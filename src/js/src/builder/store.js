@@ -1,4 +1,4 @@
-// Pinia store orchestrating the Builder v2 editor.
+// Pinia store orchestrating the Builder editor.
 //
 // The store is a thin shell: all document logic lives in the pure modules under
 // src/builder, which keeps this file about wiring (selection, history, the
@@ -10,14 +10,22 @@ import { markRaw, toRaw } from 'vue';
 import { usePhenixStore } from '@/store.js';
 import { roleAllowed } from '@/utils/rbac.js';
 
-import { count, describeRemoval, listOf } from './announce.js';
+import {
+  count,
+  describeCombined,
+  describeRemoval,
+  listOf,
+} from './announce.js';
 import {
   builderApi,
   classifyError,
   errorMessage,
   fileTopology,
+  libraryErrorMessage,
+  preconditionETag,
   serverReason,
   serverSentence,
+  shareErrors,
   sourceFileName,
 } from './api.js';
 import {
@@ -31,11 +39,24 @@ import {
   snapshotIdOf,
   stampOf,
 } from './autosave.js';
+import { BulkError, bulkOutcome, mergeShareList, runBulk } from './bulk.js';
 import { copySelection, pasteClipboard } from './clipboard.js';
 import { DocumentError, parseDocument } from './decode.js';
-import { applyGroups, nothingToGroup, planGroups } from './grouping.js';
+import {
+  PatternError,
+  applyGroups,
+  groupingPhrase,
+  nothingToGroup,
+  nothingToGroupByPattern,
+  planGroups,
+  planPatternGroups,
+  rememberGroupPattern,
+} from './grouping.js';
+import { patternProblem } from './groupingPattern.js';
 import { History, DEFAULT_HISTORY_LIMIT } from './history.js';
+import { droppedIconsNote, ICON_ID, settleIcons } from './icons.js';
 import { createDraftStore } from './idb.js';
+import { uniqueName } from './ids.js';
 import {
   layoutChanges,
   restoreLayoutChanges,
@@ -49,7 +70,13 @@ import {
   ownLayout,
   runLayout,
 } from './layouts/index.js';
-import { FILE_TOKEN, PUBLISHED_TOKEN, publishRefusal } from './publish.js';
+import {
+  FILE_TOKEN,
+  LEGACY_TOKEN,
+  PUBLISHED_TOKEN,
+  configName,
+  publishRefusal,
+} from './publish.js';
 import {
   builderSchemaV1,
   isSchemaBundle,
@@ -57,15 +84,23 @@ import {
 } from './schema.js';
 import { onBuilderSessionEnd } from './session.js';
 import { builderSettings } from './settings.js';
-import { newestFirst } from './share.js';
+import { newestFirst, reasonMessage } from './share.js';
 import { requestSignIn, signIn, signInAvailable } from './signin.js';
 import { pageStorage } from './storage.js';
 import { builderTabs } from './tabs.js';
+import {
+  paletteTemplateGroups,
+  templateByKey,
+  templateContent,
+  templatesFull,
+} from './templates.js';
 import { utf8Length } from './text.js';
 import { MAX_NAME_BYTES, validateDocument } from './validate.js';
 import {
   addInterface,
   addNode,
+  addTemplate,
+  combineIncluded,
   connect,
   connectNodes,
   createDocument,
@@ -83,6 +118,7 @@ import {
   removeElements,
   removeInterface,
   removeNetworks,
+  removeTemplate,
   renameInterface,
   resizeNode,
   savedStamp,
@@ -95,6 +131,7 @@ import {
   updateEdge,
   updateNetwork,
   updateNode,
+  updateTemplate,
   withStamp,
 } from './model.js';
 import {
@@ -132,6 +169,71 @@ async function forgetLocalDraft(owner, id) {
         .map((record) => local.remove(record.key)),
     );
   } catch {}
+}
+
+// Why a draft that changed again while its delete was sent a second time
+// was not deleted.
+const CHANGED_WHILE_DELETING =
+  'It changed on the server while it was being deleted. Try again.';
+
+// Why a bulk action left out a listed draft the server no longer finds.
+// One of the user's own is gone. For another user's the server answers the
+// same when the user may no longer see it, so the reason names both.
+const DRAFT_DELETED = 'It was deleted since the list was read.';
+const DRAFT_GONE =
+  'It was deleted since the list was read, or you can no longer see it.';
+
+function draftMissingReason(item) {
+  return item.owner === usePhenixStore().username ? DRAFT_DELETED : DRAFT_GONE;
+}
+
+// Deletes a draft, and what this device kept for it. A draft that changed
+// since `etag` was read (412) is deleted with its current ETag, once: the
+// one the refusal carries, which a damaged draft has no other way to give,
+// or else the draft's, read again. Resolves with null once it is deleted,
+// or with why it was not: the failure, and whether it is that the draft
+// changed again meanwhile.
+async function removeDraft(owner, id, etag) {
+  let retried = false;
+
+  try {
+    try {
+      await builderApi.deleteDraft(owner, id, etag);
+    } catch (error) {
+      if (error?.response?.status !== 412) {
+        throw error;
+      }
+
+      const current =
+        preconditionETag(error) || (await builderApi.getDraft(owner, id)).etag;
+
+      retried = true;
+      await builderApi.deleteDraft(owner, id, current);
+    }
+
+    await forgetLocalDraft(owner, id);
+
+    return null;
+  } catch (error) {
+    return {
+      error,
+      changed: retried && classifyError(error) === 'conflict',
+    };
+  }
+}
+
+// Whether a failure ends a bulk action: once the session has ended or the
+// server cannot be reached, the items left would fail the same way.
+function endsBulk(error) {
+  return (
+    !(error instanceof BulkError) &&
+    ['unauthenticated', 'offline'].includes(classifyError(error))
+  );
+}
+
+// Why one item of a bulk action failed, in words.
+function bulkReason(error) {
+  return errorMessage(classifyError(error), error);
 }
 
 // What a layout run is for, as the viewer knows it, and what is dropped
@@ -211,6 +313,29 @@ async function layOut(store, doc, id, options, task) {
   return laid;
 }
 
+// Makes the planned groups (see applyGroups) for autoGroup and
+// autoGroupByPattern, lays the diagram out with its layout, or the Settings
+// default, so the groups do not overlap, and commits both as one edit that
+// keeps that layout as the draft's, as layout does. `phrase` says how they
+// were grouped ("by network"). Resolves to the groups made, or to null when
+// the layout was not applied (see layOut).
+async function makeGroups(store, planned, phrase, options) {
+  const grouped = applyGroups(store.doc, planned);
+  const id = store.layoutToRun;
+  const laid = await layOut(store, grouped.doc, id, options, 'group');
+
+  if (!laid) {
+    return null;
+  }
+
+  store.commit(
+    withLayoutChoice(withGeometry(grouped.doc, laid), id),
+    `Created ${count(grouped.groups.length, 'group')} ${phrase}`,
+  );
+
+  return grouped.groups;
+}
+
 // Bumped when the session ends (see endSession), so a listing that answers
 // after the user logged out is dropped rather than shown to the next user.
 let sessionEpoch = 0;
@@ -232,20 +357,116 @@ function forgetUser(store) {
 }
 
 // Whether the signed-in role may `verb` configs, as the server's Builder
-// routes require (builderV2BaseAllowed in web/builder_v2.go). The server
+// routes require (builderBaseAllowed in web/builder.go). The server
 // decides; this only keeps controls it would refuse out of the way.
 function configsAllowed(verb) {
   return Boolean(usePhenixStore().role) && roleAllowed('configs', verb);
 }
+
+// Why a published topology the server no longer lists was not deleted.
+const PUBLISHED_GONE =
+  'It was deleted or published again since the list was read.';
 
 // What opening another user's draft says when the server cannot find it:
 // the same whether it is missing or not shared with the user, as the server
 // answers the same.
 const NOT_SHARED = 'This draft does not exist, or it is not shared with you.';
 
+// The most custom icons the icon shelf keeps (see shelveIcons): those of a
+// user's whole icon library, twice over.
+const MAX_SHELVED_ICONS = 128;
+
 // The lists as they are before they are read.
 function emptyLists() {
   return { mine: [], shared: [], others: [], published: [], damaged: [] };
+}
+
+// What a template library holds at most (the limits of api/builder), used
+// until the server says.
+const LIBRARY_LIMITS = Object.freeze({
+  templates: 200,
+  collections: 50,
+  shares: 25,
+  nameBytes: 128,
+  descriptionBytes: 1024,
+  deviceBytes: 16384,
+  icons: 32,
+});
+
+// The user's template library as it is before it is read.
+function emptyLibrary() {
+  return {
+    status: 'idle',
+    error: '',
+    loaded: false,
+    owner: '',
+    items: [],
+    collections: [],
+    icons: {},
+    canShare: false,
+    canPublish: false,
+    damaged: false,
+    limits: { ...LIBRARY_LIMITS },
+  };
+}
+
+// The reads of the template library asked for, and the last one whose
+// answer was kept: an answer older than the one kept is dropped (see
+// fetchTemplates).
+let libraryReads = 0;
+let libraryReadKept = 0;
+
+// The server changes a library with one compare-and-swap of its record,
+// which it tries a few times. When the record keeps changing under it (the
+// user's other tabs, say) it answers 503: the change is sent again, a
+// moment later, this many times.
+const LIBRARY_RETRIES = 2;
+export const LIBRARY_RETRY_MS = 1000;
+
+async function libraryWrite(send) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await send();
+    } catch (error) {
+      if (error?.response?.status !== 503 || attempt >= LIBRARY_RETRIES) {
+        throw error;
+      }
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, LIBRARY_RETRY_MS);
+      });
+    }
+  }
+}
+
+/**
+ * A change of the template library that was not sent, with why, in words.
+ */
+export class LibraryError extends Error {
+  /**
+   * @param {string} reason a sentence
+   */
+  constructor(reason) {
+    super(reason);
+    this.name = 'LibraryError';
+    this.reason = reason;
+  }
+}
+
+// Checks a diagram the server sent (see parseDocument). Whatever the check
+// throws leaves as a DocumentError: the server answered, so the failure is
+// about the diagram, and is never taken for a request that did not arrive
+// (see describeError).
+function serverDocument(value) {
+  try {
+    return parseDocument(value);
+  } catch (error) {
+    throw error instanceof DocumentError
+      ? error
+      : Object.assign(new DocumentError('', { code: 'unreadable' }), {
+          cause: error,
+        });
+  }
 }
 
 // The source token of a draft made from a published diagram as it was read
@@ -268,6 +489,62 @@ function draftsFrom(drafts, token) {
   return newestFirst(
     (drafts || []).filter((draft) => token && draft.sourceToken === token),
   );
+}
+
+/**
+ * The draft a published diagram is edited in, or null. In this order: the
+ * draft of mine that published it ('publisher'), a draft someone shared
+ * with me for editing that published it ('shared'), then the draft of mine
+ * made from it before ('opened'). A draft that published the diagram is
+ * found by the document its last publication stored, so it is still found
+ * after it publishes again, which gives the diagram a new id. Among
+ * several, the draft the diagram itself names comes first, then the one
+ * changed last.
+ *
+ * A draft shared for viewing only, or seen through a role, is not one:
+ * the diagram is opened to be edited.
+ *
+ * @param {{mine: object[], shared: object[]}} drafts as listed
+ * @param {{id: string, draftId?: string}} published the diagram's id, and
+ *   the id of the draft that published it when the listing says; the handle
+ *   of a topology's Builder file, or '', has no publishing draft
+ * @param {string} token the source token of a draft made from the diagram
+ *   (see publishedToken), or '' to leave such drafts out
+ * @returns {{draft: object, how: 'publisher'|'shared'|'opened'}|null}
+ */
+export function draftForPublished(drafts, published, token) {
+  const id = published?.id && !fileTopology(published.id) ? published.id : '';
+  const publishers = (list) => {
+    const found = newestFirst(
+      (list || []).filter(
+        (draft) => id && draft?.publication?.documentId === id,
+      ),
+    );
+
+    return (
+      found.find((draft) => draft.id === published.draftId) || found[0] || null
+    );
+  };
+
+  const mine = publishers(drafts?.mine);
+
+  if (mine) {
+    return { draft: mine, how: 'publisher' };
+  }
+
+  const shared = publishers(
+    (drafts?.shared || []).filter(
+      (draft) => draft?.via === 'share' && draft.access === 'edit',
+    ),
+  );
+
+  if (shared) {
+    return { draft: shared, how: 'shared' };
+  }
+
+  const [opened] = draftsFrom(drafts?.mine, token);
+
+  return opened ? { draft: opened, how: 'opened' } : null;
 }
 
 // The title of a draft saved from local history: the diagram's name with
@@ -308,6 +585,13 @@ export const useBuilderStore = defineStore('builder', {
     saveAnnounced: null,
     selection: emptySelection(),
     clipboard: null,
+    // Custom icons the session has seen and a diagram may come to use, by
+    // icon id, as {name?, data}: those chosen in the icon dialog and those
+    // of a clipboard (see shelveIcons). A commit copies the ones the
+    // document names from here (see commit). It is memory of this page
+    // only, never saved, and is markRaw, as the History is: nothing
+    // observes it.
+    iconShelf: markRaw(new Map()),
     // What the last automatic layout changed (layoutChanges: where it moved
     // nodes from, the routes and layout choice it replaced), and the history
     // entry that layout made. It can be put back only while that entry is
@@ -330,7 +614,7 @@ export const useBuilderStore = defineStore('builder', {
     // What Publish needs to know about the draft record: its id, the config
     // it was loaded from, the saved snapshot's digest and its last
     // publication (see draftCanUpdate in publish.js); when the server last
-    // changed it, for Export; and the name of the uploaded file it was made
+    // changed it, for Download; and the name of the uploaded file it was made
     // from, if it was, for the Inspector.
     draftRecord: {
       id: '',
@@ -341,6 +625,10 @@ export const useBuilderStore = defineStore('builder', {
       forked: null,
       updated: '',
     },
+    // The experiment a publication of the open draft made, by name, while
+    // it still exists and the user may get it, as the server last said:
+    // when the draft was read or made, and when it published. '' for none.
+    experiment: '',
     readOnly: false,
     // How the user reaches the open draft (see rememberAccess): 'owner',
     // 'edit' or 'view', and for another user's draft, 'share' or 'role'.
@@ -379,6 +667,15 @@ export const useBuilderStore = defineStore('builder', {
     theme: DEFAULT_THEME,
     resolvedTheme: 'light',
     drafts: emptyLists(),
+    // The user's template library (see fetchTemplates): status is 'idle'
+    // before it is asked for, then 'loading', and 'ready' or 'failed' as
+    // the last read went, with why it failed (error). loaded says whether
+    // the rest is what the server answered: the library's owner, its
+    // templates (items) and collections, the custom icons the templates
+    // name (by icon id: {name?, data}), what the user may do, whether the
+    // stored library cannot be read (damaged), and its limits. A read that
+    // fails keeps what an earlier one answered.
+    templates: emptyLibrary(),
     publishing: false,
     publishResult: null,
     // Whether resolveConflict is under way (see refuseWhileResolving).
@@ -413,7 +710,8 @@ export const useBuilderStore = defineStore('builder', {
     error: '',
     // The form field the error is about, when the request that failed came
     // from a dialog form: a publish target's field (see publishRefusal), or
-    // 'content' or 'name' for an import source the server refused. The
+    // 'content' or 'name' for an import source the server refused, or
+    // 'newName' for the name of the new topology an import makes. The
     // dialog marks that control. '' when the error is about no field.
     errorField: '',
     // Bumped whenever an error is set, so the same failure twice is shown
@@ -457,8 +755,15 @@ export const useBuilderStore = defineStore('builder', {
     // still does: once the share, or the draft, is gone, no one is named.
     sharedBy: (state) =>
       state.via === 'share' && state.accessLost !== 'gone' ? state.owner : '',
+    // The experiment the open diagram's publication made: a draft's own, or
+    // that of the published diagram shown read only, as its listed row says.
+    experimentName: (state) =>
+      state.published
+        ? state.documents.find((row) => row.id === state.published.id)
+            ?.experiment || ''
+        : state.experiment,
     // The drafts the server can no longer read: the user's own, and other
-    // users' (on the Other users' drafts tab, never Shared with me).
+    // users' (on the Other users' drafts tab, never Shared Drafts).
     damagedDrafts: (state) => {
       const user = usePhenixStore().username;
       const all = state.drafts.damaged || [];
@@ -501,6 +806,30 @@ export const useBuilderStore = defineStore('builder', {
 
       return { type: 'document' };
     },
+    // The device templates the palette offers, in groups: those saved in
+    // the open diagram, then those of the user's library, or the built-in
+    // ones while there is no library to show (see templates.js).
+    paletteTemplateGroups: (state) =>
+      paletteTemplateGroups(state.doc, state.templates),
+    // The template a palette entry's key names ("diagram:<id>", "own:<id>",
+    // "builtin:<id>"), or undefined.
+    templateByKey: (state) => (key) =>
+      templateByKey(state.doc, key, state.templates),
+    // The user's own templates and collections, in the order the library
+    // keeps them: the order they were added in.
+    ownTemplates: (state) =>
+      state.templates.items.filter((template) => template.source === 'own'),
+    ownCollections: (state) =>
+      state.templates.collections.filter(
+        (collection) => collection.source === 'own',
+      ),
+    // What the signed-in role may do to its library (see configsAllowed):
+    // add templates and collections, change them, delete them.
+    templateRights: () => ({
+      create: configsAllowed('create'),
+      update: configsAllowed('update'),
+      delete: configsAllowed('delete'),
+    }),
   },
 
   actions: {
@@ -601,8 +930,49 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
+     * Keeps custom icons for the documents that come to use them: before an
+     * edit gives a node an icon the document may lack (one chosen in the
+     * icon dialog, one a paste brings), its entry is put here, and the
+     * commit of that edit copies it into the document. The shelf keeps the
+     * icons put there last.
+     *
+     * @param {Map<string, object>|object|null} [icons] by icon id, {name?,
+     *   data}
+     */
+    shelveIcons(icons) {
+      const entries =
+        icons instanceof Map ? [...icons] : Object.entries(icons || {});
+
+      for (const [id, entry] of entries) {
+        if (!ICON_ID.test(id) || typeof entry?.data !== 'string') {
+          continue;
+        }
+
+        this.iconShelf.delete(id);
+        this.iconShelf.set(id, {
+          ...(entry.name ? { name: entry.name } : {}),
+          data: entry.data,
+        });
+      }
+
+      for (const id of this.iconShelf.keys()) {
+        if (this.iconShelf.size <= MAX_SHELVED_ICONS) {
+          break;
+        }
+
+        this.iconShelf.delete(id);
+      }
+    },
+
+    /**
      * Records one semantic edit: local history, then the autosave queue. Every
      * call becomes exactly one server snapshot.
+     *
+     * The document recorded carries exactly the custom icons it uses (see
+     * settleIcons): one it names and lacks comes from the icon shelf, and
+     * one no node names any more goes. This is the one place that does so
+     * for every edit, so every snapshot is a document the server accepts.
+     * Icons left out, past the most a document holds, are announced.
      *
      * @param {object} doc next document
      * @param {string} label short description
@@ -619,14 +989,20 @@ export const useBuilderStore = defineStore('builder', {
         return null;
       }
 
-      this.doc = doc;
+      const settled = settleIcons(doc, this.iconShelf);
+
+      this.doc = settled.doc;
       this.layoutRestore = null;
 
-      const entry = this.history.push(doc, label);
+      const entry = this.history.push(settled.doc, label);
       this.historyChanged();
 
       if (label) {
         this.announce(`${label}${this.unsavedNote()}`);
+      }
+
+      if (settled.dropped > 0) {
+        this.announce(droppedIconsNote(settled.dropped));
       }
 
       if (this.autosave && !this.readOnly) {
@@ -694,6 +1070,14 @@ export const useBuilderStore = defineStore('builder', {
       }
 
       this.autosave?.dispose();
+      // What the queue before this one was still sending, and the problem
+      // last announced for it, are that draft's. A draft closed while it
+      // was being saved goes on in the background (see
+      // createBackgroundSaves in leave.js): this draft's saves do not wait
+      // for it (see saveNow), and its first save is not the end of that
+      // draft's problem (see announceSaveState).
+      this.queueWork = null;
+      this.saveAnnounced = null;
       this.autosave = markRaw(
         createAutosave({
           api: builderApi,
@@ -894,6 +1278,7 @@ export const useBuilderStore = defineStore('builder', {
       this.accessLost = '';
       this.published = null;
       this.rememberDraft({});
+      this.experiment = '';
       this.saveState = initialState();
       this.saveAnnounced = null;
 
@@ -992,6 +1377,7 @@ export const useBuilderStore = defineStore('builder', {
         this.readOnly = false;
         this.published = null;
         this.rememberDraft(envelope.draft);
+        this.experiment = envelope.draft?.experiment || '';
         this.ownDraft();
         // The server stored the document with the stamp it answers with,
         // which the editor's copy takes. Its switches are named after their
@@ -999,7 +1385,7 @@ export const useBuilderStore = defineStore('builder', {
         // setDocument): the document sent may be a published one, sent as
         // it was read.
         const stored = envelope.document
-          ? parseDocument(envelope.document)
+          ? serverDocument(envelope.document)
           : doc;
         const stamp = stampOf(envelope);
 
@@ -1041,7 +1427,17 @@ export const useBuilderStore = defineStore('builder', {
       }
     },
 
-    async loadDraft(owner, id) {
+    /**
+     * Reads a draft from the server and makes it the open one.
+     *
+     * @param {string} owner
+     * @param {string} id
+     * @param {object} [options] quiet: says nothing of the draft having
+     *   opened, for a draft loaded while the drafts stay on screen (a card's
+     *   Publish); changes recovered from this device are still announced
+     * @returns {Promise<object|null>} the draft's document, or null
+     */
+    async loadDraft(owner, id, { quiet = false } = {}) {
       const epoch = sessionEpoch;
 
       this.loading = true;
@@ -1062,6 +1458,7 @@ export const useBuilderStore = defineStore('builder', {
         this.readOnly = Boolean(envelope.draft?.readOnly);
         this.published = null;
         this.rememberDraft(envelope.draft);
+        this.experiment = envelope.draft?.experiment || '';
         this.access = '';
         this.via = '';
         this.canShare = false;
@@ -1071,6 +1468,7 @@ export const useBuilderStore = defineStore('builder', {
 
         const loaded = this.setDocument(envelope.document, {
           label: 'Draft loaded',
+          announce: !quiet,
         });
 
         if (!loaded) {
@@ -1100,7 +1498,7 @@ export const useBuilderStore = defineStore('builder', {
 
         // Another user's draft says whose it is, and whether it can be
         // edited: others may be editing it at the same time.
-        if (phenix.username && this.owner !== phenix.username) {
+        if (!quiet && phenix.username && this.owner !== phenix.username) {
           const name = this.doc.name || envelope.draft?.title || 'Untitled';
 
           this.announce(
@@ -1385,6 +1783,7 @@ export const useBuilderStore = defineStore('builder', {
           this.owner = envelope.draft?.owner || this.owner;
           this.draftId = envelope.draft?.id || this.draftId;
           this.rememberDraft(envelope.draft);
+          this.experiment = envelope.draft?.experiment || '';
           // The new draft is the user's own, even when the one it leaves
           // was shared with them and they lost access to it.
           this.ownDraft();
@@ -1441,7 +1840,7 @@ export const useBuilderStore = defineStore('builder', {
     /**
      * Deletes a draft. A card's ETag can be older than the server's, as it
      * is right after Back to drafts until the list is read again: the
-     * draft is then read again and deleted with its current ETag, once.
+     * draft is then deleted with its current ETag, once (see removeDraft).
      *
      * @param {string} owner
      * @param {string} id
@@ -1451,36 +1850,75 @@ export const useBuilderStore = defineStore('builder', {
     async deleteDraft(owner, id, etag, title = '') {
       this.clearError();
 
-      let retried = false;
+      const failure = await removeDraft(owner, id, etag);
 
-      try {
-        try {
-          await builderApi.deleteDraft(owner, id, etag);
-        } catch (error) {
-          if (error?.response?.status !== 412) {
-            throw error;
-          }
-
-          const current = await builderApi.getDraft(owner, id);
-
-          retried = true;
-          await builderApi.deleteDraft(owner, id, current.etag);
-        }
-
-        await forgetLocalDraft(owner, id);
-        this.announce(title ? `Deleted draft ${title}.` : 'Draft deleted.');
-        await this.fetchDrafts();
-
-        return true;
-      } catch (error) {
+      if (failure) {
         this.setError(
-          retried && classifyError(error) === 'conflict'
-            ? 'Could not delete the draft. It changed on the server while it was being deleted. Try again.'
-            : this.describeError(error, 'delete the draft'),
+          failure.changed
+            ? `Could not delete the draft. ${CHANGED_WHILE_DELETING}`
+            : this.describeError(failure.error, 'delete the draft'),
         );
 
         return false;
       }
+
+      this.announce(title ? `Deleted draft ${title}.` : 'Draft deleted.');
+      await this.fetchDrafts();
+
+      return true;
+    },
+
+    /**
+     * Deletes several listed drafts, a few at a time, each as deleteDraft
+     * deletes one. Every draft is tried, unless the session ends or the
+     * server cannot be reached; what failed is returned with why, not put
+     * in the page alert, and nothing is announced: the caller says what the
+     * run came to. A draft of the user's own that the server no longer
+     * finds counts as deleted. The lists are read again once, at the end.
+     *
+     * @param {{owner: string, id: string, etag?: string}[]} items
+     * @param {object} [options] before(item): awaited before a draft is
+     *   deleted (the view ends its saves in the background); onProgress(done,
+     *   total): called as each draft ends
+     * @returns {Promise<{done: object[], failures: Array<{item: object,
+     *   reason: string}>}>}
+     */
+    async deleteDrafts(items, { before, onProgress } = {}) {
+      const results = await runBulk(
+        items,
+        async (item) => {
+          await before?.(item);
+
+          const failure = await removeDraft(item.owner, item.id, item.etag);
+
+          if (!failure) {
+            return;
+          }
+
+          if (failure.changed) {
+            throw new BulkError(CHANGED_WHILE_DELETING);
+          }
+
+          if (classifyError(failure.error) !== 'missing') {
+            throw failure.error;
+          }
+
+          // The server no longer finds it. One of the user's own was
+          // deleted elsewhere since the list was read, which is what was
+          // asked for: it counts as deleted, and what this device kept for
+          // it goes too.
+          if (item.owner !== usePhenixStore().username) {
+            throw new BulkError(DRAFT_GONE);
+          }
+
+          await forgetLocalDraft(item.owner, item.id);
+        },
+        { onProgress, stop: endsBulk },
+      );
+
+      await this.fetchDrafts({ keepError: true });
+
+      return bulkOutcome(results, bulkReason);
     },
 
     /**
@@ -1501,6 +1939,34 @@ export const useBuilderStore = defineStore('builder', {
       }
 
       this.clearError();
+
+      try {
+        await this.removePublished(item);
+        this.announce(`Deleted topology ${name}.`);
+
+        return true;
+      } catch (error) {
+        const missing = classifyError(error) === 'missing';
+
+        this.setError(
+          missing
+            ? `Could not delete topology ${name}. ${PUBLISHED_GONE}`
+            : this.describeError(error, `delete topology ${name}`),
+        );
+
+        if (missing) {
+          await this.fetchDocuments();
+        }
+
+        return false;
+      }
+    },
+
+    // Deletes a published topology, its card saying so meanwhile, and takes
+    // it off the lists. It rejects with the server's failure.
+    async removePublished(item) {
+      const name = item.target || item.id;
+
       this.deletingDocuments = [...this.deletingDocuments, item.id];
 
       try {
@@ -1515,28 +1981,40 @@ export const useBuilderStore = defineStore('builder', {
               (typeof entry === 'string' ? entry : entry?.name) !== name,
           ),
         };
-        this.announce(`Deleted topology ${name}.`);
-
-        return true;
-      } catch (error) {
-        const missing = classifyError(error) === 'missing';
-
-        this.setError(
-          missing
-            ? `Could not delete topology ${name}. It was deleted or published again since the list was read.`
-            : this.describeError(error, `delete topology ${name}`),
-        );
-
-        if (missing) {
-          await this.fetchDocuments();
-        }
-
-        return false;
       } finally {
         this.deletingDocuments = this.deletingDocuments.filter(
           (id) => id !== item.id,
         );
       }
+    },
+
+    /**
+     * Deletes the topologies of several listed published diagrams, each as
+     * deletePublished deletes one, one at a time: the server takes them one
+     * at a time anyway. Every topology is tried, unless the session ends or
+     * the server cannot be reached; what failed is returned with why, not
+     * put in the page alert, and nothing is announced. The list is read
+     * again once, at the end.
+     *
+     * @param {{id: string, target?: string}[]} items listed published
+     *   diagrams
+     * @param {object} [options] onProgress(done, total): called as each
+     *   topology ends
+     * @returns {Promise<{done: object[], failures: Array<{item: object,
+     *   reason: string}>}>}
+     */
+    async deletePublishedMany(items, { onProgress } = {}) {
+      const results = await runBulk(
+        items,
+        (item) => this.removePublished(item),
+        { limit: 1, onProgress, stop: endsBulk },
+      );
+
+      await this.fetchDocuments();
+
+      return bulkOutcome(results, (error) =>
+        classifyError(error) === 'missing' ? PUBLISHED_GONE : bulkReason(error),
+      );
     },
 
     /**
@@ -1686,6 +2164,81 @@ export const useBuilderStore = defineStore('builder', {
       }
     },
 
+    /**
+     * Shares several of the user's listed drafts with `people`, at
+     * `access`, a few drafts at a time. For each draft the share list is
+     * read, the people are added to it (see mergeShareList: no one is
+     * removed, and someone listed already gets the access chosen) and the
+     * whole list is saved; a list that changed meanwhile (412) is read and
+     * merged again, once. A draft that would be shared with more people
+     * than the server allows is not sent. Every draft is tried, unless the
+     * session ends or the server cannot be reached; what failed is returned
+     * with why, and nothing is announced. Each draft shared takes its place
+     * on the lists, as after saveShares.
+     *
+     * @param {{owner: string, id: string}[]} items listed drafts
+     * @param {string[]} people the users to add
+     * @param {string} access 'view' or 'edit'
+     * @param {object} [options] onProgress(done, total): called as each
+     *   draft ends
+     * @returns {Promise<{done: object[], failures: Array<{item: object,
+     *   reason: string}>}>}
+     */
+    async shareDrafts(items, people, access, { onProgress } = {}) {
+      const share = async (item, retried = false) => {
+        const current = await this.loadShares(item);
+        const merged = mergeShareList(current.shares, people, access);
+
+        if (merged.shares.length > current.maxShares) {
+          throw new BulkError(
+            `It would be shared with ${count(merged.shares.length, 'person', 'people')}. A draft can be shared with at most ${count(current.maxShares, 'person', 'people')}.`,
+          );
+        }
+
+        if (!merged.changed) {
+          return;
+        }
+
+        try {
+          await this.saveShares(item, merged.shares, current.sharesEtag);
+        } catch (error) {
+          const refused = shareErrors(error);
+
+          if (error?.response?.status === 412) {
+            if (!retried) {
+              await share(item, true);
+
+              return;
+            }
+
+            throw new BulkError(
+              'Who it is shared with changed while it was being shared. Try again.',
+            );
+          }
+
+          if (refused.length) {
+            throw new BulkError(
+              refused
+                .map((entry) => reasonMessage(entry.reason, entry.user))
+                .join(' '),
+            );
+          }
+
+          throw error;
+        }
+      };
+      const results = await runBulk(items, (item) => share(item), {
+        onProgress,
+        stop: endsBulk,
+      });
+
+      return bulkOutcome(results, (error, item) =>
+        classifyError(error) === 'missing'
+          ? draftMissingReason(item)
+          : bulkReason(error),
+      );
+    },
+
     // Replaces a draft of mine on the lists with the one the server sent.
     patchListedDraft(draft) {
       const index = this.drafts.mine.findIndex(
@@ -1717,7 +2270,7 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * The phenix Topology config a document publishes as, for the Export
+     * The phenix Topology config a document publishes as, for the Download
      * dialog, which reports a failure itself.
      *
      * @param {object} doc
@@ -1768,7 +2321,7 @@ export const useBuilderStore = defineStore('builder', {
         return {
           id,
           source: 'store',
-          document: parseDocument(await builderApi.getDocument(id)),
+          document: serverDocument(await builderApi.getDocument(id)),
         };
       }
 
@@ -1782,7 +2335,7 @@ export const useBuilderStore = defineStore('builder', {
         path: file ? read.path || '' : '',
         digest: file ? read.digest || '' : '',
         topologyDiffers: file && read.topologyDiffers === true,
-        document: parseDocument(read.document),
+        document: serverDocument(read.document),
       };
     },
 
@@ -1869,9 +2422,10 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Opens a published diagram for editing in a draft of mine: the one made
-     * from it before, when there is one (see draftsFrom), so opening
-     * the same diagram again never piles up copies; otherwise a new
+     * Opens a published diagram for editing in a draft: the draft that
+     * published it, when it is mine or shared with me for editing, or else
+     * the draft of mine made from it before (see draftForPublished), so
+     * opening the same diagram again never piles up copies; otherwise a new
      * draft made from it. A draft made from a topology's Builder file is
      * one made from what the file holds now: once the file changes, a new
      * draft is made from it.
@@ -1879,14 +2433,15 @@ export const useBuilderStore = defineStore('builder', {
      * @param {string} id a listed published diagram's id: a published
      *   document's, or the handle of a topology's Builder file
      * @param {object} [options] announcement: what to say when a new draft
-     *   is made, and resumed: when an existing one is opened (defaults name
-     *   the diagram); document: the diagram, when it was read already, and
-     *   digest: the digest a Builder file's was read with
+     *   is made, publisher: when the draft of mine that published the
+     *   diagram is opened, and resumed: when the draft of mine made from it
+     *   is (defaults name the diagram); document: the diagram, when it was
+     *   read already, and digest: the digest a Builder file's was read with
      * @returns {Promise<object|null>} the draft's document, or null
      */
     async openPublishedDocument(
       id,
-      { announcement, resumed, document: known, digest = '' } = {},
+      { announcement, resumed, publisher, document: known, digest = '' } = {},
     ) {
       const epoch = sessionEpoch;
       const topology = fileTopology(id);
@@ -1916,21 +2471,36 @@ export const useBuilderStore = defineStore('builder', {
         }
 
         const token = publishedToken(read || { id, source: 'store' });
-        const [existing] = draftsFrom(await this.listMine(), token);
+        // The lists as they are now: the drafts shared with me too.
+        const mine = await this.listMine();
 
         if (this.sessionEndedSince(epoch)) {
           return null;
         }
 
-        if (existing) {
+        const listed = this.documents.find((item) => item.id === id);
+        const found = draftForPublished(
+          { mine, shared: this.drafts.shared },
+          { id, draftId: listed?.draftId },
+          token,
+        );
+
+        if (found) {
+          const { draft: existing, how } = found;
           const opened = await this.loadDraft(existing.owner, existing.id);
 
-          if (opened) {
+          // Another user's draft has said whose it is (see loadDraft).
+          if (opened && how !== 'shared') {
+            const name = opened.name || existing.title || id;
+
             this.announce(
-              resumed ||
-                (topology
-                  ? `Opened your draft of the diagram of topology ${topology}.`
-                  : `Opened your draft of published diagram ${opened.name || existing.title || id}.`),
+              how === 'publisher'
+                ? publisher ||
+                    `Opened the draft that published diagram ${name}.`
+                : resumed ||
+                    (topology
+                      ? `Opened your draft of the diagram of topology ${topology}.`
+                      : `Opened your draft of published diagram ${name}.`),
             );
           }
 
@@ -2077,7 +2647,7 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Reads a stored scenario's content again, for Export (see
+     * Reads a stored scenario's content again, for Download (see
      * fetchScenario; the Inspector shows this reading too).
      *
      * @param {string} name
@@ -2354,9 +2924,23 @@ export const useBuilderStore = defineStore('builder', {
 
       // The queue of the draft being published, whatever opens meanwhile.
       const autosave = this.autosave;
-      const state = await this.saveNow();
+      const { owner, draftId } = this;
+      // Whether that draft is still the open one: its answer says nothing
+      // of a draft opened since.
+      const stillOpen = () => this.owner === owner && this.draftId === draftId;
+
+      // Under way from here on, the save it starts with included, for
+      // whoever waits for the draft to be free again.
+      this.publishing = true;
+
+      const state = await this.saveNow().catch((error) => {
+        this.publishing = false;
+
+        throw error;
+      });
 
       if (state.status !== 'saved' || state.pending > 0) {
+        this.publishing = false;
         this.setError(
           state.status === 'conflict'
             ? 'This draft changed elsewhere. Resolve the conflict before publishing.'
@@ -2366,8 +2950,6 @@ export const useBuilderStore = defineStore('builder', {
 
         return null;
       }
-
-      this.publishing = true;
 
       // Edits made while publishing stay queued until it ends, so no save
       // lands between the publish and the ETag it answers with, which would
@@ -2379,19 +2961,31 @@ export const useBuilderStore = defineStore('builder', {
 
         const sent = autosave.sent;
         const { result, etag } = await builderApi.publish(
-          this.owner,
-          this.draftId,
+          owner,
+          draftId,
           intent,
           this.etag,
         );
 
         if (etag && autosave.sent === sent) {
-          this.etag = etag;
+          if (stillOpen()) {
+            this.etag = etag;
+          }
+
           await autosave.setETag(etag);
         }
 
         this.publishResult = result;
-        this.rememberDraft(result.draft);
+
+        if (stillOpen()) {
+          this.rememberDraft(result.draft);
+
+          // The draft the server answers with names the experiment this
+          // publication, or an earlier one, made.
+          if (result.draft) {
+            this.experiment = result.draft.experiment || '';
+          }
+        }
 
         // The configs just written now exist, so the next publish of the same
         // names has to update them, and the topology now points at the
@@ -2464,6 +3058,23 @@ export const useBuilderStore = defineStore('builder', {
       }
     },
 
+    /**
+     * Asks the server to build a diagram from a topology or experiment
+     * config, for Import, and loads it.
+     *
+     * @param {{kind?: string, name?: string, content?: string,
+     *   includes?: 'keep'|'combine', copy?: boolean, newName?: string}} request
+     *   kind and name of a stored config, or the text of a config file;
+     *   includes 'combine' makes a topology's included nodes the diagram's
+     *   own, copy makes the diagram a copy, and either gives it newName
+     * @returns {Promise<{document: object, warnings: string[],
+     *   source: object|null, detached?: true}|null>} source is the config
+     *   that was read; detached: the diagram is a copy or combined, so it is
+     *   linked to no config and its draft takes no source token of a stored
+     *   one. null when the import failed, which `error` then says, with
+     *   `errorField` 'name' or 'content' for a source the server refused
+     *   and 'newName' for a new name it refused
+     */
     async generate(request) {
       this.clearError();
 
@@ -2471,24 +3082,46 @@ export const useBuilderStore = defineStore('builder', {
         const result = await builderApi.generate(request);
         // Validate before detaching the current draft. A successful generation
         // always starts separately; it must never reuse the prior draft's queue.
-        const generated = parseDocument(result.document);
+        const generated = serverDocument(result.document);
 
         this.newDocument({ name: generated.name });
 
         // Nothing is imported yet: the user may still cancel on the
         // warnings, and the draft may fail to be created. The import is
-        // announced once its draft exists (see GenerateDialog).
+        // announced once its draft exists (see ImportDialog).
         const document = this.setDocument(generated, {
           label: 'Imported diagram',
           announce: false,
         });
 
+        // The server's answer does not tell a copy from a plain import.
+        const detached =
+          Boolean(request?.copy) || request?.includes === 'combine';
+
         return document
-          ? { document, warnings: result.warnings, source: result.source }
+          ? {
+              document,
+              warnings: result.warnings,
+              source: result.source,
+              ...(detached ? { detached: true } : {}),
+            }
           : null;
       } catch (error) {
         const kind = classifyError(error);
         const uploaded = typeof request?.content === 'string';
+
+        // A new name the server refuses is about the field it was typed in.
+        if (
+          error?.response?.status === 422 &&
+          /^new topology name\b/i.test(serverReason(error))
+        ) {
+          this.setError(
+            this.describeError(error, 'import the diagram'),
+            'newName',
+          );
+
+          return null;
+        }
 
         // A stored config removed since the list was read. The list is read
         // again, so it is no longer offered, and the user picks another.
@@ -2532,14 +3165,110 @@ export const useBuilderStore = defineStore('builder', {
       }
     },
 
+    /**
+     * Asks the server to convert a diagram of the legacy Builder, for
+     * Upload: the diagram's XML, or a Topology config that holds one. The
+     * document is checked here and loaded by the dialog, once the user has
+     * seen the warnings: until then the open draft stays as it is.
+     *
+     * @param {{content: string, name?: string}} request the text of the
+     *   chosen file, and the name of the document of a diagram that comes
+     *   without a topology
+     * @returns {Promise<{document: object, warnings: string[],
+     *   source: object|null, sourceToken?: string}|null>} source as
+     *   generate() gives it, null for a diagram without a topology, whose
+     *   draft takes sourceToken; null when the conversion failed, which
+     *   `error` then says, with `errorField` 'content' when the file was
+     *   refused
+     */
+    async convertLegacy({ content, name = '' } = {}) {
+      this.clearError();
+
+      try {
+        const result = await builderApi.convertLegacy({ content, name });
+        const document = serverDocument(result.document);
+
+        return {
+          document,
+          warnings: result.warnings,
+          source: result.source,
+          ...(result.source ? {} : { sourceToken: LEGACY_TOKEN }),
+        };
+      } catch (error) {
+        const kind = classifyError(error);
+
+        // The server says what is wrong with the file in a sentence written
+        // to be shown, which names its root element or the topology in it.
+        this.setError(
+          this.describeFileError(error, 'convert the legacy diagram'),
+          kind === 'invalid' || kind === 'too-large' ? 'content' : '',
+        );
+
+        return null;
+      }
+    },
+
+    /**
+     * Makes a new draft of the open diagram in which the nodes of its
+     * included topologies are its own (see combineIncluded in model.js),
+     * and opens it. The draft that was open is left as it is, and stays
+     * listed. The new draft is linked to no config, so publishing it makes
+     * a new topology; it is named after the diagram, with a name that no
+     * stored topology has and no draft of the user's, read anew, is titled:
+     * combining the same diagram again makes a draft of another name.
+     *
+     * @returns {Promise<object|null>} the new draft, or null when it could
+     *   not be made, which `error` then says
+     */
+    async combineIncluded() {
+      const mine = await this.listMine();
+      const from = this.doc.name || 'Untitled diagram';
+      const included = this.summary.included;
+      const name = uniqueName(
+        `${configName(this.doc.name) || 'diagram'}-combined`,
+        [
+          ...(this.sources.topologies || []).map((entry) =>
+            typeof entry === 'string' ? entry : entry?.name,
+          ),
+          ...(mine || []).map((draft) => draft?.title),
+        ],
+      );
+      const combined = combineIncluded(toRaw(this.doc), name);
+
+      this.newDocument({ name });
+
+      const document = this.setDocument(combined, {
+        label: 'Combined diagram',
+        announce: false,
+      });
+
+      if (!document) {
+        return null;
+      }
+
+      // One message once the draft exists, so neither half is lost.
+      return this.createDraft({
+        document,
+        title: name,
+        sourceToken: '',
+        announcement: describeCombined(
+          included,
+          name,
+          from,
+          combined.source.includeTopologies,
+        ),
+      });
+    },
+
     describeError(error, action) {
-      // The server answered, but parseDocument rejected the diagram it sent.
-      // That is not a connection problem, and only the decoder's reason says
-      // what is wrong.
+      // The server answered, but the diagram it sent did not pass the
+      // editor's check (see serverDocument). That is not a connection
+      // problem, and only the decoder's reason, when it gave one, says what
+      // is wrong.
       if (error instanceof DocumentError) {
         const reason = error.message.trim().replace(/\.$/, '');
 
-        return `Could not ${action}. The server sent a diagram the editor cannot open: ${reason}.`;
+        return `Could not ${action}. The server sent a diagram the editor cannot open${reason ? `: ${reason}` : ''}.`;
       }
 
       const kind = classifyError(error);
@@ -2988,12 +3717,18 @@ export const useBuilderStore = defineStore('builder', {
      * Settings default (layoutToRun), so the groups do not overlap, all as
      * one commit that keeps that layout as the draft's, as layout does. The
      * selection stays as it was. Nothing to group is no edit, and says so.
+     * The rule that needs a pattern is autoGroupByPattern's: asked for
+     * here, it does nothing.
      *
      * @param {string} [strategy] a GROUPING_STRATEGIES id
      * @param {object} [options] for the layout
      * @returns {Promise<object[]|null>} the groups made, or null
      */
     async autoGroup(strategy = 'network', options = {}) {
+      if (strategy === 'pattern') {
+        return null;
+      }
+
       const selected = this.selection.nodes.length > 0;
       const planned = this.readOnly
         ? []
@@ -3005,22 +3740,107 @@ export const useBuilderStore = defineStore('builder', {
         return null;
       }
 
-      const grouped = applyGroups(this.doc, planned);
-      const id = this.layoutToRun;
-      const laid = await layOut(this, grouped.doc, id, options, 'group');
+      return makeGroups(this, planned, groupingPhrase(strategy), options);
+    },
 
-      if (!laid) {
-        return null;
+    /**
+     * Auto-group by name pattern: as autoGroup, with the nodes whose names
+     * the pattern matches the same text of in each group (see
+     * planPatternGroups). The pattern runs in a Web Worker, so this ends
+     * later, and its dialog is open meanwhile: what keeps it from grouping
+     * is returned as `problem` for the dialog to show, and nothing is
+     * announced or changed then. A pattern that compiles is kept for the
+     * next time the dialog opens, whatever it then matches.
+     *
+     * @param {string} pattern a regular expression, as typed
+     * @param {object} [options] match and signal, for planPatternGroups; the
+     *   rest go to the layout
+     * @returns {Promise<{groups: object[]|null, problem: string,
+     *   invalid: boolean}>} the groups made; or null with the problem, which
+     *   is about the pattern when `invalid` is set; or null with no problem
+     *   when the layout was not applied (see layOut) or `signal` aborted
+     */
+    async autoGroupByPattern(pattern, { match, signal, ...options } = {}) {
+      const refused = (problem, invalid = false) => ({
+        groups: null,
+        problem,
+        invalid,
+      });
+      const unusable = patternProblem(pattern);
+
+      if (unusable) {
+        return refused(unusable, true);
       }
 
-      const how = strategy === 'name' ? 'by name' : 'by network';
+      rememberGroupPattern(pattern);
 
-      this.commit(
-        withLayoutChoice(withGeometry(grouped.doc, laid), id),
-        `Created ${count(grouped.groups.length, 'group')} ${how}`,
-      );
+      if (this.readOnly) {
+        return refused('This draft is read-only.');
+      }
 
-      return grouped.groups;
+      if (this.layoutRunning) {
+        return refused(
+          `${this.autoGrouping ? 'Auto-group' : 'Auto layout'} is still running.`,
+        );
+      }
+
+      const { history } = this;
+      const entryId = history.currentEntry().id;
+      const selected = this.selection.nodes.length > 0;
+      let plan;
+
+      try {
+        plan = await planPatternGroups(this.doc, pattern, {
+          selection: this.selection.nodes,
+          match,
+          signal,
+        });
+      } catch (error) {
+        // The dialog closed meanwhile: there is no one to tell.
+        if (error?.name === 'AbortError') {
+          return refused('');
+        }
+
+        if (error instanceof PatternError) {
+          return refused(error.message, error.code !== 'worker');
+        }
+
+        console.error('Auto-group by name pattern failed.', error);
+
+        return refused(new PatternError('worker').message);
+      }
+
+      if (signal?.aborted) {
+        return refused('');
+      }
+
+      // An edit, an undo or another document while the pattern ran: the
+      // plan is for what the diagram was.
+      if (this.history !== history || history.currentEntry().id !== entryId) {
+        this.announce(
+          'The diagram changed during Auto-group, so no groups were made.',
+        );
+
+        return refused('');
+      }
+
+      if (plan.groups.length === 0) {
+        return refused(
+          nothingToGroupByPattern(plan.matched, { selected }),
+          true,
+        );
+      }
+
+      return {
+        groups: await makeGroups(
+          this,
+          plan.groups,
+          groupingPhrase('pattern'),
+          options,
+        ),
+        problem: '',
+        invalid: false,
+      };
     },
 
     /**
@@ -3043,6 +3863,363 @@ export const useBuilderStore = defineStore('builder', {
         restoreLayoutChanges(this.doc, this.layoutRestore),
         'Restored previous layout',
       );
+    },
+
+    // --- device templates of the diagram -----------------------------------
+
+    /**
+     * Saves a device template in the open diagram, as one edit. The custom
+     * icon it names, if any, goes with it: the commit copies it into the
+     * document (see commit).
+     *
+     * @param {{name: string, description?: string, device: object}} template
+     * @param {object} [icons] the custom icons the template names, by icon
+     *   id: {name?, data}
+     * @returns {object|null} the template as the diagram holds it, with its
+     *   id; null when the diagram did not take it
+     */
+    addTemplate(template, icons = null) {
+      const full = templatesFull(this.doc);
+
+      if (full) {
+        this.announce(`Not saved. ${full}`);
+
+        return null;
+      }
+
+      this.shelveIcons(icons);
+
+      const result = addTemplate(this.doc, template);
+
+      return this.commit(result.doc, `Added template ${result.template.name}`)
+        ? result.template
+        : null;
+    },
+
+    /**
+     * Changes a template of the open diagram, as one edit. Devices made from
+     * it before stay as they are.
+     *
+     * @param {string} id
+     * @param {{name?: string, description?: string, device?: object}} patch
+     * @param {object} [icons] as addTemplate's
+     * @returns {object|null} the template as the diagram holds it now; null
+     *   when the diagram has no such template, or did not take the change
+     */
+    updateTemplate(id, patch, icons = null) {
+      this.shelveIcons(icons);
+
+      const next = updateTemplate(this.doc, id, patch);
+      const updated = (next.templates || []).find(
+        (template) => template.id === id,
+      );
+
+      if (next === this.doc || !updated) {
+        return null;
+      }
+
+      return this.commit(next, `Updated template ${updated.name}`)
+        ? updated
+        : null;
+    },
+
+    /**
+     * Deletes a template from the open diagram, as one edit, which Undo
+     * brings back.
+     *
+     * @param {string} id
+     * @returns {boolean} whether it was deleted
+     */
+    removeTemplate(id) {
+      const template = (this.doc.templates || []).find(
+        (entry) => entry.id === id,
+      );
+
+      if (!template) {
+        return false;
+      }
+
+      return Boolean(
+        this.commit(
+          removeTemplate(this.doc, id),
+          `Deleted template ${template.name}`,
+        ),
+      );
+    },
+
+    // --- the template library ----------------------------------------------
+
+    /**
+     * Reads the user's template library. It is read when the Builder
+     * opens, with the drafts' lists, when a draft opens, and after every
+     * change of it. A read that fails says why in `templates.error`, never
+     * in the page alert, and keeps what an earlier read answered: the tab
+     * and the palette say so where they show the library. A role that may
+     * not read it is left with none. An answer that arrives after a later
+     * read's, or after the session ended, is dropped.
+     *
+     * @returns {Promise<object>} the library, as the store keeps it
+     */
+    async fetchTemplates() {
+      const epoch = sessionEpoch;
+      const read = (libraryReads += 1);
+
+      this.templates = { ...this.templates, status: 'loading' };
+
+      try {
+        const library = await builderApi.listTemplates();
+
+        if (epoch === sessionEpoch && read > libraryReadKept) {
+          libraryReadKept = read;
+          this.templates = {
+            // A later read is still under way.
+            status: read === libraryReads ? 'ready' : 'loading',
+            error: '',
+            loaded: true,
+            owner: library.owner,
+            items: library.templates,
+            collections: library.collections,
+            icons: library.icons,
+            canShare: library.canShare,
+            canPublish: library.canPublish,
+            damaged: library.damaged,
+            limits: { ...LIBRARY_LIMITS, ...library.limits },
+          };
+        }
+      } catch (error) {
+        if (epoch === sessionEpoch && read === libraryReads) {
+          this.templates = {
+            ...(classifyError(error) === 'forbidden'
+              ? emptyLibrary()
+              : this.templates),
+            status: 'failed',
+            error: libraryErrorMessage(error),
+          };
+        }
+      }
+
+      return this.templates;
+    },
+
+    // The user the library belongs to, which every change of it names. The
+    // library says who that is, so one that was not read yet is read first.
+    async libraryOwner() {
+      if (!this.templates.owner) {
+        await this.fetchTemplates();
+      }
+
+      if (!this.templates.owner) {
+        throw new LibraryError(
+          this.templates.error || 'Your library could not be loaded.',
+        );
+      }
+
+      return this.templates.owner;
+    },
+
+    /**
+     * Why a change of the template library failed, for the dialog or the
+     * page that asked for it.
+     *
+     * @param {object} error what the change rejected with
+     * @param {string} action what could not be done: "save the template"
+     * @returns {string}
+     */
+    describeLibraryError(error, action) {
+      return `Could not ${action}. ${
+        error instanceof LibraryError
+          ? error.reason
+          : libraryErrorMessage(error)
+      }`;
+    },
+
+    /**
+     * Adds templates to the user's library, each as a copy under an id the
+     * server gives it, and reads the library again. It rejects with the
+     * failure, which the caller reports (see describeLibraryError).
+     *
+     * @param {{name: string, description?: string, device: object}[]}
+     *   templates
+     * @param {object} [options] icons: the custom icons the templates name,
+     *   by icon id ({name?, data}); collection: {name, description?}, a new
+     *   collection that holds exactly these templates
+     * @returns {Promise<{created: object[], collection: object|null}>} the
+     *   ids and tags the server gave
+     */
+    async createLibraryTemplates(
+      templates,
+      { icons = null, collection = null } = {},
+    ) {
+      const owner = await this.libraryOwner();
+      const result = await libraryWrite(() =>
+        builderApi.createTemplates(owner, {
+          templates: templates.map(templateContent),
+          icons,
+          collection,
+        }),
+      );
+
+      await this.fetchTemplates();
+
+      return result;
+    },
+
+    /**
+     * Replaces a template of the user's library, and reads the library
+     * again. It rejects with the failure: a template that changed since
+     * `etag` was read is refused (412), and the caller decides what then.
+     *
+     * @param {string} id
+     * @param {{name: string, description?: string, device: object}} content
+     * @param {string} etag the template's tag, as listed
+     * @param {object} [icons] as createLibraryTemplates'
+     * @returns {Promise<object>} the template as the server has it now
+     */
+    async updateLibraryTemplate(id, content, etag, icons = null) {
+      const owner = await this.libraryOwner();
+      const saved = await libraryWrite(() =>
+        builderApi.updateTemplate(
+          owner,
+          id,
+          { description: '', ...templateContent(content), icons },
+          etag,
+        ),
+      );
+
+      await this.fetchTemplates();
+
+      return saved;
+    },
+
+    /**
+     * Adds a collection to the user's library, and reads the library
+     * again. It rejects with the failure.
+     *
+     * @param {{name: string, description?: string, templateIds?: string[]}}
+     *   content
+     * @returns {Promise<object>} the collection, with its id
+     */
+    async createCollection({ name, description = '', templateIds = [] }) {
+      const owner = await this.libraryOwner();
+      const created = await libraryWrite(() =>
+        builderApi.createTemplateCollection(owner, {
+          name,
+          description,
+          templateIds,
+        }),
+      );
+
+      await this.fetchTemplates();
+
+      return created;
+    },
+
+    /**
+     * Replaces a collection of the user's library: its name, its
+     * description and the templates it holds. It rejects with the failure;
+     * one that changed since `etag` was read is refused (412).
+     *
+     * @param {string} id
+     * @param {{name: string, description?: string, templateIds: string[]}}
+     *   content the whole collection
+     * @param {string} etag the collection's tag, as listed
+     * @returns {Promise<object>} the collection as the server has it now
+     */
+    async updateCollection(id, { name, description = '', templateIds }, etag) {
+      const owner = await this.libraryOwner();
+      const saved = await libraryWrite(() =>
+        builderApi.updateTemplateCollection(
+          owner,
+          id,
+          { name, description, templateIds },
+          etag,
+        ),
+      );
+
+      await this.fetchTemplates();
+
+      return saved;
+    },
+
+    /**
+     * Adds templates to a collection of the user's library, or takes some
+     * out of it. The collection is sent whole, as it is listed, with the
+     * change made. One that changed meanwhile (412: another tab, or a
+     * template of it deleted) is read again, and the change made to what it
+     * holds now, once. It rejects with the failure.
+     *
+     * @param {string} id the collection's id
+     * @param {{add?: string[], remove?: string[]}} change template ids
+     * @returns {Promise<boolean>} whether the collection changed; false
+     *   when it already was as asked
+     */
+    async changeCollectionMembers(id, { add = [], remove = [] }) {
+      const send = async (retried) => {
+        const collection = this.templates.collections.find(
+          (entry) => entry.id === id && entry.source === 'own',
+        );
+
+        if (!collection) {
+          throw new LibraryError(
+            'This collection is no longer in your library.',
+          );
+        }
+
+        const before = collection.templateIds || [];
+        const gone = new Set(remove);
+        const templateIds = [
+          ...before.filter((entry) => !gone.has(entry)),
+          ...add.filter((entry) => !before.includes(entry) && !gone.has(entry)),
+        ];
+
+        if (
+          templateIds.length === before.length &&
+          templateIds.every((entry, index) => entry === before[index])
+        ) {
+          return false;
+        }
+
+        try {
+          await this.updateCollection(
+            id,
+            { ...collection, templateIds },
+            collection.etag,
+          );
+        } catch (error) {
+          if (error?.response?.status !== 412 || retried) {
+            throw error;
+          }
+
+          await this.fetchTemplates();
+
+          return send(true);
+        }
+
+        return true;
+      };
+
+      return send(false);
+    },
+
+    /**
+     * Deletes templates and collections of the user's library in one
+     * request, and reads the library again. A deleted template leaves its
+     * collections; a deleted collection leaves its templates. It rejects
+     * with the failure.
+     *
+     * @param {{templates?: string[], collections?: string[]}} selection ids
+     * @returns {Promise<{templates: number, collections: number}>} how many
+     *   of each the server deleted
+     */
+    async deleteLibraryItems({ templates = [], collections = [] }) {
+      const owner = await this.libraryOwner();
+      const deleted = await libraryWrite(() =>
+        builderApi.deleteTemplates(owner, { templates, collections }),
+      );
+
+      await this.fetchTemplates();
+
+      return deleted;
     },
 
     setInfo(patch) {
@@ -3103,9 +4280,23 @@ export const useBuilderStore = defineStore('builder', {
         return [];
       }
 
+      // The copies' custom icons are made known first, as before any edit
+      // that gives a node an icon the document may lack (see shelveIcons).
+      // The paste itself puts them into the document (see pasteClipboard).
+      this.shelveIcons(this.clipboard.icons);
+
       const result = pasteClipboard(this.doc, this.clipboard);
 
-      this.commit(result.doc, `Pasted ${count(result.nodeIds.length, 'node')}`);
+      if (
+        this.commit(
+          result.doc,
+          `Pasted ${count(result.nodeIds.length, 'node')}`,
+        ) &&
+        result.dropped > 0
+      ) {
+        this.announce(droppedIconsNote(result.dropped));
+      }
+
       this.selection = { nodes: result.nodeIds, edges: [] };
 
       return result.nodeIds;

@@ -182,8 +182,6 @@ func Start(opts ...ServerOption) error {
 
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
 	router.HandleFunc("/version", GetVersion).Methods("GET")
-	router.HandleFunc("/builder", GetBuilder).Methods("GET")
-	router.HandleFunc("/builder/save", SaveBuilderTopology).Methods("POST")
 
 	plog.Info(plog.TypeSystem, "setting up assets")
 
@@ -200,11 +198,7 @@ func Start(opts ...ServerOption) error {
 	)
 
 	router.PathPrefix("/assets/").Handler(
-		builderV2AssetHandler(assets),
-	)
-
-	router.PathPrefix("/grapheditor/").Handler(
-		http.FileServer(assets),
+		builderAssetHandler(assets),
 	)
 
 	router.Handle("/favicon.ico", http.FileServer(assets))
@@ -249,23 +243,14 @@ func Start(opts ...ServerOption) error {
 	// would look enabled while it is not.
 	api.NotFoundHandler = apiNotFoundHandler()
 
-	// The Builder v2 routes are registered before the generic schema routes
-	// so /schemas/builder-v2/v1 is matched by the builder schema handler rather
-	// than by /schemas/{kind}/{version}. Registration is a no-op unless the
-	// "builder-v2" feature is enabled.
-	if err := registerBuilderV2Routes(api); err != nil {
-		return fmt.Errorf("configuring Builder v2 API: %w", err)
+	// The Builder routes are registered before the generic schema routes
+	// so /schemas/builder/v1 is matched by the builder schema handler rather
+	// than by /schemas/{kind}/{version}.
+	if err := registerBuilderRoutes(api); err != nil {
+		return fmt.Errorf("configuring Builder API: %w", err)
 	}
 
 	// OPTIONS method needed for CORS
-	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/builder/topologies", weberror.ErrorHandler(CreateBuilderTopology)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(GetBuilderTopology)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(UpdateBuilderTopology)).
-		Methods("PUT", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods("POST", "OPTIONS")
 	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)).Methods("GET", "OPTIONS")
@@ -281,10 +266,6 @@ func Start(opts ...ServerOption) error {
 
 	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/builder", weberror.ErrorHandler(CreateExperimentFromBuilder)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/builder", weberror.ErrorHandler(UpdateExperimentFromBuilder)).
-		Methods("PUT", "OPTIONS")
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(GetExperiment)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(UpdateExperiment)).

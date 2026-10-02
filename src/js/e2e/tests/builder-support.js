@@ -1,14 +1,15 @@
-// Shared fixtures and helpers for the Builder v2 browser tests.
+// Shared fixtures and helpers for the Builder browser tests.
 //
 // Specs import `test` and `expect` from here instead of @playwright/test;
 // this `expect` also has toHaveAnnounced, for what the live region says. The
-// `builder` fixture opens /builder-v2, records every draft and config the
+// `builder` fixture opens /builder, records every draft and config the
 // test creates, and deletes them afterwards so runs do not pile up drafts on
 // the target server. The `sharingUsers` fixture signs in several users of a
 // server with authentication on, each in a browser of their own (see
 // builder-sharing.spec.js).
 
 const crypto = require('crypto');
+const zlib = require('zlib');
 
 const base = require('@playwright/test');
 const AxeBuilder = require('@axe-core/playwright').default;
@@ -336,7 +337,7 @@ async function expectAccessible(
 }
 
 function draftPath({ owner, id }) {
-  return `${API}/builder-v2/drafts/${encodeURIComponent(owner)}/${encodeURIComponent(id)}`;
+  return `${API}/builder/drafts/${encodeURIComponent(owner)}/${encodeURIComponent(id)}`;
 }
 
 // A Builder document with no nodes, or with the given nodes, networks and
@@ -412,7 +413,7 @@ async function seedDraft(
   document,
   { title = document.name, sourceToken } = {},
 ) {
-  const response = await request.post(`${API}/builder-v2/drafts`, {
+  const response = await request.post(`${API}/builder/drafts`, {
     data: { title, document, ...(sourceToken ? { sourceToken } : {}) },
   });
   expect(response.ok(), await response.text()).toBeTruthy();
@@ -425,12 +426,18 @@ async function seedDraft(
 // Publishes `document` as topology `name` through the API, the same calls
 // the Publish dialog makes, and schedules the draft and topology for
 // deletion. Returns the source draft and the published document's id.
+//
+// The draft that published a diagram is the one its owner edits the
+// diagram in, from Configs and from Published Diagrams alike. A test that
+// needs the diagram to open as a draft of its own, as it does for anyone
+// else, passes `keepDraft: false`: the draft is deleted once it has
+// published.
 async function publishTopology(
   request,
   tracker,
   name,
   document = blankDocument(name),
-  { sourceToken } = {},
+  { sourceToken, keepDraft = true } = {},
 ) {
   const draft = await seedDraft(request, tracker, document, {
     title: name,
@@ -445,12 +452,16 @@ async function publishTopology(
   expect(published.ok(), await published.text()).toBeTruthy();
   expect((await published.json()).status).toBe('succeeded');
 
-  const listed = await request.get(`${API}/builder-v2/documents`);
+  const listed = await request.get(`${API}/builder/documents`);
   expect(listed.ok(), await listed.text()).toBeTruthy();
   const found = ((await listed.json()).documents || []).find(
     (entry) => entry.target === name,
   );
   expect(found, `published document for ${name}`).toBeTruthy();
+
+  if (!keepDraft) {
+    await deleteDraft(request, draftPath(draft));
+  }
 
   return { draft, documentId: found.id };
 }
@@ -544,7 +555,7 @@ async function nextSecond(since) {
     .toBeGreaterThanOrEqual(1000);
 }
 
-// Page object for the Builder v2 view. Methods cover the flows shared by
+// Page object for the Builder view. Methods cover the flows shared by
 // several specs; specs use raw locators for anything specific to them.
 class BuilderPage {
   constructor(page, request, tracker) {
@@ -614,23 +625,23 @@ class BuilderPage {
       .first();
   }
 
-  // The drafts landing's heading. The editor's heading ends in "Builder
-  // v2" too, so the match is exact.
+  // The drafts landing's heading. The editor's heading ends in "Builder"
+  // too, so the match is exact.
   get landingHeading() {
     return this.page.getByRole('heading', {
-      name: 'Builder v2',
+      name: 'Builder',
       exact: true,
     });
   }
 
   async open() {
-    await visit(this.page, '/builder-v2');
+    await visit(this.page, '/builder');
     await expect(this.landingHeading).toBeVisible({ timeout: 20000 });
   }
 
   // Creates a blank draft from the landing page and returns {id, owner}.
   async createBlank() {
-    const created = waitForApi(this.page, 'POST', '/builder-v2/drafts');
+    const created = waitForApi(this.page, 'POST', '/builder/drafts');
     await this.page.getByTestId('drafts-blank').click();
     const draft = await (await created).json();
     await expect(this.canvas).toBeVisible();
@@ -697,7 +708,7 @@ class BuilderPage {
     return this.page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        /\/builder-v2\/drafts\/[^/]+\/[^/]+\/snapshots$/.test(
+        /\/builder\/drafts\/[^/]+\/[^/]+\/snapshots$/.test(
           new URL(response.url()).pathname,
         ),
     );
@@ -751,7 +762,7 @@ class BuilderPage {
   // server. Call waitSaved() first so the latest edit has been uploaded.
   async serverDraft({ id, owner }) {
     const response = await this.request.get(
-      `${API}/builder-v2/drafts/${encodeURIComponent(owner)}/${encodeURIComponent(id)}`,
+      `${API}/builder/drafts/${encodeURIComponent(owner)}/${encodeURIComponent(id)}`,
     );
     expect(response.ok(), await response.text()).toBeTruthy();
 
@@ -802,11 +813,154 @@ async function seedConfig(request, tracker, config) {
   tracker.config(config.kind, config.metadata.name);
 }
 
+// The template library, a user's own: with authentication off every test is
+// the one user, so every test reads and changes the same library. A test
+// changes and deletes only the templates and collections it made, and never
+// the five built-in templates the library starts with.
+const LIBRARY = `${API}/builder/templates`;
+const LIBRARY_ADDS = /\/builder\/templates\/([^/]+)\/(items|collections)$/;
+const BUILTIN_TEMPLATE_IDS = [
+  'server',
+  'workstation',
+  'router',
+  'firewall',
+  'external',
+];
+
+// Sends a change of a library. Every worker's tests change the one record,
+// which the server answers with 503 when it keeps changing under a change:
+// that is sent again.
+async function libraryChange(request, method, path, options = {}) {
+  let response;
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    response = await request[method](path, options);
+    if (response.status() !== 503) {
+      break;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+  }
+
+  return response;
+}
+
+// Reads the library of the user `request` is: owner, templates, collections
+// and icons.
+async function readLibrary(request) {
+  const response = await request.get(LIBRARY);
+  expect(response.ok(), await response.text()).toBeTruthy();
+
+  return response.json();
+}
+
+// Adds templates to the library through the API, with `collection` ({name,
+// description?}) a collection that holds them, and schedules what it made
+// for deletion. Returns the library's owner, the ids of the new templates,
+// in order, and the id of the collection.
+async function seedTemplates(
+  request,
+  tracker,
+  templates,
+  { collection, icons } = {},
+) {
+  const { owner } = await readLibrary(request);
+  const response = await libraryChange(
+    request,
+    'post',
+    `${LIBRARY}/${encodeURIComponent(owner)}/items`,
+    {
+      data: {
+        templates,
+        ...(collection ? { collection } : {}),
+        ...(icons ? { icons } : {}),
+      },
+    },
+  );
+  expect(response.status(), await response.text()).toBe(201);
+
+  const made = await response.json();
+  const ids = made.created.map((entry) => entry.id);
+
+  ids.forEach((id) => tracker.template(owner, id));
+  if (made.collection) {
+    tracker.collection(owner, made.collection.id);
+  }
+
+  return { owner, ids, collection: made.collection?.id || '' };
+}
+
+// The Node Templates tab of the drafts page, its cards and the row above
+// them.
+function templateLibrary(page) {
+  const by = (id) => page.getByTestId(id);
+
+  return {
+    tab: by('drafts-tab-templates'),
+    panel: page.locator('#panel-templates'),
+    newTemplate: by('templates-new'),
+    newCollection: by('collections-new'),
+    show: by('templates-show'),
+    list: by('templates-list'),
+    empty: by('templates-empty'),
+    error: by('templates-error'),
+    retry: by('templates-retry'),
+    card: (id) => by(`template-card-${id}`),
+    select: (id) => by(`template-select-${id}`),
+    edit: (id) => by(`template-edit-${id}`),
+    remove: (id) => by(`template-delete-${id}`),
+    bar: by('bulk-bar-templates'),
+    all: by('bulk-all-templates'),
+    count: by('bulk-count-templates'),
+    collect: by('bulk-collect-templates'),
+    collectItem: (id) => by(`bulk-collect-templates-item-${id}`),
+    uncollect: by('bulk-uncollect-templates'),
+    bulkDelete: by('bulk-delete-templates'),
+    block: by('collection-block'),
+    editCollection: by('collection-edit'),
+    deleteCollection: by('collection-delete'),
+    dialog: {
+      root: by('collection-dialog'),
+      name: by('collection-name'),
+      nameHint: by('collection-name-hint'),
+      description: by('collection-description'),
+      members: by('collection-members'),
+      error: by('collection-error'),
+      save: by('collection-save'),
+      cancel: by('collection-cancel'),
+    },
+    confirm: by('builder-confirm'),
+    accept: by('confirm-accept'),
+    cancel: by('confirm-cancel'),
+  };
+}
+
 // Records server-side objects a test creates so they can be removed.
 class Tracker {
   constructor() {
     this.drafts = new Map();
     this.configs = [];
+    // The templates and collections added to a library, by its owner.
+    this.libraries = new Map();
+  }
+
+  library(owner) {
+    if (!this.libraries.has(owner)) {
+      this.libraries.set(owner, {
+        templates: new Set(),
+        collections: new Set(),
+      });
+    }
+
+    return this.libraries.get(owner);
+  }
+
+  template(owner, id) {
+    this.library(owner).templates.add(id);
+  }
+
+  collection(owner, id) {
+    this.library(owner).collections.add(id);
   }
 
   draft(body) {
@@ -825,8 +979,8 @@ class Tracker {
   watch(page) {
     page.on('response', async (response) => {
       const created =
-        isApi(response, 'POST', '/builder-v2/drafts') ||
-        isApi(response, 'POST', '/builder-v2/generate');
+        isApi(response, 'POST', '/builder/drafts') ||
+        isApi(response, 'POST', '/builder/generate');
       if (!created || !response.ok()) {
         return;
       }
@@ -834,6 +988,34 @@ class Tracker {
       try {
         const body = await response.json();
         this.draft(body.draft || body);
+      } catch {
+        // Response bodies are unavailable once the page has closed.
+      }
+    });
+
+    // What the page adds to a template library.
+    page.on('response', async (response) => {
+      const added =
+        response.request().method() === 'POST' &&
+        response.status() === 201 &&
+        new URL(response.url()).pathname.match(LIBRARY_ADDS);
+      if (!added) {
+        return;
+      }
+
+      const owner = decodeURIComponent(added[1]);
+
+      try {
+        const body = await response.json();
+
+        if (added[2] === 'collections') {
+          this.collection(owner, body.id);
+        } else {
+          (body.created || []).forEach(({ id }) => this.template(owner, id));
+          if (body.collection) {
+            this.collection(owner, body.collection.id);
+          }
+        }
       } catch {
         // Response bodies are unavailable once the page has closed.
       }
@@ -851,6 +1033,21 @@ class Tracker {
 
     for (const { id, owner } of this.drafts.values()) {
       await deleteDraft(request, draftPath({ owner, id }));
+    }
+
+    // Ids the library no longer holds are ignored.
+    for (const [owner, { templates, collections }] of this.libraries) {
+      await libraryChange(
+        request,
+        'post',
+        `${LIBRARY}/${encodeURIComponent(owner)}/delete`,
+        {
+          data: {
+            ...(templates.size ? { templates: [...templates] } : {}),
+            ...(collections.size ? { collections: [...collections] } : {}),
+          },
+        },
+      ).catch(() => {});
     }
   }
 }
@@ -903,7 +1100,7 @@ function signedClient(playwright, baseURL, token) {
 
 // Deletes every draft `username` owns, through their API client.
 async function deleteOwnDrafts(api, username) {
-  const listed = await api.get(`${API}/builder-v2/drafts`).catch(() => null);
+  const listed = await api.get(`${API}/builder/drafts`).catch(() => null);
   if (!listed || !listed.ok()) {
     return;
   }
@@ -916,9 +1113,10 @@ async function deleteOwnDrafts(api, username) {
   }
 }
 
-// A role that may read and change configs, and so make, change and delete
-// drafts of its own, and read the schemas and disks the editor offers; it
-// may not see other users' drafts (no builder-drafts) or list users. Then
+// A role that may read and change configs, by any name, and so make, change,
+// publish and delete drafts of its own, and read the schemas and disks the
+// editor offers; it may not see other users' drafts (no builder-drafts) or
+// list users. Then
 // one user with it for each of SHARING_PARTS, named for the test, each
 // signed in with a browser context of its own (the session as a sign-in
 // leaves it) and an API client. Everything is deleted afterwards.
@@ -942,8 +1140,10 @@ async function sharingUsers({ browser, playwright }, use, testInfo) {
         roleName,
         policies: [
           {
+            // "*/*" names a config in full, such as Topology/site, which
+            // publishing a topology and opening its diagram are checked by.
             resources: ['configs', 'configs/*'],
-            resourceNames: ['*'],
+            resourceNames: ['*', '*/*'],
             verbs: ['list', 'get', 'create', 'update', 'delete'],
           },
           { resources: ['schemas'], resourceNames: ['*'], verbs: ['get'] },
@@ -1056,6 +1256,62 @@ const test = base.test.extend({
   sharingUsers,
 });
 
+// --- custom icons -------------------------------------------------------------
+
+// What starts every PNG file.
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+// A PNG of one color ([red, green, blue]), built here rather than read from
+// a fixture file: each test draws its own colors, so its bytes are its own.
+function pngOf(width, height, color) {
+  const chunk = (kind, data = Buffer.alloc(0)) => {
+    const body = Buffer.concat([Buffer.from(kind, 'latin1'), data]);
+    const length = Buffer.alloc(4);
+    const checksum = Buffer.alloc(4);
+
+    length.writeUInt32BE(data.length);
+    checksum.writeUInt32BE(zlib.crc32(body));
+
+    return Buffer.concat([length, body, checksum]);
+  };
+  const header = Buffer.alloc(13);
+
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  // Eight bits a channel, with alpha.
+  header.set([8, 6, 0, 0, 0], 8);
+
+  const row = Buffer.concat([
+    Buffer.from([0]),
+    Buffer.alloc(width * 4, Buffer.from([...color, 255])),
+  ]);
+  const pixels = Buffer.alloc(row.length * height, row);
+
+  return Buffer.concat([
+    PNG_SIGNATURE,
+    chunk('IHDR', header),
+    chunk('IDAT', zlib.deflateSync(pixels)),
+    chunk('IEND'),
+  ]);
+}
+
+// An icon as a document carries it: its id, the digest of its bytes, and
+// its entry.
+function iconOf(bytes, name) {
+  const id = `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}`;
+  const data = bytes.toString('base64');
+
+  return { id, data, entry: name ? { name, data } : { data } };
+}
+
+// A color of the test's own: no theme color, and neither black, white nor
+// a grey.
+function ownColor() {
+  const color = [0, 0, 0].map(() => 48 + crypto.randomInt(160));
+
+  return Math.max(...color) - Math.min(...color) < 24 ? ownColor() : color;
+}
+
 // Fails the test when the page logged a JavaScript error.
 function expectNoFatal(issues) {
   const fatal = fatalOf(issues);
@@ -1071,9 +1327,14 @@ async function backdropPoint(dialog) {
 }
 
 module.exports = {
+  ADMIN_PASS,
+  ADMIN_USER,
   API,
+  BUILTIN_TEMPLATE_IDS,
   BuilderPage,
   DOCUMENT_TIME,
+  LIBRARY,
+  PNG_SIGNATURE,
   SAVED,
   SCHEMA_URI,
   backdropPoint,
@@ -1086,18 +1347,26 @@ module.exports = {
   expectDetail,
   expectNoFatal,
   expectNoInvisibleText,
+  iconOf,
   invisibleText,
   isApi,
   knownDefect,
   labDocument,
+  libraryChange,
   nextSecond,
   openConfigs,
+  ownColor,
+  pngOf,
   provenanceOf,
   publishTopology,
+  readLibrary,
+  recordAnnouncements,
   seedConfig,
   seedDraft,
+  seedTemplates,
   signIn,
   summaryText,
+  templateLibrary,
   test,
   uniqueName,
   USER_PASS,

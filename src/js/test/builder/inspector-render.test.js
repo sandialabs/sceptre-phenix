@@ -22,13 +22,16 @@ import {
 import {
   fieldDefault,
   inspectorRenderers,
+  inspectorTarget,
   uiSchemaForKind,
 } from '@/builder/adapters/forms.js';
 import { createFormValidator } from '@/builder/form-validator.js';
+import { addNode, updateNetwork, updateNode } from '@/builder/model.js';
 import { builderSchemaV1, schemaForKind } from '@/builder/schema.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument, tags } from './fixtures.js';
+import { ICON_DATA, ICON_KEY } from './png.js';
 
 vi.mock('@/utils/axios.js', () => ({ default: {} }));
 vi.mock('@/store.js', () => ({
@@ -481,27 +484,58 @@ describe('inspector field accessibility', () => {
 // Renders the whole Inspector for the sample document's alpha device. `schema`
 // sets the store's schema state (schemaSource, schemaError), `patch` adds to
 // the document, and `document` selects nothing, so the Inspector shows the
-// diagram's own section.
+// diagram's own section. `change` makes another document of the sample one,
+// and `select` picks the node to show from the sample's parts.
 async function renderInspector({
   readOnly = false,
   schema = {},
   patch = {},
   document = false,
   draft = {},
+  change = (sample) => sample.doc,
+  select = (sample) => sample.alpha.id,
 } = {}) {
   const pinia = createPinia();
   const app = createSSRApp({ render: () => h(BuilderInspector) });
   app.use(pinia);
 
   const store = useBuilderStore(pinia);
-  const { doc, alpha } = sampleDocument();
-  store.doc = { ...doc, ...patch };
+  const sample = sampleDocument();
+  store.doc = { ...change(sample), ...patch };
   store.readOnly = readOnly;
   store.rememberDraft(draft);
   Object.assign(store, schema);
-  store.select({ nodes: document ? [] : [alpha.id] });
+  store.select({ nodes: document ? [] : [select(sample)] });
 
   return renderToString(app);
+}
+
+// The part of rendered HTML that is the field of a data path: from its
+// control to the next one.
+function fieldOf(html, path) {
+  const start = html.indexOf(`data-path="${path}"`);
+
+  if (start === -1) {
+    return '';
+  }
+
+  const next = html.indexOf('data-path="', start + 1);
+
+  return html.slice(start, next === -1 ? undefined : next);
+}
+
+// The names of a rendered field's choices, in order.
+function choicesOf(field) {
+  return (field.match(/<option[^>]*>[^<]*<\/option>/g) || []).map((option) =>
+    option.replace(/<[^>]+>/g, '').trim(),
+  );
+}
+
+// The labels of a rendered form's fields, in order.
+function labelsOf(html) {
+  return [
+    ...html.matchAll(/<label[^>]*class="[^"]*\blabel"[^>]*>([^<]*)</g),
+  ].map((match) => match[1].trim());
 }
 
 // The visible text of rendered HTML, with its tags and runs of spaces gone.
@@ -1015,4 +1049,299 @@ test('the Inspector says which schema it uses only when it is not the server', a
     /role="alert" data-testid="inspector-schema-error"[^>]*>\s*Could not load this server&#39;s form fields\./,
   );
   expect(bundled).not.toMatch(/schema:/);
+});
+
+// A device and a switch each have an outline and a fill beside their other
+// fields, and the network's color on a switch says what it colors. Every
+// picker has the one test id, so each is found by its field's data path
+// and named after its field.
+describe('colors, line styles and group fields', () => {
+  const picker = (html, path) =>
+    tags(fieldOf(html, path), 'button').find((tag) =>
+      tag.includes('data-testid="inspector-color-picker"'),
+    );
+  const chip = (html, path) =>
+    tags(fieldOf(html, path), 'span').find((tag) =>
+      tag.includes('inspector-color__chip'),
+    );
+
+  test('a switch has Edge Color, Line style, Outline Color and Fill Color', async () => {
+    const html = await renderInspector({
+      select: ({ sw }) => sw.id,
+      change: ({ doc, sw, network }) =>
+        updateNode(
+          updateNetwork(doc, network.id, { color: '#a3273f' }),
+          sw.id,
+          {
+            switch: { outlineColor: '#A3273F', fillColor: '#6b6f18' },
+          },
+        ),
+    });
+
+    expect(labelsOf(html).slice(0, 7)).toEqual([
+      'Name',
+      'VLAN alias',
+      'Description',
+      'Edge Color',
+      'Line style',
+      'Outline Color',
+      'Fill Color',
+    ]);
+    expect(picker(html, 'color')).toContain('aria-label="Choose edge Color"');
+    expect(picker(html, 'outlineColor')).toContain(
+      'aria-label="Choose outline Color"',
+    );
+    expect(picker(html, 'fillColor')).toContain(
+      'aria-label="Choose fill Color"',
+    );
+    expect(
+      (html.match(/data-testid="inspector-color-picker"/g) || []).length,
+    ).toBe(3);
+
+    // The network's color is shown as the canvas draws it, in its theme's
+    // token; the switch's own outline and fill as chosen, even when they
+    // are a color addNetwork picks.
+    expect(chip(html, 'color')).toContain('background:var(--bx-net-4)');
+    expect(chip(html, 'outlineColor')).toContain('background:#a3273f');
+    expect(chip(html, 'fillColor')).toContain('background:#6b6f18');
+    expect(fieldOf(html, 'outlineColor')).toContain('value="#A3273F"');
+
+    // The line style left to the canvas is Auto, and names the pattern
+    // the network's place in the diagram gives it.
+    expect(choicesOf(fieldOf(html, 'lineStyle'))).toEqual([
+      'Auto (Solid)',
+      'Solid',
+      'Dashed',
+      'Dotted',
+      'Dash-dot',
+    ]);
+    expect(fieldOf(html, 'lineStyle')).toContain(
+      'Default: Auto: chosen by the network&#39;s place in the diagram.',
+    );
+    expect(html).not.toContain('Not set');
+  });
+
+  test('a device has Custom icon, Outline Color and Fill Color after its Icon', async () => {
+    const html = await renderInspector({
+      change: ({ doc, alpha }) =>
+        updateNode(doc, alpha.id, { device: { fillColor: '#ffd400' } }),
+    });
+
+    expect(labelsOf(html).slice(0, 5)).toEqual([
+      'Hostname',
+      'Icon',
+      'Custom icon',
+      'Outline Color',
+      'Fill Color',
+    ]);
+    expect(picker(html, 'outlineColor')).toContain(
+      'aria-label="Choose outline Color"',
+    );
+    expect(picker(html, 'outlineColor')).toMatch(
+      /aria-describedby="[^"]*-current"/,
+    );
+    expect(fieldOf(html, 'outlineColor')).toMatch(/hidden[^>]*>No color</);
+    expect(picker(html, 'fillColor')).toContain(
+      'aria-label="Choose fill Color"',
+    );
+    expect(chip(html, 'fillColor')).toContain('background:#ffd400');
+    expect(fieldOf(html, 'fillColor')).toContain('value="#ffd400"');
+    // Two pickers: a device has no color but these.
+    expect(
+      (html.match(/data-testid="inspector-color-picker"/g) || []).length,
+    ).toBe(2);
+    expect(fieldOf(html, 'fillColor')).toContain(
+      'Text and icon turn black or white to stay readable.',
+    );
+  });
+
+  test('a group has Description, Border pattern, Icon and Custom icon, each default named', async () => {
+    let group;
+    const html = await renderInspector({
+      change: ({ doc }) => {
+        const added = addNode(doc, { kind: 'group', title: 'Core' });
+
+        group = added.node;
+
+        return added.doc;
+      },
+      select: () => group.id,
+    });
+
+    expect(labelsOf(html).slice(0, 6)).toEqual([
+      'Title',
+      'Description',
+      'Color',
+      'Border pattern',
+      'Icon',
+      'Custom icon',
+    ]);
+    expect(text(fieldOf(html, 'icon'))).toContain('None Choose…');
+    expect(tags(fieldOf(html, 'description'), 'textarea')).toHaveLength(1);
+    expect(choicesOf(fieldOf(html, 'borderStyle'))).toEqual([
+      'Default (Dashed)',
+      'Solid',
+      'Dashed',
+      'Dotted',
+      'Double',
+    ]);
+
+    const icons = choicesOf(fieldOf(html, 'iconKey'));
+
+    expect(icons[0]).toBe('Default (container)');
+    expect(icons).toContain('firewall');
+    // Retired keys are not offered.
+    expect(icons).not.toContain('printer');
+    // Its one color keeps the plain name.
+    expect(picker(html, 'color')).toContain('aria-label="Choose color"');
+  });
+
+  // The form's own renderers, with what the Inspector provides them left
+  // out: the choice that stands for no style is still Auto.
+  test('a connection has Label, Color and Line style, which is its network’s unless chosen', async () => {
+    const { doc, edge, network } = sampleDocument();
+    const styled = updateNetwork(doc, network.id, { lineStyle: 'dashed' });
+    const target = inspectorTarget(styled, { type: 'edge', id: edge.id });
+    const render = (provides = []) => {
+      const app = createSSRApp({
+        render: () =>
+          h(JsonForms, {
+            data: target.data,
+            schema: schemaForKind(builderSchemaV1, 'edge'),
+            uischema: uiSchemaForKind(builderSchemaV1, 'edge'),
+            renderers: inspectorRenderers,
+            ajv: createFormValidator(),
+          }),
+      });
+
+      for (const [key, value] of provides) {
+        app.provide(key, value);
+      }
+
+      return renderToString(app);
+    };
+    const html = await render([
+      [
+        INSPECTOR_DEFAULTS,
+        ref((path, schema) => fieldDefault(target, path, schema)),
+      ],
+    ]);
+
+    expect(labelsOf(html)).toEqual(['Label', 'Color', 'Line style']);
+    expect(choicesOf(fieldOf(html, 'lineStyle'))).toEqual([
+      'Auto (Dashed)',
+      'Solid',
+      'Dashed',
+      'Dotted',
+      'Dash-dot',
+    ]);
+    expect(fieldOf(html, 'lineStyle')).toContain(
+      'Default: Auto: its network&#39;s line style.',
+    );
+    expect(choicesOf(fieldOf(await render(), 'lineStyle'))[0]).toBe('Auto');
+  });
+});
+
+// The Custom icon field of a device and a group: what it is now, and the
+// buttons that open the Custom icons dialog or take the icon away.
+describe('the Custom icon field', () => {
+  const button = (html, testid) =>
+    tags(fieldOf(html, 'icon'), 'button').find((tag) =>
+      tag.includes(`data-testid="${testid}"`),
+    );
+  const images = (html) => tags(fieldOf(html, 'icon'), 'img');
+  const withIcon = (entry) => ({
+    change: ({ doc, alpha }) =>
+      updateNode(doc, alpha.id, { device: { icon: ICON_KEY } }),
+    patch: entry ? { icons: { [ICON_KEY]: entry } } : {},
+  });
+
+  test('says None and offers Choose… while the device has none', async () => {
+    const html = await renderInspector();
+    const field = fieldOf(html, 'icon');
+    const choose = button(html, 'inspector-icon-choose');
+
+    expect(text(field)).toContain('Custom icon None Choose…');
+    expect(choose).toContain('aria-label="Choose custom icon"');
+    expect(choose).toContain('aria-haspopup="dialog"');
+    expect(choose).toContain('type="button"');
+    expect(choose).not.toContain('disabled');
+    expect(button(html, 'inspector-icon-remove')).toBeUndefined();
+    expect(images(html)).toEqual([]);
+    // The label is the button's, and the help text its description.
+    const id = choose.match(/ id="([^"]+)"/)[1];
+
+    expect(field).toContain(`<label for="${id}"`);
+    expect(choose).toMatch(/aria-describedby="[^"]*-description"/);
+    expect(field).toContain(
+      'An image of your own, drawn in place of the icon.',
+    );
+    // The dialog is there only once it is opened.
+    expect(html).not.toContain('data-testid="icon-dialog"');
+  });
+
+  test('shows the icon and its name, with Change… and Remove', async () => {
+    const html = await renderInspector(
+      withIcon({ name: 'plc <b>', data: ICON_DATA }),
+    );
+    const [image] = images(html);
+
+    expect(images(html)).toHaveLength(1);
+    expect(image).toContain(`src="data:image/png;base64,${ICON_DATA}"`);
+    expect(image).toContain('class="builder-icon builder-icon--custom"');
+    expect(image).toContain('width="20"');
+    expect(image).toContain('height="20"');
+    // Decoration: its alternative text is empty.
+    expect(image).toMatch(/ alt(=""|\s)/);
+    expect(image).toContain('aria-hidden="true"');
+    // The name is text: markup in it is shown, not read.
+    expect(fieldOf(html, 'icon')).toMatch(
+      /data-testid="inspector-icon-name"[^>]*>plc &lt;b&gt;<\/span>/,
+    );
+    expect(button(html, 'inspector-icon-choose')).toContain(
+      'aria-label="Change custom icon"',
+    );
+    expect(text(fieldOf(html, 'icon'))).toContain('Change… Remove');
+    expect(button(html, 'inspector-icon-remove')).toContain(
+      'aria-label="Remove custom icon"',
+    );
+    expect(button(html, 'inspector-icon-remove')).not.toContain('disabled');
+  });
+
+  test('names an icon without a name, and one the diagram does not carry', async () => {
+    const unnamed = await renderInspector(withIcon({ data: ICON_DATA }));
+
+    expect(fieldOf(unnamed, 'icon')).toContain('>Unnamed icon</span>');
+    expect(images(unnamed)).toHaveLength(1);
+
+    const unknown = await renderInspector(withIcon(null));
+
+    expect(fieldOf(unknown, 'icon')).toContain('>Unknown icon</span>');
+    // Nothing is drawn from an icon that is not known: the built-in mark.
+    expect(images(unknown)).toEqual([]);
+    expect(fieldOf(unknown, 'icon')).toContain('builder-icon--image');
+  });
+
+  // The bytes of an icon reach the page as the address of an image and as
+  // nothing else: data that is no base64 gives no image at all.
+  test('draws nothing from data that is not base64', async () => {
+    const html = await renderInspector(
+      withIcon({ name: 'x', data: '"><script>alert(1)</script>' }),
+    );
+
+    expect(images(html)).toEqual([]);
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('alert(1)');
+  });
+
+  test('a read-only draft disables its buttons', async () => {
+    const html = await renderInspector({
+      ...withIcon({ name: 'plc', data: ICON_DATA }),
+      readOnly: true,
+    });
+
+    expect(button(html, 'inspector-icon-choose')).toContain(' disabled');
+    expect(button(html, 'inspector-icon-remove')).toContain(' disabled');
+    expect(fieldOf(html, 'icon')).toContain('>plc</span>');
+  });
 });

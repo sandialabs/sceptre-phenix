@@ -6,7 +6,7 @@ import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { createPinia } from 'pinia';
 
-import ExportDialog from '@/components/builder/dialogs/ExportDialog.vue';
+import DownloadDialog from '@/components/builder/dialogs/DownloadDialog.vue';
 import HistoryDialog from '@/components/builder/dialogs/HistoryDialog.vue';
 import PublishDialog from '@/components/builder/dialogs/PublishDialog.vue';
 
@@ -589,7 +589,7 @@ describe('reloading or closing the tab', () => {
   });
 });
 
-describe('what leaving, Publish and Export say', () => {
+describe('what leaving, Publish and Download say', () => {
   test('the fields that keep edits unsaved are named', () => {
     expect(unappliedText({ title: 'Device alpha', fields: ['Memory'] })).toBe(
       'Your changes to Device alpha in the Inspector cannot be saved until Memory is fixed.',
@@ -604,14 +604,14 @@ describe('what leaving, Publish and Export say', () => {
     );
   });
 
-  test('Publish and Export say what blocks them', () => {
+  test('Publish and Download say what blocks them', () => {
     const unapplied = { title: 'Device alpha', fields: ['Memory'] };
 
     expect(unappliedBlock(unapplied, 'published')).toBe(
       'Your changes to Device alpha in the Inspector cannot be published until Memory is fixed. Fix or cancel them first.',
     );
-    expect(unappliedBlock(unapplied, 'exported')).toMatch(
-      /cannot be exported until Memory is fixed\./,
+    expect(unappliedBlock(unapplied, 'downloaded')).toBe(
+      'Your changes to Device alpha in the Inspector cannot be downloaded until Memory is fixed. Fix or cancel them first.',
     );
   });
 });
@@ -632,7 +632,7 @@ async function renderDialog(component, props = {}, prepare = () => {}) {
   return renderToString(app);
 }
 
-describe('Publish and Export with edits the Inspector cannot apply', () => {
+describe('Publish and Download with edits the Inspector cannot apply', () => {
   const unapplied = { title: 'Device alpha', fields: ['Memory'] };
 
   test('Publish says what blocks it, and cannot be sent', async () => {
@@ -652,25 +652,26 @@ describe('Publish and Export with edits the Inspector cannot apply', () => {
     expect(html).not.toContain('publish-unapplied');
   });
 
-  test('Export says what blocks it, and makes no export', async () => {
-    const html = await renderDialog(ExportDialog, { unapplied });
-    const exports = tags(html, 'button').filter((tag) =>
-      /data-testid="export-(json|yaml|png|svg)"/.test(tag),
+  test('Download says what blocks it, and saves no file', async () => {
+    const html = await renderDialog(DownloadDialog, { unapplied });
+    const formats = tags(html, 'button').filter((tag) =>
+      /data-testid="download-(json|yaml|topology-yaml|png|svg|gexf)"/.test(tag),
     );
 
-    expect(html).toContain('aria-describedby="export-unapplied"');
-    expect(html).toContain(unappliedBlock(unapplied, 'exported'));
-    expect(exports).toHaveLength(4);
-    expect(exports.filter((tag) => !/\sdisabled\b/.test(tag))).toEqual([]);
+    expect(html).toContain('>Download diagram</h2>');
+    expect(html).toContain('aria-describedby="download-unapplied"');
+    expect(html).toContain(unappliedBlock(unapplied, 'downloaded'));
+    expect(formats).toHaveLength(6);
+    expect(formats.filter((tag) => !/\sdisabled\b/.test(tag))).toEqual([]);
   });
 
-  test('Export without them makes every export', async () => {
-    const html = await renderDialog(ExportDialog);
+  test('Download without them offers every format', async () => {
+    const html = await renderDialog(DownloadDialog);
     const disabled = tags(html, 'button').filter((tag) =>
       /\sdisabled\b/.test(tag),
     );
 
-    expect(html).not.toContain('export-unapplied');
+    expect(html).not.toContain('download-unapplied');
     expect(disabled).toEqual([]);
   });
 });

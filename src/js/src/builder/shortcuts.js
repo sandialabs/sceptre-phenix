@@ -76,7 +76,7 @@ export function whereText(idOrCommand) {
 
 /**
  * A command's title for running text: without the '…' that marks one that
- * opens a dialog ('Export', not 'Export…').
+ * opens a dialog ('Download', not 'Download…').
  *
  * @param {string|object} idOrCommand
  * @returns {string}
@@ -169,7 +169,13 @@ export function shortcutRow(idOrCommand, platform = currentPlatform()) {
         platform,
       ),
     defaults: defaults.map((key) => keyEntry(key, platform)),
-    text: [command.title, command.group, where, ...(command.keywords || [])]
+    text: [
+      command.title,
+      command.group,
+      where,
+      ...(command.aliases || []),
+      ...(command.keywords || []),
+    ]
       .concat(words)
       .join(' ')
       .toLowerCase(),
@@ -190,8 +196,8 @@ function rowMatches(row, word) {
  * The sheet's rows by group, in the registry's group order: every command
  * with keys, or with `customize` every command whose keys can change, with
  * or without keys. Each word of `query` must match: a one-character word a
- * key cap ('g', '?', '⌘'), a longer one the row's title, group, keywords,
- * where it works or its keys in words ('undo', 'cmd', 'shift').
+ * key cap ('g', '?', '⌘'), a longer one the row's title, group, aliases,
+ * keywords, where it works or its keys in words ('undo', 'cmd', 'shift').
  *
  * @param {object} [options]
  * @param {string} [options.query]

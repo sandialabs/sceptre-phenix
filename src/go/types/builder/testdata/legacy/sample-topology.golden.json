@@ -1,0 +1,391 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "id": "9e05a6cf-742c-539d-ba7a-c2dd2d2829f9",
+  "name": "sample",
+  "nodes": [
+    {
+      "id": "2da456ec-b24f-5229-b330-14c78ea2a69f",
+      "kind": "device",
+      "label": "client-1",
+      "position": {
+        "x": 80,
+        "y": 832
+      },
+      "device": {
+        "hostname": "client-1",
+        "iconKey": "desktop",
+        "spec": {
+          "annotations": {
+            "owner": "ops"
+          },
+          "general": {
+            "hostname": "client-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "injections": [
+            {
+              "description": "x",
+              "dst": "/tmp/a.sh",
+              "src": "/phenix/injects/a.sh"
+            }
+          ],
+          "labels": {
+            "zone": "corp"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.10.10.10",
+                "gateway": "10.10.10.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "users"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "cc0e25f1-f5f1-59a2-98e5-6e4e1af0f150",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "732825d2-0c1b-5eda-b489-9990c4f52137",
+      "kind": "device",
+      "label": "firewall-device-1",
+      "position": {
+        "x": 480,
+        "y": 112
+      },
+      "parentId": "ba18b638-f525-5efe-ac68-d7d399eea9ec",
+      "device": {
+        "hostname": "firewall-device-1",
+        "iconKey": "firewall",
+        "spec": {
+          "general": {
+            "hostname": "firewall-device-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "b"
+              }
+            ]
+          },
+          "type": "Firewall"
+        },
+        "interfaces": [
+          {
+            "id": "58b3d984-4006-5b21-be6c-8002d23a2d52",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "cc15b785-33c5-57cc-a7bf-52c43824aa50",
+      "kind": "device",
+      "label": "router-device-0",
+      "position": {
+        "x": 80,
+        "y": 112
+      },
+      "parentId": "ba18b638-f525-5efe-ac68-d7d399eea9ec",
+      "device": {
+        "hostname": "router-device-0",
+        "iconKey": "router",
+        "spec": {
+          "general": {
+            "hostname": "router-device-0"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "vyos.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "users"
+              },
+              {
+                "name": "eth1",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "b"
+              }
+            ]
+          },
+          "type": "Router"
+        },
+        "interfaces": [
+          {
+            "id": "cbdb4c1b-b4fe-5203-8f92-cab6c8817f14",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "bc7748c7-9757-59b2-9be4-95774299513b",
+            "name": "eth1",
+            "index": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "9f599460-ff6f-5109-bdc3-268cf92b96e4",
+      "kind": "device",
+      "label": "server-device-4",
+      "position": {
+        "x": 880,
+        "y": 832
+      },
+      "device": {
+        "hostname": "server-device-4",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "server-device-4"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "users"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "9a8d0b3f-b3c6-5d99-b121-40c47ba4a69b",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "cb1a3537-6313-54f5-b785-4452d674a245",
+      "kind": "device",
+      "label": "server-device-5",
+      "position": {
+        "x": 1280,
+        "y": 512
+      },
+      "device": {
+        "hostname": "server-device-5",
+        "iconKey": "external",
+        "spec": {
+          "external": true,
+          "general": {
+            "hostname": "server-device-5"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "vlan": "users"
+              }
+            ]
+          },
+          "type": "HIL"
+        },
+        "interfaces": [
+          {
+            "id": "7d4d7776-8df1-5ba5-b1b2-28038f1b561d",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "f6873743-39ea-5dad-9eb2-396d1c1f80a1",
+      "kind": "switch",
+      "label": "b",
+      "position": {
+        "x": 272,
+        "y": 128
+      },
+      "parentId": "ba18b638-f525-5efe-ac68-d7d399eea9ec",
+      "switch": {
+        "networkId": "d79968c6-d37c-5bfd-964a-a9af8773dc33"
+      }
+    },
+    {
+      "id": "4bacb328-dc44-5116-b530-366213135c08",
+      "kind": "switch",
+      "label": "users",
+      "position": {
+        "x": 464,
+        "y": 528
+      },
+      "switch": {
+        "networkId": "91d3553c-cd28-5f28-be5e-0e11e8b88ee4"
+      }
+    },
+    {
+      "id": "ba18b638-f525-5efe-ac68-d7d399eea9ec",
+      "kind": "group",
+      "position": {
+        "x": 48,
+        "y": 48
+      },
+      "size": {
+        "width": 800,
+        "height": 240
+      },
+      "group": {
+        "title": "DMZ"
+      }
+    },
+    {
+      "id": "2f9ef933-f7bb-55b3-b91e-599a98bbcc5a",
+      "kind": "note",
+      "position": {
+        "x": 1008,
+        "y": 80
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "a note"
+      }
+    }
+  ],
+  "networks": [
+    {
+      "id": "d79968c6-d37c-5bfd-964a-a9af8773dc33",
+      "name": "b"
+    },
+    {
+      "id": "91d3553c-cd28-5f28-be5e-0e11e8b88ee4",
+      "name": "users",
+      "alias": 101
+    }
+  ],
+  "edges": [
+    {
+      "id": "22f5249b-8da0-53e4-93ab-9e9fa7c61784",
+      "sourceNodeId": "cc15b785-33c5-57cc-a7bf-52c43824aa50",
+      "sourceHandleId": "bc7748c7-9757-59b2-9be4-95774299513b",
+      "targetNodeId": "f6873743-39ea-5dad-9eb2-396d1c1f80a1",
+      "networkId": "d79968c6-d37c-5bfd-964a-a9af8773dc33"
+    },
+    {
+      "id": "3848a01e-be00-5a8d-b083-2d94e93272c0",
+      "sourceNodeId": "cc15b785-33c5-57cc-a7bf-52c43824aa50",
+      "sourceHandleId": "cbdb4c1b-b4fe-5203-8f92-cab6c8817f14",
+      "targetNodeId": "4bacb328-dc44-5116-b530-366213135c08",
+      "networkId": "91d3553c-cd28-5f28-be5e-0e11e8b88ee4"
+    },
+    {
+      "id": "83fa4d5d-6904-525d-b803-a132ae39f6a2",
+      "sourceNodeId": "cb1a3537-6313-54f5-b785-4452d674a245",
+      "sourceHandleId": "7d4d7776-8df1-5ba5-b1b2-28038f1b561d",
+      "targetNodeId": "4bacb328-dc44-5116-b530-366213135c08",
+      "networkId": "91d3553c-cd28-5f28-be5e-0e11e8b88ee4"
+    },
+    {
+      "id": "92ebe239-875d-5fa2-bbb3-a70850c904d0",
+      "sourceNodeId": "732825d2-0c1b-5eda-b489-9990c4f52137",
+      "sourceHandleId": "58b3d984-4006-5b21-be6c-8002d23a2d52",
+      "targetNodeId": "f6873743-39ea-5dad-9eb2-396d1c1f80a1",
+      "networkId": "d79968c6-d37c-5bfd-964a-a9af8773dc33"
+    },
+    {
+      "id": "cd72cae8-751d-5526-bbd1-aee66a1e2685",
+      "sourceNodeId": "9f599460-ff6f-5109-bdc3-268cf92b96e4",
+      "sourceHandleId": "9a8d0b3f-b3c6-5d99-b121-40c47ba4a69b",
+      "targetNodeId": "4bacb328-dc44-5116-b530-366213135c08",
+      "networkId": "91d3553c-cd28-5f28-be5e-0e11e8b88ee4"
+    },
+    {
+      "id": "e23488fd-4f62-57b4-8dcc-3b65e0a21a52",
+      "sourceNodeId": "2da456ec-b24f-5229-b330-14c78ea2a69f",
+      "sourceHandleId": "cc0e25f1-f5f1-59a2-98e5-6e4e1af0f150",
+      "targetNodeId": "4bacb328-dc44-5116-b530-366213135c08",
+      "networkId": "91d3553c-cd28-5f28-be5e-0e11e8b88ee4"
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": true,
+    "size": 16,
+    "snap": true
+  },
+  "source": {
+    "kind": "topology",
+    "name": "sample",
+    "apiVersion": "phenix.sandia.gov/v1",
+    "digest": "sha256:8fea70b13da11e8cc440313a89acd143bb44c1df442057d5c2ead83035423441",
+    "updatedAt": "2026-01-02T03:04:05Z",
+    "annotations": {
+      "owner": "ops"
+    },
+    "warnings": [
+      "Added a switch for 1 network that had none in the legacy diagram: b.",
+      "Left out 1 line that was not a network link.",
+      "Text and containers were kept as notes and groups. Their colors, fonts and other formatting were not converted."
+    ]
+  }
+}

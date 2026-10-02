@@ -1,4 +1,4 @@
-// What Builder v2 keeps in this browser, and what logout clears of it.
+// What Builder keeps in this browser, and what logout clears of it.
 //
 // The Builder keeps drafts that are not saved yet in IndexedDB, and in
 // localStorage under phenix.builder.* the viewer's preferences (theme, pane
@@ -117,7 +117,7 @@ export function endBuilderSession({
     try {
       reset();
     } catch (error) {
-      console.error('Could not reset Builder v2 on logout.', error);
+      console.error('Could not reset Builder on logout.', error);
     }
   }
 
@@ -320,7 +320,7 @@ function within(work, ms) {
  *   openTabs, for tests
  * @returns {Promise<{changes: number, unapplied: string, drafts: object[]}>}
  *   unapplied: a sentence naming the Inspector edits, or ''; drafts: those
- *   Export can save, as {key, name} (see draftExport)
+ *   Download can save, as {key, name} (see draftExport)
  */
 export async function unsentBuilderWork({
   username,
@@ -461,7 +461,7 @@ async function unsentDrafts(draftStore, username, draft) {
   return drafts;
 }
 
-// Export's file name for each draft; one that two drafts would share gets a
+// Download's file name for each draft; one that two drafts would share gets a
 // number, so each can be told apart and kept.
 function fileNames(drafts) {
   const taken = new Set();
@@ -481,8 +481,8 @@ function fileNames(drafts) {
 }
 
 /**
- * The file Export saves for one of the drafts unsentBuilderWork names: its
- * diagram as this browser has it now, as Export saves JSON.
+ * The file Download saves for one of the drafts unsentBuilderWork names: its
+ * diagram as this browser has it now, as Download saves JSON.
  *
  * @param {object} options username; key and name, as unsentBuilderWork
  *   names the draft; draftStore, for tests
@@ -513,7 +513,7 @@ export async function draftExport({
 }
 
 /**
- * A diagram as Export saves it as JSON (see exporters.js, which this module
+ * A diagram as Download saves it as JSON (see exporters.js, which this module
  * does not load): its file name and text.
  *
  * @param {object} doc Builder document

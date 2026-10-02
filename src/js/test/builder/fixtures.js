@@ -9,6 +9,7 @@ import {
   connect,
   createDocument,
 } from '@/builder/model.js';
+import { paletteTemplateGroups, templateByKey } from '@/builder/templates.js';
 
 let counter = 0;
 
@@ -27,6 +28,88 @@ export function testId() {
 
 export function resetIds() {
   counter = 0;
+}
+
+/**
+ * Gives a stand-in for the Builder store what the store derives from its
+ * document and its template library for the palette's device templates:
+ * paletteTemplateGroups and templateByKey, which follow the stand-in's
+ * `doc` and, when it has one, its `templates`.
+ *
+ * @param {object} store an object with a `doc`
+ * @returns {object} the same object
+ */
+export function withTemplates(store) {
+  Object.defineProperty(store, 'paletteTemplateGroups', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return paletteTemplateGroups(this.doc, this.templates);
+    },
+  });
+  store.templateByKey = (key) => templateByKey(store.doc, key, store.templates);
+
+  return store;
+}
+
+/**
+ * A template library as the Builder store keeps one that was read (see
+ * fetchTemplates in store.js): `templates` and `collections` are listed as
+ * the server lists them, the user's own unless they say otherwise.
+ *
+ * @param {object} [init] templates, collections, icons, and what else the
+ *   store's `templates` holds
+ * @returns {object}
+ */
+export function libraryOf({
+  templates = [],
+  collections = [],
+  icons = {},
+  ...rest
+} = {}) {
+  const listed = (item, index) => ({
+    owner: 'alice',
+    source: 'own',
+    version: 1,
+    etag: '"1"',
+    ...item,
+    id: item.id ?? `item-${index}`,
+  });
+
+  return {
+    status: 'ready',
+    error: '',
+    loaded: true,
+    owner: 'alice',
+    items: templates.map((template, index) => ({
+      description: '',
+      serverWide: false,
+      collections: [],
+      shares: [],
+      ...listed(template, index),
+    })),
+    collections: collections.map((collection, index) => ({
+      description: '',
+      templateIds: [],
+      serverWide: false,
+      shares: [],
+      ...listed(collection, index),
+    })),
+    icons,
+    canShare: false,
+    canPublish: false,
+    damaged: false,
+    limits: {
+      templates: 200,
+      collections: 50,
+      shares: 25,
+      nameBytes: 128,
+      descriptionBytes: 1024,
+      deviceBytes: 16384,
+      icons: 32,
+    },
+    ...rest,
+  };
 }
 
 /**
@@ -85,7 +168,7 @@ export function sampleDocument() {
 }
 
 /**
- * A node spec as phenix stores it in an experiment, and so as Generate
+ * A node spec as phenix stores it in an experiment, and so as Import
  * brings it into a draft: structs.MapDefaultCase keeps every zero value,
  * so unset fields are null or empty (advanced null, mac "", gateway "",
  * ruleset_in ""). phenix accepts it; the Inspector form's schema does not.

@@ -1,4 +1,4 @@
-// Builder v2 document provenance: who made a diagram and who saved it last.
+// Builder document provenance: who made a diagram and who saved it last.
 // The server writes both into the document when it stores it, answers each
 // create and save with them (`stamp`), and the Inspector's Details block
 // shows them. With authentication off, as here, every user is the same one;
@@ -42,7 +42,7 @@ test('a new draft says who made it and who edited it last, an edit moves only th
   issues,
 }, testInfo) => {
   await builder.open();
-  const answered = waitForApi(page, 'POST', '/builder-v2/drafts');
+  const answered = waitForApi(page, 'POST', '/builder/drafts');
   await page.getByTestId('drafts-blank').click();
   const draft = await (await answered).json();
   const madeAt = Date.now();
@@ -99,15 +99,15 @@ test('a new draft says who made it and who edited it last, an edit moves only th
       .toEqual(STAMP_KEYS);
   });
 
-  await test.step('Builder JSON export holds the four fields', async () => {
-    const dialog = await builder.openDialog('export');
+  await test.step('the Builder JSON download holds the four fields', async () => {
+    const dialog = await builder.openDialog('download');
     const [file] = await Promise.all([
       page.waitForEvent('download'),
-      dialog.getByTestId('export-json').click(),
+      dialog.getByTestId('download-json').click(),
     ]);
-    const exported = JSON.parse(fs.readFileSync(await file.path(), 'utf8'));
-    expect.soft(exported.name).toBe(title);
-    expect.soft(provenanceOf(exported)).toEqual(stamp);
+    const downloaded = JSON.parse(fs.readFileSync(await file.path(), 'utf8'));
+    expect.soft(downloaded.name).toBe(title);
+    expect.soft(provenanceOf(downloaded)).toEqual(stamp);
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(builder.dialog).toBeHidden();
   });
@@ -130,15 +130,18 @@ test('Edit as a draft of a published diagram keeps who made and last edited it, 
   issues,
 }, testInfo) => {
   const name = uniqueName(testInfo, 'kept');
+  // The draft that published it is gone, so Edit as a draft makes one from
+  // the published document, as it does for a user who did not publish it.
   const published = await publishTopology(
     request,
     tracker,
     name,
     labDocument(name),
+    { keepDraft: false },
   );
   const publishedAt = Date.now();
   const read = await request.get(
-    `${API}/builder-v2/topologies/${encodeURIComponent(name)}/document`,
+    `${API}/builder/topologies/${encodeURIComponent(name)}/document`,
   );
   expect(read.ok(), await read.text()).toBeTruthy();
   const record = await read.json();
@@ -168,7 +171,7 @@ test('Edit as a draft of a published diagram keeps who made and last edited it, 
     await test.step('the draft is the published document, not a new edit', async () => {
       // A copy stamped as an edit would be dated now.
       await nextSecond(publishedAt);
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
+      const created = waitForApi(page, 'POST', '/builder/drafts');
       await page.getByTestId('published-edit').click();
       const body = await (await created).json();
       await expect(page.getByTestId('builder-published')).toHaveCount(0);
@@ -214,7 +217,7 @@ test('Edit as a draft of a published diagram keeps who made and last edited it, 
     expect
       .soft(config?.metadata?.annotations?.['builder-doc'])
       .toEqual({ digest: record.digest, id: record.id });
-    const listed = await request.get(`${API}/builder-v2/documents`);
+    const listed = await request.get(`${API}/builder/documents`);
     expect(
       ((await listed.json()).documents || [])
         .filter((entry) => entry.target === name)
@@ -240,14 +243,14 @@ test('a pasted document keeps the author it names, and has no source file', asyn
   };
 
   await builder.open();
-  await page.getByTestId('drafts-import').click();
+  await page.getByTestId('drafts-upload').click();
   const dialog = page.getByRole('dialog', { name: 'Upload diagram' });
   await dialog.getByLabel('Paste text', { exact: true }).check();
   await dialog
-    .getByTestId('import-text')
+    .getByTestId('upload-text')
     .fill(JSON.stringify({ ...blankDocument(title), ...claimed }));
-  const answered = waitForApi(page, 'POST', '/builder-v2/drafts');
-  await dialog.getByTestId('import-submit').click();
+  const answered = waitForApi(page, 'POST', '/builder/drafts');
+  await dialog.getByTestId('upload-submit').click();
   const response = await answered;
   const draft = await response.json();
   await expect(builder.canvas).toBeVisible();
@@ -274,9 +277,9 @@ test('a pasted document keeps the author it names, and has no source file', asyn
 
   // A malformed time is refused, on the text field, and nothing is made.
   await builder.backToDrafts();
-  await page.getByTestId('drafts-import').click();
+  await page.getByTestId('drafts-upload').click();
   await dialog.getByLabel('Paste text', { exact: true }).check();
-  const field = dialog.getByTestId('import-text');
+  const field = dialog.getByTestId('upload-text');
   await field.fill(
     JSON.stringify({
       ...blankDocument(title),
@@ -284,8 +287,8 @@ test('a pasted document keeps the author it names, and has no source file', asyn
       createdAt: '2020-01-02 03:04:05',
     }),
   );
-  await dialog.getByTestId('import-submit').click();
-  await expect(dialog.getByTestId('import-error')).toContainText(
+  await dialog.getByTestId('upload-submit').click();
+  await expect(dialog.getByTestId('upload-error')).toContainText(
     'createdAt must be a UTC time in the form YYYY-MM-DDTHH:MM:SSZ',
   );
   await expect.soft(field).toHaveAttribute('aria-invalid', 'true');

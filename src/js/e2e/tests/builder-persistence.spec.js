@@ -1,4 +1,4 @@
-// Builder v2 persistence: undo and redo, the server history cursor, the
+// Builder persistence: undo and redo, the server history cursor, the
 // Draft History dialog, autosave states, ETag conflicts and local recovery.
 //
 // Every edit in the Builder is one server snapshot, and undo/redo move the
@@ -22,12 +22,12 @@ const {
   waitForApi,
 } = require('./builder-support');
 
-const SNAPSHOTS = '**/api/v1/builder-v2/drafts/*/*/snapshots';
-const DRAFT_ROUTES = '**/api/v1/builder-v2/drafts/**';
+const SNAPSHOTS = '**/api/v1/builder/drafts/*/*/snapshots';
+const DRAFT_ROUTES = '**/api/v1/builder/drafts/**';
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 async function listMine(request) {
-  const response = await request.get(`${API}/builder-v2/drafts`);
+  const response = await request.get(`${API}/builder/drafts`);
   expect(response.ok(), await response.text()).toBeTruthy();
 
   return (await response.json()).drafts || [];
@@ -158,7 +158,7 @@ async function forkAfterConflict(builder, testInfo) {
     },
   );
 
-  const forked = waitForApi(builder.page, 'POST', '/builder-v2/drafts');
+  const forked = waitForApi(builder.page, 'POST', '/builder/drafts');
   await builder.page.getByTestId('conflict-fork').click();
   const response = await forked;
   const body = await response.json();
@@ -217,7 +217,7 @@ function unloadCopies(page) {
   );
 }
 
-test.describe('Builder v2 persistence', () => {
+test.describe('Builder persistence', () => {
   test(
     'keyboard undo and redo move the server cursor, a new edit drops the redo branch, and an undo survives a reload',
     { tag: '@cross-browser' },
@@ -1203,9 +1203,9 @@ test.describe('Builder v2 persistence', () => {
     });
     await page.reload();
     expect.soft(prompts, 'prompt before the reload').toEqual(['beforeunload']);
-    await expect(page.getByRole('heading', { name: 'Builder v2' })).toBeVisible(
-      { timeout: 20000 },
-    );
+    await expect(
+      page.getByRole('heading', { name: 'Builder', exact: true }),
+    ).toBeVisible({ timeout: 20000 });
     await page.unroute(DRAFT_ROUTES);
     await expectServerCounts(builder, draft, { devices: 0 });
     // With authentication off no one has an account to share with, so
@@ -1283,7 +1283,7 @@ test.describe('Builder v2 persistence', () => {
       page.once('dialog', (dialog) => dialog.accept().catch(() => {}));
       await page.reload();
       await expect(
-        page.getByRole('heading', { name: 'Builder v2' }),
+        page.getByRole('heading', { name: 'Builder', exact: true }),
       ).toBeVisible({ timeout: 20000 });
       await page.unroute(DRAFT_ROUTES);
       await page.getByTestId(`draft-open-${draft.id}`).click();
@@ -1313,7 +1313,7 @@ test.describe('Builder v2 persistence', () => {
         .soft(prompts, 'prompt before the reload')
         .toEqual(['beforeunload']);
       await expect(
-        page.getByRole('heading', { name: 'Builder v2' }),
+        page.getByRole('heading', { name: 'Builder', exact: true }),
       ).toBeVisible({ timeout: 20000 });
       await page.unroute(DRAFT_ROUTES);
       await page.getByTestId(`draft-open-${draft.id}`).click();
@@ -1414,7 +1414,7 @@ test.describe('Builder v2 persistence', () => {
           .not.toBeChecked();
         await expect
           .soft(
-            dialog.getByRole('button', { name: "Export this tab's changes" }),
+            dialog.getByRole('button', { name: "Download this tab's changes" }),
           )
           .toBeVisible();
         await expectAccessible(page, {
@@ -1549,13 +1549,13 @@ test.describe('Builder v2 persistence', () => {
     const onRequest = (request) => {
       if (
         request.method() === 'POST' &&
-        new URL(request.url()).pathname === `${API}/builder-v2/drafts`
+        new URL(request.url()).pathname === `${API}/builder/drafts`
       ) {
         creates.push(request.url());
       }
     };
     page.on('request', onRequest);
-    const created = waitForApi(page, 'POST', '/builder-v2/drafts');
+    const created = waitForApi(page, 'POST', '/builder/drafts');
     await page.getByTestId('drafts-blank').dblclick();
     const draft = await (await created).json();
     await expect(builder.canvas).toBeVisible();
@@ -1607,7 +1607,7 @@ test.describe('Builder v2 persistence', () => {
         .toBeFocused();
       await confirm.getByRole('button', { name: 'Stay' }).click();
       await expect(confirm).toBeHidden();
-      await expect.soft(page).toHaveURL(/\/builder-v2$/);
+      await expect.soft(page).toHaveURL(/\/builder$/);
       await expect.soft(builder.landingHeading).toBeVisible();
 
       await experiments.click();
@@ -1682,7 +1682,7 @@ test.describe('Builder v2 persistence', () => {
       await expect
         .soft(warning)
         .toHaveAccessibleDescription(
-          '1 change to Builder v2 drafts has not reached the server. Logging out deletes it from this browser. Use Export to keep a copy.',
+          '1 change to Builder drafts has not reached the server. Logging out deletes it from this browser. Use Download to keep a copy.',
         );
       await expect.soft(warning).toHaveAttribute('data-theme', 'dark');
       await expect
@@ -1690,18 +1690,18 @@ test.describe('Builder v2 persistence', () => {
         .toBeFocused();
       await expect
         .soft(warning.getByRole('button'))
-        .toHaveText(['Export', 'Stay signed in', 'Log out anyway']);
+        .toHaveText(['Download', 'Stay signed in', 'Log out anyway']);
 
-      // Export saves the diagram the queued change leaves.
+      // Download saves the diagram the queued change leaves.
       const [file] = await Promise.all([
         page.waitForEvent('download'),
-        warning.getByRole('button', { name: 'Export' }).click(),
+        warning.getByRole('button', { name: 'Download' }).click(),
       ]);
       const name = `${title.toLowerCase().replace(/ /g, '-')}.json`;
       expect.soft(file.suggestedFilename()).toBe(name);
-      const exported = JSON.parse(fs.readFileSync(await file.path(), 'utf8'));
+      const downloaded = JSON.parse(fs.readFileSync(await file.path(), 'utf8'));
       expect
-        .soft(exported.nodes.filter((node) => node.kind === 'device'))
+        .soft(downloaded.nodes.filter((node) => node.kind === 'device'))
         .toHaveLength(1);
       await expect
         .soft(warning.getByRole('status'))
@@ -1753,7 +1753,7 @@ test.describe('Builder v2 persistence', () => {
       // click; the editor's heading takes focus once it shows.
       const reads = [];
       const read = (url) =>
-        url.pathname.endsWith(`/builder-v2/drafts/${draft.owner}/${draft.id}`);
+        url.pathname.endsWith(`/builder/drafts/${draft.owner}/${draft.id}`);
       await page.route(read, async (route) => {
         reads.push(route.request().method());
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -1877,7 +1877,7 @@ test.describe('Builder v2 persistence', () => {
       await expect
         .soft(dialog.getByTestId('history-automatic-hint'))
         .toHaveText(
-          'Automatic: changes you had not applied in the Inspector, saved for you before you left, published or exported the diagram.',
+          'Automatic: changes you had not applied in the Inspector, saved for you before you left, published or downloaded the diagram.',
         );
       await page.keyboard.press('Escape');
       await expect(dialog).toHaveCount(0);
@@ -1938,34 +1938,49 @@ test.describe('Builder v2 persistence', () => {
     });
   });
 
-  test('a ?topology= link edits one draft of the diagram, which a reload reopens', async ({
+  test('a ?topology= link edits one draft of the diagram, which a reload reopens and which still opens after it publishes again', async ({
     builder,
     page,
     tracker,
   }, testInfo) => {
     const target = uniqueName(testInfo, 'deeplink');
+    // The draft that published it is gone, so the diagram opens in a draft
+    // made from it.
     const { documentId } = await publishTopology(
       builder.request,
       tracker,
       target,
+      undefined,
+      { keepDraft: false },
     );
-    const opened = async () =>
-      (await listMine(builder.request)).filter(
-        (item) => item.sourceToken === `builder-doc/${documentId}`,
+    // Every draft of this diagram: each is named after it.
+    const drafts = async () =>
+      (await listMine(builder.request)).filter((item) => item.title === target);
+    const deepLink = `/builder?topology=${encodeURIComponent(target)}`;
+    const currentDocument = async () => {
+      const listed = await builder.request.get(`${API}/builder/documents`);
+      expect(listed.ok(), await listed.text()).toBeTruthy();
+
+      return ((await listed.json()).documents || []).find(
+        (entry) => entry.target === target,
       );
-    const deepLink = `/builder-v2?topology=${encodeURIComponent(target)}`;
+    };
 
     await visit(page, deepLink);
     await expect(builder.canvas).toBeVisible({ timeout: 20000 });
     await builder.waitSaved();
-    const [draft, ...others] = await opened();
+    const [draft, ...others] = await drafts();
     expect(others).toEqual([]);
-    // The address names the draft now, not the published diagram.
+    expect.soft(draft.sourceToken).toBe(`builder-doc/${documentId}`);
     await expect
-      .soft(page)
-      .toHaveURL(
-        (url) => url.searchParams.get('draft') === `${draft.owner}/${draft.id}`,
+      .soft(builder)
+      .toHaveAnnounced(
+        `Opened topology ${target} in the Builder as a new draft.`,
       );
+    const namesDraft = (url) =>
+      url.searchParams.get('draft') === `${draft.owner}/${draft.id}`;
+    // The address names the draft now, not the published diagram.
+    await expect.soft(page).toHaveURL(namesDraft);
 
     await addDevices(builder, 1);
     await expectServerCounts(builder, draft, { devices: 1 });
@@ -1986,15 +2001,56 @@ test.describe('Builder v2 persistence', () => {
       await expect
         .soft(builder)
         .toHaveAnnounced(
-          `Opened topology ${target} in Builder v2, in your draft of it.`,
+          `Opened topology ${target} in the Builder, in your draft of it.`,
         );
+      await expect.soft(page).toHaveURL(namesDraft);
       expect
-        .soft(await opened(), 'drafts opened from the published document')
+        .soft(await drafts(), 'drafts of the published diagram')
         .toHaveLength(1);
+    });
+
+    // Publishing stores a new document, with a new id, which the draft's
+    // source token does not name: the draft is found by what it published.
+    await test.step('once the draft has published the topology again, the link still opens it', async () => {
+      const publish = await builder.openDialog('publish');
+      await expect(publish.getByTestId('publish-name')).toHaveValue(target);
+      await expect(publish.getByTestId('publish-submit')).toHaveText(
+        'Update topology',
+      );
+      const published = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname.endsWith('/publish'),
+      );
+      await publish.getByTestId('publish-submit').click();
+      await page.getByTestId('confirm-accept').click();
+      const response = await published;
+      expect(response.status(), await response.text()).toBe(200);
+      const republished = await currentDocument();
+      expect(republished.id, 'the new document id').not.toBe(documentId);
+      expect.soft(republished.draftId).toBe(draft.id);
+
+      await visit(page, deepLink);
+      await expect(builder.canvas).toBeVisible({ timeout: 20000 });
+      await builder.waitSaved();
+      await builder.expectCounts({ devices: 1 });
+      await expect
+        .soft(builder)
+        .toHaveAnnounced(
+          `Opened topology ${target} in the Builder, in the draft that published it.`,
+        );
+      await expect.soft(page).toHaveURL(namesDraft);
+      // No second draft was made from the new document.
+      expect
+        .soft(
+          (await drafts()).map((item) => item.id),
+          'drafts of the published diagram',
+        )
+        .toEqual([draft.id]);
     });
 
     // Back to drafts drops the draft from the address.
     await builder.backToDrafts();
-    await expect.soft(page).toHaveURL(/\/builder-v2$/);
+    await expect.soft(page).toHaveURL(/\/builder$/);
   });
 });

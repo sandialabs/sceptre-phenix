@@ -9,7 +9,7 @@
 //
 // Everything here is pure, so it is tested without a browser.
 
-import { count, listOf } from './announce.js';
+import { count, describeNames, listOf } from './announce.js';
 import { MAX_SHARES } from './api.js';
 import { MAX_USER_BYTES } from './limits.js';
 import { utf8Length } from './text.js';
@@ -50,15 +50,11 @@ export function validUsername(name) {
  * @returns {string} "bob and carol", "bob, carol and 3 others", or ''
  */
 export function describeShares(shares) {
-  const names = (shares || [])
-    .map((entry) => (typeof entry === 'string' ? entry : entry?.user))
-    .filter(Boolean);
-
-  if (names.length <= 3) {
-    return listOf(names);
-  }
-
-  return `${names[0]}, ${names[1]} and ${count(names.length - 2, 'other')}`;
+  return describeNames(
+    (shares || []).map((entry) =>
+      typeof entry === 'string' ? entry : entry?.user,
+    ),
+  );
 }
 
 /**
@@ -432,7 +428,47 @@ export function validateAdd(
 }
 
 /**
- * The address that opens a draft in Builder v2, for Copy link.
+ * Checks a person before the dialog that shares several drafts at once adds
+ * them to the people it will share the drafts with.
+ *
+ * @param {string} name as typed
+ * @param {string[]} people the people listed so far
+ * @param {string} owner the drafts' owner
+ * @param {string[]|null} knownUsers the usernames the drafts may be shared
+ *   with, or null when they are unknown
+ * @param {number} [maxShares]
+ * @returns {{user: string, error: string}} error is '' when the person can
+ *   be added
+ */
+export function validateBulkAdd(
+  name,
+  people,
+  owner,
+  knownUsers,
+  maxShares = MAX_SHARES,
+) {
+  const user = String(name ?? '').trim();
+  let error = '';
+
+  if (!user) {
+    error = 'Enter a username.';
+  } else if (user === owner) {
+    error = 'You own these drafts.';
+  } else if ((people || []).includes(user)) {
+    error = `${user} is already in the list.`;
+  } else if (!validUsername(user)) {
+    error = reasonMessage('invalid-user', user);
+  } else if (Array.isArray(knownUsers) && !knownUsers.includes(user)) {
+    error = `No user named ${user}.`;
+  } else if ((people || []).length >= maxShares) {
+    error = `A draft can be shared with at most ${maxShares} people.`;
+  }
+
+  return { user, error };
+}
+
+/**
+ * The address that opens a draft in Builder, for Copy link.
  *
  * @param {object} router vue-router
  * @param {string} owner
@@ -447,7 +483,7 @@ export function shareLink(
   origin = globalThis.location?.origin || '',
 ) {
   const { href } = router.resolve({
-    name: 'builder-v2',
+    name: 'builder',
     query: { draft: `${owner}/${id}` },
   });
 

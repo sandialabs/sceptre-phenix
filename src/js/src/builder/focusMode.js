@@ -1,7 +1,7 @@
 // Focus mode: the Builder on its own, without the phenix navigation bar,
 // filling the window, and the screen where the browser allows it. App.vue
 // hides its header while focus mode is on; the Builder's view
-// (BuilderV2.vue) turns it on and off, with the Focus mode button of the
+// (Builder.vue) turns it on and off, with the Focus mode button of the
 // editor's and the drafts' headers and the view.focusMode command, and off
 // when the user leaves the Builder. It stays on as the editor and the
 // drafts replace each other.

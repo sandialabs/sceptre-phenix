@@ -1,6 +1,6 @@
 // Builder-only theme handling.
 //
-// The rest of phenix keeps its own styling; Builder v2 scopes its theme
+// The rest of phenix keeps its own styling; Builder scopes its theme
 // to its own root element via a data attribute, so switching here never leaks
 // into other views. The preference is persisted under phenix.builder.theme.
 

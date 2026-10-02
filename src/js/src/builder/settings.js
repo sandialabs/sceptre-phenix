@@ -1,13 +1,14 @@
-// Builder v2 settings: how this viewer likes the editor, whatever the
+// Builder settings: how this viewer likes the editor, whatever the
 // diagram. The Settings dialog (BuilderSettings.vue) changes them.
 //
 // They are kept per browser in localStorage under phenix.builder.settings,
 // as one JSON object that holds the settings changed from their defaults:
 //   { "layoutAlgorithm": "dagre", "showMinimap": false }
-// Every value is one of the choices listed below, so nothing about the user
-// or their work (names, drafts, tokens) can be stored there, and logout
-// keeps the key (see session.js). The theme and the keyboard shortcuts keep
-// keys of their own (theme.js, keymap.js); the dialog shows them with these.
+// Every value is one of the choices listed below, or a number from a fixed
+// range, so nothing about the user or their work (names, drafts, tokens)
+// can be stored there, and logout keeps the key (see session.js). The theme
+// and the keyboard shortcuts keep keys of their own (theme.js, keymap.js);
+// the dialog shows them with these.
 //
 // Storage that is blocked or full is not an error: the settings then last
 // as long as the page. A stored setting this Builder does not know, from
@@ -21,11 +22,22 @@ import { followStorageKey, pageStorage } from './storage.js';
 
 export const SETTINGS_STORAGE_KEY = 'phenix.builder.settings';
 
-// The zoom a diagram opens with: 100% from the diagram's origin, or the
-// whole diagram fitted to the canvas.
-const OPEN_ZOOMS = Object.freeze(['actual', 'fit']);
+// The zoom a diagram opens with: 100% from the diagram's origin, the whole
+// diagram fitted to the canvas, or a percentage of the viewer's own, from
+// the diagram's origin too.
+const OPEN_ZOOMS = Object.freeze(['actual', 'fit', 'custom']);
+
+// The percentages the custom zoom takes: the canvas's own least and most
+// zoom, in steps.
+export const OPEN_ZOOM_PERCENT = Object.freeze({ min: 20, max: 200, step: 5 });
 
 const isBoolean = (value) => typeof value === 'boolean';
+
+const isZoomPercent = (value) =>
+  Number.isInteger(value) &&
+  value >= OPEN_ZOOM_PERCENT.min &&
+  value <= OPEN_ZOOM_PERCENT.max &&
+  value % OPEN_ZOOM_PERCENT.step === 0;
 
 // Each setting's default, and the values it takes.
 const SETTINGS = {
@@ -40,6 +52,8 @@ const SETTINGS = {
   showMinimap: { default: true, valid: isBoolean },
   // The zoom a diagram opens with, which Reset view goes back to.
   openZoom: { default: 'actual', valid: (value) => OPEN_ZOOMS.includes(value) },
+  // The percentage a diagram opens at while openZoom is custom.
+  openZoomPercent: { default: 100, valid: isZoomPercent },
   // Motion reduced whatever the system asks for: the canvas pans and zooms
   // at once, and nothing animates.
   reduceMotion: { default: false, valid: isBoolean },

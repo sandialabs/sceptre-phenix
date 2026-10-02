@@ -68,7 +68,7 @@
 
     <h3 class="builder-settings__heading">Canvas</h3>
     <div class="builder-field">
-      <label for="settings-layout">Layout for drafts without one</label>
+      <label for="settings-layout">Default layout</label>
       <select
         id="settings-layout"
         :value="builderSettings.layoutAlgorithm"
@@ -119,7 +119,56 @@
             @change="setSetting('openZoom', option.value)" />
           {{ option.label }}
         </label>
+        <!-- Custom, with its percentage beside it: a field that is always
+             enabled, and that chooses Custom when it is given a number. -->
+        <div class="builder-settings__custom">
+          <label class="builder-choice">
+            <input
+              type="radio"
+              name="settings-zoom"
+              value="custom"
+              :checked="builderSettings.openZoom === 'custom'"
+              aria-describedby="settings-zoom-hint"
+              data-testid="settings-zoom-custom"
+              @change="chooseCustomZoom" />
+            Custom
+          </label>
+          <input
+            id="settings-zoom-percent"
+            ref="percentField"
+            v-model="percentText"
+            type="number"
+            class="builder-settings__percent"
+            :min="OPEN_ZOOM_PERCENT.min"
+            :max="OPEN_ZOOM_PERCENT.max"
+            :step="OPEN_ZOOM_PERCENT.step"
+            inputmode="numeric"
+            aria-label="Custom zoom, percent"
+            :aria-invalid="percentError.text ? 'true' : undefined"
+            :aria-describedby="
+              percentError.text
+                ? 'settings-zoom-percent-hint settings-zoom-hint settings-zoom-percent-error'
+                : 'settings-zoom-percent-hint settings-zoom-hint'
+            "
+            data-testid="settings-zoom-percent"
+            @change="onZoomPercent" />
+          <span aria-hidden="true">%</span>
+          <p id="settings-zoom-percent-hint" class="builder-hint">
+            {{ PERCENT_RANGE }}
+          </p>
+        </div>
       </div>
+      <p
+        id="settings-zoom-percent-error"
+        class="builder-dialog__message builder-dialog__error"
+        role="alert">
+        <span
+          v-if="percentError.text"
+          :key="percentError.key"
+          data-testid="settings-zoom-percent-error"
+          >{{ percentError.text }}</span
+        >
+      </p>
       <p id="settings-zoom-hint" class="builder-hint">
         Reset view goes back to it too.
       </p>
@@ -189,7 +238,7 @@
 </template>
 
 <script setup>
-  import { computed, ref } from 'vue';
+  import { computed, ref, watch } from 'vue';
 
   import BuilderDialog from './BuilderDialog.vue';
   import BuilderIcon from './BuilderIcon.vue';
@@ -203,6 +252,7 @@
     layoutAlgorithm,
   } from '@/builder/layouts/index.js';
   import {
+    OPEN_ZOOM_PERCENT,
     builderSettings,
     resetSettings,
     setSetting,
@@ -226,14 +276,72 @@
     { value: 'dark', label: 'Dark' },
   ];
 
+  // Custom, the third choice, has a field beside it and is drawn apart.
   const ZOOMS = [
     { value: 'actual', label: '100%' },
     { value: 'fit', label: 'Fit the whole diagram in view' },
   ];
 
+  const PERCENT_RANGE = `From ${OPEN_ZOOM_PERCENT.min} to ${OPEN_ZOOM_PERCENT.max}.`;
+
   const store = useBuilderStore();
   const status = useMessage();
   const sheetOpen = ref(false);
+
+  // The custom zoom's field holds what the user types until it is a
+  // percentage the setting takes; the message says when it is not.
+  const percentField = ref(null);
+  const percentText = ref(builderSettings.openZoomPercent);
+  const percentError = useMessage();
+
+  // The kept percentage back in the field, which drops what was typed and
+  // refused. The field is set as well as its model: the model holds the
+  // number typed, which can equal the kept one while the text differs.
+  function showKeptPercent() {
+    percentError.clear();
+    percentText.value = builderSettings.openZoomPercent;
+
+    if (percentField.value) {
+      percentField.value.value = String(builderSettings.openZoomPercent);
+    }
+  }
+
+  // A number in the range is rounded to the field's step, kept, and chosen:
+  // Custom becomes the zoom diagrams open with. Anything else keeps nothing.
+  function onZoomPercent(event) {
+    const typed = event.target.value.trim();
+    const number = typed === '' ? NaN : Number(typed);
+
+    if (
+      !Number.isFinite(number) ||
+      number < OPEN_ZOOM_PERCENT.min ||
+      number > OPEN_ZOOM_PERCENT.max
+    ) {
+      percentError.set(
+        `Enter a number from ${OPEN_ZOOM_PERCENT.min} to ${OPEN_ZOOM_PERCENT.max}.`,
+      );
+
+      return;
+    }
+
+    const percent =
+      Math.round(number / OPEN_ZOOM_PERCENT.step) * OPEN_ZOOM_PERCENT.step;
+
+    setSetting('openZoomPercent', percent);
+    setSetting('openZoom', 'custom');
+    showKeptPercent();
+    status.set(`Diagrams open at ${percent}%.`);
+  }
+
+  // Custom on its own takes the percentage the field shows: the kept one,
+  // which replaces a value the field refused.
+  function chooseCustomZoom() {
+    setSetting('openZoom', 'custom');
+    showKeptPercent();
+  }
+
+  // Reset to defaults, or another tab, changed the percentage.
+  watch(() => builderSettings.openZoomPercent, showKeptPercent);
 
   const systemReducesMotion = prefersReducedMotion(pageMatchMedia());
 
@@ -252,6 +360,7 @@
     }
 
     resetSettings();
+    showKeptPercent();
     setSingleKeyShortcuts(true);
     if (store.theme !== DEFAULT_THEME) {
       emit('theme', DEFAULT_THEME);
@@ -292,11 +401,35 @@
     font-weight: 600;
   }
 
-  /* A few short choices, side by side while they fit. */
+  /* A few short choices, side by side while they fit, in line along their
+     tops: the Custom zoom is taller, with a hint under its field. */
   .builder-settings__options {
     display: flex;
     flex-wrap: wrap;
+    align-items: flex-start;
     column-gap: 1.25rem;
+  }
+
+  /* The Custom choice with its field and the field's hint under it; they
+     wrap to the next line together. */
+  .builder-settings__custom {
+    display: inline-grid;
+    grid-template-columns: auto auto auto;
+    align-items: center;
+    column-gap: 0.4rem;
+  }
+
+  /* As tall as a choice's row, so Custom stays in line with the others. */
+  .builder-settings .builder-settings__custom input.builder-settings__percent {
+    width: 5rem;
+    height: 1.75rem;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .builder-settings .builder-settings__custom .builder-hint {
+    grid-column: 2 / -1;
+    margin: 0;
   }
 
   .builder-settings .builder-hint {

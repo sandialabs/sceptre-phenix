@@ -5,6 +5,8 @@
 // may only ever produce keys from this list. Shape + text label mean node
 // identity is never communicated by color alone.
 
+import { ICON_ID } from './icons.js';
+
 /** Bounded icon key registry, identical to the server registry. */
 const ICON_KEYS = [
   'centos',
@@ -38,60 +40,100 @@ export function isIconKey(key) {
   return ICON_KEYS.includes(key);
 }
 
-// Palette device templates. Every template produces a complete, valid phenix
-// minimega_node spec; `iconKey` is a builder-local presentation hint. `type`
-// is the node type phenix acts on (VirtualMachine when absent): its vrouter
+// The built-in device templates, in the shape of a template of a diagram or
+// a library: {id, name, description, device: {iconKey, spec}}. They equal
+// the templates every template library starts with on the server
+// (BuiltinTemplates in types/builder/template.go; one fixture,
+// testdata/builtin-templates.json, is checked against both).
+//
+// Every spec is a complete, valid phenix node spec. `description` is the
+// palette entry's tooltip, never the node's description, so each spec's own
+// description is empty. `type` is the node type phenix acts on: its vrouter
 // app configures routing and rulesets only on nodes of type Router or
 // Firewall, and there through their router OS types (minirouter, vyatta or
-// vyos; for the deprecated linux it writes a Vyatta config into the image), so
-// the Firewall template runs minirouter like the Router template.
-export const DEVICE_TEMPLATES = [
+// vyos; for the deprecated linux it writes a Vyatta config into the image).
+// The Router template runs minirouter and the Firewall template VyOS, each
+// on the image named after its OS type.
+//
+// The ids are names, not the UUIDs a diagram's templates have: a copy kept
+// in a diagram gets an id of its own (see addTemplate in model.js). They
+// are frozen, as every device made from one is a copy (see
+// nodeOptionsFromTemplate in templates.js).
+function virtualMachine(type, hostname, osType, image) {
+  return {
+    type,
+    general: { hostname, description: '', vm_type: 'kvm' },
+    hardware: { os_type: osType, drives: [{ image }] },
+    network: { interfaces: [] },
+  };
+}
+
+function deepFreeze(value) {
+  if (value && typeof value === 'object') {
+    Object.values(value).forEach(deepFreeze);
+    Object.freeze(value);
+  }
+
+  return value;
+}
+
+export const BUILTIN_TEMPLATES = deepFreeze([
   {
     id: 'server',
-    label: 'Server',
-    iconKey: 'server',
+    name: 'Server',
     description: 'Generic Linux server',
-    type: 'VirtualMachine',
-    osType: 'linux',
-    image: 'ubuntu.qc2',
+    device: {
+      iconKey: 'server',
+      spec: virtualMachine('VirtualMachine', 'server', 'linux', 'ubuntu.qc2'),
+    },
   },
   {
     id: 'workstation',
-    label: 'Workstation',
-    iconKey: 'desktop',
+    name: 'Workstation',
     description: 'Operator workstation',
-    type: 'VirtualMachine',
-    osType: 'windows',
-    image: 'windows10.qc2',
+    device: {
+      iconKey: 'desktop',
+      spec: virtualMachine(
+        'VirtualMachine',
+        'workstation',
+        'windows',
+        'windows10.qc2',
+      ),
+    },
   },
   {
     id: 'router',
-    label: 'Router',
-    iconKey: 'router',
+    name: 'Router',
     description: 'Layer 3 router',
-    type: 'Router',
-    osType: 'minirouter',
-    image: 'minirouter.qc2',
+    device: {
+      iconKey: 'router',
+      spec: virtualMachine('Router', 'router', 'minirouter', 'minirouter.qc2'),
+    },
   },
   {
     id: 'firewall',
-    label: 'Firewall',
-    iconKey: 'firewall',
+    name: 'Firewall',
     description: 'Perimeter firewall',
-    type: 'Firewall',
-    osType: 'minirouter',
-    image: 'minirouter.qc2',
+    device: {
+      iconKey: 'firewall',
+      spec: virtualMachine('Firewall', 'firewall', 'vyos', 'vyos.qc2'),
+    },
   },
   {
     id: 'external',
-    label: 'External device',
-    iconKey: 'external',
+    name: 'External device',
     description: 'Hardware in the loop device',
-    osType: 'linux',
-    image: '',
-    external: true,
+    device: {
+      iconKey: 'external',
+      spec: {
+        external: true,
+        type: 'HIL',
+        general: { hostname: 'external', description: '' },
+        network: { interfaces: [] },
+      },
+    },
   },
-];
+]);
 
 export const PALETTE = [
   {
@@ -144,16 +186,9 @@ export function kindMeta(kind) {
 }
 
 /**
- * @param {string} id template id
- * @returns {object|undefined}
- */
-export function deviceTemplate(id) {
-  return DEVICE_TEMPLATES.find((template) => template.id === id);
-}
-
-/**
- * Icon key for a node: devices carry their own key, other kinds use the key of
- * their kind.
+ * Icon key for a node: a device carries its own key, a group may carry one
+ * in place of the key of its kind, and other kinds use the key of their
+ * kind.
  *
  * @param {object} node builder document node
  * @returns {string}
@@ -168,7 +203,26 @@ export function nodeIconKey(node) {
     return isIconKey(key) ? key : DEFAULT_ICON_KEY;
   }
 
+  if (node.kind === 'group' && isIconKey(node.group?.iconKey)) {
+    return node.group.iconKey;
+  }
+
   return kindMeta(node.kind).iconKey;
+}
+
+/**
+ * The custom icon a node names: a device's or a group's, which is drawn in
+ * place of the icon of its key when the document carries it (see iconSrc in
+ * icons.js). Other kinds of nodes have none.
+ *
+ * @param {object} node builder document node
+ * @returns {string} an icon id, or '' for none and for a value that is no
+ *   icon id
+ */
+export function nodeIcon(node) {
+  const id = node?.device?.icon || node?.group?.icon;
+
+  return typeof id === 'string' && ICON_ID.test(id) ? id : '';
 }
 
 /**

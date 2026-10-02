@@ -81,14 +81,15 @@ nav:
     - VMs: vms.md
     - VM Actions: vm-multi-action.md
     - Images: image.md
-  - Builder v2 (beta):
-    - Overview: builder-v2/index.md
-    - Drafts: builder-v2/drafts.md
-    - The Editor: builder-v2/editor.md
-    - Building a Diagram: builder-v2/diagrams.md
-    - Import and Export: builder-v2/import-export.md
-    - Publishing: builder-v2/publishing.md
-    - Administration: builder-v2/administration.md
+  - Builder:
+    - Overview: builder/index.md
+    - Drafts: builder/drafts.md
+    - The Editor: builder/editor.md
+    - Building a Diagram: builder/diagrams.md
+    - Import, Upload and Download: builder/import-upload-download.md
+    - Publishing: builder/publishing.md
+    - Administration: builder/administration.md
+    - Legacy Builder: builder/legacy.md
   - Apps:
     - Overview: apps.md
     - Examples: examples.md

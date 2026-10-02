@@ -46,9 +46,6 @@ const (
 	// PublishRefusedIncludes is a topology that defines a hostname one of its
 	// included topologies defines too.
 	PublishRefusedIncludes PublishRefusal = "includes"
-	// PublishRefusedLegacy is an existing topology that holds a diagram of
-	// the legacy XML Builder.
-	PublishRefusedLegacy PublishRefusal = "legacy"
 	// PublishRefusedExists is an existing topology the request did not ask to
 	// update.
 	PublishRefusedExists PublishRefusal = "exists"
@@ -88,7 +85,7 @@ func (e *PublishRefusedError) Unwrap() error {
 	switch e.Refusal {
 	case PublishRefusedName, PublishRefusedPath, PublishRefusedBlocked:
 		return ErrInvalid
-	case PublishRefusedIncludes, PublishRefusedLegacy, PublishRefusedExists, PublishRefusedChanged:
+	case PublishRefusedIncludes, PublishRefusedExists, PublishRefusedChanged:
 	}
 
 	return ErrConflict
@@ -156,14 +153,15 @@ type TopologyPublication struct {
 //   - no hostname of the topology may be defined by a topology it includes
 //     too. Included topologies are read from the config store only, and one
 //     that cannot be read is a warning;
-//   - a topology of that name that holds a legacy XML Builder diagram is
-//     never replaced;
-//   - any other existing topology is replaced only when the request asks for
-//     an update, and then only when the update takes nothing from it: it is
+//   - an existing topology is replaced only when the request asks for an
+//     update, and then only when the update takes nothing from it: it is
 //     still exactly what the stored document it names publishes, so nothing
 //     has changed it since it was published, or this document was generated
 //     from it as it is now (its source names the topology and holds its
-//     digest), so its author saw every change.
+//     digest), so its author saw every change. That holds for a topology
+//     the legacy Builder drew too, while its legacy diagram is the one the
+//     document was generated from: the update removes that diagram (see
+//     [ReplaceLegacyDiagram]), which a warning says.
 //
 // A topology that already names this document, is what it publishes, and
 // would keep its path is left as it is: publishing the same document twice
@@ -326,6 +324,10 @@ func (s *Service) planTopology(ctx context.Context, req PublishTopologyRequest) 
 		}
 
 		cfg.Metadata.Annotations[DocumentAnnotation] = encoded
+
+		if warning, replaced := ReplaceLegacyDiagram(cfg); replaced {
+			warnings = append(warnings, warning)
+		}
 	}
 
 	return &topologyPlan{
@@ -336,6 +338,32 @@ func (s *Service) planTopology(ctx context.Context, req PublishTopologyRequest) 
 			Document: nil, Config: cfg, Warnings: warnings,
 		},
 	}, nil
+}
+
+// ReplaceLegacyDiagram removes from a topology that is about to be written
+// with a Builder document reference the diagram the legacy Builder kept on
+// it (see [builder.LegacyXMLAnnotation]): the topology is a Builder topology
+// from then on. It reports whether there was one, with the warning that says
+// what became of it: this diagram replaces it, or, when it cannot be read
+// (see [builder.DecodeLegacy]), so that an import converted nothing of it,
+// it was removed. Every other annotation is left as it is.
+func ReplaceLegacyDiagram(topology *store.Config) (string, bool) {
+	diagram, legacy := topology.Metadata.Annotations[builder.LegacyXMLAnnotation]
+	if !legacy {
+		return "", false
+	}
+
+	delete(topology.Metadata.Annotations, builder.LegacyXMLAnnotation)
+
+	if _, err := builder.DecodeLegacy([]byte(diagram)); err != nil {
+		return fmt.Sprintf(
+			"The legacy Builder diagram of topology %s could not be read and was removed.", topology.Metadata.Name,
+		), true
+	}
+
+	return fmt.Sprintf(
+		"The legacy Builder diagram of topology %s was replaced by this diagram.", topology.Metadata.Name,
+	), true
 }
 
 // publishedName returns the name the request publishes the document under:
@@ -625,11 +653,6 @@ func (s *Service) existingTopologyOutcome(
 		}
 	}
 
-	if config.HasBuilderXML(*existing) {
-		return refused(PublishRefusedLegacy,
-			"topology %s belongs to the legacy XML Builder and cannot be replaced by a Builder document", name)
-	}
-
 	reference := configReference(existing)
 
 	// The topology is already this document's publication when it names the
@@ -714,8 +737,9 @@ func (s *Service) referencedDocument(ctx context.Context, name string, reference
 
 // generatedFrom reports whether the document was generated from the stored
 // topology as it is now: its source names the topology and holds the digest
-// the topology has (see [builder.SourceDigest]), so publishing the document
-// replaces nothing its author did not see.
+// the topology has (see [builder.ImportDigest], which covers a legacy
+// Builder diagram too), so publishing the document replaces nothing its
+// author did not see.
 func generatedFrom(document *builder.Document, topology *store.Config) (bool, error) {
 	source := document.Source
 	if source == nil || source.Kind != builder.SourceKindTopology ||
@@ -723,7 +747,7 @@ func generatedFrom(document *builder.Document, topology *store.Config) (bool, er
 		return false, nil
 	}
 
-	digest, err := builder.SourceDigest(*topology)
+	digest, err := builder.ImportDigest(*topology)
 	if err != nil {
 		return false, fmt.Errorf("digesting topology %s: %w", topology.Metadata.Name, err)
 	}

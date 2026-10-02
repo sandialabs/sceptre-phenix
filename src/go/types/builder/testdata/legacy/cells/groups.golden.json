@@ -1,0 +1,290 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "id": "cb7dd939-1906-5017-a6df-4ade5e51d173",
+  "name": "groups",
+  "nodes": [
+    {
+      "id": "094694aa-4935-5ebd-b293-8f1e101c7c4a",
+      "kind": "device",
+      "label": "in-group",
+      "position": {
+        "x": 240,
+        "y": 288
+      },
+      "parentId": "5021f443-3eab-5558-a8bb-11488a74069c",
+      "device": {
+        "hostname": "in-group",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "in-group"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "lan"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "b36a0703-7d00-5880-9a7b-446f1f625a4a",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "27fa49b5-5ecb-58aa-990b-04a151e4ac1a",
+      "kind": "device",
+      "label": "in-rack",
+      "position": {
+        "x": 304,
+        "y": 592
+      },
+      "parentId": "ba18b638-f525-5efe-ac68-d7d399eea9ec",
+      "device": {
+        "hostname": "in-rack",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "in-rack"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "lan"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "9de6146f-ed12-581b-9d1b-0bad4dd25132",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "d84e1d35-f42e-51ad-bdfb-1459e9605681",
+      "kind": "device",
+      "label": "with-child",
+      "position": {
+        "x": 1408,
+        "y": 240
+      },
+      "device": {
+        "hostname": "with-child",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "with-child"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "c1b2b740-47af-5877-8284-b050bd46707d",
+      "kind": "switch",
+      "label": "lan",
+      "position": {
+        "x": 784,
+        "y": 640
+      },
+      "parentId": "5021f443-3eab-5558-a8bb-11488a74069c",
+      "switch": {
+        "networkId": "27d375cb-2a76-56b1-9647-76f96fcb8030"
+      }
+    },
+    {
+      "id": "5021f443-3eab-5558-a8bb-11488a74069c",
+      "kind": "group",
+      "position": {
+        "x": 208,
+        "y": 208
+      },
+      "size": {
+        "width": 800,
+        "height": 600
+      },
+      "group": {
+        "title": "Site A"
+      }
+    },
+    {
+      "id": "ba18b638-f525-5efe-ac68-d7d399eea9ec",
+      "kind": "group",
+      "position": {
+        "x": 288,
+        "y": 496
+      },
+      "size": {
+        "width": 400,
+        "height": 240
+      },
+      "parentId": "5021f443-3eab-5558-a8bb-11488a74069c",
+      "group": {
+        "title": "Rack"
+      }
+    },
+    {
+      "id": "23158c82-a969-5da7-b439-e226712f8933",
+      "kind": "group",
+      "position": {
+        "x": 1408,
+        "y": 800
+      },
+      "size": {
+        "width": 400,
+        "height": 200
+      },
+      "group": {}
+    },
+    {
+      "id": "92340675-e4fa-5708-a011-566d8683f765",
+      "kind": "note",
+      "position": {
+        "x": 608,
+        "y": 256
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "parentId": "5021f443-3eab-5558-a8bb-11488a74069c",
+      "note": {
+        "text": "child text"
+      }
+    },
+    {
+      "id": "dd79188f-3401-5713-ae63-f9c36113e10b",
+      "kind": "note",
+      "position": {
+        "x": 1424,
+        "y": 384
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "badge"
+      }
+    },
+    {
+      "id": "f11b1706-eced-5f51-a891-fba3d485cfb5",
+      "kind": "note",
+      "position": {
+        "x": 1424,
+        "y": 816
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "parentId": "23158c82-a969-5da7-b439-e226712f8933",
+      "note": {
+        "text": "only child"
+      }
+    },
+    {
+      "id": "91232ac5-e3a7-525a-9ee4-41d69fdfd489",
+      "kind": "note",
+      "position": {
+        "x": 1600,
+        "y": 1008
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "parentId": "23158c82-a969-5da7-b439-e226712f8933",
+      "note": {
+        "text": "fraction"
+      }
+    }
+  ],
+  "networks": [
+    {
+      "id": "27d375cb-2a76-56b1-9647-76f96fcb8030",
+      "name": "lan"
+    }
+  ],
+  "edges": [
+    {
+      "id": "ae6c8733-c660-52b8-8c09-2901143a9fa3",
+      "sourceNodeId": "27fa49b5-5ecb-58aa-990b-04a151e4ac1a",
+      "sourceHandleId": "9de6146f-ed12-581b-9d1b-0bad4dd25132",
+      "targetNodeId": "c1b2b740-47af-5877-8284-b050bd46707d",
+      "networkId": "27d375cb-2a76-56b1-9647-76f96fcb8030"
+    },
+    {
+      "id": "d2973353-60e2-5ebc-af48-e01996f0e2f7",
+      "sourceNodeId": "094694aa-4935-5ebd-b293-8f1e101c7c4a",
+      "sourceHandleId": "b36a0703-7d00-5880-9a7b-446f1f625a4a",
+      "targetNodeId": "c1b2b740-47af-5877-8284-b050bd46707d",
+      "networkId": "27d375cb-2a76-56b1-9647-76f96fcb8030"
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": true,
+    "size": 16,
+    "snap": true
+  },
+  "source": {
+    "kind": "manual",
+    "warnings": [
+      "Text and containers were kept as notes and groups. Their colors, fonts and other formatting were not converted."
+    ]
+  }
+}

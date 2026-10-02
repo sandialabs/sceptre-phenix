@@ -1,10 +1,10 @@
-// Builder v2 file references: a topology whose builder-doc annotation names
+// Builder file references: a topology whose builder-doc annotation names
 // a Builder file on the phenix server (builder-doc.path). The server reads
 // such a file only below its base directory, so these tests write their
 // files there. They need E2E_BASE_DIR, the server's --base-dir.phenix, and
 // the server on this machine; without it they skip:
 //
-//   phenix ui --features builder-v2 --base-dir.phenix /tmp/phenix-e2e
+//   phenix ui --base-dir.phenix /tmp/phenix-e2e
 //   E2E_BASE_DIR=/tmp/phenix-e2e npx playwright test builder-files
 
 const fs = require('node:fs');
@@ -55,7 +55,7 @@ test.use({ announceHold: 100 });
 // beside its Builder file holds. The config is sent as YAML, where the
 // annotation is a nested map.
 async function referTopology(request, tracker, name, document, reference) {
-  const exported = await request.post(`${API}/builder-v2/export/topology`, {
+  const exported = await request.post(`${API}/builder/export/topology`, {
     data: { document, name },
   });
   expect(exported.ok(), await exported.text()).toBeTruthy();
@@ -88,7 +88,7 @@ function writeBuilderFile(file, document) {
 // document and its digest.
 async function topologyDocument(request, name) {
   const response = await request.get(
-    `${API}/builder-v2/topologies/${encodeURIComponent(name)}/document`,
+    `${API}/builder/topologies/${encodeURIComponent(name)}/document`,
   );
   expect(response.ok(), await response.text()).toBeTruthy();
 
@@ -96,7 +96,7 @@ async function topologyDocument(request, name) {
 }
 
 async function listedDocument(request, name) {
-  const listed = await request.get(`${API}/builder-v2/documents`);
+  const listed = await request.get(`${API}/builder/documents`);
   expect(listed.ok(), await listed.text()).toBeTruthy();
 
   return ((await listed.json()).documents || []).find(
@@ -153,7 +153,7 @@ function watchDraftCreates(page) {
   page.on('request', (request) => {
     if (
       request.method() === 'POST' &&
-      new URL(request.url()).pathname.endsWith(`${API}/builder-v2/drafts`)
+      new URL(request.url()).pathname.endsWith(`${API}/builder/drafts`)
     ) {
       creates.push(request.url());
     }
@@ -223,6 +223,10 @@ test(
       await expect
         .soft(page.getByTestId(`published-delete-${handle}`))
         .toHaveCount(0);
+      // So it has no checkbox either: Delete selected never takes it.
+      await expect
+        .soft(page.getByTestId(`card-select-${handle}`))
+        .toHaveCount(0);
     });
 
     await test.step('it opens read only, and the banner says where it is read from', async () => {
@@ -251,7 +255,7 @@ test(
 
     const draft =
       await test.step('Edit as a draft makes a draft that names the file as it was read', async () => {
-        const created = waitForApi(page, 'POST', '/builder-v2/drafts');
+        const created = waitForApi(page, 'POST', '/builder/drafts');
         await page.getByTestId('published-edit').click();
         const body = await (await created).json();
         await expect(page.getByTestId('builder-published')).toHaveCount(0);
@@ -304,7 +308,7 @@ test(
         ]);
       const warning =
         `Topology ${name} names the Builder file ${file}, which Publish does not change. ` +
-        'Export the diagram and replace the file to keep it in step.';
+        'Download the diagram and replace the file to keep it in step.';
       expect.soft(JSON.parse(body).warnings).toEqual([warning]);
       await expect
         .soft(result.locator('li').filter({ hasText: 'Warning:' }))
@@ -336,6 +340,10 @@ test(
       await expect
         .soft(page.getByTestId(`published-delete-${stored.id}`))
         .toBeVisible();
+      // Published, it can be deleted here, alone or with others selected.
+      await expect
+        .soft(page.getByTestId(`card-select-${stored.id}`))
+        .toHaveAccessibleName(new RegExp(`^Select ${name}, published .+$`));
       await expect
         .soft(page.getByTestId(`draft-open-${handle}`))
         .toHaveCount(0);
@@ -434,7 +442,7 @@ test('a Builder file phenix cannot use is still listed, and opening it says why'
       const read = waitForApi(
         page,
         'GET',
-        `/builder-v2/topologies/${name}/document`,
+        `/builder/topologies/${name}/document`,
       );
       await open.click();
       const response = await read;
@@ -481,7 +489,7 @@ test('a Builder file changed after it was opened is neither edited nor published
 
   await test.step('Edit as a draft of a view the file has left behind is refused', async () => {
     rewrite('changed while it was shown');
-    const created = waitForApi(page, 'POST', '/builder-v2/drafts');
+    const created = waitForApi(page, 'POST', '/builder/drafts');
     await page.getByTestId('published-edit').click();
     expect((await created).status()).toBe(409);
     await expect(errorBanner(page)).toHaveText(
@@ -503,7 +511,7 @@ test('a Builder file changed after it was opened is neither edited nor published
         opened.digest,
       );
 
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
+      const created = waitForApi(page, 'POST', '/builder/drafts');
       await page.getByTestId('published-edit').click();
       const response = await created;
       expect(response.status(), await response.text()).toBe(201);

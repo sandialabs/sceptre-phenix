@@ -2,9 +2,11 @@
 // it can be driven from the canvas, the keyboard or the semantic outline.
 //
 // A payload is self contained: it carries the networks its switches reference
-// so a paste into another document still produces a valid document. Identifiers
-// are always regenerated on paste, never reused.
+// and the custom icons its nodes use, so a paste into another document still
+// produces a valid document. Identifiers are always regenerated on paste,
+// never reused.
 
+import { ICON_ID, iconRefs, settleIcons } from './icons.js';
 import {
   addNetwork,
   addNode,
@@ -14,6 +16,7 @@ import {
   deviceHandles,
   findNetwork,
   findNode,
+  lookOf,
   networkByName,
   networkColorInUse,
   specInterfaceFor,
@@ -31,7 +34,8 @@ function clone(value) {
  *
  * @param {object} doc
  * @param {{nodes?: string[], edges?: string[]}} selection
- * @returns {{nodes: object[], edges: object[], networks: object[]}}
+ * @returns {{nodes: object[], edges: object[], networks: object[],
+ *   icons: object}} icons: the custom icons the nodes use, by icon id
  */
 export function copySelection(doc, selection = {}) {
   const ids = new Set(selection.nodes || []);
@@ -65,7 +69,15 @@ export function copySelection(doc, selection = {}) {
     .filter((network) => networkIds.has(network.id))
     .map(clone);
 
-  return { nodes, edges, networks };
+  const icons = {};
+
+  for (const id of iconRefs({ nodes })) {
+    if (ICON_ID.test(id) && doc.icons && Object.hasOwn(doc.icons, id)) {
+      icons[id] = clone(doc.icons[id]);
+    }
+  }
+
+  return { nodes, edges, networks, icons };
 }
 
 function resolveNetwork(doc, payloadNetwork, networkId) {
@@ -93,6 +105,7 @@ function resolveNetwork(doc, payloadNetwork, networkId) {
     alias: payloadNetwork.alias,
     description: payloadNetwork.description,
     color: repeated ? undefined : payloadNetwork.color,
+    lineStyle: payloadNetwork.lineStyle,
   });
 
   return { doc: created.doc, networkId: created.network.id };
@@ -137,17 +150,21 @@ function pastedLabel(node) {
 
 /**
  * Pastes a clipboard payload, remapping every identifier and offsetting
- * positions.
+ * positions. The document comes to carry the custom icons the copies use,
+ * from the payload; those past the most a document holds are left out, and
+ * the copies that named them show their built-in icon (see settleIcons).
  *
  * @param {object} doc
- * @param {{nodes: object[], edges?: object[], networks?: object[]}} payload
+ * @param {{nodes: object[], edges?: object[], networks?: object[],
+ *   icons?: object}} payload
  * @param {object} [options] offset; by default each paste of the same nodes
  *   goes PASTE_OFFSET further than the copies already there
- * @returns {{doc: object, nodeIds: string[]}}
+ * @returns {{doc: object, nodeIds: string[], dropped: number}} dropped: how
+ *   many custom icons were left out
  */
 export function pasteClipboard(doc, payload, options = {}) {
   if (!payload || !Array.isArray(payload.nodes) || payload.nodes.length === 0) {
-    return { doc, nodeIds: [] };
+    return { doc, nodeIds: [], dropped: 0 };
   }
 
   const offset = options.offset || cascadeOffset(doc, payload.nodes);
@@ -169,7 +186,7 @@ export function pasteClipboard(doc, payload, options = {}) {
     if (node.kind === 'device') {
       init.hostname = node.device?.hostname;
       init.spec = node.device?.spec;
-      init.iconKey = node.device?.iconKey;
+      init.look = lookOf(node.device);
       init.interfaces = (node.device?.interfaces || []).map((handle) => ({
         name: handle.name,
       }));
@@ -184,6 +201,8 @@ export function pasteClipboard(doc, payload, options = {}) {
       next = resolved.doc;
       init.networkId = resolved.networkId;
       init.networkName = network?.name;
+      init.outlineColor = node.switch?.outlineColor;
+      init.fillColor = node.switch?.fillColor;
     }
 
     if (node.kind === 'note') {
@@ -194,6 +213,10 @@ export function pasteClipboard(doc, payload, options = {}) {
     if (node.kind === 'group') {
       init.title = node.group?.title;
       init.color = node.group?.color;
+      init.description = node.group?.description;
+      init.borderStyle = node.group?.borderStyle;
+      init.iconKey = node.group?.iconKey;
+      init.icon = node.group?.icon;
     }
 
     const added = addNode(next, init);
@@ -239,6 +262,7 @@ export function pasteClipboard(doc, payload, options = {}) {
       targetHandleId: handleIds.get(edge.targetHandleId),
       label: edge.label,
       color: edge.color,
+      lineStyle: edge.lineStyle,
     });
 
     next = result.doc;
@@ -262,8 +286,14 @@ export function pasteClipboard(doc, payload, options = {}) {
       .map((handle) => handle.id);
   });
 
+  const settled = settleIcons(
+    clearInterfaceVLANs(synced, naming),
+    payload.icons,
+  );
+
   return {
-    doc: clearInterfaceVLANs(synced, naming),
+    doc: settled.doc,
     nodeIds: [...nodeIds.values()],
+    dropped: settled.dropped,
   };
 }

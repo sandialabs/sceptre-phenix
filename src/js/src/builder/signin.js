@@ -1,4 +1,4 @@
-// Signing in again without leaving Builder v2.
+// Signing in again without leaving Builder.
 //
 // A session can end while the Builder is open: its token expires, or the
 // server no longer knows it (a request answered 401). Logging out would
@@ -167,7 +167,7 @@ export function signInError(error) {
 
   // The server takes no passwords (proxy authentication).
   if (status === 400) {
-    return 'This server does not take a password here. Use Export to keep a copy of your changes, then log out and sign in again.';
+    return 'This server does not take a password here. Use Download to keep a copy of your changes, then log out and sign in again.';
   }
 
   if (!error?.response && !error?.anotherUser) {
@@ -215,7 +215,7 @@ export function expiredNavigation(to, from) {
     return within ? 'go' : 'stay';
   }
 
-  if (within && to.name === 'builder-v2' && signInAvailable()) {
+  if (within && to.name === 'builder' && signInAvailable()) {
     sessionEnded();
 
     return 'go';

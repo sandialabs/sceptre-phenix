@@ -7,7 +7,7 @@
   many changes it holds and when the last was made. Save this version
   saves the one chosen to the draft; the others are saved as new drafts,
   or, for a role that cannot make drafts, deleted from this browser, which
-  the dialog says first. Export keeps a copy of each version this tab can
+  the dialog says first. Download keeps a copy of each version this tab can
   read. Decide later, Escape or a click outside close it: nothing is sent
   meanwhile, and the editor's notice opens it again.
 -->
@@ -24,7 +24,7 @@
       <template v-if="canCreate">The others are saved as new drafts.</template>
       <template v-else>
         Your role cannot make drafts, so the others are deleted from this
-        browser. Use Export to keep a copy of them first.
+        browser. Use Download to keep a copy of them first.
       </template>
     </p>
 
@@ -45,12 +45,12 @@
             {{ row.text }}
           </label>
           <button
-            v-if="exportable(row)"
+            v-if="downloadable(row)"
             type="button"
             class="builder-button"
-            :aria-label="exportName(row)"
-            @click="exportRow(row)">
-            Export
+            :aria-label="downloadName(row)"
+            @click="downloadRow(row)">
+            Download
           </button>
         </div>
       </fieldset>
@@ -91,9 +91,9 @@
     canCreate: { type: Boolean, default: true },
     // The choice is being carried out.
     busy: { type: Boolean, default: false },
-    // (row) => Promise<{name, text}|null>: the file Export saves for a
+    // (row) => Promise<{name, text}|null>: the file Download saves for a
     // version this tab can read.
-    exportVersion: { type: Function, default: null },
+    downloadVersion: { type: Function, default: null },
   });
 
   const emit = defineEmits(['choose', 'close']);
@@ -135,18 +135,18 @@
   );
 
   // The versions whose diagram this tab holds: its own and closed tabs'.
-  function exportable(row) {
+  function downloadable(row) {
     return (
-      Boolean(props.exportVersion) &&
+      Boolean(props.downloadVersion) &&
       row.changes > 0 &&
       ['this', 'closed'].includes(row.where)
     );
   }
 
-  function exportName(row) {
+  function downloadName(row) {
     return row.where === 'this'
-      ? "Export this tab's changes"
-      : `Export the changes of ${row.name.toLowerCase()}`;
+      ? "Download this tab's changes"
+      : `Download the changes of ${row.name.toLowerCase()}`;
   }
 
   // Saves a file from inside the dialog: the page behind it is inert.
@@ -167,10 +167,10 @@
     return name;
   }
 
-  async function exportRow(row) {
+  async function downloadRow(row) {
     status.value = '';
 
-    const file = await props.exportVersion(row);
+    const file = await props.downloadVersion(row);
 
     if (!form.value) {
       return;

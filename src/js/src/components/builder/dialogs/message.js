@@ -121,3 +121,33 @@ export function parseErrorText(message) {
 
   return first.trim().replace(/\((\d+):(\d+)\)$/, '(line $1, column $2)');
 }
+
+// The Upload source that converts a diagram of the legacy Builder.
+export const LEGACY_SOURCE = 'Legacy Builder diagram or Topology';
+
+/**
+ * What Upload says of text that is XML when it is given as a Builder
+ * document: no Builder document is XML, and a diagram of the legacy Builder
+ * is, which another source of the dialog converts.
+ *
+ * @param {string} text the text of the file, or the pasted text
+ * @returns {string} the message, or '' for text that is not XML
+ */
+export function legacyDiagramHint(text) {
+  return String(text || '')
+    .trimStart()
+    .startsWith('<')
+    ? `This looks like a legacy Builder diagram (XML). Choose "${LEGACY_SOURCE}" to convert it.`
+    : '';
+}
+
+/**
+ * A file's name without its last extension, which names the diagram
+ * converted from it: "plant.xml" is "plant".
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+export function fileBaseName(name) {
+  return String(name || '').replace(/\.[^.]*$/, '');
+}

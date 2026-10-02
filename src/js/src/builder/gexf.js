@@ -1,4 +1,4 @@
-// GEXF 1.3 export: the diagram as a graph for Gephi
+// GEXF 1.3: the diagram as a graph for Gephi
 // (https://gexf.net/schema.html).
 //
 // Devices and networks are the nodes, and each connection (a device's
@@ -11,9 +11,9 @@
 // A device's scenario apps are columns too (apps, disabled_apps): the apps
 // of the scenario that list its hostname among their hosts. They are written
 // only when the scenario's content is known: an uploaded scenario carries it,
-// and Export reads a stored one's from the server first.
+// and Download reads a stored one's from the server first.
 //
-// What the export uses of GEXF 1.3:
+// What the file uses of GEXF 1.3:
 // - the 1.3 namespaces, and the schema's location, as the 1.3 primer and
 //   Gephi write them.
 // - meta: the day of the diagram's last change, creator, keywords and the
@@ -56,10 +56,11 @@
 // gexf.rng: the tools that follow one would report the same error.
 
 import { networkStyle } from './adapters/vueflow.js';
-import { colorChannels } from './colors.js';
+import { colorChannels, nodeColors } from './colors.js';
 import {
   DEFAULT_NETWORK_COLORS,
   deviceHandles,
+  LINE_STYLES,
   nodeLabel,
   scenarioApps,
   sizeOf,
@@ -74,7 +75,8 @@ export const GEXF_MIME = 'application/xml';
 // proportions.
 const NODE_SIZE = 10;
 
-// Devices are colored and shaped by what phenix runs them as.
+// Devices are colored and shaped by what phenix runs them as. A device
+// given a fill color, or else an outline color, has that color instead.
 const DEVICE_LOOKS = {
   Router: { color: '#37474f', shape: 'diamond' },
   Firewall: { color: '#8e2c2c', shape: 'triangle' },
@@ -82,8 +84,8 @@ const DEVICE_LOOKS = {
   device: { color: '#6b7c93', shape: 'disc' },
 };
 
-// A network's dash pattern on the canvas (see adapters/vueflow.js), as the
-// nearest edge shape GEXF has.
+// A connection's dash pattern on the canvas (its own line style, else its
+// network's; see adapters/vueflow.js), as the nearest edge shape GEXF has.
 const EDGE_SHAPES = {
   solid: 'solid',
   dashed: 'dashed',
@@ -518,13 +520,18 @@ function staticColumn([id, title, type, fallback]) {
   return { id, title, type, default: fallback };
 }
 
-function deviceLook(spec) {
+function deviceLook(device) {
+  const spec = device?.spec;
   const look =
     spec?.external === true
       ? DEVICE_LOOKS.external
       : DEVICE_LOOKS[spec?.type] || DEVICE_LOOKS.device;
+  const chosen = nodeColors(device);
 
-  return { color: vizColor(look.color), shape: look.shape };
+  return {
+    color: vizColor(chosen.fill || chosen.outline || look.color),
+    shape: look.shape,
+  };
 }
 
 // The scenario apps of each host, by hostname, as {apps, disabled}, from
@@ -822,7 +829,7 @@ function nodeElement(node, context) {
       kind: 'device',
       ...deviceValues(node, columns, networkOf, hostApps),
     };
-    look = deviceLook(node.device?.spec);
+    look = deviceLook(node.device);
   } else if (node.kind === 'switch') {
     const hub = hubs.get(node.switch?.networkId);
 
@@ -886,7 +893,12 @@ function edgeElement(connection, used) {
     [
       ...attvalues(edgeValues(device, iface, handle, hub.network), used),
       color && element('viz:color', color),
-      element('viz:shape', { value: EDGE_SHAPES[hub.pattern] || 'solid' }),
+      element('viz:shape', {
+        value:
+          EDGE_SHAPES[
+            LINE_STYLES.includes(edge.lineStyle) ? edge.lineStyle : hub.pattern
+          ] || 'solid',
+      }),
     ].filter(Boolean),
   );
 }
@@ -919,7 +931,7 @@ function metaElement(doc, lastChange) {
   const source = doc?.source || {};
   const keywords = distinct([
     'phenix',
-    'Builder v2',
+    'Builder',
     source.kind,
     source.name,
     source.topology,
@@ -928,7 +940,7 @@ function metaElement(doc, lastChange) {
   const description = doc?.description || doc?.name;
 
   return element('meta', { lastmodifieddate: lastChange }, [
-    element('creator', {}, ['phēnix Builder v2']),
+    element('creator', {}, ['phēnix Builder']),
     element('keywords', {}, [keywords.join(', ')]),
     ...(description ? [element('description', {}, [description])] : []),
   ]);

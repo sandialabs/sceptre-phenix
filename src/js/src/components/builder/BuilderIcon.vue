@@ -1,13 +1,33 @@
 <!--
   Builder icon set.
 
-  Builder v2 ships its own inline SVG icons instead of pulling from the
+  Builder ships its own inline SVG icons instead of pulling from the
   global Font Awesome library: the editor chunk stays self contained, icons
   inherit currentColor for both themes, and nodes are identified by shape as
   well as color.
+
+  A custom icon (`src`) is drawn in place of the built-in one, as an <img>:
+  an image runs no script and, from a data URL, loads nothing. Only an
+  address that is a PNG data URL in base64 is drawn (see isIconSrc in
+  icons.js); with any other, the built-in icon of `name` is. A custom icon
+  is a bitmap in its own colors, the same in both themes. The markup below
+  (v-html) is only ever one of the constant PATHS: nothing of a document or
+  a file reaches it.
 -->
 <template>
+  <img
+    v-if="custom"
+    class="builder-icon builder-icon--custom"
+    :src="src"
+    :width="size"
+    :height="size"
+    :style="box"
+    :alt="title"
+    :aria-hidden="title ? undefined : 'true'"
+    draggable="false"
+    decoding="async" />
   <svg
+    v-else
     class="builder-icon"
     :class="`builder-icon--${name}`"
     viewBox="0 0 24 24"
@@ -29,10 +49,27 @@
 <script setup>
   import { computed } from 'vue';
 
+  import { isIconSrc } from '@/builder/icons.js';
+
   const props = defineProps({
     name: { type: String, required: true },
     size: { type: [Number, String], default: 18 },
     title: { type: String, default: '' },
+    // A custom icon's address, from iconSrc in icons.js.
+    src: { type: String, default: '' },
+  });
+
+  const custom = computed(() => isIconSrc(props.src));
+
+  // The square a custom icon is drawn in, whatever the image's own
+  // proportions: the application's styles size an <img> by its picture,
+  // which its width and height attributes alone do not prevent.
+  const box = computed(() => {
+    const side = /^\d+(\.\d+)?$/.test(String(props.size))
+      ? `${props.size}px`
+      : String(props.size);
+
+    return { width: side, height: side };
   });
 
   // Keys of the bounded server icon registry (phenix/types/builder icons.go)
@@ -162,6 +199,11 @@
       '<path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     pencil: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/>',
+    // A flask: the experiment a diagram was published with.
+    experiment:
+      '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/>',
+    // Book spines on a shelf, one leaning: the Node Templates library.
+    library: '<path d="M4 4v16M8 8v12M12 6v14M16 6l4 14"/>',
   };
 
   const path = computed(() => PATHS[props.name] || PATHS.server);
@@ -171,5 +213,10 @@
   .builder-icon {
     flex: none;
     vertical-align: middle;
+  }
+
+  /* All of the image, in its own proportions, inside the icon's square. */
+  .builder-icon--custom {
+    object-fit: contain;
   }
 </style>

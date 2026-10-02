@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -73,6 +76,7 @@ func TestSchemaDefinesBuilderStructures(t *testing.T) {
 		"identifier", "iconKey", "position", "size", "viewport", "grid",
 		"interfaceHandle", "device", "switch", "note", "group", "node",
 		"network", "edge", "scenario", "source",
+		"hexColor", "lineStyle", "borderStyle", "iconRef", "icon", "template", "templateDevice",
 	} {
 		def := mapAt(t, defs, name)
 
@@ -86,7 +90,7 @@ func TestSchemaDefinesBuilderStructures(t *testing.T) {
 
 	for _, name := range []string{
 		"sourceNodeId", "sourceHandleId", "targetNodeId", "targetHandleId", "networkId",
-		"label", "color", "route",
+		"label", "color", "lineStyle", "route",
 	} {
 		if _, ok := edgeProps[name]; !ok {
 			t.Fatalf("edge schema has no %q property", name)
@@ -119,6 +123,260 @@ func TestSchemaDefinesBuilderStructures(t *testing.T) {
 			t.Fatalf("iconKey enum is missing %q", key)
 		}
 	}
+}
+
+// propertyNames returns the sorted property names of an object schema.
+func propertyNames(t *testing.T, def map[string]any) []string {
+	t.Helper()
+
+	return slices.Sorted(maps.Keys(mapAt(t, def, "properties")))
+}
+
+// TestSchemaPropertiesMatchDocument holds every object of the document to
+// the fields its Go type has: the decoder refuses a key the type lacks, and
+// the schema one it does not list, so the two must name the same.
+func TestSchemaPropertiesMatchDocument(t *testing.T) {
+	schema := mustSchema(t)
+	defs := mapAt(t, schema, "$defs")
+
+	for name, value := range map[string]any{
+		"device":         builder.Device{},
+		"switch":         builder.Switch{},
+		"note":           builder.Note{},
+		"group":          builder.Group{},
+		"node":           builder.Node{},
+		"network":        builder.Network{},
+		"edge":           builder.Edge{},
+		"scenario":       builder.ScenarioRef{},
+		"source":         builder.Source{},
+		"icon":           builder.Icon{},
+		"template":       builder.Template{},
+		"templateDevice": builder.TemplateDevice{},
+	} {
+		want := slices.Sorted(maps.Keys(jsonFields(t, value)))
+
+		if got := propertyNames(t, mapAt(t, defs, name)); !slices.Equal(got, want) {
+			t.Fatalf("$defs.%s has the properties %v, and its Go type the fields %v", name, got, want)
+		}
+	}
+
+	want := slices.Sorted(maps.Keys(jsonFields(t, builder.Document{})))
+
+	if got := propertyNames(t, schema); !slices.Equal(got, want) {
+		t.Fatalf("the schema has the root properties %v, and Document the fields %v", got, want)
+	}
+}
+
+// TestSchemaPresentationFields pins the schema of the presentation fields,
+// each bounded the way Document.Validate bounds it.
+func TestSchemaPresentationFields(t *testing.T) {
+	schema := mustSchema(t)
+	defs := mapAt(t, schema, "$defs")
+
+	for path, want := range map[string]string{
+		"device.icon":                 "#/$defs/iconRef",
+		"device.outlineColor":         "#/$defs/hexColor",
+		"device.fillColor":            "#/$defs/hexColor",
+		"switch.outlineColor":         "#/$defs/hexColor",
+		"switch.fillColor":            "#/$defs/hexColor",
+		"group.borderStyle":           "#/$defs/borderStyle",
+		"group.iconKey":               "#/$defs/iconKey",
+		"group.icon":                  "#/$defs/iconRef",
+		"network.lineStyle":           "#/$defs/lineStyle",
+		"template.id":                 "#/$defs/identifier",
+		"template.device":             "#/$defs/templateDevice",
+		"templateDevice.iconKey":      "#/$defs/iconKey",
+		"templateDevice.icon":         "#/$defs/iconRef",
+		"templateDevice.outlineColor": "#/$defs/hexColor",
+		"templateDevice.fillColor":    "#/$defs/hexColor",
+	} {
+		def, property, _ := strings.Cut(path, ".")
+
+		if got := mapAt(t, mapAt(t, mapAt(t, defs, def), "properties"), property)["$ref"]; got != want {
+			t.Fatalf("%s refers to %v, want %s", path, got, want)
+		}
+	}
+
+	edgeStyle := mapAt(t, mapAt(t, mapAt(t, defs, "edge"), "properties"), "lineStyle")
+	if got := collectRefs(edgeStyle); !slices.Equal(got, []string{"#/$defs/lineStyle"}) {
+		t.Fatalf("edge.lineStyle refers to %v", got)
+	}
+
+	if got := mapAt(t, mapAt(t, mapAt(t, defs, "group"), "properties"), "description"); got["type"] != "string" || len(got) != 1 {
+		t.Fatalf("group.description is not free text: %v", got)
+	}
+
+	unresolved := mapAt(t, mapAt(t, mapAt(t, defs, "source"), "properties"), "unresolvedIncludes")
+	included := mapAt(t, mapAt(t, mapAt(t, defs, "source"), "properties"), "includeTopologies")
+
+	if unresolved["type"] != "array" || mapAt(t, unresolved, "items")["pattern"] != mapAt(t, included, "items")["pattern"] ||
+		mapAt(t, unresolved, "items")["minLength"] != 1 {
+		t.Fatalf("unresolvedIncludes is not a list of topology names: %v", unresolved)
+	}
+
+	// None of them is required.
+	for _, name := range []string{"templates", "icons"} {
+		if containsAny(schema["required"], name) {
+			t.Fatalf("the schema requires %q", name)
+		}
+	}
+}
+
+// TestSchemaStyles holds the style enums to the lists Document.Validate
+// checks against, each with the empty default.
+func TestSchemaStyles(t *testing.T) {
+	defs := mapAt(t, mustSchema(t), "$defs")
+
+	for name, values := range map[string][]string{"lineStyle": builder.LineStyles(), "borderStyle": builder.BorderStyles()} {
+		want := append([]any{""}, anyOf(values)...)
+
+		if got := mapAt(t, defs, name)["enum"]; !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s enum = %v, want %v", name, got, want)
+		}
+	}
+
+	if got, want := strings.Join(builder.LineStyles(), " "), "solid dashed dotted dash-dot"; got != want {
+		t.Fatalf("line styles are %q, want %q", got, want)
+	}
+
+	if got, want := strings.Join(builder.BorderStyles(), " "), "solid dashed dotted double"; got != want {
+		t.Fatalf("border styles are %q, want %q", got, want)
+	}
+
+	// Each call returns a list of its own.
+	builder.LineStyles()[0] = "changed"
+	builder.BorderStyles()[0] = "changed"
+
+	if builder.LineStyles()[0] != "solid" || builder.BorderStyles()[0] != "solid" {
+		t.Fatal("the style lists are shared state")
+	}
+}
+
+// TestSchemaPresentationPatterns checks what the patterns of colors, icon
+// ids and icon data take.
+func TestSchemaPresentationPatterns(t *testing.T) {
+	schema := mustSchema(t)
+	defs := mapAt(t, schema, "$defs")
+	root := mapAt(t, schema, "properties")
+
+	patterns := map[string]struct {
+		pattern any
+		yes, no []string
+	}{
+		"hexColor": {
+			pattern: mapAt(t, defs, "hexColor")["pattern"],
+			yes:     []string{"", "#2f6fbf", "#ABCDEF", "#000000"},
+			no:      []string{"#abc", "red", "2f6fbf", "#2f6fbf80", "#2f6fbg", " #2f6fbf", "rgb(0,0,0)"},
+		},
+		"iconRef": {
+			pattern: mapAt(t, defs, "iconRef")["pattern"],
+			yes:     []string{"", iconFixtureID},
+			no:      []string{"sha256:abc", strings.ToUpper(iconFixtureID), "server", "data:image/png;base64,AAAA"},
+		},
+		"icons key": {
+			pattern: mapAt(t, mapAt(t, root, "icons"), "propertyNames")["pattern"],
+			yes:     []string{iconFixtureID},
+			no:      []string{"", "plc", iconFixtureID + "0"},
+		},
+		"icon data": {
+			pattern: mapAt(t, mapAt(t, mapAt(t, defs, "icon"), "properties"), "data")["pattern"],
+			yes:     []string{iconFixtureData, "AAAA", "AA=="},
+			no:      []string{"", "AA\nAA", "AA_A", "data:image/png;base64,AAAA", "<svg/>"},
+		},
+	}
+
+	for name, test := range patterns {
+		pattern, ok := test.pattern.(string)
+		if !ok {
+			t.Fatalf("%s has no pattern", name)
+		}
+
+		matcher := regexp.MustCompile(pattern)
+
+		for _, text := range test.yes {
+			if !matcher.MatchString(text) {
+				t.Fatalf("the %s pattern rejects %q", name, text)
+			}
+		}
+
+		for _, text := range test.no {
+			if matcher.MatchString(text) {
+				t.Fatalf("the %s pattern accepts %q", name, text)
+			}
+		}
+	}
+}
+
+// TestSchemaBoundsIconsAndTemplates holds the schema of custom icons and
+// templates to the limits Document.Validate enforces.
+func TestSchemaBoundsIconsAndTemplates(t *testing.T) {
+	schema := mustSchema(t)
+	defs := mapAt(t, schema, "$defs")
+	root := mapAt(t, schema, "properties")
+
+	icons := mapAt(t, root, "icons")
+	if icons["maxProperties"] != builder.MaxDocumentIcons || mapAt(t, icons, "additionalProperties")["$ref"] != "#/$defs/icon" {
+		t.Fatalf("icons is not a bounded map of icons: %v", icons)
+	}
+
+	icon := mapAt(t, defs, "icon")
+	iconProps := mapAt(t, icon, "properties")
+
+	if !containsAny(icon["required"], "data") || containsAny(icon["required"], "name") {
+		t.Fatalf("an icon does not require only its data: %v", icon["required"])
+	}
+
+	if got := mapAt(t, iconProps, "name")["maxLength"]; got != builder.MaxIconNameBytes {
+		t.Fatalf("icon name maxLength = %v, want %d", got, builder.MaxIconNameBytes)
+	}
+
+	// The base64 text of the largest icon.
+	if got := mapAt(t, iconProps, "data")["maxLength"]; got != 54616 {
+		t.Fatalf("icon data maxLength = %v, want 54616", got)
+	}
+
+	templates := mapAt(t, root, "templates")
+	if templates["maxItems"] != builder.MaxTemplates || mapAt(t, templates, "items")["$ref"] != "#/$defs/template" {
+		t.Fatalf("templates is not a bounded list of templates: %v", templates)
+	}
+
+	template := mapAt(t, defs, "template")
+	for _, required := range []string{"id", "name", "device"} {
+		if !containsAny(template["required"], required) {
+			t.Fatalf("a template does not require %q: %v", required, template["required"])
+		}
+	}
+
+	templateProps := mapAt(t, template, "properties")
+	if name := mapAt(t, templateProps, "name"); name["minLength"] != 1 || name["maxLength"] != builder.MaxTemplateNameBytes {
+		t.Fatalf("template name is not bounded: %v", name)
+	}
+
+	if got := mapAt(t, templateProps, "description")["maxLength"]; got != builder.MaxTemplateDescriptionBytes {
+		t.Fatalf("template description maxLength = %v, want %d", got, builder.MaxTemplateDescriptionBytes)
+	}
+
+	// A template's spec is a device's.
+	templateDevice := mapAt(t, defs, "templateDevice")
+	if !reflect.DeepEqual(templateDevice["required"], []any{"spec"}) {
+		t.Fatalf("a template device does not require only its spec: %v", templateDevice["required"])
+	}
+
+	if got, want := mapAt(t, mapAt(t, templateDevice, "properties"), "spec"),
+		mapAt(t, mapAt(t, mapAt(t, defs, "device"), "properties"), "spec"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("a template's spec is not a device's:\nwant: %v\ngot:  %v", want, got)
+	}
+}
+
+// anyOf converts strings to the []any form a decoded schema has.
+func anyOf(values []string) []any {
+	out := make([]any, len(values))
+
+	for i, value := range values {
+		out[i] = value
+	}
+
+	return out
 }
 
 func TestSchemaDiscriminatesNodeKinds(t *testing.T) {

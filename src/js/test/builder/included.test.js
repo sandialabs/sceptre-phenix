@@ -8,9 +8,28 @@ import { createPinia, setActivePinia } from 'pinia';
 
 vi.mock('@/utils/axios.js', () => ({ default: {} }));
 
-vi.mock('@/store.js', () => ({
-  usePhenixStore: () => ({ username: 'alice' }),
+// The signed-in user, whose role a test may set.
+const phenix = vi.hoisted(() => ({ username: 'alice', role: undefined }));
+
+vi.mock('@/store.js', () => ({ usePhenixStore: () => phenix }));
+
+// With authentication off the server answers this user's own lists.
+const api = vi.hoisted(() => ({
+  createDraft: vi.fn(),
+  listDrafts: vi.fn(async () => ({ mine: [], shared: [], published: [] })),
 }));
+
+vi.mock('@/builder/api.js', async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return { ...actual, builderApi: { ...actual.builderApi, ...api } };
+});
+
+vi.mock('@/builder/idb.js', async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return { ...actual, createDraftStore: () => actual.createMemoryStore() };
+});
 
 import {
   inspectorLock,
@@ -25,6 +44,7 @@ import {
   addNetwork,
   addNode,
   canConnect,
+  combineIncluded,
   connect,
   documentSummary,
   findNode,
@@ -309,7 +329,8 @@ describe('presentation', () => {
       fields: [],
       note:
         'Defined by included topology shared, so it is read only here. ' +
-        'Change it in shared, then import it again from the drafts page. It can still be moved.',
+        'Change it in shared and import again, or combine the included ' +
+        'nodes into a new draft to edit them here. It can still be moved.',
     });
 
     const network = inspectorLock(doc, { type: 'node', id: sw.id });
@@ -336,6 +357,111 @@ describe('presentation', () => {
     expect(inspectorTarget(doc, { type: 'node', id: bravo.id }).kind).toBe(
       'device',
     );
+  });
+});
+
+describe('combining included devices into a new diagram', () => {
+  // The diagram as a keep import leaves it: one include read, one not.
+  function imported() {
+    const fixture = includedDocument();
+
+    return {
+      ...fixture,
+      doc: {
+        ...fixture.doc,
+        source: {
+          kind: 'topology',
+          name: 'root',
+          apiVersion: 'phenix.sandia.gov/v1',
+          digest: `sha256:${'a'.repeat(64)}`,
+          updatedAt: '2026-09-01T00:00:00Z',
+          importedAt: '2026-09-02T00:00:00Z',
+          includeTopologies: ['shared', 'gone'],
+          unresolvedIncludes: ['gone'],
+          annotations: { owner: 'ops' },
+          warnings: ['included topology "gone" could not be read'],
+        },
+      },
+    };
+  }
+
+  test("every included device becomes the diagram's own", () => {
+    const { doc, bravo } = imported();
+    const combined = combineIncluded(doc, 'root-combined');
+
+    expect(documentSummary(combined).included).toBe(0);
+    expect(findNode(combined, bravo.id).device).not.toHaveProperty(
+      'includedFrom',
+    );
+    // It is a device like any other now: it can be renamed.
+    const renamed = updateNode(combined, bravo.id, {
+      device: { hostname: 'charlie' },
+    });
+    expect(findNode(renamed, bravo.id).device.hostname).toBe('charlie');
+    expect(errorsOf(combined)).toEqual([]);
+    expect(() => parseDocument(combined)).not.toThrow();
+  });
+
+  test('the new diagram is linked to no config and keeps only the includes that were never read', () => {
+    const { doc } = imported();
+    const combined = combineIncluded(doc, 'root-combined');
+
+    expect(combined.id).not.toBe(doc.id);
+    expect(combined.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(combined.name).toBe('root-combined');
+    expect(combined.source).toEqual({
+      kind: 'manual',
+      importedAt: '2026-09-02T00:00:00Z',
+      includeTopologies: ['gone'],
+    });
+  });
+
+  test('a diagram whose includes were all read includes nothing afterwards', () => {
+    const { doc } = includedDocument();
+
+    expect(combineIncluded(doc, 'root-combined').source).toEqual({
+      kind: 'manual',
+    });
+    // A diagram drawn here has no source, and gets one that says so.
+    expect(combineIncluded({ ...doc, source: undefined }, 'x').source).toEqual({
+      kind: 'manual',
+    });
+  });
+
+  test('everything else is copied as it is, and the diagram it came from is left alone', () => {
+    const { doc, alpha, bravo } = imported();
+    const marked = {
+      ...doc,
+      description: 'Plant floor',
+      scenario: { kind: 'stored', name: 'plant-apps' },
+      templates: [{ id: alpha.id, name: 'PLC', device: { spec: {} } }],
+      icons: { abc: { name: 'plc.png', data: 'AAAA' } },
+    };
+    const before = structuredClone(marked);
+    const combined = combineIncluded(marked, 'root-combined');
+
+    expect(marked).toEqual(before);
+
+    // Everything but what a combined diagram replaces.
+    const rest = (document) =>
+      Object.fromEntries(
+        Object.entries(document).filter(
+          ([key]) => !['id', 'name', 'source', 'nodes'].includes(key),
+        ),
+      );
+    const { nodes } = combined;
+    const { nodes: oldNodes } = marked;
+
+    expect(rest(combined)).toEqual(rest(marked));
+    // Only the mark of the included device differs.
+    expect(nodes.map((node) => node.id)).toEqual(oldNodes.map((n) => n.id));
+    expect(findNode(combined, alpha.id)).toBe(findNode(marked, alpha.id));
+    expect(findNode(combined, bravo.id)).toEqual({
+      ...bravo,
+      device: Object.fromEntries(
+        Object.entries(bravo.device).filter(([key]) => key !== 'includedFrom'),
+      ),
+    });
   });
 });
 
@@ -419,19 +545,162 @@ describe('store', () => {
   });
 });
 
-// Renders the whole Inspector for the included device bravo.
-async function renderIncludedInspector({ readOnly = false } = {}) {
+describe('Combine included nodes into a new draft', () => {
+  let store;
+  let fixture;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setActivePinia(createPinia());
+    store = useBuilderStore();
+    fixture = includedDocument();
+    store.setDocument({
+      ...fixture.doc,
+      name: 'Riverside water',
+      source: {
+        kind: 'topology',
+        name: 'root',
+        includeTopologies: ['shared', 'site-b'],
+        unresolvedIncludes: ['site-b'],
+      },
+    });
+    store.sources = {
+      images: [],
+      scenarios: [],
+      experiments: [],
+      topologies: [{ name: 'root' }, { name: 'Riverside-water-combined' }],
+    };
+    api.createDraft.mockImplementation(async (request) => ({
+      draft: { id: 'd9', owner: 'alice' },
+      document: request.document,
+      history: null,
+      cursor: 0,
+      etag: '"1"',
+    }));
+  });
+
+  test('makes a draft linked to no config, named so that no stored topology has the name', async () => {
+    const open = store.doc;
+    const created = await store.combineIncluded();
+
+    expect(created).toBeTruthy();
+
+    const [sent] = api.createDraft.mock.calls[0];
+
+    // "Riverside water" as a config name, and a topology has "-combined".
+    expect(sent.title).toBe('Riverside-water-combined-2');
+    expect(sent.sourceToken).toBe('');
+    expect(sent.document.name).toBe('Riverside-water-combined-2');
+    expect(sent.document.id).not.toBe(open.id);
+    expect(sent.document.source).toEqual({
+      kind: 'manual',
+      includeTopologies: ['site-b'],
+    });
+    expect(documentSummary(sent.document).included).toBe(0);
+
+    // The new draft is the one open, and it can be edited.
+    expect(store.draftId).toBe('d9');
+    expect(store.doc.name).toBe('Riverside-water-combined-2');
+    expect(store.summary.included).toBe(0);
+    store.updateNode(fixture.bravo.id, { device: { hostname: 'charlie' } });
+    expect(findNode(store.doc, fixture.bravo.id).device.hostname).toBe(
+      'charlie',
+    );
+  });
+
+  // Combining the same diagram again must not make a second draft of the
+  // same name: both would propose one topology name at Publish.
+  test('names the draft so that no draft of mine has the title either', async () => {
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [
+        { id: 'd1', owner: 'alice', title: 'Riverside water' },
+        { id: 'd2', owner: 'alice', title: 'Riverside-water-combined-2' },
+      ],
+      shared: [{ id: 'd3', owner: 'bob', title: 'Riverside-water-combined-3' }],
+      published: [],
+    });
+
+    await store.combineIncluded();
+
+    const [sent] = api.createDraft.mock.calls[0];
+
+    // A topology has "-combined" and a draft of mine "-combined-2".
+    // Another user's draft takes no name of mine.
+    expect(sent.title).toBe('Riverside-water-combined-3');
+    expect(sent.document.name).toBe('Riverside-water-combined-3');
+
+    // When the drafts cannot be read, those listed last say.
+    api.listDrafts.mockRejectedValueOnce(new Error('offline'));
+    api.createDraft.mockClear();
+    store.setDocument({
+      ...fixture.doc,
+      name: 'Riverside water',
+      source: { kind: 'topology', name: 'root', includeTopologies: ['shared'] },
+    });
+
+    await store.combineIncluded();
+
+    expect(api.createDraft.mock.calls[0][0].title).toBe(
+      'Riverside-water-combined-3',
+    );
+  });
+
+  test('says what was combined, and which includes the new draft keeps', async () => {
+    await store.combineIncluded();
+
+    expect(store.announcement).toBe(
+      'Combined 1 included node into new draft Riverside-water-combined-2. ' +
+        'Draft Riverside water is unchanged. ' +
+        'It still includes site-b, whose nodes are not in the diagram.',
+    );
+  });
+
+  test('a draft that cannot be made is reported, and nothing says it was', async () => {
+    api.createDraft.mockRejectedValueOnce({
+      response: { status: 403, data: { message: 'forbidden' } },
+    });
+
+    await expect(store.combineIncluded()).resolves.toBeNull();
+    expect(store.error).toMatch(/^Could not create the draft\./);
+    expect(store.announcement).not.toMatch(/^Combined/);
+  });
+});
+
+// A role that may make drafts, and one that may only look.
+const CREATOR = {
+  name: 'included-test-creator',
+  policies: [
+    { resources: ['configs'], resourceNames: ['*'], verbs: ['list', 'create'] },
+  ],
+};
+const VIEWER = {
+  name: 'included-test-viewer',
+  policies: [{ resources: ['configs'], resourceNames: ['*'], verbs: ['list'] }],
+};
+
+// Renders the whole Inspector for the included device bravo, or for
+// another node of the same diagram.
+async function renderIncludedInspector({
+  readOnly = false,
+  role,
+  select = 'bravo',
+} = {}) {
   const pinia = createPinia();
   const app = createSSRApp({ render: () => h(BuilderInspector) });
   app.use(pinia);
 
   const store = useBuilderStore(pinia);
-  const { doc, bravo } = includedDocument();
-  store.doc = doc;
+  const fixture = includedDocument();
+  store.doc = fixture.doc;
   store.readOnly = readOnly;
-  store.select({ nodes: [bravo.id] });
+  store.select({ nodes: [fixture[select].id] });
+  phenix.role = role;
 
-  return renderToString(app);
+  try {
+    return await renderToString(app);
+  } finally {
+    phenix.role = undefined;
+  }
 }
 
 describe('Inspector of an included device', () => {
@@ -470,5 +739,43 @@ describe('Inspector of an included device', () => {
     expect(
       fields.filter((tag) => !/\sreadonly\b|aria-readonly="true"/.test(tag)),
     ).toEqual([]);
+  });
+
+  test('a role that may create drafts is offered the combined draft, under the note', async () => {
+    const html = await renderIncludedInspector({ role: CREATOR });
+    const [button] = tags(html, 'button').filter((tag) =>
+      tag.includes('data-testid="inspector-combine"'),
+    );
+
+    expect(button).toContain('type="button"');
+    expect(button).toContain('aria-describedby="inspector-included-note"');
+    expect(html).toMatch(
+      /data-testid="inspector-combine"[^>]*>\s*Combine into a new draft\s*</,
+    );
+    expect(html.indexOf('id="inspector-included-note"')).toBeLessThan(
+      html.indexOf('data-testid="inspector-combine"'),
+    );
+    // A view-only draft is not changed by it, so it is offered there too.
+    expect(
+      await renderIncludedInspector({ role: CREATOR, readOnly: true }),
+    ).toContain('data-testid="inspector-combine"');
+  });
+
+  test('no one else is, and no other node offers it', async () => {
+    expect(await renderIncludedInspector()).not.toContain('inspector-combine');
+    expect(await renderIncludedInspector({ role: VIEWER })).not.toContain(
+      'inspector-combine',
+    );
+    // The switch an included device is on has a note, but nothing to combine.
+    const network = await renderIncludedInspector({
+      role: CREATOR,
+      select: 'sw',
+    });
+
+    expect(network).toContain('data-testid="inspector-included-note"');
+    expect(network).not.toContain('inspector-combine');
+    expect(
+      await renderIncludedInspector({ role: CREATOR, select: 'alpha' }),
+    ).not.toContain('inspector-combine');
   });
 });

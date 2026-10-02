@@ -15,14 +15,18 @@ import {
   DRAFTS_PATH,
   draftPath,
   errorMessage,
+  experimentError,
+  experimentPath,
   EXPORT_TOPOLOGY_PATH,
   fileHandle,
   fileTopology,
   GENERATE_PATH,
+  LEGACY_PATH,
   MAX_REQUEST_BYTES,
   MAX_SOURCE_FILE_BYTES,
   publishIntent,
   publishPath,
+  preconditionETag,
   readEnvelope,
   readPublishResult,
   readETag,
@@ -78,37 +82,36 @@ function httpError(status) {
 
 describe('routes', () => {
   test('match the documented backend contract', () => {
-    expect(DRAFTS_PATH).toBe('builder-v2/drafts');
-    expect(SOURCES_PATH).toBe('builder-v2/sources');
-    expect(GENERATE_PATH).toBe('builder-v2/generate');
-    expect(EXPORT_TOPOLOGY_PATH).toBe('builder-v2/export/topology');
-    expect(DOCUMENTS_PATH).toBe('builder-v2/documents');
-    expect(SCHEMA_PATH).toBe('schemas/builder-v2/v1');
-    expect(draftPath('alice', 'd1')).toBe('builder-v2/drafts/alice/d1');
+    expect(DRAFTS_PATH).toBe('builder/drafts');
+    expect(SOURCES_PATH).toBe('builder/sources');
+    expect(GENERATE_PATH).toBe('builder/generate');
+    expect(LEGACY_PATH).toBe('builder/legacy');
+    expect(EXPORT_TOPOLOGY_PATH).toBe('builder/export/topology');
+    expect(DOCUMENTS_PATH).toBe('builder/documents');
+    expect(SCHEMA_PATH).toBe('schemas/builder/v1');
+    expect(draftPath('alice', 'd1')).toBe('builder/drafts/alice/d1');
     expect(snapshotPath('alice', 'd1')).toBe(
-      'builder-v2/drafts/alice/d1/snapshots',
+      'builder/drafts/alice/d1/snapshots',
     );
     expect(snapshotPath('alice', 'd1', 's2')).toBe(
-      'builder-v2/drafts/alice/d1/snapshots/s2',
+      'builder/drafts/alice/d1/snapshots/s2',
     );
-    expect(cursorPath('alice', 'd1')).toBe('builder-v2/drafts/alice/d1/cursor');
-    expect(publishPath('alice', 'd1')).toBe(
-      'builder-v2/drafts/alice/d1/publish',
-    );
-    expect(sharesPath('alice', 'd1')).toBe('builder-v2/drafts/alice/d1/shares');
+    expect(cursorPath('alice', 'd1')).toBe('builder/drafts/alice/d1/cursor');
+    expect(publishPath('alice', 'd1')).toBe('builder/drafts/alice/d1/publish');
+    expect(sharesPath('alice', 'd1')).toBe('builder/drafts/alice/d1/shares');
     expect(shareCandidatesPath('alice', 'd1')).toBe(
-      'builder-v2/drafts/alice/d1/shares/candidates',
+      'builder/drafts/alice/d1/shares/candidates',
     );
-    expect(documentPath('doc 1')).toBe('builder-v2/documents/doc%201');
+    expect(documentPath('doc 1')).toBe('builder/documents/doc%201');
     expect(topologyDocumentPath('core')).toBe(
-      'builder-v2/topologies/core/document',
+      'builder/topologies/core/document',
     );
   });
 
   test('owner and id are URL encoded', () => {
-    expect(draftPath('a/b', 'c d')).toBe('builder-v2/drafts/a%2Fb/c%20d');
+    expect(draftPath('a/b', 'c d')).toBe('builder/drafts/a%2Fb/c%20d');
     expect(topologyDocumentPath('lab@site 1')).toBe(
-      'builder-v2/topologies/lab%40site%201/document',
+      'builder/topologies/lab%40site%201/document',
     );
   });
 
@@ -177,8 +180,8 @@ describe('error classification', () => {
     const ended = vi.fn();
     const http = watchSession(
       fakeHttp({
-        'post builder-v2/drafts': httpError(401),
-        'get builder-v2/sources': httpError(403),
+        'post builder/drafts': httpError(401),
+        'get builder/sources': httpError(403),
       }),
       ended,
     );
@@ -237,9 +240,9 @@ describe('error classification', () => {
     ).toBe('Scenario configs cannot be opened in the builder.');
     expect(
       serverReason(
-        rejected({ message: 'the uploaded config is not valid JSON or YAML' }),
+        rejected({ message: 'the config file is not valid JSON or YAML' }),
       ),
-    ).toBe('The uploaded config is not valid JSON or YAML.');
+    ).toBe('The config file is not valid JSON or YAML.');
     // Without a cause, the message is used, but never an id.
     expect(
       serverReason(
@@ -249,12 +252,37 @@ describe('error classification', () => {
         }),
       ),
     ).toBe('Unable to save builder draft.');
+    // A draft is named by its owner and its id: the owner goes with the id.
+    expect(
+      serverReason(
+        rejected({
+          message: 'draft alice/e11aa62f-3289-4051-a661-bc2fa63429ba not found',
+        }),
+      ),
+    ).toBe('Draft not found.');
+    expect(
+      serverReason(
+        rejected({
+          message:
+            'deleting draft a.b@c/e11aa62f-3289-4051-a661-bc2fa63429ba not allowed for alice',
+        }),
+      ),
+    ).toBe('Deleting draft not allowed for alice.');
+    // An id inside a longer path takes nothing before it along.
+    expect(
+      serverReason(
+        rejected({
+          message:
+            'file /phenix/topologies/e11aa62f-3289-4051-a661-bc2fa63429ba/lab.json is missing',
+        }),
+      ),
+    ).toBe('File /phenix/topologies//lab.json is missing.');
     expect(serverReason(new Error('network'))).toBe('');
     expect(errorMessage('invalid', rejected({}))).toMatch(/invalid/i);
   });
 
   // A publish refused with 422 says which interfaces to fix: in the message
-  // (publishProjectionRefusal in builder_v2_publish.go), or, where the
+  // (publishProjectionRefusal in builder_publish.go), or, where the
   // message only names the topology, in the cause.
   // Why a Builder file cannot be used is written to be shown: the path it
   // names is kept whole, where serverReason() would take an id out of it.
@@ -339,6 +367,28 @@ describe('envelopes', () => {
     expect(readETag({})).toBeNull();
   });
 
+  test('a refused precondition gives the draft’s current etag, for the request to be sent again', () => {
+    const refused = (headers, status = 412) => ({
+      response: { status, headers },
+    });
+
+    expect(preconditionETag(refused({ etag: '"7"' }))).toBe('"7"');
+    expect(preconditionETag(refused({ ETag: ' "8" ' }))).toBe('"8"');
+    expect(preconditionETag(refused(new Map([['etag', '"9"']])))).toBe('"9"');
+    // No header, or no tag in it: the caller reads the draft instead.
+    expect(preconditionETag(refused({}))).toBeNull();
+    expect(preconditionETag(refused(undefined))).toBeNull();
+    expect(preconditionETag(refused({ etag: '' }))).toBeNull();
+    expect(preconditionETag(refused({ etag: '*' }))).toBeNull();
+    // A tag a compressing proxy rewrote is not the draft's.
+    expect(preconditionETag(refused({ etag: 'W/"7"' }))).toBeNull();
+    expect(preconditionETag(refused({ etag: '"7-gzip"' }))).toBeNull();
+    // Only a refused precondition carries it.
+    expect(preconditionETag(refused({ etag: '"7"' }, 409))).toBeNull();
+    expect(preconditionETag(new Error('Network Error'))).toBeNull();
+    expect(preconditionETag(null)).toBeNull();
+  });
+
   // A compressing proxy rewrites the header, which the server's If-Match
   // then refuses; the body keeps the server's own tag.
   test('etags are read from the body before a header a proxy rewrote', () => {
@@ -393,7 +443,7 @@ describe('client', () => {
   test('a snapshot is appended with If-Match, never a whole draft PUT', async () => {
     const { doc } = sampleDocument();
     const http = fakeHttp({
-      'post builder-v2/drafts/alice/d1/snapshots': {
+      'post builder/drafts/alice/d1/snapshots': {
         data: { draft: { id: 'd1' }, document: doc },
         headers: { etag: '"2"' },
       },
@@ -431,6 +481,7 @@ describe('client', () => {
       () => api.appendSnapshot('alice', 'd1', { document: big }, '"1"'),
       () => api.createDraft({ title: 'wide', document: wide }),
       () => api.generate({ content: 'y'.repeat(MAX_DOCUMENT_BYTES + 1) }),
+      () => api.convertLegacy({ content: '<'.repeat(MAX_DOCUMENT_BYTES + 1) }),
       () => api.exportTopology(big, 'big'),
     ]) {
       const error = await request().catch((failure) => failure);
@@ -448,6 +499,25 @@ describe('client', () => {
           .catch((failure) => failure),
       ),
     ).toBe('This diagram is larger than the 5 MiB the server accepts.');
+    expect(
+      errorMessage(
+        'too-large',
+        await api
+          .generate({ content: 'y'.repeat(MAX_DOCUMENT_BYTES + 1) })
+          .catch((failure) => failure),
+      ),
+    ).toBe('The config file is larger than the 5 MiB the server accepts.');
+    expect(
+      errorMessage(
+        'too-large',
+        await api
+          .convertLegacy({
+            content: '<'.repeat(MAX_DOCUMENT_BYTES + 1),
+            name: 'plant',
+          })
+          .catch((failure) => failure),
+      ),
+    ).toBe('The legacy diagram is larger than the 5 MiB the server accepts.');
     expect(MAX_REQUEST_BYTES).toBe(MAX_DOCUMENT_BYTES + 1024 * 1024);
 
     // Just under the limit, it is sent.
@@ -464,7 +534,7 @@ describe('client', () => {
 
     expect(http.calls[0]).toMatchObject({
       method: 'patch',
-      url: 'builder-v2/drafts/alice/d1/cursor',
+      url: 'builder/drafts/alice/d1/cursor',
       body: { index: 4 },
     });
     expect(http.calls[0].config.headers['If-Match']).toBe('"9"');
@@ -487,7 +557,7 @@ describe('client', () => {
     expect(http.calls).toEqual([
       expect.objectContaining({
         method: 'delete',
-        url: 'builder-v2/documents/doc%201',
+        url: 'builder/documents/doc%201',
       }),
     ]);
   });
@@ -495,7 +565,7 @@ describe('client', () => {
   // The answer is the draft, as a save's is: its ETag is read from the body.
   test('deleting a snapshot sends If-Match and reads the draft it answers with', async () => {
     const http = fakeHttp({
-      'delete builder-v2/drafts/alice/d1/snapshots/s%202': {
+      'delete builder/drafts/alice/d1/snapshots/s%202': {
         data: { id: 'd1', cursor: 1, snapshots: 2, etag: '"8"' },
         headers: { etag: 'W/"8"' },
       },
@@ -522,7 +592,7 @@ describe('client', () => {
   // never the share list's header.
   test('share lists are read and replaced with their own tag', async () => {
     const http = fakeHttp({
-      'get builder-v2/drafts/al%20ice/d1/shares': {
+      'get builder/drafts/al%20ice/d1/shares': {
         data: {
           shares: [
             { user: 'bob', access: 'edit', grantedAt: 't', stale: false },
@@ -534,7 +604,7 @@ describe('client', () => {
         },
         headers: { etag: 'W/"shares-3"' },
       },
-      'put builder-v2/drafts/al%20ice/d1/shares': {
+      'put builder/drafts/al%20ice/d1/shares': {
         data: {
           shares: [{ user: 'bob', access: 'view' }],
           sharesEtag: '"shares-4"',
@@ -603,7 +673,7 @@ describe('client', () => {
   });
 
   test('the users a draft may be shared with are listed by username and name', async () => {
-    const candidates = 'get builder-v2/drafts/alice/d1/shares/candidates';
+    const candidates = 'get builder/drafts/alice/d1/shares/candidates';
     const http = fakeHttp({
       [candidates]: {
         data: {
@@ -633,7 +703,7 @@ describe('client', () => {
 
   test('publishing sends only the intent, never the document', async () => {
     const http = fakeHttp({
-      'post builder-v2/drafts/alice/d1/publish': {
+      'post builder/drafts/alice/d1/publish': {
         data: { stages: [{ name: 'topology', status: 'created' }] },
         headers: { etag: '"5"' },
       },
@@ -676,7 +746,7 @@ describe('client', () => {
       },
     });
     const http = fakeHttp({
-      'post builder-v2/drafts/alice/d1/publish': error,
+      'post builder/drafts/alice/d1/publish': error,
     });
 
     const response = await createBuilderApi(http).publish(
@@ -771,7 +841,7 @@ describe('client', () => {
     const shared = { id: 'b', owner: 'bob', via: 'share', access: 'edit' };
     const role = { id: 'c', owner: 'carol', via: 'role', access: 'view' };
     const http = fakeHttp({
-      'get builder-v2/drafts': {
+      'get builder/drafts': {
         data: { drafts: [{ id: 'a' }], shared: [shared, role] },
         headers: {},
       },
@@ -787,7 +857,7 @@ describe('client', () => {
 
     const damaged = { id: 'c', owner: 'alice', etag: '"7"', canDelete: true };
     const withDamaged = fakeHttp({
-      'get builder-v2/drafts': {
+      'get builder/drafts': {
         data: { drafts: [], shared: [], damaged: [damaged] },
         headers: {},
       },
@@ -847,10 +917,10 @@ describe('client', () => {
       document: doc,
     };
     const http = fakeHttp({
-      'builder-v2/topologies/plant/document': {
+      'builder/topologies/plant/document': {
         data: { ...row, topologyDiffers: true },
       },
-      'builder-v2/topologies/core/document': {
+      'builder/topologies/core/document': {
         data: { ...row, source: 'store', id: 'p1', target: 'core', path: '' },
       },
     });
@@ -863,7 +933,7 @@ describe('client', () => {
     });
     expect(http.calls[0]).toMatchObject({
       method: 'get',
-      url: 'builder-v2/topologies/plant/document',
+      url: 'builder/topologies/plant/document',
     });
 
     // A stored document keeps its id, and a row that does not say the
@@ -898,7 +968,7 @@ describe('client', () => {
 
   test('generate returns the document and its warnings', async () => {
     const http = fakeHttp({
-      'post builder-v2/generate': {
+      'post builder/generate': {
         data: { document: { id: 'x' }, warnings: ['dropped a field'] },
         headers: {},
       },
@@ -916,7 +986,7 @@ describe('client', () => {
 
   test('generate sends uploaded config content without a source token', async () => {
     const http = fakeHttp({
-      'post builder-v2/generate': {
+      'post builder/generate': {
         data: {
           document: { id: 'x' },
           warnings: [],
@@ -932,11 +1002,112 @@ describe('client', () => {
     expect(http.calls[0].body).toEqual({ content });
   });
 
-  test('a topology export sends the document and reads the YAML and what blocks publishing', async () => {
+  test('generate sends each import choice only when it is made', async () => {
+    const http = fakeHttp({
+      'post builder/generate': {
+        data: { document: { id: 'x' }, warnings: [] },
+        headers: {},
+      },
+    });
+    const api = createBuilderApi(http);
+    const stored = { kind: 'Topology', name: 'site' };
+    const sent = () => http.calls.at(-1).body;
+
+    // A choice that was not offered, or not made, is left out.
+    await api.generate({ ...stored, copy: false, newName: '', includes: '' });
+    expect(sent()).toEqual({ source: 'Topology/site' });
+
+    await api.generate({ ...stored, includes: 'keep' });
+    expect(sent()).toEqual({ source: 'Topology/site', includes: 'keep' });
+
+    await api.generate({ ...stored, copy: true, newName: 'site-copy' });
+    expect(sent()).toEqual({
+      source: 'Topology/site',
+      copy: true,
+      name: 'site-copy',
+    });
+
+    await api.generate({
+      ...stored,
+      includes: 'combine',
+      newName: 'site-combined',
+    });
+    expect(sent()).toEqual({
+      source: 'Topology/site',
+      includes: 'combine',
+      name: 'site-combined',
+    });
+
+    // A config file takes the same choices, and names no stored source.
+    await api.generate({
+      content: 'kind: Topology',
+      includes: 'combine',
+      newName: 'file-combined',
+    });
+    expect(sent()).toEqual({
+      content: 'kind: Topology',
+      includes: 'combine',
+      name: 'file-combined',
+    });
+  });
+
+  test('convertLegacy posts the file text and the name to builder/legacy', async () => {
+    const content = '<mxGraphModel><root/></mxGraphModel>';
+    const http = fakeHttp({
+      'post builder/legacy': {
+        data: {
+          document: { id: 'x' },
+          warnings: ['The diagram has no nodes.'],
+        },
+        headers: {},
+      },
+    });
+
+    // A diagram alone comes back without a source.
+    await expect(
+      createBuilderApi(http).convertLegacy({ content, name: 'plant' }),
+    ).resolves.toEqual({
+      document: { id: 'x' },
+      warnings: ['The diagram has no nodes.'],
+      source: null,
+    });
+    expect(http.calls).toHaveLength(1);
+    expect(http.calls[0].method).toBe('post');
+    expect(http.calls[0].url).toBe('builder/legacy');
+    expect(http.calls[0].body).toEqual({ content, name: 'plant' });
+  });
+
+  test('convertLegacy leaves out an empty name and reads the source of a Topology config', async () => {
+    const source = {
+      kind: 'Topology',
+      name: 'plant',
+      fullName: 'Topology/plant',
+      stored: false,
+      builder: 'builder-xml',
+    };
+    const http = fakeHttp({
+      'post builder/legacy': {
+        data: { document: { id: 'x' }, warnings: [], source },
+        headers: {},
+      },
+    });
+    const content = 'kind: Topology\n';
+
+    await expect(
+      createBuilderApi(http).convertLegacy({ content }),
+    ).resolves.toEqual({ document: { id: 'x' }, warnings: [], source });
+    // The request is strict: it carries the two fields the route reads.
+    expect(http.calls[0].body).toEqual({ content });
+
+    await createBuilderApi(http).convertLegacy({ content, name: '' });
+    expect(http.calls[1].body).toEqual({ content });
+  });
+
+  test('exportTopology sends the document and reads the YAML and what blocks publishing', async () => {
     const { doc } = sampleDocument();
     const yaml = 'apiVersion: phenix.sandia.gov/v1\nkind: Topology\n';
     const http = fakeHttp({
-      'post builder-v2/export/topology': {
+      'post builder/export/topology': {
         data: {
           name: 'Sample',
           yaml,
@@ -962,7 +1133,7 @@ describe('client', () => {
 
     const odd = createBuilderApi(
       fakeHttp({
-        'post builder-v2/export/topology': { data: {}, headers: {} },
+        'post builder/export/topology': { data: {}, headers: {} },
       }),
     );
 
@@ -973,7 +1144,7 @@ describe('client', () => {
 
   test('sources always report every catalog', async () => {
     const http = fakeHttp({
-      'get builder-v2/sources': { data: { topologies: ['a'] }, headers: {} },
+      'get builder/sources': { data: { topologies: ['a'] }, headers: {} },
     });
 
     await expect(createBuilderApi(http).getSources()).resolves.toEqual({
@@ -1034,5 +1205,55 @@ describe('client', () => {
     await expect(createBuilderApi(http).listDisks()).rejects.toThrow(
       /unexpected disk listing/,
     );
+  });
+});
+
+describe('the experiment a diagram was published with', () => {
+  test('is read from GET experiments/NAME, for whether it is running', async () => {
+    const http = fakeHttp({
+      'get experiments/lab-exp': {
+        data: { name: 'lab-exp', running: true, vms: [] },
+        headers: {},
+      },
+      'get experiments/a%2Fb%20c': { data: { name: 'a/b c' }, headers: {} },
+      'get experiments/gone': httpError(404),
+    });
+    const api = createBuilderApi(http);
+
+    await expect(api.experimentState('lab-exp')).resolves.toEqual({
+      running: true,
+    });
+    // A stopped experiment's answer may leave the field out.
+    await expect(api.experimentState('a/b c')).resolves.toEqual({
+      running: false,
+    });
+    expect(http.calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      'get experiments/lab-exp',
+      'get experiments/a%2Fb%20c',
+    ]);
+    expect(experimentPath('a/b c')).toBe('experiments/a%2Fb%20c');
+    // One that is gone is a failure: nothing is opened.
+    await expect(api.experimentState('gone')).rejects.toThrow('status 404');
+  });
+
+  test('says why it could not be opened', () => {
+    expect(experimentError('lab-exp', httpError(404))).toBe(
+      'Could not open experiment lab-exp. It may have been deleted or renamed.',
+    );
+    expect(experimentError('lab-exp', httpError(403))).toBe(
+      'Could not open experiment lab-exp. Your role does not allow it.',
+    );
+    expect(experimentError('lab-exp', httpError(401))).toBe(
+      'Could not open experiment lab-exp. Your session has ended. Sign in again to continue.',
+    );
+    expect(experimentError('lab-exp', new Error('Network Error'))).toBe(
+      'Could not open experiment lab-exp. The server could not be reached. Check the connection and try again.',
+    );
+    // Whatever else the server answers, its own words are not repeated.
+    for (const status of [400, 409, 500]) {
+      expect(experimentError('lab-exp', httpError(status))).toBe(
+        'Could not open experiment lab-exp. It may have been deleted or renamed.',
+      );
+    }
   });
 });

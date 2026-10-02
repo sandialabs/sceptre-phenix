@@ -1,16 +1,18 @@
 <!--
   The buttons the editor header and the drafts landing's header share, in
   one order on both: Commands, the theme, Shortcuts (the editor's only),
-  Settings, Help and Focus mode. The view (BuilderV2.vue) puts them in
+  Settings, Help and Focus mode. The view (Builder.vue) puts them in
   both headers, gives them their tooltips and descriptions, which it shows
   on both views, and does what they ask.
 
-  Commands shows the palette's key as key caps. The theme button shows the
-  theme in use; its name and tooltip say what a press changes it to. In a
-  narrower header the theme, Shortcuts, Settings and Help show only their
-  icons, as Focus mode always does, and Commands its name without its keys;
-  in a narrow one Commands shows only its icon too (see
-  .builder-header__label in builder.css). The labels stay as their names.
+  Commands shows the palette's key as key caps, and Shortcuts the key that
+  opens the sheet. The theme button shows the theme in use; its name and
+  tooltip say what a press changes it to. In a narrower header the theme,
+  Shortcuts, Settings and Help show only their icons, as Focus mode always
+  does, and Commands its name without its keys; in a narrow one Commands
+  shows only its icon too (see .builder-header__label in builder.css).
+  Shortcuts keeps its key beside its icon at every width, so the button
+  itself says what opens the sheet. The labels stay as their names.
   Focus mode is named Exit focus mode while it is on, and stays one element,
   so focus stays on it.
 -->
@@ -60,6 +62,8 @@
     <span class="builder-header__label builder-header__label--wide">
       Shortcuts
     </span>
+    <!-- Outside the label, so it stays when the header hides its labels. -->
+    <builder-keycaps v-if="shortcutsKey" :spec="shortcutsKey" />
   </button>
   <button
     type="button"
@@ -137,6 +141,9 @@
 
   // The first key of the command palette, shown on its button.
   const paletteKey = computed(() => commandKeys('palette.open')[0] || '');
+  // The first key of the shortcut sheet, shown on its button: none while
+  // single-key shortcuts are off, unless the user gave it another key.
+  const shortcutsKey = computed(() => commandKeys('shortcuts.open')[0] || '');
 
   function describedBy(key) {
     return props.tips[key].description ? `header-tip-${key}` : undefined;

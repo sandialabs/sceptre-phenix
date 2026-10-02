@@ -1,6 +1,17 @@
 import { describe, expect, test } from 'vitest';
 
-import { pressSelection, selectionItemName } from '@/builder/selection.js';
+import {
+  addNetwork,
+  addNode,
+  connect,
+  groupNodes,
+  removeElements,
+} from '@/builder/model.js';
+import {
+  kindSelection,
+  pressSelection,
+  selectionItemName,
+} from '@/builder/selection.js';
 
 import { sampleDocument } from './fixtures.js';
 
@@ -94,5 +105,148 @@ describe('pressing a node or connection', () => {
     pressSelection(doc, before, { kind: 'edges', id: edge.id });
 
     expect(before).toEqual({ nodes: [alpha.id], edges: [edge.id] });
+  });
+});
+
+describe('pressing one of the header’s counts', () => {
+  // The sample (alpha and bravo, the EXP switch, one connection), with a
+  // note, and a group around bravo.
+  function diagram() {
+    const sample = sampleDocument();
+    const noted = addNode(sample.doc, { kind: 'note', text: 'hi' });
+    const grouped = groupNodes(noted.doc, [sample.bravo.id]);
+
+    return {
+      ...sample,
+      doc: grouped.doc,
+      note: noted.node,
+      group: grouped.group,
+    };
+  }
+
+  test('selects every item of the kind, in place of the selection', () => {
+    const { doc, alpha, bravo, sw, edge, note, group } = diagram();
+
+    expect(kindSelection(doc, 'devices')).toEqual({
+      selection: { nodes: [alpha.id, bravo.id], edges: [] },
+      message: 'Selected 2 devices.',
+    });
+    expect(kindSelection(doc, 'switches')).toEqual({
+      selection: { nodes: [sw.id], edges: [] },
+      message: 'Selected 1 switch.',
+    });
+    // Connections are every connection, and no node.
+    expect(kindSelection(doc, 'links')).toEqual({
+      selection: { nodes: [], edges: [edge.id] },
+      message: 'Selected 1 connection.',
+    });
+    expect(kindSelection(doc, 'groups')).toEqual({
+      selection: { nodes: [group.id], edges: [] },
+      message: 'Selected 1 group.',
+    });
+    expect(kindSelection(doc, 'notes')).toEqual({
+      selection: { nodes: [note.id], edges: [] },
+      message: 'Selected 1 note.',
+    });
+  });
+
+  test('a count of none selects nothing, and says why', () => {
+    const empty = { nodes: [], edges: [], networks: [] };
+
+    for (const [key, words] of [
+      ['devices', 'devices'],
+      ['switches', 'switches'],
+      ['networks', 'networks'],
+      ['links', 'connections'],
+      ['groups', 'groups'],
+      ['notes', 'notes'],
+    ]) {
+      expect(kindSelection(empty, key), key).toEqual({
+        selection: null,
+        message: `There are no ${words} to select.`,
+      });
+    }
+
+    // No document yet, and a key that is no count.
+    expect(kindSelection(null, 'devices').selection).toBeNull();
+    expect(kindSelection(diagram().doc, 'everything')).toEqual({
+      selection: null,
+      message: '',
+    });
+  });
+
+  test('the networks count selects the switches that show a network', () => {
+    const { doc, sw } = diagram();
+
+    expect(kindSelection(doc, 'networks')).toEqual({
+      selection: { nodes: [sw.id], edges: [] },
+      message: 'Selected 1 switch of 1 network.',
+    });
+
+    // A second switch of the same network, as a pasted one is.
+    const second = addNode(doc, {
+      kind: 'switch',
+      networkId: sw.switch.networkId,
+    });
+
+    expect(kindSelection(second.doc, 'networks')).toEqual({
+      selection: { nodes: [sw.id, second.node.id], edges: [] },
+      message: 'Selected 2 switches of 1 network.',
+    });
+
+    // Networks no switch shows are counted, and said.
+    const one = addNetwork(second.doc, { name: 'OT' }).doc;
+
+    expect(kindSelection(one, 'networks').message).toBe(
+      'Selected 2 switches of 2 networks. 1 network has no switch.',
+    );
+
+    const two = addNetwork(one, { name: 'MGMT' }).doc;
+
+    expect(kindSelection(two, 'networks').message).toBe(
+      'Selected 2 switches of 3 networks. 2 networks have no switch.',
+    );
+  });
+
+  test('networks that no switch shows have nothing to select', () => {
+    const { doc, sw } = diagram();
+    const bare = removeElements(doc, { nodes: [sw.id], edges: [] });
+
+    // Deleting a switch keeps its network.
+    expect(bare.networks).toHaveLength(1);
+    expect(kindSelection(bare, 'networks')).toEqual({
+      selection: null,
+      message: 'No switch shows a network, so there is nothing to select.',
+    });
+    expect(kindSelection(bare, 'switches')).toEqual({
+      selection: null,
+      message: 'There are no switches to select.',
+    });
+  });
+
+  test('included devices are selected with the rest', () => {
+    const { doc, alpha, bravo, sw } = diagram();
+    const included = {
+      ...doc,
+      nodes: doc.nodes.map((node) =>
+        node.id === alpha.id
+          ? { ...node, device: { ...node.device, includedFrom: 'base' } }
+          : node,
+      ),
+    };
+
+    expect(kindSelection(included, 'devices').selection.nodes).toEqual([
+      alpha.id,
+      bravo.id,
+    ]);
+    // A connection of an included device is a connection like any other.
+    const more = connect(included, {
+      sourceNodeId: bravo.id,
+      targetNodeId: sw.id,
+    }).doc;
+
+    expect(kindSelection(more, 'links').message).toBe(
+      'Selected 2 connections.',
+    );
   });
 });

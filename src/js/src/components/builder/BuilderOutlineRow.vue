@@ -3,6 +3,8 @@
 
   Each row asks about its own id only (pressed, the tab stop, being
   renamed), so a click redraws the rows it changes rather than every row.
+  A device or a group with a custom icon shows it in place of the icon of
+  its key.
   The state and the handlers live in BuilderOutline, which provides them;
   BuilderOutlineList describes the lists.
 -->
@@ -12,7 +14,10 @@
       v-if="outline.isRenaming(item.id)"
       class="builder-outline__item"
       :data-testid="`outline-item-${item.id}`">
-      <builder-icon :name="outline.iconFor(item)" :size="14" />
+      <builder-icon
+        :name="outline.iconFor(item)"
+        :src="outline.iconSrcFor(item)"
+        :size="14" />
       <label class="builder-visually-hidden" :for="`rename-${item.id}`">
         Rename {{ item.label }}
       </label>
@@ -39,7 +44,10 @@
       @click="outline.onRowClick(item, $event)"
       @keydown="outline.onRowKeydown(item, $event)"
       @focus="outline.onRowFocus(item)">
-      <builder-icon :name="outline.iconFor(item)" :size="14" />
+      <builder-icon
+        :name="outline.iconFor(item)"
+        :src="outline.iconSrcFor(item)"
+        :size="14" />
       <span class="builder-outline__label" :title="item.label">{{
         item.label
       }}</span>

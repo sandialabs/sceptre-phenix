@@ -248,6 +248,7 @@
   import BuilderOutlineList from './BuilderOutlineList.vue';
 
   import { nodeIconKey } from '@/builder/catalog.js';
+  import { iconSrc } from '@/builder/icons.js';
   import {
     deviceHandles,
     findNetwork,
@@ -273,7 +274,7 @@
   const GROUP_ERROR_ID = 'regroup-error';
 
   const store = useBuilderStore();
-  // The view's command context (BuilderV2.vue), whose view brings nodes
+  // The view's command context (Builder.vue), whose view brings nodes
   // into view on the canvas.
   const commands = inject('builderCommands', null);
 
@@ -484,6 +485,7 @@
       renameValue,
       rowId,
       iconFor,
+      iconSrcFor,
       isPressed: (id) => pressedIds.has(id),
       isRoving: (id) => rovingIds.has(id),
       isRenaming: (id) => renamingIds.has(id),
@@ -525,6 +527,12 @@
   // only the rows it changed.
   function iconFor(item) {
     return item.iconKey || nodeIconKey({ kind: item.kind });
+  }
+
+  // The address of the row's custom icon, drawn in place of that icon, or
+  // '' for a row without one.
+  function iconSrcFor(item) {
+    return item.icon ? iconSrc(item.icon, store.doc.icons) : '';
   }
 
   function isSelected(id) {
@@ -702,7 +710,7 @@
   }
 
   // Save now commits the focused field first by sending it a change (see
-  // settleEdits in BuilderV2.vue), which commits the rename as Enter does,
+  // settleEdits in Builder.vue), which commits the rename as Enter does,
   // focus going back to the row. The change the browser sends as focus
   // leaves, with focus already gone, commits it as leaving does.
   function onRenameChange(item, event) {

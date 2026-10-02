@@ -9,9 +9,10 @@
 // its connections on the canvas.
 
 import { count, listOf } from './announce.js';
-import { nodeIconKey } from './catalog.js';
+import { nodeIcon, nodeIconKey } from './catalog.js';
 import {
   connectionEndLabel,
+  deviceTypeLabel,
   documentSummary,
   findNetwork,
   findNode,
@@ -76,6 +77,9 @@ export function buildOutline(doc) {
           kind: node.kind,
           label: nodeLabel(node),
           iconKey: nodeIconKey(node),
+          // The id of its custom icon, which the row draws in place of the
+          // icon of its key (see iconSrcFor in BuilderOutline).
+          icon: nodeIcon(node),
           depth,
           description: nodeComment(node),
           includedFrom: includedFrom(node),
@@ -278,10 +282,11 @@ function scanIndex(doc) {
 }
 
 /**
- * Accessible name for a node: kind, label, device type, the topology an
- * included device comes from, group, a switch's network, link or member
- * count and the networks a device is on, as "Device node, 2 connections,
- * on EXP and EXP-2".
+ * Accessible name for a node: kind, label, device type (its icon's word,
+ * then the phenix node type the canvas shows), the topology an included
+ * device comes from, group, a switch's network, link or member count and
+ * the networks a device is on, as "Device node, 2 connections, on EXP and
+ * EXP-2".
  *
  * @param {object} doc
  * @param {object} node
@@ -290,12 +295,7 @@ function scanIndex(doc) {
  */
 export function outlineLabel(doc, node, index = scanIndex(doc)) {
   const links = index.links(node.id);
-  const parts = [nodeName(node)];
-  const type = deviceType(node);
-
-  if (type) {
-    parts.push(type);
-  }
+  const parts = [nodeName(node), ...deviceTypes(node)];
 
   if (includedFrom(node)) {
     parts.push(`from included topology ${includedFrom(node)}, read only`);
@@ -381,27 +381,57 @@ function noteSummary(text, length = NOTE_SUMMARY_LENGTH) {
     : flat;
 }
 
-// The device's type, unless its label already says it: palette templates
-// name their devices after their type ("router", "router-2", "external").
-// Only whole words count, so "shredder" does not hide "Red Hat".
-function deviceType(node) {
-  const key = node.kind === 'device' ? node.device?.iconKey : '';
-  const type = Object.hasOwn(DEVICE_TYPES, key || '')
-    ? DEVICE_TYPES[key]
-    : null;
-
-  if (!type) {
-    return '';
-  }
-
-  const words = labelWords(nodeLabel(node));
-  const name = type.name.toLowerCase().split(' ');
-  const named =
+// Whether a label's words hold all the words of a name, in a row. Only
+// whole words count, so "shredder" does not hide "Red Hat".
+function holdsWords(words, name) {
+  return (
+    name.length > 0 &&
     words.some((_, start) =>
       name.every((word, offset) => words[start + offset] === word),
-    ) || (type.also || []).some((word) => words.includes(word));
+    )
+  );
+}
 
-  return named ? '' : type.name;
+// The types the canvas shows no word for: no type at all, and the type of
+// a plain device.
+const PLAIN_TYPES = ['device', 'virtualmachine'];
+
+// A device's type, as up to two parts of its name. First the word for its
+// icon, unless its label already says it: palette templates name their
+// devices after their type ("router", "router-2", "external"). Then the
+// phenix node type the node shows on the canvas (deviceTypeLabel), unless
+// it is that of a plain device or the label or the icon's word already
+// says it: a Router with the Linux icon named "edge-1" is "Device edge-1,
+// Router".
+function deviceTypes(node) {
+  if (node.kind !== 'device') {
+    return [];
+  }
+
+  const key = node.device?.iconKey;
+  const icon = Object.hasOwn(DEVICE_TYPES, key || '')
+    ? DEVICE_TYPES[key]
+    : null;
+  const words = labelWords(nodeLabel(node));
+  const iconNames = icon ? [icon.name, ...(icon.also || [])] : [];
+  const parts = [];
+
+  if (icon && !iconNames.some((name) => holdsWords(words, labelWords(name)))) {
+    parts.push(icon.name);
+  }
+
+  const type = deviceTypeLabel(node);
+  const typeWords = labelWords(type);
+
+  if (
+    !PLAIN_TYPES.includes(type.toLowerCase()) &&
+    !holdsWords(words, typeWords) &&
+    !iconNames.some((name) => holdsWords(labelWords(name), typeWords))
+  ) {
+    parts.push(type);
+  }
+
+  return parts;
 }
 
 // A label's words, lower case and without a trailing number: "router-2" and
@@ -471,20 +501,42 @@ const COUNTED = [
   ['notes', 'note'],
 ];
 
+// What pressing a count does, as its tooltip and description say it. A
+// count of none selects nothing, and its tooltip is the count in words.
+function countTip(key, n, text) {
+  if (n === 0) {
+    return text;
+  }
+
+  if (key === 'networks') {
+    return `Select the switches of ${n === 1 ? 'the' : 'all'} ${text}`;
+  }
+
+  return `Select ${n === 1 ? 'the' : 'all'} ${text}`;
+}
+
 /**
  * The diagram's counts, as the editor header shows them: each kind's
- * number, the word after it and both together ("2 devices").
+ * number, the word after it, both together ("2 devices"), and what pressing
+ * the count does ("Select all 2 devices"; see kindSelection in
+ * selection.js).
  *
  * @param {object} doc
- * @returns {{key: string, count: number, noun: string, text: string}[]}
+ * @returns {{key: string, count: number, noun: string, text: string,
+ *   tip: string}[]}
  */
 export function diagramCounts(doc) {
   const summary = documentSummary(doc);
 
-  return COUNTED.map(([key, noun, plural = `${noun}s`]) => ({
-    key,
-    count: summary[key],
-    noun: summary[key] === 1 ? noun : plural,
-    text: count(summary[key], noun, plural),
-  }));
+  return COUNTED.map(([key, noun, plural = `${noun}s`]) => {
+    const text = count(summary[key], noun, plural);
+
+    return {
+      key,
+      count: summary[key],
+      noun: summary[key] === 1 ? noun : plural,
+      text,
+      tip: countTip(key, summary[key], text),
+    };
+  });
 }

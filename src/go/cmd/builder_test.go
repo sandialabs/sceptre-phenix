@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -65,7 +66,7 @@ func runBuilder(args ...string) (string, error) {
 func docsExample(t *testing.T, name string) []byte {
 	t.Helper()
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "content", "builder-v2", "examples", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "content", "builder", "examples", name))
 	if err != nil {
 		t.Fatalf("reading the docs example: %v", err)
 	}
@@ -589,7 +590,7 @@ func TestBuilderPublishRecordPath(t *testing.T) { //nolint:paralleltest // repla
 }
 
 // TestBuilderHelp pins what the help of the command group says, and that
-// the CLI names the Builder without a version.
+// the CLI names the Builder without a version and as always available.
 func TestBuilderHelp(t *testing.T) {
 	t.Parallel()
 
@@ -607,6 +608,7 @@ func TestBuilderHelp(t *testing.T) {
 		"phenix builder publish </path/to/document> [flags]",
 		"--dry-run", "-n, --name string", "--record-path", "--update", "--user string",
 		"Scenarios and experiments are not created.",
+		"The Configs\n  page opens such a topology in the Builder, not as text;",
 	} {
 		if !strings.Contains(publish, want) {
 			t.Errorf("builder publish --help does not say %q:\n%s", want, publish)
@@ -625,9 +627,17 @@ func TestBuilderHelp(t *testing.T) {
 		}
 	}
 
+	version := regexp.MustCompile(`(?i)builder[ -]v\d`)
+	// The Builder has no switch: no help text may say it can be off.
+	switched := regexp.MustCompile(`(?i)turned\s+(on|off)|builder\s+is\s+(on|off)\b|feature`)
+
 	for _, help := range []string{group, publish} {
-		if lower := strings.ToLower(help); strings.Contains(lower, "builder v2") || strings.Contains(lower, "builder-v2") {
+		if version.MatchString(help) {
 			t.Errorf("the help names a Builder version:\n%s", help)
+		}
+
+		if found := switched.FindString(help); found != "" {
+			t.Errorf("the help says the Builder can be turned on or off (%q):\n%s", found, help)
 		}
 	}
 }

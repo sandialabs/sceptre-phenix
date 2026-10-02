@@ -13,9 +13,13 @@ import {
   addNetwork,
   addNode,
   connect,
+  createDocument,
   findNode,
   groupNodes,
+  updateNode,
 } from '@/builder/model.js';
+import { BUILTIN_TEMPLATES } from '@/builder/catalog.js';
+import { nodeOptionsFromTemplate } from '@/builder/templates.js';
 
 import { sampleDocument } from './fixtures.js';
 
@@ -149,6 +153,45 @@ describe('semantic outline', () => {
     expect(outlineLabel(renamed, node(bravo.id))).toContain('in Group DMZ');
   });
 
+  // A group's description is its comment, and its row shows the icon it
+  // was given. Its colors and its border are not said: they are how it
+  // looks, and its name and description say what it is.
+  test("a group's description ends its name, and its row has its icon", () => {
+    const { doc, alpha } = sampleDocument();
+    const grouped = groupNodes(doc, [alpha.id], { title: 'DMZ' });
+    const described = updateNode(grouped.doc, grouped.group.id, {
+      group: {
+        description: 'Public servers',
+        borderStyle: 'double',
+        iconKey: 'firewall',
+      },
+    });
+    const group = findNode(described, grouped.group.id);
+    const row = buildOutline(described).find((item) => item.id === group.id);
+
+    expect(outlineLabel(described, group)).toBe(
+      'Group DMZ, 1 member, comment: Public servers',
+    );
+    expect(row).toMatchObject({
+      label: 'DMZ',
+      iconKey: 'firewall',
+      description: 'Public servers',
+      accessibleName: 'Group DMZ, 1 member, comment: Public servers',
+    });
+    expect(
+      buildOutline(grouped.doc).find((item) => item.id === group.id),
+    ).toMatchObject({ iconKey: 'container', description: '' });
+
+    // A device's or a switch's colors change no name.
+    const colored = updateNode(described, alpha.id, {
+      device: { outlineColor: '#2f6fbf', fillColor: '#ffd400' },
+    });
+
+    expect(outlineLabel(colored, findNode(colored, alpha.id))).toBe(
+      outlineLabel(described, findNode(described, alpha.id)),
+    );
+  });
+
   test('a note is named by its text, and a device by a non-default type', () => {
     const { doc } = sampleDocument();
     const text = `Firewall rules pending review ${'x'.repeat(100)}`;
@@ -194,6 +237,79 @@ describe('semantic outline', () => {
     expect(outlineLabel(doc, redHat('rhel9'))).toBe(
       'Device rhel9, 0 connections',
     );
+  });
+
+  // The canvas shows a device's phenix node type; its name says the type
+  // too, unless it is a plain device's or something in the name already
+  // says it.
+  test('a device is named by its node type, unless its label or its icon says it', () => {
+    const { doc } = sampleDocument();
+    const device = (hostname, iconKey, spec) =>
+      addNode(doc, {
+        kind: 'device',
+        hostname,
+        iconKey,
+        spec: { general: { hostname }, ...spec },
+      }).node;
+    const name = (...args) => outlineLabel(doc, device(...args));
+
+    expect(name('edge-1', 'linux', { type: 'Router' })).toBe(
+      'Device edge-1, Router, 0 connections',
+    );
+    // As stored, not as the icon's word is written.
+    expect(name('plc-1', 'server', { type: 'SCEPTRE' })).toBe(
+      'Device plc-1, SCEPTRE, 0 connections',
+    );
+    // The icon's word comes first, then a type that says something else.
+    expect(name('fw-1', 'router', { type: 'Firewall' })).toBe(
+      'Device fw-1, router, Firewall, 0 connections',
+    );
+    // The icon's word says the type.
+    expect(name('edge-1', 'router', { type: 'Router' })).toBe(
+      'Device edge-1, router, 0 connections',
+    );
+    expect(name('plc-1', 'external', { external: true, type: 'HIL' })).toBe(
+      'Device plc-1, external device, 0 connections',
+    );
+    // An external device with another icon says External, not its type.
+    expect(name('plc-1', 'linux', { external: true, type: 'HIL' })).toBe(
+      'Device plc-1, External, 0 connections',
+    );
+    // The label says the type: whole words, without a trailing number.
+    expect(name('router2', 'linux', { type: 'Router' })).toBe(
+      'Device router2, 0 connections',
+    );
+    expect(name('core-router', 'linux', { type: 'Router' })).toBe(
+      'Device core-router, 0 connections',
+    );
+    expect(name('routers', 'linux', { type: 'Router' })).toBe(
+      'Device routers, Router, 0 connections',
+    );
+    // A plain device has no type worth saying.
+    expect(name('web', 'linux', { type: 'VirtualMachine' })).toBe(
+      'Device web, 0 connections',
+    );
+    expect(name('web', 'linux', {})).toBe('Device web, 0 connections');
+  });
+
+  // The names of the devices the palette's templates add.
+  test('template devices are named as before', () => {
+    let doc = createDocument();
+    const names = BUILTIN_TEMPLATES.map((template) => {
+      const added = addNode(doc, nodeOptionsFromTemplate(template, doc));
+
+      doc = added.doc;
+
+      return outlineLabel(doc, added.node);
+    });
+
+    expect(names).toEqual([
+      'Device server, 0 connections',
+      'Device workstation, 0 connections',
+      'Device router, 0 connections',
+      'Device firewall, 0 connections',
+      'Device external, 0 connections',
+    ]);
   });
 
   test('connections are named from the device end, for the palette', () => {
@@ -251,8 +367,66 @@ describe('semantic outline', () => {
     // The header shows each count's number beside its icon, and reads it
     // with its noun.
     expect(counts.slice(0, 2)).toEqual([
-      { key: 'devices', count: 2, noun: 'devices', text: '2 devices' },
-      { key: 'switches', count: 1, noun: 'switch', text: '1 switch' },
+      {
+        key: 'devices',
+        count: 2,
+        noun: 'devices',
+        text: '2 devices',
+        tip: 'Select all 2 devices',
+      },
+      {
+        key: 'switches',
+        count: 1,
+        noun: 'switch',
+        text: '1 switch',
+        tip: 'Select the 1 switch',
+      },
     ]);
+  });
+
+  test('each count says what pressing it selects', () => {
+    const { doc } = sampleDocument();
+    const tips = (document) =>
+      Object.fromEntries(
+        diagramCounts(document).map((entry) => [entry.key, entry.tip]),
+      );
+
+    // One of a kind, and none: a count of none selects nothing, and its
+    // tip is the count in words.
+    expect(tips(doc)).toEqual({
+      devices: 'Select all 2 devices',
+      switches: 'Select the 1 switch',
+      networks: 'Select the switches of the 1 network',
+      links: 'Select the 1 connection',
+      groups: '0 groups',
+      notes: '0 notes',
+    });
+    expect(tips({ nodes: [], edges: [], networks: [] })).toEqual({
+      devices: '0 devices',
+      switches: '0 switches',
+      networks: '0 networks',
+      links: '0 connections',
+      groups: '0 groups',
+      notes: '0 notes',
+    });
+
+    // Several of each.
+    let many = addNetwork(doc, { name: 'OT' }).doc;
+
+    many = addNode(many, {
+      kind: 'switch',
+      networkId: many.networks[1].id,
+    }).doc;
+    many = addNode(many, { kind: 'note', text: 'one' }).doc;
+    many = addNode(many, { kind: 'note', text: 'two' }).doc;
+    many = groupNodes(many, [many.nodes[0].id]).doc;
+    many = groupNodes(many, [many.nodes[1].id]).doc;
+
+    expect(tips(many)).toMatchObject({
+      switches: 'Select all 2 switches',
+      networks: 'Select the switches of all 2 networks',
+      groups: 'Select all 2 groups',
+      notes: 'Select all 2 notes',
+    });
   });
 });

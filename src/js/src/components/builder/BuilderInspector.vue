@@ -2,7 +2,7 @@
   Inspector.
 
   Entirely schema driven: the form is generated from the builder schema served
-  by GET /api/v1/schemas/builder-v2/v1 (with a bundled fallback), so fields the
+  by GET /api/v1/schemas/builder/v1 (with a bundled fallback), so fields the
   server adds show up without touching this component. The Builder's own
   JSON Forms renderers (components/builder/inspector/) label, describe and
   flag every field; see adapters/forms.js.
@@ -23,14 +23,25 @@
   A field that is not set shows the value it comes to all the same, marked
   as the default (see fieldDefault): Memory the megabytes phenix gives a VM,
   a connection's Label its network's name.
+
+  What it reads and edits is its `host`: the Builder store, for the canvas,
+  or an object with the same members, for another document. The template
+  editor (dialogs/TemplateDialog.vue) mounts it on a document that holds the
+  one device a template describes, with the variant 'template': the form,
+  its checks and its renderers are the canvas's, and what belongs to a
+  canvas (the heading, the checks of the diagram, the connection points,
+  the position, Apply and Cancel) is left out. Its edits then wait in the
+  working copy for the dialog's Save, which calls settle().
 -->
 <template>
   <section
     ref="panel"
-    class="builder-inspector builder-panel"
-    aria-labelledby="inspector-title"
+    class="builder-inspector"
+    :class="template ? 'builder-inspector--template' : 'builder-panel'"
+    :aria-labelledby="labelledby"
     @pointerdown="onPress">
     <h2
+      v-if="!template"
       id="inspector-title"
       ref="heading"
       class="builder-inspector__title"
@@ -45,12 +56,14 @@
     <template v-else>
       <!-- Which schema the form comes from is said only when it is not the
            server's, in the schema error below. -->
-      <p class="builder-inspector__subject">{{ target.title }}</p>
+      <p v-if="!template" class="builder-inspector__subject">
+        {{ target.title }}
+      </p>
 
       <!-- The errors and warnings of what the Inspector shows, as applied;
            the checks button in the header lists the whole diagram's. -->
       <div
-        v-if="ownIssues.length"
+        v-if="!template && ownIssues.length"
         class="builder-inspector__issues"
         :data-level="ownCounts.errors ? 'error' : 'warning'"
         data-testid="inspector-checks">
@@ -74,20 +87,32 @@
       </div>
 
       <!-- Why fields below cannot change: a device from an included
-           topology, or a network one is on (see inspectorLock). -->
+           topology, or a network one is on (see inspectorLock). An included
+           device can be changed in a copy of the diagram, which a role that
+           may create drafts can make from here. -->
       <p
-        v-if="lock.note"
+        v-if="!template && lock.note"
+        id="inspector-included-note"
         class="builder-inspector__note"
         data-testid="inspector-included-note">
         {{ lock.note }}
       </p>
+      <button
+        v-if="!template && lock.all && host.canCreateDrafts"
+        type="button"
+        class="builder-button builder-inspector__combine"
+        aria-describedby="inspector-included-note"
+        data-testid="inspector-combine"
+        @click="$emit('combine')">
+        Combine into a new draft
+      </button>
 
       <p
-        v-if="store.schemaError"
+        v-if="host.schemaError"
         class="builder-inspector__schema-error"
         role="alert"
         data-testid="inspector-schema-error">
-        {{ store.schemaError }}
+        {{ host.schemaError }}
       </p>
 
       <p v-if="schema.required?.length" class="builder-inspector__hint">
@@ -115,24 +140,29 @@
           :renderers="renderers"
           :ajv="validator"
           :i18n="i18n"
-          :readonly="store.readOnly || lock.all"
+          :readonly="host.readOnly || lock.all"
           validation-mode="NoValidation"
-          :additional-errors="validation.errors"
+          :additional-errors="shownValidation.errors"
           :middleware="middleware"
           @change="onChange" />
 
         <div
-          v-if="errors.length"
+          v-if="shownErrors.length"
           :key="errorSummary"
           class="builder-inspector__errors"
           role="alert">
           <p data-testid="inspector-errors">
-            {{ errors.length }}
-            {{ errors.length === 1 ? 'field needs' : 'fields need' }}
-            attention before these changes can be applied.
+            {{ shownErrors.length }}
+            {{ shownErrors.length === 1 ? 'field needs' : 'fields need' }}
+            attention before
+            {{
+              template
+                ? 'this template can be saved.'
+                : 'these changes can be applied.'
+            }}
           </p>
           <ul data-testid="inspector-error-list">
-            <li v-for="error in errors" :key="error.path">
+            <li v-for="error in shownErrors" :key="error.path">
               <button
                 type="button"
                 class="builder-inspector__error-link"
@@ -152,10 +182,12 @@
           v-if="pending"
           ref="actions"
           class="builder-inspector__actions"
-          :data-state="errors.length ? 'error' : changed ? 'changed' : 'none'"
+          :data-state="
+            shownErrors.length ? 'error' : changed ? 'changed' : 'none'
+          "
           data-testid="inspector-actions">
           <span class="builder-inspector__state">
-            <builder-icon v-if="errors.length" name="close" :size="14" />
+            <builder-icon v-if="shownErrors.length" name="close" :size="14" />
             {{ stateText }}
           </span>
           <span class="builder-inspector__buttons">
@@ -195,7 +227,7 @@
            focus of its buttons; screen readers read it after the heading,
            and as Add connection point's description. -->
       <div
-        v-if="target.kind === 'device'"
+        v-if="!template && target.kind === 'device'"
         class="builder-inspector__ifaces"
         @focusin="ifacesTip?.onFocusIn($event, ifacesTitle)"
         @focusout="ifacesTip?.hide()">
@@ -222,7 +254,7 @@
                 class="builder-button"
                 data-testid="inspector-disconnect"
                 :aria-label="`Disconnect ${handle.name} from ${networkFor(handle.id)}`"
-                :disabled="store.readOnly"
+                :disabled="host.readOnly"
                 @click="disconnect(handle.id)">
                 Disconnect
               </button>
@@ -230,7 +262,7 @@
                 type="button"
                 class="builder-button builder-button--danger builder-inspector__iface-remove"
                 :aria-label="`Remove connection point ${handle.name}`"
-                :disabled="store.readOnly"
+                :disabled="host.readOnly"
                 @click="removeInterface(handle.id)">
                 <builder-icon name="trash" :size="12" />
               </button>
@@ -245,8 +277,8 @@
           class="builder-button"
           data-testid="inspector-add-interface"
           aria-describedby="inspector-ifaces-hint"
-          :disabled="store.readOnly"
-          @click="store.addInterface(target.target.id, {})">
+          :disabled="host.readOnly"
+          @click="host.addInterface(target.target.id, {})">
           <builder-icon name="plus" :size="14" />
           Add connection point
         </button>
@@ -258,7 +290,7 @@
            hover and on keyboard focus of its fields, and the fields'
            description. -->
       <form
-        v-if="selection.type === 'node' && target.target?.position"
+        v-if="!template && selection.type === 'node' && target.target?.position"
         class="builder-inspector__position"
         aria-labelledby="inspector-position-title"
         data-testid="inspector-position"
@@ -293,8 +325,8 @@
               autocomplete="off"
               :aria-valuenow="shownPosition(axis)"
               aria-describedby="inspector-position-hint"
-              :readonly="store.readOnly"
-              :aria-readonly="store.readOnly || undefined"
+              :readonly="host.readOnly"
+              :aria-readonly="host.readOnly || undefined"
               @keydown="stepPosition($event, axis)" />
           </div>
           <button
@@ -334,6 +366,8 @@
     INSPECTOR_DEFAULTS,
     INSPECTOR_DRAWN_COLOR,
     INSPECTOR_FIELD_WARNINGS,
+    INSPECTOR_ICON_LIBRARY,
+    INSPECTOR_ICONS,
     INSPECTOR_LOCAL_PROBLEMS,
     INSPECTOR_LOCKED,
     INSPECTOR_NEW_ITEM,
@@ -354,6 +388,7 @@
     inspectorRenderers,
     inspectorTarget,
     issueText,
+    lookChangeLabel,
     mergeFormData,
     newListItem,
     relevantErrors,
@@ -368,25 +403,61 @@
     workingCopyErrors,
   } from '@/builder/form-validator.js';
   import { SAVED_UNAPPLIED } from '@/builder/history.js';
+  import { iconLibrary } from '@/builder/iconLibrary.js';
+  import { MAX_DOCUMENT_ICONS } from '@/builder/icons.js';
   import { countsText, issueCounts, issuesAbout } from '@/builder/issues.js';
   import {
     connectionChanges,
     findNetwork,
+    HEX_COLOR,
+    LOOK_KEYS,
+    lookOf,
     moveNodes,
+    NODE_COLOR_KEYS,
     sameButStamp,
   } from '@/builder/model.js';
   import { schemaForKind } from '@/builder/schema.js';
   import { useBuilderStore } from '@/builder/store.js';
   import { deviceFieldWarnings } from '@/builder/validate.js';
 
-  // Edit scenario, in the Diagram section, asks for the Scenario dialog.
-  defineEmits(['scenario']);
+  // Edit scenario, in the Diagram section, asks for the Scenario dialog;
+  // Combine into a new draft, under an included device's note, for the
+  // draft the view makes (see combineIncluded in Builder.vue).
+  defineEmits(['scenario', 'combine']);
 
-  const store = useBuilderStore();
+  const props = defineProps({
+    // What the Inspector reads and edits, in place of the Builder store,
+    // which it is by default: a reactive object with the store's members
+    // the Inspector uses. Those are doc, inspectorSelection, schema,
+    // schemaError, readOnly, disks, issues, canRedo, canCreateDrafts and
+    // iconShelf, and the actions commit(doc, label), announce(message),
+    // addInterface, removeInterface, remove, moveNodes and
+    // shelveIcons(icons). A commit that is not the store's makes the
+    // document carry the icons it names, as the store's does (see
+    // settleIcons in icons.js), and returns whether it took the document.
+    // The Inspector keeps the host it is set up with.
+    host: { type: Object, default: null },
+    // 'canvas', or 'template' for the template editor (see the top of this
+    // file).
+    variant: {
+      type: String,
+      default: 'canvas',
+      validator: (value) => ['canvas', 'template'].includes(value),
+    },
+    // The id of the heading that names the Inspector's section: its own,
+    // which the template variant does not show.
+    labelledby: { type: String, default: 'inspector-title' },
+  });
+
+  const host = props.host || useBuilderStore();
+  const template = props.variant === 'template';
   const renderers = inspectorRenderers;
   const validator = createFormValidator();
 
-  provide(INSPECTOR_ANNOUNCE, (message) => store.announce(message));
+  // The form's path of an interface's VLAN (see fieldWarnings).
+  const INTERFACE_VLAN_FIELD = /^spec\.network\.interfaces\.\d+\.vlan$/;
+
+  provide(INSPECTOR_ANNOUNCE, (message) => host.announce(message));
 
   // Counts the times reset() reloads the form's data from the document
   // (Cancel, undo, another selection, and after Apply or an outline edit), so
@@ -426,6 +497,9 @@
   const committedText = new WeakMap();
   // Focus is on Apply or Cancel, which then stay until used or left.
   const held = ref(false);
+  // A press in the Inspector is under way, from pointerdown until its click
+  // is over (see onPress).
+  const pressing = ref(false);
   const heading = ref();
   const panel = ref();
   const form = ref();
@@ -438,8 +512,8 @@
   const ifacesTitle = ref();
   const ifacesTip = ref();
 
-  const selection = computed(() => store.inspectorSelection);
-  const target = computed(() => inspectorTarget(store.doc, selection.value));
+  const selection = computed(() => host.inspectorSelection);
+  const target = computed(() => inspectorTarget(host.doc, selection.value));
   const formKey = computed(
     () => `${selection.value.type}-${selection.value.id || 'document'}`,
   );
@@ -458,14 +532,15 @@
   // The same object while the element's kind and spec variant stay (see
   // schemaForKind), so an edit elsewhere compiles nothing again.
   function schemaFor(element) {
-    return schemaForKind(store.schema, element?.kind || 'document', {
+    return schemaForKind(host.schema, element?.kind || 'document', {
       spec: element?.data?.spec,
       iconKey: element?.data?.iconKey,
+      template,
     });
   }
 
   const schema = computed(() => schemaFor(target.value));
-  const lock = computed(() => inspectorLock(store.doc, selection.value));
+  const lock = computed(() => inspectorLock(host.doc, selection.value));
 
   // The working copy's errors that count (see workingCopyErrors): `errors`
   // for JSON Forms to show on their fields, and `fields`, the summary. Each
@@ -491,18 +566,30 @@
     ...localErrors.value,
   ]);
 
+  // What the Inspector shows of the working copy's checks: the error and
+  // the warnings under each field, the summary under the form, and the
+  // state beside Apply. The field a press takes focus from commits its
+  // value then, and a line that came or went above the button being pressed
+  // would move it away from the pointer, and lose its click. So during a
+  // press they stay as they were, and follow once its click is over. Apply
+  // goes by the checks themselves.
+  const duringPress = (checks) =>
+    computed((shown) => (pressing.value && shown) || checks.value);
+  const shownValidation = duringPress(validation);
+  const shownErrors = duringPress(errors);
+
   // An included device's fields, and every field of a read-only draft, are
   // locked rather than disabled, so they stay readable and reachable with
   // Tab, which shows their descriptions (see useInspectorLocked).
   provide(
     INSPECTOR_LOCKED,
-    computed(() => lock.value.all || store.readOnly),
+    computed(() => lock.value.all || host.readOnly),
   );
 
   // A new interface added in the form is named and set up the way one drawn
   // on the canvas is (see newListItem).
   provide(INSPECTOR_NEW_ITEM, (path, data) =>
-    newListItem(store.doc, selection.value, path, data ?? draft.value),
+    newListItem(host.doc, selection.value, path, data ?? draft.value),
   );
 
   // What a field shows while it is not set (see fieldDefault): Memory the
@@ -518,50 +605,104 @@
 
   // Whether the working copy changed a field's value, or an entry of a map
   // field, for the mark on the field (see useFieldChanged and fieldChanged).
+  // A template's fields have no mark: the mark says a change waits for
+  // Apply, and the template editor has none.
   provide(
     INSPECTOR_CHANGED,
     computed(() => {
       const [now, was] = [draft.value, loadedData()];
 
-      return (path, key) => fieldChanged(now, was, path, key);
+      return (path, key) => !template && fieldChanged(now, was, path, key);
     }),
   );
 
-  // A switch's Color is its network's, which the canvas draws in the theme's
-  // token when it is a color addNetwork picks; the picker's chip and
-  // swatches show it the same way (see drawnNetworkColor).
+  // A switch's Edge Color is its network's, which the canvas draws in the
+  // theme's token when it is a color addNetwork picks; the picker's chip and
+  // swatches show it the same way (see drawnNetworkColor). Its outline and
+  // its fill, like every other color, are drawn as chosen.
   provide(
     INSPECTOR_DRAWN_COLOR,
-    computed(() =>
-      target.value?.kind === 'switch' ? drawnNetworkColor : drawnColor,
-    ),
+    computed(() => {
+      const network = target.value?.kind === 'switch';
+
+      return (value, path) =>
+        network && path === 'color'
+          ? drawnNetworkColor(value)
+          : drawnColor(value);
+    }),
   );
+
+  // The custom icons the Custom icon field and its dialog work with (see
+  // INSPECTOR_ICONS): those the host's document carries, and those chosen
+  // in the dialog, which the host keeps until the edit that names one is
+  // committed (see shelveIcons and commit in the store).
+  function iconEntry(id) {
+    const carried = host.doc.icons;
+
+    return carried && Object.hasOwn(carried, id)
+      ? carried[id]
+      : host.iconShelf.get(id);
+  }
+
+  provide(INSPECTOR_ICONS, {
+    entry: iconEntry,
+    shelve: (id, entry) => host.shelveIcons({ [id]: entry }),
+    diagram: () =>
+      Object.entries(host.doc.icons || {}).map(([id, entry]) => ({
+        id,
+        name: entry?.name || '',
+        data: entry?.data,
+      })),
+    full: (id) => {
+      const carried = host.doc.icons || {};
+
+      return (
+        Object.keys(carried).length >= MAX_DOCUMENT_ICONS &&
+        !Object.hasOwn(carried, id)
+      );
+    },
+  });
+
+  // The user's icon library on the server, for the same dialog.
+  provide(INSPECTOR_ICON_LIBRARY, iconLibrary);
 
   // The drive image field suggests the server's disk images, once known.
   provide(
     INSPECTOR_SUGGESTIONS,
-    computed(() => ({ disks: store.disks })),
+    computed(() => ({ disks: host.disks })),
   );
 
   // Warnings about the working copy's fields, which each field shows once
   // it commits its value, before Apply (see deviceFieldWarnings). A device
   // from an included topology is not this diagram's to fix, so its fields
-  // get none, as in the diagram checks.
-  const fieldWarnings = computed(() =>
-    target.value?.kind === 'device' && !lock.value.all
-      ? deviceFieldWarnings(store.doc, draft.value?.spec, {
-          disks: store.disks,
-          nodeId: target.value.target.id,
-          hostname: draft.value?.hostname,
-        })
-      : {},
-  );
+  // get none, as in the diagram checks. A template is in no diagram, so an
+  // interface's VLAN gets none for naming a network no diagram has.
+  const fieldWarnings = computed(() => {
+    if (target.value?.kind !== 'device' || lock.value.all) {
+      return {};
+    }
 
-  provide(INSPECTOR_FIELD_WARNINGS, fieldWarnings);
+    const warnings = deviceFieldWarnings(host.doc, draft.value?.spec, {
+      disks: host.disks,
+      nodeId: target.value.target.id,
+      hostname: draft.value?.hostname,
+    });
+
+    return template
+      ? Object.fromEntries(
+          Object.entries(warnings).filter(
+            ([field]) => !INTERFACE_VLAN_FIELD.test(field),
+          ),
+        )
+      : warnings;
+  });
+
+  provide(INSPECTOR_FIELD_WARNINGS, duringPress(fieldWarnings));
   const uiSchema = computed(() =>
-    uiSchemaForKind(store.schema, target.value?.kind || 'document', {
+    uiSchemaForKind(host.schema, target.value?.kind || 'document', {
       spec: target.value?.data?.spec,
       readonly: lock.value.fields,
+      template,
     }),
   );
   const i18n = computed(() => inspectorI18n(schema.value));
@@ -571,24 +712,25 @@
   // elsewhere does: the Inspector would then shift under that click. They
   // go again when the text is typed back, but not while focus or a click is
   // on its way to them (see onFieldBlur). Apply commits the field before it
-  // checks for errors.
+  // checks for errors. A template's edits have neither: they wait for the
+  // template editor's Save.
   const changed = computed(
     () => dirty.value || typing.value || localErrors.value.length > 0,
   );
   const pending = computed(
-    () => (changed.value || held.value) && !store.readOnly,
+    () => !template && (changed.value || held.value) && !host.readOnly,
   );
 
   const canApply = computed(
-    () => changed.value && !store.readOnly && errors.value.length === 0,
+    () => changed.value && !host.readOnly && errors.value.length === 0,
   );
 
   const errorSummary = computed(() =>
-    errors.value.map((error) => error.message).join('\n'),
+    shownErrors.value.map((error) => error.message).join('\n'),
   );
 
   const stateText = computed(() => {
-    if (errors.value.length > 0) {
+    if (shownErrors.value.length > 0) {
       return 'Fix the fields marked with errors';
     }
 
@@ -600,17 +742,19 @@
   // not read. Those changes announce themselves, and so does the error
   // summary. Edits becoming unapplied are announced here, a moment later and
   // only if they still are: Enter in a field, or a click on Apply straight
-  // from it, applies them at once, and "Updated ..." says so instead.
+  // from it, applies them at once, and "Updated ..." says so instead. A
+  // template's edits are not announced as unapplied: nothing applies them
+  // but Save.
   const UNAPPLIED_DELAY_MS = 400;
   let unappliedTimer = null;
 
   watch(dirty, (now) => {
     clearTimeout(unappliedTimer);
 
-    if (now && !store.readOnly) {
+    if (now && !host.readOnly && !template) {
       unappliedTimer = setTimeout(() => {
         if (dirty.value) {
-          store.announce('Unapplied changes.');
+          host.announce('Unapplied changes.');
         }
       }, UNAPPLIED_DELAY_MS);
     }
@@ -626,20 +770,28 @@
   // it, for focus to return to when Apply or Cancel goes.
   let lastEdited = null;
 
-  // A device's icon is presentation only, so a new one is applied without
-  // Apply, as an edit of its own, like Add connection point. Left to Apply,
-  // which on a device's long form is far below the Icon field, it reached
-  // the canvas only once the selection changed and applied it. Other
-  // unapplied edits stay unapplied.
+  // A device's look (its icon, its custom icon, its outline color and its
+  // fill color, see LOOK_KEYS) is presentation only, so a new one is
+  // applied without Apply, as an edit of its own, like Add connection
+  // point. Left to Apply, which on a device's long form is far below these
+  // fields, it reached the canvas only once the selection changed and
+  // applied it. Other unapplied edits stay unapplied. A switch's short form
+  // waits for Apply.
   //
   // One choice is one edit (see heldCommit): an icon chosen from the list
   // with the pointer commits at once, and one stepped to with keys when the
   // choice is made: when focus leaves the field, on Enter or another key
   // that is no step (a shortcut), on Apply or Cancel, or when the selection
-  // changes. See onFieldKey, holdIcon and commitIcon.
-  const icon = heldCommit(commitIcon);
+  // changes. A color arrives as one change, from its picker or its text
+  // field, and a custom icon as one, from its dialog or Remove: each
+  // commits at once. See onFieldKey, holdLook and commitLook.
+  const look = heldCommit(commitLook);
+  // A look was committed in the task under way: Enter in a color's text
+  // field commits the color and, where the browser submits the form for it
+  // (Firefox does, before the field's change), asks to apply what is left.
+  let lookJustCommitted = false;
 
-  onBeforeUnmount(() => icon.flush());
+  onBeforeUnmount(() => look.flush());
 
   function reset() {
     const data = target.value
@@ -675,7 +827,7 @@
   // were made on, merged into it as it is now (see mergeFormData).
   function applied(element) {
     return applyFormData(
-      store.doc,
+      host.doc,
       editing.selection,
       mergeFormData(loaded.value, draft.value, element.data),
     );
@@ -685,19 +837,19 @@
   // edits are applied to the element they were made on, merged into it as it
   // is now; edits with errors are discarded, and the announcement says which
   // happened. Nothing is applied while a redo is pending, so an undo is not
-  // undone by it. A held icon goes first, to the device it was chosen for.
+  // undone by it. A held look goes first, to the device it was chosen for.
   function settleUnapplied() {
-    icon.flush();
+    look.flush();
 
     if (
       !(dirty.value || localErrors.value.length > 0) ||
       !editing ||
-      store.readOnly
+      host.readOnly
     ) {
       return;
     }
 
-    const previous = inspectorTarget(store.doc, editing.selection);
+    const previous = inspectorTarget(host.doc, editing.selection);
 
     if (!previous) {
       return;
@@ -707,22 +859,22 @@
     const found = failing(previous);
 
     if (found.length > 0) {
-      store.announce(
+      host.announce(
         `Discarded unapplied changes to ${editing.title}: ${found.length === 1 ? 'a field has' : 'fields have'} errors.`,
       );
 
       return;
     }
 
-    if (store.canRedo) {
-      store.announce(`Discarded unapplied changes to ${editing.title}.`);
+    if (host.canRedo) {
+      host.announce(`Discarded unapplied changes to ${editing.title}.`);
 
       return;
     }
 
     const next = applied(previous);
 
-    store.commit(
+    host.commit(
       next,
       appliedLabel(`Applied changes to ${editing.title}`, next, editing),
     );
@@ -735,22 +887,22 @@
    * change it applies them while a redo is pending too, which clears Redo
    * as Apply does. The form stays open, so edits that cannot be applied are
    * kept, not discarded. The field being typed in has committed already
-   * (see settleEdits in BuilderV2.vue).
+   * (see settleEdits in Builder.vue).
    *
    * @returns {string} why edits are left unapplied, or '' when none are
    */
   function settle() {
-    icon.flush();
+    look.flush();
 
     if (
       !(dirty.value || localErrors.value.length > 0) ||
       !editing ||
-      store.readOnly
+      host.readOnly
     ) {
       return '';
     }
 
-    const previous = inspectorTarget(store.doc, editing.selection);
+    const previous = inspectorTarget(host.doc, editing.selection);
 
     if (!previous) {
       return `${editing.title} is no longer in the diagram`;
@@ -768,7 +920,7 @@
 
     // A commit refused while a conflict is resolved leaves them unapplied.
     if (
-      !store.commit(
+      !host.commit(
         next,
         appliedLabel(`Applied changes to ${editing.title}`, next, editing),
       )
@@ -783,7 +935,7 @@
 
   /**
    * Saves unapplied edits before the diagram is left or read whole: Back to
-   * drafts, another page, Upload, a reload, Publish and Export (see
+   * drafts, another page, Upload, a reload, Publish and Download (see
    * leave.js). Valid edits, and a position typed and not moved to, are
    * applied as one edit named SAVED_UNAPPLIED, which the History dialog
    * marks; like a save, this applies them while a redo is pending too. It
@@ -796,11 +948,11 @@
    */
   function saveUnapplied() {
     catchUp();
-    icon.flush();
+    look.flush();
 
     const element =
-      editing && !store.readOnly
-        ? inspectorTarget(store.doc, editing.selection)
+      editing && !host.readOnly
+        ? inspectorTarget(host.doc, editing.selection)
         : null;
 
     if (!element) {
@@ -818,7 +970,7 @@
     // The Position fields are the selected node's, which the form is
     // editing too.
     if (canMove.value && editing.selection.id === target.value?.target?.id) {
-      next = moveNodes(next || store.doc, [
+      next = moveNodes(next || host.doc, [
         { id: editing.selection.id, position: { ...moveTo.value } },
       ]);
     }
@@ -826,7 +978,7 @@
     // A commit refused while a conflict is resolved leaves them unapplied.
     if (
       next &&
-      store.commit(
+      host.commit(
         next,
         appliedLabel(`${SAVED_UNAPPLIED} to ${editing.title}`, next, editing),
       ) &&
@@ -887,7 +1039,7 @@
     return listOf([
       label,
       ...(applied.type === 'node'
-        ? connectionChanges(store.doc, next, applied.id)
+        ? connectionChanges(host.doc, next, applied.id)
         : []),
     ]);
   }
@@ -908,7 +1060,7 @@
   // (see stampEntry in store.js), which no form shows: a reset then would
   // drop the text being typed in a field.
   watch(
-    () => store.doc,
+    () => host.doc,
     (next, previous) => {
       if (sameButStamp(next, previous)) {
         return;
@@ -936,10 +1088,11 @@
     }
 
     const warned = fieldWarnings.value;
+    const before = draft.value;
 
     draft.value = event.data;
     announceWarnings(warned, fieldWarnings.value);
-    holdIcon(event.data);
+    holdLook(event.data, before);
     dirty.value = formDataChanged(event.data, loadedData());
 
     // Edits typed back leave nothing to apply, so the form shows the element
@@ -961,7 +1114,7 @@
 
       for (const message of messages) {
         if (!before[path]?.includes(message)) {
-          store.announce(
+          host.announce(
             label ? `Warning for ${label}: ${message}` : `Warning: ${message}`,
           );
         }
@@ -969,23 +1122,40 @@
     }
   }
 
-  // Commits an icon chosen in the form, or holds it while it is stepped to
-  // with keys (see `icon`), unless it is the one the device has or is
-  // getting.
-  function holdIcon(data) {
+  // Commits what a change of the form's data changed of the device's look,
+  // or holds it while its icon is stepped to with keys (see `look`). Only
+  // the look fields this change set count, told from the data the form had
+  // before it: the form keeps its data while it has unapplied edits, and a
+  // look the device was given elsewhere meanwhile is not put back by an
+  // edit of another field. A color that is no #rrggbb is left out: its
+  // field shows the error, and the device keeps the color it has.
+  function holdLook(data, before) {
     const current = target.value;
-    const iconKey = data?.iconKey || '';
 
-    if (
-      current?.kind !== 'device' ||
-      store.readOnly ||
-      lock.value.all ||
-      iconKey === (icon.held?.iconKey ?? (current.data.iconKey || ''))
-    ) {
+    if (current?.kind !== 'device' || host.readOnly || lock.value.all) {
       return;
     }
 
-    icon.change({ selection: { ...selection.value }, iconKey });
+    const [chosen, shown] = [lookOf(data), lookOf(before)];
+    const refused = (key) =>
+      NODE_COLOR_KEYS.includes(key) &&
+      chosen[key] !== '' &&
+      !HEX_COLOR.test(chosen[key]);
+    const changed = LOOK_KEYS.filter(
+      (key) => chosen[key] !== shown[key] && !refused(key),
+    );
+
+    if (changed.length === 0) {
+      return;
+    }
+
+    look.change({
+      selection: { ...selection.value },
+      change: {
+        ...look.held?.change,
+        ...Object.fromEntries(changed.map((key) => [key, chosen[key]])),
+      },
+    });
   }
 
   // A key on the Icon select: one that steps it holds the icon it steps to,
@@ -1003,44 +1173,64 @@
     const effect = keyEffect(event);
 
     if (effect === 'hold') {
-      icon.key();
+      look.key();
     } else if (effect === 'flush') {
-      icon.flush();
+      look.flush();
     }
   }
 
-  // Gives the device the icon chosen for it, unless it has it already.
-  // Returns whether it did.
-  function commitIcon({ selection: chosenFor, iconKey }) {
-    const device = inspectorTarget(store.doc, chosenFor);
+  // Gives the device the look fields chosen for it, unless it has them
+  // already, as an edit named after the first field it changes (see
+  // lookChangeLabel). Returns whether it did.
+  function commitLook({ selection: chosenFor, change }) {
+    const device = inspectorTarget(host.doc, chosenFor);
 
+    if (device?.kind !== 'device' || host.readOnly) {
+      return false;
+    }
+
+    const has = lookOf(device.data);
+    const label = lookChangeLabel(
+      device.title,
+      has,
+      { ...has, ...change },
+      (id) => iconEntry(id)?.name,
+    );
+
+    if (!label) {
+      return false;
+    }
+
+    // A commit refused while a conflict is resolved leaves the look in the
+    // form, as an unapplied edit.
     if (
-      device?.kind !== 'device' ||
-      store.readOnly ||
-      iconKey === (device.data.iconKey || '')
+      !host.commit(
+        applyFormData(host.doc, chosenFor, { ...device.data, ...change }),
+        label,
+      )
     ) {
       return false;
     }
 
-    store.commit(
-      applyFormData(store.doc, chosenFor, { ...device.data, iconKey }),
-      `Changed the icon of ${device.title} to ${iconKey || 'the default'}`,
-    );
-
-    // The icon is no unapplied edit of the device's now.
+    // The look is no unapplied edit of the device's now.
     if (editing?.selection.id === chosenFor.id) {
-      loaded.value = { ...loaded.value, iconKey };
+      loaded.value = { ...loaded.value, ...change };
     }
+
+    lookJustCommitted = true;
+    setTimeout(() => {
+      lookJustCommitted = false;
+    });
 
     return true;
   }
 
-  // The element's data as the form loaded it, counting a held icon as
+  // The element's data as the form loaded it, counting a held look as
   // applied: it is no edit for Apply.
   function loadedData() {
     const data = loaded.value;
 
-    return icon.held ? { ...data, iconKey: icon.held.iconKey } : data;
+    return look.held ? { ...data, ...look.held.change } : data;
   }
 
   function remember(field) {
@@ -1055,26 +1245,29 @@
   // field it takes focus from settles only then, so nothing moves under the
   // click, and a click on Apply or Cancel lands although the field's change
   // left nothing to apply.
-  let pressing = false;
   let settleAfterPress = false;
 
   function onPress(event) {
-    // An icon chosen with the pointer commits at once (see `icon`).
-    icon.point();
+    // An icon chosen with the pointer commits at once (see `look`).
+    look.point();
 
     // A secondary button opens a menu, and may never send pointerup here.
-    if (pressing || event.button !== 0) {
+    if (pressing.value || event.button !== 0) {
       return;
     }
 
-    pressing = true;
+    pressing.value = true;
 
+    // A press that opens a menu (Control and a click, on macOS) ends there:
+    // its pointerup may never come.
+    const ends = ['pointerup', 'pointercancel', 'contextmenu'];
     const release = () => {
-      document.removeEventListener('pointerup', release, true);
-      document.removeEventListener('pointercancel', release, true);
+      ends.forEach((type) => {
+        document.removeEventListener(type, release, true);
+      });
       // The click follows pointerup in the same task.
       setTimeout(() => {
-        pressing = false;
+        pressing.value = false;
 
         if (settleAfterPress) {
           settleAfterPress = false;
@@ -1083,8 +1276,9 @@
       });
     };
 
-    document.addEventListener('pointerup', release, true);
-    document.addEventListener('pointercancel', release, true);
+    ends.forEach((type) => {
+      document.addEventListener(type, release, true);
+    });
   }
 
   function onFieldFocus(event) {
@@ -1200,7 +1394,7 @@
 
     committedText.set(field, field.value);
     setTimeout(() => {
-      if (!pressing && document.activeElement === field) {
+      if (!pressing.value && document.activeElement === field) {
         typing.value = false;
       }
     });
@@ -1212,9 +1406,9 @@
     const field = event.target;
     const next = event.relatedTarget;
 
-    // Only the Icon field holds an icon, and the choice is made once focus
+    // Only the Icon field holds a look, and the choice is made once focus
     // leaves it.
-    icon.flush();
+    look.flush();
 
     // The window lost focus: the element gets it back, so nothing settles.
     if (!next && document.activeElement === field) {
@@ -1244,7 +1438,7 @@
       field.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    if (pressing) {
+    if (pressing.value) {
       settleAfterPress = true;
     } else {
       typing.value = false;
@@ -1309,10 +1503,14 @@
     }
 
     const refocus = keepFocus();
-    // A held icon is an edit of its own, and says so.
-    const iconChanged = icon.flush();
+    // A held look is an edit of its own, and says so.
+    const flushed = look.flush();
 
     await commitFocusedField();
+
+    // So is a color its text field has just committed, on the Enter that
+    // asks for this.
+    const lookChanged = flushed || lookJustCommitted;
 
     // Edits changed back leave nothing to apply. Committing the unchanged
     // element would still add an Undo step and a server snapshot. Edits a
@@ -1322,8 +1520,8 @@
       typing.value = false;
       held.value = false;
 
-      if (!store.readOnly && !lock.value.all && !iconChanged) {
-        store.announce('No changes to apply.');
+      if (!host.readOnly && !lock.value.all && !lookChanged) {
+        host.announce('No changes to apply.');
       }
 
       await refocus();
@@ -1339,7 +1537,7 @@
     const warned = ownWarnings();
 
     // Named after the edit, so a rename says the new name.
-    store.commit(
+    host.commit(
       next,
       appliedLabel(`Updated ${inspectorName(next, selection.value)}`, next, {
         selection: selection.value,
@@ -1353,7 +1551,7 @@
     const added = ownWarnings().filter((text) => !warned.includes(text));
 
     if (added.length) {
-      store.announce(
+      host.announce(
         `${count(added.length, 'new warning')}: ${added.join('; ')}`,
       );
     }
@@ -1376,14 +1574,14 @@
 
     const refocus = keepFocus();
 
-    // An icon is applied without Apply, so Cancel keeps it.
-    icon.flush();
+    // A look is applied without Apply, so Cancel keeps it.
+    look.flush();
 
     const discarded = dirty.value || localErrors.value.length > 0;
 
     reset();
     held.value = false;
-    store.announce(
+    host.announce(
       discarded ? 'Discarded unapplied changes.' : 'No changes to discard.',
     );
     await refocus();
@@ -1471,7 +1669,7 @@
 
   const canMove = computed(
     () =>
-      !store.readOnly &&
+      !host.readOnly &&
       Number.isFinite(typedPosition.value.x) &&
       Number.isFinite(typedPosition.value.y) &&
       (moveTo.value.x !== Math.round(nodePosition.value?.x ?? 0) ||
@@ -1492,7 +1690,7 @@
     const up = event.key === 'ArrowUp';
 
     if (
-      store.readOnly ||
+      host.readOnly ||
       (!up && event.key !== 'ArrowDown') ||
       event.altKey ||
       event.ctrlKey ||
@@ -1520,7 +1718,7 @@
       return;
     }
 
-    store.moveNodes([
+    host.moveNodes([
       { id: target.value.target.id, position: { ...moveTo.value } },
     ]);
   }
@@ -1541,7 +1739,7 @@
       (handle) => handle.id === handleId,
     );
 
-    store.removeInterface(target.value.target.id, handleId);
+    host.removeInterface(target.value.target.id, handleId);
     await nextTick();
 
     const buttons = removeButtons();
@@ -1558,7 +1756,7 @@
       (handle) => handle.id === handleId,
     );
 
-    store.remove({
+    host.remove({
       nodes: [],
       edges: connectionsOf(handleId).map((edge) => edge.id),
     });
@@ -1568,7 +1766,7 @@
   }
 
   function connectionsOf(handleId) {
-    return (store.doc.edges || []).filter(
+    return (host.doc.edges || []).filter(
       (entry) =>
         entry.sourceHandleId === handleId || entry.targetHandleId === handleId,
     );
@@ -1581,14 +1779,14 @@
       return 'not connected';
     }
 
-    const network = findNetwork(store.doc, edge.networkId);
+    const network = findNetwork(host.doc, edge.networkId);
 
     return network ? `network ${network.name}` : 'unknown network';
   }
 
-  const issues = computed(() => store.issues);
+  const issues = computed(() => host.issues);
   const ownIssues = computed(() =>
-    issuesAbout(store.doc, issues.value, selection.value),
+    issuesAbout(host.doc, issues.value, selection.value),
   );
   const ownCounts = computed(() => issueCounts(ownIssues.value));
 
@@ -1598,10 +1796,10 @@
   // through the Builder's one live region, after the edit's own announcement.
   watch(
     () => ({
-      id: store.doc?.id,
+      id: host.doc?.id,
       texts: issues.value
         .filter((issue) => issue.level === 'error')
-        .map((issue) => issueText(store.doc, issue)),
+        .map((issue) => issueText(host.doc, issue)),
     }),
     (now, before) => {
       const added =
@@ -1610,14 +1808,22 @@
           : [];
 
       if (added.length) {
-        store.announce(
+        host.announce(
           `${count(added.length, 'new diagram error')}: ${added.join('; ')}`,
         );
       }
     },
   );
 
-  defineExpose({ apply, cancel, settle, saveUnapplied, draft, errors });
+  defineExpose({
+    apply,
+    cancel,
+    settle,
+    saveUnapplied,
+    draft,
+    errors,
+    changed,
+  });
 </script>
 
 <style scoped>
@@ -1637,6 +1843,10 @@
     margin: 0 0 0.5rem;
     padding-left: 0.5rem;
     border-left: 3px dashed var(--bx-border-strong);
+  }
+
+  .builder-inspector__combine {
+    margin: 0 0 0.75rem;
   }
 
   /* Across the panel's width, over the fields that scroll under it, with a

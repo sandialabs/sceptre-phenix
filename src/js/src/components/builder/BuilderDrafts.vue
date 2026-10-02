@@ -5,7 +5,7 @@
   other users' drafts the role may see, a tab shown only when it lists
   something) plus the three ways to start: a blank diagram, Import (the server converts
   a topology or experiment config) and Upload (a Builder document). The
-  view (BuilderV2.vue) puts the buttons the editor header has too after
+  view (Builder.vue) puts the buttons the editor header has too after
   them, in the buttons slot: Commands, the theme, Settings, Help and Focus
   mode. The view reads the lists again whenever they come back into view,
   so there is no Refresh button.
@@ -19,11 +19,16 @@
   cannot be opened, and Delete when the user may delete it: the user's own
   under My Drafts, other users' under Other users' drafts.
 
-  The user's own drafts say who they are shared with, and have Share when
-  the server says the user may share them (canShare). Other users' drafts
-  say what the user may do with them, and only open. A published topology
-  has Delete when the role may delete configs, which deletes the topology
-  from phenix.
+  A card says who owns the draft on one line and when it last changed on
+  the next, and its buttons are all one size (see .builder-card__actions in
+  builder.css). The user's own drafts say who they are shared with, and have
+  Share when the server says the user may share them (canShare). Other
+  users' drafts say what the user may do with them; one the server says the
+  user may delete (canDelete) has Delete. A draft the user may change has
+  Publish, which opens the Publish dialog here, on the drafts, once the view
+  has loaded the draft (publishing). A published topology has Delete when
+  the role may delete configs, which deletes the topology from phenix, and
+  Exp while its publication has an experiment, which opens that experiment.
 
   A topology whose diagram is read from the Builder file it names is listed
   with the published diagrams, tagged File in words, with the file's path
@@ -34,11 +39,28 @@
   on (saves, see createBackgroundSaves in builder/leave.js): being saved,
   saved, or why not, which its Open button is described by. Opening it
   again is the way back to changes that could not be saved.
+
+  Several cards can be acted on at once. A card the user may delete, or on
+  My Drafts share, has a checkbox, and its list a row above it
+  (BuilderBulkBar.vue) with Select all, how many are selected, and Share
+  selected and Delete selected. Drafts shared with the user have neither,
+  nor has a list with no such card. Each list keeps its own selection, by
+  cardKey, through a change of tab and a new read of the lists; every change
+  of it is announced (announce). Delete selected asks once for the batch,
+  naming what goes and how many, and the view deletes them (bulk-delete,
+  bulk-delete-published); Share selected has the view open the dialog that
+  shares them (bulk-share). While the view runs a batch (bulk), the row says
+  how far it is, and nothing can be selected or deleted. What a batch left
+  undone is listed under the row (bulkResult, BuilderBulkSummary.vue), in a
+  summary that takes focus.
+
+  The view can add a tab of its own, Node Templates (templates), whose panel
+  is the templates slot.
 -->
 <template>
   <section ref="rootEl" aria-labelledby="drafts-title">
     <div class="builder-drafts__header">
-      <h1 id="drafts-title">Builder v2</h1>
+      <h1 id="drafts-title">Builder</h1>
 
       <div class="builder-drafts__actions">
         <template v-if="canCreate">
@@ -51,18 +73,6 @@
             <builder-icon name="plus" :size="14" />
             Blank diagram
           </button>
-          <!-- The test ids predate the names: drafts-generate is Import and
-               drafts-import is Upload, after the dialogs they open. -->
-          <button
-            type="button"
-            class="builder-button"
-            data-testid="drafts-generate"
-            aria-haspopup="dialog"
-            :aria-disabled="busy || undefined"
-            @click="busy || $emit('generate')">
-            <builder-icon name="layout" :size="14" />
-            Import
-          </button>
           <button
             type="button"
             class="builder-button"
@@ -70,6 +80,16 @@
             aria-haspopup="dialog"
             :aria-disabled="busy || undefined"
             @click="busy || $emit('import')">
+            <builder-icon name="layout" :size="14" />
+            Import
+          </button>
+          <button
+            type="button"
+            class="builder-button"
+            data-testid="drafts-upload"
+            aria-haspopup="dialog"
+            :aria-disabled="busy || undefined"
+            @click="busy || $emit('upload')">
             <builder-icon name="upload" :size="14" />
             Upload
           </button>
@@ -100,7 +120,7 @@
         @click="active = tab.id"
         @keydown="onTabKeydown($event, tab)">
         {{ tab.label }}
-        <span class="builder-card__meta">({{ tab.items.length }})</span>
+        <span class="builder-tab__count">({{ tab.count }})</span>
       </button>
     </div>
 
@@ -110,50 +130,129 @@
       :key="`panel-${tab.id}`"
       role="tabpanel"
       :aria-labelledby="`tab-${tab.id}`"
-      :tabindex="tab.items.length ? undefined : 0"
+      :tabindex="tab.custom || tab.items.length ? undefined : 0"
       :hidden="active !== tab.id">
-      <!-- A refresh keeps the cards on screen, so focus on them survives. -->
-      <p v-if="loading && !tab.items.length" role="status">Loading…</p>
+      <builder-bulk-bar
+        v-if="tab.selection?.total"
+        :id="tab.id"
+        :label="tab.label"
+        :count="tab.selection.count"
+        :total="tab.selection.total"
+        :state="tab.selection.state"
+        :running="bulk?.tab === tab.id ? bulk : null"
+        :disabled="Boolean(bulk)"
+        @toggle-all="selectAll(tab)">
+        <!-- Both say how many are selected, so one that cannot act says
+             why: "0 of 12 selected". -->
+        <button
+          v-if="tab.id === 'mine' && canShareSome"
+          type="button"
+          class="builder-button"
+          data-testid="bulk-share-mine"
+          aria-haspopup="dialog"
+          :aria-describedby="`bulk-count-${tab.id}`"
+          :aria-disabled="
+            !shareable(tab).length || Boolean(bulk) || busy || undefined
+          "
+          @click="shareSelected(tab)">
+          <builder-icon name="share" :size="14" />
+          Share selected
+        </button>
+        <button
+          v-if="canDeleteSome(tab)"
+          type="button"
+          class="builder-button builder-button--danger"
+          :data-testid="`bulk-delete-${tab.id}`"
+          aria-haspopup="dialog"
+          :aria-describedby="`bulk-count-${tab.id}`"
+          :aria-disabled="
+            !deletable(tab).length || Boolean(bulk) || busy || undefined
+          "
+          @click="askDeleteSelected(tab)">
+          Delete selected
+        </button>
+      </builder-bulk-bar>
+
+      <!-- What the last batch on this tab left undone, under the row. -->
+      <builder-bulk-summary
+        v-if="bulkResult && summaryTab === tab.id"
+        :ref="(element) => (summary = element)"
+        :heading="bulkResult.heading"
+        :items="bulkResult.items"
+        @dismiss="dismissResult(tab.id)" />
+
+      <!-- The view's own panel (Node Templates). Otherwise the cards: a
+           refresh keeps them on screen, so focus on them survives. -->
+      <slot v-if="tab.custom" name="templates" />
+      <p v-else-if="loading && !tab.items.length" role="status">Loading…</p>
       <p v-else-if="!tab.items.length">{{ tab.empty }}</p>
 
-      <ul v-else class="builder-cards" :data-testid="`drafts-list-${tab.id}`">
+      <ul
+        v-else
+        class="builder-cards"
+        :aria-busy="bulk?.tab === tab.id || undefined"
+        :data-testid="`drafts-list-${tab.id}`">
         <li
           v-for="item in tab.items"
           :key="`${item.owner || 'published'}-${item.id}`"
-          class="builder-card builder-panel">
-          <h2>
-            {{ itemLabel(item) }}
-            <span
-              v-if="isFile(item)"
-              class="builder-drafts__tag"
-              :data-testid="`published-file-${item.id}`"
-              >File</span
-            >
-          </h2>
-          <p class="builder-card__meta">
-            <span v-if="item.owner">Owner: {{ item.owner }}</span>
+          class="builder-card builder-panel"
+          :class="{ 'is-selected': tab.selection?.has(item) }">
+          <div class="builder-card__head">
+            <!-- The checkbox is named for the card, as its buttons are. -->
+            <label
+              v-if="tab.selection && selectable(tab.id, item)"
+              class="builder-card__select">
+              <input
+                type="checkbox"
+                :checked="tab.selection.has(item)"
+                :disabled="Boolean(bulk)"
+                :data-testid="`card-select-${item.id}`"
+                @change="select(tab, item, $event.target.checked)" />
+              <span class="builder-visually-hidden">
+                Select {{ cardName(item) }}
+              </span>
+            </label>
+            <h2>
+              {{ itemLabel(item) }}
+              <span
+                v-if="isFile(item)"
+                class="builder-drafts__tag"
+                :data-testid="`published-file-${item.id}`"
+                >File</span
+              >
+            </h2>
+          </div>
+          <!-- One line each: the owner, with what the user may do with
+               another user's draft; then when it changed. -->
+          <p v-if="item.owner" class="builder-card__meta">
+            Owner: {{ item.owner }}
             <span
               v-if="tab.id !== 'mine' && item.access"
               :data-testid="`draft-access-${item.id}`">
               · {{ listedAccess(item) }}
             </span>
-            <span v-if="stamp(item)">
-              · {{ stamp(item).verb }} {{ stamp(item).time
-              }}{{ changedBy(item) ? ` by ${changedBy(item)}` : '' }}
-            </span>
-            <span
-              v-if="isFile(item)"
-              :data-testid="`published-path-${item.id}`">
-              Read from {{ item.path }}
-            </span>
-            <span v-if="item.nodeCount != null">
-              · {{ item.nodeCount }} nodes
-            </span>
-            <span
-              v-if="tab.id === 'mine' && item.shares?.length"
-              :data-testid="`draft-shared-with-${item.id}`">
-              · Shared with {{ describeShares(item.shares) }}
-            </span>
+          </p>
+          <p
+            v-if="stamp(item)"
+            class="builder-card__meta"
+            :data-testid="`card-time-${item.id}`">
+            {{ stamp(item).verb }} {{ stamp(item).time
+            }}{{ changedBy(item) ? ` by ${changedBy(item)}` : '' }}
+          </p>
+          <p
+            v-if="isFile(item)"
+            class="builder-card__meta"
+            :data-testid="`published-path-${item.id}`">
+            Read from {{ item.path }}
+          </p>
+          <p v-if="item.nodeCount != null" class="builder-card__meta">
+            {{ item.nodeCount }} nodes
+          </p>
+          <p
+            v-if="tab.id === 'mine' && item.shares?.length"
+            class="builder-card__meta"
+            :data-testid="`draft-shared-with-${item.id}`">
+            Shared with {{ describeShares(item.shares) }}
           </p>
           <p v-if="item.description" class="builder-card__meta">
             {{ item.description }}
@@ -185,7 +284,7 @@
             of phenix may have saved it.
           </p>
 
-          <div class="builder-drafts__actions">
+          <div class="builder-card__actions">
             <!-- While it opens: a turning ring and Opening… (see
                  builder.css; reduced motion stops the ring turning). Both
                  labels hold the button's width; the hidden one is not
@@ -224,6 +323,23 @@
               <builder-icon name="share" :size="14" />
               Share
             </button>
+            <!-- The experiment the diagram's publication made, while it
+                 exists: the button's name says which, as its tooltip does. -->
+            <button
+              v-if="tab.id === 'published' && item.experiment"
+              type="button"
+              class="builder-button"
+              :data-testid="`published-experiment-${item.id}`"
+              :aria-label="`Exp: open experiment ${item.experiment}`"
+              :aria-disabled="busy || undefined"
+              v-on="tipEvents(`Open experiment ${item.experiment}`)"
+              @click="busy || $emit('experiment', item)">
+              <builder-icon name="experiment" :size="14" />
+              Exp
+            </button>
+            <!-- Delete waits with the other buttons while a draft is made,
+                 opened or published: the draft a card's Publish is still
+                 publishing must not be deleted under it. -->
             <button
               v-if="mayDelete(tab, item)"
               type="button"
@@ -231,7 +347,8 @@
               :data-testid="`draft-delete-${item.id}`"
               :aria-label="`Delete ${cardName(item)}`"
               aria-haspopup="dialog"
-              @click="confirming = item">
+              :aria-disabled="busy || Boolean(bulk) || undefined"
+              @click="busy || bulk || (confirming = item)">
               Delete
             </button>
             <!-- A published topology's: while it is deleted, a turning ring
@@ -243,9 +360,13 @@
               :data-testid="`published-delete-${item.id}`"
               :aria-label="`${isDeleting(item) ? 'Deleting' : 'Delete'} ${cardName(item)}`"
               aria-haspopup="dialog"
-              :aria-disabled="isDeleting(item) || undefined"
+              :aria-disabled="
+                isDeleting(item) || busy || Boolean(bulk) || undefined
+              "
               :aria-busy="isDeleting(item) || undefined"
-              @click="isDeleting(item) || (confirmingPublished = item)">
+              @click="
+                isDeleting(item) || busy || bulk || (confirmingPublished = item)
+              ">
               <span
                 v-if="isDeleting(item)"
                 class="builder-toolbar__spinner"
@@ -253,6 +374,29 @@
               <span class="builder-button__swap">
                 <span :class="{ 'is-off': isDeleting(item) }">Delete</span>
                 <span :class="{ 'is-off': !isDeleting(item) }">Deleting…</span>
+              </span>
+            </button>
+            <!-- On a draft the user may change. While the view loads the
+                 draft for the dialog: a turning ring and Loading…, as Open
+                 shows while it opens. -->
+            <button
+              v-if="mayPublish(item)"
+              type="button"
+              class="builder-button"
+              :data-testid="`draft-publish-${item.id}`"
+              :aria-label="`${isPublishing(item) ? 'Loading' : 'Publish'} ${cardName(item)}`"
+              aria-haspopup="dialog"
+              :aria-disabled="busy || undefined"
+              :aria-busy="isPublishing(item) || undefined"
+              @click="busy || $emit('publish', item, itemLabel(item))">
+              <span
+                v-if="isPublishing(item)"
+                class="builder-toolbar__spinner"
+                aria-hidden="true"></span>
+              <builder-icon v-else name="publish" :size="14" />
+              <span class="builder-button__swap">
+                <span :class="{ 'is-off': isPublishing(item) }">Publish</span>
+                <span :class="{ 'is-off': !isPublishing(item) }">Loading…</span>
               </span>
             </button>
           </div>
@@ -276,6 +420,19 @@
       confirm-label="Delete topology"
       @cancel="confirmingPublished = null"
       @confirm="confirmDeletePublished" />
+    <!-- Delete selected: one question for the batch. One card alone is
+         asked about as its own Delete asks. -->
+    <builder-confirm
+      v-if="confirmingSelected"
+      :id="selectedQuestion.id"
+      :title="selectedQuestion.title"
+      :message="selectedQuestion.message"
+      :confirm-label="selectedQuestion.confirmLabel"
+      @cancel="confirmingSelected = null"
+      @confirm="confirmDeleteSelected" />
+
+    <!-- Exp's tooltip. It is aria-hidden: the button's name says the same. -->
+    <builder-fixed-tooltip :tooltip="tooltip" testid="drafts-tooltip" />
   </section>
 </template>
 
@@ -293,13 +450,22 @@
 </script>
 
 <script setup>
-  import { computed, nextTick, ref, watch } from 'vue';
+  import { computed, nextTick, reactive, ref, watch } from 'vue';
 
+  import BuilderBulkBar from './BuilderBulkBar.vue';
+  import BuilderBulkSummary from './BuilderBulkSummary.vue';
   import BuilderConfirm from './BuilderConfirm.vue';
+  import BuilderFixedTooltip from './BuilderFixedTooltip.vue';
   import BuilderIcon from './BuilderIcon.vue';
+  import { useFixedTooltip } from './fixedTooltip.js';
 
+  import {
+    draftsDeleteMessage,
+    topologiesDeleteMessage,
+  } from '@/builder/bulk.js';
   import { focusLost } from '@/builder/commands.js';
   import { formatTimestamp } from '@/builder/format.js';
+  import { useListSelection } from '@/builder/listSelection.js';
   import { rowTarget } from '@/builder/roving.js';
   import {
     deleteMessage,
@@ -321,10 +487,12 @@
     canDelete: { type: Boolean, default: true },
     // The ids of the published diagrams whose topologies are being deleted.
     deletingPublished: { type: Array, default: () => [] },
-    // A draft is being made or opened.
+    // A draft is being made, opened or published.
     busy: { type: Boolean, default: false },
     // The draft or published diagram being opened, as cardKey names it.
     opening: { type: String, default: '' },
+    // The draft being loaded for its card's Publish, as cardKey names it.
+    publishing: { type: String, default: '' },
     // The drafts the server can no longer read: the user's own (mine) and
     // other users' (others), each with whether the user may delete it.
     damaged: {
@@ -335,6 +503,15 @@
     // kind ('saving', 'saved', 'retrying', 'waiting', 'signin' or
     // 'stopped') and text.
     saves: { type: Object, default: () => ({}) },
+    // The batch the view is running on the selection of a tab, if one is:
+    // { tab, label, done, total }, shown as "Deleting 2 of 5…".
+    bulk: { type: Object, default: null },
+    // What the last batch left undone: { tab, heading, items }, each item
+    // { key, name, reason }.
+    bulkResult: { type: Object, default: null },
+    // The view's Node Templates tab, when it has one: { count }, the number
+    // its name is followed by. Its panel is the templates slot.
+    templates: { type: Object, default: null },
   });
 
   const emit = defineEmits([
@@ -342,9 +519,22 @@
     'delete',
     'delete-published',
     'share',
+    'publish',
+    'experiment',
     'blank',
     'import',
-    'generate',
+    'upload',
+    // (tabId, items, names): the selected drafts to delete, once the user
+    // has confirmed, and what their cards call them, by cardKey.
+    'bulk-delete',
+    // (items, names): the selected published topologies, likewise.
+    'bulk-delete-published',
+    // (items, names, leftOut): the selected drafts to share, and how many
+    // damaged ones of the selection are left out.
+    'bulk-share',
+    'dismiss-bulk-result',
+    // (text, slot): for the page's live region.
+    'announce',
   ]);
 
   const rootEl = ref(null);
@@ -364,17 +554,41 @@
     return Boolean(props.opening) && props.opening === cardKey(item);
   }
 
+  function isPublishing(item) {
+    return Boolean(props.publishing) && props.publishing === cardKey(item);
+  }
+
+  // Publish is on a draft the user may change, as the server says (not
+  // readOnly): their own, one shared with them for editing, or another
+  // user's their role lets them update. The editor offers it for the same
+  // drafts.
+  function mayPublish(item) {
+    return (
+      Boolean(item.owner) &&
+      !item.damaged &&
+      !item.readOnly &&
+      item.access !== 'view'
+    );
+  }
+
   // How the saves of a draft closed while being saved go on, if they do.
   function saveOf(item) {
     return (item.owner && props.saves[cardKey(item)]) || null;
   }
 
   // Delete is on the user's own drafts, if the role may delete them, and on
-  // a damaged draft whenever the server says the user may delete it.
+  // a damaged draft, or another user's listed for the role, whenever the
+  // server says the user may delete it. A share never lets them.
   function mayDelete(tab, item) {
-    return item.damaged
-      ? Boolean(item.canDelete)
-      : tab.id === 'mine' && props.canDelete;
+    if (item.damaged) {
+      return Boolean(item.canDelete);
+    }
+
+    if (tab.id === 'mine') {
+      return props.canDelete;
+    }
+
+    return tab.id === 'others' && item.canDelete === true;
   }
 
   // A topology whose diagram is read from the Builder file it names: its
@@ -439,38 +653,99 @@
     return when ? `${name}, ${when.verb.toLowerCase()} ${when.time}` : name;
   }
 
-  // Damaged drafts follow the readable ones on their tab. Drafts shared
-  // with the user come the latest changed first. Other users' drafts have
-  // a tab only while there are some.
-  const tabs = computed(() => {
-    const others = [...props.others, ...(props.damaged.others || [])];
+  // What each tab lists. Damaged drafts follow the readable ones on their
+  // tab. Drafts shared with the user come the latest changed first.
+  const lists = computed(() => ({
+    mine: [...props.mine, ...(props.damaged.mine || [])],
+    shared: newestFirst(props.shared),
+    published: props.published,
+    others: [...props.others, ...(props.damaged.others || [])],
+  }));
 
+  // A card can be selected when a bulk action could act on it: on My
+  // Drafts a draft the user may delete or share, elsewhere one they may
+  // delete. A draft shared with the user never can.
+  function selectable(tabId, item) {
+    const tab = { id: tabId };
+
+    switch (tabId) {
+      case 'mine':
+        return item.damaged
+          ? Boolean(item.canDelete)
+          : props.canDelete || Boolean(item.canShare);
+      case 'published':
+        return mayDeletePublished(tab, item);
+      case 'others':
+        return mayDelete(tab, item);
+      default:
+        return false;
+    }
+  }
+
+  // The selection of each tab whose cards can be selected, by cardKey.
+  const selections = Object.fromEntries(
+    ['mine', 'published', 'others'].map((id) => [
+      id,
+      reactive(
+        useListSelection(
+          () => lists.value[id].filter((item) => selectable(id, item)),
+          cardKey,
+        ),
+      ),
+    ]),
+  );
+
+  // Other users' drafts have a tab only while there are some, and the
+  // view's Node Templates tab stands before it, so the tabs before those
+  // never move.
+  const tabs = computed(() => {
+    const { mine, shared, published, others } = lists.value;
+
+    // Each tab says how many it lists, after its name.
     return [
       {
         id: 'mine',
         label: 'My Drafts',
-        items: [...props.mine, ...(props.damaged.mine || [])],
+        items: mine,
         empty: props.canCreate
           ? 'You have no drafts yet. Start from a blank diagram.'
           : 'You have no drafts.',
       },
       {
         id: 'shared',
-        label: 'Shared with me',
-        items: newestFirst(props.shared),
+        label: 'Shared Drafts',
+        items: shared,
         empty: 'No one has shared a draft with you yet.',
       },
       {
         id: 'published',
         label: 'Published Diagrams',
-        items: props.published,
+        items: published,
         empty: 'Nothing has been published yet.',
       },
+      ...(props.templates
+        ? [
+            {
+              id: 'templates',
+              label: 'Node Templates',
+              items: [],
+              count: props.templates.count,
+              custom: true,
+            },
+          ]
+        : []),
       ...(others.length
         ? [{ id: 'others', label: "Other users' drafts", items: others }]
         : []),
-    ];
+    ].map((tab) => ({
+      ...tab,
+      count: tab.count ?? tab.items.length,
+      selection: selections[tab.id] || null,
+    }));
   });
+
+  const tooltip = useFixedTooltip({ side: 'below' });
+  const { tipEvents } = tooltip;
 
   // The tab shown goes when it has nothing left to list (the last of
   // other users' drafts deleted, say): My Drafts takes its place.
@@ -551,8 +826,11 @@
   // on it can leave its list when the lists are read again (deleted
   // elsewhere, say). Once its tab no longer holds the draft, focus moves to
   // the card that took its place, or to the tab when none is left (WCAG
-  // 2.4.3). A delete that failed leaves focus alone. The draft is named as
-  // on its card, with its time, since most drafts share a title.
+  // 2.4.3). A card that stays can lose the button focus was on instead
+  // (Publish, once the draft is shared with the user for viewing only):
+  // focus then moves to the card's first button. A delete that failed
+  // leaves focus alone. The draft is named as on its card, with its time,
+  // since most drafts share a title.
   let deleting = null;
 
   function requestDelete(item) {
@@ -613,27 +891,262 @@
     async () => {
       const pending = deleting || focusedCard();
       deleting = null;
-      const items =
-        tabs.value.find((entry) => entry.id === pending?.tab)?.items || [];
-      if (!pending || items.some((item) => item.id === pending.id)) {
+      if (!pending) {
         return;
       }
 
+      const items =
+        tabs.value.find((entry) => entry.id === pending.tab)?.items || [];
+      const stays = items.some((item) => item.id === pending.id);
+
       await nextTick();
-      // The user has moved on while the delete was in flight.
+      // Focus is where it was, or the user has moved on while the delete
+      // was in flight.
       if (!focusLost()) {
         return;
       }
 
-      const next = items[Math.min(pending.index, items.length - 1)];
+      const next = stays
+        ? pending
+        : items[Math.min(pending.index, items.length - 1)];
       if (!next || !(await focusDraft(next.id))) {
         focusActiveTab();
       }
     },
   );
 
+  // --- selection and bulk actions ---------------------------------------
+
+  // Every change of a selection is said, in a slot of its own, so quick
+  // changes come to the last one.
+  function announceSelection(tab) {
+    emit(
+      'announce',
+      `${tab.selection.count} of ${tab.selection.total} selected.`,
+      'selection',
+    );
+  }
+
+  function select(tab, item, on) {
+    tab.selection.toggle(item, on);
+    announceSelection(tab);
+  }
+
+  function selectAll(tab) {
+    tab.selection.toggleAll();
+    announceSelection(tab);
+  }
+
+  // The selected drafts Share selected shares: the user's own that the
+  // server lets them share. A damaged draft cannot be shared.
+  function shareable(tab) {
+    return tab.selection.selected.filter(
+      (item) => item.canShare && !item.damaged,
+    );
+  }
+
+  // The selected cards Delete selected deletes: on My Drafts a selected
+  // draft may be one the user can only share. A topology being deleted from
+  // its own card is left to that.
+  function deletable(tab) {
+    return tab.selection.selected.filter((item) =>
+      tab.id === 'published'
+        ? mayDeletePublished(tab, item) && !isDeleting(item)
+        : mayDelete(tab, item),
+    );
+  }
+
+  // Share selected is there when any listed draft can be shared, and
+  // Delete selected when any card of the tab can be deleted.
+  const canShareSome = computed(() =>
+    lists.value.mine.some((item) => item.canShare && !item.damaged),
+  );
+
+  function canDeleteSome(tab) {
+    return tab.items.some((item) =>
+      tab.id === 'published'
+        ? mayDeletePublished(tab, item)
+        : mayDelete(tab, item),
+    );
+  }
+
+  // What the cards call the items, by cardKey: the view names them so in
+  // what it says of the batch.
+  function namesOf(items) {
+    return Object.fromEntries(
+      items.map((item) => [cardKey(item), cardName(item)]),
+    );
+  }
+
+  function shareSelected(tab) {
+    const items = shareable(tab);
+
+    if (!items.length || props.bulk || props.busy) {
+      return;
+    }
+
+    emit(
+      'bulk-share',
+      items,
+      namesOf(items),
+      tab.selection.selected.filter((item) => item.damaged).length,
+    );
+  }
+
+  // Deleted drafts, their histories and deleted topologies cannot be
+  // recovered, so Delete selected asks first, once for the batch (WCAG
+  // 3.3.4): { tab, items }, the tab's id and the cards to delete.
+  const confirmingSelected = ref(null);
+
+  function askDeleteSelected(tab) {
+    const items = deletable(tab);
+
+    if (items.length && !props.bulk && !props.busy) {
+      confirmingSelected.value = { tab: tab.id, items };
+    }
+  }
+
+  // The question: what goes, by name, and how many. One card alone is
+  // asked about as its own Delete asks.
+  const selectedQuestion = computed(() => {
+    const { tab, items } = confirmingSelected.value || { items: [] };
+    const [first] = items;
+    const n = items.length;
+    const names = items.map(itemLabel);
+
+    if (tab === 'published') {
+      return n === 1
+        ? {
+            id: 'published-delete',
+            title: `Delete topology ${itemLabel(first)}?`,
+            message:
+              'The topology is deleted from phēnix. Drafts and experiments made from it are not changed.',
+            confirmLabel: 'Delete topology',
+          }
+        : {
+            id: 'bulk-delete-published',
+            title: `Delete ${n} topologies?`,
+            message: topologiesDeleteMessage(names),
+            confirmLabel: `Delete ${n} topologies`,
+          };
+    }
+
+    if (n === 1) {
+      return {
+        id: 'draft-delete',
+        title: `Delete draft ${cardName(first)}?`,
+        message: deleteMessage(first.shares),
+        confirmLabel: 'Delete draft',
+      };
+    }
+
+    return {
+      id: 'bulk-delete',
+      title: `Delete ${n} drafts?`,
+      message: draftsDeleteMessage(
+        names,
+        tab === 'others'
+          ? { owners: items.map((item) => item.owner).filter(Boolean) }
+          : { shared: items.filter((item) => item.shares?.length).length },
+      ),
+      confirmLabel: `Delete ${n} drafts`,
+    };
+  });
+
+  // The dialog gives focus back to Delete selected, which keeps it while
+  // the batch runs.
+  function confirmDeleteSelected() {
+    const { tab, items } = confirmingSelected.value;
+
+    confirmingSelected.value = null;
+
+    if (tab === 'published') {
+      emit('bulk-delete-published', items, namesOf(items));
+    } else {
+      emit('bulk-delete', tab, items, namesOf(items));
+    }
+  }
+
+  // The summary of what the last batch left undone, and the tab it is
+  // shown on: the batch's, or My Drafts once that tab is gone (the last of
+  // other users' drafts went with the batch).
+  let summary = null;
+  const summaryTab = computed(() =>
+    tabs.value.some((tab) => tab.id === props.bulkResult?.tab)
+      ? props.bulkResult.tab
+      : 'mine',
+  );
+
+  // It takes focus when it appears, on its tab.
+  watch(
+    () => props.bulkResult,
+    async (now) => {
+      if (!now) {
+        return;
+      }
+
+      active.value = summaryTab.value;
+      await nextTick();
+      summary?.focus();
+    },
+    { flush: 'post' },
+  );
+
+  // A batch that ended with nothing left undone leaves focus on its
+  // button. When the row went with the last card that could be selected,
+  // focus moves to the tab instead of falling to <body>.
+  watch(
+    () => props.bulk,
+    async (now, before) => {
+      if (now || !before || props.bulkResult) {
+        return;
+      }
+
+      await nextTick();
+
+      if (focusLost()) {
+        focusActiveTab();
+      }
+    },
+    { flush: 'post' },
+  );
+
+  // Dismiss removes the summary, so focus moves to Select all, or to the
+  // tab when the list has no row.
+  async function dismissResult(tabId) {
+    emit('dismiss-bulk-result');
+    await nextTick();
+
+    const all = rootEl.value?.querySelector(
+      `[data-testid="bulk-all-${tabId}"]`,
+    );
+
+    if (all && !all.disabled) {
+      all.focus();
+    } else {
+      focusActiveTab();
+    }
+  }
+
+  /**
+   * Unselects cards of a tab: the view calls it for the drafts a batch
+   * shared.
+   *
+   * @param {string} tabId
+   * @param {string[]} keys as cardKey names them
+   */
+  function deselect(tabId, keys) {
+    selections[tabId]?.remove(keys);
+  }
+
   // activeTab is the shown tab's id, for the palette's Show commands.
-  defineExpose({ activeTab: active, focusActiveTab, focusDraft, showTab });
+  defineExpose({
+    activeTab: active,
+    deselect,
+    focusActiveTab,
+    focusDraft,
+    showTab,
+  });
 </script>
 
 <style scoped>
@@ -672,8 +1185,14 @@
   }
 
   .builder-card h2 {
+    min-width: 0;
     font-weight: 700;
     margin: 0 0 0.25rem;
+  }
+
+  /* The owner, the time and the rest, a line each. */
+  .builder-card p.builder-card__meta {
+    margin: 0;
   }
 
   /* Says in words where the diagram is read from; the frame only sets the

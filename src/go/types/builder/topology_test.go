@@ -1142,3 +1142,42 @@ func TestExportTopologyConfigReturnsVLANAliases(t *testing.T) {
 		t.Fatalf("export aliases = %v, want the projection's %v, which are not empty", export.VLANAliases, projection.VLANAliases)
 	}
 }
+
+// TestToTopologyOmitsPresentationFields publishes a document that uses every
+// presentation field: the topology is the one of the same document without
+// them. Colors, line and border styles, custom icons, templates and the
+// includes that were not resolved are the diagram's alone.
+func TestToTopologyOmitsPresentationFields(t *testing.T) {
+	decorated := decoratedDocument(t)
+
+	plain := loadDocumentFixture(t, "document.json")
+	plain.Source.Kind = decorated.Source.Kind
+	plain.Source.IncludeTopologies = decorated.Source.IncludeTopologies
+
+	want, _, err := plain.ToTopologyConfig("decorated")
+	if err != nil {
+		t.Fatalf("ToTopologyConfig: %v", err)
+	}
+
+	got, _, err := decorated.ToTopologyConfig("decorated")
+	if err != nil {
+		t.Fatalf("ToTopologyConfig: %v", err)
+	}
+
+	if asJSON(t, got) != asJSON(t, want) {
+		t.Fatalf("a presentation field reached the topology:\nwant: %s\ngot:  %s", asJSON(t, want), asJSON(t, got))
+	}
+
+	encoded := asJSON(t, got)
+
+	for _, text := range append([]string{iconFixtureID, iconFixtureData, "#2f6fbf", "dotted", "dash-dot", "PLC"}, decorationKeys...) {
+		if strings.Contains(encoded, text) {
+			t.Fatalf("the topology holds %s: %s", text, encoded)
+		}
+	}
+
+	// The includes themselves are written back, all of them.
+	if includes := got.Spec["includeTopologies"]; !reflect.DeepEqual(includes, []string{"shared", "plant"}) {
+		t.Fatalf("includeTopologies = %#v", includes)
+	}
+}

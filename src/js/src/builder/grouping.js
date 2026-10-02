@@ -1,6 +1,7 @@
-// Auto-group: puts ungrouped nodes into groups of their own, by network or
-// by name. The store then lays the diagram out, so the new groups do not
-// overlap (see autoGroup in store.js).
+// Auto-group: puts ungrouped nodes into groups of their own, by network, by
+// name, or by a pattern the user types. The store then lays the diagram
+// out, so the new groups do not overlap (see autoGroup and
+// autoGroupByPattern in store.js).
 //
 // By network, each network's switch goes with the devices on that network,
 // and a device on several networks with its smallest one: the rule the
@@ -11,39 +12,89 @@
 // devices join, such as a management network, pulls unrelated networks into
 // one group with no name that fits.
 //
+// By name pattern, the user's regular expression is run on each name, a
+// device's hostname or a switch's label, and the nodes it matches the same
+// text of, ignoring case, go together (see groupingPattern.js). The pattern
+// runs in a Web Worker that is ended when it takes too long, and only when
+// the user asks: it is kept in this browser, never in the document.
+//
 // Only ungrouped devices and switches are grouped (only the selected ones,
 // when a selection is given), existing groups are left alone, and a group
 // would need two members.
 
-import { DEFAULT_NETWORK_COLORS, addNode, boundsOf } from './model.js';
+import { count } from './announce.js';
 import { drawnColor } from './colors.js';
+import {
+  GROUP_PATTERN_MAX,
+  matchTexts,
+  patternProblem,
+} from './groupingPattern.js';
 import { uniqueName } from './ids.js';
 import { collator, prefixOf } from './layouts/common.js';
+import {
+  DEFAULT_NETWORK_COLORS,
+  addNode,
+  boundsOf,
+  nodeLabel,
+} from './model.js';
+import { pageStorage } from './storage.js';
 
+// Each rule: `phrase` ends what its commit says ("Created 2 groups by
+// network"), and `asks` marks a rule that needs something from the user
+// first (the pattern), so choosing it opens a dialog.
 export const GROUPING_STRATEGIES = Object.freeze([
   {
     id: 'network',
     label: 'By network',
     summary: 'Each network’s switch with its devices',
+    phrase: 'by network',
   },
   {
     id: 'name',
     label: 'By name',
     summary: 'Devices with names like web-01 and web-02',
+    phrase: 'by name',
+  },
+  {
+    id: 'pattern',
+    label: 'By name pattern',
+    summary: 'Nodes whose names match a regular expression',
+    phrase: 'by name pattern',
+    asks: true,
   },
 ]);
 
 const DEFAULT_GROUPING = 'network';
+
+// How long a pattern may take over all the names before its worker is
+// ended.
+export const GROUP_PATTERN_TIMEOUT_MS = 2000;
+
+// The longest title a group takes from the text a pattern matched.
+const GROUP_TITLE_MAX = 80;
+
+// Where the last pattern used is kept, in this browser. It is the user's
+// own text, so logout removes it (see session.js).
+export const GROUP_PATTERN_STORAGE_KEY = 'phenix.builder.groupPattern';
 
 // Room between a new group's border and its members, as groupNodes leaves.
 const GROUP_PADDING = 40;
 
 /**
  * @param {string} id
- * @returns {{id: string, label: string, summary: string}|undefined}
+ * @returns {{id: string, label: string, summary: string, phrase: string,
+ *   asks?: boolean}|undefined}
  */
 function groupingStrategy(id) {
   return GROUPING_STRATEGIES.find((strategy) => strategy.id === id);
+}
+
+/**
+ * @param {string} id a GROUPING_STRATEGIES id; an unknown one is the default
+ * @returns {string} how the rule grouped, for its commit: "by network"
+ */
+export function groupingPhrase(id) {
+  return (groupingStrategy(id) || groupingStrategy(DEFAULT_GROUPING)).phrase;
 }
 
 // The nodes Auto-group may put in a group: devices and switches in no group,
@@ -166,7 +217,12 @@ function byName(doc, candidates) {
     families.set(key, family);
   }
 
-  // The palette color fewest groups use, earliest first.
+  return inNameOrder(doc, [...families.values()]);
+}
+
+// The families of two or more, in name order, each in the palette color
+// fewest groups use, earliest first.
+function inNameOrder(doc, families) {
   const uses = new Map(DEFAULT_NETWORK_COLORS.map((color) => [color, 0]));
 
   for (const node of doc.nodes || []) {
@@ -177,7 +233,7 @@ function byName(doc, candidates) {
     }
   }
 
-  return [...families.values()]
+  return families
     .filter((family) => family.members.length > 1)
     .sort((a, b) => collator.compare(a.title, b.title))
     .map((family) => {
@@ -194,7 +250,8 @@ const STRATEGIES = { network: byNetwork, name: byName };
 /**
  * The groups Auto-group would make, in the diagram's order of networks or
  * in name order: each {title, color, members}, members being node ids.
- * Groups of one are left out.
+ * Groups of one are left out. A rule that asks for something first plans
+ * none here (see planPatternGroups).
  *
  * @param {object} doc builder document
  * @param {string} strategy a GROUPING_STRATEGIES id; an unknown one is the
@@ -204,6 +261,10 @@ const STRATEGIES = { network: byNetwork, name: byName };
  * @returns {{title: string, color: string, members: string[]}[]}
  */
 export function planGroups(doc, strategy, { selection = [] } = {}) {
+  if (groupingStrategy(strategy)?.asks) {
+    return [];
+  }
+
   const run =
     STRATEGIES[groupingStrategy(strategy) ? strategy : DEFAULT_GROUPING];
 
@@ -269,4 +330,242 @@ export function nothingToGroup(strategy, { selected = false } = {}) {
   return strategy === 'name'
     ? `Nothing to group: no ungrouped ${which}devices have similar names.`
     : `Nothing to group: no ungrouped ${which}nodes share a network.`;
+}
+
+// --- by name pattern ---------------------------------------------------------
+
+const PATTERN_ERRORS = {
+  slow: 'This pattern takes too long to match. Use a simpler one.',
+  worker: 'The pattern could not be checked. Reload the page to try again.',
+};
+
+/**
+ * Why a pattern made no plan: `code` is 'invalid' (it does not compile),
+ * 'slow' (its worker was ended) or 'worker' (the worker could not start).
+ * The message says it to the user.
+ */
+export class PatternError extends Error {
+  constructor(code, message = PATTERN_ERRORS[code], options) {
+    super(message, options);
+    this.name = 'PatternError';
+    this.code = code;
+  }
+}
+
+// The name a pattern is run on: a device's hostname, a switch's label as
+// the canvas shows it.
+function patternName(node) {
+  return node.kind === 'device' ? node.device?.hostname || '' : nodeLabel(node);
+}
+
+// Matches in a worker made for this run and ended after it: on its answer,
+// on its failure, or when `signal` aborts.
+async function matchInWorker(pattern, names, { signal } = {}) {
+  let Matcher;
+
+  try {
+    ({ default: Matcher } = await import('./groupingWorker.js?worker'));
+  } catch (error) {
+    throw new PatternError('worker', undefined, { cause: error });
+  }
+
+  return new Promise((resolve, reject) => {
+    let worker;
+
+    try {
+      worker = new Matcher();
+    } catch (error) {
+      reject(new PatternError('worker', undefined, { cause: error }));
+
+      return;
+    }
+
+    const end = () => worker.terminate();
+
+    if (signal?.aborted) {
+      end();
+    } else {
+      signal?.addEventListener('abort', end, { once: true });
+    }
+
+    worker.addEventListener('message', ({ data }) => {
+      end();
+
+      if (Array.isArray(data?.texts)) {
+        resolve(data.texts);
+      } else {
+        reject(
+          new PatternError(
+            'invalid',
+            `That is not a valid regular expression. ${data?.error || ''}`.trim(),
+          ),
+        );
+      }
+    });
+    worker.addEventListener('error', (event) => {
+      event.preventDefault?.();
+      end();
+      reject(new PatternError('worker'));
+    });
+    worker.postMessage({ pattern, names });
+  });
+}
+
+// Node, where the unit tests run, has no Worker: the pattern runs in-thread
+// there. A browser build leaves that path out.
+function matchNames(pattern, names, options) {
+  return import.meta.env.MODE === 'test'
+    ? matchTexts(pattern, names)
+    : matchInWorker(pattern, names, options);
+}
+
+// Runs `match`, and gives up on it as too slow after the time limit, or as
+// stopped (an AbortError) when `signal` aborts. The signal it hands `match`
+// aborts once the run is over, however it ends, so a worker never outlives
+// its run.
+async function matchWithin(match, pattern, names, signal) {
+  const run = new AbortController();
+  let timer = null;
+  let stop = null;
+  const limits = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new PatternError('slow')),
+      GROUP_PATTERN_TIMEOUT_MS,
+    );
+    stop = () =>
+      reject(new DOMException('The matching was stopped.', 'AbortError'));
+  });
+
+  if (signal?.aborted) {
+    stop();
+  } else {
+    signal?.addEventListener('abort', stop, { once: true });
+  }
+
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() =>
+        match(pattern, names, { signal: run.signal }),
+      ),
+      limits,
+    ]);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', stop);
+    run.abort();
+  }
+}
+
+/**
+ * The groups Auto-group by name pattern would make: the candidates (as for
+ * the other rules) whose names the pattern matches the same text of,
+ * ignoring case, in name order. A group is named after the text as its
+ * first member in name order has it, and groups of one are left out.
+ *
+ * @param {object} doc builder document
+ * @param {string} pattern a regular expression, as typed
+ * @param {object} [options] selection: node ids to group, empty or left out
+ *   for every ungrouped node; match(pattern, names, {signal}): what runs the
+ *   pattern (see matchTexts), a Web Worker by default; signal: an
+ *   AbortSignal that ends the matching
+ * @returns {Promise<{groups: {title: string, color: string,
+ *   members: string[]}[], matched: number}>} the plan, for applyGroups, and
+ *   how many candidates the pattern matched; rejects with a PatternError,
+ *   or with an AbortError when `signal` aborts
+ */
+export async function planPatternGroups(
+  doc,
+  pattern,
+  { selection = [], match = matchNames, signal } = {},
+) {
+  const problem = patternProblem(pattern);
+
+  if (problem) {
+    throw new PatternError('invalid', problem);
+  }
+
+  const candidates = candidatesOf(doc, selection)
+    .map((node) => ({ id: node.id, name: patternName(node) }))
+    .sort((a, b) => collator.compare(a.name, b.name));
+  const texts = await matchWithin(
+    match,
+    pattern,
+    candidates.map((candidate) => candidate.name),
+    signal,
+  );
+  const families = new Map();
+  let matched = 0;
+
+  candidates.forEach((candidate, index) => {
+    const text = texts?.[index];
+
+    if (typeof text !== 'string' || !text) {
+      return;
+    }
+
+    const key = text.toLowerCase();
+    const family = families.get(key) || {
+      title: text.slice(0, GROUP_TITLE_MAX),
+      members: [],
+    };
+
+    matched += 1;
+    family.members.push(candidate.id);
+    families.set(key, family);
+  });
+
+  return { groups: inNameOrder(doc, [...families.values()]), matched };
+}
+
+/**
+ * Why Auto-group by name pattern has nothing to do, in words.
+ *
+ * @param {number} matched how many candidates the pattern matched
+ * @param {object} [options] selected: whether it looked at a selection
+ * @returns {string}
+ */
+export function nothingToGroupByPattern(matched, { selected = false } = {}) {
+  return matched > 0
+    ? `Nothing to group: ${count(matched, 'name')} ${
+        matched === 1 ? 'matches' : 'match'
+      }, but no two with the same text.`
+    : `Nothing to group: the pattern matches no ungrouped ${
+        selected ? 'selected ' : ''
+      }device or switch.`;
+}
+
+/**
+ * The pattern used last in this browser, for the dialog to offer again.
+ *
+ * @param {Storage|null} [storage] localStorage by default
+ * @returns {string} '' when none is kept, or what is kept is no pattern
+ */
+export function readGroupPattern(storage = pageStorage()) {
+  let stored = null;
+
+  try {
+    stored = storage?.getItem(GROUP_PATTERN_STORAGE_KEY) ?? null;
+  } catch {
+    // Blocked storage keeps nothing.
+  }
+
+  return typeof stored === 'string' &&
+    stored.length >= 1 &&
+    stored.length <= GROUP_PATTERN_MAX
+    ? stored
+    : '';
+}
+
+/**
+ * Keeps a pattern for the next time the dialog opens.
+ *
+ * @param {string} pattern one that compiles
+ * @param {Storage|null} [storage] localStorage by default
+ */
+export function rememberGroupPattern(pattern, storage = pageStorage()) {
+  try {
+    storage?.setItem(GROUP_PATTERN_STORAGE_KEY, pattern);
+  } catch {
+    // Blocked or full: the dialog then opens empty.
+  }
 }

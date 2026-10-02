@@ -113,6 +113,107 @@ describe('matchItem', () => {
   });
 });
 
+// Aliases are words that stand for the title: "export" for Download.
+describe('aliases', () => {
+  const download = { title: 'Download…', aliases: ['export'] };
+  const gexf = {
+    title: 'Download Gephi (GEXF)',
+    aliases: ['export'],
+    keywords: ['save', 'file', 'graph', 'analyze'],
+  };
+  const png = {
+    title: 'Download PNG',
+    aliases: ['export'],
+    keywords: ['save', 'file', 'image', 'picture'],
+  };
+
+  test('a word that starts an alias matches as a word of the title, unmarked', () => {
+    expect(matchItem(download, 'export')).toEqual({
+      score: 1150,
+      grade: 1200,
+      ranges: [],
+    });
+    // From its start only, as a word is; a part of it elsewhere matches
+    // as part of a keyword does, at the bottom.
+    expect(matchItem(download, 'exp')).toEqual({
+      score: 1150,
+      grade: 1200,
+      ranges: [],
+    });
+    expect(matchItem(download, 'port')).toEqual({ score: 50, ranges: [] });
+    expect(matchItem(download, 'import')).toBeNull();
+    expect(matchItem(download, 'EXPORT').grade).toBe(1200);
+  });
+
+  test('with a word of the title, that word is marked', () => {
+    expect(matchItem(gexf, 'export gexf')).toEqual({
+      score: 1334,
+      grade: 1400,
+      ranges: [[16, 20]],
+    });
+    // The plainer command matches only through its keywords, at the bottom.
+    expect(
+      matchItem(
+        { ...download, keywords: ['save', 'file', 'gexf'] },
+        'export gexf',
+      ),
+    ).toEqual({ score: 50, ranges: [] });
+    expect(matchItem(png, 'export png').ranges).toEqual([[9, 12]]);
+  });
+
+  test('a true title match outranks an alias match', () => {
+    const title = matchItem({ title: 'Export settings' }, 'export');
+    const inside = matchItem({ title: 'Reexport' }, 'export');
+    const alias = matchItem(download, 'export');
+
+    expect(title.grade).toBeGreaterThan(alias.grade);
+    expect(title.score).toBeGreaterThan(alias.score);
+    // An alias is a word at a word start: above a match inside a word,
+    // and above every field and letter match.
+    expect(alias.grade).toBeGreaterThan(inside.grade);
+    expect(alias.score).toBeGreaterThan(
+      matchItem({ title: 'e-x-p-o-r-t' }, 'export').score,
+    );
+    // The title is tried first for each word.
+    expect(
+      matchItem({ title: 'Export', aliases: ['export'] }, 'export'),
+    ).toEqual({ score: 1300, grade: 1300, ranges: [[0, 6]] });
+  });
+
+  test('as a last resort the words may be spread over title, aliases and keywords', () => {
+    // A word of the title and a keyword.
+    expect(matchItem(png, 'download image')).toEqual({ score: 50, ranges: [] });
+    expect(matchItem(png, 'save png')).toEqual({ score: 50, ranges: [] });
+    // An alias and a keyword.
+    expect(matchItem(png, 'export image')).toEqual({ score: 50, ranges: [] });
+    expect(matchItem(gexf, 'export image')).toBeNull();
+    // Keywords alone, as before.
+    expect(matchItem(png, 'picture')).toEqual({ score: 50, ranges: [] });
+    // An item with neither aliases nor keywords gains nothing.
+    expect(matchItem({ title: 'Download PNG' }, 'download image')).toBeNull();
+  });
+
+  test('items without aliases score as before', () => {
+    expect(matchItem({ title: 'Auto layout' }, 'lay')).toEqual({
+      score: 1195,
+      grade: 1200,
+      ranges: [[5, 8]],
+    });
+    expect(matchItem({ title: 'Layout', aliases: [] }, 'lay')).toEqual(
+      matchItem({ title: 'Layout' }, 'lay'),
+    );
+    expect(
+      matchItem({ title: 'Share…', keywords: ['access', 'people'] }, 'send'),
+    ).toBeNull();
+    expect(
+      matchItem(
+        { title: 'Share…', aliases: ['send'], keywords: ['access'] },
+        'send',
+      ).score,
+    ).toBe(1150);
+  });
+});
+
 test('highlightParts splits text into marked and plain runs', () => {
   expect(
     highlightParts('Group selection', [

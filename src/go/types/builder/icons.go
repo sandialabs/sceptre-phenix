@@ -13,6 +13,9 @@ const IconServer = "server"
 // node type.
 const (
 	iconContainer = "container"
+	iconDesktop   = "desktop"
+	iconExternal  = "external"
+	iconFirewall  = "firewall"
 	iconRouter    = "router"
 )
 
@@ -26,9 +29,9 @@ const (
 var iconKeys = []string{ //nolint:gochecknoglobals // immutable registry
 	"centos",
 	iconContainer,
-	"desktop",
-	"external",
-	"firewall",
+	iconDesktop,
+	iconExternal,
+	iconFirewall,
 	"linux",
 	"printer",
 	"redhat",

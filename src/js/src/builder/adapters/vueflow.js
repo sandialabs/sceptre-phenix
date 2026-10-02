@@ -8,19 +8,23 @@
 // the network it belongs to, and every network gets a stroke pattern as well as
 // a color so network membership is never communicated by color alone.
 
-import { kindMeta, nodeIconKey } from '../catalog.js';
+import { kindMeta, nodeIcon, nodeIconKey } from '../catalog.js';
 import { networkColorToken } from '../colors.js';
+import { iconSrc } from '../icons.js';
 import { stableHash } from '../ids.js';
 import {
   connectionEndLabel,
   deviceHandles,
+  deviceTypeLabel,
   findNode,
   includedFrom,
+  LINE_STYLES,
   nodeComment,
   nodeLabel,
   sizeOf,
   specInterfaceFor,
 } from '../model.js';
+import { interfaceAddress } from '../nodeInfo.js';
 import { labelIndex, outlineLabel } from '../outline.js';
 import { handleOffsetY } from '../routes.js';
 
@@ -37,6 +41,8 @@ export const SWITCH_HANDLE_ID = 'bus';
 export const NEW_INTERFACE_HANDLE_ID = 'new-interface';
 
 // Dash patterns give every network a non-color cue as well as a color token.
+// A network or a connection given a line style (see LINE_STYLES in
+// model.js) is drawn in that pattern instead of the one of its place.
 export const NETWORK_PATTERNS = ['solid', 'dashed', 'dotted', 'dash-dot'];
 const NETWORK_DASH_ARRAYS = {
   solid: undefined,
@@ -64,15 +70,30 @@ export function nodeIssueId(nodeId) {
 }
 
 /**
+ * Id of the hidden text that says what a device's or a switch's info
+ * tooltip shows (see useNodeInfo in nodes/nodeTooltip.js), which describes
+ * the node.
+ *
+ * @param {string} nodeId
+ * @returns {string}
+ */
+export function nodeInfoId(nodeId) {
+  return `builder-node-info-${nodeId}`;
+}
+
+/**
  * Deterministic visual treatment for a network. Documents with the same
  * networks always render identically. A network whose color is one
  * addNetwork picks is drawn with that color's token (see colors.js), which
- * for a network given its color in turn is the token of its place.
+ * for a network given its color in turn is the token of its place. Its
+ * pattern is the line style it was given, else the one of its place, which
+ * `autoPattern` is either way.
  *
  * @param {object} doc
  * @param {string} networkId
- * @returns {{token: number, pattern: string, dashArray: string|undefined,
- *   label: string, color: string, alias: number|undefined}}
+ * @returns {{token: number, pattern: string, autoPattern: string,
+ *   dashArray: string|undefined, label: string, color: string,
+ *   alias: number|undefined}}
  */
 export function networkStyle(doc, networkId) {
   const index = (doc?.networks || []).findIndex(
@@ -110,16 +131,20 @@ function styleAt(network, networkId, index) {
   const seed = index >= 0 ? index : stableHash(networkId || 'network');
   // The pattern shifts by one every time the colors wrap, so no two of the
   // first 32 networks share both color and pattern.
-  const pattern =
+  const autoPattern =
     NETWORK_PATTERNS[
       (seed + Math.floor(seed / NETWORK_TOKEN_COUNT)) % NETWORK_PATTERNS.length
     ];
+  const pattern = LINE_STYLES.includes(network?.lineStyle)
+    ? network.lineStyle
+    : autoPattern;
 
   const chosen = networkColorToken(network?.color);
 
   return {
     token: chosen === -1 ? seed % NETWORK_TOKEN_COUNT : chosen,
     pattern,
+    autoPattern,
     dashArray: NETWORK_DASH_ARRAYS[pattern],
     label: network?.name || '',
     color: network?.color || '',
@@ -221,8 +246,61 @@ export function handlesFor(doc, node, index = labelIndex(doc)) {
 }
 
 /**
+ * The devices connected to a switch node, each once, with the address of
+ * the interface each of its connections to the switch uses (see
+ * interfaceAddress), in the order of the connections. A switch's info
+ * tooltip lists them.
+ *
+ * @param {object} node switch node
+ * @param {object} index labelIndex(doc)
+ * @returns {{label: string, addresses: string[]}[]}
+ */
+export function connectedDevices(node, index) {
+  const devices = new Map();
+
+  for (const edge of index.links(node.id)) {
+    for (const [id, handleId] of [
+      [edge.sourceNodeId, edge.sourceHandleId],
+      [edge.targetNodeId, edge.targetHandleId],
+    ]) {
+      const device = id === node.id ? null : index.node(id);
+
+      if (device?.kind !== 'device') {
+        continue;
+      }
+
+      if (!devices.has(id)) {
+        devices.set(id, { label: nodeLabel(device), addresses: [] });
+      }
+
+      devices
+        .get(id)
+        .addresses.push(interfaceAddress(specInterfaceFor(device, handleId)));
+    }
+  }
+
+  return [...devices.values()];
+}
+
+// The texts that describe a node, by id: a device's or a switch's info,
+// what the diagram checks found, then the canvas's keys.
+function describedBy(node, issue) {
+  return [
+    (node.kind === 'device' || node.kind === 'switch') && nodeInfoId(node.id),
+    issue && nodeIssueId(node.id),
+    NODE_HINT_ID,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
  * Converts model nodes into Vue Flow nodes. A node the diagram checks flag
- * carries what they found (data.issue), and is described by it as well.
+ * carries what they found (data.issue), and is described by it as well. A
+ * device carries the type it shows (data.typeLabel), and a switch the
+ * devices connected to it (data.connected). A device or a group with a
+ * custom icon the document carries has the address it is drawn from
+ * (data.iconSrc, see iconSrc in icons.js); it is '' otherwise.
  *
  * @param {object} doc
  * @param {object} [options] selectedIds; issues: nodeIssueSummaries by
@@ -278,16 +356,16 @@ export function toFlowNodes(doc, options = {}) {
         role: 'button',
         'aria-pressed': String(selected.has(node.id)),
         'aria-roledescription': undefined,
-        'aria-describedby': issue
-          ? `${nodeIssueId(node.id)} ${NODE_HINT_ID}`
-          : NODE_HINT_ID,
+        'aria-describedby': describedBy(node, issue),
       },
       data: {
         node,
         label: nodeLabel(node),
         iconKey: nodeIconKey(node),
+        iconSrc: iconSrc(nodeIcon(node), doc.icons),
         shape: kindMeta(node.kind).shape,
         comment: nodeComment(node),
+        typeLabel: node.kind === 'device' ? deviceTypeLabel(node) : undefined,
         includedFrom: includedFrom(node),
         network:
           node.kind === 'switch'
@@ -295,6 +373,8 @@ export function toFlowNodes(doc, options = {}) {
             : undefined,
         networkStyle:
           node.kind === 'switch' ? styleOf(node.switch?.networkId) : undefined,
+        connected:
+          node.kind === 'switch' ? connectedDevices(node, index) : undefined,
         handles: handlesFor(doc, node, index),
         issue,
       },
@@ -483,7 +563,8 @@ export function edgeLanes(doc, nodeById) {
 }
 
 /**
- * Converts model edges into Vue Flow edges.
+ * Converts model edges into Vue Flow edges. A connection given a line style
+ * of its own is drawn in it (data.style), in place of its network's.
  *
  * @param {object} doc
  * @param {object} [options] selectedIds
@@ -512,7 +593,15 @@ export function toFlowEdges(doc, options = {}) {
   const lanes = edgeLanes(doc, nodeById);
 
   return (doc.edges || []).map((edge) => {
-    const style = styleOf(edge.networkId);
+    const shared = styleOf(edge.networkId);
+    // A copy: the network's style is shared by its other connections.
+    const style = LINE_STYLES.includes(edge.lineStyle)
+      ? {
+          ...shared,
+          pattern: edge.lineStyle,
+          dashArray: NETWORK_DASH_ARRAYS[edge.lineStyle],
+        }
+      : shared;
     const source = nodeById.get(edge.sourceNodeId);
     const target = nodeById.get(edge.targetNodeId);
     const network = networks.get(edge.networkId);

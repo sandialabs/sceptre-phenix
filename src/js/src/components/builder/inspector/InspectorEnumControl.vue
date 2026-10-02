@@ -7,7 +7,10 @@
   stands in for the vanilla renderer's separate unnamed empty option. It
   names the value the field comes to, "Default (kvm)", where there is one
   (see useFieldDefault), and while it is chosen the field says "Default",
-  as a text or number field showing its default does.
+  as a text or number field showing its default does. A field whose schema
+  names that choice (UNSET_KEYWORD in schema.js) uses its word in place of
+  "Default" and "Not set": a line style left to the canvas is "Auto
+  (Dashed)".
 
   A value no choice matches, as an uploaded topology can hold, is a choice
   of its own, named as not one of the choices, and a warning says so: the
@@ -58,6 +61,7 @@
     useInspectorControl,
     useUnsetValue,
   } from './control.js';
+  import { UNSET_KEYWORD } from '@/builder/schema.js';
 
   const props = defineProps(rendererProps());
   const input = useJsonFormsControl(props);
@@ -75,12 +79,14 @@
           (value) => ({ value, label: String(value) }),
         );
     // The choice that stands for no value, named after the value the
-    // field then comes to, as its choice names it.
+    // field then comes to, as its choice names it, in the schema's word
+    // for it when it has one.
+    const word = schema[UNSET_KEYWORD];
     const fallbackValue = unset.value?.value;
     const empty =
       fallbackValue === undefined
-        ? undefined
-        : `Default (${
+        ? word
+        : `${word ?? 'Default'} (${
             values.find((choice) => choice.value === fallbackValue)?.label ??
             String(fallbackValue)
           })`;

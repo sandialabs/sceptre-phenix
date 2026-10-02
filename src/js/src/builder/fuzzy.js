@@ -5,8 +5,11 @@
 // the start of the text ranks first, then one at the start of a word, then
 // one anywhere. When a word is missing, the query's letters must appear in
 // order ("grp" finds "Group selection"), ranked by how close together they
-// are. Keywords and a node's fields (its addresses, image and so on) match
-// only by words, and rank below any match on the title.
+// are. A word may also start one of the item's aliases, words that stand for
+// its name ("export" for Download): it then counts as a word of the title.
+// Keywords and a node's fields (its addresses, image and so on) match only
+// by words, and rank below any match on the title; as a last resort the
+// words may be spread over the title, the aliases and the keywords.
 
 // What starts a word, besides the start of the text.
 const BOUNDARY = /[\s\-_.:/,›·()@#]/;
@@ -42,9 +45,16 @@ function wordsOf(query) {
     .filter(Boolean);
 }
 
+// What a word that starts an alias is worth: a word found at the start of a
+// word, as far into the text as the penalty for that goes.
+const ALIAS_GRADE = 200;
+const ALIAS_SCORE = 150;
+
 // Every word as a substring: {score, grade, ranges}, or null. The grade is
-// the score without its penalty for words further into the text.
-function byWords(text, words) {
+// the score without its penalty for words further into the text. A word that
+// is not in the text may start one of the aliases instead, which marks no
+// range.
+function byWords(text, words, aliases = []) {
   const lower = String(text || '').toLowerCase();
   const ranges = [];
   let score = 0;
@@ -62,7 +72,13 @@ function byWords(text, words) {
     }
 
     if (at < 0) {
-      return null;
+      if (!aliases.some((alias) => alias.startsWith(word))) {
+        return null;
+      }
+
+      grade += ALIAS_GRADE;
+      score += ALIAS_SCORE;
+      continue;
     }
 
     at = boundary >= 0 ? boundary : at;
@@ -106,13 +122,15 @@ function byLetters(text, letters) {
 }
 
 /**
- * How well `query` matches an item: its title first, then its fields (for a
- * node: hostname, image, addresses...), then its keywords. An empty query
- * matches everything with score 0; ranges are [start, end) of the matched
- * text.
+ * How well `query` matches an item: its title first (with its aliases),
+ * then its fields (for a node: hostname, image, addresses...), then its
+ * title, aliases and keywords taken together. An empty query matches
+ * everything with score 0; ranges are [start, end) of the matched text.
  *
  * @param {object} item
  * @param {string} item.title
+ * @param {string[]} [item.aliases] lower-case single words that stand for
+ *   the title, matched as words of it without saying so
  * @param {{label: string, value: string}[]} [item.fields] what else the item
  *   is found by, named so the palette can say which one matched
  * @param {string[]} [item.keywords] more words, matched without saying so
@@ -130,7 +148,8 @@ export function matchItem(item, query) {
     return { score: 0, ranges: [] };
   }
 
-  const title = byWords(item.title, words);
+  const aliases = item.aliases || [];
+  const title = byWords(item.title, words, aliases);
 
   if (title) {
     return {
@@ -164,7 +183,11 @@ export function matchItem(item, query) {
     return { score: LETTERS + letters.score, ranges: letters.ranges };
   }
 
-  return (item.keywords || []).length && byWords(item.keywords.join(' '), words)
+  // Each word in the title, an alias or a keyword: "save png" finds
+  // Download PNG by a keyword and a word of its title.
+  const rest = [...aliases, ...(item.keywords || [])];
+
+  return rest.length && byWords([item.title, ...rest].join(' '), words)
     ? { score: KEYWORD, ranges: [] }
     : null;
 }

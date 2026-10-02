@@ -74,7 +74,8 @@ const (
 
 	// MaxSourceTokenLength bounds the opaque token recording where a draft
 	// came from ("<kind>/<name>", "uploaded/<kind>/<name>",
-	// "builder-doc/<document id>" or "builder-file/<topology>/<digest>").
+	// "uploaded/legacy-xml", "builder-doc/<document id>" or
+	// "builder-file/<topology>/<digest>").
 	MaxSourceTokenLength = 512
 
 	// MaxSourceFileLength bounds the name of the uploaded file a draft was
@@ -106,6 +107,25 @@ const (
 	MaxMetadataBytes = 512 << 10
 )
 
+// Limits of a user's template library (see [TemplateLibrary]). The whole
+// library is one record, so [MaxMetadataBytes] bounds it too: its templates,
+// its collections and its custom icons together.
+const (
+	// MaxLibraryTemplates is the most templates one library holds.
+	MaxLibraryTemplates = 200
+
+	// MaxLibraryCollections is the most collections one library holds.
+	MaxLibraryCollections = 50
+
+	// MaxCollectionTemplates is the most templates one collection names.
+	MaxCollectionTemplates = 200
+
+	// MaxLibraryTemplateIcons is the most custom icons the templates of one
+	// library use together. It is what a document may carry, so every
+	// template of a library fits in one diagram with its icon.
+	MaxLibraryTemplateIcons = builder.MaxDocumentIcons
+)
+
 // Record namespaces used by this package. They are separate namespaces so
 // prefix scans and prefix deletions of one kind of data can never touch
 // another.
@@ -123,6 +143,16 @@ const (
 	// NamespacePublished holds one metadata record per published document,
 	// keyed by published document ID.
 	NamespacePublished = "builder.published"
+
+	// NamespaceIcons holds one record per icon of a user's icon library,
+	// keyed by "<owner scope>/<the 64 hex digits of the icon ID>" (see
+	// [OwnerScope] and [LibraryIcon]). A record is never updated.
+	NamespaceIcons = "builder.icons"
+
+	// NamespaceTemplates holds one record per user's template library,
+	// keyed by "lib/<owner scope>" (see [LibraryKey] and [TemplateLibrary]).
+	// The whole library is that one record, of at most [MaxMetadataBytes].
+	NamespaceTemplates = "builder.templates"
 )
 
 // DocumentAnnotation is the topology config annotation that holds a

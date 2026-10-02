@@ -24,7 +24,7 @@
 // chooses which version to save (see BuilderTabsDialog.vue). Every tab
 // hears the choice. The versions not chosen are saved as new drafts, as a
 // conflict's Save my history as a new draft does (see applyChoice); a role
-// that cannot make drafts is offered Export first.
+// that cannot make drafts is offered Download first.
 
 import { count } from './announce.js';
 import { createAutosave, replayHistory } from './autosave.js';

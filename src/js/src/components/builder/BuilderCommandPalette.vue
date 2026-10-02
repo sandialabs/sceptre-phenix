@@ -18,7 +18,7 @@
   @ searches nodes, # networks, ? lists these prefixes, and > is ignored.
 
   The palette closes before a command runs, so focus is back where it was
-  when the command moves it (Go to node) or opens a dialog (Export…), and
+  when the command moves it (Go to node) or opens a dialog (Download…), and
   the command's own announcement is spoken once no modal hides the live
   region. While open, it speaks through a status line of its own: why a
   command cannot run, what Shift+Enter changed, and the result count once

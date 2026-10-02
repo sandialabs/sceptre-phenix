@@ -5,6 +5,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   absolutePosition,
+  connectedDevices,
   connectionStep,
   EDGE_HINT_ID,
   edgeLanes,
@@ -26,6 +27,7 @@ import {
   NETWORK_PATTERNS,
   nodeAriaLabel,
   nodeInDirection,
+  nodeInfoId,
   nodeIssueId,
   nodePoint,
   relativePosition,
@@ -42,12 +44,14 @@ import {
   connect,
   DEFAULT_NETWORK_COLORS,
   groupNodes,
+  LINE_STYLES,
   moveNode,
   removeElements,
   updateEdge,
+  updateNetwork,
   updateNode,
 } from '@/builder/model.js';
-import { outlineLabel } from '@/builder/outline.js';
+import { labelIndex, outlineLabel } from '@/builder/outline.js';
 import { keepUnchanged } from '@/builder/stable.js';
 import {
   colorChannels,
@@ -55,10 +59,13 @@ import {
   customNetworkColor,
   drawnColor,
   drawnNetworkColor,
+  inkOn,
   needsCasing,
   networkColorToken,
+  nodeColors,
   opaqueHex,
 } from '@/builder/colors.js';
+import { useNodeColors } from '@/components/builder/nodes/nodeColors.js';
 
 import { sampleDocument } from './fixtures.js';
 
@@ -115,6 +122,80 @@ describe('flow nodes', () => {
     expect(nodeAriaLabel(next, next.nodes[2])).toBeTruthy();
   });
 
+  // A device shows its type in place of the word "Device".
+  test('a device carries the type it shows, and no other node does', () => {
+    const { doc, alpha, sw } = sampleDocument();
+    const router = updateNode(doc, alpha.id, {
+      device: { spec: { type: 'Router' } },
+    });
+    const external = updateNode(doc, alpha.id, {
+      device: { spec: { external: true, type: 'HIL' } },
+    });
+    const data = (from, id) =>
+      toFlowNodes(from).find((entry) => entry.id === id).data;
+
+    expect(data(doc, alpha.id).typeLabel).toBe('VirtualMachine');
+    expect(data(router, alpha.id).typeLabel).toBe('Router');
+    expect(data(external, alpha.id).typeLabel).toBe('External');
+    expect(data(doc, sw.id).typeLabel).toBeUndefined();
+    expect(data(doc, alpha.id).connected).toBeUndefined();
+  });
+
+  // What a switch's info tooltip lists.
+  test('a switch carries the devices connected to it, with their addresses on it', () => {
+    const { doc, alpha, bravo, sw } = sampleDocument();
+    const address = (from, id, iface) =>
+      updateNode(from, id, {
+        device: {
+          spec: {
+            network: {
+              interfaces: [{ name: 'eth0', vlan: 'EXP', ...iface }],
+            },
+          },
+        },
+      });
+    const connected = (from) =>
+      toFlowNodes(from).find((entry) => entry.id === sw.id).data.connected;
+
+    // Only alpha is connected; its interface has no address yet.
+    expect(connected(doc)).toEqual([
+      { label: 'alpha', addresses: ['no address'] },
+    ]);
+
+    let next = address(doc, alpha.id, { address: '10.0.0.5', mask: 24 });
+    next = connect(next, {
+      sourceNodeId: bravo.id,
+      sourceHandleId: bravo.device.interfaces[0].id,
+      targetNodeId: sw.id,
+    }).doc;
+    next = address(next, bravo.id, { proto: 'dhcp' });
+
+    expect(connected(next)).toEqual([
+      { label: 'alpha', addresses: ['10.0.0.5/24'] },
+      { label: 'bravo', addresses: ['DHCP'] },
+    ]);
+
+    // A second connection of the same device adds an address, not a device.
+    const twice = connect(next, {
+      sourceNodeId: alpha.id,
+      sourceHandleId: null,
+      targetNodeId: sw.id,
+    }).doc;
+
+    expect(connected(twice)).toEqual([
+      { label: 'alpha', addresses: ['10.0.0.5/24', 'no address'] },
+      { label: 'bravo', addresses: ['DHCP'] },
+    ]);
+
+    // A second switch of the network lists only its own connections.
+    const second = addNode(twice, {
+      kind: 'switch',
+      networkId: sw.switch.networkId,
+    });
+
+    expect(connectedDevices(second.node, labelIndex(second.doc))).toEqual([]);
+  });
+
   // Vue Flow spreads domAttributes over its focusable wrapper, out of the
   // Tab order until it is the canvas's Tab stop.
   test('the wrapper is a toggle button pressed while the node is selected', () => {
@@ -126,7 +207,7 @@ describe('flow nodes', () => {
       tabindex: -1,
       role: 'button',
       'aria-pressed': 'true',
-      'aria-describedby': NODE_HINT_ID,
+      'aria-describedby': `${nodeInfoId(alpha.id)} ${NODE_HINT_ID}`,
     });
     expect(attrs(bravo.id)['aria-pressed']).toBe('false');
     // Present and undefined, so Vue removes Vue Flow's "node" description.
@@ -185,10 +266,36 @@ describe('flow nodes', () => {
 
     expect(find(alpha.id).data.issue).toBe(issue);
     expect(find(alpha.id).domAttributes['aria-describedby']).toBe(
-      `${nodeIssueId(alpha.id)} ${NODE_HINT_ID}`,
+      `${nodeInfoId(alpha.id)} ${nodeIssueId(alpha.id)} ${NODE_HINT_ID}`,
     );
     expect(find(bravo.id).data.issue).toBeNull();
-    expect(find(bravo.id).domAttributes['aria-describedby']).toBe(NODE_HINT_ID);
+    expect(find(bravo.id).domAttributes['aria-describedby']).toBe(
+      `${nodeInfoId(bravo.id)} ${NODE_HINT_ID}`,
+    );
+  });
+
+  // The hidden text of a device's or a switch's info tooltip (see
+  // nodes/nodeTooltip.js) comes first; notes and groups have no tooltip.
+  test('a device and a switch are described by their info, a note and a group are not', () => {
+    const { doc, alpha, bravo, sw } = sampleDocument();
+    const grouped = groupNodes(doc, [alpha.id, bravo.id]);
+    const noted = addNode(grouped.doc, { kind: 'note', text: 'Lab' });
+    const issue = { level: 'warning', text: '1 warning: no members.' };
+    const nodes = toFlowNodes(noted.doc, {
+      issues: new Map([[grouped.group.id, issue]]),
+    });
+    const described = (id) =>
+      nodes.find((node) => node.id === id).domAttributes['aria-describedby'];
+
+    expect(nodeInfoId('n1')).toBe('builder-node-info-n1');
+    expect(described(alpha.id)).toBe(
+      `builder-node-info-${alpha.id} ${NODE_HINT_ID}`,
+    );
+    expect(described(sw.id)).toBe(`builder-node-info-${sw.id} ${NODE_HINT_ID}`);
+    expect(described(noted.node.id)).toBe(NODE_HINT_ID);
+    expect(described(grouped.group.id)).toBe(
+      `${nodeIssueId(grouped.group.id)} ${NODE_HINT_ID}`,
+    );
   });
 
   test('canvas and outline name every kind of node the same way', () => {
@@ -358,6 +465,100 @@ describe('flow edges', () => {
     expect(new Set(looks).size).toBe(32);
   });
 
+  // The line style a network is given is drawn in place of the pattern of
+  // its place, which Auto still names (see fieldDefault in forms.js).
+  test('a network given a line style is drawn in it, and keeps its auto pattern', () => {
+    const { doc, network, edge } = sampleDocument();
+    const auto = networkStyle(doc, network.id);
+
+    expect(auto.pattern).toBe('solid');
+    expect(auto.autoPattern).toBe('solid');
+    expect(auto.dashArray).toBeUndefined();
+
+    const dashes = {
+      solid: undefined,
+      dashed: '8 4',
+      dotted: '2 4',
+      'dash-dot': '10 4 2 4',
+    };
+
+    for (const lineStyle of LINE_STYLES) {
+      const styled = updateNetwork(doc, network.id, { lineStyle });
+      const style = networkStyle(styled, network.id);
+
+      expect(style, lineStyle).toMatchObject({
+        pattern: lineStyle,
+        autoPattern: 'solid',
+        token: auto.token,
+      });
+      expect(style.dashArray, lineStyle).toBe(dashes[lineStyle]);
+      // Every connection of the network, and its switch, take it.
+      expect(
+        toFlowEdges(styled).find((entry) => entry.id === edge.id).data.style,
+        lineStyle,
+      ).toEqual(style);
+      expect(
+        toFlowNodes(styled).find((entry) => entry.data.networkStyle).data
+          .networkStyle.pattern,
+        lineStyle,
+      ).toBe(lineStyle);
+    }
+
+    // A style the editor does not know, which only an edited file can
+    // hold, is drawn as none.
+    expect(
+      networkStyle(
+        { networks: [{ id: 'a', name: 'A', lineStyle: 'wavy' }] },
+        'a',
+      ).pattern,
+    ).toBe('solid');
+  });
+
+  test('a connection given a line style is drawn in it, and the others of its network are not', () => {
+    const { doc, network, sw, bravo, edge } = sampleDocument();
+    const two = connect(doc, { sourceNodeId: bravo.id, targetNodeId: sw.id });
+    const dashed = updateNetwork(two.doc, network.id, { lineStyle: 'dashed' });
+    const styled = updateEdge(dashed, edge.id, { lineStyle: 'dotted' });
+    const style = (document, id) =>
+      toFlowEdges(document).find((entry) => entry.id === id).data.style;
+
+    expect(style(styled, edge.id)).toMatchObject({
+      pattern: 'dotted',
+      dashArray: '2 4',
+      // What tells its network apart stays: its color token and its name.
+      token: networkStyle(styled, network.id).token,
+      label: 'EXP',
+    });
+    expect(style(styled, two.edge.id)).toMatchObject({
+      pattern: 'dashed',
+      dashArray: '8 4',
+    });
+    // The network's own style is not changed by one connection's.
+    expect(networkStyle(styled, network.id).pattern).toBe('dashed');
+    expect(style(styled, two.edge.id)).toEqual(
+      networkStyle(styled, network.id),
+    );
+    // Solid on a connection of a dashed network has no dashes.
+    expect(
+      style(updateEdge(dashed, edge.id, { lineStyle: 'solid' }), edge.id)
+        .dashArray,
+    ).toBeUndefined();
+    // Its accessible name still names its network.
+    expect(
+      toFlowEdges(styled).find((entry) => entry.id === edge.id).ariaLabel,
+    ).toBe('Network EXP from alpha (eth0) to EXP');
+    // An unknown style is drawn as its network's.
+    expect(
+      style(
+        {
+          ...dashed,
+          edges: dashed.edges.map((entry) => ({ ...entry, lineStyle: 'wavy' })),
+        },
+        edge.id,
+      ).pattern,
+    ).toBe('dashed');
+  });
+
   test('the new-interface handle asks the model for a new interface', () => {
     expect(
       fromFlowConnection({
@@ -505,6 +706,167 @@ describe('colors', () => {
     // Measured against the canvas and its grid, not white: this blue keeps
     // 3.15:1 against white, but 2.91:1 against the light canvas.
     expect(needsCasing('#3498db').light).toBe(true);
+  });
+
+  // Text and icons on a fill are black or white. The better of the two
+  // keeps at least 4.5:1 on any color (WCAG 1.4.3), where the themes' own
+  // text colors would not: the light theme's on a mid grey has 4.0:1.
+  test('the ink on a fill is black or white, and keeps 4.5:1 on any fill', () => {
+    expect(inkOn('#ffffff')).toBe('#000000');
+    expect(inkOn('#000000')).toBe('#ffffff');
+    expect(inkOn('#2f6fbf')).toBe('#ffffff');
+    expect(inkOn('#ffd400')).toBe('#000000');
+    expect(inkOn('#777777')).toBe('#000000');
+    expect(contrastRatio('#777777', '#1b2330')).toBeLessThan(4.5);
+
+    let least = Infinity;
+    const levels = [0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204];
+    const hex = (value) => value.toString(16).padStart(2, '0');
+
+    for (const r of [...levels, 221, 238, 255]) {
+      for (const g of [...levels, 221, 238, 255]) {
+        for (const b of [...levels, 221, 238, 255]) {
+          const fill = `#${hex(r)}${hex(g)}${hex(b)}`;
+          const ratio = contrastRatio(fill, inkOn(fill));
+
+          least = Math.min(least, ratio);
+        }
+      }
+    }
+
+    expect(least).toBeGreaterThanOrEqual(4.5);
+
+    // The greys around the point where black and white read equally well.
+    for (let level = 100; level <= 140; level += 1) {
+      const fill = `#${hex(level).repeat(3)}`;
+
+      expect(contrastRatio(fill, inkOn(fill)), fill).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    }
+
+    // A color whose contrast cannot be read gets no ink.
+    expect(inkOn('red')).toBe('');
+    expect(inkOn('#2f6fbf80')).toBe('');
+    expect(inkOn('')).toBe('');
+  });
+
+  test('a node is drawn in the outline and fill it was given, when each is #rrggbb', () => {
+    expect(
+      nodeColors({ outlineColor: '#2F6FBF', fillColor: '#ffd400' }),
+    ).toEqual({
+      fill: '#ffd400',
+      outline: '#2F6FBF',
+      ink: '#000000',
+      // The suggested blue fades into the dark canvas.
+      low: { light: false, dark: true },
+    });
+    expect(nodeColors({ networkId: 'a' })).toEqual({
+      fill: '',
+      outline: '',
+      ink: '',
+      low: null,
+    });
+    expect(nodeColors(undefined)).toEqual(nodeColors({}));
+    // An outline that fades into a theme's canvas says where.
+    expect(nodeColors({ outlineColor: '#f4f6f9' }).low).toEqual({
+      light: true,
+      dark: false,
+    });
+    expect(nodeColors({ outlineColor: '#1a212b' }).low).toEqual({
+      light: false,
+      dark: true,
+    });
+
+    // Anything else, which only an edited file can hold, is not drawn: a
+    // named or translucent color has no ink to go with it, and no value
+    // ever reaches the node's style as anything but a color.
+    for (const value of [
+      'red',
+      '#abc',
+      '#2f6fbf80',
+      'rgb(1, 2, 3)',
+      'url(https://example.com/x)',
+      'var(--bx-accent)',
+      '#2f6fbf; background: red',
+      7,
+      null,
+    ]) {
+      expect(
+        nodeColors({ outlineColor: value, fillColor: value }),
+        String(value),
+      ).toEqual({ fill: '', outline: '', ink: '', low: null });
+    }
+  });
+
+  test('a node element takes its colors as classes and custom properties', () => {
+    let payload = { fillColor: '#2f6fbf', outlineColor: '#f4f6f9' };
+    const { colorClasses, colorStyle } = useNodeColors(() => payload);
+
+    expect(colorClasses.value).toEqual({
+      'builder-node--filled': true,
+      'builder-node--outlined': true,
+      'is-low-light': true,
+      'is-low-dark': false,
+    });
+    expect(colorStyle.value).toEqual({
+      '--bx-node-fill': '#2f6fbf',
+      '--bx-node-ink': '#ffffff',
+      '--bx-node-outline': '#f4f6f9',
+    });
+
+    payload = { fillColor: '#ffd400' };
+
+    const filled = useNodeColors(() => payload);
+
+    expect(filled.colorClasses.value).toEqual({
+      'builder-node--filled': true,
+      'builder-node--outlined': false,
+      'is-low-light': false,
+      'is-low-dark': false,
+    });
+    expect(filled.colorStyle.value).toEqual({
+      '--bx-node-fill': '#ffd400',
+      '--bx-node-ink': '#000000',
+    });
+
+    // A node given no color has no class and no style of them.
+    const plain = useNodeColors(() => ({ networkId: 'a' }));
+
+    expect(Object.values(plain.colorClasses.value)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(plain.colorStyle.value).toBeUndefined();
+  });
+
+  // The rules that draw them: a selected node keeps its accent border, a
+  // filled one its fill, and every line of text on a fill takes the ink.
+  test('the stylesheet draws a fill and an outline from the custom properties', () => {
+    const css = readFileSync(
+      new URL('../../src/builder/builder.css', import.meta.url),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+
+    expect(css).toContain(
+      '.builder-node--outlined { border-color: var(--bx-node-outline); }',
+    );
+    expect(css).toContain(
+      '.builder-node--filled, .builder-node--filled.is-selected { background: var(--bx-node-fill); color: var(--bx-node-ink); }',
+    );
+    expect(css).toMatch(
+      /\.builder-node--filled :is\( \.builder-node__kind, \.builder-node__meta, \.builder-node__comment, \.builder-node__origin \) \{ color: inherit; \}/,
+    );
+    // After the rule for a selected node, which it has to outrank for the
+    // fill and must not for the border.
+    expect(css.indexOf('.builder-node--filled,')).toBeGreaterThan(
+      css.indexOf('.builder-node.is-selected {'),
+    );
+    expect(css).toContain(
+      ".builder-node--group[data-border='double'] { border-style: double; border-width: 4px; }",
+    );
   });
 
   test('hex and rgb() colors are read into their channels', () => {

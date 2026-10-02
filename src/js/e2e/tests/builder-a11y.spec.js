@@ -1,4 +1,4 @@
-// Accessibility, keyboard-only authoring and theming for the Builder v2.
+// Accessibility, keyboard-only authoring and theming for the Builder.
 //
 // The outline is the advertised pointer-free editing surface, so these tests
 // drive it with the keyboard only: focus, arrow keys, Enter, F2, Delete and
@@ -20,6 +20,9 @@ const {
   expectAccessible,
   expectNoFatal,
   invisibleText,
+  openConfigs,
+  publishTopology,
+  uniqueName,
   waitForApi,
 } = require('./builder-support');
 
@@ -180,13 +183,22 @@ async function zoomLevel(page) {
 }
 
 // The Vue Flow viewport's pan and zoom, as its CSS transform, once it has
-// stopped moving.
-async function settledView(page) {
+// stopped moving. Given `from`, the view a press is about to change, it
+// first waits for the viewport to leave that view: the move may begin a
+// moment after the press, and a viewport that has not begun to move looks
+// like one that has stopped.
+async function settledView(page, from) {
   const transform = () =>
     page
       .locator('.vue-flow__transformationpane')
       .evaluate((element) => element.style.transform);
   let last = '';
+
+  if (from !== undefined) {
+    await expect
+      .poll(transform, { message: 'the view the press changes' })
+      .not.toBe(from);
+  }
 
   await expect
     .poll(async () => {
@@ -1192,10 +1204,15 @@ test.describe('keyboard-only authoring', () => {
 
 // --- axe scans in both themes -------------------------------------------------
 
+// A diagram of the legacy Builder with nothing drawn in it, which converts
+// with one warning.
+const EMPTY_LEGACY_DIAGRAM =
+  '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel>';
+
 const DIALOGS = [
   { action: 'publish', title: 'Publish diagram' },
-  { action: 'import', title: 'Upload diagram' },
-  { action: 'export', title: 'Export diagram' },
+  { action: 'upload', title: 'Upload diagram' },
+  { action: 'download', title: 'Download diagram' },
   { action: 'scenario', title: 'Scenario' },
   { action: 'history', title: 'Draft History' },
 ];
@@ -1249,7 +1266,7 @@ for (const scheme of ['light', 'dark']) {
   test(
     `axe finds no serious violations in the ${scheme} theme`,
     { tag: ['@cross-browser', '@axe'] },
-    async ({ page, builder, issues }) => {
+    async ({ page, builder, issues }, testInfo) => {
       // Scans every view and dialog in turn, which takes close to a minute.
       test.slow();
       await openWithScheme(page, builder, scheme);
@@ -1267,11 +1284,11 @@ for (const scheme of ['light', 'dark']) {
         // Blank drafts are numbered after the first.
         await expect
           .soft(heading)
-          .toHaveText(/^Untitled topology( \d+)? – Builder v2\s*$/);
+          .toHaveText(/^Untitled topology( \d+)? – Builder\s*$/);
         await expect.soft(heading).toBeFocused();
         await expect
           .soft(page)
-          .toHaveTitle(/^Untitled topology( \d+)? - Builder v2 - phēnix$/);
+          .toHaveTitle(/^Untitled topology( \d+)? - Builder - phēnix$/);
         await expect
           .soft(page.locator('html'))
           .toHaveAttribute('lang', 'en-US');
@@ -1327,6 +1344,7 @@ for (const scheme of ['light', 'dark']) {
           exact: true,
         });
         const count = (index) => counts.getByRole('listitem').nth(index);
+        const countButton = (index) => counts.getByRole('button').nth(index);
 
         // Left to right, as Tab goes: Back to drafts, the name's pencil, the
         // counts (one stop, at the first count), then the checks, Reset
@@ -1337,7 +1355,7 @@ for (const scheme of ['light', 'dark']) {
           await back.focus();
           for (const next of [
             edit,
-            count(0),
+            countButton(0),
             checks,
             reset,
             commands,
@@ -1455,9 +1473,10 @@ for (const scheme of ['light', 'dark']) {
         await field.press('Enter');
         await expect.soft(name).toHaveText(title);
 
-        // Each count is an icon and a number, read in words, which show on
-        // hover and on focus. The arrow keys, Home and End move between the
-        // counts, and the list keeps one Tab stop.
+        // Each count is a button: an icon and a number, read in words. Its
+        // tooltip, on hover and on focus, says what it selects, which for a
+        // count of none is the count itself. The arrow keys, Home and End
+        // move between the counts, and the list keeps one Tab stop.
         await expect.soft(counts.locator('svg.builder-icon')).toHaveCount(6);
         await expect
           .soft(counts.getByRole('listitem'))
@@ -1469,44 +1488,72 @@ for (const scheme of ['light', 'dark']) {
             '0 groups,',
             '0 notes',
           ]);
+        // The comma is the list's, not part of a button's name. With
+        // nothing to select a count is unavailable and has no description.
+        await expect
+          .soft(counts.getByRole('button'))
+          .toHaveText([
+            '0 devices',
+            '0 switches',
+            '0 networks',
+            '0 connections',
+            '0 groups',
+            '0 notes',
+          ]);
+        for (let index = 0; index < 6; index += 1) {
+          await expect
+            .soft(countButton(index))
+            .toHaveAttribute('aria-disabled', 'true');
+          await expect.soft(countButton(index)).toHaveAccessibleDescription('');
+        }
         await count(3).hover();
         await expect.soft(countsTip).toHaveText('0 connections');
-        await count(0).focus();
+        await countButton(0).focus();
         await expect.soft(countsTip).toHaveText('0 devices');
         await page.keyboard.press('ArrowRight');
-        await expect.soft(count(1)).toBeFocused();
+        await expect.soft(countButton(1)).toBeFocused();
         await expect.soft(countsTip).toHaveText('0 switches');
         await page.keyboard.press('End');
         await expect.soft(countsTip).toHaveText('0 notes');
-        // The counts are in a box, which holds a count's focus ring.
+        // The counts are in a box, which holds a count's focus ring. A
+        // count is large enough to press (WCAG 2.5.8).
         await expect.soft(counts).toHaveCSS('border-top-style', 'solid');
-        const room = await count(5).evaluate((item) => {
+        const room = await countButton(5).evaluate((item) => {
           const own = item.getBoundingClientRect();
-          const box = item.parentElement.getBoundingClientRect();
+          const box = item.closest('ul').getBoundingClientRect();
           const style = getComputedStyle(item);
           const reach =
             parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
 
-          return Math.min(
-            own.top - reach - box.top,
-            box.bottom - own.bottom - reach,
-            box.right - own.right - reach,
-          );
+          return {
+            ring: Math.min(
+              own.top - reach - box.top,
+              box.bottom - own.bottom - reach,
+              box.right - own.right - reach,
+            ),
+            size: Math.min(own.width, own.height),
+          };
         });
         expect
-          .soft(room, 'focus ring inside the counts box')
+          .soft(room.ring, 'focus ring inside the counts box')
           .toBeGreaterThan(1);
+        expect.soft(room.size, 'a count’s size').toBeGreaterThanOrEqual(24);
         await page.keyboard.press('ArrowRight');
-        await expect.soft(count(0)).toBeFocused();
+        await expect.soft(countButton(0)).toBeFocused();
         await expect.soft(counts.locator('[tabindex="0"]')).toHaveCount(1);
         await page.keyboard.press('Escape');
         await expect.soft(countsTip).toHaveCount(0);
 
-        // Shortcuts opens the shortcut sheet, and gets focus back from it.
+        // Shortcuts shows the key that opens the shortcut sheet, as a
+        // picture of it: its name stays Shortcuts, and its description says
+        // the key. It opens the sheet, and gets focus back from it.
+        await expect.soft(shortcuts.locator('kbd')).toHaveText(['?']);
+        await expect.soft(shortcuts.locator('kbd')).toBeVisible();
+        await expect.soft(shortcuts).toHaveAccessibleDescription('?');
         await shortcuts.focus();
         await expect
           .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(/^Keyboard shortcuts/);
+          .toHaveText('Keyboard shortcuts (?)');
         await page.keyboard.press('Enter');
         await expect.soft(page.getByTestId('shortcuts-dialog')).toBeVisible();
         await page.keyboard.press('Escape');
@@ -1550,11 +1597,18 @@ for (const scheme of ['light', 'dark']) {
           .soft(page.getByTestId('header-tooltip'))
           .toHaveText(`Switch to ${next} theme`);
         await page.setViewportSize(initial);
-        // Settings' and Help's tooltips name them too.
+        // Settings' and Help's tooltips name them too, and Settings' gives
+        // its key.
+        const settingsKeys =
+          process.platform === 'darwin' ? '⌥⇧S' : 'Alt+Shift+S';
         await settings.hover();
         await expect
           .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(/^Builder settings/);
+          .toHaveText(`Builder settings (${settingsKeys})`);
+        await expect
+          .soft(settings)
+          .toHaveAttribute('aria-keyshortcuts', 'Alt+Shift+S');
+        await expect.soft(settings).toHaveAccessibleDescription(settingsKeys);
         await help.focus();
         await expect
           .soft(page.getByTestId('header-tooltip'))
@@ -1593,7 +1647,7 @@ for (const scheme of ['light', 'dark']) {
           .soft(help)
           .toHaveAttribute(
             'href',
-            'https://phenix.sceptre.dev/latest/builder-v2/',
+            'https://phenix.sceptre.dev/latest/builder/',
           );
         await expect.soft(help).toHaveAttribute('target', '_blank');
         await expect.soft(help).toHaveAttribute('rel', /\bnoopener\b/);
@@ -1654,6 +1708,51 @@ for (const scheme of ['light', 'dark']) {
             title,
           ));
       }
+
+      // Upload's legacy source, and the warnings of a conversion, which
+      // take the place of the form. Escape there makes no draft, so the
+      // open one stays.
+      await test.step('Upload dialog, legacy source and its warnings', async () => {
+        const opener = builder.toolbar('upload');
+        const surface = `Upload dialog, legacy source (${scheme})`;
+
+        await opener.press('Enter');
+        await expect(builder.dialog).toBeVisible();
+        await builder.dialog
+          .getByLabel('Legacy Builder diagram or Topology', { exact: true })
+          .check();
+        const file = builder.dialog.getByTestId('upload-legacy-file');
+        await expect(file).toBeVisible();
+        await expectAccessible(page, {
+          soft: true,
+          label: `axe on ${surface}`,
+        });
+        await expectRadioGroups(builder.dialog, surface);
+
+        await file.setInputFiles({
+          name: 'empty.xml',
+          mimeType: 'text/xml',
+          buffer: Buffer.from(EMPTY_LEGACY_DIAGRAM),
+        });
+        await builder.dialog.getByTestId('upload-submit').click();
+        await expect(
+          builder.dialog.getByTestId('upload-warnings'),
+        ).toContainText('The diagram has no nodes.');
+        await expect
+          .soft(builder.dialog.getByTestId('upload-continue'))
+          .toBeFocused();
+        await expectAccessible(page, {
+          soft: true,
+          label: `axe on the warnings of ${surface}`,
+        });
+        expect
+          .soft(await focusableBehindDialog(page), `${surface}: page behind`)
+          .toEqual([]);
+
+        await page.keyboard.press('Escape');
+        await expect(builder.dialog).toHaveCount(0);
+        await expect.soft(opener, `${surface} returns focus`).toBeFocused();
+      });
 
       // The command palette's first row is its search field, which takes
       // focus. The scans cover an unavailable command, a node search and no
@@ -1716,6 +1815,48 @@ for (const scheme of ['light', 'dark']) {
           `Builder settings dialog (${scheme})`,
           'Builder settings',
         ));
+
+      // Opened from the Auto-group menu, with focus in its field, and
+      // scanned with its message showing.
+      await test.step('Auto-group by name pattern dialog', async () => {
+        const opener = builder.toolbar('auto-group');
+        const surface = `Auto-group by name pattern dialog (${scheme})`;
+
+        await opener.press('ArrowUp');
+        await page.keyboard.press('Enter');
+        await expect(
+          builder.dialog.getByRole('heading', {
+            name: 'Auto-group by name pattern',
+          }),
+        ).toBeVisible();
+        const field = builder.dialog.getByRole('textbox', {
+          name: 'Name pattern',
+        });
+        await expect.soft(field, `${surface} focuses its field`).toBeFocused();
+        await field.fill('(');
+        await page.keyboard.press('Enter');
+        await expect(
+          builder.dialog.getByTestId('group-pattern-error'),
+        ).toHaveText(/^That is not a valid regular expression\./);
+        await expectAccessible(page, {
+          soft: true,
+          label: `axe on ${surface}`,
+        });
+        await expectReadable(builder.dialog, surface);
+        expect
+          .soft(await focusableBehindDialog(page), `${surface}: page behind`)
+          .toEqual([]);
+        // Tab wraps inside the dialog: from Group, its last control, to
+        // Close dialog, its first.
+        await builder.dialog.getByRole('button', { name: 'Group' }).focus();
+        await page.keyboard.press('Tab');
+        await expect
+          .soft(builder.dialog.getByRole('button', { name: 'Close dialog' }))
+          .toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect(builder.dialog).toHaveCount(0);
+        await expect.soft(opener, `${surface} returns focus`).toBeFocused();
+      });
 
       // The same in either theme, so checked in the light one.
       if (scheme === 'light') {
@@ -1899,12 +2040,12 @@ for (const scheme of ['light', 'dark']) {
           );
         await expect
           .soft(page.getByRole('heading', { level: 1 }))
-          .toHaveText('Builder v2');
-        await expect.soft(page).toHaveTitle('Builder v2 - phēnix');
-        // Import (the Generate dialog) comes before Upload (the Import
-        // dialog), then the editor header's buttons: Commands, with its key
-        // caps, the theme, Settings, Help, a link to the documentation, and
-        // Focus mode, an icon. They look as the editor's do. The theme is
+          .toHaveText('Builder');
+        await expect.soft(page).toHaveTitle('Builder - phēnix');
+        // Import comes before Upload, each named as its test id says, then
+        // the editor header's buttons: Commands, with its key caps, the
+        // theme, Settings, Help, a link to the documentation, and Focus
+        // mode, an icon. They look as the editor's do. The theme is
         // the one chosen in the editor above.
         const theme = scheme === 'dark' ? 'Dark' : 'Light';
         const actions = page.locator('.builder-drafts__header > div > *');
@@ -1929,9 +2070,15 @@ for (const scheme of ['light', 'dark']) {
           .soft(page.getByTestId('drafts-theme'))
           .toHaveAccessibleName(`Theme: ${theme}. Switch to System theme.`);
         await expectReadable(page.getByTestId('drafts-theme'), 'drafts theme');
+        await expect
+          .soft(page.getByTestId('drafts-import'))
+          .toHaveText('Import');
+        await expect
+          .soft(page.getByTestId('drafts-upload'))
+          .toHaveText('Upload');
         for (const opener of [
           'drafts-import',
-          'drafts-generate',
+          'drafts-upload',
           'drafts-commands',
           'drafts-settings',
         ]) {
@@ -1946,7 +2093,7 @@ for (const scheme of ['light', 'dark']) {
           .soft(help)
           .toHaveAttribute(
             'href',
-            'https://phenix.sceptre.dev/latest/builder-v2/',
+            'https://phenix.sceptre.dev/latest/builder/',
           );
         await expect.soft(help).toHaveAttribute('target', '_blank');
         await expect.soft(help).toHaveAttribute('rel', /\bnoopener\b/);
@@ -1963,10 +2110,8 @@ for (const scheme of ['light', 'dark']) {
         await expect
           .soft(page.getByRole('link', { name: 'Skip to diagram canvas' }))
           .toHaveCount(0);
-        // The nav link's "beta" tag is part of its name, and readable.
-        const nav = page.getByTestId('nav-builder-v2');
-        await expect.soft(nav).toHaveAccessibleName('Builder v2 beta');
-        await expectReadable(nav.locator('.tag'), 'nav beta tag');
+        const nav = page.getByTestId('nav-builder');
+        await expect.soft(nav).toHaveAccessibleName('Builder');
         await expectHeaderRing(page, nav, 'nav link');
         await expectHeaderRing(page, page.getByTestId('nav-logout'), 'Logout');
         await expectAccessible(page, {
@@ -1980,11 +2125,14 @@ for (const scheme of ['light', 'dark']) {
         await test.step('drafts tabs follow the APG tabs pattern', async () => {
           const tab = (id) => page.getByTestId(`drafts-tab-${id}`);
 
+          // The last tab is Node Templates: other users' drafts have a
+          // tab only while there are some, and without sign-in there are
+          // none.
           await tab('mine').focus();
           await page.keyboard.press('End');
-          await expect.soft(tab('published')).toBeFocused();
+          await expect.soft(tab('templates')).toBeFocused();
           await expect
-            .soft(tab('published'))
+            .soft(tab('templates'))
             .toHaveAttribute('aria-selected', 'true');
           await page.keyboard.press('Home');
           await expect.soft(tab('mine')).toBeFocused();
@@ -2043,14 +2191,151 @@ for (const scheme of ['light', 'dark']) {
         });
       }
 
-      await test.step('Generate dialog', () =>
+      await test.step('Import dialog', () =>
         scanDialog(
           page,
           builder,
-          page.getByTestId('drafts-generate'),
-          `Generate dialog (${scheme})`,
+          page.getByTestId('drafts-import'),
+          `Import dialog (${scheme})`,
           'Import topology or experiment',
         ));
+
+      // A topology that includes another shows every option of Import: the
+      // "Included topologies" choice, the copy box and, once one of them
+      // asks for it, the new name, here with what is wrong with it.
+      await test.step('Import dialog, with its options and a refused name', async () => {
+        const opener = page.getByTestId('drafts-import');
+        const surface = `Import dialog with its options (${scheme})`;
+        const included = uniqueName(testInfo, 'axe-inc');
+        const including = uniqueName(testInfo, 'axe-root');
+        const config = (name, spec) => ({
+          apiVersion: 'phenix.sandia.gov/v1',
+          kind: 'Topology',
+          metadata: { name },
+          spec,
+        });
+        await builder.seedConfig(config(included, { nodes: [] }));
+        await builder.seedConfig(
+          config(including, { nodes: [], includeTopologies: [included] }),
+        );
+
+        await opener.press('Enter');
+        await expect(builder.dialog).toBeVisible();
+        await builder.dialog.getByTestId('import-name').selectOption(including);
+        await expect(
+          builder.dialog.getByRole('group', { name: 'Included topologies' }),
+        ).toBeVisible();
+        await builder.dialog.getByTestId('import-copy').check();
+        const name = builder.dialog.getByLabel('New topology name');
+        await name.fill(included);
+        await name.press('Enter');
+        await expect(builder.dialog.getByTestId('import-error')).toHaveText(
+          `A topology named ${included} already exists. Enter another name.`,
+        );
+        await expect.soft(name).toBeFocused();
+        // The Import button changed color when a source was chosen: its
+        // colors are measured once they have settled.
+        await builder.dialog.evaluate((dialog) =>
+          Promise.all(
+            dialog
+              .getAnimations({ subtree: true })
+              .map((animation) => animation.finished),
+          ),
+        );
+        await expectAccessible(page, {
+          soft: true,
+          label: `axe on ${surface}`,
+        });
+        await expectRadioGroups(builder.dialog, surface);
+        expect
+          .soft(await focusableBehindDialog(page), `${surface}: page behind`)
+          .toEqual([]);
+
+        // Combine takes the copy box away; what is left is scanned too.
+        await builder.dialog
+          .getByLabel('Combine into one new topology')
+          .check();
+        await expect(builder.dialog.getByTestId('import-copy')).toHaveCount(0);
+        await expectAccessible(page, {
+          soft: true,
+          label: `axe on ${surface}, Combine chosen`,
+        });
+
+        await page.keyboard.press('Escape');
+        await expect(builder.dialog).toHaveCount(0);
+        await expect.soft(opener, `${surface} returns focus`).toBeFocused();
+      });
+
+      // The Builder controls of the Configs page: the tag of a Builder
+      // topology, which is a link, and the first button of its viewer.
+      await test.step('Configs page, the Builder tag and the viewer button', async () => {
+        const name = uniqueName(testInfo, 'axe-built');
+        await publishTopology(builder.request, builder.tracker, name);
+        await openConfigs(page);
+
+        const tag = page.locator(`[data-config-builder="Topology/${name}"]`);
+        await expect(tag).toBeVisible();
+        await expect
+          .soft(tag)
+          .toHaveAccessibleName(
+            `builder: open Topology ${name} in the Builder`,
+          );
+        // Keyboard focus shows on the tag, in a ring that stands out from
+        // the row behind it (WCAG 1.4.11).
+        await tag.focus();
+        expect
+          .soft(
+            await tag.evaluate((link) => getComputedStyle(link).outlineStyle),
+            'tag focus outline',
+          )
+          .toBe('solid');
+        const [ring] = await contrast(tag, 'outlineColor');
+        expect
+          .soft(ring.ratio, `tag focus ring: ${JSON.stringify(ring)}`)
+          .toBeGreaterThanOrEqual(3);
+        await expectAccessible(page, {
+          include: `tr:has([data-config-builder="Topology/${name}"])`,
+          soft: true,
+          label: 'axe on the Configs row of a Builder topology',
+        });
+
+        const fetched = waitForApi(page, 'GET', `/configs/Topology/${name}`);
+        await page
+          .getByRole('button', { name: `View Topology ${name}` })
+          .click();
+        await fetched;
+        const viewer = page.getByRole('dialog', { name: `Topology/${name}` });
+        await expect(viewer.getByTestId('viewer-builder')).toHaveText(
+          'Open in Builder',
+        );
+        // The viewer fades in: its colors are measured once it has.
+        await expect
+          .poll(() =>
+            viewer.evaluate((modal) => {
+              let opacity = 1;
+
+              for (
+                let element = modal.querySelector('.modal-card');
+                element;
+                element = element.parentElement
+              ) {
+                opacity *= parseFloat(getComputedStyle(element).opacity);
+              }
+
+              return opacity;
+            }),
+          )
+          .toBe(1);
+        // The button alone: the viewer's other buttons are not the
+        // Builder's, and white on their colors is below 4.5:1.
+        await expectAccessible(page, {
+          include: '[data-testid="viewer-builder"]',
+          soft: true,
+          label: 'axe on the Builder button of the Configs viewer',
+        });
+        await viewer.getByRole('button', { name: 'Exit' }).click();
+        await expect(viewer).toBeHidden();
+      });
       expectNoFatal(issues);
     },
   );
@@ -2117,9 +2402,9 @@ test.describe('themes and canvas controls', () => {
     }
 
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Builder v2' })).toBeVisible(
-      { timeout: 20000 },
-    );
+    await expect(
+      page.getByRole('heading', { name: 'Builder', exact: true }),
+    ).toBeVisible({ timeout: 20000 });
     await expect(root(page)).toHaveAttribute('data-builder-theme', 'dark');
     await expect(root(page)).toHaveAttribute(
       'data-builder-theme-preference',
@@ -2413,10 +2698,11 @@ test.describe('themes and canvas controls', () => {
         await expect
           .soft(device.getByTestId('node-issue'))
           .toHaveAttribute('data-level', 'warning');
+        // After what its info tooltip shows, and before the canvas's keys.
         await expect
           .soft(device)
           .toHaveAccessibleDescription(
-            /^1 warning: device "node" has no interfaces\. Arrow keys move between nodes/,
+            /^No interfaces\. OS type linux\. 1 warning: device "node" has no interfaces\. Arrow keys move between nodes/,
           );
       });
 
@@ -2567,13 +2853,15 @@ test.describe('themes and canvas controls', () => {
         .toHaveText(/^Restore previous view \(.+1 on the canvas\)$/);
       const fitted = await settledView(page);
       await restore.press('Enter');
-      expect(await settledView(page), 'the view from before Fit').toBe(before);
+      expect(await settledView(page, fitted), 'the view from before Fit').toBe(
+        before,
+      );
       await expect.soft(builder).toHaveAnnounced('Restored the previous view');
       await expect.soft(fit).toBeFocused();
       await expect.soft(icon('fit-view')).toHaveCount(1);
       await expect.soft(tip).toHaveText(/^Fit diagram to view /);
       await fit.press('Enter');
-      expect(await settledView(page), 'fitted again').toBe(fitted);
+      expect(await settledView(page, before), 'fitted again').toBe(fitted);
       await expect.soft(restore).toBeFocused();
 
       // Any other change of the view forgets the view from before Fit: a
@@ -2585,8 +2873,12 @@ test.describe('themes and canvas controls', () => {
       await page.mouse.up();
       await expect(fit).toBeVisible();
       await expect(restore).toHaveCount(0);
+      const panned = await settledView(page);
+      expect(panned, 'the pan moved the view').not.toBe(fitted);
       await fit.press('Enter');
-      expect(await settledView(page), 'fitted after the pan').toBe(fitted);
+      expect(await settledView(page, panned), 'fitted after the pan').toBe(
+        fitted,
+      );
 
       // The last device is the canvas's Tab stop, once it has had focus.
       const last = page.locator('.vue-flow__node').last();
@@ -2647,7 +2939,7 @@ test.describe('themes and canvas controls', () => {
       const opener = page.getByTestId('editor-settings');
       const settings = page.getByTestId('settings-dialog');
       const layout = settings.getByRole('combobox', {
-        name: 'Layout for drafts without one',
+        name: 'Default layout',
       });
       const showMinimap = settings.getByRole('switch', {
         name: 'Show the minimap',
@@ -2768,7 +3060,7 @@ test.describe('themes and canvas controls', () => {
         );
       });
       const other = await page.context().newPage();
-      await other.goto(new URL('/builder-v2', page.url()).href);
+      await other.goto(new URL('/builder', page.url()).href);
       await other.evaluate(() =>
         localStorage.setItem(
           'phenix.builder.settings',
@@ -2792,13 +3084,13 @@ test.describe('themes and canvas controls', () => {
       await expect
         .poll(async () => level(await zoomLevel(page)))
         .not.toBe(opened);
-      const upload = await builder.openDialog('import');
+      const upload = await builder.openDialog('upload');
       await upload.getByLabel('Paste text', { exact: true }).check();
       await upload
-        .getByTestId('import-text')
+        .getByTestId('upload-text')
         .fill(JSON.stringify(await builder.serverDocument(draft)));
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-      await upload.getByTestId('import-submit').click();
+      const created = waitForApi(page, 'POST', '/builder/drafts');
+      await upload.getByTestId('upload-submit').click();
       const uploaded = await (await created).json();
       expect.soft(uploaded.id, 'a new draft').not.toBe(draft.id);
       await expect(builder.dialog).toBeHidden();
@@ -2806,7 +3098,7 @@ test.describe('themes and canvas controls', () => {
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
       await expect.soft(toggle).toHaveAttribute('aria-pressed', 'false');
       await expect.soft(minimap).toHaveCount(0);
-      await expect.soft(builder.toolbar('import')).toBeFocused();
+      await expect.soft(builder.toolbar('upload')).toBeFocused();
       await builder.waitSaved();
 
       // Reset to defaults puts every choice back, and forgets them.
@@ -2827,6 +3119,151 @@ test.describe('themes and canvas controls', () => {
       await expect.soft(reset).toHaveAttribute('aria-disabled', 'true');
       expect(await stored()).toBeNull();
       await page.keyboard.press('Escape');
+    });
+
+    await test.step('a custom zoom opens a diagram at a percentage, which Reset view goes back to', async () => {
+      const opener = page.getByTestId('editor-settings');
+      const settings = page.getByTestId('settings-dialog');
+      const zooms = settings.locator('input[name="settings-zoom"]');
+      const custom = settings.getByRole('radio', { name: 'Custom' });
+      const percent = settings.getByRole('spinbutton', {
+        name: 'Custom zoom, percent',
+      });
+      const refused = settings.getByTestId('settings-zoom-percent-error');
+      const status = settings.getByTestId('settings-status');
+      const level = (value) => Math.round(value * 1000) / 1000;
+      const view = () =>
+        page
+          .locator('.vue-flow__transformationpane')
+          .evaluate((element) => element.style.transform);
+      const stored = async () =>
+        JSON.parse(
+          await page.evaluate(() =>
+            localStorage.getItem('phenix.builder.settings'),
+          ),
+        );
+
+      await opener.press('Enter');
+      // 100%, the fit, then Custom with its percentage beside it: a field
+      // that is always enabled, described by its range.
+      await expect.soft(zooms).toHaveCount(3);
+      expect
+        .soft(
+          await zooms.evaluateAll((radios) =>
+            radios.map((radio) => [radio.value, radio.checked]),
+          ),
+        )
+        .toEqual([
+          ['actual', true],
+          ['fit', false],
+          ['custom', false],
+        ]);
+      await expect.soft(percent).toHaveValue('100');
+      await expect.soft(percent).toBeEnabled();
+      await expect.soft(percent).toHaveAttribute('min', '20');
+      await expect.soft(percent).toHaveAttribute('max', '200');
+      await expect.soft(percent).toHaveAttribute('step', '5');
+      await expect
+        .soft(percent)
+        .toHaveAccessibleDescription(
+          'From 20 to 200. Reset view goes back to it too.',
+        );
+      const beside = await Promise.all([
+        custom.boundingBox(),
+        percent.boundingBox(),
+      ]);
+      expect
+        .soft(
+          Math.abs(
+            beside[0].y +
+              beside[0].height / 2 -
+              (beside[1].y + beside[1].height / 2),
+          ),
+          'the field is on the line of the Custom choice',
+        )
+        .toBeLessThan(12);
+
+      // Out of range: nothing is kept, and the field says why.
+      await percent.fill('500');
+      await percent.press('Enter');
+      await expect(refused).toHaveText('Enter a number from 20 to 200.');
+      await expect.soft(percent).toHaveAttribute('aria-invalid', 'true');
+      await expect.soft(percent).toHaveValue('500');
+      await expect
+        .soft(percent)
+        .toHaveAccessibleDescription(/Enter a number from 20 to 200\.$/);
+      await expect.soft(custom).not.toBeChecked();
+      expect(await stored()).toBeNull();
+      await percent.fill('');
+      await percent.blur();
+      await expect(refused).toHaveText('Enter a number from 20 to 200.');
+      expect(await stored()).toBeNull();
+
+      // A number in range is rounded to a step of 5, kept, and chooses
+      // Custom.
+      await percent.fill('33');
+      await percent.press('Enter');
+      await expect(percent).toHaveValue('35');
+      await expect.soft(refused).toHaveCount(0);
+      await expect.soft(percent).not.toHaveAttribute('aria-invalid');
+      await expect.soft(custom).toBeChecked();
+      await expect.soft(status).toHaveText('Diagrams open at 35%.');
+      expect(await stored()).toEqual({
+        openZoom: 'custom',
+        openZoomPercent: 35,
+      });
+      await percent.fill('75');
+      await percent.blur();
+      await expect.soft(status).toHaveText('Diagrams open at 75%.');
+      expect(await stored()).toEqual({
+        openZoom: 'custom',
+        openZoomPercent: 75,
+      });
+
+      // Another choice keeps the percentage for the next time; Custom on
+      // its own takes it up again, and drops a value the field refused.
+      await settings.getByRole('radio', { name: '100%' }).check();
+      expect(await stored()).toEqual({ openZoomPercent: 75 });
+      await percent.fill('7');
+      await percent.blur();
+      await expect(refused).toHaveText('Enter a number from 20 to 200.');
+      await custom.check();
+      await expect.soft(percent).toHaveValue('75');
+      await expect.soft(refused).toHaveCount(0);
+      expect(await stored()).toEqual({
+        openZoom: 'custom',
+        openZoomPercent: 75,
+      });
+      await page.keyboard.press('Escape');
+      await expect.soft(opener).toBeFocused();
+
+      // Reset view goes to the percentage, from the diagram's origin.
+      await page.getByTestId('editor-reset-view').click();
+      await expect.poll(async () => level(await zoomLevel(page))).toBe(0.75);
+      await expect.poll(view).toMatch(/^translate\(0px, 0px\) scale\(0\.75\)$/);
+
+      // A new page opens the draft at it.
+      await builder.waitSaved();
+      await page.reload();
+      await expect(builder.landingHeading).toBeVisible({ timeout: 20000 });
+      await page.getByTestId(`draft-open-${draft.id}`).click();
+      await expect(builder.canvas).toBeVisible();
+      await expect.poll(async () => level(await zoomLevel(page))).toBe(0.75);
+      await expect.poll(view).toMatch(/^translate\(0px, 0px\) scale\(0\.75\)$/);
+
+      // Reset to defaults puts both back.
+      await opener.press('Enter');
+      await expect.soft(custom).toBeChecked();
+      await expect.soft(percent).toHaveValue('75');
+      await settings.getByRole('button', { name: 'Reset to defaults' }).click();
+      await expect
+        .soft(settings.getByRole('radio', { name: '100%' }))
+        .toBeChecked();
+      await expect.soft(percent).toHaveValue('100');
+      expect(await stored()).toBeNull();
+      await page.keyboard.press('Escape');
+      await page.getByTestId('editor-reset-view').click();
+      await expect.poll(async () => level(await zoomLevel(page))).toBe(1);
     });
 
     await test.step('a switch row brings its whole network into view, however far apart its nodes are', async () => {

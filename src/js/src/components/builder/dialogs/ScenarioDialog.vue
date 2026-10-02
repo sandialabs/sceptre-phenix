@@ -3,7 +3,7 @@
 
   A document may reference a stored scenario config or carry uploaded scenario
   content. Both forms need the config apiVersion and a content digest, so the
-  stored list comes from GET /api/v1/builder-v2/sources and uploads are digested
+  stored list comes from GET /api/v1/builder/sources and uploads are digested
   here before the reference is attached.
 -->
 <template>

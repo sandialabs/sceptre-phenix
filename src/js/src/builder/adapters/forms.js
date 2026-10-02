@@ -35,6 +35,7 @@ import InspectorArrayRenderer from '../../components/builder/inspector/Inspector
 import InspectorColorControl from '../../components/builder/inspector/InspectorColorControl.vue';
 import InspectorComboboxControl from '../../components/builder/inspector/InspectorComboboxControl.vue';
 import InspectorEnumControl from '../../components/builder/inspector/InspectorEnumControl.vue';
+import InspectorIconControl from '../../components/builder/inspector/InspectorIconControl.vue';
 import InspectorInputControl from '../../components/builder/inspector/InspectorInputControl.vue';
 import InspectorMapRenderer from '../../components/builder/inspector/InspectorMapRenderer.vue';
 import InspectorOneOfRenderer from '../../components/builder/inspector/InspectorOneOfRenderer.vue';
@@ -43,6 +44,7 @@ import {
   isTextOrList,
   numberBranch,
 } from '../../components/builder/inspector/control.js';
+import { kindMeta } from '../catalog.js';
 import {
   COMBINATORS,
   errorMessage,
@@ -55,6 +57,8 @@ import {
   findNetwork,
   findNode,
   includedFrom,
+  LOOK_KEYS,
+  lookOf,
   networkOfSwitch,
   networkRefusal,
   nextInterfaceName,
@@ -69,6 +73,8 @@ import {
   schemaForKind,
   SUGGESTIONS_KEYWORD,
 } from '../schema.js';
+
+import { networkStyle } from './vueflow.js';
 
 const MULTILINE_KEYS = ['description', 'text', 'comment'];
 
@@ -115,11 +121,28 @@ export const inspectorRenderers = Object.freeze(
       renderer: InspectorEnumControl,
       tester: rankWith(15, isOneOfEnumControl),
     },
-    // The color of a network, note, group or connection: a text field with
-    // a color picker.
+    // The color of a network, note, group or connection, and the outline
+    // and the fill of a device or a switch: a text field with a color
+    // picker.
     {
       renderer: InspectorColorControl,
-      tester: rankWith(14, and(isStringControl, scopeEndIs('color'))),
+      tester: rankWith(
+        14,
+        and(
+          isStringControl,
+          or(
+            scopeEndIs('color'),
+            scopeEndIs('outlineColor'),
+            scopeEndIs('fillColor'),
+          ),
+        ),
+      ),
+    },
+    // The custom icon of a device or a group: what it is, and a dialog to
+    // choose one.
+    {
+      renderer: InspectorIconControl,
+      tester: rankWith(14, and(isStringControl, scopeEndIs('icon'))),
     },
     // A text field that suggests values: a drive's image.
     {
@@ -204,6 +227,9 @@ export function relevantErrors(errors) {
   );
 }
 
+// The border a group is drawn with when it names none (see builder.css).
+const GROUP_BORDER = 'dashed';
+
 // What phenix itself puts in a node spec's unset fields as it runs an
 // experiment (setDefaults in src/go/types/version/v1/node.go, and
 // Drive.InjectPartition), keyed like SPEC_BOUNDS in schema.js. A device
@@ -241,8 +267,11 @@ function specEntry(table, path) {
  * What an Inspector field shows while it is not set: the value it comes to
  * all the same, which is not written into the document until the field is
  * changed. A connection's label is its network's name, which the canvas
- * draws for it; a device's spec field is the value phenix gives it (see
- * PHENIX_DEFAULTS), else its schema's `default`.
+ * draws for it; a line style is the pattern the canvas picks (a network's
+ * by its place in the diagram, a connection's its network's); a group's
+ * border is dashed and its icon the group icon; a device's spec field is
+ * the value phenix gives it (see PHENIX_DEFAULTS), else its schema's
+ * `default`.
  *
  * @param {object|null} target the Inspector's target (see inspectorTarget)
  * @param {string} path the field's data path
@@ -255,6 +284,26 @@ export function fieldDefault(target, path, schema) {
     return target.network?.name
       ? { value: target.network.name, note: "The network's name" }
       : undefined;
+  }
+
+  if (path === 'lineStyle' && target?.networkStyle) {
+    return target.kind === 'edge'
+      ? {
+          value: target.networkStyle.pattern,
+          note: "Auto: its network's line style",
+        }
+      : {
+          value: target.networkStyle.autoPattern,
+          note: "Auto: chosen by the network's place in the diagram",
+        };
+  }
+
+  if (target?.kind === 'group' && path === 'borderStyle') {
+    return { value: GROUP_BORDER, note: 'The default border' };
+  }
+
+  if (target?.kind === 'group' && path === 'iconKey') {
+    return { value: kindMeta('group').iconKey, note: 'The group icon' };
   }
 
   const spec = target?.kind === 'device' ? target.data?.spec : undefined;
@@ -430,8 +479,8 @@ export function inspectorLock(doc, selection) {
       fields: [],
       note:
         `Defined by included topology ${from}, so it is read only here. ` +
-        `Change it in ${from}, then import it again from the drafts page. ` +
-        'It can still be moved.',
+        `Change it in ${from} and import again, or combine the included ` +
+        'nodes into a new draft to edit them here. It can still be moved.',
     };
   }
 
@@ -486,11 +535,56 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value ?? {}));
 }
 
+// What each of a device's presentation fields is called in the
+// announcement of its change (see LOOK_KEYS in model.js).
+const LOOK_NAMES = {
+  iconKey: 'icon',
+  icon: 'custom icon',
+  outlineColor: 'outline color',
+  fillColor: 'fill color',
+};
+
+/**
+ * What a change of a device's presentation fields says, and undoes as: the
+ * first of the fields that differs names it, as "Changed the fill color of
+ * Device web-01 to #2f6fbf", "Removed the fill color of Device web-01",
+ * "Changed the icon of Device web-01 to the default" or "Changed the custom
+ * icon of Device web-01 to plc". A custom icon is said by its name, never
+ * by its id.
+ *
+ * @param {string} title the device's title, from inspectorTarget
+ * @param {object} before its look (see lookOf)
+ * @param {object} after the look it is given
+ * @param {(id: string) => string|undefined} [iconName] the name of a
+ *   custom icon, by its id
+ * @returns {string} '' when they are the same
+ */
+export function lookChangeLabel(title, before, after, iconName = () => '') {
+  const key = LOOK_KEYS.find((name) => before[name] !== after[name]);
+
+  if (!key) {
+    return '';
+  }
+
+  if (key === 'iconKey') {
+    return `Changed the icon of ${title} to ${after.iconKey || 'the default'}`;
+  }
+
+  if (!after[key]) {
+    return `Removed the ${LOOK_NAMES[key]} of ${title}`;
+  }
+
+  const value =
+    key === 'icon' ? iconName(after.icon) || 'an unnamed icon' : after[key];
+
+  return `Changed the ${LOOK_NAMES[key]} of ${title} to ${value}`;
+}
+
 /**
  * Describes what the inspector is editing.
  *
- * A selected switch edits its network, because a switch has no properties of
- * its own beyond the network it publishes.
+ * A selected switch edits its network, and with it the two colors that are
+ * the switch node's own: its outline and its fill.
  *
  * @param {object} doc
  * @param {{type: 'node'|'edge'|'document', id?: string}} selection
@@ -526,7 +620,13 @@ export function inspectorTarget(doc, selection) {
       title: `Connection from ${end(edge.sourceNodeId, edge.sourceHandleId)} to ${end(edge.targetNodeId, edge.targetHandleId)}`,
       target: edge,
       network: findNetwork(doc, edge.networkId),
-      data: { label: edge.label || '', color: edge.color || '' },
+      // What its Line style comes to while it has none (see fieldDefault).
+      networkStyle: networkStyle(doc, edge.networkId),
+      data: {
+        label: edge.label || '',
+        color: edge.color || '',
+        lineStyle: edge.lineStyle || '',
+      },
     };
   }
 
@@ -544,7 +644,7 @@ export function inspectorTarget(doc, selection) {
         target: node,
         data: {
           hostname: node.device.hostname,
-          iconKey: node.device.iconKey || '',
+          ...lookOf(node.device),
           spec: clone(node.device.spec),
         },
         interfaces: deviceHandles(node),
@@ -557,11 +657,16 @@ export function inspectorTarget(doc, selection) {
         title: `Network ${network ? network.name : ''}`.trim(),
         target: node,
         network,
+        networkStyle: network ? networkStyle(doc, network.id) : undefined,
+        // The network's fields, then the colors of this switch node itself.
         data: {
           name: network?.name || '',
           ...(Number.isInteger(network?.alias) ? { alias: network.alias } : {}),
           description: network?.description || '',
           color: network?.color || '',
+          lineStyle: network?.lineStyle || '',
+          outlineColor: node.switch?.outlineColor || '',
+          fillColor: node.switch?.fillColor || '',
         },
       };
     }
@@ -579,7 +684,11 @@ export function inspectorTarget(doc, selection) {
         target: node,
         data: {
           title: node.group?.title || '',
+          description: node.group?.description || '',
           color: node.group?.color || '',
+          borderStyle: node.group?.borderStyle || '',
+          iconKey: node.group?.iconKey || '',
+          icon: node.group?.icon || '',
         },
       };
     default:
@@ -860,12 +969,13 @@ export function applyFormData(doc, selection, data) {
       return updateEdge(doc, target.target.id, {
         label: data.label ?? '',
         color: data.color ?? '',
+        lineStyle: data.lineStyle ?? '',
       });
     case 'device':
       return updateNode(doc, target.target.id, {
         device: {
           hostname: data.hostname,
-          iconKey: data.iconKey || '',
+          ...lookOf(data),
           spec: clone(data.spec),
         },
       });
@@ -877,12 +987,24 @@ export function applyFormData(doc, selection, data) {
         return doc;
       }
 
-      return updateNetwork(doc, network.id, {
-        name: data.name,
-        alias: data.alias === undefined ? null : data.alias,
-        description: data.description ?? '',
-        color: data.color ?? '',
-      });
+      // The network's fields, then the switch node's own colors, as one
+      // document and so one Undo step.
+      return updateNode(
+        updateNetwork(doc, network.id, {
+          name: data.name,
+          alias: data.alias === undefined ? null : data.alias,
+          description: data.description ?? '',
+          color: data.color ?? '',
+          lineStyle: data.lineStyle ?? '',
+        }),
+        target.target.id,
+        {
+          switch: {
+            outlineColor: data.outlineColor ?? '',
+            fillColor: data.fillColor ?? '',
+          },
+        },
+      );
     }
     case 'note':
       return updateNode(doc, target.target.id, {
@@ -891,7 +1013,14 @@ export function applyFormData(doc, selection, data) {
     case 'group':
       // updateNode keeps the group's other fields, such as `collapsed`.
       return updateNode(doc, target.target.id, {
-        group: { title: data.title ?? '', color: data.color ?? '' },
+        group: {
+          title: data.title ?? '',
+          description: data.description ?? '',
+          color: data.color ?? '',
+          borderStyle: data.borderStyle ?? '',
+          iconKey: data.iconKey ?? '',
+          icon: data.icon ?? '',
+        },
       });
     default:
       return doc;

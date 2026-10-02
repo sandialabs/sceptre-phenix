@@ -467,7 +467,7 @@ Key: E - experiment resource, V - VM resource, U - user resource
 |
 |------|------
 | Verb | list, get, update, delete
-| Desc | reach other users' Builder v2 drafts (see [Builder v2 permissions](builder-v2/administration.md#permissions))
+| Desc | reach other users' Builder drafts (see [Builder permissions](builder/administration.md#permissions))
 | Exp. Scoped | no
 | Res. Scoped | yes (resource names are `<owner>/<draft id>`; use `*/*` for every draft)
 

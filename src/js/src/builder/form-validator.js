@@ -105,6 +105,7 @@ const PATTERN_HINTS = {
   '^[\\w-]+$': 'can use only letters, digits, underscores and hyphens',
   '^[^\\x00-\\x1f\\x7f]*$':
     'cannot contain tabs, line breaks or other control characters',
+  '^(#[0-9a-fA-F]{6})?$': 'must be a hex color, such as #2f6fbf',
 };
 
 const FORMAT_HINTS = {

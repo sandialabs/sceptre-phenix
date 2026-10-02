@@ -16,7 +16,7 @@ import (
 // docsExamples holds the Builder documents the documentation links to, which
 // a reader uploads as they are.
 var docsExamples = filepath.Join( //nolint:gochecknoglobals // test fixture path
-	"..", "..", "..", "..", "docs", "content", "builder-v2", "examples",
+	"..", "..", "..", "..", "docs", "content", "builder", "examples",
 )
 
 func testProvenance() builder.Provenance {

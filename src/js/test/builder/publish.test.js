@@ -1,12 +1,16 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import {
+  LEGACY_TOKEN,
   actionFor,
   buildPublishIntent,
   configName,
   configNameProblem,
   describePublishResult,
   draftCanUpdate,
+  hasLegacyDiagram,
+  keptIncludesText,
+  legacyDiagramUpdate,
   overwriteConfirmation,
   publishChecks,
   publishLabel,
@@ -102,21 +106,39 @@ describe('publish intent', () => {
         'the diagram was not imported from it or published to it. ' +
         'Enter another name to create a new experiment.',
     });
-    // Nor can any draft update a topology the legacy XML Builder owns.
+    // A topology that still has its legacy Builder diagram is refused the
+    // same way for a draft that was not imported from it, and is updated by
+    // the one that was.
+    const legacy = [{ name: 'old', builder: 'builder-xml' }];
+
     expect(
       buildPublishIntent(
         { topologyName: 'old' },
-        {
-          topologies: [{ name: 'old', builder: 'builder-xml' }],
-          draft: { source: { kind: 'topology', name: 'old' } },
-        },
+        { topologies: legacy, draft: {} },
       ),
     ).toEqual({
       intent: null,
       field: 'topologyName',
       error:
-        'The topology "old" belongs to the legacy XML Builder and cannot be updated here. ' +
+        'A topology named "old" already exists, and this diagram cannot update it: ' +
+        'the diagram was not imported from it, opened from its published diagram or published to it. ' +
         'Enter another name to create a new topology.',
+    });
+    expect(
+      buildPublishIntent(
+        { topologyName: 'old' },
+        {
+          topologies: legacy,
+          draft: { source: { kind: 'topology', name: 'old' } },
+        },
+      ),
+    ).toEqual({
+      intent: {
+        mode: 'topology',
+        topology: { name: 'old', action: 'update' },
+      },
+      error: '',
+      field: '',
     });
     // A new name is always created.
     expect(
@@ -328,6 +350,48 @@ describe('which configs a draft may update', () => {
     ).toBe(false);
   });
 
+  // Import as a copy, and Import with the included topologies combined,
+  // give the document a manual source and the draft no token (see Detach in
+  // types/builder/detach.go).
+  test('a copy or a combined import never updates the topology it was made from', () => {
+    const copy = {
+      sourceToken: '',
+      source: { kind: 'manual', includeTopologies: ['corp-services'] },
+    };
+    const topologies = [
+      { name: 'core' },
+      { name: 'old', builder: 'builder-xml' },
+    ];
+
+    expect(draftCanUpdate('topology', 'core', copy)).toBe(false);
+    expect(updateBlocker('topology', 'core', topologies, copy)).toBe('source');
+    // Nor a legacy topology it was copied from, which keeps its diagram.
+    expect(updateBlocker('topology', 'old', topologies, copy)).toBe('source');
+    // A combined import of a config file is still an upload.
+    expect(
+      updateBlocker('topology', 'core', topologies, {
+        sourceToken: 'uploaded/Topology/core',
+        source: { kind: 'manual' },
+      }),
+    ).toBe('source');
+
+    // Once it has published its own topology, it updates that one.
+    const republished = {
+      ...copy,
+      id: 'd1',
+      documents: [
+        { id: 'p1', kind: 'Topology', target: 'core-copy', draftId: 'd1' },
+      ],
+    };
+
+    expect(
+      updateBlocker('topology', 'core-copy', topologies, republished),
+    ).toBe('');
+    expect(updateBlocker('topology', 'core', topologies, republished)).toBe(
+      'source',
+    );
+  });
+
   test('a draft opened from a published diagram updates the topology that still points at it', () => {
     const draft = {
       sourceToken: 'builder-doc/p1',
@@ -533,17 +597,125 @@ describe('which configs a draft may update', () => {
     }
   });
 
-  test('a topology the legacy XML Builder owns is never updated', () => {
+  // The import of a topology that has a legacy Builder diagram converts
+  // the diagram, and the update replaces it. No other draft read it, so the
+  // server lets no other draft update the topology
+  // (topologyUpdateMatchesSource).
+  test('a topology with a legacy Builder diagram is updated only by the draft imported from it', () => {
     const entries = [{ name: 'old', builder: 'builder-xml' }, { name: 'new' }];
-    const draft = { source: { kind: 'topology', name: 'old' } };
+    const imported = { source: { kind: 'topology', name: 'old' } };
+    const fromExperiment = {
+      source: { kind: 'experiment', name: 'exp', topology: 'old' },
+    };
 
-    expect(updateBlocker('topology', 'old', entries, draft)).toBe('legacy');
-    expect(updateBlocker('topology', 'new', entries, draft)).toBe('source');
+    expect(hasLegacyDiagram('old', entries)).toBe(true);
+    expect(hasLegacyDiagram('new', entries)).toBe(false);
+    expect(hasLegacyDiagram('old', ['old'])).toBe(false);
+    expect(hasLegacyDiagram('old', undefined)).toBe(false);
+
+    expect(updateBlocker('topology', 'old', entries, imported)).toBe('');
+    expect(updateBlocker('topology', 'new', entries, imported)).toBe('source');
     expect(
       updateBlocker('topology', 'new', entries, {
         source: { kind: 'topology', name: 'new' },
       }),
     ).toBe('');
+
+    // A draft drawn by hand, and one of another topology.
+    expect(updateBlocker('topology', 'old', entries, {})).toBe('source');
+    expect(
+      updateBlocker('topology', 'old', entries, {
+        source: { kind: 'topology', name: 'new' },
+      }),
+    ).toBe('source');
+    // The topology as a config file, and the diagram alone, are uploads.
+    expect(
+      updateBlocker('topology', 'old', entries, {
+        ...imported,
+        sourceToken: 'uploaded/Topology/old',
+      }),
+    ).toBe('source');
+    expect(LEGACY_TOKEN).toBe('uploaded/legacy-xml');
+    expect(
+      updateBlocker('topology', 'old', entries, {
+        source: { kind: 'manual' },
+        sourceToken: LEGACY_TOKEN,
+      }),
+    ).toBe('source');
+    // An experiment built from the topology never held its diagram. Its
+    // draft updates the topology once the diagram is gone, as before.
+    expect(updateBlocker('topology', 'old', entries, fromExperiment)).toBe(
+      'source',
+    );
+    expect(
+      updateBlocker(
+        'topology',
+        'old',
+        [{ name: 'old', builder: 'builder-doc' }],
+        fromExperiment,
+      ),
+    ).toBe('');
+    expect(updateBlocker('topology', 'old', ['old'], fromExperiment)).toBe('');
+    // A topology someone changed since this draft published it stays so.
+    expect(
+      updateBlocker('topology', 'old', entries, {
+        ...imported,
+        changedTargets: ['topology/old'],
+      }),
+    ).toBe('changed');
+  });
+
+  // The import says so when it could not read the legacy diagram: the
+  // server's sentence, as FromLegacyTopology words it, kept on the source.
+  test('a legacy Builder diagram the import could not read is removed, not replaced', () => {
+    const entries = [{ name: 'old', builder: 'builder-xml' }, { name: 'new' }];
+    const unread =
+      'The legacy diagram of topology old could not be read ' +
+      '(the XML is not a legacy Builder diagram: its root element is <mxfile>, not <mxGraphModel>), ' +
+      'so its layout was not used. Nodes were placed automatically.';
+    const source = (warnings, name = 'old') => ({
+      kind: 'topology',
+      name,
+      warnings,
+    });
+
+    expect(legacyDiagramUpdate('new', entries, source([unread]))).toBe('');
+    expect(legacyDiagramUpdate('old', ['old'], source([unread]))).toBe('');
+    expect(legacyDiagramUpdate('old', undefined, source([unread]))).toBe('');
+
+    expect(legacyDiagramUpdate('old', entries, source([unread]))).toBe(
+      'removed',
+    );
+    expect(
+      legacyDiagramUpdate(
+        'old',
+        entries,
+        source(['topology node at index 1 was skipped', unread]),
+      ),
+    ).toBe('removed');
+
+    // A diagram that was converted, with whatever warnings.
+    expect(legacyDiagramUpdate('old', entries)).toBe('replaced');
+    expect(legacyDiagramUpdate('old', entries, source(undefined))).toBe(
+      'replaced',
+    );
+    expect(
+      legacyDiagramUpdate(
+        'old',
+        entries,
+        source(['Left out 1 line that was not a network link.']),
+      ),
+    ).toBe('replaced');
+    // The warning of another topology's import says nothing of this one.
+    expect(legacyDiagramUpdate('old', entries, source([unread], 'new'))).toBe(
+      'replaced',
+    );
+    expect(
+      legacyDiagramUpdate('old', entries, {
+        kind: 'manual',
+        warnings: [unread],
+      }),
+    ).toBe('replaced');
   });
 
   test('the name hint promises an update only when there can be one', () => {
@@ -558,9 +730,31 @@ describe('which configs a draft may update', () => {
         'the diagram was not imported from it, opened from its published diagram or published to it. ' +
         'Enter another name to create a new topology.',
     );
-    expect(targetHint('topology', true, 'legacy')).toBe(
-      'A topology with this name belongs to the legacy XML Builder and cannot be updated here. ' +
-        'Enter another name to create a new topology.',
+    // An update of a topology that has a legacy Builder diagram says what
+    // becomes of the diagram; a refusal, and a new topology, do not.
+    expect(targetHint('topology', true, '', true)).toBe(
+      'A topology with this name exists and will be updated. ' +
+        'Its legacy Builder diagram is replaced by this diagram.',
+    );
+    expect(targetHint('topology', true, '', 'replaced')).toBe(
+      targetHint('topology', true, '', true),
+    );
+    // A diagram the import could not read is not in this one: it is removed.
+    expect(targetHint('topology', true, '', 'removed')).toBe(
+      'A topology with this name exists and will be updated. ' +
+        'Its legacy Builder diagram could not be read and is removed.',
+    );
+    expect(targetHint('topology', true, 'source', 'removed')).toBe(
+      targetHint('topology', true, 'source'),
+    );
+    expect(targetHint('topology', true, 'source', true)).toBe(
+      targetHint('topology', true, 'source'),
+    );
+    expect(targetHint('topology', false, '', true)).toBe(
+      'A new topology will be created.',
+    );
+    expect(targetHint('experiment', true, '', true)).toBe(
+      'An experiment with this name exists and will be updated.',
     );
     expect(targetHint('experiment', true, '')).toBe(
       'An experiment with this name exists and will be updated.',
@@ -638,20 +832,27 @@ describe('publish refusals', () => {
     ).toBe('');
   });
 
-  test('a topology stored meanwhile by the legacy XML Builder is named as such', () => {
-    expect(
+  test('a topology with a legacy Builder diagram stored meanwhile is refused like any other', () => {
+    const refusal = (draft) =>
       publishRefusal(
         'Config lab already exists; choose update explicitly.',
         { topology: { name: 'lab', action: 'create' } },
-        {
-          topologies: [{ name: 'lab', builder: 'builder-xml' }],
-          draft: { source: { kind: 'topology', name: 'lab' } },
-        },
-      ).message,
-    ).toBe(
-      'The topology "lab" belongs to the legacy XML Builder and cannot be updated here. ' +
+        { topologies: [{ name: 'lab', builder: 'builder-xml' }], draft },
+      );
+
+    expect(refusal({})).toEqual({
+      message:
+        'A topology named "lab" already exists, and this diagram cannot update it: ' +
+        'the diagram was not imported from it, opened from its published diagram or published to it. ' +
         'Enter another name to create a new topology.',
-    );
+      field: 'topologyName',
+    });
+    // The draft imported from it may update it, which publishing again does.
+    expect(refusal({ source: { kind: 'topology', name: 'lab' } })).toEqual({
+      message:
+        'A topology named "lab" already exists. Publish again to update it, or enter another name to create a new topology.',
+      field: 'topologyName',
+    });
   });
 
   test('an update the server refuses asks for another name', () => {
@@ -683,6 +884,8 @@ describe('publish refusals', () => {
   });
 
   test('other refusals keep the server reason and name the field it is about', () => {
+    // The sentence a server once sent for a legacy topology is not special:
+    // it is shown as any refusal that names its config.
     expect(
       publishRefusal(
         'topology lab belongs to the legacy XML Builder and cannot be updated here',
@@ -690,8 +893,7 @@ describe('publish refusals', () => {
       ),
     ).toEqual({
       message:
-        'The topology "lab" belongs to the legacy XML Builder and cannot be updated here. ' +
-        'Enter another name to create a new topology.',
+        'Topology lab belongs to the legacy XML Builder and cannot be updated here.',
       field: 'topologyName',
     });
     expect(
@@ -755,6 +957,39 @@ describe('publish refusals', () => {
 
 // phenix stores a topology with an interface VLAN of "", and minimega
 // refuses it when the experiment starts.
+describe('includes the diagram keeps without showing their nodes', () => {
+  test('the summary names them, by reference', () => {
+    expect(keptIncludesText(['site-b'])).toBe(
+      ' The published topology also includes site-b by reference.',
+    );
+    expect(keptIncludesText(['site-b', 'site-c'])).toBe(
+      ' The published topology also includes site-b and site-c by reference.',
+    );
+    expect(keptIncludesText(['a', 'b', 'c'])).toBe(
+      ' The published topology also includes a, b and c by reference.',
+    );
+  });
+
+  test('a diagram that includes nothing adds nothing', () => {
+    expect(keptIncludesText()).toBe('');
+    expect(keptIncludesText([])).toBe('');
+    expect(keptIncludesText(null)).toBe('');
+    expect(keptIncludesText('site-b')).toBe('');
+    expect(keptIncludesText([''])).toBe('');
+  });
+
+  test('a long list names eight and counts the rest', () => {
+    const many = Array.from({ length: 20 }, (_, index) => `t${index + 1}`);
+
+    expect(keptIncludesText(many)).toBe(
+      ' The published topology also includes t1, t2, t3, t4, t5, t6, t7, t8 and 12 more by reference.',
+    );
+    expect(keptIncludesText(many.slice(0, 8))).toBe(
+      ' The published topology also includes t1, t2, t3, t4, t5, t6, t7 and t8 by reference.',
+    );
+  });
+});
+
 describe('publish checks', () => {
   test('an interface with no VLAN is an error in the Publish dialog only', () => {
     const { doc } = sampleDocument();

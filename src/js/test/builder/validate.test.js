@@ -3,7 +3,14 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 
 import { parseDocument } from '@/builder/decode.js';
-import { createDocument } from '@/builder/model.js';
+import { MAX_DOCUMENT_ICONS, MAX_ICON_NAME_BYTES } from '@/builder/icons.js';
+import {
+  addNode,
+  BORDER_STYLES,
+  createDocument,
+  HEX_COLOR,
+  LINE_STYLES,
+} from '@/builder/model.js';
 import bundle from '@/builder/schema/builder-v1.schema.json';
 import {
   deviceFieldWarnings,
@@ -11,13 +18,20 @@ import {
   MAX_ANNOTATION_BYTES,
   MAX_ANNOTATIONS,
   MAX_NAME_BYTES,
+  MAX_TEMPLATE_DESCRIPTION_BYTES,
+  MAX_TEMPLATE_DEVICE_BYTES,
+  MAX_TEMPLATE_NAME_BYTES,
+  MAX_TEMPLATES,
   MAX_USER_BYTES,
   MAX_VLAN_ALIAS,
   SCENARIO_API_VERSION,
+  templateIssues,
   validateDocument,
+  validateIcons,
 } from '@/builder/validate.js';
 
 import { sampleDocument, testId } from './fixtures.js';
+import { base64Of, ICON_DATA, ICON_KEY, png } from './png.js';
 
 function errorsFor(doc) {
   return validateDocument(doc).filter((issue) => issue.level === 'error');
@@ -199,9 +213,10 @@ describe('document validation', () => {
     expect(messages(many)).toEqual([
       `at most ${MAX_ANNOTATIONS} annotations are allowed, not ${MAX_ANNOTATIONS + 1}`,
     ]);
+    // Quoted as the server quotes them (Go's %q).
     expect(messages({ '\t': 'tab', 'a\u0007b': 'bell' })).toEqual([
       'annotation key "\\t" must not be blank',
-      'annotation key "a\\u0007b" must not contain control characters',
+      'annotation key "a\\ab" must not contain control characters',
     ]);
     expect(paths(annotated(null))).toEqual([]);
   });
@@ -287,6 +302,40 @@ describe('document validation', () => {
     };
 
     expect(errorsFor(broken).length).toBeGreaterThan(0);
+  });
+
+  // A spec is free-form, and a file or a legacy diagram edited by hand may
+  // hold anything in it. The check reports what it finds; it never throws.
+  test('interfaces of a spec that are no list of objects are checked without a throw', () => {
+    const { doc, alpha } = sampleDocument();
+    const withInterfaces = (interfaces, handles = alpha.device.interfaces) => ({
+      ...doc,
+      edges: handles.length ? doc.edges : [],
+      nodes: doc.nodes.map((node) =>
+        node.id === alpha.id
+          ? {
+              ...node,
+              device: {
+                ...node.device,
+                interfaces: handles,
+                spec: { ...node.device.spec, network: { interfaces } },
+              },
+            }
+          : node,
+      ),
+    });
+
+    for (const interfaces of ['x', 7, true, { eth0: {} }, [null], ['x', 5]]) {
+      // A device without connection points has nothing to match.
+      expect(errorsFor(withInterfaces(interfaces, []))).toEqual([]);
+      expect(() => parseDocument(withInterfaces(interfaces, []))).not.toThrow();
+      // One with a connection point is told that the list lacks its entry.
+      expect(
+        errorsFor(withInterfaces(interfaces)).map((issue) => issue.message),
+      ).toEqual([
+        'interface "eth0" has no matching entry in the node\'s Interfaces',
+      ]);
+    }
   });
 
   test('unknown icon keys are rejected', () => {
@@ -852,8 +901,8 @@ describe('IP and MAC addresses that two interfaces use', () => {
     }
   });
 
-  // minirouter, which the Router and Firewall templates make, and Vyatta
-  // give a QinQ interface its address (vrouter.go, vyatta.tmpl).
+  // minirouter, which the Router template makes, and Vyatta give a QinQ
+  // interface its address (vrouter.go, vyatta.tmpl).
   test('the address of a QinQ interface is compared', () => {
     expect(pair(fixed('10.0.0.5', { qinq: true }), fixed('10.0.0.5'))).toEqual([
       'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
@@ -1117,7 +1166,7 @@ describe('scenario references', () => {
   }
 
   test('a stored reference without content is valid and reopens', () => {
-    // What the Scenario dialog attaches: GET /builder-v2/sources lists stored
+    // What the Scenario dialog attaches: GET /builder/sources lists stored
     // scenarios by apiVersion and digest, never with their content.
     const stored = {
       kind: 'stored',
@@ -1189,6 +1238,375 @@ describe('scenario references', () => {
   });
 });
 
+// The rules themselves are in the corpus below, which the server runs too.
+// These are the editor's side of them: its limits against the schema
+// bundle, the functions other modules call, and values only a document that
+// was not decoded can hold.
+describe('colors, styles, custom icons and templates', () => {
+  const template = (changes = {}) => ({
+    id: testId(),
+    name: 'PLC',
+    description: 'Programmable logic controller',
+    device: {
+      iconKey: 'server',
+      spec: { general: { hostname: 'plc' } },
+    },
+    ...changes,
+  });
+
+  const messages = (issues) => issues.map((entry) => entry.message);
+
+  // The schema bundle is generated from the server's lists and limits
+  // (validate.go, template.go), so one changed there fails here.
+  test('the styles and limits are the ones the schema bundle carries', () => {
+    expect(['', ...LINE_STYLES]).toEqual(bundle.$defs.lineStyle.enum);
+    expect(['', ...BORDER_STYLES]).toEqual(bundle.$defs.borderStyle.enum);
+    expect(bundle.$defs.hexColor.pattern).toBe(
+      `^(${HEX_COLOR.source.slice(1, -1)})?$`,
+    );
+    expect(MAX_TEMPLATES).toBe(bundle.properties.templates.maxItems);
+
+    // The schema's maxLength counts characters, where the server counts
+    // bytes, so each is only equal, not the same bound.
+    const properties = bundle.$defs.template.properties;
+
+    expect(MAX_TEMPLATE_NAME_BYTES).toBe(properties.name.maxLength);
+    expect(MAX_TEMPLATE_DESCRIPTION_BYTES).toBe(
+      properties.description.maxLength,
+    );
+    expect(bundle.$defs.templateDevice.description).toBe(
+      `Fields a template fills in. At most ${MAX_TEMPLATE_DEVICE_BYTES} bytes as JSON.`,
+    );
+  });
+
+  test('a color is none, or six hex digits after a number sign', () => {
+    for (const color of ['#000000', '#2f6fbf', '#ABCDEF', '#aBc123']) {
+      expect(HEX_COLOR.test(color), color).toBe(true);
+    }
+
+    for (const color of [
+      '',
+      '#abc',
+      'red',
+      '2f6fbf',
+      '#2f6fbf80',
+      '#2f6fbg',
+      ' #2f6fbf',
+      '#2f6fbf\n',
+      'rgb(0, 0, 0)',
+    ]) {
+      expect(HEX_COLOR.test(color), color).toBe(false);
+    }
+  });
+
+  // Decoding refuses these, as the server does; a document the editor made
+  // itself is validated without being decoded.
+  test('values of the wrong type are errors, not crashes', () => {
+    const { doc, alpha, sw, network, edge } = sampleDocument();
+    const group = addNode(doc, { kind: 'group', title: 'Rack' });
+    const broken = JSON.parse(JSON.stringify(group.doc));
+    const index = (id) => broken.nodes.findIndex((node) => node.id === id);
+
+    Object.assign(broken.nodes[index(alpha.id)].device, {
+      icon: 7,
+      outlineColor: ['#2f6fbf'],
+      fillColor: 0x2f6fbf,
+    });
+    Object.assign(broken.nodes[index(sw.id)].switch, { fillColor: true });
+    Object.assign(broken.nodes[index(group.node.id)].group, {
+      borderStyle: 1,
+      iconKey: {},
+      icon: [ICON_KEY],
+    });
+    broken.networks.find((entry) => entry.id === network.id).lineStyle = 2;
+    broken.edges.find((entry) => entry.id === edge.id).lineStyle = ['solid'];
+    broken.icons = 'icons';
+    broken.templates = 'templates';
+    broken.source = { kind: 'manual', unresolvedIncludes: 'plant' };
+
+    expect(paths(broken)).toEqual(
+      [
+        `edges[0].lineStyle`,
+        'icons',
+        'networks[0].lineStyle',
+        `nodes[${index(alpha.id)}].device.fillColor`,
+        `nodes[${index(alpha.id)}].device.icon`,
+        `nodes[${index(alpha.id)}].device.outlineColor`,
+        `nodes[${index(sw.id)}].switch.fillColor`,
+        `nodes[${index(group.node.id)}].group.borderStyle`,
+        `nodes[${index(group.node.id)}].group.icon`,
+        `nodes[${index(group.node.id)}].group.iconKey`,
+        'source.unresolvedIncludes',
+        'templates',
+      ].sort((a, b) => a.localeCompare(b)),
+    );
+  });
+
+  // An icon id names a key of the document's icons, never a property every
+  // object has.
+  test('a custom icon is looked up among the document icons only', () => {
+    const { doc, alpha } = sampleDocument();
+    const using = (icon, icons) => {
+      const next = JSON.parse(JSON.stringify(doc));
+
+      next.nodes.find((node) => node.id === alpha.id).device.icon = icon;
+
+      if (icons) {
+        next.icons = icons;
+      }
+
+      return paths(next);
+    };
+    const path = expect.stringMatching(/^nodes\[\d+\]\.device\.icon$/);
+    const icons = { [ICON_KEY]: { data: ICON_DATA } };
+
+    expect(using(ICON_KEY, icons)).toEqual([]);
+    expect(using(ICON_KEY)).toEqual([path]);
+    expect(using('constructor', icons)).toEqual([path]);
+    expect(using('toString', icons)).toEqual([path]);
+    expect(using('__proto__', icons)).toEqual([path]);
+  });
+
+  test('validateIcons reports at the path it is given', () => {
+    expect(validateIcons(undefined)).toEqual([]);
+    expect(validateIcons(null)).toEqual([]);
+    expect(validateIcons({})).toEqual([]);
+    expect(validateIcons({ [ICON_KEY]: { data: ICON_DATA } })).toEqual([]);
+    expect(
+      validateIcons({ plc: { data: ICON_DATA } }, 'library.icons'),
+    ).toEqual([
+      {
+        path: 'library.icons',
+        message: 'icon key "plc" must be sha256: and 64 hex digits',
+        level: 'error',
+      },
+    ]);
+    expect(validateIcons({ [ICON_KEY]: 'x' })[0]).toMatchObject({
+      path: 'icons',
+      message: expect.stringContaining('data must be base64'),
+    });
+    expect(messages(validateIcons([ICON_DATA]))).toEqual([
+      'custom icons must be an object of icons by icon id',
+    ]);
+  });
+
+  test('icons are counted, and reported in the order of their keys', () => {
+    const icons = (count) =>
+      Object.fromEntries(
+        Array.from({ length: count }, (_, i) => {
+          const data = base64Of(png(1, 1, [i, 0, 7, 255]));
+
+          return [`sha256:${String(i).padStart(64, '0')}`, { data }];
+        }),
+      );
+
+    // Each key is the id of other bytes, so each is reported, in order.
+    const issues = messages(validateIcons(icons(MAX_DOCUMENT_ICONS + 1)));
+
+    expect(issues[0]).toBe('at most 32 custom icons are allowed, not 33');
+    expect(issues).toHaveLength(MAX_DOCUMENT_ICONS + 2);
+    expect(issues.slice(1)).toEqual([...issues.slice(1)].sort());
+    expect(messages(validateIcons(icons(MAX_DOCUMENT_ICONS)))).not.toContain(
+      issues[0],
+    );
+  });
+
+  // An icon that was checked is not decoded and hashed again on every edit:
+  // its id is the digest of its data. Other data under the same id is.
+  test('an icon found valid is checked again when its data changes', () => {
+    const other = base64Of(png(2, 2, [1, 2, 3, 255]));
+
+    expect(validateIcons({ [ICON_KEY]: { data: ICON_DATA } })).toEqual([]);
+    expect(validateIcons({ [ICON_KEY]: { data: ICON_DATA } })).toEqual([]);
+    expect(messages(validateIcons({ [ICON_KEY]: { data: other } }))).toEqual([
+      expect.stringContaining('does not match its data'),
+    ]);
+    expect(messages(validateIcons({ [ICON_KEY]: { data: 'x' } }))).toEqual([
+      expect.stringContaining('data must be base64'),
+    ]);
+    // The name is checked each time: it is no part of the id.
+    expect(
+      messages(
+        validateIcons({
+          [ICON_KEY]: {
+            name: 'n'.repeat(MAX_ICON_NAME_BYTES + 1),
+            data: ICON_DATA,
+          },
+        }),
+      ),
+    ).toEqual([expect.stringContaining('name must be at most 64 bytes')]);
+    expect(validateIcons({ [ICON_KEY]: { data: ICON_DATA } })).toEqual([]);
+  });
+
+  test('templateIssues reports under the path it is given', () => {
+    expect(templateIssues(template(), 'templates[0]')).toEqual([]);
+
+    // The id and the custom icon are checked where the template is kept.
+    expect(
+      templateIssues(
+        template({
+          id: 'server',
+          device: { icon: ICON_KEY, spec: { general: { hostname: 'x' } } },
+        }),
+        'templates[0]',
+      ),
+    ).toEqual([]);
+
+    expect(
+      templateIssues(
+        template({
+          name: ' ',
+          description: 'one\ntwo',
+          device: {
+            iconKey: 'toaster',
+            outlineColor: 'red',
+            fillColor: '#abc',
+            spec: { general: { hostname: 'two words' } },
+          },
+        }),
+        'library.templates[3]',
+      ),
+    ).toEqual([
+      {
+        path: 'library.templates[3].name',
+        message: 'template name is required',
+        level: 'error',
+      },
+      {
+        path: 'library.templates[3].description',
+        message: 'template description must not contain control characters',
+        level: 'error',
+      },
+      {
+        path: 'library.templates[3].device.spec.general.hostname',
+        message: 'template hostname "two words" must not contain whitespace',
+        level: 'error',
+      },
+      {
+        path: 'library.templates[3].device.iconKey',
+        message: 'unknown icon key "toaster"',
+        level: 'error',
+      },
+      {
+        path: 'library.templates[3].device.outlineColor',
+        message: 'color "red" must be a hex color such as #2f6fbf',
+        level: 'error',
+      },
+      {
+        path: 'library.templates[3].device.fillColor',
+        message: 'color "#abc" must be a hex color such as #2f6fbf',
+        level: 'error',
+      },
+    ]);
+
+    for (const broken of [undefined, null, 'PLC', [], {}]) {
+      expect(
+        templateIssues(broken, 't').map((entry) => entry.path),
+        JSON.stringify(broken),
+      ).toEqual(['t.name', 't.device.spec']);
+    }
+  });
+
+  // The server counts a template's device as it encodes it: without the
+  // icon and color fields that are not set, "<" as six bytes and a
+  // character outside ASCII by its UTF-8 bytes.
+  test('a template device is measured as the server encodes it', () => {
+    const device = (description, look = {}) => ({
+      iconKey: 'server',
+      ...look,
+      spec: { general: { hostname: 'big', description } },
+    });
+    const size = (description, look) =>
+      templateIssues(template({ device: device(description, look) }), 't');
+    const base =
+      '{"iconKey":"server","spec":{"general":{"description":"","hostname":"big"}}}';
+    const room = MAX_TEMPLATE_DEVICE_BYTES - base.length;
+
+    expect(size('x'.repeat(room))).toEqual([]);
+    expect(messages(size('x'.repeat(room + 1)))).toEqual([
+      'template device must take at most 16384 bytes as JSON, not 16385',
+    ]);
+    // Filled to the last byte with a character and, where its bytes do not
+    // divide the room, with "x".
+    const filled = (character, bytes) => {
+      const times = Math.floor(room / bytes);
+
+      return character.repeat(times) + 'x'.repeat(room - times * bytes);
+    };
+
+    for (const [character, bytes] of [
+      ['<', 6],
+      ['&', 6],
+      ['é', 2],
+      ['€', 3],
+      ['\u2028', 6],
+      ['"', 2],
+    ]) {
+      expect(size(filled(character, bytes)), character).toEqual([]);
+      expect(
+        messages(size(`${filled(character, bytes)}x`)),
+        character,
+      ).toHaveLength(1);
+    }
+
+    // Unset look fields take no room, as the server leaves them out.
+    expect(
+      size('x'.repeat(room), { icon: '', outlineColor: null, fillColor: '' }),
+    ).toEqual([]);
+    expect(
+      messages(size('x'.repeat(room), { fillColor: '#2f6fbf' })),
+    ).toHaveLength(1);
+  });
+
+  test('templates are counted, and their ids are unique among them', () => {
+    const { doc, alpha } = sampleDocument();
+    const withTemplates = (templates) => paths({ ...doc, templates });
+    const many = (count) => Array.from({ length: count }, () => template());
+
+    expect(withTemplates(many(MAX_TEMPLATES))).toEqual([]);
+    expect(withTemplates(many(MAX_TEMPLATES + 1))).toEqual(['templates']);
+
+    // A template may have the id of a node: they are looked up apart.
+    expect(withTemplates([template({ id: alpha.id })])).toEqual([]);
+
+    const first = template();
+
+    expect(
+      withTemplates([first, template({ id: first.id.toUpperCase() })]),
+    ).toEqual(['templates[1].id']);
+    expect(withTemplates([template({ id: undefined })])).toEqual([
+      'templates[0].id',
+    ]);
+    expect(withTemplates([null])).toEqual([
+      'templates[0].device.spec',
+      'templates[0].id',
+      'templates[0].name',
+    ]);
+  });
+
+  // The warnings about devices are about the devices of the diagram: a
+  // template's spec is not one until a device is made from it.
+  test('a template raises no warning about its spec', () => {
+    const { doc } = sampleDocument();
+    const before = validateDocument(doc);
+    const after = validateDocument({
+      ...doc,
+      templates: [
+        template({
+          device: {
+            spec: {
+              general: { hostname: 'alpha' },
+              network: { interfaces: [{ name: 'eth0', vlan: 'NOWHERE' }] },
+            },
+          },
+        }),
+      ],
+    });
+
+    expect(after).toEqual(before);
+  });
+});
+
 // The documents validate.go must agree on (TestValidationCorpus in
 // types/builder), run through parseDocument as the editor opens a document.
 describe('the validation corpus shared with the server', () => {
@@ -1207,12 +1625,28 @@ describe('the validation corpus shared with the server', () => {
     parent[path[path.length - 1]] = value;
   }
 
+  // The text the join parts of a set entry make: each is text, or text and
+  // how many times to repeat it.
+  function joinParts(parts) {
+    return parts
+      .map((part) =>
+        typeof part === 'string' ? part : part[0].repeat(part[1]),
+      )
+      .join('');
+  }
+
+  function issueLines(issues = []) {
+    return issues.map((issue) => `${issue.path}: ${issue.message}`).sort();
+  }
+
   test.each(corpus.cases.map((entry) => [entry.name, entry]))(
     '%s',
     (_, entry) => {
       const doc = read(corpus.document);
 
-      (entry.set || []).forEach(({ path, value }) => setIn(doc, path, value));
+      (entry.set || []).forEach(({ path, value, join }) =>
+        setIn(doc, path, join ? joinParts(join) : value),
+      );
 
       if (!entry.error) {
         expect(() => parseDocument(doc)).not.toThrow();
@@ -1226,6 +1660,24 @@ describe('the validation corpus shared with the server', () => {
         parseDocument(doc);
       } catch (error) {
         refusal = error;
+      }
+
+      // Every issue, in any order, when the case pins that there are no
+      // others.
+      if (entry.issues) {
+        expect(issueLines(refusal?.issues)).toEqual(issueLines(entry.issues));
+      }
+
+      // The words the server refuses it in, when the case pins them.
+      if (entry.message) {
+        expect(
+          refusal?.issues
+            ?.filter((issue) => issue.path === entry.error)
+            .map((issue) => issue.message),
+          refusal?.message || 'accepted',
+        ).toContain(entry.message);
+
+        return;
       }
 
       // An issue at the path, or a decoding error naming the key.

@@ -54,11 +54,10 @@ server on another port (see the port rule in the root `AGENTS.md`):
 cd e2e
 npm ci
 npx playwright install --with-deps chromium firefox
-# against `phenix ui --listen-endpoint 127.0.0.1:3080 --features builder-v2`
+# against `phenix ui --listen-endpoint 127.0.0.1:3080`
 E2E_BASE_URL=http://127.0.0.1:3080 npx playwright test
 ```
 
-Default smoke tests need a server started with `--features builder-v2`.
 `routes.spec.js` also runs an axe-core WCAG 2.x A/AA scan on every route; fix
 violations in the UI (accessible names, contrast, ARIA) rather than excluding
 rules. Lifecycle tests additionally need minimega, VM images, and a topology
@@ -66,10 +65,9 @@ rules. Lifecycle tests additionally need minimega, VM images, and a topology
 signing key. See `e2e/README.md`; report missing prerequisites instead of
 silently skipping checks.
 
-Before changing Builder v2 (`src/builder/`, `src/components/builder/`,
-`src/views/BuilderV2.vue`, or the `builder*` e2e specs, which need their own
-server setup), read
-[`../../skills/phenix/references/builder-v2.md`](../../skills/phenix/references/builder-v2.md).
+Before changing the Builder (`src/builder/`, `src/components/builder/`,
+`src/views/Builder.vue`, or the `builder*` e2e specs), read
+[`../../skills/phenix/references/builder.md`](../../skills/phenix/references/builder.md).
 
 ## CI
 

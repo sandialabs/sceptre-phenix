@@ -162,12 +162,16 @@
   import { debounce } from 'lodash-es';
 
   import axiosInstance from '@/utils/axios.js';
-  import { usePhenixStore } from '@/store.js';
-  import { BUILDER_V2_FEATURE, isFeatureEnabled } from '@/utils/features.js';
-  import { V2_ANNOTATION, builderAnnotation } from '@/builder/configs.js';
+  import {
+    DOC_ANNOTATION,
+    LEGACY_ANNOTATION,
+    builderAnnotation,
+    builderLink,
+  } from '@/builder/configs.js';
 
-  const ALERT_TITLE_ID = 'configs-alert-title';
-  const ALERT_MESSAGE_ID = 'configs-alert-message';
+  // What the text shows in place of a topology's legacy Builder diagram,
+  // which is long XML on one line.
+  const SNIPPED = '<SNIPPED>';
 
   export default {
     expose: ['confirmResetEditor'],
@@ -205,57 +209,35 @@
         axiosInstance
           .get('configs/' + name, { headers: { Accept: 'application/json' } })
           .then(async (response) => {
-            if (this.isBuilderTopology(response.data)) {
-              if (builderAnnotation(response.data) === V2_ANNOTATION) {
-                // Only Builder v2 edits it. Where this server does not
-                // offer it, the user stays here and is told why, instead of
-                // being sent on to a route that turns them away.
-                const unavailable = await this.builderV2Unavailable();
-
-                this.editor.isLoading = false;
-                if (unavailable) {
-                  this.cannotEdit(
-                    'Built by Builder v2',
-                    `This topology was built in Builder v2, so it can only be edited there, and ${unavailable} Select its name in the list to view it read only.`,
-                  );
-                  return;
-                }
-
-                const router = this.$router;
-                const destination = {
-                  name: 'builder-v2',
-                  query: { topology: response.data.metadata.name },
-                };
-
-                // No message: an empty one would open an empty toast. The
-                // Builder announces the draft it opens.
-                this.$emit('is-done', '');
-                await router.push(destination);
-                return;
-              }
-
+            if (builderAnnotation(response.data) === DOC_ANNOTATION) {
+              // Only Builder edits it.
               this.editor.isLoading = false;
-              this.cannotEdit(
-                `Built by ${this.builderName(response.data)}`,
-                `This configuration can only be edited in ${this.builderName(
-                  response.data,
-                )}`,
-              );
-              return;
-            } else {
-              this.config.obj = response.data;
-              this.config.str = this.getConfigStr('yaml');
 
-              if (this.config.obj.kind == 'Experiment') {
-                if (
-                  this.config.obj.status &&
-                  this.config.obj.status.startTime !== ''
-                ) {
-                  this.expStart = true;
-                }
-              }
-              this.editor.lang = 'yaml';
+              const router = this.$router;
+              const destination = builderLink(response.data);
+
+              // No message: an empty one would open an empty toast. The
+              // Builder announces the draft it opens.
+              this.$emit('is-done', '');
+              await router.push(destination);
+              return;
             }
+
+            // A topology with a legacy Builder diagram is edited as text
+            // like any other. Its diagram is left out of the text and
+            // written back as it was (see getConfigStr and getConfigObj).
+            this.config.obj = response.data;
+            this.config.str = this.getConfigStr('yaml');
+
+            if (this.config.obj.kind == 'Experiment') {
+              if (
+                this.config.obj.status &&
+                this.config.obj.status.startTime !== ''
+              ) {
+                this.expStart = true;
+              }
+            }
+            this.editor.lang = 'yaml';
             this.editor.isLoading = false;
           })
           .catch((err) => {
@@ -306,33 +288,6 @@
     methods: {
       handlePageReload(event) {
         event.preventDefault();
-      },
-      // Why this config cannot be edited here, and back to the list on OK.
-      // Buefy's alert has no role, name or description of its own: it is
-      // made an alert dialog (WAI-ARIA APG) named by its title and described
-      // by its message, so a screen reader reads why as focus moves to OK.
-      cannotEdit(title, message) {
-        this.$buefy.dialog.alert({
-          title,
-          message: `<span id="${ALERT_MESSAGE_ID}">${message}</span>`,
-          confirmText: 'OK',
-          type: 'is-warning',
-          hasIcon: true,
-          ariaRole: 'alertdialog',
-          ariaModal: true,
-          'aria-labelledby': ALERT_TITLE_ID,
-          'aria-describedby': ALERT_MESSAGE_ID,
-          onConfirm: () => this.$emit('is-done', ''),
-        });
-        // The title has no id to name the dialog by until it is drawn, as
-        // the dialog opens.
-        this.$nextTick(() => {
-          document
-            .getElementById(ALERT_MESSAGE_ID)
-            ?.closest('.modal-card')
-            ?.querySelector('.modal-card-title')
-            ?.setAttribute('id', ALERT_TITLE_ID);
-        });
       },
       configSentSave() {
         if (this.mode == 'edit') {
@@ -435,8 +390,17 @@
           }
         }
 
-        if (this.config.builderXML) {
-          obj.metadata.annotations['builder-xml'] = this.config.builderXML;
+        // The legacy Builder diagram goes back where the text still has its
+        // placeholder. A line the user removed or rewrote stays as typed.
+        const annotations = obj?.metadata?.annotations;
+
+        if (
+          this.config.builderXML !== null &&
+          annotations &&
+          typeof annotations === 'object' &&
+          annotations[LEGACY_ANNOTATION] === SNIPPED
+        ) {
+          annotations[LEGACY_ANNOTATION] = this.config.builderXML;
         }
         return obj;
       },
@@ -448,11 +412,16 @@
           obj = this.config.obj;
         }
 
-        if ('annotations' in obj.metadata) {
-          if ('builder-xml' in obj.metadata.annotations) {
-            this.config.builderXML = obj.metadata.annotations['builder-xml'];
-            obj.metadata.annotations['builder-xml'] = '<SNIPPED>';
-          }
+        // The legacy Builder diagram is kept aside and left out of the text.
+        const annotations = obj.metadata?.annotations;
+
+        if (
+          annotations &&
+          typeof annotations === 'object' &&
+          LEGACY_ANNOTATION in annotations
+        ) {
+          this.config.builderXML = annotations[LEGACY_ANNOTATION];
+          annotations[LEGACY_ANNOTATION] = SNIPPED;
         }
 
         switch (lang) {
@@ -571,26 +540,6 @@
           });
 
         this.isWaiting = false;
-      },
-      isBuilderTopology(cfg) {
-        return builderAnnotation(cfg) !== null;
-      },
-      // Why Builder v2 cannot open a topology here, or '' when it can.
-      async builderV2Unavailable() {
-        try {
-          const features = await usePhenixStore().ensureFeatures();
-
-          return isFeatureEnabled(features, BUILDER_V2_FEATURE)
-            ? ''
-            : 'Builder v2 is not enabled on this phenix server.';
-        } catch {
-          return 'whether Builder v2 is enabled on this phenix server could not be checked. Reload the page to try again.';
-        }
-      },
-      builderName(cfg) {
-        return builderAnnotation(cfg) === V2_ANNOTATION
-          ? 'Builder v2'
-          : 'Builder';
       },
     },
     computed: {

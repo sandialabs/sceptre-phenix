@@ -310,3 +310,50 @@ func uploadedScenario(content map[string]any) *builder.ScenarioRef {
 		Digest:     digest,
 	}
 }
+
+// decorationKeys are the JSON keys of what decorates a document and is left
+// out when not set: custom icons, colors, line and border styles, templates,
+// and the includes that were not resolved. A document that uses none of them
+// encodes without any of these.
+var decorationKeys = []string{ //nolint:gochecknoglobals // test fixture
+	`"templates"`, `"icons"`, `"icon"`, `"outlineColor"`, `"fillColor"`, `"borderStyle"`, `"lineStyle"`,
+	`"unresolvedIncludes"`,
+}
+
+// decoratedDocument loads the document.json fixture and sets each of those
+// fields in it: the custom icon and colors of a device, the colors of a
+// switch, a group's description, border, icon key and custom icon, the line
+// style of a network and of an edge, the includes that were not resolved,
+// a template and the icon they use.
+func decoratedDocument(t *testing.T) *builder.Document {
+	t.Helper()
+
+	doc := loadDocumentFixture(t, "document.json")
+
+	doc.Icons = map[string]builder.Icon{iconFixtureID: {Name: "plc", Data: iconFixtureData}}
+	doc.Templates = []builder.Template{sampleTemplate()}
+
+	router := nodeByHostname(t, doc, "router").Device
+	router.Icon = iconFixtureID
+	router.OutlineColor = "#2f6fbf"
+	router.FillColor = "#eef4fb"
+
+	hub := doc.NodeByID(idSwExp).Switch
+	hub.OutlineColor = "#1f7a5a"
+	hub.FillColor = "#E8F5F0"
+
+	rack := doc.NodeByID(idGrpRack).Group
+	rack.Description = "first rack\nsecond line"
+	rack.BorderStyle = "dotted"
+	rack.IconKey = "container"
+	rack.Icon = iconFixtureID
+
+	doc.Networks[0].LineStyle = "dashed"
+	doc.Edges[0].LineStyle = "dash-dot"
+
+	doc.Source.Kind = builder.SourceKindTopology
+	doc.Source.IncludeTopologies = []string{"shared", "plant"}
+	doc.Source.UnresolvedIncludes = []string{"plant"}
+
+	return doc
+}
