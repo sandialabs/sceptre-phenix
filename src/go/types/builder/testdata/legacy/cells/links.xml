@@ -1,0 +1,94 @@
+<mxGraphModel dx="786" dy="589" grid="1" gridSize="10" page="1" experimentVars="[{&quot;name&quot;:&quot;DEFAULT_MEMORY&quot;,&quot;value&quot;:&quot;2048&quot;},{&quot;name&quot;:&quot;DEFAULT_VCPU&quot;,&quot;value&quot;:&quot;1&quot;},{&quot;name&quot;:&quot;DEFAULT_VM_IMAGE&quot;,&quot;value&quot;:&quot;ubuntu.qc2&quot;},{&quot;name&quot;:&quot;DEFAULT_ROUTER_IMAGE&quot;,&quot;value&quot;:&quot;vyos.qc2&quot;}]">
+  <root>
+    <mxCell id="0"/>
+    <mxCell id="1" parent="0"/>
+    <object label="alpha" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;alpha&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;router&quot;,&quot;schema&quot;:&quot;kvm&quot;,&quot;network&quot;:{&quot;interfaces&quot;:[{&quot;name&quot;:&quot;eth0&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;lan&quot;},{&quot;name&quot;:&quot;eth1&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;p2p&quot;},{&quot;name&quot;:&quot;eth2&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;quiet&quot;}]}}" id="2">
+      <mxCell style="image;html=1;image=/router_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="40" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="beta" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;beta&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;firewall&quot;,&quot;schema&quot;:&quot;kvm&quot;,&quot;network&quot;:{&quot;interfaces&quot;:[{&quot;name&quot;:&quot;eth0&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;p2p&quot;},{&quot;name&quot;:&quot;eth1&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;}]}}" id="3">
+      <mxCell style="image;html=1;image=/firewall_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="400" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="gamma" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;gamma&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;,&quot;network&quot;:{&quot;interfaces&quot;:[{&quot;name&quot;:&quot;eth0&quot;,&quot;type&quot;:&quot;ethernet&quot;,&quot;proto&quot;:&quot;dhcp&quot;,&quot;vlan&quot;:&quot;lan&quot;}]}}" id="4">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="40" y="400" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="lan-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:0,&quot;hostname&quot;:&quot;lan-sw&quot;,&quot;name&quot;:&quot;lan&quot;}" id="5">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="200" y="200" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="spare-sw" schemaVars="{&quot;device&quot;:&quot;switch&quot;,&quot;id&quot;:0,&quot;hostname&quot;:&quot;spare-sw&quot;,&quot;name&quot;:&quot;spare&quot;}" id="6">
+      <mxCell style="image;html=1;image=/switch_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="600" y="200" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="lan" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:200,&quot;name&quot;:&quot;lan&quot;}" id="10">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="5">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="lan" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;lan&quot;}" id="11">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="4" target="5">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="p2p" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:77,&quot;name&quot;:&quot;p2p&quot;}" id="12">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="3">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="lan" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;lan&quot;}" id="13">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="5" target="6">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="dangling" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;lan&quot;}" id="14">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="DMZ" id="15">
+      <mxCell style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+        <mxGeometry x="700" y="400" width="120" height="60" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="a note" id="16">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+        <mxGeometry x="900" y="400" width="60" height="20" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="" id="17">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="15" target="16">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <mxCell id="18" value="on the line" style="edgeLabel;html=1;align=center;" vertex="1" parent="10">
+      <mxGeometry x="-0.1" relative="1" as="geometry"/>
+    </mxCell>
+    <object label="spare" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;spare&quot;}" id="19">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="3" target="6">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:null}" id="20">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="4" target="3">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="nowhere" schemaVars="{&quot;device&quot;:&quot;diagraming&quot;,&quot;id&quot;:0,&quot;name&quot;:&quot;nowhere&quot;}" id="21">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="4" target="3">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="unreadable" schemaVars="{not json" id="22">
+      <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="2" target="3">
+        <mxGeometry relative="1" as="geometry"/>
+      </mxCell>
+    </object>
+  </root>
+</mxGraphModel>

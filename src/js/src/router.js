@@ -2,8 +2,20 @@ import { createRouter, createWebHistory } from 'vue-router';
 
 import { ToastProgrammatic as Toast } from 'buefy';
 
-import { usePhenixStore } from '@/store.js';
+import { expiredNavigation, signIn } from '@/builder/signin.js';
+import { tokenExpired, usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
+
+/**
+ * A page's document title: what the page shows, most specific first, then
+ * the app's name (WCAG 2.4.2 Page Titled).
+ *
+ * @param {...string} parts
+ * @returns {string} for example "Configs - phēnix"
+ */
+export function pageTitle(...parts) {
+  return [...parts.filter(Boolean), 'phēnix'].join(' - ');
+}
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -109,6 +121,18 @@ const router = createRouter({
       meta: { title: 'Tunneler' },
       component: () => import('@/views/Tunneler.vue'),
     },
+    {
+      // The Builder. The server finds the files only this view loads by its
+      // path in the build manifest, and serves them compressed
+      // (src/go/web/builder_assets.go).
+      path: '/builder',
+      name: 'builder',
+      component: () => import('@/views/Builder.vue'),
+      // The editor fills the viewport below the header, so App.vue drops the
+      // page container, its padding and the footer for this route. The
+      // editor adds the open diagram to the title (see Builder.vue).
+      meta: { fullBleed: true, title: 'Builder' },
+    },
 
     {
       // username must be a path param: Vue Router 4 drops params that are
@@ -127,7 +151,6 @@ const router = createRouter({
     },
 
     //static paths
-    { path: '/builder?token=:token', name: 'builder' },
     { path: '/version', name: 'version' },
     { path: '/features', name: 'features' },
     { path: '/api/v1/options', name: 'options' },
@@ -162,7 +185,7 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach(async (to, _, next) => {
+router.beforeEach(async (to, from, next) => {
   const store = usePhenixStore();
 
   if (import.meta.env.VITE_AUTH === 'disabled' || !import.meta.env.VITE_AUTH) {
@@ -212,17 +235,36 @@ router.beforeEach(async (to, _, next) => {
     } else if (to.name === 'signin') {
       // No need to go to the signin route if already authorized.
       router.replace('/');
-    } else if (
-      Date.now() >=
-      JSON.parse(atob(store.token.split('.')[1])).exp * 1000
-    ) {
+    } else if (signIn.open || tokenExpired(store.token)) {
+      // Builder asks for the password again in place, and nothing
+      // logs out or leaves the page meanwhile (see builder/signin.js).
+      const builder = expiredNavigation(to, from);
+
+      if (builder === 'go') {
+        next();
+        return;
+      }
+
+      if (builder === 'stay') {
+        next(false);
+        return;
+      }
+
       // handle expired JWT by logging user out: https://stackoverflow.com/a/69058154
-      new Toast().open({
-        message: `Token is expired. Log in again`,
-        type: 'is-warning',
-        duration: 5000,
-      });
-      store.logout();
+      // The page stays while a warning about Builder changes the
+      // server does not have is shown (see utils/logout.js); the logout
+      // then goes to the sign-in page.
+      if (!store.loggingOut) {
+        new Toast().open({
+          message: `Token is expired. Log in again`,
+          type: 'is-warning',
+          duration: 5000,
+        });
+      }
+
+      store.requestLogout('expired');
+      next(false);
+      return;
     }
 
     next();
@@ -254,7 +296,7 @@ router.beforeEach(async (to, _, next) => {
 });
 // Give every route its own document title (WCAG 2.4.2 Page Titled).
 router.afterEach((to) => {
-  document.title = to.meta?.title ? `${to.meta.title} - phēnix` : 'phēnix';
+  document.title = pageTitle(to.meta?.title);
 });
 
 export default router;

@@ -4,6 +4,8 @@ import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import vueDevTools from 'vite-plugin-vue-devtools';
 
+import builderAssets from './plugins/builder-assets.js';
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   process.env = {
@@ -17,7 +19,17 @@ export default defineConfig(({ mode }) => {
     // code concatenates paths onto it (e.g. `${BASE_URL}api/v1/`)
     base: (process.env.VITE_BASE_PATH || '/').replace(/\/?$/, '/'),
     assetsDir: 'assets',
-    plugins: [vue(), vueDevTools()],
+    plugins: [
+      vue(),
+      vueDevTools(),
+      // Compresses the files only Builder loads, for the server
+      // (src/go/web/builder_assets.go), and lists them.
+      builderAssets({
+        view: fileURLToPath(
+          new URL('./src/views/Builder.vue', import.meta.url),
+        ),
+      }),
+    ],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),

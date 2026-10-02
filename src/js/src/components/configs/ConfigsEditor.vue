@@ -23,6 +23,13 @@
     <div class="columns p-4">
       <div class="column is-1" />
       <div class="column is-2">
+        <!-- Focus starts here when the editor opens, not on the page. -->
+        <h1
+          ref="heading"
+          class="title is-5 config-editor__heading"
+          tabindex="-1">
+          {{ heading }}
+        </h1>
         <b-field
           class="editor"
           label="Config Name"
@@ -134,6 +141,10 @@
             :vim="editor.vim"
             @save="configSentSave"
             @reset="configSentReset" />
+          <p class="help">
+            Press Enter on the editor to type in it, and Escape to leave it
+            (twice in Vim mode), so that Tab moves on.
+          </p>
           <b-loading
             :is-full-page="false"
             v-model="editor.isLoading"></b-loading>
@@ -151,6 +162,16 @@
   import { debounce } from 'lodash-es';
 
   import axiosInstance from '@/utils/axios.js';
+  import {
+    DOC_ANNOTATION,
+    LEGACY_ANNOTATION,
+    builderAnnotation,
+    builderLink,
+  } from '@/builder/configs.js';
+
+  // What the text shows in place of a topology's legacy Builder diagram,
+  // which is long XML on one line.
+  const SNIPPED = '<SNIPPED>';
 
   export default {
     expose: ['confirmResetEditor'],
@@ -163,6 +184,8 @@
       editorConfig: Object,
     },
     mounted() {
+      this.$refs.heading?.focus();
+
       //set vim mode
       let user = localStorage.getItem('user');
       if (localStorage.getItem(user + '.vimMode')) {
@@ -185,29 +208,36 @@
 
         axiosInstance
           .get('configs/' + name, { headers: { Accept: 'application/json' } })
-          .then((response) => {
-            if (this.isBuilderTopology(response.data)) {
-              this.$buefy.dialog.alert({
-                title: 'Built by Builder',
-                message: 'This configuration can only be edited in Builder',
-                confirmText: 'OK',
-                type: 'is-warning',
-                hasIcon: true,
-              });
-            } else {
-              this.config.obj = response.data;
-              this.config.str = this.getConfigStr('yaml');
+          .then(async (response) => {
+            if (builderAnnotation(response.data) === DOC_ANNOTATION) {
+              // Only Builder edits it.
+              this.editor.isLoading = false;
 
-              if (this.config.obj.kind == 'Experiment') {
-                if (
-                  this.config.obj.status &&
-                  this.config.obj.status.startTime !== ''
-                ) {
-                  this.expStart = true;
-                }
-              }
-              this.editor.lang = 'yaml';
+              const router = this.$router;
+              const destination = builderLink(response.data);
+
+              // No message: an empty one would open an empty toast. The
+              // Builder announces the draft it opens.
+              this.$emit('is-done', '');
+              await router.push(destination);
+              return;
             }
+
+            // A topology with a legacy Builder diagram is edited as text
+            // like any other. Its diagram is left out of the text and
+            // written back as it was (see getConfigStr and getConfigObj).
+            this.config.obj = response.data;
+            this.config.str = this.getConfigStr('yaml');
+
+            if (this.config.obj.kind == 'Experiment') {
+              if (
+                this.config.obj.status &&
+                this.config.obj.status.startTime !== ''
+              ) {
+                this.expStart = true;
+              }
+            }
+            this.editor.lang = 'yaml';
             this.editor.isLoading = false;
           })
           .catch((err) => {
@@ -360,8 +390,17 @@
           }
         }
 
-        if (this.config.builderXML) {
-          obj.metadata.annotations['builder-xml'] = this.config.builderXML;
+        // The legacy Builder diagram goes back where the text still has its
+        // placeholder. A line the user removed or rewrote stays as typed.
+        const annotations = obj?.metadata?.annotations;
+
+        if (
+          this.config.builderXML !== null &&
+          annotations &&
+          typeof annotations === 'object' &&
+          annotations[LEGACY_ANNOTATION] === SNIPPED
+        ) {
+          annotations[LEGACY_ANNOTATION] = this.config.builderXML;
         }
         return obj;
       },
@@ -373,11 +412,16 @@
           obj = this.config.obj;
         }
 
-        if ('annotations' in obj.metadata) {
-          if ('builder-xml' in obj.metadata.annotations) {
-            this.config.builderXML = obj.metadata.annotations['builder-xml'];
-            obj.metadata.annotations['builder-xml'] = '<SNIPPED>';
-          }
+        // The legacy Builder diagram is kept aside and left out of the text.
+        const annotations = obj.metadata?.annotations;
+
+        if (
+          annotations &&
+          typeof annotations === 'object' &&
+          LEGACY_ANNOTATION in annotations
+        ) {
+          this.config.builderXML = annotations[LEGACY_ANNOTATION];
+          annotations[LEGACY_ANNOTATION] = SNIPPED;
         }
 
         switch (lang) {
@@ -497,16 +541,14 @@
 
         this.isWaiting = false;
       },
-      isBuilderTopology(cfg) {
-        if (cfg.kind == 'Topology') {
-          if ('annotations' in cfg.metadata) {
-            return 'builder-xml' in cfg.metadata.annotations;
-          }
-        }
-        return false;
-      },
     },
     computed: {
+      // What the editor is for: "Edit Topology/web", or "New config".
+      heading() {
+        return this.mode == 'edit' && this.editorConfig
+          ? `Edit ${this.editorConfig.kind}/${this.editorConfig.metadata.name}`
+          : 'New config';
+      },
       validName() {
         return /^[a-zA-Z0-9_@.-]*$/.test(this.configName);
       },
@@ -661,6 +703,11 @@
 
   .editor :deep(.label) {
     color: whitesmoke;
+  }
+
+  .config-editor__heading {
+    color: whitesmoke;
+    overflow-wrap: anywhere;
   }
 
   button#editor {

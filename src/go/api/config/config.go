@@ -35,6 +35,11 @@ var NameRegex = regexp.MustCompile(`^[a-zA-Z0-9_@.-]*$`)
 // of a config. The passed config can be updated by the hook functions as
 // necessary, and an error can be returned if the lifecycle stage should be
 // halted.
+//
+// The stages are "startup", "create", "update" and "delete", and "rename",
+// which follows an update that changed the config's name: it is called with
+// the config as it was under its old name, once the store holds it under the
+// new name only. No "delete" stage runs for the old name.
 type ConfigHook func(string, *store.Config) error
 
 var hooks = make(map[string][]ConfigHook) //nolint:gochecknoglobals // global hooks
@@ -488,13 +493,33 @@ func Update(name string, c *store.Config) error {
 				return fmt.Errorf("renaming updated config in store: %w", deleteErr)
 			}
 
-			return nil
+			return renamed(name, old)
 		}
 
 		return fmt.Errorf("updating config in store: %w", err)
 	}
 
 	return nil
+}
+
+// renamed runs the "rename" stage of the config hooks for old, the config an
+// update just stored under a new name, as it was under its old one. Like the
+// "delete" stage, it runs once the store has changed, so an error it returns
+// does not undo the rename.
+func renamed(name string, old *store.Config) error {
+	var errs error
+
+	for _, hook := range hooks[old.Kind] {
+		hookErr := hook("rename", old)
+		if hookErr != nil {
+			errs = multierror.Append(
+				errs,
+				fmt.Errorf("executing rename hook for config %s: %w", name, hookErr),
+			)
+		}
+	}
+
+	return errs
 }
 
 // Delete removes the config with the given name from the store. The given name

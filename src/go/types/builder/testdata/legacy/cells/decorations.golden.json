@@ -1,0 +1,268 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "id": "7036f382-0809-5ece-a886-90bac1709c16",
+  "name": "decorations",
+  "nodes": [
+    {
+      "id": "f6e4ab30-adf5-58de-9ed9-ab1de32ad683",
+      "kind": "device",
+      "label": "inside",
+      "position": {
+        "x": 208,
+        "y": 240
+      },
+      "parentId": "d5fcc8c1-2ef7-5dc6-8ab6-42d04eb644a1",
+      "device": {
+        "hostname": "inside",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "inside"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "lan"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "3ff40618-1ed5-5df7-8fdb-40e9aa7e3ed9",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1b2b740-47af-5877-8284-b050bd46707d",
+      "kind": "switch",
+      "label": "lan",
+      "position": {
+        "x": 592,
+        "y": 240
+      },
+      "parentId": "5021f443-3eab-5558-a8bb-11488a74069c",
+      "switch": {
+        "networkId": "27d375cb-2a76-56b1-9647-76f96fcb8030"
+      }
+    },
+    {
+      "id": "5021f443-3eab-5558-a8bb-11488a74069c",
+      "kind": "group",
+      "position": {
+        "x": 48,
+        "y": 48
+      },
+      "size": {
+        "width": 1000,
+        "height": 600
+      },
+      "group": {
+        "title": "Outer zone"
+      }
+    },
+    {
+      "id": "d5fcc8c1-2ef7-5dc6-8ab6-42d04eb644a1",
+      "kind": "group",
+      "position": {
+        "x": 128,
+        "y": 128
+      },
+      "size": {
+        "width": 400,
+        "height": 360
+      },
+      "parentId": "5021f443-3eab-5558-a8bb-11488a74069c",
+      "group": {
+        "title": "Inner zone"
+      }
+    },
+    {
+      "id": "92340675-e4fa-5708-a011-566d8683f765",
+      "kind": "note",
+      "position": {
+        "x": 1200,
+        "y": 48
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "plain text"
+      }
+    },
+    {
+      "id": "9fee4cda-1db2-5691-9e6a-b3a24c4b09a6",
+      "kind": "note",
+      "position": {
+        "x": 1200,
+        "y": 128
+      },
+      "size": {
+        "width": 160,
+        "height": 80
+      },
+      "note": {
+        "text": "a\nb \u0026 cd\ne\nx"
+      }
+    },
+    {
+      "id": "2f9ef933-f7bb-55b3-b91e-599a98bbcc5a",
+      "kind": "note",
+      "position": {
+        "x": 1200,
+        "y": 240
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "\u003cb\u003ekept\u003c/b\u003e as it is"
+      }
+    },
+    {
+      "id": "1db20cc2-0a91-56ce-9e73-f63ca19050c3",
+      "kind": "note",
+      "position": {
+        "x": 1200,
+        "y": 400
+      },
+      "size": {
+        "width": 200,
+        "height": 120
+      },
+      "note": {
+        "text": "empty box"
+      }
+    },
+    {
+      "id": "6d1e822f-9266-5fb6-98b8-d4d84d4e2271",
+      "kind": "note",
+      "position": {
+        "x": 160,
+        "y": 160
+      },
+      "size": {
+        "width": 240,
+        "height": 240
+      },
+      "parentId": "d5fcc8c1-2ef7-5dc6-8ab6-42d04eb644a1",
+      "note": {
+        "text": "round"
+      }
+    },
+    {
+      "id": "71678411-0bb7-5610-bf4a-e1f82b59f0cb",
+      "kind": "note",
+      "position": {
+        "x": 1648,
+        "y": 848
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "note in a box"
+      }
+    },
+    {
+      "id": "10e41d41-5e3c-56f8-8b83-2c2e705712b1",
+      "kind": "note",
+      "position": {
+        "x": 1600,
+        "y": 800
+      },
+      "size": {
+        "width": 400,
+        "height": 200
+      },
+      "note": {
+        "text": "around a note"
+      }
+    },
+    {
+      "id": "284d3993-3934-57c2-9520-ff432c7fc180",
+      "kind": "note",
+      "position": {
+        "x": 1200,
+        "y": 800
+      },
+      "size": {
+        "width": 160,
+        "height": 80
+      },
+      "note": {
+        "text": "a\n\nb"
+      }
+    },
+    {
+      "id": "dd79188f-3401-5713-ae63-f9c36113e10b",
+      "kind": "note",
+      "position": {
+        "x": 176,
+        "y": 176
+      },
+      "size": {
+        "width": 600,
+        "height": 600
+      },
+      "parentId": "d5fcc8c1-2ef7-5dc6-8ab6-42d04eb644a1",
+      "note": {
+        "text": "pic"
+      }
+    }
+  ],
+  "networks": [
+    {
+      "id": "27d375cb-2a76-56b1-9647-76f96fcb8030",
+      "name": "lan"
+    }
+  ],
+  "edges": [
+    {
+      "id": "02b785c5-2fc3-546e-b477-0d0830ff152e",
+      "sourceNodeId": "f6e4ab30-adf5-58de-9ed9-ab1de32ad683",
+      "sourceHandleId": "3ff40618-1ed5-5df7-8fdb-40e9aa7e3ed9",
+      "targetNodeId": "c1b2b740-47af-5877-8284-b050bd46707d",
+      "networkId": "27d375cb-2a76-56b1-9647-76f96fcb8030"
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": true,
+    "size": 16,
+    "snap": true
+  },
+  "source": {
+    "kind": "manual",
+    "warnings": [
+      "Left out 1 shape that had no text.",
+      "Text and containers were kept as notes and groups. Their colors, fonts and other formatting were not converted."
+    ]
+  }
+}

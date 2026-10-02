@@ -10,7 +10,7 @@ has a matching config-file key and `PHENIX_*` env var):
 
 | Flag | Config key / Env var | Default | Description |
 |---|---|---|---|
-| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://...` or `etcd://host:port`) |
+| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://...` or `etcd://host:port`; etcd accepts `?compaction-retention=<duration>`, default `1h`, `0` disables phenix's cluster-wide history compaction) |
 | `--base-dir.phenix` | `base-dir.phenix` / `PHENIX_BASE_DIR_PHENIX` | `/phenix` | Base phēnix data directory |
 | `--base-dir.minimega` | `base-dir.minimega` / `PHENIX_BASE_DIR_MINIMEGA` | `/tmp/minimega` | Base minimega directory |
 | `--mount-dir` | `mount-dir` / `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts (`phenix vm mount`, UI `vm-mount` feature) |
@@ -41,6 +41,11 @@ VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/
 disabled by default and requires restarting `phenix ui` to take effect. The CLI
 equivalents (`phenix vm mount`/`unmount`) are always available.
 
+The Builder, the web topology editor at `/builder`, has no CLI equivalent
+for its drafts, sharing and Publish; the one CLI command for its documents is
+[`phenix builder publish`](#phenix-builder--publish-a-builder-document-as-a-topology).
+See [`builder.md`](builder.md).
+
 ## `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
 ```bash
@@ -52,6 +57,75 @@ phenix config edit <kind>/<name> [--force]          # open in $EDITOR
 phenix config delete <kind>/<name> ...              # delete one or more specific configs by kind/name
 phenix config delete all [kind]                     # delete every stored config, or every config of one kind
 ```
+
+A config written as YAML (`phenix config get -o yaml`, `phenix config edit`,
+`GET /configs/{kind}/{name}` with `Accept: application/x-yaml`, and
+`POST /configs/download`) loads as the stored config: a string yaml.v3 could
+not read back (one starting with a line break, or whose first line starts with
+a tab) is written double quoted.
+
+Annotations are text, except `builder-doc` on a Topology, which every JSON
+and YAML form of a config shows as a map of `digest`, `id` and `path` (see
+[`builder.md`](builder.md#the-builder-doc-reference)). A Topology
+whose `builder-doc` is not valid is refused on create and update, also with
+`--skip-validation`. `config edit` can change an annotation but not remove
+one (annotation maps merge).
+
+`config create` takes files and directories (walked recursively). A Builder
+document (a Builder JSON or YAML download) is not a config: one found in
+a directory is skipped with the log line `skipped Builder document; use
+phenix builder publish`, and one named on the command line is refused with
+`<file> is a Builder document, not a configuration: use "phenix builder
+publish <file>" to create its topology`.
+
+## `phenix builder` — publish a Builder document as a topology
+
+```bash
+phenix builder publish </path/to/document> [-n|--name <topology>] [--update] [--dry-run] \
+  [--user <user>] [--record-path]
+```
+
+`publish` is the only subcommand. It reads one Builder document file (Builder
+JSON or Builder YAML, decided by content; at most 5 MiB; no `${NAME}`
+expansion), checks it as Builder's Publish does, and stores the Topology
+config it describes, with the document stored as the topology's published
+diagram and named in its `builder-doc` annotation (`digest` and `id`). It
+writes to the store from the CLI process: it needs no running `phenix ui`.
+Topology only: no scenario, no experiment, no VLAN aliases (each is a warning
+when the document has one).
+
+| Flag | Meaning |
+|---|---|
+| `-n`, `--name` | Topology name. Default: the document's name as the Publish dialog proposes it (`Pump station` gives `Pump-station`). Must be a config name. |
+| `--update` | Replace an existing topology of that name. Allowed only when the topology is unchanged since its stored document was published, or the document was imported from the topology as it is now. Never for a `builder-xml` topology. No force flag. |
+| `--dry-run` | Run every check and print a report on stdout (document, file, digest, document ID, what would happen, node count, warnings). Writes nothing. |
+| `--user` | User to record as the publisher of the stored document. Default: the sudo caller, else the OS account. |
+| `--record-path` | Also write the file's absolute path as `builder-doc.path`. The file name must end in `.json`, `.yaml` or `.yml`. A path the server would not read (outside `base-dir.phenix`, or below the mount directory) is a warning, not an error. |
+
+```bash
+phenix builder publish pump-station.builder.json              # creates Topology Pump-station
+phenix builder publish pump-station.builder.json              # again: "topology already up to date", exit 0
+phenix builder publish pump-station.builder.yaml -n pump-lab  # another name
+phenix builder publish pump-station.builder.json --update     # after the file changed
+phenix builder publish pump-station.builder.json --dry-run    # check only; prints the digest
+```
+
+Exit status is 0 when the topology was created, updated or already up to
+date, and 1 otherwise. Success and warnings are log lines on stderr
+(`topology created`, `topology updated`, `topology already up to date`, with
+`name`, `document` and `digest`); only `--dry-run` writes to stdout. A
+document that cannot be published is an error that lists every blocker on
+its own line. Common refusals: `topology X already exists; use --update to
+replace it`; `topology X was changed after it was published, and replacing
+it would discard that change`; `<file> is not a valid Builder document:
+...`.
+
+A running `phenix ui` on the same store sees the topology after a page
+reload; nothing serializes a CLI publish with a UI publish of the same
+topology. The Configs page opens the published topology in the Builder, not
+as text (it has `builder-doc`); `phenix config edit` edits it as text.
+Details and the full rules are in
+[`builder.md`](builder.md#cli-phenix-builder-publish).
 
 ## `phenix experiment` — experiment lifecycle
 

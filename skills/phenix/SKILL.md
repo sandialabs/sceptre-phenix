@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util).'
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams and drafts, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, the Builder (the web topology editor), or any `phenix` subcommand (config, builder, experiment, vm, image, vlan, mm, settings, ui, util).'
 license: GPL-3.0-only
 ---
 
@@ -21,7 +21,7 @@ Detailed references and examples, loaded only when needed:
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
-| Graphical topology Builder: diagram model, translation to configs, endpoints, gotchas | [`references/builder.md`](references/builder.md) |
+| The Builder, the web topology editor: drafts, sharing, publishing, the `builder-doc` annotation, Builder files, `phenix builder publish`, routes, its code | [`references/builder.md`](references/builder.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
 
@@ -50,7 +50,10 @@ external/physical nodes) and their hardware, network interfaces, and boot
 behavior. Key node fields (see [`examples/topology.yaml`](examples/topology.yaml)
 for a complete, copyable two-node topology):
 
-- `type`: `VirtualMachine | Firewall | Router | Switch`
+- `type`: `VirtualMachine | Firewall | Router | Switch`. The `vrouter` app
+  configures routing and rulesets only on `Router` and `Firewall` nodes whose
+  `hardware.os_type` is `minirouter`, `vyatta`, or `vyos` (`linux` there is
+  deprecated: it writes a Vyatta config into the image)
 - `general.hostname`, `general.vm_type` (`kvm` or `container`, default `kvm`),
   `general.do_not_boot`, `general.snapshot`
 - `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos | other`
@@ -135,19 +138,27 @@ An experiment also tracks runtime `status` (start time, per-VM schedule,
 per-app state, allocated VLANs) once started. The same fields are editable
 through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
 
-## Topology Builder
+## Builder
 
-Builder is the graphical topology editor at `/builder`, backed by an mxGraph
-XML model stored on the topology config in the `builder-xml` annotation.
+The Builder is the web topology editor at `/builder`. Drafts save on the
+server apart from configs; only Publish writes Topology, Scenario and
+Experiment configs. A topology names its Builder document in the
+`builder-doc` annotation, the one annotation that is a map: `digest` and `id`
+name a published document in the store, and `path` names a Builder file on
+the phenix server. The Builder does not update topologies that carry
+`builder-xml`, which the removed legacy Builder saved. Its one CLI command is
+`phenix builder publish <file>`, which makes a topology from a Builder
+document file; `phenix config create` skips or refuses Builder documents.
 
-**Read [`references/builder.md`](references/builder.md)** before creating,
-editing, or translating a diagram. It carries the task routing table, the
-endpoints and payloads, the diagram-to-config translation rules, and the
-gotchas.
+For anything about the Builder (its drafts, sharing, publishing, import from
+topologies and experiments, `/builder/…` routes, the `builder-doc` annotation
+and Builder files, the `builder-drafts` RBAC resource, or its code),
+**read [`references/builder.md`](references/builder.md)** first.
 
 ## CLI Overview
 
-Command groups: `config` (stored configs), `experiment` (lifecycle), `vm`
+Command groups: `config` (stored configs), `builder` (publish a Builder
+document as a topology), `experiment` (lifecycle), `vm`
 (running VMs), `image` (vmdb2 disk images), `vlan` (per-experiment VLAN
 aliases/ranges), plus `mm`, `settings`, `ui`, `util`, `completion`, and
 `version`. Every subcommand accepts the persistent flags documented in
@@ -213,7 +224,11 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
   unless the topology explicitly sets `general.vm_type: container`.
 - **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
-  "no configs found" rather than an obvious connection error.
+  "no configs found" rather than an obvious connection error. Every etcd store is compacted by
+  phenix, cluster-wide, every retention/10 unless
+  `compaction-retention=0`; then the operator must run etcd with auto-compaction. When etcd
+  reaches its space quota it refuses writes (`mvcc: database space exceeded`); compact and
+  defragment etcd, then `etcdctl alarm disarm`.
 - **Deleting `config.yaml` while phenix is running breaks the file watcher** (hot-reload of
   log level, deploy-mode, etc. stops working). `phenix settings unset <key>` rewrites the
   file in place and leaves the watcher intact; `phenix settings unset --all` deletes the

@@ -1,0 +1,297 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "id": "144fb284-ad82-5707-9350-7c9a03181ecf",
+  "name": "structure",
+  "nodes": [
+    {
+      "id": "e3b88686-c639-5ab7-8872-5145f35da254",
+      "kind": "device",
+      "label": "first",
+      "position": {
+        "x": 800,
+        "y": 112
+      },
+      "device": {
+        "hostname": "first",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "first"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "4850c39c-7fbe-5aab-b142-f084c8ee92a0",
+      "kind": "device",
+      "label": "no-geometry",
+      "position": {
+        "x": -80,
+        "y": -48
+      },
+      "device": {
+        "hostname": "no-geometry",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "no-geometry"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "aa5f2bb4-e45c-553b-a3be-bb45633e6d77",
+      "kind": "device",
+      "label": "on-layer-two",
+      "position": {
+        "x": 80,
+        "y": 112
+      },
+      "device": {
+        "hostname": "on-layer-two",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "on-layer-two"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "246d473e-9fc4-5013-be65-8d90ab68ff41",
+      "kind": "note",
+      "position": {
+        "x": 400,
+        "y": 80
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "plain cell"
+      }
+    },
+    {
+      "id": "7111ad0e-f03f-5b9b-82ff-28e1b9a6292b",
+      "kind": "note",
+      "position": {
+        "x": 608,
+        "y": 80
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "user object"
+      }
+    },
+    {
+      "id": "03f76982-c8b1-5da1-905b-c1b34e9f6523",
+      "kind": "note",
+      "position": {
+        "x": 1200,
+        "y": 80
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "no id"
+      }
+    },
+    {
+      "id": "12cc52ab-1679-578f-9d35-65a41af02dcd",
+      "kind": "note",
+      "position": {
+        "x": 16,
+        "y": 400
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "cycle a"
+      }
+    },
+    {
+      "id": "c70892c2-0b23-510e-98d1-2c09152b7380",
+      "kind": "note",
+      "position": {
+        "x": 16,
+        "y": 480
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "cycle b"
+      }
+    },
+    {
+      "id": "ad644a22-1526-50c3-b059-08dd75a19ae8",
+      "kind": "note",
+      "position": {
+        "x": 16,
+        "y": 560
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "leads into the cycle"
+      }
+    },
+    {
+      "id": "ae66a71b-21d0-5251-823f-01445fa406be",
+      "kind": "note",
+      "position": {
+        "x": 16,
+        "y": 640
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "own parent"
+      }
+    },
+    {
+      "id": "92340675-e4fa-5708-a011-566d8683f765",
+      "kind": "note",
+      "position": {
+        "x": 400,
+        "y": 400
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "orphan"
+      }
+    },
+    {
+      "id": "2f9ef933-f7bb-55b3-b91e-599a98bbcc5a",
+      "kind": "note",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "odd numbers"
+      }
+    },
+    {
+      "id": "1db20cc2-0a91-56ce-9e73-f63ca19050c3",
+      "kind": "note",
+      "position": {
+        "x": 2000000,
+        "y": -2000000
+      },
+      "size": {
+        "width": 2000000,
+        "height": 64
+      },
+      "note": {
+        "text": "far away"
+      }
+    },
+    {
+      "id": "22217de9-a21b-5a1a-a422-cf20061dee64",
+      "kind": "note",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "other geometry"
+      }
+    },
+    {
+      "id": "10e41d41-5e3c-56f8-8b83-2c2e705712b1",
+      "kind": "note",
+      "position": {
+        "x": 800,
+        "y": 400
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "two cells"
+      }
+    }
+  ],
+  "networks": [],
+  "edges": [],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": false,
+    "size": 16,
+    "snap": true
+  },
+  "source": {
+    "kind": "manual",
+    "warnings": [
+      "The legacy diagram had 2 layers. They were merged into one.",
+      "Text and containers were kept as notes and groups. Their colors, fonts and other formatting were not converted."
+    ]
+  }
+}

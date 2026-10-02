@@ -1,0 +1,210 @@
+// Bounded snapshot history for undo/redo.
+//
+// The builder keeps whole-document snapshots (documents are small and plain
+// JSON) which keeps the semantics obvious: undo restores exactly what the user
+// saw. The stack is capped at the same 50 entries the server retains per
+// draft (MaxSnapshots in limits.go), so local history and server history stay
+// comparable.
+//
+// Every entry carries a stable commit id. The autosave queue keys its ordered
+// operations on that id, which is what lets a distinct commit map to exactly
+// one persisted snapshot without coalescing.
+
+import { newId } from './ids.js';
+
+export const DEFAULT_HISTORY_LIMIT = 50;
+
+// What an edit is named when the Builder applied it for the user: the
+// Inspector's unapplied edits, saved before the diagram is left or read
+// whole (see leave.js). The History dialog marks its snapshots.
+export const SAVED_UNAPPLIED = 'Saved unapplied changes';
+
+/**
+ * Whether a snapshot's summary names an edit the Builder applied for the
+ * user (SAVED_UNAPPLIED).
+ *
+ * @param {string} [summary]
+ * @returns {boolean}
+ */
+export function savedAutomatically(summary) {
+  return String(summary || '').startsWith(`${SAVED_UNAPPLIED} `);
+}
+
+export class History {
+  /**
+   * @param {*} initial first snapshot
+   * @param {number} [limit] maximum number of retained snapshots
+   */
+  constructor(initial, limit = DEFAULT_HISTORY_LIMIT) {
+    this.limit = Math.max(1, limit);
+    this.entries = [{ id: newId(), label: 'initial', snapshot: initial }];
+    this.index = 0;
+  }
+
+  /**
+   * @returns {*} current snapshot
+   */
+  current() {
+    return this.entries[this.index].snapshot;
+  }
+
+  /**
+   * @returns {{id: string, label: string, snapshot: *}} current entry
+   */
+  currentEntry() {
+    return this.entries[this.index];
+  }
+
+  /**
+   * Records a new snapshot, dropping any redo entries.
+   *
+   * @param {*} snapshot
+   * @param {string} [label] short description used for accessible announcements
+   * @param {string} [id] explicit commit id (used when replaying a recovered
+   *   queue so local ids survive a reload)
+   * @returns {{id: string, label: string, snapshot: *}} the recorded entry
+   */
+  push(snapshot, label = 'change', id = newId()) {
+    const entry = { id, label, snapshot };
+
+    this.entries = this.entries.slice(0, this.index + 1);
+    this.entries.push(entry);
+
+    if (this.entries.length > this.limit) {
+      this.entries = this.entries.slice(this.entries.length - this.limit);
+    }
+
+    this.index = this.entries.length - 1;
+
+    return entry;
+  }
+
+  /** @returns {boolean} */
+  canUndo() {
+    return this.index > 0;
+  }
+
+  /** @returns {boolean} */
+  canRedo() {
+    return this.index < this.entries.length - 1;
+  }
+
+  /**
+   * @returns {*} snapshot after undo (unchanged when at the oldest entry)
+   */
+  undo() {
+    if (this.canUndo()) {
+      this.index -= 1;
+    }
+
+    return this.current();
+  }
+
+  /**
+   * @returns {*} snapshot after redo (unchanged when at the newest entry)
+   */
+  redo() {
+    if (this.canRedo()) {
+      this.index += 1;
+    }
+
+    return this.current();
+  }
+
+  /**
+   * Label of the operation that undo would reverse.
+   *
+   * @returns {string}
+   */
+  undoLabel() {
+    return this.canUndo() ? this.entries[this.index].label : '';
+  }
+
+  /**
+   * Label of the operation that redo would reapply.
+   *
+   * @returns {string}
+   */
+  redoLabel() {
+    return this.canRedo() ? this.entries[this.index + 1].label : '';
+  }
+
+  /**
+   * Discards history and restarts from `snapshot`.
+   *
+   * @param {*} snapshot
+   * @param {string} [label]
+   */
+  reset(snapshot, label = 'initial') {
+    this.entries = [{ id: newId(), label, snapshot }];
+    this.index = 0;
+  }
+
+  /**
+   * Restores a previously recorded list of entries, e.g. after recovering the
+   * local operation log from IndexedDB.
+   *
+   * @param {{id: string, label: string, snapshot: *}[]} entries
+   * @param {number} [index] cursor position, defaults to the newest entry
+   */
+  restore(entries, index = entries.length - 1) {
+    if (!entries || entries.length === 0) {
+      return;
+    }
+
+    const dropped = Math.max(0, entries.length - this.limit);
+
+    this.entries = entries.slice(dropped);
+    this.index = Math.min(
+      Math.max(0, index - dropped),
+      this.entries.length - 1,
+    );
+  }
+
+  /**
+   * Drops the `count` oldest entries, for example those the server no longer
+   * keeps, so undo stops at the oldest one it does. The current entry is
+   * always kept.
+   *
+   * @param {number} count
+   * @returns {number} the number of entries dropped
+   */
+  trimOldest(count) {
+    const dropped = Math.min(Math.max(0, count), this.index);
+
+    if (dropped > 0) {
+      this.entries = this.entries.slice(dropped);
+      this.index -= dropped;
+    }
+
+    return dropped;
+  }
+
+  /**
+   * Drops the entries `test` picks, such as those of a snapshot deleted
+   * from the server, so undo and redo skip them. The current entry is
+   * always kept.
+   *
+   * @param {(entry: object) => boolean} test
+   * @returns {number} the number of entries dropped
+   */
+  removeWhere(test) {
+    const current = this.entries[this.index];
+    const kept = this.entries.filter(
+      (entry) => entry === current || !test(entry),
+    );
+    const dropped = this.entries.length - kept.length;
+
+    if (dropped > 0) {
+      this.entries = kept;
+      this.index = kept.indexOf(current);
+    }
+
+    return dropped;
+  }
+
+  /** @returns {number} retained snapshot count */
+  get size() {
+    return this.entries.length;
+  }
+}

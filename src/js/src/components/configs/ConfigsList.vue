@@ -27,7 +27,14 @@
       </section>
     </div>
   </b-modal>
-  <b-modal v-model="viewer.isActive" @close="resetViewer" has-modal-card>
+  <b-modal
+    v-model="viewer.isActive"
+    @close="resetViewer"
+    has-modal-card
+    aria-role="dialog"
+    aria-modal
+    :aria-label="viewer.title"
+    close-button-aria-label="Close">
     <div class="modal-card" style="width: 50em">
       <header class="modal-card-head x-modal-dark">
         <p class="modal-card-title x-config-text">{{ viewer.title }}</p>
@@ -37,11 +44,27 @@
           <textarea
             class="textarea x-config-text has-fixed-size"
             rows="30"
+            aria-label="Config, as YAML"
             v-model="viewer.obj"
             readonly />
         </div>
       </section>
       <footer class="modal-card-foot x-modal-dark buttons is-right">
+        <!-- A topology opens in the Builder: its diagram when it has one,
+             else the Import dialog, which makes one. The button has the
+             colors of the list's Builder tag, whose text meets the 4.5:1
+             contrast that white on the info color does not. -->
+        <button
+          v-if="viewer.builder"
+          class="button is-info is-light"
+          data-testid="viewer-builder"
+          @click="openInBuilder(viewer.config)">
+          {{
+            viewer.builder === 'open'
+              ? 'Open in Builder'
+              : 'Import into Builder'
+          }}
+        </button>
         <button
           v-if="roleAllowed('configs', 'update', configFullName(viewer.config))"
           class="button is-success"
@@ -124,7 +147,7 @@
                 multilined>
                 <button
                   class="button input-button"
-                  aria-label="Clear config filters"
+                  aria-label="Reset the search and the kind filter"
                   @click="
                     searchQuery = '';
                     filterKind = null;
@@ -225,24 +248,47 @@
         v-slot="props">
         <template
           v-if="roleAllowed('configs', 'get', configFullName(props.row))">
+          <!-- A button, so the keyboard reaches the read-only view too. -->
           <b-tooltip label="view config" type="is-dark">
-            <div class="field is-clickable">
-              <div @click="viewConfig(props.row)">
-                {{ props.row.metadata.name }}
-              </div>
-            </div>
+            <button
+              type="button"
+              class="config-name"
+              :aria-label="`View ${props.row.kind} ${props.row.metadata.name}`"
+              :data-config-view="configFullName(props.row)"
+              @click="viewConfig(props.row)">
+              {{ props.row.metadata.name }}
+            </button>
           </b-tooltip>
           &nbsp;
-          <b-tag type="is-info" v-if="isBuilderTopology(props.row)"
-            >builder</b-tag
-          >
+          <!-- The tag is a link into the Builder for a role that may follow
+               it. Its name starts with the text it shows, then says what
+               following it does. -->
+          <b-tooltip
+            v-if="tagControl(props.row)"
+            :label="
+              tagControl(props.row) === 'open'
+                ? 'open in Builder'
+                : 'import into Builder'
+            "
+            type="is-dark">
+            <router-link
+              class="tag is-info is-light config-builder"
+              :to="builderLink(props.row)"
+              :aria-label="tagControlName(props.row)"
+              :data-config-builder="configFullName(props.row)">
+              {{ builderTag(props.row) }}
+            </router-link>
+          </b-tooltip>
+          <b-tag type="is-info is-light" v-else-if="builderTag(props.row)">{{
+            builderTag(props.row)
+          }}</b-tag>
         </template>
         <template v-else>
           {{ props.row.metadata.name }}
           &nbsp;
-          <b-tag type="is-info" v-if="isBuilderTopology(props.row)"
-            >builder</b-tag
-          >
+          <b-tag type="is-info is-light" v-if="builderTag(props.row)">{{
+            builderTag(props.row)
+          }}</b-tag>
         </template>
       </b-table-column>
 
@@ -260,7 +306,8 @@
           <button
             v-if="roleAllowed('configs', 'update', configFullName(props.row))"
             class="button is-light is-small action"
-            :aria-label="`Edit config ${props.row.metadata.name}`"
+            :aria-label="`Edit ${props.row.kind} ${props.row.metadata.name}`"
+            :data-config-edit="configFullName(props.row)"
             @click="$emit('edit', props.row)">
             <b-icon icon="edit"></b-icon>
           </button>
@@ -274,7 +321,7 @@
           <button
             v-if="roleAllowed('configs', 'get', configFullName(props.row))"
             class="button is-light is-small action"
-            :aria-label="`Download config ${props.row.metadata.name}`"
+            :aria-label="`Download ${props.row.kind} ${props.row.metadata.name}`"
             @click="download([props.row])">
             <b-icon icon="download"></b-icon>
           </button>
@@ -288,7 +335,7 @@
           <button
             v-if="roleAllowed('configs', 'delete', configFullName(props.row))"
             class="button is-light is-small action"
-            :aria-label="`Delete config ${props.row.metadata.name}`"
+            :aria-label="`Delete ${props.row.kind} ${props.row.metadata.name}`"
             @click="deleteConfigs([props.row])">
             <b-icon icon="trash"></b-icon>
           </button>
@@ -313,9 +360,20 @@
   import FileSaver from 'file-saver';
   import { roleAllowed } from '@/utils/rbac.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import {
+    builderAction,
+    builderLink,
+    builderTagLabel,
+  } from '@/builder/configs.js';
 
   export default {
     emits: ['edit', 'create'],
+    props: {
+      // The config ("Kind/name") whose edit button takes focus once the
+      // list shows it: the one the editor that closed was opened for, so
+      // focus does not fall to the page.
+      focusConfig: { type: String, default: '' },
+    },
     setup() {
       return { roleAllowed };
     },
@@ -350,6 +408,9 @@
           config: { kind: null, metadata: { name: null } },
           title: null,
           obj: null,
+          // What the Builder does with the config shown (see
+          // builderControl), or '' for no button.
+          builder: '',
         },
       };
     },
@@ -412,10 +473,21 @@
         this.isWaiting = true;
         axiosInstance
           .get('configs')
-          .then((response) => {
+          .then(async (response) => {
             const state = response.data;
             this.configs = state.configs === null ? [] : state.configs;
             this.isWaiting = false;
+
+            // The list has several root elements, so it is searched from
+            // the document.
+            if (this.focusConfig) {
+              await this.$nextTick();
+              document
+                .querySelector(
+                  `[data-config-edit="${CSS.escape(this.focusConfig)}"]`,
+                )
+                ?.focus();
+            }
           })
           .catch(() => {
             this.isWaiting = false;
@@ -425,14 +497,51 @@
       configFullName(cfg) {
         return `${cfg.kind}/${cfg.metadata.name}`;
       },
-      isBuilderTopology(cfg) {
-        if (cfg.kind == 'Topology') {
-          if ('annotations' in cfg.metadata) {
-            return 'builder-xml' in cfg.metadata.annotations;
-          }
+      // distinguishes Builder documents (builder-doc) from legacy
+      // builder diagrams (builder-xml)
+      builderTag(cfg) {
+        return builderTagLabel(cfg);
+      },
+      builderLink,
+      // What the Builder control of a topology does, for a role that may
+      // use it: 'open' its diagram, or 'import' it to make one, which
+      // creates a draft. '' for no control. The server decides again.
+      builderControl(cfg) {
+        const action = builderAction(cfg);
+
+        if (
+          !action ||
+          !roleAllowed('configs', 'list') ||
+          !roleAllowed('configs', 'get', this.configFullName(cfg)) ||
+          (action === 'import' && !roleAllowed('configs', 'create'))
+        ) {
+          return '';
         }
 
-        return false;
+        return action;
+      },
+      // The control of a topology's tag. A topology without a tag has
+      // none in its row: the viewer's button imports it.
+      tagControl(cfg) {
+        return builderTagLabel(cfg) ? this.builderControl(cfg) : '';
+      },
+      // The name of the tag's link: the tag's own text, then what the link
+      // does, as "builder: open Topology site in the Builder".
+      tagControlName(cfg) {
+        const name = cfg.metadata.name;
+        const does =
+          this.tagControl(cfg) === 'open'
+            ? `open Topology ${name} in the Builder`
+            : `import Topology ${name} into the Builder`;
+
+        return `${builderTagLabel(cfg)}: ${does}`;
+      },
+      // The viewer closes first, so the page is not left locked behind it.
+      openInBuilder(cfg) {
+        const link = builderLink(cfg);
+
+        this.viewer.isActive = false;
+        this.$router.push(link);
       },
       download(configList) {
         const configs = configList.map(this.configFullName);
@@ -559,6 +668,16 @@
         this.uploaderFile = null;
       },
       resetViewer() {
+        // Focus goes back to the name the viewer was opened from.
+        const opener = this.viewer.title;
+        if (opener) {
+          this.$nextTick(() =>
+            document
+              .querySelector(`[data-config-view="${CSS.escape(opener)}"]`)
+              ?.focus(),
+          );
+        }
+
         this.viewer.isActive = false;
         ((this.viewer.config = {
           kind: null,
@@ -566,6 +685,7 @@
         }),
           (this.viewer.title = null));
         this.viewer.obj = null;
+        this.viewer.builder = '';
       },
       viewConfig(cfg) {
         this.viewer.config = cfg;
@@ -580,10 +700,15 @@
           .then((response) => {
             let obj = response.data;
 
+            // The Builder button follows the config as it is now, not the
+            // row, which may be older.
+            this.viewer.builder = this.builderControl(obj);
+
+            // The viewer only shows the config, so it keeps no copy of the
+            // legacy Builder diagram it leaves out: Edit and Download read
+            // the config again.
             if ('annotations' in obj.metadata) {
               if ('builder-xml' in obj.metadata.annotations) {
-                this.config.builderXML =
-                  obj.metadata.annotations['builder-xml'];
                 obj.metadata.annotations['builder-xml'] = '<SNIPPED>';
               }
             }
@@ -602,6 +727,34 @@
   };
 </script>
 <style scoped>
+  /* The name looks as the text it was, and shows its focus. */
+  .config-name {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .config-name:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+
+  /* The Builder tag as a link: it shows its focus, and that it is one. The
+     ring is the color of the page's text: the tag's own dark blue would be
+     lost on the row behind it. */
+  .config-builder:focus-visible {
+    outline: 2px solid whitesmoke;
+    outline-offset: 2px;
+  }
+
+  .config-builder:hover {
+    text-decoration: underline;
+  }
+
   .x-modal-dark :deep(textarea) {
     background-color: #686868;
     color: whitesmoke;

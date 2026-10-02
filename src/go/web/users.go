@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -142,16 +143,18 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := rbac.NewUser(req.Username, req.Password)
-
-	user.Spec.FirstName = req.FirstName
-	user.Spec.LastName = req.LastName
-
+	// The role is found before the user is created, so a request naming no
+	// role creates no user.
 	uRole, err := rbac.RoleFromConfig(req.RoleName)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "role not found", "role", req.RoleName)
 		http.Error(w, "role not found", http.StatusBadRequest)
 
+		return
+	}
+
+	user, ok := createUser(w, req.Username, req.Password, req.FirstName, req.LastName)
+	if !ok {
 		return
 	}
 
@@ -492,4 +495,25 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 		user,
 	)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// createUser creates and stores a user. When it cannot, it answers the
+// request (409 for a name another user has, 500 otherwise) and returns
+// false.
+func createUser(w http.ResponseWriter, username, password, firstName, lastName string) (*rbac.User, bool) {
+	user, err := rbac.NewUser(username, password, firstName, lastName)
+	if err == nil {
+		return user, true
+	}
+
+	if errors.Is(err, rbac.ErrUserExists) {
+		http.Error(w, "user "+username+" already exists", http.StatusConflict)
+
+		return nil, false
+	}
+
+	plog.Error(plog.TypeSecurity, "creating user", "user", username, "err", err)
+	http.Error(w, "error creating user", http.StatusInternalServerError)
+
+	return nil, false
 }

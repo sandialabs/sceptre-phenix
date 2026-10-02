@@ -1,0 +1,712 @@
+<!--
+  Editor toolbar.
+
+  Every control is a labelled button. Its tooltip gives its keyboard
+  shortcut, if it has one, from the command registry (commands.js), so the
+  keys are this platform's and follow the user's changes. The groups, left
+  to right: undo and redo, the clipboard, grouping (Group, Ungroup and the
+  Auto-group menu), the layout menu and scenario, the ways out (Download,
+  Upload, Publish, Share, and Exp, which opens the experiment the diagram
+  was published with, while there is one), then Minimap and Draft History,
+  followed by the save state. Commands and the theme are in the editor
+  header (Builder.vue).
+  The layout menu is named after the layout the draft keeps, the last one
+  that laid it out, or Default for a draft that has none; it lays the
+  diagram out with the one chosen, which the draft keeps, and after a layout
+  it offers to put the previous one back. Edits are saved as they are made,
+  so there is no Save button (Save now is a key and a command); the save
+  state shows after Draft History, as text rather than a button, and Retry
+  saving shows at the right end, while a save needs it.
+
+  It follows the APG toolbar pattern: the toolbar is one Tab stop, and the
+  arrow keys, Home and End move between its buttons. Unavailable buttons are
+  aria-disabled rather than disabled, so they stay in that sequence and a
+  button that becomes unavailable while focused keeps focus. The two menu
+  buttons (BuilderMenuButton.vue) are buttons in that sequence; Down and Up
+  open their menus.
+-->
+<template>
+  <div
+    ref="toolbarEl"
+    class="builder-toolbar builder-panel"
+    role="toolbar"
+    aria-label="Builder actions"
+    @focusin="onFocusin"
+    @keydown="onKeydown">
+    <div class="builder-toolbar__group">
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-undo"
+        :aria-disabled="off.undo || undefined"
+        :aria-keyshortcuts="tips.undo.aria"
+        :aria-describedby="
+          tips.undo.description ? 'toolbar-tip-undo' : undefined
+        "
+        v-on="tipFor('undo')"
+        @click="run('undo', () => store.undo())">
+        <builder-icon name="undo" :size="14" />
+        Undo
+      </button>
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-redo"
+        :aria-disabled="off.redo || undefined"
+        :aria-keyshortcuts="tips.redo.aria"
+        :aria-describedby="
+          tips.redo.description ? 'toolbar-tip-redo' : undefined
+        "
+        v-on="tipFor('redo')"
+        @click="run('redo', () => store.redo())">
+        <builder-icon name="redo" :size="14" />
+        Redo
+      </button>
+    </div>
+
+    <div class="builder-toolbar__group">
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-copy"
+        :aria-keyshortcuts="tips.copy.aria"
+        :aria-describedby="
+          tips.copy.description ? 'toolbar-tip-copy' : undefined
+        "
+        v-on="tipFor('copy')"
+        @click="store.copy()">
+        <builder-icon name="copy" :size="14" />
+        Copy
+      </button>
+      <button
+        type="button"
+        class="builder-button"
+        :aria-disabled="off.paste || undefined"
+        data-testid="toolbar-paste"
+        :aria-keyshortcuts="tips.paste.aria"
+        :aria-describedby="
+          tips.paste.description ? 'toolbar-tip-paste' : undefined
+        "
+        v-on="tipFor('paste')"
+        @click="run('paste', () => store.paste())">
+        <builder-icon name="paste" :size="14" />
+        Paste
+      </button>
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-delete"
+        :aria-keyshortcuts="tips.delete.aria"
+        :aria-describedby="
+          tips.delete.description ? 'toolbar-tip-delete' : undefined
+        "
+        v-on="tipFor('delete')"
+        :aria-disabled="off.delete || undefined"
+        @click="run('delete', deleteSelectionHere)">
+        <builder-icon name="trash" :size="14" />
+        Delete
+      </button>
+    </div>
+
+    <div class="builder-toolbar__group">
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-group"
+        :aria-keyshortcuts="tips.group.aria"
+        :aria-describedby="
+          tips.group.description ? 'toolbar-tip-group' : undefined
+        "
+        v-on="tipFor('group')"
+        :aria-disabled="off.group || undefined"
+        @click="run('group', () => store.group())">
+        <builder-icon name="group" :size="14" />
+        Group
+      </button>
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-ungroup"
+        :aria-keyshortcuts="tips.ungroup.aria"
+        :aria-describedby="
+          tips.ungroup.description ? 'toolbar-tip-ungroup' : undefined
+        "
+        v-on="tipFor('ungroup')"
+        :aria-disabled="off.ungroup || undefined"
+        @click="run('ungroup', ungroupSelectionHere)">
+        <builder-icon name="ungroup" :size="14" />
+        Ungroup
+      </button>
+      <builder-menu-button
+        testid="toolbar-auto-group"
+        :items="autoGroupItems"
+        :disabled="off.autoGroup"
+        :busy="store.autoGrouping"
+        :aria-describedby="
+          tips.autoGroup.description ? 'toolbar-tip-autoGroup' : undefined
+        "
+        v-on="tipFor('autoGroup')"
+        @toggle="onMenuToggle('autoGroup', $event)"
+        @select="chooseAutoGroup">
+        <span
+          v-if="store.autoGrouping"
+          class="builder-toolbar__spinner"
+          aria-hidden="true"></span>
+        <builder-icon v-else name="auto-group" :size="14" />
+        Auto-group
+      </builder-menu-button>
+    </div>
+
+    <div class="builder-toolbar__group">
+      <!-- Named after the layout that made the positions, or Default, with
+           "layout" after it for screen readers. While a layout runs, a
+           turning ring in place of the icon; reduced motion stops it turning
+           (see builder.css). -->
+      <builder-menu-button
+        testid="toolbar-layout"
+        :items="layoutItems"
+        :disabled="off.layout"
+        :busy="store.layoutRunning && !store.autoGrouping"
+        :aria-label="`${currentLayout.label} layout`"
+        :aria-describedby="
+          tips.layout.description ? 'toolbar-tip-layout' : undefined
+        "
+        v-on="tipFor('layout')"
+        @toggle="onMenuToggle('layout', $event)"
+        @select="chooseLayout">
+        <span
+          v-if="store.layoutRunning && !store.autoGrouping"
+          class="builder-toolbar__spinner"
+          aria-hidden="true"></span>
+        <builder-icon v-else name="layout" :size="14" />
+        <!-- Every layout's name, and Default, holds the button's width, so
+             it stays under the pointer when the layout changes; the hidden
+             ones are not shown or named. -->
+        <span class="builder-button__swap">
+          <span
+            v-for="algorithm in [DEFAULT_LAYOUT, ...LAYOUT_ALGORITHMS]"
+            :key="algorithm.id"
+            :class="{ 'is-off': algorithm.id !== currentLayout.id }">
+            {{ algorithm.label }}
+          </span>
+        </span>
+      </builder-menu-button>
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-scenario"
+        :aria-keyshortcuts="tips.scenario.aria"
+        :aria-describedby="
+          tips.scenario.description ? 'toolbar-tip-scenario' : undefined
+        "
+        v-on="tipFor('scenario')"
+        aria-haspopup="dialog"
+        :aria-disabled="off.scenario || undefined"
+        @click="run('scenario', () => $emit('scenario'))">
+        <builder-icon name="document" :size="14" />
+        Scenario
+      </button>
+    </div>
+
+    <div class="builder-toolbar__group">
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-download"
+        :aria-keyshortcuts="tips.download.aria"
+        :aria-describedby="
+          tips.download.description ? 'toolbar-tip-download' : undefined
+        "
+        v-on="tipFor('download')"
+        aria-haspopup="dialog"
+        @click="$emit('download')">
+        <builder-icon name="download" :size="14" />
+        Download
+      </button>
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-upload"
+        :aria-keyshortcuts="tips.upload.aria"
+        :aria-describedby="
+          tips.upload.description ? 'toolbar-tip-upload' : undefined
+        "
+        v-on="tipFor('upload')"
+        aria-haspopup="dialog"
+        :aria-disabled="off.upload || undefined"
+        @click="run('upload', () => $emit('upload'))">
+        <builder-icon name="upload" :size="14" />
+        Upload
+      </button>
+      <button
+        type="button"
+        class="builder-button builder-button--primary"
+        data-testid="toolbar-publish"
+        :aria-keyshortcuts="tips.publish.aria"
+        :aria-describedby="
+          tips.publish.description ? 'toolbar-tip-publish' : undefined
+        "
+        v-on="tipFor('publish')"
+        aria-haspopup="dialog"
+        :aria-disabled="off.publish || undefined"
+        @click="run('publish', () => $emit('publish'))">
+        <builder-icon name="publish" :size="14" />
+        Publish
+      </button>
+      <!-- The owner shares; someone the draft was shared with sees who
+           may. Anyone else has no Share. -->
+      <button
+        v-if="store.canShare || store.sharedBy"
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-share"
+        :aria-keyshortcuts="tips.share.aria"
+        aria-describedby="toolbar-tip-share"
+        v-on="tipFor('share')"
+        aria-haspopup="dialog"
+        :aria-disabled="off.share || undefined"
+        @click="run('share', () => $emit('share'))">
+        <builder-icon name="share" :size="14" />
+        Share
+      </button>
+      <!-- Only while the diagram's publication has an experiment. It leaves
+           the Builder, so it opens no dialog. -->
+      <button
+        v-if="store.experimentName"
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-experiment"
+        :aria-label="`Exp: open experiment ${store.experimentName}`"
+        :aria-keyshortcuts="tips.experiment.aria"
+        :aria-describedby="
+          tips.experiment.description ? 'toolbar-tip-experiment' : undefined
+        "
+        v-on="tipFor('experiment')"
+        @click="$emit('experiment')">
+        <builder-icon name="experiment" :size="14" />
+        Exp
+      </button>
+    </div>
+
+    <div class="builder-toolbar__group">
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-minimap"
+        :aria-keyshortcuts="tips.minimap.aria"
+        :aria-describedby="
+          tips.minimap.description ? 'toolbar-tip-minimap' : undefined
+        "
+        v-on="tipFor('minimap')"
+        :aria-pressed="String(minimap)"
+        @click="$emit('toggle-minimap')">
+        <builder-icon name="image" :size="14" />
+        Minimap
+      </button>
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-history"
+        :aria-keyshortcuts="tips.history.aria"
+        :aria-describedby="
+          tips.history.description ? 'toolbar-tip-history' : undefined
+        "
+        v-on="tipFor('history')"
+        aria-haspopup="dialog"
+        @click="$emit('history')">
+        <builder-icon name="history" :size="14" />
+        Draft History
+      </button>
+      <!-- Shown but not spoken: it changes on every edit, so the store
+           announces only the transitions that matter (a new problem, or
+           the recovery from one) through the live region. Text, not a
+           control, so the arrow keys pass it by (see buttons). -->
+      <p
+        class="builder-status builder-toolbar__save"
+        :class="`builder-status--${store.saveState.status}`"
+        data-testid="builder-save-state">
+        <span class="builder-status__dot" aria-hidden="true"></span>
+        <!-- Decorative: the text beside it says the same. -->
+        <builder-icon v-if="saveNeedsAttention" name="warning" :size="14" />
+        {{ store.saveStateText }}
+      </p>
+    </div>
+
+    <!-- Last, at the right end, so the others stay put while it comes and
+         goes. -->
+    <div
+      v-if="canRetry"
+      class="builder-toolbar__group builder-toolbar__group--end">
+      <button
+        ref="retryEl"
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-retry"
+        @click="store.retrySave({ announce: true })">
+        <builder-icon name="refresh" :size="14" />
+        Retry saving
+      </button>
+    </div>
+
+    <!-- The tooltips' text reaches screen readers as the buttons'
+         descriptions; the tooltips themselves are aria-hidden. -->
+    <span
+      v-for="(entry, key) in tips"
+      :id="`toolbar-tip-${key}`"
+      :key="key"
+      hidden>
+      {{ entry.description }}
+    </span>
+    <builder-fixed-tooltip :tooltip="tooltip" testid="toolbar-tooltip" />
+  </div>
+</template>
+
+<script setup>
+  import { computed, nextTick, onMounted, onUpdated, ref, watch } from 'vue';
+
+  import BuilderFixedTooltip from './BuilderFixedTooltip.vue';
+  import BuilderIcon from './BuilderIcon.vue';
+  import BuilderMenuButton from './BuilderMenuButton.vue';
+  import { useFixedTooltip } from './fixedTooltip.js';
+
+  import {
+    ariaShortcuts,
+    deleteSelection,
+    focusLost,
+    shortcutLabel,
+    ungroupSelection,
+    withShortcut,
+  } from '@/builder/commands.js';
+  import { GROUPING_STRATEGIES } from '@/builder/grouping.js';
+  import {
+    LAYOUT_ALGORITHMS,
+    layoutAlgorithm,
+  } from '@/builder/layouts/index.js';
+  import { rowTarget } from '@/builder/roving.js';
+  import { describeShares } from '@/builder/share.js';
+  import { useBuilderStore } from '@/builder/store.js';
+
+  defineProps({
+    minimap: { type: Boolean, default: true },
+  });
+
+  const emit = defineEmits([
+    'publish',
+    'share',
+    'download',
+    'upload',
+    'scenario',
+    'history',
+    'experiment',
+    'group-pattern',
+    'toggle-minimap',
+  ]);
+
+  const store = useBuilderStore();
+  const toolbarEl = ref(null);
+  const retryEl = ref(null);
+
+  const hasSelection = computed(
+    () => store.selection.nodes.length > 0 || store.selection.edges.length > 0,
+  );
+
+  // Ungroup acts on the first selected node, which must be a group.
+  const selectedGroup = computed(() => {
+    const id = store.selection.nodes[0];
+
+    return (store.doc.nodes || []).find(
+      (node) => node.id === id && node.kind === 'group',
+    );
+  });
+
+  // The actions that are unavailable right now, by name.
+  const off = computed(() => ({
+    undo: store.readOnly || !store.canUndo,
+    redo: store.readOnly || !store.canRedo,
+    paste: store.readOnly,
+    delete: store.readOnly || !hasSelection.value,
+    group: store.readOnly || !store.selection.nodes.length,
+    ungroup: store.readOnly || !selectedGroup.value,
+    autoGroup: store.readOnly,
+    layout: store.readOnly,
+    scenario: store.readOnly,
+    // Upload makes a new draft; Publish writes configs (see the store's
+    // canCreateDrafts and canPublish).
+    upload: !store.canCreateDrafts,
+    publish: store.readOnly || !store.canPublish,
+    share: !store.canShare,
+  }));
+
+  function run(action, handler) {
+    if (!off.value[action]) {
+      handler();
+    }
+  }
+
+  // --- menus -------------------------------------------------------------------
+
+  // What the layout button says of a draft with no layout of its own:
+  // imported, uploaded, blank, or placed by hand.
+  const DEFAULT_LAYOUT = { id: '', label: 'Default' };
+
+  const currentLayout = computed(
+    () => layoutAlgorithm(store.currentLayout) || DEFAULT_LAYOUT,
+  );
+
+  // The layouts, the draft's checked (none at Default); choosing one runs it
+  // and the draft keeps it, the checked one included. Right after a layout,
+  // until the diagram changes some other way, the previous one can be put
+  // back.
+  const layoutItems = computed(() => [
+    ...LAYOUT_ALGORITHMS.map((algorithm) => ({
+      id: algorithm.id,
+      label: algorithm.label,
+      description: algorithm.summary,
+      checked: algorithm.id === store.currentLayout,
+    })),
+    ...(store.canRestoreLayout
+      ? [
+          {
+            id: 'restore',
+            label: 'Restore previous layout',
+            description: 'Put every node back where it was',
+            separator: true,
+          },
+        ]
+      : []),
+  ]);
+
+  function chooseLayout(item) {
+    if (item.id === 'restore') {
+      store.restoreLayout();
+    } else {
+      store.layout({ algorithm: item.id });
+    }
+  }
+
+  // A rule that asks for something first (the name pattern) ends in an
+  // ellipsis: choosing it opens a dialog, which the view shows.
+  const autoGroupItems = GROUPING_STRATEGIES.map((strategy) => ({
+    id: strategy.id,
+    label: `${strategy.label}${strategy.asks ? '…' : ''}`,
+    description: strategy.summary,
+    asks: Boolean(strategy.asks),
+  }));
+
+  function chooseAutoGroup(item) {
+    if (item.asks) {
+      emit('group-pattern');
+    } else {
+      store.autoGroup(item.id);
+    }
+  }
+
+  // The menu that is open, whose button shows no tooltip over it.
+  const openMenu = ref('');
+
+  function onMenuToggle(key, open) {
+    openMenu.value = open ? key : '';
+
+    if (open) {
+      hideTip();
+    }
+  }
+
+  // --- roving Tab stop -------------------------------------------------------
+
+  // The button that holds the toolbar's Tab stop: the last one focused.
+  let current = null;
+
+  function buttons() {
+    return [...(toolbarEl.value?.querySelectorAll('button') || [])];
+  }
+
+  // The template leaves tabindex unbound, so a re-render keeps these values;
+  // a button added later (Retry saving) is brought into line on update.
+  function syncTabStop() {
+    const all = buttons();
+    if (!all.includes(current)) {
+      current = all[0] || null;
+    }
+
+    for (const button of all) {
+      button.tabIndex = button === current ? 0 : -1;
+    }
+  }
+
+  function onFocusin(event) {
+    const button = event.target.closest?.('button');
+    if (button && buttons().includes(button)) {
+      current = button;
+      syncTabStop();
+    }
+  }
+
+  function onKeydown(event) {
+    const all = buttons();
+    const index = all.indexOf(event.target);
+    if (event.altKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+
+    const next = rowTarget(event.key, index, all.length);
+    if (next === undefined) {
+      return;
+    }
+
+    event.preventDefault();
+    all[next].focus();
+  }
+
+  onMounted(syncTabStop);
+  onUpdated(syncTabStop);
+
+  // Delete and Ungroup move focus on to the outline row that takes the
+  // removed node's place, as the commands do (see commands.js).
+  function deleteSelectionHere() {
+    return deleteSelection(store);
+  }
+
+  function ungroupSelectionHere() {
+    return ungroupSelection(store);
+  }
+
+  // --- tooltips ----------------------------------------------------------------
+
+  // The command each button runs, for its keys, and its name in the
+  // tooltip. aria-keyshortcuts only where the keys work with focus here:
+  // Delete works on the canvas and in the outline.
+  const TIPS = {
+    undo: { command: 'edit.undo', name: 'Undo' },
+    redo: { command: 'edit.redo', name: 'Redo' },
+    copy: { command: 'edit.copy', name: 'Copy' },
+    paste: { command: 'edit.paste', name: 'Paste' },
+    delete: { command: 'edit.delete', name: 'Delete selection', local: true },
+    group: { command: 'structure.group', name: 'Group selection' },
+    ungroup: { command: 'structure.ungroup', name: 'Ungroup' },
+    history: { command: 'draft.history', name: 'Draft History' },
+    download: { command: 'draft.download', name: 'Download' },
+    upload: { command: 'draft.upload', name: 'Upload' },
+    scenario: { command: 'draft.scenario', name: 'Scenario' },
+    publish: { command: 'draft.publish', name: 'Publish' },
+    minimap: { command: 'view.minimap', name: 'Minimap' },
+  };
+
+  // Per button: the tooltip's text ('' for none), the description screen
+  // readers get in its place (the keys: the name is the button's own), and
+  // aria-keyshortcuts. The menus' tooltips say what they do, keys or not;
+  // the layout's keys run the layout again rather than open its menu, or at
+  // Default the one Settings chooses, and Auto-group's run its first rule.
+  const tips = computed(() => {
+    const entries = Object.entries(TIPS).map(([key, entry]) => {
+      const keys = shortcutLabel(entry.command);
+
+      return [
+        key,
+        {
+          text: keys ? `${entry.name} (${keys})` : '',
+          description: keys,
+          aria: entry.local ? undefined : ariaShortcuts(entry.command),
+        },
+      ];
+    });
+    const layoutKeys = shortcutLabel('structure.layout');
+    const next = layoutAlgorithm(store.layoutToRun).label;
+    const layoutText = store.currentLayout
+      ? `Choose a layout, or run it again${
+          layoutKeys ? `. ${layoutKeys} runs it again` : ''
+        }`
+      : `Choose a layout${
+          layoutKeys ? `. ${layoutKeys} runs ${next}, the Settings default` : ''
+        }`;
+    // The Auto-group key runs the first rule of the menu, by network.
+    const autoGroupKeys = shortcutLabel('structure.autoGroup.network');
+    const autoGroupText = `${
+      store.selection.nodes.length
+        ? 'Group the selected nodes automatically'
+        : 'Group the ungrouped nodes automatically'
+    }${autoGroupKeys ? `. ${autoGroupKeys} groups by network` : ''}`;
+    // Share says who has the draft, or who may change that.
+    const shareText = store.canShare
+      ? store.shares.length
+        ? `Shared with ${describeShares(store.shares)}`
+        : 'Only you can open this draft'
+      : `Only ${store.sharedBy || 'the owner'} can change who has access`;
+
+    return {
+      ...Object.fromEntries(entries),
+      layout: { text: layoutText, description: layoutText },
+      autoGroup: { text: autoGroupText, description: autoGroupText },
+      share: {
+        text: withShortcut(shareText, 'draft.share'),
+        description: withShortcut(shareText, 'draft.share'),
+        aria: ariaShortcuts('draft.share'),
+      },
+      // Exp's name says which experiment it opens, as its tooltip does.
+      experiment: {
+        text: withShortcut(
+          `Open experiment ${store.experimentName}`,
+          'draft.experiment',
+        ),
+        description: shortcutLabel('draft.experiment'),
+        aria: ariaShortcuts('draft.experiment'),
+      },
+    };
+  });
+
+  const tooltip = useFixedTooltip({ side: 'below' });
+  const { hideTip, tipEvents } = tooltip;
+
+  // Read when shown, so a tooltip follows the button's state. None over an
+  // open menu.
+  function tipFor(key) {
+    return tipEvents(() => openMenu.value !== key && tips.value[key].text);
+  }
+
+  const saveNeedsAttention = computed(() =>
+    ['conflict', 'forbidden', 'error', 'offline'].includes(
+      store.saveState.status,
+    ),
+  );
+
+  // Not for an error that sending again cannot fix (a refused snapshot):
+  // the save state says what to change instead.
+  const canRetry = computed(
+    () =>
+      store.saveState.status === 'offline' ||
+      (store.saveState.status === 'error' &&
+        store.saveState.retryable !== false),
+  );
+
+  // Retry saving goes away as soon as a save starts or succeeds, whether the
+  // user pressed it or the automatic retry ran. If it had focus, the button
+  // before it (Draft History) takes the toolbar's Tab stop, and focus moves
+  // there instead of falling to <body> (WCAG 2.4.3). The check runs before
+  // the button is removed. The same update may have given focus a better
+  // place: a conflict moves it to the conflict panel, which then keeps it.
+  watch(
+    canRetry,
+    (now) => {
+      if (now || !retryEl.value?.contains(document.activeElement)) {
+        return;
+      }
+
+      const all = buttons();
+      const before = all[all.indexOf(retryEl.value) - 1];
+
+      nextTick(() => {
+        if (!before?.isConnected) {
+          return;
+        }
+
+        current = before;
+        syncTabStop();
+
+        if (focusLost()) {
+          before.focus();
+        }
+      });
+    },
+    { flush: 'pre' },
+  );
+</script>

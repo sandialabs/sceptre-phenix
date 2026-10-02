@@ -78,6 +78,15 @@ nav:
     - VMs: vms.md
     - VM Actions: vm-multi-action.md
     - Images: image.md
+  - Builder:
+    - Overview: builder/index.md
+    - Drafts: builder/drafts.md
+    - The Editor: builder/editor.md
+    - Building a Diagram: builder/diagrams.md
+    - Import, Upload and Download: builder/import-upload-download.md
+    - Publishing: builder/publishing.md
+    - Administration: builder/administration.md
+    - Legacy Builder: builder/legacy.md
   - Apps:
     - Overview: apps.md
     - Examples: examples.md

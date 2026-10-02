@@ -53,21 +53,25 @@ server on another port (see the port rule in the root `AGENTS.md`):
 ```bash
 cd e2e
 npm ci
-npx playwright install --with-deps chromium
+npx playwright install --with-deps chromium firefox
 # against `phenix ui --listen-endpoint 127.0.0.1:3080`
 E2E_BASE_URL=http://127.0.0.1:3080 npx playwright test
 ```
 
-Default smoke tests need only a server. `routes.spec.js` also runs an
-axe-core WCAG 2.x A/AA scan on every route; fix violations in the UI
-(accessible names, contrast, ARIA) rather than excluding rules. Lifecycle tests additionally need
-minimega, VM images, and a topology (`E2E_LIFECYCLE=1`). Auth suites require a
-matching `VITE_AUTH` build and signing key. See `e2e/README.md`; report missing
-prerequisites instead of silently skipping checks.
+`routes.spec.js` also runs an axe-core WCAG 2.x A/AA scan on every route; fix
+violations in the UI (accessible names, contrast, ARIA) rather than excluding
+rules. Lifecycle tests additionally need minimega, VM images, and a topology
+(`E2E_LIFECYCLE=1`). Auth suites require a matching `VITE_AUTH` build and
+signing key. See `e2e/README.md`; report missing prerequisites instead of
+silently skipping checks.
+
+Before changing the Builder (`src/builder/`, `src/components/builder/`,
+`src/views/Builder.vue`, or the `builder*` e2e specs), read
+[`../../skills/phenix/references/builder.md`](../../skills/phenix/references/builder.md).
 
 ## CI
 
-`.github/workflows/frontend.yml` runs Vitest and builds the UI, then builds and
-starts a real backend for Playwright smoke tests. Keep Node versions, npm cache
-lockfiles, auth build mode, backend startup, and path filters aligned with local
-commands.
+`.github/workflows/frontend.yml` runs Vitest, builds the UI and a real backend
+once, then runs the Playwright tests in parallel jobs, each against its own
+server (see `e2e/README.md`). Keep Node versions, npm cache lockfiles, auth
+build mode, backend startup, and path filters aligned with local commands.

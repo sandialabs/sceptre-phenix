@@ -44,6 +44,41 @@ npm run format
 npm run test
 ```
 
+Browser tests use the separate Playwright project. They need a running
+`phenix ui`; see `e2e/README.md`:
+
+```bash
+cd e2e
+npm ci
+npx playwright install --with-deps chromium firefox
+npx playwright test
+```
+
+## Builder
+
+Start the backend with `phenix ui`, then open `/builder`. The Builder uses
+Vue Flow for the canvas and JSON Forms for schema-backed node/network
+properties. It works over plain HTTP as well as HTTPS.
+
+Builder documents and draft history autosave independently from phenix configs.
+Creating or updating topology, scenario, or experiment configs requires the
+explicit Publish action. The editor supports upload and download of JSON/YAML
+documents, Topology YAML, Gephi (GEXF) and PNG/SVG downloads, import of
+authorized Topology/Experiment configs (stored, or a JSON or YAML config
+file), shared-draft RBAC, and a synchronized keyboard/screen-reader outline.
+
+Imported config files make new drafts without changing their source. They may
+create publication targets, but only drafts tied to the matching stored
+Topology or Experiment may update those resources. Updating an uploaded
+Scenario reference also requires the fresh target digest shown by the server,
+so a concurrent Scenario change is rejected instead of overwritten.
+
+Builder theme choices are system, light, and dark. System is the default;
+explicit choices persist in browser local storage for Builder only.
+
+User documentation: [`docs/content/builder/`](../../docs/content/builder/index.md);
+developer reference: [`skills/phenix/references/builder.md`](../../skills/phenix/references/builder.md).
+
 ## Code Details
 
 ### Structure

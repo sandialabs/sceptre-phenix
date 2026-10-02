@@ -1,0 +1,248 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "id": "cbc6d926-51d1-5dc0-9c60-22ac8887c52f",
+  "name": "Pump station",
+  "description": "Remote pump station: cellular router, RTU and a field laptop.",
+  "author": "e2e-admin",
+  "createdAt": "2026-09-29T18:38:08Z",
+  "updatedBy": "e2e-admin",
+  "updatedAt": "2026-09-29T18:39:21Z",
+  "nodes": [
+    {
+      "id": "59a81426-0b05-590b-9024-2ae5ef766653",
+      "kind": "device",
+      "label": "eng-ws-01",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "device": {
+        "hostname": "eng-ws-01",
+        "iconKey": "windows",
+        "spec": {
+          "general": {
+            "description": "Field engineering laptop",
+            "hostname": "eng-ws-01"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "windows10.qc2"
+              }
+            ],
+            "os_type": "windows"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "STATION"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "d3a6f1b2-da06-5e05-924f-70740ef6bbbb",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "0a031b9a-3d12-58c5-9287-c89a1ea5f76c",
+      "kind": "device",
+      "label": "rtu-01",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "device": {
+        "hostname": "rtu-01",
+        "iconKey": "linux",
+        "spec": {
+          "general": {
+            "description": "Remote terminal unit",
+            "hostname": "rtu-01"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "bennu.qc2"
+              }
+            ],
+            "os_type": "linux"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.40.1.10",
+                "gateway": "10.40.1.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "STATION"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "827b43d4-de9e-5d59-86bf-d758e36e5eb7",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "b0ee61d2-0199-58cf-aa88-9b788373d016",
+      "kind": "device",
+      "label": "station-rtr",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "device": {
+        "hostname": "station-rtr",
+        "iconKey": "router",
+        "spec": {
+          "general": {
+            "description": "Cellular router at the pump station",
+            "hostname": "station-rtr"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "minirouter.qc2"
+              }
+            ],
+            "os_type": "minirouter"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "198.51.100.20",
+                "gateway": "198.51.100.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "WAN"
+              },
+              {
+                "address": "10.40.1.1",
+                "mask": 24,
+                "name": "eth1",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "STATION"
+              }
+            ]
+          },
+          "type": "Router"
+        },
+        "interfaces": [
+          {
+            "id": "24d0d76c-4a2a-52da-9efd-e756daa2a81b",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "83df9c8a-fa0e-531f-8e21-af7b28981df2",
+            "name": "eth1",
+            "index": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "ca84e37b-0a6a-5395-a5c3-c7267266a739",
+      "kind": "switch",
+      "label": "STATION",
+      "position": {
+        "x": 0,
+        "y": 400
+      },
+      "switch": {
+        "networkId": "7d9f741d-f7c9-55e0-90b0-2015f4f2dbd8"
+      }
+    },
+    {
+      "id": "7d485d0c-4ec0-5c7c-91c4-dacb1f70bc31",
+      "kind": "switch",
+      "label": "WAN",
+      "position": {
+        "x": 320,
+        "y": 400
+      },
+      "switch": {
+        "networkId": "6853e6b9-c16e-5015-af8d-d48fedfd55d1"
+      }
+    }
+  ],
+  "networks": [
+    {
+      "id": "7d9f741d-f7c9-55e0-90b0-2015f4f2dbd8",
+      "name": "STATION"
+    },
+    {
+      "id": "6853e6b9-c16e-5015-af8d-d48fedfd55d1",
+      "name": "WAN"
+    }
+  ],
+  "edges": [
+    {
+      "id": "0cb928ac-89db-5fad-91d3-d07d78d2369d",
+      "sourceNodeId": "b0ee61d2-0199-58cf-aa88-9b788373d016",
+      "sourceHandleId": "83df9c8a-fa0e-531f-8e21-af7b28981df2",
+      "targetNodeId": "ca84e37b-0a6a-5395-a5c3-c7267266a739",
+      "networkId": "7d9f741d-f7c9-55e0-90b0-2015f4f2dbd8"
+    },
+    {
+      "id": "6a443d49-bb21-5561-b135-6157d74ef7b2",
+      "sourceNodeId": "0a031b9a-3d12-58c5-9287-c89a1ea5f76c",
+      "sourceHandleId": "827b43d4-de9e-5d59-86bf-d758e36e5eb7",
+      "targetNodeId": "ca84e37b-0a6a-5395-a5c3-c7267266a739",
+      "networkId": "7d9f741d-f7c9-55e0-90b0-2015f4f2dbd8"
+    },
+    {
+      "id": "70c13996-a8ed-54bf-893a-0a025decbe8f",
+      "sourceNodeId": "b0ee61d2-0199-58cf-aa88-9b788373d016",
+      "sourceHandleId": "24d0d76c-4a2a-52da-9efd-e756daa2a81b",
+      "targetNodeId": "7d485d0c-4ec0-5c7c-91c4-dacb1f70bc31",
+      "networkId": "6853e6b9-c16e-5015-af8d-d48fedfd55d1"
+    },
+    {
+      "id": "e96fa580-d290-573e-9b83-b56da4d2f31f",
+      "sourceNodeId": "59a81426-0b05-590b-9024-2ae5ef766653",
+      "sourceHandleId": "d3a6f1b2-da06-5e05-924f-70740ef6bbbb",
+      "targetNodeId": "ca84e37b-0a6a-5395-a5c3-c7267266a739",
+      "networkId": "7d9f741d-f7c9-55e0-90b0-2015f4f2dbd8"
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": true,
+    "size": 16,
+    "snap": true
+  },
+  "source": {
+    "kind": "topology",
+    "name": "pump-station",
+    "apiVersion": "phenix.sandia.gov/v1",
+    "importedAt": "2026-09-29T18:38:07Z",
+    "digest": "sha256:8eb4474a4da5e0dfb58cc3c6604091acd5ebe253253786730f074ac07a41f663"
+  }
+}
