@@ -1956,7 +1956,7 @@ func TestBuilderV2PublishRepairsDocumentDespiteCleanupFailure(t *testing.T) { //
 		t.Fatalf("DecodeReference returned error: %v", err)
 	}
 
-	if _, err := harness.service.VerifyPublishedDocument(context.Background(), ref); err != nil {
+	if _, _, err := harness.service.GetPublishedDocumentData(context.Background(), ref.StoredID("rep")); err != nil {
 		t.Fatalf("the topology's document after the repair: %v", err)
 	}
 }

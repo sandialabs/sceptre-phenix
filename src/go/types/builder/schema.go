@@ -85,13 +85,28 @@ func Schema() (map[string]any, error) {
 			keyID:          ref("identifier"),
 			keyName:        documentNameDef(),
 			keyDescription: stringDef(""),
-			keyNodes:       arrayDef(ref("node")),
-			"networks":     arrayDef(ref("network")),
-			"edges":        arrayDef(ref("edge")),
-			"viewport":     ref("viewport"),
-			"grid":         ref("grid"),
-			"scenario":     ref("scenario"),
-			"source":       ref("source"),
+			keyAuthor: userDef(
+				"User who first made the document. The server sets it when a draft is created from a document " +
+					"that names none, and writes the same value into every later save of that draft.",
+			),
+			keyCreatedAt: timeDef(
+				"When the document was first made. The server sets it when a draft is created from a document " +
+					"that has none, and writes the same value into every later save of that draft.",
+			),
+			keyUpdatedBy: userDef(
+				"User whose save stored this content. The server sets it on every save, and a value sent is replaced.",
+			),
+			keyUpdatedAt: timeDef(
+				"When this content was saved. The server sets it on every save, and a value sent is replaced. " +
+					"It is not source.updatedAt, which is a time of the source config.",
+			),
+			keyNodes:   arrayDef(ref("node")),
+			"networks": arrayDef(ref("network")),
+			"edges":    arrayDef(ref("edge")),
+			"viewport": ref("viewport"),
+			"grid":     ref("grid"),
+			"scenario": ref("scenario"),
+			"source":   ref("source"),
 			"layout": stringDef(
 				"Automatic layout that last laid this document out, which the editor names in its layout menu. " +
 					"Empty, or an id the editor does not know, means the positions were not made by a layout. Never published.",
@@ -278,6 +293,18 @@ const (
 	keyPosition    = "position"
 	keySize        = "size"
 	keyNetworkID   = "networkId"
+	keyAuthor      = "author"
+	keyCreatedAt   = "createdAt"
+	keyUpdatedBy   = "updatedBy"
+	keyUpdatedAt   = "updatedAt"
+
+	// noControlPattern matches text without control characters, as
+	// [Document.Validate] requires of the document name and of the users the
+	// header names.
+	noControlPattern = `^[^\x00-\x1f\x7f]*$`
+
+	// timePattern matches a time in [TimeLayout].
+	timePattern = `^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$`
 
 	// uuidPattern matches the canonical RFC 4122 UUID text form with a known
 	// version and the RFC 4122 variant, mirroring [IsUUID].
@@ -331,7 +358,29 @@ func nameDef(description string) map[string]any {
 func documentNameDef() map[string]any {
 	def := stringDef("")
 	def["maxLength"] = MaxNameBytes
-	def["pattern"] = `^[^\x00-\x1f\x7f]*$`
+	def["pattern"] = noControlPattern
+
+	return def
+}
+
+// userDef builds the schema of a user the document header names, bounded the
+// way [Document.Validate] bounds it. maxLength counts characters, as it does
+// for the document name.
+func userDef(description string) map[string]any {
+	def := stringDef(description)
+	def["maxLength"] = MaxUserBytes
+	def["pattern"] = noControlPattern
+
+	return def
+}
+
+// timeDef builds the schema of a time of the document header: the one form of
+// [TimeLayout]. The pattern is the rule; the format only names what the
+// value is.
+func timeDef(description string) map[string]any {
+	def := stringDef(description + " RFC 3339 in UTC, whole seconds: YYYY-MM-DDTHH:MM:SSZ.")
+	def["format"] = "date-time"
+	def["pattern"] = timePattern
 
 	return def
 }
@@ -686,7 +735,7 @@ func sourceDef() map[string]any {
 			"topology":    stringDef(""),
 			"importedAt":  stringDef(""),
 			keyDigest:     digestDef("Digest of the source config identity and spec."),
-			"updatedAt":   stringDef("metadata.updated of the source config at import time."),
+			keyUpdatedAt:  stringDef("metadata.updated of the source config at import time."),
 			"includeTopologies": arrayDef(
 				nameDef("Topology included by the generated source topology."),
 			),

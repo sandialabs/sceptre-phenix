@@ -5,7 +5,7 @@
 // autosave queue, API calls, announcements) rather than behaviour.
 
 import { defineStore } from 'pinia';
-import { markRaw } from 'vue';
+import { markRaw, toRaw } from 'vue';
 
 import { usePhenixStore } from '@/store.js';
 import { roleAllowed } from '@/utils/rbac.js';
@@ -15,7 +15,10 @@ import {
   builderApi,
   classifyError,
   errorMessage,
+  fileTopology,
   serverReason,
+  serverSentence,
+  sourceFileName,
 } from './api.js';
 import {
   appliedOperations,
@@ -26,6 +29,7 @@ import {
   replayHistory,
   saveAnnouncement,
   snapshotIdOf,
+  stampOf,
 } from './autosave.js';
 import { copySelection, pasteClipboard } from './clipboard.js';
 import { DocumentError, parseDocument } from './decode.js';
@@ -45,7 +49,7 @@ import {
   ownLayout,
   runLayout,
 } from './layouts/index.js';
-import { publishRefusal } from './publish.js';
+import { FILE_TOKEN, PUBLISHED_TOKEN, publishRefusal } from './publish.js';
 import {
   builderSchemaV1,
   isSchemaBundle,
@@ -81,6 +85,7 @@ import {
   removeNetworks,
   renameInterface,
   resizeNode,
+  savedStamp,
   setGrid,
   setParent,
   setDocumentInfo,
@@ -90,6 +95,7 @@ import {
   updateEdge,
   updateNetwork,
   updateNode,
+  withStamp,
 } from './model.js';
 import {
   DEFAULT_THEME,
@@ -242,11 +248,25 @@ function emptyLists() {
   return { mine: [], shared: [], others: [], published: [], damaged: [] };
 }
 
-// The drafts of mine made from a published diagram, the one changed last
-// first.
-function draftsOfDocument(drafts, id) {
+// The source token of a draft made from a published diagram as it was read
+// (see readPublished): "builder-doc/<document id>", or, for the diagram of a
+// topology's Builder file, "builder-file/<topology>/<digest>", with the
+// digest of what the file held. '' for a file whose digest the server did
+// not say.
+function publishedToken(read) {
+  if (read.source !== 'file') {
+    return `${PUBLISHED_TOKEN}${read.id}`;
+  }
+
+  return read.digest ? `${FILE_TOKEN}${read.target}/${read.digest}` : '';
+}
+
+// The drafts of mine made from a published diagram, by their source token,
+// the one changed last first. A Builder file's token names what the file
+// held, so a draft made before the file changed is not one of them.
+function draftsFrom(drafts, token) {
   return newestFirst(
-    (drafts || []).filter((draft) => draft.sourceToken === `builder-doc/${id}`),
+    (drafts || []).filter((draft) => token && draft.sourceToken === token),
   );
 }
 
@@ -309,11 +329,13 @@ export const useBuilderStore = defineStore('builder', {
     etag: null,
     // What Publish needs to know about the draft record: its id, the config
     // it was loaded from, the saved snapshot's digest and its last
-    // publication (see draftCanUpdate in publish.js); and when the server
-    // last changed it, for Export.
+    // publication (see draftCanUpdate in publish.js); when the server last
+    // changed it, for Export; and the name of the uploaded file it was made
+    // from, if it was, for the Inspector.
     draftRecord: {
       id: '',
       sourceToken: '',
+      sourceFile: '',
       digest: '',
       publication: null,
       forked: null,
@@ -336,7 +358,12 @@ export const useBuilderStore = defineStore('builder', {
     // autosave.js): 'view-only', 'role' or 'gone'; '' otherwise.
     accessLost: '',
     // The published diagram shown read only, with no draft of its own yet
-    // ({id, name, target}; see viewPublishedDocument), or null.
+    // (see viewPublishedDocument), or null: its id, name and target, and
+    // source, 'store' for a published document or 'file' for the diagram of
+    // the Builder file a topology names. A file's also has its path, the
+    // digest of what it held, and topologyDiffers: whether the stored
+    // topology is not what the file publishes. `read` is the diagram as the
+    // server sent it, which editing it sends back unchanged.
     published: null,
     announcement: '',
     // Messages in the same slot supersede each other while they wait to be
@@ -512,6 +539,7 @@ export const useBuilderStore = defineStore('builder', {
       this.draftRecord = {
         id: draft.id || '',
         sourceToken: draft.sourceToken || '',
+        sourceFile: draft.sourceFile || '',
         digest: draft.digest || '',
         publication: draft.publication || null,
         forked: draft.forked || null,
@@ -714,6 +742,8 @@ export const useBuilderStore = defineStore('builder', {
                 entry.serverSnapshotId = snapshotId;
               }
 
+              this.stampEntry(entry, stampOf(envelope));
+
               // The server keeps fewer snapshots than this history when they
               // are large (MaxDraftHistoryBytes), the one just saved being
               // its newest. Undo stops at the oldest it keeps: a move to one
@@ -747,6 +777,31 @@ export const useBuilderStore = defineStore('builder', {
         queue,
         serverHead,
       });
+    },
+
+    /**
+     * Copies the stamp a save answered with (who made the document and who
+     * saved it last, and when; see withStamp in model.js) into the history
+     * entry the save stored, so undo back to it shows what the server holds
+     * of it. While that entry is the one shown, the diagram takes the stamp
+     * too: it is the entry's snapshot, or a copy of it with another viewport.
+     *
+     * @param {object} [entry] history entry
+     * @param {object|null} stamp stampOf() the save's answer
+     */
+    stampEntry(entry, stamp) {
+      if (!entry || !stamp) {
+        return;
+      }
+
+      const shown = entry === this.history.currentEntry();
+      const same = shown && toRaw(this.doc) === toRaw(entry.snapshot);
+
+      entry.snapshot = withStamp(entry.snapshot, stamp);
+
+      if (shown) {
+        this.doc = same ? entry.snapshot : withStamp(this.doc, stamp);
+      }
     },
 
     /**
@@ -899,13 +954,15 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * @param {object} [options] document, title, sourceToken, and
+     * @param {object} [options] document, title, sourceToken; sourceFile:
+     *   the name of the uploaded file the document was read from;
      *   announcement: what to say once the draft exists ('' for nothing)
      */
     async createDraft({
       document,
       title,
       sourceToken,
+      sourceFile,
       announcement = 'Draft created.',
     } = {}) {
       const phenix = usePhenixStore();
@@ -918,6 +975,9 @@ export const useBuilderStore = defineStore('builder', {
         const envelope = await builderApi.createDraft({
           title: title || doc.name || 'Untitled diagram',
           sourceToken,
+          // Left out of the request when there is none, or none the server
+          // would record.
+          sourceFile: sourceFileName(sourceFile) || undefined,
           document: doc,
         });
 
@@ -933,7 +993,17 @@ export const useBuilderStore = defineStore('builder', {
         this.published = null;
         this.rememberDraft(envelope.draft);
         this.ownDraft();
-        this.doc = envelope.document ? parseDocument(envelope.document) : doc;
+        // The server stored the document with the stamp it answers with,
+        // which the editor's copy takes. Its switches are named after their
+        // networks, as those of a draft read from the server are (see
+        // setDocument): the document sent may be a published one, sent as
+        // it was read.
+        const stored = envelope.document
+          ? parseDocument(envelope.document)
+          : doc;
+        const stamp = stampOf(envelope);
+
+        this.doc = namedSwitches(stamp ? withStamp(stored, stamp) : stored);
         this.history = markRaw(new History(this.doc, DEFAULT_HISTORY_LIMIT));
         this.historyChanged();
         this.linkCurrentHistorySnapshot(envelope);
@@ -960,7 +1030,11 @@ export const useBuilderStore = defineStore('builder', {
         return envelope;
       } catch (error) {
         if (!this.sessionEndedSince(epoch)) {
-          this.setError(this.describeError(error, 'create the draft'));
+          this.setError(
+            String(sourceToken || '').startsWith(FILE_TOKEN)
+              ? this.describeFileError(error, 'create the draft')
+              : this.describeError(error, 'create the draft'),
+          );
         }
 
         return null;
@@ -1100,11 +1174,27 @@ export const useBuilderStore = defineStore('builder', {
         return false;
       }
 
-      const entries = (local.entries || []).map((entry) =>
-        applied.snapshotIds.has(entry.id)
-          ? { ...entry, serverSnapshotId: applied.snapshotIds.get(entry.id) }
-          : entry,
+      // An entry the server holds is the snapshot it lists: it takes that
+      // snapshot's id, and the stamp the save, whose answer never arrived,
+      // wrote into it (see savedStamp).
+      const listed = new Map(
+        this.serverHistory.map((snapshot) => [snapshot.id, snapshot]),
       );
+      const opened = this.history.current();
+      const entries = (local.entries || []).map((entry) => {
+        const snapshotId = applied.snapshotIds.get(entry.id);
+
+        return snapshotId
+          ? {
+              ...entry,
+              serverSnapshotId: snapshotId,
+              snapshot: withStamp(
+                entry.snapshot,
+                savedStamp(opened, listed.get(snapshotId)),
+              ),
+            }
+          : entry;
+      });
       const replayed = replayHistory(
         [this.history.currentEntry()],
         0,
@@ -1301,14 +1391,25 @@ export const useBuilderStore = defineStore('builder', {
           this.readOnly = false;
           this.etag = envelope.etag;
           this.history.entries = entries;
-          this.doc = setDocumentInfo(this.doc, { name: title });
-          this.historyChanged();
 
           // Each entry now names its snapshot in the new draft, so undo and
-          // redo move that draft's cursor, never the old draft's.
+          // redo move that draft's cursor, never the old draft's, and holds
+          // the stamp the new draft stored it with.
           this.history.entries.forEach((entry) => {
+            const stamp = envelope.stamps?.get(entry.id);
+
             entry.serverSnapshotId = envelope.snapshotIds.get(entry.id);
+
+            if (stamp) {
+              entry.snapshot = withStamp(entry.snapshot, stamp);
+            }
           });
+
+          const renamed = setDocumentInfo(this.doc, { name: title });
+          const stamp = envelope.stamps?.get(this.history.currentEntry().id);
+
+          this.doc = stamp ? withStamp(renamed, stamp) : renamed;
+          this.historyChanged();
           this.serverHistory = await builderApi
             .listSnapshots(this.owner, this.draftId)
             .catch(() => []);
@@ -1649,44 +1750,96 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
+     * Reads a published diagram: the published document of that id, or,
+     * for the handle of a topology whose diagram is read from the Builder
+     * file it names (see fileHandle in api.js), the document that topology
+     * references now. That is the file's, unless the topology was published
+     * since the list was read: then it is a published document, with an id.
+     *
+     * @param {string} id a listed published diagram's id
+     * @returns {Promise<object>} id, source ('store' or 'file') and
+     *   document: the diagram as the server sent it, decoded; for a
+     *   topology's, also target, path, digest and topologyDiffers
+     */
+    async readPublished(id) {
+      const topology = fileTopology(id);
+
+      if (!topology) {
+        return {
+          id,
+          source: 'store',
+          document: parseDocument(await builderApi.getDocument(id)),
+        };
+      }
+
+      const read = await builderApi.getTopologyDocument(topology);
+      const file = read.source === 'file';
+
+      return {
+        id: file ? id : read.id || id,
+        source: file ? 'file' : 'store',
+        target: topology,
+        path: file ? read.path || '' : '',
+        digest: file ? read.digest || '' : '',
+        topologyDiffers: file && read.topologyDiffers === true,
+        document: parseDocument(read.document),
+      };
+    },
+
+    /**
      * Shows a published diagram read only. No draft is made: the diagram is
      * only looked at until the user chooses to edit it (editPublished), which
      * a role without the configs create permission cannot.
      *
-     * @param {string} id published document id
+     * @param {string} id a listed published diagram's id: a published
+     *   document's, or the handle of a topology's Builder file
      * @returns {Promise<object|null>} the diagram, or null when it could not
      *   be read
      */
     async viewPublishedDocument(id) {
       const epoch = sessionEpoch;
+      const topology = fileTopology(id);
 
       this.loading = true;
       this.clearError();
 
       try {
-        const document = parseDocument(await builderApi.getDocument(id));
+        const read = await this.readPublished(id);
 
         if (this.sessionEndedSince(epoch)) {
           return null;
         }
 
         const listed = this.documents.find((item) => item.id === id);
-        const name = document.name || listed?.name || listed?.target || id;
+        const target = read.target || listed?.target || '';
+        const name = read.document.name || listed?.name || target || id;
+        const file = read.source === 'file';
 
         this.newDocument();
-        this.setDocument(document, { announce: false });
+        this.setDocument(read.document, { announce: false });
         this.draftId = '';
         this.serverHistory = [];
         this.readOnly = true;
-        this.published = { id, name, target: listed?.target || '' };
-        this.announce(`Opened published diagram ${name}, read only.`);
+        this.published = {
+          id: read.id,
+          name,
+          target,
+          source: read.source,
+          path: read.path || '',
+          digest: read.digest || '',
+          topologyDiffers: read.topologyDiffers === true,
+          read: read.document,
+        };
+        this.announce(
+          file
+            ? `Opened the diagram of topology ${target}, read only.`
+            : `Opened published diagram ${name}, read only.`,
+        );
 
         return this.doc;
       } catch (error) {
         if (!this.sessionEndedSince(epoch)) {
-          this.setError(
-            this.describeError(error, 'open the published diagram'),
-          );
+          this.setError(this.describePublishedError(error, topology));
         }
 
         return null;
@@ -1697,6 +1850,10 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Edits the published diagram shown read only (see openPublishedDocument).
+     * The draft is made from the diagram as the server sent it, not as the
+     * editor shows it (a switch renamed after its network, say): the server
+     * stores a diagram sent back unchanged as it is, so opening one is not
+     * an edit of it.
      *
      * @returns {Promise<object|null>} the draft's document, or null
      */
@@ -1706,33 +1863,60 @@ export const useBuilderStore = defineStore('builder', {
       }
 
       return this.openPublishedDocument(this.published.id, {
-        document: this.doc,
+        document: this.published.read || this.doc,
+        digest: this.published.digest,
       });
     },
 
     /**
      * Opens a published diagram for editing in a draft of mine: the one made
-     * from it before, when there is one (see draftsOfDocument), so opening
+     * from it before, when there is one (see draftsFrom), so opening
      * the same diagram again never piles up copies; otherwise a new
-     * draft made from it.
+     * draft made from it. A draft made from a topology's Builder file is
+     * one made from what the file holds now: once the file changes, a new
+     * draft is made from it.
      *
-     * @param {string} id published document id
+     * @param {string} id a listed published diagram's id: a published
+     *   document's, or the handle of a topology's Builder file
      * @param {object} [options] announcement: what to say when a new draft
      *   is made, and resumed: when an existing one is opened (defaults name
-     *   the diagram); document: the diagram, when it was read already
+     *   the diagram); document: the diagram, when it was read already, and
+     *   digest: the digest a Builder file's was read with
      * @returns {Promise<object|null>} the draft's document, or null
      */
     async openPublishedDocument(
       id,
-      { announcement, resumed, document: known } = {},
+      { announcement, resumed, document: known, digest = '' } = {},
     ) {
       const epoch = sessionEpoch;
+      const topology = fileTopology(id);
 
       this.loading = true;
       this.clearError();
 
       try {
-        const [existing] = draftsOfDocument(await this.listMine(), id);
+        let read = known
+          ? {
+              id,
+              source: topology ? 'file' : 'store',
+              target: topology,
+              digest,
+              document: known,
+            }
+          : null;
+
+        // A file's draft is found by what the file holds, so it is read
+        // first.
+        if (topology && !read) {
+          read = await this.readPublished(id);
+
+          if (this.sessionEndedSince(epoch)) {
+            return null;
+          }
+        }
+
+        const token = publishedToken(read || { id, source: 'store' });
+        const [existing] = draftsFrom(await this.listMine(), token);
 
         if (this.sessionEndedSince(epoch)) {
           return null;
@@ -1744,15 +1928,16 @@ export const useBuilderStore = defineStore('builder', {
           if (opened) {
             this.announce(
               resumed ||
-                `Opened your draft of published diagram ${opened.name || existing.title || id}.`,
+                (topology
+                  ? `Opened your draft of the diagram of topology ${topology}.`
+                  : `Opened your draft of published diagram ${opened.name || existing.title || id}.`),
             );
           }
 
           return opened;
         }
 
-        const document =
-          known || parseDocument(await builderApi.getDocument(id));
+        read ||= await this.readPublished(id);
 
         if (this.sessionEndedSince(epoch)) {
           return null;
@@ -1760,20 +1945,20 @@ export const useBuilderStore = defineStore('builder', {
 
         // One message for the whole operation, so neither half is lost.
         const created = await this.createDraft({
-          document,
-          title: document.name,
-          sourceToken: `builder-doc/${id}`,
+          document: read.document,
+          title: read.document.name,
+          sourceToken: token,
           announcement:
             announcement ||
-            `Opened published diagram ${document.name || id} as a new draft.`,
+            (topology
+              ? `Opened the diagram of topology ${topology} as a new draft.`
+              : `Opened published diagram ${read.document.name || id} as a new draft.`),
         });
 
         return created ? this.doc : null;
       } catch (error) {
         if (!this.sessionEndedSince(epoch)) {
-          this.setError(
-            this.describeError(error, 'open the published diagram'),
-          );
+          this.setError(this.describePublishedError(error, topology));
         }
 
         return null;
@@ -2361,6 +2546,38 @@ export const useBuilderStore = defineStore('builder', {
       const detail = errorMessage(kind, error);
 
       return `Could not ${action}. ${detail}`;
+    },
+
+    /**
+     * Why a request about a topology's Builder file failed. The server says
+     * what is wrong with the file in a sentence written to be shown (it is
+     * outside the directory phenix reads, it does not exist, it changed
+     * since it was opened), which is shown as it is. Any other failure is
+     * described as usual.
+     *
+     * @param {object} error
+     * @param {string} action what could not be done
+     * @returns {string}
+     */
+    describeFileError(error, action) {
+      const said = [404, 409, 413, 422].includes(error?.response?.status)
+        ? serverSentence(error)
+        : '';
+
+      return said
+        ? `Could not ${action}. ${said}`
+        : this.describeError(error, action);
+    },
+
+    // Why a published diagram could not be opened: a topology's, read from
+    // its Builder file, or a published document.
+    describePublishedError(error, topology) {
+      return topology
+        ? this.describeFileError(
+            error,
+            `open the diagram of topology ${topology}`,
+          )
+        : this.describeError(error, 'open the published diagram');
     },
 
     // --- document editing -------------------------------------------------

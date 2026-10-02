@@ -2,6 +2,7 @@ package builder
 
 import (
 	"strings"
+	"time"
 
 	"phenix/store"
 	"phenix/types/version"
@@ -14,8 +15,22 @@ const (
 
 	// SchemaRevision is the revision of [SchemaURI] understood by this package.
 	// The revision is bumped for backwards compatible additions; the schema URI
-	// is bumped for breaking changes.
+	// is bumped for breaking changes. Revision 1 is changed in place until it
+	// is first released.
 	SchemaRevision = 1
+)
+
+const (
+	// MaxUserBytes bounds a user a document names (see [Document.Author] and
+	// [Document.UpdatedBy]). It is the bound the draft service puts on the
+	// owner and the actors of a draft.
+	MaxUserBytes = 256
+
+	// TimeLayout is the one form a time in the document header takes (see
+	// [Document.CreatedAt] and [Document.UpdatedAt]): RFC 3339 in UTC, whole
+	// seconds, with a literal "Z". The editor checks the same form, so a
+	// document is accepted or refused the same way on both sides.
+	TimeLayout = "2006-01-02T15:04:05Z"
 )
 
 // NodeKind enumerates the kinds of nodes a builder document can contain.
@@ -63,18 +78,30 @@ const (
 // Document is the root of the builder model. It is versioned by [Document.Schema]
 // and [Document.Revision] and is safe to persist verbatim.
 type Document struct {
-	Schema      string       `json:"$schema"`
-	Revision    int          `json:"revision"`
-	ID          string       `json:"id"`
-	Name        string       `json:"name,omitempty"`
-	Description string       `json:"description,omitempty"`
-	Nodes       []Node       `json:"nodes"`
-	Networks    []Network    `json:"networks"`
-	Edges       []Edge       `json:"edges"`
-	Viewport    Viewport     `json:"viewport"`
-	Grid        Grid         `json:"grid"`
-	Scenario    *ScenarioRef `json:"scenario,omitempty"`
-	Source      *Source      `json:"source,omitempty"`
+	Schema      string `json:"$schema"`
+	Revision    int    `json:"revision"`
+	ID          string `json:"id"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	// Author is the user who first made the document, and CreatedAt is when,
+	// in [TimeLayout]. The draft service sets each when a draft is created
+	// from a document that has none, and writes both into every later
+	// snapshot of that draft (see phenix/api/builder). A document it never
+	// stored may have neither.
+	Author    string `json:"author,omitempty"`
+	CreatedAt string `json:"createdAt,omitempty"`
+	// UpdatedBy is the user whose save stored this content, and UpdatedAt is
+	// when, in [TimeLayout]. The draft service sets both on every save. They
+	// are not [Source.UpdatedAt], which is a time of the source config.
+	UpdatedBy string       `json:"updatedBy,omitempty"`
+	UpdatedAt string       `json:"updatedAt,omitempty"`
+	Nodes     []Node       `json:"nodes"`
+	Networks  []Network    `json:"networks"`
+	Edges     []Edge       `json:"edges"`
+	Viewport  Viewport     `json:"viewport"`
+	Grid      Grid         `json:"grid"`
+	Scenario  *ScenarioRef `json:"scenario,omitempty"`
+	Source    *Source      `json:"source,omitempty"`
 	// Layout is the id of the automatic layout that last laid this document
 	// out, which the editor names in its layout menu. Empty, or an id the
 	// editor does not know, means the positions were not made by a layout. It
@@ -271,6 +298,42 @@ func NewDocument(name string) *Document {
 		Viewport: Viewport{X: 0, Y: 0, Zoom: 1},
 		Grid:     Grid{Enabled: true, Size: defaultGridSize, Snap: true},
 	}
+}
+
+// Provenance is who made a document and who last saved it, and when: the
+// four header fields the draft service sets (see [Document.Author] and
+// [Document.UpdatedBy]). An empty field is one the document does not have.
+type Provenance struct {
+	Author    string `json:"author,omitempty"`
+	CreatedAt string `json:"createdAt,omitempty"`
+	UpdatedBy string `json:"updatedBy,omitempty"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
+}
+
+// FormatTime returns t as a time of the document header, in [TimeLayout]:
+// in UTC, cut to whole seconds.
+func FormatTime(t time.Time) string {
+	return t.UTC().Format(TimeLayout)
+}
+
+// Provenance returns the document's author, creation time, last editor and
+// last edit time.
+func (d *Document) Provenance() Provenance {
+	return Provenance{
+		Author:    d.Author,
+		CreatedAt: d.CreatedAt,
+		UpdatedBy: d.UpdatedBy,
+		UpdatedAt: d.UpdatedAt,
+	}
+}
+
+// SetProvenance replaces the document's author, creation time, last editor
+// and last edit time. An empty field removes the one the document had.
+func (d *Document) SetProvenance(provenance Provenance) {
+	d.Author = provenance.Author
+	d.CreatedAt = provenance.CreatedAt
+	d.UpdatedBy = provenance.UpdatedBy
+	d.UpdatedAt = provenance.UpdatedAt
 }
 
 // NodeByID returns the node with the given ID, or nil.

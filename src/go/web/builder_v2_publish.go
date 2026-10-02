@@ -45,7 +45,8 @@ const (
 
 // Config storage does not expose compare-and-swap. This lock prevents two
 // publications in this process from passing the same preflight concurrently;
-// multi-process deployments still rely on source digests and explicit actions.
+// multi-process deployments, and a `phenix builder publish` run beside this
+// server, still rely on source digests and explicit actions.
 var builderPublishLock sync.Mutex //nolint:gochecknoglobals // process-wide publication transaction boundary
 
 // lockBuilderPublishing holds [builderPublishLock] while a Topology config is
@@ -303,7 +304,12 @@ func (b *builderV2API) publishDraft(w http.ResponseWriter, r *http.Request) erro
 		Name: builderPublishStageDocument, Status: "created", Message: "immutable builder document stored", Config: "",
 	})
 
-	reference, err := published.Reference().EncodeReference()
+	documentReference := publishedTopologyReference(published, plan.topology.existing)
+	if documentReference.Path != "" {
+		response.Warnings = append(response.Warnings, builderFileNotWrittenWarning(request.Topology.Name, documentReference.Path))
+	}
+
+	reference, err := documentReference.EncodeReference()
 	if err != nil {
 		return b.writePublishPartial(w, meta, &response, "document reference", err)
 	}
@@ -838,9 +844,9 @@ func (b *builderV2API) sourceHoldsDraftPublication(
 		return unchanged, err
 	}
 
-	_, unchanged, err := b.holdsDraftDocument(ctx, meta, snapshot, source)
+	held, err := b.holdsDraftDocument(ctx, meta, snapshot, source)
 
-	return unchanged, err
+	return held.unchanged, err
 }
 
 // experimentHoldsDraftPublication reports whether an experiment records (see
@@ -874,35 +880,52 @@ func experimentHoldsDraftPublication(meta *bapi.DraftMetadata, exp *store.Config
 	return true, digest == record.Digest, nil
 }
 
-// draftDocumentReference returns the builder document reference a topology
-// config carries, and whether that document is this draft's own: one the
-// draft published (the published record names the draft, or the draft
-// recorded it as its last publication), the published document the draft was
-// opened from, or one holding exactly the content the draft publishes now.
-func draftDocumentReference(
+// publishedTopologyReference is the document reference a publication stores
+// on its topology: the digest and the ID of the document it published, and
+// the path of a Builder file the topology it updates already named. Publish
+// never writes that file. The stored document is what the topology is read
+// from afterwards, and the file is used only where no such document is
+// stored, when its content has that digest.
+func publishedTopologyReference(published *bapi.PublishedDocument, existing *store.Config) bapi.DocumentReference {
+	reference := published.Reference()
+
+	if existing == nil {
+		return reference
+	}
+
+	if stored, err := bapi.DecodeReference(existing.Metadata.Annotations[bapi.DocumentAnnotation]); err == nil {
+		reference.Path = stored.Path
+	}
+
+	return reference
+}
+
+// builderFileNotWrittenWarning is what a publication says of the Builder
+// file its topology still names: the topology is read from the stored
+// document from now on, and the file is left as it was.
+func builderFileNotWrittenWarning(topology, path string) string {
+	return fmt.Sprintf(
+		"Topology %s names the Builder file %s, which Publish does not change. "+
+			"Export the diagram and replace the file to keep it in step.",
+		topology, path,
+	)
+}
+
+// draftNamesDocument reports whether the document reference a topology
+// carries names, by its ID alone, a stored document of this draft: one with
+// exactly the content the draft publishes now, or one the draft recorded
+// (see [draftOwnsDocument]). It reads nothing, so it holds for a document
+// that can no longer be read.
+func draftNamesDocument(
 	meta *bapi.DraftMetadata,
 	snapshot *bapi.Snapshot,
-	topology *store.Config,
-) (bapi.DocumentReference, bool) {
-	if topology == nil {
-		return bapi.DocumentReference{}, false
-	}
+	topology string,
+	reference bapi.DocumentReference,
+) bool {
+	id := reference.StoredID(topology)
 
-	value, ok := topology.Metadata.Annotations[bapi.DocumentAnnotation]
-	if !ok {
-		return bapi.DocumentReference{}, false
-	}
-
-	ref, err := bapi.DecodeReference(value)
-	if err != nil {
-		return bapi.DocumentReference{}, false
-	}
-
-	owned := ref.DraftID == meta.ID ||
-		ref.Digest == snapshot.Manifest.Digest ||
-		draftOwnsDocument(meta, ref.ID)
-
-	return ref, owned
+	return id != "" &&
+		(id == bapi.PublishedDocumentID(topology, snapshot.Manifest.Digest) || draftOwnsDocument(meta, id))
 }
 
 // draftOwnsDocument reports whether a published document is one of this
@@ -918,6 +941,85 @@ func draftOwnsDocument(meta *bapi.DraftMetadata, id string) bool {
 // builderDocTokenPrefix starts the source token of a draft opened from a
 // published document: "builder-doc/<document id>".
 const builderDocTokenPrefix = "builder-doc/"
+
+// builderFileTokenPrefix starts the source token of a draft opened from the
+// Builder file a topology names: "builder-file/<topology name>/<digest>",
+// with the digest the file's document had when it was opened.
+const builderFileTokenPrefix = "builder-file/"
+
+// openedBuilderFile returns the topology and the digest the source token of
+// a draft opened from a Builder file names. It reports false for any other
+// token, and for one that names no topology or no digest.
+func openedBuilderFile(token string) (string, string, bool) {
+	rest, ok := strings.CutPrefix(token, builderFileTokenPrefix)
+	if !ok {
+		return "", "", false
+	}
+
+	// A topology name holds no slash, and nor does a digest.
+	split := strings.LastIndex(rest, "/")
+	if split <= 0 {
+		return "", "", false
+	}
+
+	topology, digest := rest[:split], rest[split+1:]
+	if strings.Contains(topology, "/") || !bdoc.IsDigest(digest) {
+		return "", "", false
+	}
+
+	return topology, digest, true
+}
+
+// draftOpenedFile reports whether a draft was opened from the Builder file
+// the topology names, when that file's document had this digest.
+func draftOpenedFile(meta *bapi.DraftMetadata, topology, digest string) bool {
+	opened, at, ok := openedBuilderFile(meta.SourceToken)
+
+	return ok && opened == topology && at == digest
+}
+
+// openedTopologyFile returns the document of the Builder file that the
+// source token of a new draft names, read as GET
+// /builder-v2/topologies/{topology}/document reads it and under the same
+// authorization: a draft opened from a file may update the topology that
+// names it (see [builderV2API.holdsDraftDocument]), so only a caller who may
+// read the topology's document may name it, and only while the file still
+// holds what the caller opened. A topology that is no longer read from its
+// file, and a file whose document has another digest now, are refused with
+// 409.
+func (b *builderV2API) openedTopologyFile(
+	ctx context.Context,
+	actor builderV2Actor,
+	token string,
+) (builderTopologyDocument, error) {
+	var none builderTopologyDocument
+
+	topology, digest, ok := openedBuilderFile(token)
+	if !ok {
+		return none, builderV2NotFound("builder document of topology", strings.TrimPrefix(token, builderFileTokenPrefix))
+	}
+
+	_, resolved, err := b.readableTopologyDocument(ctx, actor, topology)
+
+	switch {
+	case err != nil:
+		return none, err
+	case resolved.record != nil:
+		return none, weberror.NewWebError(
+			nil,
+			"Topology %s is no longer read from its Builder file. Open its diagram again.",
+			topology,
+		).SetStatus(http.StatusConflict)
+	case resolved.digest != digest:
+		return none, weberror.NewWebError(
+			nil,
+			"The Builder file of topology %s changed since it was opened. Open its diagram again.",
+			topology,
+		).SetStatus(http.StatusConflict)
+	}
+
+	return resolved, nil
+}
 
 // builderUploadedTokenPrefix starts the source token of a draft generated
 // from an uploaded config: "uploaded/<kind>/<name>".
@@ -945,7 +1047,7 @@ func openedDocumentID(meta *bapi.DraftMetadata) string {
 // editor's history as a new draft does: that draft's own source token, and
 // its last publication (or else what it had forked). The fork may then
 // update what that draft published or was opened from, as long as nothing
-// else has changed it since (see [draftDocumentReference] and
+// else has changed it since (see [builderV2API.holdsDraftDocument] and
 // [experimentHoldsDraftPublication]), but not what that draft publishes
 // later. Its source token is not the published document's, so opening that
 // published diagram does not open the fork as the user's draft of it. Only a
@@ -977,53 +1079,85 @@ func (b *builderV2API) forkOrigin(
 	return meta.SourceToken, forked, nil
 }
 
+// builderHeldDocument is what [builderV2API.holdsDraftDocument] found of the
+// document a topology references.
+type builderHeldDocument struct {
+	// owned is set when the document is one of the draft's own.
+	owned bool
+	// unchanged is set when the document is the draft's own and the
+	// topology's spec is still exactly its projection.
+	unchanged bool
+	// file is set when the document was read from the Builder file the
+	// topology names.
+	file bool
+}
+
 // holdsDraftDocument reports whether a topology config holds a document of
-// this draft (see [draftDocumentReference]) and, if so, whether its spec is
-// still exactly that document's projection: nothing has changed the topology
-// since the document was published to it. A document that can no longer be
-// read or projected counts as changed.
+// this draft and, if so, whether its spec is still exactly that document's
+// projection: nothing has changed the topology since the document was
+// published to it.
+//
+// The document the topology references (see [builderV2API.topologyDocument])
+// is this draft's own when the reference names one of the draft's stored
+// documents (see [draftNamesDocument]), when it holds exactly the content the
+// draft publishes now, when its record says this draft published it, or,
+// for a document read from the Builder file the topology names, when the
+// draft was opened from that file and the file still holds what it held then
+// (see [draftOpenedFile]). A document that can no longer be read or
+// projected, a Builder file that cannot be used included, counts as changed,
+// and is the draft's own only by the reference: its record vouches for
+// nothing.
 func (b *builderV2API) holdsDraftDocument(
 	ctx context.Context,
 	meta *bapi.DraftMetadata,
 	snapshot *bapi.Snapshot,
 	topology *store.Config,
-) (bool, bool, error) {
-	ref, owned := draftDocumentReference(meta, snapshot, topology)
-	if !owned {
-		return false, false, nil
+) (builderHeldDocument, error) {
+	none := builderHeldDocument{owned: false, unchanged: false, file: false}
+
+	if topology == nil {
+		return none, nil
 	}
 
-	data, err := b.drafts.VerifyPublishedDocument(ctx, ref)
+	value, ok := topology.Metadata.Annotations[bapi.DocumentAnnotation]
+	if !ok {
+		return none, nil
+	}
+
+	reference, err := bapi.DecodeReference(value)
 	if err != nil {
-		if errors.Is(err, bapi.ErrNotFound) || errors.Is(err, bapi.ErrCorrupt) || errors.Is(err, bapi.ErrInvalid) {
-			return true, false, nil
-		}
-
-		return true, false, builderV2WebError(err, "unable to read the builder document of topology %s", topology.Metadata.Name)
+		return none, nil //nolint:nilerr // an invalid reference names no document
 	}
 
-	document, err := bdoc.Decode(data)
-	if err != nil {
-		return true, false, nil //nolint:nilerr // an undecodable document cannot vouch for the topology
+	name := topology.Metadata.Name
+	held := builderHeldDocument{owned: draftNamesDocument(meta, snapshot, name, reference), unchanged: false, file: false}
+
+	resolved, found, err := b.topologyDocument(ctx, name, reference)
+
+	var fileErr *bapi.DocumentFileError
+
+	switch {
+	case errors.As(err, &fileErr),
+		errors.Is(err, bapi.ErrNotFound), errors.Is(err, bapi.ErrCorrupt), errors.Is(err, bapi.ErrInvalid):
+		return held, nil
+	case err != nil:
+		return held, builderV2WebError(err, "unable to read the builder document of topology %s", name)
+	case !found:
+		return held, nil
 	}
 
-	published, _, err := document.ToTopologyConfig(topology.Metadata.Name)
-	if err != nil {
-		return true, false, nil //nolint:nilerr // nor can one that no longer projects
+	held.file = resolved.record == nil
+	held.owned = held.owned || resolved.digest == snapshot.Manifest.Digest ||
+		(resolved.record != nil && resolved.record.DraftID == meta.ID) ||
+		(held.file && draftOpenedFile(meta, name, resolved.digest))
+
+	if !held.owned {
+		return none, nil
 	}
 
-	want, err := bdoc.SourceDigest(*published)
-	if err != nil {
-		return true, false, nil //nolint:nilerr // nor can one that cannot be digested
-	}
+	held.unchanged, err = topologyHoldsProjection(resolved.data, topology)
 
-	got, err := bdoc.SourceDigest(*topology)
-	if err != nil {
-		return true, false, weberror.NewWebError(err, "unable to digest topology %s", topology.Metadata.Name).
-			SetStatus(http.StatusInternalServerError)
-	}
-
-	return true, got == want, nil
+	return held, err
 }
 
 func builderV2SourceGetAllowed(role rbac.Role, kind, name string) bool {
@@ -1058,7 +1192,11 @@ func (b *builderV2API) preflightTopology(
 		).SetStatus(http.StatusConflict)
 	}
 
-	applied := existingBuilderDocumentMatches(existing, snapshot.Manifest.Digest)
+	applied, err := b.topologyPublicationApplied(ctx, existing, snapshot.Manifest.Digest)
+	if err != nil {
+		return builderPublishConfigPlan{}, err
+	}
+
 	if err := requirePublishAction(target, exists, applied); err != nil {
 		return builderPublishConfigPlan{}, err
 	}
@@ -1080,12 +1218,14 @@ func (b *builderV2API) preflightTopology(
 
 // topologyUpdateRefusal refuses an update of an existing topology this draft
 // may not update. A draft updates a topology that holds one of its own
-// documents (see [draftDocumentReference]), which it published or was opened
+// documents (see [builderV2API.holdsDraftDocument]), which it published or was opened
 // from, as long as nothing else has changed the topology since: that is how a
 // draft publishes again after further edits, whatever it was loaded from.
-// Otherwise it updates only the topology it was loaded from: the one it was
-// imported from, or the one its source experiment was built from, whose
-// freshness checkSourceFreshness checks.
+// For a topology read from the Builder file it names, that is a draft opened
+// from the file as it is now, while the topology is still what the file
+// publishes. Otherwise it updates only the topology it was loaded from: the
+// one it was imported from, or the one its source experiment was built from,
+// whose freshness checkSourceFreshness checks.
 func (b *builderV2API) topologyUpdateRefusal(
 	ctx context.Context,
 	meta *bapi.DraftMetadata,
@@ -1095,18 +1235,28 @@ func (b *builderV2API) topologyUpdateRefusal(
 ) error {
 	name := existing.Metadata.Name
 
-	owned, unchanged, err := b.holdsDraftDocument(ctx, meta, snapshot, existing)
+	held, err := b.holdsDraftDocument(ctx, meta, snapshot, existing)
 
 	switch {
 	case err != nil:
 		return err
-	case owned && unchanged:
+	case held.owned && held.unchanged:
 		return nil
-	case owned:
+	case held.owned && held.file:
+		return weberror.NewWebError(
+			nil, "topology %s is not what its Builder file publishes, so this draft cannot update it", name,
+		).SetStatus(http.StatusConflict)
+	case held.owned:
 		return weberror.NewWebError(nil, "topology %s changed after this draft published it", name).
 			SetStatus(http.StatusConflict)
 	case topologyUpdateMatchesSource(meta, document, name):
 		return nil
+	}
+
+	if opened, _, ok := openedBuilderFile(meta.SourceToken); ok && opened == name {
+		return weberror.NewWebError(
+			nil, "topology %s or its Builder file changed after this draft was opened from the file", name,
+		).SetStatus(http.StatusConflict)
 	}
 
 	return weberror.NewWebError(nil, "topology %s is not the source this draft was loaded from", name).
@@ -1132,19 +1282,59 @@ func topologyUpdateMatchesSource(meta *bapi.DraftMetadata, document *bdoc.Docume
 	return false
 }
 
-func existingBuilderDocumentMatches(existing *store.Config, digest string) bool {
+// topologyPublicationApplied reports whether an existing topology already
+// holds the publication of the content with this digest, so that publishing
+// it again writes nothing: its document reference names the stored document
+// that publication stores for it (see [existingBuilderDocumentReference]).
+//
+// A reference that names a Builder file too says so of a topology that was
+// never published: its digest only pins the file. Such a topology holds the
+// publication only once that document is stored. Until then it is read from
+// the file, and is updated as any other topology is (see
+// [builderV2API.topologyUpdateRefusal]).
+func (b *builderV2API) topologyPublicationApplied(ctx context.Context, existing *store.Config, digest string) (bool, error) {
+	reference, matches := existingBuilderDocumentReference(existing, digest)
+	if !matches || reference.Path == "" {
+		return matches, nil
+	}
+
+	name := existing.Metadata.Name
+
+	// A damaged record is one: storing the document again repairs it.
+	_, err := b.drafts.GetPublishedDocument(ctx, reference.StoredID(name))
+
+	switch {
+	case errors.Is(err, bapi.ErrNotFound):
+		return false, nil
+	case err != nil && !errors.Is(err, bapi.ErrCorrupt):
+		return false, builderV2WebError(err, "unable to read the builder document of topology %s", name)
+	}
+
+	return true, nil
+}
+
+// existingBuilderDocumentReference returns an existing topology's document
+// reference, and whether it names the stored document a publication of the
+// content with this digest stores for it, whichever of the digest and the ID
+// the reference holds. No record is read.
+func existingBuilderDocumentReference(existing *store.Config, digest string) (bapi.DocumentReference, bool) {
+	none := bapi.DocumentReference{Digest: "", ID: "", Path: ""}
+
 	if existing == nil || existing.Metadata.Annotations == nil {
-		return false
+		return none, false
 	}
 
 	value, ok := existing.Metadata.Annotations[bapi.DocumentAnnotation]
 	if !ok {
-		return false
+		return none, false
 	}
 
 	ref, err := bapi.DecodeReference(value)
+	if err != nil {
+		return none, false
+	}
 
-	return err == nil && ref.Digest == digest
+	return ref, ref.Publishes(existing.Metadata.Name, digest)
 }
 
 //nolint:funlen // ordered validation prevents any write before every scenario check passes

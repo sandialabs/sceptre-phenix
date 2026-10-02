@@ -55,7 +55,7 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 | SCORCH | `GET /experiments/{name}/scorch/pipelines`, `GET /experiments/{name}/scorch/pipelines/{run}/{loop}`, `POST/DELETE /experiments/{name}/scorch/pipelines/{run}`, `GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}[/ws]`, `/experiments/{name}/scorch/terminals*` |
 | Settings | `GET/POST /settings`, `GET /settings/password`, `GET /settings/timeout` |
 | Builder | `GET/POST /builder/topologies`, `GET/PUT /builder/topologies/{name}`; the builder UI itself is served from the server root as `GET /builder` and `POST /builder/save` (outside `/api/v1`). Payloads and workflow are in [`builder.md`](builder.md) |
-| Builder v2 (only with the `builder-v2` feature enabled) | `/builder-v2/drafts…`, `/builder-v2/sources`, `/builder-v2/generate`, `/builder-v2/export/topology`, `/builder-v2/documents`, `/schemas/builder-v2/v1`; full list in [`builder-v2.md`](builder-v2.md#routes) |
+| Builder v2 (only with the `builder-v2` feature enabled) | `/builder-v2/drafts…`, `/builder-v2/sources`, `/builder-v2/generate`, `/builder-v2/export/topology`, `/builder-v2/documents`, `/builder-v2/topologies/{topology}/document`, `/schemas/builder-v2/v1`; full list in [`builder-v2.md`](builder-v2.md#routes) |
 | Workflow | `POST /workflow/apply/{branch}`, `POST /workflow/configs/{branch}` |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
 

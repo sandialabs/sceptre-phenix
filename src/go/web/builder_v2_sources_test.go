@@ -883,9 +883,10 @@ type builderV2TestStore struct {
 type builderV2TestConfigs struct{ store.Store }
 
 // newBuilderV2StoreHarness returns a harness serving the Builder v2 routes,
-// and PUT and DELETE /configs, from a BoltDB phenix store of its own, where
-// the config hooks run as they do in production. With records, the store
-// keeps its records there instead.
+// and the /configs routes that list, get, create, update and delete a
+// config, from a BoltDB phenix store of its own, where the config hooks run
+// as they do in production. With records, the store keeps its records there
+// instead.
 func newBuilderV2StoreHarness(t *testing.T, records *memrecord.Store) *builderV2Harness {
 	t.Helper()
 
@@ -912,14 +913,19 @@ func newBuilderV2StoreHarness(t *testing.T, records *memrecord.Store) *builderV2
 	}
 
 	router, api := newBuilderV2Router()
+	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods(http.MethodGet)
+	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods(http.MethodPost)
+	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)).Methods(http.MethodGet)
 	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(UpdateConfig)).Methods(http.MethodPut)
 	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(DeleteConfig)).Methods(http.MethodDelete)
 
-	if err := registerBuilderV2Routes(api); err != nil {
+	files := filepath.Join(t.TempDir(), "phenix")
+
+	if err := registerBuilderV2Routes(api, withBuilderV2DocumentFiles(files, filepath.Join(files, "mounts"))); err != nil {
 		t.Fatalf("registerBuilderV2Routes returned error: %v", err)
 	}
 
-	return &builderV2Harness{t: t, router: router, service: service, store: records}
+	return &builderV2Harness{t: t, router: router, service: service, store: records, files: files}
 }
 
 // publishTopology stores two documents of target in the phenix store and the
@@ -1024,7 +1030,7 @@ func TestBuilderV2DocumentsDeletedWithTopology(t *testing.T) { //nolint:parallel
 		}
 	}
 
-	if _, err := harness.service.VerifyPublishedDocument(t.Context(), kept[1].Reference()); err != nil {
+	if _, _, err := harness.service.GetPublishedDocumentData(t.Context(), kept[1].ID); err != nil {
 		t.Errorf("another topology's document: %v, want it kept", err)
 	}
 }

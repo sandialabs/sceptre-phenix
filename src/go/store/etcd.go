@@ -153,7 +153,7 @@ func (e Etcd) Create(c *Config) error {
 	c.Metadata.Created = now
 	c.Metadata.Updated = now
 
-	v, err := json.Marshal(c)
+	v, err := c.StoredJSON()
 	if err != nil {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
@@ -178,7 +178,7 @@ func (e Etcd) Update(c *Config) error {
 
 	c.Metadata.Updated = now
 
-	v, err := json.Marshal(c)
+	v, err := c.StoredJSON()
 	if err != nil {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}

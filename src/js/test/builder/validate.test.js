@@ -7,9 +7,11 @@ import { createDocument } from '@/builder/model.js';
 import bundle from '@/builder/schema/builder-v1.schema.json';
 import {
   deviceFieldWarnings,
+  isTime,
   MAX_ANNOTATION_BYTES,
   MAX_ANNOTATIONS,
   MAX_NAME_BYTES,
+  MAX_USER_BYTES,
   MAX_VLAN_ALIAS,
   SCENARIO_API_VERSION,
   validateDocument,
@@ -48,6 +50,8 @@ describe('document validation', () => {
     // The schema's maxLength counts characters, where the server counts
     // bytes (MaxNameBytes), so it is only equal, not the same bound.
     expect(MAX_NAME_BYTES).toBe(bundle.properties.name.maxLength);
+    expect(MAX_USER_BYTES).toBe(bundle.properties.author.maxLength);
+    expect(MAX_USER_BYTES).toBe(bundle.properties.updatedBy.maxLength);
   });
 
   test('the name is bounded the way the server bounds a draft title', () => {
@@ -57,6 +61,115 @@ describe('document validation', () => {
     // Bytes, not characters: 257 two-byte characters are 514 bytes.
     expect(paths(named('é'.repeat(MAX_NAME_BYTES / 2 + 1)))).toEqual(['name']);
     expect(paths(named('my\ttopology'))).toEqual(['name']);
+  });
+
+  // validateUser and validateTime in validate.go, message for message.
+  test('the author and the last editor are bounded text', () => {
+    const errors = (field, value) =>
+      errorsFor({ ...createDocument(), [field]: value }).map(
+        ({ path, message }) => [path, message],
+      );
+
+    for (const field of ['author', 'updatedBy']) {
+      expect(errors(field, 'alice')).toEqual([]);
+      expect(errors(field, 'a'.repeat(MAX_USER_BYTES))).toEqual([]);
+      // None, as Go decodes them.
+      expect(errors(field, '')).toEqual([]);
+      expect(errors(field, null)).toEqual([]);
+      expect(errors(field, undefined)).toEqual([]);
+      expect(errors(field, 'a'.repeat(MAX_USER_BYTES + 1))).toEqual([
+        [field, `${field} must be at most 256 bytes`],
+      ]);
+      // Bytes, not characters: 86 three-byte characters are 258 bytes.
+      expect(errors(field, '€'.repeat(86))).toEqual([
+        [field, `${field} must be at most 256 bytes`],
+      ]);
+      expect(errors(field, 'alice\tsmith')).toEqual([
+        [field, `${field} must not contain control characters`],
+      ]);
+      expect(errors(field, 'bob\u007f')).toEqual([
+        [field, `${field} must not contain control characters`],
+      ]);
+      // Too long is said once, not with the control character too.
+      expect(errors(field, `${'a'.repeat(MAX_USER_BYTES)}\n`)).toEqual([
+        [field, `${field} must be at most 256 bytes`],
+      ]);
+      expect(errors(field, 7)).toEqual([[field, `${field} must be a string`]]);
+      expect(errors(field, { user: 'bob' })).toEqual([
+        [field, `${field} must be a string`],
+      ]);
+    }
+  });
+
+  test('the creation time and the last edit time have one form', () => {
+    const errors = (field, value) =>
+      errorsFor({ ...createDocument(), [field]: value }).map(
+        ({ path, message }) => [path, message],
+      );
+
+    for (const field of ['createdAt', 'updatedAt']) {
+      const refused = [
+        [field, `${field} must be a UTC time in the form YYYY-MM-DDTHH:MM:SSZ`],
+      ];
+
+      expect(errors(field, '2026-10-01T15:04:05Z')).toEqual([]);
+      expect(errors(field, '')).toEqual([]);
+      expect(errors(field, null)).toEqual([]);
+      expect(errors(field, '2026-10-01T15:04:05+00:00')).toEqual(refused);
+      expect(errors(field, '2026-10-01T15:04:05.000Z')).toEqual(refused);
+      expect(errors(field, '2026-02-30T00:00:00Z')).toEqual(refused);
+      expect(errors(field, 1790866800)).toEqual([
+        [field, `${field} must be a string`],
+      ]);
+      expect(errors(field, true)).toEqual([
+        [field, `${field} must be a string`],
+      ]);
+    }
+
+    // There is no rule between the four: an editor without a time, and a
+    // creation after the last edit, are valid.
+    expect(
+      errorsFor({
+        ...createDocument(),
+        updatedBy: 'bob',
+        createdAt: '2026-10-02T00:00:00Z',
+        updatedAt: '2024-02-29T23:59:59Z',
+      }),
+    ).toEqual([]);
+  });
+
+  // What Go's time.Parse and Format accept and give back with the layout
+  // 2006-01-02T15:04:05Z (IsTime in validate.go), case for case.
+  test.each([
+    ['2026-10-01T15:04:05Z', true],
+    ['0000-01-01T00:00:00Z', true],
+    ['0000-02-29T00:00:00Z', true],
+    ['9999-12-31T23:59:59Z', true],
+    ['2000-02-29T00:00:00Z', true],
+    ['2024-02-29T23:59:59Z', true],
+    ['1900-02-29T00:00:00Z', false],
+    ['2026-02-29T00:00:00Z', false],
+    ['2026-00-01T00:00:00Z', false],
+    ['2026-13-01T00:00:00Z', false],
+    ['2026-01-00T00:00:00Z', false],
+    ['2026-04-31T00:00:00Z', false],
+    ['2026-10-01T24:00:00Z', false],
+    ['2026-10-01T23:60:00Z', false],
+    ['2026-10-01T23:59:60Z', false],
+    ['2026-10-01T15:04:05Z\n', false],
+    [' 2026-10-01T15:04:05Z', false],
+    ['２０２６-10-01T15:04:05Z', false],
+    ['+026-10-01T15:04:05Z', false],
+    ['2026-10-01T15:04:05,5Z', false],
+    ['2026-1-01T15:04:05Z', false],
+    ['2026-10-01T5:04:05Z', false],
+    ['2026-10-01T15:04:05z', false],
+    ['2026-10-01 15:04:05Z', false],
+    ['2026-10-01T15:04:05', false],
+    ['2026-10-01', false],
+    ['', false],
+  ])('the time %j is valid: %s', (text, valid) => {
+    expect(isTime(text)).toBe(valid);
   });
 
   test('source annotations are bounded the way the server bounds them', () => {

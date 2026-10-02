@@ -27,7 +27,8 @@ SCORCH, minimega integration, or cyber-range workflows, read
 configs, build scripts, overlays, or vmdb2 work, also read
 [`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md). For Builder v2,
 the `builder-v2` web topology editor (its routes, drafts, sharing, publishing,
-or its code in `src/go/api/builder/`, `src/go/types/builder/`,
+the `phenix builder` command, or its code in `src/go/api/builder/`,
+`src/go/types/builder/`, `src/go/cmd/builder.go`,
 `src/go/web/builder_v2*.go`, `src/js/src/builder/`,
 `src/js/src/components/builder/`, or `src/js/src/views/BuilderV2.vue`), also
 read [`skills/phenix/references/builder-v2.md`](skills/phenix/references/builder-v2.md).
@@ -136,7 +137,7 @@ When changing a capability, inspect every applicable surface:
 | RBAC role or policy | Policy generation, migrations, authorization surfaces, and migration tests |
 | minimega command | minimega API/source behavior and focused tests |
 | Topology Builder behavior | `src/go/web/builder.go`, Builder routes in `src/go/web/server.go`, the editor under `src/go/web/public/grapheditor/js/`, the embedded schemas in `.../grapheditor/utils/schemas/`, and [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) |
-| Builder v2 behavior | `src/go/api/builder/`, `src/go/types/builder/` (then `make generate` for the committed schema bundle), `src/go/web/builder_v2*.go`, `src/js/src/builder/`, `src/js/src/components/builder/`, `src/js/src/views/BuilderV2.vue`, the `builder-*` e2e specs, and [`skills/phenix/references/builder-v2.md`](skills/phenix/references/builder-v2.md) |
+| Builder v2 behavior | `src/go/api/builder/`, `src/go/types/builder/` (then `make generate` for the committed schema bundle), `src/go/web/builder_v2*.go`, `src/go/cmd/builder.go` (`phenix builder publish`), `src/js/src/builder/`, `src/js/src/components/builder/`, `src/js/src/views/BuilderV2.vue`, the `builder-*` e2e specs, and [`skills/phenix/references/builder-v2.md`](skills/phenix/references/builder-v2.md) |
 
 Preserve v1/v2 config upgrades, persisted BoltDB/etcd data, RBAC migrations, and
 public API compatibility unless a breaking change is deliberate and documented.

@@ -8,7 +8,7 @@
 import YAML from 'js-yaml';
 
 import { MAX_DOCUMENT_BYTES } from './limits.js';
-import { SCHEMA_REVISION, SCHEMA_URI } from './model.js';
+import { SCHEMA_REVISION, SCHEMA_URI, STAMP_KEYS } from './model.js';
 import { utf8Length } from './text.js';
 import { validateDocument } from './validate.js';
 
@@ -38,12 +38,15 @@ export class DocumentError extends Error {
   }
 }
 
-const DOCUMENT_KEYS = new Set([
+// The keys of a document: the root properties of the schema bundle
+// (schema/builder-v1.schema.json), which a test compares them with.
+export const DOCUMENT_KEYS = new Set([
   '$schema',
   'revision',
   'id',
   'name',
   'description',
+  ...STAMP_KEYS,
   'nodes',
   'networks',
   'edges',
@@ -253,9 +256,11 @@ export function decodeDocument(value) {
   doc.grid = doc.grid || { enabled: true, size: 16, snap: true };
 
   // Null is none, as Go decodes it.
-  if (doc.layout === null) {
-    delete doc.layout;
-  }
+  ['layout', ...STAMP_KEYS].forEach((key) => {
+    if (doc[key] === null) {
+      delete doc[key];
+    }
+  });
 
   doc.edges.forEach((edge) => {
     if (edge && edge.route === null) {

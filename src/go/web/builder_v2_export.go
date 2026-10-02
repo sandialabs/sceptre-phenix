@@ -3,28 +3,19 @@ package web
 import (
 	"encoding/json"
 	"net/http"
-	"regexp"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	bapi "phenix/api/builder"
 	"phenix/store"
+	bdoc "phenix/types/builder"
 	"phenix/util/plog"
 	"phenix/web/weberror"
 )
 
-// builderDefaultTopologyName is the topology name of a document with no name
-// that leaves one, as its export files are named "topology".
-const builderDefaultTopologyName = "topology"
-
-// builderTopologyNameInvalid matches the runs of characters a config name may
-// not hold (see [phenix/api/config.NameRegex]).
-var builderTopologyNameInvalid = regexp.MustCompile(`[^A-Za-z0-9_@.-]+`)
-
 // builderTopologyExportRequest asks for the topology config a document
 // publishes as. Name is the topology's name; empty, it is the name the
-// Publish dialog proposes (see [builderTopologyName]).
+// Publish dialog proposes (see [bdoc.TopologyName]).
 type builderTopologyExportRequest struct {
 	Document json.RawMessage `json:"document"`
 	Name     string          `json:"name"`
@@ -57,19 +48,6 @@ type builderExportedTopology struct {
 
 type builderExportedMetadata struct {
 	Name string `yaml:"name"`
-}
-
-// builderTopologyName is the name the Publish dialog proposes for the
-// topology of a document named name (configName in
-// src/js/src/builder/publish.js): each run of characters a config name may
-// not hold becomes one hyphen, and hyphens at either end are dropped.
-func builderTopologyName(name string) string {
-	proposed := strings.Trim(builderTopologyNameInvalid.ReplaceAllString(name, "-"), "-")
-	if proposed == "" {
-		return builderDefaultTopologyName
-	}
-
-	return proposed
 }
 
 // exportTopology - POST /builder-v2/export/topology.
@@ -112,7 +90,7 @@ func (b *builderV2API) exportTopology(w http.ResponseWriter, r *http.Request) er
 
 	name := request.Name
 	if name == "" {
-		name = builderTopologyName(document.Name)
+		name = bdoc.TopologyName(document.Name)
 	}
 
 	// The name is checked as a publish checks its topology target.

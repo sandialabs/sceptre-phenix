@@ -147,9 +147,13 @@ type DraftMetadata struct {
 	// was imported from as "<kind>/<name>", an uploaded config as
 	// "uploaded/<kind>/<name>", or the published document it was opened from
 	// as "builder-doc/<document id>". It is an opaque token to this package.
-	SourceToken string    `json:"sourceToken,omitempty"`
-	Created     time.Time `json:"created"`
-	Updated     time.Time `json:"updated"`
+	SourceToken string `json:"sourceToken,omitempty"`
+	// SourceFile optionally records the name of the uploaded file the draft
+	// was made from: a base name, kept only to show it. Nothing is ever
+	// opened by it.
+	SourceFile string    `json:"sourceFile,omitempty"`
+	Created    time.Time `json:"created"`
+	Updated    time.Time `json:"updated"`
 	// LastModifiedBy is the actor of the most recent mutation, which may differ
 	// from Owner.
 	LastModifiedBy string `json:"lastModifiedBy"`
@@ -169,11 +173,25 @@ type DraftMetadata struct {
 	// changing it changes the draft's revision: a save authorized by a share
 	// that has since been removed can never land.
 	Sharing *SharingState `json:"sharing,omitempty"`
+	// DocumentAuthor and DocumentCreatedAt are the author and createdAt the
+	// document of every snapshot of this draft carries. They are fixed when
+	// the draft is created (see [Service.CreateDraft]), so a save never has
+	// to read the previous snapshot to keep them. Either is empty for a draft
+	// whose document has none, and both for a draft stored before the
+	// fields existed.
+	DocumentAuthor    string `json:"documentAuthor,omitempty"`
+	DocumentCreatedAt string `json:"documentCreatedAt,omitempty"`
 
 	// Revision is the store record revision this metadata was read at. It is
 	// never serialized: it is filled in from the record on read and is what
 	// callers pass back as the expected revision of a mutation.
 	Revision int64 `json:"-"`
+	// Stamp is the author, creation time, last editor and last edit time of
+	// the document the call that returned this metadata stored: what
+	// [Service.CreateDraft] and [Service.AppendSnapshot] wrote into it, or,
+	// for a draft created as an unchanged copy, what it already held. It is
+	// never serialized, and nil in metadata any other call returns.
+	Stamp *builder.Provenance `json:"-"`
 }
 
 // Snapshot is a snapshot manifest together with its reassembled, verified
@@ -213,6 +231,9 @@ type PublishedDocument struct {
 	SnapshotID string    `json:"snapshotId,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
 	CreatedBy  string    `json:"createdBy"`
+	// Schema is the Builder document schema URI the document was written
+	// with. It is empty on a record stored before the field existed.
+	Schema string `json:"schema"`
 
 	// Revision is the store record revision this document was read at. It is
 	// never serialized.
@@ -223,22 +244,22 @@ type PublishedDocument struct {
 	published time.Time
 }
 
-// DocumentReference is the compact, self describing pointer a caller stores in
-// a topology config's [DocumentAnnotation] annotation. It is deliberately small
-// (annotations travel with every config read) and carries enough information to
-// fetch and verify the document.
+// DocumentReference is what a topology config's [DocumentAnnotation]
+// annotation holds: the Builder document the topology was made from. Each
+// field is optional, and a reference names at least one. A config's JSON and
+// YAML show it as a map of these sub-keys (see phenix/store.Annotations).
 type DocumentReference struct {
-	ID        string `json:"id"`
-	Digest    string `json:"digest"`
-	Size      int64  `json:"size"`
-	Chunks    int    `json:"chunks"`
-	ChunkSize int    `json:"chunkSize"`
-	// Schema is the builder document schema URI the document was written with.
-	Schema     string `json:"schema"`
-	DraftID    string `json:"draftId,omitempty"`
-	SnapshotID string `json:"snapshotId,omitempty"`
-	CreatedAt  string `json:"createdAt"`
-	CreatedBy  string `json:"createdBy,omitempty"`
+	// Digest is the digest of the document's canonical JSON, "sha256:" and 64
+	// hex digits. It pins the content wherever the content is read from, and
+	// finds the stored document when ID is empty (see
+	// [DocumentReference.StoredID]).
+	Digest string `json:"digest,omitempty"`
+	// ID names a stored published document. It is this topology's only when
+	// that document was published to this topology.
+	ID string `json:"id,omitempty"`
+	// Path names a Builder file on the phenix server, used when no stored
+	// document is found (see [ValidateDocumentPath] and [ReadDocumentFile]).
+	Path string `json:"path,omitempty"`
 }
 
 // hasSnapshot reports whether the draft still holds a snapshot.
@@ -347,6 +368,11 @@ func (d *DraftMetadata) Clone() *DraftMetadata {
 		clone.Sharing = &sharing
 	}
 
+	if d.Stamp != nil {
+		stamp := *d.Stamp
+		clone.Stamp = &stamp
+	}
+
 	return &clone
 }
 
@@ -367,21 +393,10 @@ func (s *Snapshot) Decode() (*builder.Document, error) {
 	return doc, nil
 }
 
-// Reference returns the compact annotation reference for the published
-// document.
+// Reference returns the reference a topology holds for the published
+// document: its digest and its ID.
 func (p *PublishedDocument) Reference() DocumentReference {
-	return DocumentReference{
-		ID:         p.ID,
-		Digest:     p.Digest,
-		Size:       p.Size,
-		Chunks:     len(p.ChunkDigests),
-		ChunkSize:  p.ChunkSize,
-		Schema:     builder.SchemaURI,
-		DraftID:    p.DraftID,
-		SnapshotID: p.SnapshotID,
-		CreatedAt:  p.CreatedAt.UTC().Format(time.RFC3339Nano),
-		CreatedBy:  p.CreatedBy,
-	}
+	return DocumentReference{Digest: p.Digest, ID: p.ID, Path: ""}
 }
 
 func (m SnapshotManifest) clone() SnapshotManifest {

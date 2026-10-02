@@ -891,6 +891,20 @@ function edgeElement(connection, used) {
   );
 }
 
+/**
+ * When the diagram last changed, which dates the file: the last change made
+ * in this tab, else the save that stored the content shown (the document's
+ * updatedAt, which a published diagram opened read only has too), else the
+ * server's last change to the draft.
+ *
+ * @param {object} [times] changedAt: the tab's last change; doc: the
+ *   diagram; updated: the draft record's last change
+ * @returns {string} a time, or '' when none is known
+ */
+export function lastModified({ changedAt, doc, updated } = {}) {
+  return changedAt || doc?.updatedAt || updated || '';
+}
+
 // YYYY-MM-DD of the day `value` falls on here, or of today when it is no
 // date.
 function day(value, now) {

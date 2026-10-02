@@ -351,13 +351,28 @@
 
       <!-- A published diagram opens read only, with no draft of its own:
            one is made only when the user chooses to edit it. The
-           live region has said it opened read only. -->
+           live region has said it opened read only. The diagram of a
+           topology read from the Builder file it names says where it was
+           read from, and when the stored topology is not what the file
+           publishes, that a draft of it cannot update that topology. -->
       <div
         v-if="store.published"
         class="builder-panel builder-published"
         data-testid="builder-published">
         <p>
-          You are viewing the published diagram {{ store.published.name }}.
+          <template v-if="store.published.source === 'file'">
+            You are viewing the diagram of topology
+            {{ store.published.target }}, read from
+            {{ store.published.path }} on the phenix server.
+            <template v-if="store.published.topologyDiffers">
+              It differs from topology {{ store.published.target }} as stored. A
+              draft made from it can be published as a new topology, not as an
+              update of {{ store.published.target }}.
+            </template>
+          </template>
+          <template v-else>
+            You are viewing the published diagram {{ store.published.name }}.
+          </template>
           <template v-if="store.canCreateDrafts">
             Edit it as a draft to make changes.
           </template>
@@ -1161,8 +1176,10 @@
     });
   }
 
-  // A published diagram opens read only, with no draft. The landing names
-  // the item as its card does (label).
+  // A published diagram opens read only, with no draft: a published
+  // document by its id, the diagram of a topology's Builder file by the
+  // handle its row has for one. The landing names the item as its card does
+  // (label).
   function openDraft(item, label = '') {
     const name = label || item.name || item.title || item.target || 'the draft';
 
@@ -1257,12 +1274,14 @@
         : '';
 
       // An Import says what it imported once the draft exists (see
-      // GenerateDialog); an Upload has said so already.
+      // GenerateDialog); an Upload has said so already. Either names the
+      // file it read, when it read one, which the draft records.
       ready = Boolean(
         await store.createDraft({
           document: result.document || store.doc,
           title: (result.document || store.doc).name,
           sourceToken,
+          sourceFile: result.sourceFile,
           announcement: result.announcement,
         }),
       );
@@ -2006,9 +2025,10 @@
 
   /**
    * Opens what the address names: ?draft=owner/id a draft, ?topology=name
-   * the published diagram of a topology (Configs' edit links here). A role
-   * that may create drafts edits that diagram, in its draft of it or a new
-   * one (see openPublishedDocument); any other role views it read only.
+   * the published diagram of a topology (Configs' edit links here), or the
+   * diagram read from the Builder file it names. A role that may create
+   * drafts edits that diagram, in its draft of it or a new one (see
+   * openPublishedDocument); any other role views it read only.
    *
    * @param {{draft: string, topology: string}} link
    */

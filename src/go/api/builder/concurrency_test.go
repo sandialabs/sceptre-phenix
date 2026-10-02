@@ -65,7 +65,7 @@ func TestConcurrentIdenticalAppendKeepsWinnerReadable(t *testing.T) {
 		t.Fatalf("the winner's document must stay readable: %v", err)
 	}
 
-	if !bytes.Equal(current.Data, document) {
+	if !sameContent(t, current.Data, document) || documentProvenance(t, current.Data).UpdatedBy != testPeer {
 		t.Fatal("the winner's document content changed")
 	}
 
@@ -148,7 +148,7 @@ func TestConcurrentAppendsElectExactlyOneWinner(t *testing.T) {
 		t.Fatalf("the winning document must be readable: %v", err)
 	}
 
-	if !bytes.Equal(current.Data, document) {
+	if !sameContent(t, current.Data, document) {
 		t.Fatal("the winning document content changed")
 	}
 

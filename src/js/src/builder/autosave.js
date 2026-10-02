@@ -26,6 +26,12 @@
 // are ordered, awaited and carry If-Match. "Cursor" here means the position in
 // the draft's own undo history, not a collaborator's caret.
 //
+// A save stores the document with the author, creation time, last editor and
+// last edit time the server writes into it, and answers with them (the
+// stamp). The queue copies the stamp into its own copy of the snapshot it
+// sent, so that copy is the document the server stores (see withStamp in
+// model.js). It never makes these values up.
+//
 // Other tabs of this browser are another matter (see tabs.js). Each tab
 // keeps its own local record of a draft, and while another tab, or a queue
 // a closed tab left, holds changes to the draft the server does not have,
@@ -35,6 +41,7 @@ import { count } from './announce.js';
 import { classifyError, errorMessage, sentence } from './api.js';
 import { DEFAULT_HISTORY_LIMIT } from './history.js';
 import { draftKey, tabRecordKey } from './idb.js';
+import { withStamp } from './model.js';
 
 export const RETRY_DELAYS = [1000, 2000, 5000, 15000, 30000];
 
@@ -135,6 +142,23 @@ export function snapshotIdOf(envelope) {
   return (
     envelope?.history?.[envelope.cursor]?.id || envelope?.draft?.snapshotId
   );
+}
+
+/**
+ * The stamp a create or save answered with: the author, creation time, last
+ * editor and last edit time of the document it stored. Empty for a document
+ * that names none of them.
+ *
+ * @param {object} envelope readEnvelope() result
+ * @returns {object|null} null when the envelope carries none, as that of a
+ *   read or a cursor move
+ */
+export function stampOf(envelope) {
+  const stamp = envelope?.draft?.stamp;
+
+  return stamp && typeof stamp === 'object' && !Array.isArray(stamp)
+    ? stamp
+    : null;
 }
 
 /**
@@ -435,6 +459,9 @@ export function createAutosave(options = {}) {
   // is written once, and whether it holds the record at all.
   let stored = new Set();
   let hasRecord = false;
+  // The ids of the entries whose snapshot took a stamp since the store
+  // wrote it (see restamp), which the next write stores again.
+  let restamped = new Set();
   // What the store is known to hold of the record: the entries and the
   // operations its last finished write stored. Leaving the page copies the
   // rest at once (see keepForUnload); copiedOps lists the operations such a
@@ -636,6 +663,7 @@ export function createAutosave(options = {}) {
       if (record.queue.length === 0) {
         // An unload copy of a drained queue keeps nothing.
         release();
+        restamped = new Set();
 
         if (hasRecord) {
           hasRecord = false;
@@ -647,12 +675,15 @@ export function createAutosave(options = {}) {
       } else {
         const needed = new Set(record.queue.map((op) => op.commitId));
         const entries = record.entries.filter((entry) => needed.has(entry.id));
-        const write = entries.filter((entry) => !stored.has(entry.id));
+        const write = entries.filter(
+          (entry) => !stored.has(entry.id) || restamped.has(entry.id),
+        );
         const drop = [...stored].filter((id) => !needed.has(id));
         const ops = record.queue.map((op) => op.opId);
 
         hasRecord = true;
         stored = new Set(entries.map((entry) => entry.id));
+        restamped = new Set();
         await store.put({ ...record, entries }, { write, drop });
         confirm(
           key,
@@ -667,6 +698,7 @@ export function createAutosave(options = {}) {
     } catch {
       // What the store holds is unknown now: the next write writes it all.
       stored = new Set();
+      restamped = new Set();
       hasRecord = true;
 
       if (!state.storageFailed) {
@@ -674,6 +706,22 @@ export function createAutosave(options = {}) {
       }
     }
   };
+
+  // Copies the stamp a save answered with into the entry it stored, so the
+  // entry holds the document the server does. An undo back to the entry
+  // (a cursor move kept with the queue) then shows who saved it, and when.
+  function restamp(entry, stamp) {
+    if (!entry || !stamp) {
+      return;
+    }
+
+    const snapshot = withStamp(entry.snapshot, stamp);
+
+    if (snapshot !== entry.snapshot) {
+      entry.snapshot = snapshot;
+      restamped.add(entry.id);
+    }
+  }
 
   // Removes the record's unload copy.
   function release() {
@@ -912,6 +960,8 @@ export function createAutosave(options = {}) {
           if (entry && snapshotId) {
             entry.serverSnapshotId = snapshotId;
           }
+
+          restamp(entry, stampOf(envelope));
         }
 
         await persist();
@@ -1228,6 +1278,7 @@ export function createAutosave(options = {}) {
       stored = new Set(
         merged ? [] : (existing?.entries || []).map((entry) => entry.id),
       );
+      restamped = new Set();
       held = {
         entries: new Set(stored),
         ops: new Set(
@@ -1499,7 +1550,8 @@ export function createAutosave(options = {}) {
      * @param {object} [options] title; entries and index: the history to
      *   save and its current entry (the queue's own entries by default)
      * @returns {Promise<object>} new draft envelope, with snapshotIds: the
-     *   new draft's snapshot id of each entry, by entry id
+     *   new draft's snapshot id of each entry, by entry id; and stamps: the
+     *   stamp the server answered each entry's save with, by entry id
      */
     async forkLocalHistory(options = {}) {
       const entries = options.entries || record?.entries || [];
@@ -1537,6 +1589,7 @@ export function createAutosave(options = {}) {
       const owner = created.draft?.owner || actor;
       const draftId = created.draft?.id;
       const snapshotIds = new Map([[first.id, snapshotIdOf(created)]]);
+      const stamps = new Map([[first.id, stampOf(created)]]);
 
       for (const entry of rest) {
         latest = await api.appendSnapshot(
@@ -1548,6 +1601,7 @@ export function createAutosave(options = {}) {
 
         etag = latest.etag || etag;
         snapshotIds.set(entry.id, snapshotIdOf(latest));
+        stamps.set(entry.id, stampOf(latest));
       }
 
       // Appending leaves the cursor on the last entry. The one on screen may
@@ -1578,13 +1632,17 @@ export function createAutosave(options = {}) {
         entries: entries.map((entry) => ({
           id: entry.id,
           label: entry.label,
-          snapshot: entry.snapshot,
+          // As the new draft stores it.
+          snapshot: stamps.get(entry.id)
+            ? withStamp(entry.snapshot, stamps.get(entry.id))
+            : entry.snapshot,
           serverSnapshotId: snapshotIds.get(entry.id),
         })),
         queue: [],
         updatedAt: now(),
       };
       stored = new Set();
+      restamped = new Set();
       hasRecord = false;
       held = { entries: new Set(), ops: new Set() };
       copiedOps = null;
@@ -1602,6 +1660,7 @@ export function createAutosave(options = {}) {
         etag,
         draft: { ...created.draft, ...latest.draft, id: draftId, owner },
         snapshotIds,
+        stamps,
       };
     },
 

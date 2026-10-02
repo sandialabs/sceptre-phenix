@@ -77,6 +77,21 @@ source <(phenix completion bash)
 source <(phenix completion zsh)
 ```
 
+### Builder v2 Diagrams
+
+[Builder v2](https://phenix.sceptre.dev/latest/builder-v2/) (beta) is a web editor that draws topologies as diagrams. Enable it with `phenix ui --features builder-v2`. A diagram exported from it (Builder JSON or Builder YAML) can also be published as a Topology config from the command line, with or without the feature enabled:
+
+```bash
+# Check the document and report what would be written
+phenix builder publish pump-station.builder.json --dry-run
+
+# Create the topology, or update it after the file changed
+phenix builder publish pump-station.builder.json
+phenix builder publish pump-station.builder.json --update
+```
+
+The command writes a topology only: scenarios and experiments are published from the web editor. See [From the command line](https://phenix.sceptre.dev/latest/builder-v2/import-export/#from-the-command-line).
+
 ## 🛠️ Local Development
 
 If you wish to build and run the services locally without Docker, follow these steps.

@@ -11,6 +11,9 @@
 
   The stored configs offered are read again every time the dialog opens, and
   again when the chosen one turns out to have been removed since.
+
+  A draft imported from an uploaded config records the chosen file's name
+  (sourceFile), which the Inspector then shows.
 -->
 <template>
   <builder-dialog
@@ -182,11 +185,13 @@
   // A result with warnings, held until the user continues.
   let pending = null;
 
+  // `fileName` is the name of the uploaded config whose text is `content`.
   const form = reactive({
     source: 'stored',
     kind: 'topology',
     name: '',
     content: '',
+    fileName: '',
   });
 
   const choices = computed(() => {
@@ -234,6 +239,7 @@
 
   async function onFile(event) {
     form.content = '';
+    form.fileName = '';
 
     const read = await readChosenFile(event, 'config');
 
@@ -242,6 +248,7 @@
     } else if (read) {
       error.clear();
       form.content = read.text;
+      form.fileName = read.name || '';
     }
   }
 
@@ -256,11 +263,14 @@
     status.set('Importing…');
     warnings.value = [];
 
-    const request =
-      form.source === 'uploaded'
-        ? { content: form.content }
-        : { kind: form.kind, name: form.name };
-    const result = await store.generate(request);
+    const uploaded = form.source === 'uploaded';
+    const request = uploaded
+      ? { content: form.content }
+      : { kind: form.kind, name: form.name };
+    // Only an uploaded config has a file name to record.
+    const sourceFile = uploaded ? form.fileName : '';
+    const generated = await store.generate(request);
+    const result = generated && { ...generated, sourceFile };
 
     busy.value = false;
 

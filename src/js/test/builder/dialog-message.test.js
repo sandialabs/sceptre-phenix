@@ -75,14 +75,18 @@ describe('dialog messages', () => {
 
 describe('a chosen file', () => {
   // A file field's change event, choosing a file that holds `text` (and is
-  // `size` bytes): its text is read once `finish` is called.
+  // `size` bytes), named after its text: its text is read once `finish` is
+  // called.
   function choose(field, text, size = text?.length) {
     let finish;
     const read = new Promise((resolve) => {
       finish = resolve;
     });
 
-    field.files = text === undefined ? [] : [{ size, text: () => read }];
+    field.files =
+      text === undefined
+        ? []
+        : [{ name: `${text}.yaml`, size, text: () => read }];
 
     return { event: { target: field }, finish: () => finish(text) };
   }
@@ -93,7 +97,11 @@ describe('a chosen file', () => {
     const read = readChosenFile(small.event, 'file');
 
     small.finish();
-    expect(await read).toEqual({ text: 'name: lab' });
+    // With its name, which a draft made from the file records.
+    expect(await read).toStrictEqual({
+      text: 'name: lab',
+      name: 'name: lab.yaml',
+    });
 
     const large = choose(field, 'x', MAX_DOCUMENT_BYTES + 1);
 
@@ -115,7 +123,7 @@ describe('a chosen file', () => {
     second.finish();
     first.finish();
 
-    expect(await secondRead).toEqual({ text: 'second' });
+    expect(await secondRead).toEqual({ text: 'second', name: 'second.yaml' });
     expect(await firstRead).toBeNull();
 
     // A file chosen in another field replaces none.
@@ -127,7 +135,7 @@ describe('a chosen file', () => {
     other.finish();
     mine.finish();
 
-    expect(await otherRead).toEqual({ text: 'other' });
-    expect(await mineRead).toEqual({ text: 'mine' });
+    expect(await otherRead).toEqual({ text: 'other', name: 'other.yaml' });
+    expect(await mineRead).toEqual({ text: 'mine', name: 'mine.yaml' });
   });
 });

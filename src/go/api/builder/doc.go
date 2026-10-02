@@ -1,17 +1,46 @@
 // Package builder implements persistence for the phenix topology builder.
 //
 // Two kinds of data are persisted, both through the generic
-// [phenix/store.RecordStore] primitives (no phenix configs and no broker events
-// are created by this package):
+// [phenix/store.RecordStore] primitives. No broker events are created by this
+// package, and it stores a phenix config in one place only (see below):
 //
 //   - Drafts: mutable, per-user working documents. A draft is a metadata record
 //     (owner, title, provenance, publication state, and an ordered history of
 //     snapshot manifests) plus immutable content chunks holding the compressed
 //     document bytes of every snapshot.
 //   - Published documents: immutable, content addressed copies of the document
-//     a config was published from. A compact [DocumentReference] is produced for
-//     storage in a topology's "builder-doc" annotation by the caller; this
-//     package never writes configs itself.
+//     a config was published from. The caller stores a [DocumentReference],
+//     the document's digest and ID, in the topology's "builder-doc" annotation.
+//     The Topology config hook of this package checks that reference in every
+//     topology about to be stored.
+//
+// The web layer publishes a draft itself: it stores the document here and
+// writes the configs, with its own locks, stages and broadcasts.
+// [Service.PublishTopology] publishes a document for a caller that holds no
+// draft, the phenix CLI, which reads it from a file with [LoadDocumentFile]:
+// it makes the checks a topology publication makes, stores the document, and
+// creates or updates the Topology config through phenix/api/config. That is
+// the only config this package stores.
+//
+// A document names who made it and who last saved it, and when (see
+// [phenix/types/builder.Provenance]). This package sets those four fields,
+// and only when it stores a draft snapshot: [Service.CreateDraft] keeps the
+// author and the creation time a document already names and otherwise writes
+// the actor and now, [Service.AppendSnapshot] writes the ones the draft
+// records, and both write the actor and now as the last editor and the last
+// edit time, whatever the request says of them. So the last editor of every
+// snapshot a save stored is the actor of that save, at the time its manifest
+// records. A draft opened from a document the caller read itself, and sent
+// back unchanged, is stored as it is. Nothing else writes a document: moving
+// the cursor, deleting a snapshot, sharing, recording a publication and
+// storing a published document leave the bytes they are given alone.
+//
+// A reference may also name a Builder file by its path on the phenix server.
+// [ReadDocumentFile] reads one for a caller that did not choose the path:
+// nothing it reads is stored, and its errors say nothing of what a file
+// holds. [LoadDocumentFile] reads a file its caller chose, and says what is
+// wrong with it. These two are the only times this package touches the file
+// system.
 //
 // Concurrency is handled with optimistic concurrency control: every draft
 // mutation takes the record revision the caller observed and performs a
@@ -24,7 +53,8 @@
 // [Service.CleanupOrphanedChunks].
 //
 // Authorization is deliberately *not* implemented here. Owner and actor are
-// explicit, trusted arguments supplied by the web layer, which is responsible
-// for authenticating and authorizing them. The service records the actor of
-// every mutation (including cross-user actors) for audit purposes.
+// explicit, trusted arguments supplied by the caller: the web layer, which is
+// responsible for authenticating and authorizing them, or the CLI, whose
+// user holds the store. The service records the actor of every mutation
+// (including cross-user actors) for audit purposes.
 package builder

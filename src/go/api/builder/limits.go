@@ -62,8 +62,10 @@ const (
 	// MaxIDLength bounds draft, snapshot, and document identifiers.
 	MaxIDLength = 128
 
-	// MaxOwnerLength bounds the owner and actor of a draft.
-	MaxOwnerLength = 256
+	// MaxOwnerLength bounds the owner and actor of a draft. It is the bound
+	// the document validator puts on the users a document names, so the
+	// actor of a save is always a valid updatedBy.
+	MaxOwnerLength = builder.MaxUserBytes
 
 	// MaxTitleLength bounds a draft title, which is derived from the document
 	// name when the document carries one. It is the bound the document
@@ -71,9 +73,14 @@ const (
 	MaxTitleLength = builder.MaxNameBytes
 
 	// MaxSourceTokenLength bounds the opaque token recording where a draft
-	// came from ("<kind>/<name>", "uploaded/<kind>/<name>" or
-	// "builder-doc/<document id>").
+	// came from ("<kind>/<name>", "uploaded/<kind>/<name>",
+	// "builder-doc/<document id>" or "builder-file/<topology>/<digest>").
 	MaxSourceTokenLength = 512
+
+	// MaxSourceFileLength bounds the name of the uploaded file a draft was
+	// made from (see [DraftMetadata.SourceFile]): the longest file name
+	// common file systems hold.
+	MaxSourceFileLength = 255
 
 	// MaxSummaryLength bounds the per-snapshot summary shown in history.
 	MaxSummaryLength = 1024
@@ -83,6 +90,10 @@ const (
 
 	// MaxKindLength bounds a config kind (for example "Topology").
 	MaxKindLength = 64
+
+	// MaxDocumentPathLength bounds the path of a Builder file a document
+	// reference names (see [ValidateDocumentPath]).
+	MaxDocumentPathLength = 1024
 
 	// maxUserCreatedLength bounds the account creation time a share records
 	// for its recipient (see [ShareEntry.UserCreated]).
@@ -114,7 +125,10 @@ const (
 	NamespacePublished = "builder.published"
 )
 
-// DocumentAnnotation is the topology config annotation the caller stores a
-// [DocumentReference] under. This package never writes configs; the constant is
-// exported so the web layer and this package agree on the key.
+// DocumentAnnotation is the topology config annotation that holds a
+// [DocumentReference], as the string [DocumentReference.EncodeReference]
+// returns. A config's JSON and YAML show it as a map of the reference's
+// sub-keys, because phenix/store names it a structured annotation. The
+// constant is exported so that the web layer, which writes the annotation
+// when it publishes a draft, and this package agree on the key.
 const DocumentAnnotation = "builder-doc"

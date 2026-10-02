@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"path"
 	"regexp"
-	"time"
+	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"phenix/types/builder"
@@ -24,29 +26,53 @@ var (
 // the same document with different formatting or key order produce the same
 // digest, and no invalid document ever reaches the store.
 func canonicalDocument(data []byte) ([]byte, *builder.Document, error) {
+	doc, err := parseDocument(data)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	canonical, err := encodeDocument(doc)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return canonical, doc, nil
+}
+
+// parseDocument is the first half of [canonicalDocument]: it bounds, decodes
+// and validates untrusted document bytes. A draft's document is stamped
+// between the two halves (see [Service.CreateDraft]), so what the caller sent
+// is validated whole before any of it is replaced.
+func parseDocument(data []byte) (*builder.Document, error) {
 	if len(data) == 0 {
-		return nil, nil, newValidationError("document", "must not be empty")
+		return nil, newValidationError("document", "must not be empty")
 	}
 
 	if int64(len(data)) > MaxDocumentBytes {
-		return nil, nil, newTooLargeError("document", int64(len(data)), MaxDocumentBytes)
+		return nil, newTooLargeError("document", int64(len(data)), MaxDocumentBytes)
 	}
 
 	doc, err := builder.Parse(data)
 	if err != nil {
-		return nil, nil, newValidationCause("document", "is not a valid builder document", err)
+		return nil, newValidationCause("document", "is not a valid builder document", err)
 	}
 
+	return doc, nil
+}
+
+// encodeDocument is the second half of [canonicalDocument]: the canonical
+// encoding of a valid document, checked against [MaxDocumentBytes].
+func encodeDocument(doc *builder.Document) ([]byte, error) {
 	canonical, err := builder.Encode(doc)
 	if err != nil {
-		return nil, nil, newValidationCause("document", "could not be canonicalized", err)
+		return nil, newValidationCause("document", "could not be canonicalized", err)
 	}
 
 	if int64(len(canonical)) > MaxDocumentBytes {
-		return nil, nil, newTooLargeError("document", int64(len(canonical)), MaxDocumentBytes)
+		return nil, newTooLargeError("document", int64(len(canonical)), MaxDocumentBytes)
 	}
 
-	return canonical, doc, nil
+	return canonical, nil
 }
 
 // parseStored validates document bytes that were read back from the store.
@@ -124,6 +150,27 @@ func validateText(field, value string, maxLength int, required bool) error {
 	return nil
 }
 
+// ValidateSourceFile checks the name of the uploaded file a draft was made
+// from (see [DraftMetadata.SourceFile]): a base name, so no "/", no "\" and
+// neither "." nor "..", of at most [MaxSourceFileLength] bytes and no control
+// characters. An empty name is valid: the draft has none.
+func ValidateSourceFile(name string) error {
+	const field = "sourceFile"
+
+	if err := validateText(field, name, MaxSourceFileLength, false); err != nil {
+		return err
+	}
+
+	switch {
+	case strings.ContainsAny(name, `/\`):
+		return newValidationError(field, `must be a file name, without "/" or "\"`)
+	case name == "." || name == "..":
+		return newValidationError(field, `must be a file name, not "." or ".."`)
+	}
+
+	return nil
+}
+
 // decodeMetadata strictly decodes a metadata record: unknown fields and
 // trailing content are treated as corruption rather than ignored, so a
 // tampered or foreign record is never silently accepted.
@@ -161,6 +208,12 @@ func validateDraftMetadata(key string, meta *DraftMetadata) error {
 		)
 	case meta.Cursor < 0 || meta.Cursor >= len(meta.History):
 		return newCorruptError(kindDraft, key, fmt.Sprintf("cursor %d is outside its history", meta.Cursor))
+	case ValidateSourceFile(meta.SourceFile) != nil:
+		return newCorruptError(kindDraft, key, "source file is not a usable file name")
+	case validateText("documentAuthor", meta.DocumentAuthor, MaxOwnerLength, false) != nil:
+		return newCorruptError(kindDraft, key, "document author is not a usable user")
+	case meta.DocumentCreatedAt != "" && !builder.IsTime(meta.DocumentCreatedAt):
+		return newCorruptError(kindDraft, key, "document creation time is not a time a document may hold")
 	}
 
 	seen := make(map[string]bool, len(meta.History))
@@ -288,7 +341,8 @@ func validateSharingState(key string, meta *DraftMetadata) error {
 
 // validatePublishedMetadata fully validates a decoded published document
 // record, including that its key is the content addressed ID its own target and
-// digest derive.
+// digest derive. A record stored before it held the document's schema has
+// none, and its content still says which schema it has when it is read.
 func validatePublishedMetadata(key string, doc *PublishedDocument) error {
 	switch {
 	case doc.ID != key:
@@ -307,38 +361,58 @@ func validatePublishedMetadata(key string, doc *PublishedDocument) error {
 		return newCorruptError(kindPublished, key, "metadata names an invalid snapshot")
 	case validateID("payloadID", doc.PayloadID) != nil:
 		return newCorruptError(kindPublished, key, "metadata names an invalid payload")
+	case doc.Schema != "" && doc.Schema != builder.SchemaURI:
+		return newCorruptError(kindPublished, key, fmt.Sprintf("schema %q is not %q", doc.Schema, builder.SchemaURI))
 	}
 
 	return validateManifestShape(kindPublished, key, doc.manifest())
 }
 
 // validateReference validates an untrusted document reference read back from a
-// config annotation.
+// config annotation: it names at least one of a digest, an ID and a path,
+// and each one it names has the right shape.
 func validateReference(ref DocumentReference) error {
 	switch {
-	case validateID("id", ref.ID) != nil:
-		return newValidationError(DocumentAnnotation, "id is not a valid document identifier")
-	case !builder.IsDigest(ref.Digest):
+	case ref == DocumentReference{Digest: "", ID: "", Path: ""}:
+		return newValidationError(DocumentAnnotation, "must name a digest, an id or a path")
+	case ref.Digest != "" && !builder.IsDigest(ref.Digest):
 		return newValidationError(DocumentAnnotation, "digest is not a sha256 digest")
-	case ref.Schema != builder.SchemaURI:
-		return newValidationError(DocumentAnnotation, fmt.Sprintf("schema %q is not %q", ref.Schema, builder.SchemaURI))
-	case ref.Size <= 0 || ref.Size > MaxDocumentBytes:
-		return newValidationError(DocumentAnnotation, fmt.Sprintf("size %d is outside 1-%d", ref.Size, int64(MaxDocumentBytes)))
-	case ref.Chunks <= 0 || ref.Chunks > MaxChunks:
-		return newValidationError(DocumentAnnotation, fmt.Sprintf("chunk count %d is outside 1-%d", ref.Chunks, MaxChunks))
-	case ref.ChunkSize <= 0 || ref.ChunkSize > ChunkBytes:
-		return newValidationError(DocumentAnnotation, fmt.Sprintf("chunk size %d is outside 1-%d", ref.ChunkSize, ChunkBytes))
-	case validateOptionalID("draftId", ref.DraftID) != nil:
-		return newValidationError(DocumentAnnotation, "draftId is not a valid identifier")
-	case validateOptionalID("snapshotId", ref.SnapshotID) != nil:
-		return newValidationError(DocumentAnnotation, "snapshotId is not a valid identifier")
+	case ref.ID != "" && validateID("id", ref.ID) != nil:
+		return newValidationError(DocumentAnnotation, "id is not a valid document identifier")
+	case ref.Path != "":
+		return ValidateDocumentPath(ref.Path)
 	}
 
-	if ref.CreatedAt != "" {
-		if _, err := time.Parse(time.RFC3339, ref.CreatedAt); err != nil {
-			return newValidationCause(DocumentAnnotation, "createdAt is not an RFC 3339 timestamp", err)
-		}
+	return nil
+}
+
+// documentPathExtensions are the file name extensions of a Builder file a
+// document reference may name.
+var documentPathExtensions = []string{".json", ".yaml", ".yml"} //nolint:gochecknoglobals // fixed set
+
+// ValidateDocumentPath checks the syntax of the path of a Builder file a
+// document reference names, without touching the file: an absolute path that
+// is already clean (no "." or ".." element, no doubled or trailing slash), of
+// at most [MaxDocumentPathLength] bytes and no control characters, ending in
+// .json, .yaml or .yml. The extension rule keeps a reference from naming the
+// store file, a key file or a device. Whether the path is one the phenix
+// server reads files from is checked when the file is read, by the process
+// that reads it.
+func ValidateDocumentPath(value string) error {
+	field := DocumentAnnotation + "." + referencePath
+
+	if err := validateText(field, value, MaxDocumentPathLength, true); err != nil {
+		return err
 	}
 
-	return validateText(DocumentAnnotation+".createdBy", ref.CreatedBy, MaxOwnerLength, false)
+	switch {
+	case !path.IsAbs(value):
+		return newValidationError(field, "must be an absolute path")
+	case path.Clean(value) != value:
+		return newValidationError(field, `must be a clean path, with no ".", "..", "//" or trailing "/"`)
+	case !slices.Contains(documentPathExtensions, path.Ext(value)):
+		return newValidationError(field, "must end in .json, .yaml or .yml")
+	}
+
+	return nil
 }

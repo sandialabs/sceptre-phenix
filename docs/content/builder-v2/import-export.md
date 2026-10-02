@@ -2,14 +2,17 @@
 
 Builder v2 can start a draft from a phenix config or from a Builder v2
 file, and it can save a diagram as a file in six formats. None of this
-changes a config on the phenix server: only **Publish** writes configs (see
-[Publishing](publishing.md)).
+changes a config on the phenix server: in the web UI, only **Publish**
+writes configs (see [Publishing](publishing.md)). On the command line,
+`phenix builder publish` makes a topology from a Builder file.
 
 | To | Use | Where | Result |
 |---|---|---|---|
 | Start from a Topology or Experiment config | **Import** | Drafts page | A new draft |
 | Open a Builder document, or a published diagram | **Upload** | Drafts page and editor toolbar | A new draft |
 | Save the diagram as a file | **Export** | Editor toolbar | A file |
+| Make a topology from a Builder file | `phenix builder publish` | Command line | A Topology config (see [From the command line](#from-the-command-line)) |
+| Show the diagram of a topology kept in files | A `builder-doc` annotation with a `path` | The Topology config | A card under **Published Diagrams** (see [A Builder file beside a topology](#a-builder-file-beside-a-topology)) |
 
 The examples on this page use the [example lab](index.md#the-example-lab).
 
@@ -92,6 +95,9 @@ the pump station of the example lab from
 This config has no warnings, so the editor opens at once. The new draft is
 named pump-station, after the config. It has 3 devices (station-rtr, rtu-01
 and eng-ws-01), 2 switches, 2 networks (WAN and STATION) and 4 connections.
+The draft remembers the name of the file: with nothing selected, the
+Inspector shows "Source file pump-station.topology.yaml" under **Details**
+(see [With nothing selected](editor.md#with-nothing-selected)).
 
 Importing an uploaded config needs the `configs` `create` permission. A
 draft made from an uploaded config can publish a new topology. It cannot
@@ -167,7 +173,10 @@ To upload the pump station as a Builder document, from
 2. Keep **Source** set to **File**. In **Builder document file**, choose
    `pump-station.builder.json`.
 3. Select **Upload**. The editor opens a new draft named "Pump station",
-   the name the document gives the diagram.
+   the name the document gives the diagram. With nothing selected, the
+   Inspector shows where the draft came from under **Details**: "Source
+   file pump-station.builder.json" (see
+   [With nothing selected](editor.md#with-nothing-selected)).
 
 The dialog in step 2:
 
@@ -176,11 +185,13 @@ The dialog in step 2:
 The dialog has two other sources:
 
 - **Paste text**: paste the document into **Document text (JSON or YAML)**,
-  then select **Upload**.
+  then select **Upload**. A draft made from pasted text has no source file.
 - **Published diagram**: choose a diagram in **Published diagram** ("Select
   a diagram"), then select **Open**. This opens your draft of that published
   diagram, or makes one the first time, as **Edit as a draft** does (see
-  [Published diagrams](drafts.md#published-diagrams)).
+  [Published diagrams](drafts.md#published-diagrams)). A topology whose
+  diagram is read from a file on the server is listed with "(File)" after
+  its name.
 
 **Upload** refuses a file it cannot use, and says why:
 
@@ -196,6 +207,21 @@ A Builder document keeps everything, so an export and an upload give the
 same diagram. For example, export Riverside Water as **Builder YAML**, then
 upload `riverside-water.yaml`: the new draft has the same 12 devices,
 4 groups and note, the same **ELK layered** layout, and the same scenario.
+
+A Builder document also says who made the diagram and who saved it last
+(see [Who made and last saved a diagram](#who-made-and-last-saved-a-diagram)).
+An uploaded draft keeps the author and the creation time the document
+names, and you are the one who saved it last. The example file names
+`e2e-admin` as its author. So after alice uploads it, the Inspector shows
+these **Details**:
+
+- **Created**: "Sep 29, 2026, 12:38 PM by e2e-admin", as the file says. The
+  time is shown in the time zone of your browser, here US Mountain Time.
+- **Last edited**: the time of the upload, and "by alice".
+- **Source file**: "pump-station.builder.json".
+
+A document that names no author gets you as its author, and the time of the
+upload as its creation time.
 
 Upload makes a draft, which needs the `configs` `create` permission.
 
@@ -236,8 +262,9 @@ first.", and no export is made.
 
 Builder JSON and Builder YAML hold the whole Builder document: every node
 with its settings and position, the networks, the connections, the groups
-and notes, the layout, the scenario and where the diagram was imported
-from. The YAML file begins like this:
+and notes, the layout, the scenario, where the diagram was imported from,
+and who made and last saved it. The example file
+`riverside-water.builder.json` begins like this as YAML:
 
 ```yaml
 $schema: https://phenix.sandia.gov/schemas/builder/v1
@@ -245,6 +272,10 @@ revision: 1
 id: 35923065-de11-56bc-9e1d-a307308716a7
 name: Riverside Water
 description: 'Water utility training range: internet edge, DMZ, corporate and OT networks.'
+author: e2e-admin
+createdAt: '2026-09-29T18:17:59Z'
+updatedBy: e2e-admin
+updatedAt: '2026-09-29T18:31:44Z'
 nodes:
   - id: 017b57e6-1d23-5555-a576-d0cdc682109a
     kind: device
@@ -253,8 +284,55 @@ nodes:
 
 Use them to keep a copy of a draft, to move a diagram to another phenix
 server, or to hand it to someone. **Upload** opens them as a new draft (see
-[Uploading a Builder document](#uploading-a-builder-document)). The phenix
+[Uploading a Builder document](#uploading-a-builder-document)), and
+`phenix builder publish` makes a topology from them (see
+[From the command line](#from-the-command-line)). The phenix
 server describes the format as a JSON Schema at `/api/v1/schemas/builder-v2/v1`.
+
+#### Who made and last saved a diagram
+
+Four fields at the top of the document say who made the diagram and who
+saved it last. The phenix server writes them each time it saves a draft;
+the editor never does. The Inspector shows them under **Details** (see
+[With nothing selected](editor.md#with-nothing-selected)).
+
+| Field | What it holds | Set |
+|---|---|---|
+| `author` | The user who made the diagram | When a draft is created: the `author` the document already names, else the user who creates the draft. Every later save keeps it. |
+| `createdAt` | When the diagram was made | With `author`, the same way |
+| `updatedBy` | The user whose save stored this content | On every save: the user who saves |
+| `updatedAt` | When that save was | On every save: the time of the save |
+
+The times are in UTC, to the second, in the form `2026-09-29T18:17:59Z`. A
+user name is at most 256 bytes. All four fields are optional: a document
+written by hand may have none. Opened read only from a file, such a diagram
+shows no **Details**.
+
+What this means for each way of making a draft:
+
+- **Blank diagram** and **Import**: you are the author, and the diagram is
+  created now.
+- **Upload**: the author and creation time the file names are kept. When the
+  file names none, you are the author.
+- **Edit as a draft** on a published diagram or on a diagram read from a
+  file: the draft starts as that document, unchanged, so all four fields
+  are the document's. Your first edit makes you the one who saved it last.
+- A draft shared with **Can edit**: the author stays, and a save by the
+  other person names that person in `updatedBy`.
+- **Undo**, **Redo** and **Restore** go back to an earlier snapshot, which
+  holds the `updatedBy` and `updatedAt` of the save that made it.
+
+**Publish** and `phenix builder publish` store the document as it is, with
+the four fields it has. They are part of the document, so they count in its
+digest.
+
+!!! note
+    `author` and `createdAt` are what the document says. Someone who uploads
+    a document can name any author in it. `updatedBy` and `updatedAt` are
+    always written by the server.
+
+`source.updatedAt`, further down in a document made by **Import**, is a
+different time: when the imported config was last changed.
 
 ### Topology YAML
 
@@ -336,7 +414,11 @@ phenix config create riverside-water.topology.yaml
 ```
 
 A topology stored this way is a plain Topology config: Builder v2 did not
-publish it, so editing it from **Configs** does not open Builder v2.
+publish it, so editing it from **Configs** does not open Builder v2. To
+store the topology with its diagram instead, publish the Builder file with
+`phenix builder publish` (see [From the command line](#from-the-command-line)),
+or name the Builder file in the config (see
+[A Builder file beside a topology](#a-builder-file-beside-a-topology)).
 
 When the diagram cannot be published yet, the file is still saved, and the
 dialog lists every reason. The Riverside Water expansion draft gives:
@@ -447,3 +529,317 @@ To find devices by VLAN, use the nodes' **VLANs (text)** column. It holds
 the VLANs of a device separated by `|`, for example `INTERNET|DMZ|CORP` for
 edge-rtr. Select **Use regex** and type `(.*\|)?OT(\|.*)?` to keep the
 devices on OT and the OT network itself.
+
+## From the command line
+
+`phenix builder publish` makes a Topology config from a Builder document
+file (Builder JSON or Builder YAML), without the web UI. It checks the
+document as **Publish** does, stores the topology, and stores the document
+with it as the topology's published diagram. The topology then opens in
+Builder v2 like one published there: it is listed under **Published
+Diagrams**, and **Edit as a draft** works on it.
+
+```bash
+phenix builder publish </path/to/document> [--name <topology>] [--update] [--dry-run] [--user <user>] [--record-path]
+```
+
+The command takes one file. It writes to the phenix store itself, as
+`phenix config create` does, so run it where the other `phenix` commands
+run. It works whether or not the `builder-v2` feature is on. With Docker,
+the file must be where the container can read it, for example below
+`/phenix`:
+
+```bash
+docker exec phenix phenix builder publish /phenix/topologies/pump-station/pump-station.builder.json
+```
+
+### Creating a topology
+
+To publish the example file
+[pump-station.builder.json](examples/pump-station.builder.json):
+
+```console
+$ phenix builder publish pump-station.builder.json
+2026-10-01 21:51:06.342 INF topology created type=SYSTEM name=Pump-station document=1e13fa9bd9417c696159a9d0f1496953909516221c6600383cea29fa1fa8dc90 digest=sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+```
+
+The topology is named after the diagram, the way the Publish dialog
+proposes a name: "Pump station" gives `Pump-station`. `--name` (or `-n`)
+sets another name, which must be a valid config name:
+
+```bash
+phenix builder publish pump-station.builder.json --name pump-lab
+```
+
+The new Topology config names the stored document in its `builder-doc`
+annotation (see
+[The builder-doc annotation](administration.md#the-builder-doc-annotation)):
+
+```console
+$ phenix config get topology/Pump-station
+apiVersion: phenix.sandia.gov/v1
+kind: Topology
+metadata:
+    name: Pump-station
+    created: "2026-10-01T21:51:06-06:00"
+    updated: "2026-10-01T21:51:06-06:00"
+    annotations:
+        builder-doc:
+            digest: sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+            id: 1e13fa9bd9417c696159a9d0f1496953909516221c6600383cea29fa1fa8dc90
+spec:
+    nodes:
+        - general:
+            description: Field engineering laptop
+            hostname: eng-ws-01
+```
+
+The output goes on with the rest of the three nodes: eng-ws-01, rtu-01 and
+station-rtr.
+
+Publishing the same document again changes nothing, so a script can run the
+command each time:
+
+```console
+$ phenix builder publish pump-station.builder.json
+2026-10-01 21:51:06.527 INF topology already up to date type=SYSTEM name=Pump-station document=1e13fa9bd9417c696159a9d0f1496953909516221c6600383cea29fa1fa8dc90 digest=sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+```
+
+The command exits with 0 when the topology was created, updated or already
+up to date, and with 1 otherwise. Results and warnings are log lines on
+standard error; only `--dry-run` writes to standard output.
+
+### Checking without writing
+
+`--dry-run` runs every check and reports what the command would do. It
+writes nothing. Here the example file is in
+`/phenix/topologies/riverside-water`, and the
+[example configs are loaded](index.md#load-the-example-configs):
+
+```console
+$ cd /phenix/topologies/riverside-water
+$ phenix builder publish riverside-water.builder.json --dry-run
+Document:     Riverside Water
+File:         /phenix/topologies/riverside-water/riverside-water.builder.json
+Digest:       sha256:82a1aba006d86a043d3d0ed615a7aa05aeff52407f1121f6e9224595c5dea308
+Document ID:  85cabd30f51263863fb0282819aa4a88417556761a83b8a643f1d31be033df68
+Topology:     Riverside-Water (would be created)
+Nodes:        10
+Warnings:
+  - The document's scenario is not published: only the topology is.
+Nothing was written.
+```
+
+The **Topology** line says "(would be created)", "(would be updated)" or
+"(would be left as it is: it already holds this document)". A document that
+cannot be published prints the reason as an error instead, and the command
+exits with 1. This makes `--dry-run` a check for a repository's CI.
+
+### Updating a topology
+
+The command replaces an existing topology only with `--update`:
+
+```console
+$ phenix builder publish pump-station.builder.json
+Error: topology Pump-station already exists; use --update to replace it
+$ phenix builder publish pump-station.builder.json --update
+2026-10-01 21:51:06.957 INF topology updated type=SYSTEM name=Pump-station document=0e98ffde0792cd8fd6b1e5e16ff0b865978ae5b605434125d54f6a3382ce8e43 digest=sha256:53953338b10e2e824be1f4da08fc9178026d89dfef63cc7adfd406c0a918468d
+```
+
+Here the file was changed after it was first published: the description of
+rtu-01 is now "Remote terminal unit, pump 2". An update keeps the topology's
+other annotations.
+
+`--update` never discards someone else's change. It replaces the topology
+in two cases only:
+
+- The topology is still exactly what its stored published document
+  publishes: nothing changed it since Builder v2 or this command published
+  it.
+- The document was made from the topology as it is now: imported from it in
+  Builder v2 and exported, with the topology unchanged since. The example
+  file `riverside-water.builder.json` was made from `riverside-water` this
+  way, so this works after you
+  [load the example configs](index.md#load-the-example-configs):
+
+    ```console
+    $ phenix builder publish riverside-water.builder.json --name riverside-water --update
+    2026-10-01 21:51:07.132 WRN The document's scenario is not published: only the topology is. type=SYSTEM topology=riverside-water
+    2026-10-01 21:51:07.132 INF topology updated type=SYSTEM name=riverside-water document=ae78c07ebf467ded1928a0f144b109fa47416e549c901fe0dd54f7753932e9b5 digest=sha256:82a1aba006d86a043d3d0ed615a7aa05aeff52407f1121f6e9224595c5dea308
+    ```
+
+!!! note
+    This update changes `riverside-water`, as a publish from a draft does.
+    Drafts made from `riverside-water` before, such as Riverside Water on
+    these pages, can then no longer publish (see
+    [When the source config changed](publishing.md#when-the-source-config-changed)).
+    Add `--dry-run` to try the command without changing the topology.
+
+In every other case the command refuses:
+
+| Error | Why | What to do |
+|---|---|---|
+| `topology Pump-station was changed after it was published, and replacing it would discard that change` | The topology was changed after its document was published, with `phenix config edit` for example | Import the topology in Builder v2 and publish that draft, or delete the topology and publish the file again |
+| `topology corp-services was not published from a Builder document that is still stored, and this document was not made from the topology as it is now` | The topology has no stored published document (a plain topology, or one that only names a Builder file), and the document was not imported from it as it is now | The same |
+| `topology old-lab belongs to the legacy XML Builder and cannot be replaced by a Builder document` | The legacy Builder made the topology | Publish under another name |
+
+There is no flag to force an update.
+
+### What blocks publishing
+
+The command refuses what **Publish** refuses (see
+[What blocks publishing](publishing.md#what-blocks-publishing)), and lists
+every problem at once:
+
+```console
+$ phenix builder publish blocked.builder.json
+Error: the document cannot be published as topology Pump-station:
+  interface "eth0" of device "eng-ws-01" has no VLAN: connect it to a network, or type a VLAN for it
+  IP address 10.40.1.10 is used by interface "eth0" of device "rtu-01" and interface "eth1" of device "station-rtr"
+```
+
+Here `blocked.builder.json` is the pump station with eth0 of eng-ws-01
+disconnected, and with the address of rtu-01 given to eth1 of station-rtr
+too.
+
+A file that is not a valid Builder document is refused with the reason, for
+example for a Topology config:
+
+```console
+$ phenix builder publish pump-station.topology.yaml
+Error: pump-station.topology.yaml is not a valid Builder document: decoding builder document: json: unknown field "apiVersion"
+```
+
+The file can be at most 5 MiB. Its content decides whether it is read as
+JSON or YAML, not its name. `${NAME}` in the file is not filled in from the
+environment.
+
+### What the command does not do
+
+- **Scenarios and experiments.** It writes a Topology config only. A
+  document with a scenario publishes its topology, with the warning "The
+  document's scenario is not published: only the topology is." To publish
+  an experiment and its scenario, use **Publish** in Builder v2, or create
+  the experiment from the topology with `phenix experiment create`.
+- **VLAN aliases.** A topology holds none, so a network's **VLAN alias** is
+  not written: "The document's VLAN alias is not published: a topology
+  holds none."
+- **Included topologies from files.** An included topology is checked for
+  duplicate hostnames only when it is stored in phenix. Otherwise the
+  command warns, for example "Included topology corp-services was not
+  checked for duplicate hostnames: no stored topology has that name."
+- **Drafts.** The command makes no draft. To edit the diagram, open the
+  topology in Builder v2 and select **Edit as a draft**.
+
+The document is stored as the file holds it. The command does not change
+who made or last saved the diagram (see
+[Who made and last saved a diagram](#who-made-and-last-saved-a-diagram)). It
+records who published: the user that `--user` names, else the user who ran
+`sudo`, else the operating system account that ran the command. In the
+Docker deployment that is `root`. The name is a record only: it gives no
+permission.
+
+### With a running phenix server
+
+The command writes to the phenix store itself, as `phenix config create`
+does. It does not talk to the running `phenix ui`, so:
+
+- A web page that is already open shows the new topology after a reload.
+- Publishing the same topology from the command line and from Builder v2
+  at the same moment is not coordinated: the config that is written last
+  wins. Nothing is damaged, and the other published document is removed
+  later.
+- A Builder v2 draft that was made from the topology before the command
+  changed it can no longer publish (see
+  [When the source config changed](publishing.md#when-the-source-config-changed)).
+- When the `builder-v2` feature is off, the command still works. The
+  topology then has a `builder-doc` annotation, so the **Configs** page
+  does not open it for editing as text and says it was built by Builder v2.
+  `phenix config edit` still edits it.
+
+### Recording the file's path
+
+`--record-path` also writes the absolute path of the file into the
+annotation, as `path`. Here no topology `pump-station` exists yet:
+
+```console
+$ cd /phenix/topologies/pump-station
+$ phenix builder publish pump-station.builder.json --name pump-station --record-path
+2026-10-01 21:51:22.878 INF topology created type=SYSTEM name=pump-station document=b856fc9e35107594f72e715f74ee1cae3eb951b41bf09a504327924e0a220d34 digest=sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+```
+
+```yaml
+    annotations:
+        builder-doc:
+            digest: sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+            id: b856fc9e35107594f72e715f74ee1cae3eb951b41bf09a504327924e0a220d34
+            path: /phenix/topologies/pump-station/pump-station.builder.json
+```
+
+On this server the topology shows the stored document. The path matters
+when the Topology config is used where that document is not stored, for
+example on another phenix server with the same files: the diagram is then
+read from the file (see
+[Builder documents in files](administration.md#builder-documents-in-files)).
+
+The file name must end in `.json`, `.yaml` or `.yml`. phenix reads Builder
+files only below its base directory, so for a file elsewhere the command
+still publishes, and warns:
+
+```console
+$ cd /home/alice
+$ phenix builder publish pump-station.builder.json --name pump-home --record-path
+2026-10-01 21:51:08.761 WRN The phenix server does not read Builder files from /home/alice/pump-station.builder.json: it reads them below /phenix, except below /phenix/mounts. The topology opens from the stored document. type=SYSTEM topology=pump-home
+2026-10-01 21:51:08.761 INF topology created type=SYSTEM name=pump-home document=7ec10c84ea722c79c705731e516ea400dc6a18312de3f50aaafc55b7344abc3d digest=sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+```
+
+A later `--update` from another file keeps the recorded path, and warns
+that the file it names was not changed: "Topology pump-station names the
+Builder file /phenix/topologies/pump-station/pump-station.builder.json,
+which was not read or changed. Replace that file with the published document
+to keep it in step." `--update --record-path` replaces the recorded path.
+
+### Builder documents and phenix config create
+
+A Builder document is not a config. `phenix config create` refuses one named
+on the command line, and skips one it finds in a directory:
+
+```console
+$ phenix config create pump-station.builder.json
+Error: pump-station.builder.json is a Builder document, not a configuration: use "phenix builder publish pump-station.builder.json" to create its topology
+$ phenix config create examples
+2026-10-01 21:51:05.923 INF configuration created type=SYSTEM kind=Topology name=corp-services
+2026-10-01 21:51:05.962 INF configuration created type=SYSTEM kind=Topology name=metro-campus
+2026-10-01 21:51:05.962 INF skipped Builder document; use phenix builder publish type=SYSTEM path=examples/pump-station.builder.json
+2026-10-01 21:51:05.994 INF configuration created type=SYSTEM kind=Topology name=pump-station
+2026-10-01 21:51:05.994 INF skipped Builder document; use phenix builder publish type=SYSTEM path=examples/riverside-water.builder.json
+2026-10-01 21:51:06.023 INF configuration created type=SYSTEM kind=Scenario name=riverside-water
+2026-10-01 21:51:06.057 INF configuration created type=SYSTEM kind=Topology name=riverside-water
+2026-10-01 21:51:06.086 INF configuration created type=SYSTEM kind=Role name=topology-designer
+2026-10-01 21:51:06.115 INF configuration created type=SYSTEM kind=Role name=topology-reviewer
+```
+
+Here `examples` is a directory with every
+[example file](index.md#load-the-example-configs) of these pages.
+
+## A Builder file beside a topology
+
+A topology that lives in a repository can keep its diagram there too, as a
+Builder JSON or Builder YAML file next to the Topology config. Name the
+file in the config's `builder-doc` annotation:
+
+```yaml
+metadata:
+    name: pump-station
+    annotations:
+        builder-doc:
+            path: /phenix/topologies/pump-station/pump-station.builder.json
+```
+
+After `phenix config create`, the **Published Diagrams** tab lists the
+topology with the tag **File**, and its diagram opens from the file, with
+nothing published first. The file must be on the phenix server, below
+`/phenix`. See
+[Builder documents in files](administration.md#builder-documents-in-files)
+for the example in full, the rules, and what **Publish** does with such a
+topology.

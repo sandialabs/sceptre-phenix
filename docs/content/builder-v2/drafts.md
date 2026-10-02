@@ -31,8 +31,8 @@ holds, for example **My Drafts (3)**.
 - **My Drafts**: the drafts you own.
 - **Shared with me**: drafts other users shared with you, the most recently
   changed first (see [Sharing a draft](#sharing-a-draft)).
-- **Published Diagrams**: the topologies published from Builder v2 (see
-  [Published diagrams](#published-diagrams)).
+- **Published Diagrams**: the topologies that have a Builder v2 diagram
+  (see [Published diagrams](#published-diagrams)).
 - **Other users' drafts**: other users' drafts that your role lets you see.
   This tab appears only when your role has the `builder-drafts` permission
   and there is such a draft (see
@@ -49,6 +49,14 @@ Each draft is a card with:
 - On other users' drafts, what you may do: "· Can view" or "· Can edit".
 - **Open**, and for your own drafts **Share** (when phenix has user sign-in)
   and **Delete**.
+
+"Updated" on a card is the last activity on the draft: an edit, but also an
+undo, a restore, a deleted snapshot or a publish. It is not the same as
+**Last edited** in the Inspector, which says when the content you see was
+saved, and by whom (see
+[With nothing selected](editor.md#with-nothing-selected)). After an edit
+the two agree. After an undo, for example, the card says when you undid,
+and the Inspector says when the version you went back to was saved.
 
 A role without the `configs` `create` permission sees no **Blank diagram**,
 **Import** or **Upload**, and the page says "Your role can open drafts and
@@ -87,6 +95,8 @@ Open a card on the **Published Diagrams** tab and select **Edit as a draft**
 (see [Published diagrams](#published-diagrams)). Editing a Builder v2
 topology on the **Configs** page does the same (see
 [Editing a published topology](publishing.md#editing-a-published-topology)).
+The draft starts as the published diagram, unchanged: the Inspector still
+shows who made it and who edited it last, until your first change.
 
 Builder v2 also makes a draft when it keeps your changes apart from a draft
 you can no longer save to. That draft is named after the diagram, with
@@ -268,7 +278,11 @@ The table lists the snapshots newest first, with these columns:
 - **#**: the snapshot's number. 1 is the oldest, the draft as it was made.
 - **Name**: what the change did, for example "Draft created", "Added device"
   and "Updated device files-02".
-- **Date** and **User**: when the snapshot was saved, and who saved it.
+- **Date** and **User**: when the snapshot was saved, and who saved it. They
+  are what the Inspector shows as **Last edited** while that snapshot is the
+  current one. Snapshot 1 of a draft made with **Edit as a draft** is the
+  exception: its row says when you made the draft, and the Inspector says
+  who last edited the diagram before that.
 - The Restore and Delete buttons.
 
 The draft's current snapshot is marked **Current**. It can be neither restored
@@ -427,9 +441,18 @@ To keep changes that were not saved:
 
 ## Published diagrams
 
-The **Published Diagrams** tab lists each topology published from Builder
-v2, by topology name, for example riverside-water, with when it was
-published.
+The **Published Diagrams** tab lists each topology that has a Builder v2
+diagram, by topology name:
+
+- A topology published from Builder v2, or with `phenix builder publish`
+  (see [From the command line](import-export.md#from-the-command-line)),
+  with when it was published, for example riverside-water with "Published
+  Sep 29, 2026, 10:30 AM".
+- A topology whose diagram is read from a file on the phenix server, with
+  the tag **File** and where the file is (see
+  [Diagrams read from a file](#diagrams-read-from-a-file)).
+
+![The Published Diagrams tab with two cards: riverside-water, Published Sep 29, 2026, 10:30 AM, with Open and Delete; and pump-station with the tag File, Read from /phenix/topologies/pump-station/pump-station.builder.json, and Open only.](../images/builder-v2/published-diagrams.png)
 
 To see one:
 
@@ -449,10 +472,53 @@ A role that cannot create drafts gets no **Edit as a draft**. Its notice says
 "Your role cannot create drafts, so it cannot be edited. Use Export to keep a
 copy."
 
+A published diagram keeps who made it and who edited it last, as they were
+in the draft when it was published. The Inspector shows them under
+**Details** (see [With nothing selected](editor.md#with-nothing-selected)).
+
+### Diagrams read from a file
+
+A topology can name a Builder file on the phenix server as its diagram,
+without anyone publishing it (an administrator sets this up, see
+[Builder documents in files](administration.md#builder-documents-in-files)).
+Its card on the **Published Diagrams** tab differs from a published
+diagram's card:
+
+- It has the tag **File**, and says where the file is, for example "Read
+  from /phenix/topologies/pump-station/pump-station.builder.json".
+- It has no **Delete**. Delete the topology on the **Configs** page instead.
+
+**Open** reads the file and shows its diagram read only, with the notice
+"You are viewing the diagram of topology pump-station, read from
+/phenix/topologies/pump-station/pump-station.builder.json on the phenix
+server. Edit it as a draft to make changes."
+
+When the stored topology is not what the diagram in the file publishes (the
+file or the topology changed), the notice adds: "It differs from topology
+pump-station as stored. A draft made from it can be published as a new
+topology, not as an update of pump-station."
+
+**Edit as a draft** makes a draft from the diagram in the file. The next
+time, it reopens that draft while the file still holds the same diagram.
+After the file changes, it makes a new draft from the new diagram. Such a
+draft can update the topology (see
+[Publishing to a topology that names a Builder file](publishing.md#publishing-to-a-topology-that-names-a-builder-file)).
+
+When phenix cannot use the file, the diagram does not open, and the page
+says why, for example "Could not open the diagram of topology pump-station.
+Builder file /phenix/topologies/pump-station/pump-station.builder.json does
+not exist on this phenix server." See
+[When the file cannot be used](administration.md#when-the-file-cannot-be-used).
+When the file changes between **Open** and **Edit as a draft**, no draft is
+made: "Could not create the draft. The Builder file of topology pump-station
+changed since it was opened. Open its diagram again."
+
 ### Deleting a published topology
 
 **Delete** on a **Published Diagrams** card deletes the Topology config from
-phenix. It needs the `configs` `delete` permission on the topology.
+phenix. It needs the `configs` `delete` permission on the topology. A card
+with the tag **File** has no **Delete** (see
+[Diagrams read from a file](#diagrams-read-from-a-file)).
 
 1. Select the **Published Diagrams** tab.
 2. Select **Delete** on the riverside-water card.

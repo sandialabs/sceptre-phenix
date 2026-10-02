@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
   - **API Documentation**: Documented the Builder routes in `openapi.yml`, which previously carried none of them.
 - **Documentation Sources**: Consolidate the phēnix MkDocs site into this repository so documentation changes can ship with the code they describe.
 - **etcd**: Automatic history compaction for every etcd store, even with Builder v2 off. It compacts the whole etcd cluster. Set it with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
-- **Builder v2** (beta, `--features builder-v2`): New topology editor at `/builder-v2`, next to the existing Builder. See the [Builder v2 documentation](https://phenix.sceptre.dev/latest/builder-v2/).
+- **Builder v2** (beta, `--features builder-v2`): New topology editor at `/builder-v2`, next to the existing Builder, with `phenix builder publish` to create a topology from a Builder file. See the [Builder v2 documentation](https://phenix.sceptre.dev/latest/builder-v2/).
 
 ### Changed
 

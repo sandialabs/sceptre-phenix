@@ -355,6 +355,54 @@ function blankDocument(name, { nodes = [], networks = [], edges = [] } = {}) {
   };
 }
 
+// A diagram that publishes: two Server devices, `server` and `server-2`,
+// each connected by eth0 to the switch of network EXP. Tests whose subject is
+// not drawing the diagram start from this instead of clicking it together.
+function labDocument(name) {
+  const id = () => crypto.randomUUID();
+  const network = { id: id(), name: 'EXP' };
+  const sw = {
+    id: id(),
+    kind: 'switch',
+    label: 'EXP',
+    position: { x: 0, y: 400 },
+    switch: { networkId: network.id },
+  };
+  const devices = ['server', 'server-2'].map((hostname, index) => ({
+    id: id(),
+    kind: 'device',
+    label: hostname,
+    position: { x: index * 320, y: 0 },
+    device: {
+      hostname,
+      iconKey: 'linux',
+      spec: {
+        type: 'VirtualMachine',
+        general: { hostname, vm_type: 'kvm' },
+        hardware: { os_type: 'linux', drives: [{ image: 'ubuntu.qc2' }] },
+        network: {
+          interfaces: [
+            { name: 'eth0', proto: 'dhcp', type: 'ethernet', vlan: 'EXP' },
+          ],
+        },
+      },
+      interfaces: [{ id: id(), name: 'eth0', index: 0 }],
+    },
+  }));
+
+  return blankDocument(name, {
+    nodes: [...devices, sw],
+    networks: [network],
+    edges: devices.map((device) => ({
+      id: id(),
+      sourceNodeId: device.id,
+      sourceHandleId: device.device.interfaces[0].id,
+      targetNodeId: sw.id,
+      networkId: network.id,
+    })),
+  });
+}
+
 // Creates a draft holding `document` through the API and schedules it for
 // deletion. The tracker sees only drafts the page creates, so API-created
 // drafts are registered here. Returns the draft metadata, including `etag`.
@@ -455,6 +503,45 @@ function devicesOf(document) {
 async function openConfigs(page) {
   await visit(page, '/configs/');
   await expect(page.locator('table')).toBeVisible({ timeout: 20000 });
+}
+
+// A time as a Builder document writes it: UTC, in whole seconds.
+const DOCUMENT_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/;
+
+// The four fields the server writes into a document when it stores it: who
+// made the diagram and when, and who saved it last and when.
+function provenanceOf(document) {
+  const { author, createdAt, updatedBy, updatedAt } = document || {};
+
+  return { author, createdAt, updatedBy, updatedAt };
+}
+
+// Expects the row `id` of the Inspector's Details block on `page`
+// ('created' or 'edited') to name `user` and to hold the time `at`, as the
+// document writes it. The text of the time is in the viewer's locale, so it
+// is read from the element's datetime.
+async function expectDetail(page, id, user, at, { soft = true } = {}) {
+  const row = page.getByTestId(`inspector-${id}`);
+  const check = expect.configure({ soft });
+  const by = user.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  await check(row.locator('time'), `${id} time`).toHaveAttribute(
+    'datetime',
+    at,
+  );
+  await check(row.locator('dd'), `${id} user`).toHaveText(
+    new RegExp(` by ${by}$`),
+  );
+}
+
+// The server writes a document's times in whole seconds, so a save in the
+// second of the one before it has the same time. Resolves once a second has
+// passed since `since`, the Date.now() at which the earlier save was
+// answered: the next save then has a later time.
+async function nextSecond(since) {
+  await expect
+    .poll(() => Date.now() - since, { timeout: 5000 })
+    .toBeGreaterThanOrEqual(1000);
 }
 
 // Page object for the Builder v2 view. Methods cover the flows shared by
@@ -986,6 +1073,7 @@ async function backdropPoint(dialog) {
 module.exports = {
   API,
   BuilderPage,
+  DOCUMENT_TIME,
   SAVED,
   SCHEMA_URI,
   backdropPoint,
@@ -995,12 +1083,16 @@ module.exports = {
   draftPath,
   expect,
   expectAccessible,
+  expectDetail,
   expectNoFatal,
   expectNoInvisibleText,
   invisibleText,
   isApi,
   knownDefect,
+  labDocument,
+  nextSecond,
   openConfigs,
+  provenanceOf,
   publishTopology,
   seedConfig,
   seedDraft,

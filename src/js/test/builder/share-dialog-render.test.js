@@ -350,4 +350,44 @@ describe('published diagrams', () => {
       await render(BuilderDrafts, { published, canDelete: false }),
     ).not.toContain('published-delete-');
   });
+
+  // A topology whose diagram is read from the Builder file it names is
+  // listed by a handle, with the file's path and no published document.
+  test('a topology read from its Builder file is tagged File, says where from, and has no Delete', async () => {
+    const file = {
+      source: 'file',
+      id: 'file/plant',
+      kind: 'Topology',
+      target: 'plant',
+      config: 'Topology/plant',
+      path: '/phenix/topologies/plant/plant.builder.json',
+    };
+    const html = await render(BuilderDrafts, {
+      published: [{ ...published[0], source: 'store' }, file],
+    });
+    const panel = html.slice(html.indexOf('id="panel-published"'));
+    const card = panel.slice(panel.indexOf('>plant'));
+
+    // The tag is a word in the card's heading, not a color or an icon.
+    expect(panel).toMatch(
+      /<h2[^>]*>\s*plant\s*<span[^>]*data-testid="published-file-file\/plant"[^>]*>File<\/span>/,
+    );
+    expect(tag(panel, 'data-testid="published-path-file/plant"')).toMatch(
+      /^<span/,
+    );
+    expect(card).toMatch(
+      />\s*Read from \/phenix\/topologies\/plant\/plant\.builder\.json\s*</,
+    );
+    expect(card).not.toContain('Published');
+    // Open names the file, as a published diagram's names its time.
+    expect(tag(panel, 'data-testid="draft-open-file/plant"')).toContain(
+      'aria-label="Open plant, read from /phenix/topologies/plant/plant.builder.json"',
+    );
+    // Nothing was published, so nothing is deleted here; the published
+    // topology beside it keeps its Delete and has no tag.
+    expect(panel).not.toContain('published-delete-file/plant');
+    expect(panel).toContain('data-testid="published-delete-p1"');
+    expect(panel).not.toContain('published-file-p1');
+    expect(panel.match(/builder-drafts__tag/g)).toHaveLength(1);
+  });
 });

@@ -7,7 +7,9 @@ that the main phenix skill leaves out.
 **Read this file when** a task involves Builder v2: its drafts, sharing,
 publishing, import, export or generation, its `/api/v1/builder-v2/*` or
 `/schemas/builder-v2/v1` routes, the `builder-drafts` RBAC resource, the Builder
-document format (`builder/v1`), or any Builder v2 code (see
+document format (`builder/v1`), the `builder-doc` annotation, Builder files
+named by `builder-doc.path`, `phenix builder publish`, or any Builder v2 code
+(see
 [Working on Builder v2 code](#working-on-builder-v2-code)). The legacy
 Builder (`/builder`, `builder-xml` topologies) is a different editor, covered
 by [builder.md](./builder.md).
@@ -17,9 +19,13 @@ by [builder.md](./builder.md).
 `phenix ui --features builder-v2` enables Builder v2, the Vue Flow
 topology editor (a beta), at `/builder-v2` and its draft/document APIs. It
 leaves the legacy `/builder` route available for `builder-xml` topologies.
-Builder v2 has no `phenix` CLI command: use the REST API or the web UI.
-Drafts autosave separately from phenix configs; only the explicit Publish action
-creates or updates topology, scenario, or experiment configs. Its Router and
+Its one CLI command is `phenix builder publish`, which makes a Topology from
+a Builder document file and needs neither the feature nor a running server
+(see [CLI: phenix builder publish](#cli-phenix-builder-publish)); drafts,
+sharing and everything else are in the REST API and the web UI only.
+Drafts autosave separately from phenix configs; in the web UI and REST API
+only the explicit Publish action creates or updates topology, scenario, or
+experiment configs. Its Router and
 Firewall device templates create `minirouter` nodes (image `minirouter.qc2`)
 of type `Router` and `Firewall`, which the `vrouter` app configures. The
 Inspector suggests drive images, and the diagram checks flag a missing one,
@@ -47,7 +53,12 @@ Description. Annotations lists the annotations of the config the diagram was
 imported from, sorted by key and without `builder-` ones, under "From <Kind>
 <name>, imported <time>"; a diagram drawn in the editor has no such part. A
 value too long for its box scrolls in it, and Tab reaches the box only while
-it scrolls. Scenario says whether the scenario is stored or uploaded and lists
+it scrolls. Above Annotations, a read-only Details block shows the document's
+provenance (see [Document provenance](#document-provenance)): "Created
+<time> by <author>", "Last edited <time> by <updatedBy>", and "Source file
+<name>" when the draft record has `sourceFile`; a row without a value is
+left out, and the block when no row is left. Scenario says whether the
+scenario is stored or uploaded and lists
 each of its apps with the hosts it runs on. A stored scenario's apps are read
 with `GET /configs/Scenario/<name>`, which needs `configs` `get`; otherwise the
 Inspector says it cannot read them. Edit scenario (Add scenario when there is
@@ -294,7 +305,9 @@ include cannot be read now, a node that neither the experiment's own topology
 nor a readable include defines is marked as coming from it (from the first,
 when several cannot be read).
 Includes are read from the config store only (never file paths), under the
-caller's `configs` `get` and `topologies` `list` permissions; a missing,
+caller's `configs` `get` and `topologies` `list` permissions. (The one server
+file Builder v2 reads is a Builder file named by `builder-doc.path`; see
+[Builder files](#builder-files).) A missing,
 forbidden, cyclic, or repeated include, or a hostname that collides with
 another topology's, is reported as a warning. Included devices are read only in
 the editor (they can be moved, not changed, deleted, or reconnected), and
@@ -334,8 +347,11 @@ publication as `forked`, so it can update what that draft published or was
 opened from (not what that draft publishes later). The caller must be able to
 read that draft (owner, a share, or `builder-drafts` `get`), otherwise 404. A
 `sourceToken` of `builder-doc/<document id>` needs `configs` `get` for the config
-that document was published to, otherwise 404. A published
-topology names its document in its `builder-doc` annotation; a published
+that document was published to, otherwise 404. A `sourceToken` of
+`builder-file/<topology>/<digest>` names the Builder file a topology
+references (see [Builder files](#builder-files)). A published
+topology names its document in its `builder-doc` annotation (see
+[The builder-doc reference](#the-builder-doc-reference)); a published
 experiment records the draft and document that published it, and its digest
 after the configure stage, in its `builder-experiment` annotation, so any later
 change to its spec counts. An Experiment update then runs the apps' configure
@@ -458,15 +474,21 @@ Renaming a topology (an update that changes `metadata.name`: `PUT /configs`,
 the Configs page, `phenix config edit`) stores it under the new name and
 deletes it under the old one. The config hooks of its kind then run a `rename`
 stage with the config as it was, where the Topology hook removes the old
-name's documents as for a delete. The renamed topology keeps no `builder-doc`:
-the hook drops, from a Topology config being created or updated, a
-`builder-doc` naming another topology's document (a document's ID is made from
-the name it was published to), which a copy stored under a new name carries
-too. It is a topology like any other until it is published again.
+name's documents as for a delete. The renamed topology's `builder-doc` loses
+its `id`, and its `digest` too unless it has a `path` (see
+[The builder-doc reference](#the-builder-doc-reference)), which a copy
+stored under a new name gets too. Without a `path` it is a topology like any
+other until it is published again. The hooks never read or remove a Builder
+file.
 
 `GET /builder-v2/documents` lists only current documents: it lists each kind
-of config once per request and matches the documents against their references,
-rather than reading one config per document.
+of config once per request and matches the documents against their references
+(`DocumentReference.Names`), rather than reading one config per document.
+Stored rows carry `source: "store"`. A topology the caller may list whose
+reference has a `path` and no current stored document gets a file row,
+exactly `{source: "file", target, kind: "Topology", config, path}`: no `id`,
+`digest`, `size`, `createdAt` or `createdBy`. The listing reads no file, so a
+file row is listed even when the file is missing or invalid.
 
 `DELETE /builder-v2/documents/{document}` deletes a published topology: the
 Topology config the document is current for, through the same config call and
@@ -492,6 +514,266 @@ again. A draft that published the topology, was imported from it, or was
 opened from its published diagram creates it again when it publishes: a source
 config deleted since then passes the source freshness check.
 
+## The builder-doc reference
+
+`metadata.annotations["builder-doc"]` of a Topology config is a map with the
+text sub-keys `digest`, `id` and `path`: each optional, at least one, no
+other key. It is the one annotation that is not a string. Every JSON and
+YAML encoding of a config shows it nested (REST, `phenix config get`/`edit`,
+the Configs page). In memory (`store.Annotations` is still
+`map[string]string`) and in BoltDB/etcd it is one compact JSON string; the
+codec is on `store.Annotations` (`store.StructuredAnnotation`,
+`Config.StoredJSON`). A string value of another shape, such as the 10-field
+reference earlier builds of this branch wrote, is refused (`POST`/`PUT
+/configs` answer 400); there is no migration.
+
+```yaml
+metadata:
+  annotations:
+    builder-doc:
+      digest: sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+      id: b856fc9e35107594f72e715f74ee1cae3eb951b41bf09a504327924e0a220d34
+      path: /phenix/topologies/pump-station/pump-station.builder.json
+```
+
+- `digest`: `sha256:` plus 64 lowercase hex, of the document's canonical JSON
+  (`builder.Encode`: `json.MarshalIndent` with two spaces, struct field
+  order, no final newline). It is not `sha256sum` of a file unless the file
+  is byte for byte that encoding. Without `id` it also finds the stored
+  document: `id = PublishedDocumentID(topology name, digest)`.
+- `id`: a record in `builder.published`. It counts only when that record's
+  `target` is this topology.
+- `path`: a Builder file on the phenix server (see
+  [Builder files](#builder-files)).
+
+Go: `bapi.DocumentReference{Digest, ID, Path}`, `DecodeReference` (strict),
+`EncodeReference` (canonical: sorted, compact), `StoredID(topology)`,
+`Names(doc)` (`StoredID(doc.Target) == doc.ID` and digest equal when set),
+`Publishes(topology, digest)`. Every reader goes through `Names`.
+
+Resolution (`topologyDocument` in `web/builder_v2_documents.go`): the stored
+document the reference names for this topology wins; else, with a `path`,
+the file, whose digest must equal `digest` when the reference has one (a
+pin); else no document (`?topology=<name>` then says "No published Builder
+v2 document exists for topology <name>."). A store error or corrupt record
+is an error and does not fall through to the file.
+
+Publish and `phenix builder publish` write `digest` and `id` and keep an
+existing `path`. Nothing writes a Builder file.
+
+The Topology config hook (`api/builder/config_hook.go`, registered in every
+phenix process, with or without the feature, `--skip-validation` included)
+on create and update:
+
+- refuses a reference that does not decode (error matching
+  `types.ErrValidationFailed` and `builder.ErrInvalid`; 400 over REST, and
+  `phenix config create` logs `calling config hook: config validation
+  failed: topology <name>: builder: invalid request: builder-doc...`).
+  Messages: `builder-doc: digest is not a sha256 digest`,
+  `builder-doc.path: must be an absolute path`, `... must be a clean path,
+  with no ".", "..", "//" or trailing "/"`, `... must end in .json, .yaml or
+  .yml` (case-sensitive); a path is at most 1024 bytes with no control
+  characters. The config schema refuses a non-map (`value must be an
+  object`), an unknown sub-key (`property "x" is unsupported`) and `{}`;
+- when `id` and `digest` are both set and `id` is not the ID that digest
+  gives for this topology name (a rename, or a copy under a new name), drops
+  `id`, and `digest` too unless `path` is set (it stays as the file's pin);
+  with nothing left the annotation is removed;
+- re-encodes a valid reference canonically;
+- never checks a path against the file system: confinement is checked by
+  the process that reads the file, at read time.
+
+An `id` without a `digest` cannot be checked there; readers find that it
+names nothing. `phenix config edit` merges annotation maps, so it can change
+a sub-key but not remove `builder-doc`; `PUT /configs` without the
+annotation removes it. `${NAME}` in `path` is expanded when the config is
+parsed, as in any config field.
+
+The Configs page tags any topology with a `builder-doc` key `builder v2` and
+sends its edit button to `/builder-v2?topology=<name>`, whatever the
+reference names.
+
+## Builder files
+
+The one exception to "Builder v2 never reads server files": a Builder
+document file named by `builder-doc.path`, read by
+`bapi.ReadDocumentFile(root, excluded, path)` only when a diagram is
+opened (`GET /builder-v2/topologies/{topology}/document`), when a draft is
+created from it, and when such a draft updates the topology. The listing,
+the hooks and the CLI never read it. Nothing is cached.
+
+Rules (all checked at read time, by `phenix ui`):
+
+- below `--base-dir.phenix` (default `/phenix`) and not below the VM mount
+  directory (`common.MountDir()`, default `<base>/mounts`), also after
+  resolving symbolic links; opened through `os.OpenRoot`, so a link that
+  leaves the root is refused;
+- a regular file (opened `O_NONBLOCK`; a FIFO or directory is refused), at
+  most 5 MiB;
+- one valid Builder document, JSON or YAML decided by content, not by the
+  extension (which the path rule still requires). YAML goes through
+  `builder.JSONFromYAML` (`types/builder/yaml.go`), which refuses anchors,
+  aliases, merge keys, a second document, non-scalar or duplicate keys,
+  other tags, `.inf` and `.nan`, and types scalars as js-yaml's
+  `JSON_SCHEMA` does. No `${NAME}` expansion in the file;
+- a `digest` beside `path` must equal the file document's digest.
+
+Authorization is `configs` `get` on the topology. A forbidden or missing
+topology, no or an invalid annotation, and a reference that names nothing
+all answer the same 404 (`builder document of topology <name> not found`).
+File errors are a closed set (`bapi.DocumentFileError`), each a fixed
+sentence naming the path and never anything the file holds; the cause is
+not wrapped, and the log line is `builder document file not usable` with
+`topology`, `path`, `reason`:
+
+| Status | `message` |
+|---|---|
+| 422 | `Builder file <path> is outside <root>, the directory phenix reads Builder files from.` |
+| 404 | `Builder file <path> does not exist on this phenix server.` |
+| 422 | `Builder file <path> cannot be read by phenix.` |
+| 422 | `Builder file <path> is not a regular file.` |
+| 413 | `Builder file <path> is larger than 5 MiB.` |
+| 422 | `Builder file <path> is not a valid Builder document. Upload it in the Builder to see why.` |
+| 422 | `Builder file <path> does not match the digest topology <name> records for it.` |
+
+`topologyDiffers: true` on the read route (files only, omitted when false)
+means the stored spec is not the document's projection for that topology
+name (`bapi.TopologyHoldsDocument`; node order counts, so use the Topology
+YAML export as the config's `spec`).
+
+Edit as a draft of a file diagram: `POST /builder-v2/drafts` with
+`sourceToken: "builder-file/<topology>/<digest>"` (the digest the read route
+returned) and the document exactly as returned. The server reads the file
+again with the same authorization: the file errors above; 409 `The Builder
+file of topology <name> changed since it was opened. Open its diagram
+again.`; 409 `Topology <name> is no longer read from its Builder file. Open
+its diagram again.` (a stored document now wins); 404 for a malformed token.
+The UI reuses a user's draft with exactly that token, so a changed file
+gives a new draft.
+
+Publishing such a draft as an update of that topology is allowed while (1)
+the draft's token names this topology and the file's digest still equals
+the token's, or the draft's snapshot digest equals the file's, and (2) the
+topology's spec still equals the file document's projection. Otherwise 409:
+`topology <name> or its Builder file changed after this draft was opened
+from the file`, or `topology <name> is not what its Builder file publishes,
+so this draft cannot update it`. The client cannot tell beforehand, so the
+dialog offers Update and shows the refusal. A publish writes `digest` and
+`id`, keeps `path`, never writes the file, and adds to `warnings`:
+`Topology <name> names the Builder file <path>, which Publish does not
+change. Export the diagram and replace the file to keep it in step.` From
+then on the stored document wins and the listing row is `source: "store"`.
+On a server without that record, the file is used only when it matches the
+`digest`.
+
+In the UI a file row has the local id `file/<topology>`, a text tag File,
+"Read from <path>", and no Delete; the read-only banner says "You are
+viewing the diagram of topology <t>, read from <path> on the phenix
+server.", plus a sentence when `topologyDiffers`.
+
+## Document provenance
+
+A document has four optional top-level string fields after `description`:
+`author`, `createdAt`, `updatedBy`, `updatedAt`. Users are at most 256
+bytes with no control characters; times are exactly
+`YYYY-MM-DDTHH:MM:SSZ` (UTC, whole seconds); an empty string or null is
+none; no pairing or ordering rule. Revision stays 1. They are document
+content and part of its digest. `source.updatedAt` is a different field
+(the imported config's time).
+
+The server stamps them in `api/builder` when it stores a draft snapshot;
+the editor never sets them:
+
+- `POST /builder-v2/drafts` (`CreateDraft`): `author` and `createdAt` are the
+  body's when present, else the caller and now; `updatedBy` and `updatedAt`
+  are always the caller and now. The draft record keeps the two as
+  `documentAuthor` and `documentCreatedAt`. So an Upload keeps the file's
+  author, and anyone with `configs` `create` can name any author;
+  `updatedBy` cannot be forged.
+- Unchanged copy: with `sourceToken` `builder-doc/<id>` or
+  `builder-file/<topology>/<digest>` and no `forkOf`, a body whose canonical
+  JSON is the opened document is stored unstamped, so the draft's `digest`
+  equals the document's and an unchanged publish answers topology
+  `skipped`. A client must send the document exactly as `GET` returned it.
+- `POST .../snapshots` (`AppendSnapshot`): `author` and `createdAt` come from
+  the draft record (left out when it has none); `updatedBy` and `updatedAt`
+  are the caller and now, equal to the snapshot's `createdBy` and its
+  `createdAt` cut to seconds. Every save is an edit, also one that changes
+  nothing.
+- Nothing else writes a document: cursor moves (undo, redo, restore),
+  snapshot delete, shares, publish, a file read and the CLI never stamp. A
+  published document holds the fields of the snapshot it was published from.
+- A value that is not valid in any of the four fields answers 422 on create
+  and save.
+
+Create and save responses have no document, so they carry `stamp:
+{author?, createdAt?, updatedBy?, updatedAt?}` (empty fields left out, `{}`
+for an unchanged copy of a document that names nobody); the editor copies
+it into its document (`withStamp` in `model.js`). No other response has
+`stamp`.
+
+`sourceFile` on `POST /builder-v2/drafts` records the name of the uploaded
+file a draft came from (the UI sends it for Upload of a file and Import of
+an uploaded config): a base name of at most 255 bytes, no `/` or `\`, not
+`.` or `..`, no control characters, else 422. It is returned on every draft
+response when set, is never used to open anything, and a `forkOf` draft
+records none.
+
+## CLI: phenix builder publish
+
+```bash
+phenix builder publish </path/to/document> [-n|--name N] [--update] [--dry-run] [--user U] [--record-path]
+```
+
+One Builder document file (JSON or YAML by content, at most 5 MiB, no
+`${NAME}` expansion) becomes a Topology config with its stored published
+document and a `builder-doc` of `digest` and `id`. It runs in the CLI
+process against the store (`bapi.Service.PublishTopology` in
+`api/builder/publish.go`, command in `cmd/builder.go`), with the feature on
+or off and with or without a running `phenix ui`. The CLI never says
+"builder v2".
+
+- Name: `--name`, else `bdoc.TopologyName(document name)`, the Publish
+  dialog's proposal ("Pump station" gives `Pump-station`).
+- It refuses what Publish refuses and lists every blocker, one per line.
+- Existing topology: the same document already published there is a no-op
+  (`topology already up to date`, exit 0). Otherwise `--update` is required
+  (`topology X already exists; use --update to replace it`), and allowed
+  only when the topology is still exactly what its stored document
+  publishes, or the document's `source` names the topology with a
+  `source.digest` equal to the stored topology's. Else: `topology X was
+  changed after it was published, and replacing it would discard that
+  change`, or `topology X was not published from a Builder document that is
+  still stored, and this document was not made from the topology as it is
+  now`. A `builder-xml` topology is never replaced. There is no force flag.
+  An update keeps the topology's other annotations and an existing `path`.
+- `--dry-run` runs every check, writes nothing, and prints a report on
+  stdout (Document, File, Digest, Document ID, optional Path, Topology with
+  "would be created/updated/left as it is", Nodes, Warnings). A refusal
+  prints the error and exits 1. It is the way to get a file's digest.
+- `--record-path` also writes `path`: the absolute, clean path of the input
+  file (must pass the path rule). Outside the base directory or below the
+  mount directory the command still succeeds and warns that the server does
+  not read the file there. `--update --record-path` replaces a recorded
+  path.
+- The document is stored as it is in the file (no stamping). The record's
+  `createdBy` is `--user`, else the sudo caller, else the OS account.
+- Exit 0 for created, updated or up to date; 1 otherwise. Results and
+  warnings are log lines on stderr (`topology created`, `topology updated`,
+  `topology already up to date`, with `name`, `document`, `digest`).
+- Not done: scenarios, experiments, VLAN aliases (warned), includes named by
+  file path (warned, not checked), drafts. No broadcast to open pages, and
+  no lock shared with a running server: a CLI publish and a UI publish of
+  one topology at the same moment are not serialized.
+- REST has no single "publish this document" call: create a draft, then
+  publish it.
+
+`phenix config create` recognizes a Builder document (`bdoc.IsDocumentText`):
+found in a directory it is skipped with the log line `skipped Builder
+document; use phenix builder publish`, and named on the command line it is
+refused with `<file> is a Builder document, not a configuration: use
+"phenix builder publish <file>" to create its topology`.
+
 ## Routes
 
 All routes are relative to `/api/v1`.
@@ -511,8 +793,9 @@ All routes are relative to `/api/v1`.
 | `GET /builder-v2/sources` | Configs a document can be generated from or publish to |
 | `POST /builder-v2/generate` | Build a document from a stored or uploaded Topology or Experiment |
 | `POST /builder-v2/export/topology` | The Topology config a document publishes as, as YAML, with `warnings` and `publishBlockers` (nothing is written; needs `configs` `get`) |
-| `GET /builder-v2/documents[/{document}]` | Published Builder documents |
+| `GET /builder-v2/documents[/{document}]` | Published Builder documents (`source: "store"`); the listing also has a row per topology read from a Builder file (`source: "file"`) |
 | `DELETE /builder-v2/documents/{document}` | Delete the topology a published document is current for, and the topology's published documents |
+| `GET /builder-v2/topologies/{topology}/document` | The document a topology's `builder-doc` names, stored or read from its Builder file: the listing row plus `digest`, `size`, `document`, and for a file `topologyDiffers` |
 
 Every route is behind the `builder-v2` feature: with it off, each answers a JSON `404`. The OpenAPI document served at `/docs/` describes every request and response.
 
@@ -536,8 +819,10 @@ Read this section before changing any file listed below.
 
 | Area | Files |
 |---|---|
-| Document model, generation, publishing to configs, validation, JSON Schema | `src/go/types/builder/` (`document.go`, `generate.go`, `topology.go`, `validate.go`, `schema.go`) |
-| Drafts, snapshots, sharing, published documents, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`; `config_hook.go` removes a deleted or renamed topology's documents) |
+| Document model, generation, publishing to configs, validation, JSON Schema, YAML reading | `src/go/types/builder/` (`document.go`, `generate.go`, `topology.go`, `validate.go`, `schema.go`, `yaml.go`) |
+| Drafts, snapshots, sharing, published documents, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`; `config_hook.go` checks a topology's `builder-doc` and removes a deleted or renamed topology's documents; `file.go` reads Builder files; `publish.go` publishes a document as a topology for the CLI) |
+| `builder-doc` codec (nested in JSON and YAML, a string in memory and in the store) | `src/go/store/types.go` |
+| `phenix builder publish`, and `phenix config create` recognizing Builder documents | `src/go/cmd/builder.go`, `src/go/cmd/config.go` |
 | Record store for drafts (BoltDB and etcd, etcd compaction) | `src/go/store/*record*.go`, `src/go/store/etcd_record_compact.go` |
 | HTTP routes, authorization and RBAC | `src/go/web/builder_v2*.go` (`builder_v2.go` holds the authorization model, `builder_v2_assets.go` serves the editor's files, which `src/js/plugins/builder-v2-assets.js` compresses in the UI build) |
 | Editor page and drafts landing | `src/js/src/views/BuilderV2.vue`, `src/js/src/components/builder/BuilderDrafts.vue`, `BuilderHeaderButtons.vue` (the buttons both headers share) |
@@ -591,6 +876,10 @@ Read this section before changing any file listed below.
   needs a second server without the feature and `E2E_BUILDER_V2=off`.
   `builder-sharing.spec.js` (sharing, and signing in again) needs a server
   with sign-in on (a JWT signing key and an admin user) and `E2E_SHARING=1`.
+  `builder-files.spec.js` (topologies that name a Builder file by
+  `builder-doc.path`) writes its files below the server's base directory, so
+  it needs the server on the same machine and `E2E_BASE_DIR` set to the
+  server's `--base-dir.phenix`; without it the spec skips.
   `src/js/e2e/README.md` has the setup, the `@known-defect`, `@cross-browser`
   and `@axe` tags, the Playwright projects, and how CI splits the suite into
   parallel jobs. Tag `@axe` only on full axe scans: CI runs them in a job of

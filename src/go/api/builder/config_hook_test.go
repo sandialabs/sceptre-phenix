@@ -1,8 +1,10 @@
 package builder
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"phenix/api/config"
 	"phenix/store"
 	"phenix/store/recordtest/memrecord"
+	"phenix/types"
 )
 
 // hookTestStore is a phenix store that keeps configs in a BoltDB and records
@@ -104,20 +107,43 @@ func (h *hookTest) publishAt(target, content string, at time.Time) *PublishedDoc
 func (h *hookTest) writeTopology(name string, doc *PublishedDocument) error {
 	h.t.Helper()
 
+	return h.writeReference(name, doc.Reference())
+}
+
+// writeReference stores the topology name with the document reference ref,
+// past the config hook. The store dates it now.
+func (h *hookTest) writeReference(name string, ref DocumentReference) error {
+	h.t.Helper()
+
+	return store.Create(h.topology(name, encodeTestReference(h.t, ref))) //nolint:wrapcheck // the store's own error
+}
+
+// topology returns a topology config name whose document annotation holds
+// value.
+func (h *hookTest) topology(name, value string) *store.Config {
+	h.t.Helper()
+
 	c, err := store.NewConfig("Topology/" + name)
 	if err != nil {
 		h.t.Fatalf("NewConfig returned error: %v", err)
 	}
 
-	reference, err := doc.Reference().EncodeReference()
-	if err != nil {
-		h.t.Fatalf("EncodeReference returned error: %v", err)
-	}
-
-	c.Metadata.Annotations = store.Annotations{DocumentAnnotation: reference}
+	c.Metadata.Annotations = store.Annotations{DocumentAnnotation: value, "kept": "yes"}
 	c.Spec = map[string]any{"nodes": []any{}}
 
-	return store.Create(c) //nolint:wrapcheck // the store's own error
+	return c
+}
+
+// encodeTestReference returns ref as a topology's annotation holds it.
+func encodeTestReference(t *testing.T, ref DocumentReference) string {
+	t.Helper()
+
+	encoded, err := ref.EncodeReference()
+	if err != nil {
+		t.Fatalf("EncodeReference returned error: %v", err)
+	}
+
+	return encoded
 }
 
 // topologyUpdated returns the start of the second the topology name was last
@@ -158,7 +184,7 @@ func (h *hookTest) assertReadable(docs ...*PublishedDocument) {
 	h.t.Helper()
 
 	for _, doc := range docs {
-		if _, err := h.service.VerifyPublishedDocument(context.Background(), doc.Reference()); err != nil {
+		if _, _, err := h.service.GetPublishedDocumentData(context.Background(), doc.ID); err != nil {
 			h.t.Errorf("document %s: %s, want it readable", doc.ID, fmtErr(err))
 		}
 	}
@@ -373,22 +399,10 @@ func TestCreatingTopologyDropsAnotherTopologysDocument(t *testing.T) { //nolint:
 	h := newHookTest(t)
 
 	doc := h.publish("topo", "topo-v1", time.Minute)
-
-	reference, err := doc.Reference().EncodeReference()
-	if err != nil {
-		t.Fatalf("EncodeReference returned error: %v", err)
-	}
+	reference := encodeTestReference(t, doc.Reference())
 
 	for name, named := range map[string]bool{"topo": true, "copy": false} {
-		c, err := store.NewConfig("Topology/" + name)
-		if err != nil {
-			t.Fatalf("NewConfig returned error: %v", err)
-		}
-
-		c.Metadata.Annotations = store.Annotations{DocumentAnnotation: reference, "kept": "yes"}
-		c.Spec = map[string]any{"nodes": []any{}}
-
-		stored, err := config.Create(config.CreateFromConfig(c), config.CreateWithValidation())
+		stored, err := config.Create(config.CreateFromConfig(h.topology(name, reference)), config.CreateWithValidation())
 		if err != nil {
 			t.Fatalf("creating topology %s returned error: %v", name, err)
 		}
@@ -400,6 +414,258 @@ func TestCreatingTopologyDropsAnotherTopologysDocument(t *testing.T) { //nolint:
 	}
 
 	h.assertReadable(doc)
+}
+
+// TestStoringTopologyChecksItsReference creates and updates topologies with
+// each kind of document reference. A reference that is this topology's, or
+// that cannot be told to be another's without reading the store, is stored
+// as it is written canonically. The ID of a pair that belongs to another
+// topology is dropped, and its digest too unless the reference names a file,
+// whose content the digest pins. A reference that does not decode refuses
+// the write, with or without config validation.
+func TestStoringTopologyChecksItsReference(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+	h := newHookTest(t)
+
+	const file = "/phenix/topologies/site/builder.yaml"
+
+	own := h.publish("topo", "topo-v1", time.Minute)
+	other := h.publish("other", "other-v1", time.Minute)
+	encode := func(ref DocumentReference) string { return encodeTestReference(t, ref) }
+
+	for _, test := range []struct {
+		name  string
+		value string
+		// want is the annotation stored, "" when it is removed.
+		want string
+		// refused is whether the write is refused.
+		refused bool
+	}{
+		{
+			name:  "digest only",
+			value: encode(DocumentReference{Digest: own.Digest}),
+			want:  encode(DocumentReference{Digest: own.Digest}),
+		},
+		{
+			name:  "its own digest and id",
+			value: encode(own.Reference()),
+			want:  encode(own.Reference()),
+		},
+		{
+			name:  "an id alone, which only the store can check",
+			value: encode(DocumentReference{ID: other.ID}),
+			want:  encode(DocumentReference{ID: other.ID}),
+		},
+		{
+			name:  "path only",
+			value: encode(DocumentReference{Path: file}),
+			want:  encode(DocumentReference{Path: file}),
+		},
+		{
+			name:  "its own digest and id with a path",
+			value: encode(DocumentReference{Digest: own.Digest, ID: own.ID, Path: file}),
+			want:  encode(DocumentReference{Digest: own.Digest, ID: own.ID, Path: file}),
+		},
+		{
+			name:  "another topology's digest and id",
+			value: encode(other.Reference()),
+			want:  "",
+		},
+		{
+			name:  "another topology's digest and id with a path",
+			value: encode(DocumentReference{Digest: other.Digest, ID: other.ID, Path: file}),
+			want:  encode(DocumentReference{Digest: other.Digest, Path: file}),
+		},
+		{
+			name:  "its own digest with another id",
+			value: encode(DocumentReference{Digest: own.Digest, ID: other.ID}),
+			want:  "",
+		},
+		{
+			name:  "written by hand",
+			value: ` { "path" : "` + file + `", "id": "` + own.ID + `" ,"digest":"` + own.Digest + `" } `,
+			want:  encode(DocumentReference{Digest: own.Digest, ID: own.ID, Path: file}),
+		},
+		{name: "not json", value: "{", refused: true},
+		{name: "empty", value: "", refused: true},
+		{name: "no sub-key", value: "{}", refused: true},
+		{name: "an unknown sub-key", value: `{"id":"` + own.ID + `","draftId":"draft-1"}`, refused: true},
+		{name: "an invalid id", value: `{"id":"../escape"}`, refused: true},
+		{name: "an invalid digest", value: `{"digest":"deadbeef"}`, refused: true},
+		{name: "a relative path", value: `{"path":"builder.yaml"}`, refused: true},
+		{name: "a path that is not a document", value: `{"path":"/etc/phenix/config.txt"}`, refused: true},
+		{
+			name: "the reference an earlier Builder wrote",
+			value: `{"id":"` + own.ID + `","digest":"` + own.Digest + `","size":600,"chunks":1,"chunkSize":1024,` +
+				`"schema":"https://phenix.sceptre.dev/schemas/builder/v1","createdAt":"2026-09-29T10:00:00Z"}`,
+			refused: true,
+		},
+	} {
+		check := func(t *testing.T, stage string, stored *store.Config, err error) {
+			t.Helper()
+
+			if test.refused {
+				if !errors.Is(err, types.ErrValidationFailed) {
+					t.Fatalf("%s error = %v, want the write refused as invalid", stage, err)
+				}
+
+				if _, getErr := config.Get("topology/topo", false); stage == "create" && !errors.Is(getErr, store.ErrNotExist) {
+					t.Fatalf("%s stored the topology: error = %v", stage, getErr)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("%s returned error: %v", stage, err)
+			}
+
+			got, named := stored.Metadata.Annotations[DocumentAnnotation]
+			if got != test.want || named != (test.want != "") || !stored.HasAnnotation("kept") {
+				t.Fatalf("%s stored annotations %v, want the document reference %q and the others kept",
+					stage, stored.Metadata.Annotations, test.want)
+			}
+		}
+
+		for _, validate := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/create validated %t", test.name, validate), func(t *testing.T) {
+				options := []config.CreateOption{config.CreateFromConfig(h.topology("topo", test.value))}
+				if validate {
+					options = append(options, config.CreateWithValidation())
+				}
+
+				_, err := config.Create(options...)
+
+				stored, getErr := config.Get("topology/topo", false)
+				if err == nil && getErr != nil {
+					t.Fatalf("getting the created topology returned error: %v", getErr)
+				}
+
+				check(t, "create", stored, err)
+
+				if !validate && test.refused && !errors.Is(err, ErrInvalid) {
+					t.Fatalf("create error = %v, want the hook's refusal", err)
+				}
+
+				_ = store.Delete(h.topology("topo", ""))
+			})
+		}
+
+		t.Run(test.name+"/update", func(t *testing.T) {
+			if err := h.writeReference("topo", own.Reference()); err != nil {
+				t.Fatalf("storing the topology returned error: %v", err)
+			}
+
+			defer func() { _ = store.Delete(h.topology("topo", "")) }()
+
+			err := config.Update("topology/topo", h.topology("topo", test.value))
+
+			stored, getErr := config.Get("topology/topo", false)
+			if getErr != nil {
+				t.Fatalf("getting the updated topology returned error: %v", getErr)
+			}
+
+			check(t, "update", stored, err)
+
+			if want := encode(own.Reference()); test.refused && stored.Metadata.Annotations[DocumentAnnotation] != want {
+				t.Fatalf("a refused update stored the reference %q, want %q kept",
+					stored.Metadata.Annotations[DocumentAnnotation], want)
+			}
+		})
+	}
+
+	h.assertReadable(own, other)
+}
+
+// TestRenamingTopologyKeepsItsFile renames topologies whose references name
+// a Builder file. The path is not bound to the topology's name and stays;
+// the ID, which is, goes, and the digest stays as the file's pin.
+func TestRenamingTopologyKeepsItsFile(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+	h := newHookTest(t)
+
+	const file = "/phenix/topologies/site/builder.yaml"
+
+	doc := h.publish("pinned", "pinned-v1", time.Minute)
+
+	for name, test := range map[string]struct{ ref, want DocumentReference }{
+		"floating": {
+			ref:  DocumentReference{Path: file},
+			want: DocumentReference{Path: file},
+		},
+		"pinned": {
+			ref:  DocumentReference{Digest: doc.Digest, ID: doc.ID, Path: file},
+			want: DocumentReference{Digest: doc.Digest, Path: file},
+		},
+	} {
+		if err := h.writeReference(name, test.ref); err != nil {
+			t.Fatalf("storing topology %s returned error: %v", name, err)
+		}
+
+		c, err := config.Get("topology/"+name, false)
+		if err != nil {
+			t.Fatalf("getting topology %s returned error: %v", name, err)
+		}
+
+		c.Metadata.Name = name + "-renamed"
+
+		if err := config.Update("topology/"+name, c); err != nil {
+			t.Fatalf("renaming topology %s returned error: %v", name, err)
+		}
+
+		renamed, err := config.Get("topology/"+name+"-renamed", false)
+		if err != nil {
+			t.Fatalf("getting the renamed topology returned error: %v", err)
+		}
+
+		if got, want := renamed.Metadata.Annotations[DocumentAnnotation], encodeTestReference(t, test.want); got != want {
+			t.Errorf("renamed topology %s has the reference %q, want %q", name, got, want)
+		}
+	}
+
+	// The document was published to the old name, which no topology has now.
+	h.assertGone(doc)
+}
+
+// TestDeletingTopologyNeverTouchesItsFile deletes topologies that name
+// their documents by digest alone, and by a file as well: the stored
+// documents go, those stored in the second the topology was written in
+// included, which only the document the topology named tells apart, and the
+// file is neither read nor removed.
+func TestDeletingTopologyNeverTouchesItsFile(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+	h := newHookTest(t)
+
+	file := filepath.Join(t.TempDir(), "builder.yaml")
+	content := []byte("not a builder document\n")
+
+	//nolint:gosec // a file the test reads back
+	if err := os.WriteFile(file, content, 0o600); err != nil {
+		t.Fatalf("writing the builder file: %v", err)
+	}
+
+	byDigest := h.publishAt("by-digest", "by-digest-v1", time.Now())
+	if err := h.writeReference("by-digest", DocumentReference{Digest: byDigest.Digest}); err != nil {
+		t.Fatalf("storing the topology returned error: %v", err)
+	}
+
+	withFile := h.publishAt("with-file", "with-file-v1", time.Now())
+	if err := h.writeReference("with-file", DocumentReference{Digest: withFile.Digest, Path: file}); err != nil {
+		t.Fatalf("storing the topology returned error: %v", err)
+	}
+
+	if err := h.writeReference("file-only", DocumentReference{Path: file}); err != nil {
+		t.Fatalf("storing the topology returned error: %v", err)
+	}
+
+	for _, name := range []string{"by-digest", "with-file", "file-only"} {
+		if err := config.Delete("topology/" + name); err != nil {
+			t.Fatalf("deleting topology %s returned error: %v", name, err)
+		}
+	}
+
+	h.assertGone(byDigest, withFile)
+
+	if got, err := os.ReadFile(file); err != nil || !bytes.Equal(got, content) {
+		t.Fatalf("the builder file after the deletes = %q, %v; want it untouched", got, err)
+	}
 }
 
 // TestLeaveTopologyDocuments asserts the hook leaves the documents of a
@@ -637,7 +903,7 @@ func TestDeleteConfigDocumentsInTheSecondOfTheLastWrite(t *testing.T) {
 			}
 
 			for i, doc := range test.docs {
-				_, err := h.service.VerifyPublishedDocument(ctx, docs[i].Reference())
+				_, _, err := h.service.GetPublishedDocumentData(ctx, docs[i].ID)
 				if doc.kept && err != nil {
 					t.Errorf("document %q: %s, want it kept", doc.content, fmtErr(err))
 				}

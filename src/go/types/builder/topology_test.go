@@ -1099,3 +1099,46 @@ func TestPublishTopologyConfigChecksHostnamesAfterInterfaces(t *testing.T) {
 		t.Fatalf("PublishTopologyConfig refused an external device's hostname: %v", err)
 	}
 }
+
+func TestTopologyNameMatchesPublishDialog(t *testing.T) {
+	t.Parallel()
+
+	// The cases of configName in src/js/test/builder/publish.test.js, and a
+	// name that leaves none.
+	for name, want := range map[string]string{
+		"Untitled topology":  "Untitled-topology",
+		"  lab #2 (copy) ":   "lab-2-copy",
+		"core_net@site.v2":   "core_net@site.v2",
+		" Lab topology (2) ": "Lab-topology-2",
+		"Pump station":       "Pump-station",
+		"":                   builder.DefaultTopologyName,
+		"!!":                 builder.DefaultTopologyName,
+	} {
+		if got := builder.TopologyName(name); got != want {
+			t.Errorf("TopologyName(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// TestExportTopologyConfigReturnsVLANAliases asserts an export carries the
+// VLAN aliases the projection found, which the topology config has no place
+// for.
+func TestExportTopologyConfigReturnsVLANAliases(t *testing.T) {
+	t.Parallel()
+
+	doc := loadDocumentFixture(t, "strict-document.json")
+
+	projection, err := doc.ToTopology()
+	if err != nil {
+		t.Fatalf("ToTopology: %v", err)
+	}
+
+	export, err := doc.ExportTopologyConfig("lab")
+	if err != nil {
+		t.Fatalf("ExportTopologyConfig: %v", err)
+	}
+
+	if len(projection.VLANAliases) == 0 || !maps.Equal(export.VLANAliases, projection.VLANAliases) {
+		t.Fatalf("export aliases = %v, want the projection's %v, which are not empty", export.VLANAliases, projection.VLANAliases)
+	}
+}

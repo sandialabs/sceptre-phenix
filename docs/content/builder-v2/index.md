@@ -13,7 +13,7 @@ Scenario and Experiment configs.
     screens, keyboard shortcuts and document format may change in later
     releases.
 
-![The Builder v2 editor showing the Riverside Water diagram: the header and toolbar at the top, Add nodes and Outline on the left, the canvas with the DMZ, INTERNET, OT and CORP groups in the middle, and the Inspector with the diagram's annotations and scenario on the right.](../images/builder-v2/overview-editor.png)
+![The Builder v2 editor showing the Riverside Water diagram: the header and toolbar at the top, Add nodes and Outline on the left, the canvas with the DMZ, INTERNET, OT and CORP groups in the middle, and the Inspector with the diagram's details, annotations and scenario on the right.](../images/builder-v2/overview-editor.png)
 
 ## What you can do with Builder v2
 
@@ -36,6 +36,14 @@ Scenario and Experiment configs.
 - Export the diagram as Builder JSON or YAML, as the Topology YAML that
   Publish would write, as a PNG or SVG picture, or as a Gephi (GEXF) graph.
   See [Exporting](import-export.md#exporting).
+- Make a topology from a Builder JSON or YAML file on the command line,
+  with `phenix builder publish`. See
+  [From the command line](import-export.md#from-the-command-line).
+- Keep a diagram as a file next to its topology, for example in a
+  repository checked out on the phenix server. See
+  [Builder documents in files](administration.md#builder-documents-in-files).
+- See who made a diagram and who edited it last. See
+  [With nothing selected](editor.md#with-nothing-selected).
 - Work from the keyboard, with a command palette and shortcuts. See
   [Command palette](editor.md#command-palette) and
   [Keyboard shortcuts](editor.md#keyboard-shortcuts).
@@ -260,8 +268,9 @@ publish the diagram as a topology and an experiment (see
 - [Building a Diagram](diagrams.md): adding and connecting devices, device
   settings, groups, notes, layouts and scenarios.
 - [Import and Export](import-export.md): starting from a config or a Builder
-  document, and every export format.
+  document, every export format, and the `phenix builder publish` command.
 - [Publishing](publishing.md): writing Topology, Scenario and Experiment
   configs, and what blocks publishing.
 - [Administration](administration.md): enabling Builder v2, permissions,
-  storage, the REST API and troubleshooting.
+  storage, the `builder-doc` annotation, Builder documents in files, the
+  REST API and troubleshooting.

@@ -487,6 +487,7 @@ async function renderInspector({
   schema = {},
   patch = {},
   document = false,
+  draft = {},
 } = {}) {
   const pinia = createPinia();
   const app = createSSRApp({ render: () => h(BuilderInspector) });
@@ -496,6 +497,7 @@ async function renderInspector({
   const { doc, alpha } = sampleDocument();
   store.doc = { ...doc, ...patch };
   store.readOnly = readOnly;
+  store.rememberDraft(draft);
   Object.assign(store, schema);
   store.select({ nodes: document ? [] : [alpha.id] });
 
@@ -572,6 +574,127 @@ describe('the diagram section', () => {
       ],
     },
   };
+
+  // Who made the diagram and who saved it last, as the server wrote them
+  // into the document, and the uploaded file the draft was made from.
+  describe('Details', () => {
+    const stamp = {
+      author: 'alice',
+      createdAt: '2026-10-01T15:04:05Z',
+      updatedBy: 'bob@example.com',
+      updatedAt: '2026-10-01T16:10:00Z',
+    };
+    const details = (html) => {
+      const from = html.indexOf('data-testid="inspector-details"');
+
+      return from < 0
+        ? ''
+        : html.slice(
+            html.lastIndexOf('<div', from),
+            html.indexOf('</dl>', from),
+          );
+    };
+    const shownTime = (value) =>
+      new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(value));
+
+    test('says who made the diagram and who saved it last, each with a machine-readable time', async () => {
+      const html = await renderInspector({ document: true, patch: stamp });
+      const block = details(html);
+
+      expect(text(block)).toBe(
+        `Details Created ${shownTime(stamp.createdAt)} by alice ` +
+          `Last edited ${shownTime(stamp.updatedAt)} by bob@example.com`,
+      );
+      // A heading and a list, as the Annotations and Scenario blocks are.
+      expect(block).toMatch(
+        /<h3[^>]*>Details<\/h3>\s*<dl class="inspector-diagram__list"/,
+      );
+      expect(block.match(/<dt[^>]*>[^<]+<\/dt>/g)).toHaveLength(2);
+      expect(tags(block, 'time')).toEqual([
+        expect.stringContaining('datetime="2026-10-01T15:04:05Z"'),
+        expect.stringContaining('datetime="2026-10-01T16:10:00Z"'),
+      ]);
+      // Read only text: nothing to edit, nothing in the Tab order, and no
+      // live region, which would speak over the save state on every save.
+      expect(block).not.toMatch(/<(input|button|textarea|select)\b/);
+      expect(block).not.toMatch(/tabindex|aria-live|role="(status|alert)"/);
+      // It comes before the annotations and the scenario.
+      expect(html.indexOf('inspector-details')).toBeLessThan(
+        html.indexOf('inspector-scenario'),
+      );
+    });
+
+    test('leaves out what the document does not say', async () => {
+      const some = details(
+        await renderInspector({
+          document: true,
+          patch: { author: 'alice', updatedAt: stamp.updatedAt },
+        }),
+      );
+
+      // A user without a time, and a time without a user.
+      expect(text(some)).toBe(
+        `Details Created by alice Last edited ${shownTime(stamp.updatedAt)}`,
+      );
+      expect(tags(some, 'time')).toHaveLength(1);
+
+      const edited = details(
+        await renderInspector({
+          document: true,
+          patch: { updatedBy: 'bob', updatedAt: stamp.updatedAt },
+        }),
+      );
+
+      expect(text(edited)).toBe(
+        `Details Last edited ${shownTime(stamp.updatedAt)} by bob`,
+      );
+      expect(edited).not.toContain('inspector-created');
+    });
+
+    test('a diagram that names no one, stored before the server kept them, has no Details', async () => {
+      const html = await renderInspector({ document: true });
+
+      expect(html).not.toContain('inspector-details');
+      expect(text(html)).not.toContain('Details');
+      expect(text(html)).toContain('Scenario No scenario.');
+    });
+
+    test('a draft made from an uploaded file names the file', async () => {
+      const html = await renderInspector({
+        document: true,
+        patch: stamp,
+        draft: { id: 'd1', sourceFile: 'pump station (v2).builder.json' },
+      });
+
+      expect(text(details(html))).toBe(
+        `Details Created ${shownTime(stamp.createdAt)} by alice ` +
+          `Last edited ${shownTime(stamp.updatedAt)} by bob@example.com ` +
+          'Source file pump station (v2).builder.json',
+      );
+      expect(tags(details(html), 'time')).toHaveLength(2);
+
+      // The file alone is enough for the block, and its name is text: it
+      // is never markup.
+      const only = details(
+        await renderInspector({
+          document: true,
+          draft: { id: 'd1', sourceFile: '<b>x</b>.yaml' },
+        }),
+      );
+
+      expect(text(only)).toBe('Details Source file &lt;b&gt;x&lt;/b&gt;.yaml');
+      expect(only).not.toContain('<b>');
+    });
+
+    test('is shown for a node selection no more than the rest of the Diagram section', async () => {
+      const html = await renderInspector({ patch: stamp });
+
+      expect(html).not.toContain('inspector-details');
+    });
+  });
 
   test("lists the annotations of its source, sorted, but for the Builders' own", async () => {
     const html = await renderInspector({ document: true, patch: { source } });

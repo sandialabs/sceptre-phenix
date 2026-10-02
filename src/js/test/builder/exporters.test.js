@@ -18,13 +18,14 @@ import {
   toYAMLString,
 } from '@/builder/exporters.js';
 import { parseDocument } from '@/builder/decode.js';
-import { toGEXF } from '@/builder/gexf.js';
+import { lastModified, toGEXF } from '@/builder/gexf.js';
 import {
   addNetwork,
   addNode,
   connect,
   createDocument,
   groupNodes,
+  withStamp,
 } from '@/builder/model.js';
 
 import { sampleDocument } from './fixtures.js';
@@ -213,6 +214,50 @@ describe('document export', () => {
     const { doc } = sampleDocument();
 
     expect(parseDocument(YAML.load(toYAMLString(doc)))).toEqual(doc);
+  });
+
+  // Who made the diagram and who saved it last are part of the document,
+  // so an export holds them where the server's own encoding has them.
+  test('exports hold who made and last saved the diagram, after the description', () => {
+    const stamp = {
+      author: 'alice',
+      createdAt: '2026-10-01T15:04:05Z',
+      updatedBy: 'bob',
+      updatedAt: '2026-10-01T16:10:00Z',
+    };
+    const doc = withStamp(sampleDocument().doc, stamp);
+    const json = toJSONString(doc);
+    const header = Object.keys(JSON.parse(json)).slice(0, 10);
+    const expected = [
+      '$schema',
+      'revision',
+      'id',
+      'name',
+      'description',
+      'author',
+      'createdAt',
+      'updatedBy',
+      'updatedAt',
+      'nodes',
+    ];
+
+    expect(header).toEqual(expected);
+    expect(JSON.parse(json)).toMatchObject(stamp);
+    expect(parseDocument(JSON.parse(json))).toEqual(doc);
+
+    // YAML keeps the order too, and its times read back as the same text,
+    // not as dates: the Builder reads YAML without that type.
+    const yaml = toYAMLString(doc);
+    const read = YAML.load(yaml, { schema: YAML.JSON_SCHEMA });
+
+    expect(Object.keys(read).slice(0, 10)).toEqual(expected);
+    expect(read).toMatchObject(stamp);
+    expect(parseDocument(read)).toEqual(doc);
+    expect(yaml.indexOf('description:')).toBeLessThan(yaml.indexOf('author:'));
+    expect(yaml.indexOf('updatedAt:')).toBeLessThan(yaml.indexOf('nodes:'));
+
+    // A diagram stored before the server kept them exports without them.
+    expect(toJSONString(sampleDocument().doc)).not.toContain('"author"');
   });
 
   test('file names are filesystem safe', () => {
@@ -1141,6 +1186,38 @@ describe('GEXF export', () => {
     expect(toGEXF(doc, { now: () => new Date(2026, 0, 2) }).text).toContain(
       'lastmodifieddate="2026-01-02"',
     );
+  });
+
+  // The file's date is the diagram's last change: this tab's, else the save
+  // that stored the content shown, else the server's last change to the
+  // draft.
+  test('is dated by the last change known of the diagram', () => {
+    const { doc } = gexfDocument();
+    const saved = { ...doc, updatedAt: '2026-05-06T12:00:00Z' };
+    const times = {
+      changedAt: '2026-07-08T12:00:00Z',
+      doc: saved,
+      updated: '2026-03-04T12:00:00Z',
+    };
+    const dated = (modified) =>
+      /lastmodifieddate="([^"]+)"/.exec(
+        toGEXF(doc, { modified, now: () => new Date(2020, 0, 1) }).text,
+      )[1];
+
+    expect(lastModified(times)).toBe('2026-07-08T12:00:00Z');
+    expect(lastModified({ ...times, changedAt: null })).toBe(
+      '2026-05-06T12:00:00Z',
+    );
+    expect(lastModified({ ...times, changedAt: null, doc })).toBe(
+      '2026-03-04T12:00:00Z',
+    );
+    // A published diagram opened read only has no draft: its document says
+    // when it was last saved.
+    expect(dated(lastModified({ doc: saved }))).toBe('2026-05-06');
+    // One that does not say is dated today, as before.
+    expect(lastModified({ doc })).toBe('');
+    expect(lastModified()).toBe('');
+    expect(dated(lastModified({ doc }))).toBe('2020-01-01');
   });
 
   test('exports a 500-device diagram quickly', () => {

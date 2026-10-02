@@ -6,6 +6,11 @@
   server. Topology and Experiment configs are refused with an explanation: the
   server converts those through Import on the drafts landing (see
   GenerateDialog), so nothing is quietly dropped.
+
+  A draft made from a chosen file records the file's name (sourceFile), which
+  the Inspector then shows. Pasted text has none. The published diagrams
+  offered include those of topologies read from the Builder file they name,
+  marked (File).
 -->
 <template>
   <builder-dialog
@@ -77,7 +82,8 @@
           data-testid="import-published">
           <option value="">Select a diagram</option>
           <option v-for="doc in documents" :key="doc.id" :value="doc.id">
-            {{ doc.name || doc.target || doc.id }}
+            {{ doc.name || doc.target || doc.id
+            }}{{ doc.source === 'file' ? ' (File)' : '' }}
           </option>
         </select>
       </div>
@@ -128,10 +134,12 @@
     published: 'import-published',
   });
 
-  // `file` is the chosen file's state: '' (none), 'read' or 'too-large'.
+  // `file` is the chosen file's state: '' (none), 'read' or 'too-large',
+  // and `fileName` the name of the file read.
   const form = reactive({
     source: 'file',
     file: '',
+    fileName: '',
     text: '',
     documentId: '',
   });
@@ -151,6 +159,7 @@
     error.clear();
     form.text = '';
     form.file = '';
+    form.fileName = '';
     pendingRead = readChosenFile(event, 'file');
 
     const read = await pendingRead;
@@ -161,6 +170,7 @@
     } else if (read) {
       form.text = read.text;
       form.file = 'read';
+      form.fileName = read.name || '';
     }
   }
 
@@ -220,7 +230,11 @@
       return;
     }
 
-    emit('imported');
+    // Only a chosen file has a name to record.
+    emit(
+      'imported',
+      form.source === 'file' ? { sourceFile: form.fileName } : {},
+    );
     emit('close');
   }
 </script>

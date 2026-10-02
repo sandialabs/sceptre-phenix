@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -68,6 +69,11 @@ type builderV2Harness struct {
 	// configGets counts the configs it got one at a time.
 	configLists []string
 	configGets  int
+	// files is the directory the API reads Builder files from, a directory
+	// of the test's own, whose "mounts" directory is excluded. fileReads
+	// counts the Builder files the API went to read.
+	files     string
+	fileReads int
 }
 
 // newBuilderV2Router returns a router wired the way [Start] wires the real
@@ -148,12 +154,21 @@ func newBuilderV2Harness(t *testing.T, configs ...store.Config) *builderV2Harnes
 		configuring:       nil,
 		configLists:       nil,
 		configGets:        0,
+		files:             filepath.Join(t.TempDir(), "phenix"),
+		fileReads:         0,
 	}
 
 	options := []builderV2Option{
 		withBuilderV2Service(service),
 		withBuilderV2Configs(harness.listConfigs, harness.getConfig),
 		withBuilderV2PublishOps(harness.publishOps()),
+		func(api *builderV2API) {
+			api.documentFiles = func() (string, []string) {
+				harness.fileReads++
+
+				return harness.files, []string{filepath.Join(harness.files, "mounts")}
+			}
+		},
 	}
 
 	if err := registerBuilderV2Routes(harness.api, options...); err != nil {
@@ -577,8 +592,19 @@ func TestBuilderV2PublishTopology(t *testing.T) { //nolint:paralleltest // mutat
 		t.Fatalf("builder-doc annotation invalid: %v", err)
 	}
 
-	if reference.SnapshotID != draft.SnapshotID {
-		t.Fatalf("published snapshot = %q, want %q", reference.SnapshotID, draft.SnapshotID)
+	// The annotation holds the document's digest and ID and nothing else:
+	// which draft and snapshot it was published from is on its record.
+	published, err := harness.service.GetPublishedDocument(context.Background(), reference.StoredID("topo"))
+	if err != nil {
+		t.Fatalf("the published document: %v", err)
+	}
+
+	if reference != published.Reference() || reference.Digest != draft.Digest || reference.Path != "" {
+		t.Fatalf("builder-doc annotation = %+v, want the digest and the ID of %+v", reference, published)
+	}
+
+	if published.SnapshotID != draft.SnapshotID || published.DraftID != draft.ID || published.Schema != bdoc.SchemaURI {
+		t.Fatalf("published document = %+v, want snapshot %q of draft %q", published, draft.SnapshotID, draft.ID)
 	}
 
 	meta, err := harness.service.GetDraft(context.Background(), draft.ID)

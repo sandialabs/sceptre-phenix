@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strconv"
@@ -73,6 +74,60 @@ func testDocument(t *testing.T, name string, padding int) []byte {
 	}
 
 	return data
+}
+
+// documentProvenance returns the author, creation time, last editor and last
+// edit time an encoded document holds.
+func documentProvenance(t *testing.T, data []byte) builder.Provenance {
+	t.Helper()
+
+	doc, err := builder.Decode(data)
+	if err != nil {
+		t.Fatalf("decoding a document returned error: %v", err)
+	}
+
+	return doc.Provenance()
+}
+
+// stampedDocument returns the canonical encoding of an encoded document with
+// its author, creation time, last editor and last edit time replaced.
+func stampedDocument(t *testing.T, data []byte, provenance builder.Provenance) []byte {
+	t.Helper()
+
+	doc, err := builder.Decode(data)
+	if err != nil {
+		t.Fatalf("decoding a document returned error: %v", err)
+	}
+
+	doc.SetProvenance(provenance)
+
+	stamped, err := builder.Encode(doc)
+	if err != nil {
+		t.Fatalf("encoding a document returned error: %v", err)
+	}
+
+	return stamped
+}
+
+// sameContent reports whether two encoded documents differ in nothing but
+// the four fields the service sets when it stores a snapshot.
+func sameContent(t *testing.T, got, want []byte) bool {
+	t.Helper()
+
+	var none builder.Provenance
+
+	return bytes.Equal(stampedDocument(t, got, none), stampedDocument(t, want, none))
+}
+
+// stampAt is what a save by actor leaves in a document at the test clock's
+// tick: the time the harness clock returned on its tick-th read.
+func stampAt(author string, created int64, actor string, tick int64) builder.Provenance {
+	return builder.Provenance{
+		Author:    author,
+		CreatedAt: builder.FormatTime(memrecord.Time(created)),
+		UpdatedBy: actor,
+		UpdatedAt: builder.FormatTime(memrecord.Time(tick)),
+	}
 }
 
 // randomText returns deterministic, poorly compressible text so tests can

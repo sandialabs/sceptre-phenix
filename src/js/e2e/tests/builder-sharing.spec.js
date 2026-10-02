@@ -18,12 +18,14 @@ const fs = require('fs');
 
 const {
   API,
+  DOCUMENT_TIME,
   SAVED,
   USER_PASS,
   blankDocument,
   draftPath,
   expect,
   expectAccessible,
+  expectDetail,
   signIn,
   test,
   visit,
@@ -160,6 +162,8 @@ test(
     const name = 'Network lab';
     const draft = await seedDraft(owner, name);
     const { page } = owner;
+    // The time of the editor's save, once it is made.
+    let editedAt;
 
     await test.step('the owner shares it from the drafts page', async () => {
       await landing(owner);
@@ -271,10 +275,33 @@ test(
         'true',
       );
 
-      await rename(theirs, `${name} changed`);
+      // The diagram is the owner's: Details names them as its maker and
+      // its last editor, until the editor saves a change.
+      const made = draft.stamp;
+      expect(made).toEqual({
+        author: owner.username,
+        createdAt: expect.stringMatching(DOCUMENT_TIME),
+        updatedBy: owner.username,
+        updatedAt: made.createdAt,
+      });
+      await expectDetail(theirs, 'created', owner.username, made.createdAt);
+      await expectDetail(theirs, 'edited', owner.username, made.updatedAt);
+
+      const saved = await rename(theirs, `${name} changed`);
       await expect(theirs.getByTestId('builder-save-state')).toContainText(
         SAVED,
       );
+
+      // The editor's save changes who edited it last, and nothing else.
+      const { stamp } = await saved.json();
+      expect(stamp).toEqual({
+        ...made,
+        updatedBy: editor.username,
+        updatedAt: expect.stringMatching(DOCUMENT_TIME),
+      });
+      editedAt = stamp.updatedAt;
+      await expectDetail(theirs, 'created', owner.username, made.createdAt);
+      await expectDetail(theirs, 'edited', editor.username, editedAt);
     });
 
     await test.step("the owner's list shows the change, and who made it", async () => {
@@ -309,6 +336,14 @@ test(
       await expect(theirs.getByTestId('editor-shared-by')).toHaveText(
         `Shared by ${owner.username} · Can view`,
       );
+      // A viewer reads who made the diagram and who edited it last.
+      await expectDetail(
+        theirs,
+        'created',
+        owner.username,
+        draft.stamp.createdAt,
+      );
+      await expectDetail(theirs, 'edited', editor.username, editedAt);
       // The name keeps a box at least 8rem wide, and who shared the draft
       // one line, whose username is not broken at its hyphen: the header
       // wraps before either gives way.
