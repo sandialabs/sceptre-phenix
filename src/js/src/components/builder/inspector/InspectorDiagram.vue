@@ -1,15 +1,44 @@
 <!--
   The rest of the Inspector's Diagram section, below the diagram's Name and
-  Description: the annotations of the config the diagram was imported from,
-  and its scenario, with the hosts each app runs on. Both are read only
-  here. Edit scenario opens the Scenario dialog the toolbar's Scenario
-  button opens, and like it, not in a read-only draft.
+  Description: who made the diagram and who saved it last, the annotations
+  of the config the diagram was imported from, and its scenario, with the
+  hosts each app runs on. All are read only here. Edit scenario opens the
+  Scenario dialog the toolbar's Scenario button opens, and like it, not in
+  a read-only draft.
+
+  Details shows what the server wrote into the document when it stored it:
+  its author and creation time, and the user and time of the save that
+  stored the content shown. The editor never sets them, so they are those
+  of the last save the server confirmed, and of an older save after an
+  undo. A draft made from an uploaded file also names that file. It is
+  text, not a live region: the values change with every save, which the
+  save state announces already.
 
   A stored scenario reference carries no content (see ScenarioDialog), so
   the apps of a stored scenario are read from its config (see the store's
   fetchScenario), when the role may read it.
 -->
 <template>
+  <!-- A diagram stored before the server kept these has none to show. -->
+  <div
+    v-if="details.length"
+    class="inspector-diagram"
+    data-testid="inspector-details">
+    <h3>Details</h3>
+    <dl class="inspector-diagram__list">
+      <div
+        v-for="row in details"
+        :key="row.id"
+        :data-testid="`inspector-${row.id}`">
+        <dt>{{ row.label }}</dt>
+        <dd class="inspector-diagram__detail">
+          <time v-if="row.time" :datetime="row.at">{{ row.time }}</time
+          >{{ row.text }}
+        </dd>
+      </div>
+    </dl>
+  </div>
+
   <!-- A diagram drawn here, not imported, has no source to list. -->
   <div
     v-if="source"
@@ -107,6 +136,33 @@
   defineEmits(['scenario']);
 
   const store = useBuilderStore();
+
+  // A user and a time the document holds, as a row: the time in the
+  // viewer's locale, then "by" the user. Either may be missing; with
+  // neither there is no row.
+  function stampRow(id, label, user, at) {
+    const time = formatTimestamp(at);
+    const by = typeof user === 'string' && user ? `by ${user}` : '';
+
+    return time || by
+      ? { id, label, at, time, text: time && by ? ` ${by}` : by }
+      : null;
+  }
+
+  // Who made the diagram and who saved it last, and when, and the uploaded
+  // file the draft was made from.
+  const details = computed(() => {
+    const { author, createdAt, updatedBy, updatedAt } = store.doc;
+    const file = store.draftRecord.sourceFile;
+
+    return [
+      stampRow('created', 'Created', author, createdAt),
+      stampRow('edited', 'Last edited', updatedBy, updatedAt),
+      file
+        ? { id: 'source-file', label: 'Source file', time: '', text: file }
+        : null,
+    ].filter(Boolean);
+  });
 
   const KINDS = { topology: 'Topology', experiment: 'Experiment' };
 
@@ -272,7 +328,8 @@
     overflow-wrap: anywhere;
   }
 
-  .inspector-diagram__hosts {
+  .inspector-diagram__hosts,
+  .inspector-diagram__detail {
     overflow-wrap: anywhere;
   }
 

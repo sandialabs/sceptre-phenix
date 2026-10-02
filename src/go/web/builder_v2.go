@@ -15,6 +15,7 @@ import (
 	"phenix/store"
 	bdoc "phenix/types/builder"
 	putil "phenix/util"
+	"phenix/util/common"
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -120,13 +121,18 @@ type builderV2Access struct {
 	stale bool
 }
 
-// builderV2API serves the Builder v2 routes. Config access and publication
-// effects are injected so handlers can be exercised without a real store.
+// builderV2API serves the Builder v2 routes. Config access, publication
+// effects and where Builder files are read from are injected so handlers can
+// be exercised without a real store or the server's directories.
 type builderV2API struct {
 	drafts      *bapi.Service
 	listConfigs func(kind string) (store.Configs, error)
 	getConfig   func(name string) (*store.Config, error)
 	publish     builderV2PublishOps
+	// documentFiles returns the directory the Builder files that document
+	// references name are read from, and the directories below it they are
+	// never read from (see [bapi.ReadDocumentFile]).
+	documentFiles func() (string, []string)
 }
 
 // builderV2Option configures a [builderV2API].
@@ -147,10 +153,11 @@ func newBuilderV2API(opts ...builderV2Option) (*builderV2API, error) {
 	}
 
 	api := &builderV2API{
-		drafts:      service,
-		listConfigs: config.List,
-		getConfig:   func(name string) (*store.Config, error) { return config.Get(name, false) },
-		publish:     newBuilderV2PublishOps(),
+		drafts:        service,
+		listConfigs:   config.List,
+		getConfig:     func(name string) (*store.Config, error) { return config.Get(name, false) },
+		publish:       newBuilderV2PublishOps(),
+		documentFiles: builderV2DocumentFiles,
 	}
 
 	for _, opt := range opts {
@@ -165,13 +172,14 @@ func newBuilderV2API(opts ...builderV2Option) (*builderV2API, error) {
 // cleanupStorage removes interrupted chunk writes and published documents no
 // topology references. Document cleanup only runs after a complete topology
 // listing with entirely decodable references; otherwise deleting an apparently
-// orphaned document could break a topology omitted from the reference set.
+// orphaned document could break a topology omitted from the reference set. A
+// reference that names only a file names no stored document, and keeps none.
 func (b *builderV2API) cleanupStorage() {
 	topologies, err := b.listConfigs(builderV2KindTopology)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "listing builder topology references for cleanup", "err", err)
 	} else {
-		references := make([]bapi.DocumentReference, 0)
+		live := make([]bapi.LiveDocument, 0)
 		complete := true
 
 		for _, topology := range topologies {
@@ -193,13 +201,15 @@ func (b *builderV2API) cleanupStorage() {
 				break
 			}
 
-			references = append(references, reference)
+			if id := reference.StoredID(topology.Metadata.Name); id != "" {
+				live = append(live, bapi.LiveDocument{Target: topology.Metadata.Name, ID: id})
+			}
 		}
 
 		if complete {
 			if _, cleanupErr := b.drafts.CleanupOrphanedDocuments(
 				context.Background(),
-				references,
+				live,
 			); cleanupErr != nil {
 				plog.Error(plog.TypeSystem, "cleaning orphaned builder documents", "err", cleanupErr)
 			}
@@ -231,6 +241,24 @@ func withBuilderV2Configs(
 // withBuilderV2PublishOps replaces explicit publication effects in tests.
 func withBuilderV2PublishOps(ops builderV2PublishOps) builderV2Option {
 	return func(api *builderV2API) { api.publish = ops }
+}
+
+// builderV2DocumentFiles is where this server reads Builder files from: the
+// phenix base directory (--base-dir.phenix), except the directory VM file
+// systems are mounted in, which holds guest files and can hang a read. The
+// store and the settings file, with its signing key, are kept outside the
+// base directory. Both are read when a file is, so they are the directories
+// the server was started with.
+func builderV2DocumentFiles() (string, []string) {
+	return common.PhenixBase, []string{common.MountDir()}
+}
+
+// withBuilderV2DocumentFiles sets the directory Builder files are read from,
+// and the directories below it they are never read from.
+func withBuilderV2DocumentFiles(root string, excluded ...string) builderV2Option {
+	return func(api *builderV2API) {
+		api.documentFiles = func() (string, []string) { return root, excluded }
+	}
 }
 
 // registerBuilderV2Routes adds the Builder v2 routes to the given API
@@ -841,6 +869,8 @@ func (b *builderV2API) routes(router *mux.Router) {
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder-v2/documents/{document}", weberror.ErrorHandler(b.deleteDocument)).
 		Methods("DELETE", "OPTIONS")
+	router.Handle("/builder-v2/topologies/{topology}/document", weberror.ErrorHandler(b.getTopologyDocument)).
+		Methods("GET", "OPTIONS")
 }
 
 // getSchema - GET /schemas/builder-v2/v1.

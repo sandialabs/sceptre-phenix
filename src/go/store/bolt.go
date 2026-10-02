@@ -193,7 +193,7 @@ func (b *BoltDB) Create(c *Config) error {
 
 	c.Metadata.Updated = now
 
-	v, err := json.Marshal(c)
+	v, err := c.StoredJSON()
 	if err != nil {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
@@ -218,7 +218,7 @@ func (b *BoltDB) Update(c *Config) error {
 
 	c.Metadata.Updated = time.Now().Format(time.RFC3339)
 
-	v, err := json.Marshal(c)
+	v, err := c.StoredJSON()
 	if err != nil {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}

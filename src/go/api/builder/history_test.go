@@ -109,7 +109,18 @@ func TestDeleteSnapshot(t *testing.T) {
 		t.Fatalf("MarkPublished returned error: %v", err)
 	}
 
-	published := publishTestDocument(t, h, "topo", testDocument(t, "topo-v1", 0))
+	// The published document is the snapshot's own bytes, as a publication
+	// stores them.
+	saved, err := h.service.GetCurrentDocument(ctx, meta.ID)
+	if err != nil {
+		t.Fatalf("GetCurrentDocument returned error: %v", err)
+	}
+
+	published := publishTestDocument(t, h, "topo", saved.Data)
+
+	if published.Digest != saved.Manifest.Digest {
+		t.Fatalf("published digest = %s, want the snapshot's %s", published.Digest, saved.Manifest.Digest)
+	}
 
 	meta = appendTestSnapshot(t, h, meta, "topo-v1", testActor)
 	meta = appendTestSnapshot(t, h, meta, "topo-v3", testActor)
@@ -122,8 +133,16 @@ func TestDeleteSnapshot(t *testing.T) {
 	}
 
 	v1, same, v3 := meta.History[1], meta.History[2], meta.History[3]
-	if v1.Digest != same.Digest {
-		t.Fatal("the two snapshots of the same content should share a digest")
+
+	// Each save is stamped with its own time, so two saves of the same
+	// content are two documents.
+	if v1.Digest == same.Digest {
+		t.Fatal("the two saves of the same content share a digest, so the second was not stamped")
+	}
+
+	again, err := h.service.GetCurrentDocument(ctx, meta.ID)
+	if err != nil || !sameContent(t, again.Data, saved.Data) {
+		t.Fatalf("the second save does not hold the content of the first: %s", fmtErr(err))
 	}
 
 	// A snapshot before the cursor: the cursor keeps pointing at the same

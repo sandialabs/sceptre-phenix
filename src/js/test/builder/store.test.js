@@ -64,6 +64,19 @@ const api = vi.hoisted(() => ({
   generate: vi.fn(async () => ({ document: null, warnings: ['a warning'] })),
   listDocuments: vi.fn(async () => [{ id: 'p1', name: 'Published' }]),
   getDocument: vi.fn(async () => sampleDocument().doc),
+  // The document a topology references: here, its Builder file's.
+  getTopologyDocument: vi.fn(async (name) => ({
+    source: 'file',
+    id: `file/${name}`,
+    target: name,
+    kind: 'Topology',
+    config: `Topology/${name}`,
+    path: `/phenix/topologies/${name}.builder.json`,
+    digest: FILE_DIGEST,
+    size: 1024,
+    topologyDiffers: false,
+    document: sampleDocument().doc,
+  })),
   deleteDocument: vi.fn(async () => true),
   getSources: vi.fn(async () => ({
     images: [],
@@ -90,6 +103,9 @@ vi.mock('@/builder/api.js', async (importOriginal) => {
   return { ...actual, builderApi: api };
 });
 
+// The digest of what the Builder file of the mocked topologies holds.
+const FILE_DIGEST = vi.hoisted(() => `sha256:${'f'.repeat(64)}`);
+
 // This device's local drafts, as the in-memory store keeps them; one per
 // test, shared by every queue the test opens.
 const device = vi.hoisted(() => ({ store: null }));
@@ -101,7 +117,7 @@ vi.mock('@/builder/idb.js', async (importOriginal) => {
 });
 
 import { createMemoryStore } from '@/builder/idb.js';
-import { createDocument, findNode } from '@/builder/model.js';
+import { createDocument, findNode, STAMP_KEYS } from '@/builder/model.js';
 import { builderSchemaV1 } from '@/builder/schema.js';
 import { useBuilderStore } from '@/builder/store.js';
 
@@ -2688,5 +2704,728 @@ describe('theme', () => {
         delete globalThis.localStorage;
       }
     }
+  });
+});
+
+// The server writes who made the document and who saved it last, and when,
+// into the copy it stores, and answers a create and a save with them. The
+// editor copies them into its own copy, and never makes them up.
+describe('who made and last saved the diagram', () => {
+  const created = {
+    author: 'alice',
+    createdAt: '2026-10-01T15:04:05Z',
+    updatedBy: 'alice',
+    updatedAt: '2026-10-01T15:04:05Z',
+  };
+  const saved = (seconds, by = 'alice') => ({
+    author: 'alice',
+    createdAt: '2026-10-01T15:04:05Z',
+    updatedBy: by,
+    updatedAt: `2026-10-01T16:00:${String(seconds).padStart(2, '0')}Z`,
+  });
+  const stampOf = (doc) =>
+    Object.fromEntries(
+      STAMP_KEYS.filter((key) => key in doc).map((key) => [key, doc[key]]),
+    );
+
+  // A save that answers with the stamp the server wrote.
+  function saveAnswers(snapshotId, stamp, etag) {
+    api.appendSnapshot.mockResolvedValueOnce({
+      draft: { id: 'd1', owner: 'alice', snapshotId, stamp },
+      history: null,
+      etag,
+    });
+  }
+
+  test('a new draft takes the stamp its create answered with', async () => {
+    api.createDraft.mockResolvedValueOnce({
+      draft: { id: 'd1', owner: 'alice', snapshotId: 's1', stamp: created },
+      document: null,
+      history: null,
+      cursor: 0,
+      etag: '"1"',
+    });
+
+    await store.createDraft({ title: 'Test' });
+
+    // What was sent names no one: the editor does not sign its documents.
+    expect(stampOf(api.createDraft.mock.calls[0][0].document)).toEqual({});
+    expect(stampOf(store.doc)).toEqual(created);
+    expect(Object.keys(store.doc).slice(4, 10)).toEqual([
+      'description',
+      ...STAMP_KEYS,
+      'nodes',
+    ]);
+    // The history starts from the stamped document, so the first edit is
+    // built from it.
+    expect(store.history.current()).toEqual(store.doc);
+    expect(stampOf(store.history.currentEntry().snapshot)).toEqual(created);
+  });
+
+  test('a create that answers with no stamp leaves the diagram as it was', async () => {
+    await store.createDraft({ title: 'Test' });
+
+    expect(stampOf(store.doc)).toEqual({});
+  });
+
+  test('a confirmed save stamps its entry and the diagram shown', async () => {
+    await withDraft();
+    saveAnswers('s2', saved(1), '"2"');
+
+    store.addNode({ kind: 'device', hostname: 'alpha' });
+
+    // Until the server answers, the diagram shows the save before.
+    expect(stampOf(store.doc)).toEqual({});
+
+    await store.saveNow();
+
+    expect(stampOf(api.appendSnapshot.mock.calls[0][2].document)).toEqual({});
+    expect(stampOf(store.doc)).toEqual(saved(1));
+    expect(stampOf(store.history.current())).toEqual(saved(1));
+    expect(store.doc.nodes).toHaveLength(1);
+    // The next edit is built from the stamped diagram and sends that stamp,
+    // which the server replaces.
+    saveAnswers('s3', saved(2, 'bob'), '"3"');
+    store.addNode({ kind: 'device', hostname: 'bravo' });
+    await store.saveNow();
+
+    expect(stampOf(api.appendSnapshot.mock.calls[1][2].document)).toEqual(
+      saved(1),
+    );
+    expect(stampOf(store.doc)).toEqual(saved(2, 'bob'));
+  });
+
+  // A pan makes the diagram another object than its history entry.
+  test('a save confirmed after a pan stamps the diagram and keeps the pan', async () => {
+    await withDraft();
+    saveAnswers('s2', saved(1), '"2"');
+
+    store.addNode({ kind: 'device', hostname: 'alpha' });
+    store.setViewport({ x: 40, y: -8, zoom: 2 });
+    await store.saveNow();
+
+    expect(stampOf(store.doc)).toEqual(saved(1));
+    expect(store.doc.viewport).toEqual({ x: 40, y: -8, zoom: 2 });
+    expect(stampOf(store.history.current())).toEqual(saved(1));
+    expect(store.history.current().viewport).toEqual({ x: 0, y: 0, zoom: 1 });
+  });
+
+  test('a save confirmed after the next edit stamps its own entry only', async () => {
+    await withDraft();
+
+    // Each save answers when the test says so.
+    const confirm = [];
+    const answered = (snapshotId, stamp, etag) => () =>
+      new Promise((resolve) => {
+        confirm.push(() =>
+          resolve({
+            draft: { id: 'd1', owner: 'alice', snapshotId, stamp },
+            history: null,
+            etag,
+          }),
+        );
+      });
+
+    api.appendSnapshot
+      .mockImplementationOnce(answered('s2', saved(1), '"2"'))
+      .mockImplementationOnce(answered('s3', saved(2), '"3"'));
+
+    store.addNode({ kind: 'device', hostname: 'alpha' });
+    await vi.waitFor(() => expect(confirm).toHaveLength(1));
+    store.addNode({ kind: 'device', hostname: 'bravo' });
+
+    const [, first, second] = store.history.entries;
+
+    confirm[0]();
+    await vi.waitFor(() => expect(confirm).toHaveLength(2));
+
+    // The first edit's entry holds its save. The diagram shown is the
+    // second edit's, which is not saved yet: it shows no save of its own.
+    expect(stampOf(first.snapshot)).toEqual(saved(1));
+    expect(first.snapshot.nodes).toHaveLength(1);
+    expect(stampOf(second.snapshot)).toEqual({});
+    expect(stampOf(store.doc)).toEqual({});
+    expect(store.doc.nodes).toHaveLength(2);
+
+    confirm[1]();
+    await store.saveNow();
+
+    expect(stampOf(first.snapshot)).toEqual(saved(1));
+    expect(stampOf(second.snapshot)).toEqual(saved(2));
+    expect(stampOf(store.doc)).toEqual(saved(2));
+    expect(store.doc.nodes).toHaveLength(2);
+  });
+
+  test('undo shows the stamp of the save it goes back to', async () => {
+    await withDraft();
+    saveAnswers('s2', saved(1), '"2"');
+    saveAnswers('s3', saved(2, 'bob'), '"3"');
+
+    store.addNode({ kind: 'device', hostname: 'alpha' });
+    await store.saveNow();
+    store.addNode({ kind: 'device', hostname: 'bravo' });
+    await store.saveNow();
+    expect(stampOf(store.doc)).toEqual(saved(2, 'bob'));
+
+    store.undo();
+    await store.saveNow();
+
+    // A cursor move stores no document, and answers with no stamp.
+    expect(stampOf(store.doc)).toEqual(saved(1));
+
+    store.redo();
+    await store.saveNow();
+
+    expect(stampOf(store.doc)).toEqual(saved(2, 'bob'));
+  });
+
+  test('saving the history as a new draft stamps each entry as the new draft stored it', async () => {
+    await withDraft();
+    saveAnswers('s2', saved(1), '"2"');
+    store.addNode({ kind: 'device', hostname: 'alpha' });
+    await store.saveNow();
+
+    api.appendSnapshot.mockRejectedValueOnce(
+      Object.assign(new Error('conflict'), { response: { status: 412 } }),
+    );
+    store.addNode({ kind: 'device', hostname: 'bravo' });
+    await store.saveNow();
+    expect(store.hasConflict).toBe(true);
+
+    const forked = (seconds) => ({
+      ...saved(seconds, 'carol'),
+      updatedAt: `2026-10-02T09:00:${String(seconds).padStart(2, '0')}Z`,
+    });
+
+    api.createDraft.mockResolvedValueOnce({
+      draft: { id: 'd9', owner: 'alice', snapshotId: 'f1', stamp: forked(1) },
+      history: null,
+      etag: '"f1"',
+    });
+    [2, 3].forEach((n) =>
+      api.appendSnapshot.mockResolvedValueOnce({
+        draft: {
+          id: 'd9',
+          owner: 'alice',
+          snapshotId: `f${n}`,
+          stamp: forked(n),
+        },
+        history: null,
+        etag: `"f${n}"`,
+      }),
+    );
+
+    await store.resolveConflict('fork', { title: 'Mine' });
+
+    expect(
+      store.history.entries.map((entry) => stampOf(entry.snapshot)),
+    ).toEqual([forked(1), forked(2), forked(3)]);
+    expect(stampOf(store.doc)).toEqual(forked(3));
+    expect(store.doc.name).toBe('Mine');
+    // No file name is sent: a fork is not an upload.
+    expect(api.createDraft.mock.calls[0][0]).not.toHaveProperty('sourceFile');
+
+    store.undo();
+    expect(stampOf(store.doc)).toEqual(forked(2));
+    await store.saveNow();
+  });
+
+  // A session ended after a save reached the server and before its answer
+  // came back, with an edit and an undo back to that save still queued.
+  // The entry of that save is the snapshot the server lists: its stamp is
+  // read from there, who stored it and when, to the second.
+  test('a recovered save the server already holds takes its snapshot’s user and time', async () => {
+    const opened = { ...createDocument({ name: 'Opened' }), ...created };
+    const sent = { ...opened, name: 'Sent' };
+    const later = { ...opened, name: 'Later' };
+
+    await device.store.put(
+      {
+        key: 'alice::alice::d1',
+        actor: 'alice',
+        owner: 'alice',
+        draftId: 'd1',
+        etag: '"1"',
+        cursor: 0,
+        entries: [
+          { id: 'c1', label: 'Sent' },
+          { id: 'c2', label: 'Later' },
+        ],
+        queue: [
+          { opId: 'c1', kind: 'snapshot', commitId: 'c1', label: 'Sent' },
+          { opId: 'c2', kind: 'snapshot', commitId: 'c2', label: 'Later' },
+          { opId: 'cursor-c1-2', kind: 'cursor', commitId: 'c1' },
+        ],
+      },
+      {
+        write: [
+          { id: 'c1', snapshot: sent },
+          { id: 'c2', snapshot: later },
+        ],
+      },
+    );
+    api.getDraft.mockResolvedValueOnce({
+      draft: { id: 'd1', owner: 'alice' },
+      // The server's copy of that save, which the editor reads but does
+      // not put in place of the entry this device holds.
+      document: { ...sent, ...saved(30, 'bob') },
+      history: [
+        { id: 's1', current: false, createdBy: 'alice' },
+        {
+          id: 's2',
+          opId: 'c1',
+          current: true,
+          createdBy: 'bob',
+          createdAt: '2026-10-01T16:00:30.123456Z',
+        },
+      ],
+      cursor: 1,
+      etag: '"2"',
+    });
+    saveAnswers('s3', saved(45), '"3"');
+
+    await store.loadDraft('alice', 'd1');
+    await store.saveNow();
+
+    expect(store.hasConflict).toBe(false);
+    expect(api.appendSnapshot).toHaveBeenCalledOnce();
+    expect(api.moveCursor).toHaveBeenCalledWith(
+      'alice',
+      'd1',
+      { snapshotId: 's2' },
+      '"3"',
+    );
+    // The undo left the diagram at the save recovered, which this device
+    // held without a stamp.
+    expect(store.doc.name).toBe('Sent');
+    expect(store.history.currentEntry().id).toBe('c1');
+    expect(stampOf(store.doc)).toEqual(saved(30, 'bob'));
+
+    store.redo();
+    expect(store.doc.name).toBe('Later');
+    expect(stampOf(store.doc)).toEqual(saved(45));
+    await store.saveNow();
+  });
+
+  test('the draft record says which uploaded file the draft was made from', async () => {
+    expect(store.draftRecord.sourceFile).toBe('');
+
+    api.createDraft.mockResolvedValueOnce({
+      draft: { id: 'd1', owner: 'alice', sourceFile: 'plant.builder.json' },
+      document: null,
+      history: null,
+      cursor: 0,
+      etag: '"1"',
+    });
+
+    await store.createDraft({
+      title: 'Plant',
+      sourceFile: 'plant.builder.json',
+    });
+
+    expect(api.createDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sourceFile: 'plant.builder.json' }),
+    );
+    expect(store.draftRecord.sourceFile).toBe('plant.builder.json');
+
+    // A draft loaded says so too, and another diagram has none.
+    api.getDraft.mockResolvedValueOnce({
+      draft: { id: 'd2', owner: 'alice', sourceFile: 'core.yaml' },
+      document: createDocument({ name: 'Core' }),
+      history: [{ id: 's1' }],
+      cursor: 0,
+      etag: '"1"',
+    });
+    await store.loadDraft('alice', 'd2');
+    expect(store.draftRecord.sourceFile).toBe('core.yaml');
+
+    store.newDocument();
+    expect(store.draftRecord.sourceFile).toBe('');
+  });
+
+  // Only an Upload and an Import of an uploaded config name a file (see
+  // importReady in BuilderV2.vue). Nothing else sends one.
+  test('a file name is sent only when one is given, and only one the server records', async () => {
+    const sentWith = () => api.createDraft.mock.calls.at(-1)[0];
+
+    await store.createDraft({ title: 'Blank' });
+    expect('sourceFile' in sentWith()).toBe(true);
+    expect(sentWith().sourceFile).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(sentWith()))).not.toHaveProperty(
+      'sourceFile',
+    );
+
+    await store.createDraft({
+      title: 'Imported',
+      sourceToken: 'Topology/core',
+    });
+    expect(sentWith().sourceFile).toBeUndefined();
+
+    // A name the server would refuse the draft for is left out.
+    for (const name of ['dir/plant.json', '..', 'a'.repeat(256), 'a\nb']) {
+      await store.createDraft({ title: 'Upload', sourceFile: name });
+      expect(sentWith().sourceFile).toBeUndefined();
+    }
+
+    await store.openPublishedDocument('published-1');
+    expect(sentWith().sourceToken).toBe('builder-doc/published-1');
+    expect(sentWith().sourceFile).toBeUndefined();
+
+    await store.openPublishedDocument('file/plant');
+    expect(sentWith().sourceToken).toBe(`builder-file/plant/${FILE_DIGEST}`);
+    expect(sentWith().sourceFile).toBeUndefined();
+  });
+});
+
+// A topology whose builder-doc annotation names a Builder file, and no
+// published document, is listed with a handle for an id ("file/<name>").
+describe('the diagram of a topology read from its Builder file', () => {
+  const row = {
+    source: 'file',
+    id: 'file/plant',
+    target: 'plant',
+    kind: 'Topology',
+    config: 'Topology/plant',
+    path: '/phenix/topologies/plant.builder.json',
+  };
+  const refusal = (status, message) =>
+    Object.assign(new Error('refused'), {
+      response: { status, data: { message, cause: '' } },
+    });
+
+  test('opens read only, and says where it was read from', async () => {
+    store.documents = [row];
+    api.getTopologyDocument.mockResolvedValueOnce({
+      ...row,
+      digest: FILE_DIGEST,
+      size: 1024,
+      topologyDiffers: true,
+      document: sampleDocument().doc,
+    });
+
+    const viewed = await store.viewPublishedDocument('file/plant');
+
+    expect(viewed.name).toBe('Sample');
+    expect(api.getTopologyDocument).toHaveBeenCalledWith('plant');
+    expect(api.getDocument).not.toHaveBeenCalled();
+    expect(api.createDraft).not.toHaveBeenCalled();
+    expect(store.readOnly).toBe(true);
+    expect(store.autosave).toBeNull();
+    expect(store.published).toMatchObject({
+      id: 'file/plant',
+      name: 'Sample',
+      target: 'plant',
+      source: 'file',
+      path: '/phenix/topologies/plant.builder.json',
+      digest: FILE_DIGEST,
+      topologyDiffers: true,
+    });
+    expect(store.announcement).toBe(
+      'Opened the diagram of topology plant, read only.',
+    );
+  });
+
+  test('editing it makes a draft named by what the file held, then reopens that draft', async () => {
+    await store.viewPublishedDocument('file/plant');
+    await expect(store.editPublished()).resolves.toBeTruthy();
+
+    // The diagram shown is the one saved: the file is not read again.
+    expect(api.getTopologyDocument).toHaveBeenCalledTimes(1);
+    expect(api.createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceToken: `builder-file/plant/${FILE_DIGEST}`,
+        document: expect.objectContaining({ name: 'Sample' }),
+      }),
+    );
+    expect(store.readOnly).toBe(false);
+    expect(store.published).toBeNull();
+    expect(store.announcement).toBe(
+      'Opened the diagram of topology plant as a new draft.',
+    );
+
+    // Opened again while the file holds the same: the draft made from it,
+    // the one changed last, not another copy. A draft of the file as it
+    // was before, and one of a published diagram, are not it.
+    const { doc } = sampleDocument();
+
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [
+        {
+          id: 'old',
+          owner: 'alice',
+          sourceToken: `builder-file/plant/sha256:${'0'.repeat(64)}`,
+          updated: '2026-09-09T00:00:00Z',
+        },
+        { id: 'doc', owner: 'alice', sourceToken: 'builder-doc/file/plant' },
+        {
+          id: 'd6',
+          owner: 'alice',
+          sourceToken: `builder-file/plant/${FILE_DIGEST}`,
+          updated: '2026-09-02T00:00:00Z',
+        },
+        {
+          id: 'd7',
+          owner: 'alice',
+          sourceToken: `builder-file/plant/${FILE_DIGEST}`,
+          updated: '2026-09-03T00:00:00Z',
+        },
+      ],
+      shared: [],
+      published: [],
+    });
+    api.getDraft.mockResolvedValueOnce({
+      draft: { id: 'd7', owner: 'alice' },
+      document: doc,
+      history: [{ id: 's1' }],
+      cursor: 0,
+      etag: '"7"',
+    });
+
+    await expect(
+      store.openPublishedDocument('file/plant'),
+    ).resolves.toBeTruthy();
+    // The file is read to learn what it holds now.
+    expect(api.getTopologyDocument).toHaveBeenCalledTimes(2);
+    expect(api.getDraft).toHaveBeenLastCalledWith('alice', 'd7');
+    expect(store.draftId).toBe('d7');
+    expect(store.announcement).toBe(
+      'Opened your draft of the diagram of topology plant.',
+    );
+    expect(api.createDraft).toHaveBeenCalledTimes(1);
+  });
+
+  test('a file that changed since the draft was made gets a new draft', async () => {
+    const changed = `sha256:${'e'.repeat(64)}`;
+
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [
+        {
+          id: 'd6',
+          owner: 'alice',
+          sourceToken: `builder-file/plant/${FILE_DIGEST}`,
+        },
+      ],
+      shared: [],
+      published: [],
+    });
+    api.getTopologyDocument.mockResolvedValueOnce({
+      ...row,
+      digest: changed,
+      topologyDiffers: false,
+      document: { ...sampleDocument().doc, name: 'Changed' },
+    });
+
+    await expect(
+      store.openPublishedDocument('file/plant'),
+    ).resolves.toBeTruthy();
+    expect(api.getDraft).not.toHaveBeenCalled();
+    expect(api.createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Changed',
+        sourceToken: `builder-file/plant/${changed}`,
+      }),
+    );
+  });
+
+  // Published since the list was read: the topology's document is a
+  // published one now, with an id, and the draft is made from that.
+  test('a topology published since it was listed opens as its published diagram', async () => {
+    api.getTopologyDocument.mockResolvedValue({
+      source: 'store',
+      id: 'p7',
+      target: 'plant',
+      kind: 'Topology',
+      digest: FILE_DIGEST,
+      topologyDiffers: false,
+      document: sampleDocument().doc,
+    });
+
+    try {
+      await store.viewPublishedDocument('file/plant');
+      expect(store.published).toMatchObject({
+        id: 'p7',
+        source: 'store',
+        target: 'plant',
+        path: '',
+        digest: '',
+      });
+      expect(store.announcement).toBe(
+        'Opened published diagram Sample, read only.',
+      );
+
+      await store.editPublished();
+      expect(api.createDraft).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sourceToken: 'builder-doc/p7' }),
+      );
+
+      await store.openPublishedDocument('file/plant');
+      expect(api.createDraft).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sourceToken: 'builder-doc/p7' }),
+      );
+    } finally {
+      api.getTopologyDocument.mockReset();
+    }
+  });
+
+  // Why a file cannot be used is the server's sentence, shown as it is.
+  test.each([
+    [
+      404,
+      'Builder file /phenix/topologies/0f8fad5b-d9cb-469f-a165-70867728950e/plant.builder.json does not exist on this phenix server.',
+    ],
+    [
+      422,
+      'Builder file /srv/plant.builder.json is outside /phenix, the directory phenix reads Builder files from.',
+    ],
+    [413, 'Builder file /phenix/plant.builder.json is larger than 5 MiB.'],
+    [
+      422,
+      'Builder file /phenix/plant.builder.json is not a valid Builder document. Upload it in the Builder to see why.',
+    ],
+    [
+      422,
+      'Builder file /phenix/plant.builder.json does not match the digest topology plant records for it.',
+    ],
+  ])(
+    'a file the server cannot use (%i) is reported in its words',
+    async (status, message) => {
+      const before = store.doc;
+
+      api.getTopologyDocument.mockRejectedValueOnce(refusal(status, message));
+      await expect(
+        store.viewPublishedDocument('file/plant'),
+      ).resolves.toBeNull();
+      expect(store.error).toBe(
+        `Could not open the diagram of topology plant. ${message}`,
+      );
+      expect(store.doc).toBe(before);
+      expect(store.published).toBeNull();
+
+      api.getTopologyDocument.mockRejectedValueOnce(refusal(status, message));
+      await expect(
+        store.openPublishedDocument('file/plant'),
+      ).resolves.toBeNull();
+      expect(store.error).toBe(
+        `Could not open the diagram of topology plant. ${message}`,
+      );
+      expect(api.createDraft).not.toHaveBeenCalled();
+    },
+  );
+
+  test('a file that changed between viewing and editing is reported in the server’s words', async () => {
+    const changed =
+      'The Builder file of topology plant changed since it was opened. Open its diagram again.';
+
+    await store.viewPublishedDocument('file/plant');
+    api.createDraft.mockRejectedValueOnce(refusal(409, changed));
+
+    await expect(store.editPublished()).resolves.toBeNull();
+    expect(store.error).toBe(`Could not create the draft. ${changed}`);
+    // The diagram stays as it was shown.
+    expect(store.published).toMatchObject({ id: 'file/plant' });
+    expect(store.readOnly).toBe(true);
+  });
+
+  test('a failure that is not about the file is described as any other', async () => {
+    api.getTopologyDocument.mockRejectedValueOnce(new Error('offline'));
+    await store.viewPublishedDocument('file/plant');
+    expect(store.error).toBe(
+      'Could not open the diagram of topology plant. The server could not be reached. Check the connection and try again.',
+    );
+
+    api.getTopologyDocument.mockRejectedValueOnce(
+      refusal(500, 'unable to read the builder document of topology plant'),
+    );
+    await store.viewPublishedDocument('file/plant');
+    expect(store.error).toBe(
+      'Could not open the diagram of topology plant. Unable to read the builder document of topology plant.',
+    );
+
+    // A create refused with a 409 that is not about a file keeps its text.
+    api.createDraft.mockRejectedValueOnce(refusal(409, 'something else'));
+    await store.createDraft({ title: 'Test' });
+    expect(store.error).toBe(
+      'Could not create the draft. This draft changed on the server since you loaded it.',
+    );
+  });
+});
+
+// The server stores a document sent back as it was read as it is, so that
+// opening a diagram is not an edit of it. The editor names each switch
+// after its network when it opens a document, which must not reach the
+// document it sends.
+describe('editing a published diagram sends it back as it was read', () => {
+  function staleDocument() {
+    const { doc, sw } = sampleDocument();
+
+    return {
+      sw,
+      doc: {
+        ...doc,
+        author: 'carol',
+        createdAt: '2026-09-01T08:00:00Z',
+        updatedBy: 'dave',
+        updatedAt: '2026-09-02T09:30:00Z',
+        nodes: doc.nodes.map((node) =>
+          node.id === sw.id ? { ...node, label: 'OLD' } : node,
+        ),
+      },
+    };
+  }
+
+  test.each([
+    ['a published document', 'published-1', 'getDocument', (doc) => doc],
+    [
+      'a Builder file',
+      'file/plant',
+      'getTopologyDocument',
+      (doc) => ({
+        source: 'file',
+        target: 'plant',
+        path: '/phenix/plant.builder.json',
+        digest: FILE_DIGEST,
+        topologyDiffers: false,
+        document: doc,
+      }),
+    ],
+  ])('%s', async (_, id, read, answer) => {
+    const { doc, sw } = staleDocument();
+    const stamp = {
+      author: 'carol',
+      createdAt: '2026-09-01T08:00:00Z',
+      updatedBy: 'dave',
+      updatedAt: '2026-09-02T09:30:00Z',
+    };
+
+    api[read].mockResolvedValueOnce(answer(structuredClone(doc)));
+    // An unchanged copy answers with the stamp the document had.
+    api.createDraft.mockResolvedValueOnce({
+      draft: { id: 'd1', owner: 'alice', snapshotId: 's1', stamp },
+      document: null,
+      history: null,
+      cursor: 0,
+      etag: '"1"',
+    });
+
+    await store.viewPublishedDocument(id);
+
+    // Shown with the switch named after its network.
+    expect(findNode(store.doc, sw.id).label).toBe('EXP');
+
+    await store.editPublished();
+
+    const sent = api.createDraft.mock.calls[0][0].document;
+
+    expect(sent).toEqual(doc);
+    expect(JSON.stringify(sent)).toBe(JSON.stringify(doc));
+    // The draft opens as it was shown, with the stamp the document had.
+    expect(findNode(store.doc, sw.id).label).toBe('EXP');
+    expect(store.doc).toMatchObject(stamp);
+    expect(store.history.current()).toEqual(store.doc);
+
+    // Opened without viewing it first, the same document is sent.
+    api[read].mockResolvedValueOnce(answer(structuredClone(doc)));
+    await store.openPublishedDocument(id);
+    expect(api.createDraft.mock.calls[1][0].document).toEqual(doc);
   });
 });

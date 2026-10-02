@@ -84,9 +84,9 @@ const reads = new WeakMap();
  * @param {Event} event
  * @param {string} noun what the file holds, for the message when it is too
  *   large: "file", "config", "scenario"
- * @returns {Promise<{text?: string, error?: string}|null>} the file's text,
- *   or why it was not read; null when no file is chosen, or when another
- *   replaced it
+ * @returns {Promise<{text?: string, name?: string, error?: string}|null>}
+ *   the file's text and its name, or why it was not read; null when no file
+ *   is chosen, or when another replaced it
  */
 export async function readChosenFile(event, noun) {
   const field = event.target;
@@ -105,7 +105,7 @@ export async function readChosenFile(event, noun) {
 
   const text = await file.text();
 
-  return reads.get(field) === read ? { text } : null;
+  return reads.get(field) === read ? { text, name: file.name } : null;
 }
 
 /**

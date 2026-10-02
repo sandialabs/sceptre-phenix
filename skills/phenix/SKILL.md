@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams and Builder v2 drafts, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, Builder v2 (the builder-v2 web topology editor), or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams and Builder v2 drafts, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, Builder v2 (the builder-v2 web topology editor), or any `phenix` subcommand (config, builder, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
 license: GPL-3.0-only
 ---
 
@@ -22,7 +22,7 @@ Detailed references and examples, loaded only when needed:
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
 | Graphical topology Builder: diagram model, translation to configs, endpoints, gotchas | [`references/builder.md`](references/builder.md) |
-| Builder v2, the `builder-v2` web topology editor: drafts, sharing, publishing, routes, its code | [`references/builder-v2.md`](references/builder-v2.md) |
+| Builder v2, the `builder-v2` web topology editor: drafts, sharing, publishing, the `builder-doc` annotation, Builder files, `phenix builder publish`, routes, its code | [`references/builder-v2.md`](references/builder-v2.md) |
 | Deploying a topology directory with `phenix workflow apply`: layout, steps, workflow config, endpoints, gotchas, troubleshooting | [`references/workflow.md`](references/workflow.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
@@ -151,16 +151,22 @@ endpoints and payloads, the diagram-to-config translation rules, and the
 gotchas.
 
 Builder v2 is a separate, newer editor at `/builder-v2`, on only with
-`phenix ui --features builder-v2`. It keeps its own document on a topology in
-the `builder-doc` annotation and does not update topologies that carry
-`builder-xml`. It has no `phenix` CLI command. For anything about Builder v2
-(its drafts, sharing, publishing, import from topologies and experiments,
-`/builder-v2/drafts…` routes, the `builder-drafts` RBAC resource, or its code),
+`phenix ui --features builder-v2`. A topology names its Builder v2 document
+in the `builder-doc` annotation, the one annotation that is a map: `digest`
+and `id` name a published document in the store, and `path` names a Builder
+file on the phenix server. Builder v2 does not update topologies that carry
+`builder-xml`. Its one CLI command is `phenix builder publish <file>`, which
+makes a topology from a Builder document file, with the feature on or off;
+`phenix config create` skips or refuses Builder documents. For anything
+about Builder v2 (its drafts, sharing, publishing, import from topologies
+and experiments, `/builder-v2/…` routes, the `builder-doc` annotation and
+Builder files, the `builder-drafts` RBAC resource, or its code),
 **read [`references/builder-v2.md`](references/builder-v2.md)** first.
 
 ## CLI Overview
 
-Command groups: `config` (stored configs), `experiment` (lifecycle), `vm`
+Command groups: `config` (stored configs), `builder` (publish a Builder v2
+document as a topology), `experiment` (lifecycle), `vm`
 (running VMs), `image` (vmdb2 disk images), `vlan` (per-experiment VLAN
 aliases/ranges), `workflow` (topology directory deployment), plus `mm`,
 `settings`, `ui`, `util`, `completion`, and `version`. Every subcommand

@@ -9,6 +9,7 @@ import (
 
 	"phenix/store"
 	"phenix/store/recordtest/memrecord"
+	"phenix/types/builder"
 )
 
 // tamperDraft rewrites the stored draft record through the given mutation,
@@ -200,131 +201,131 @@ func TestTamperedPublishedMetadataIsRejected(t *testing.T) {
 	}
 }
 
+// TestDecodeReferenceIsStrict decodes document references: each combination
+// of the sub-keys digest, id and path decodes, and a value that is not one
+// JSON object of those sub-keys, each text of the right shape, is refused.
 func TestDecodeReferenceIsStrict(t *testing.T) {
-	h := newHarness(t)
-	ctx := context.Background()
+	t.Parallel()
 
-	doc, err := h.service.PutPublishedDocument(ctx, PutPublishedDocumentRequest{
-		Target: "topo", Kind: "Topology", Actor: testActor,
-		Document: testDocument(t, "topo", 0), DraftID: "", SnapshotID: "",
-	})
-	if err != nil {
-		t.Fatalf("PutPublishedDocument returned error: %v", err)
-	}
+	const (
+		digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		id     = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+		file   = "/phenix/topologies/site/builder.yaml"
+	)
 
-	encoded, err := doc.Reference().EncodeReference()
-	if err != nil {
-		t.Fatalf("EncodeReference returned error: %v", err)
-	}
-
-	if _, err := DecodeReference(encoded); err != nil {
-		t.Fatalf("DecodeReference of a valid reference returned error: %v", err)
-	}
-
-	tests := map[string]func(map[string]any){
-		"unknown field":         func(raw map[string]any) { raw["injected"] = "value" },
-		"invalid id":            func(raw map[string]any) { raw["id"] = "../escape" },
-		"invalid digest":        func(raw map[string]any) { raw["digest"] = "deadbeef" },
-		"foreign schema":        func(raw map[string]any) { raw["schema"] = "https://example.com/other" },
-		"zero size":             func(raw map[string]any) { raw["size"] = 0 },
-		"oversized document":    func(raw map[string]any) { raw["size"] = MaxDocumentBytes + 1 },
-		"zero chunks":           func(raw map[string]any) { raw["chunks"] = 0 },
-		"too many chunks":       func(raw map[string]any) { raw["chunks"] = MaxChunks + 1 },
-		"oversized chunk size":  func(raw map[string]any) { raw["chunkSize"] = ChunkBytes + 1 },
-		"invalid draft id":      func(raw map[string]any) { raw["draftId"] = "not/valid" },
-		"invalid timestamp":     func(raw map[string]any) { raw["createdAt"] = "yesterday" },
-		"control chars in user": func(raw map[string]any) { raw["createdBy"] = "alice\x00" },
-	}
-
-	for name, mutate := range tests {
+	for name, want := range map[string]DocumentReference{
+		"digest":          {Digest: digest},
+		"id":              {ID: id},
+		"digest and id":   {Digest: digest, ID: id},
+		"path":            {Path: file},
+		"path and digest": {Digest: digest, Path: file},
+		"path and id":     {ID: id, Path: file},
+		"all three":       {Digest: digest, ID: id, Path: file},
+		"a json file":     {Path: "/phenix/builder.json"},
+		"a yml file":      {Path: "/phenix/a b/builder.yml"},
+		"the longest path": {
+			Path: "/" + strings.Repeat("a", MaxDocumentPathLength-len("/.json")) + ".json",
+		},
+	} {
 		t.Run(name, func(t *testing.T) {
-			var raw map[string]any
+			t.Parallel()
 
-			if err := json.Unmarshal([]byte(encoded), &raw); err != nil {
-				t.Fatalf("unmarshalling the reference returned error: %v", err)
-			}
-
-			mutate(raw)
-
-			value, err := json.Marshal(raw)
+			encoded, err := want.EncodeReference()
 			if err != nil {
-				t.Fatalf("marshalling the mutated reference returned error: %v", err)
+				t.Fatalf("EncodeReference returned error: %v", err)
 			}
 
-			if _, err := DecodeReference(string(value)); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("DecodeReference error = %s, want ErrInvalid", fmtErr(err))
+			if got, err := DecodeReference(encoded); err != nil || got != want {
+				t.Fatalf("DecodeReference(%s) = %+v, %s; want %+v", encoded, got, fmtErr(err), want)
 			}
 		})
 	}
 
+	// The sub-keys are written in a fixed order, and an empty one is left out.
+	encoded, err := DocumentReference{Digest: digest, ID: id, Path: file}.EncodeReference()
+	if want := `{"digest":"` + digest + `","id":"` + id + `","path":"` + file + `"}`; err != nil || encoded != want {
+		t.Fatalf("EncodeReference = %q, %v; want %q", encoded, err, want)
+	}
+
+	if encoded, err := (DocumentReference{ID: id}).EncodeReference(); err != nil || encoded != `{"id":"`+id+`"}` {
+		t.Fatalf("EncodeReference of an id alone = %q, %v", encoded, err)
+	}
+
 	for name, value := range map[string]string{
-		"empty object":     "{}",
-		"not json":         "not json",
-		"not an object":    `"just a string"`,
-		"trailing content": encoded + `{"id":"other"}`,
-		"trailing brace":   encoded + "}",
+		"empty":                    "",
+		"empty object":             "{}",
+		"null":                     "null",
+		"not json":                 "not json",
+		"not an object":            `"just a string"`,
+		"a list":                   `["` + id + `"]`,
+		"trailing content":         encoded + `{"id":"other"}`,
+		"trailing brace":           encoded + "}",
+		"unknown sub-key":          `{"id":"` + id + `","file":"` + file + `"}`,
+		"a field of the old shape": `{"id":"` + id + `","digest":"` + digest + `","draftId":"draft-1"}`,
+		"a number in the old shape": `{"id":"` + id + `","digest":"` + digest + `","size":10,"chunks":1,"chunkSize":1024,` +
+			`"schema":"` + builder.SchemaURI + `","createdAt":"2026-09-29T10:00:00Z"}`,
+		"a number":                          `{"id":42}`,
+		"a list sub-key":                    `{"id":["` + id + `"]}`,
+		"a null sub-key":                    `{"digest":"` + digest + `","id":null}`,
+		"an empty sub-key":                  `{"digest":"` + digest + `","id":""}`,
+		"invalid id":                        `{"id":"../escape"}`,
+		"an id that is too long":            `{"id":"` + strings.Repeat("a", MaxIDLength+1) + `"}`,
+		"invalid digest":                    `{"digest":"deadbeef"}`,
+		"a digest in upper case":            `{"digest":"` + strings.ToUpper(digest) + `"}`,
+		"a digest of another sum":           `{"digest":"md5:` + strings.Repeat("0", 64) + `"}`,
+		"a relative path":                   `{"path":"topologies/builder.yaml"}`,
+		"a path with ..":                    `{"path":"/phenix/../etc/builder.yaml"}`,
+		"a path with .":                     `{"path":"/phenix/./builder.yaml"}`,
+		"a path with //":                    `{"path":"/phenix//builder.yaml"}`,
+		"a path ending in /":                `{"path":"/phenix/builder.yaml/"}`,
+		"a path with no extension":          `{"path":"/phenix/builder"}`,
+		"a path to another file":            `{"path":"/etc/phenix/store.bdb"}`,
+		"an extension in upper case":        `{"path":"/phenix/builder.YAML"}`,
+		"a path with a control character":   `{"path":"/phenix/a\nb.yaml"}`,
+		"a path with a NUL":                 `{"path":"/phenix/a\u0000.yaml"}`,
+		"a path that is too long":           `{"path":"/` + strings.Repeat("a", MaxDocumentPathLength) + `.json"}`,
+		"a valid id beside an invalid path": `{"id":"` + id + `","path":"builder.yaml"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := DecodeReference(value); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("DecodeReference error = %s, want ErrInvalid", fmtErr(err))
+			t.Parallel()
+
+			if got, err := DecodeReference(value); !errors.Is(err, ErrInvalid) || got != (DocumentReference{}) {
+				t.Fatalf("DecodeReference(%s) = %+v, %s; want ErrInvalid and no reference", value, got, fmtErr(err))
 			}
 		})
 	}
 }
 
-func TestVerifyPublishedDocumentRejectsMismatchedReferences(t *testing.T) {
-	h := newHarness(t)
-	ctx := context.Background()
+// TestValidateDocumentPath checks the syntax rules of a Builder file path on
+// their own, as a caller that sets one checks it.
+func TestValidateDocumentPath(t *testing.T) {
+	t.Parallel()
 
-	doc, err := h.service.PutPublishedDocument(ctx, PutPublishedDocumentRequest{
-		Target: "topo", Kind: "Topology", Actor: testActor,
-		Document: testRandomDocument(t, "topo", 3000), DraftID: "", SnapshotID: "",
-	})
-	if err != nil {
-		t.Fatalf("PutPublishedDocument returned error: %v", err)
+	for _, value := range []string{"/phenix/builder.json", "/phenix/site/phenix-configs/builder.yaml", "/b.yml", "/phenix/.yaml"} {
+		if err := ValidateDocumentPath(value); err != nil {
+			t.Errorf("ValidateDocumentPath(%q) returned error: %v", value, err)
+		}
 	}
 
-	ref := doc.Reference()
-
-	if _, err := h.service.VerifyPublishedDocument(ctx, ref); err != nil {
-		t.Fatalf("VerifyPublishedDocument returned error: %v", err)
+	for _, value := range []string{
+		"", "builder.yaml", "./builder.yaml", "/phenix/builder", "/phenix/builder.txt", "/phenix/builder.yaml/",
+		"/phenix/../builder.yaml", "/phenix//builder.yaml", "/phenix/\x7f.yaml", "/phenix/builder.yaml\n",
+	} {
+		if err := ValidateDocumentPath(value); !errors.Is(err, ErrInvalid) {
+			t.Errorf("ValidateDocumentPath(%q) error = %s, want ErrInvalid", value, fmtErr(err))
+		}
 	}
+}
 
-	t.Run("digest", func(t *testing.T) {
-		other := ref
-		other.Digest = digestOf([]byte("something else"))
+// TestDocumentAnnotationIsStructured asserts the store shows the annotation
+// that holds a document reference as a map of its sub-keys: the store names
+// that annotation by a literal, since it cannot import this package.
+func TestDocumentAnnotationIsStructured(t *testing.T) {
+	t.Parallel()
 
-		if _, err := h.service.VerifyPublishedDocument(ctx, other); !errors.Is(err, ErrCorrupt) {
-			t.Fatalf("VerifyPublishedDocument error = %s, want ErrCorrupt", fmtErr(err))
-		}
-	})
-
-	t.Run("chunk count", func(t *testing.T) {
-		other := ref
-		other.Chunks = ref.Chunks + 1
-
-		if _, err := h.service.VerifyPublishedDocument(ctx, other); !errors.Is(err, ErrCorrupt) {
-			t.Fatalf("VerifyPublishedDocument error = %s, want ErrCorrupt", fmtErr(err))
-		}
-	})
-
-	t.Run("chunk size", func(t *testing.T) {
-		other := ref
-		other.ChunkSize = ref.ChunkSize / 2
-
-		if _, err := h.service.VerifyPublishedDocument(ctx, other); !errors.Is(err, ErrCorrupt) {
-			t.Fatalf("VerifyPublishedDocument error = %s, want ErrCorrupt", fmtErr(err))
-		}
-	})
-
-	t.Run("size", func(t *testing.T) {
-		other := ref
-		other.Size = ref.Size - 1
-
-		if _, err := h.service.VerifyPublishedDocument(ctx, other); !errors.Is(err, ErrCorrupt) {
-			t.Fatalf("VerifyPublishedDocument error = %s, want ErrCorrupt", fmtErr(err))
-		}
-	})
+	if !store.StructuredAnnotation(DocumentAnnotation) {
+		t.Fatalf("store.StructuredAnnotation(%q) = false, want the annotation shown as a map", DocumentAnnotation)
+	}
 }
 
 func TestUntrustedStringsAreBounded(t *testing.T) {

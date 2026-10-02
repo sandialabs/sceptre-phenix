@@ -481,8 +481,10 @@ var errBuilderIncludeForbidden = errors.New("you are not allowed to read it")
 // includedTopologyLoader resolves includeTopologies for generation and for
 // the checks publish makes of them. An include is read from the config store
 // only, under the same authorization as a stored source: phenix also accepts
-// a file path there, but the Builder never reads files from the server on a
-// caller's behalf.
+// a file path there, but the Builder never reads a file an include names.
+// The one file it reads from the server on a caller's behalf is the Builder
+// file a topology's "builder-doc" annotation names, under the limits of
+// [bapi.ReadDocumentFile].
 func (b *builderV2API) includedTopologyLoader(actor builderV2Actor) bdoc.TopologyLoader {
 	return func(name string) (*store.Config, error) {
 		if strings.ContainsAny(name, `/\`) {

@@ -12,6 +12,7 @@ a CI-built binary, a container, or a full range node.
 | `forms.spec.js`                | just a running server                                                                                   | yes                              |
 | `builder.spec.js`              | just a running server (the Topology Builder at `/builder`)                                              | yes                              |
 | `builder-*.spec.js`            | server started with `--features builder-v2` (Builder v2)                                                | yes                              |
+| `builder-files.spec.js`        | as above, and `E2E_BASE_DIR`: the server's `--base-dir.phenix`, on the machine the tests run on         | yes                              |
 | `builder-feature-off.spec.js`  | server started without `--features builder-v2`, and `E2E_BUILDER_V2=off`                                | yes (own server)                 |
 | `builder-sharing.spec.js`      | server started with `--features builder-v2`, `--jwt-signing-key` and an admin user, and `E2E_SHARING=1` | yes (own server)                 |
 | `experiment-lifecycle.spec.js` | minimega, VM images, a topology                                                                         | opt-in (`E2E_LIFECYCLE=1`)       |
@@ -20,7 +21,9 @@ a CI-built binary, a container, or a full range node.
 
 CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`
 and `bin/phenix` once, then runs six jobs in parallel. Each starts its own
-`bin/phenix ui` against a throw-away store and runs one part of the suite:
+`bin/phenix ui` against a throw-away store and base directory
+(`--base-dir.phenix`, which `E2E_BASE_DIR` names to the tests) and runs one
+part of the suite:
 
 | Job                    | Server                                     | Runs                                        |
 | ---------------------- | ------------------------------------------ | ------------------------------------------- |
@@ -83,6 +86,17 @@ looks after the text the previous one found, so a message expected twice
 must be shown twice. `.not.toHaveAnnounced()` checks the log at once, and
 `builder.announced()` returns it.
 
+A topology can name a Builder file on the server
+(`metadata.annotations.builder-doc.path`), which phenix reads only below its
+base directory. `builder-files.spec.js` writes such files itself, so it needs
+the server on the same machine and `E2E_BASE_DIR` set to the directory the
+server was started with as `--base-dir.phenix`, spelled the same way: the
+server's messages name it. Each test writes below
+`$E2E_BASE_DIR/e2e-builder-files/`, in a directory of its own that it removes
+afterwards. Without
+`E2E_BASE_DIR` the spec skips, so the default set still runs against a remote
+server.
+
 A test that asserts the intended behavior of a known product defect is tagged
 `@known-defect` and starts with
 `knownDefect('<summary> (<issue or PR, such as sandialabs/sceptre-phenix#436>)')`
@@ -120,6 +134,10 @@ npx playwright test builder --project=known-defects
 # the rest
 npx playwright test --grep @axe
 npx playwright test --grep-invert @axe --shard=1/3
+
+# Builder files a topology names (the server started with
+# `--base-dir.phenix /tmp/phenix-e2e`, a directory this user can write)
+E2E_BASE_DIR=/tmp/phenix-e2e npx playwright test builder-files
 
 # Builder with the feature flag off (a second server, started without
 # --features, for example on 127.0.0.1:3081)

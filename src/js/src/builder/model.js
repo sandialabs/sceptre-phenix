@@ -6,11 +6,15 @@
 //
 // Wire shape (see src/go/types/builder/document.go):
 //
-//   { $schema, revision, id, name?, description?, nodes[], networks[],
-//     edges[], viewport, grid, scenario?, source? }
+//   { $schema, revision, id, name?, description?, author?, createdAt?,
+//     updatedBy?, updatedAt?, nodes[], networks[], edges[], viewport, grid,
+//     scenario?, source?, layout? }
 //
 // Node payloads are discriminated by kind: device | switch | note | group.
 // `owner` is a property of the draft envelope and is never part of a document.
+// `author`, `createdAt`, `updatedBy` and `updatedAt` are, and only the server
+// sets them: it answers a create and a save with the values it wrote (the
+// stamp), which the editor copies into its own copy (see withStamp).
 
 import { iconKeyForSpec, isIconKey, kindMeta } from './catalog.js';
 import { isBuilderAnnotation } from './configs.js';
@@ -2526,6 +2530,102 @@ export function setViewport(doc, viewport) {
  */
 export function setGrid(doc, patch = {}) {
   return { ...doc, grid: { ...doc.grid, ...patch } };
+}
+
+// --- who made and last saved the document -----------------------------------
+
+// The header fields the server sets, in the order its encoding has them,
+// after `description` (Document in document.go).
+export const STAMP_KEYS = ['author', 'createdAt', 'updatedBy', 'updatedAt'];
+
+// The header keys the stamp follows.
+const BEFORE_STAMP = new Set([
+  '$schema',
+  'revision',
+  'id',
+  'name',
+  'description',
+]);
+
+/**
+ * The document with the author, creation time, last editor and last edit
+ * time the server wrote into the stored copy of it (the `stamp` of a create
+ * or save response). A value the stamp lacks is removed, as the stored
+ * document has none. The four keys follow the description, as in the
+ * server's encoding, so an export reads like the stored document. The same
+ * document is returned when it holds exactly the stamp already.
+ *
+ * @param {object} doc
+ * @param {{author?: string, createdAt?: string, updatedBy?: string,
+ *   updatedAt?: string}} [stamp]
+ * @returns {object} document
+ */
+export function withStamp(doc, stamp) {
+  const fields = STAMP_KEYS.filter(
+    (key) => typeof stamp?.[key] === 'string' && stamp[key] !== '',
+  ).map((key) => [key, stamp[key]]);
+  const rest = Object.entries(doc).filter(([key]) => !STAMP_KEYS.includes(key));
+  const header = rest.findLastIndex(([key]) => BEFORE_STAMP.has(key)) + 1;
+  const next = Object.fromEntries([
+    ...rest.slice(0, header),
+    ...fields,
+    ...rest.slice(header),
+  ]);
+
+  return JSON.stringify(Object.keys(next)) ===
+    JSON.stringify(Object.keys(doc)) &&
+    STAMP_KEYS.every((key) => next[key] === doc[key])
+    ? doc
+    : next;
+}
+
+/**
+ * The stamp of the document a snapshot the server lists holds: every save
+ * stores its user and its time, to the second, as the document's last
+ * editor and last edit time, and keeps the author and creation time of the
+ * draft, which `doc`, another snapshot of it, holds too.
+ *
+ * @param {object} doc a document of the draft
+ * @param {{createdBy?: string, createdAt?: string}} snapshot a row of the
+ *   draft's history
+ * @returns {object} stamp, as withStamp takes it
+ */
+export function savedStamp(doc, snapshot) {
+  const at = String(snapshot?.createdAt || '');
+  // The server's times are UTC, with a fraction of a second.
+  const whole = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?Z$/.exec(at);
+  const parsed = whole || !at ? null : new Date(at);
+
+  return {
+    author: doc?.author,
+    createdAt: doc?.createdAt,
+    updatedBy: snapshot?.createdBy,
+    updatedAt: whole
+      ? `${whole[1]}Z`
+      : parsed && !Number.isNaN(parsed.getTime())
+        ? `${parsed.toISOString().slice(0, 19)}Z`
+        : '',
+  };
+}
+
+/**
+ * Whether two documents differ at most in what the server stamps (see
+ * withStamp): everything else is the very same content.
+ *
+ * @param {object} a
+ * @param {object} b
+ * @returns {boolean}
+ */
+export function sameButStamp(a, b) {
+  const keys = (doc) =>
+    Object.keys(doc || {}).filter((key) => !STAMP_KEYS.includes(key));
+  const left = keys(a);
+
+  return (
+    Boolean(a && b) &&
+    left.length === keys(b).length &&
+    left.every((key) => a[key] === b[key])
+  );
 }
 
 /**

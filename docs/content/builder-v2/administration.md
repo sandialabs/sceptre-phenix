@@ -1,8 +1,9 @@
 # Administration
 
 This page is for phenix administrators. It covers turning Builder v2 on,
-the permissions its users need, where it keeps drafts, its REST API, and
-what to do when something goes wrong.
+the permissions its users need, where it keeps drafts and published
+diagrams, the `builder-doc` annotation, Builder documents kept in files, its
+REST API, and what to do when something goes wrong.
 
 ## Enabling Builder v2
 
@@ -67,10 +68,18 @@ The legacy **Builder** tab stays as it is.
 When the feature is off, the navigation bar has no **Builder v2** tab. A
 link to `/builder-v2` goes to the Experiments page with the notice
 "Builder v2 is not enabled on this phenix server." Every Builder v2 API
-route answers 404. On the Configs page, **Edit** on a topology that Builder
-v2 published says "Built by Builder v2" and explains that the topology
-can only be edited there. Turning the feature off does not delete drafts:
-they are there again when you turn it back on.
+route answers 404. On the Configs page, **Edit** on a topology that has a
+`builder-doc` annotation says "Built by Builder v2" and explains that the
+topology can only be edited there. That is every topology Builder v2
+published, every topology `phenix builder publish` created, and every
+topology that names a Builder file (see
+[The builder-doc annotation](#the-builder-doc-annotation)).
+`phenix config edit` still opens such a topology. Turning the feature off
+does not delete drafts: they are there again when you turn it back on.
+
+The `phenix builder publish` command does not need the feature: it works
+whether Builder v2 is on or off (see
+[From the command line](import-export.md#from-the-command-line)).
 
 Builder v2 works over plain HTTP. Only **Copy link** in the Share dialog
 needs HTTPS (see `--tls-key` and `--tls-cert` in `phenix ui --help`), or a
@@ -116,7 +125,7 @@ not see Builder v2. Give Builder v2 users a role such as the
 | Task | Permissions |
 |---|---|
 | See the **Builder v2** tab, and list drafts and published diagrams | `configs` `list` |
-| Open a draft or a published diagram | `configs` `get`; for a published diagram, on the topology it was published to, such as `Topology/riverside-water` |
+| Open a draft or a published diagram | `configs` `get`; for a published diagram, or the diagram of a topology that names a Builder file, on that topology, such as `Topology/riverside-water` |
 | Make a draft: **Blank diagram**, **Import**, **Upload**, **Edit as a draft**, **Save my history as a new draft** | `configs` `create` |
 | Import a stored config | Also `configs` `get` on the config, such as `Topology/riverside-water`, and `topologies` `list` (or `experiments` `list`) on its name |
 | Import an uploaded config | `configs` `create` |
@@ -366,10 +375,14 @@ list them. Limits:
 - A draft can be shared with at most 25 people.
 
 Publishing stores a copy of the diagram that never changes, the published
-document, and names it in the topology's `builder-doc` annotation. The
-**Published Diagrams** tab lists these documents. After a publish, older
-published documents of the same topology are removed once they are more than
-an hour old.
+document, and names it in the topology's `builder-doc` annotation (see
+[The builder-doc annotation](#the-builder-doc-annotation)). Published
+documents are records in the phenix store too, apart from configs. The
+**Published Diagrams** tab lists the topologies that name one, and the
+topologies that name a Builder file instead (see
+[Builder documents in files](#builder-documents-in-files)). After a publish,
+older published documents of the same topology are removed once they are
+more than an hour old.
 
 Deleting the topology removes its published documents too, however it is
 deleted: with **Delete** on its **Published Diagrams** card, on the
@@ -384,7 +397,12 @@ old.
 Renaming the topology, on the **Configs** page, through the REST API or with
 `phenix config edit`, removes its published documents the same way. The
 renamed topology is no longer listed under **Published Diagrams** until it is
-published again.
+published again, unless its annotation names a Builder file: the `path`
+stays, and the topology is then read from that file (see
+[Renaming and copying a topology](#renaming-and-copying-a-topology)).
+
+Deleting or renaming a topology never reads, changes or removes a Builder
+file.
 
 The browser keeps some Builder v2 data too:
 
@@ -428,13 +446,316 @@ Publish reports the stages that failed. To recover, compact and defragment
 etcd, then clear its `NOSPACE` alarm (see
 [etcd maintenance](https://etcd.io/docs/latest/op-guide/maintenance/)).
 
+## The builder-doc annotation
+
+A topology names its diagram in the `builder-doc` annotation of its Topology
+config. The annotation is a map with up to three keys:
+
+```yaml
+apiVersion: phenix.sandia.gov/v1
+kind: Topology
+metadata:
+  name: pump-station
+  annotations:
+    builder-doc:
+      digest: sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+      id: b856fc9e35107594f72e715f74ee1cae3eb951b41bf09a504327924e0a220d34
+      path: /phenix/topologies/pump-station/pump-station.builder.json
+```
+
+| Key | What it holds |
+|---|---|
+| `digest` | The digest of the Builder document: `sha256:` and 64 lowercase hex digits. It names the published document with that content that phenix stores for this topology. Beside `path`, it also says which content the file must hold. |
+| `id` | The ID of a published document in the phenix store. It counts only for the topology that document was published to. |
+| `path` | The absolute path of a Builder file on the phenix server (see [Builder documents in files](#builder-documents-in-files)). |
+
+Each key is optional, but the map must have at least one, and no other key.
+**Publish** and `phenix builder publish` write `digest` and `id`. You write
+`path` yourself, or `phenix builder publish --record-path` writes it. A
+publish keeps a `path` the topology already has.
+
+`builder-doc` is the only annotation that is a map: every other annotation
+of a config is text. In the JSON of a config it is an object:
+
+```json
+"annotations": {
+  "builder-doc": {
+    "digest": "sha256:82a1aba006d86a043d3d0ed615a7aa05aeff52407f1121f6e9224595c5dea308",
+    "id": "ae78c07ebf467ded1928a0f144b109fa47416e549c901fe0dd54f7753932e9b5"
+  },
+  "maintainer": "range-team",
+  "purpose": "Water utility training range"
+}
+```
+
+### Which diagram a topology shows
+
+1. The published document in the store, when the annotation names one: by
+   `id`, or by `digest` when there is no `id`. The document must have been
+   published to this topology, and when the annotation has a `digest`, the
+   document must have that digest.
+2. Otherwise the Builder file at `path`, when the annotation has one. With a
+   `digest` beside it, the file must hold the document with that digest.
+3. Otherwise none. The topology is not listed under **Published Diagrams**.
+   It still has the tag `builder v2` on the **Configs** page, and its edit
+   button opens Builder v2 with the message "No published Builder v2
+   document exists for topology pump-station. Use Import to make a diagram
+   from it."
+
+The stored document comes first because it is the diagram the stored
+topology was published from. The file may have changed since.
+
+### What phenix checks
+
+phenix checks the annotation whenever a Topology config is created or
+updated, by any means: `phenix config create` and `phenix config edit`, the
+**Configs** page, and the REST API. It refuses a config whose `builder-doc`
+is not valid. With `phenix config create`, the reason is in the log line
+before the error:
+
+```console
+$ phenix config create pump-station.topology.yaml
+2026-10-01 21:52:35.595 ERR calling config hook: config validation failed: topology pump-station: builder: invalid request: builder-doc.path: must be an absolute path type=SYSTEM uuid=197b8a05-ccb3-4162-994a-c39d8ebc1dc5
+Error: Unable to create configuration from pump-station.topology.yaml (search error logs for 197b8a05-ccb3-4162-994a-c39d8ebc1dc5)
+```
+
+The reasons are:
+
+| Reason | What is wrong |
+|---|---|
+| `value must be an object` | `builder-doc` is text, not a map |
+| `property "file" is unsupported` | A key other than `digest`, `id` and `path` |
+| `there must be at least 1 properties` | The map is empty |
+| `builder-doc: digest is not a sha256 digest` | `digest` is not `sha256:` and 64 lowercase hex digits |
+| `builder-doc.path: must be an absolute path` | `path` does not start with `/` |
+| `builder-doc.path: must be a clean path, with no ".", "..", "//" or trailing "/"` | `path` has one of these |
+| `builder-doc.path: must end in .json, .yaml or .yml` | `path` has another ending. An ending in capitals, such as `.JSON`, is refused too. |
+
+A `path` can be at most 1024 bytes long. phenix does not look for the file
+when it stores the config: the file is read only when someone opens the
+diagram.
+
+`phenix config edit` changes the keys of an annotation but cannot remove an
+annotation. To remove `builder-doc` from a topology, send the config without
+the annotation with `PUT /api/v1/configs/topology/<name>`, or delete the
+topology and create it again without the annotation.
+
+### Renaming and copying a topology
+
+A published document belongs to one topology name. When a topology is stored
+under another name (renamed, or its config copied and created under a new
+name), the `id` and `digest` that a publish wrote no longer name a document
+of that topology, so phenix drops them:
+
+- Without a `path`, the whole annotation is removed. The topology is then a
+  plain Topology config until it is published again.
+- With a `path`, the `id` is removed. The `path` and the `digest` stay, so
+  the topology is read from the file, and the file must still hold the
+  document with that digest.
+
+## Builder documents in files
+
+A topology can name a Builder document that is a file on the phenix server,
+instead of a published document in the store. This suits topologies kept in
+a repository that is checked out on the server: the Topology config and its
+diagram sit side by side as files, and the diagram opens in Builder v2
+without anyone publishing it first.
+
+### Example
+
+The directory `/phenix/topologies/pump-station/` holds two files:
+
+- `pump-station.builder.json`, the Builder document (the example file
+  [pump-station.builder.json](examples/pump-station.builder.json)).
+- `pump-station.topology.yaml`, the Topology config that the document
+  publishes, with a `builder-doc` annotation that names the document:
+
+    ```yaml
+    apiVersion: phenix.sandia.gov/v1
+    kind: Topology
+    metadata:
+        name: pump-station
+        annotations:
+            builder-doc:
+                path: /phenix/topologies/pump-station/pump-station.builder.json
+    spec:
+        nodes:
+            - general:
+                description: Field engineering laptop
+                hostname: eng-ws-01
+            # ... the rest of the nodes
+    ```
+
+To make the Topology config, open the document in Builder v2 and select
+**Export** > **Topology YAML** (see
+[Topology YAML](import-export.md#topology-yaml)). Then set `metadata.name`
+and add the annotation. Use the exported `spec` as it is: when the topology
+differs from what the document publishes, Builder v2 says so, and a draft
+made from the file cannot update the topology (see
+[Editing and publishing](#editing-and-publishing)).
+
+Store the config:
+
+```console
+$ phenix config create /phenix/topologies/pump-station/pump-station.topology.yaml
+2026-10-01 21:52:35.788 INF configuration created type=SYSTEM kind=Topology name=pump-station
+```
+
+The **Published Diagrams** tab now lists `pump-station` with the tag
+**File** and "Read from
+/phenix/topologies/pump-station/pump-station.builder.json" (see
+[Diagrams read from a file](drafts.md#diagrams-read-from-a-file)). **Open**
+shows the diagram read only.
+
+After a `git pull` changes the Builder file, the next **Open** shows the new
+diagram: phenix reads the file each time, and keeps no copy. The stored
+Topology config does not change with the file. Create the config again, or
+publish a draft made from the file, to bring the topology in step.
+
+### Which files phenix reads
+
+phenix reads a Builder file only when all of this holds:
+
+- The file is below the phenix base directory: `/phenix`, or the directory
+  the `base-dir.phenix` setting names (see [Settings](../settings.md)).
+- It is not below the directory where VM file systems are mounted:
+  `/phenix/mounts`, or the directory the `mount-dir` setting names.
+- It is a regular file, not a directory, a device or a pipe. A symbolic
+  link is followed only while it stays below the base directory and outside
+  the mount directory.
+- It is at most 5 MiB.
+- It holds one valid Builder document, as JSON or YAML. The content
+  decides which, not the file name. A YAML file may not use anchors,
+  aliases, merge keys or more than one document.
+
+`${NAME}` in the `path` of a config is filled in from the environment when
+the config is created, as everywhere in a config. `${NAME}` inside the
+Builder file is left as it is.
+
+The path is resolved on the server that runs `phenix ui`. When several
+phenix servers share one store, each reads its own file system.
+
+The file is read when someone opens the diagram, makes a draft from it, or
+publishes such a draft to the topology. Listing the **Published Diagrams**
+tab reads no file, so a card is listed even when its file is missing or not
+valid. Creating, editing, renaming and deleting the config read no file
+either, and neither does any `phenix` command: `phenix builder publish`
+reads only the file you give it.
+
+Anyone whose role has `configs` `get` on the topology can open its diagram.
+The `path` itself is part of the config, so everyone who can list the
+config can see it.
+
+### Pinning the file with a digest
+
+With `path` alone, the topology shows whatever document the file holds. Add
+`digest` to accept one document only:
+
+```yaml
+    builder-doc:
+      digest: sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+      path: /phenix/topologies/pump-station/pump-station.builder.json
+```
+
+When the file holds another document, the diagram does not open: "Builder
+file /phenix/topologies/pump-station/pump-station.builder.json does not
+match the digest topology pump-station records for it."
+
+The digest is the SHA-256 of the document as phenix writes it, not of the
+file. `sha256sum pump-station.builder.yaml` gives another value: a YAML
+file, or a JSON file with other spacing, key order or a final line break,
+has other bytes than the document phenix writes. To get the digest, use
+either of these:
+
+- `phenix builder publish --dry-run`, which writes nothing:
+
+    ```console
+    $ phenix builder publish /phenix/topologies/pump-station/pump-station.builder.json --dry-run
+    Document:     Pump station
+    File:         /phenix/topologies/pump-station/pump-station.builder.json
+    Digest:       sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+    Document ID:  1e13fa9bd9417c696159a9d0f1496953909516221c6600383cea29fa1fa8dc90
+    Topology:     Pump-station (would be created)
+    Nodes:        3
+    Nothing was written.
+    ```
+
+- The REST API, for a topology that already names the file (see
+  [Examples](#examples)).
+
+### When the file cannot be used
+
+Opening the diagram then fails with "Could not open the diagram of topology
+pump-station." and one of these sentences. Each names the path and nothing
+of what the file holds. The REST API answers with the same sentence as
+`message`.
+
+| Message | Status | Why |
+|---|---|---|
+| "Builder file … is outside /phenix, the directory phenix reads Builder files from." | 422 | The path is not below the base directory, or it is below the mount directory |
+| "Builder file … does not exist on this phenix server." | 404 | No file is at the path |
+| "Builder file … cannot be read by phenix." | 422 | phenix has no permission to read it, a symbolic link leaves the base directory, or reading failed |
+| "Builder file … is not a regular file." | 422 | The path is a directory, a device or a pipe |
+| "Builder file … is larger than 5 MiB." | 413 | The file is too large |
+| "Builder file … is not a valid Builder document. Upload it in the Builder to see why." | 422 | The file is not JSON or YAML, or not a valid Builder document. **Upload** the file to see what is wrong with it (see [Uploading a Builder document](import-export.md#uploading-a-builder-document)) |
+| "Builder file … does not match the digest topology pump-station records for it." | 422 | The annotation has a `digest`, and the file holds another document |
+
+The phenix log has a line for each failure: `builder document file not
+usable`, with the topology, the path and the reason.
+
+### Editing and publishing
+
+**Edit as a draft** on the diagram makes a draft from the file, as it does
+from a published diagram (see
+[Diagrams read from a file](drafts.md#diagrams-read-from-a-file)).
+
+The draft can update the topology while both of these hold:
+
+- The file still holds the document the draft was made from.
+- The topology is still what that document publishes: no one changed the
+  config by hand.
+
+Otherwise Publish refuses the update, and the draft can still be published
+under a new topology name.
+
+**Publish never writes the file.** It stores the diagram as a published
+document, as every publish does, and writes `digest` and `id` beside the
+`path`:
+
+```yaml
+    builder-doc:
+      digest: sha256:ea65ffe247c2e425e96ced25ba077fd50104c481435974f995d2a05ce10fe159
+      id: bcf0b3bd4b8b876f594637d3d43e2f6b6fcdedaceb0bfde99e994c9992928a03
+      path: /phenix/topologies/pump-station/pump-station.builder.json
+```
+
+From then on the topology shows the published document, and its
+**Published Diagrams** card has no **File** tag. The file is now behind, and
+the Publish dialog warns: "Topology pump-station names the Builder file
+/phenix/topologies/pump-station/pump-station.builder.json, which Publish
+does not change. Export the diagram and replace the file to keep it in
+step." To do that, select **Export** > **Builder JSON** (or **Builder
+YAML**) in the draft, and replace the file with the export.
+
+The `path` stays because it still helps where the published document is
+missing: on another phenix server that gets this Topology config, the
+diagram is read from the file there, and only when the file holds the
+document with that `digest`.
+
 ## REST API
 
-Builder v2 has no `phenix` command. Scripts use its REST API, which the web
-UI uses too. All routes are under `/api/v1`, and each answers 404 while the
-`builder-v2` feature is off. The interactive API docs of a running server,
-at `/docs/`, describe every request and response under the **Builder v2**
-tag (see [Interactive API Docs](../api.md#interactive-api-docs-swaggeropenapi)).
+Scripts use Builder v2's REST API, which the web UI uses too. All routes
+are under `/api/v1`, and each answers 404 while the `builder-v2` feature is
+off. The interactive API docs of a running server, at `/docs/`, describe
+every request and response under the **Builder v2** tag (see
+[Interactive API Docs](../api.md#interactive-api-docs-swaggeropenapi)).
+
+Builder v2 has one `phenix` command, `phenix builder publish`, which makes
+a topology from a Builder file (see
+[From the command line](import-export.md#from-the-command-line)). Drafts,
+sharing and everything else are in the web UI and the REST API only. The
+REST API has no single request that publishes a Builder file: create a
+draft from the document, then publish the draft.
 
 | Route | What it does |
 |---|---|
@@ -454,9 +775,10 @@ tag (see [Interactive API Docs](../api.md#interactive-api-docs-swaggeropenapi)).
 | `GET /builder-v2/sources` | The configs a document can be made from or published with |
 | `POST /builder-v2/generate` | Make a document from a stored or uploaded Topology or Experiment config |
 | `POST /builder-v2/export/topology` | The Topology YAML a document would publish as (writes nothing) |
-| `GET /builder-v2/documents` | List the published documents |
+| `GET /builder-v2/documents` | List the published documents (`source` `store`), and the topologies that name a Builder file instead (`source` `file`, with the `path` and no `id`) |
 | `GET /builder-v2/documents/{document}` | Read a published document |
 | `DELETE /builder-v2/documents/{document}` | Delete a published topology and its published documents |
+| `GET /builder-v2/topologies/{topology}/document` | Read the diagram a topology names in `builder-doc`, from the store or from its Builder file |
 
 `GET /schemas/builder-v2/v1` needs `schemas` `get` on the resource name
 `builder-v2`, the name in its path. The legacy Builder's `/builder/topologies`
@@ -542,15 +864,39 @@ jq '{id, owner, title, etag}' created.json
 
 ```json
 {
-  "id": "aeb86f5e-b1ee-4290-9729-e7f6fd1fd4ee",
+  "id": "6b471c7d-dd32-44e7-ae85-a889f377747f",
   "owner": "e2e-admin",
   "title": "riverside-water",
-  "etag": "\"31\""
+  "etag": "\"14\""
 }
 ```
 
 The `sourceToken` ties the draft to the topology it came from, so the draft
 can later publish back to `riverside-water`.
+
+The server writes who made and last saved the diagram into the document it
+stores (see
+[Who made and last saved a diagram](import-export.md#who-made-and-last-saved-a-diagram)).
+The answers to creating a draft and to saving one have no document, so they
+return these four values as `stamp`:
+
+```bash
+jq .stamp created.json
+```
+
+```json
+{
+  "author": "e2e-admin",
+  "createdAt": "2026-10-02T03:53:41Z",
+  "updatedBy": "e2e-admin",
+  "updatedAt": "2026-10-02T03:53:41Z"
+}
+```
+
+A draft made from an uploaded file can carry the file's name, which the
+Inspector shows as **Source file**: send it as `sourceFile` beside
+`document`, for example `"sourceFile": "riverside-water.builder.json"`. It
+must be a plain file name of at most 255 bytes, with no `/` or `\`.
 
 Delete that draft, with its current ETag. The owner and ID come from
 `created.json`. The owner is your user name, or `global-admin` when
@@ -570,6 +916,34 @@ The delete answers 204 with no body. Without `If-Match`, it answers:
 {"cause":"","message":"an If-Match header is required for this request"}
 ```
 
+Read the diagram of a topology, wherever it is kept. This is the topology
+`pump-station` of [Builder documents in files](#builder-documents-in-files);
+`jq` leaves out the document itself:
+
+```bash
+curl -s -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  "$PHENIX/api/v1/builder-v2/topologies/pump-station/document" | jq 'del(.document)'
+```
+
+```json
+{
+  "source": "file",
+  "digest": "sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184",
+  "size": 6480,
+  "target": "pump-station",
+  "kind": "Topology",
+  "config": "Topology/pump-station",
+  "path": "/phenix/topologies/pump-station/pump-station.builder.json"
+}
+```
+
+`digest` is the digest to write beside `path` (see
+[Pinning the file with a digest](#pinning-the-file-with-a-digest)). For a
+file, the answer also has `"topologyDiffers": true` when the stored topology
+is not what the document publishes. For a published document, `source` is
+`store`, and the answer has the document's `id` and who published it and
+when (`createdBy`, `createdAt`) instead of a `path`.
+
 ## Troubleshooting
 
 | What you see | Why | What to do |
@@ -584,6 +958,10 @@ The delete answers 204 with no body. Without `If-Match`, it answers:
 | The Publish dialog says the topology "already exists, and this diagram cannot update it" | The draft was not imported from that topology, opened from its published diagram, or published to it | Publish under another name, or import the topology and make your changes in that draft (see [Publishing](publishing.md)) |
 | The Publish dialog says the topology "changed after this diagram published it" | Someone changed the topology after this draft published it | Import the topology again, or publish under another name (see [Publishing again](publishing.md#publishing-again)) |
 | The Publish dialog says the topology "belongs to the legacy XML Builder and cannot be updated here" | The legacy Builder made that topology | Publish under another name |
+| "Could not open the diagram of topology pump-station. Builder file … " | The topology names a Builder file that phenix cannot use | See [When the file cannot be used](#when-the-file-cannot-be-used) |
+| "No published Builder v2 document exists for topology …" | The topology's `builder-doc` annotation names no document of that topology | See [Which diagram a topology shows](#which-diagram-a-topology-shows) |
+| `phenix config create` skips a file with "skipped Builder document; use phenix builder publish", or refuses it as "a Builder document, not a configuration" | The file is a Builder document, not a config | Publish it with `phenix builder publish` (see [From the command line](import-export.md#from-the-command-line)) |
+| `phenix builder publish --update` says the topology "was changed after it was published" | Someone changed the topology after its diagram was published | See [Updating a topology](import-export.md#updating-a-topology) |
 | **Copy link** shows a **Link to this draft** field and "Press ⌘C to copy the link." ("Press Ctrl+C to copy the link." on Windows and Linux) | The page is served over plain HTTP, where the browser does not allow the clipboard | Copy the selected link with <kbd>⌘</kbd>+<kbd>C</kbd> on macOS or <kbd>Ctrl</kbd>+<kbd>C</kbd> on Windows and Linux, or serve phenix over HTTPS |
 | The save state says "Offline: …" | The browser cannot reach the server | Keep the tab open: saving retries when the server answers (see [Working offline](drafts.md#working-offline)) |
 | "This draft changed on the server" | Someone saved a newer version of the draft before your changes reached the server | Choose how to keep your changes (see [When the draft changed on the server](drafts.md#when-the-draft-changed-on-the-server)) |

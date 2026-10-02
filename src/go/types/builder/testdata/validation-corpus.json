@@ -610,6 +610,380 @@
         }
       ],
       "error": "edges[0].route"
+    },
+    {
+      "name": "author, createdAt, updatedBy and updatedAt",
+      "set": [
+        {
+          "path": [
+            "author"
+          ],
+          "value": "alice"
+        },
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": "2026-10-01T15:04:05Z"
+        },
+        {
+          "path": [
+            "updatedBy"
+          ],
+          "value": "bob@example.com"
+        },
+        {
+          "path": [
+            "updatedAt"
+          ],
+          "value": "2026-10-01T16:10:00Z"
+        }
+      ]
+    },
+    {
+      "name": "updatedBy without updatedAt, and a createdAt after updatedAt",
+      "set": [
+        {
+          "path": [
+            "updatedBy"
+          ],
+          "value": "bob"
+        },
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": "2026-10-02T00:00:00Z"
+        },
+        {
+          "path": [
+            "updatedAt"
+          ],
+          "value": "2024-02-29T23:59:59Z"
+        }
+      ]
+    },
+    {
+      "name": "author of 256 bytes",
+      "set": [
+        {
+          "path": [
+            "author"
+          ],
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    {
+      "name": "author of 257 bytes",
+      "set": [
+        {
+          "path": [
+            "author"
+          ],
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "error": "author"
+    },
+    {
+      "name": "author of 86 characters in 258 bytes",
+      "set": [
+        {
+          "path": [
+            "author"
+          ],
+          "value": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€"
+        }
+      ],
+      "error": "author"
+    },
+    {
+      "name": "author with a tab",
+      "set": [
+        {
+          "path": [
+            "author"
+          ],
+          "value": "alice\tsmith"
+        }
+      ],
+      "error": "author"
+    },
+    {
+      "name": "author that is a number",
+      "set": [
+        {
+          "path": [
+            "author"
+          ],
+          "value": 7
+        }
+      ],
+      "error": "author"
+    },
+    {
+      "name": "null author, which Go decodes as none",
+      "set": [
+        {
+          "path": [
+            "author"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "empty author, which is none",
+      "set": [
+        {
+          "path": [
+            "author"
+          ],
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "updatedBy of 257 bytes",
+      "set": [
+        {
+          "path": [
+            "updatedBy"
+          ],
+          "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "error": "updatedBy"
+    },
+    {
+      "name": "updatedBy with a control character",
+      "set": [
+        {
+          "path": [
+            "updatedBy"
+          ],
+          "value": "bob\u0007"
+        }
+      ],
+      "error": "updatedBy"
+    },
+    {
+      "name": "updatedBy with a delete character",
+      "set": [
+        {
+          "path": [
+            "updatedBy"
+          ],
+          "value": "bob\u007f"
+        }
+      ],
+      "error": "updatedBy"
+    },
+    {
+      "name": "updatedBy that is an object",
+      "set": [
+        {
+          "path": [
+            "updatedBy"
+          ],
+          "value": {
+            "user": "bob"
+          }
+        }
+      ],
+      "error": "updatedBy"
+    },
+    {
+      "name": "empty createdAt, which is none",
+      "set": [
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "createdAt with an offset",
+      "set": [
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": "2026-10-01T15:04:05+00:00"
+        }
+      ],
+      "error": "createdAt"
+    },
+    {
+      "name": "createdAt with a fraction of a second",
+      "set": [
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": "2026-10-01T15:04:05.000Z"
+        }
+      ],
+      "error": "createdAt"
+    },
+    {
+      "name": "createdAt with a space for the T",
+      "set": [
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": "2026-10-01 15:04:05Z"
+        }
+      ],
+      "error": "createdAt"
+    },
+    {
+      "name": "createdAt with a lower case z",
+      "set": [
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": "2026-10-01T15:04:05z"
+        }
+      ],
+      "error": "createdAt"
+    },
+    {
+      "name": "createdAt without a zone",
+      "set": [
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": "2026-10-01T15:04:05"
+        }
+      ],
+      "error": "createdAt"
+    },
+    {
+      "name": "createdAt on February 30",
+      "set": [
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": "2026-02-30T00:00:00Z"
+        }
+      ],
+      "error": "createdAt"
+    },
+    {
+      "name": "createdAt on February 29 of a year that is not a leap year",
+      "set": [
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": "2026-02-29T00:00:00Z"
+        }
+      ],
+      "error": "createdAt"
+    },
+    {
+      "name": "createdAt at hour 24",
+      "set": [
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": "2026-10-01T24:00:00Z"
+        }
+      ],
+      "error": "createdAt"
+    },
+    {
+      "name": "createdAt that is a date only",
+      "set": [
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": "2026-10-01"
+        }
+      ],
+      "error": "createdAt"
+    },
+    {
+      "name": "createdAt that is a number",
+      "set": [
+        {
+          "path": [
+            "createdAt"
+          ],
+          "value": 1790866800
+        }
+      ],
+      "error": "createdAt"
+    },
+    {
+      "name": "updatedAt with an offset",
+      "set": [
+        {
+          "path": [
+            "updatedAt"
+          ],
+          "value": "2026-10-01T09:04:05-06:00"
+        }
+      ],
+      "error": "updatedAt"
+    },
+    {
+      "name": "updatedAt with a leap second",
+      "set": [
+        {
+          "path": [
+            "updatedAt"
+          ],
+          "value": "2026-12-31T23:59:60Z"
+        }
+      ],
+      "error": "updatedAt"
+    },
+    {
+      "name": "updatedAt in month 13",
+      "set": [
+        {
+          "path": [
+            "updatedAt"
+          ],
+          "value": "2026-13-01T00:00:00Z"
+        }
+      ],
+      "error": "updatedAt"
+    },
+    {
+      "name": "updatedAt with surrounding space",
+      "set": [
+        {
+          "path": [
+            "updatedAt"
+          ],
+          "value": " 2026-10-01T15:04:05Z"
+        }
+      ],
+      "error": "updatedAt"
+    },
+    {
+      "name": "updatedAt that is true",
+      "set": [
+        {
+          "path": [
+            "updatedAt"
+          ],
+          "value": true
+        }
+      ],
+      "error": "updatedAt"
     }
   ]
 }

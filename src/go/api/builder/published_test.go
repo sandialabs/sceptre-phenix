@@ -3,7 +3,6 @@ package builder
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -69,6 +68,9 @@ func TestPublishedDocumentRoundTrip(t *testing.T) {
 	}
 }
 
+// TestPublishedDocumentReferenceRoundTrip encodes the reference of a
+// published document, its digest and its ID, as a topology's annotation holds
+// it, and reads the document the decoded reference names.
 func TestPublishedDocumentReferenceRoundTrip(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -76,21 +78,17 @@ func TestPublishedDocumentReferenceRoundTrip(t *testing.T) {
 	doc := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo", 2000))
 	ref := doc.Reference()
 
+	if ref != (DocumentReference{Digest: doc.Digest, ID: doc.ID}) {
+		t.Fatalf("reference = %+v, want the digest and the ID of %+v", ref, doc)
+	}
+
 	encoded, err := ref.EncodeReference()
 	if err != nil {
 		t.Fatalf("EncodeReference returned error: %v", err)
 	}
 
-	if strings.Contains(encoded, "\n") || strings.Contains(encoded, "  ") {
-		t.Fatalf("annotation value must be compact JSON, got %q", encoded)
-	}
-
-	if len(encoded) > 1024 {
-		t.Fatalf("the reference encodes to %d bytes, too large for an annotation", len(encoded))
-	}
-
-	if !json.Valid([]byte(encoded)) {
-		t.Fatalf("annotation value is not valid JSON: %q", encoded)
+	if want := `{"digest":"` + doc.Digest + `","id":"` + doc.ID + `"}`; encoded != want {
+		t.Fatalf("annotation value = %q, want the compact JSON %q", encoded, want)
 	}
 
 	decoded, err := DecodeReference(encoded)
@@ -98,19 +96,13 @@ func TestPublishedDocumentReferenceRoundTrip(t *testing.T) {
 		t.Fatalf("DecodeReference returned error: %v", err)
 	}
 
-	switch {
-	case decoded != ref:
-		t.Fatalf("decoded reference = %+v, want %+v", decoded, ref)
-	case decoded.Chunks != len(doc.ChunkDigests) || decoded.ChunkSize != doc.ChunkSize:
-		t.Fatalf("decoded reference chunking = %d x %d, want %d x %d",
-			decoded.Chunks, decoded.ChunkSize, len(doc.ChunkDigests), doc.ChunkSize)
-	case decoded.Schema != builder.SchemaURI:
-		t.Fatalf("reference schema = %q, want %q", decoded.Schema, builder.SchemaURI)
+	if decoded != ref || !decoded.Names(doc) {
+		t.Fatalf("decoded reference = %+v, want %+v, which names the document", decoded, ref)
 	}
 
-	verified, err := h.service.VerifyPublishedDocument(ctx, decoded)
+	stored, verified, err := h.service.GetPublishedDocumentData(ctx, decoded.StoredID("topo"))
 	if err != nil {
-		t.Fatalf("VerifyPublishedDocument returned error: %v", err)
+		t.Fatalf("GetPublishedDocumentData returned error: %v", err)
 	}
 
 	if !bytes.Equal(verified, testRandomDocument(t, "topo", 2000)) {
@@ -119,6 +111,92 @@ func TestPublishedDocumentReferenceRoundTrip(t *testing.T) {
 
 	if _, err := builder.Parse(verified); err != nil {
 		t.Fatalf("the verified document must parse: %v", err)
+	}
+
+	// The record holds what the reference no longer does.
+	if stored.Schema != builder.SchemaURI || stored.DraftID != "draft-1" || stored.SnapshotID != "snap-1" ||
+		stored.Size != int64(len(verified)) || stored.CreatedBy != testActor {
+		t.Fatalf("stored document = %+v, want its schema, draft, snapshot, size and author recorded", stored)
+	}
+}
+
+// TestReferenceStoredID asserts which stored document each combination of a
+// reference's sub-keys names for a topology: its ID when it has one, else the
+// one its digest derives for that topology, else none.
+func TestReferenceStoredID(t *testing.T) {
+	t.Parallel()
+
+	const (
+		digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		id     = "another-document"
+		file   = "/phenix/builder.yaml"
+	)
+
+	derived := PublishedDocumentID("topo", digest)
+
+	for _, test := range []struct {
+		name string
+		ref  DocumentReference
+		want string
+	}{
+		{name: "digest", ref: DocumentReference{Digest: digest}, want: derived},
+		{name: "id", ref: DocumentReference{ID: id}, want: id},
+		{name: "digest and id", ref: DocumentReference{Digest: digest, ID: id}, want: id},
+		{name: "path", ref: DocumentReference{Path: file}, want: ""},
+		{name: "path and digest", ref: DocumentReference{Digest: digest, Path: file}, want: derived},
+		{name: "path and id", ref: DocumentReference{ID: id, Path: file}, want: id},
+		{name: "all three", ref: DocumentReference{Digest: digest, ID: id, Path: file}, want: id},
+		{name: "none", ref: DocumentReference{}, want: ""},
+	} {
+		if got := test.ref.StoredID("topo"); got != test.want {
+			t.Errorf("%s: StoredID = %q, want %q", test.name, got, test.want)
+		}
+	}
+
+	if other := (DocumentReference{Digest: digest}).StoredID("other"); other == derived || other == "" {
+		t.Errorf("a digest names %q for another topology, want an ID of its own", other)
+	}
+}
+
+// TestReferenceNames asserts a reference names a stored document only when
+// the document is the one it finds for the topology the document was
+// published to, with the digest it pins.
+func TestReferenceNames(t *testing.T) {
+	h := newHarness(t)
+
+	doc := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo", 1000))
+	other := publishTestDocument(t, h, "other", testRandomDocument(t, "other", 1000))
+	// The same content as doc, published to the other topology.
+	copied := publishTestDocument(t, h, "other", testRandomDocument(t, "topo", 1000))
+
+	const file = "/phenix/builder.yaml"
+
+	for _, test := range []struct {
+		name string
+		ref  DocumentReference
+		doc  *PublishedDocument
+		want bool
+	}{
+		{name: "digest", ref: DocumentReference{Digest: doc.Digest}, doc: doc, want: true},
+		{name: "id", ref: DocumentReference{ID: doc.ID}, doc: doc, want: true},
+		{name: "digest and id", ref: doc.Reference(), doc: doc, want: true},
+		{name: "all three", ref: DocumentReference{Digest: doc.Digest, ID: doc.ID, Path: file}, doc: doc, want: true},
+		{name: "path and digest", ref: DocumentReference{Digest: doc.Digest, Path: file}, doc: doc, want: true},
+		{name: "path", ref: DocumentReference{Path: file}, doc: doc, want: false},
+		{name: "none", ref: DocumentReference{}, doc: doc, want: false},
+		{name: "no document", ref: doc.Reference(), doc: nil, want: false},
+		{name: "another digest", ref: DocumentReference{Digest: other.Digest, ID: doc.ID}, doc: doc, want: false},
+		{name: "another digest alone", ref: DocumentReference{Digest: other.Digest}, doc: doc, want: false},
+		{name: "another document's ID", ref: DocumentReference{ID: other.ID}, doc: doc, want: false},
+		{name: "another document's ID and this digest", ref: DocumentReference{Digest: doc.Digest, ID: other.ID}, doc: doc, want: false},
+		// The digest of a document published to another topology derives that
+		// topology's own document, never this one.
+		{name: "the same content of another topology", ref: DocumentReference{Digest: doc.Digest}, doc: copied, want: true},
+		{name: "another topology's reference", ref: doc.Reference(), doc: copied, want: false},
+	} {
+		if got := test.ref.Names(test.doc); got != test.want {
+			t.Errorf("%s: Names = %t, want %t", test.name, got, test.want)
+		}
 	}
 }
 
@@ -151,37 +229,39 @@ func TestPublishedDocumentIsImmutableAndIdempotent(t *testing.T) {
 	}
 }
 
-func TestVerifyPublishedDocumentDetectsCorruptionAndLoss(t *testing.T) {
+// TestPublishedDocumentDataDetectsCorruptionAndLoss reads a published
+// document by its ID: content that no longer matches the record is corrupt,
+// and a removed record is not found.
+func TestPublishedDocumentDataDetectsCorruptionAndLoss(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 
-	doc := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo", 2000))
-	ref := doc.Reference()
+	data := testRandomDocument(t, "topo", 2000)
+	doc := publishTestDocument(t, h, "topo", data)
 
-	mismatched := ref
-	mismatched.Digest = "sha256:" + strings.Repeat("0", 64)
-
-	if _, err := h.service.VerifyPublishedDocument(ctx, mismatched); !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("VerifyPublishedDocument with a mismatched digest error = %s, want ErrCorrupt", fmtErr(err))
+	if _, read, err := h.service.GetPublishedDocumentData(ctx, doc.ID); err != nil || !bytes.Equal(read, data) {
+		t.Fatalf("GetPublishedDocumentData error = %s, want the published bytes", fmtErr(err))
 	}
 
-	mismatched = ref
-	mismatched.Chunks = ref.Chunks + 3
+	// A reference that pins another digest does not name the document, so
+	// nothing is read through it.
+	mismatched := doc.Reference()
+	mismatched.Digest = "sha256:" + strings.Repeat("0", 64)
 
-	if _, err := h.service.VerifyPublishedDocument(ctx, mismatched); !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("VerifyPublishedDocument with a mismatched chunk count error = %s, want ErrCorrupt", fmtErr(err))
+	if mismatched.Names(doc) {
+		t.Fatal("a reference with a mismatched digest names the document")
 	}
 
 	h.store.Drop(NamespaceChunks, chunkKey(publishedPayloadScope(doc.ID, doc.PayloadID), 0))
 
-	if _, err := h.service.VerifyPublishedDocument(ctx, ref); !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("VerifyPublishedDocument with a missing chunk error = %s, want ErrCorrupt", fmtErr(err))
+	if _, _, err := h.service.GetPublishedDocumentData(ctx, doc.ID); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("GetPublishedDocumentData with a missing chunk error = %s, want ErrCorrupt", fmtErr(err))
 	}
 
 	h.store.Drop(NamespacePublished, doc.ID)
 
-	if _, err := h.service.VerifyPublishedDocument(ctx, ref); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("VerifyPublishedDocument of a deleted document error = %s, want ErrNotFound", fmtErr(err))
+	if _, _, err := h.service.GetPublishedDocumentData(ctx, doc.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetPublishedDocumentData of a deleted document error = %s, want ErrNotFound", fmtErr(err))
 	}
 }
 
@@ -295,9 +375,9 @@ func TestPutPublishedDocumentRepairsCorruptContent(t *testing.T) {
 		t.Fatalf("republished document = %+v, want %s stored again with a new payload", repaired, doc.ID)
 	}
 
-	verified, err := h.service.VerifyPublishedDocument(ctx, repaired.Reference())
+	_, verified, err := h.service.GetPublishedDocumentData(ctx, repaired.ID)
 	if err != nil {
-		t.Fatalf("VerifyPublishedDocument of the repaired document returned error: %s", fmtErr(err))
+		t.Fatalf("GetPublishedDocumentData of the repaired document returned error: %s", fmtErr(err))
 	}
 
 	if !bytes.Equal(verified, data) {
@@ -478,16 +558,17 @@ func TestCleanupOrphanedDocuments(t *testing.T) {
 
 	keep := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo", 1000))
 	orphan := publishTestDocument(t, h, "gone", testRandomDocument(t, "gone", 1000))
+	live := []LiveDocument{{Target: "topo", ID: keep.Reference().StoredID("topo")}}
 
 	// A document is stored before the config that references it, so a recent
 	// one may be a publication still in flight.
-	if removed, err := h.service.CleanupOrphanedDocuments(ctx, []DocumentReference{keep.Reference()}); err != nil || removed != 0 {
+	if removed, err := h.service.CleanupOrphanedDocuments(ctx, live); err != nil || removed != 0 {
 		t.Fatalf("CleanupOrphanedDocuments of a recent document = %d, %s; want it kept", removed, fmtErr(err))
 	}
 
 	h.passOrphanGracePeriod()
 
-	removed, err := h.service.CleanupOrphanedDocuments(ctx, []DocumentReference{keep.Reference()})
+	removed, err := h.service.CleanupOrphanedDocuments(ctx, live)
 	if err != nil {
 		t.Fatalf("CleanupOrphanedDocuments returned error: %v", err)
 	}
@@ -506,6 +587,44 @@ func TestCleanupOrphanedDocuments(t *testing.T) {
 
 	if _, err := h.service.GetPublishedDocument(ctx, keep.ID); err != nil {
 		t.Fatalf("referenced document must survive: %v", err)
+	}
+}
+
+// TestCleanupOrphanedDocumentsKeepsOnlyATopologysOwn asserts a document is
+// live only when the topology it was published to names it. A document the
+// topology names by its digest alone is kept, and one only another topology
+// names, by an ID that is not that topology's, is an orphan: that topology
+// never lists or reads it.
+func TestCleanupOrphanedDocumentsKeepsOnlyATopologysOwn(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	byDigest := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo", 1000))
+	superseded := publishTestDocument(t, h, "other", testRandomDocument(t, "other-v1", 1000))
+	current := publishTestDocument(t, h, "other", testRandomDocument(t, "other-v2", 1000))
+
+	h.passOrphanGracePeriod()
+
+	live := []LiveDocument{
+		// The topology names its document by the digest alone.
+		{Target: "topo", ID: DocumentReference{Digest: byDigest.Digest}.StoredID("topo")},
+		{Target: "other", ID: current.Reference().StoredID("other")},
+		// A third topology names, by ID alone, a document of another one.
+		{Target: "copy", ID: DocumentReference{ID: superseded.ID}.StoredID("copy")},
+	}
+
+	if removed, err := h.service.CleanupOrphanedDocuments(ctx, live); err != nil || removed != 1 {
+		t.Fatalf("CleanupOrphanedDocuments = %d, %s; want the document another topology names removed", removed, fmtErr(err))
+	}
+
+	if _, err := h.service.GetPublishedDocument(ctx, superseded.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the superseded document error = %s, want ErrNotFound", fmtErr(err))
+	}
+
+	for _, doc := range []*PublishedDocument{byDigest, current} {
+		if _, _, err := h.service.GetPublishedDocumentData(ctx, doc.ID); err != nil {
+			t.Fatalf("the document of topology %s must survive: %s", doc.Target, fmtErr(err))
+		}
 	}
 }
 
@@ -531,7 +650,7 @@ func TestRepublishedDocumentIsNotAnOrphan(t *testing.T) {
 		t.Fatalf("CleanupOrphanedDocuments after the republish = %d, %s; want it kept", removed, fmtErr(err))
 	}
 
-	if _, err := h.service.VerifyPublishedDocument(ctx, reused.Reference()); err != nil {
+	if _, _, err := h.service.GetPublishedDocumentData(ctx, reused.ID); err != nil {
 		t.Fatalf("the republished document: %v", err)
 	}
 

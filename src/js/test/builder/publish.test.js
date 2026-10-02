@@ -453,6 +453,86 @@ describe('which configs a draft may update', () => {
     ).toBe(false);
   });
 
+  // A topology whose diagram is read from the Builder file it names is
+  // listed with no document (see listDocuments in api.js). The draft opened
+  // from that file may update it; the server checks that the file and the
+  // topology are still what the draft was opened from.
+  test("a draft opened from a topology's Builder file updates that topology", () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const file = (target) => ({
+      source: 'file',
+      id: `file/${target}`,
+      kind: 'Topology',
+      target,
+      config: `Topology/${target}`,
+      path: `/phenix/topologies/${target}.builder.json`,
+    });
+    const draft = {
+      id: 'd1',
+      digest: 'sha256:edited',
+      sourceToken: `builder-file/plant/${digest}`,
+      source: { kind: 'manual' },
+      documents: [file('plant'), file('plant-2'), published('p1', 'core')],
+    };
+
+    expect(draftCanUpdate('topology', 'plant', draft)).toBe(true);
+    // Not another file's topology, not even one whose name starts the same,
+    // and not a topology with a published diagram.
+    expect(draftCanUpdate('topology', 'plant-2', draft)).toBe(false);
+    expect(draftCanUpdate('topology', 'core', draft)).toBe(false);
+    expect(
+      draftCanUpdate('topology', 'plant', {
+        ...draft,
+        sourceToken: `builder-file/plant-2/${digest}`,
+      }),
+    ).toBe(false);
+    // Nor from any other source: a blank draft, an upload, or the published
+    // diagram of another topology.
+    for (const sourceToken of [
+      '',
+      'uploaded/Topology/plant',
+      'builder-doc/p1',
+    ]) {
+      expect(
+        draftCanUpdate('topology', 'plant', { ...draft, sourceToken }),
+      ).toBe(false);
+    }
+    // Once the topology is published, it is listed with that document, and
+    // the token no longer counts: the draft that published it may update it.
+    const stored = { ...published('p9', 'plant'), source: 'store' };
+
+    expect(
+      draftCanUpdate('topology', 'plant', { ...draft, documents: [stored] }),
+    ).toBe(false);
+    expect(
+      draftCanUpdate('topology', 'plant', {
+        ...draft,
+        documents: [{ ...stored, draftId: 'd1' }],
+      }),
+    ).toBe(true);
+    // The topology of the file is not an experiment's.
+    expect(draftCanUpdate('experiment', 'plant', draft)).toBe(false);
+    expect(updateBlocker('topology', 'plant', [{ name: 'plant' }], draft)).toBe(
+      '',
+    );
+  });
+
+  // The server's refusals of such an update name the topology, so the
+  // dialog shows them on its field, as they are.
+  test('a refused update of a file topology is shown on the topology field', () => {
+    const intent = { topology: { name: 'plant', action: 'update' } };
+
+    for (const reason of [
+      'Topology plant is not what its Builder file publishes, so this draft cannot update it.',
+      'Topology plant or its Builder file changed after this draft was opened from the file.',
+    ]) {
+      expect(publishRefusal(reason, intent)).toEqual({
+        message: reason,
+        field: 'topologyName',
+      });
+    }
+  });
+
   test('a topology the legacy XML Builder owns is never updated', () => {
     const entries = [{ name: 'old', builder: 'builder-xml' }, { name: 'new' }];
     const draft = { source: { kind: 'topology', name: 'old' } };

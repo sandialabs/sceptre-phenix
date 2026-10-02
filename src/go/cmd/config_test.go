@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -12,8 +16,10 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"phenix/api/builder"
+	"phenix/api/config"
 	"phenix/store"
 	bdoc "phenix/types/builder"
+	"phenix/util/plog/plogtest"
 )
 
 // TestConfigGetYAMLKeepsStrings gets a config whose strings start with a
@@ -130,5 +136,241 @@ func TestConfigDeleteRemovesBuilderDocuments(t *testing.T) {
 
 	if _, err := service.GetPublishedDocument(t.Context(), document.ID); !errors.Is(err, builder.ErrNotFound) {
 		t.Fatalf("published document: error = %v, want it deleted with its topology", err)
+	}
+}
+
+// TestConfigCommandsShowBuilderDocumentAsMap creates a topology from a YAML
+// file whose builder-doc annotation is a map, as a topology repository keeps
+// it, then gets it as YAML and as JSON and edits it: every command reads and
+// writes the map, and the hook refuses a reference that is not valid.
+func TestConfigCommandsShowBuilderDocumentAsMap(t *testing.T) {
+	db := store.NewBoltDB()
+	if err := db.Init(store.Endpoint("bolt://" + filepath.Join(t.TempDir(), "phenix.bdb"))); err != nil {
+		t.Fatalf("initializing BoltDB returned error: %v", err)
+	}
+
+	previous := store.DefaultStore
+	store.DefaultStore = db //nolint:reassign // the test's own store
+
+	t.Cleanup(func() { store.DefaultStore = previous }) //nolint:reassign // restore the store
+
+	const digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	topology := func(name, reference string) string {
+		path := filepath.Join(t.TempDir(), name+".yaml")
+		body := "apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: " + name +
+			"\n  annotations:\n    builder-doc:\n" + reference + "spec:\n  nodes: []\n"
+
+		//nolint:gosec // a config file the test creates
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatalf("writing %s: %v", path, err)
+		}
+
+		return path
+	}
+
+	run := func(args ...string) (string, error) {
+		root := &cobra.Command{Use: "phenix", SilenceUsage: true, SilenceErrors: true}
+		configCmd := newConfigCmd()
+		configCmd.AddCommand(newConfigCreateCmd(), newConfigGetCmd(), newConfigEditCmd())
+		root.AddCommand(configCmd)
+		root.SetArgs(append([]string{"config"}, args...))
+
+		var output bytes.Buffer
+		root.SetOut(&output)
+
+		_, err := root.ExecuteC()
+
+		return output.String(), err
+	}
+
+	file := topology("site", "      path: /phenix/topologies/site/builder.yaml\n      digest: "+digest+"\n")
+	if _, err := run("create", file); err != nil {
+		t.Fatalf("config create returned error: %v", err)
+	}
+
+	type shown struct {
+		Metadata struct {
+			Annotations map[string]any `json:"annotations" yaml:"annotations"`
+		} `json:"metadata" yaml:"metadata"`
+	}
+
+	// reference returns the builder-doc annotation `phenix config get` shows.
+	reference := func(unmarshal func([]byte, any) error, args ...string) any {
+		t.Helper()
+
+		output, err := run(append([]string{"get", "topology/site"}, args...)...)
+		if err != nil {
+			t.Fatalf("config get %v returned error: %v", args, err)
+		}
+
+		var config shown
+		if err := unmarshal([]byte(output), &config); err != nil {
+			t.Fatalf("config get %v output does not load: %v\n%s", args, err, output)
+		}
+
+		return config.Metadata.Annotations[builder.DocumentAnnotation]
+	}
+
+	want := map[string]any{"digest": digest, "path": "/phenix/topologies/site/builder.yaml"}
+
+	for name, got := range map[string]any{
+		"YAML": reference(yaml.Unmarshal),
+		"JSON": reference(json.Unmarshal, "-o", "json"),
+	} {
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("config get as %s shows builder-doc = %#v, want %#v", name, got, want)
+		}
+	}
+
+	// An editor that points the reference at another file.
+	editor := filepath.Join(t.TempDir(), "editor")
+	script := "#!/bin/sh\nsed 's|builder.yaml$|other.yml|' \"$1\" > \"$1.edited\" && mv \"$1.edited\" \"$1\"\n"
+
+	//nolint:gosec // the editor the test runs
+	if err := os.WriteFile(editor, []byte(script), 0o700); err != nil {
+		t.Fatalf("writing the editor: %v", err)
+	}
+
+	t.Setenv("EDITOR", editor)
+
+	if _, err := run("edit", "topology/site"); err != nil {
+		t.Fatalf("config edit returned error: %v", err)
+	}
+
+	want["path"] = "/phenix/topologies/site/other.yml"
+	if got := reference(yaml.Unmarshal); !reflect.DeepEqual(got, want) {
+		t.Fatalf("config get after the edit shows builder-doc = %#v, want %#v", got, want)
+	}
+
+	// The schema refuses an unknown sub-key, and the Topology config hook a
+	// sub-key that is not valid, with or without validation.
+	for name, test := range map[string]struct {
+		reference string
+		args      []string
+	}{
+		"an unknown sub-key":                {reference: "      file: /phenix/builder.yaml\n"},
+		"a relative path":                   {reference: "      path: builder.yaml\n"},
+		"a relative path, not validated":    {reference: "      path: builder.yaml\n", args: []string{"--skip-validation"}},
+		"an unknown sub-key, not validated": {reference: "      file: /phenix/builder.yaml\n", args: []string{"--skip-validation"}},
+	} {
+		if _, err := run(append([]string{"create", topology("refused", test.reference)}, test.args...)...); err == nil {
+			t.Errorf("%s: config create succeeded, want it refused", name)
+		}
+
+		refused, _ := store.NewConfig("topology/refused")
+		if err := store.Get(refused); !errors.Is(err, store.ErrNotExist) {
+			t.Errorf("%s: the topology was stored: error = %v", name, err)
+		}
+	}
+}
+
+// TestConfigCreateRecognizesBuilderDocuments runs `phenix config create` on
+// a directory that holds a config and Builder documents, as a topology
+// repository does: the config is created and each document is skipped with a
+// log line that names `phenix builder publish`. A Builder document named on
+// the command line is refused with an error that names it too. Neither
+// publishes the document.
+func TestConfigCreateRecognizesBuilderDocuments(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+	useBoltStore(t)
+
+	logs := plogtest.Capture(t)
+	directory := t.TempDir()
+	nested := filepath.Join(directory, "diagrams")
+
+	if err := os.Mkdir(nested, 0o750); err != nil {
+		t.Fatalf("creating %s: %v", nested, err)
+	}
+
+	var generic any
+	if err := json.Unmarshal(docsExample(t, builderExample), &generic); err != nil {
+		t.Fatalf("decoding the docs example: %v", err)
+	}
+
+	asYAML, err := yaml.Marshal(generic)
+	if err != nil {
+		t.Fatalf("encoding the docs example as YAML: %v", err)
+	}
+
+	// The names say nothing: the Builder exports a document as plain .json
+	// and .yaml.
+	documents := []string{
+		writeTestFile(t, directory, "a-diagram.json", docsExample(t, builderExample)),
+		writeTestFile(t, nested, "pump-station.yaml", asYAML),
+	}
+
+	writeTestFile(t, directory, "pump-station.topology.yaml", docsExample(t, "pump-station.topology.yaml"))
+	writeTestFile(t, directory, "notes.txt", []byte("not a config"))
+
+	run := func(args ...string) error {
+		root := &cobra.Command{Use: "phenix", SilenceUsage: true, SilenceErrors: true}
+		configCmd := newConfigCmd()
+		configCmd.AddCommand(newConfigCreateCmd())
+		root.AddCommand(configCmd)
+		root.SetArgs(append([]string{"config", "create"}, args...))
+
+		_, err := root.ExecuteC()
+
+		return err
+	}
+
+	if err := run(directory); err != nil {
+		t.Fatalf("config create on the directory returned error: %v", err)
+	}
+
+	topologies, err := config.List("topology")
+	if err != nil || len(topologies) != 1 || topologies[0].Metadata.Name != "pump-station" {
+		t.Fatalf("topologies = %v, %v, want only pump-station, from the config file", topologies, err)
+	}
+
+	if topologies[0].HasAnnotation(builder.DocumentAnnotation) {
+		t.Error("the topology names a Builder document, which config create never publishes")
+	}
+
+	skipped := logs.Records(t, plogtest.Message("skipped Builder document; use phenix builder publish"))
+
+	paths := make([]string, 0, len(skipped))
+	for _, record := range skipped {
+		path, _ := record["path"].(string)
+		paths = append(paths, path)
+	}
+
+	if !slices.Equal(paths, documents) {
+		t.Errorf("skipped %v, want one log line for each of %v", paths, documents)
+	}
+
+	if created := logs.Records(t, plogtest.Message("configuration created")); len(created) != 1 {
+		t.Errorf("created = %v, want the one config", created)
+	}
+
+	// Named on the command line, a Builder document is an error, with or
+	// without validation, and files named after it are not read.
+	for _, args := range [][]string{{documents[0]}, {documents[1], "--skip-validation"}, {documents[0], directory}} {
+		err := run(args...)
+
+		want := args[0] + ` is a Builder document, not a configuration: use "phenix builder publish ` + args[0] +
+			`" to create its topology`
+		if err == nil || err.Error() != want {
+			t.Errorf("config create %v: error = %v, want %q", args, err, want)
+		}
+	}
+
+	service, err := builder.New()
+	if err != nil {
+		t.Fatalf("builder.New returned error: %v", err)
+	}
+
+	if published, err := service.ListPublishedDocuments(t.Context()); err != nil || len(published) != 0 {
+		t.Errorf("published documents = %v, %v, want none", published, err)
+	}
+
+	if topologies, err := config.List("topology"); err != nil || len(topologies) != 1 {
+		t.Errorf("topologies = %v, %v, want still only pump-station", topologies, err)
+	}
+
+	// A file that is neither still fails as it did.
+	other := writeTestFile(t, t.TempDir(), "other.json", []byte(`{"$schema": "https://json-schema.org/draft/2020-12/schema"}`))
+	if err := run(other); err == nil || !strings.HasPrefix(err.Error(), "Unable to create configuration from "+other) {
+		t.Errorf("config create of a file that is no config: error = %v, want the humanized failure", err)
 	}
 }

@@ -12,6 +12,7 @@ import {
   RETRY_DELAYS,
   saveAnnouncement,
   staleSaveMessage,
+  stampOf,
 } from '@/builder/autosave.js';
 import {
   createMemoryStore,
@@ -224,6 +225,206 @@ describe('one commit, one snapshot', () => {
 
     expect(queue.record.entries).toHaveLength(50);
     expect(queue.record.entries[0].id).toBe('c20');
+  });
+});
+
+// The server writes who made the document and who saved it last, and when,
+// into the copy it stores, and answers the save with them (see withStamp in
+// model.js). The queue's own copy takes them, and no others.
+describe('the stamp a save answers with', () => {
+  const stamps = [
+    {
+      author: 'alice',
+      createdAt: '2026-10-01T15:04:05Z',
+      updatedBy: 'alice',
+      updatedAt: '2026-10-01T16:00:00Z',
+    },
+    {
+      author: 'alice',
+      createdAt: '2026-10-01T15:04:05Z',
+      updatedBy: 'alice',
+      updatedAt: '2026-10-01T16:00:07Z',
+    },
+  ];
+
+  function stampingApi() {
+    let saves = 0;
+
+    return fakeApi({
+      appendSnapshot: vi.fn(async () => {
+        saves += 1;
+
+        return {
+          draft: {
+            id: 'd1',
+            owner: 'alice',
+            snapshotId: `s${saves}`,
+            stamp: stamps[saves - 1],
+          },
+          history: null,
+          cursor: saves,
+          etag: `"${saves + 1}"`,
+        };
+      }),
+    });
+  }
+
+  test('is read from a create or a save, and from nothing else', () => {
+    expect(stampOf({ draft: { stamp: stamps[0] } })).toBe(stamps[0]);
+    // A document that names no one answers with an empty stamp.
+    expect(stampOf({ draft: { stamp: {} } })).toEqual({});
+    expect(stampOf({ draft: { id: 'd1' } })).toBeNull();
+    expect(stampOf({ draft: { stamp: 'alice' } })).toBeNull();
+    expect(stampOf({ draft: { stamp: [stamps[0]] } })).toBeNull();
+    expect(stampOf(null)).toBeNull();
+  });
+
+  test('goes into the entry the save stored, and is what the next page shows', async () => {
+    const api = stampingApi();
+    const seen = [];
+    const { queue } = await attached({
+      api,
+      extra: { onDraft: (envelope, op) => seen.push([op.commitId, envelope]) },
+    });
+    const first = { ...doc, name: 'first' };
+
+    await queue.commit({ id: 'c1', label: 'one', snapshot: first });
+
+    const [entry] = queue.record.entries;
+
+    // What was sent is what the editor held: the stamp is the server's.
+    expect(api.appendSnapshot.mock.calls[0][2].document).toBe(first);
+    expect(entry.snapshot).toMatchObject({ name: 'first', ...stamps[0] });
+    expect(Object.keys(entry.snapshot).slice(4, 9)).toEqual([
+      'description',
+      'author',
+      'createdAt',
+      'updatedBy',
+      'updatedAt',
+    ]);
+    // The document handed in is not changed under its owner.
+    expect(first).not.toHaveProperty('updatedAt');
+    expect(seen.map(([id, envelope]) => [id, stampOf(envelope)])).toEqual([
+      ['c1', stamps[0]],
+    ]);
+
+    // The next edit is built from the stamped copy, and sends that stamp;
+    // the server replaces it, and the entry takes the new one.
+    await queue.commit({
+      id: 'c2',
+      label: 'two',
+      snapshot: { ...entry.snapshot, name: 'second' },
+    });
+
+    expect(api.appendSnapshot.mock.calls[1][2].document.updatedAt).toBe(
+      stamps[0].updatedAt,
+    );
+    expect(queue.record.entries.map((item) => item.snapshot.updatedAt)).toEqual(
+      [stamps[0].updatedAt, stamps[1].updatedAt],
+    );
+  });
+
+  test('a save without one leaves the entry as it was', async () => {
+    const { queue } = await attached();
+
+    await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(queue.record.entries[0].snapshot).toBe(doc);
+  });
+
+  // An entry still needed once its save is confirmed is one a queued undo
+  // or redo moves to. The store wrote it before the save: it is written
+  // again, so a reload shows who saved it.
+  test('an entry the store keeps is stored again with its stamp', async () => {
+    const store = memoryStore();
+    const api = stampingApi();
+    let online = false;
+    const { queue } = await attached({ api, store, isOnline: () => online });
+
+    await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+    await queue.commit({ id: 'c2', label: 'two', snapshot: doc });
+    await queue.moveCursor({ commitId: 'c1' });
+    expect(store.written).toEqual(['c1', 'c2']);
+
+    // The cursor move fails, so the queue keeps it, and c1 with it.
+    api.moveCursor.mockRejectedValueOnce(new Error('offline'));
+    online = true;
+    await queue.flush();
+
+    expect(queue.record.queue.map((op) => op.kind)).toEqual(['cursor']);
+    // Not c2: nothing queued needs it once it is saved.
+    expect(store.written).toEqual(['c1', 'c2', 'c1']);
+
+    const kept = await queue.recover('alice', 'd1');
+
+    expect(kept.entries.map((entry) => entry.id)).toEqual(['c1']);
+    expect(kept.entries[0].snapshot).toMatchObject(stamps[0]);
+  });
+
+  test('a fork gives each entry the stamp the new draft stored it with', async () => {
+    const forked = [
+      { ...stamps[0], updatedBy: 'bob', updatedAt: '2026-10-02T10:00:00Z' },
+      { ...stamps[0], updatedBy: 'bob', updatedAt: '2026-10-02T10:00:01Z' },
+      { ...stamps[0], updatedBy: 'bob', updatedAt: '2026-10-02T10:00:02Z' },
+    ];
+    let saves = 0;
+    const api = fakeApi({
+      createDraft: vi.fn(async () => ({
+        draft: { id: 'd2', owner: 'bob', snapshotId: 'f0', stamp: forked[0] },
+        etag: '"f0"',
+      })),
+      appendSnapshot: vi.fn(async (owner, id) => {
+        saves += 1;
+
+        return {
+          draft: {
+            id,
+            owner,
+            snapshotId: `f${saves}`,
+            stamp: forked[saves],
+          },
+          etag: `"f${saves}"`,
+        };
+      }),
+    });
+    const queue = createAutosave({ api, store: memoryStore(), actor: 'bob' });
+    // The history as the editor holds it: each entry with the stamp of the
+    // save that stored it in the draft it leaves.
+    const held = { ...doc, ...stamps[0] };
+    const history = [
+      { id: 'base', label: 'initial', snapshot: held },
+      { id: 'kept', label: 'Added device', snapshot: { ...held, name: 'b' } },
+      { id: 'redo', label: 'Added switch', snapshot: { ...held, name: 'c' } },
+    ];
+
+    await queue.attach({ owner: 'alice', draftId: 'd1', etag: '"1"' });
+
+    const created = await queue.forkLocalHistory({
+      title: 'Copy',
+      entries: history,
+      index: 1,
+    });
+
+    // The first document carries the author the editor got from the server,
+    // which the new draft keeps. No file name is sent: a fork has none.
+    expect(api.createDraft.mock.calls[0][0].document).toMatchObject({
+      author: 'alice',
+      createdAt: '2026-10-01T15:04:05Z',
+    });
+    expect(api.createDraft.mock.calls[0][0]).not.toHaveProperty('sourceFile');
+    expect([...created.stamps]).toEqual([
+      ['base', forked[0]],
+      ['kept', forked[1]],
+      ['redo', forked[2]],
+    ]);
+    expect(
+      queue.record.entries.map((entry) => [
+        entry.snapshot.updatedBy,
+        entry.snapshot.updatedAt,
+      ]),
+    ).toEqual(forked.map((stamp) => [stamp.updatedBy, stamp.updatedAt]));
+    // The entries handed in are the caller's to stamp.
+    expect(history[1].snapshot.updatedBy).toBe('alice');
   });
 });
 

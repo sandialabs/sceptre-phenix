@@ -3200,6 +3200,18 @@
       "const": "https://phenix.sandia.gov/schemas/builder/v1",
       "description": "Identifies the builder document schema."
     },
+    "author": {
+      "description": "User who first made the document. The server sets it when a draft is created from a document that names none, and writes the same value into every later save of that draft.",
+      "maxLength": 256,
+      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "When the document was first made. The server sets it when a draft is created from a document that has none, and writes the same value into every later save of that draft. RFC 3339 in UTC, whole seconds: YYYY-MM-DDTHH:MM:SSZ.",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "type": "string"
+    },
     "description": {
       "type": "string"
     },
@@ -3245,6 +3257,18 @@
     },
     "source": {
       "$ref": "#/$defs/source"
+    },
+    "updatedAt": {
+      "description": "When this content was saved. The server sets it on every save, and a value sent is replaced. It is not source.updatedAt, which is a time of the source config. RFC 3339 in UTC, whole seconds: YYYY-MM-DDTHH:MM:SSZ.",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "type": "string"
+    },
+    "updatedBy": {
+      "description": "User whose save stored this content. The server sets it on every save, and a value sent is replaced.",
+      "maxLength": 256,
+      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+      "type": "string"
     },
     "viewport": {
       "$ref": "#/$defs/viewport"

@@ -44,6 +44,18 @@ components:
               type: string
             annotations:
               type: object
+              properties:
+                builder-doc:
+                  type: object
+                  minProperties: 1
+                  additionalProperties: false
+                  properties:
+                    digest:
+                      type: string
+                    id:
+                      type: string
+                    path:
+                      type: string
               additionalProperties:
                 type: string
         spec:

@@ -601,22 +601,3 @@ func TestBuilderV2ExportTopologyRequests(t *testing.T) { //nolint:paralleltest /
 		t.Fatalf("export name = %q, config %q, want topology", response.Name, exported.Metadata.Name)
 	}
 }
-
-func TestBuilderTopologyNameMatchesPublishDialog(t *testing.T) {
-	t.Parallel()
-
-	// The cases of configName in src/js/test/builder/publish.test.js, and a
-	// name that leaves none.
-	for name, want := range map[string]string{
-		"Untitled topology":  "Untitled-topology",
-		"  lab #2 (copy) ":   "lab-2-copy",
-		"core_net@site.v2":   "core_net@site.v2",
-		" Lab topology (2) ": "Lab-topology-2",
-		"":                   "topology",
-		"!!":                 "topology",
-	} {
-		if got := builderTopologyName(name); got != want {
-			t.Errorf("builderTopologyName(%q) = %q, want %q", name, got, want)
-		}
-	}
-}

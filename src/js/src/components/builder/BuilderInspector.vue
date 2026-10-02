@@ -373,6 +373,7 @@
     connectionChanges,
     findNetwork,
     moveNodes,
+    sameButStamp,
   } from '@/builder/model.js';
   import { schemaForKind } from '@/builder/schema.js';
   import { useBuilderStore } from '@/builder/store.js';
@@ -903,10 +904,16 @@
 
   // Reset when the document changes underneath us (undo, outline edits) unless
   // the user has unapplied work in progress, which must never be discarded
-  // silently.
+  // silently. A save's answer changes only who saved the document and when
+  // (see stampEntry in store.js), which no form shows: a reset then would
+  // drop the text being typed in a field.
   watch(
     () => store.doc,
-    () => {
+    (next, previous) => {
+      if (sameButStamp(next, previous)) {
+        return;
+      }
+
       if (!dirty.value && localErrors.value.length === 0) {
         reset();
       }

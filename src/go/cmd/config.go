@@ -14,6 +14,7 @@ import (
 
 	"phenix/api/config"
 	"phenix/types"
+	bdoc "phenix/types/builder"
 	"phenix/util"
 	"phenix/util/plog"
 	"phenix/util/printer"
@@ -298,7 +299,11 @@ func newConfigCreateCmd() *cobra.Command {
 
   This subcommand is used to create one or more configurations from JSON or
   YAML file(s). A directory path can also be given, and all JSON and YAML
-  files in the given directory will be parsed.`
+  files in the given directory will be parsed.
+
+  A Builder document (the Builder's JSON or YAML export) is not a
+  configuration. One found in a directory is skipped, and one named on the
+  command line is refused: "phenix builder publish" creates its topology.`
 
 	cmd := &cobra.Command{
 		Use:   "create </path/to/filename> ...",
@@ -312,43 +317,30 @@ func newConfigCreateCmd() *cobra.Command {
 			skip := MustGetBool(cmd.Flags(), "skip-validation")
 
 			for _, f := range args {
-				var configs []string
-
-				err := filepath.Walk(f, func(path string, info os.FileInfo, err error) error {
-					if err != nil {
-						return err
-					}
-
-					// Don't recursively process subdirectories.
-					if info.IsDir() {
-						return nil
-					}
-
-					extensions := []string{"*.json", "*.yaml", "*.yml"}
-
-					for _, ext := range extensions {
-						match, err := filepath.Match(ext, filepath.Base(path))
-						if err != nil {
-							return err
-						}
-
-						if match {
-							configs = append(configs, path)
-
-							break
-						}
-					}
-
-					return nil
-				})
+				configs, err := configFilesAt(f)
 				if err != nil {
 					err := util.HumanizeError(err, "%s", "Unable to create configuration from "+f)
 
 					return err.Humanized()
 				}
 
-				for _, f := range configs {
-					opts := []config.CreateOption{config.CreateFromPath(f)}
+				for _, path := range configs {
+					if isBuilderDocumentFile(path) {
+						// The file named on the command line, and not one
+						// found in a directory it names.
+						if path == f {
+							return fmt.Errorf(
+								"%s is a Builder document, not a configuration: "+
+									"use \"phenix builder publish %s\" to create its topology", path, path,
+							)
+						}
+
+						plog.Info(plog.TypeSystem, "skipped Builder document; use phenix builder publish", "path", path)
+
+						continue
+					}
+
+					opts := []config.CreateOption{config.CreateFromPath(path)}
 
 					if !skip {
 						opts = append(opts, config.CreateWithValidation())
@@ -356,7 +348,7 @@ func newConfigCreateCmd() *cobra.Command {
 
 					c, err := config.Create(opts...)
 					if err != nil {
-						return configCreateError(f, err)
+						return configCreateError(path, err)
 					}
 
 					plog.Info(
@@ -377,6 +369,53 @@ func newConfigCreateCmd() *cobra.Command {
 	cmd.Flags().Bool("skip-validation", false, "Skip configuration spec validation against schema")
 
 	return cmd
+}
+
+// configFilesAt returns the JSON and YAML files at path: the file itself, or
+// the files of the directory and of the directories below it.
+func configFilesAt(path string) ([]string, error) {
+	var configs []string
+
+	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		extensions := []string{"*.json", "*.yaml", "*.yml"}
+
+		for _, ext := range extensions {
+			match, err := filepath.Match(ext, filepath.Base(path))
+			if err != nil {
+				return err
+			}
+
+			if match {
+				configs = append(configs, path)
+
+				break
+			}
+		}
+
+		return nil
+	})
+
+	return configs, err //nolint:wrapcheck // the caller words the error
+}
+
+// isBuilderDocumentFile reports whether the file at path holds a Builder
+// document, by its content: the Builder exports one as plain .json or .yaml.
+// A file that cannot be read is not one, and is left to report why.
+func isBuilderDocumentFile(path string) bool {
+	text, err := os.ReadFile(path) //nolint:gosec // a config file the caller named
+	if err != nil {
+		return false
+	}
+
+	return bdoc.IsDocumentText(text)
 }
 
 // configCreateError is the error "config create" returns when the config in

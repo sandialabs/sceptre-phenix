@@ -102,6 +102,75 @@ export function documentPath(id) {
 }
 
 /**
+ * @param {string} topology topology name
+ * @returns {string} the Builder document the topology references
+ */
+export function topologyDocumentPath(topology) {
+  return `builder-v2/topologies/${encodeURIComponent(topology)}/document`;
+}
+
+// A topology whose Builder document is read from the file it names has no
+// published document, and so no document id. Its row in the listing gets a
+// handle in place of one, "file/<topology>", which no id can be (an id
+// holds no slash), so cards, commands and the editor name the row as they
+// name any other.
+const FILE_HANDLE = 'file/';
+
+/**
+ * @param {string} topology topology name
+ * @returns {string} the listing id of the diagram read from its Builder file
+ */
+export function fileHandle(topology) {
+  return `${FILE_HANDLE}${topology}`;
+}
+
+/**
+ * @param {string} id a listed published diagram's id
+ * @returns {string} the topology whose Builder file the diagram is read
+ *   from, or '' when the id is a published document's
+ */
+export function fileTopology(id) {
+  return typeof id === 'string' && id.startsWith(FILE_HANDLE)
+    ? id.slice(FILE_HANDLE.length)
+    : '';
+}
+
+// A listed published diagram, a file's with its handle as its id.
+function listedDocument(row) {
+  return row?.source === 'file' && typeof row.target === 'string'
+    ? { ...row, id: fileHandle(row.target) }
+    : row;
+}
+
+// The longest name of an uploaded file a draft records, in UTF-8 bytes
+// (MaxSourceFileLength in api/builder).
+export const MAX_SOURCE_FILE_BYTES = 255;
+
+/**
+ * The name of an uploaded file as a new draft records it (`sourceFile`), or
+ * '' for a name the server would refuse the draft for (ValidateSourceFile
+ * in api/builder): one that is not a plain file name, is too long, or holds
+ * a control character. The name is only shown, so one that cannot be
+ * recorded is left out, and the upload goes ahead without it.
+ *
+ * @param {string} [name] the chosen file's name
+ * @returns {string}
+ */
+export function sourceFileName(name) {
+  const text = typeof name === 'string' ? name : '';
+  const refused =
+    text === '.' ||
+    text === '..' ||
+    /[/\\]/.test(text) ||
+    [...text].some(
+      (ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f,
+    ) ||
+    utf8Length(text) > MAX_SOURCE_FILE_BYTES;
+
+  return refused ? '' : text;
+}
+
+/**
  * Reads the draft ETag from a response: from its body, which carries it in
  * every draft envelope (and a publish result's draft), or else from the ETag
  * header, tolerating header bags and Maps. The body comes first because a
@@ -329,6 +398,22 @@ export function serverReason(error) {
   return sentence(
     more > 0 ? `${reason} (and ${count(more, 'more problem')})` : reason,
   );
+}
+
+/**
+ * What the server said of a refused request, word for word, as a sentence.
+ * For answers written to be shown as they are: why a topology's Builder
+ * file cannot be used names its path, which serverReason() would take an id
+ * out of.
+ *
+ * @param {object} [error] axios-like error
+ * @returns {string} the message, or '' when the server gave none
+ */
+export function serverSentence(error) {
+  const data = error?.response?.data;
+  const detail = data && typeof data === 'object' ? data.message : '';
+
+  return typeof detail === 'string' ? sentence(detail) : '';
 }
 
 // One issue of a cause chain, without its prefixes, the other elements it
@@ -608,9 +693,12 @@ export function createBuilderApi(http = axiosInstance) {
      * Creates a draft from a complete document.
      *
      * @param {{owner?: string, title?: string, sourceToken?: string,
-     *   forkOf?: string, document: object, summary?: string}} request
+     *   sourceFile?: string, forkOf?: string, document: object,
+     *   summary?: string}} request
      *   forkOf: "<owner>/<draft id>" of a draft the new one forks, whose
-     *   source and last publication it takes in place of sourceToken
+     *   source and last publication it takes in place of sourceToken;
+     *   sourceFile: the name of the uploaded file the document was read
+     *   from
      */
     async createDraft(request) {
       checkUploadSize(request);
@@ -889,10 +977,38 @@ export function createBuilderApi(http = axiosInstance) {
       return spec;
     },
 
+    /**
+     * Lists the published diagrams the user may see: each topology's
+     * current published document (source "store"), and each topology whose
+     * diagram is read from the Builder file it names (source "file"), which
+     * has a path and a handle for an id (see fileHandle), and no digest,
+     * time or user: the listing reads no file.
+     */
     async listDocuments() {
       const response = await http.get(DOCUMENTS_PATH);
+      const documents = response.data?.documents;
 
-      return response.data?.documents || [];
+      return (Array.isArray(documents) ? documents : []).map(listedDocument);
+    },
+
+    /**
+     * Reads the Builder document a topology references, wherever it is
+     * kept: its published document, or the Builder file it names, which the
+     * server reads on every request.
+     *
+     * @param {string} name topology name
+     * @returns {Promise<object>} the listing row, with `digest`, `size` and
+     *   `document`, and for a file `topologyDiffers`: whether the stored
+     *   topology is not what the file's document publishes
+     */
+    async getTopologyDocument(name) {
+      const response = await http.get(topologyDocumentPath(name));
+      const data = response.data || {};
+
+      return {
+        ...listedDocument(data),
+        topologyDiffers: data.topologyDiffers === true,
+      };
     },
 
     async getDocument(id) {

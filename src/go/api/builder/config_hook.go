@@ -2,11 +2,13 @@ package builder
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"phenix/api/config"
 	"phenix/store"
+	"phenix/types"
 	"phenix/util/plog"
 )
 
@@ -70,13 +72,14 @@ func topologyDocumentsLeft(name string) bool {
 //
 // Once a topology is deleted (DELETE /configs, `phenix config delete`, all
 // included) or renamed (an update that changes its name: PUT /configs, `phenix
-// config edit`), its documents are removed. A topology about to be stored
-// loses a document reference that is another topology's, as a renamed
-// topology's is.
+// config edit`), its documents are removed. A topology about to be stored is
+// refused when its document reference does not decode, and loses the part of
+// the reference that is another topology's, as a renamed topology's is (see
+// [checkTopologyReference]).
 func topologyConfigHook(stage string, c *store.Config) error {
 	switch stage {
 	case configStageCreate, configStageUpdate:
-		dropOtherTopologyDocument(c)
+		return checkTopologyReference(c)
 	case configStageDelete:
 		if !topologyDocumentsLeft(c.Metadata.Name) {
 			deleteTopologyDocuments(c)
@@ -88,45 +91,76 @@ func topologyConfigHook(stage string, c *store.Config) error {
 	return nil
 }
 
-// dropOtherTopologyDocument removes a topology's [DocumentAnnotation] when
-// the document it names was published to a topology of another name: a
-// document's ID is made from the name it was published to (see
-// [PublishedDocumentID]). A renamed topology carries such a reference, and so
-// does a copy stored under a new name. That document is never listed or read
-// through this topology, and while a topology names it, the startup cleanup
-// keeps it. A reference that cannot be decoded is left for its readers to
-// report.
-func dropOtherTopologyDocument(c *store.Config) {
+// checkTopologyReference checks the [DocumentAnnotation] of a topology about
+// to be stored, and stores it as [DocumentReference.EncodeReference] writes
+// it.
+//
+// A reference that does not decode refuses the write, with an error matching
+// [types.ErrValidationFailed] and [ErrInvalid]: every config write passes
+// here, validated or not, and a topology stored with such a reference could
+// be opened neither in the Builder nor as text.
+//
+// A reference whose id is not the one its digest derives for this topology
+// (see [PublishedDocumentID]) names a document published to a topology of
+// another name. A renamed topology carries such a reference, and so does a
+// copy stored under a new name. That document is never listed or read
+// through this topology, so the id is dropped. The digest is dropped too,
+// unless the reference names a file, whose content the digest then pins; a
+// reference with nothing left is removed. An id without a digest cannot be
+// checked without reading the store, and is left: readers find that it names
+// nothing (see [DocumentReference.Names]). A path is never checked against
+// the files of this host, which may not be the host that reads it.
+func checkTopologyReference(c *store.Config) error {
 	value, ok := c.Metadata.Annotations[DocumentAnnotation]
 	if !ok {
-		return
+		return nil
 	}
+
+	name := c.Metadata.Name
 
 	ref, err := DecodeReference(value)
-	if err != nil || ref.ID == PublishedDocumentID(c.Metadata.Name, ref.Digest) {
-		return
+	if err != nil {
+		return fmt.Errorf("%w: topology %s: %w", types.ErrValidationFailed, name, err)
 	}
 
-	delete(c.Metadata.Annotations, DocumentAnnotation)
+	if ref.ID != "" && ref.Digest != "" && ref.ID != PublishedDocumentID(name, ref.Digest) {
+		plog.Info(
+			plog.TypeSystem,
+			"dropped a builder document reference that belongs to another topology",
+			"topology", name,
+			"document", ref.ID,
+		)
 
-	plog.Info(
-		plog.TypeSystem,
-		"dropped a builder document reference that belongs to another topology",
-		"topology", c.Metadata.Name,
-		"document", ref.ID,
-	)
+		ref.ID = ""
+
+		if ref.Path == "" {
+			delete(c.Metadata.Annotations, DocumentAnnotation)
+
+			return nil
+		}
+	}
+
+	encoded, err := ref.EncodeReference()
+	if err != nil {
+		return fmt.Errorf("topology %s: %w", name, err)
+	}
+
+	c.Metadata.Annotations[DocumentAnnotation] = encoded
+
+	return nil
 }
 
 // deleteTopologyDocuments removes the published documents of a Topology
 // config that no longer exists under its name (see
 // [Service.DeleteConfigDocuments] for which). A failure is logged and never
 // fails the delete: the config is gone, so its documents are never listed or
-// read again, and the startup cleanup removes them.
+// read again, and the startup cleanup removes them. A Builder file the
+// config named is never read or removed.
 func deleteTopologyDocuments(c *store.Config) {
 	deleted := DeletedConfig{Kind: c.Kind, Name: c.Metadata.Name, DocumentID: "", Updated: configUpdated(c)}
 
 	if ref, err := DecodeReference(c.Metadata.Annotations[DocumentAnnotation]); err == nil {
-		deleted.DocumentID = ref.ID
+		deleted.DocumentID = ref.StoredID(c.Metadata.Name)
 	}
 
 	service, err := New()

@@ -45,6 +45,31 @@ begin with a capital letter.
     When we say this, we mean passing a YAML or JSON configuration file of any
     type to the `phenix config create` command.
 
+    `phenix config create` also takes a directory, and creates every
+    configuration file below it. A [Builder v2](builder-v2/index.md) document
+    (a Builder JSON or Builder YAML file) is not a configuration: one found in
+    a directory is skipped with a log line, and one named on the command line
+    is refused. Use `phenix builder publish` to create its topology (see
+    [From the command line](builder-v2/import-export.md#from-the-command-line)).
+
+The `metadata` section can also hold `annotations`: text values by key, such
+as the `topology` and `scenario` annotations of an
+[Experiment](#experiment). One annotation is not text but a map:
+`builder-doc`, which names the Builder v2 diagram of a Topology. Its keys are
+`digest`, `id` and `path`:
+
+```yaml
+metadata:
+  name: pump-station
+  annotations:
+    builder-doc:
+      path: /phenix/topologies/pump-station/pump-station.builder.json
+    maintainer: range-team
+```
+
+See
+[The builder-doc annotation](builder-v2/administration.md#the-builder-doc-annotation).
+
 ## Topology
 
 The `Topology` configuration is one of the core configuration types for

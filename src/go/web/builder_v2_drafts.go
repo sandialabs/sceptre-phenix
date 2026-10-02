@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/mux"
 
 	bapi "phenix/api/builder"
+	bdoc "phenix/types/builder"
 	"phenix/util/plog"
 	"phenix/web/weberror"
 )
@@ -18,10 +19,13 @@ import (
 // user: it may be sent for symmetry with the response, but never to create a
 // draft on somebody else's behalf. ForkOf, "<owner>/<draft id>", names a
 // draft the new one forks, whose source and last publication it takes in
-// place of SourceToken (see [builderV2API.forkOrigin]).
+// place of SourceToken (see [builderV2API.forkOrigin]). SourceFile is the
+// name of the uploaded file the document came from, which is kept only to
+// show it; a fork records none.
 type builderDraftRequest struct {
 	Title       string          `json:"title"`
 	SourceToken string          `json:"sourceToken"`
+	SourceFile  string          `json:"sourceFile"`
 	ForkOf      string          `json:"forkOf"`
 	Summary     string          `json:"summary"`
 	Owner       string          `json:"owner"`
@@ -57,10 +61,13 @@ type builderCursorRequest struct {
 // builderDraftResponse is the JSON view of a draft. Chunk digests and other
 // storage details are deliberately not exposed.
 type builderDraftResponse struct {
-	ID             string    `json:"id"`
-	Owner          string    `json:"owner"`
-	Title          string    `json:"title,omitempty"`
-	SourceToken    string    `json:"sourceToken,omitempty"`
+	ID          string `json:"id"`
+	Owner       string `json:"owner"`
+	Title       string `json:"title,omitempty"`
+	SourceToken string `json:"sourceToken,omitempty"`
+	// SourceFile is the name of the uploaded file the draft was made from,
+	// when it was made from one.
+	SourceFile     string    `json:"sourceFile,omitempty"`
 	Created        time.Time `json:"created"`
 	Updated        time.Time `json:"updated"`
 	LastModifiedBy string    `json:"lastModifiedBy"`
@@ -79,6 +86,12 @@ type builderDraftResponse struct {
 	ETag         string                    `json:"etag"`
 	Document     json.RawMessage           `json:"document,omitempty"`
 	History      []builderSnapshotResponse `json:"history,omitempty"`
+	// Stamp is the author, creation time, last editor and last edit time of
+	// the document the request stored. Only creating a draft and saving one
+	// store a document, and neither returns it: the editor copies the stamp
+	// into its own copy instead. A field the stored document lacks is left
+	// out.
+	Stamp *bdoc.Provenance `json:"stamp,omitempty"`
 
 	Publication *builderPublicationResponse `json:"publication,omitempty"`
 	// Forked is what the draft this one forks had published when it was
@@ -146,6 +159,7 @@ func newBuilderDraftResponse(meta *bapi.DraftMetadata) builderDraftResponse {
 		Owner:          meta.Owner,
 		Title:          meta.Title,
 		SourceToken:    meta.SourceToken,
+		SourceFile:     meta.SourceFile,
 		Created:        meta.Created,
 		Updated:        meta.Updated,
 		LastModifiedBy: meta.LastModifiedBy,
@@ -156,6 +170,8 @@ func newBuilderDraftResponse(meta *bapi.DraftMetadata) builderDraftResponse {
 		CanUndo:        meta.CanUndo(),
 		CanRedo:        meta.CanRedo(),
 		ETag:           meta.ETag(),
+		// Set only on the metadata a create or a save returns.
+		Stamp: meta.Stamp,
 	}
 
 	if current := meta.Current(); current != nil {
@@ -400,29 +416,25 @@ func (b *builderV2API) createDraft(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 
-	sourceToken := request.SourceToken
+	// Checked here too, so a name that is not one refuses a fork as well,
+	// which would otherwise drop it unseen.
+	if err := bapi.ValidateSourceFile(request.SourceFile); err != nil {
+		return builderV2WebError(err, "unable to create the builder draft")
+	}
 
-	var forked *bapi.ForkedPublication
-
-	if request.ForkOf != "" {
-		if sourceToken, forked, err = b.forkOrigin(r, actor, request.ForkOf); err != nil {
-			return err
-		}
-	} else if id, opened := strings.CutPrefix(sourceToken, builderDocTokenPrefix); opened {
-		// A draft opened from a published document may update the config it
-		// was published to (see [draftOwnsDocument]), so only a caller who
-		// may read that document may name it.
-		if _, err = b.readableDocument(r, actor, id); err != nil {
-			return err
-		}
+	source, err := b.draftSource(r, actor, request)
+	if err != nil {
+		return err
 	}
 
 	meta, err := b.drafts.CreateDraft(r.Context(), bapi.CreateDraftRequest{
 		Owner:       actor.user,
 		Actor:       actor.user,
 		Title:       request.Title,
-		SourceToken: sourceToken,
-		Forked:      forked,
+		SourceToken: source.token,
+		SourceFile:  source.file,
+		Forked:      source.forked,
+		Origin:      source.origin,
 		Document:    document,
 		Summary:     request.Summary,
 		ID:          "",
@@ -440,6 +452,75 @@ func (b *builderV2API) createDraft(w http.ResponseWriter, r *http.Request) error
 	w.Header().Set("Location", "/api/v1/builder-v2/drafts/"+builderV2DraftName(meta.Owner, meta.ID))
 
 	return builderV2WriteJSON(w, http.StatusCreated, meta.ETag(), newBuilderDraftResponse(meta))
+}
+
+// builderDraftSource is where a new draft comes from, as the server
+// established it from the request (see [builderV2API.draftSource]).
+type builderDraftSource struct {
+	// token and file are the source token and the source file name the
+	// draft records.
+	token string
+	file  string
+	// forked is what the draft it forks had published.
+	forked *bapi.ForkedPublication
+	// origin is the document the draft is opened from, when the server read
+	// it itself for this request.
+	origin *bapi.DocumentOrigin
+}
+
+// draftSource establishes where the draft a request creates comes from.
+//
+// A fork takes the source token and the last publication of the draft it
+// forks (see [builderV2API.forkOrigin]) and records no source file. Its
+// document is what the caller's editor holds, so it is stamped as any
+// request body is.
+//
+// A draft opened from a published document, or from the Builder file a
+// topology names, may update that topology (see [draftOwnsDocument] and
+// [builderV2API.holdsDraftDocument]), so only a caller who may read the
+// document may name it, and for a file only while the file still holds what
+// the caller opened. That document is the draft's origin: when the request
+// sends it back unchanged, the draft stores it as it is (see
+// [bapi.Service.CreateDraft]), so opening a diagram is not an edit of it.
+// Its digest is all that says, and it is the server's own: the record's, or
+// that of the file as it was read for this request.
+func (b *builderV2API) draftSource(
+	r *http.Request,
+	actor builderV2Actor,
+	request builderDraftRequest,
+) (builderDraftSource, error) {
+	source := builderDraftSource{token: request.SourceToken, file: request.SourceFile, forked: nil, origin: nil}
+
+	if request.ForkOf != "" {
+		token, forked, err := b.forkOrigin(r, actor, request.ForkOf)
+		if err != nil {
+			return source, err
+		}
+
+		source.token, source.file, source.forked = token, "", forked
+
+		return source, nil
+	}
+
+	if id, opened := strings.CutPrefix(source.token, builderDocTokenPrefix); opened {
+		document, err := b.readableDocument(r, actor, id)
+		if err != nil {
+			return source, err
+		}
+
+		source.origin = &bapi.DocumentOrigin{Digest: document.Digest}
+	} else if strings.HasPrefix(source.token, builderFileTokenPrefix) {
+		// The token says what the file held: the file is read again here, so
+		// the token never names content the caller was not given.
+		file, err := b.openedTopologyFile(r.Context(), actor, source.token)
+		if err != nil {
+			return source, err
+		}
+
+		source.origin = &bapi.DocumentOrigin{Digest: file.digest}
+	}
+
+	return source, nil
 }
 
 // getDraft - GET /builder-v2/drafts/{owner}/{draft}.

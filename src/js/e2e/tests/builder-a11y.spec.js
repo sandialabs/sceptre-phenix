@@ -1277,6 +1277,33 @@ for (const scheme of ['light', 'dark']) {
           .toHaveAttribute('lang', 'en-US');
       });
 
+      // With nothing selected the Inspector shows the diagram, and below
+      // its fields who made it and who edited it last.
+      await test.step('the Inspector’s Details of a new draft', async () => {
+        const inspector = 'section[aria-labelledby="inspector-title"]';
+        const details = builder.inspector.getByTestId('inspector-details');
+        await expect
+          .soft(details.getByRole('heading', { level: 3 }))
+          .toHaveText('Details');
+        await expect
+          .soft(details.locator('dt'))
+          .toHaveText(['Created', 'Last edited']);
+        for (const time of await details.locator('time').all()) {
+          await expect
+            .soft(time)
+            .toHaveAttribute('datetime', /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+        }
+        await expectAccessible(page, {
+          include: inspector,
+          soft: true,
+          label: `axe on the Inspector's Details (${scheme})`,
+        });
+        const found = await invisibleText(page, inspector);
+        expect
+          .soft(found, `invisible text: ${JSON.stringify(found, null, 2)}`)
+          .toEqual([]);
+      });
+
       await test.step('the header has Back to drafts, the name and its pencil, the counts, the checks, Reset view, Commands, the theme, Shortcuts, Settings, the Help link of the landing and Focus mode', async () => {
         const back = page.getByRole('button', { name: 'Back to drafts' });
         const help = page.getByRole('link', {

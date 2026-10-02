@@ -163,7 +163,11 @@ func TestDocumentsAreCanonicalizedBeforeStorage(t *testing.T) {
 		t.Fatalf("CreateDraft returned error: %v", err)
 	}
 
-	if meta.History[0].Digest != digestOf(canonical) {
+	// What is stored is the canonical encoding of the document with the stamp
+	// the service wrote, whatever encoding the caller sent.
+	stamped := stampedDocument(t, canonical, *meta.Stamp)
+
+	if meta.History[0].Digest != digestOf(stamped) {
 		t.Fatal("stored digest must be the digest of the canonical encoding")
 	}
 
@@ -172,7 +176,7 @@ func TestDocumentsAreCanonicalizedBeforeStorage(t *testing.T) {
 		t.Fatalf("GetCurrentDocument returned error: %v", err)
 	}
 
-	if !bytes.Equal(snapshot.Data, canonical) {
+	if !bytes.Equal(snapshot.Data, stamped) {
 		t.Fatal("stored bytes must be the canonical encoding, not the caller's encoding")
 	}
 

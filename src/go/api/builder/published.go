@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -74,8 +75,9 @@ func PublishedDocumentID(target, digest string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// EncodeReference returns the compact JSON encoding of a document reference,
-// suitable for a config annotation value.
+// EncodeReference returns the compact JSON encoding of a document reference:
+// the value of a config's [DocumentAnnotation] annotation. A sub-key that is
+// empty is left out.
 func (r DocumentReference) EncodeReference() (string, error) {
 	data, err := json.Marshal(r)
 	if err != nil {
@@ -85,16 +87,24 @@ func (r DocumentReference) EncodeReference() (string, error) {
 	return string(data), nil
 }
 
-// DecodeReference decodes a compact document reference produced by
-// [DocumentReference.EncodeReference]. Decoding is strict: the value must be a
-// single JSON object with no unknown fields and no trailing content, and every
-// field is validated (identifier shape, sha256 digest syntax, builder schema
-// URI, and size, chunk count, and chunk size bounds) before the reference is
-// used to read anything.
-func DecodeReference(value string) (DocumentReference, error) {
-	var ref DocumentReference
+// The sub-keys of a document reference.
+const (
+	referenceDigest = "digest"
+	referenceID     = "id"
+	referencePath   = "path"
+)
 
-	if err := util.DecodeJSONStrict(strings.NewReader(value), &ref); err != nil {
+// DecodeReference decodes the value of a config's [DocumentAnnotation]
+// annotation, as [DocumentReference.EncodeReference] writes it. Decoding is
+// strict: the value must be a single JSON object with no trailing content,
+// holding at least one of the sub-keys digest, id and path and no other, and
+// each sub-key it holds must be text of the right shape (a sha256 digest, a
+// document identifier, see [ValidateDocumentPath]). Nothing is read through
+// a reference that does not decode.
+func DecodeReference(value string) (DocumentReference, error) {
+	var fields map[string]*string
+
+	if err := util.DecodeJSONStrict(strings.NewReader(value), &fields); err != nil {
 		if errors.Is(err, util.ErrTrailingJSON) {
 			return DocumentReference{}, newValidationError(DocumentAnnotation, "carries trailing content")
 		}
@@ -102,11 +112,79 @@ func DecodeReference(value string) (DocumentReference, error) {
 		return DocumentReference{}, newValidationCause(DocumentAnnotation, "is not a valid builder document reference", err)
 	}
 
+	if fields == nil {
+		return DocumentReference{}, newValidationError(DocumentAnnotation, "must be a map of digest, id and path")
+	}
+
+	var ref DocumentReference
+
+	// In key order, so that the same value always fails the same way.
+	for _, key := range slices.Sorted(maps.Keys(fields)) {
+		var field *string
+
+		switch key {
+		case referenceDigest:
+			field = &ref.Digest
+		case referenceID:
+			field = &ref.ID
+		case referencePath:
+			field = &ref.Path
+		default:
+			return DocumentReference{}, newValidationError(
+				DocumentAnnotation, fmt.Sprintf("has the unknown sub-key %q: its sub-keys are digest, id and path", key),
+			)
+		}
+
+		text := fields[key]
+		if text == nil || *text == "" {
+			return DocumentReference{}, newValidationError(DocumentAnnotation, key+" must be text that is not empty")
+		}
+
+		*field = *text
+	}
+
 	if err := validateReference(ref); err != nil {
 		return DocumentReference{}, err
 	}
 
 	return ref, nil
+}
+
+// StoredID is the ID of the stored published document the reference names
+// for the topology it was read from: ID when set, else the ID its digest
+// derives for that topology (see [PublishedDocumentID]), else "". A reference
+// with only a path names no stored document.
+func (r DocumentReference) StoredID(topology string) string {
+	switch {
+	case r.ID != "":
+		return r.ID
+	case r.Digest != "":
+		return PublishedDocumentID(topology, r.Digest)
+	}
+
+	return ""
+}
+
+// Names reports whether the reference, read from the topology doc was
+// published to, names the stored document doc: doc is the document
+// [DocumentReference.StoredID] finds for that topology, and it has the
+// reference's digest when the reference has one. A reference that names
+// another topology's document by its ID therefore names nothing, since that
+// document is never doc.
+func (r DocumentReference) Names(doc *PublishedDocument) bool {
+	if doc == nil {
+		return false
+	}
+
+	return r.StoredID(doc.Target) == doc.ID && (r.Digest == "" || r.Digest == doc.Digest)
+}
+
+// Publishes reports whether the reference, read from the topology named
+// topology, names the stored document a publication of the content with
+// this digest stores for that topology, whichever of the digest and the ID
+// it holds. No record is read.
+func (r DocumentReference) Publishes(topology, digest string) bool {
+	return r.StoredID(topology) == PublishedDocumentID(topology, digest) && (r.Digest == "" || r.Digest == digest)
 }
 
 // PutPublishedDocumentRequest stores an immutable copy of a published document.
@@ -124,8 +202,9 @@ type PutPublishedDocumentRequest struct {
 }
 
 // PutPublishedDocument stores an immutable copy of a published document and
-// returns it together with the compact reference the caller stores in the
-// config's [DocumentAnnotation] annotation. Published documents are content
+// returns it. The caller stores its reference (see
+// [PublishedDocument.Reference]) in the config's [DocumentAnnotation]
+// annotation. Published documents are content
 // addressed and never mutated: publishing identical content to the same target
 // twice returns the existing document, once its stored content has been
 // verified. An existing document whose content is corrupt or missing is
@@ -147,7 +226,7 @@ func (s *Service) PutPublishedDocument(ctx context.Context, req PutPublishedDocu
 		return nil, err
 	}
 
-	canonical, _, err := canonicalDocument(req.Document)
+	canonical, parsed, err := canonicalDocument(req.Document)
 	if err != nil {
 		return nil, err
 	}
@@ -202,6 +281,7 @@ func (s *Service) PutPublishedDocument(ctx context.Context, req PutPublishedDocu
 		SnapshotID:     req.SnapshotID,
 		CreatedAt:      s.clock().UTC(),
 		CreatedBy:      req.Actor,
+		Schema:         parsed.Schema,
 		Revision:       store.AnyRevision,
 		published:      time.Time{},
 	}
@@ -463,49 +543,6 @@ func (s *Service) ListPublishedDocuments(ctx context.Context) ([]PublishedDocume
 	return docs, nil
 }
 
-// VerifyPublishedDocument reassembles the document a reference points at and
-// checks it against the reference. It returns the verified document bytes, or
-// an error matching [ErrNotFound] when the document is gone and [ErrCorrupt]
-// when the stored content does not match the reference.
-func (s *Service) VerifyPublishedDocument(ctx context.Context, ref DocumentReference) ([]byte, error) {
-	if err := validateReference(ref); err != nil {
-		return nil, err
-	}
-
-	doc, data, err := s.GetPublishedDocumentData(ctx, ref.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	switch {
-	case doc.Digest != ref.Digest:
-		return nil, newCorruptError(kindPublished, ref.ID, fmt.Sprintf("digest is %s, reference expects %s", doc.Digest, ref.Digest))
-	case doc.Size != ref.Size:
-		return nil, newCorruptError(kindPublished, ref.ID, fmt.Sprintf("size is %d, reference expects %d", doc.Size, ref.Size))
-	case len(doc.ChunkDigests) != ref.Chunks:
-		return nil, newCorruptError(
-			kindPublished, ref.ID,
-			fmt.Sprintf("chunk count is %d, reference expects %d", len(doc.ChunkDigests), ref.Chunks),
-		)
-	case doc.ChunkSize != ref.ChunkSize:
-		return nil, newCorruptError(
-			kindPublished, ref.ID,
-			fmt.Sprintf("chunk size is %d, reference expects %d", doc.ChunkSize, ref.ChunkSize),
-		)
-	}
-
-	parsed, err := parseStored(kindPublished, ref.ID, data)
-	if err != nil {
-		return nil, err
-	}
-
-	if parsed.Schema != ref.Schema {
-		return nil, newCorruptError(kindPublished, ref.ID, fmt.Sprintf("schema is %q, reference expects %q", parsed.Schema, ref.Schema))
-	}
-
-	return data, nil
-}
-
 // deletePublished removes a published document at the revision it was read at,
 // then the payload it names.
 func (s *Service) deletePublished(doc *PublishedDocument) error {
@@ -584,8 +621,9 @@ func (s *Service) DeleteTargetDocuments(ctx context.Context, target string) (int
 type DeletedConfig struct {
 	Kind string
 	Name string
-	// DocumentID is the published document the config named in its
-	// [DocumentAnnotation] annotation, or empty when it named none.
+	// DocumentID is the stored published document the config named in its
+	// [DocumentAnnotation] annotation (see [DocumentReference.StoredID]), or
+	// empty when it named none.
 	DocumentID string
 	// Updated is the config's metadata.updated time, which the store keeps to
 	// the second: the start of the second the config was last written in. It
@@ -670,21 +708,33 @@ func (s *Service) DeleteConfigDocuments(ctx context.Context, deleted DeletedConf
 	})
 }
 
-// CleanupOrphanedDocuments removes every published document whose ID is not in
-// the given set of live references, which the caller collects from the configs
-// it owns. Callers must pass a complete set: any document missing from it is
-// treated as an orphan and removed, unless it was stored within the
+// LiveDocument names the stored published document a topology's reference
+// names (see [DocumentReference.StoredID]) to
+// [Service.CleanupOrphanedDocuments].
+type LiveDocument struct {
+	// Target is the name of the topology the reference was read from.
+	Target string
+	// ID is the document the reference names for that topology.
+	ID string
+}
+
+// CleanupOrphanedDocuments removes every published document that is not in
+// the given set of live documents, which the caller collects from the
+// topologies it owns. A document is live only when the topology it was
+// published to names it: a reference on another topology keeps nothing.
+// Callers must pass a complete set: any document missing from it is treated
+// as an orphan and removed, unless it was stored within the
 // [OrphanGracePeriod] and so may be about to be referenced.
-func (s *Service) CleanupOrphanedDocuments(ctx context.Context, referenced []DocumentReference) (int, error) {
-	live := make(map[string]bool, len(referenced))
-	for _, ref := range referenced {
-		live[ref.ID] = true
+func (s *Service) CleanupOrphanedDocuments(ctx context.Context, referenced []LiveDocument) (int, error) {
+	live := make(map[LiveDocument]bool, len(referenced))
+	for _, document := range referenced {
+		live[document] = true
 	}
 
 	now := s.clock()
 
 	return s.deleteDocumentsWhere(ctx, "cleaning up orphaned documents", func(doc *PublishedDocument) bool {
-		return !live[doc.ID] && now.Sub(doc.lastPublished()) >= OrphanGracePeriod
+		return !live[LiveDocument{Target: doc.Target, ID: doc.ID}] && now.Sub(doc.lastPublished()) >= OrphanGracePeriod
 	})
 }
 

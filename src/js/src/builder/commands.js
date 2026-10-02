@@ -791,16 +791,23 @@ function goToNode(ctx, id) {
   ctx.view.showNode(id);
 }
 
+// A topology read from the Builder file it names is listed with the
+// published diagrams, by the handle its row has for an id, and says so.
 function draftChoices(store) {
   const name = (item) => item.name || item.title || item.target || item.id;
   const from = (items, where) =>
     (items || []).map((item) => ({
       id: `${where}:${item.owner || ''}:${item.id}`,
       title: name(item),
-      detail: [where, item.owner && `Owner: ${item.owner}`, item.description]
+      detail: [
+        where,
+        item.owner && `Owner: ${item.owner}`,
+        item.source === 'file' && `File: ${item.path}`,
+        item.description,
+      ]
         .filter(Boolean)
         .join(' · '),
-      keywords: [item.target, item.owner].filter(Boolean),
+      keywords: [item.target, item.owner, item.path].filter(Boolean),
       value: item,
     }));
 

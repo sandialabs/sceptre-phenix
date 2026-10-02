@@ -16,7 +16,7 @@ All notable changes to this project will be documented in this file.
 - **Workflow API**: The workflow endpoints accept `?dryRun=true`, which validates the request and changes nothing, and return a JSON result. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Validation Errors**: Config validation errors from the CLI, the API and the web UI name the list item, its hostname or name, and the line. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **etcd**: Automatic history compaction for every etcd store, even with Builder v2 off. It compacts the whole etcd cluster. Set it with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
-- **Builder v2** (beta, `--features builder-v2`): New topology editor at `/builder-v2`, next to the existing Builder. See the [Builder v2 documentation](https://phenix.sceptre.dev/latest/builder-v2/).
+- **Builder v2** (beta, `--features builder-v2`): New topology editor at `/builder-v2`, next to the existing Builder, with `phenix builder publish` to create a topology from a Builder file. See the [Builder v2 documentation](https://phenix.sceptre.dev/latest/builder-v2/).
 
 ### Changed
 

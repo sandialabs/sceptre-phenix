@@ -6,7 +6,6 @@ const { createHash } = require('node:crypto');
 
 const {
   API,
-  SCHEMA_URI,
   expect,
   expectNoFatal,
   openConfigs,
@@ -25,23 +24,16 @@ const DISABLED = 'Builder v2 is not enabled on this phenix server.';
 const NO_ROUTE = 'no API route matches this request';
 
 // A Topology published by Builder v2 while the flag was on. The annotation
-// is the document reference the publish handler stores; the document itself
-// lives in the Builder store, which this server does not expose. The
-// document's ID is derived from the topology's name and the digest, as the
-// server derives it: it drops a reference whose ID belongs to another name.
+// is the document reference the publish handler stores, a map of the
+// document's digest and id; the document itself lives in the Builder store,
+// which this server does not expose. The document's ID is derived from the
+// topology's name and the digest, as the server derives it: it drops a
+// reference whose ID belongs to another name.
 function v2Topology(name) {
   const digest = `sha256:${'0'.repeat(64)}`;
   const reference = {
-    id: createHash('sha256').update(`${name}\x1f${digest}`).digest('hex'),
     digest,
-    size: 1024,
-    chunks: 1,
-    chunkSize: 524288,
-    schema: SCHEMA_URI,
-    draftId: '00000000-0000-4000-8000-000000000000',
-    snapshotId: '00000000-0000-4000-8000-000000000001',
-    createdAt: '2026-01-01T00:00:00Z',
-    createdBy: 'global-admin',
+    id: createHash('sha256').update(`${name}\x1f${digest}`).digest('hex'),
   };
 
   return {
@@ -49,7 +41,7 @@ function v2Topology(name) {
     kind: 'Topology',
     metadata: {
       name,
-      annotations: { 'builder-doc': JSON.stringify(reference) },
+      annotations: { 'builder-doc': reference },
     },
     spec: {
       nodes: [
@@ -225,7 +217,10 @@ test('Configs still labels a Builder v2 topology and shows it read-only', async 
     `Topology/${name}`,
   );
   const text = viewer.locator('textarea');
-  await expect(text).toHaveValue(/builder-doc/);
+  // The reference is shown as the nested map it is.
+  await expect(text).toHaveValue(
+    /\n( +)builder-doc:\n( +)digest: sha256:0{64}\n\2id: [0-9a-f]{64}\n/,
+  );
   await expect(text).toHaveValue(/hostname: host-a/);
   await expect(text).not.toBeEditable();
 

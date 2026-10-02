@@ -87,6 +87,10 @@ jobs:
     name: E2E ${{ matrix.name }}
     needs: build-e2e
     runs-on: ubuntu-latest
+    env:
+      # The server's base directory, which the tests can write: the Builder
+      # file specs put the files a topology names there.
+      E2E_BASE_DIR: /tmp/phenix-e2e-base
     strategy:
       fail-fast: false
       matrix:
@@ -135,7 +139,9 @@ jobs:
       - name: Start phenix UI
         run: |
           chmod +x bin/phenix
+          mkdir -p "$E2E_BASE_DIR"
           ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-e2e.bdb \
+            --base-dir.phenix "$E2E_BASE_DIR" \
             --listen-endpoint 127.0.0.1:3000 \
             ${{ matrix.server }} &> /tmp/phenix-ui.log &
           timeout 30 bash -c \

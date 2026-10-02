@@ -11,6 +11,7 @@ import (
 	"github.com/gofrs/uuid/v5"
 
 	"phenix/store"
+	"phenix/types/builder"
 	"phenix/util/plog"
 )
 
@@ -50,6 +51,16 @@ type Service struct {
 	chunkSize int
 }
 
+// DocumentOrigin is a document the caller read itself, from the store or from
+// a Builder file, that a new draft is opened from. It is a trusted input, as
+// Owner and Actor are: a caller must never take it from a request.
+type DocumentOrigin struct {
+	// Digest is the digest of the origin's canonical JSON. A request whose
+	// document has this digest is that document, byte for byte, so nothing
+	// else of the origin needs to be given.
+	Digest string
+}
+
 // CreateDraftRequest describes a new draft. Owner and Actor are trusted inputs
 // supplied by the caller, which is responsible for authorization.
 type CreateDraftRequest struct {
@@ -60,8 +71,15 @@ type CreateDraftRequest struct {
 	// SourceToken optionally records where the document came from (see
 	// [DraftMetadata.SourceToken]).
 	SourceToken string
+	// SourceFile optionally records the name of the uploaded file the
+	// document came from (see [DraftMetadata.SourceFile]).
+	SourceFile string
 	// Forked optionally records what the draft this one forks had published.
 	Forked *ForkedPublication
+	// Origin is the document the draft is opened from, when the caller read
+	// one itself. A draft whose document is that document unchanged stores it
+	// as it is (see [Service.CreateDraft]).
+	Origin *DocumentOrigin
 	// Document holds a JSON encoded builder document. It is decoded, validated,
 	// and canonicalized before anything is stored.
 	Document []byte
@@ -404,6 +422,16 @@ func (s *Service) GetSnapshot(ctx context.Context, draftID, snapshotID string) (
 // metadata. The document is decoded, semantically validated, and canonicalized
 // before it is hashed or stored; invalid documents are rejected with an error
 // matching [ErrInvalid].
+//
+// The document is validated as it was sent, then stamped: its author and
+// createdAt are kept when it has them, and are otherwise the actor and now,
+// and its updatedBy and updatedAt are always the actor and now. The author
+// and createdAt it is stored with are recorded in the draft, and every later
+// snapshot carries them (see [Service.AppendSnapshot]). One document is not
+// stamped: the unchanged copy of req.Origin, the document the draft is opened
+// from. It is stored as it is, so the draft holds exactly the content that
+// was opened, under the same digest. The returned metadata's Stamp holds the
+// four values the stored document has.
 func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*DraftMetadata, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("creating draft: %w", err)
@@ -418,7 +446,16 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 		return nil, err
 	}
 
-	canonical, doc, err := canonicalDocument(req.Document)
+	doc, err := parseDocument(req.Document)
+	if err != nil {
+		return nil, err
+	}
+
+	// The one clock read of this call: the document, its manifest and the
+	// draft record all hold the same time.
+	now := s.clock().UTC()
+
+	canonical, err := firstDocument(doc, req, now)
 	if err != nil {
 		return nil, err
 	}
@@ -433,27 +470,31 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 		return nil, err
 	}
 
-	manifest, err := s.manifest(load, req.Actor, req.Summary)
+	manifest, err := s.manifest(load, req.Actor, req.Summary, now)
 	if err != nil {
 		return nil, err
 	}
 
-	now := s.clock().UTC()
+	stamp := doc.Provenance()
 
 	meta := &DraftMetadata{
-		ID:             draftID,
-		Owner:          req.Owner,
-		Title:          title,
-		SourceToken:    req.SourceToken,
-		Created:        now,
-		Updated:        now,
-		LastModifiedBy: req.Actor,
-		History:        []SnapshotManifest{manifest},
-		Cursor:         0,
-		Publication:    nil,
-		Forked:         nil,
-		Sharing:        nil,
-		Revision:       store.AnyRevision,
+		ID:                draftID,
+		Owner:             req.Owner,
+		Title:             title,
+		SourceToken:       req.SourceToken,
+		SourceFile:        req.SourceFile,
+		Created:           now,
+		Updated:           now,
+		LastModifiedBy:    req.Actor,
+		History:           []SnapshotManifest{manifest},
+		Cursor:            0,
+		Publication:       nil,
+		Forked:            nil,
+		Sharing:           nil,
+		DocumentAuthor:    stamp.Author,
+		DocumentCreatedAt: stamp.CreatedAt,
+		Revision:          store.AnyRevision,
+		Stamp:             &stamp,
 	}
 
 	if req.Forked != nil {
@@ -480,7 +521,7 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 		err = storeError(kindDraft, draftID, store.AnyRevision, err)
 
 		if !writeRejected(err) {
-			return s.settleAmbiguousWrite(draftID, manifest.ID, store.AnyRevision, err)
+			return s.settleAmbiguousWrite(draftID, manifest.ID, store.AnyRevision, stamp, err)
 		}
 
 		cleanupErrs := s.deleteChunkKeys(created)
@@ -491,6 +532,42 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 	meta.Revision = record.Revision
 
 	return meta, nil
+}
+
+// firstDocument returns the canonical encoding of the document a new draft
+// is stored with, and leaves doc as that document.
+//
+// The unchanged copy of the request's origin is returned as it is: its digest
+// says it is the origin, byte for byte, and the origin was not this caller's
+// edit. Any other document is stamped. It keeps the author and the creation
+// time it names, since a document made elsewhere was not made by the actor
+// now, and takes the actor and now for whichever it lacks. Its last editor
+// and last edit time are always the actor and now: nothing a request says of
+// them is kept.
+func firstDocument(doc *builder.Document, req CreateDraftRequest, now time.Time) ([]byte, error) {
+	if req.Origin != nil {
+		// A copy too large to store is refused below, as any document is.
+		if canonical, err := encodeDocument(doc); err == nil && digestOf(canonical) == req.Origin.Digest {
+			return canonical, nil
+		}
+	}
+
+	stamp := doc.Provenance()
+
+	if stamp.Author == "" {
+		stamp.Author = req.Actor
+	}
+
+	if stamp.CreatedAt == "" {
+		stamp.CreatedAt = builder.FormatTime(now)
+	}
+
+	stamp.UpdatedBy = req.Actor
+	stamp.UpdatedAt = builder.FormatTime(now)
+
+	doc.SetProvenance(stamp)
+
+	return encodeDocument(doc)
 }
 
 // AppendSnapshot appends a new snapshot to a draft.
@@ -510,6 +587,15 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 // When the metadata write succeeded but removing chunks of discarded snapshots
 // failed, the updated metadata is returned together with an error matching
 // [ErrCleanup].
+//
+// The document is validated as it was sent, then stamped: its author and
+// createdAt become the ones the draft records (see
+// [DraftMetadata.DocumentAuthor]), or are removed when the draft records
+// none, and its updatedBy and updatedAt become the actor and now. Nothing a
+// request says of the four is kept, so every snapshot names the user who
+// really saved it. The same time is the snapshot's and the draft's, cut to
+// whole seconds in the document. The returned metadata's Stamp holds the four
+// values written.
 func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest) (*DraftMetadata, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("appending snapshot: %w", err)
@@ -519,7 +605,7 @@ func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest)
 		return nil, err
 	}
 
-	canonical, doc, err := canonicalDocument(req.Document)
+	doc, err := parseDocument(req.Document)
 	if err != nil {
 		return nil, err
 	}
@@ -540,12 +626,18 @@ func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest)
 		return nil, err
 	}
 
-	load, err := buildPayload(canonical, s.chunkSize)
-	if err != nil {
-		return nil, err
+	// The one clock read of this call, made once the draft was read: the
+	// document, its manifest and the draft record all hold the same time.
+	now := s.clock().UTC()
+
+	stamp := builder.Provenance{
+		Author:    meta.DocumentAuthor,
+		CreatedAt: meta.DocumentCreatedAt,
+		UpdatedBy: req.Actor,
+		UpdatedAt: builder.FormatTime(now),
 	}
 
-	manifest, err := s.manifest(load, req.Actor, req.Summary)
+	load, manifest, err := s.stampedSnapshot(doc, stamp, req.Summary, now)
 	if err != nil {
 		return nil, err
 	}
@@ -556,8 +648,9 @@ func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest)
 	truncated := slices.Clone(updated.History[updated.Cursor+1:])
 	updated.History = append(updated.History[:updated.Cursor+1:updated.Cursor+1], manifest)
 	updated.Cursor = len(updated.History) - 1
-	s.stampDraft(updated, req.Actor)
+	stampDraft(updated, req.Actor, now)
 	updated.Title = title
+	updated.Stamp = &stamp
 
 	dropped := slices.Concat(truncated, pruneHistory(updated))
 
@@ -581,7 +674,7 @@ func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest)
 
 	if err := s.saveDraft(updated, value, meta.Revision); err != nil {
 		if !writeRejected(err) {
-			stored, settleErr := s.settleAmbiguousWrite(req.DraftID, manifest.ID, meta.Revision, err)
+			stored, settleErr := s.settleAmbiguousWrite(req.DraftID, manifest.ID, meta.Revision, stamp, err)
 			if settleErr != nil {
 				return nil, settleErr
 			}
@@ -629,7 +722,7 @@ func (s *Service) MoveCursor(ctx context.Context, req MoveCursorRequest) (*Draft
 
 	updated := meta.Clone()
 	updated.Cursor = index
-	s.stampDraft(updated, req.Actor)
+	stampDraft(updated, req.Actor, s.clock().UTC())
 
 	if err := s.writeDraft(updated, meta.Revision); err != nil {
 		return nil, err
@@ -685,7 +778,7 @@ func (s *Service) DeleteSnapshot(ctx context.Context, req DeleteSnapshotRequest)
 
 	updated := meta.Clone()
 	removed := removeSnapshot(updated, index)
-	s.stampDraft(updated, req.Actor)
+	stampDraft(updated, req.Actor, s.clock().UTC())
 
 	// A write that failed may still be applied later, and until it is the
 	// draft references the chunks, so they are left to
@@ -745,7 +838,7 @@ func (s *Service) MarkPublished(ctx context.Context, req MarkPublishedRequest) (
 	}
 
 	updated := meta.Clone()
-	s.stampDraft(updated, req.Actor)
+	stampDraft(updated, req.Actor, s.clock().UTC())
 	updated.Publication = &PublicationState{
 		Mode:             req.Mode,
 		TopologyTarget:   req.TopologyTarget,
@@ -833,7 +926,35 @@ func (s *Service) snapshot(draftID string, manifest SnapshotManifest) (*Snapshot
 	return &Snapshot{Manifest: manifest, Data: data, parsed: parsed}, nil
 }
 
-func (s *Service) manifest(load *payload, actor, summary string) (SnapshotManifest, error) {
+// stampedSnapshot writes stamp into doc and returns the payload of the
+// stamped document and the manifest of the snapshot that stores it, by the
+// user and at the time the stamp names as its last edit: now. The stamp
+// counts towards [MaxDocumentBytes], like the rest of the document.
+func (s *Service) stampedSnapshot(
+	doc *builder.Document,
+	stamp builder.Provenance,
+	summary string,
+	now time.Time,
+) (*payload, SnapshotManifest, error) {
+	doc.SetProvenance(stamp)
+
+	canonical, err := encodeDocument(doc)
+	if err != nil {
+		return nil, SnapshotManifest{}, err
+	}
+
+	load, err := buildPayload(canonical, s.chunkSize)
+	if err != nil {
+		return nil, SnapshotManifest{}, err
+	}
+
+	manifest, err := s.manifest(load, stamp.UpdatedBy, summary, now)
+
+	return load, manifest, err
+}
+
+// manifest describes a new snapshot of load, stored by actor at now.
+func (s *Service) manifest(load *payload, actor, summary string, now time.Time) (SnapshotManifest, error) {
 	snapshotID, err := s.newID()
 	if err != nil {
 		return SnapshotManifest{}, err
@@ -850,7 +971,7 @@ func (s *Service) manifest(load *payload, actor, summary string) (SnapshotManife
 		CompressedSize: load.compressedSize,
 		ChunkDigests:   load.chunkDigests,
 		ChunkSize:      s.chunkSize,
-		CreatedAt:      s.clock().UTC(),
+		CreatedAt:      now,
 		CreatedBy:      actor,
 		Summary:        summary,
 		// Set by the caller: only an appended snapshot records one.
@@ -858,9 +979,10 @@ func (s *Service) manifest(load *payload, actor, summary string) (SnapshotManife
 	}, nil
 }
 
-// stampDraft records updated as changed now, by actor.
-func (s *Service) stampDraft(updated *DraftMetadata, actor string) {
-	updated.Updated = s.clock().UTC()
+// stampDraft records updated as changed at now, by actor. It is the draft
+// record that is stamped, on every mutation: only a save stamps a document.
+func stampDraft(updated *DraftMetadata, actor string, now time.Time) {
+	updated.Updated = now
 	updated.LastModifiedBy = actor
 }
 
@@ -903,8 +1025,14 @@ func writeRejected(err error) bool {
 //
 // The chunks of snapshotID are never removed here: a write that has not been
 // applied yet may still be, so chunks that end up unreferenced are left to
-// [Service.CleanupOrphanedChunks].
-func (s *Service) settleAmbiguousWrite(draftID, snapshotID string, expected int64, err error) (*DraftMetadata, error) {
+// [Service.CleanupOrphanedChunks]. The stored metadata is returned with
+// stamp, what the write put in the document of snapshotID.
+func (s *Service) settleAmbiguousWrite(
+	draftID, snapshotID string,
+	expected int64,
+	stamp builder.Provenance,
+	err error,
+) (*DraftMetadata, error) {
 	record, getErr := s.store.GetRecord(NamespaceDrafts, draftID)
 	if getErr != nil {
 		return nil, err
@@ -916,6 +1044,8 @@ func (s *Service) settleAmbiguousWrite(draftID, snapshotID string, expected int6
 	}
 
 	if current := stored.Current(); current != nil && current.ID == snapshotID {
+		stored.Stamp = &stamp
+
 		return stored, nil
 	}
 
@@ -1066,7 +1196,11 @@ func validateCreateRequest(req CreateDraftRequest) error {
 		}
 	}
 
-	return nil
+	if req.Origin != nil && !builder.IsDigest(req.Origin.Digest) {
+		return newValidationError("origin", "digest is not a sha256 digest")
+	}
+
+	return ValidateSourceFile(req.SourceFile)
 }
 
 func validateAppendRequest(req AppendSnapshotRequest) error {

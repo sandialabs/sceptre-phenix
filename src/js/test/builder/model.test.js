@@ -26,15 +26,19 @@ import {
   removeElements,
   removeInterface,
   removeNetworks,
+  sameButStamp,
+  savedStamp,
   scenarioApps,
   SCHEMA_REVISION,
   SCHEMA_URI,
   setParent,
   setScenario,
+  setViewport,
   sizeOf,
   sourceAnnotations,
   specInterfaceFor,
   specInterfaces,
+  STAMP_KEYS,
   storedScenarioName,
   syncInterfaceVLANs,
   ungroup,
@@ -42,6 +46,7 @@ import {
   updateNetwork,
   updateNode,
   validateConnection,
+  withStamp,
 } from '@/builder/model.js';
 import { copySelection, pasteClipboard } from '@/builder/clipboard.js';
 import { DEVICE_TEMPLATES } from '@/builder/catalog.js';
@@ -1475,5 +1480,153 @@ describe('source annotations', () => {
     ]);
     expect(sourceAnnotations(createDocument())).toEqual([]);
     expect(sourceAnnotations({ source: { annotations: null } })).toEqual([]);
+  });
+});
+
+// The author, creation time, last editor and last edit time the server
+// writes into every document it stores (stampedSnapshot in api/builder).
+describe('the stamp of a stored document', () => {
+  const stamp = {
+    author: 'alice',
+    createdAt: '2026-10-01T15:04:05Z',
+    updatedBy: 'bob',
+    updatedAt: '2026-10-01T16:10:00Z',
+  };
+
+  test('is set after the description, as the server encodes it', () => {
+    const doc = createDocument({ name: 'Lab', description: 'A lab' });
+    const stamped = withStamp(doc, stamp);
+
+    expect(stamped).toMatchObject(stamp);
+    expect(Object.keys(stamped).slice(0, 10)).toEqual([
+      '$schema',
+      'revision',
+      'id',
+      'name',
+      'description',
+      'author',
+      'createdAt',
+      'updatedBy',
+      'updatedAt',
+      'nodes',
+    ]);
+    // A new document: the one given keeps what it had.
+    expect(stamped).not.toBe(doc);
+    expect(doc.author).toBeUndefined();
+    expect(stamped.nodes).toBe(doc.nodes);
+  });
+
+  test('follows the last header key a document without a description has', () => {
+    const { description, ...bare } = createDocument({ name: 'Lab' });
+    const { name, ...nameless } = bare;
+
+    expect(description).toBe('');
+    expect(name).toBe('Lab');
+    expect(Object.keys(withStamp(bare, stamp)).slice(3, 9)).toEqual([
+      'name',
+      ...STAMP_KEYS,
+      'nodes',
+    ]);
+    expect(Object.keys(withStamp(nameless, stamp)).slice(2, 8)).toEqual([
+      'id',
+      ...STAMP_KEYS,
+      'nodes',
+    ]);
+  });
+
+  test('replaces every value: one the stamp lacks is removed', () => {
+    const doc = withStamp(createDocument(), stamp);
+    const saved = withStamp(doc, {
+      updatedBy: 'carol',
+      updatedAt: '2026-10-02T08:00:00Z',
+    });
+
+    expect(saved.updatedBy).toBe('carol');
+    expect(saved.updatedAt).toBe('2026-10-02T08:00:00Z');
+    expect('author' in saved).toBe(false);
+    expect('createdAt' in saved).toBe(false);
+
+    // An empty stamp is that of a document that names no one. Empty text
+    // and values that are not text are none.
+    const cleared = withStamp(doc, {});
+
+    expect(STAMP_KEYS.some((key) => key in cleared)).toBe(false);
+    expect(
+      Object.keys(
+        withStamp(doc, { author: '', createdAt: null, updatedBy: 7 }),
+      ),
+    ).toEqual(Object.keys(createDocument()));
+  });
+
+  test('moves keys that are out of place, and keeps a document that holds it already', () => {
+    const doc = withStamp(createDocument(), stamp);
+    const { author, ...rest } = doc;
+    const misplaced = { ...rest, author };
+
+    expect(Object.keys(misplaced).at(-1)).toBe('author');
+    expect(Object.keys(withStamp(misplaced, stamp))).toEqual(Object.keys(doc));
+    expect(withStamp(doc, { ...stamp })).toBe(doc);
+    expect(withStamp(createDocument(), {})).not.toHaveProperty('author');
+
+    const plain = createDocument();
+
+    expect(withStamp(plain, {})).toBe(plain);
+    expect(withStamp(plain, undefined)).toBe(plain);
+  });
+
+  test('a listed snapshot gives the stamp its save wrote', () => {
+    const doc = withStamp(createDocument(), stamp);
+
+    // The server lists times with a fraction of a second; the document
+    // holds the second it falls in.
+    expect(
+      savedStamp(doc, {
+        createdBy: 'dana',
+        createdAt: '2026-10-03T09:30:15.987654321Z',
+      }),
+    ).toEqual({
+      author: 'alice',
+      createdAt: '2026-10-01T15:04:05Z',
+      updatedBy: 'dana',
+      updatedAt: '2026-10-03T09:30:15Z',
+    });
+    expect(
+      savedStamp(doc, { createdBy: 'dana', createdAt: '2026-10-03T09:30:15Z' })
+        .updatedAt,
+    ).toBe('2026-10-03T09:30:15Z');
+    // A time with an offset is the same moment in UTC.
+    expect(
+      savedStamp(doc, {
+        createdBy: 'dana',
+        createdAt: '2026-10-03T03:30:15.5-06:00',
+      }).updatedAt,
+    ).toBe('2026-10-03T09:30:15Z');
+    // Nothing is made up for a snapshot that does not say.
+    expect(savedStamp(createDocument(), {})).toEqual({
+      author: undefined,
+      createdAt: undefined,
+      updatedBy: undefined,
+      updatedAt: '',
+    });
+    expect(savedStamp(doc, { createdAt: 'yesterday' }).updatedAt).toBe('');
+    expect(
+      withStamp(createDocument(), savedStamp(createDocument(), undefined)),
+    ).not.toHaveProperty('updatedAt');
+  });
+
+  test('two documents that differ only in it hold the same content', () => {
+    const doc = createDocument();
+    const stamped = withStamp(doc, stamp);
+
+    expect(sameButStamp(doc, stamped)).toBe(true);
+    expect(sameButStamp(stamped, withStamp(stamped, {}))).toBe(true);
+    expect(sameButStamp(doc, doc)).toBe(true);
+    // Any other change is content, a pan included.
+    expect(
+      sameButStamp(doc, setViewport(stamped, { x: 4, y: 0, zoom: 1 })),
+    ).toBe(false);
+    expect(sameButStamp(doc, { ...stamped, name: 'Other' })).toBe(false);
+    expect(sameButStamp(doc, { ...stamped, layout: 'elk' })).toBe(false);
+    expect(sameButStamp(doc, null)).toBe(false);
   });
 });

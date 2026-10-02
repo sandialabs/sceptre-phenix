@@ -523,6 +523,54 @@ describe('availability', () => {
     ]);
   });
 
+  // A topology read from its Builder file is listed with the published
+  // diagrams, under a handle: it is named by its topology, says it is a
+  // file, is found by its path, and opens as any listed diagram does.
+  test('the diagram of a topology read from its Builder file can be opened', () => {
+    const file = {
+      source: 'file',
+      id: 'file/plant',
+      kind: 'Topology',
+      target: 'plant',
+      path: '/phenix/topologies/plant.builder.json',
+    };
+    const landing = context({
+      view: { editing: false },
+      store: {
+        drafts: { mine: [], shared: [], others: [] },
+        documents: [
+          { source: 'store', id: 'p1', kind: 'Topology', target: 'core' },
+          file,
+        ],
+      },
+    });
+    const command = getCommand('drafts.open');
+    const choices = command.choices(landing);
+
+    expect(
+      choices.map(({ id, title, detail }) => ({ id, title, detail })),
+    ).toEqual([
+      {
+        id: 'Published Diagrams::p1',
+        title: 'core',
+        detail: 'Published Diagrams',
+      },
+      {
+        id: 'Published Diagrams::file/plant',
+        title: 'plant',
+        detail:
+          'Published Diagrams · File: /phenix/topologies/plant.builder.json',
+      },
+    ]);
+    expect(choices[1].keywords).toEqual([
+      'plant',
+      '/phenix/topologies/plant.builder.json',
+    ]);
+
+    command.run(landing, choices[1]);
+    expect(landing.view.openDraft).toHaveBeenCalledWith(file);
+  });
+
   test('titles follow the state', () => {
     expect(commandTitle('view.minimap', context())).toBe('Hide minimap');
     expect(

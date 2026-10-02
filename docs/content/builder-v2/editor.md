@@ -9,7 +9,7 @@ step-by-step tasks, such as adding devices and connecting them, see
 The examples on this page use the Riverside Water draft of the
 [example lab](index.md#the-example-lab).
 
-![The Builder v2 editor showing the Riverside Water diagram: the header and toolbar at the top, Add nodes and Outline on the left, the canvas with the DMZ, INTERNET, OT and CORP groups in the middle, and the Inspector with the diagram's annotations and scenario on the right.](../images/builder-v2/overview-editor.png)
+![The Builder v2 editor showing the Riverside Water diagram: the header and toolbar at the top, Add nodes and Outline on the left, the canvas with the DMZ, INTERNET, OT and CORP groups in the middle, and the Inspector with the diagram's details, annotations and scenario on the right.](../images/builder-v2/overview-editor.png)
 
 The editor has five areas:
 
@@ -219,12 +219,29 @@ with several items selected, it shows the diagram itself.
 
 ### With nothing selected
 
-![The Inspector with nothing selected: the diagram's Name and Description, the Annotations imported from Topology riverside-water (maintainer and purpose), and the Scenario section listing the vrouter and ntp apps with their hosts and an Edit scenario button.](../images/builder-v2/inspector-diagram.png){ width="354" }
+![The Inspector with nothing selected: the diagram's Name and Description; Details, with Created Sep 29, 2026, 10:18 AM by e2e-admin, Last edited Sep 29, 2026, 10:30 AM by global-admin and Source file riverside-water.builder.json; the Annotations imported from Topology riverside-water (maintainer and purpose); and the Scenario section listing the vrouter and ntp apps with their hosts and an Edit scenario button.](../images/builder-v2/inspector-diagram.png){ width="354" }
 
 The **Diagram** section has:
 
 - **Name** and **Description** of the diagram. Select **Apply** to keep a
   change.
+- **Details**, which you cannot change here:
+    - **Created**: when the diagram was made, and by whom.
+    - **Last edited**: when the content you see was saved, and by whom. It
+      changes with each change you make, once the server has saved it. After
+      **Undo** or **Restore** it shows the save of the earlier version you
+      went back to.
+    - **Source file**: the name of the file the draft was made from, for a
+      draft made by **Upload** of a file or by **Import** of an uploaded
+      config.
+
+    In the picture, the draft was made by uploading
+    `riverside-water.builder.json`. That file names `e2e-admin` as the
+    author of the diagram, and **Upload** keeps the author. The upload itself
+    is the last edit. Its user is `global-admin`, the user everyone has on a
+    phenix server with authentication disabled. A row is left out when the
+    diagram does not have its value. See
+    [Who made and last saved a diagram](import-export.md#who-made-and-last-saved-a-diagram).
 - **Annotations**: for a draft imported from a config, the annotations of
   that config, under "From Topology riverside-water, imported" and the
   date. They are shown only: publishing does not write them. A diagram

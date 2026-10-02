@@ -44,8 +44,10 @@ disabled by default and requires restarting `phenix ui` to take effect. The CLI
 equivalents (`phenix vm mount`/`unmount`) are always available.
 
 `phenix ui --features builder-v2` enables Builder v2, the web topology
-editor at `/builder-v2`, the same way; it has no CLI equivalent. See
-[`builder-v2.md`](builder-v2.md).
+editor at `/builder-v2`, the same way. Its drafts, sharing and Publish have
+no CLI equivalent; the one CLI command for its documents is
+[`phenix builder publish`](#phenix-builder--publish-a-builder-document-as-a-topology),
+which works with the feature on or off. See [`builder-v2.md`](builder-v2.md).
 
 ## `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
@@ -64,6 +66,69 @@ A config written as YAML (`phenix config get -o yaml`, `phenix config edit`,
 `POST /configs/download`) loads as the stored config: a string yaml.v3 could
 not read back (one starting with a line break, or whose first line starts with
 a tab) is written double quoted.
+
+Annotations are text, except `builder-doc` on a Topology, which every JSON
+and YAML form of a config shows as a map of `digest`, `id` and `path` (see
+[`builder-v2.md`](builder-v2.md#the-builder-doc-reference)). A Topology
+whose `builder-doc` is not valid is refused on create and update, also with
+`--skip-validation`. `config edit` can change an annotation but not remove
+one (annotation maps merge).
+
+`config create` takes files and directories (walked recursively). A Builder
+document (the Builder v2 JSON or YAML export) is not a config: one found in
+a directory is skipped with the log line `skipped Builder document; use
+phenix builder publish`, and one named on the command line is refused with
+`<file> is a Builder document, not a configuration: use "phenix builder
+publish <file>" to create its topology`.
+
+## `phenix builder` — publish a Builder document as a topology
+
+```bash
+phenix builder publish </path/to/document> [-n|--name <topology>] [--update] [--dry-run] \
+  [--user <user>] [--record-path]
+```
+
+`publish` is the only subcommand. It reads one Builder document file (Builder
+JSON or Builder YAML, decided by content; at most 5 MiB; no `${NAME}`
+expansion), checks it as Builder v2's Publish does, and stores the Topology
+config it describes, with the document stored as the topology's published
+diagram and named in its `builder-doc` annotation (`digest` and `id`). It
+writes to the store from the CLI process: it needs no running `phenix ui`
+and no `builder-v2` feature. Topology only: no scenario, no experiment, no
+VLAN aliases (each is a warning when the document has one).
+
+| Flag | Meaning |
+|---|---|
+| `-n`, `--name` | Topology name. Default: the document's name as the Publish dialog proposes it (`Pump station` gives `Pump-station`). Must be a config name. |
+| `--update` | Replace an existing topology of that name. Allowed only when the topology is unchanged since its stored document was published, or the document was imported from the topology as it is now. Never for a `builder-xml` topology. No force flag. |
+| `--dry-run` | Run every check and print a report on stdout (document, file, digest, document ID, what would happen, node count, warnings). Writes nothing. |
+| `--user` | User to record as the publisher of the stored document. Default: the sudo caller, else the OS account. |
+| `--record-path` | Also write the file's absolute path as `builder-doc.path`. The file name must end in `.json`, `.yaml` or `.yml`. A path the server would not read (outside `base-dir.phenix`, or below the mount directory) is a warning, not an error. |
+
+```bash
+phenix builder publish pump-station.builder.json              # creates Topology Pump-station
+phenix builder publish pump-station.builder.json              # again: "topology already up to date", exit 0
+phenix builder publish pump-station.builder.yaml -n pump-lab  # another name
+phenix builder publish pump-station.builder.json --update     # after the file changed
+phenix builder publish pump-station.builder.json --dry-run    # check only; prints the digest
+```
+
+Exit status is 0 when the topology was created, updated or already up to
+date, and 1 otherwise. Success and warnings are log lines on stderr
+(`topology created`, `topology updated`, `topology already up to date`, with
+`name`, `document` and `digest`); only `--dry-run` writes to stdout. A
+document that cannot be published is an error that lists every blocker on
+its own line. Common refusals: `topology X already exists; use --update to
+replace it`; `topology X was changed after it was published, and replacing
+it would discard that change`; `<file> is not a valid Builder document:
+...`.
+
+A running `phenix ui` on the same store sees the topology after a page
+reload; nothing serializes a CLI publish with a UI publish of the same
+topology. With the `builder-v2` feature off, the Configs page will not open
+the published topology as text (it has `builder-doc`); `phenix config edit`
+still does. Details and the full rules are in
+[`builder-v2.md`](builder-v2.md#cli-phenix-builder-publish).
 
 ## `phenix experiment` — experiment lifecycle
 

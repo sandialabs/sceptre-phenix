@@ -152,7 +152,7 @@
     toYAMLString,
   } from '@/builder/exporters.js';
   import { count, listOf } from '@/builder/announce.js';
-  import { GEXF_MIME, toGEXF } from '@/builder/gexf.js';
+  import { GEXF_MIME, lastModified, toGEXF } from '@/builder/gexf.js';
   import { unappliedBlock } from '@/builder/leave.js';
   import { storedScenarioName } from '@/builder/model.js';
   import { useBuilderStore } from '@/builder/store.js';
@@ -269,8 +269,8 @@
   }
 
   // The network as a GEXF graph (see gexf.js), dated by the diagram's last
-  // change: this tab's, else the server's. A stored scenario is read again
-  // first, for the apps each device runs.
+  // change (see lastModified). A stored scenario is read again first, for
+  // the apps each device runs.
   async function exportGEXF() {
     // A busy button keeps focus, so it can still be pressed.
     if (busy.value) {
@@ -280,7 +280,11 @@
     error.clear();
 
     const doc = store.doc;
-    const modified = store.saveState.changedAt || store.draftRecord.updated;
+    const modified = lastModified({
+      changedAt: store.saveState.changedAt,
+      doc,
+      updated: store.draftRecord.updated,
+    });
     const fileName = exportFileName(doc, 'gexf');
     const stored = storedScenarioName(doc.scenario);
     let scenario = { content: doc.scenario?.content ?? null, problem: '' };

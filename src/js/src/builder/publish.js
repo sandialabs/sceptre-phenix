@@ -83,10 +83,14 @@ export function actionFor(name, existing = []) {
   return names.includes(target) ? 'update' : 'create';
 }
 
-// Source tokens of a draft generated from an uploaded config, and of one
-// opened from a published diagram ("builder-doc/<document id>").
+// Source tokens of a draft generated from an uploaded config, of one opened
+// from a published diagram ("builder-doc/<document id>"), and of one opened
+// from the diagram of the Builder file a topology names
+// ("builder-file/<topology>/<digest>", with the digest of what the file
+// held then).
 const UPLOADED_TOKEN = 'uploaded/';
-const PUBLISHED_TOKEN = 'builder-doc/';
+export const PUBLISHED_TOKEN = 'builder-doc/';
+export const FILE_TOKEN = 'builder-file/';
 
 /**
  * Whether this draft may update the existing config `name`, as the server
@@ -96,10 +100,13 @@ const PUBLISHED_TOKEN = 'builder-doc/';
  * A draft may update a topology that holds one of its own published
  * diagrams: one it published, whatever it was loaded from, the one it was
  * opened from, or one of exactly its saved snapshot. That is how it publishes
- * again after further edits. Otherwise it may update the topology it was
- * generated from, unless that was an upload, or the one its source
- * experiment was built from. The server also refuses a topology changed by
- * anyone else since the draft published it, which the client cannot see: it
+ * again after further edits. It may also update a topology whose diagram is
+ * read from the Builder file it names, when the draft was opened from that
+ * file. Otherwise it may update the topology it was generated from, unless
+ * that was an upload, or the one its source experiment was built from. The
+ * server also refuses a topology changed by anyone else since the draft
+ * published it, and one whose Builder file, or whose own spec, is no longer
+ * what the draft was opened from. The client cannot see either: the server
  * says so when it refuses (see publishRefusal).
  *
  * An experiment is updated from its own source, unless that was an upload,
@@ -129,7 +136,9 @@ export function draftCanUpdate(kind, name, draft = {}) {
     : '';
 
   // Whether a topology holds a published diagram of this draft's own. The
-  // one a topology config points at is listed as current.
+  // one a topology config points at is listed as current. A topology read
+  // from its Builder file is listed with no document: it is the draft's own
+  // when the draft was opened from that file.
   const holdsOwn = (topology) =>
     documents.some(
       (entry) =>
@@ -139,7 +148,9 @@ export function draftCanUpdate(kind, name, draft = {}) {
           (publication?.documentId && entry.id === publication.documentId) ||
           (forked?.documentId && entry.id === forked.documentId) ||
           (opened && entry.id === opened) ||
-          (digest && entry.digest === digest)),
+          (digest && entry.digest === digest) ||
+          (entry.source === 'file' &&
+            token.startsWith(`${FILE_TOKEN}${topology}/`))),
     );
 
   if (kind === 'experiment') {

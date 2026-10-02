@@ -33,6 +33,10 @@ export const MAX_VLAN_ALIAS = 4094;
 // bytes (MaxNameBytes in validate.go).
 export const MAX_NAME_BYTES = 512;
 
+// The longest user a document names as its author or last editor, in UTF-8
+// bytes (MaxUserBytes in document.go).
+export const MAX_USER_BYTES = 256;
+
 // Bounds on the source config annotations a document carries only to show
 // them (MaxAnnotations and MaxAnnotationBytes in validate.go): how many, and
 // their keys and values together in UTF-8 bytes. A key is bounded like the
@@ -87,6 +91,74 @@ function validateUUID(issues, path, kind, id) {
   }
 }
 
+// A user the document header names (validateUser in validate.go): text of
+// at most MAX_USER_BYTES bytes without control characters. Empty or null is
+// none, as Go decodes it.
+function validateUser(issues, path, user) {
+  if (user === undefined || user === null) {
+    return;
+  }
+
+  if (typeof user !== 'string') {
+    issue(issues, path, `${path} must be a string`);
+  } else if (utf8Length(user) > MAX_USER_BYTES) {
+    issue(issues, path, `${path} must be at most ${MAX_USER_BYTES} bytes`);
+  } else if (hasControlCharacters(user)) {
+    issue(issues, path, `${path} must not contain control characters`);
+  }
+}
+
+const TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/;
+
+/**
+ * Whether text is a time in exactly the one form a document header holds
+ * (IsTime in validate.go): UTC, whole seconds, a literal Z, and a date and
+ * time of day that exist. The fields are checked here, not by Date, whose
+ * parsing of such text differs between browsers (hour 24, February 30).
+ *
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function isTime(text) {
+  const match = TIME_PATTERN.exec(String(text));
+
+  if (!match) {
+    return false;
+  }
+
+  const [year, month, day, hour, minute, second] = match.slice(1).map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= days[month - 1] &&
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59
+  );
+}
+
+// A time of the document header, when it has one (validateTime in
+// validate.go).
+function validateTime(issues, path, value) {
+  if (value === undefined || value === null || value === '') {
+    return;
+  }
+
+  if (typeof value !== 'string') {
+    issue(issues, path, `${path} must be a string`);
+  } else if (!isTime(value)) {
+    issue(
+      issues,
+      path,
+      `${path} must be a UTC time in the form YYYY-MM-DDTHH:MM:SSZ`,
+    );
+  }
+}
+
 function validateHeader(doc, issues) {
   if (doc.$schema !== SCHEMA_URI) {
     issue(
@@ -121,6 +193,11 @@ function validateHeader(doc, issues) {
   } else if (hasControlCharacters(name)) {
     issue(issues, 'name', 'document name must not contain control characters');
   }
+
+  validateUser(issues, 'author', doc.author);
+  validateTime(issues, 'createdAt', doc.createdAt);
+  validateUser(issues, 'updatedBy', doc.updatedBy);
+  validateTime(issues, 'updatedAt', doc.updatedAt);
 
   const viewport = doc.viewport || {};
 

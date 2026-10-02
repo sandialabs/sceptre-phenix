@@ -2,16 +2,18 @@
 // publish writes, and how failures are reported.
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 
 const {
   API,
   test,
   expect,
-  blankDocument,
   devicesOf,
   draftPath,
   expectAccessible,
   expectNoFatal,
+  labDocument,
+  openConfigs,
   publishTopology,
   uniqueName,
 } = require('./builder-support');
@@ -47,54 +49,6 @@ async function buildLab(builder, draft) {
     draft,
     (document) => (document.edges || []).length === 2,
   );
-}
-
-// The diagram buildLab() draws, written directly: `server` and `server-2`,
-// each connected by eth0 to the switch of network EXP. Tests whose subject is
-// not drawing the diagram start from this instead of clicking it together.
-function labDocument(name) {
-  const id = () => crypto.randomUUID();
-  const network = { id: id(), name: 'EXP' };
-  const sw = {
-    id: id(),
-    kind: 'switch',
-    label: 'EXP',
-    position: { x: 0, y: 400 },
-    switch: { networkId: network.id },
-  };
-  const devices = ['server', 'server-2'].map((hostname, index) => ({
-    id: id(),
-    kind: 'device',
-    label: hostname,
-    position: { x: index * 320, y: 0 },
-    device: {
-      hostname,
-      iconKey: 'linux',
-      spec: {
-        type: 'VirtualMachine',
-        general: { hostname, vm_type: 'kvm' },
-        hardware: { os_type: 'linux', drives: [{ image: 'ubuntu.qc2' }] },
-        network: {
-          interfaces: [
-            { name: 'eth0', proto: 'dhcp', type: 'ethernet', vlan: 'EXP' },
-          ],
-        },
-      },
-      interfaces: [{ id: id(), name: 'eth0', index: 0 }],
-    },
-  }));
-
-  return blankDocument(name, {
-    nodes: [...devices, sw],
-    networks: [network],
-    edges: devices.map((device) => ({
-      id: id(),
-      sourceNodeId: device.id,
-      sourceHandleId: device.device.interfaces[0].id,
-      targetNodeId: sw.id,
-      networkId: network.id,
-    })),
-  });
 }
 
 // Seeds labDocument(name) as a draft and opens it. The Publish dialog offers
@@ -214,12 +168,22 @@ function nodesByHostname(config) {
   );
 }
 
-// The parsed builder-doc manifest annotation of a published topology, or
-// undefined when the annotation is missing.
+// The builder-doc annotation of a published topology, a map that names the
+// published document by digest and id, or undefined when it is missing.
 function manifestOf(config) {
-  const raw = config?.metadata?.annotations?.['builder-doc'];
+  return config?.metadata?.annotations?.['builder-doc'];
+}
 
-  return raw ? JSON.parse(raw) : undefined;
+// The record of the document published to topology `name`, as Published
+// Diagrams lists it. The annotation only names the document: the draft and
+// snapshot it was published from are on the record.
+async function publishedRecord(request, name) {
+  const listed = await request.get(`${API}/builder-v2/documents`);
+  expect(listed.ok(), await listed.text()).toBeTruthy();
+
+  return ((await listed.json()).documents || []).find(
+    (entry) => entry.target === name,
+  );
 }
 
 function topologyHint(page) {
@@ -438,11 +402,21 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
 
     const config = await builder.config('Topology', topology);
     expect(config, 'published topology config').toBeTruthy();
-    // The manifest points at the immutable document published from this draft.
-    expect.soft(manifestOf(config), 'builder-doc manifest').toMatchObject({
-      draftId: draft.id,
+    // The manifest names the immutable document published from this draft,
+    // by digest and id and nothing else.
+    const manifest = manifestOf(config);
+    expect.soft(manifest, 'builder-doc manifest').toEqual({
       digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      id: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
+    expect
+      .soft(await publishedRecord(builder.request, topology), 'record')
+      .toMatchObject({
+        source: 'store',
+        id: manifest?.id,
+        digest: manifest?.digest,
+        draftId: draft.id,
+      });
 
     const nodes = nodesByHostname(config);
     expect.soft(Object.keys(nodes).sort()).toEqual(['server', 'server-2']);
@@ -606,6 +580,91 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
   expectNoFatal(issues);
 });
 
+// --- the builder-doc annotation ------------------------------------------------
+
+test('a published topology names its document in a builder-doc map, in JSON and in the YAML Configs downloads', async ({
+  page,
+  request,
+  builder,
+  tracker,
+  issues,
+}, testInfo) => {
+  const topology = uniqueName(testInfo, 'annotated');
+  const { documentId } = await publishTopology(
+    request,
+    tracker,
+    topology,
+    labDocument(topology),
+  );
+  const record = await publishedRecord(request, topology);
+  expect(record).toMatchObject({ source: 'store', id: documentId });
+
+  await test.step('the config as JSON holds a map of the digest and id only', async () => {
+    const response = await request.get(`${API}/configs/topology/${topology}`, {
+      headers: { Accept: 'application/json' },
+    });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    expect(manifestOf(await response.json())).toEqual({
+      digest: record.digest,
+      id: documentId,
+    });
+  });
+
+  await test.step('the YAML the Configs page downloads holds the nested map', async () => {
+    await openConfigs(page);
+    const [file] = await Promise.all([
+      page.waitForEvent('download'),
+      page
+        .getByRole('button', { name: `Download Topology ${topology}` })
+        .click(),
+    ]);
+    expect.soft(file.suggestedFilename()).toBe(`Topology-${topology}.yml`);
+    const text = fs.readFileSync(await file.path(), 'utf8');
+    // The map's two keys, one level below builder-doc, and nothing else.
+    expect(text).toMatch(
+      new RegExp(
+        `\\n( +)annotations:\\n( +)builder-doc:\\n( +)digest: ${record.digest}\\n\\3id: ${documentId}\\n(?!\\3)`,
+      ),
+    );
+    expect.soft(text).not.toContain('draftId');
+  });
+
+  // Before it was a map, the annotation was a JSON string of the whole
+  // record. Nothing reads that form: the server refuses the config.
+  await test.step('the reference as a string of the record is refused', async () => {
+    const name = uniqueName(testInfo, 'annotated-string');
+    tracker.config('Topology', name);
+    const refused = await request.post(`${API}/configs`, {
+      data: {
+        apiVersion: 'phenix.sandia.gov/v1',
+        kind: 'Topology',
+        metadata: {
+          name,
+          annotations: {
+            'builder-doc': JSON.stringify({
+              id: documentId,
+              digest: record.digest,
+              size: record.size,
+              chunks: 1,
+              chunkSize: 524288,
+              schema: 'https://phenix.sandia.gov/schemas/builder/v1',
+              draftId: record.draftId,
+              snapshotId: record.snapshotId,
+              createdAt: record.createdAt,
+              createdBy: record.createdBy,
+            }),
+          },
+        },
+        spec: { nodes: [] },
+      },
+    });
+    expect(refused.status(), await refused.text()).toBe(400);
+    expect.soft(await builder.config('Topology', name)).toBeNull();
+  });
+
+  expectNoFatal(issues);
+});
+
 // --- topology and experiment ---------------------------------------------------
 
 test(
@@ -762,10 +821,19 @@ test(
         .soft(exp?.spec?.vlans?.aliases, 'experiment VLAN aliases')
         .toMatchObject({ EXP: 101 });
 
-      const published = await builder.config('Topology', topology);
+      const manifest = manifestOf(await builder.config('Topology', topology));
       expect
-        .soft(manifestOf(published), 'topology builder-doc manifest')
-        .toMatchObject({ draftId: draft.id });
+        .soft(
+          Object.keys(manifest || {}).sort(),
+          'topology builder-doc manifest',
+        )
+        .toEqual(['digest', 'id']);
+      expect
+        .soft(
+          await publishedRecord(builder.request, topology),
+          'published document record',
+        )
+        .toMatchObject({ id: manifest?.id, draftId: draft.id });
     });
 
     expectNoFatal(issues);

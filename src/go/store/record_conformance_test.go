@@ -1,12 +1,17 @@
 package store
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
+
+	"go.etcd.io/bbolt"
 )
 
 // recordStoreBackend opens one [RecordStore] implementation for the
@@ -20,6 +25,9 @@ type recordStoreBackend struct {
 	// keyPageSize is the number of keys a listing reads per request, or zero
 	// when the implementation does not page.
 	keyPageSize int
+	// rawConfig returns the value the store open last returned keeps for a
+	// config, as any other program reading the store sees it.
+	rawConfig func(t *testing.T, kind, name string) []byte
 }
 
 // recordStoreConformance is the behavior every [RecordStore] implementation
@@ -42,6 +50,7 @@ var recordStoreConformance = []struct { //nolint:gochecknoglobals // shared tabl
 	{name: "invalid namespaces and keys", run: testRecordRejectsInvalidNamespacesAndKeys},
 	{name: "records do not collide with configs", run: testRecordsDoNotCollideWithConfigs},
 	{name: "missing and duplicate configs are typed errors", run: testConfigErrorsAreTyped},
+	{name: "a structured annotation is stored as one string", run: testConfigStructuredAnnotation},
 	{name: "concurrent create and update", run: testRecordConcurrentCreateAndUpdate},
 }
 
@@ -69,6 +78,11 @@ func TestRecordStoreConformance(t *testing.T) {
 				return s
 			},
 			keyPageSize: 0,
+			rawConfig: func(t *testing.T, kind, name string) []byte {
+				t.Helper()
+
+				return rawBoltConfig(t, path, kind, name)
+			},
 		})
 	})
 
@@ -84,6 +98,16 @@ func TestRecordStoreConformance(t *testing.T) {
 			},
 			reopen:      server.open,
 			keyPageSize: etcdRecordKeyPageSize,
+			rawConfig: func(t *testing.T, kind, name string) []byte {
+				t.Helper()
+
+				resp, err := server.Client.Get(context.Background(), strings.ToLower(kind)+"/"+name)
+				if err != nil || len(resp.Kvs) != 1 {
+					t.Fatalf("reading config %s/%s from etcd: %v, %d values", kind, name, err, len(resp.Kvs))
+				}
+
+				return resp.Kvs[0].Value
+			},
 		})
 	})
 }
@@ -552,6 +576,106 @@ func testRecordsDoNotCollideWithConfigs(t *testing.T, _ *recordStoreBackend, s S
 	if string(record.Value) != "record" {
 		t.Fatalf("record value = %q, want record", record.Value)
 	}
+}
+
+// rawBoltConfig returns the value the BoltDB file at path keeps for a config.
+func rawBoltConfig(t *testing.T, path, kind, name string) []byte {
+	t.Helper()
+
+	db, err := bbolt.Open(path, boltFileMode, &bbolt.Options{ReadOnly: true})
+	if err != nil {
+		t.Fatalf("opening BoltDB file %s: %v", path, err)
+	}
+
+	defer func() { _ = db.Close() }()
+
+	var value []byte
+
+	err = db.View(func(tx *bbolt.Tx) error {
+		if bucket := tx.Bucket([]byte(kind)); bucket != nil {
+			value = slices.Clone(bucket.Get([]byte(name)))
+		}
+
+		return nil
+	})
+	if err != nil || value == nil {
+		t.Fatalf("reading config %s/%s from BoltDB: %v, value %q", kind, name, err, value)
+	}
+
+	return value
+}
+
+// testConfigStructuredAnnotation stores a config with a structured
+// annotation. The store keeps the annotation as the one string it is in
+// memory, which a phenix binary that reads annotations into a plain map of
+// strings loads, and every read gives that string back.
+func testConfigStructuredAnnotation(t *testing.T, backend *recordStoreBackend, s Store) {
+	t.Helper()
+
+	const reference = `{"digest":"sha256:aa","id":"bb","path":"/phenix/topologies/site/builder.yaml"}`
+
+	config, err := NewConfigFromJSON([]byte(`{"apiVersion": "phenix.sandia.gov/v1", "kind": "Topology",
+		"metadata": {"name": "site", "annotations": {"keep": "v", "builder-doc": ` + reference + `}},
+		"spec": {"nodes": []}}`))
+	if err != nil {
+		t.Fatalf("NewConfigFromJSON returned error: %v", err)
+	}
+
+	if err := s.Create(config); err != nil {
+		t.Fatalf("Create config returned error: %v", err)
+	}
+
+	check := func(stage string) {
+		t.Helper()
+
+		// What a phenix binary without the structured annotation reads.
+		var plain struct {
+			Metadata struct {
+				Name        string            `json:"name"`
+				Annotations map[string]string `json:"annotations"`
+			} `json:"metadata"`
+		}
+
+		raw := backend.rawConfig(t, "Topology", "site")
+		if err := json.Unmarshal(raw, &plain); err != nil {
+			t.Fatalf("%s: the stored value does not load with plain annotations: %v\n%s", stage, err, raw)
+		}
+
+		want := map[string]string{"keep": "v", "builder-doc": reference}
+		if plain.Metadata.Name != "site" || !reflect.DeepEqual(plain.Metadata.Annotations, want) {
+			t.Fatalf("%s: stored annotations = %v, want %v\n%s", stage, plain.Metadata.Annotations, want, raw)
+		}
+
+		got, err := NewConfig("Topology/site")
+		if err != nil {
+			t.Fatalf("NewConfig returned error: %v", err)
+		}
+
+		if err := s.Get(got); err != nil {
+			t.Fatalf("%s: Get config returned error: %v", stage, err)
+		}
+
+		listed, err := s.List("Topology")
+		if err != nil || len(listed) != 1 {
+			t.Fatalf("%s: List configs = %d, %v; want the config", stage, len(listed), err)
+		}
+
+		for _, read := range []Config{*got, listed[0]} {
+			if !reflect.DeepEqual(read.Metadata.Annotations, Annotations(want)) {
+				t.Fatalf("%s: annotations read = %v, want %v", stage, read.Metadata.Annotations, want)
+			}
+		}
+	}
+
+	check("create")
+
+	config.Spec = map[string]any{"nodes": []any{}, "changed": true}
+
+	if err := s.Update(config); err != nil {
+		t.Fatalf("Update config returned error: %v", err)
+	}
+
+	check("update")
 }
 
 func testConfigErrorsAreTyped(t *testing.T, _ *recordStoreBackend, s Store) {

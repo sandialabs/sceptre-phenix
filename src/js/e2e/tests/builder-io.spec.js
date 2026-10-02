@@ -8,12 +8,14 @@ const fs = require('fs');
 
 const {
   API,
+  DOCUMENT_TIME,
   SCHEMA_URI,
   backdropPoint,
   blankDocument,
   draftPath,
   expect,
   expectAccessible,
+  expectDetail,
   expectNoFatal,
   knownDefect,
   publishTopology,
@@ -957,6 +959,77 @@ test.describe('export and import', () => {
     expectNoFatal(issues);
   });
 
+  test('an uploaded file keeps the author it names, shows the uploader as its last editor, and is named in Details', async ({
+    page,
+    builder,
+    issues,
+  }, testInfo) => {
+    const title = uniqueName(testInfo, 'claimed');
+    const fileName = `${title}.builder.json`;
+    const claimed = {
+      author: 'alice',
+      createdAt: '2020-01-02T03:04:05Z',
+      updatedBy: 'alice',
+      updatedAt: '2020-02-03T04:05:06Z',
+    };
+
+    await builder.open();
+    const dialog = await openImport(page);
+    await dialog.getByTestId('import-file').setInputFiles({
+      name: fileName,
+      mimeType: 'application/json',
+      buffer: Buffer.from(
+        JSON.stringify({ ...blankDocument(title), ...claimed }),
+      ),
+    });
+    const answered = waitForApi(page, 'POST', '/builder-v2/drafts');
+    await dialog.getByTestId('import-submit').click();
+    const response = await answered;
+    const draft = await response.json();
+    await expect(builder.canvas).toBeVisible();
+    await builder.waitSaved();
+
+    await test.step('the draft records the name of the file', async () => {
+      expect.soft(response.request().postDataJSON().sourceFile).toBe(fileName);
+      expect.soft(draft.sourceFile).toBe(fileName);
+      expect.soft((await builder.serverDraft(draft)).sourceFile).toBe(fileName);
+      const row = builder.inspector.getByTestId('inspector-source-file');
+      await expect.soft(row.locator('dt')).toHaveText('Source file');
+      await expect.soft(row.locator('dd')).toHaveText(fileName);
+    });
+
+    await test.step('the author the file names is kept, and the uploader edited it last', async () => {
+      expect(draft.stamp).toEqual({
+        author: claimed.author,
+        createdAt: claimed.createdAt,
+        updatedBy: draft.owner,
+        updatedAt: expect.stringMatching(DOCUMENT_TIME),
+      });
+      expect.soft(draft.stamp.updatedAt).not.toBe(claimed.updatedAt);
+      await expectDetail(page, 'created', claimed.author, claimed.createdAt);
+      await expectDetail(page, 'edited', draft.owner, draft.stamp.updatedAt);
+    });
+
+    await test.step('a save keeps both, and the file name', async () => {
+      const saved = builder.nextSnapshot();
+      await builder.rename(`${title} renamed`);
+      const { stamp, sourceFile } = await (await saved).json();
+      expect.soft(stamp).toMatchObject({
+        author: claimed.author,
+        createdAt: claimed.createdAt,
+        updatedBy: draft.owner,
+      });
+      expect.soft(sourceFile).toBe(fileName);
+      await expectDetail(page, 'created', claimed.author, claimed.createdAt);
+      await expect
+        .soft(builder.inspector.getByTestId('inspector-source-file'))
+        .toContainText(fileName);
+      await builder.waitSaved();
+    });
+
+    expectNoFatal(issues);
+  });
+
   test('published diagrams open as new drafts from a deep link and from Upload', async ({
     page,
     request,
@@ -1707,6 +1780,68 @@ test.describe('generate', () => {
       expectNoFatal(issues);
     },
   );
+
+  test('Import names the uploaded config it read in Details; a stored config names no file', async ({
+    page,
+    request,
+    builder,
+    tracker,
+    issues,
+  }, testInfo) => {
+    const name = uniqueName(testInfo, 'gen-file');
+    const config = topologyConfig(name, sharedVlanNodes());
+    const fileName = `${name}.topology.json`;
+    await seedConfig(request, tracker, config);
+    await builder.open();
+    const row = builder.inspector.getByTestId('inspector-source-file');
+
+    await test.step('an uploaded config', async () => {
+      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
+      const { dialog } = await generateFromUpload(
+        page,
+        JSON.stringify(config),
+        fileName,
+      );
+      await continuePastWarnings(dialog);
+      const response = await created;
+      const draft = await response.json();
+      await expect(builder.canvas).toBeVisible();
+      await builder.waitSaved();
+
+      expect.soft(response.request().postDataJSON().sourceFile).toBe(fileName);
+      expect.soft(draft.sourceFile).toBe(fileName);
+      await expect.soft(row.locator('dd')).toHaveText(fileName);
+      // The diagram was made here, now, from the config.
+      await expectDetail(page, 'created', draft.owner, draft.stamp.createdAt);
+    });
+
+    await builder.backToDrafts();
+
+    await test.step('a stored config', async () => {
+      const dialog = await openGenerate(page);
+      const choices = dialog.getByTestId('generate-name');
+      await expect(choices.locator('option', { hasText: name })).toHaveCount(1);
+      await choices.selectOption(name);
+      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
+      await dialog.getByTestId('generate-submit').click();
+      await continuePastWarnings(dialog);
+      const response = await created;
+      const draft = await response.json();
+      await expect(builder.canvas).toBeVisible();
+      await builder.waitSaved();
+
+      expect
+        .soft(response.request().postDataJSON())
+        .not.toHaveProperty('sourceFile');
+      expect.soft(draft.sourceFile, 'sourceFile').toBeUndefined();
+      await expect(
+        builder.inspector.getByTestId('inspector-details'),
+      ).toBeVisible();
+      await expect.soft(row).toHaveCount(0);
+    });
+
+    expectNoFatal(issues);
+  });
 
   test('shows generation warnings before opening the draft', async ({
     page,

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"phenix/store"
 	"phenix/types"
@@ -90,6 +91,9 @@ type validator struct {
 //   - wrong schema URI or revision,
 //   - a document name longer than [MaxNameBytes] or containing control
 //     characters, which the draft service could not record as a title,
+//   - an author or updatedBy longer than [MaxUserBytes] or containing control
+//     characters,
+//   - a createdAt or updatedAt that is not a time in [TimeLayout],
 //   - missing or null nodes, networks, or edges (the editor requires arrays,
 //     empty when there is nothing in them),
 //   - identifiers that are not RFC 4122 UUIDs, and duplicate
@@ -161,9 +165,14 @@ func (v *validator) validateHeader() {
 	switch {
 	case len(v.doc.Name) > MaxNameBytes:
 		v.addf("name", "document name must be at most %d bytes", MaxNameBytes)
-	case strings.ContainsFunc(v.doc.Name, func(r rune) bool { return r < 0x20 || r == 0x7f }):
+	case strings.ContainsFunc(v.doc.Name, isControl):
 		v.addf("name", "document name must not contain control characters")
 	}
+
+	v.validateUser(keyAuthor, v.doc.Author)
+	v.validateTime(keyCreatedAt, v.doc.CreatedAt)
+	v.validateUser(keyUpdatedBy, v.doc.UpdatedBy)
+	v.validateTime(keyUpdatedAt, v.doc.UpdatedAt)
 
 	// decodeDocument in the front end's decode.js refuses a document without
 	// these arrays, so one stored here could never be opened.
@@ -187,6 +196,41 @@ func (v *validator) validateHeader() {
 
 	if !finite(v.doc.Grid.Size) || v.doc.Grid.Size <= 0 {
 		v.addf("grid.size", "grid size must be a positive finite number")
+	}
+}
+
+// isControl reports whether r is a control character, which no text the
+// document header carries may hold.
+func isControl(r rune) bool {
+	return r < 0x20 || r == 0x7f
+}
+
+// validateUser checks a user the document header names: bounded like the
+// owner of a draft, and free of control characters. The name itself is not
+// checked against the names this server issues, since a document made on
+// another server may name a user of that one.
+func (v *validator) validateUser(path, user string) {
+	switch {
+	case len(user) > MaxUserBytes:
+		v.addf(path, "%s must be at most %d bytes", path, MaxUserBytes)
+	case strings.ContainsFunc(user, isControl):
+		v.addf(path, "%s must not contain control characters", path)
+	}
+}
+
+// IsTime reports whether value is a time in exactly the form of
+// [TimeLayout]. Parsing alone accepts a fraction of a second, so the value
+// must also be what formatting the parsed time gives back.
+func IsTime(value string) bool {
+	parsed, err := time.Parse(TimeLayout, value)
+
+	return err == nil && parsed.Format(TimeLayout) == value
+}
+
+// validateTime checks a time of the document header, when it has one.
+func (v *validator) validateTime(path, value string) {
+	if value != "" && !IsTime(value) {
+		v.addf(path, "%s must be a UTC time in the form YYYY-MM-DDTHH:MM:SSZ", path)
 	}
 }
 
@@ -782,7 +826,7 @@ func annotationKeyProblem(key string) string {
 		return "must not be blank"
 	case len(key) > MaxNameBytes:
 		return fmt.Sprintf("must be at most %d bytes", MaxNameBytes)
-	case strings.ContainsFunc(key, func(r rune) bool { return r < 0x20 || r == 0x7f }):
+	case strings.ContainsFunc(key, isControl):
 		return "must not contain control characters"
 	default:
 		return ""

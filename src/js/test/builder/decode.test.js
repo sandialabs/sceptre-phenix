@@ -2,10 +2,12 @@ import { describe, expect, test } from 'vitest';
 
 import {
   decodeDocument,
+  DOCUMENT_KEYS,
   parseDocument,
   parseImport,
 } from '@/builder/decode.js';
-import { SCHEMA_URI } from '@/builder/model.js';
+import { SCHEMA_URI, STAMP_KEYS } from '@/builder/model.js';
+import bundle from '@/builder/schema/builder-v1.schema.json';
 
 import { sampleDocument } from './fixtures.js';
 
@@ -103,6 +105,46 @@ describe('strict decoding', () => {
 
     expect(() => decodeDocument(payload)).toThrowError(
       /edges\[0\]\.route\[0\]: unknown field "z"/,
+    );
+  });
+
+  // The server refuses a key its Document struct lacks and the editor one
+  // DOCUMENT_KEYS lacks, so a key added on one side alone makes the other
+  // refuse every document that has it. The bundle is generated from the
+  // server's schema.
+  test('the document keys are the root properties of the schema bundle', () => {
+    expect([...DOCUMENT_KEYS].sort()).toEqual(
+      Object.keys(bundle.properties).sort(),
+    );
+  });
+
+  test('accepts who made and last saved the document, and reads null as none', () => {
+    const { doc } = sampleDocument();
+    const stamp = {
+      author: 'alice',
+      createdAt: '2026-10-01T15:04:05Z',
+      updatedBy: 'bob@example.com',
+      updatedAt: '2026-10-01T16:10:00Z',
+    };
+    const decoded = parseDocument({ ...doc, ...stamp });
+
+    expect(decoded).toMatchObject(stamp);
+
+    const none = parseDocument({
+      ...doc,
+      author: null,
+      createdAt: null,
+      updatedBy: null,
+      updatedAt: null,
+    });
+
+    expect(STAMP_KEYS.some((key) => key in none)).toBe(false);
+    // A key near one of them is still unknown.
+    expect(() => decodeDocument({ ...doc, updatedby: 'bob' })).toThrowError(
+      /document: unknown field "updatedby"/,
+    );
+    expect(() => decodeDocument({ ...doc, owner: 'bob' })).toThrowError(
+      /document: unknown field "owner"/,
     );
   });
 });

@@ -25,6 +25,11 @@
   has Delete when the role may delete configs, which deletes the topology
   from phenix.
 
+  A topology whose diagram is read from the Builder file it names is listed
+  with the published diagrams, tagged File in words, with the file's path
+  where a published diagram has its time. It has no Delete: nothing was
+  published, and the topology is deleted on the Configs page.
+
   A draft closed while its changes were being saved says how the saves go
   on (saves, see createBackgroundSaves in builder/leave.js): being saved,
   saved, or why not, which its Open button is described by. Opening it
@@ -116,7 +121,15 @@
           v-for="item in tab.items"
           :key="`${item.owner || 'published'}-${item.id}`"
           class="builder-card builder-panel">
-          <h2>{{ itemLabel(item) }}</h2>
+          <h2>
+            {{ itemLabel(item) }}
+            <span
+              v-if="isFile(item)"
+              class="builder-drafts__tag"
+              :data-testid="`published-file-${item.id}`"
+              >File</span
+            >
+          </h2>
           <p class="builder-card__meta">
             <span v-if="item.owner">Owner: {{ item.owner }}</span>
             <span
@@ -127,6 +140,11 @@
             <span v-if="stamp(item)">
               · {{ stamp(item).verb }} {{ stamp(item).time
               }}{{ changedBy(item) ? ` by ${changedBy(item)}` : '' }}
+            </span>
+            <span
+              v-if="isFile(item)"
+              :data-testid="`published-path-${item.id}`">
+              Read from {{ item.path }}
             </span>
             <span v-if="item.nodeCount != null">
               · {{ item.nodeCount }} nodes
@@ -359,11 +377,21 @@
       : tab.id === 'mine' && props.canDelete;
   }
 
+  // A topology whose diagram is read from the Builder file it names: its
+  // card has the file's path, and no published document.
+  function isFile(item) {
+    return item.source === 'file';
+  }
+
   // Delete is on a published topology's card when the role may delete
-  // configs; a published experiment is deleted from the Experiments page.
+  // configs; a published experiment is deleted from the Experiments page,
+  // and a topology read from its Builder file on the Configs page.
   function mayDeletePublished(tab, item) {
     return (
-      tab.id === 'published' && item.kind === 'Topology' && props.canDelete
+      tab.id === 'published' &&
+      item.kind === 'Topology' &&
+      !isFile(item) &&
+      props.canDelete
     );
   }
 
@@ -403,6 +431,10 @@
     const when = stamp(item);
     const whose = item.owner && !own.value.has(item) ? ` by ${item.owner}` : '';
     const name = `${itemLabel(item)}${whose}`;
+
+    if (isFile(item)) {
+      return `${name}, read from ${item.path}`;
+    }
 
     return when ? `${name}, ${when.verb.toLowerCase()} ${when.time}` : name;
   }
@@ -642,6 +674,19 @@
   .builder-card h2 {
     font-weight: 700;
     margin: 0 0 0.25rem;
+  }
+
+  /* Says in words where the diagram is read from; the frame only sets the
+     word apart from the name. */
+  .builder-drafts__tag {
+    display: inline-block;
+    margin-left: 0.25rem;
+    padding: 0 0.35rem;
+    border: 1px solid var(--bx-border-strong);
+    border-radius: var(--bx-radius);
+    font-size: 0.75rem;
+    font-weight: 600;
+    vertical-align: middle;
   }
 
   /* The warning sign is decorative: the text says the same. */

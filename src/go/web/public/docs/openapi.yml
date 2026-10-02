@@ -185,8 +185,10 @@ paths:
         Can also be used to rename a config by changing the name in the metadata
         portion of the config header and using the old name in the request path.
         Renaming a Topology removes the Builder v2 documents published under
-        its old name, as deleting it does, and the renamed config keeps no
-        `builder-doc` annotation.
+        its old name, as deleting it does. The `builder-doc` annotation of the
+        renamed config loses the `id` and `digest` Publish wrote; it keeps a
+        `path`, with the `digest` beside it, and is removed when nothing is
+        left (see `BuilderDocumentReference`).
       operationId: putConfigsKindName
       parameters:
         - name: kind
@@ -1863,7 +1865,22 @@ paths:
         `forkOf`, the caller must be able to read that draft: own it, have it
         shared with them, or hold `builder-drafts` `get` for it. With a
         `sourceToken` naming a published document, the caller must hold
-        `configs` `get` for the config it was published to.
+        `configs` `get` for the config it was published to. With a
+        `sourceToken` naming the Builder file of a topology, the file is read
+        as GET /builder-v2/topologies/{topology}/document reads it, with the
+        same permission and the same answers when it cannot be used, and the
+        draft is refused with 409 when the file no longer holds the document
+        the token names, or the topology is no longer read from its file.
+        The server stamps the document before it stores it: `author` and
+        `createdAt` are kept when the document has them, and are otherwise the
+        caller and the current time; `updatedBy` and `updatedAt` are always
+        the caller and the current time, and values sent are replaced. One
+        document is stored as it is: the document a `sourceToken` of the
+        `builder-doc/` or `builder-file/` form names, sent back unchanged, so
+        the draft holds exactly what was opened, under the same digest. A
+        value that is not valid in any of the four fields refuses the request
+        (422). The response has no document; its `stamp` holds the four
+        values the stored document has.
       operationId: postBuilderDrafts
       requestBody:
         required: true
@@ -1894,6 +1911,15 @@ paths:
           $ref: "#/components/responses/BuilderForbidden"
         "404":
           $ref: "#/components/responses/BuilderNotFound"
+        "409":
+          description: >
+            The `sourceToken` names the Builder file of a topology, and the
+            file's document changed since it was opened, or the topology is no
+            longer read from its file.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
         "413":
           $ref: "#/components/responses/BuilderTooLarge"
         "422":
@@ -2006,6 +2032,12 @@ paths:
         snapshots after the cursor (the redo branch), and moves the cursor to
         the new snapshot. A draft keeps at most 50 snapshots of at most 50 MiB
         in total; the oldest are dropped to make room for the new one.
+        The server stamps the document before it stores it: `author` and
+        `createdAt` are the ones the draft was created with, and `updatedBy`
+        and `updatedAt` are the caller and the current time. Values sent in
+        any of the four fields are replaced, and one that is not valid refuses
+        the request (422). The response has no document; its `stamp` holds
+        the four values written.
       operationId: postBuilderDraftSnapshots
       parameters:
         - $ref: "#/components/parameters/BuilderIfMatch"
@@ -2230,7 +2262,12 @@ paths:
         skipped. A draft updates an existing topology or experiment only when
         it was imported from it, or when it published it (or was opened from
         the published diagram that did) and nothing else changed it since;
-        any other update is refused with 409. A published experiment records
+        any other update is refused with 409. A topology read from the Builder
+        file its `builder-doc` annotation names is updated by a draft opened
+        from that file, while the file still holds what the draft was opened
+        from and the topology is still what the file publishes. Publishing
+        never writes the file: the topology keeps its `path`, and the result
+        carries a warning that the file is now behind. A published experiment records
         which draft and published document published it, and its digest once
         its apps' configure stage ran, in its `builder-experiment`
         annotation; an experiment update runs that stage, as an update
@@ -2572,7 +2609,11 @@ paths:
       description: >
         Requires `configs` `list`. Lists the documents that configs currently
         reference in their `builder-doc` annotation, filtered by `configs`
-        `list` for the config each one was published to.
+        `list` for the config each one was published to. A topology whose
+        annotation names a Builder file (`path`), and no stored document that
+        is current, is listed with `source` `file` and the path only: the
+        listing reads no file, so such a row is listed whether or not the
+        file can be used.
       operationId: getBuilderDocuments
       responses:
         "200":
@@ -2649,6 +2690,73 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
+  "/builder-v2/topologies/{topology}/document":
+    get:
+      tags:
+        - Builder v2
+      summary: Get the Builder v2 document a topology references
+      description: >
+        Returns the document the topology's `builder-doc` annotation names,
+        wherever it is kept. The stored published document wins: the one the
+        annotation's `id` or `digest` names for this topology. Without one,
+        the Builder file at the annotation's `path` is read from the phenix
+        server, on every request. The file must be below the phenix base
+        directory (`--base-dir.phenix`) and outside the directory VM file
+        systems are mounted in, be a regular file of at most 5 MiB reached
+        through no symbolic link that leaves the base directory, and hold a
+        valid Builder v2 document as JSON or YAML. A `digest` beside `path`
+        pins the file: a file whose document has another digest is refused.
+        Requires `configs` `get` for the topology. A topology the caller may
+        not get, one that does not exist, and one that references no document
+        are all answered with the same 404. A file that cannot be used is
+        answered with a fixed sentence naming the path, never with anything
+        the file holds.
+      operationId: getBuilderTopologyDocument
+      parameters:
+        - name: topology
+          in: path
+          description: topology name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: >
+            The document, with `digest`, `size` and `document`. For a file,
+            `topologyDiffers` says whether the stored topology differs from
+            what the document publishes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderPublishedDocument"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          description: >
+            The topology does not exist, the caller may not get it, or it
+            references no Builder v2 document; or the Builder file it names
+            does not exist on this phenix server; or the server runs without
+            the builder-v2 feature.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "413":
+          description: The Builder file is larger than 5 MiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "422":
+          description: >
+            The Builder file is outside the directory phenix reads Builder
+            files from, cannot be read, is not a regular file, is not a valid
+            Builder v2 document, or does not match the digest the topology
+            records for it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
@@ -2676,7 +2784,13 @@ components:
             name:
               type: string
             annotations:
+              description: >
+                Text values by key. `builder-doc` is the one annotation that
+                is a map: the Builder v2 document a topology references.
               type: object
+              properties:
+                builder-doc:
+                  $ref: "#/components/schemas/BuilderDocumentReference"
               additionalProperties:
                 type: string
           required:
@@ -2689,6 +2803,37 @@ components:
         - kind
         - metadata
         - spec
+    BuilderDocumentReference:
+      description: >
+        The Builder v2 document a topology references, in its `builder-doc`
+        annotation. It holds at least one sub-key. Publish writes `digest`
+        and `id`, and keeps a `path` the topology already has. A config whose
+        reference is not valid is refused. When a topology is created or
+        updated with an `id` that is not the one its `digest` gives for the
+        topology's name, as a renamed or copied topology has, the `id` is
+        dropped, and the `digest` too unless `path` is set.
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        digest:
+          description: >
+            digest of the document's canonical JSON, `sha256:` and 64
+            lowercase hex digits. It names the stored published document of
+            this topology with that content, and pins the content of the
+            file `path` names.
+          type: string
+        id:
+          description: >
+            ID of a stored published document (see `/builder-v2/documents`).
+            It names a document only when that document was published to
+            this topology.
+          type: string
+        path:
+          description: >
+            absolute, clean path of a Builder v2 document file on the phenix
+            server, at most 1024 bytes, ending in `.json`, `.yaml` or `.yml`.
+          type: string
     Experiments:
       type: object
       properties:
@@ -2965,7 +3110,12 @@ components:
     BuilderDocument:
       description: >
         A Builder v2 document. GET /schemas/builder-v2/v1 serves its complete
-        JSON Schema.
+        JSON Schema. The server sets `author`, `createdAt`, `updatedBy` and
+        `updatedAt` when it stores a draft snapshot (see POST
+        /builder-v2/drafts and POST
+        /builder-v2/drafts/{owner}/{draft}/snapshots). Each is optional: a
+        document that was never saved as a draft, such as a Builder file
+        written by hand, may have none.
       type: object
       additionalProperties: true
       properties:
@@ -2979,6 +3129,53 @@ components:
           type: string
         name:
           type: string
+        author:
+          description: >
+            user who first made the document. Kept from the document a draft
+            is created with, or else the user who created the draft; every
+            later save writes the same value.
+          type: string
+          maxLength: 256
+        createdAt:
+          description: >
+            when the document was first made, in UTC to the second
+            (`YYYY-MM-DDTHH:MM:SSZ`). Set and kept as `author` is.
+          type: string
+          format: date-time
+          pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        updatedBy:
+          description: >
+            user whose save stored this content. Set by the server on every
+            save; a value sent is replaced.
+          type: string
+          maxLength: 256
+        updatedAt:
+          description: >
+            when that save was, in the form of `createdAt`. Set by the server
+            on every save; a value sent is replaced. It is not
+            `source.updatedAt`, which is a time of the config the document
+            was imported from.
+          type: string
+          format: date-time
+          pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    BuilderDocumentStamp:
+      description: >
+        The `author`, `createdAt`, `updatedBy` and `updatedAt` of the document
+        a request stored. A field the stored document does not have is left
+        out, so a draft opened unchanged from a document that names nobody
+        has an empty stamp.
+      type: object
+      properties:
+        author:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
     BuilderDraftCreate:
       type: object
       additionalProperties: false
@@ -2993,17 +3190,31 @@ components:
             the config the draft was imported from, as `<kind>/<name>`; an
             uploaded config, as `uploaded/<kind>/<name>`, which names no stored
             config, so it does not let the draft update a stored Topology or
-            Experiment; or the published document it was opened from, as
+            Experiment; the published document it was opened from, as
             `builder-doc/<document id>`, which the caller must be able to read
-            (404 otherwise)
+            (404 otherwise); or the Builder file of a topology it was opened
+            from, as `builder-file/<topology name>/<digest>`, with the
+            `digest` GET /builder-v2/topologies/{topology}/document returned,
+            which the caller must be able to read and which the file must
+            still have (409 otherwise)
           type: string
+        sourceFile:
+          description: >
+            the name of the uploaded file the document came from, kept only
+            to show it: a file name of at most 255 bytes without `/` or `\`,
+            not `.` or `..`, with no control characters (422 otherwise). The
+            server never opens anything by it.
+          type: string
+          maxLength: 255
         forkOf:
           description: >
             a draft the new one forks, as `<owner>/<draft id>`, which the caller
             must be able to read (404 otherwise). The new draft takes its
             source token in place of `sourceToken`, and records its last
             publication as `forked`, so publishing the new draft can update
-            what that draft published or was opened from.
+            what that draft published or was opened from. It records no
+            source file: neither that draft's, nor a `sourceFile` sent with
+            it.
           type: string
         owner:
           description: optional; when set, it must be the caller
@@ -3050,6 +3261,11 @@ components:
           type: string
         sourceToken:
           type: string
+        sourceFile:
+          description: >
+            the name of the uploaded file the draft was made from, when it
+            was created with one
+          type: string
         created:
           type: string
           format: date-time
@@ -3094,6 +3310,14 @@ components:
           type: string
         document:
           $ref: "#/components/schemas/BuilderDocument"
+        stamp:
+          description: >
+            what the stored document holds in `author`, `createdAt`,
+            `updatedBy` and `updatedAt` (creating a draft and saving one
+            only, whose responses have no document). An editor copies it
+            into its own copy of the document.
+          allOf:
+            - $ref: "#/components/schemas/BuilderDocumentStamp"
         history:
           description: the snapshots, oldest first (GET of one draft only)
           type: array
@@ -3469,33 +3693,78 @@ components:
           items:
             type: string
     BuilderPublishedDocument:
+      description: >
+        The Builder v2 document a config references: a stored published
+        document (`source` `store`), which Publish or the
+        `phenix builder publish` command stored, or the Builder file a
+        topology's `builder-doc` annotation names (`source` `file`). A file
+        has no `id`,
+        `draftId`, `snapshotId`, `createdAt` or `createdBy`. In a listing a
+        file also has no `digest` and no `size`, since a listing reads no
+        file.
       type: object
       properties:
+        source:
+          description: where the document is kept
+          type: string
+          enum:
+            - store
+            - file
         id:
+          description: stored documents only
           type: string
         digest:
+          description: digest of the document's canonical JSON, not of a file's bytes
           type: string
         size:
+          description: size of the document's canonical JSON, in bytes
           type: integer
         target:
-          description: name of the config the document was published to
+          description: name of the config that references the document
           type: string
         kind:
           type: string
         config:
-          description: the config the document was published to, as `<Kind>/<name>`
+          description: the config that references the document, as `<Kind>/<name>`
+          type: string
+        path:
+          description: files only; the path of the Builder file on the phenix server
           type: string
         draftId:
+          description: >
+            stored documents only; the draft that first published the
+            document. Absent for a document that `phenix builder publish`
+            stored from a file.
           type: string
         snapshotId:
+          description: >
+            stored documents only; the snapshot of that draft. Absent with
+            `draftId`.
           type: string
         createdAt:
+          description: stored documents only; when the document was first published
           type: string
           format: date-time
         createdBy:
+          description: >
+            stored documents only; the user who first published the document.
+            For a document `phenix builder publish` stored, the user that
+            command recorded: its `--user`, or the operating system account
+            that ran it.
           type: string
+        topologyDiffers:
+          description: >
+            files only, in GET /builder-v2/topologies/{topology}/document;
+            true when the stored topology is not what the document publishes,
+            so a draft opened from the file cannot update the topology
+          type: boolean
         document:
           $ref: "#/components/schemas/BuilderDocument"
+      required:
+        - source
+        - target
+        - kind
+        - config
     BuilderPublishedDocuments:
       type: object
       properties:

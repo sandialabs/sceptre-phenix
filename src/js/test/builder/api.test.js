@@ -16,8 +16,11 @@ import {
   draftPath,
   errorMessage,
   EXPORT_TOPOLOGY_PATH,
+  fileHandle,
+  fileTopology,
   GENERATE_PATH,
   MAX_REQUEST_BYTES,
+  MAX_SOURCE_FILE_BYTES,
   publishIntent,
   publishPath,
   readEnvelope,
@@ -26,12 +29,15 @@ import {
   readShares,
   SCHEMA_PATH,
   serverReason,
+  serverSentence,
   shareCandidatesPath,
   shareErrors,
   sharesPath,
   snapshotPath,
+  sourceFileName,
   SOURCES_PATH,
   TooLargeError,
+  topologyDocumentPath,
   watchSession,
 } from '@/builder/api.js';
 import { MAX_DOCUMENT_BYTES } from '@/builder/limits.js';
@@ -94,10 +100,27 @@ describe('routes', () => {
       'builder-v2/drafts/alice/d1/shares/candidates',
     );
     expect(documentPath('doc 1')).toBe('builder-v2/documents/doc%201');
+    expect(topologyDocumentPath('core')).toBe(
+      'builder-v2/topologies/core/document',
+    );
   });
 
   test('owner and id are URL encoded', () => {
     expect(draftPath('a/b', 'c d')).toBe('builder-v2/drafts/a%2Fb/c%20d');
+    expect(topologyDocumentPath('lab@site 1')).toBe(
+      'builder-v2/topologies/lab%40site%201/document',
+    );
+  });
+
+  // A topology read from its Builder file has no document id: its row is
+  // named by a handle no id can be.
+  test('a file handle names its topology, and a document id names none', () => {
+    expect(fileHandle('core')).toBe('file/core');
+    expect(fileTopology('file/core')).toBe('core');
+    expect(fileTopology(fileHandle('a.b-c_d@e'))).toBe('a.b-c_d@e');
+    expect(fileTopology('f'.repeat(64))).toBe('');
+    expect(fileTopology('')).toBe('');
+    expect(fileTopology(undefined)).toBe('');
   });
 });
 
@@ -233,6 +256,36 @@ describe('error classification', () => {
   // A publish refused with 422 says which interfaces to fix: in the message
   // (publishProjectionRefusal in builder_v2_publish.go), or, where the
   // message only names the topology, in the cause.
+  // Why a Builder file cannot be used is written to be shown: the path it
+  // names is kept whole, where serverReason() would take an id out of it.
+  test('a sentence written to be shown is shown word for word', () => {
+    const refused = (status, message) =>
+      Object.assign(new Error('refused'), {
+        response: { status, data: { message, cause: '' } },
+      });
+    const path =
+      '/phenix/topologies/0f8fad5b-d9cb-469f-a165-70867728950e/lab.builder.json';
+    const missing = refused(
+      404,
+      `Builder file ${path} does not exist on this phenix server.`,
+    );
+
+    expect(serverSentence(missing)).toBe(
+      `Builder file ${path} does not exist on this phenix server.`,
+    );
+    expect(serverReason(missing)).not.toContain('0f8fad5b');
+    expect(
+      serverSentence(
+        refused(404, 'builder document of topology core not found'),
+      ),
+    ).toBe('Builder document of topology core not found.');
+    expect(serverSentence(refused(500, ''))).toBe('');
+    expect(serverSentence(new Error('offline'))).toBe('');
+    expect(
+      serverSentence({ response: { status: 502, data: '<html>Bad gateway' } }),
+    ).toBe('');
+  });
+
   test('a refused publish says what to fix', () => {
     const rejected = (data) => ({ response: { status: 422, data } });
     const vlan =
@@ -743,6 +796,104 @@ describe('client', () => {
     await expect(
       createBuilderApi(withDamaged).listDrafts(),
     ).resolves.toMatchObject({ damaged: [{ ...damaged, damaged: true }] });
+  });
+
+  test('a topology read from its Builder file is listed under a handle', async () => {
+    const stored = {
+      source: 'store',
+      id: 'a'.repeat(64),
+      digest: `sha256:${'b'.repeat(64)}`,
+      size: 512,
+      target: 'core',
+      kind: 'Topology',
+      config: 'Topology/core',
+      draftId: 'd1',
+      createdAt: '2026-10-01T15:04:05Z',
+      createdBy: 'alice',
+    };
+    const file = {
+      source: 'file',
+      target: 'plant',
+      kind: 'Topology',
+      config: 'Topology/plant',
+      path: '/phenix/topologies/plant/plant.builder.json',
+    };
+    const http = fakeHttp({
+      [DOCUMENTS_PATH]: { data: { documents: [stored, file] } },
+    });
+    const documents = await createBuilderApi(http).listDocuments();
+
+    // A stored row is as the server sent it; a file row gains only its id.
+    expect(documents).toEqual([stored, { ...file, id: 'file/plant' }]);
+    expect(fileTopology(documents[1].id)).toBe('plant');
+
+    await expect(
+      createBuilderApi(
+        fakeHttp({ [DOCUMENTS_PATH]: { data: {} } }),
+      ).listDocuments(),
+    ).resolves.toEqual([]);
+  });
+
+  test('the document a topology references is read by its name', async () => {
+    const { doc } = sampleDocument();
+    const row = {
+      source: 'file',
+      target: 'plant',
+      kind: 'Topology',
+      config: 'Topology/plant',
+      path: '/phenix/topologies/plant/plant.builder.yaml',
+      digest: `sha256:${'c'.repeat(64)}`,
+      size: 2048,
+      document: doc,
+    };
+    const http = fakeHttp({
+      'builder-v2/topologies/plant/document': {
+        data: { ...row, topologyDiffers: true },
+      },
+      'builder-v2/topologies/core/document': {
+        data: { ...row, source: 'store', id: 'p1', target: 'core', path: '' },
+      },
+    });
+    const api = createBuilderApi(http);
+
+    await expect(api.getTopologyDocument('plant')).resolves.toEqual({
+      ...row,
+      id: 'file/plant',
+      topologyDiffers: true,
+    });
+    expect(http.calls[0]).toMatchObject({
+      method: 'get',
+      url: 'builder-v2/topologies/plant/document',
+    });
+
+    // A stored document keeps its id, and a row that does not say the
+    // topology differs does not differ.
+    const stored = await api.getTopologyDocument('core');
+
+    expect(stored.id).toBe('p1');
+    expect(stored.topologyDiffers).toBe(false);
+  });
+
+  test('a draft records the name of the uploaded file only when the server would', () => {
+    expect(sourceFileName('plant.builder.json')).toBe('plant.builder.json');
+    expect(sourceFileName('Übung 1 (final).yaml')).toBe('Übung 1 (final).yaml');
+    expect(sourceFileName('a'.repeat(MAX_SOURCE_FILE_BYTES))).toBe(
+      'a'.repeat(MAX_SOURCE_FILE_BYTES),
+    );
+    // What ValidateSourceFile refuses is left out, not sent.
+    expect(sourceFileName('a'.repeat(MAX_SOURCE_FILE_BYTES + 1))).toBe('');
+    // Bytes, not characters: 86 three-byte characters are 258 bytes.
+    expect(sourceFileName('€'.repeat(86))).toBe('');
+    expect(sourceFileName('dir/plant.json')).toBe('');
+    expect(sourceFileName('dir\\plant.json')).toBe('');
+    expect(sourceFileName('.')).toBe('');
+    expect(sourceFileName('..')).toBe('');
+    expect(sourceFileName('plant\n.json')).toBe('');
+    expect(sourceFileName('plant\u007f.json')).toBe('');
+    expect(sourceFileName('')).toBe('');
+    expect(sourceFileName(undefined)).toBe('');
+    // A name that only starts with dots is a file name.
+    expect(sourceFileName('...json')).toBe('...json');
   });
 
   test('generate returns the document and its warnings', async () => {

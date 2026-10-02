@@ -13,7 +13,8 @@
 //   - phenix semantics: the complete node spec of every device, canonical
 //     networks (VLANs) with optional integer aliases, and the edges that bind
 //     device interfaces to networks.
-//   - Provenance: where the document came from ([Source]) and an optional
+//   - Provenance: who made the document and who last saved it, and when
+//     ([Provenance]), where the document came from ([Source]) and an optional
 //     reference to a stored or uploaded scenario ([ScenarioRef]).
 //
 // Two authoritative transformations are provided:
@@ -77,6 +78,11 @@
 // Size limits (node counts, payload sizes, etc.) are deliberately *not*
 // enforced here; they belong to the API/transport layer. This package enforces
 // structural and semantic correctness only, and the bounds on the document
-// name, which the draft service records as a title, and on the source config
+// name, which the draft service records as a title, on the users the header
+// names, which are bounded like the owner of a draft, and on the source config
 // annotations a document carries only to show them.
+//
+// The header's author, createdAt, updatedBy and updatedAt are ordinary
+// content: this package checks their form ([MaxUserBytes], [TimeLayout]) and
+// never sets them. The draft service does, when it stores a snapshot.
 package builder

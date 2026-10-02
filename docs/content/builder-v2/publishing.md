@@ -6,6 +6,10 @@ in Builder v2 writes configs. Publish sends no diagram: the server reads
 the draft's last saved snapshot, checks it again, and writes the configs from
 it.
 
+Without the web UI, the `phenix builder publish` command writes a Topology
+config from a Builder file (see
+[From the command line](import-export.md#from-the-command-line)).
+
 The examples on this page publish the Riverside Water draft (see
 [The drafts on these pages](index.md#the-drafts-on-these-pages)). It has the
 scenario `riverside-water` attached.
@@ -100,7 +104,10 @@ that draft published, or when the draft was made from the topology:
   uploaded as a Builder document that was exported from such a draft, such
   as `riverside-water.builder.json`,
 - opened from its published diagram (**Edit as a draft**, or the edit
-  button on the **Configs** page), or
+  button on the **Configs** page),
+- opened from the Builder file that the topology names as its diagram (see
+  [Publishing to a topology that names a Builder file](#publishing-to-a-topology-that-names-a-builder-file)),
+  or
 - saved as a new draft from the history of a draft that could update it
   (**Save my history as a new draft**).
 
@@ -120,8 +127,23 @@ no earlier version of a config. To go back, restore an earlier snapshot in
 
 An update keeps the topology's own annotations, such as `maintainer` and
 `purpose` on `riverside-water`. Publishing adds the annotation `builder-doc`,
-which names the published diagram. A new topology gets only `builder-doc`: the
-annotations the Inspector shows from an imported config are not published.
+which names the published diagram by its `digest` and its `id`:
+
+```yaml
+metadata:
+    name: riverside-water
+    annotations:
+        builder-doc:
+            digest: sha256:a62655786319cf4b5a38653dd6c16118a1802a621e4a0f65a78b8e1392177691
+            id: 14c17b46f3a0c6f5ba2f66c6fdd2ff20ef621a57c1aa65ddba5e91413435dc81
+        maintainer: range-team
+        purpose: Water utility training range
+```
+
+A `path` that the annotation already has is kept (see
+[The builder-doc annotation](administration.md#the-builder-doc-annotation)).
+A new topology gets only `builder-doc`: the annotations the Inspector shows
+from an imported config are not published.
 
 ### The result
 
@@ -135,7 +157,9 @@ draft: ok
 ```
 
 - **document**: the published copy of the diagram, which the
-  **Published Diagrams** tab lists.
+  **Published Diagrams** tab lists. It is the draft's last saved snapshot as
+  it is, so it keeps who made the diagram and who edited it last (see
+  [Who made and last saved a diagram](import-export.md#who-made-and-last-saved-a-diagram)).
 - **topology**, **scenario**, **experiment**: `created`, `updated`, or
   `skipped` when the config already holds this snapshot, so nothing was
   written.
@@ -415,10 +439,47 @@ To keep the work of such a draft:
 A config that was deleted since does not stop a draft: the draft publishes as
 a new diagram does.
 
+## Publishing to a topology that names a Builder file
+
+A topology can name a Builder file on the phenix server as its diagram (see
+[Diagrams read from a file](drafts.md#diagrams-read-from-a-file)). A draft
+made with **Edit as a draft** from that diagram can update the topology
+while both of these hold:
+
+- The file still holds the diagram the draft was made from.
+- The topology is still what that diagram publishes.
+
+Otherwise the form stays open and says why, and you can publish under a new
+topology name instead:
+
+- "Could not publish the diagram. Topology pump-station or its Builder file
+  changed after this draft was opened from the file."
+- "Could not publish the diagram. Topology pump-station is not what its
+  Builder file publishes, so this draft cannot update it."
+
+The hint under **Topology name** cannot tell these cases apart. It says "A
+topology with this name exists and will be updated." for every draft made
+from the file, and the server refuses when you select **Update topology**.
+
+Publish does not write the file. It stores the published diagram in
+phenix, and the topology shows that diagram from then on: its **Published
+Diagrams** card loses the tag **File**. The result lists a warning:
+
+```text
+Warning: Topology pump-station names the Builder file /phenix/topologies/pump-station/pump-station.builder.json, which Publish does not change. Export the diagram and replace the file to keep it in step.
+```
+
+To keep the file in step, select **Export** > **Builder JSON** in the draft
+and replace the file on the server with the export. See
+[Editing and publishing](administration.md#editing-and-publishing) for what
+is written to the topology.
+
 ## Editing a published topology
 
-A topology published from Builder v2 has the tag `builder v2` on the
-**Configs** page. Its edit button opens it in Builder v2:
+A topology with a Builder v2 diagram has the tag `builder v2` on the
+**Configs** page: one published from Builder v2 or with
+`phenix builder publish`, or one that names a Builder file. Its edit button
+opens it in Builder v2:
 
 1. Select **Configs** in the phenix navigation bar.
 2. In the **Actions** column of `riverside-water`, select the edit button
