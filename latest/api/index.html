@@ -16,14 +16,14 @@
         <link rel="prev" href="../tunneler/">
       
       
-        <link rel="next" href="../git-workflow/">
+        <link rel="next" href="../workflow/">
       
       
         
       
       
       <link rel="icon" href="../images/favicon.ico">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
     
     
       
@@ -1084,14 +1084,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../git-workflow/" class="md-nav__link">
+      <a href="../workflow/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Git Workflow
+    Workflow
   
 
     
@@ -1414,7 +1414,7 @@
 <h1 id="api">API<a class="headerlink" href="#api" title="Permanent link">&para;</a></h1>
 <p>The phēnix web UI is built entirely on top of a REST API served by the phēnix
 daemon. That same API is available for external tooling and automation, such
-as CI/CD pipelines (see <a href="../git-workflow/">Git Workflow</a>) or custom scripts.</p>
+as CI/CD pipelines (see <a href="../workflow/">Workflow</a>) or custom scripts.</p>
 <h2 id="interactive-api-docs-swaggeropenapi">Interactive API Docs (Swagger/OpenAPI)<a class="headerlink" href="#interactive-api-docs-swaggeropenapi" title="Permanent link">&para;</a></h2>
 <p>Browsable, interactive API documentation is generated from the project's
 <a href="https://www.openapis.org/">OpenAPI</a> (Swagger) specification, and is
@@ -1443,9 +1443,9 @@ the latest docs release.</p>
 </li>
 </ul>
 <p>The API docs are organized by tag (<code>Configs</code>, <code>Experiments</code>, <code>Virtual
-Machines</code>, <code>Hosts</code>, <code>Applications</code>, <code>Topologies</code>, <code>Disks</code>, <code>Users</code>, etc.) and
-document every available endpoint, including request parameters and response
-schemas.</p>
+Machines</code>, <code>Hosts</code>, <code>Applications</code>, <code>Topologies</code>, <code>Disks</code>, <code>Users</code>,
+<code>Workflow</code>, etc.) and document every available endpoint, including request
+parameters and response schemas.</p>
 <div class="admonition info">
 <p class="admonition-title">Info</p>
 <p>The underlying OpenAPI spec is maintained at
@@ -1467,9 +1467,9 @@ for details.</p>
 <p>The phēnix API can be used to integrate phēnix with external systems. Known
 integrations include:</p>
 <ul>
-<li><a href="../git-workflow/">Git Workflow</a> - drive experiment topology/scenario
-  updates from a git-based CI/CD pipeline (e.g. a GitLab runner) reacting to
-  push events.</li>
+<li><a href="../workflow/">Workflow</a> - deploy a topology directory with
+  <code>phenix workflow apply</code>, or drive experiment topology/scenario updates from
+  a git-based CI/CD pipeline reacting to push events.</li>
 </ul>
 
 

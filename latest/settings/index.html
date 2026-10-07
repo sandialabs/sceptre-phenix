@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../images/favicon.ico">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
     
     
       
@@ -1184,14 +1184,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../git-workflow/" class="md-nav__link">
+      <a href="../workflow/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Git Workflow
+    Workflow
   
 
     
@@ -1690,6 +1690,12 @@ Changes made via this command are applied immediately (hot-swapped) without rest
 </thead>
 <tbody>
 <tr>
+<td style="text-align: left;"><code>--base-dir.injects</code></td>
+<td style="text-align: left;"><code>string</code></td>
+<td style="text-align: left;"><code>&lt;base-dir.phenix&gt;/injects</code></td>
+<td style="text-align: left;">Directory that <code>phenix workflow apply</code> stages topology injects into. The <code>phenix ui</code> server reports its value to the CLI, and the flag on the <code>phenix workflow apply</code> command line overrides it. See <a href="../workflow/">Workflow</a>.</td>
+</tr>
+<tr>
 <td style="text-align: left;"><code>--base-dir.minimega</code></td>
 <td style="text-align: left;"><code>string</code></td>
 <td style="text-align: left;"><code>/tmp/minimega</code></td>
@@ -1700,6 +1706,12 @@ Changes made via this command are applied immediately (hot-swapped) without rest
 <td style="text-align: left;"><code>string</code></td>
 <td style="text-align: left;"><code>/phenix</code></td>
 <td style="text-align: left;">Base phēnix directory.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--base-dir.topologies</code></td>
+<td style="text-align: left;"><code>string</code></td>
+<td style="text-align: left;"><code>&lt;base-dir.phenix&gt;/topologies</code></td>
+<td style="text-align: left;">Directory that <code>phenix workflow apply</code> looks up topology directory names in. See <a href="../workflow/">Workflow</a>.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>--bridge-mode</code></td>
@@ -1875,6 +1887,18 @@ Changes made via this command are applied immediately (hot-swapped) without rest
 <td style="text-align: left;"><code>PHENIX_MOUNT_DIR</code></td>
 <td style="text-align: left;"><code>&lt;base-dir.phenix&gt;/mounts</code></td>
 <td style="text-align: left;">Base directory used for VM filesystem mounts created via <code>phenix vm mount</code>. See <a href="../vms/#mount-a-vm">Mount a VM</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>base-dir.injects</code></td>
+<td style="text-align: left;"><code>PHENIX_BASE_DIR_INJECTS</code></td>
+<td style="text-align: left;"><code>&lt;base-dir.phenix&gt;/injects</code></td>
+<td style="text-align: left;">Directory that <code>phenix workflow apply</code> stages a topology directory's <code>phenix-injects/</code> into, as <code>&lt;base-dir.injects&gt;/&lt;name&gt;</code>. The phēnix server's value is used unless <code>--base-dir.injects</code> is given; see <a href="../workflow/#settings">Workflow</a>. Use an absolute path. <strong>(Restart Required)</strong></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>base-dir.topologies</code></td>
+<td style="text-align: left;"><code>PHENIX_BASE_DIR_TOPOLOGIES</code></td>
+<td style="text-align: left;"><code>&lt;base-dir.phenix&gt;/topologies</code></td>
+<td style="text-align: left;">Directory where <code>phenix workflow apply NAME</code> looks for <code>NAME</code> when <code>NAME</code> isn't an existing path. Use an absolute path. See <a href="../workflow/">Workflow</a>.</td>
 </tr>
 </tbody>
 </table>
