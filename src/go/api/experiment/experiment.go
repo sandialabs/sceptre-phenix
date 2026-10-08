@@ -875,6 +875,8 @@ func Start(ctx context.Context, opts ...StartOption) error {
 // Stop stops the experiment with the given name. Injection snapshots are
 // deleted by default. It returns any errors encountered while stopping the
 // experiment.
+const scorchDrainTimeout = 2 * time.Minute
+
 func Stop(name string, opts ...StopOption) error {
 	o := newStopOptions(opts...)
 
@@ -896,6 +898,16 @@ func Stop(name string, opts ...StopOption) error {
 	}
 
 	dryrun := strings.HasSuffix(exp.Status.StartTime(), "-DRYRUN")
+
+	// Drain component processes while their VMs and namespace still exist.
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), scorchDrainTimeout)
+	defer drainCancel()
+	if err := app.Drain(drainCtx, exp); err != nil {
+		return err
+	}
+	if err := exp.Reload(); err != nil {
+		return err
+	}
 
 	var errors error
 

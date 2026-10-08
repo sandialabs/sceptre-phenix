@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/activeshadow/structs"
@@ -31,11 +32,13 @@ import (
 )
 
 const (
-	statusRunning  = "running"
-	statusSuccess  = "success"
-	statusFailure  = "failure"
-	statusUnstable = "unstable"
-	scorchInfoName = "name"
+	filebeatFinalizeTimeout  = 90 * time.Second
+	componentFinalizeTimeout = 30 * time.Second
+	statusRunning            = "running"
+	statusSuccess            = "success"
+	statusFailure            = "failure"
+	statusUnstable           = "unstable"
+	scorchInfoName           = "name"
 
 	filebeatStartupDelay = 2 * time.Second
 	filebeatScanDelay    = 7 * time.Second
@@ -45,6 +48,11 @@ const (
 
 func init() { //nolint:gochecknoinits // app registration
 	_ = app.RegisterUserApp("scorch", func() app.App { return newScorch() })
+	app.RegisterDrainer("scorch", scorchexe.Drain)
+}
+
+func (s *Scorch) RunManaged(ctx context.Context, exp *types.Experiment) error {
+	return scorchexe.Execute(ctx, exp, scorchexe.MustRunID(ctx))
 }
 
 type Scorch struct {
@@ -105,6 +113,7 @@ func (s Scorch) PostStart(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
+//nolint:funlen // component execution and artifact finalization share one lifetime
 func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	var err error
 
@@ -148,14 +157,18 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	var (
 		errors error
 		run    = s.md.Runs[runID]
-		opts   = []Option{Experiment(*exp), RunID(runID), StartTime(start.Format(time.RubyDate))}
+		tasks  = newTaskGroup()
+		opts   = []Option{Experiment(*exp), RunID(runID), StartTime(start.Format(time.RubyDate)), executionTasks(tasks)}
 	)
 
+	executionCtx, cancelExecution := context.WithCancelCause(ctx)
+	defer cancelExecution(nil)
+	tasks.failed = cancelExecution
 	for i := range run.Count {
 		loopOpts := append([]Option(nil), opts...)
-		loopOpts = append(loopOpts, LoopCount(i))
+		loopOpts = append(loopOpts, LoopCount(i), iteration(strconv.Itoa(i)))
 
-		err := executor(ctx, s.md.ComponentSpecs(), run, loopOpts...)
+		err := executor(executionCtx, s.md.ComponentSpecs(), run, loopOpts...)
 		if err != nil {
 			errors = multierror.Append(
 				errors,
@@ -166,28 +179,40 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		}
 	}
 
+	if err := tasks.close(); err != nil {
+		errors = multierror.Append(errors, err)
+	}
+	if err := scorchexe.State(ctx, exp.Metadata.Name, scorchmd.StateFinalizing, "done", "", 0, 0, "", ""); err != nil {
+		errors = multierror.Append(errors, err)
+	}
 	update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
-		Exp:   exp.Metadata.Name,
-		Run:   runID,
-		Loop:  0,
-		Stage: string(ActionDone),
+		ExecutionID: scorchexe.ExecutionID(ctx),
+		Exp:         exp.Metadata.Name,
+		Run:         runID,
+		Loop:        0,
+		Stage:       string(ActionDone),
 	}
 
 	update.Status = statusRunning
 	_ = scorch.UpdatePipeline(update)
 
+	if err := cleanupOwnedTaps(ctx, exp, runID); err != nil {
+		errors = multierror.Append(errors, err)
+	}
 	if cmd != nil {
-		s.stopFilebeat(ctx, cmd, port)
+		finalCtx, cancelFinal := context.WithTimeout(context.WithoutCancel(ctx), filebeatFinalizeTimeout)
+		s.stopFilebeat(finalCtx, cmd, port)
+		cancelFinal()
 	}
 
-	if err := s.recordInfo(runID, runDir, exp.Metadata, start); err != nil {
+	if err := s.recordInfo(runID, runDir, exp.Metadata, start, scorchexe.ExecutionID(ctx)); err != nil {
 		errors = multierror.Append(errors, err)
 	}
 
 	if _, err := os.Stat(runDir); err == nil {
 		archive := filepath.Join(
 			exp.FilesDir(),
-			fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format("2006-01-02T15-04-05Z0700")),
+			fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format("2006-01-02T15-04-05Z0700")+"-"+scorchexe.ExecutionID(ctx)),
 		)
 
 		err := util.CreateArchive(runDir, archive)
@@ -200,6 +225,9 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	update.Status = statusSuccess
+	if errors != nil {
+		update.Status = statusFailure
+	}
 	_ = scorch.UpdatePipeline(update)
 
 	return errors
@@ -280,6 +308,17 @@ func (s Scorch) startFilebeat(
 
 //nolint:funlen // complex logic
 func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
+	joined := make(chan struct{})
+	defer close(joined)
+	go func() {
+		select {
+		case <-ctx.Done():
+			if cmd != nil {
+				_ = cmd.Process.Kill()
+			}
+		case <-joined:
+		}
+	}()
 	if cmd == nil {
 		return
 	}
@@ -318,7 +357,8 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 		select {
 		case <-ctx.Done():
 			_ = cmd.Process.Signal(os.Interrupt)
-
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
 			return
 		case <-maxTimer.C:
 			plog.Warn(
@@ -449,6 +489,7 @@ func (s Scorch) recordInfo(
 	runDir string,
 	md store.ConfigMetadata,
 	startTime time.Time,
+	executionID string,
 ) error {
 	c := mmcli.NewCommand()
 	c.Command = "version"
@@ -466,6 +507,7 @@ func (s Scorch) recordInfo(
 		"run": map[string]any{
 			scorchInfoName: s.md.RunName(runID),
 			"index":        runID,
+			"executionID":  executionID,
 		},
 		"start": startTime.Format(time.RFC3339),
 		"end":   time.Now().UTC().Format(time.RFC3339),
@@ -500,7 +542,7 @@ func (s Scorch) recordInfo(
 	return nil
 }
 
-//nolint:funlen,maintidx // complex logic
+//nolint:funlen,maintidx,gocyclo,cyclop // recursive staged executor
 func executor(
 	ctx context.Context,
 	components scorchmd.ComponentSpecMap,
@@ -548,15 +590,33 @@ func executor(
 	}
 
 	update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
-		Exp:   exp,
-		Run:   options.Run,
-		Loop:  options.Loop,
-		Count: options.Count,
+		ExecutionID: scorchexe.ExecutionID(ctx),
+		Exp:         exp,
+		Run:         options.Run,
+		Loop:        options.Loop,
+		Count:       options.Count,
 	}
 
 	logger.Info("starting scorch", "run", loopPrefix)
 
 	runStage := func(stage Action, names []string, failFast bool) error {
+		stageCtx := ctx
+		if !failFast {
+			var cancel context.CancelFunc
+			stageCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), componentFinalizeTimeout)
+			defer cancel()
+		} else if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if options.Tasks != nil && (stage == ActionStop || stage == ActionCleanup) {
+			original := ActionStart
+			if stage == ActionCleanup {
+				original = ActionConfigure
+			}
+			if err := options.Tasks.stopPrefix(fmt.Sprintf("%s/%s/", options.Iteration, original)); err != nil {
+				return err
+			}
+		}
 		update.Stage = string(stage)
 
 		if len(names) == 0 {
@@ -574,6 +634,16 @@ func executor(
 
 		for _, name := range names {
 			typ := components[name].Type
+			if !failFast && ctx.Err() != nil && (typ == "break" || typ == componentPause) {
+				continue
+			}
+			runState := scorchmd.StateRunning
+			if !failFast {
+				runState = scorchmd.StateFinalizing
+			}
+			if err := scorchexe.State(stageCtx, exp, runState, string(stage), name, options.Loop, options.Count, "", ""); err != nil {
+				return err
+			}
 
 			update.CmpType = typ
 			update.CmpName = name
@@ -582,7 +652,7 @@ func executor(
 			scorch.UpdateComponent(update)
 
 			meta := scorchmd.ApplyReplacements(components[name].Metadata, options.Replacements)
-			cmpOpts := opts
+			cmpOpts := append([]Option(nil), opts...)
 			cmpOpts = append(cmpOpts, Name(name), Type(typ), Stage(stage), Metadata(meta))
 
 			status := statusRunning
@@ -598,7 +668,10 @@ func executor(
 
 			logger.Debug("running scorch stage component", "stage", stage, "component", name)
 
-			err := ExecuteComponent(ctx, cmpOpts...)
+			var err error
+			if !components[name].Background || failFast || (typ != componentPause && typ != componentSOH) {
+				err = ExecuteComponent(stageCtx, cmpOpts...)
+			}
 			if err != nil {
 				update.Status = statusFailure
 				scorch.UpdateComponent(update)
@@ -682,10 +755,11 @@ func executor(
 
 	if exe.Loop != nil {
 		update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
-			Exp:   exp,
-			Run:   options.Run,
-			Loop:  options.Loop,
-			Stage: string(ActionLoop),
+			ExecutionID: scorchexe.ExecutionID(ctx),
+			Exp:         exp,
+			Run:         options.Run,
+			Loop:        options.Loop,
+			Stage:       string(ActionLoop),
 		}
 
 		update.Status = statusRunning
@@ -693,7 +767,7 @@ func executor(
 
 		for i := range exe.Loop.Count {
 			loopOpts := append([]Option(nil), opts...)
-			loopOpts = append(loopOpts, CurrentLoop(options.Loop+1), LoopCount(i))
+			loopOpts = append(loopOpts, CurrentLoop(options.Loop+1), LoopCount(i), iteration(fmt.Sprintf("%s/%d", options.Iteration, i)))
 
 			err := executor(ctx, components, exe.Loop, loopOpts...)
 			if err != nil {

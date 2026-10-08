@@ -10,6 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"path/filepath"
+	"sync"
+
+	"phenix/api/scorch/scorchexe"
 	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/plog"
@@ -43,30 +47,18 @@ func (u UserComponent) Type() string {
 }
 
 func (u UserComponent) Configure(ctx context.Context) error {
-	if u.options.Background {
-		ctx = background(ctx, ActionConfigure, u.options)
-	}
-
 	return u.shellOut(ctx, ActionConfigure)
 }
 
 func (u UserComponent) Start(ctx context.Context) error {
-	if u.options.Background {
-		ctx = background(ctx, ActionStart, u.options)
-	}
-
 	return u.shellOut(ctx, ActionStart)
 }
 
 func (u UserComponent) Stop(ctx context.Context) error {
-	handleBackgrounded(ActionStop, u.options)
-
 	return u.shellOut(ctx, ActionStop)
 }
 
 func (u UserComponent) Cleanup(ctx context.Context) error {
-	handleBackgrounded(ActionCleanup, u.options)
-
 	return u.shellOut(ctx, ActionCleanup)
 }
 
@@ -140,48 +132,49 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 	// TODO: consider letting the child process send a signal indicating it wants
 	// to run in the background instead of having to configure it in the scenario.
 
-	if u.options.Background {
-		go func() { _ = u.run(ctx, stage, cmd, data) }()
-
-		return nil
-	}
-
 	return u.run(ctx, stage, cmd, data)
 }
 
 func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data []byte) error {
 	update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
-		Exp:     u.options.Exp.Spec.ExperimentName(),
-		CmpName: u.options.Name,
-		CmpType: u.options.Type,
-		Run:     u.options.Run,
-		Loop:    u.options.Loop,
-		Count:   u.options.Count,
-		Stage:   string(stage),
-		Status:  statusRunning,
+		ExecutionID: scorchexe.ExecutionID(ctx),
+		Exp:         u.options.Exp.Spec.ExperimentName(),
+		CmpName:     u.options.Name,
+		CmpType:     u.options.Type,
+		Run:         u.options.Run,
+		Loop:        u.options.Loop,
+		Count:       u.options.Count,
+		Stage:       string(stage),
+		Status:      statusRunning,
 	}
 
 	stdout := make(chan []byte)
 
 	stderrChan := make(chan []byte)
-	go processLogChannel(stderrChan, func(level, msg string) {
-		kv := []any{
-			"component", u.options.Name,
-			"stage", stage,
-			"exp", u.options.Exp.Spec.ExperimentName(),
-		}
+	var streams sync.WaitGroup
+	streams.Add(1)
+	streams.Add(1)
+	go func() {
+		defer streams.Done()
+		processLogChannel(stderrChan, func(level, msg string) {
+			kv := []any{
+				"component", u.options.Name,
+				"stage", stage,
+				"exp", u.options.Exp.Spec.ExperimentName(),
+			}
 
-		switch level {
-		case levelError, "ERR":
-			plog.Error(plog.TypeScorch, msg, kv...)
-		case levelWarn, "WARNING":
-			plog.Warn(plog.TypeScorch, msg, kv...)
-		case levelDebug, "DBG":
-			plog.Debug(plog.TypeScorch, msg, kv...)
-		default:
-			plog.Info(plog.TypeScorch, msg, kv...)
-		}
-	})
+			switch level {
+			case levelError, "ERR":
+				plog.Error(plog.TypeScorch, msg, kv...)
+			case levelWarn, "WARNING":
+				plog.Warn(plog.TypeScorch, msg, kv...)
+			case levelDebug, "DBG":
+				plog.Debug(plog.TypeScorch, msg, kv...)
+			default:
+				plog.Info(plog.TypeScorch, msg, kv...)
+			}
+		})
+	}()
 
 	opts := []shell.Option{
 		shell.Command(cmd),
@@ -201,11 +194,14 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 			"PHENIX_LOG_FILE=stderr",
 			"PHENIX_DRYRUN="+strconv.FormatBool(u.options.Exp.DryRun()),
 			"PHENIX_SCORCH_STARTTIME="+u.options.StartTime,
+			"PHENIX_SCORCH_EXECUTION_ID="+scorchexe.ExecutionID(ctx),
+			"PHENIX_SCORCH_CONTROL_DIR="+filepath.Join(common.PhenixBase, ".scorch-control"),
 		),
 		shell.StreamStderr(stderrChan),
 	}
 
 	go func() {
+		defer streams.Done()
 		for output := range stdout {
 			update.Output = output
 			update.Output = append(update.Output, '\n')
@@ -214,6 +210,7 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 	}()
 
 	stdoutBytes, _, err := shell.ExecCommand(ctx, opts...)
+	streams.Wait()
 	if err != nil {
 		return fmt.Errorf(
 			"external user component %s (command %s) failed: %w",

@@ -9,6 +9,8 @@ import (
 	"github.com/fatih/color"
 	"github.com/mitchellh/mapstructure"
 
+	"phenix/api/scorch/scorchexe"
+	"phenix/api/scorch/scorchmd"
 	"phenix/util"
 	"phenix/web/scorch"
 )
@@ -37,46 +39,22 @@ func (p *Pause) Init(opts ...Option) error {
 }
 
 func (p Pause) Type() string {
-	return "pause"
+	return componentPause
 }
 
 func (p Pause) Configure(ctx context.Context) error {
-	if p.options.Background {
-		ctx = background(ctx, ActionConfigure, p.options)
-
-		go func() { _ = p.pause(ctx, ActionConfigure) }()
-
-		return nil
-	}
-
 	return p.pause(ctx, ActionConfigure)
 }
 
 func (p Pause) Start(ctx context.Context) error {
-	if p.options.Background {
-		ctx = background(ctx, ActionStart, p.options)
-
-		go func() { _ = p.pause(ctx, ActionStart) }()
-
-		return nil
-	}
-
 	return p.pause(ctx, ActionStart)
 }
 
 func (p Pause) Stop(ctx context.Context) error {
-	if handleBackgrounded(ActionStop, p.options) {
-		return nil
-	}
-
 	return p.pause(ctx, ActionStop)
 }
 
 func (p Pause) Cleanup(ctx context.Context) error {
-	if handleBackgrounded(ActionCleanup, p.options) {
-		return nil
-	}
-
 	return p.pause(ctx, ActionCleanup)
 }
 
@@ -115,6 +93,35 @@ func (p Pause) pause(ctx context.Context, stage Action) error {
 	}
 
 	start := time.Now()
+	// Only a foreground timer blocks the run's control flow.
+	if !p.options.Background && !p.options.Detached {
+		if err := scorchexe.State(
+			ctx,
+			p.options.Exp.Metadata.Name,
+			scorchmd.StateWaiting,
+			string(stage),
+			p.options.Name,
+			p.options.Loop,
+			p.options.Count,
+			"timer",
+			start.Add(d).UTC().Format(time.RFC3339),
+		); err != nil {
+			return err
+		}
+		defer func() {
+			_ = scorchexe.State(
+				ctx,
+				p.options.Exp.Metadata.Name,
+				scorchmd.StateRunning,
+				string(stage),
+				p.options.Name,
+				p.options.Loop,
+				p.options.Count,
+				"",
+				"",
+			)
+		}()
+	}
 
 	for time.Since(start) < d {
 		select {
