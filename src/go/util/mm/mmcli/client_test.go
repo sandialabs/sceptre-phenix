@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/activeshadow/libminimega/minicli"
-	"github.com/activeshadow/libminimega/miniclient"
+	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
+	"github.com/sandia-minimega/minimega/v2/pkg/miniclient"
 
 	"phenix/util/common"
 )
@@ -40,6 +41,9 @@ const (
 	// actionClose drops the connection without answering, modelling a lost
 	// socket or a restarted minimega.
 	actionClose
+	// actionStatusReply sends a progress frame before the supplied response, as
+	// minimega does while an iomeshage transfer is in flight.
+	actionStatusReply
 )
 
 type fakeHandler func(cmd string) (*miniclient.Response, fakeAction)
@@ -107,6 +111,19 @@ func serveFake(conn net.Conn, handle fakeHandler) {
 			if err := enc.Encode(resp); err != nil {
 				return
 			}
+		case actionStatusReply:
+			status := &miniclient.Response{
+				Rendered: "transferring file disk.qc2: 50.000000% complete",
+				Status:   true,
+			}
+
+			if err := enc.Encode(status); err != nil {
+				return
+			}
+
+			if err := enc.Encode(resp); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -156,6 +173,33 @@ func TestRunDeliversResponses(t *testing.T) {
 
 	if got != "pong" {
 		t.Fatalf("got %q, want %q", got, "pong")
+	}
+}
+
+// TestRunSkipsStatusFrames: minimega publishes progress frames (Status set,
+// More unset) while an iomeshage transfer is in flight. A client that reads one
+// as the final response returns nothing for that command and leaves the real
+// reply on the socket, where the next command on the shared connection picks
+// it up.
+func TestRunSkipsStatusFrames(t *testing.T) {
+	dir := newFakeMinimega(t, func(cmd string) (*miniclient.Response, fakeAction) {
+		return reply(cmd), actionStatusReply
+	})
+
+	useFakeMinimega(t, dir)
+
+	for _, command := range []string{"vm launch", "vm info"} {
+		cmd := NewCommand()
+		cmd.Command = command
+
+		got, err := SingleResponse(Run(cmd))
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", command, err)
+		}
+
+		if got != cmd.String() {
+			t.Fatalf("%s: got %q, want %q", command, got, cmd.String())
+		}
 	}
 }
 
@@ -435,5 +479,40 @@ func TestRunConcurrentCommands(t *testing.T) {
 
 	for err := range errs {
 		t.Error(err)
+	}
+}
+
+// TestRunTabularErrKeepsRowsFromHealthyHosts: on a mesh a query can succeed
+// on some hosts and fail on others (a `cc` query on a host that does not own
+// the VM answers with an error). The rows must survive alongside the error so
+// callers can decide whether they are sufficient.
+func TestRunTabularErrKeepsRowsFromHealthyHosts(t *testing.T) {
+	dir := newFakeMinimega(t, func(string) (*miniclient.Response, fakeAction) {
+		return &miniclient.Response{
+			Resp: minicli.Responses{
+				{Host: "sibling", Error: "no client foo"},
+				{Host: "owner", Header: []string{"id", "responses"}, Tabular: [][]string{{"7", "1"}}},
+			},
+		}, actionReply
+	})
+
+	useFakeMinimega(t, dir)
+
+	cmd := NewCommand()
+	cmd.Command = "cc commands"
+	cmd.Columns = []string{"host", "responses"}
+
+	rows, err := RunTabularErr(cmd)
+	if err == nil || !strings.Contains(err.Error(), "no client foo") {
+		t.Fatalf("err = %v, want the sibling host's error", err)
+	}
+
+	want := []map[string]string{{"host": "owner", "responses": "1"}}
+	if !reflect.DeepEqual(rows, want) {
+		t.Fatalf("rows = %v, want %v", rows, want)
+	}
+
+	if got := RunTabular(cmd); !reflect.DeepEqual(got, want) {
+		t.Fatalf("RunTabular rows = %v, want %v", got, want)
 	}
 }

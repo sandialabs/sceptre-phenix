@@ -39,14 +39,18 @@ func (c *Command) String() string {
 		cmd = fmt.Sprintf(".filter %v %v", f, cmd)
 	}
 
-	if len(c.Columns) > 0 {
-		columns := make([]string, len(c.Columns))
+	// `host` is the responding node, which minicli reports outside the tabular
+	// header, so it is never requested as a column (tabularToMapCols fills it).
+	columns := make([]string, 0, len(c.Columns))
 
-		// Quote all the columns in case there are spaces.
-		for i := range c.Columns {
-			columns[i] = fmt.Sprintf("%q", c.Columns[i])
+	for _, col := range c.Columns {
+		if col != "host" {
+			// Quote the column in case it contains spaces.
+			columns = append(columns, fmt.Sprintf("%q", col))
 		}
+	}
 
+	if len(columns) > 0 {
 		cmd = fmt.Sprintf(".columns %v %v", strings.Join(columns, ","), cmd)
 	}
 

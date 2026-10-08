@@ -183,7 +183,7 @@ func TestProcessLogChannelTreatsInvalidJSONAsText(t *testing.T) {
 	}
 }
 
-func TestUserComponentRunRoutesStdoutAndStructuredStderr(t *testing.T) {
+func TestUserShellComponentRunRoutesStdoutAndStructuredStderr(t *testing.T) {
 	tmpDir := t.TempDir()
 	scriptPath := filepath.Join(tmpDir, "component.sh")
 	script := strings.Join([]string{
@@ -221,7 +221,7 @@ func TestUserComponentRunRoutesStdoutAndStructuredStderr(t *testing.T) {
 	exp := types.NewExperiment(store.ConfigMetadata{Name: "test-exp"})
 	exp.Spec.SetExperimentName("test-exp")
 
-	var u UserComponent
+	var u UserShellComponent
 	if err := u.Init(
 		Name("test-component"),
 		Type("test-type"),
