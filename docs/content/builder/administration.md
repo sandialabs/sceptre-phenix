@@ -1,9 +1,10 @@
 # Administration
 
 This page is for phenix administrators. It covers the permissions the
-Builder's users need, where it keeps drafts and published diagrams, the
-`builder-doc` annotation, Builder documents kept in files, its REST API, and
-what to do when something goes wrong.
+Builder's users need, the built-in Builder role, where it keeps drafts,
+published diagrams and libraries, the `builder-doc` annotation, Builder
+documents kept in files, its REST API, and what to do when something goes
+wrong.
 
 ## Availability
 
@@ -44,20 +45,120 @@ mode (see [User Authn/Authz in phenix](../user-administration.md)):
 - With authentication enabled, each user has their own drafts and can share
   them.
 
-Of the built-in roles, only two have `configs` permissions:
+Of the built-in roles, three have `configs` permissions:
 
 - **Global Admin** can do everything, including opening, changing and
-  deleting every user's drafts. The drafts page offers **Delete** only on
-  the user's own drafts and on damaged drafts. Delete another user's draft
-  with the REST API: `DELETE /api/v1/builder/drafts/{owner}/{draft}` (see
-  [REST API](#rest-api)).
+  deleting every user's drafts, and publishing templates server-wide.
+- **Builder** holds every Builder permission (see
+  [The Builder role](#the-builder-role)).
 - **Global Viewer** can open every draft and published diagram, read only.
   Other users' drafts appear under **Other users' drafts** with **Can
   view**.
 
 The Experiment and VM roles have no `configs` permissions, so their users do
-not see Builder. Give Builder users a role such as the
+not see Builder. Give Builder users the Builder role, or a role such as the
 [example roles](#example-roles) below.
+
+### The Builder role
+
+phenix has a built-in role for the people who draw and publish topologies:
+**Builder** (`builder`). It holds every Builder permission:
+
+- `configs` `list`, `get`, `create`, `update` and `delete`, on Topology,
+  Scenario and Experiment configs only (`Topology/*`, `Scenario/*` and
+  `Experiment/*`). It gives no access to User, Role or Image configs, so a
+  Builder user cannot read accounts or change roles;
+- `builder-drafts` `list`, `get`, `update` and `delete`, on every draft: it
+  lists, opens, changes and deletes other users' drafts (see
+  [Other users' drafts](#other-users-drafts));
+- `builder-templates` `publish`: it publishes templates server-wide, and
+  takes back any user's server-wide template (see
+  [Server-wide templates](#server-wide-templates));
+- `schemas` `get`, for the Inspector's fields;
+- `topologies` and `scenarios` `list` and `get`, `experiments` `list`,
+  `get`, `create` and `update`, and `disks` `list`, for Import, Publish and
+  the drive image suggestions.
+
+```yaml
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: builder
+spec:
+  roleName: Builder
+  policies:
+  - resources:
+    - configs
+    resourceNames:
+    - "Topology/*"
+    - "Scenario/*"
+    - "Experiment/*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+    - delete
+  - resources:
+    - builder-drafts
+    resourceNames:
+    - "*"
+    - "*/*"
+    verbs:
+    - list
+    - get
+    - update
+    - delete
+  - resources:
+    - builder-templates
+    verbs:
+    - publish
+  - resources:
+    - schemas
+    resourceNames:
+    - "*"
+    verbs:
+    - get
+  - resources:
+    - topologies
+    - scenarios
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+  - resources:
+    - experiments
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+  - resources:
+    - disks
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+```
+
+Each time `phenix ui` starts, it makes sure the role exists:
+
+- On a store with no role named `builder`, and none whose role name is
+  `Builder`, it creates the role above. So a store made before the role
+  existed gets it too, and a deleted role comes back at the next start.
+- A role of that name that is already stored, such as one an administrator
+  made, keeps its policies. If it cannot publish templates server-wide, it
+  gains the `builder-templates` `publish` policy, and so do the users it is
+  assigned to. Nothing else in it changes.
+
+Assign the role to a user on the **Users** page (see
+[Updating Users](../user-administration.md#updating-users)). For a site
+that wants its users to have less, such as no access to other users' drafts
+or no server-wide templates, use the [example roles](#example-roles)
+instead.
 
 ### What each task needs
 
@@ -68,9 +169,13 @@ not see Builder. Give Builder users a role such as the
 | Make a draft: **Blank diagram**, **Import**, **Upload**, **Edit as a draft**, **Save my history as a new draft** | `configs` `create` |
 | Import a stored config | Also `configs` `get` on the config, such as `Topology/riverside-water`, and `topologies` `list` (or `experiments` `list`) on its name |
 | Import a config file | `configs` `create` |
+| Convert a legacy Builder diagram with **Upload** | `configs` `get` and `configs` `create` |
+| Open a topology in Builder from the **Configs** page | `configs` `list`, and `configs` `get` on the topology; to import it, also `configs` `create` |
 | Save changes, undo, redo, and restore or delete a snapshot | `configs` `update` |
 | Delete your own draft | `configs` `delete` |
 | Share your own draft | `configs` `update`, and authentication enabled |
+| Publish from a draft's card on the drafts page | As **Publish** in the editor |
+| See **Exp**, which opens the experiment a publication made | `experiments` `get` on that experiment |
 | Choose a stored scenario | `configs` `list` and `scenarios` `list` |
 | Download **Topology YAML** | `configs` `get` |
 | Use the **Publish** button | `configs` `update` |
@@ -81,6 +186,14 @@ not see Builder. Give Builder users a role such as the
 | Get the Inspector's fields from the server | `schemas` `get` on `builder` |
 | Get drive image suggestions and missing-image checks | `disks` `list` |
 | List, open, change or delete other users' drafts | `builder-drafts` (see [Other users' drafts](#other-users-drafts)) |
+| Use your icon library: list, add, delete icons | `configs` `list`, `create`, `delete` |
+| See the **Node Templates** tab, and use templates | `configs` `list` |
+| Add templates and collections, **Save to library**, **Copy to my library** | `configs` `create` |
+| Edit templates and collections, add to and remove from a collection | `configs` `update` |
+| Delete templates and collections | `configs` `delete` |
+| Share templates and collections with users | `configs` `update`, and authentication enabled |
+| Publish templates and collections server-wide | `configs` `update` and `builder-templates` `publish` (see [Server-wide templates](#server-wide-templates)) |
+| Take back another user's server-wide template | `configs` `update` and `builder-templates` `publish` |
 
 Import and Publish read included topologies, such as `corp-services`, with
 the user's `configs` `get` and `topologies` `list` permissions. An include
@@ -116,7 +229,7 @@ example to help a user or to clean up after someone leaves:
 | `list` | List other users' drafts under **Other users' drafts** |
 | `get` | Open another user's draft, read only |
 | `update` | Change another user's draft (shown as **Can edit**) |
-| `delete` | Delete another user's draft, with `DELETE /api/v1/builder/drafts/{owner}/{draft}`. The drafts page offers **Delete** on another user's draft only when that draft is damaged. |
+| `delete` | Delete another user's draft: **Delete** on its card, under **Other users' drafts**, or `DELETE /api/v1/builder/drafts/{owner}/{draft}` |
 
 `builder-drafts` has no `create` verb, and no verb lets a role share another
 user's draft: only the owner shares a draft. The `configs` permission of the
@@ -152,17 +265,49 @@ This one lets a role list and open the drafts of `alice` only:
   - get
 ```
 
-![The drafts page of e2e-admin with a fourth tab, Other users' drafts, showing alice's draft Pump station with Can edit.](../images/builder/drafts-other-users.png)
+![The drafts page of e2e-admin with the tab Other users' drafts, showing alice's draft Pump station with Can edit.](../images/builder/drafts-other-users.png)
+
+### Server-wide templates
+
+Users keep device templates in their own template library on the server
+(see [Node Templates](templates.md)).
+They can share templates and collections with named users, which needs
+`configs` `update` and authentication enabled, or publish them
+server-wide, for every user of the server. Everyone with `configs` `list`
+sees server-wide templates. With authentication disabled there is one user, so
+the Node Templates tab offers no **Share**.
+
+Publishing server-wide needs the `builder-templates` resource with the verb
+`publish`, besides `configs` `update`. It takes no resource names:
+
+```yaml
+- resources:
+  - builder-templates
+  verbs:
+  - publish
+```
+
+A role with it can also take back any user's server-wide template or
+collection. The owner of an item can take it back without it. Of the
+built-in roles, Global Admin and Builder have it.
+
+A user's icon library and template library are their own: no role, not even
+Global Admin or one with `builder-drafts`, reads or changes another user's
+library. Taking back a server-wide item is the one exception. The security
+log records each change of who an item is shared with, each server-wide
+publication and its removal, and each request for another user's library.
 
 ### Example roles
 
-Two roles cover the usual needs. Download them from
+The [Builder role](#the-builder-role) gives its users everything. For a site
+that wants less, two example roles cover the usual needs. Download them from
 [topology-designer.role.yaml](examples/roles/topology-designer.role.yaml)
 and [topology-reviewer.role.yaml](examples/roles/topology-reviewer.role.yaml).
 
 **Topology Designer** creates drafts, imports and uploads, and publishes
 topologies, scenarios and experiments. It sees only its own drafts and the
-drafts shared with it:
+drafts shared with it. It keeps its own template library and shares
+templates with users, but cannot publish them server-wide:
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1
@@ -175,8 +320,9 @@ spec:
   - resources:
     - configs
     resourceNames:
-    - "*"
-    - "*/*"
+    - "Topology/*"
+    - "Scenario/*"
+    - "Experiment/*"
     verbs:
     - list
     - get
@@ -215,7 +361,9 @@ spec:
 ```
 
 **Topology Reviewer** opens drafts shared with it and published diagrams. It
-cannot create drafts, import, upload or publish:
+cannot create drafts, import, upload or publish. It lists the templates
+shared with it and the server-wide ones, and can view them, but cannot copy,
+share or publish them:
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1
@@ -228,8 +376,9 @@ spec:
   - resources:
     - configs
     resourceNames:
-    - "*"
-    - "*/*"
+    - "Topology/*"
+    - "Scenario/*"
+    - "Experiment/*"
     verbs:
     - list
     - get
@@ -250,10 +399,14 @@ spec:
     - get
 ```
 
-Both name `"*/*"` for `configs`, because config names such as
-`Topology/riverside-water` contain a `/` that `"*"` does not match. To let
+Both name the three config kinds the Builder uses, `Topology/*`,
+`Scenario/*` and `Experiment/*`, for `configs`. Do not use `"*/*"` there:
+it also matches User and Role configs, so a user could read password hashes
+and change accounts and roles. To let
 Topology Designer manage every user's drafts, add the `builder-drafts`
-policy from [Other users' drafts](#other-users-drafts).
+policy from [Other users' drafts](#other-users-drafts). To let it publish
+templates server-wide, add the `builder-templates` policy from
+[Server-wide templates](#server-wide-templates).
 
 To add the roles, store them as configs:
 
@@ -292,6 +445,12 @@ server still checks every request.
   the **Diagram checks** dialog says "Drive images are not checked: the
   server did not list its disk images." The dialog says the same when the
   server lists no images, for example while minimega is not running.
+- On the **Node Templates** tab, **New template** and **New collection**
+  need `configs` `create`, **Edit** needs `configs` `update`, and
+  **Delete** needs `configs` `delete`. A role without them sees the
+  templates but not those buttons.
+- Without `experiments` `get` on the experiment a publication made, there
+  is no **Exp** button for it.
 
 For example, bob's role, Topology Reviewer, cannot create drafts. His drafts page looks like this:
 
@@ -310,8 +469,29 @@ list them. Limits:
 
 - A draft keeps at most 50 snapshots and 50 MiB of them. Past either limit,
   the oldest snapshots are dropped.
-- A diagram (a Builder document) can be at most 5 MiB.
+- A diagram (a Builder document) can be at most 5 MiB. It can hold at most
+  32 custom icons and 50 device templates of its own.
 - A draft can be shared with at most 25 people.
+
+A diagram keeps its own copy of each custom icon it uses, so it opens on any
+phenix server. Each snapshot of a draft holds those copies again, so a draft
+with icons keeps fewer snapshots within its 50 MiB.
+
+Each user also has an icon library and a template library on the server.
+They are records in the phenix store too:
+
+| Library | Records | Limits |
+|---|---|---|
+| Icons | Namespace `builder.icons`, one record per icon | 64 icons and 1 MiB of PNG data per user. An icon is a PNG of at most 96 × 96 pixels and 40,960 bytes, and a record is about 1.4 times the size of its PNG |
+| Templates | Namespace `builder.templates`, one record per user, under `lib/` and the SHA-256 of the user name | 512 KiB per user: at most 200 templates, 50 collections, 200 templates in a collection and 32 custom icons. A template's name is at most 128 bytes, its description 1024 bytes, and its device 16 KiB as JSON. A template or collection is shared with at most 25 people |
+
+Sharing and server-wide publishing also write small records under `in/` and
+`pub/` in `builder.templates`, which are never removed. A library belongs to
+a user name, as drafts do: deleting a user account removes nothing, and a new
+account with the same name gets the library. With authentication disabled,
+the one library belongs to `global-admin`. A user who never changed their
+template library has the five built-in templates; the first change stores
+them as ordinary templates, which the user can edit and delete.
 
 Publishing stores a copy of the diagram that never changes, the published
 document, and names it in the topology's `builder-doc` annotation (see
@@ -349,7 +529,8 @@ The browser keeps some Builder data too:
 - Preferences stay in localStorage: `phenix.builder.theme`,
   `phenix.builder.panes`, `phenix.builder.minimap`,
   `phenix.builder.shortcuts` and `phenix.builder.settings`.
-- Logging out clears the rest: the unsaved changes and the recent commands.
+- Logging out clears the rest: the unsaved changes, the recent commands and
+  the last **Auto-group** name pattern.
   Signing in as another user on the same browser clears them as well. Before
   it clears unsaved changes, logging out tries to send them, and warns when
   some remain (see [Logging out](drafts.md#logging-out)).
@@ -434,10 +615,9 @@ of a config is text. In the JSON of a config it is an object:
 2. Otherwise the Builder file at `path`, when the annotation has one. With a
    `digest` beside it, the file must hold the document with that digest.
 3. Otherwise none. The topology is not listed under **Published Diagrams**.
-   It still has the tag `builder` on the **Configs** page, and its edit
-   button opens Builder with the message "No published Builder
-   document exists for topology pump-station. Use Import to make a diagram
-   from it."
+   It still has the tag `builder` on the **Configs** page. Its tag and edit
+   button open the **Import** dialog, set to the topology, with "Topology
+   pump-station has no Builder diagram to open. Import it to make one."
 
 The stored document comes first because it is the diagram the stored
 topology was published from. The file may have changed since.
@@ -724,31 +904,50 @@ sharing and everything else are in the web UI and the REST API only. The
 REST API has no single request that publishes a Builder file: create a
 draft from the document, then publish the draft.
 
-| Route | What it does |
-|---|---|
-| `GET /schemas/builder/v1` | The JSON Schema of the Builder document |
-| `GET /builder/drafts` | List your drafts (`drafts`), other users' drafts you can see (`shared`), and drafts this server cannot read (`damaged`) |
-| `POST /builder/drafts` | Create a draft |
-| `GET /builder/drafts/{owner}/{draft}` | Read a draft, with its current document |
-| `DELETE /builder/drafts/{owner}/{draft}` | Delete a draft |
-| `GET /builder/drafts/{owner}/{draft}/snapshots` | List a draft's snapshots |
-| `POST /builder/drafts/{owner}/{draft}/snapshots` | Save a new version of the document |
-| `GET /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Read one snapshot's document (`current` for the current one) |
-| `DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Delete a snapshot other than the current one |
-| `PATCH` or `PUT /builder/drafts/{owner}/{draft}/cursor` | Undo and redo: choose the current snapshot |
-| `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the Topology, Scenario and Experiment configs |
-| `GET`, `PUT /builder/drafts/{owner}/{draft}/shares` | Read or replace who a draft is shared with (owner only) |
-| `GET /builder/drafts/{owner}/{draft}/shares/candidates` | The users a draft can be shared with |
-| `GET /builder/sources` | The configs a document can be made from or published with |
-| `POST /builder/generate` | Make a document from a stored Topology or Experiment config, or from a config file |
-| `POST /builder/export/topology` | The Topology YAML a document would publish as (writes nothing) |
-| `GET /builder/documents` | List the published documents (`source` `store`), and the topologies that name a Builder file instead (`source` `file`, with the `path` and no `id`) |
-| `GET /builder/documents/{document}` | Read a published document |
-| `DELETE /builder/documents/{document}` | Delete a published topology and its published documents |
-| `GET /builder/topologies/{topology}/document` | Read the diagram a topology names in `builder-doc`, from the store or from its Builder file |
+Each route needs the `configs` permission its column names, and the
+checks of [Permissions](#permissions) on top of it: a share or
+`builder-drafts` for another user's draft, the permissions of each config
+for Import and Publish.
 
-`GET /schemas/builder/v1` needs `schemas` `get` on the resource name
-`builder`, the name in its path.
+| Route | What it does | `configs` permission |
+|---|---|---|
+| `GET /schemas/builder/v1` | The JSON Schema of the Builder document | None: `schemas` `get` on `builder` |
+| `GET /builder/drafts` | List your drafts (`drafts`), other users' drafts you can see (`shared`), and drafts this server cannot read (`damaged`) | `list` |
+| `POST /builder/drafts` | Create a draft | `create` |
+| `GET /builder/drafts/{owner}/{draft}` | Read a draft, with its current document | `get` |
+| `DELETE /builder/drafts/{owner}/{draft}` | Delete a draft | `delete` |
+| `GET /builder/drafts/{owner}/{draft}/snapshots` | List a draft's snapshots | `get` |
+| `POST /builder/drafts/{owner}/{draft}/snapshots` | Save a new version of the document | `update` |
+| `GET /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Read one snapshot's document (`current` for the current one) | `get` |
+| `DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Delete a snapshot other than the current one | `update` |
+| `PATCH` or `PUT /builder/drafts/{owner}/{draft}/cursor` | Undo and redo: choose the current snapshot | `update` |
+| `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the Topology, Scenario and Experiment configs | `update`, and each config's own |
+| `GET`, `PUT /builder/drafts/{owner}/{draft}/shares` | Read or replace who a draft is shared with (owner only) | `get`, `update` |
+| `GET /builder/drafts/{owner}/{draft}/shares/candidates` | The users a draft can be shared with | `update` |
+| `GET /builder/sources` | The configs a document can be made from or published with | `list` |
+| `POST /builder/generate` | Make a document from a stored Topology or Experiment config, or from a config file, with the [import options](import-upload-download.md#import-options) (`includes`, `copy`, `name`) | `get`; `create` for a config file |
+| `POST /builder/legacy` | Convert a [legacy Builder](legacy.md) diagram, or a Topology config file that holds one, into a document (writes nothing) | `get` and `create` |
+| `POST /builder/export/topology` | The Topology YAML a document would publish as (writes nothing) | `get` |
+| `GET /builder/documents` | List the published documents (`source` `store`), and the topologies that name a Builder file instead (`source` `file`, with the `path` and no `id`) | `list` |
+| `GET /builder/documents/{document}` | Read a published document | `get` on its topology |
+| `DELETE /builder/documents/{document}` | Delete a published topology and its published documents | `delete` on the topology |
+| `GET /builder/topologies/{topology}/document` | Read the diagram a topology names in `builder-doc`, from the store or from its Builder file | `get` on the topology |
+| `GET /builder/icons` | List your icon library | `list` |
+| `POST /builder/icons` | Add a PNG to your icon library | `create` |
+| `DELETE /builder/icons/{icon}` | Delete an icon from your icon library | `delete` |
+| `GET /builder/templates` | List the templates and collections you can use: yours, those shared with you, and the server-wide ones | `list` |
+| `GET /builder/templates/candidates` | The users your templates can be shared with | `update`, and authentication enabled |
+| `POST /builder/templates/{owner}/items` | Add templates to your library | `create` |
+| `PUT /builder/templates/{owner}/items/{template}` | Replace a template of your library | `update` |
+| `POST /builder/templates/{owner}/collections` | Add a collection to your library | `create` |
+| `PUT /builder/templates/{owner}/collections/{collection}` | Replace a collection of your library | `update` |
+| `POST /builder/templates/{owner}/delete` | Delete templates and collections of your library | `delete` |
+| `POST /builder/templates/{owner}/share` | Add or remove users your templates and collections are shared with | `update`, and authentication enabled |
+| `POST /builder/templates/{owner}/publish` | Publish templates and collections server-wide, or take them back | `update`; to publish, and to take back another user's, also `builder-templates` `publish` |
+
+`{owner}` in a template route is your own user name: a library is changed by
+its owner only, and any other name answers 404. The one exception is taking
+back another user's server-wide item, with `builder-templates` `publish`.
 
 With authentication enabled, send a token in the `X-Phenix-Auth-Token`
 header, as `Bearer <token>` (see
@@ -761,6 +960,21 @@ current ETag, as the last response returned it. A request without one answers
 with its new ETag. Draft responses also have the ETag in their body, as
 `etag`. Use that one: a proxy that compresses responses can change the
 `ETag` header.
+
+### Response headers
+
+Every response of a Builder route, `/api/v1/schemas/builder/v1` included,
+has the header `X-Content-Type-Options: nosniff`: each is JSON, and says so.
+The responses of the icon routes, which carry the images users uploaded as
+base64 inside the JSON, also have
+`Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`. A
+browser that showed one as a page would load, run and frame nothing.
+
+phenix sets no Content-Security-Policy on the application page itself, the
+page that holds the Builder and the rest of the web UI. If a proxy in front
+of phenix adds one, it must still let the Builder start workers from
+phenix's own address (the layout engine and **Auto-group** by name pattern
+run in them) and show `data:` images (custom icons are drawn from them).
 
 ### Examples
 
@@ -839,6 +1053,21 @@ jq '{id, owner, title, etag}' created.json
 
 The `sourceToken` ties the draft to the topology it came from, so the draft
 can later publish back to `riverside-water`.
+
+Convert a diagram of the [legacy Builder](legacy.md), as **Upload** does.
+`content` is the text of the file: the diagram's XML, or a Topology config
+that holds it in `builder-xml`. `name` names a diagram that comes without a
+topology. Nothing is written:
+
+```bash
+jq -Rs '{content: ., name: "plant"}' plant.xml \
+  | curl -s -X POST -H "X-Phenix-Auth-Token: Bearer $TOKEN" -H 'Content-Type: application/json' \
+      -d @- "$PHENIX/api/v1/builder/legacy" > converted.json
+jq '{name: .document.name, warnings}' converted.json
+```
+
+The answer has the same form as that of `POST /builder/generate`. Create a
+draft from its `document` as above.
 
 The server writes who made and last saved the diagram into the document it
 stores (see
@@ -922,9 +1151,11 @@ when (`createdBy`, `createdAt`) instead of a `path`.
 | "Drive images are not checked: the server did not list its disk images." | The role has no `disks` `list`, or the server lists no images (minimega not running) | Give the role `disks` `list`, or start minimega |
 | The Publish dialog says the topology "already exists, and this diagram cannot update it" | The draft was not imported from that topology, opened from its published diagram, or published to it | Publish under another name, or import the topology and make your changes in that draft (see [Publishing](publishing.md)) |
 | The Publish dialog says the topology "changed after this diagram published it" | Someone changed the topology after this draft published it | Import the topology again, or publish under another name (see [Publishing again](publishing.md#publishing-again)) |
-| The Publish dialog says the topology "belongs to the legacy XML Builder and cannot be updated here" | The legacy Builder made that topology | Publish under another name |
+| The Publish dialog says a topology the legacy Builder saved "already exists, and this diagram cannot update it" | Only the draft imported from that topology can replace its legacy diagram | Import the topology and publish that draft (see [Legacy Builder](legacy.md#converting-a-stored-topology)), or publish under another name |
+| "Could not convert the legacy diagram. …" | The file is not a diagram the legacy Builder saved, or a Topology config without `builder-xml` | See [Converting a file](legacy.md#converting-a-file) |
 | "Could not open the diagram of topology pump-station. Builder file … " | The topology names a Builder file that phenix cannot use | See [When the file cannot be used](#when-the-file-cannot-be-used) |
-| "No published Builder document exists for topology …" | The topology's `builder-doc` annotation names no document of that topology | See [Which diagram a topology shows](#which-diagram-a-topology-shows) |
+| "Topology … has no Builder diagram, and your role cannot create drafts to import it. Select its name in Configs to view it." | A link from the **Configs** page named a topology without a diagram, and the role has no `configs` `create` | Give the role `configs` `create`, or view the topology on the **Configs** page (see [Which diagram a topology shows](#which-diagram-a-topology-shows)) |
+| "Topology … does not exist, or you may not read it." | The topology was deleted, or the role cannot list it | Give the role `configs` `list` and `topologies` `list` on the topology |
 | `phenix config create` skips a file with "skipped Builder document; use phenix builder publish", or refuses it as "a Builder document, not a configuration" | The file is a Builder document, not a config | Publish it with `phenix builder publish` (see [From the command line](import-upload-download.md#from-the-command-line)) |
 | `phenix builder publish --update` says the topology "was changed after it was published" | Someone changed the topology after its diagram was published | See [Updating a topology](import-upload-download.md#updating-a-topology) |
 | **Copy link** shows a **Link to this draft** field and "Press ⌘C to copy the link." ("Press Ctrl+C to copy the link." on Windows and Linux) | The page is served over plain HTTP, where the browser does not allow the clipboard | Copy the selected link with <kbd>⌘</kbd>+<kbd>C</kbd> on macOS or <kbd>Ctrl</kbd>+<kbd>C</kbd> on Windows and Linux, or serve phenix over HTTPS |
@@ -933,4 +1164,6 @@ when (`createdBy`, `createdAt`) instead of a `path`.
 | The save state says "Could not save your changes. Etcd is out of space: …" | etcd reached its space quota | Free space in etcd (see [etcd](#etcd)); the editor retries on its own |
 | The **Sign in again** dialog | The user's session ended (the token lifetime, `--jwt-lifetime`, is 24 hours by default) | Enter the password; changes not yet saved are sent after sign-in (see [Signing in again](drafts.md#signing-in-again)) |
 | A draft card says "This draft cannot be read, so it cannot be opened. A newer version of phenix may have saved it." | A newer phenix saved the draft | Open it with that phenix version, or delete it (see [Damaged drafts](drafts.md#damaged-drafts)) |
-| "Auto layout failed. The layout engine could not start." | The browser could not start the layout worker, a script that phenix serves from its own address. A proxy or a content security policy may block it | Reload the page. Let the proxy serve phenix's scripts, and let the content security policy allow workers from the same origin |
+| "Auto layout failed. The layout engine could not start.", or "The pattern could not be checked. Reload the page to try again." in **Auto-group by name pattern** | The browser could not start the layout worker or the pattern worker, scripts that phenix serves from its own address. A proxy or a content security policy may block them | Reload the page. Let the proxy serve phenix's scripts, and let the content security policy allow workers from the same origin (see [Response headers](#response-headers)) |
+| "This image could not be converted. Save it as a PNG and upload it again." | The browser could not turn the file into a PNG icon, for example an SVG that draws nothing on its own | Save the picture as a PNG and upload that |
+| "Your library cannot be read. A newer version of phenix may have saved it." on the **Node Templates** tab | A newer phenix saved the user's template library | Use that phenix version. The templates other users share are still listed |

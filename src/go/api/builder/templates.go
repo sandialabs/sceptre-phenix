@@ -31,6 +31,43 @@ const (
 // libraryKeyPrefix starts the record key of every template library.
 const libraryKeyPrefix = "lib/"
 
+// Prefixes of the hint records that say where libraries with items another
+// user may see are: "in/<recipient scope>/<owner scope>" once an owner shared
+// something with a recipient, and "pub/<owner scope>" once an owner published
+// something to every user (see [Service.LibrarySources]).
+const (
+	sharedHintPrefix = "in/"
+	publicHintPrefix = "pub/"
+)
+
+// kindHint names a hint record in the typed errors of a template library.
+const kindHint = "template library hint"
+
+// hintValue is the value of every hint record: the key is all it says.
+const hintValue = "{}"
+
+// Reasons a change of who an item is shared with, or whether it is
+// published, leaves that item unchanged (see [LibraryFailure]).
+const (
+	// FailureNotFound: the library holds no item with the ID.
+	FailureNotFound = "not-found"
+	// FailureTooMany: the item would be shared with more than [MaxShares]
+	// users.
+	FailureTooMany = "too-many"
+)
+
+// Visibility is how a user other than the owner sees an item of a library.
+type Visibility string
+
+const (
+	// VisibleShared: the item, or a collection holding it, is shared with
+	// the user.
+	VisibleShared Visibility = "shared"
+	// VisibleServer: the item, or a collection holding it, is published to
+	// every user.
+	VisibleServer Visibility = "server"
+)
+
 // maxShownIDBytes bounds an identifier a refusal repeats. An icon ID, the
 // longest one in use, is 71 bytes and is shown whole.
 const maxShownIDBytes = 80
@@ -120,6 +157,16 @@ type CollectionContent struct {
 	Name        string
 	Description string
 	TemplateIDs []string
+}
+
+// LibraryFailure names an item a change of who it is shared with, or of
+// whether it is published, left unchanged, and why.
+type LibraryFailure struct {
+	// Kind is "template" or "collection".
+	Kind string
+	ID   string
+	// Reason is [FailureNotFound] or [FailureTooMany].
+	Reason string
 }
 
 // LibraryError says why a change of a template library was refused, in
@@ -365,6 +412,209 @@ func (l *TemplateLibrary) ReplaceCollection(id string, content CollectionContent
 	return nil
 }
 
+// Share adds users to, and removes users from, who the named templates and
+// collections are shared with, read only, and returns the items it left
+// unchanged. The caller resolves each added share to the account it binds
+// (see [TemplateShare]); its grant time is set when the library is stored.
+//
+// A share is a change of the list, not a new list: adding a user the item is
+// already shared with through the same account, or removing one it is not
+// shared with, changes nothing, so the same request may be applied twice.
+// Adding a user whose share is bound to an account since removed replaces
+// that share with one bound to the account given. Removals apply before
+// additions. An ID the library does not hold fails with [FailureNotFound],
+// and an item that would be shared with more than [MaxShares] users fails
+// with [FailureTooMany] and keeps its list; the other items are changed.
+func (l *TemplateLibrary) Share(templateIDs, collectionIDs []string, add []TemplateShare, remove []string) []LibraryFailure {
+	var failed []LibraryFailure
+
+	for _, id := range distinct(templateIDs) {
+		template := l.Template(id)
+		if template == nil {
+			failed = append(failed, LibraryFailure{Kind: kindTemplate, ID: id, Reason: FailureNotFound})
+
+			continue
+		}
+
+		shares, ok := sharedWith(template.Shares, add, remove)
+		if !ok {
+			failed = append(failed, LibraryFailure{Kind: kindTemplate, ID: id, Reason: FailureTooMany})
+
+			continue
+		}
+
+		template.Shares = shares
+	}
+
+	for _, id := range distinct(collectionIDs) {
+		collection := l.Collection(id)
+		if collection == nil {
+			failed = append(failed, LibraryFailure{Kind: kindCollection, ID: id, Reason: FailureNotFound})
+
+			continue
+		}
+
+		shares, ok := sharedWith(collection.Shares, add, remove)
+		if !ok {
+			failed = append(failed, LibraryFailure{Kind: kindCollection, ID: id, Reason: FailureTooMany})
+
+			continue
+		}
+
+		collection.Shares = shares
+	}
+
+	return failed
+}
+
+// sharedWith returns the share list current becomes once the users in remove
+// are taken out and the shares in add are put in, sorted by user. The second
+// result is false when the list would name more than [MaxShares] users.
+func sharedWith(current, add []TemplateShare, remove []string) ([]TemplateShare, bool) {
+	shares := slices.DeleteFunc(slices.Clone(current), func(share TemplateShare) bool {
+		return slices.Contains(remove, share.User)
+	})
+
+	for _, grant := range add {
+		i := slices.IndexFunc(shares, func(share TemplateShare) bool { return share.User == grant.User })
+
+		switch {
+		case i < 0:
+			shares = append(shares, grant)
+		case shares[i].UserCreated != grant.UserCreated:
+			shares[i] = grant
+		}
+	}
+
+	if len(shares) > MaxShares {
+		return current, false
+	}
+
+	slices.SortFunc(shares, func(a, b TemplateShare) int { return strings.Compare(a.User, b.User) })
+
+	if len(shares) == 0 {
+		return nil, true
+	}
+
+	return shares, true
+}
+
+// SetPublic publishes the named templates and collections to every user, or
+// with on false takes them back, and returns the items it left unchanged: an
+// ID the library does not hold fails with [FailureNotFound]. Publishing an
+// item already published keeps when and by whom it was; by is who publishes,
+// and the time is set when the library is stored.
+func (l *TemplateLibrary) SetPublic(templateIDs, collectionIDs []string, on bool, by string) []LibraryFailure {
+	var failed []LibraryFailure
+
+	publish := func(public **TemplatePublished) {
+		switch {
+		case !on:
+			*public = nil
+		case *public == nil:
+			*public = &TemplatePublished{At: time.Time{}, By: by}
+		}
+	}
+
+	for _, id := range distinct(templateIDs) {
+		if template := l.Template(id); template != nil {
+			publish(&template.Public)
+		} else {
+			failed = append(failed, LibraryFailure{Kind: kindTemplate, ID: id, Reason: FailureNotFound})
+		}
+	}
+
+	for _, id := range distinct(collectionIDs) {
+		if collection := l.Collection(id); collection != nil {
+			publish(&collection.Public)
+		} else {
+			failed = append(failed, LibraryFailure{Kind: kindCollection, ID: id, Reason: FailureNotFound})
+		}
+	}
+
+	return failed
+}
+
+// distinct returns ids without repeats, in the order first given.
+func distinct(ids []string) []string {
+	kept := make([]string, 0, len(ids))
+
+	for _, id := range ids {
+		if !slices.Contains(kept, id) {
+			kept = append(kept, id)
+		}
+	}
+
+	return kept
+}
+
+// VisibleTo returns which templates and which collections of the library the
+// named user sees, by ID, and how. created and exists describe the user's
+// account (metadata.created of its User config, and whether there is one): a
+// share applies only to the account it was made for, so it never passes to a
+// new account created under the same name, and grants nothing to a user
+// without an account.
+//
+// A collection is seen when a share of it applies (shared) or it is published
+// (server). A template is seen when a share of it, or of a collection that
+// holds it, applies (shared), or when it, or a collection that holds it, is
+// published (server). An item seen both ways is shared. The owner sees none
+// of its own items this way.
+func (l *TemplateLibrary) VisibleTo(user, created string, exists bool) (map[string]Visibility, map[string]Visibility) {
+	templates := map[string]Visibility{}
+	collections := map[string]Visibility{}
+
+	if user == l.Owner {
+		return templates, collections
+	}
+
+	applies := func(shares []TemplateShare) bool {
+		return exists && slices.ContainsFunc(shares, func(share TemplateShare) bool {
+			return share.User == user && share.UserCreated == created
+		})
+	}
+
+	see := func(id string, how Visibility) {
+		if templates[id] != VisibleShared {
+			templates[id] = how
+		}
+	}
+
+	for i := range l.Collections {
+		collection := &l.Collections[i]
+
+		var how Visibility
+
+		switch {
+		case applies(collection.Shares):
+			how = VisibleShared
+		case collection.Public != nil:
+			how = VisibleServer
+		default:
+			continue
+		}
+
+		collections[collection.ID] = how
+
+		for _, id := range collection.TemplateIDs {
+			see(id, how)
+		}
+	}
+
+	for i := range l.Templates {
+		template := &l.Templates[i]
+
+		switch {
+		case applies(template.Shares):
+			see(template.ID, VisibleShared)
+		case template.Public != nil:
+			see(template.ID, VisibleServer)
+		}
+	}
+
+	return templates, collections
+}
+
 // checkTemplate checks the content a template is made of or replaced with.
 // Issues are located under path; a custom icon nothing carries names the
 // template by index, its place in the request.
@@ -515,11 +765,14 @@ func (l *TemplateLibrary) dropUnusedIcons() {
 // from what the library held before a change: a new one starts at version 1,
 // one whose content changed gains a version and the time of the change, and
 // any other keeps what it had. So a change can never leave an entity tag
-// that names other content.
+// that names other content. A share or a publication the change made, which
+// has no time yet, gets the time of the change.
 func (l *TemplateLibrary) stamp(before *TemplateLibrary, now time.Time) {
 	for i := range l.Templates {
 		template := &l.Templates[i]
 		previous := before.Template(template.ID)
+
+		stampSharing(template.Shares, template.Public, now)
 
 		if previous == nil {
 			template.Version, template.Created, template.Updated = 1, now, now
@@ -539,6 +792,8 @@ func (l *TemplateLibrary) stamp(before *TemplateLibrary, now time.Time) {
 		collection := &l.Collections[i]
 		previous := before.Collection(collection.ID)
 
+		stampSharing(collection.Shares, collection.Public, now)
+
 		if previous == nil {
 			collection.Version, collection.Created, collection.Updated = 1, now, now
 
@@ -552,6 +807,20 @@ func (l *TemplateLibrary) stamp(before *TemplateLibrary, now time.Time) {
 			collection.Version++
 			collection.Updated = now
 		}
+	}
+}
+
+// stampSharing gives the shares and the publication of an item that have no
+// time yet, the ones a change just made, the time of the change.
+func stampSharing(shares []TemplateShare, public *TemplatePublished, now time.Time) {
+	for i := range shares {
+		if shares[i].GrantedAt.IsZero() {
+			shares[i].GrantedAt = now
+		}
+	}
+
+	if public != nil && public.At.IsZero() {
+		public.At = now
 	}
 }
 
@@ -640,6 +909,113 @@ func (s *Service) GetLibraryByKey(ctx context.Context, ownerScope string) (*Temp
 	}
 
 	return s.storedLibrary(libraryKeyPrefix + ownerScope)
+}
+
+// LibrarySources returns where the libraries are whose items user may see
+// besides its own, as owner scopes (see [OwnerScope]) for
+// [Service.GetLibraryByKey]: shared names the owners that shared something
+// with user, and public the owners that published something to every user,
+// each sorted. user's own scope is never returned.
+//
+// Only the keys of hint records are listed, never a library: a hint is
+// written before the change that needs it (see [Service.NoteShared] and
+// [Service.NotePublic]) and is never removed, so it may name a library that
+// no longer shares or publishes anything. Whether an item may be seen is
+// always decided from the owner's library (see [TemplateLibrary.VisibleTo]).
+func (s *Service) LibrarySources(ctx context.Context, user string) ([]string, []string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, fmt.Errorf("listing template library sources: %w", err)
+	}
+
+	if err := validateText("user", user, MaxOwnerLength, true); err != nil {
+		return nil, nil, err
+	}
+
+	own := OwnerScope(user)
+	sharedPrefix := sharedHintPrefix + own + "/"
+
+	sharedKeys, err := s.store.ListRecordKeys(NamespaceTemplates, sharedPrefix)
+	if err != nil {
+		return nil, nil, fmt.Errorf("listing the template libraries shared with %s: %w", user, err)
+	}
+
+	publicKeys, err := s.store.ListRecordKeys(NamespaceTemplates, publicHintPrefix)
+	if err != nil {
+		return nil, nil, fmt.Errorf("listing the published template libraries: %w", err)
+	}
+
+	return hintedOwners(sharedKeys, sharedPrefix, own), hintedOwners(publicKeys, publicHintPrefix, own), nil
+}
+
+// hintedOwners returns the owner scopes the hint keys under prefix name,
+// sorted, without own and without anything that is not a scope.
+func hintedOwners(keys []string, prefix, own string) []string {
+	owners := make([]string, 0, len(keys))
+
+	for _, key := range keys {
+		scope, ok := strings.CutPrefix(key, prefix)
+		if !ok || scope == own || !isOwnerScope(scope) {
+			continue
+		}
+
+		owners = append(owners, scope)
+	}
+
+	slices.Sort(owners)
+
+	return slices.Compact(owners)
+}
+
+// NoteShared records that owner shared something with each of recipients,
+// so [Service.LibrarySources] names owner's library to them. It is called
+// before the change of the library that shares, so a share never exists
+// without its hint; a hint that is there already is kept.
+func (s *Service) NoteShared(ctx context.Context, owner string, recipients []string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("noting a shared template library: %w", err)
+	}
+
+	if err := validateText("owner", owner, MaxOwnerLength, true); err != nil {
+		return err
+	}
+
+	for _, recipient := range recipients {
+		if err := validateText("recipient", recipient, MaxOwnerLength, true); err != nil {
+			return err
+		}
+
+		if err := s.noteHint(sharedHintPrefix + OwnerScope(recipient) + "/" + OwnerScope(owner)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// NotePublic records that owner published something to every user, so
+// [Service.LibrarySources] names owner's library to everyone. It is called
+// before the change of the library that publishes; a hint that is there
+// already is kept.
+func (s *Service) NotePublic(ctx context.Context, owner string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("noting a published template library: %w", err)
+	}
+
+	if err := validateText("owner", owner, MaxOwnerLength, true); err != nil {
+		return err
+	}
+
+	return s.noteHint(publicHintPrefix + OwnerScope(owner))
+}
+
+// noteHint creates the hint record with the given key, unless it exists.
+func (s *Service) noteHint(key string) error {
+	_, err := s.store.CreateRecord(NamespaceTemplates, key, []byte(hintValue))
+	if err == nil || errors.Is(err, store.ErrRecordExist) {
+		return nil
+	}
+
+	return storeError(kindHint, key, store.AnyRevision, err)
 }
 
 // isOwnerScope reports whether value has the form [OwnerScope] returns: 64

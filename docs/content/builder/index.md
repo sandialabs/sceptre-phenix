@@ -14,8 +14,15 @@ Scenario and Experiment configs.
   between them, notes and groups. Lay it out with one of four automatic
   layouts. See [Building a Diagram](diagrams.md).
 - Start from a Topology or Experiment config, stored in phenix or in a
-  config file, or from a Builder document. See
+  config file, with **Import**, or from a file you have, such as a Builder
+  document, with **Upload**. **Download** saves a diagram as a file. See
   [Import, Upload and Download](import-upload-download.md).
+- Open a topology in the Builder from the **Configs** page. See
+  [From the Configs page](import-upload-download.md#from-the-configs-page).
+- Give nodes colors, line styles and your own icons, and keep device
+  templates in the diagram or in your own **Node Templates** library, which
+  you can share. See [Building a Diagram](diagrams.md) and
+  [Node Templates](templates.md).
 - Keep your work safe: each edit is saved to the draft on the server, and
   **Draft History** lists the earlier versions to restore. See
   [Drafts](drafts.md#how-drafts-save).
@@ -25,7 +32,8 @@ Scenario and Experiment configs.
   with no network or two interfaces with the same address. See
   [Checks and warnings](editor.md#checks-and-warnings).
 - Publish a Topology config, or a Topology and an Experiment config with its
-  scenario. See [Publishing](publishing.md).
+  scenario, from the editor or from the drafts page. See
+  [Publishing](publishing.md).
 - Download the diagram as Builder JSON or YAML, as the Topology YAML that
   Publish would write, as a PNG or SVG picture, or as a Gephi (GEXF) graph.
   See [Downloading](import-upload-download.md#downloading).
@@ -45,8 +53,9 @@ Scenario and Experiment configs.
 
 Earlier phenix releases had a different graphical editor with the same
 name. It was removed. Topologies it saved keep their `builder-xml`
-annotation and have the tag `builder legacy` on the **Configs** page. See
-[Legacy Builder](legacy.md).
+annotation and have the tag `builder legacy` on the **Configs** page.
+**Import** converts such a topology into a draft, and **Upload** converts a
+diagram file the legacy Builder saved. See [Legacy Builder](legacy.md).
 
 ## The example lab
 
@@ -174,7 +183,9 @@ first (see [The example lab](#the-example-lab)).
    opens.
 2. Select **Import**. In the **Import topology or experiment** dialog, keep
    **Stored config** and **Source kind** **Topology**. Choose
-   `riverside-water` under **Source name**, and select **Import**.
+   `riverside-water` under **Source name**. Keep
+   **Keep included nodes read only** under **Included topologies**, leave
+   **Create a new topology as a copy** clear, and select **Import**.
 3. The dialog says "This import has 1 warning." The warning says that 2
    nodes come from the included topology `corp-services` and are shown read
    only. These are `dns-01` and `ntp-01`. Select **Continue to editor**. A
@@ -185,7 +196,7 @@ first (see [The example lab](#the-example-lab)).
 
 The dialog in step 2:
 
-![The Import topology or experiment dialog with Stored config, Source kind Topology and Source name riverside-water selected, and the Cancel and Import buttons.](../images/builder/quickstart-import-dialog.png)
+![The Import topology or experiment dialog with Stored config, Source kind Topology and Source name riverside-water selected, Included topologies set to Keep included nodes read only, Create a new topology as a copy clear, and the Cancel and Import buttons.](../images/builder/quickstart-import-dialog.png)
 
 ### Add a workstation
 
@@ -230,8 +241,9 @@ The confirmation in step 2, and the result in step 3:
 ![The Publish diagram dialog after publishing: Published. Every stage succeeded, with the document created, topology updated and draft ok, and a Close button.](../images/builder/quickstart-publish-result.png)
 
 The Topology config `riverside-water` now has `ws-03`. On the **Configs**
-page it has the tag `builder`, and its **Edit** button opens it in
-Builder (see
+page it has the tag `builder`. The tag, its **Edit** button and
+**Open in Builder** in its viewer open it in Builder, in the quick start
+draft (see
 [Editing a published topology](publishing.md#editing-a-published-topology)).
 Experiments made from it before, such as `riverside`, keep the copy of the
 topology they were created with. To run the new topology, create an
@@ -248,11 +260,15 @@ publish the diagram as a topology and an experiment (see
   command palette, keyboard shortcuts and settings.
 - [Building a Diagram](diagrams.md): adding and connecting devices, device
   settings, groups, notes, layouts and scenarios.
+- [Node Templates](templates.md): device templates in a diagram, your
+  template library, collections, sharing and server-wide templates.
 - [Import, Upload and Download](import-upload-download.md): starting from a
   config or a Builder document, every download format, and the
   `phenix builder publish` command.
 - [Publishing](publishing.md): writing Topology, Scenario and Experiment
   configs, and what blocks publishing.
-- [Administration](administration.md): permissions, storage, the
-  `builder-doc` annotation, Builder documents in files, the REST API and
-  troubleshooting.
+- [Administration](administration.md): permissions and the Builder role,
+  storage, the `builder-doc` annotation, Builder documents in files, the
+  REST API and troubleshooting.
+- [Legacy Builder](legacy.md): converting the diagrams of the editor that
+  the Builder replaced.

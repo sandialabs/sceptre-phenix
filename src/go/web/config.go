@@ -3,6 +3,7 @@ package web
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -288,32 +289,34 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	var (
-		typ  = r.Header.Get("Content-Type")
-		opts = []config.CreateOption{config.CreateWithValidation()}
-		src  []byte
+		typ   = r.Header.Get("Content-Type")
+		body  []byte
+		parse func([]byte) (*store.Config, error)
 	)
 
 	switch {
 	case typ == mimeJSON: // default to JSON if not set
-		body, err := io.ReadAll(r.Body)
+		var err error
+
+		body, err = io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		src = body
-		opts = append(opts, config.CreateFromJSON(body))
+		parse = store.NewConfigFromJSON
 	case typ == mimeYAML:
-		body, err := io.ReadAll(r.Body)
+		var err error
+
+		body, err = io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		src = body
-		opts = append(opts, config.CreateFromYAML(body))
+		parse = store.NewConfigFromYAML
 	case strings.HasPrefix(typ, "multipart/form-data"): // file upload
 		_ = r.ParseMultipartForm(MaxUploadSize)
 
@@ -328,25 +331,23 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 		switch filepath.Ext(handler.Filename) {
 		case ".json":
-			body, err := io.ReadAll(file)
+			body, err = io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
 
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
-			src = body
-			opts = append(opts, config.CreateFromJSON(body))
+			parse = store.NewConfigFromJSON
 		case ".yaml", ".yml":
-			body, err := io.ReadAll(file)
+			body, err = io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
 
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
-			src = body
-			opts = append(opts, config.CreateFromYAML(body))
+			parse = store.NewConfigFromYAML
 		default:
 			return weberror.NewWebError(
 				nil,
@@ -362,21 +363,27 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		)
 	}
 
-	c, err := config.Create(opts...)
+	c, err := parse(body)
+	if err != nil {
+		return weberror.NewWebError(err, "invalid formatting").
+			WithMetadata("validation", err.Error(), true)
+	}
+
+	// The check above is for creating configs at all; this one is for the
+	// config the body names, so a role scoped to some kinds or names creates
+	// no other config.
+	if name := c.FullName(); !role.Allowed("configs", "create", name) {
+		return configForbidden(ctx, "creating", name)
+	}
+
+	c, err = config.Create(config.CreateFromConfig(c), config.CreateWithValidation())
 	if err != nil {
 		if errors.Is(err, store.ErrExist) {
 			return weberror.NewWebError(err, "config with same name already exists")
 		}
 
 		if errors.Is(err, types.ErrValidationFailed) {
-			return validationWebError(src, err)
-		}
-
-		if errors.Is(err, store.ErrInvalidFormat) {
-			cause := errors.Unwrap(err)
-
-			return weberror.NewWebError(cause, "invalid formatting").
-				WithMetadata("validation", cause.Error(), true)
+			return validationWebError(body, err)
 		}
 
 		if errors.Is(err, version.ErrInvalidKind) {
@@ -618,6 +625,13 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		)
 	}
 
+	// The config is stored under the kind and name the body gives, which
+	// may differ from those of the path: a rename, or another config
+	// altogether. So the caller must also be allowed to update that one.
+	if target := c.FullName(); target != name && !role.Allowed("configs", "update", target) {
+		return configForbidden(ctx, "updating", target)
+	}
+
 	if c.Kind == kindExperiment {
 		// Reset experiment name in spec since we removed it before sending.
 		c.Spec["experimentName"] = vars["name"]
@@ -733,6 +747,24 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	return nil
+}
+
+// configForbidden logs and returns the refusal of a request whose role may
+// not act on the config name, where action says what it asked for, such as
+// "creating".
+func configForbidden(ctx context.Context, action, name string) error {
+	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+	plog.Warn(
+		plog.TypeSecurity,
+		action+" config not allowed",
+		"user",
+		user,
+		"config",
+		name,
+	)
+
+	return weberror.NewWebError(nil, "%s config %s not allowed for %s", action, name, user).
+		SetStatus(http.StatusForbidden)
 }
 
 // broadcastConfig tells everyone who may list the config c that it was

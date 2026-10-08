@@ -14,3 +14,8 @@ export const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
 // a draft is shared with (MaxOwnerLength in api/builder, which is that
 // limit).
 export const MAX_USER_BYTES = 256;
+
+// The most people a draft, or a template or collection of the template
+// library, is shared with (MaxShares in api/builder), used until the server
+// says otherwise.
+export const MAX_SHARES = 25;

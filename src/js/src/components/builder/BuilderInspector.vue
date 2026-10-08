@@ -122,10 +122,16 @@
       <!-- novalidate: the Inspector checks the fields itself, and JSON
            Forms shows the errors that count on their fields (see
            validation). The browser's own check of a number field's bounds
-           would stop Enter from applying. -->
+           would stop Enter from applying.
+           autocomplete off: Firefox keeps what each Apply or Enter sends,
+           and offers it back under the same field of any element, once
+           its lookup returns. It first scrolls that field into view, which
+           moved the Inspector away from the pointer as it pressed a button
+           below. -->
       <form
         ref="form"
         novalidate
+        autocomplete="off"
         @submit.prevent="apply"
         @focusin="onFieldFocus"
         @input="onFieldInput"

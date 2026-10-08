@@ -45,13 +45,20 @@ func upsertConfigTestRequest(t *testing.T, role rbac.Role, query string) *http.R
 	return req.WithContext(ctx)
 }
 
+// configsRole holds the given configs verbs on every config: config names
+// such as Topology/lab hold a "/", which "*" alone does not match.
 func configsRole(verbs ...string) rbac.Role {
+	return configsRoleOn([]string{"*", "*/*"}, verbs...)
+}
+
+// configsRoleOn holds the given configs verbs on the configs names match.
+func configsRoleOn(names []string, verbs ...string) rbac.Role {
 	return rbac.Role{
 		Spec: &v1.RoleSpec{
 			Policies: []*v1.PolicySpec{
 				{
 					Resources:     []string{"configs"},
-					ResourceNames: []string{"*"},
+					ResourceNames: names,
 					Verbs:         verbs,
 				},
 			},

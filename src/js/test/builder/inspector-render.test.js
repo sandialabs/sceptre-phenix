@@ -585,6 +585,27 @@ test('an Inspector with no changes shows no Apply, Cancel or state', async () =>
   expect(html).not.toContain('No changes');
 });
 
+// Firefox keeps what a form sends and offers it back under the field typed
+// in, once its lookup returns, and first scrolls that field into view: the
+// Inspector moved away from a pointer pressing a button below. No text
+// field takes part, by its form's choice or its own.
+test("the browser offers none of the values it keeps in the Inspector's text fields", async () => {
+  const html = await renderInspector();
+  const forms = html.match(/<form\b[^>]*>[\s\S]*?<\/form>/g) || [];
+  const offered = forms
+    .filter((form) => !/^<form\b[^>]*\sautocomplete="off"/.test(form))
+    .flatMap((form) => [...tags(form, 'input'), ...tags(form, 'textarea')])
+    .filter(
+      (tag) =>
+        !/\stype="(checkbox|radio|hidden|file|button)"/.test(tag) &&
+        !/\sautocomplete="off"/.test(tag),
+    );
+
+  expect(forms).toHaveLength(2);
+  expect(tags(forms[0], 'input').length).toBeGreaterThan(10);
+  expect(offered).toEqual([]);
+});
+
 describe('the diagram section', () => {
   const source = {
     kind: 'topology',

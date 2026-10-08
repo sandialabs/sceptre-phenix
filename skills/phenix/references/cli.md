@@ -44,7 +44,8 @@ disabled by default and requires restarting `phenix ui` to take effect. The CLI
 equivalents (`phenix vm mount`/`unmount`) are always available.
 
 The Builder, the web topology editor at `/builder`, has no CLI equivalent
-for its drafts, sharing and Publish; the one CLI command for its documents is
+for its drafts, sharing, Import, Publish, legacy diagram conversion, icon
+library or template library; the one CLI command for its documents is
 [`phenix builder publish`](#phenix-builder--publish-a-builder-document-as-a-topology).
 See [`builder.md`](builder.md).
 
@@ -99,7 +100,7 @@ when the document has one).
 | Flag | Meaning |
 |---|---|
 | `-n`, `--name` | Topology name. Default: the document's name as the Publish dialog proposes it (`Pump station` gives `Pump-station`). Must be a config name. |
-| `--update` | Replace an existing topology of that name. Allowed only when the topology is unchanged since its stored document was published, or the document was imported from the topology as it is now. Never for a `builder-xml` topology. No force flag. |
+| `--update` | Replace an existing topology of that name. Allowed only when the topology is unchanged since its stored document was published, or the document was imported from the topology as it is now. A `builder-xml` (legacy Builder) topology is replaced only in the second case; the update deletes `builder-xml` and warns `The legacy Builder diagram of topology X was replaced by this diagram.` No force flag. |
 | `--dry-run` | Run every check and print a report on stdout (document, file, digest, document ID, what would happen, node count, warnings). Writes nothing. |
 | `--user` | User to record as the publisher of the stored document. Default: the sudo caller, else the OS account. |
 | `--record-path` | Also write the file's absolute path as `builder-doc.path`. The file name must end in `.json`, `.yaml` or `.yml`. A path the server would not read (outside `base-dir.phenix`, or below the mount directory) is a warning, not an error. |

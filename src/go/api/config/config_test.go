@@ -243,6 +243,32 @@ func TestUpdateRenameRunsRenameHooks(t *testing.T) {
 	}
 }
 
+// TestCreateDefaultNamesABuiltinConfig asserts CreateDefault stores only a
+// config the built-in defaults hold, and says so of any other.
+func TestCreateDefaultNamesABuiltinConfig(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	m := store.NewMockStore(ctrl)
+	m.EXPECT().Create(gomock.Any()).DoAndReturn(func(c *store.Config) error {
+		if c.Kind != "Role" || c.Metadata.Name != "builder" || c.Spec["roleName"] != "Builder" {
+			t.Errorf("CreateDefault stored %s with %v", c.FullName(), c.Spec)
+		}
+
+		return nil
+	}).Times(1)
+
+	store.DefaultStore = m //nolint:reassign // mocking
+
+	if _, err := config.CreateDefault("role", "builder"); err != nil {
+		t.Fatalf("CreateDefault(role, builder) returned error: %v", err)
+	}
+
+	if _, err := config.CreateDefault("Role", "no-such-role"); err == nil {
+		t.Fatal("CreateDefault of a config the defaults do not hold returned no error")
+	}
+}
+
 // TestWorkflowIsNotAConfigKind proves the Workflow schema did not make
 // workflow configs listable or storable through the config API. The mock has
 // no expectations, so any store call fails the test.

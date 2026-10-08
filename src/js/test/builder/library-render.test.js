@@ -1,7 +1,10 @@
 // The Node Templates tab, the collection dialog, the palette's library and
 // the template editor on a template of the library, rendered on the server,
-// and the commands that go with the library. What needs a browser (menus,
-// focus, saving, deleting) is left to builder-templates.spec.js.
+// and the commands that go with the library; and what sharing adds to them:
+// Share, other users' lists, the Share dialog, and another user's template
+// in the editor. What needs a browser (menus, focus, saving, deleting,
+// other users' cards) is left to builder-templates.spec.js and
+// builder-sharing-templates.spec.js.
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createSSRApp, h } from 'vue';
@@ -19,6 +22,7 @@ import BuilderPalette from '@/components/builder/BuilderPalette.vue';
 import BuilderTemplates from '@/components/builder/BuilderTemplates.vue';
 import CollectionDialog from '@/components/builder/dialogs/CollectionDialog.vue';
 import TemplateDialog from '@/components/builder/dialogs/TemplateDialog.vue';
+import TemplateShareDialog from '@/components/builder/dialogs/TemplateShareDialog.vue';
 import {
   VIEW_API,
   availability,
@@ -576,6 +580,53 @@ describe('the palette’s library', () => {
     );
   });
 
+  test('other users’ templates are grouped by how they are reached, and say whose they are', async () => {
+    const { html } = await render(BuilderPalette, {}, (store) => {
+      store.templates = libraryOf({
+        templates: [
+          template('plc'),
+          template('rtu', {
+            owner: 'bob smith',
+            source: 'shared',
+            description: 'Remote unit',
+          }),
+          template('fw', { owner: 'carol', source: 'server' }),
+        ],
+      });
+    });
+    const [shared] = html.match(
+      /<ul[^>]*data-testid="palette-templates-shared"[\s\S]*?<\/ul>/,
+    );
+
+    expect(groupNames(html)).toEqual([
+      'My library',
+      'Shared with me',
+      'Server-wide',
+    ]);
+    expect(shared).toContain('aria-label="Shared with me"');
+    expect(buttonIds(shared)).toEqual([
+      'palette-template-shared-bob smith-rtu',
+    ]);
+    // An id holds no space, and a user name may.
+    expect(shared).toContain(
+      'aria-describedby="palette-template-shared-bob%20smith-rtu-hint"',
+    );
+    expect(
+      textOf(
+        shared.match(
+          /<span id="palette-template-shared-bob%20smith-rtu-hint"[^>]*>[\s\S]*?<\/span>/,
+        )[0],
+      ),
+    ).toBe('Remote unit Shared by bob smith.');
+    expect(
+      textOf(
+        element(html, 'palette-templates-server').match(
+          /<span id="palette-template-server-carol-fw-hint"[^>]*>[\s\S]*?<\/span>/,
+        )[0],
+      ),
+    ).toBe('Published by carol.');
+  });
+
   test('while it is first read the list says so, and nothing stands in', async () => {
     const { html } = await render(BuilderPalette, {}, (store) => {
       store.templates = { ...store.templates, status: 'loading' };
@@ -824,5 +875,378 @@ describe('the library commands', () => {
         look: { iconKey: 'router', icon: ICON_KEY },
       }),
     );
+  });
+});
+
+describe('sharing on the Node Templates tab', () => {
+  const shared = (init = {}) =>
+    libraryOf({
+      templates: [
+        template('plc', {
+          serverWide: true,
+          shares: [
+            { user: 'bob', stale: false },
+            { user: 'carol', stale: true },
+          ],
+        }),
+        template('hmi'),
+        template('rtu', { owner: 'bob', source: 'shared' }),
+        template('fw', { owner: 'c/d', source: 'server', serverWide: true }),
+      ],
+      collections: [
+        { id: 'c1', name: 'Plant floor', templateIds: ['plc'] },
+        {
+          id: 'kit',
+          owner: 'bob',
+          source: 'shared',
+          name: 'Kit',
+          templateIds: ['rtu'],
+        },
+        {
+          id: 'edge',
+          owner: 'c/d',
+          source: 'server',
+          name: 'Edge',
+          serverWide: true,
+          templateIds: ['fw'],
+        },
+      ],
+      ...init,
+    });
+  const tab = (library) =>
+    render(BuilderTemplates, {}, (store) => {
+      store.templates = library;
+    });
+
+  test('a role that may share has Share on each card and on the selection', async () => {
+    const { html } = await tab({ ...shared(), canShare: true });
+    const [card, next] = html.split('<li ').slice(1);
+
+    expect(buttonIds(card)).toEqual([
+      'template-edit-plc',
+      'template-share-plc',
+      'template-delete-plc',
+    ]);
+
+    const share = element(card, 'template-share-plc');
+
+    expect(textOf(share)).toBe('Share');
+    expect(share).toContain('aria-label="Share template PLC"');
+    expect(share).toContain('aria-haspopup="dialog"');
+    // Who has it, those whose account was removed left out, and that
+    // everyone can use it.
+    expect(textOf(element(card, 'template-shared-with-plc'))).toBe(
+      'Shared with bob',
+    );
+    expect(textOf(element(card, 'template-server-wide-plc'))).toBe(
+      'Server-wide',
+    );
+    expect(textOf(card.match(/<h2[^>]*>[\s\S]*?<\/h2>/)[0])).toBe(
+      'PLC Server-wide',
+    );
+    expect(next).not.toContain('template-shared-with-hmi');
+    expect(next).not.toContain('template-server-wide-hmi');
+    // Only other users' cards say whose they are.
+    expect(card).not.toContain('template-owner-');
+
+    expect(buttonIds(element(html, 'bulk-bar-templates'))).toEqual([
+      'bulk-collect-templates',
+      'bulk-share-templates',
+      'bulk-delete-templates',
+    ]);
+
+    const bulk = element(html, 'bulk-share-templates');
+
+    expect(textOf(bulk)).toBe('Share selected');
+    expect(bulk).toContain('aria-disabled="true"');
+    expect(bulk).toContain('aria-describedby="bulk-count-templates"');
+  });
+
+  test('Share is for a user who may share with people: not one who may only publish, as with sign-in off, nor a role that cannot change configs', async () => {
+    const sharer = (await tab({ ...shared(), canShare: true })).html;
+
+    expect(sharer).toContain('data-testid="template-share-plc"');
+    expect(sharer).toContain('data-testid="bulk-share-templates"');
+
+    // Without an account of their own, as with sign-in off, there is no
+    // one to share with, and server-wide reaches no one else either.
+    for (const flags of [{ canPublish: true }, {}]) {
+      const { html } = await tab({ ...shared(), ...flags });
+
+      expect(html).not.toContain('template-share-');
+      expect(html).not.toContain('bulk-share-templates');
+    }
+
+    phenix.role = roleWith('list', 'create', 'delete');
+
+    const unchanging = (
+      await tab({ ...shared(), canShare: true, canPublish: true })
+    ).html;
+
+    expect(unchanging).not.toContain('template-share-');
+    expect(unchanging).not.toContain('bulk-share-templates');
+  });
+
+  test('Show lists what other users share and publish, after the user’s own', async () => {
+    const { html } = await tab(shared());
+    const show = html.match(/<select[\s\S]*?<\/select>/)[0];
+
+    expect(
+      [
+        ...show.matchAll(
+          /<option[^>]*value="([^"]*)"[^>]*>([\s\S]*?)<\/option>/g,
+        ),
+      ].map(([, value, inner]) => [value, textOf(inner)]),
+    ).toEqual([
+      ['', 'My templates'],
+      ['c1', 'Plant floor'],
+      ['shared:', 'Shared with me'],
+      ['shared:bob/kit', 'Kit (bob)'],
+      ['server:', 'Server-wide'],
+      ['server:c/d/edge', 'Edge (c/d)'],
+    ]);
+    expect(
+      [...show.matchAll(/<optgroup label="([^"]+)"/g)].map(
+        ([, label]) => label,
+      ),
+    ).toEqual([
+      'My collections',
+      'Shared collections',
+      'Server-wide collections',
+    ]);
+
+    // The user's own list holds only their own templates.
+    expect(
+      [...html.matchAll(/data-testid="template-card-([^"]+)"/g)].map(
+        ([, id]) => id,
+      ),
+    ).toEqual(['plc', 'hmi']);
+
+    // Nothing of other users: neither choice.
+    const alone = (
+      await tab(libraryOf({ templates: [template('plc')] }))
+    ).html.match(/<select[\s\S]*?<\/select>/)[0];
+
+    expect(alone).not.toContain('Shared with me');
+    expect(alone).not.toContain('Server-wide');
+  });
+
+  test('a library the server cannot read still offers what other users share', async () => {
+    const { html } = await tab({
+      ...libraryOf({
+        templates: [template('rtu', { owner: 'bob', source: 'shared' })],
+      }),
+      damaged: true,
+    });
+
+    expect(textOf(element(html, 'templates-damaged'))).toBe(
+      'Your library cannot be read. A newer version of phenix may have saved it.',
+    );
+    expect(element(html, 'templates-show')).toMatch(
+      /<option value="shared:"[^>]*> Shared with me <\/option>/,
+    );
+    // The user's own list: no cards, and no word of an empty library.
+    expect(html).not.toContain('templates-empty');
+    expect(html).not.toContain('templates-list');
+    expect(html).not.toContain('bulk-bar-templates');
+  });
+});
+
+describe('the Share dialog of the template library', () => {
+  const plc = template('plc', {
+    shares: [
+      { user: 'bob', stale: false },
+      { user: 'carol', stale: true },
+    ],
+  });
+  const dialog = (targets, init = {}) =>
+    render(TemplateShareDialog, { targets }, (store) => {
+      store.templates = { ...libraryOf({ templates: [plc] }), ...init };
+    });
+
+  test('one template: who has access, each with Remove, and whether it is server-wide', async () => {
+    const { html } = await dialog(
+      [{ kind: 'template', ...libraryOf({ templates: [plc] }).items[0] }],
+      {
+        canShare: true,
+        canPublish: true,
+      },
+    );
+
+    expect(textOf(html.match(/<h2[^>]*>[\s\S]*?<\/h2>/)[0])).toBe('Share PLC');
+    expect(
+      textOf(
+        element(html, 'template-share-dialog').match(
+          /<p id="template-share-intro"[\s\S]*?<\/p>/,
+        )[0],
+      ),
+    ).toBe(
+      'People you add find this under Shared with me in their Node Templates and in Add nodes. They can use it and copy it, and they see your later changes. They cannot change it.',
+    );
+    expect(html).toContain('aria-describedby="template-share-intro"');
+    expect(html).toMatch(/<label for="template-share-user"[^>]*>User<\/label>/);
+    expect(element(html, 'template-share-user')).toContain('role="combobox"');
+    expect(textOf(element(html, 'template-share-add'))).toBe('Add');
+    expect(textOf(element(html, 'template-share-empty'))).toBe('No one yet.');
+
+    const people = element(html, 'template-share-people');
+
+    expect(people).toContain('aria-labelledby="template-share-people-title"');
+    // The name, then what the person is, each a part of the row.
+    const parts = (row) =>
+      [
+        ...row.matchAll(
+          /<span[^>]*class="builder-template-share__[a-z]+"[^>]*>([\s\S]*?)<\/span>/g,
+        ),
+      ].map(([, inner]) => textOf(inner));
+
+    expect(parts(people.split('<li ')[1])).toEqual(['alice (you)', 'Owner']);
+
+    const bob = element(people, 'template-share-row-bob');
+    const remove = element(bob, 'template-share-remove-bob');
+
+    expect(textOf(remove)).toBe('Remove');
+    expect(remove).toContain('aria-label="Remove bob"');
+    expect(remove).not.toContain('aria-disabled');
+
+    // A share whose account was removed starts marked for removal, and
+    // cannot be kept.
+    const carol = element(people, 'template-share-row-carol');
+
+    expect(carol).toContain('is-removed');
+    expect(parts(carol)).toEqual(['carol', 'Account removed']);
+    expect(textOf(element(carol, 'template-share-remove-carol'))).toBe('Keep');
+    expect(element(carol, 'template-share-remove-carol')).toContain(
+      'aria-disabled="true"',
+    );
+
+    const server = element(html, 'template-share-server-wide');
+
+    expect(server).toContain('type="checkbox"');
+    expect(server).not.toContain('checked');
+    expect(html).toContain(
+      'Published server-wide: anyone who can use the Builder on this server can use it',
+    );
+
+    // Removing carol is a change, which Save sends; Cancel would not ask
+    // about it.
+    expect(textOf(element(html, 'template-share-changes'))).toBe(
+      '1 change not saved',
+    );
+    expect(element(html, 'template-share-save')).not.toContain('aria-disabled');
+    expect(textOf(element(html, 'template-share-cancel'))).toBe('Cancel');
+  });
+
+  test('several items: no list of people, and a choice of what to do server-wide', async () => {
+    const { html } = await dialog(
+      [
+        { kind: 'template', ...plc, serverWide: true },
+        { kind: 'template', ...template('hmi') },
+      ],
+      { canShare: true, canPublish: true },
+    );
+
+    expect(textOf(html.match(/<h2[^>]*>[\s\S]*?<\/h2>/)[0])).toBe(
+      'Share 2 templates',
+    );
+    expect(html).not.toContain('template-share-people');
+    expect(textOf(element(html, 'template-share-several'))).toBe(
+      'Adds these people to every selected item. People who already have access keep it.',
+    );
+
+    const server = element(html, 'template-share-server-wide');
+
+    expect(server).toMatch(/^<fieldset/);
+    expect(textOf(server.match(/<legend[^>]*>[\s\S]*?<\/legend>/)[0])).toBe(
+      'Server-wide',
+    );
+    expect(
+      [...server.matchAll(/<label[^>]*>([\s\S]*?)<\/label>/g)].map(
+        ([, inner]) => textOf(inner),
+      ),
+    ).toEqual([
+      'Leave as it is',
+      'Publish server-wide',
+      'Remove from server-wide',
+    ]);
+    expect(element(server, 'template-share-server-wide-keep')).toContain(
+      'checked',
+    );
+    expect(element(server, 'template-share-server-wide-publish')).toContain(
+      'name="template-share-server-wide"',
+    );
+    // Nothing to save yet.
+    expect(html).not.toContain('template-share-changes');
+    expect(element(html, 'template-share-save')).toContain(
+      'aria-disabled="true"',
+    );
+  });
+
+  test('a role that may not publish is not offered server-wide', async () => {
+    const { html } = await dialog(
+      [{ kind: 'collection', id: 'c1', name: 'Plant floor', shares: [] }],
+      { canShare: true, canPublish: false },
+    );
+
+    expect(textOf(html.match(/<h2[^>]*>[\s\S]*?<\/h2>/)[0])).toBe(
+      'Share Plant floor',
+    );
+    expect(html).not.toContain('template-share-server-wide');
+    expect(html).not.toContain('Server-wide');
+  });
+});
+
+describe('another user’s template in the editor', () => {
+  const rtu = template('rtu', {
+    owner: 'bob',
+    source: 'shared',
+    description: 'Remote unit',
+  });
+  const view = (role = EVERYTHING) => {
+    phenix.role = role;
+
+    return render(
+      TemplateDialog,
+      { mode: 'view', template: rtu, icons: {} },
+      (store) => {
+        store.templates = libraryOf({ templates: [template('rtu'), rtu] });
+      },
+    );
+  };
+
+  test('it is read only, says whose it is, and offers Copy to my library', async () => {
+    const { html } = await view();
+
+    expect(textOf(html.match(/<h2[^>]*>[\s\S]*?<\/h2>/)[0])).toBe(
+      'Template RTU',
+    );
+    expect(textOf(element(html, 'template-origin'))).toBe('Shared by bob');
+    expect(html).toContain('aria-describedby="template-origin"');
+
+    const name = element(html, 'template-name');
+
+    expect(name).toContain('readonly');
+    expect(name).not.toContain('required');
+    expect(element(html, 'template-description')).toContain('readonly');
+    expect(html).not.toMatch(/Name<span aria-hidden="true"> \*<\/span>/);
+    // A name the user's own library has means nothing here.
+    expect(textOf(element(html, 'template-name-hint'))).toBe('');
+    // The node fields are locked.
+    expect(html).toMatch(/value="rtu"[^>]*readonly|readonly[^>]*value="rtu"/);
+
+    expect(textOf(element(html, 'template-cancel'))).toBe('Close');
+
+    const copy = element(html, 'template-save');
+
+    expect(textOf(copy)).toBe('Copy to my library');
+    expect(copy).toContain('type="button"');
+    expect(copy).not.toContain('form=');
+  });
+
+  test('a role that may not add templates can only look', async () => {
+    const { html } = await view(roleWith('list', 'get'));
+
+    expect(html).not.toContain('template-save');
+    expect(textOf(element(html, 'template-cancel'))).toBe('Close');
   });
 });

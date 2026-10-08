@@ -97,6 +97,11 @@ async function editConfig(page, name) {
   await fetched;
 }
 
+// A dialog's opacity, as a string: Buefy fades a modal in and out.
+function opacityOf(dialog) {
+  return dialog.evaluate((modal) => getComputedStyle(modal).opacity);
+}
+
 // Records every Buefy toast the page adds, so a toast that has already
 // faded out, or was opened just before a route change, is still visible to
 // the test.
@@ -350,6 +355,49 @@ test.describe('Configs page', () => {
       await viewer.getByRole('button', { name: 'Exit' }).click();
       await expect(viewer).toBeHidden();
       await expect.soft(view).toBeFocused();
+    });
+
+    await test.step('a viewer opened as the one before it closes is shown, and Exit closes it', async () => {
+      const first = page.getByRole('dialog', { name: `Topology/${legacy}` });
+      await page
+        .getByRole('button', { name: `View Topology ${legacy}` })
+        .click();
+      await expect(first).toBeVisible();
+      await expect.poll(() => opacityOf(first)).toBe('1');
+
+      // Exit, then the next name on the first frame the viewer is hidden,
+      // while the page may still be removing it.
+      const fetched = waitForApi(page, 'GET', `/configs/Topology/${plain}`);
+      await first.evaluate(
+        (modal, next) =>
+          new Promise((resolve) => {
+            const exit = [...modal.querySelectorAll('footer button')].find(
+              (button) => button.textContent.trim() === 'Exit',
+            );
+            const openNext = () => {
+              if (getComputedStyle(modal).display !== 'none') {
+                requestAnimationFrame(openNext);
+                return;
+              }
+              document
+                .querySelector(`[data-config-view="${CSS.escape(next)}"]`)
+                .click();
+              resolve();
+            };
+            exit.click();
+            requestAnimationFrame(openNext);
+          }),
+        `Topology/${plain}`,
+      );
+      await fetched;
+
+      // It fades in, and does not stay invisible over the page.
+      const next = page.getByRole('dialog', { name: `Topology/${plain}` });
+      await expect(next).toBeVisible();
+      await expect.poll(() => opacityOf(next)).toBe('1');
+      await next.getByRole('button', { name: 'Exit' }).click();
+      // No dialog is left over the page.
+      await expect(page.getByRole('dialog')).toHaveCount(0);
     });
 
     await test.step('a legacy Builder topology opens in the YAML editor, which leaves its diagram out and saves it back', async () => {

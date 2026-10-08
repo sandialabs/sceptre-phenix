@@ -1810,6 +1810,8 @@ func TestBuilderOutOfSpaceDocumented(t *testing.T) {
 		{library + "/collections", "post"},
 		{library + "/collections/{collection}", "put"},
 		{library + "/delete", "post"},
+		{library + "/share", "post"},
+		{library + "/publish", "post"},
 	} {
 		if !documents507(operation.path, operation.method) {
 			t.Errorf("openapi.yml does not document 507 for %s %s", operation.method, operation.path)

@@ -44,6 +44,7 @@ All notable changes to this project will be documented in this file.
 - **Config Schemas**: Invalid v1 schema (empty `pattern` on a serial interface's `device`).
 - **Schemas API**: Unknown schemas return 404 instead of 500.
 - **API docs**: The OpenAPI document is valid again.
+- **Configs API**: Creating or replacing a config checks the permission on the kind and name in the request body.
 - **Settings**: Password checks on a new server no longer fail when several requests arrive at once. An error reading a setting names the setting instead of saying `decoding image spec`.
 - **Web UI**: The header's Logout can be reached with the keyboard, and says when logging out fails. The keyboard focus ring on the header's links, Logout and menu button is no longer cut off at the top of the window. The sign-in page focuses Username after a logout, labels its fields and the Create Account dialog, and fits narrow screens. The Create Account dialog opens empty each time, and reopening it as it closes no longer leaves an invisible dialog over the page. Red field errors in dialogs are legible.
 - **Web UI**: For users with a character such as `é` in their username, moving between pages no longer fails, and an expired sign-in logs them out.

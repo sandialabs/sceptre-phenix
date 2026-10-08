@@ -10,8 +10,7 @@
 // Everything here is pure, so it is tested without a browser.
 
 import { count, describeNames, listOf } from './announce.js';
-import { MAX_SHARES } from './api.js';
-import { MAX_USER_BYTES } from './limits.js';
+import { MAX_SHARES, MAX_USER_BYTES } from './limits.js';
 import { utf8Length } from './text.js';
 
 export const ACCESS_LABELS = { view: 'Can view', edit: 'Can edit' };

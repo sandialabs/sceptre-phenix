@@ -1174,6 +1174,10 @@ test(
       await expect
         .soft(library.remove('router'))
         .toHaveAccessibleName('Delete template Router');
+      // With sign-in off there is no one else, so nothing is shared or
+      // published server-wide: no Share, as a draft card has none.
+      await expect.soft(library.share('router')).toHaveCount(0);
+      await expect.soft(library.bulkShare).toHaveCount(0);
       await expect
         .soft(library.select('router'))
         .toHaveAccessibleName('Select Router');
@@ -1699,6 +1703,8 @@ test('collections group templates of the library, and several templates are adde
     await expect
       .soft(page.getByTestId('collection-about'))
       .toHaveText('The first set');
+    // With sign-in off a collection is not shared either.
+    await expect.soft(library.shareCollection).toHaveCount(0);
     await expect(library.list.locator('.builder-card')).toHaveCount(2);
     await expect(library.card(alfa)).toBeVisible();
     await expect(library.card(bravo)).toBeVisible();

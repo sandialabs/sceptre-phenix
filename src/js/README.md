@@ -65,7 +65,9 @@ Creating or updating topology, scenario, or experiment configs requires the
 explicit Publish action. The editor supports upload and download of JSON/YAML
 documents, Topology YAML, Gephi (GEXF) and PNG/SVG downloads, import of
 authorized Topology/Experiment configs (stored, or a JSON or YAML config
-file), shared-draft RBAC, and a synchronized keyboard/screen-reader outline.
+file), conversion of legacy Builder diagrams, a per-user icon library, a
+per-user device template library with sharing, shared-draft RBAC, and a
+synchronized keyboard/screen-reader outline.
 
 Imported config files make new drafts without changing their source. They may
 create publication targets, but only drafts tied to the matching stored

@@ -10,8 +10,9 @@ spec:
   - resources:
     - configs
     resourceNames:
-    - "*"
-    - "*/*"
+    - "Topology/*"
+    - "Scenario/*"
+    - "Experiment/*"
     verbs:
     - list
     - get

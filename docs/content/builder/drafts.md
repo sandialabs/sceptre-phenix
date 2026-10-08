@@ -9,46 +9,57 @@ you make it. Only **Publish** writes Topology, Scenario and Experiment configs
 
 Select **Builder** in the phenix navigation bar. The drafts page opens.
 
-![The Builder drafts page with the Blank diagram, Import, Upload and Commands buttons, the My Drafts, Shared with me and Published Diagrams tabs, and cards for Metro Campus, Riverside Water and Riverside Water expansion.](../images/builder/drafts-page.png)
+![The Builder drafts page with the Blank diagram, Import, Upload and Commands buttons, the My Drafts, Shared Drafts, Published Diagrams and Node Templates tabs, the Select all row, and cards for Metro Campus, Riverside Water and Riverside Water expansion, each with a checkbox and the Open, Share, Delete and Publish buttons.](../images/builder/drafts-page.png)
 
 The buttons at the top right are:
 
 - **Blank diagram**: starts a new, empty draft.
 - **Import**: starts a draft from a Topology or Experiment config (see
   [Import](#import)).
-- **Upload**: starts a draft from a Builder document (see
-  [Upload](#upload)).
+- **Upload**: starts a draft from a diagram you have: a Builder document,
+  or a legacy Builder diagram (see [Upload](#upload)).
 - **Commands**: opens the command palette (<kbd>⌘</kbd>+<kbd>K</kbd> on
   macOS, <kbd>Ctrl</kbd>+<kbd>K</kbd> on Windows and Linux). See
   [Command palette](editor.md#command-palette).
 - The theme, **Settings**, **Help** and **Focus mode** buttons, as in the
   editor (see [Header](editor.md#header)). **Help** opens this Builder
-  documentation in a new tab.
+  documentation in a new tab. **Settings** also opens with
+  <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>S</kbd> on macOS and
+  <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> on Windows and Linux, and
+  <kbd>?</kbd> lists the keyboard shortcuts.
 
 The tabs below them list what you can open. Each tab shows how many items it
 holds, for example **My Drafts (3)**.
 
 - **My Drafts**: the drafts you own.
-- **Shared with me**: drafts other users shared with you, the most recently
+- **Shared Drafts**: drafts other users shared with you, the most recently
   changed first (see [Sharing a draft](#sharing-a-draft)).
 - **Published Diagrams**: the topologies that have a Builder diagram
   (see [Published diagrams](#published-diagrams)).
+- **Node Templates**: your library of device templates. Its count is the
+  number of your own templates (see
+  [The template library](templates.md#the-template-library)).
 - **Other users' drafts**: other users' drafts that your role lets you see.
   This tab appears only when your role has the `builder-drafts` permission
   and there is such a draft (see
   [Permissions](administration.md#permissions)).
 
-Each draft is a card with:
+Each draft is a card with, one line each:
 
 - The draft's name.
-- The owner and when the draft last changed, for example
-  "Owner: e2e-admin · Updated Sep 29, 2026, 12:52 PM". When someone you
-  shared the draft with made the last change, the card adds their name:
-  "Updated Sep 29, 2026, 1:02 PM by alice".
-- On your own shared drafts, who has access: "· Shared with alice and bob".
-- On other users' drafts, what you may do: "· Can view" or "· Can edit".
-- **Open**, and for your own drafts **Share** (when phenix has user sign-in)
-  and **Delete**.
+- The owner, for example "Owner: e2e-admin". On the other tabs, what you may
+  do follows: "Owner: e2e-admin · Can view" or "· Can edit".
+- When the draft last changed, for example "Updated Sep 29, 2026, 12:52 PM".
+  When someone you shared the draft with made the last change, the line adds
+  their name: "Updated Sep 29, 2026, 1:02 PM by alice".
+- On your own shared drafts, who has access: "Shared with alice and bob".
+- The buttons, all of one size: **Open**; for your own drafts **Share** (when
+  phenix has user sign-in) and **Delete**; and **Publish** on a draft you may
+  change (see [Publishing from the drafts page](#publishing-from-the-drafts-page)).
+
+A card you may delete, or on **My Drafts** share, also has a checkbox, for
+acting on several drafts at once (see
+[Selecting several drafts](#selecting-several-drafts)).
 
 "Updated" on a card is the last activity on the draft: an edit, but also an
 undo, a restore, a deleted snapshot or a publish. It is not the same as
@@ -79,15 +90,20 @@ The drafts page then lists the draft under its new name.
 
 **Import** makes a draft from a Topology or Experiment config, stored in
 phenix or in a config file. The draft is named after the config, for
-example riverside-water. See
+example riverside-water. For a topology, Import can also make the draft a
+copy with a new topology name, or combine the topologies it includes into
+one (see
+[Making included devices editable](diagrams.md#making-included-devices-editable)).
+See
 [Importing a topology or experiment](import-upload-download.md#importing-a-topology-or-experiment).
 
 ### Upload
 
-**Upload** makes a draft from a Builder document: a Builder JSON or YAML file
-that **Download** saved, pasted text, or a published diagram. Uploading always
-makes a new draft. See
-[Uploading a Builder document](import-upload-download.md#uploading-a-builder-document).
+**Upload** makes a draft from a diagram you have: a Builder JSON or YAML file
+that **Download** saved, pasted text, a published diagram, or a legacy
+Builder diagram (**Legacy Builder diagram or Topology**, see
+[Legacy Builder](legacy.md)). Uploading always makes a new draft. See
+[Import, Upload and Download](import-upload-download.md).
 
 ### From a published diagram
 
@@ -141,6 +157,29 @@ can see it: its owner, the people it is shared with, and roles with the
 `builder-drafts` permission. Opening a topology from the **Configs** page
 also puts a link like this in the address bar, so a reload reopens the same
 draft.
+
+## Publishing from the drafts page
+
+**Publish** on a draft's card publishes the draft without opening the
+editor. It is on your own drafts, on drafts shared with you with **Can
+edit**, and on other users' drafts your role may change.
+
+1. On the Riverside Water card, select **Publish**. The button says
+   **Loading…** while Builder loads the draft.
+2. The **Publish Riverside Water** dialog opens over the drafts page. It is
+   the editor's **Publish diagram** dialog, with the same choices and checks
+   (see [Publishing](publishing.md)).
+3. Choose what to publish, and select the dialog's publish button.
+
+The dialog has one more button, **Open draft**, which opens the draft in the
+editor instead. When the diagram has errors, the dialog lists them and says
+"Open the draft to fix the errors, then publish." When the draft has changes
+the server does not hold yet (while offline, for example), it is not
+published, and the dialog adds "Open the draft to resolve it."
+
+Closing the dialog hands the draft back to the drafts page: changes that are
+still being saved keep saving in the background, as after **Back to
+drafts**. Closing it while it publishes does not stop the publish.
 
 ## How drafts save
 
@@ -400,14 +439,15 @@ In the dialog:
   HTTP the browser allows no clipboard: the dialog shows the link in a
   **Link to this draft** field, selected, and says "Press ⌘C to copy the
   link." on macOS or "Press Ctrl+C to copy the link." on Windows and Linux.
-- The people you add find the draft under **Shared with me**. They see all
+- The people you add find the draft under **Shared Drafts**. They see all
   of it, including its history.
 
 ### What the people you share with see
 
-The draft appears on their **Shared with me** tab, with the owner and their
-access, for example "Owner: e2e-admin · Can view · Updated Sep 29, 2026,
-12:52 PM".
+The draft appears on their **Shared Drafts** tab, with the owner and their
+access, for example "Owner: e2e-admin · Can view", and on the next line
+"Updated Sep 29, 2026, 12:52 PM". Drafts shared with you have no checkbox,
+**Share** or **Delete**.
 
 When bob (**Can view**) opens Riverside Water, the header says "Shared by
 e2e-admin · Can view", and a notice says "e2e-admin shared this draft with
@@ -455,7 +495,7 @@ diagram, by topology name:
   the tag **File** and where the file is (see
   [Diagrams read from a file](#diagrams-read-from-a-file)).
 
-![The Published Diagrams tab with two cards: riverside-water, Published Sep 29, 2026, 10:30 AM, with Open and Delete; and pump-station with the tag File, Read from /phenix/topologies/pump-station/pump-station.builder.json, and Open only.](../images/builder/published-diagrams.png)
+![The Published Diagrams tab with the Select all row and two cards: riverside-water, with a checkbox, Published Sep 29, 2026, 10:30 AM, and Open, Exp and Delete; and pump-station with the tag File, Read from /phenix/topologies/pump-station/pump-station.builder.json, and Open only.](../images/builder/published-diagrams.png)
 
 To see one:
 
@@ -478,6 +518,23 @@ a copy."
 A published diagram keeps who made it and who edited it last, as they were
 in the draft when it was published. The Inspector shows them under
 **Details** (see [With nothing selected](editor.md#with-nothing-selected)).
+
+### Opening the experiment
+
+When a diagram was published with an experiment (see
+[Publishing a topology and an experiment](publishing.md#publishing-a-topology-and-an-experiment)),
+its card on **Published Diagrams** has **Exp**, and so has the editor's
+toolbar, after **Share**. Its tooltip names the experiment, for example
+"Open experiment riverside-lab". **Exp** opens the experiment's page in the
+same tab, and leaves the editor as any link out of Builder does. The
+command palette has the same command, **Open experiment**.
+
+**Exp** shows only while the experiment exists and your role has
+`experiments` `get` on it. It follows a renamed experiment. An experiment
+made by hand from the topology, or a topology published with
+`phenix builder publish`, has none. When one publication made several
+experiments, **Exp** opens one of them; the others are on the
+**Experiments** page.
 
 ### Diagrams read from a file
 
@@ -534,6 +591,10 @@ A draft that published the topology, was imported from it, or was opened from
 its published diagram creates the topology again the next time it publishes
 to that name.
 
+To delete several topologies at once, select their cards' checkboxes and
+select **Delete selected** (see
+[Selecting several drafts](#selecting-several-drafts)).
+
 ## Deleting a draft
 
 1. On the **My Drafts** tab, select **Delete** on the draft's card, for
@@ -548,10 +609,78 @@ example "alice, bob and carol will lose access too." Deleting a draft does not
 change the configs it published.
 
 **Delete** is on your own drafts, and needs the `configs` `delete`
-permission. Another user's draft has **Delete** only when it is damaged (see
-[Damaged drafts](#damaged-drafts)). An administrator deletes other users'
-drafts with the REST API (see
-[Other users' drafts](administration.md#other-users-drafts)).
+permission. On the **Other users' drafts** tab, a draft has **Delete** when
+your role has both `builder-drafts` `delete` and `configs` `delete` for it
+(see [Other users' drafts](administration.md#other-users-drafts)). The
+question then names the owner. A draft shared with you never has
+**Delete**.
+
+## Selecting several drafts
+
+**My Drafts**, **Published Diagrams** and **Other users' drafts** let you
+delete several items at once, and **My Drafts** also lets you share several
+drafts at once. A card you may delete (or, on **My Drafts**, share) has a
+checkbox. Above the cards, a row holds:
+
+- **Select all**, which selects every card that has a checkbox, or none. It
+  shows a mixed state when only some cards are selected.
+- How many cards are selected, for example "2 of 3 selected".
+- **Share selected**, on **My Drafts** only, when phenix has user sign-in.
+- **Delete selected**.
+
+**Shared Drafts** has no checkboxes. On **Published Diagrams**, a topology
+whose diagram is read from a file has none. Each tab keeps its own
+selection.
+
+### Deleting several drafts
+
+1. Select the checkboxes of the drafts, for example Metro Campus and
+   Riverside Water expansion.
+2. Select **Delete selected**. Builder asks once: "Delete 2 drafts?", names
+   the drafts, and says "The drafts and their whole histories are removed
+   from the server." When some of them are shared, it says how many: the
+   people with access lose it too. On **Other users' drafts**, it names the
+   owners.
+3. Select **Delete 2 drafts**.
+
+On **Published Diagrams**, **Delete selected** deletes the topologies of the
+selected cards: "Delete 2 topologies?", then **Delete 2 topologies**. Drafts
+and experiments made from them are not changed.
+
+While the drafts are deleted, the row says how far it is, for example
+"Deleting 1 of 2…". When every item is deleted, Builder says so, for example
+"Deleted 2 drafts." When some cannot be deleted, a summary under the row
+lists each with the reason, for example "1 of 2 drafts could not be deleted.
+The other 1 was deleted." The items that failed stay selected. **Dismiss**
+removes the summary.
+
+### Sharing several drafts
+
+1. On **My Drafts**, select the checkboxes of the drafts.
+2. Select **Share selected**. The **Share 2 drafts** dialog opens.
+3. Add people in **User**, as in the Share dialog (see
+   [Sharing a draft](#sharing-a-draft)), and choose one **Access** for all
+   of them: **Can view** or **Can edit**.
+4. Select **Share 2 drafts**.
+
+Sharing several drafts only adds people:
+
+- Everyone who already has access to a draft keeps it.
+- Someone you add who is already on a draft gets the access you chose, which
+  can lower **Can edit** to **Can view**.
+- No one is removed.
+
+A draft that would be shared with more than 25 people is left as it was,
+and listed in the summary with the reason. A damaged draft in the selection
+is left out, and the dialog says how many. When every draft is shared, the
+dialog closes and Builder says so, for example "Shared 2 drafts with carol
+(can edit)." When some fail, the dialog lists them, and the drafts that
+were shared are no longer selected.
+
+When your session ends, or the server cannot be reached, during either
+action, Builder stops, and lists the rest as "Not attempted." Each item is
+deleted or shared with its own request, under your permissions for that
+item.
 
 ## Damaged drafts
 
@@ -605,6 +734,7 @@ warning then says "You will be logged out" and counts down, and its button
 is **Log out now**.
 
 Logging out, or signing in as another user in the same browser, deletes
-Builder's unsent changes and recent commands from the browser. Your
+Builder's unsent changes, recent commands and last Auto-group name pattern
+from the browser. Your
 preferences stay: the theme, column widths, minimap size, keyboard shortcuts
 and settings (see [Storage](administration.md#storage)).

@@ -212,9 +212,9 @@
   import { useMessage } from './message.js';
 
   import { count, describeNames } from '@/builder/announce.js';
-  import { MAX_SHARES } from '@/builder/api.js';
   import { bulkFailureHeading } from '@/builder/bulk.js';
   import { findUser } from '@/builder/combobox.js';
+  import { MAX_SHARES } from '@/builder/limits.js';
   import {
     ACCESS_LABELS,
     accessLabel,

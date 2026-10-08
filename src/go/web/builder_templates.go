@@ -1,8 +1,11 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -174,6 +177,37 @@ type builderTemplateDeleteResponse struct {
 	} `json:"deleted"`
 }
 
+// builderTemplateShareRequest adds users to, and removes users from, who
+// templates and collections of the caller's library are shared with.
+type builderTemplateShareRequest struct {
+	Templates   []string `json:"templates"`
+	Collections []string `json:"collections"`
+	Add         []string `json:"add"`
+	Remove      []string `json:"remove"`
+}
+
+// builderTemplatePublishRequest publishes templates and collections of one
+// library to every user, or with ServerWide false takes them back.
+type builderTemplatePublishRequest struct {
+	Templates   []string `json:"templates"`
+	Collections []string `json:"collections"`
+	ServerWide  *bool    `json:"serverWide"`
+}
+
+// builderTemplateFailure names an item a request left unchanged, and why:
+// "not-found" or "too-many".
+type builderTemplateFailure struct {
+	Kind   string `json:"kind"`
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
+
+// builderTemplateResult is what a request sharing or publishing items could
+// not do. Failed is empty when every item took the change.
+type builderTemplateResult struct {
+	Failed []builderTemplateFailure `json:"failed"`
+}
+
 // builderTemplateStaleError is returned by a change of a library whose
 // If-Match does not name the current content of the item it replaces.
 type builderTemplateStaleError struct {
@@ -294,22 +328,20 @@ func (b *builderAPI) templateShares(
 	return responses, nil
 }
 
-// ownTemplate returns one template of the caller's own library as responses
-// carry it.
-func (b *builderAPI) ownTemplate(
+// templateItem returns one template of a library as responses carry it, to
+// a caller that sees it as source. visible names the collections of the
+// library the caller sees, all of them when nil; the template names only
+// those that hold it. Who it is shared with is not set.
+func templateItem(
 	library *bapi.TemplateLibrary,
 	template *bapi.LibraryTemplate,
-	accounts map[string]func() (string, bool, error),
-) (builderTemplateResponse, error) {
-	shares, err := b.templateShares(template.Shares, accounts)
-	if err != nil {
-		return builderTemplateResponse{}, err
-	}
-
+	source string,
+	visible map[string]bapi.Visibility,
+) builderTemplateResponse {
 	response := builderTemplateResponse{
 		ID:          template.ID,
 		Owner:       library.Owner,
-		Source:      builderTemplateOwn,
+		Source:      source,
 		Name:        template.Name,
 		Description: template.Description,
 		Device:      template.Device,
@@ -321,7 +353,7 @@ func (b *builderAPI) ownTemplate(
 		PublishedAt: time.Time{},
 		PublishedBy: "",
 		Collections: []string{},
-		Shares:      shares,
+		Shares:      nil,
 	}
 
 	if template.Public != nil {
@@ -329,32 +361,31 @@ func (b *builderAPI) ownTemplate(
 	}
 
 	for i := range library.Collections {
-		for _, id := range library.Collections[i].TemplateIDs {
-			if id == template.ID {
-				response.Collections = append(response.Collections, library.Collections[i].ID)
-			}
+		collection := &library.Collections[i]
+
+		if _, seen := visible[collection.ID]; visible != nil && !seen {
+			continue
+		}
+
+		if slices.Contains(collection.TemplateIDs, template.ID) {
+			response.Collections = append(response.Collections, collection.ID)
 		}
 	}
 
-	return response, nil
+	return response
 }
 
-// ownCollection returns one collection of the caller's own library as
-// responses carry it.
-func (b *builderAPI) ownCollection(
+// collectionItem returns one collection of a library as responses carry it,
+// to a caller that sees it as source. Who it is shared with is not set.
+func collectionItem(
 	library *bapi.TemplateLibrary,
 	collection *bapi.TemplateCollection,
-	accounts map[string]func() (string, bool, error),
-) (builderTemplateCollectionResponse, error) {
-	shares, err := b.templateShares(collection.Shares, accounts)
-	if err != nil {
-		return builderTemplateCollectionResponse{}, err
-	}
-
+	source string,
+) builderTemplateCollectionResponse {
 	response := builderTemplateCollectionResponse{
 		ID:          collection.ID,
 		Owner:       library.Owner,
-		Source:      builderTemplateOwn,
+		Source:      source,
 		Name:        collection.Name,
 		Description: collection.Description,
 		TemplateIDs: append([]string{}, collection.TemplateIDs...),
@@ -365,22 +396,80 @@ func (b *builderAPI) ownCollection(
 		ServerWide:  collection.Public != nil,
 		PublishedAt: time.Time{},
 		PublishedBy: "",
-		Shares:      shares,
+		Shares:      nil,
 	}
 
 	if collection.Public != nil {
 		response.PublishedAt, response.PublishedBy = collection.Public.At, collection.Public.By
 	}
 
+	return response
+}
+
+// ownTemplate returns one template of the caller's own library as responses
+// carry it: with every collection that holds it, and who it is shared with.
+func (b *builderAPI) ownTemplate(
+	library *bapi.TemplateLibrary,
+	template *bapi.LibraryTemplate,
+	accounts map[string]func() (string, bool, error),
+) (builderTemplateResponse, error) {
+	shares, err := b.templateShares(template.Shares, accounts)
+	if err != nil {
+		return builderTemplateResponse{}, err
+	}
+
+	response := templateItem(library, template, builderTemplateOwn, nil)
+	response.Shares = shares
+
 	return response, nil
+}
+
+// ownCollection returns one collection of the caller's own library as
+// responses carry it, with who it is shared with.
+func (b *builderAPI) ownCollection(
+	library *bapi.TemplateLibrary,
+	collection *bapi.TemplateCollection,
+	accounts map[string]func() (string, bool, error),
+) (builderTemplateCollectionResponse, error) {
+	shares, err := b.templateShares(collection.Shares, accounts)
+	if err != nil {
+		return builderTemplateCollectionResponse{}, err
+	}
+
+	response := collectionItem(library, collection, builderTemplateOwn)
+	response.Shares = shares
+
+	return response, nil
+}
+
+// addIcon adds to the listing the custom icon with the given ID, which a
+// listed template of library names, when the library holds it.
+func (l *builderTemplateLibraryResponse) addIcon(library *bapi.TemplateLibrary, id string) {
+	icon, ok := library.Icons[id]
+	if !ok {
+		return
+	}
+
+	if l.Icons == nil {
+		l.Icons = map[string]bdoc.Icon{}
+	}
+
+	// An icon ID is the digest of its image, so two libraries that hold the
+	// same ID hold the same image: the first one listed is kept.
+	if _, listed := l.Icons[id]; !listed {
+		l.Icons[id] = icon
+	}
 }
 
 // listTemplates - GET /builder/templates.
 //
-// The answer holds the caller's own library, which is the built-in templates
-// until the caller changes it. Only the caller's library record is read: no
-// other user's library is listed or read here. A record this server cannot
-// read is reported as damaged, with none of its items.
+// The answer holds the caller's own library first, which is the built-in
+// templates until the caller changes it, then the items of other users'
+// libraries the caller sees, by owner: those shared with it and those
+// published to every user, read only. A library is read only when a hint
+// record names it (see [bapi.Service.LibrarySources]): no listing reads every
+// user's library. A record of the caller's this server cannot read is
+// reported as damaged, with none of its items.
 func (b *builderAPI) listTemplates(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderListTemplates")
 
@@ -389,13 +478,20 @@ func (b *builderAPI) listTemplates(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 
+	account := b.accountOnce(actor.user)
+
+	canShare, err := b.canShare(actor, account)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to list the templates").SetStatus(http.StatusInternalServerError)
+	}
+
 	response := builderTemplateLibraryResponse{
 		Owner:       actor.user,
 		Templates:   []builderTemplateResponse{},
 		Collections: []builderTemplateCollectionResponse{},
 		Icons:       nil,
-		CanShare:    false,
-		CanPublish:  false,
+		CanShare:    canShare,
+		CanPublish:  builderBaseAllowed(actor.role, builderVerbUpdate) && builderTemplatesPublishAllowed(actor.role),
 		Damaged:     false,
 		Limits:      builderTemplateLibraryLimits(),
 	}
@@ -407,42 +503,128 @@ func (b *builderAPI) listTemplates(w http.ResponseWriter, r *http.Request) error
 		plog.Error(plog.TypeSystem, "builder template library is unreadable", "user", actor.user, "err", err)
 
 		response.Damaged = true
-
-		return builderWriteJSON(w, http.StatusOK, "", response)
 	case err != nil:
 		return builderWebError(err, "unable to list the templates")
+	default:
+		if err := b.listOwnTemplates(&response, library); err != nil {
+			return weberror.NewWebError(err, "unable to list the templates").SetStatus(http.StatusInternalServerError)
+		}
 	}
 
+	if err := b.listOtherTemplates(r.Context(), actor, account, &response); err != nil {
+		return weberror.NewWebError(err, "unable to list the templates").SetStatus(http.StatusInternalServerError)
+	}
+
+	return builderWriteJSON(w, http.StatusOK, "", response)
+}
+
+// listOwnTemplates adds the items of the caller's own library to the
+// listing, each with who it is shared with.
+func (b *builderAPI) listOwnTemplates(response *builderTemplateLibraryResponse, library *bapi.TemplateLibrary) error {
 	accounts := map[string]func() (string, bool, error){}
 
 	for i := range library.Templates {
 		template, err := b.ownTemplate(library, &library.Templates[i], accounts)
 		if err != nil {
-			return weberror.NewWebError(err, "unable to list the templates").SetStatus(http.StatusInternalServerError)
+			return err
 		}
 
 		response.Templates = append(response.Templates, template)
-
-		// Only the icons the listed templates name are sent.
-		if icon, ok := library.Icons[template.Device.Icon]; ok {
-			if response.Icons == nil {
-				response.Icons = map[string]bdoc.Icon{}
-			}
-
-			response.Icons[template.Device.Icon] = icon
-		}
+		response.addIcon(library, template.Device.Icon)
 	}
 
 	for i := range library.Collections {
 		collection, err := b.ownCollection(library, &library.Collections[i], accounts)
 		if err != nil {
-			return weberror.NewWebError(err, "unable to list the templates").SetStatus(http.StatusInternalServerError)
+			return err
 		}
 
 		response.Collections = append(response.Collections, collection)
 	}
 
-	return builderWriteJSON(w, http.StatusOK, "", response)
+	return nil
+}
+
+// listOtherTemplates adds to the listing the items of other users' libraries
+// the caller sees (see [bapi.TemplateLibrary.VisibleTo]), by owner name, in
+// each library's order. Only the libraries a hint record names are read; one
+// that is gone or that this server cannot read is left out.
+func (b *builderAPI) listOtherTemplates(
+	ctx context.Context,
+	actor builderActor,
+	account func() (string, bool, error),
+	response *builderTemplateLibraryResponse,
+) error {
+	shared, public, err := b.drafts.LibrarySources(ctx, actor.user)
+	if err != nil {
+		return err
+	}
+
+	var (
+		libraries []*bapi.TemplateLibrary
+		read      = map[string]bool{}
+	)
+
+	for _, scope := range slices.Concat(shared, public) {
+		if read[scope] {
+			continue
+		}
+
+		read[scope] = true
+
+		library, err := b.drafts.GetLibraryByKey(ctx, scope)
+
+		switch {
+		case errors.Is(err, bapi.ErrNotFound):
+			continue
+		case errors.Is(err, bapi.ErrCorrupt):
+			plog.Warn(
+				plog.TypeSystem, "skipping a builder template library that is unreadable",
+				"user", actor.user, "library", scope, "err", err,
+			)
+
+			continue
+		case err != nil:
+			return err
+		}
+
+		libraries = append(libraries, library)
+	}
+
+	if len(libraries) == 0 {
+		return nil
+	}
+
+	// Shares apply to the account they were made for.
+	created, exists, err := account()
+	if err != nil {
+		return err
+	}
+
+	slices.SortFunc(libraries, func(a, b *bapi.TemplateLibrary) int { return strings.Compare(a.Owner, b.Owner) })
+
+	for _, library := range libraries {
+		templates, collections := library.VisibleTo(actor.user, created, exists)
+
+		for i := range library.Templates {
+			template := &library.Templates[i]
+
+			if how, ok := templates[template.ID]; ok {
+				response.Templates = append(response.Templates, templateItem(library, template, string(how), collections))
+				response.addIcon(library, template.Device.Icon)
+			}
+		}
+
+		for i := range library.Collections {
+			collection := &library.Collections[i]
+
+			if how, ok := collections[collection.ID]; ok {
+				response.Collections = append(response.Collections, collectionItem(library, collection, string(how)))
+			}
+		}
+	}
+
+	return nil
 }
 
 // createTemplates - POST /builder/templates/{owner}/items.
@@ -717,4 +899,352 @@ func (b *builderAPI) deleteTemplates(w http.ResponseWriter, r *http.Request) err
 	)
 
 	return builderWriteJSON(w, http.StatusOK, "", response)
+}
+
+// builderTemplateFailures returns the items a change left unchanged as a
+// response names them: always a list.
+func builderTemplateFailures(failed []bapi.LibraryFailure) []builderTemplateFailure {
+	failures := make([]builderTemplateFailure, 0, len(failed))
+
+	for _, failure := range failed {
+		failures = append(failures, builderTemplateFailure{Kind: failure.Kind, ID: failure.ID, Reason: failure.Reason})
+	}
+
+	return failures
+}
+
+// builderTemplateLogIDs joins, for a log, the IDs a request named that can
+// name an item. Any other was not found, and is not repeated.
+func builderTemplateLogIDs(ids []string) string {
+	kept := make([]string, 0, len(ids))
+
+	for _, id := range ids {
+		if bapi.ValidID(id) && !slices.Contains(kept, id) {
+			kept = append(kept, id)
+		}
+	}
+
+	return strings.Join(kept, ",")
+}
+
+// builderDistinct returns values without repeats, in the order first given.
+func builderDistinct(values []string) []string {
+	kept := make([]string, 0, len(values))
+
+	for _, value := range values {
+		if !slices.Contains(kept, value) {
+			kept = append(kept, value)
+		}
+	}
+
+	return kept
+}
+
+// mayShareTemplates fails the request unless actor may share items of its
+// library: that takes a user account, which a caller has no other reason to
+// hold when authentication is off, on top of config update.
+func (b *builderAPI) mayShareTemplates(actor builderActor, action string) error {
+	canShare, err := b.canShare(actor, b.accountOnce(actor.user))
+	if err != nil {
+		return weberror.NewWebError(err, "unable to check who may share builder templates").
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	// The UI never offers sharing then: see the listing's canShare.
+	if !canShare {
+		return builderForbidden(actor, action+" without a user account")
+	}
+
+	return nil
+}
+
+// getTemplateShareCandidates - GET /builder/templates/candidates.
+//
+// Who the caller may share items of its library with: every account a share
+// request would accept, whatever the caller's users permissions, sorted by
+// username. It needs what sharing needs: config update and a user account.
+func (b *builderAPI) getTemplateShareCandidates(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderGetTemplateShareCandidates")
+
+	const action = "listing who builder templates can be shared with"
+
+	actor, err := builderAuthorize(r, builderVerbShare, action)
+	if err != nil {
+		return err
+	}
+
+	if err := b.mayShareTemplates(actor, action); err != nil {
+		return err
+	}
+
+	users, err := b.listShareCandidates(func(user, created string) bool {
+		return user != actor.user && bapi.ValidateShareUser(user) == nil && created != ""
+	})
+	if err != nil {
+		return weberror.NewWebError(err, "unable to list who builder templates can be shared with").
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	return builderWriteJSON(w, http.StatusOK, "", builderShareCandidatesResponse{Users: users})
+}
+
+// builderTemplateShareErrors returns what is wrong with the users a share
+// request of owner adds and removes, before any account is read: a name that
+// cannot name a user, the owner, a user both added and removed, and more
+// users added than an item may be shared with.
+func builderTemplateShareErrors(owner string, add, remove []string) []builderShareError {
+	var problems []builderShareError
+
+	added := builderDistinct(add)
+
+	if len(added) > bapi.MaxShares {
+		problems = append(problems, builderShareError{User: "", Reason: builderShareTooMany})
+	}
+
+	for _, user := range added {
+		reason := ""
+
+		switch {
+		case bapi.ValidateShareUser(user) != nil:
+			reason = builderShareInvalidUser
+		case user == owner:
+			reason = builderShareOwner
+		case slices.Contains(remove, user):
+			reason = builderShareDuplicate
+		}
+
+		if reason != "" {
+			problems = append(problems, builderShareError{User: user, Reason: reason})
+		}
+	}
+
+	for _, user := range builderDistinct(remove) {
+		if !slices.Contains(added, user) && bapi.ValidateShareUser(user) != nil {
+			problems = append(problems, builderShareError{User: user, Reason: builderShareInvalidUser})
+		}
+	}
+
+	return problems
+}
+
+// resolveTemplateGrants binds each user a share request adds to the account
+// it names, which must exist. Refusals are logged: they may be probing for
+// user names.
+func (b *builderAPI) resolveTemplateGrants(
+	actor builderActor,
+	users []string,
+) ([]bapi.TemplateShare, []builderShareError, error) {
+	var (
+		grants   = make([]bapi.TemplateShare, 0, len(users))
+		problems []builderShareError
+	)
+
+	for _, user := range users {
+		created, exists, err := b.accountCreated(user)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if exists {
+			grants = append(grants, bapi.TemplateShare{User: user, UserCreated: created, GrantedAt: time.Time{}})
+
+			continue
+		}
+
+		plog.Warn(
+			plog.TypeSecurity,
+			"builder template share names an unknown user",
+			"user", actor.user,
+			"recipient", user,
+		)
+
+		problems = append(problems, builderShareError{User: user, Reason: builderShareUnknownUser})
+	}
+
+	return grants, problems, nil
+}
+
+// shareTemplates - POST /builder/templates/{owner}/share.
+//
+// Adds users to, and removes users from, who the named templates and
+// collections of the caller's library are shared with, read only. Only the
+// owner shares, with config update and a user account. The request is a
+// change of each list, not a new list, so it needs no entity tag. Every user
+// added must have an account, which the share is bound to; when one is
+// refused nothing changes. An item that would be shared with more than
+// [bapi.MaxShares] users, and an ID the library does not hold, are answered
+// in "failed"; the other items are changed.
+func (b *builderAPI) shareTemplates(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderShareTemplates")
+
+	const action = "sharing builder templates"
+
+	actor, err := b.templateOwner(r, builderVerbShare, action)
+	if err != nil {
+		return err
+	}
+
+	if err := b.mayShareTemplates(actor, action); err != nil {
+		return err
+	}
+
+	var request builderTemplateShareRequest
+
+	if err := builderDecodeLimit(w, r, &request, builderTemplateRequestBytes); err != nil {
+		return err
+	}
+
+	switch {
+	case len(request.Templates)+len(request.Collections) == 0:
+		return weberror.NewWebError(nil, "at least one template or collection is required").
+			SetStatus(http.StatusBadRequest)
+	case len(request.Add)+len(request.Remove) == 0:
+		return weberror.NewWebError(nil, "at least one user to add or remove is required").
+			SetStatus(http.StatusBadRequest)
+	}
+
+	if problems := builderTemplateShareErrors(actor.user, request.Add, request.Remove); len(problems) != 0 {
+		return builderWriteShareErrors(w, problems)
+	}
+
+	added := builderDistinct(request.Add)
+
+	grants, problems, err := b.resolveTemplateGrants(actor, added)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to share the templates").SetStatus(http.StatusInternalServerError)
+	}
+
+	if len(problems) != 0 {
+		return builderWriteShareErrors(w, problems)
+	}
+
+	// The hints go first, so a share never exists without the hint that
+	// lists the library to its recipient.
+	if len(added) != 0 {
+		if err := b.drafts.NoteShared(r.Context(), actor.user, added); err != nil {
+			return builderTemplateError(w, err, "unable to share the templates")
+		}
+	}
+
+	var (
+		failed []bapi.LibraryFailure
+		read   int64
+	)
+
+	library, err := b.changeOwnLibrary(r, actor, func(library *bapi.TemplateLibrary) error {
+		read = library.Revision
+		failed = library.Share(request.Templates, request.Collections, grants, request.Remove)
+
+		return nil
+	})
+	if err != nil {
+		return builderTemplateError(w, err, "unable to share the templates")
+	}
+
+	if library.Revision != read {
+		plog.Info(
+			plog.TypeSecurity, "builder template sharing changed",
+			"user", actor.user,
+			"owner", actor.user,
+			"templates", builderTemplateLogIDs(request.Templates),
+			"collections", builderTemplateLogIDs(request.Collections),
+			"added", strings.Join(added, ","),
+			"removed", strings.Join(builderDistinct(request.Remove), ","),
+		)
+	}
+
+	return builderWriteJSON(w, http.StatusOK, "", builderTemplateResult{Failed: builderTemplateFailures(failed)})
+}
+
+// publishTemplates - POST /builder/templates/{owner}/publish.
+//
+// Publishes the named templates and collections of a library to every user,
+// or with "serverWide" false takes them back. Both need config update.
+// Publishing is for the owner holding builder-templates publish: the owner
+// without it is answered 403, anyone else 404. Taking an item back is for
+// the owner, or for anyone holding builder-templates publish, of any
+// owner's library; anyone else is answered 403, since a published item is
+// seen by everyone. An ID the library does not hold is answered in "failed".
+func (b *builderAPI) publishTemplates(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderPublishTemplates")
+
+	const action = "publishing builder templates"
+
+	actor, err := builderAuthorize(r, builderVerbUpdate, action)
+	if err != nil {
+		return err
+	}
+
+	var request builderTemplatePublishRequest
+
+	if err := builderDecodeLimit(w, r, &request, builderTemplateRequestBytes); err != nil {
+		return err
+	}
+
+	switch {
+	case request.ServerWide == nil:
+		return weberror.NewWebError(nil, "serverWide is required").SetStatus(http.StatusBadRequest)
+	case len(request.Templates)+len(request.Collections) == 0:
+		return weberror.NewWebError(nil, "at least one template or collection is required").
+			SetStatus(http.StatusBadRequest)
+	}
+
+	var (
+		owner      = mux.Vars(r)["owner"]
+		serverWide = *request.ServerWide
+		mayPublish = builderTemplatesPublishAllowed(actor.role)
+	)
+
+	switch {
+	case owner != actor.user && (serverWide || bapi.ValidateShareUser(owner) != nil):
+		plog.Warn(
+			plog.TypeSecurity,
+			"builder template library request for another user not allowed",
+			"user", actor.user,
+			"owner", owner,
+			"action", action,
+		)
+
+		return builderNotFound("template library", owner)
+	case owner != actor.user && !mayPublish:
+		return builderForbidden(actor, "taking another user's builder templates back from every user")
+	case serverWide && !mayPublish:
+		return builderForbidden(actor, action+" to every user")
+	}
+
+	// The hint goes first, so an item is never published without the hint
+	// that lists its library to every user.
+	if serverWide {
+		if err := b.drafts.NotePublic(r.Context(), owner); err != nil {
+			return builderTemplateError(w, err, "unable to publish the templates")
+		}
+	}
+
+	var (
+		failed []bapi.LibraryFailure
+		read   int64
+	)
+
+	library, err := b.drafts.UpdateLibrary(r.Context(), owner, actor.user, func(library *bapi.TemplateLibrary) error {
+		read = library.Revision
+		failed = library.SetPublic(request.Templates, request.Collections, serverWide, actor.user)
+
+		return nil
+	})
+	if err != nil {
+		return builderTemplateError(w, err, "unable to publish the templates")
+	}
+
+	if library.Revision != read {
+		plog.Info(
+			plog.TypeSecurity, "builder template publication changed",
+			"user", actor.user,
+			"owner", owner,
+			"templates", builderTemplateLogIDs(request.Templates),
+			"collections", builderTemplateLogIDs(request.Collections),
+			"serverWide", serverWide,
+		)
+	}
+
+	return builderWriteJSON(w, http.StatusOK, "", builderTemplateResult{Failed: builderTemplateFailures(failed)})
 }

@@ -63,10 +63,10 @@ func init() { //nolint:gochecknoinits // config hook
 	}
 }
 
-//nolint:cyclop,funlen,gocyclo // complex init logic
-func Init() error {
-	// Ensure all built-in, default configs are present in the store.
-	err := fs.WalkDir(defaultFS, "default", func(path string, d fs.DirEntry, walkErr error) error {
+// walkDefaults calls fn with the path and the content of every built-in,
+// default config, and the config it holds.
+func walkDefaults(fn func(path string, content []byte, c store.Config) error) error {
+	return fs.WalkDir(defaultFS, "default", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -90,6 +90,45 @@ func Init() error {
 			return fmt.Errorf("unmarshaling default config %s: %w", path, err)
 		}
 
+		return fn(path, content, c)
+	})
+}
+
+// CreateDefault stores the built-in, default config of the given kind and
+// name, as [Init] does for a new store, and returns it. It is for a default
+// config added after a store was initialized: phenix runs [Init] only for a
+// store that was never initialized. A kind and name no default config has is
+// an error.
+func CreateDefault(kind, name string) (*store.Config, error) {
+	var found []byte
+
+	err := walkDefaults(func(_ string, content []byte, c store.Config) error {
+		if found == nil && strings.EqualFold(c.Kind, kind) && c.Metadata.Name == name {
+			found = content
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reading default configs: %w", err)
+	}
+
+	if found == nil {
+		return nil, fmt.Errorf("there is no default config %s/%s", kind, name)
+	}
+
+	c, err := Create(CreateFromYAML(found))
+	if err != nil {
+		return nil, fmt.Errorf("storing default config %s/%s: %w", kind, name, err)
+	}
+
+	return c, nil
+}
+
+//nolint:funlen // complex init logic
+func Init() error {
+	// Ensure all built-in, default configs are present in the store.
+	err := walkDefaults(func(path string, content []byte, c store.Config) error {
 		name := strings.ToLower(c.Kind) + "/" + c.Metadata.Name
 
 		// Don't attempt to create this default config again if it already exists in

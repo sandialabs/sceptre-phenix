@@ -25,12 +25,14 @@
 import { count, describeNames } from './announce.js';
 import { BUILTIN_TEMPLATES } from './catalog.js';
 import { settleIcons } from './icons.js';
+import { MAX_SHARES } from './limits.js';
 import {
   addNode,
   createDocument,
   networkByName,
   templateDevice,
 } from './model.js';
+import { reasonMessage, validUsername } from './share.js';
 import { utf8Length } from './text.js';
 import {
   MAX_TEMPLATE_DESCRIPTION_BYTES,
@@ -430,8 +432,9 @@ export function libraryUse(library) {
  * them, and those published server-wide). While there is no library to
  * show (see libraryUse), the built-in templates stand in for it, so a
  * diagram can still be built; while its first read is under way, nothing
- * does. A group with no template is left out, and a template of the
- * library is listed once.
+ * does. A library the server cannot read (damaged) lists none of the
+ * user's own, but still other users' templates. A group with no template
+ * is left out, and a template of the library is listed once.
  *
  * @param {object} doc
  * @param {object} [library] the user's library, as the store keeps it
@@ -442,7 +445,7 @@ export function libraryUse(library) {
 export function paletteTemplateGroups(doc, library = null) {
   const use = libraryUse(library);
   const items =
-    use === 'ready' && Array.isArray(library.items) ? library.items : [];
+    library?.loaded && Array.isArray(library.items) ? library.items : [];
   const seen = new Set();
   // Own before shared before server-wide.
   const from = (source) =>
@@ -614,9 +617,14 @@ export function collectionProblem({ name, description = '' }) {
     : null;
 }
 
-// The people an item of the library is shared with now: a share whose
-// account was removed gives no one anything.
-function sharedWith(item) {
+/**
+ * The people an item of the library is shared with now: a share whose
+ * account was removed gives no one anything.
+ *
+ * @param {object} item a template or a collection, as listed
+ * @returns {string[]} usernames
+ */
+export function sharedWith(item) {
   return (item?.shares || [])
     .filter((share) => share?.user && !share.stale)
     .map((share) => share.user);
@@ -702,4 +710,525 @@ export function membersMessage(change, templates, collection) {
   return change === 'add'
     ? `Added ${what} to ${collection}.`
     : `Removed ${what} from ${collection}.`;
+}
+
+// --- what the Node Templates tab lists -------------------------------------
+
+// The Show field's values for the templates other users share with the user
+// and for those published server-wide. An id of a library holds no ':', so
+// none of these names a collection of the user's own, whose value is its id.
+export const SHOW_SHARED = 'shared:';
+export const SHOW_SERVER = 'server:';
+
+/**
+ * What the Node Templates tab's Show field offers beside "My templates":
+ * the user's collections; then, when other users share some with the user,
+ * "Shared with me" and the collections shared; and, when some are published
+ * server-wide, "Server-wide" and those collections. Another user's
+ * collection is named with its owner.
+ *
+ * @param {object|null} library the library, as the store keeps it
+ * @returns {{own: object[], shared: boolean, sharedCollections: object[],
+ *   server: boolean, serverCollections: object[]}} each collection as
+ *   {value, label}
+ */
+export function showChoices(library) {
+  const items = Array.isArray(library?.items) ? library.items : [];
+  const collections = Array.isArray(library?.collections)
+    ? library.collections
+    : [];
+  const of = (source) =>
+    collections
+      .filter((collection) => collection?.source === source)
+      .map((collection) =>
+        source === 'own'
+          ? { value: collection.id, label: collection.name }
+          : {
+              value: templateKey(source, collection.id, collection.owner),
+              label: `${collection.name} (${collection.owner})`,
+            },
+      );
+  const has = (source) =>
+    [...items, ...collections].some((item) => item?.source === source);
+
+  return {
+    own: of('own'),
+    shared: has('shared'),
+    sharedCollections: of('shared'),
+    server: has('server'),
+    serverCollections: of('server'),
+  };
+}
+
+/**
+ * The list a value of the Show field names: whose templates it holds (own:
+ * the user's; shared or server: other users'), the collection it is, if
+ * any, and its templates, in the order the library lists them, or the
+ * collection holds them.
+ *
+ * @param {object|null} library the library, as the store keeps it
+ * @param {string} value '' for every template of the user's, the id of
+ *   one of the user's collections, SHOW_SHARED, SHOW_SERVER, or the key of
+ *   another user's collection (see templateKey)
+ * @returns {{source: string, collection: object|null, templates:
+ *   object[]}|null} null for a collection the library no longer lists
+ */
+export function shownList(library, value) {
+  const items = Array.isArray(library?.items) ? library.items : [];
+  const collections = Array.isArray(library?.collections)
+    ? library.collections
+    : [];
+  const text = String(value || '');
+
+  if (!text || text === SHOW_SHARED || text === SHOW_SERVER) {
+    const source = text ? text.slice(0, -1) : 'own';
+
+    return {
+      source,
+      collection: null,
+      templates: items.filter((template) => template?.source === source),
+    };
+  }
+
+  const at = text.indexOf(':');
+  let collection;
+
+  if (at < 0) {
+    collection = collections.find(
+      (entry) => entry?.source === 'own' && entry.id === text,
+    );
+  } else {
+    // An id holds no "/", and a user name may.
+    const rest = text.slice(at + 1);
+    const cut = rest.lastIndexOf('/');
+
+    collection = collections.find(
+      (entry) =>
+        entry?.source === text.slice(0, at) &&
+        entry.owner === rest.slice(0, cut) &&
+        entry.id === rest.slice(cut + 1),
+    );
+  }
+
+  if (!collection) {
+    return null;
+  }
+
+  const own = collection.source === 'own';
+  // The templates of the collection's library: another user's are listed
+  // as shared or server-wide, as each one is reached.
+  const byId = new Map(
+    items
+      .filter((template) =>
+        own
+          ? template?.source === 'own'
+          : template?.source !== 'own' && template?.owner === collection.owner,
+      )
+      .map((template) => [template.id, template]),
+  );
+
+  return {
+    source: collection.source,
+    collection,
+    templates: (collection.templateIds || [])
+      .map((id) => byId.get(id))
+      .filter(Boolean),
+  };
+}
+
+/**
+ * The collections of a template's library that hold it, of those the user
+ * sees, by name.
+ *
+ * @param {object|null} library the library, as the store keeps it
+ * @param {object} template as listed
+ * @returns {string[]}
+ */
+export function collectionNames(library, template) {
+  const own = template?.source === 'own';
+
+  return (library?.collections || [])
+    .filter(
+      (collection) =>
+        (collection?.source === 'own') === own &&
+        collection.owner === template.owner &&
+        (collection.templateIds || []).includes(template.id),
+    )
+    .map((collection) => collection.name);
+}
+
+/**
+ * Whom another user's template comes from, for its view in the template
+ * editor.
+ *
+ * @param {object} template as listed
+ * @returns {string} "Shared by bob", "Published by bob", or '' for one of
+ *   the user's own
+ */
+export function templateOrigin(template) {
+  switch (template?.source) {
+    case 'shared':
+      return `Shared by ${template.owner}`;
+    case 'server':
+      return `Published by ${template.owner}`;
+    default:
+      return '';
+  }
+}
+
+// --- sharing and publishing ------------------------------------------------
+
+// What items of the library are, together: templates, collections, or
+// items when they are both.
+function itemsNoun(items) {
+  const kinds = new Set(
+    items.map((item) =>
+      item?.kind === 'collection' ? 'collection' : 'template',
+    ),
+  );
+
+  return kinds.size === 1 ? [...kinds][0] : 'item';
+}
+
+/**
+ * What the Share dialog, and what it comes to, call the items it shares:
+ * one by its name, several counted.
+ *
+ * @param {{kind?: string, name: string}[]} targets templates (kind
+ *   'template' or none) and collections (kind 'collection')
+ * @returns {string} "PLC", "3 templates", "2 items"
+ */
+export function shareSubject(targets) {
+  return targets.length === 1
+    ? targets[0].name
+    : count(targets.length, itemsNoun(targets));
+}
+
+// What the owner is told when they name themselves.
+function ownedText(targets) {
+  const noun = itemsNoun(targets);
+
+  return targets.length === 1
+    ? `You own this ${noun}.`
+    : `You own these ${noun}s.`;
+}
+
+/**
+ * The people one item is shared with, as the Share dialog lists them: a
+ * share whose account was removed (stale) starts marked for removal.
+ *
+ * @param {object} item a template or a collection, as listed
+ * @returns {{user: string, stale: boolean, removed: boolean}[]}
+ */
+export function shareRows(item) {
+  return (item?.shares || [])
+    .filter((share) => share?.user)
+    .map((share) => ({
+      user: share.user,
+      stale: share.stale === true,
+      removed: share.stale === true,
+    }));
+}
+
+/**
+ * Checks a person before the Share dialog adds them to the people to add.
+ * Someone one item has, marked for removal, is kept rather than added; a
+ * share whose account was removed is replaced by one for the account the
+ * name has now.
+ *
+ * @param {string} name as typed
+ * @param {object} options
+ * @param {object[]} options.targets the items shared
+ * @param {string[]} [options.people] the people to add, so far
+ * @param {object[]} [options.rows] the one item's people (see shareRows);
+ *   none for several items
+ * @param {string} options.owner the items' owner, who shares them
+ * @param {string[]|null} options.knownUsers the usernames the items may be
+ *   shared with, or null while they are not known
+ * @param {number} [options.max] the most people an item is shared with
+ * @returns {{user: string, error: string, row?: object}} error is '' when
+ *   the person can be added; row is their row, to keep
+ */
+export function validateTemplateShareAdd(
+  name,
+  { targets, people = [], rows = [], owner, knownUsers, max = MAX_SHARES },
+) {
+  const user = String(name ?? '').trim();
+  const row = rows.find((entry) => entry.user === user && !entry.stale);
+
+  if (!user) {
+    return { user, error: 'Enter a username.' };
+  }
+
+  if (user === owner) {
+    return { user, error: ownedText(targets) };
+  }
+
+  if (people.includes(user)) {
+    return { user, error: `${user} is already in the list.` };
+  }
+
+  if (row) {
+    return row.removed
+      ? { user, error: '', row }
+      : { user, error: `${user} already has access.`, row };
+  }
+
+  if (!validUsername(user)) {
+    return { user, error: reasonMessage('invalid-user', user) };
+  }
+
+  if (Array.isArray(knownUsers) && !knownUsers.includes(user)) {
+    return { user, error: `No user named ${user}.` };
+  }
+
+  if (targets.length === 1) {
+    const kept = rows.filter((entry) => !entry.stale && !entry.removed);
+
+    if (kept.length + people.length >= max) {
+      return {
+        user,
+        error: `${targets[0].name} can be shared with at most ${max} people.`,
+      };
+    }
+  } else if (people.length >= max) {
+    return { user, error: `At most ${max} people can be added at once.` };
+  }
+
+  return { user, error: '' };
+}
+
+/**
+ * What the Share dialog changes when it is saved.
+ *
+ * @param {object} state
+ * @param {object[]} state.targets the items shared
+ * @param {string[]} state.people the people to add
+ * @param {object[]} state.rows the one item's people (see shareRows)
+ * @param {boolean|null} state.serverWide whether the items are to be
+ *   server-wide; null to leave them as they are
+ * @returns {{add: string[], remove: string[], publish: boolean|null,
+ *   count: number, asked: number}} publish is null when server-wide does
+ *   not change; count counts every change, and asked those the user made,
+ *   which leaves out the shares marked for removal because their account
+ *   was removed
+ */
+export function templateShareChange({ targets, people, rows, serverWide }) {
+  const add = [...people];
+  // Someone added again is not removed: a share whose account was removed
+  // is replaced by one for the account the name has now.
+  const removing = rows.filter((row) => row.removed && !add.includes(row.user));
+  const unchanged =
+    serverWide === null ||
+    serverWide === undefined ||
+    (targets.length === 1 && serverWide === Boolean(targets[0].serverWide));
+  const publish = unchanged ? null : serverWide;
+  const changes = add.length + removing.length + (publish === null ? 0 : 1);
+
+  return {
+    add,
+    remove: removing.map((row) => row.user),
+    publish,
+    count: changes,
+    asked: changes - removing.filter((row) => row.stale).length,
+  };
+}
+
+/**
+ * Whether other people reach a template of the user's through one of the
+ * collections that hold it: one shared with someone, or server-wide.
+ *
+ * @param {object|null} library the library, as the store keeps it
+ * @param {object} item a template or a collection, as listed
+ * @returns {boolean}
+ */
+export function reachedThroughCollection(library, item) {
+  if (item?.kind === 'collection') {
+    return false;
+  }
+
+  return (library?.collections || []).some(
+    (collection) =>
+      collection?.source === 'own' &&
+      (collection.templateIds || []).includes(item?.id) &&
+      (collection.serverWide || sharedWith(collection).length > 0),
+  );
+}
+
+/**
+ * What the page says once the Share dialog saved: whom the items were
+ * shared with, whether they are server-wide now, and, for one item, when
+ * only its owner can use it now.
+ *
+ * @param {object[]} targets the items shared
+ * @param {{add: string[], remove: string[], publish: boolean|null}} change
+ *   see templateShareChange
+ * @param {object} [options]
+ * @param {object[]} [options.rows] the one item's people, as the dialog
+ *   left them
+ * @param {boolean} [options.reached] other people still reach the one item
+ *   through a collection (see reachedThroughCollection)
+ * @returns {string}
+ */
+export function templateSharedMessage(
+  targets,
+  { add, remove, publish },
+  { rows = [], reached = false } = {},
+) {
+  const subject = shareSubject(targets);
+  const parts = [];
+
+  if (add.length) {
+    parts.push(`Shared ${subject} with ${describeNames(add)}.`);
+  }
+
+  if (publish === true) {
+    parts.push(`Published ${subject} server-wide.`);
+  } else if (publish === false) {
+    parts.push(`Removed ${subject} from server-wide.`);
+  }
+
+  if (targets.length === 1) {
+    const kept = rows.filter((row) => !row.stale && !row.removed).length;
+    const wide = publish === null ? Boolean(targets[0].serverWide) : publish;
+    // Only people who had it: a share whose account was removed gave no
+    // one anything.
+    const stopped = remove.filter((user) =>
+      rows.some((row) => row.user === user && !row.stale),
+    );
+
+    if (
+      (remove.length || publish === false) &&
+      kept + add.length === 0 &&
+      !wide &&
+      !reached
+    ) {
+      parts.push(`Only you can use ${subject} now.`);
+    } else if (stopped.length) {
+      parts.push(`Stopped sharing ${subject} with ${describeNames(stopped)}.`);
+    }
+  }
+
+  return parts.join(' ') || `Saved sharing for ${subject}.`;
+}
+
+/**
+ * Why the server left items as they were, a sentence each.
+ *
+ * @param {object[]} targets the items shared
+ * @param {{kind: string, id: string, reason: string}[]} failed see
+ *   readLibraryResult in api.js
+ * @param {number} [max] the most people an item is shared with
+ * @returns {string[]}
+ */
+export function templateShareFailures(targets, failed, max = MAX_SHARES) {
+  return failed.map(({ kind, id, reason }) => {
+    const item = targets.find(
+      (target) =>
+        target.id === id &&
+        (target.kind === 'collection' ? 'collection' : 'template') === kind,
+    );
+    const name = item?.name || id;
+
+    switch (reason) {
+      case 'too-many':
+        return sharedWith(item).length >= max
+          ? `${name} is already shared with ${max} people, the most allowed.`
+          : `Adding these people would share ${name} with more than ${max} people, the most allowed.`;
+      case 'not-found':
+        return `${name} is no longer in your library.`;
+      default:
+        return `${name} could not be changed.`;
+    }
+  });
+}
+
+/**
+ * Why the server refused a person the Share dialog adds (a 422 reason
+ * code), in words.
+ *
+ * @param {string} code
+ * @param {string} user
+ * @param {object[]} targets the items shared
+ * @param {number} [max] the most people one request adds
+ * @returns {string}
+ */
+export function templateShareReason(code, user, targets, max = MAX_SHARES) {
+  switch (code) {
+    case 'owner':
+      return ownedText(targets);
+    case 'too-many':
+      return `At most ${max} people can be added at once.`;
+    default:
+      return reasonMessage(code, user);
+  }
+}
+
+// --- other users' templates ------------------------------------------------
+
+// The most templates a library holds (api/builder), until the server says.
+const MAX_LIBRARY_TEMPLATES = 200;
+
+/**
+ * Why templates cannot be copied into the user's library, or '' when they
+ * can: a library holds so many templates at most.
+ *
+ * @param {object|null} library the library, as the store keeps it
+ * @param {number} adding how many templates the copy adds
+ * @returns {string}
+ */
+export function copyProblem(library, adding) {
+  const max = library?.limits?.templates ?? MAX_LIBRARY_TEMPLATES;
+  const own = (library?.items || []).filter(
+    (template) => template?.source === 'own',
+  ).length;
+
+  return own + adding > max
+    ? `Your library holds ${max} templates, the most it can. Delete some first.`
+    : '';
+}
+
+/**
+ * What the page says once templates of other users were copied into the
+ * user's library.
+ *
+ * @param {object[]} templates the templates copied
+ * @param {object} [collection] the collection copied with them
+ * @returns {string}
+ */
+export function copiedMessage(templates, collection = null) {
+  if (collection) {
+    return `Copied collection ${collection.name} to your library.`;
+  }
+
+  return templates.length === 1
+    ? `Copied ${templates[0].name} to your library.`
+    : `Copied ${count(templates.length, 'template')} to your library.`;
+}
+
+/**
+ * What taking other users' items back from server-wide does, for its
+ * confirmation.
+ *
+ * @param {object[]} items templates or collections, as listed (kind
+ *   'collection' for a collection)
+ * @returns {{title: string, message: string, confirmLabel: string}}
+ */
+export function unpublishQuestion(items) {
+  if (items.length === 1) {
+    const [item] = items;
+
+    return {
+      title: `Remove ${item.name} from server-wide?`,
+      message: `It stays in ${item.owner}'s library. Other people can no longer use it unless it is shared with them.`,
+      confirmLabel: 'Remove',
+    };
+  }
+
+  return {
+    title: `Remove ${shareSubject(items)} from server-wide?`,
+    message:
+      "They stay in their owners' libraries. Other people can no longer use them unless they are shared with them.",
+    confirmLabel: 'Remove',
+  };
 }

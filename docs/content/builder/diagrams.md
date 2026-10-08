@@ -1,8 +1,8 @@
 # Building a Diagram
 
 This page shows how to draw and change a diagram: devices, switches and the
-connections between them, device settings, groups, notes, layouts and the
-scenario. For the parts of the editor that these tasks use, see
+connections between them, device settings, groups, notes, colors, line
+styles, custom icons, layouts and the scenario. For the parts of the editor that these tasks use, see
 [The Editor](editor.md).
 
 The examples on this page use the Riverside Water draft of the
@@ -20,6 +20,7 @@ to the topology like this:
 | A connection from a device to a switch | An interface of the device, whose `vlan` is the network's name |
 | A device from an included topology | Nothing: `includeTopologies` names that topology |
 | A note or a group | Nothing: notes and groups only help people read the diagram |
+| Colors, line styles, custom icons and the diagram's templates | Nothing: they stay in the Builder document |
 
 For example, the connection from ws-01 to the CORP switch is this interface
 of ws-01:
@@ -52,20 +53,30 @@ a device:
   [Command palette](editor.md#command-palette)).
 
 **Device** adds a device with default settings. The **Device templates**
-fill in more:
+fill in more. Every template library starts with the five built-in
+templates of this table:
 
-| Item | Hostname | Type | OS type | Image | Description |
+| Item | Hostname | Type | OS type | Image | Description (its tooltip) |
 |---|---|---|---|---|---|
-| **Device** | node | VirtualMachine | linux | `ubuntu.qc2` | None |
+| **Device** | node | VirtualMachine | linux | `ubuntu.qc2` | A virtual machine, container or external device |
 | **Server** | server | VirtualMachine | linux | `ubuntu.qc2` | Generic Linux server |
 | **Workstation** | workstation | VirtualMachine | windows | `windows10.qc2` | Operator workstation |
 | **Router** | router | Router | minirouter | `minirouter.qc2` | Layer 3 router |
-| **Firewall** | firewall | Firewall | minirouter | `minirouter.qc2` | Perimeter firewall |
+| **Firewall** | firewall | Firewall | vyos | `vyos.qc2` | Perimeter firewall |
 | **External device** | external | HIL (external) | None | None | Hardware in the loop device |
+
+A template's description is its tooltip in **Add nodes** only: the device it
+makes has no description. You can change and delete the built-in templates,
+and make templates of your own, in a diagram or in your library (see
+[Node Templates](templates.md)). The templates of **Add nodes** are in
+groups: **This diagram**, **My library**, **Shared with me** and
+**Server-wide**.
 
 When the hostname is taken, the new device gets a number, for example
 server-2. A new device has no interfaces, so the checks warn "device
-"workstation" has no interfaces" until you add one.
+"workstation" has no interfaces" until you add one. A device made from a
+template keeps no link to it: changing or deleting the template later
+changes no device.
 
 For example, to add an engineering workstation to Riverside Water:
 
@@ -80,11 +91,12 @@ To connect ws-03 to the CORP network, see
 
 ### Routers and firewalls
 
-The **Router** and **Firewall** templates run minirouter. phenix's `vrouter`
-app configures the interfaces, routes and rulesets of a device whose type is
-Router or Firewall (see [vrouter App](../apps.md#vrouter-app)). For a VyOS
-router, such as edge-rtr, set **OS type** to `vyos` and the drive's
-**Image** to `vyos.qc2`.
+The **Router** template runs minirouter, on `minirouter.qc2`. The
+**Firewall** template runs VyOS: **OS type** `vyos` and the image
+`vyos.qc2`. phenix's `vrouter` app configures the interfaces, routes and
+rulesets of a device whose type is Router or Firewall (see
+[vrouter App](../apps.md#vrouter-app)). For a VyOS router, such as
+edge-rtr, set **OS type** to `vyos` and the drive's **Image** to `vyos.qc2`.
 
 ### External devices
 
@@ -112,12 +124,16 @@ The Inspector of a switch, for example "Network CORP", has these fields:
   diagram with an experiment, it becomes that network's entry in the
   experiment's `vlans.aliases` (see
   [Publishing a topology and an experiment](publishing.md#publishing-a-topology-and-an-experiment)).
-- **Description**, **Color** (see [Colors](#colors)) and **Position**.
+- **Description**.
+- **Edge Color**, the network's color, and **Line style**, the pattern of
+  its connections (see [Colors](#colors) and [Line styles](#line-styles)).
+- **Outline Color** and **Fill Color** of this switch.
+- **Position**.
 
 For example, to give CORP the VLAN alias 120, select the CORP switch, type
 `120` in **VLAN alias**, and select **Apply**.
 
-![The Inspector for network CORP: a note that CORP cannot be renamed because ntp-01 from the included topology corp-services is on it, Name CORP (read only), VLAN alias 120 marked as changed, Description, Color, Unapplied changes with Apply and Cancel, and Position.](../images/builder/inspector-network.png){ width="354" }
+![The Inspector for network CORP: a note that CORP cannot be renamed because ntp-01 from the included topology corp-services is on it, Name CORP (read only), VLAN alias 120 marked as changed, Description, Edge Color, Line style, Outline Color, Fill Color, Unapplied changes with Apply and Cancel, and Position.](../images/builder/inspector-network.png){ width="354" }
 
 A network that a device from an included topology is on cannot be renamed or
 removed. Its other fields can still change. In Riverside Water, that is CORP,
@@ -319,8 +335,19 @@ To group nodes:
    macOS or <kbd>Ctrl</kbd>+<kbd>G</kbd> on Windows and Linux.
 
 The new group is named "Group", or "Group 2" and so on when that name is
-taken. Select the group to change its **Title** and **Color** in the
-Inspector.
+taken. Select the group to change its fields in the Inspector, then select
+**Apply**:
+
+- **Title**: shown at the top of the group.
+- **Description**: shown under the title on the canvas, on one line.
+  Screen readers read it after the group's name.
+- **Color** (see [Colors](#colors)).
+- **Border pattern**: **Dashed** (the default), **Solid**, **Dotted** or
+  **Double**.
+- **Icon**: the icon beside the title, from the built-in icons. The default
+  is the container icon.
+- **Custom icon**: an image of your own, drawn in place of the icon (see
+  [Custom icons](#custom-icons)).
 
 To take a group apart, select it and select **Ungroup**
 (<kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>G</kbd> or
@@ -342,10 +369,12 @@ To resize a selected group from the keyboard, press
 
 **Auto-group** in the toolbar puts nodes into new groups for you:
 
-- **By network**: "Each network's switch with its devices". A device on
+- **By network**: "Each network’s switch with its devices". A device on
   several networks goes with the smallest of them.
 - **By name**: "Devices with names like web-01 and web-02". Devices whose
   hostnames share a stem go together. Switches stay out.
+- **By name pattern…**: "Nodes whose names match a regular expression".
+  See [Grouping by a name pattern](#grouping-by-a-name-pattern).
 
 Auto-group groups only the devices and switches that are in no group yet,
 and it leaves existing groups as they are. When nodes are selected, it
@@ -358,21 +387,178 @@ CORP, DMZ, INTERNET and OT, as in the Riverside Water draft. **By name** on
 Metro Campus makes six groups: app, db, dc, dist, web and ws. When there is
 nothing left to group, Auto-group changes nothing.
 
+<kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>G</kbd> on macOS, or
+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> on Windows and Linux, groups by
+network without opening the menu. The command palette has **Auto-group by
+network**, **Auto-group by name** and **Auto-group by name pattern…**.
+
 **Undo** removes the groups again.
+
+### Grouping by a name pattern
+
+**By name pattern…** opens the **Auto-group by name pattern** dialog. Type a
+JavaScript regular expression in **Name pattern**, and select **Group**. The
+pattern is matched against each name, ignoring case: a device's hostname and
+a switch's name. Names with the same matched text go in one group, named
+after that text. When the pattern has parentheses, the text of the first
+pair is used.
+
+For example:
+
+- `^[a-z]+` puts web-01 and web-02 in group web, and db-01 and db-02 in
+  group db.
+- `^(\w+)-(east|west)` groups by the part of the name before the site.
+- `-(\d)\d$` groups by the tens digit of the number at the end.
+
+As with the other rules, it groups only devices and switches that are in no
+group, only the selected ones when nodes are selected, and at least two
+nodes to a group. One **Undo** removes all the groups it made.
+
+Limits:
+
+- A pattern has at most 200 characters.
+- Only the first 255 characters of a name are matched.
+- A group's name is cut to 80 characters.
+- A pattern that takes more than 2 seconds is stopped, with "This pattern
+  takes too long to match. Use a simpler one."
+
+When nothing can be grouped, the dialog says why, for example "Nothing to
+group: the pattern matches no ungrouped device or switch." The dialog offers
+the pattern you used last. The browser keeps it until you log out; it is not
+saved in the diagram or sent to the server. The command has no default key.
+
+The pattern runs in a separate script that phenix serves. When that script
+cannot start, the dialog says "The pattern could not be checked. Reload the
+page to try again."
 
 ## Colors
 
-Networks, connections, notes and groups have a **Color** field. A network's
-color draws its switch and its connections. A connection's own **Color**
-overrides its network's.
+Each kind of node and connection has its own color fields:
+
+| Where | Field | What it colors | Values |
+|---|---|---|---|
+| Switch | **Edge Color** | The network: its switch's swatch and its connections | Any CSS color |
+| Connection | **Color** | This connection, in place of its network's color | Any CSS color |
+| Device, switch | **Outline Color** | The node's border | `#rrggbb` only |
+| Device, switch | **Fill Color** | The node's background | `#rrggbb` only |
+| Note, group | **Color** | The note or the group | Any CSS color |
+
+To set a color:
 
 - Select the swatch button before the field to pick a color: one of the
   suggested colors (Blue, Orange, Green, Purple, Red, Teal, Olive and Plum),
   **Custom color**, or **No color**.
-- Or type any CSS color in the field, for example `#1f7a5a` or `teal`.
+- Or type a color in the field, for example `#1f7a5a`, or `teal` where any
+  CSS color is allowed.
+
+**Outline Color** and **Fill Color** take a hex color such as `#2f6fbf`
+only: no color names, no short form and no transparency. Anything else shows
+"Outline Color must be a hex color, such as #2f6fbf" (or "Fill Color …") and
+is not applied. On a device they take effect at once, without **Apply**. On
+a switch they wait for **Apply**, and they belong to that switch: two
+switches of one network can differ.
+
+How the canvas draws them:
+
+- On a fill, the text and the icon are black or white, whichever reads
+  better (a contrast of at least 4.5 to 1).
+- An outline close to the canvas color gets a thin ring, so the node stays
+  visible in both themes.
+- A selected node shows the selection's border in place of its outline.
+- In a Windows contrast theme (forced colors), the system's colors are
+  drawn, not the chosen ones.
 
 A new network gets the suggested color that the fewest networks use. The
 suggested colors keep their contrast in the light and the dark theme.
+
+## Line styles
+
+A connection is drawn with a line pattern. **Line style** sets it, on a
+network (in the switch's Inspector, for all its connections) or on one
+connection (in place of its network's):
+
+- **Auto**: the pattern Builder picks from the network's place in the
+  diagram, so that networks differ without color. The choice names that
+  pattern, for example "Auto (Solid)". On a connection, **Auto** follows
+  its network.
+- **Solid**, **Dashed**, **Dotted** or **Dash-dot**.
+
+A chosen pattern may repeat on several networks. The connection's label, the
+switch it joins and its name for screen readers still name its network.
+**Line style** waits for **Apply**.
+
+## Custom icons
+
+A device or a group can show an image of your own in place of its icon. To
+choose one:
+
+1. Select the device or the group.
+2. Under **Custom icon** in the Inspector, select **Choose…**. The **Custom
+   icons** dialog opens.
+3. Select **Upload icon…** and choose an image file, or select **Use** on an
+   icon the dialog lists.
+
+![The Custom icons dialog: Upload icon…; In this diagram (1), listing the icon plc with Use and Save to my library; My library (2 of 64, 3.0 KiB of 1 MiB), listing the icons pump and valve with their sizes, each with Use and Delete; and Close.](../images/builder/custom-icons-dialog.png)
+
+The field then shows the icon, its name, **Change…** and **Remove**. On a
+device, the change takes effect at once, without **Apply**, as one step of
+**Undo**. On a group, it waits for **Apply**. A switch and a note have no
+custom icon.
+
+The dialog lists two places:
+
+- **In this diagram**: the icons the diagram carries. **Save to my library**
+  copies one into your library; "In my library" says it is there already.
+- **My library**: your own icons, kept on the phenix server, with how many
+  there are and how much room they take, for example "My library (2 of 64,
+  3.0 KiB of 1 MiB)". Each has **Use** and **Delete**.
+
+### Uploading an icon
+
+**Upload icon…** takes a PNG, JPEG, GIF, WebP or SVG file of at most 5 MiB.
+The browser converts it to a PNG of at most 96 by 96 pixels, in the
+picture's own proportions, and uploads that PNG to your library. A small
+picture is not enlarged; an SVG is drawn as large as an icon may be. The
+icon is named after the file, without its extension, cut to 64 bytes. An
+upload your library already holds says "Your library already has this icon,
+as" and its name.
+
+An SVG is drawn on its own: nothing it refers to outside its own file
+(style sheets, images, fonts) is loaded, so those parts are missing from the
+icon. When nothing of it can be drawn, or (in Chrome) when it embeds HTML,
+the dialog says "This image could not be converted. Save it as a PNG and
+upload it again." Browsers differ on such files: save the picture as a PNG.
+
+An icon is drawn at 16 pixels on the canvas (14 in the Outline), in its own
+colors, the same in the light and the dark theme. Choose one that reads on
+both, or give the node a **Fill Color**.
+
+### The diagram keeps its own copy
+
+A diagram keeps a copy of each icon it uses. It shows its icons on another
+phenix server, for another user, and after the icon is deleted from the
+library. Copy and paste carry the icons of the nodes, also into another
+diagram in the same browser tab. Downloads as Builder JSON or YAML, PNG and
+SVG include them. An icon that no node or template of the diagram uses any
+more leaves the diagram with the edit that removed its last use; **Undo**
+brings it back.
+
+A diagram holds at most 32 custom icons. The dialog refuses a 33rd: "This
+diagram already has 32 custom icons. Remove one from a node first." A paste
+or another edit that would pass 32 leaves the icon out, the node keeps its
+built-in icon, and Builder says "1 custom icon was left out: a diagram holds
+at most 32."
+
+### Your icon library
+
+Your icon library holds at most 64 icons and 1 MiB of them. It is yours
+only: it is never shared, and no role can read another user's. An icon
+cannot be renamed or replaced: delete it and upload it again.
+
+**Delete** asks "Delete icon?" and says "Delete NAME from your library?
+Diagrams that use it keep their copy." Deleting an icon changes no diagram.
+There is no `phenix` command for the icon library: use the editor or the
+REST API.
 
 ## Layouts
 
@@ -390,8 +576,8 @@ its devices in rows on a grid, with the switches below them.
 | **Dagre** | Networks in layers, left to right | Each network's devices in a column beside their switch, and the networks in layers along the connections between them. |
 | **Standard** | Devices above switches, top to bottom | Every device in a row above the switches, from top to bottom. |
 
-**ELK layered** suits most diagrams. The **Layout for drafts without one**
-setting describes each layout the same way.
+**ELK layered** suits most diagrams. The **Default layout** setting
+describes each layout the same way.
 
 Layouts keep groups together: a group's members stay inside it, and no other
 node goes in.
@@ -411,9 +597,11 @@ where it was"), until you change the diagram some other way. **Undo** puts
 the nodes back too.
 
 **Auto layout** in the command palette runs the draft's layout again, or the
-Settings layout on a draft at **Default**. **Layout for drafts without one**
-in [Settings](editor.md#settings) chooses that layout. **ELK layered** is
-the default.
+Settings layout on a draft at **Default**. Its keys are
+<kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>L</kbd> on macOS and
+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> on Windows and Linux.
+**Default layout** in [Settings](editor.md#settings) chooses that layout.
+**ELK layered** is the default.
 
 Publishing, and a download as Topology YAML, ignore positions and layouts.
 
@@ -518,7 +706,36 @@ are in the diagram:
 
 To change dns-01, change the topology corp-services, then import
 riverside-water again (see
-[Importing a topology or experiment](import-upload-download.md#importing-a-topology-or-experiment)).
+[Importing a topology or experiment](import-upload-download.md#importing-a-topology-or-experiment)),
+or make the included devices part of a new diagram (see
+[Making included devices editable](#making-included-devices-editable)).
 Publishing does not copy included devices: the published topology names
 corp-services in `includeTopologies` (see
 [Included topologies](publishing.md#included-topologies)).
+
+### Making included devices editable
+
+To change included devices in the diagram itself, make a copy of the diagram
+in which they are its own nodes:
+
+- When you import the topology, choose **Combine into one new topology**
+  under **Included topologies** (see
+  [Importing a topology or experiment](import-upload-download.md#importing-a-topology-or-experiment)).
+- In a draft that is open, run **Combine included nodes into a new draft**
+  from the command palette, or select an included device and select
+  **Combine into a new draft** in the Inspector.
+
+The command makes a new draft and opens it. The draft you had open stays as
+it is. The new draft is named after the diagram, with "-combined" at the
+end, for example Riverside-Water-combined, and gets a number when a topology
+or one of your drafts already has that name. Builder says, for example,
+"Combined 2 included nodes into new draft Riverside-Water-combined. Draft
+Riverside Water is unchanged."
+
+In the new draft, the included devices are ordinary devices: you can change,
+delete and connect them, and the checks look at them too. The draft is not
+linked to riverside-water, so publishing it makes a new topology. An
+included topology whose nodes the diagram never had stays named in
+`includeTopologies`, and Builder says so: "It still includes", the
+topology's name, and "whose nodes are not in the diagram." A role that
+cannot create drafts cannot combine.

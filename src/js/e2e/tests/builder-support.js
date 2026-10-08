@@ -891,9 +891,11 @@ async function seedTemplates(
 }
 
 // The Node Templates tab of the drafts page, its cards and the row above
-// them.
+// them. Another user's card is named by its owner and id (`theirs`), since
+// every library starts with the same built-in ids.
 function templateLibrary(page) {
   const by = (id) => page.getByTestId(id);
+  const theirs = (prefix) => (owner, id) => by(`${prefix}-${owner}-${id}`);
 
   return {
     tab: by('drafts-tab-templates'),
@@ -908,17 +910,29 @@ function templateLibrary(page) {
     card: (id) => by(`template-card-${id}`),
     select: (id) => by(`template-select-${id}`),
     edit: (id) => by(`template-edit-${id}`),
+    share: (id) => by(`template-share-${id}`),
     remove: (id) => by(`template-delete-${id}`),
+    theirCard: theirs('template-card'),
+    theirSelect: theirs('template-select'),
+    owner: theirs('template-owner'),
+    view: theirs('template-view'),
+    copy: theirs('template-copy'),
     bar: by('bulk-bar-templates'),
     all: by('bulk-all-templates'),
     count: by('bulk-count-templates'),
     collect: by('bulk-collect-templates'),
     collectItem: (id) => by(`bulk-collect-templates-item-${id}`),
     uncollect: by('bulk-uncollect-templates'),
+    bulkShare: by('bulk-share-templates'),
     bulkDelete: by('bulk-delete-templates'),
+    bulkCopy: by('bulk-copy-templates'),
+    bulkUnpublish: by('bulk-unpublish-templates'),
     block: by('collection-block'),
     editCollection: by('collection-edit'),
+    shareCollection: by('collection-share'),
     deleteCollection: by('collection-delete'),
+    copyCollection: by('collection-copy'),
+    unpublishCollection: by('collection-unpublish'),
     dialog: {
       root: by('collection-dialog'),
       name: by('collection-name'),
@@ -1113,14 +1127,43 @@ async function deleteOwnDrafts(api, username) {
   }
 }
 
-// A role that may read and change configs, by any name, and so make, change,
-// publish and delete drafts of its own, and read the schemas and disks the
-// editor offers; it may not see other users' drafts (no builder-drafts) or
-// list users. Then
-// one user with it for each of SHARING_PARTS, named for the test, each
-// signed in with a browser context of its own (the session as a sign-in
-// leaves it) and an API client. Everything is deleted afterwards.
-async function sharingUsers({ browser, playwright }, use, testInfo) {
+// Deletes the templates and collections of the library `api`'s user owns,
+// once it was changed, so nothing of it stays shared or server-wide: a
+// library outlives its user, and other tests list what is server-wide.
+async function emptyOwnLibrary(api) {
+  const listed = await api.get(LIBRARY).catch(() => null);
+  if (!listed || !listed.ok()) {
+    return;
+  }
+
+  const { owner, templates = [], collections = [] } = await listed.json();
+  const own = (items) =>
+    items.filter((item) => item.source === 'own').map((item) => item.id);
+  const changed =
+    collections.some((item) => item.source === 'own') ||
+    templates.some((item) => item.source === 'own' && item.created);
+
+  if (owner && changed) {
+    await libraryChange(
+      api,
+      'post',
+      `${LIBRARY}/${encodeURIComponent(owner)}/delete`,
+      {
+        data: {
+          ...(own(templates).length ? { templates: own(templates) } : {}),
+          ...(own(collections).length ? { collections: own(collections) } : {}),
+        },
+      },
+    ).catch(() => {});
+  }
+}
+
+// Signs in as the administrator, who then makes the roles and users a test
+// asks for (users are named `<part>-<nonce>`), each user signed in with a
+// browser context of their own (the session as a sign-in leaves it) and an
+// API client. dispose() deletes what the users made (drafts, and their
+// template library's items), the users and the roles.
+async function userMaker({ browser, playwright }, testInfo) {
   const { baseURL, viewport } = testInfo.project.use;
   const nonce = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
   const guest = await playwright.request.newContext({ baseURL });
@@ -1129,34 +1172,38 @@ async function sharingUsers({ browser, playwright }, use, testInfo) {
     baseURL,
     (await signIn(guest, ADMIN_USER, ADMIN_PASS)).token,
   );
-  const roleName = `E2E Builder Author ${nonce}`;
-  const roleConfig = `e2e-builder-author-${nonce}`;
-  const created = await admin.post(`${API}/configs`, {
-    data: {
-      apiVersion: 'phenix.sandia.gov/v1',
-      kind: 'Role',
-      metadata: { name: roleConfig },
-      spec: {
-        roleName,
-        policies: [
-          {
-            // "*/*" names a config in full, such as Topology/site, which
-            // publishing a topology and opening its diagram are checked by.
-            resources: ['configs', 'configs/*'],
-            resourceNames: ['*', '*/*'],
-            verbs: ['list', 'get', 'create', 'update', 'delete'],
-          },
-          { resources: ['schemas'], resourceNames: ['*'], verbs: ['get'] },
-          { resources: ['disks'], resourceNames: ['*'], verbs: ['list'] },
-        ],
-      },
-    },
-  });
-  expect(created.ok(), await created.text()).toBeTruthy();
+  const roles = [];
+  const users = [];
 
-  const users = {};
-  try {
-    for (const part of SHARING_PARTS) {
+  return {
+    nonce,
+    admin,
+
+    // Makes a role from a Role config: an object, or the text of a YAML
+    // file. Returns its config name.
+    async role(config) {
+      const yaml = typeof config === 'string';
+      const created = await admin.post(`${API}/configs`, {
+        ...(yaml
+          ? {
+              headers: { 'Content-Type': 'application/x-yaml' },
+              data: config,
+            }
+          : { data: config }),
+      });
+      expect(created.ok(), await created.text()).toBeTruthy();
+
+      const name = yaml
+        ? config.match(/^ {2}name: (\S+)$/m)[1]
+        : config.metadata.name;
+      roles.push(name);
+
+      return name;
+    },
+
+    // Makes a user of the role named `roleName` (its roleName), and signs
+    // them in.
+    async user(part, roleName) {
       const username = `${part}-${nonce}`;
       const made = await admin.post(`${API}/users`, {
         data: {
@@ -1186,28 +1233,79 @@ async function sharingUsers({ browser, playwright }, use, testInfo) {
       const issues = [];
       attachCapture(page, issues);
 
-      users[part] = {
+      const user = {
         username,
         context,
         page,
         issues,
         api: await signedClient(playwright, baseURL, session.token),
       };
+      users.push(user);
+
+      return user;
+    },
+
+    async dispose() {
+      for (const user of users) {
+        await deleteOwnDrafts(user.api, user.username);
+        await emptyOwnLibrary(user.api);
+        await user.context.close().catch(() => {});
+        await user.api.dispose();
+      }
+      for (const { username } of users) {
+        await admin.delete(`${API}/users/${username}`).catch(() => {});
+      }
+      for (const name of roles) {
+        await admin.delete(`${API}/configs/Role/${name}`).catch(() => {});
+      }
+      await admin.dispose();
+      await guest.dispose();
+    },
+  };
+}
+
+// The role of the sharing tests' users: it may read and change configs, by
+// any name, and so make, change, publish and delete drafts of its own, and
+// read the schemas and disks the editor offers; it may not see other users'
+// drafts (no builder-drafts), list users, or publish templates server-wide.
+function authorRole(nonce) {
+  return {
+    apiVersion: 'phenix.sandia.gov/v1',
+    kind: 'Role',
+    metadata: { name: `e2e-builder-author-${nonce}` },
+    spec: {
+      roleName: `E2E Builder Author ${nonce}`,
+      policies: [
+        {
+          // "*/*" names a config in full, such as Topology/site, which
+          // publishing a topology and opening its diagram are checked by.
+          resources: ['configs', 'configs/*'],
+          resourceNames: ['*', '*/*'],
+          verbs: ['list', 'get', 'create', 'update', 'delete'],
+        },
+        { resources: ['schemas'], resourceNames: ['*'], verbs: ['get'] },
+        { resources: ['disks'], resourceNames: ['*'], verbs: ['list'] },
+      ],
+    },
+  };
+}
+
+// One user of authorRole for each of SHARING_PARTS, named for the test.
+// Everything is deleted afterwards.
+async function sharingUsers({ browser, playwright }, use, testInfo) {
+  const maker = await userMaker({ browser, playwright }, testInfo);
+  const users = {};
+
+  try {
+    const role = authorRole(maker.nonce);
+    await maker.role(role);
+    for (const part of SHARING_PARTS) {
+      users[part] = await maker.user(part, role.spec.roleName);
     }
 
     await use(users);
   } finally {
-    for (const user of Object.values(users)) {
-      await deleteOwnDrafts(user.api, user.username);
-      await user.context.close().catch(() => {});
-      await user.api.dispose();
-    }
-    for (const part of SHARING_PARTS) {
-      await admin.delete(`${API}/users/${part}-${nonce}`).catch(() => {});
-    }
-    await admin.delete(`${API}/configs/Role/${roleConfig}`).catch(() => {});
-    await admin.dispose();
-    await guest.dispose();
+    await maker.dispose();
   }
 }
 
@@ -1254,6 +1352,18 @@ const test = base.test.extend({
   },
 
   sharingUsers,
+
+  // Makes the roles and users a test asks for, on a server with
+  // authentication on, and deletes them afterwards (see userMaker).
+  userMaker: async ({ browser, playwright }, use, testInfo) => {
+    const maker = await userMaker({ browser, playwright }, testInfo);
+
+    try {
+      await use(maker);
+    } finally {
+      await maker.dispose();
+    }
+  },
 });
 
 // --- custom icons -------------------------------------------------------------
@@ -1337,6 +1447,7 @@ module.exports = {
   PNG_SIGNATURE,
   SAVED,
   SCHEMA_URI,
+  authorRole,
   backdropPoint,
   blankDocument,
   contrast,

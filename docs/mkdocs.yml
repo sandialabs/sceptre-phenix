@@ -86,6 +86,7 @@ nav:
     - Drafts: builder/drafts.md
     - The Editor: builder/editor.md
     - Building a Diagram: builder/diagrams.md
+    - Node Templates: builder/templates.md
     - Import, Upload and Download: builder/import-upload-download.md
     - Publishing: builder/publishing.md
     - Administration: builder/administration.md

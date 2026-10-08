@@ -778,6 +778,40 @@ func TestBuilderResponseHeaders(t *testing.T) {
 		}
 	}
 
+	// A request under the Builder's paths that matches no route, or no
+	// method of a route, is answered by the router, with the same headers;
+	// one outside them, with neither.
+	for _, tt := range []struct {
+		method, path      string
+		status            int
+		builder, iconsCSP bool
+	}{
+		{http.MethodGet, "/builder/no-such-route", http.StatusNotFound, true, false},
+		{http.MethodPost, "/builder/published", http.StatusNotFound, true, false},
+		{http.MethodPatch, "/builder/drafts", http.StatusMethodNotAllowed, true, false},
+		{http.MethodPut, "/schemas/builder/v1", http.StatusMethodNotAllowed, true, false},
+		{http.MethodPatch, builderIconsRoute, http.StatusMethodNotAllowed, true, true},
+		{http.MethodGet, builderIconsRoute + "/x/y", http.StatusNotFound, true, true},
+		{http.MethodGet, "/no-such-route", http.StatusNotFound, false, false},
+		{http.MethodPatch, "/configs/x/x", http.StatusMethodNotAllowed, false, false},
+	} {
+		recorder := harness.do(builderRequest{method: tt.method, path: tt.path, user: builderTestOwner})
+		what := fmt.Sprintf("%s %s (%d)", tt.method, tt.path, recorder.Code)
+		header := recorder.Header()
+
+		if recorder.Code != tt.status {
+			t.Errorf("%s: status = %d, want %d", what, recorder.Code, tt.status)
+		}
+
+		if got, want := header.Get("X-Content-Type-Options"), map[bool]string{true: builderNoSniff}[tt.builder]; got != want {
+			t.Errorf("%s: X-Content-Type-Options = %q, want %q", what, got, want)
+		}
+
+		if got, want := header.Get("Content-Security-Policy"), map[bool]string{true: builderIconCSP}[tt.iconsCSP]; got != want {
+			t.Errorf("%s: Content-Security-Policy = %q, want %q", what, got, want)
+		}
+	}
+
 	// The headers are set before the request is answered, so they are also
 	// on what a middleware registered later, as authentication is, answers
 	// in place of the route.

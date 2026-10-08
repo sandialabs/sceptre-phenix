@@ -276,6 +276,15 @@ func (b *builderAPI) getShareCandidates(w http.ResponseWriter, r *http.Request) 
 // shareCandidates returns, sorted by username, every user whom a share of the
 // draft would be accepted for (see [builderShareAccepts]).
 func (b *builderAPI) shareCandidates(meta *bapi.DraftMetadata) ([]builderShareCandidate, error) {
+	return b.listShareCandidates(func(user, created string) bool {
+		return builderShareAccepts(meta, user, created)
+	})
+}
+
+// listShareCandidates returns, sorted by username, every user with an account
+// that accepts reports true for, given the user name and the account's
+// creation time ("" when it has none).
+func (b *builderAPI) listShareCandidates(accepts func(user, created string) bool) ([]builderShareCandidate, error) {
 	candidates := []builderShareCandidate{}
 
 	accounts, err := b.listConfigs("User")
@@ -286,7 +295,7 @@ func (b *builderAPI) shareCandidates(meta *bapi.DraftMetadata) ([]builderShareCa
 	for _, account := range accounts {
 		name := account.Metadata.Name
 
-		if !builderShareAccepts(meta, name, account.Metadata.Created) {
+		if !accepts(name, account.Metadata.Created) {
 			continue
 		}
 

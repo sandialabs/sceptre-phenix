@@ -4,15 +4,25 @@ The Builder is phenix's web topology editor, built on Vue Flow. This file
 holds everything about it that the main phenix skill leaves out.
 
 **Read this file when** a task involves Builder: its drafts, sharing,
-publishing, import, upload, download or generation, its `/api/v1/builder/*`
-or `/schemas/builder/v1` routes, the `builder-drafts` RBAC resource, the Builder
+publishing, import, upload, download or generation, the conversion of legacy
+diagrams, custom icons, node templates and their libraries, its
+`/api/v1/builder/*` or `/schemas/builder/v1` routes, the `builder-drafts` and
+`builder-templates` RBAC resources or the built-in Builder role, the Builder
 document format (`builder/v1`), the `builder-doc` annotation, Builder files
 named by `builder-doc.path`, `phenix builder publish`, or any Builder code
 (see
 [Working on Builder code](#working-on-builder-code)). The legacy
 Builder of earlier releases (mxGraph, `builder-xml` topologies) was removed
-in sandialabs/sceptre-phenix#442; topologies it saved still carry
-`builder-xml`.
+in sandialabs/sceptre-phenix#442 (the last commit with it is `a0aeaa4e`);
+topologies it saved still carry `builder-xml`, and the Builder converts
+them (see [Legacy import](#legacy-import)).
+
+Words, as the UI and the user docs use them: **Import** makes a draft from a
+phenix config (stored, or a config file; `POST /builder/generate`);
+**Upload** opens a file that is already a diagram (a Builder document, or a
+legacy diagram through `POST /builder/legacy`), or a published diagram;
+**Download** saves the open diagram as a file. The Builder is in every
+`phenix ui`; nothing turns it on or off, and RBAC is the only control.
 
 ## Where it runs
 
@@ -24,9 +34,12 @@ a Builder document file and needs no running server
 sharing and everything else are in the REST API and the web UI only.
 Drafts autosave separately from phenix configs; in the web UI and REST API
 only the explicit Publish action creates or updates topology, scenario, or
-experiment configs. Its Router and
-Firewall device templates create `minirouter` nodes (image `minirouter.qc2`)
-of type `Router` and `Firewall`, which the `vrouter` app configures. The
+experiment configs. The five built-in device templates (`server`,
+`workstation`, `router`, `firewall`, `external`; fixture
+`types/builder/testdata/builtin-templates.json`, `BuiltinTemplates()` in Go,
+`BUILTIN_TEMPLATES` in `catalog.js`) write no description into the node.
+Router is type `Router` running `minirouter` on `minirouter.qc2`; Firewall
+is type `Firewall` running `vyos` on `vyos.qc2`. The
 Inspector suggests drive images, and the diagram checks flag a missing one,
 from `GET /disks`; without the `disks` `list` permission it does neither.
 
@@ -36,10 +49,29 @@ Builder works over plain HTTP as well as HTTPS. A published diagram
 opens read only; Edit as a draft creates a draft from it (or reopens the draft
 made from it before), which needs `configs` `create`, so a role with only
 `list`/`get` can view drafts and published diagrams but cannot create, import,
-upload, or publish. Configs' edit button for a Builder topology links to
-`/builder?topology=<name>`, which opens the user's draft of it (making one
-the first time) and then names it as `?draft=<owner>/<id>`, so a reload reopens
-that draft. The Inspector also edits a node's labels,
+upload, or publish. On the Configs page the Builder tag of a topology
+(`builder` for `builder-doc`, `builder legacy` for `builder-xml`) is a
+`<router-link>`, and the viewer has a button left of Edit Config ("Open in
+Builder" for `builder-doc`, "Import into Builder" for any other topology,
+the latter only with `configs` `create`); both, and the edit button of a
+`builder-doc` topology, go to `builderLink(config)` =
+`/builder?topology=<name>` (`builderAction`, `builderLink`,
+`builderTagLabel` in `builder/configs.js`). `openLinked` in `Builder.vue`
+then opens, for a topology with a current published document,
+`draftForPublished(drafts, published, token)` in this order: the user's
+draft that published it, a draft shared with the user for edit that
+published it, the user's draft made from it (`builder-doc/<id>` token),
+else a new draft (`store.openPublishedDocument`); without `configs`
+`create` and no such draft, the published diagram read only. Any other
+listed topology (plain, legacy, or `builder-doc` naming no document) opens
+the Import dialog with `initial: {kind: 'topology', name}` and nothing is
+made until Import; errors: "Topology <name> does not exist, or you may not
+read it." and "Topology <name> has no Builder diagram, and your role cannot
+create drafts to import it. Select its name in Configs to view it." The
+address then names the draft as `?draft=<owner>/<id>`, so a reload reopens
+that draft. Edit on a `builder-xml` topology opens the text editor with
+`builder-xml: <SNIPPED>`; the diagram is written back unchanged while that
+line stays, and deleting the line removes it. The Inspector also edits a node's labels,
 annotations, and advanced (minimega `vm config`) settings. An interface's kind
 picker offers Static or OSPF, DHCP or manual, and Serial; the Protocol and Type
 fields under it hold the rest. With nothing
@@ -77,7 +109,7 @@ layout that last laid it out: the one chosen in the toolbar's layout menu, or
 the one Auto layout or Auto-group ran. The layout menu names it, or says
 Default, with no layout checked, for a draft without one (imported, uploaded,
 blank or placed by hand). On such a draft, Auto layout and Auto-group run the
-Settings layout ("Layout for drafts without one") and the draft then keeps
+Settings layout ("Default layout") and the draft then keeps
 it. A run that moves nothing keeps no layout. Undo and Restore previous layout
 bring Default back. A document may also hold each connection's `route` as a
 layout drew it; publishing and Topology YAML ignore both. ELK layered lays each
@@ -126,6 +158,22 @@ toolbar has Draft History right after Minimap, then the save state, which is tex
 toolbar's arrow keys pass by. Focus
 mode (⇧⌘F or Ctrl+Shift+F) works on both views and stays on between them,
 until the user turns it off or leaves Builder.
+
+Default keys added in this release: Settings… ⌥⇧S / Alt+Shift+S (editor and
+drafts page), Auto layout ⌥⇧L / Alt+Shift+L and Auto-group by network
+⌥⇧G / Alt+Shift+G (editor), none of them in text fields. The Shortcuts
+button shows its key (`?`) and Settings' tooltip its own; the list of the
+canvas keys is in the user docs' editor page, not under the canvas. The
+palette has a command per download format (Download Builder JSON, …,
+Download PNG), all found by `export`; `send` finds Share; `legacy` finds
+Upload and Import. Auto-group has a third rule, By name pattern… (dialog
+"Auto-group by name pattern", a JavaScript regular expression matched
+ignoring case, run in a same-origin worker, `grouping.js` and
+`groupingWorker.js`: at most 200 characters, the first 255 characters of a
+name, 2000 ms; the last pattern is kept in `phenix.builder.groupPattern`
+and removed at logout). Settings: "Default layout", and "Zoom when a
+diagram opens" with 100%, Fit, or Custom (20 to 200 percent, step 5). Each
+header count is a button that selects every item of its kind.
 
 Each side column (Add nodes and Outline, the Inspector) has a Hide toggle under
 its Widen toggle, which folds the column into a narrow strip holding a Show
@@ -210,6 +258,40 @@ can be read. They cannot be opened, only deleted with that `etag`; a `412` on
 Publishing still requires the applicable config, scenario, and experiment
 permissions; Builder draft access does not bypass them.
 
+`GET /builder/drafts` rows and draft responses carry `canDelete` (computed
+on every read, never stored): another user's draft has it when the role
+holds `builder-drafts` `delete` and `configs` `delete`, and the drafts page
+then offers Delete on its card. Draft responses (one draft, `POST
+/builder/drafts`, the draft in a publish answer; never the listing) carry
+`experiment`, and stored rows of `GET /builder/documents` too: the name of
+an experiment the publication made that still exists, read from its
+`builder-experiment` annotation on every request, only for a caller with
+`experiments` `get` on it (one is named: the draft's last publication's,
+then one recording the document, then the first by name).
+
+`builder-templates` `publish` (no resource names; a literal check,
+`builderTemplatesPublishAllowed` in `web/builder.go`, so `make generate`
+records it) lets a role publish template library items to every user and
+take any user's server-wide item back. The icon and template libraries are
+the caller's own: no role, also not Global Admin or `builder-drafts`, reads
+or changes another user's (404), except taking back a server-wide item.
+
+The built-in role `Builder` (`api/config/default/builder.yml`,
+`metadata.name: builder`) holds every Builder permission: `configs` all five
+verbs on `Topology/*`, `Scenario/*`, `Experiment/*` only (never `*/*`, which
+would expose User and Role configs: password hashes and role changes),
+`builder-drafts` `list`/`get`/`update`/`delete` on
+`*`/`*/*`, `builder-templates` `publish`, `schemas` `get`, `topologies` and
+`scenarios` `list`/`get`, `experiments` `list`/`get`/`create`/`update`,
+`disks` `list`. `rbac.EnsureBuilderTemplatesPublishPermission` (called from
+`web.Init` at every start) creates it when no role is named `builder` or has
+role name `Builder` (so old stores get it, and a deleted one comes back),
+and adds the `builder-templates` `publish` policy to an existing role of
+that name and to the users assigned it, changing nothing else. Of the other
+built-in roles only Global Admin can publish templates (`*`). The example
+roles `docs/content/builder/examples/roles/topology-*.role.yaml` are for
+sites that want less.
+
 ## Saving: snapshots, ETags and the local queue
 
 A snapshot append (`POST /builder/drafts/{owner}/{draft}/snapshots`) may carry
@@ -260,7 +342,8 @@ Failing such a request would only make the client retry with a stale tag.
 
 `GET /builder/sources` groups configs by kind: `topologies` and `experiments`
 (what a document can be generated from, reported as `generatable: true`),
-`scenarios` (selectable when publishing) and `images` (node property editing).
+`scenarios` (selectable when publishing) and `images` (node property editing;
+empty for the built-in Builder role, which has no `configs` on `Image/*`).
 Each config is filtered through the `configs` permission *and* the kind specific
 `list` permission that already gates the kind elsewhere (`topologies`,
 `experiments`, `scenarios`); `Image` configs have no kind specific vocabulary,
@@ -283,7 +366,35 @@ rest. `POST /builder/generate` also sets `source.importedAt` (RFC 3339, UTC).
 
 `POST /builder/generate` accepts either `{"source":"Topology/name"}` (or an
 Experiment source) or `{"content":"..."}` containing an uploaded JSON/YAML
-Topology or Experiment. Uploaded sources are reported as `stored: false` and
+Topology or Experiment, plus the import options `includes` (`""`/`"keep"`,
+or `"combine"`), `copy` (bool) and `name` (the new topology name; only with
+`copy` or `combine`, else 400). `combine` (`bdoc.WithCombinedIncludes()`,
+then `Document.CombineIncludes` in `types/builder/detach.go`) makes every
+readable included node the document's own; includes that could not be read
+(missing, forbidden, a file path, past the 100th) stay in
+`source.includeTopologies` with the warning `Included topology X was not
+combined and stays in includeTopologies: publishing keeps the reference.`
+`copy` or `combine` then run `Document.Detach(newName)`: `source.kind`
+`manual`, no config named, document name = the new name (default
+`<name>-copy` / `<name>-combined`; 1 to 512 bytes, config name pattern; not
+the stored source's own name, else 422; the server does not look for a free
+name, the dialog proposes one with `uniqueName`). Neither is allowed for an
+Experiment (422 `only a topology can be combined or copied on import`). The
+draft of a copy or combine gets source token `''` (stored source) and so
+publishes a new topology and cannot update the source. `source.unresolvedIncludes`
+(keep mode) lists included topologies whose nodes are not in the document;
+informational, Publish ignores it. A config file needs `metadata.name`
+(422 otherwise). `GET /builder/sources` topology rows gain `includeCount`
+(left out when 0; only for a topology the caller may `get`), which the
+Import dialog uses to offer "Included topologies" (`dialogs/importOptions.js`,
+`uploadedConfigInfo` for a file). A stored topology that has `builder-xml`
+and no `builder-doc` is converted from its legacy diagram by
+`(*builderAPI).generate` (see [Legacy import](#legacy-import)). The editor
+command "Combine included nodes into a new draft" (and the Inspector button
+"Combine into a new draft" under an included device's lock note) does the
+same as combine on the open draft, client side (`combineIncluded` in
+`model.js` and `store.js`), into a new draft with a name no topology and no
+draft of the user's has. Uploaded sources are reported as `stored: false` and
 receive uploaded provenance, so they can create publication targets but cannot
 authorize a Topology or Experiment update. Uploaded `content` needs `configs`
 `create` (a stored `source` needs only read permissions): uploads are parsed
@@ -760,7 +871,11 @@ running `phenix ui`.
   changed after it was published, and replacing it would discard that
   change`, or `topology X was not published from a Builder document that is
   still stored, and this document was not made from the topology as it is
-  now`. A `builder-xml` topology is never replaced. There is no force flag.
+  now` (`generatedFrom`, which compares `bdoc.ImportDigest`, so a
+  `builder-xml` topology is replaced only by a document imported from it as
+  it is now, diagram included). An update of a `builder-xml` topology
+  deletes the annotation (`ReplaceLegacyDiagram`) and warns. There is no
+  force flag.
   An update keeps the topology's other annotations and an existing `path`.
 - `--dry-run` runs every check, writes nothing, and prints a report on
   stdout (Document, File, Digest, Document ID, optional Path, Topology with
@@ -789,6 +904,187 @@ document; use phenix builder publish`, and named on the command line it is
 refused with `<file> is a Builder document, not a configuration: use
 "phenix builder publish <file>" to create its topology`.
 
+## Legacy import
+
+The converter is pure Go in `src/go/types/builder/` (`legacy_xml.go` reads,
+`legacy.go` converts): `DecodeLegacy(bytes)` → `*LegacyDiagram` or a
+`*LegacyError{Reason, Message}` (reasons `not-diagram`, `malformed`,
+`doctype`, `root`, `too-large`, `too-deep`, `too-many`); `FromLegacy(diagram,
+name)` for a bare diagram; `FromLegacyTopology(config, options...)` for a
+Topology with `builder-xml` (same options as `FromConfig`, so combine works);
+`HasLegacyDiagram(config)`, `LegacyXMLAnnotation`. Both run `FromConfig`
+first and lay the XML over it.
+
+- Input: plain mxGraph XML (root `mxGraphModel` or `root`, UTF-8, no DOCTYPE
+  or entity declaration, at most 5 MiB (`MaxLegacyBytes`), 32 levels, 10000
+  cells), or a Topology config (YAML or JSON) whose `builder-xml` holds such
+  XML. No base64, no compressed or `<mxfile>` draw.io form, no pasted text.
+- Bare diagram: node settings come from each cell's `schemaVars`; `$NAME`
+  placeholders are resolved from the diagram's `experimentVars` and the four
+  legacy defaults (`DEFAULT_MEMORY` 2048, `DEFAULT_VCPU` 1,
+  `DEFAULT_VM_IMAGE` `ubuntu.qc2`, `DEFAULT_ROUTER_IMAGE` `vyos.qc2`), never
+  from the environment; values stay strings. `source.kind` is `manual`.
+- Topology: its spec is the truth; the XML gives positions, VLAN ids (as
+  VLAN aliases), notes (text cells) and groups (containers), matched by
+  hostname ignoring case. Diagram-only nodes are left out, topology-only
+  nodes placed below.
+- Both: positions ×2 and snapped to 16; a switch is added for a VLAN drawn
+  without one; a switch is named after its network; icon variants map to
+  `router`, `firewall`, `desktop`, `server`, `external`; styles, layers,
+  edge labels and the rest are dropped. The warnings are a closed list,
+  built in `legacyNotes.sentences` (plus the unreadable-diagram warning in
+  `FromLegacyTopology`); names are sorted, 8 shown, then "N more".
+- `POST /builder/legacy` (`web/builder_legacy.go`): `{content, name?}`
+  (strict; `name` names a bare diagram, default `legacy-diagram`), needs
+  `configs` `get` and `create` (a Topology file is parsed as `POST /configs`
+  parses one, `${NAME}` from the environment included). Answers `{document,
+  warnings, source?}` (no `source` for a bare diagram), 200, no ETag;
+  400/403/413/422 with sentences that repeat nothing of the content but a
+  config's name and kind or the XML root name. Nothing is written.
+- `POST /builder/generate` of a stored (or uploaded) Topology with
+  `builder-xml` and no `builder-doc` converts through `(*builderAPI).generate`
+  (`web/builder_sources.go`); `source.builder` is then `builder-xml`, and
+  `source.digest` (`bdoc.ImportDigest`) covers the annotation, as does a
+  sources row's `digest`.
+- Draft tokens: Import of the stored topology `Topology/<name>`; Upload of a
+  Topology file `uploaded/Topology/<name>`; Upload of a bare diagram
+  `uploaded/legacy-xml` (`LEGACY_TOKEN`). Only the first can update the
+  topology.
+- Publish of that draft to the topology (web, and `phenix builder publish
+  --update`) calls `bapi.ReplaceLegacyDiagram`: deletes `builder-xml`, keeps
+  the other annotations, and warns `The legacy Builder diagram of topology
+  <name> was replaced by this diagram.` (or `… could not be read and was
+  removed.` when `DecodeLegacy` refuses it). While a topology has
+  `builder-xml`, `topologyUpdateMatchesSource` accepts only a draft whose
+  document source is that topology (not one imported from an experiment);
+  the client mirrors it (`updateBlocker`, `legacyDiagramUpdate` and
+  `targetHint` in `publish.js`). A changed topology or diagram is the usual
+  409 `changed after this draft was imported`.
+- UI: Upload's fourth source "Legacy Builder diagram or Topology"
+  (`LEGACY_SOURCE` in `dialogs/message.js`), a file field only
+  (`upload-legacy-file`), submit "Convert"; `store.convertLegacy({content,
+  name})` checks the document and the dialog loads it on Continue, so Cancel
+  keeps the open draft. XML given to File or Paste text gets the hint
+  `legacyDiagramHint`. The Import list labels a legacy topology "NAME (legacy
+  Builder diagram)" with the hint `import-legacy-hint`. Warnings show in the
+  shared `dialogs/ImportWarnings.vue`. The palette finds Upload and Import
+  by `legacy`.
+- No CLI, no bulk conversion, nothing at server start.
+
+## Drafts page
+
+Tabs in order: My Drafts, Shared Drafts, Published Diagrams, Node Templates
+(the view's `templates` prop and slot of `BuilderDrafts`), Other users'
+drafts (shown when it lists something). A card shows `Owner: …` on one line
+and `Updated …` on the next; Open, Share, Delete, Publish and Exp are one
+size. Publish on a card (`draft-publish-<id>`, own drafts, edit shares, and
+other users' drafts the role may change) loads the draft into the store
+without the editor (`store.loadDraft(owner, id, {quiet: true})`) and opens
+the editor's Publish dialog over the drafts page, titled `Publish <name>`.
+Exp (`published-experiment-<id>` on a published row, and in the editor
+toolbar after Share; `store.experiment`, `experimentName`) navigates to the
+experiment in the same tab; palette command "Open experiment".
+
+Bulk actions are a client loop over the per-item routes (`builder/bulk.js`
+`runBulk`, `listSelection.js`, `BuilderBulkBar.vue`, `BuilderBulkSummary.vue`,
+`dialogs/BulkShareDialog.vue`): at most 4 requests at once (topology deletes
+1), one retry on a 412 using the `ETag` the 412 carries. Rows: Select all,
+"{n} of {m} selected", Share selected (My Drafts, with sign-in), Delete
+selected (My Drafts, Other users' drafts with `canDelete`, Published
+Diagrams stored rows). Bulk Share merges the chosen users and access into
+each draft's list; a draft that would pass 25 users fails. A session that
+ends stops the run ("Not attempted.").
+
+## Presentation fields and custom icons
+
+Optional document fields (schema revision stays 1; none is ever written to
+a Topology, Scenario or Experiment config, `TestToTopologyOmitsPresentationFields`):
+device and switch `outlineColor`, `fillColor` (`#rrggbb`); network and edge
+`lineStyle` (`solid`, `dashed`, `dotted`, `dash-dot`; empty is Auto); group
+`description`, `borderStyle` (`solid`, `dashed`, `dotted`, `double`),
+`iconKey`, `icon`; device `icon`; root `icons` (`{"sha256:<hex>": {name?,
+data}}`, at most 32, each a PNG of 1 to 96 pixels a side and at most 40960
+bytes, chunks `IHDR`, `PLTE`, `tRNS`, `IDAT`, `IEND` only, key = SHA-256 of
+the bytes; `bdoc.ValidateIcons`, `customicons.go`) and root `templates` (at
+most 50; see [Node templates](#node-templates)). Go and JS validate them
+alike (`testdata/validation-corpus.json`). The Inspector writes them; the
+network's own `color` is labelled "Edge Color".
+
+A device node shows `spec.type` as stored ("External" when `spec.external`,
+"Device" without a type). Devices and switches have an info tooltip on
+hover (400 ms) and on keyboard focus (`BuilderNodeTooltip.vue`,
+`nodeInfo.js`, `useFixedTooltip`); it is not in PNG or SVG downloads.
+
+Custom icons: a document keeps its own copy of each icon it uses, so it
+opens anywhere; the browser converts PNG, JPEG, GIF, WebP and SVG (up to
+5 MiB) to a PNG of at most 96 pixels before upload. Icon bytes are drawn
+only through `BuilderIcon`'s `<img>` with a `data:image/png;base64,` URL
+built by `iconSrc` in `icons.js`, never as markup. `store.iconShelf` holds
+icons the open diagram may take in; `settleIcons(doc, known)` in
+`store.commit` adds used icons and drops unused ones. The per-user icon
+library: `GET/POST /builder/icons`, `DELETE /builder/icons/{hex}` (`configs`
+`list`/`create`/`delete`; own library only, no owner in the path); a PNG of
+at most 96 pixels and 65536 bytes (body 131072); a strict PNG of at most
+40960 bytes is kept as it is, any other is re-encoded to its pixels; 64
+icons and 1 MiB per user; 201 for a new icon, 200 for bytes already held;
+no rename. Records: `builder.icons`, key `<OwnerScope(user)>/<hex>`
+(`api/builder/icons.go`, `scope.go`). Every `/builder/` response has
+`X-Content-Type-Options: nosniff`; the icon routes also
+`Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`
+(`builderResponseHeaders`). No CSP is set on the application page. Files:
+`icons.js`, `iconLibrary.js`, `dialogs/IconDialog.vue`,
+`inspector/InspectorIconControl.vue`, `nodes/nodeColors.js`.
+
+## Node templates
+
+Two stores. Diagram templates live in the document (`templates`: `{id,
+name, description, device: {iconKey?, icon?, outlineColor?, fillColor?,
+spec}}`; name 1 to 128 bytes, description at most 1024, both one line;
+device at most 16384 bytes as JSON; `bdoc.Template`, `template.go`); they
+travel with downloads, shares and publishes, and are never written to a
+config. The palette's "+" (New device template) and the template editor
+(`dialogs/TemplateDialog.vue`, the Inspector's form code through
+`templateEditorHost` in `templates.js`) write them. `TemplateDevice` must
+hold every `Device` field but `hostname`, `interfaces` and `includedFrom`
+(a reflection test pins it), so a new device field is a template field too.
+A device made from a template (`nodeOptionsFromTemplate`) keeps no link to
+it.
+
+The per-user library (`api/builder/templates.go`, `web/builder_templates.go`):
+one record per user in `builder.templates` under `lib/<OwnerScope(user)>`
+(`LibraryKey`), at most 512 KiB, holding templates, collections and the
+custom icons they name (`icons`). A user with no record has the five
+built-in templates at version 1; the first change stores them, and a
+deleted one never comes back. Limits: 200 templates, 50 collections, 200
+templates per collection, 32 icons, 25 users per item. Every write is
+`Service.UpdateLibrary(ctx, owner, actor, change)`: read, run `change`,
+drop unused icons, stamp versions and times, validate, write against the
+read revision; up to 5 tries, then `ErrBusy` (503, `Retry-After: 1`).
+Refusals are `*LibraryError`. Templates and collections have strong ETags
+`"<version>"`; only the two PUT routes need `If-Match`. A record a newer
+phenix wrote is `damaged`: listed with no own items, and every change 409.
+Sharing (`/share`, `configs` `update` and a user account) and server-wide
+publishing (`/publish`, also `builder-templates` `publish`; taking back:
+the owner, or anyone with that permission) give recipients a live, read-only
+view and add hint records `in/<OwnerScope(recipient)>/<OwnerScope(owner)>`
+and `pub/<OwnerScope(owner)>` (value `{}`, never removed), so a listing
+reads only the libraries hints name. A share is bound to the recipient's
+account (stale after it is deleted or recreated). With authentication off
+the one library is `global-admin`'s and sharing is unavailable. The
+start-of-server cleanup never touches `builder.icons` or
+`builder.templates`. UI: the Node Templates tab (`BuilderTemplates.vue`,
+`CollectionDialog.vue`, `TemplateShareDialog.vue`), palette groups "This
+diagram", "My library", "Shared with me", "Server-wide", "Built-in"
+(`paletteTemplateGroups`, `TEMPLATE_GROUP_LABELS`; a group heading shows only
+with two groups or more), the library button "Node Templates library",
+`store.templates` and its actions (`fetchTemplates`,
+`createLibraryTemplates`, `updateLibraryTemplate`, `createCollection`,
+`updateCollection`, `deleteLibraryItems`, `shareLibraryItems`,
+`publishLibraryItems`).
+
+No `phenix` command converts legacy diagrams, imports configs, or manages
+the icon or template library; they are web UI and REST only.
+
 ## Routes
 
 All routes are relative to `/api/v1`.
@@ -805,18 +1101,33 @@ All routes are relative to `/api/v1`.
 | `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the topology, scenario and experiment configs |
 | `GET/PUT /builder/drafts/{owner}/{draft}/shares` | Read or replace who a draft is shared with (owner only) |
 | `GET /builder/drafts/{owner}/{draft}/shares/candidates` | Every account that can receive a share of the draft |
-| `GET /builder/sources` | Configs a document can be generated from or publish to |
-| `POST /builder/generate` | Build a document from a stored or uploaded Topology or Experiment |
+| `GET /builder/sources` | Configs a document can be generated from or publish to; topology rows have `includeCount` |
+| `POST /builder/generate` | Build a document from a stored or uploaded Topology or Experiment, with `includes`, `copy`, `name`; converts a `builder-xml` topology (`configs` `get`; `create` for `content`) |
+| `POST /builder/legacy` | Convert a legacy diagram or a Topology file with `builder-xml` into a document (`configs` `get` and `create`; nothing is written) |
 | `POST /builder/export/topology` | The Topology config a document publishes as, as YAML, with `warnings` and `publishBlockers` (nothing is written; needs `configs` `get`) |
 | `GET /builder/documents[/{document}]` | Published Builder documents (`source: "store"`); the listing also has a row per topology read from a Builder file (`source: "file"`) |
 | `DELETE /builder/documents/{document}` | Delete the topology a published document is current for, and the topology's published documents |
 | `GET /builder/topologies/{topology}/document` | The document a topology's `builder-doc` names, stored or read from its Builder file: the listing row plus `digest`, `size`, `document`, and for a file `topologyDiffers` |
+| `GET/POST /builder/icons`, `DELETE /builder/icons/{icon}` | The caller's icon library (`configs` `list`, `create`, `delete`) |
+| `GET /builder/templates` | Templates and collections the caller can use: own (`source` `own`), shared (`shared`), server-wide (`server`), with their `icons`, `canShare`, `canPublish`, `damaged`, `limits` (`configs` `list`) |
+| `GET /builder/templates/candidates` | Accounts the caller's items can be shared with (`configs` `update`, a user account) |
+| `POST /builder/templates/{owner}/items`, `PUT …/items/{template}` | Add templates (optionally as a new `collection`), replace one (`If-Match`) (`configs` `create`, `update`; owner only) |
+| `POST /builder/templates/{owner}/collections`, `PUT …/collections/{collection}` | Add, replace a collection (`If-Match` on PUT) (`configs` `create`, `update`; owner only) |
+| `POST /builder/templates/{owner}/delete` | Delete templates and collections (`configs` `delete`; owner only) |
+| `POST /builder/templates/{owner}/share` | Add or remove users of items (`configs` `update`, owner, a user account) |
+| `POST /builder/templates/{owner}/publish` | `serverWide` true publishes the owner's items (`configs` `update` and `builder-templates` `publish`); false takes them back (owner, or anyone with `builder-templates` `publish`) |
 
 The OpenAPI document served at `/docs/` describes every request and response.
 
 ## Storage
 
-Drafts live in the phenix store as records, apart from configs. With an etcd
+Drafts live in the phenix store as records, apart from configs
+(`builder.drafts`, `builder.chunks`, `builder.published`; the startup cleanup
+lists only these three). The icon and template libraries are records in
+`builder.icons` and `builder.templates`, keyed through `OwnerScope(user)`
+(the lowercase hex SHA-256 of the user name, `api/builder/scope.go`): a
+library follows the user name, as draft ownership does, and nothing removes
+it when an account is deleted. With an etcd
 store, phenix compacts etcd's history for the whole cluster (see
 `compaction-retention` in [cli.md](./cli.md)). When etcd reaches its space quota,
 any write it refuses, including config writes (`POST`/`PUT /configs`) and
@@ -834,15 +1145,17 @@ Read this section before changing any file listed below.
 
 | Area | Files |
 |---|---|
-| Document model, generation, publishing to configs, validation, JSON Schema, YAML reading | `src/go/types/builder/` (`document.go`, `generate.go`, `topology.go`, `validate.go`, `schema.go`, `yaml.go`) |
-| Drafts, snapshots, sharing, published documents, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`; `config_hook.go` checks a topology's `builder-doc` and removes a deleted or renamed topology's documents; `file.go` reads Builder files; `publish.go` publishes a document as a topology for the CLI) |
+| Document model, generation, publishing to configs, validation, JSON Schema, YAML reading | `src/go/types/builder/` (`document.go`, `generate.go`, `detach.go` (combine, copy), `topology.go`, `validate.go`, `schema.go`, `yaml.go`, `customicons.go`, `template.go`, `legacy_xml.go` and `legacy.go` (legacy conversion)) |
+| Drafts, snapshots, sharing, published documents, libraries, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`, `icons.go`, `templates.go`, `scope.go`; `config_hook.go` checks a topology's `builder-doc` and removes a deleted or renamed topology's documents; `file.go` reads Builder files; `publish.go` publishes a document as a topology for the CLI, and `ReplaceLegacyDiagram`) |
+| Built-in Builder role and its start-up check | `src/go/api/config/default/builder.yml`, `src/go/web/rbac/migrations.go` (`EnsureBuilderTemplatesPublishPermission`), `src/go/web/init.go` |
 | `builder-doc` codec (nested in JSON and YAML, a string in memory and in the store) | `src/go/store/types.go` |
 | `phenix builder publish`, and `phenix config create` recognizing Builder documents | `src/go/cmd/builder.go`, `src/go/cmd/config.go` |
 | Record store for drafts (BoltDB and etcd, etcd compaction) | `src/go/store/*record*.go`, `src/go/store/etcd_record_compact.go` |
-| HTTP routes, authorization and RBAC | `src/go/web/builder*.go` (`builder.go` holds the authorization model, `builder_assets.go` serves the editor's files, which `src/js/plugins/builder-assets.js` compresses in the UI build) |
-| Editor page and drafts landing | `src/js/src/views/Builder.vue`, `src/js/src/components/builder/BuilderDrafts.vue`, `BuilderHeaderButtons.vue` (the buttons both headers share) |
+| HTTP routes, authorization and RBAC | `src/go/web/builder*.go` (`builder.go` holds the authorization model, the routes and the response headers; `builder_legacy.go`, `builder_icons.go`, `builder_templates.go`, `builder_experiments.go` (the `experiment` link); `builder_assets.go` serves the editor's files, which `src/js/plugins/builder-assets.js` compresses in the UI build) |
+| Editor page and drafts landing | `src/js/src/views/Builder.vue`, `src/js/src/components/builder/BuilderDrafts.vue`, `BuilderTemplates.vue` (the Node Templates tab), `BuilderBulkBar.vue`, `BuilderBulkSummary.vue`, `BuilderHeaderButtons.vue` (the buttons both headers share) |
+| Configs page links | `src/js/src/components/configs/ConfigsList.vue`, `ConfigsEditor.vue`, `src/js/src/builder/configs.js` |
 | Editor components | `src/js/src/components/builder/` (canvas, Inspector, outline, toolbar, side columns, `BuilderSignIn.vue`, dialogs, nodes, edges) |
-| Editor state and logic | `src/js/src/builder/` (`store.js`, `model.js`, `autosave.js`, `idb.js`, `tabs.js`, `session.js`, `signin.js`, `panes.js`, `commands.js`, `keymap.js`, `layouts/`, `adapters/`) |
+| Editor state and logic | `src/js/src/builder/` (`store.js`, `model.js`, `autosave.js`, `idb.js`, `tabs.js`, `session.js`, `signin.js`, `panes.js`, `commands.js`, `keymap.js`, `layouts/`, `adapters/`, `publish.js`, `templates.js`, `icons.js`, `iconLibrary.js`, `bulk.js`, `listSelection.js`, `nodeInfo.js`, `grouping.js`, `groupingWorker.js`) |
 | Generated schema bundle | `src/js/src/builder/schema/builder-v1.schema.json` |
 
 ### Rules
@@ -878,8 +1191,10 @@ Read this section before changing any file listed below.
   the server's word. Import (a draft from a Topology or Experiment config,
   stored or in a config file) is `dialogs/ImportDialog.vue`, dialog key
   `import`, ids and test ids `import-…`; it calls `store.generate`
-  (`POST /builder/generate`). Upload (a Builder document you have) is
-  `dialogs/UploadDialog.vue`, `upload`, `upload-…`. Download (the open
+  (`POST /builder/generate`). Upload (a Builder document you have, a
+  published diagram, or a legacy diagram, which `store.convertLegacy` sends
+  to `POST /builder/legacy`) is `dialogs/UploadDialog.vue`, `upload`,
+  `upload-…`. Download (the open
   diagram as a file) is `dialogs/DownloadDialog.vue`, `download`,
   `download-…`; its files come from `exporters.js`, `gexf.js` and
   `store.exportTopology` (`POST /builder/export/topology`). Import and
@@ -889,7 +1204,10 @@ Read this section before changing any file listed below.
 
 ### Tests
 
-- Go: `go test ./api/builder ./types/builder ./store ./web` from `src/go`.
+- Go: `go test ./api/builder ./types/builder ./store ./web ./web/rbac` from
+  `src/go`. The legacy converter has golden files under
+  `types/builder/testdata/legacy/` (rewrite with `-update-legacy-golden`) and
+  a fuzz test, `go test -fuzz=FuzzDecodeLegacy -fuzztime=30s ./types/builder/`.
   The `api/builder` and `web` tests share one in-memory record store,
   `src/go/store/recordtest/memrecord`, with the hooks `BeforeCreate`,
   `BeforeUpdate`, `AfterWrite`, `FailDelete`, `FailPrefixDelete` and `Stamp`.
@@ -898,7 +1216,14 @@ Read this section before changing any file listed below.
   own because the `store` tests import `recordtest`.
 - Unit: `npx vitest run test/builder` from `src/js`.
 - Browser: the `builder*.spec.js` Playwright specs in `src/js/e2e/tests/` need a
-  running server.
+  running server. `builder-legacy.spec.js` (conversion, with
+  `fixtures/legacy-sample.xml`), `builder-drafts.spec.js` (cards, card
+  Publish, bulk actions), `builder-presentation.spec.js` (node face,
+  tooltips, colors, line styles, icons) and `builder-templates.spec.js` run
+  on the default server; `builder-sharing-templates.spec.js` runs with the
+  sharing suite. With authentication off every test is `global-admin` on one
+  shared library: a test selects and deletes only what it made, never
+  changes the five built-in templates, and deletes any icon it uploads.
   `builder-sharing.spec.js` (sharing, and signing in again) needs a server
   with sign-in on (a JWT signing key and an admin user) and `E2E_SHARING=1`.
   `builder-files.spec.js` (topologies that name a Builder file by

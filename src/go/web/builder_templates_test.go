@@ -199,7 +199,8 @@ func TestBuilderTemplateLibraryStartsWithBuiltins(t *testing.T) {
 		t.Fatalf("the listing = %s, want the caller's, with an empty list of collections and no icons", recorder.Body)
 	}
 
-	// Sharing and publishing are not offered, and the flags are sent.
+	// Sharing and publishing are not offered, and the flags are sent: alice
+	// has no account, and her role cannot publish to every user.
 	for name, flag := range map[string]*bool{"canShare": raw.CanShare, "canPublish": raw.CanPublish, "damaged": raw.Damaged} {
 		if flag == nil || *flag {
 			t.Errorf("%s = %v, want it sent and false", name, flag)
@@ -542,7 +543,9 @@ func TestBuilderDeletedBuiltinTemplateStaysDeleted(t *testing.T) {
 }
 
 // TestBuilderTemplatePermissions asserts each route needs the base config
-// permission of its verb, and nothing else.
+// permission of its verb, and nothing else: sharing also needs an account,
+// which the caller has, and taking an item back from every user is the
+// owner's with config update alone.
 func TestBuilderTemplatePermissions(t *testing.T) {
 	role := func(verbs ...string) *rbac.Role {
 		return builderShareRole(verbs)
@@ -561,28 +564,43 @@ func TestBuilderTemplatePermissions(t *testing.T) {
 		forbidden = http.StatusForbidden
 	)
 
+	// none refuses every request; allow returns want with the given
+	// requests, by index, answered with the given statuses.
+	none := [9]int{forbidden, forbidden, forbidden, forbidden, forbidden, forbidden, forbidden, forbidden, forbidden}
+	allow := func(want [9]int, pairs ...int) [9]int {
+		for i := 0; i+1 < len(pairs); i += 2 {
+			want[pairs[i]] = pairs[i+1]
+		}
+
+		return want
+	}
+
 	tests := []struct {
 		name      string
 		role      *rbac.Role
 		anonymous bool
 		// list, add items, replace an item, add a collection, replace a
-		// collection, delete.
-		want [6]int
+		// collection, delete, share candidates, share, take back from
+		// every user.
+		want [9]int
 	}{
-		{name: "no identity", anonymous: true, want: [6]int{forbidden, forbidden, forbidden, forbidden, forbidden, forbidden}},
-		{name: "no permission", role: role(), want: [6]int{forbidden, forbidden, forbidden, forbidden, forbidden, forbidden}},
-		{name: "everything but configs", role: &noConfigs, want: [6]int{forbidden, forbidden, forbidden, forbidden, forbidden, forbidden}},
-		{name: "configs list", role: role("list"), want: [6]int{ok, forbidden, forbidden, forbidden, forbidden, forbidden}},
-		{name: "configs get", role: role("get"), want: [6]int{forbidden, forbidden, forbidden, forbidden, forbidden, forbidden}},
-		{name: "configs create", role: role("create"), want: [6]int{forbidden, made, forbidden, made, forbidden, forbidden}},
-		{name: "configs update", role: role("update"), want: [6]int{forbidden, forbidden, ok, forbidden, ok, forbidden}},
-		{name: "configs delete", role: role("delete"), want: [6]int{forbidden, forbidden, forbidden, forbidden, forbidden, ok}},
-		{name: "every config verb", role: role(builderShareConfigVerbs...), want: [6]int{ok, made, ok, made, ok, ok}},
+		{name: "no identity", anonymous: true, want: none},
+		{name: "no permission", role: role(), want: none},
+		{name: "everything but configs", role: &noConfigs, want: none},
+		{name: "configs list", role: role("list"), want: allow(none, 0, ok)},
+		{name: "configs get", role: role("get"), want: none},
+		{name: "configs create", role: role("create"), want: allow(none, 1, made, 3, made)},
+		{name: "configs update", role: role("update"), want: allow(none, 2, ok, 4, ok, 6, ok, 7, ok, 8, ok)},
+		{name: "configs delete", role: role("delete"), want: allow(none, 5, ok)},
+		{name: "every config verb", role: role(builderShareConfigVerbs...), want: [9]int{ok, made, ok, made, ok, ok, ok, ok, ok}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			harness := newBuilderHarness(t)
+
+			harness.setUser(builderTestOwner, builderShareCreated)
+			harness.setUser(builderTestPeer, builderShareCreated)
 
 			// The library holds a collection, so a replacement that is
 			// allowed finds it.
@@ -622,6 +640,12 @@ func TestBuilderTemplatePermissions(t *testing.T) {
 					body: `{"name":"Floor two"}`, ifMatch: `"1"`,
 				},
 				{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/delete"), body: `{"templates":["router"]}`},
+				{method: http.MethodGet, path: builderTemplatesRoute + "/candidates"},
+				{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/share"), body: `{"templates":["server"],"add":["bob"]}`},
+				{
+					method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/publish"),
+					body: `{"templates":["server"],"serverWide":false}`,
+				},
 			} {
 				request.user = user
 				request.role = tt.role
@@ -1181,16 +1205,37 @@ func (s *builderCountingStore) DeleteRecordPrefix(namespace, prefix string) (int
 	return s.Store.DeleteRecordPrefix(namespace, prefix) //nolint:wrapcheck // the wrapped store's answer
 }
 
-// TestBuilderTemplateListingReadsOnlyTheCallersRecord asserts the listing
-// reads one record, the caller's own library, and lists nothing: it never
-// reaches the library of another user. Starting the server reads and
-// removes nothing in the namespace either.
-func TestBuilderTemplateListingReadsOnlyTheCallersRecord(t *testing.T) {
+// TestBuilderTemplateListingReadsOnlyHintedLibraries asserts the listing
+// reads the caller's own library, lists the keys of the hints, and reads the
+// library of each owner a hint names, and no other: it lists no library and
+// never reaches the library of a user who shared nothing with the caller and
+// published nothing. Starting the server reads and removes nothing in the
+// namespace either.
+func TestBuilderTemplateListingReadsOnlyHintedLibraries(t *testing.T) {
 	harness := newBuilderHarness(t)
 
+	for _, user := range []string{builderTestOwner, builderTestPeer, builderShareCarol, builderShareDave, builderShareErin} {
+		harness.setUser(user, builderShareCreated)
+	}
+
 	harness.addTemplates(builderTestOwner, "Of alice")
-	harness.addTemplates(builderTestPeer, "Of bob")
-	harness.addTemplates(builderShareCarol, "Of carol")
+	bob := harness.addTemplates(builderTestPeer, "Of bob")
+	carol := harness.addTemplates(builderShareCarol, "Of carol")
+	harness.addTemplates(builderShareDave, "Of dave")
+	erin := harness.addTemplates(builderShareErin, "Of erin")
+
+	// Bob shares with alice; carol publishes; erin shared with alice and
+	// stopped, which leaves her hint; dave does neither.
+	harness.mustShareTemplates(builderTestPeer, builderTemplateShareRequest{
+		Templates: []string{bob[0].ID}, Collections: nil, Add: []string{builderTestOwner}, Remove: nil,
+	})
+	harness.mustShareTemplates(builderShareErin, builderTemplateShareRequest{
+		Templates: []string{erin[0].ID}, Collections: nil, Add: []string{builderTestOwner}, Remove: nil,
+	})
+	harness.mustShareTemplates(builderShareErin, builderTemplateShareRequest{
+		Templates: []string{erin[0].ID}, Collections: nil, Add: nil, Remove: []string{builderTestOwner},
+	})
+	harness.mustPublishTemplates(builderShareCarol, builderShareCarol, builderPublisherRole(), []string{carol[0].ID}, true)
 
 	counting := &builderCountingStore{Store: harness.store, namespace: bapi.NamespaceTemplates, calls: nil}
 	ids := new(atomic.Int64)
@@ -1216,34 +1261,59 @@ func TestBuilderTemplateListingReadsOnlyTheCallersRecord(t *testing.T) {
 		t.Fatalf("registerBuilderRoutes returned error: %v", err)
 	}
 
-	// The cleanup a server start runs does not touch the namespace.
-	if len(counting.calls) != 0 || harness.store.Count(bapi.NamespaceTemplates) != 3 {
+	// The cleanup a server start runs does not touch the namespace: five
+	// libraries and three hints.
+	if len(counting.calls) != 0 || harness.store.Count(bapi.NamespaceTemplates) != 8 {
 		t.Fatalf("registering the routes made the calls %q", counting.calls)
+	}
+
+	sortedCalls := func(calls ...string) []string {
+		return slices.Sorted(slices.Values(calls))
 	}
 
 	list := harness.templates(builderTestOwner)
 
-	if want := []string{"GetRecord " + bapi.LibraryKey(builderTestOwner)}; !slices.Equal(counting.calls, want) {
-		t.Fatalf("the listing made the calls %q, want %q", counting.calls, want)
+	want := sortedCalls(
+		"GetRecord "+bapi.LibraryKey(builderTestOwner),
+		"ListRecordKeys in/"+bapi.OwnerScope(builderTestOwner)+"/",
+		"ListRecordKeys pub/",
+		"GetRecord "+bapi.LibraryKey(builderTestPeer),
+		"GetRecord "+bapi.LibraryKey(builderShareCarol),
+		"GetRecord "+bapi.LibraryKey(builderShareErin),
+	)
+
+	if got := sortedCalls(counting.calls...); !slices.Equal(got, want) {
+		t.Fatalf("the listing made the calls %q, want %q", got, want)
 	}
 
-	if len(list.Templates) != len(builderBuiltinIDs)+1 || list.Templates[len(builderBuiltinIDs)].Name != "Of alice" {
-		t.Fatalf("the listing holds %q", builderTemplateIDs(list))
+	// The caller's own first, then the others by owner; nothing of dave's
+	// or of erin's.
+	names := make([]string, 0, len(list.Templates))
+	for _, template := range list.Templates[len(builderBuiltinIDs):] {
+		names = append(names, template.Owner+":"+template.Source+":"+template.Name)
 	}
 
-	for _, template := range list.Templates {
-		if template.Owner != builderTestOwner || strings.HasPrefix(template.Name, "Of bob") ||
-			strings.HasPrefix(template.Name, "Of carol") {
-			t.Errorf("the listing holds another user's template: %+v", template)
-		}
+	if want := []string{"alice:own:Of alice", "bob:shared:Of bob", "carol:server:Of carol"}; !slices.Equal(names, want) {
+		t.Fatalf("the listing holds %q, want %q", names, want)
 	}
 
-	// A user with no library costs the same one read, and writes nothing.
+	// A user nothing is shared with reads the published libraries alone.
 	counting.calls = nil
 
-	if list := harness.templates(builderShareDave); !slices.Equal(builderTemplateIDs(list), builderBuiltinIDs) ||
-		!slices.Equal(counting.calls, []string{"GetRecord " + bapi.LibraryKey(builderShareDave)}) {
-		t.Fatalf("a new user's listing = %q with the calls %q", builderTemplateIDs(list), counting.calls)
+	if list := harness.templates(builderShareDave); len(list.Templates) != len(builderBuiltinIDs)+2 ||
+		list.Templates[len(list.Templates)-1].Name != "Of carol" {
+		t.Fatalf("dave's listing holds %q", builderTemplateIDs(list))
+	}
+
+	want = sortedCalls(
+		"GetRecord "+bapi.LibraryKey(builderShareDave),
+		"ListRecordKeys in/"+bapi.OwnerScope(builderShareDave)+"/",
+		"ListRecordKeys pub/",
+		"GetRecord "+bapi.LibraryKey(builderShareCarol),
+	)
+
+	if got := sortedCalls(counting.calls...); !slices.Equal(got, want) {
+		t.Fatalf("dave's listing made the calls %q, want %q", got, want)
 	}
 
 	// A change reads and writes the caller's record, and no other.
@@ -1396,12 +1466,14 @@ func TestBuilderTemplateSharesAndPublication(t *testing.T) {
 		t.Fatalf("the shared collection = %+v", got)
 	}
 
-	// Each account is read once, however many items name it.
-	if harness.configGets != 3 {
-		t.Errorf("the listing read %d accounts, want 3", harness.configGets)
+	// Each account is read once, however many items name it, and the
+	// caller's own once, to know whether it may share.
+	if harness.configGets != 4 {
+		t.Errorf("the listing read %d accounts, want 4", harness.configGets)
 	}
 
-	// Neither sharing nor publishing is offered.
+	// Neither sharing nor publishing is offered: alice has no account, and
+	// her role cannot publish to every user.
 	if list.CanShare || list.CanPublish {
 		t.Errorf("canShare = %v, canPublish = %v, want both false", list.CanShare, list.CanPublish)
 	}

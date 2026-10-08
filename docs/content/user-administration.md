@@ -141,6 +141,13 @@ available roles and their access rights.
 
 Key: E - experiment resource, V - VM resource, U - user resource
 
+The built-in **Builder** role is for users of the [Builder](builder/index.md),
+the web topology editor. It controls configs rather than experiments or VMs:
+it can list, get, create, update and delete every config, reach every
+user's Builder drafts, publish Builder templates server-wide, and list, get,
+create and update experiments. See
+[The Builder role](builder/administration.md#the-builder-role).
+
 ### Resources
 
 #### Resource: `experiments`
@@ -462,6 +469,12 @@ Key: E - experiment resource, V - VM resource, U - user resource
 | Exp. Scoped | no |
 | Res. Scoped | yes |
 
+Resource names are `<Kind>/<name>`, such as `Topology/riverside-water`;
+`Topology/*` covers every topology. Create and update are checked on the
+kind and name of the config in the request body too, so a role scoped to
+`Topology/*` cannot create or overwrite a User or Role config. `*/*` covers
+every config, User and Role configs included.
+
 #### Resource: `builder-drafts`
 
 |
@@ -470,6 +483,15 @@ Key: E - experiment resource, V - VM resource, U - user resource
 | Desc | reach other users' Builder drafts (see [Builder permissions](builder/administration.md#permissions))
 | Exp. Scoped | no
 | Res. Scoped | yes (resource names are `<owner>/<draft id>`; use `*/*` for every draft)
+
+#### Resource: `builder-templates`
+
+|
+|------|------
+| Verb | publish
+| Desc | publish Builder templates and collections to every user, and take back any user's (see [Server-wide templates](builder/administration.md#server-wide-templates))
+| Exp. Scoped | no
+| Res. Scoped | no
 
 #### Resource: `settings`
 
@@ -567,6 +589,77 @@ spec:
     verbs:
     - post
     - delete
+```
+
+#### Builder (`builder`)
+
+phenix creates this role at start when the store has no role named
+`builder` (or with the role name `Builder`). A role of that name that is
+already stored gains the `builder-templates` `publish` policy at start, and
+so do the users assigned to it.
+
+```yaml
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: builder
+spec:
+  roleName: Builder
+  policies:
+  - resources:
+    - configs
+    resourceNames:
+    - "*"
+    - "*/*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+    - delete
+  - resources:
+    - builder-drafts
+    resourceNames:
+    - "*"
+    - "*/*"
+    verbs:
+    - list
+    - get
+    - update
+    - delete
+  - resources:
+    - builder-templates
+    verbs:
+    - publish
+  - resources:
+    - schemas
+    resourceNames:
+    - "*"
+    verbs:
+    - get
+  - resources:
+    - topologies
+    - scenarios
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+  - resources:
+    - experiments
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+  - resources:
+    - disks
+    resourceNames:
+    - "*"
+    verbs:
+    - list
 ```
 
 #### Experiment Admin (`experiment-admin`)

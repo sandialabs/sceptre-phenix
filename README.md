@@ -112,6 +112,8 @@ phenix builder publish pump-station.builder.json --update
 
 The command writes a topology only: scenarios and experiments are published from the web editor. See [From the command line](https://phenix.sceptre.dev/latest/builder/import-upload-download/#from-the-command-line).
 
+Diagrams of the legacy Builder are converted in the web editor, with Import or Upload (see [Legacy Builder](https://phenix.sceptre.dev/latest/builder/legacy/)), and device templates are kept in a per-user library on the Node Templates tab (see [Node Templates](https://phenix.sceptre.dev/latest/builder/templates/)). Neither has a CLI command.
+
 ## 🛠️ Local Development
 
 If you wish to build and run the services locally without Docker, follow these steps.

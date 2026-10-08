@@ -23,7 +23,7 @@ The editor has five areas:
 
 ## Header
 
-![The editor header: Back to drafts, the name Riverside Water with its Edit diagram name pencil, the counts 12 devices, 4 switches, 4 networks, 15 connections, 4 groups and 1 note, No issues, and the Reset view, Commands, theme, Shortcuts, Settings, Help and Focus mode buttons.](../images/builder/editor-header.png)
+![The editor header: Back to drafts, the name Riverside Water with its Edit diagram name pencil, the counts 12 devices, 4 switches, 4 networks, 15 connections, 4 groups and 1 note, No issues, and the Reset view, Commands, theme, Shortcuts with its key ?, Settings, Help and Focus mode buttons.](../images/builder/editor-header.png)
 
 From left to right, the header holds:
 
@@ -38,9 +38,10 @@ From left to right, the header holds:
 - "Shared by e2e-admin · Can view" (or "Can edit"), on a draft someone
   shared with you (see
   [What the people you share with see](drafts.md#what-the-people-you-share-with-see)).
-- The counts: devices, switches, networks, connections, groups and notes.
-  Point at a count, or move to it with <kbd>Tab</kbd> and the arrow keys,
-  to see its name, for example "12 devices".
+- The counts: devices, switches, networks, connections, groups and notes,
+  each a number after a 17-pixel icon of its kind. Each count is a button
+  that selects every item of its kind on the canvas, in place of the
+  selection (see [Selecting by kind](#selecting-by-kind)).
 - The checks button: **No issues**, or the number of errors and warnings,
   for example **3 warnings**. It opens the **Diagram checks** dialog (see
   [Checks and warnings](#checks-and-warnings)).
@@ -49,13 +50,40 @@ From left to right, the header holds:
 - **Commands**: opens the [command palette](#command-palette).
 - The theme button: switches the theme (see [Themes](#themes)).
 - **Shortcuts**: opens the [keyboard shortcuts](#keyboard-shortcuts) sheet.
-- **Settings**: opens **Builder settings** (see [Settings](#settings)).
+  The button shows the key that opens the sheet: <kbd>?</kbd>, or the key
+  you gave it. With **Single-key shortcuts** off and no other key, it shows
+  none.
+- **Settings**: opens **Builder settings** (see [Settings](#settings)). Its
+  key is <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>S</kbd> on macOS and
+  <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> on Windows and Linux, and its
+  tooltip shows it: "Builder settings (⌥⇧S)" or "Builder settings
+  (Alt+Shift+S)".
 - **Help**: opens this Builder documentation in a new tab.
 - **Focus mode**: hides the phenix navigation bar (see
   [Focus mode](#focus-mode)).
 
 In a narrower window, the buttons after the checks button show only their
-icons. Point at a button, or move focus to it, to see its name in a tooltip.
+icons; **Shortcuts** keeps its key. Point at a button, or move focus to it,
+to see its name in a tooltip.
+
+### Selecting by kind
+
+Select a count to select every item of that kind on the canvas, in place of
+the selection you had. Focus stays on the count. For example, select
+**12 devices** in Riverside Water: the 12 devices are selected, and Builder
+announces "Selected 12 devices."
+
+- The networks count selects the switches of the networks, because a network
+  is drawn as its switch. Its tooltip says "Select the switches of all 4
+  networks".
+- The connections count selects the connections and no nodes.
+- A count of 0 selects nothing, and says so, for example "There are no notes
+  to select."
+
+Point at a count, or move to it with <kbd>Tab</kbd>, to see what it
+selects, for example "Select all 12 devices". The counts are one
+<kbd>Tab</kbd> stop: the arrow keys, <kbd>Home</kbd> and <kbd>End</kbd>
+move between them, and <kbd>Enter</kbd> or <kbd>Space</kbd> selects.
 
 ### Renaming the diagram
 
@@ -85,13 +113,14 @@ The toolbar's buttons, from left to right:
 | **Copy**, **Paste** | Copy the selection, and paste a copy of it 40 pixels down and to the right of the original. Each further paste goes 40 pixels further. | [Copy, paste, duplicate and delete](diagrams.md#copy-paste-duplicate-and-delete) |
 | **Delete** | Delete the selected nodes and connections. | [Copy, paste, duplicate and delete](diagrams.md#copy-paste-duplicate-and-delete) |
 | **Group**, **Ungroup** | Put the selected nodes in a new group, or take a selected group apart. | [Groups](diagrams.md#groups) |
-| **Auto-group** | A menu: **By network** or **By name**. | [Auto-group](diagrams.md#auto-group) |
+| **Auto-group** | A menu: **By network**, **By name** or **By name pattern…**. | [Auto-group](diagrams.md#auto-group) |
 | Layout menu | Lays the diagram out. It shows the draft's layout, or **Default** when no layout has run. | [Layouts](diagrams.md#layouts) |
 | **Scenario** | Attach a scenario to the diagram. | [Attaching a scenario](diagrams.md#attaching-a-scenario) |
 | **Download** | Save the diagram as a file. | [Downloading](import-upload-download.md#downloading) |
-| **Upload** | Open a Builder document as a new draft. | [Uploading a Builder document](import-upload-download.md#uploading-a-builder-document) |
+| **Upload** | Open a diagram you have as a new draft: a Builder document, a published diagram, or a legacy Builder diagram. | [Import, Upload and Download](import-upload-download.md) |
 | **Publish** | Write Topology, Scenario and Experiment configs. | [Publishing](publishing.md) |
 | **Share** | Choose who can open the draft. Shown to the owner when phenix has sign-in enabled and their role has `configs` `update`. Shown, unavailable, to the people the draft is shared with. | [Sharing a draft](drafts.md#sharing-a-draft) |
+| **Exp** | Open the experiment the diagram was published with. Shown only while that experiment exists and your role can read it. | [Opening the experiment](drafts.md#opening-the-experiment) |
 | **Minimap** | Show or hide the minimap. | [Canvas](#canvas) |
 | **Draft History** | List the draft's snapshots, and restore one. | [Draft History](drafts.md#draft-history) |
 
@@ -104,7 +133,11 @@ is unavailable until you select a group. When you can only view a draft,
 the editing buttons are unavailable.
 
 Point at a button to see its keyboard shortcut in a tooltip, for example
-"Undo (⌘Z)" on macOS and "Undo (Ctrl+Z)" on Windows and Linux.
+"Undo (⌘Z)" on macOS and "Undo (Ctrl+Z)" on Windows and Linux. The two
+menus name the keys that run them without opening them: the layout menu's
+tooltip says "Choose a layout. ⌥⇧L runs ELK layered, the Settings default",
+and the **Auto-group** tooltip says "Group the ungrouped nodes
+automatically. ⌥⇧G groups by network".
 
 ## Canvas
 
@@ -123,13 +156,37 @@ connections between devices and switches.
 - **Connect**: drag from a device's connection point to a switch (see
   [Connecting interfaces](diagrams.md#connecting-interfaces)).
 
-A device shows its hostname, its kind, its number of interfaces and its
-description. Point at a device to see its whole description. A device from
-an included topology has a dashed border and says where it comes from, for
-example "Included from corp-services" on dns-01 and ntp-01 (see
-[Included topologies](diagrams.md#included-topologies)). A node with a
-warning has a warning mark at its top left corner (see
+A device shows its icon, its hostname, its node type, its number of
+interfaces and its description. The node type is the device's **Type** as
+it is stored, for example VirtualMachine, Router or Firewall. An external
+device shows External, and a device with no type shows Device. A device from
+an included topology has a dashed border and says where it comes from in
+place of its type, for example "Included from corp-services" on dns-01 and
+ntp-01 (see [Included topologies](diagrams.md#included-topologies)). A node
+with a warning has a warning mark at its top left corner (see
 [Checks and warnings](#checks-and-warnings)).
+
+Devices and switches can have colors and icons of their own (see
+[Colors](diagrams.md#colors) and [Custom icons](diagrams.md#custom-icons)).
+
+### Info tooltips
+
+Rest the pointer on a device or a switch for a moment, or move keyboard
+focus to it, to see an info tooltip:
+
+| Node | Rows of the tooltip |
+|---|---|
+| Device | **Description**, cut to 80 characters. **Interfaces**: each interface with its address, for example "eth0 — 10.10.20.101/24", or "DHCP". **OS type**. |
+| Switch | **Network**: the network's name. **VLAN alias**, or "no alias". **Description**, cut to 80 characters. **Connected devices**, with their number: each device connected to this switch, with the address of the interface it connects on. |
+
+A list shows its first 8 entries, then "+N more". An empty row says "None",
+and a device with no OS type says "Not set".
+
+The tooltip stays while the pointer is on the node or on the tooltip, and
+while the node has keyboard focus. <kbd>Esc</kbd> closes it and keeps the
+selection; a second <kbd>Esc</kbd> clears the selection. Notes, groups and
+connections have no tooltip, and PNG and SVG downloads do not show it.
+Screen readers read the same facts as the node's description.
 
 The minimap at the bottom right shows the whole diagram, with the visible
 part outlined. To resize it, drag the **Resize minimap** handle at its top
@@ -137,12 +194,12 @@ left corner. **Minimap** in the toolbar shows or hides it until the next
 diagram opens. The Settings choose whether it shows at first (see
 [Settings](#settings)).
 
-**Keyboard help**, under the canvas, lists the keys that work on the canvas.
-Its **Show all keyboard shortcuts** button opens the full list (see
-[Keyboard shortcuts](#keyboard-shortcuts)).
+The keys that work on the canvas are in
+[Keys on the canvas](#keys-on-the-canvas).
 
 **Reset view** in the header sets the zoom back to how diagrams open (100%,
-or the whole diagram, as the Settings say). It also shows the minimap at its
+the whole diagram, or your custom percentage, as the Settings say). It also
+shows the minimap at its
 default size (unless the Settings turn it off), shows both side columns at
 their default widths, closes the sections you opened, and scrolls the
 columns back to the top. It does not change the diagram.
@@ -174,10 +231,25 @@ In a window narrower than about 900 pixels, the columns stack: the toolbar,
 ## Add nodes
 
 **Add nodes** lists what you can add: **Device**, **Switch**, **Note** and
-**Group**, then the **Device templates** **Server**, **Workstation**,
-**Router**, **Firewall** and **External device**. Select an item to add it
-to the diagram, or drag it onto the canvas. The new node is placed in free
-space and selected. See [Adding devices](diagrams.md#adding-devices).
+**Group**, then the **Device templates**, such as **Server**,
+**Workstation**, **Router**, **Firewall** and **External device**. Select an
+item to add it to the diagram, or drag it onto the canvas. The new node is
+placed in free space and selected. Point at an item to see its description.
+See [Adding devices](diagrams.md#adding-devices).
+
+Two buttons follow the **Device templates** heading:
+
+- **New device template** (the **+**): opens the template editor on a new
+  template of this diagram (see
+  [Diagram templates](templates.md#diagram-templates)).
+- **Node Templates library**: leaves the draft, as **Back to drafts** does,
+  and shows the **Node Templates** tab of the drafts page (see
+  [The template library](templates.md#the-template-library)).
+
+The device templates are in groups: **This diagram**, **My library**,
+**Shared with me** and **Server-wide**. A group's name shows only when two
+groups or more have templates. See
+[Templates in Add nodes](templates.md#templates-in-add-nodes).
 
 ## Outline
 
@@ -259,11 +331,13 @@ The **Diagram** section has:
 
 ### Editing a node
 
-![The Inspector for the device edge-rtr: Hostname, Icon router, Type Router, and the General and Hardware sections with the description VyOS edge router, the drive vyos.qc2, 2048 MB of memory and OS type vyos.](../images/builder/inspector-device.png){ width="354" }
+![The Inspector for the device edge-rtr: Hostname, Icon router, Custom icon None, Outline Color, Fill Color, Type Router, and the General and Hardware sections with the description VyOS edge router, the drive vyos.qc2, 2048 MB of memory and OS type vyos.](../images/builder/inspector-device.png){ width="354" }
 
 Select a node to see its fields. A device has these sections:
 
-- **Hostname** and **Icon**.
+- **Hostname**, **Icon**, **Custom icon**, **Outline Color** and **Fill
+  Color** (see [Colors](diagrams.md#colors) and
+  [Custom icons](diagrams.md#custom-icons)).
 - **Node**: **Type**, and **General** (**Description**, **Do not boot**,
   **Node hostname**, **Snapshot**, **VM type**).
 - **Hardware**: **CPU**, **Drives** (**Image** and more for each drive),
@@ -302,8 +376,12 @@ ws-01". Leaving the draft,
 publishing or downloading also saves changes you did not apply. They appear
 in Draft History as "Saved unapplied changes to" and the node's name.
 
-**Connection points** are the exception: adding, disconnecting or removing
-one takes effect at once, without **Apply**.
+Some fields of a device take effect at once, without **Apply**:
+
+- **Icon**, **Custom icon**, **Outline Color** and **Fill Color**. Each
+  change is one step of **Undo**, for example "Changed the fill color of
+  Device web-01 to #2f6fbf".
+- **Connection points**: adding, disconnecting or removing one.
 
 The fields come from the phenix server, so they match what it accepts. When
 the server cannot send them, the Inspector says so, for example "Could not
@@ -314,23 +392,32 @@ the Builder instead, which may differ from what this server accepts." See
 ### Other kinds of nodes
 
 - A switch is one network. Its Inspector ("Network CORP") has **Name**,
-  **VLAN alias**, **Description**, **Color** and **Position**. See
+  **VLAN alias**, **Description**, **Edge Color**, **Line style**,
+  **Outline Color**, **Fill Color** and **Position**. See
   [Adding switches and networks](diagrams.md#adding-switches-and-networks).
 - A note has **Text**, **Color** and **Position** (see
   [Notes](diagrams.md#notes)).
-- A group has **Title**, **Color** and **Position** (see
+- A group has **Title**, **Description**, **Color**, **Border pattern**,
+  **Icon**, **Custom icon** and **Position** (see
   [Groups](diagrams.md#groups)).
-- A connection has **Label** (by default, the network's name) and **Color**.
-  Its Inspector names it, for example "Connection from ntp-01 (eth0) to
-  CORP".
+- A connection has **Label** (by default, the network's name), **Color** and
+  **Line style**. Its Inspector names it, for example "Connection from
+  ntp-01 (eth0) to CORP".
+
+These fields wait for **Apply**, the colors and icons of switches and groups
+too. Only a device's icons and colors take effect at once.
 
 ### Fields you cannot change
 
 Some fields are read only:
 
 - A device from an included topology says "Defined by included topology
-  corp-services, so it is read only here. Change it in corp-services, then
-  import it again from the drafts page. It can still be moved."
+  corp-services, so it is read only here. Change it in corp-services and
+  import again, or combine the included nodes into a new draft to edit them
+  here. It can still be moved." Under the note, **Combine into a new draft**
+  makes a copy of the diagram in which the included devices are its own (see
+  [Making included devices editable](diagrams.md#making-included-devices-editable)).
+  A role that cannot create drafts does not get the button.
 - A network that an included device is on cannot be renamed. For CORP the
   Inspector says "Network CORP cannot be renamed: ntp-01 from included
   topology corp-services is on it. Its other fields can still change."
@@ -384,7 +471,7 @@ the server does not have is a warning.
 
 The command palette runs any command by name, and finds nodes and networks.
 
-![The command palette filtered by layout, listing Auto layout and the Layout: ELK layered, Network cards, Dagre and Standard commands, with ELK layered marked as the current layout.](../images/builder/command-palette.png)
+![The command palette filtered by layout, listing the Layout: ELK layered, Network cards, Dagre and Standard commands, with ELK layered marked as the current layout, and Auto layout with its keys ⌥⇧L.](../images/builder/command-palette.png)
 
 To open it, select **Commands** in the header, or press
 <kbd>⌘</kbd>+<kbd>K</kbd> on macOS or <kbd>Ctrl</kbd>+<kbd>K</kbd> on Windows
@@ -402,9 +489,17 @@ The field says "Type a command, @ for nodes, # for networks":
   last.
 - A command that does not apply now says why, for example "Unavailable:
   There is no earlier layout to restore."
+- Some commands are also found by another word. Type `export` to list every
+  download format, or `send` to find **Share…**.
+- Each download format is a command of its own: **Download Builder JSON**,
+  **Download Builder YAML**, **Download Topology YAML**, **Download PNG**,
+  **Download SVG** and **Download Gephi (GEXF)**. Each opens the **Download
+  diagram** dialog and starts that download at once (see
+  [Downloading](import-upload-download.md#downloading)).
 - A command marked **›** takes a second step. For example, **Add device**
-  then lists the templates: **Device**, **Server**, **Workstation**,
-  **Router**, **Firewall** and **External device**. Press
+  then lists **Device** and every device template of
+  [Add nodes](#add-nodes), each with its group and image, for example
+  **Server** with "My library · ubuntu.qc2". Press
   <kbd>⌫</kbd> (<kbd>Backspace</kbd>) in the empty field to go back a step.
 - Type `@` and a name, an image, a network or an address to find nodes.
   `@10.10.30.20` finds historian-01.
@@ -429,12 +524,16 @@ opens the palette at **Go to node**, which lists every node.
 ## Keyboard shortcuts
 
 To see every shortcut, select **Shortcuts** in the header, or press
-<kbd>?</kbd> outside a text field. The sheet shows the keys of your
-platform ("Keys for macOS, and where each one works." or "Keys for Windows
-and Linux, and where each one works."). Type in **Filter shortcuts** to find
-an action, or a key such as `G`.
+<kbd>?</kbd> outside a text field. The **Shortcuts** button shows the key
+that opens the sheet. The sheet shows the keys of your platform ("Keys for
+macOS, and where each one works." or "Keys for Windows and Linux, and where
+each one works."). Type in **Filter shortcuts** to find an action, or a key
+such as `G`.
 
-![The Keyboard shortcuts sheet with Single-key shortcuts on, the Change shortcuts button, the Filter shortcuts field, and the General and Edit groups with their macOS keys.](../images/builder/shortcuts-sheet.png)
+The sheet sets its groups in columns: three in a wide window, two in a
+narrower one, and one in a narrow one.
+
+![The Keyboard shortcuts sheet with Single-key shortcuts on, the Change shortcuts button, the Filter shortcuts field, and the groups in three columns: General and Edit; Selection; Structure, Go to, View and Draft, with their macOS keys.](../images/builder/shortcuts-sheet.png)
 
 The default shortcuts:
 
@@ -442,6 +541,7 @@ The default shortcuts:
 |---|---|---|---|
 | Command palette | Editor and drafts list, text fields too | <kbd>⌘</kbd>+<kbd>K</kbd> | <kbd>Ctrl</kbd>+<kbd>K</kbd> |
 | Keyboard shortcuts | Editor and drafts list, not in text fields | <kbd>?</kbd> | <kbd>?</kbd> |
+| Settings… | Editor and drafts list, not in text fields | <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>S</kbd> | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> |
 | Undo | Editor, not in text fields | <kbd>⌘</kbd>+<kbd>Z</kbd> | <kbd>Ctrl</kbd>+<kbd>Z</kbd> |
 | Redo | Editor, not in text fields | <kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>Z</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd> |
 | Copy | Editor, not in text fields | <kbd>⌘</kbd>+<kbd>C</kbd> | <kbd>Ctrl</kbd>+<kbd>C</kbd> |
@@ -454,12 +554,14 @@ The default shortcuts:
 | Select or deselect the focused item | Canvas and outline rows | <kbd>↩</kbd> or <kbd>Space</kbd> | <kbd>Enter</kbd> or <kbd>Space</kbd> |
 | Add the focused item to the selection, or take it out | Canvas and outline rows | <kbd>⇧</kbd>+<kbd>↩</kbd> | <kbd>Shift</kbd>+<kbd>Enter</kbd> |
 | Move to the nearest node that way | Canvas | <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> | <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> |
-| Move through the focused node's connections | Canvas | <kbd>⇟</kbd> or <kbd>⇞</kbd> | <kbd>PgDn</kbd> or <kbd>PgUp</kbd> |
+| Move through the focused node’s connections | Canvas | <kbd>⇟</kbd> or <kbd>⇞</kbd> | <kbd>PgDn</kbd> or <kbd>PgUp</kbd> |
 | Move the selected nodes 10 pixels | Canvas | <kbd>⇧</kbd> with an arrow key | <kbd>Shift</kbd> with an arrow key |
 | Resize the selected group 10 pixels | Canvas | <kbd>⌥</kbd>+<kbd>⇧</kbd> with an arrow key | <kbd>Alt</kbd>+<kbd>Shift</kbd> with an arrow key |
 | Move between outline rows | Outline rows | <kbd>↑</kbd> <kbd>↓</kbd> <kbd>↖</kbd> <kbd>↘</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Home</kbd> <kbd>End</kbd> |
 | Group selection | Editor, not in text fields | <kbd>⌘</kbd>+<kbd>G</kbd> | <kbd>Ctrl</kbd>+<kbd>G</kbd> |
 | Ungroup | Editor, not in text fields | <kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>G</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> |
+| Auto-group by network | Editor, not in text fields | <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>G</kbd> | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> |
+| Auto layout | Editor, not in text fields | <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>L</kbd> | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> |
 | Go to node | Editor, not in text fields | <kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>O</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> |
 | Zoom in | Canvas | <kbd>=</kbd> or <kbd>+</kbd> | <kbd>=</kbd> or <kbd>+</kbd> |
 | Zoom out | Canvas | <kbd>−</kbd> | <kbd>−</kbd> |
@@ -472,8 +574,59 @@ On a Mac keyboard without these keys, <kbd>⇟</kbd> and <kbd>⇞</kbd> are
 <kbd>↘</kbd> (Home and End) are <kbd>Fn</kbd> with <kbd>←</kbd> and
 <kbd>→</kbd>. <kbd>⌫</kbd> is Delete and <kbd>⌦</kbd> is Forward Delete.
 
-Other commands, such as **Auto layout** and **Settings…**, have no keys
-until you give them some.
+Other commands, such as **Reset view** and **Download…**, have no keys
+until you give them some (see [Customizing shortcuts](#customizing-shortcuts)).
+
+"Not in text fields" means the keys do nothing while focus is in a field
+you type in, or in any field of the Inspector. On the drafts page,
+**Settings…** and **Keyboard shortcuts** also work while a card's checkbox
+or **Select all** has focus.
+
+### Keys on the canvas
+
+The diagram is one <kbd>Tab</kbd> stop. These keys work on the canvas itself,
+on its nodes and on its connections, not on the zoom buttons:
+
+- The arrow keys move to the nearest node that way. From the canvas itself,
+  they go to the node nearest the middle of the view.
+- <kbd>PgDn</kbd> and <kbd>PgUp</kbd> move through the focused node's
+  connections (on a Mac, <kbd>Fn</kbd> with <kbd>↓</kbd> and <kbd>↑</kbd>).
+- <kbd>Enter</kbd> or <kbd>Space</kbd> (<kbd>↩</kbd> or <kbd>Space</kbd>)
+  selects the focused item alone, or deselects it when it is the only
+  selected item. <kbd>Shift</kbd>+<kbd>Enter</kbd>
+  (<kbd>⇧</kbd>+<kbd>↩</kbd>) adds it to the selection or takes it out.
+- <kbd>Esc</kbd> clears the selection. When the focused node shows its
+  [info tooltip](#info-tooltips), the first <kbd>Esc</kbd> closes the
+  tooltip, and the second clears the selection.
+- <kbd>Shift</kbd> with an arrow key moves the selected nodes 10 pixels.
+  For an exact position, use **Position** in the Inspector.
+- <kbd>Alt</kbd>+<kbd>Shift</kbd> (<kbd>⌥</kbd>+<kbd>⇧</kbd>) with an arrow
+  key resizes the selected group 10 pixels: <kbd>→</kbd> and <kbd>↓</kbd>
+  grow it, <kbd>←</kbd> and <kbd>↑</kbd> shrink it.
+- <kbd>Delete</kbd> or <kbd>Backspace</kbd> (<kbd>⌫</kbd> or <kbd>⌦</kbd>)
+  deletes the focused item, or the whole selection when the focused item is
+  part of it.
+- <kbd>F2</kbd> moves focus to the name of the focused item in the
+  Inspector.
+- <kbd>=</kbd> or <kbd>+</kbd> zooms in, and <kbd>−</kbd> zooms out.
+  <kbd>Shift</kbd>+<kbd>1</kbd> (<kbd>⇧</kbd>+<kbd>1</kbd>) fits the
+  diagram to the view, and a second press restores the view from before.
+
+Anywhere in the editor but a text field, the keys of the table select
+everything, copy, paste, duplicate, undo, redo, group, ungroup, go to a
+node, open Settings, run Auto layout, auto-group by network, and open the
+shortcut sheet. The command palette, **Save now** and focus mode work in
+text fields too. In a draft you can only view, you can select items and copy
+them, but not change them.
+
+To add nodes or connect them without a pointer, use **Add nodes** and the
+Outline. With a screen reader, turn on its focus mode (forms mode in JAWS)
+for the canvas keys, or use the Outline (see
+[Accessibility](#accessibility)).
+
+A key you removed does nothing, and so does a single key while
+[Single-key shortcuts](#single-key-shortcuts) are off. The tooltips, the
+palette and the sheet show the keys you have.
 
 ### Single-key shortcuts
 
@@ -486,59 +639,65 @@ The palette and the buttons still run those commands.
 ### Customizing shortcuts
 
 You can give any command other keys, or none. For example, to run
-**Auto layout** with <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>L</kbd>
-(<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> on Windows and Linux):
+**Reset view** with <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>R</kbd>
+(<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> on Windows and Linux):
 
 1. Select **Shortcuts** in the header.
 2. Select **Change shortcuts**. The sheet is now named **Change keyboard
    shortcuts**, and it lists every command, with or without keys.
-3. In **Filter shortcuts**, type `auto layout`.
-4. On the **Auto layout** row, select **Change**. The row says "Press the
+3. In **Filter shortcuts**, type `reset view`.
+4. On the **Reset view** row, select **Change**. The row says "Press the
    new shortcut".
-5. Press <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>L</kbd>. The row shows the keys and
+5. Press <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>R</kbd>. The row shows the keys and
    says they are free: "Press Enter to keep it, or Escape to cancel."
 6. Press <kbd>Enter</kbd>, or select **Keep**.
 7. Select **Done**, then close the sheet.
 
 The sheet after step 5:
 
-![The Change keyboard shortcuts sheet filtered by auto layout: the Auto layout row shows Option Shift L in its field, with Keep and Cancel, and says the keys are free.](../images/builder/shortcuts-customize.png)
+![The Change keyboard shortcuts sheet filtered by reset view: the Reset view row shows Option Shift R in its field, with Keep and Cancel, and says the keys are free.](../images/builder/shortcuts-customize.png)
 
-Now open the Metro Campus draft, click an empty spot of the canvas, and press
-<kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>L</kbd>. The draft is laid out with **ELK
-layered**, the layout Settings chooses for a draft that has none (see
-[Layouts](diagrams.md#layouts)).
+Now zoom the canvas, widen the Inspector, click an empty spot of the canvas,
+and press <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>R</kbd>: the zoom and the columns
+go back to how a diagram opens.
 
 When you press keys that another command uses, the row says so, for
 example that <kbd>⌘</kbd>+<kbd>G</kbd> "already runs Group selection". Select
-**Use for** and the command's name, for example **Use for Layout: Network
-cards**, to move the keys to this command, or press other keys. Keys the
+**Use for** and the command's name, for example **Use for Reset view**, to
+move the keys to this command, or press other keys. Keys the
 browser keeps, such as <kbd>⌘</kbd>+<kbd>T</kbd>, cannot be chosen.
 
 Each changed row has **Remove** (no keys) and **Reset** (its default keys).
 **Reset all shortcuts** puts every command back to its default keys. The
-tooltips, the palette and **Keyboard help** show your keys. The browser
-keeps them, and they stay after you log out.
+tooltips and the palette show your keys. The browser keeps them, and they
+stay after you log out.
 
 ## Settings
 
-Select **Settings** in the header to open **Builder settings**. Changes
-apply at once. The browser keeps them, and they stay after you log out.
+Select **Settings** in the header to open **Builder settings**, or press
+<kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>S</kbd> on macOS or
+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> on Windows and Linux, in the
+editor or on the drafts page. Changes apply at once. The browser keeps them,
+and they stay after you log out.
 
-![The Builder settings dialog: Theme System, Light or Dark, Reduce motion, Layout for drafts without one set to ELK layered, Show the minimap, Zoom when a diagram opens, Single-key shortcuts, Change keyboard shortcuts, Reset to defaults and Done.](../images/builder/settings-dialog.png)
+![The Builder settings dialog: Theme System, Light or Dark, Reduce motion, Default layout set to ELK layered, Show the minimap, Zoom when a diagram opens with 100%, Fit the whole diagram in view and Custom with a percentage field, Single-key shortcuts, Change keyboard shortcuts, Reset to defaults and Done.](../images/builder/settings-dialog.png)
 
 - **Theme**: **System**, **Light** or **Dark**. System follows your
   device's light or dark appearance.
 - **Reduce motion**: the canvas pans and zooms at once, and nothing
   animates. Motion is also reduced whenever your device asks for it.
-- **Layout for drafts without one**: **ELK layered** (the default),
-  **Network cards**, **Dagre** or **Standard**. **Auto layout** and
-  **Auto-group** use it on a draft whose layout menu says **Default**, and
-  the draft then keeps it. It does not move anything by itself.
+- **Default layout**: **ELK layered** (the default), **Network cards**,
+  **Dagre** or **Standard**. **Auto layout** and **Auto-group** use it on a
+  draft whose layout menu says **Default**, and the draft then keeps it. It
+  does not move anything by itself.
 - **Show the minimap**: on by default. The toolbar's **Minimap** button
   shows or hides it until the next diagram opens.
-- **Zoom when a diagram opens**: **100%** (the default) or **Fit the whole
-  diagram in view**. **Reset view** goes back to it too.
+- **Zoom when a diagram opens**: **100%** (the default), **Fit the whole
+  diagram in view**, or **Custom** with a percentage from 20 to 200. A
+  percentage is rounded to a multiple of 5, and typing one chooses
+  **Custom**; a number out of range says "Enter a number from 20 to 200."
+  A custom zoom shows the same part of the diagram first as 100% does.
+  **Reset view** goes back to it too.
 - **Single-key shortcuts**: see [Single-key shortcuts](#single-key-shortcuts).
 - **Change keyboard shortcuts**: see
   [Customizing shortcuts](#customizing-shortcuts).
@@ -585,9 +744,17 @@ You can use Builder with a keyboard only, and with a screen reader.
   the focused node's connections.
 - <kbd>Enter</kbd> or <kbd>Space</kbd> selects the focused item.
   <kbd>Shift</kbd> with an arrow key moves the selection. <kbd>Delete</kbd>
-  deletes it.
+  deletes it. See [Keys on the canvas](#keys-on-the-canvas).
+- A device or a switch with keyboard focus shows its
+  [info tooltip](#info-tooltips), and screen readers read the same facts as
+  its description. While the node has focus, the pointer resting on another
+  node shows that node's tooltip, and the focused node's comes back when the
+  pointer leaves. <kbd>Esc</kbd> closes the tooltip until focus moves.
 - The toolbar is one <kbd>Tab</kbd> stop too: the arrow keys,
-  <kbd>Home</kbd> and <kbd>End</kbd> move between its buttons.
+  <kbd>Home</kbd> and <kbd>End</kbd> move between its buttons. So are the
+  header's counts (see [Selecting by kind](#selecting-by-kind)).
+- A custom icon is decoration: a node's name, its type and what screen
+  readers say of it do not change with its icon.
 - To add nodes and connect them without a pointer, use **Add nodes** and the
   Outline's **Add a connection**.
 - A screen reader announces what each change did, for example "Updated

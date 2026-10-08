@@ -1,15 +1,26 @@
 # Import, Upload and Download
 
-Builder can start a draft from a phenix config or from a Builder
-file, and it can save a diagram as a file in six formats. None of this
-changes a config on the phenix server: in the web UI, only **Publish**
-writes configs (see [Publishing](publishing.md)). On the command line,
-`phenix builder publish` makes a topology from a Builder file.
+Builder can start a draft from a phenix config or from a file you have, and
+it can save a diagram as a file in six formats. Three words name these, and
+these pages use them the same way everywhere:
+
+- **Import** makes a draft from a phenix config: a Topology or Experiment
+  config stored in phenix, or a config file. The phenix server converts the
+  config into a diagram.
+- **Upload** opens a file you have that is already a diagram: a Builder
+  document, such as a draft you downloaded, or a diagram of the
+  [legacy Builder](legacy.md). Its **Published diagram** source opens a
+  diagram published on the server.
+- **Download** saves the open diagram as a file.
+
+None of this changes a config on the phenix server: in the web UI, only
+**Publish** writes configs (see [Publishing](publishing.md)). On the command
+line, `phenix builder publish` makes a topology from a Builder file.
 
 | To | Use | Where | Result |
 |---|---|---|---|
-| Start from a Topology or Experiment config | **Import** | Drafts page | A new draft |
-| Open a Builder document, or a published diagram | **Upload** | Drafts page and editor toolbar | A new draft |
+| Start from a Topology or Experiment config | **Import** | Drafts page, and the **Configs** page | A new draft |
+| Open a Builder document, a published diagram, or a legacy Builder diagram | **Upload** | Drafts page and editor toolbar | A new draft |
 | Save the diagram as a file | **Download** | Editor toolbar | A file |
 | Make a topology from a Builder file | `phenix builder publish` | Command line | A Topology config (see [From the command line](#from-the-command-line)) |
 | Show the diagram of a topology kept in files | A `builder-doc` annotation with a `path` | The Topology config | A card under **Published Diagrams** (see [A Builder file beside a topology](#a-builder-file-beside-a-topology)) |
@@ -30,7 +41,12 @@ To import the riverside-water topology:
    experiment** dialog opens.
 2. Keep **Source** set to **Stored config**, and **Source kind** set to
    **Topology**.
-3. In **Source name**, choose `riverside-water`.
+3. In **Source name**, choose `riverside-water`. Because riverside-water
+   includes corp-services, the dialog shows **Included topologies**:
+   "riverside-water includes 1 other topology." Keep
+   **Keep included nodes read only**, and leave
+   **Create a new topology as a copy** clear (see
+   [Import options](#import-options)).
 4. Select **Import**. The dialog says "This import has 1 warning." and lists
    it: "Added 2 nodes from included topology corp-services (2 nodes). They
    are shown read only: edit them in their own topology. Publishing keeps
@@ -39,7 +55,7 @@ To import the riverside-water topology:
 
 The dialog in step 3:
 
-![The Import topology or experiment dialog with Stored config, Source kind Topology and Source name riverside-water selected, and the Cancel and Import buttons.](../images/builder/quickstart-import-dialog.png)
+![The Import topology or experiment dialog with Stored config, Source kind Topology and Source name riverside-water selected, Included topologies set to Keep included nodes read only, Create a new topology as a copy clear, and the Cancel and Import buttons.](../images/builder/quickstart-import-dialog.png)
 
 The editor opens a new draft named riverside-water. The header counts 12
 devices, 4 switches, 4 networks and 15 connections. The layout menu says
@@ -48,6 +64,12 @@ them. Choose a layout to arrange them (see [Layouts](diagrams.md#layouts)).
 
 To stop at step 5, select **Cancel**: the dialog closes and no draft is
 made. An import without warnings opens the editor at once, without step 5.
+
+A topology that the [legacy Builder](legacy.md) saved is marked
+"(legacy Builder diagram)" in **Source name**. Importing it converts its
+diagram, and publishing the draft to the same topology replaces the legacy
+diagram (see
+[Converting a stored topology](legacy.md#converting-a-stored-topology)).
 
 ### Importing an experiment
 
@@ -102,7 +124,10 @@ Inspector shows "Source file pump-station.topology.yaml" under **Details**
 Importing a config file needs the `configs` `create` permission. A
 draft made from a config file can publish a new topology. It cannot
 update a stored config, even one with the same name (see
-[Publishing](publishing.md)).
+[Publishing](publishing.md)). So the dialog offers no copy for a config
+file, but it offers **Included topologies** when the file's topology
+includes others (see [Import options](#import-options)). The file must name
+its config in `metadata.name`.
 
 An Experiment config file always keeps its own copy of its scenario, and
 the import says so: "the experiment file's copy of scenario
@@ -132,6 +157,82 @@ imports with the address `198.51.100.20` when the server has no
     variables this way, as with `phenix config create`. See
     [sandialabs/sceptre-phenix#436](https://github.com/sandialabs/sceptre-phenix/pull/436).
 
+### Import options
+
+The dialog shows more choices after the source when they apply. An
+Experiment has none.
+
+**Included topologies** shows when the topology includes other topologies
+(its `includeTopologies`), stored or in a config file. The text above the
+choices says how many, for example "riverside-water includes 1 other
+topology.":
+
+- **Keep included nodes read only** (the default): "Their nodes are shown
+  but cannot be changed here. Publishing keeps the includes." This is the
+  import described above (see
+  [Included topologies](diagrams.md#included-topologies)).
+- **Combine into one new topology**: "Their nodes are copied into the
+  diagram and can be changed. Publishing creates a new topology." For
+  riverside-water the import warns: "Copied 2 nodes from included topology
+  corp-services (2 nodes). They are ordinary nodes of this diagram now:
+  changes here do not reach that topology, and later changes there do not
+  reach this diagram." An included topology that you may not read, or that
+  is not stored in phenix, is not combined: the draft still includes it, and
+  the import warns, for example "Included topology site-b was not combined
+  and stays in includeTopologies: publishing keeps the reference."
+
+**Create a new topology as a copy** shows for a stored topology, while
+**Combine into one new topology** is not chosen (combining makes a new
+topology already). Its hint says "The draft is not linked to
+riverside-water. Publishing creates a new topology and leaves
+riverside-water as it is." Included nodes stay read only.
+
+With either one, **New topology name** asks for the name of the new
+topology. It proposes the topology's name with `-copy` or `-combined`, such
+as `riverside-water-copy`, with a number added when a topology has that name
+already. The name follows the config name rule (see
+[Publishing a topology](publishing.md#publishing-a-topology)), can be at most
+512 bytes long, and cannot be the name of an existing topology: "A topology
+named riverside-water already exists. Enter another name."
+
+A copy, or a combined draft, is named after the new topology and is linked
+to no config. **Publish** proposes the new name and creates a new topology
+("A new topology will be created."). It cannot update the topology it came
+from, and later changes to that topology, or to the topologies combined
+into it, do not reach the draft.
+
+To make the included nodes of a draft you already have editable, without
+importing again, use **Combine included nodes into a new draft** (see
+[Included topologies](diagrams.md#included-topologies)).
+
+### From the Configs page
+
+The **Configs** page links each topology to the Builder. A topology with a
+Builder diagram has the tag `builder`; one the legacy Builder saved has
+`builder legacy`. The tag is a link, and the viewer that opens when you
+select a topology's name has a button left of **Edit Config**:
+
+| Topology | Tag (its tooltip) | Viewer button | What opens |
+|---|---|---|---|
+| Has a Builder diagram (`builder-doc`) | `builder` ("open in Builder") | **Open in Builder** | The diagram, in a draft (see [Editing a published topology](publishing.md#editing-a-published-topology)) |
+| Has a legacy Builder diagram (`builder-xml`) | `builder legacy` ("import into Builder") | **Import into Builder** | The **Import** dialog, set to the topology: "Topology riverside-water has a legacy Builder diagram. Import it to convert the diagram." |
+| Has no diagram | None | **Import into Builder** | The **Import** dialog, set to the topology: "Topology riverside-water has no Builder diagram to open. Import it to make one." |
+
+The dialog makes nothing until you select **Import**, and offers the
+[import options](#import-options).
+
+The tag is a link for a role with `configs` `list` and `configs` `get` on
+the topology. The import controls also need `configs` `create`; without it,
+the tag is plain text and the viewer has no button. When the Builder cannot
+go on, it says why: "Topology riverside-water does not exist, or you may not
+read it.", or "Topology riverside-water has no Builder diagram, and your
+role cannot create drafts to import it. Select its name in Configs to view
+it."
+
+The edit button of a `builder` topology, and **Edit Config** in its viewer,
+open the Builder too. Any other topology, `builder legacy` included, opens
+in the text editor (see [Legacy Builder](legacy.md#what-changed)).
+
 ### What an import keeps
 
 - Every node, as a device, with all of its settings: hardware, interfaces,
@@ -140,7 +241,8 @@ imports with the address `198.51.100.20` when the server has no
   interface with a VLAN is connected to that network's switch. An interface
   without a VLAN is kept, but not connected.
 - The devices of included topologies, read only (see
-  [Included topologies](diagrams.md#included-topologies)). For
+  [Included topologies](diagrams.md#included-topologies)), unless you
+  combine them (see [Import options](#import-options)). For
   riverside-water these are dns-01 and ntp-01 from corp-services.
 - The annotations of the config itself, such as `maintainer: range-team`
   and `purpose: Water utility training range` on riverside-water. The
@@ -183,16 +285,22 @@ The dialog in step 2:
 
 ![The Upload diagram dialog with Source File selected and pump-station.builder.json chosen as the Builder document file, and the Cancel and Upload buttons.](../images/builder/upload-dialog.png)
 
-The dialog has two other sources:
+The dialog has three other sources:
 
 - **Paste text**: paste the document into **Document text (JSON or YAML)**,
   then select **Upload**. A draft made from pasted text has no source file.
 - **Published diagram**: choose a diagram in **Published diagram** ("Select
-  a diagram"), then select **Open**. This opens your draft of that published
-  diagram, or makes one the first time, as **Edit as a draft** does (see
+  a diagram"), then select **Open**. This opens the draft that published
+  the diagram, when it is yours or shared with you to edit, else your draft
+  of it, or makes one the first time, as **Edit as a draft** does (see
   [Published diagrams](drafts.md#published-diagrams)). A topology whose
   diagram is read from a file on the server is listed with "(File)" after
   its name.
+- **Legacy Builder diagram or Topology**: choose a diagram file that the
+  legacy Builder saved, or a Topology config file that holds one in its
+  `builder-xml` annotation, in **Legacy diagram or Topology file**, then
+  select **Convert**. The server converts the diagram into a new draft. See
+  [Converting a file](legacy.md#converting-a-file).
 
 **Upload** refuses a file it cannot use, and says why:
 
@@ -200,8 +308,10 @@ The dialog has two other sources:
   Builder document. Use Import on the drafts page so the server can convert
   it." Import it instead (see
   [Importing a config file](#importing-a-config-file)).
-- A file that is not JSON or YAML, such as a GEXF file: "Could not parse the
-  document: …".
+- A file that is not JSON or YAML: "Could not parse the document: …".
+- An XML file, such as a legacy Builder diagram or a GEXF file: "This looks
+  like a legacy Builder diagram (XML). Choose "Legacy Builder diagram or
+  Topology" to convert it." A GEXF file cannot be converted either.
 - A file over 5 MiB: "The uploaded file is larger than the 5 MiB limit."
 
 A Builder document keeps everything, so a download and an upload give the
@@ -233,11 +343,18 @@ To download the Riverside Water diagram:
 1. Open the Riverside Water draft.
 2. Select **Download** in the toolbar. The **Download diagram** dialog opens.
    It shows the size of the whole diagram: "Diagram bounds: 2384 × 1048 px".
-3. Select a format. The browser saves the file, and the dialog says so, for
+3. Select a format. The buttons are in two rows: **Builder JSON**,
+   **Builder YAML** and **Topology YAML**, then **PNG**, **SVG** and
+   **Gephi (GEXF)**. The browser saves the file, and the dialog says so, for
    example "Saved riverside-water.json."
 4. Select **Close**.
 
-![The Download diagram dialog with the diagram bounds, the Builder JSON, Builder YAML, Topology YAML, PNG, SVG and Gephi (GEXF) buttons, and the message that riverside-water.gexf was saved with 12 devices, 4 networks and 15 connections.](../images/builder/download-dialog.png)
+![The Download diagram dialog with the diagram bounds, the Builder JSON, Builder YAML and Topology YAML buttons in one row and the PNG, SVG and Gephi (GEXF) buttons in the next, and the message that riverside-water.gexf was saved with 12 devices, 4 networks and 15 connections.](../images/builder/download-dialog.png)
+
+The command palette has a command for each format, such as
+**Download PNG** or **Download Topology YAML**: it opens the dialog and
+starts that download. Typing `export` in the palette finds them all (see
+[Command palette](editor.md#command-palette)).
 
 | Button | File for Riverside Water | What it holds | Open it with |
 |---|---|---|---|
@@ -264,7 +381,11 @@ first.", and no file is saved.
 Builder JSON and Builder YAML hold the whole Builder document: every node
 with its settings and position, the networks, the connections, the groups
 and notes, the layout, the scenario, where the diagram was imported from,
-and who made and last saved it. The example file
+and who made and last saved it. They also hold how the diagram looks: the
+colors and line styles of nodes and connections, the description, border
+pattern and icon of each group, the diagram's own device templates
+(`templates`), and a copy of each custom icon the diagram uses (`icons`),
+so the file opens the same on another phenix server. The example file
 `riverside-water.builder.json` begins like this as YAML:
 
 ```yaml
@@ -311,8 +432,8 @@ shows no **Details**.
 
 What this means for each way of making a draft:
 
-- **Blank diagram** and **Import**: you are the author, and the diagram is
-  created now.
+- **Blank diagram**, **Import**, and a legacy diagram converted with
+  **Upload**: you are the author, and the diagram is created now.
 - **Upload**: the author and creation time the file names are kept. When the
   file names none, you are the author.
 - **Edit as a draft** on a published diagram or on a diagram read from a
@@ -411,7 +532,8 @@ What to note in the file:
   `nodes`. `includeTopologies` names corp-services instead, as publishing
   does.
 - Each interface's `vlan` is the name of the network it is connected to.
-- Notes, groups, colors and positions are not in the file.
+- Notes, groups, colors, line styles, icons, device templates and positions
+  are not in the file.
 
 To store the file in phenix as a Topology config named `Riverside-Water`:
 
@@ -451,13 +573,14 @@ picture covers the diagram bounds that the dialog shows, and is scaled to
 at most 4096 pixels on its longer side. The Riverside Water PNG is 4096 ×
 1801 pixels.
 
-The picture leaves out what is only there for editing: the selection, the
-connection points and the warning marks. Its background follows the theme:
+The picture shows colors, line styles, group borders and custom icons as
+the canvas draws them. It leaves out what is only there for editing: the
+selection, the connection points, the warning marks and the info tooltips. Its background follows the theme:
 white in the light theme, dark in the dark theme (see
 [Themes](editor.md#themes)).
 
-The SVG holds the diagram as HTML inside the SVG. Web browsers show it; some
-drawing programs cannot.
+The SVG holds the diagram as HTML inside the SVG, and each custom icon as a
+PNG inside it. Web browsers show it; some drawing programs cannot.
 
 ### Gephi (GEXF)
 
@@ -472,8 +595,10 @@ The graph has:
 - An edge for each connection, from the device to its network. The edge
   label is the interface and its address, for example "eth0
   10.10.30.20/24".
-- The colors and positions of the diagram. Colors written in hex or `rgb()`
-  are kept; a color written as a name, such as `red`, is not.
+- The colors and positions of the diagram. A device has its fill color, else
+  its outline color, else the color of its type; a network has its
+  **Edge Color**. Colors written in hex or `rgb()` are kept; a color written
+  as a name, such as `red`, is not.
 
 Notes and groups are not nodes. A node's groups are in its **Group** and
 **Groups** columns instead.
@@ -685,10 +810,16 @@ In every other case the command refuses:
 | Error | Why | What to do |
 |---|---|---|
 | `topology Pump-station was changed after it was published, and replacing it would discard that change` | The topology was changed after its document was published, with `phenix config edit` for example | Import the topology in Builder and publish that draft, or delete the topology and publish the file again |
-| `topology corp-services was not published from a Builder document that is still stored, and this document was not made from the topology as it is now` | The topology has no stored published document (a plain topology, or one that only names a Builder file), and the document was not imported from it as it is now | The same |
-| `topology old-lab belongs to the legacy XML Builder and cannot be replaced by a Builder document` | The legacy Builder made the topology | Publish under another name |
+| `topology corp-services was not published from a Builder document that is still stored, and this document was not made from the topology as it is now` | The topology has no stored published document (a plain topology, a topology the legacy Builder saved, or one that only names a Builder file), and the document was not imported from it as it is now | The same |
 
 There is no flag to force an update.
+
+A topology that the [legacy Builder](legacy.md) saved is updated like any
+other: import it in the Builder, download the draft as **Builder JSON**,
+and publish the file with `--update` while the topology is unchanged. The
+update removes the topology's `builder-xml` annotation, writes `builder-doc`,
+and warns "The legacy Builder diagram of topology old-lab was replaced by
+this diagram."
 
 ### What blocks publishing
 
@@ -735,6 +866,10 @@ environment.
   checked for duplicate hostnames: no stored topology has that name."
 - **Drafts.** The command makes no draft. To edit the diagram, open the
   topology in Builder and select **Edit as a draft**.
+- **Import, Upload and the libraries.** No `phenix` command imports a
+  config, converts a [legacy Builder](legacy.md) diagram, or manages the
+  icon library or the template library. Use the web UI, or the REST API
+  (see [REST API](administration.md#rest-api)).
 
 The document is stored as the file holds it. The command does not change
 who made or last saved the diagram (see

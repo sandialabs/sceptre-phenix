@@ -21,7 +21,7 @@ Detailed references and examples, loaded only when needed:
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
-| The Builder, the web topology editor: drafts, sharing, publishing, the `builder-doc` annotation, Builder files, `phenix builder publish`, routes, its code | [`references/builder.md`](references/builder.md) |
+| The Builder, the web topology editor: drafts, sharing, publishing, import options, legacy diagram conversion, icon and template libraries, the Builder role, the `builder-doc` annotation, Builder files, `phenix builder publish`, routes, its code | [`references/builder.md`](references/builder.md) |
 | Deploying a topology directory with `phenix workflow apply`: layout, steps, workflow config, endpoints, gotchas, troubleshooting | [`references/workflow.md`](references/workflow.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
@@ -146,14 +146,20 @@ server apart from configs; only Publish writes Topology, Scenario and
 Experiment configs. A topology names its Builder document in the
 `builder-doc` annotation, the one annotation that is a map: `digest` and `id`
 name a published document in the store, and `path` names a Builder file on
-the phenix server. The Builder does not update topologies that carry
-`builder-xml`, which the removed legacy Builder saved. Its one CLI command is
-`phenix builder publish <file>`, which makes a topology from a Builder
-document file; `phenix config create` skips or refuses Builder documents.
+the phenix server. Topologies the removed legacy Builder saved carry
+`builder-xml`; Import (or Upload of the file) converts that diagram, and
+publishing the draft imported from the topology replaces `builder-xml` with
+`builder-doc`. Its one CLI command is `phenix builder publish <file>`, which
+makes a topology from a Builder document file; `phenix config create` skips
+or refuses Builder documents. There is no CLI for import, the legacy
+conversion, the icon library or the template library. The built-in role
+`Builder` holds every Builder permission, `builder-templates` `publish`
+included.
 
 For anything about the Builder (its drafts, sharing, publishing, import from
-topologies and experiments, `/builder/…` routes, the `builder-doc` annotation
-and Builder files, the `builder-drafts` RBAC resource, or its code),
+topologies and experiments, legacy conversion, icons and node templates,
+`/builder/…` routes, the `builder-doc` annotation and Builder files, the
+`builder-drafts` and `builder-templates` RBAC resources, or its code),
 **read [`references/builder.md`](references/builder.md)** first.
 
 ## CLI Overview

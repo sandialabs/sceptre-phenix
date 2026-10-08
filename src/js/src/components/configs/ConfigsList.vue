@@ -55,7 +55,11 @@
     aria-role="dialog"
     aria-modal
     :aria-label="viewer.title"
-    close-button-aria-label="Close">
+    close-button-aria-label="Close"
+    :destroy-on-hide="false">
+    <!-- Kept in the page once closed: a viewer opened while the one before
+         it was still being removed stayed open but invisible, over the
+         page, and Exit did not close it. -->
     <div class="modal-card" style="width: 50em">
       <header class="modal-card-head x-modal-dark">
         <p class="modal-card-title x-config-text">{{ viewer.title }}</p>

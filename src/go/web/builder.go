@@ -258,7 +258,8 @@ func withBuilderDocumentFiles(root string, excluded ...string) builderOption {
 }
 
 // registerBuilderRoutes adds the Builder routes to the given API
-// router.
+// router, whose NotFoundHandler is set already: the Builder's response
+// headers are added to it (see [builderResponseHeaders]).
 func registerBuilderRoutes(router *mux.Router, opts ...builderOption) error {
 	api, err := newBuilderAPI(opts...)
 	if err != nil {
@@ -318,6 +319,13 @@ func builderBaseAllowed(role rbac.Role, verb builderVerb, names ...string) bool 
 	}
 
 	return false
+}
+
+// builderTemplatesPublishAllowed reports whether the role may publish
+// template library items to every user, and take any user's published item
+// back. The check is a literal call so the RBAC policy generator records it.
+func builderTemplatesPublishAllowed(role rbac.Role) bool {
+	return role.Allowed("builder-templates", "publish")
 }
 
 // builderCrossUserAllowed reports whether the role may operate on a draft
@@ -809,10 +817,15 @@ func builderWriteJSON(w http.ResponseWriter, status int, etag string, payload an
 
 // What [builderResponseHeaders] goes by, and what it sets.
 const (
-	// builderRoutePrefix is in the path of every Builder route: it starts
-	// each one below the API prefix, and the Builder's schema route,
-	// /schemas/builder/v1, holds it too.
+	// builderAPIPrefix is the path [Start] mounts the API router at.
+	builderAPIPrefix = "/api/v1"
+
+	// builderRoutePrefix starts the path, below the API prefix, of every
+	// Builder route but the schema route.
 	builderRoutePrefix = "/builder/"
+
+	// builderSchemaPath is the path of the Builder's schema route.
+	builderSchemaPath = "/schemas/builder/v1"
 
 	// builderIconsPath is the path of the caller's icon library, whose
 	// routes are this path and the paths below it.
@@ -823,34 +836,39 @@ const (
 	builderIconPolicy = "default-src 'none'; frame-ancestors 'none'"
 )
 
-// builderResponseHeaders sets the security headers of Builder responses. It
-// is a middleware of the API router, so it also covers what the middleware
-// after it answers, and it leaves every route that is not a Builder route
-// alone.
+// builderResponseHeaders sets the security headers of the responses to
+// requests under the Builder's paths: every path below /api/v1/builder/, and
+// the schema route. It goes by the request's path, not by the route it
+// matched, and leaves every other path alone. [builderAPI.routes] makes it a
+// middleware of the API router, so it also covers what the middleware after
+// it answers, and wraps the router's handlers of a request that matches no
+// route, or no method of one, which no middleware runs for.
 //
-// Every response of a Builder route, whatever its status, tells the browser
-// not to guess a content type: each is JSON and says so. The responses of
-// the icon library carry images people uploaded, as base64 inside that JSON,
-// so they also carry a Content-Security-Policy that lets a browser load, run
-// and frame nothing, should it ever show one as a page.
+// Every response under the Builder's paths, whatever its status, tells the
+// browser not to guess a content type: each is JSON and says so. The
+// responses of the icon library carry images people uploaded, as base64
+// inside that JSON, so they also carry a Content-Security-Policy that lets a
+// browser load, run and frame nothing, should it ever show one as a page.
 func builderResponseHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var template string
+		if path, ok := strings.CutPrefix(r.URL.Path, builderAPIPrefix); ok {
+			if strings.HasPrefix(path, builderRoutePrefix) || path == builderSchemaPath {
+				w.Header().Set("X-Content-Type-Options", "nosniff")
+			}
 
-		if route := mux.CurrentRoute(r); route != nil {
-			template, _ = route.GetPathTemplate()
-		}
-
-		if strings.Contains(template, builderRoutePrefix) {
-			w.Header().Set("X-Content-Type-Options", "nosniff")
-		}
-
-		if strings.HasSuffix(template, builderIconsPath) || strings.Contains(template, builderIconsPath+"/") {
-			w.Header().Set("Content-Security-Policy", builderIconPolicy)
+			if path == builderIconsPath || strings.HasPrefix(path, builderIconsPath+"/") {
+				w.Header().Set("Content-Security-Policy", builderIconPolicy)
+			}
 		}
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// builderMethodNotAllowed answers a request that matches a route's path but
+// none of its methods, as the router does when it has no handler for that.
+func builderMethodNotAllowed(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusMethodNotAllowed)
 }
 
 // routes registers every Builder route on the given router. Each route
@@ -865,7 +883,20 @@ func (b *builderAPI) routes(router *mux.Router) {
 
 	router.Use(builderResponseHeaders)
 
-	router.Handle("/schemas/builder/v1", weberror.ErrorHandler(b.getSchema)).
+	// The router answers a request that matches no route, or no method of
+	// one, with these handlers, without running its middleware.
+	if router.NotFoundHandler != nil {
+		router.NotFoundHandler = builderResponseHeaders(router.NotFoundHandler)
+	}
+
+	notAllowed := router.MethodNotAllowedHandler
+	if notAllowed == nil {
+		notAllowed = http.HandlerFunc(builderMethodNotAllowed)
+	}
+
+	router.MethodNotAllowedHandler = builderResponseHeaders(notAllowed)
+
+	router.Handle(builderSchemaPath, weberror.ErrorHandler(b.getSchema)).
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder/drafts", weberror.ErrorHandler(b.listDrafts)).
 		Methods("GET", "OPTIONS")
@@ -919,6 +950,8 @@ func (b *builderAPI) routes(router *mux.Router) {
 		Methods("DELETE", "OPTIONS")
 	router.Handle(builderTemplatesPath, weberror.ErrorHandler(b.listTemplates)).
 		Methods("GET", "OPTIONS")
+	router.Handle(builderTemplatesPath+"/candidates", weberror.ErrorHandler(b.getTemplateShareCandidates)).
+		Methods("GET", "OPTIONS")
 	router.Handle(libraryPath+"/items", weberror.ErrorHandler(b.createTemplates)).
 		Methods("POST", "OPTIONS")
 	router.Handle(libraryPath+"/items/{template}", weberror.ErrorHandler(b.putTemplate)).
@@ -928,6 +961,10 @@ func (b *builderAPI) routes(router *mux.Router) {
 	router.Handle(libraryPath+"/collections/{collection}", weberror.ErrorHandler(b.putTemplateCollection)).
 		Methods("PUT", "OPTIONS")
 	router.Handle(libraryPath+"/delete", weberror.ErrorHandler(b.deleteTemplates)).
+		Methods("POST", "OPTIONS")
+	router.Handle(libraryPath+"/share", weberror.ErrorHandler(b.shareTemplates)).
+		Methods("POST", "OPTIONS")
+	router.Handle(libraryPath+"/publish", weberror.ErrorHandler(b.publishTemplates)).
 		Methods("POST", "OPTIONS")
 }
 

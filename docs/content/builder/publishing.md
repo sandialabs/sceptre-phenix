@@ -44,7 +44,10 @@ scenario `riverside-water` attached.
   permission (see [What each task needs](administration.md#what-each-task-needs)).
 
 **Publish** is in the toolbar. The command palette has it too, as
-**Publish…**.
+**Publish…**. On the drafts page, each draft you can change has a
+**Publish** button on its card, which opens the same dialog without opening
+the editor (see
+[Publishing from the drafts page](drafts.md#publishing-from-the-drafts-page)).
 
 ## Publishing a topology
 
@@ -95,14 +98,17 @@ The button then names the action.
 | "A topology with this name exists and will be updated." | **Update topology** |
 | "A topology with this name already exists, and this diagram cannot update it: the diagram was not imported from it, opened from its published diagram or published to it. Enter another name to create a new topology." | Publishing is refused. Enter another name. |
 | "A topology with this name changed after this diagram published it, and publishing would overwrite that change. Import the topology again to edit it as it is now, or enter another name to create a new topology." | Publishing is refused. See [Publishing again](#publishing-again). |
-| "A topology with this name belongs to the legacy XML Builder and cannot be updated here. Enter another name to create a new topology." | Publishing is refused. Enter another name. |
+| "A topology with this name exists and will be updated. Its legacy Builder diagram is replaced by this diagram." | **Update topology**. See [Replacing a legacy Builder diagram](#replacing-a-legacy-builder-diagram). |
+| "A topology with this name exists and will be updated. Its legacy Builder diagram could not be read and is removed." | **Update topology**. The same section. |
 
 A draft can update a topology when the topology currently holds a diagram
 that draft published, or when the draft was made from the topology:
 
-- imported from the stored topology (not from a config file), or
-  uploaded as a Builder document that was downloaded from such a draft, such
-  as `riverside-water.builder.json`,
+- imported from the stored topology (not from a config file, and not as a
+  copy or with its included topologies combined; see
+  [Import options](import-upload-download.md#import-options)), or uploaded
+  as a Builder document that was downloaded from such a draft, such as
+  `riverside-water.builder.json`,
 - opened from its published diagram (**Edit as a draft**, or the edit
   button on the **Configs** page),
 - opened from the Builder file that the topology names as its diagram (see
@@ -110,6 +116,10 @@ that draft published, or when the draft was made from the topology:
   or
 - saved as a new draft from the history of a draft that could update it
   (**Save my history as a new draft**).
+
+A draft imported from an experiment can also update the topology that
+experiment was made from, except a topology that still has a legacy Builder
+diagram.
 
 ### Replacing a config
 
@@ -144,6 +154,26 @@ A `path` that the annotation already has is kept (see
 [The builder-doc annotation](administration.md#the-builder-doc-annotation)).
 A new topology gets only `builder-doc`: the annotations the Inspector shows
 from an imported config are not published.
+
+### Replacing a legacy Builder diagram
+
+A topology that the [legacy Builder](legacy.md) saved has the annotation
+`builder-xml`. The draft imported from that topology converts the old
+diagram, and only that draft can update the topology. The hint under
+**Topology name** says "A topology with this name exists and will be
+updated. Its legacy Builder diagram is replaced by this diagram.", and the
+button is **Update topology**, with the same confirmation as any update.
+
+The update removes `builder-xml`, writes `builder-doc` and keeps the other
+annotations. The result lists the warning "The legacy Builder diagram of
+topology NAME was replaced by this diagram." From then on the topology has
+the tag `builder` on the **Configs** page, like any topology published from
+the Builder.
+
+When the import could not read the old diagram, the hint ends "Its legacy
+Builder diagram could not be read and is removed.", and the warning is "The
+legacy Builder diagram of topology NAME could not be read and was removed."
+See [Converting a stored topology](legacy.md#converting-a-stored-topology).
 
 ### The result
 
@@ -211,6 +241,14 @@ The dialog in step 5:
 The Experiment config `riverside-lab` now uses the topology `riverside-water`
 and the scenario `riverside-water`. Start it from the **Experiments** page
 (see **Starting / Stopping Experiments** in [Experiments](../experiments.md)).
+
+While that experiment exists, the toolbar has an **Exp** button after
+**Share**, and the diagram's card on the **Published Diagrams** tab has one
+too. Its tooltip names the experiment, "Open experiment riverside-lab", and
+it opens the experiment's page in the same browser tab. The palette command
+**Open experiment** does the same. **Exp** is shown only to a role with
+`experiments` `get` on the experiment. It goes away when the experiment is
+deleted.
 
 Each network's **VLAN alias** (see
 [Adding switches and networks](diagrams.md#adding-switches-and-networks)) is
@@ -372,6 +410,13 @@ spec:
     # web-01, ws-01 and ws-02; no dns-01 or ntp-01
 ```
 
+A diagram imported with **Combine into one new topology** has the included
+nodes as its own, and publishes them as its own (see
+[Import options](import-upload-download.md#import-options)). The included
+topologies it could not combine stay in `includeTopologies`, and the
+**Checks** summary says so, for example "The published topology also
+includes site-b by reference."
+
 A device may not use a hostname that an included topology also defines. The
 checks show it as an error, for example "duplicate hostname "dns-01" (also
 nodes[10])". When the included topology gains such a hostname after the
@@ -483,19 +528,31 @@ is written to the topology.
 
 A topology with a Builder diagram has the tag `builder` on the
 **Configs** page: one published from Builder or with
-`phenix builder publish`, or one that names a Builder file. Its edit button
-opens it in Builder:
+`phenix builder publish`, or one that names a Builder file. The tag is a
+link that opens the topology in Builder. So do its edit button and, in the
+viewer that opens when you select its name, **Open in Builder** and
+**Edit Config**:
 
 1. Select **Configs** in the phenix navigation bar.
-2. In the **Actions** column of `riverside-water`, select the edit button
-   (its tooltip says **edit config file**).
-3. Builder opens your draft of the topology's published diagram. The
-   first time, it makes that draft; later, it opens the same draft again.
+2. In the row of `riverside-water`, select the tag `builder` (its tooltip
+   says **open in Builder**).
+3. Builder opens the diagram in a draft that can update the topology.
 
-This draft is apart from the draft that published the topology, and it can
-update the topology. The address bar then holds a link to the draft (see
+Builder opens, in this order:
+
+1. the draft that published the topology, when it is yours;
+2. the draft that published it, when its owner shared it with you with
+   **Can edit**;
+3. your draft of the topology's published diagram, made before;
+4. a new draft of the published diagram, the first time.
+
+The address bar then holds a link to the draft (see
 [Links to a draft](drafts.md#links-to-a-draft)). A role that cannot create
-drafts sees the published diagram read only.
+drafts sees the published diagram read only, unless it already has a draft
+of it. For a topology whose diagram is read from a Builder file, Builder
+opens your draft made from the file, or makes one. For a topology without
+a Builder diagram, the same controls open the **Import** dialog (see
+[From the Configs page](import-upload-download.md#from-the-configs-page)).
 
 **Edit as a draft** on the **Published Diagrams** tab opens the same draft
 (see [Published diagrams](drafts.md#published-diagrams)).

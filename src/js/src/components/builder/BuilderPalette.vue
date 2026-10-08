@@ -103,7 +103,7 @@
           v-for="entry in group.entries"
           :key="entry.key"
           class="builder-palette__entry">
-          <span v-if="entry.description" :id="`${entry.testid}-hint`" hidden>
+          <span v-if="entry.description" :id="hintId(entry)" hidden>
             {{ entry.description }}
           </span>
           <button
@@ -113,9 +113,7 @@
             :disabled="store.readOnly"
             :data-testid="entry.testid"
             :aria-label="`Add ${deviceName(entry.name)}`"
-            :aria-describedby="
-              entry.description ? `${entry.testid}-hint` : undefined
-            "
+            :aria-describedby="entry.description ? hintId(entry) : undefined"
             @click="addTemplate(entry)"
             @dragstart="onDragStart($event, { kind: 'device', key: entry.key })"
             v-on="tipEvents(entry.description)">
@@ -238,6 +236,13 @@
   // device".
   function deviceName(label) {
     return /\bdevice$/i.test(label) ? label : `${label} device`;
+  }
+
+  // The id of an entry's description. An entry's test id names the owner of
+  // another user's template, and a user name may hold a space, which an id
+  // may not: it is encoded.
+  function hintId(entry) {
+    return `${encodeURIComponent(entry.testid)}-hint`;
   }
 
   // Palette descriptions, and the palette's own instructions on its help

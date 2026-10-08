@@ -44,9 +44,12 @@ tags:
       draft gets 404, exactly as for a draft that does not exist, so draft
       existence is never disclosed; a caller who can see it but may not
       perform the operation gets 403.
-      An icon library and a template library belong to one user: their
-      operations act on the caller's own, and no role reaches another
-      user's.
+      An icon library belongs to one user: its operations act on the
+      caller's own, and no role reaches another user's. So does a template
+      library, except that its owner may share templates and collections,
+      read only, with other users, and publish them to every user with
+      `builder-templates` `publish`; anyone with that permission may take
+      any user's published item back.
       Every response of a Builder operation carries
       `X-Content-Type-Options: nosniff`.
 paths:
@@ -84,7 +87,9 @@ paths:
       tags:
         - Configs
       summary: Create new phenix config
-      description: ""
+      description: >
+        Needs `configs` `create` on the config the body names, by its kind
+        and name (such as `Topology/lab`).
       operationId: postConfigs
       requestBody:
         description: phenix config creation parameters
@@ -189,7 +194,9 @@ paths:
         its old name, as deleting it does. The `builder-doc` annotation of the
         renamed config loses the `id` and `digest` Publish wrote; it keeps a
         `path`, with the `digest` beside it, and is removed when nothing is
-        left (see `BuilderDocumentReference`).
+        left (see `BuilderDocumentReference`). Needs `configs` `update` on the
+        config of the path and, when the body names another kind or name, on
+        that config too.
       operationId: putConfigsKindName
       parameters:
         - name: kind
@@ -1394,7 +1401,10 @@ paths:
         Topology is also checked for a node an experiment could not use, such
         as a hostname used twice or a reserved hostname, before it is stored.
         With dryRun=true it runs the same checks, returns what it would do, and
-        stores nothing.
+        stores nothing. Needs `configs` `create` or `update` before the body is
+        parsed, then `configs` `create` on a new config or `update` on a
+        stored one, by the kind and name the body gives (such as
+        `Topology/lab`), dry run or not.
       operationId: postWorkflowConfigsBranch
       parameters:
         - name: branch
@@ -2823,17 +2833,22 @@ paths:
         - Builder
       summary: List the device templates you can use
       description: >
-        Requires `configs` `list`. Returns the caller's own template library:
-        its templates and collections in the order they were added, the
-        custom icons those templates name, and the library's limits. A user
-        who never changed the library has the five built-in templates
-        (`server`, `workstation`, `router`, `firewall`, `external`), at
-        version 1 and without times; the first change stores them, and a
-        built-in template that is deleted is never added again. `source` is
-        `own` on every item, and `canShare` and `canPublish` are false:
-        templates of other users are not listed. A library record this
-        server cannot read is reported with `damaged` true and none of its
-        items; every change of it is then refused with 409.
+        Requires `configs` `list`. Returns the templates and collections the
+        caller can use, and the custom icons those templates name. First the
+        caller's own library (`source` `own`), in the order its items were
+        added; then, sorted by owner, the items of other users' libraries
+        shared with the caller (`shared`) or published to every user
+        (`server`), read only, as they are now. A template in a collection
+        shared with the caller, or published, is listed as well; an item
+        seen both ways is `shared`. A share applies only to the account it
+        was made for. A user who never changed the library has the five
+        built-in templates (`server`, `workstation`, `router`, `firewall`,
+        `external`), at version 1 and without times; the first change stores
+        them, and a built-in template that is deleted is never added again.
+        A library record of the caller's that this server cannot read is
+        reported with `damaged` true and none of its items; every change of
+        it is then refused with 409. Another user's library that cannot be
+        read is left out.
       operationId: getBuilderTemplates
       responses:
         "200":
@@ -2842,6 +2857,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BuilderTemplateLibrary"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+  "/builder/templates/candidates":
+    get:
+      tags:
+        - Builder
+      summary: List who your Builder templates can be shared with
+      description: >
+        Requires `configs` `update` and a user account of the caller's own,
+        as sharing does (403 otherwise; so not with authentication off).
+        Lists, sorted by username, every account a share request would
+        accept, whatever the caller's `users` permissions: every user with
+        an account other than the caller.
+      operationId: getBuilderTemplateShareCandidates
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderShareCandidates"
         "403":
           $ref: "#/components/responses/BuilderForbidden"
   "/builder/templates/{owner}/items":
@@ -3087,6 +3123,150 @@ paths:
           $ref: "#/components/responses/BuilderForbidden"
         "404":
           $ref: "#/components/responses/BuilderTemplateNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderTemplateDamaged"
+        "413":
+          description: The request body is larger than 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "503":
+          $ref: "#/components/responses/BuilderTemplateBusy"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
+  "/builder/templates/{owner}/share":
+    parameters:
+      - $ref: "#/components/parameters/BuilderTemplateOwner"
+    post:
+      tags:
+        - Builder
+      summary: Share templates and collections of your template library
+      description: >
+        Requires `configs` `update`, being `{owner}`, and a user account of
+        the caller's own (403 without it, so not with authentication off).
+        Adds the users in `add` to, and removes the users in `remove` from,
+        who each named template and collection is shared with. A recipient
+        sees the item read only, as it is now, and can copy it into its own
+        library; sharing a collection shares its templates. The request is
+        a change of each list, not a new list: adding a user an item is
+        already shared with, or removing one it is not, changes nothing, so
+        no entity tag is needed. Every user added must have an account, and
+        the share is bound to it: it grants nothing once that account is
+        deleted, or replaced by a new one under the same name, until the
+        user is added again. When a user in `add` is refused, nothing is
+        changed (422). An item that would be shared with more than 25 users
+        keeps its list, and an ID the library does not hold is ignored; both
+        are named in `failed`, and the other items are changed. Changes are
+        logged to the security log.
+      operationId: shareBuilderTemplates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTemplateShareUpdate"
+      responses:
+        "200":
+          description: the items that were not changed, if any
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderTemplateResult"
+        "400":
+          description: >
+            The request is malformed: its body is not a single JSON value of
+            the expected shape (unknown fields are rejected), or it names no
+            template or collection, or no user to add or remove.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderTemplateNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderTemplateDamaged"
+        "413":
+          description: The request body is larger than 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "422":
+          description: >
+            A user in `add` or `remove` was refused: `owner` (the caller),
+            `invalid-user`, `unknown-user` (no such account), `duplicate`
+            (both added and removed), or `too-many` (more than 25 users
+            added). Nothing was changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderShareErrors"
+        "503":
+          $ref: "#/components/responses/BuilderTemplateBusy"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
+  "/builder/templates/{owner}/publish":
+    parameters:
+      - name: owner
+        in: path
+        description: >
+          the user whose template library holds the items: the caller, or,
+          to take items back from every user, any user
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - Builder
+      summary: Publish templates and collections to every user, or take them back
+      description: >
+        Requires `configs` `update`. With `serverWide` true, publishes the
+        named templates and collections of the caller's own library to every
+        user, read only; this also requires `builder-templates` `publish`
+        (403 without it), and for a library of another user the answer is
+        404. Publishing a collection publishes its templates. Publishing an
+        item already published keeps who published it and when. With
+        `serverWide` false, takes the items back: the owner may, and so may
+        anyone with `builder-templates` `publish`, for any user's library
+        (403 for anyone else). An ID the library does not hold is named in
+        `failed`, and the other items are changed. Publishing does not need
+        a user account. Changes are logged to the security log.
+      operationId: publishBuilderTemplates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTemplatePublishUpdate"
+      responses:
+        "200":
+          description: the items that were not changed, if any
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderTemplateResult"
+        "400":
+          description: >
+            The request is malformed: its body is not a single JSON value of
+            the expected shape (unknown fields are rejected), it has no
+            `serverWide`, or it names no template or collection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          description: >
+            `serverWide` is true and `{owner}` is not the caller: an item is
+            published by its owner only.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
         "409":
           $ref: "#/components/responses/BuilderTemplateDamaged"
         "413":
@@ -4244,7 +4424,7 @@ components:
       type: object
       properties:
         users:
-          description: who the draft can be shared with, sorted by username
+          description: who the draft or the templates can be shared with, sorted by username
           type: array
           items:
             type: object
@@ -4479,12 +4659,14 @@ components:
         collections:
           description: >
             the IDs of the collections of the same owner that hold the
-            template
+            template and that the caller sees
           type: array
           items:
             type: string
         shares:
-          description: who the template is shared with, sorted by user; sent to its owner only
+          description: >
+            who the template is shared with, sorted by user; sent to its
+            owner only, and left out of the items of other owners
           type: array
           items:
             $ref: "#/components/schemas/BuilderTemplateShare"
@@ -4499,6 +4681,10 @@ components:
           description: the user whose library holds the collection
           type: string
         source:
+          description: >
+            `own` for a collection of the caller's library, `shared` for one
+            another user shared with the caller, `server` for one published
+            to every user
           type: string
           enum:
             - own
@@ -4540,7 +4726,9 @@ components:
           description: left out unless `serverWide`
           type: string
         shares:
-          description: who the collection is shared with, sorted by user; sent to its owner only
+          description: >
+            who the collection is shared with, sorted by user; sent to its
+            owner only, and left out of the items of other owners
           type: array
           items:
             $ref: "#/components/schemas/BuilderTemplateShare"
@@ -4551,14 +4739,19 @@ components:
           description: the caller, whose library the write routes change
           type: string
         templates:
-          description: the caller's own templates, in the order they were added
+          description: >
+            the caller's own templates, in the order they were added, then
+            the templates of other users shared with the caller or published,
+            by owner
           type: array
           items:
             $ref: "#/components/schemas/BuilderTemplate"
         collections:
           description: >
-            the caller's own collections, in the order they were added. Every
-            ID in a collection's `templateIds` is in `templates`.
+            the caller's own collections, in the order they were added, then
+            the collections of other users shared with the caller or
+            published, by owner. Every ID in a collection's `templateIds` is
+            in `templates`.
           type: array
           items:
             $ref: "#/components/schemas/BuilderTemplateCollection"
@@ -4569,10 +4762,15 @@ components:
           allOf:
             - $ref: "#/components/schemas/BuilderTemplateIcons"
         canShare:
-          description: the caller may share its templates and collections
+          description: >
+            the caller may share its templates and collections: it has
+            `configs` `update` and a user account
           type: boolean
         canPublish:
-          description: the caller may publish its templates and collections to every user
+          description: >
+            the caller may publish its templates and collections to every
+            user, and take any user's published item back: it has `configs`
+            `update` and `builder-templates` `publish`
           type: boolean
         damaged:
           description: >
@@ -4728,6 +4926,71 @@ components:
               type: integer
             collections:
               type: integer
+    BuilderTemplateShareUpdate:
+      description: at least one template or collection, and at least one user
+      type: object
+      additionalProperties: false
+      properties:
+        templates:
+          type: array
+          items:
+            type: string
+        collections:
+          type: array
+          items:
+            type: string
+        add:
+          description: users to share the items with; at most 25
+          type: array
+          items:
+            type: string
+        remove:
+          description: users to stop sharing the items with
+          type: array
+          items:
+            type: string
+    BuilderTemplatePublishUpdate:
+      description: at least one template or collection
+      type: object
+      additionalProperties: false
+      required:
+        - serverWide
+      properties:
+        templates:
+          type: array
+          items:
+            type: string
+        collections:
+          type: array
+          items:
+            type: string
+        serverWide:
+          description: true to publish the items to every user, false to take them back
+          type: boolean
+    BuilderTemplateResult:
+      type: object
+      properties:
+        failed:
+          description: the items that were not changed; empty when every one was
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                enum:
+                  - template
+                  - collection
+              id:
+                type: string
+              reason:
+                description: >
+                  `not-found` (the library holds no such item) or `too-many`
+                  (the item would be shared with more than 25 users)
+                type: string
+                enum:
+                  - not-found
+                  - too-many
     Workflow:
       type: object
       title: Workflow

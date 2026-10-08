@@ -6,20 +6,21 @@ a CI-built binary, a container, or a full range node.
 
 ## What runs where
 
-| Spec                           | Needs                                                                                           | CI                               |
-| ------------------------------ | ----------------------------------------------------------------------------------------------- | -------------------------------- |
-| `routes.spec.js`               | just a running server (empty store is fine)                                                     | yes                              |
-| `forms.spec.js`                | just a running server                                                                           | yes                              |
-| `builder-*.spec.js`            | just a running server (the Builder)                                                             | yes                              |
-| `builder-presentation.spec.js` | as above: a device's type, info tooltips, templates, colors, line styles, group fields, icons   | yes                              |
-| `builder-files.spec.js`        | as above, and `E2E_BASE_DIR`: the server's `--base-dir.phenix`, on the machine the tests run on | yes                              |
-| `builder-legacy.spec.js`       | just a running server; converts `tests/fixtures/legacy-sample.xml`, a legacy Builder diagram    | yes                              |
-| `builder-drafts.spec.js`       | just a running server; the drafts page: its cards, Publish from a card, Exp, and bulk Delete    | yes                              |
-| `builder-templates.spec.js`    | just a running server; device templates of a diagram and of the library, and its collections    | yes                              |
-| `builder-sharing.spec.js`      | server started with `--jwt-signing-key` and an admin user, and `E2E_SHARING=1`                  | yes (own server)                 |
-| `experiment-lifecycle.spec.js` | minimega, VM images, a topology                                                                 | opt-in (`E2E_LIFECYCLE=1`)       |
-| `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`                                   | opt-in (`E2E_AUTH_MODE=enabled`) |
-| `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`                           | opt-in (`E2E_AUTH_MODE=proxy`)   |
+| Spec                                | Needs                                                                                                   | CI                               |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `routes.spec.js`                    | just a running server (empty store is fine)                                                             | yes                              |
+| `forms.spec.js`                     | just a running server                                                                                   | yes                              |
+| `builder-*.spec.js`                 | just a running server (the Builder)                                                                     | yes                              |
+| `builder-presentation.spec.js`      | as above: a device's type, info tooltips, templates, colors, line styles, group fields, icons           | yes                              |
+| `builder-files.spec.js`             | as above, and `E2E_BASE_DIR`: the server's `--base-dir.phenix`, on the machine the tests run on         | yes                              |
+| `builder-legacy.spec.js`            | just a running server; converts `tests/fixtures/legacy-sample.xml`, a legacy Builder diagram            | yes                              |
+| `builder-drafts.spec.js`            | just a running server; the drafts page: its cards, Publish from a card, Exp, and bulk Delete            | yes                              |
+| `builder-templates.spec.js`         | just a running server; device templates of a diagram and of the library, and its collections            | yes                              |
+| `builder-sharing.spec.js`           | server started with `--jwt-signing-key` and an admin user, and `E2E_SHARING=1`                          | yes (own server)                 |
+| `builder-sharing-templates.spec.js` | as `builder-sharing.spec.js`; library templates shared and published server-wide, built-in ones changed | yes (the sharing job's server)   |
+| `experiment-lifecycle.spec.js`      | minimega, VM images, a topology                                                                         | opt-in (`E2E_LIFECYCLE=1`)       |
+| `auth-enabled.spec.js`              | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`                                           | opt-in (`E2E_AUTH_MODE=enabled`) |
+| `auth-proxy.spec.js`                | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`                                   | opt-in (`E2E_AUTH_MODE=proxy`)   |
 
 CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`
 and `bin/phenix` once, then runs five jobs in parallel. Each starts its own
@@ -31,10 +32,11 @@ part of the suite:
 | ---------------- | ----------------- | ------------------------------------------- |
 | Smoke 1/3 to 3/3 | no flags          | the default set without `@axe`, in 3 shards |
 | Axe scans        | no flags          | the `@axe` tests                            |
-| Builder sharing  | authentication on | `builder-sharing.spec.js`                   |
+| Builder sharing  | authentication on | `builder-sharing*.spec.js`                  |
 
-Every job runs all three projects (below) on its part. The sharing spec makes
-and signs in users of its own. Builder checks include axe accessibility scans.
+Every job runs all three projects (below) on its part. The sharing specs make
+and sign in users of their own, and the roles they need (`userMaker` in
+`tests/builder-support.js`). Builder checks include axe accessibility scans.
 The shards use Playwright's `--shard`, which splits the tests by count, not by
 time.
 
@@ -122,7 +124,11 @@ Delete selected on the list of every template, only on the list of a
 collection it made. The `tracker` fixture deletes the templates and
 collections a page adds, and those added with `seedTemplates()` of
 `tests/builder-support.js`; `templateLibrary(page)` there finds the tab's
-controls.
+controls. Changing and deleting built-in templates, sharing and publishing
+server-wide are tested in `builder-sharing-templates.spec.js`, by users with
+a library of their own. What one of its tests publishes server-wide is
+listed to every user meanwhile, so its tests look only for their own users'
+templates.
 
 A test that asserts the intended behavior of a known product defect is tagged
 `@known-defect` and starts with

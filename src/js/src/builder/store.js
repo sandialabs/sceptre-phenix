@@ -671,8 +671,10 @@ export const useBuilderStore = defineStore('builder', {
     // before it is asked for, then 'loading', and 'ready' or 'failed' as
     // the last read went, with why it failed (error). loaded says whether
     // the rest is what the server answered: the library's owner, its
-    // templates (items) and collections, the custom icons the templates
-    // name (by icon id: {name?, data}), what the user may do, whether the
+    // templates (items) and collections, and those of other users shared
+    // with the user or published server-wide (each with its source and
+    // owner), the custom icons the templates name (by icon id: {name?,
+    // data}), what the user may do (canShare, canPublish), whether the
     // stored library cannot be read (damaged), and its limits. A read that
     // fails keeps what an earlier one answered.
     templates: emptyLibrary(),
@@ -812,7 +814,8 @@ export const useBuilderStore = defineStore('builder', {
     paletteTemplateGroups: (state) =>
       paletteTemplateGroups(state.doc, state.templates),
     // The template a palette entry's key names ("diagram:<id>", "own:<id>",
-    // "builtin:<id>"), or undefined.
+    // "shared:<owner>/<id>", "server:<owner>/<id>", "builtin:<id>"), or
+    // undefined.
     templateByKey: (state) => (key) =>
       templateByKey(state.doc, key, state.templates),
     // The user's own templates and collections, in the order the library
@@ -4220,6 +4223,80 @@ export const useBuilderStore = defineStore('builder', {
       await this.fetchTemplates();
 
       return deleted;
+    },
+
+    /**
+     * The users the templates and collections of the user's library may be
+     * shared with. It rejects with the failure: a user without an account
+     * of their own may share nothing (403).
+     *
+     * @returns {Promise<{username: string, name: string}[]>}
+     */
+    loadTemplateShareCandidates() {
+      return builderApi.listTemplateShareCandidates();
+    },
+
+    /**
+     * Adds people to templates and collections of the user's library, and
+     * takes people off them, every item at once, then reads the library
+     * again. Sharing a collection shares its templates. It rejects with the
+     * failure: a person the server refuses (422, see shareErrors) changes
+     * nothing.
+     *
+     * @param {{templates?: string[], collections?: string[]}} items ids
+     * @param {{add?: string[], remove?: string[]}} people usernames
+     * @returns {Promise<{failed: object[]}>} the items left as they were
+     *   (see readLibraryResult in api.js)
+     */
+    async shareLibraryItems(
+      { templates = [], collections = [] },
+      { add = [], remove = [] },
+    ) {
+      const owner = await this.libraryOwner();
+      const result = await libraryWrite(() =>
+        builderApi.shareTemplates(owner, {
+          templates,
+          collections,
+          add,
+          remove,
+        }),
+      );
+
+      await this.fetchTemplates();
+
+      return result;
+    },
+
+    /**
+     * Publishes templates and collections server-wide, for everyone who
+     * can use the Builder, or takes them back, then reads the library
+     * again. Publishing a collection publishes its templates. It rejects
+     * with the failure.
+     *
+     * @param {{templates?: string[], collections?: string[]}} items ids
+     * @param {boolean} serverWide
+     * @param {string} [owner] whose library the items are: the user's own
+     *   when not given. A role that may publish takes back another user's
+     *   items too.
+     * @returns {Promise<{failed: object[]}>} the items left as they were
+     */
+    async publishLibraryItems(
+      { templates = [], collections = [] },
+      serverWide,
+      owner = '',
+    ) {
+      const library = owner || (await this.libraryOwner());
+      const result = await libraryWrite(() =>
+        builderApi.publishTemplates(library, {
+          templates,
+          collections,
+          serverWide,
+        }),
+      );
+
+      await this.fetchTemplates();
+
+      return result;
     },
 
     setInfo(patch) {

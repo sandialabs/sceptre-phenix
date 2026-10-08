@@ -475,8 +475,8 @@ func TestWorkflowUpsertConfigRejectsBadRequests(t *testing.T) {
 
 // TestWorkflowUpsertConfigForbidden asserts a dry run is refused as the real
 // upsert is: for a role that may neither create nor update configs, before
-// the body is parsed or the store is read, and for a role that may only
-// create configs, when the body names a stored config.
+// the body is parsed or the store is read, and for a role that may create and
+// update other configs only, for the config the body names.
 func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 	for _, query := range []string{"?dryRun=true", ""} {
 		t.Run(fmt.Sprintf("query %q, no configs permission", query), func(t *testing.T) {
@@ -497,24 +497,31 @@ func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 			}
 		})
 
-		t.Run(fmt.Sprintf("query %q, exists=true, create only", query), func(t *testing.T) {
-			t.Setenv("BRANCH_NAME", "")
+		for _, exists := range []bool{false, true} {
+			t.Run(fmt.Sprintf("query %q, exists=%t, other configs only", query, exists), func(t *testing.T) {
+				t.Setenv("BRANCH_NAME", "")
 
-			m := installValidationTestStore(t)
-			expectUpsertExists(m, workflowTestKey("topology/main-topo"), true)
+				m := installValidationTestStore(t)
+				expectUpsertExists(m, workflowTestKey("topology/main-topo"), exists)
 
-			req := upsertTestRequest(t, query, upsertTestTopology)
-			req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, configsRole("create")))
+				req := upsertTestRequest(t, query, upsertTestTopology)
+				req = req.WithContext(context.WithValue(
+					req.Context(), middleware.ContextKeyRole, configsRoleOn([]string{"Topology/other"}, "create", "update"),
+				))
 
-			want := "updating config Topology/main-topo not allowed for test-user"
+				want := "creating config Topology/main-topo not allowed for test-user"
+				if exists {
+					want = "updating config Topology/main-topo not allowed for test-user"
+				}
 
-			err := WorkflowUpsertConfig(httptest.NewRecorder(), req)
+				err := WorkflowUpsertConfig(httptest.NewRecorder(), req)
 
-			var werr *weberror.WebError
-			if !errors.As(err, &werr) || werr.Status != http.StatusForbidden || werr.Message != want {
-				t.Fatalf("error = %v, want a 403 with message %q", err, want)
-			}
-		})
+				var werr *weberror.WebError
+				if !errors.As(err, &werr) || werr.Status != http.StatusForbidden || werr.Message != want {
+					t.Fatalf("error = %v, want a 403 with message %q", err, want)
+				}
+			})
+		}
 	}
 }
 

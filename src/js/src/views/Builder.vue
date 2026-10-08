@@ -91,7 +91,8 @@
         <template #templates>
           <builder-templates
             @template="(options) => openDialog('template', options)"
-            @collection="(options) => openDialog('collection', options)" />
+            @collection="(options) => openDialog('collection', options)"
+            @share="(options) => openDialog('template-share', options)" />
         </template>
       </builder-drafts>
     </template>
@@ -526,6 +527,12 @@
       :collection="collectionRequest.collection"
       :template-ids="collectionRequest.templateIds"
       @close="dialog = ''" />
+    <!-- Share templates and collections of the user's library, from the
+         Node Templates tab. -->
+    <template-share-dialog
+      v-if="dialog === 'template-share' && templateShareRequest"
+      :targets="templateShareRequest.targets"
+      @close="dialog = ''" />
 
     <history-dialog v-if="dialog === 'history'" @close="dialog = ''" />
 
@@ -627,6 +634,7 @@
   import ScenarioDialog from '@/components/builder/dialogs/ScenarioDialog.vue';
   import ShareDialog from '@/components/builder/dialogs/ShareDialog.vue';
   import TemplateDialog from '@/components/builder/dialogs/TemplateDialog.vue';
+  import TemplateShareDialog from '@/components/builder/dialogs/TemplateShareDialog.vue';
   import UploadDialog from '@/components/builder/dialogs/UploadDialog.vue';
   import { useFixedTooltip } from '@/components/builder/fixedTooltip.js';
   import { closeSections } from '@/components/builder/inspector/InspectorSectionRenderer.vue';
@@ -720,9 +728,10 @@
   // scenario, history, commands (the command palette), shortcuts (the
   // shortcut sheet) or settings.
   // Also group-pattern, the Auto-group by name pattern dialog.
-  // Also template, the template editor (see openTemplate), and collection,
+  // Also template, the template editor (see openTemplate), collection,
   // the dialog of a collection of the template library (see
-  // openCollection).
+  // openCollection), and template-share, the Share dialog of templates and
+  // collections of the library (see openTemplateShare).
   const dialog = ref('');
   // What the command palette shows first: a query ('@' for Go to node) or
   // the choices of one command (its id), as commandView.openPalette asked.
@@ -1876,11 +1885,17 @@
   // The template editor on a template of the user's library, from the
   // Node Templates tab: 'library-edit' edits the one `id` names,
   // 'library-new' starts a new one from a plain device, with no name.
-  function openLibraryTemplate(mode, id) {
-    const template =
-      mode === 'library-edit'
-        ? store.ownTemplates.find((entry) => entry.id === id)
-        : blankTemplate();
+  // 'view' shows another user's, of `owner`, read only.
+  function openLibraryTemplate(mode, id, owner) {
+    const template = {
+      'library-edit': () => store.ownTemplates.find((entry) => entry.id === id),
+      'library-new': () => blankTemplate(),
+      view: () =>
+        store.templates.items.find(
+          (entry) =>
+            entry.source !== 'own' && entry.owner === owner && entry.id === id,
+        ),
+    }[mode]?.();
 
     templateRequest.value = template
       ? { mode, template, icons: store.templates.icons }
@@ -1897,9 +1912,9 @@
   // as the diagram has it, so what the Inspector holds unapplied for it is
   // saved first, as before the diagram is read whole. Returns whether
   // there is a template to open the editor on.
-  function openTemplate({ mode = 'diagram-new', id = '' } = {}) {
-    if (mode.startsWith('library-')) {
-      return openLibraryTemplate(mode, id);
+  function openTemplate({ mode = 'diagram-new', id = '', owner = '' } = {}) {
+    if (mode.startsWith('library-') || mode === 'view') {
+      return openLibraryTemplate(mode, id, owner);
     }
 
     if (!editing.value || store.readOnly) {
@@ -1957,9 +1972,23 @@
     return Boolean(collectionRequest.value);
   }
 
+  // What the Share dialog of the template library opens on: the user's
+  // templates and collections, as listed (see TemplateShareDialog.vue).
+  const templateShareRequest = ref(null);
+
+  function openTemplateShare({ targets = [] } = {}) {
+    templateShareRequest.value = targets.length ? { targets } : null;
+
+    return Boolean(templateShareRequest.value);
+  }
+
   function openDialog(name, options = {}) {
     if (name === 'upload' && editing.value) {
       return openUpload();
+    }
+
+    if (name === 'template-share' && !openTemplateShare(options)) {
+      return;
     }
 
     if (name === 'template' && !openTemplate(options)) {

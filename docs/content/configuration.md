@@ -718,6 +718,17 @@ There are two ways to view a specific config:
    invalid, an error will be presented.
   ![screenshot](images/view_edit.png){: width=800 .center}
 
+### Topologies with a Builder diagram
+
+A topology with a [Builder](builder/index.md) diagram has the tag `builder`
+next to its name, and one the legacy Builder saved has `builder legacy`.
+The tag is a link into the Builder. A topology's viewer also has a button,
+left of `Edit Config`: `Open in Builder` for a topology with a Builder
+diagram, and `Import into Builder` for any other topology. The `Edit`
+button of a `builder` topology opens it in the Builder, not in the editor
+window. See
+[From the Configs page](builder/import-upload-download.md#from-the-configs-page).
+
 ### Create a Config
 
 There are two ways to create a new config:

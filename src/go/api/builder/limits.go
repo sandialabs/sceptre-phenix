@@ -152,6 +152,9 @@ const (
 	// NamespaceTemplates holds one record per user's template library,
 	// keyed by "lib/<owner scope>" (see [LibraryKey] and [TemplateLibrary]).
 	// The whole library is that one record, of at most [MaxMetadataBytes].
+	// The hints "in/<recipient scope>/<owner scope>" and "pub/<owner scope>",
+	// whose value is "{}", say an owner shared something with a recipient
+	// or published something (see [Service.LibrarySources]).
 	NamespaceTemplates = "builder.templates"
 )
 

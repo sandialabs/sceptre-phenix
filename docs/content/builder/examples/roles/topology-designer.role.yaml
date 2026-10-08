@@ -1,7 +1,8 @@
 # Topology Designer: creates Builder drafts and publishes topologies,
 # scenarios and experiments. Sees only their own drafts and those shared with
-# them (no builder-drafts policy). Every policy names its resources: "*/*"
-# matches config names such as Topology/riverside-water, which "*" does not.
+# them (no builder-drafts policy). Every policy names its resources. configs
+# names only the kinds the Builder uses: "*/*" would also match User and Role
+# configs.
 apiVersion: phenix.sandia.gov/v1
 kind: Role
 metadata:
@@ -12,8 +13,9 @@ spec:
   - resources:
     - configs
     resourceNames:
-    - "*"
-    - "*/*"
+    - "Topology/*"
+    - "Scenario/*"
+    - "Experiment/*"
     verbs:
     - list
     - get

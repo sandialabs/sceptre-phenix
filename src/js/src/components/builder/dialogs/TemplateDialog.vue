@@ -26,14 +26,27 @@
   what was typed, so Save can be pressed again. A template that changed
   since the editor opened (another tab) is not replaced unasked: the dialog
   says so, and the next Save replaces it.
+
+  Another user's template, shared with the user or published server-wide,
+  opens read only from its card's View: every field is locked, readable and
+  reachable with Tab, a line under the title says whose it is, and Copy to
+  my library, for a role that may add templates, adds a copy the user owns.
 -->
 <template>
   <builder-dialog
     :title="title"
     title-id="template-dialog-title"
+    :describedby="viewing ? 'template-origin' : ''"
     class="builder-template-editor"
     data-testid="template-dialog"
     @close="requestClose">
+    <p
+      v-if="viewing"
+      id="template-origin"
+      class="builder-template-editor__origin"
+      data-testid="template-origin">
+      {{ templateOrigin(template) }}
+    </p>
     <!-- tabindex: Firefox makes a box that scrolls a Tab stop of its own;
          this one holds fields, which Tab reaches and scrolls into view. -->
     <div ref="body" class="builder-template-editor__body" tabindex="-1">
@@ -46,14 +59,15 @@
         <h3 id="template-about-title">Template</h3>
         <div class="builder-field">
           <label for="template-name"
-            >Name<span aria-hidden="true"> *</span></label
+            >Name<span v-if="!viewing" aria-hidden="true"> *</span></label
           >
           <input
             id="template-name"
             ref="nameField"
             v-model="name"
             type="text"
-            required
+            :required="!viewing"
+            :readonly="viewing"
             autocomplete="off"
             :aria-invalid="invalid('name')"
             :aria-describedby="describedBy('name', 'template-name-hint')"
@@ -73,6 +87,7 @@
             id="template-description"
             v-model="description"
             type="text"
+            :readonly="viewing"
             autocomplete="off"
             :aria-invalid="invalid('description')"
             :aria-describedby="
@@ -147,10 +162,13 @@
           class="builder-button"
           data-testid="template-cancel"
           @click="requestClose">
-          Cancel
+          {{ viewing ? 'Close' : 'Cancel' }}
         </button>
-        <!-- While the library saves it, it keeps focus and does nothing. -->
+        <!-- While the library saves it, it keeps focus and does nothing.
+             Viewing, it copies, for a role that may add templates, which
+             Enter in a field does not do. -->
         <button
+          v-if="!viewing"
           type="submit"
           :form="FORM_ID"
           class="builder-button builder-button--primary"
@@ -158,6 +176,16 @@
           :aria-busy="saving || undefined"
           data-testid="template-save">
           {{ saving ? 'Saving…' : MODES[mode].save }}
+        </button>
+        <button
+          v-else-if="store.templateRights.create"
+          type="button"
+          class="builder-button builder-button--primary"
+          :aria-disabled="saving || undefined"
+          :aria-busy="saving || undefined"
+          data-testid="template-save"
+          @click="copy">
+          {{ saving ? 'Copying…' : MODES[mode].save }}
         </button>
       </div>
     </div>
@@ -186,6 +214,12 @@
       save: 'Save',
       library: true,
     },
+    // Another user's template, which the user can copy but not change.
+    view: {
+      title: (template) => `Template ${template.name}`,
+      save: 'Copy to my library',
+      view: true,
+    },
   };
 
   const CHANGED_ELSEWHERE =
@@ -210,9 +244,13 @@
   import { isTextEntry } from '@/builder/commands.js';
   import { useBuilderStore } from '@/builder/store.js';
   import {
+    copiedMessage,
+    copyProblem,
     templateDocument,
     templateEditorHost,
     templateFromDocument,
+    templateIcons,
+    templateOrigin,
     templateProblem,
     templateText,
   } from '@/builder/templates.js';
@@ -224,6 +262,7 @@
     // one the diagram has, which `template` then is, with its id.
     // 'library-new': a new template of the user's library; 'library-edit':
     // one the library has, which `template` then is, with its id and etag.
+    // 'view': another user's template, as listed, read only.
     mode: {
       type: String,
       required: true,
@@ -257,6 +296,7 @@
 
   const title = MODES[props.mode].title(props.template);
   const inLibrary = Boolean(MODES[props.mode].library);
+  const viewing = Boolean(MODES[props.mode].view);
   // The tag a template of the library is saved against: the one it was
   // listed with, then the one a refused save said it has now.
   let etag = props.template.etag || '';
@@ -268,6 +308,7 @@
       doc: templateDocument(props.template, props.icons),
       source: store,
       announce: (message) => status.set(message),
+      readOnly: viewing,
     }),
   );
 
@@ -307,7 +348,7 @@
   const duplicate = computed(() => {
     const typed = templateText(name.value).toLowerCase();
 
-    return typed !== '' && others.value.includes(typed);
+    return !viewing && typed !== '' && others.value.includes(typed);
   });
 
   // --- closing ---------------------------------------------------------
@@ -330,7 +371,7 @@
       return;
     }
 
-    if (!changed()) {
+    if (viewing || !changed()) {
       emit('close');
 
       return;
@@ -415,8 +456,41 @@
     }
   }
 
+  // Another user's template, viewed, goes to the user's library as a copy
+  // they own, with the custom icon it names. The page says so once the
+  // dialog has closed; a failure is said in the dialog.
+  async function copy() {
+    if (saving.value) {
+      return;
+    }
+
+    error.clear();
+
+    const full = copyProblem(store.templates, 1);
+
+    if (full) {
+      await fail(`Could not copy the template. ${full}`);
+
+      return;
+    }
+
+    saving.value = true;
+
+    try {
+      await store.createLibraryTemplates([props.template], {
+        icons: templateIcons(props.template, props.icons),
+      });
+      store.announce(copiedMessage([props.template]));
+      emit('close');
+    } catch (failure) {
+      await fail(store.describeLibraryError(failure, 'copy the template'));
+    } finally {
+      saving.value = false;
+    }
+  }
+
   async function save() {
-    if (confirming.value || saving.value) {
+    if (confirming.value || saving.value || viewing) {
       return;
     }
 
@@ -514,6 +588,13 @@
       border: 0;
       border-radius: 0;
     }
+  }
+
+  .builder-template-editor__origin {
+    flex: none;
+    margin: 0 0 0.75rem;
+    color: var(--bx-text-muted);
+    overflow-wrap: anywhere;
   }
 
   .builder-template-editor__body {

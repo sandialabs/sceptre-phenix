@@ -13,7 +13,7 @@
 import axiosInstance from '@/utils/axios.js';
 
 import { count } from './announce.js';
-import { MAX_DOCUMENT_BYTES } from './limits.js';
+import { MAX_DOCUMENT_BYTES, MAX_SHARES } from './limits.js';
 import { sessionEnded } from './signin.js';
 import { hasControlCharacters, utf8Length } from './text.js';
 
@@ -166,6 +166,27 @@ export function templateCollectionPath(owner, id) {
  */
 export function templateDeletePath(owner) {
   return `${TEMPLATES_PATH}/${encodeURIComponent(owner)}/delete`;
+}
+
+// The users the caller may share the templates of their library with.
+export const TEMPLATE_CANDIDATES_PATH = `${TEMPLATES_PATH}/candidates`;
+
+/**
+ * @param {string} owner
+ * @returns {string} where people are added to and removed from templates
+ *   and collections of that library
+ */
+export function templateSharePath(owner) {
+  return `${TEMPLATES_PATH}/${encodeURIComponent(owner)}/share`;
+}
+
+/**
+ * @param {string} owner
+ * @returns {string} where templates and collections of that library are
+ *   published server-wide, or taken back
+ */
+export function templatePublishPath(owner) {
+  return `${TEMPLATES_PATH}/${encodeURIComponent(owner)}/publish`;
 }
 
 /**
@@ -617,10 +638,6 @@ function ifMatch(etag) {
   return etag ? { headers: { 'If-Match': etag } } : {};
 }
 
-// The most people a draft is shared with (MaxShares in api/builder), used
-// until the server says otherwise.
-export const MAX_SHARES = 25;
-
 /**
  * Normalizes a share list response. Its tag ("shares-3") is the share
  * list's own, apart from the draft's ETag, and is read from the body first
@@ -674,6 +691,49 @@ export function shareErrors(error) {
       user: typeof entry.user === 'string' ? entry.user : '',
       reason: entry.reason,
     }));
+}
+
+/**
+ * The users a share may name, from a listing of them: a draft's or the
+ * template library's.
+ *
+ * @param {object} response axios-like response
+ * @returns {{username: string, name: string}[]} name may be ''
+ */
+export function readCandidates(response) {
+  const users = response?.data?.users;
+
+  if (!Array.isArray(users)) {
+    throw new TypeError('The server sent an unexpected user listing.');
+  }
+
+  return users
+    .filter((user) => typeof user?.username === 'string' && user.username)
+    .map((user) => ({
+      username: user.username,
+      name: typeof user.name === 'string' ? user.name.trim() : '',
+    }));
+}
+
+/**
+ * What a change of who may use templates and collections came to: the
+ * items it left as they were, and why ('not-found', 'too-many').
+ *
+ * @param {object} response axios-like response
+ * @returns {{failed: {kind: string, id: string, reason: string}[]}}
+ */
+export function readLibraryResult(response) {
+  const failed = response?.data?.failed;
+
+  return {
+    failed: (Array.isArray(failed) ? failed : [])
+      .filter((entry) => typeof entry?.id === 'string' && entry.id)
+      .map((entry) => ({
+        kind: entry.kind === 'collection' ? 'collection' : 'template',
+        id: entry.id,
+        reason: typeof entry.reason === 'string' ? entry.reason : '',
+      })),
+  };
 }
 
 /**
@@ -915,19 +975,7 @@ export function createBuilderApi(http = axiosInstance) {
      * @returns {Promise<{username: string, name: string}[]>} name may be ''
      */
     async listShareCandidates(owner, id) {
-      const response = await http.get(shareCandidatesPath(owner, id));
-      const users = response.data?.users;
-
-      if (!Array.isArray(users)) {
-        throw new TypeError('The server sent an unexpected user listing.');
-      }
-
-      return users
-        .filter((user) => typeof user?.username === 'string' && user.username)
-        .map((user) => ({
-          username: user.username,
-          name: typeof user.name === 'string' ? user.name.trim() : '',
-        }));
+      return readCandidates(await http.get(shareCandidatesPath(owner, id)));
     },
 
     async listSnapshots(owner, id) {
@@ -1301,8 +1349,10 @@ export function createBuilderApi(http = axiosInstance) {
 
     /**
      * Reads the template library the user can use: their own templates and
-     * collections, with what they may do and the library's limits. A user
-     * who never changed theirs has the built-in templates.
+     * collections, then those of other users that are shared with them or
+     * published server-wide (each item's source says which: own, shared or
+     * server), with what they may do and the library's limits. A user who
+     * never changed theirs has the built-in templates.
      *
      * @returns {Promise<object>} owner, templates and collections (lists),
      *   icons (the custom icons the templates name, by icon id: {name?,
@@ -1442,6 +1492,66 @@ export function createBuilderApi(http = axiosInstance) {
         templates: Number(deleted.templates) || 0,
         collections: Number(deleted.collections) || 0,
       };
+    },
+
+    /**
+     * Lists the users the caller may share the templates and collections
+     * of their library with: every user but the caller. Only a user with an
+     * account of their own may.
+     *
+     * @returns {Promise<{username: string, name: string}[]>} name may be ''
+     */
+    async listTemplateShareCandidates() {
+      return readCandidates(await http.get(TEMPLATE_CANDIDATES_PATH));
+    },
+
+    /**
+     * Adds people to templates and collections of a library, and takes
+     * people off them, each item at once. A person an item has already, or
+     * does not have, changes nothing there. The server refuses the whole
+     * request (422, see shareErrors) when it refuses a person to add.
+     *
+     * @param {string} owner the library's owner, who the caller must be
+     * @param {object} change templates, collections: the items, by id; add,
+     *   remove: usernames
+     * @returns {Promise<{failed: object[]}>} the items left as they were,
+     *   see readLibraryResult
+     */
+    async shareTemplates(
+      owner,
+      { templates = [], collections = [], add = [], remove = [] } = {},
+    ) {
+      return readLibraryResult(
+        await http.post(templateSharePath(owner), {
+          ...(templates.length ? { templates } : {}),
+          ...(collections.length ? { collections } : {}),
+          ...(add.length ? { add } : {}),
+          ...(remove.length ? { remove } : {}),
+        }),
+      );
+    },
+
+    /**
+     * Publishes templates and collections of a library server-wide, for
+     * everyone who can use the Builder, or takes them back. Only the owner
+     * publishes; the owner, or a role that may publish, takes back.
+     *
+     * @param {string} owner the library's owner
+     * @param {object} change templates, collections: the items, by id;
+     *   serverWide: whether they are to be server-wide
+     * @returns {Promise<{failed: object[]}>} see readLibraryResult
+     */
+    async publishTemplates(
+      owner,
+      { templates = [], collections = [], serverWide } = {},
+    ) {
+      return readLibraryResult(
+        await http.post(templatePublishPath(owner), {
+          ...(templates.length ? { templates } : {}),
+          ...(collections.length ? { collections } : {}),
+          serverWide: serverWide === true,
+        }),
+      );
     },
 
     /**
