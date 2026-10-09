@@ -72,7 +72,9 @@ address then names the draft as `?draft=<owner>/<id>`, so a reload reopens
 that draft. Edit on a `builder-xml` topology opens the text editor with
 `builder-xml: <SNIPPED>`; the diagram is written back unchanged while that
 line stays, and deleting the line removes it. The Inspector also edits a node's labels,
-annotations, and advanced (minimega `vm config`) settings. An interface's kind
+annotations, and advanced (minimega `vm config`) settings, and its notes
+(`general.notes`), each note in a text area of its own (`isMultilineList` in
+`inspector/control.js`). An interface's kind
 picker offers Static or OSPF, DHCP or manual, and Serial; the Protocol and Type
 fields under it hold the rest. With nothing
 selected, its Diagram section shows two more parts below Name and

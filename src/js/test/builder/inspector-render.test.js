@@ -2,6 +2,12 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createSSRApp, effectScope, h, nextTick, ref } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { createPinia } from 'pinia';
+import {
+  Actions,
+  coreReducer,
+  createDefaultValue,
+  mapDispatchToArrayControlProps,
+} from '@jsonforms/core';
 import { JsonForms } from '@jsonforms/vue';
 
 import BuilderInspector from '@/components/builder/BuilderInspector.vue';
@@ -1364,5 +1370,152 @@ describe('the Custom icon field', () => {
     expect(button(html, 'inspector-icon-choose')).toContain(' disabled');
     expect(button(html, 'inspector-icon-remove')).toContain(' disabled');
     expect(fieldOf(html, 'icon')).toContain('>plc</span>');
+  });
+});
+
+// A device's notes (general.notes), which a new experiment copies to its
+// VM's notes: a list in General in which each note is a text area of its
+// own, named after its place in the list.
+describe('the Notes list', () => {
+  const NOTES = 'spec.general.notes';
+  const node = builderSchemaV1.$defs['phenix.v1.minimega_node'];
+  const notesSchema = node.properties.general.properties.notes;
+  const notes = ['Domain controller.', 'Reset the password\nbefore each run.'];
+
+  // The whole Inspector for the alpha device, holding these notes.
+  const renderNotes = (held) =>
+    renderInspector({
+      change: ({ doc, alpha }) =>
+        updateNode(doc, alpha.id, {
+          device: {
+            spec: {
+              ...alpha.device.spec,
+              general: { ...alpha.device.spec?.general, notes: held },
+            },
+          },
+        }),
+    });
+
+  // The Notes list of a rendered form: its group, up to the group's end
+  // after its Add button.
+  function notesList(html) {
+    const at = html.indexOf(`data-path="${NOTES}"`);
+
+    if (at === -1) {
+      return '';
+    }
+
+    const add = html.indexOf('array-list-add', at);
+
+    return html.slice(
+      html.lastIndexOf('<fieldset', at),
+      html.indexOf('</fieldset>', add),
+    );
+  }
+
+  // The text of the label of the control with an id.
+  function labelFor(html, id) {
+    const at = id ? html.indexOf(` for="${id}"`) : -1;
+
+    if (at === -1) {
+      return '';
+    }
+
+    const start = html.indexOf('>', at) + 1;
+
+    return text(html.slice(start, html.indexOf('</label>', start)));
+  }
+
+  // Each text area of rendered HTML: the text of its label, and its own.
+  function textAreas(html) {
+    const areas = html.matchAll(/<textarea\b([^>]*)>([^<]*)<\/textarea>/g);
+
+    return Array.from(areas, ([, attributes, value]) => ({
+      label: labelFor(html, /\sid="([^"]+)"/.exec(attributes)?.[1]),
+      value,
+    }));
+  }
+
+  // Changes notes with the functions JSON Forms gives a list control
+  // (useJsonFormsArrayControl), which the list's Add note and Remove note
+  // buttons call, and returns the notes they leave.
+  function editNotes(held, edit) {
+    const data = { spec: { general: { hostname: 'alpha', notes: held } } };
+    let core = coreReducer(undefined, Actions.init(data, { type: 'object' }));
+    const list = mapDispatchToArrayControlProps((action) => {
+      core = coreReducer(core, action);
+    });
+
+    edit(list);
+
+    return core.data.spec.general.notes;
+  }
+
+  const addButton = (list) =>
+    tags(list, 'button').find((tag) => tag.includes('array-list-add'));
+
+  test('each note is a text area named after its place, between Node hostname and Snapshot', async () => {
+    const html = await renderNotes(notes);
+    const list = notesList(html);
+    const at = (path) => html.indexOf(`data-path="${path}"`);
+
+    expect(list).toContain('>Notes</span>');
+    expect(textAreas(list)).toEqual([
+      { label: 'Note 1', value: 'Domain controller.' },
+      { label: 'Note 2', value: 'Reset the password\nbefore each run.' },
+    ]);
+    // No one-line field holds a note, which would lose its line breaks.
+    expect(tags(list, 'input')).toEqual([]);
+    expect(list).toContain('aria-label="Remove note 1"');
+    expect(list).toContain('aria-label="Move note 2 up"');
+    expect(list).toMatch(/Add note\s*<\/button>/);
+    expect(addButton(list)).not.toMatch(/\sdisabled\b/);
+
+    expect(at('spec.general.hostname')).toBeGreaterThan(-1);
+    expect(at(NOTES)).toBeGreaterThan(at('spec.general.hostname'));
+    expect(at(NOTES)).toBeLessThan(at('spec.general.snapshot'));
+  });
+
+  test('Add note adds an empty note at the end, and Remove note takes one away', async () => {
+    // What Add note appends: the default value of a note's schema.
+    const added = editNotes(notes, ({ addItem }) =>
+      addItem(NOTES, createDefaultValue(notesSchema.items, notesSchema))(),
+    );
+
+    expect(added).toEqual([...notes, '']);
+    expect(textAreas(notesList(await renderNotes(added)))).toEqual([
+      { label: 'Note 1', value: 'Domain controller.' },
+      { label: 'Note 2', value: 'Reset the password\nbefore each run.' },
+      { label: 'Note 3', value: '' },
+    ]);
+
+    const removed = editNotes(added, ({ removeItems }) =>
+      removeItems(NOTES, [0])(),
+    );
+
+    expect(removed).toEqual([notes[1], '']);
+    expect(textAreas(notesList(await renderNotes(removed)))).toEqual([
+      { label: 'Note 1', value: 'Reset the password\nbefore each run.' },
+      { label: 'Note 2', value: '' },
+    ]);
+
+    // With none left, the list says so and still offers Add note.
+    const none = editNotes([notes[0]], ({ removeItems }) =>
+      removeItems(NOTES, [0])(),
+    );
+    const empty = notesList(await renderNotes(none));
+
+    expect(none).toEqual([]);
+    expect(textAreas(empty)).toEqual([]);
+    expect(text(empty)).toContain('No notes.');
+    expect(addButton(empty)).not.toMatch(/\sdisabled\b/);
+  });
+
+  test('Add note is unavailable at 100 notes, the most a node takes', async () => {
+    const many = Array.from({ length: 100 }, (_, i) => `Note ${i + 1}.`);
+    const full = notesList(await renderNotes(many));
+
+    expect(textAreas(full)).toHaveLength(100);
+    expect(addButton(full)).toMatch(/\sdisabled\b/);
   });
 });

@@ -504,21 +504,43 @@ export function valueText(value) {
  *
  * @param {object} uischema generated UI schema, possibly a one-element layout
  * @param {string} label
+ * @param {object} [options] UI schema options the control also takes, such as
+ *   `multi` for a text area
  * @returns {object}
  */
-export function labelWholeValue(uischema, label) {
+export function labelWholeValue(uischema, label, options) {
   if (uischema?.type === 'Control' && uischema.scope === '#') {
-    return { ...uischema, label };
+    return options
+      ? { ...uischema, label, options: { ...uischema.options, ...options } }
+      : { ...uischema, label };
   }
 
   if (Array.isArray(uischema?.elements) && uischema.elements.length === 1) {
     return {
       ...uischema,
-      elements: [labelWholeValue(uischema.elements[0], label)],
+      elements: [labelWholeValue(uischema.elements[0], label, options)],
     };
   }
 
   return uischema;
+}
+
+// The lists whose text items each take several lines, by the list's key: a
+// node's notes (general.notes), which become its VM's notes.
+const MULTILINE_LIST_KEYS = ['notes'];
+
+/**
+ * Whether the items of the list at a data path are text of several lines,
+ * which the Inspector edits each in a text area rather than a one-line field
+ * (see InspectorArrayRenderer).
+ *
+ * @param {string} path the list's data path, such as "spec.general.notes"
+ * @returns {boolean}
+ */
+export function isMultilineList(path) {
+  const keys = String(path ?? '').split('.');
+
+  return MULTILINE_LIST_KEYS.includes(keys[keys.length - 1]);
 }
 
 const COMBINATORS = ['oneOf', 'anyOf', 'allOf'];

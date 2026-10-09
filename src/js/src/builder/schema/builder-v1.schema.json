@@ -869,6 +869,19 @@
               "example": "ADServer",
               "type": "string"
             },
+            "notes": {
+              "description": "Notes about the device. phenix copies them to the device's labels, as notes, when an experiment is created.",
+              "example": [
+                "Physical PLC on the test bench."
+              ],
+              "items": {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
             "vm_type": {
               "default": "vm",
               "description": "Whether the device is a virtual machine or a container.",
@@ -1229,6 +1242,20 @@
               "minLength": 2,
               "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$",
               "type": "string"
+            },
+            "notes": {
+              "description": "Notes about the node. phenix copies them to the VM's notes when an experiment is created.",
+              "example": [
+                "Domain controller for the corporate network.",
+                "Reset the administrator password before each run."
+              ],
+              "items": {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array"
             },
             "snapshot": {
               "default": true,
@@ -2207,6 +2234,19 @@
               "example": "ADServer",
               "type": "string"
             },
+            "notes": {
+              "description": "Notes about the device. phenix copies them to the device's labels, as notes, when an experiment is created.",
+              "example": [
+                "Physical PLC on the test bench."
+              ],
+              "items": {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
             "vm_type": {
               "default": "vm",
               "enum": [
@@ -2532,6 +2572,20 @@
               "minLength": 2,
               "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$",
               "type": "string"
+            },
+            "notes": {
+              "description": "Notes about the node. phenix copies them to the VM's notes when an experiment is created.",
+              "example": [
+                "Domain controller for the corporate network.",
+                "Reset the administrator password before each run."
+              ],
+              "items": {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array"
             },
             "snapshot": {
               "default": true,

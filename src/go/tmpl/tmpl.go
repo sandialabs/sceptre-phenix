@@ -16,6 +16,24 @@ import (
 //go:embed templates
 var templatesFS embed.FS
 
+// escapeQuoted returns s escaped for a double-quoted argument of a minimega
+// command, such as the key and the value of `vm config tags "<key>"
+// "<value>"`, so that minimega reads the argument back as s and the command
+// stays on one line. minimega's command lexer (lexQuote and lexEscape in its
+// minicli package) ends the argument at a double quote and starts an escape at
+// a backslash, and reads \\, \", \n, \r and \t back as a backslash, a double
+// quote, a line feed, a carriage return and a tab. A line break left as it is
+// would also end the command, since a script holds one command a line.
+func escapeQuoted(s string) string {
+	return strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+		"\r", `\r`,
+		"\t", `\t`,
+	).Replace(s)
+}
+
 // GenerateFromTemplate executes the template with the given name using the
 // given data. The result is written to the given writer. The templates used are
 // located in the `phenix/tmpl/templates' directory. Each template will have a
@@ -66,6 +84,7 @@ func GenerateFromTemplate(name string, data any, w io.Writer) error {
 		"escapeNewline": func(s string) string {
 			return strings.ReplaceAll(s, "\n", "\\n")
 		},
+		"escapeQuoted": escapeQuoted,
 	}
 
 	tplContent, err := templatesFS.ReadFile(path.Join("templates", name))

@@ -56,7 +56,9 @@ for a complete, copyable two-node topology):
   `hardware.os_type` is `minirouter`, `vyatta`, or `vyos` (`linux` there is
   deprecated: it writes a Vyatta config into the image)
 - `general.hostname`, `general.vm_type` (`kvm` or `container`, default `kvm`),
-  `general.do_not_boot`, `general.snapshot`
+  `general.do_not_boot`, `general.snapshot`, `general.notes` (up to 100 strings;
+  creating an experiment copies them into the node's labels as `__notes_<time>`
+  keys, which minimega sets as VM tags and the UI shows as the VM's notes)
 - `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos | other`
 - `hardware.vcpus`, `hardware.memory`, `hardware.drives[].image` (disk image name/path)
 - `network.interfaces[]`: `name`, `vlan`, `type: ethernet`, `proto: static|dhcp|manual`

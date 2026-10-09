@@ -339,7 +339,9 @@ Select a node to see its fields. A device has these sections:
   Color** (see [Colors](diagrams.md#colors) and
   [Custom icons](diagrams.md#custom-icons)).
 - **Node**: **Type**, and **General** (**Description**, **Do not boot**,
-  **Node hostname**, **Snapshot**, **VM type**).
+  **Node hostname**, **Notes**, **Snapshot**, **VM type**). Each note has a
+  text area of its own; **Add note** adds one. A new experiment copies the
+  notes to its VM's notes.
 - **Hardware**: **CPU**, **Drives** (**Image** and more for each drive),
   **Memory**, **OS type** and **VCPUs**.
 - **Network**: **Interfaces**, **OSPF**, **Routes** and **Rulesets**.

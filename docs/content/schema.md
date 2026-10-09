@@ -283,6 +283,10 @@ in schema version `v0`. It is documented, with every field, in
 The `minimega_node` schema contains references to the `interface` schema [described
 here](#interface-schema).
 
+`general.notes` holds up to 100 notes about the node, each from 1 to 4096
+characters. When an experiment is created, phēnix copies them into the node's
+labels as VM notes (see [Node Notes](configuration.md#node-notes)).
+
 ```yaml
 minimega_node:
   type: object
@@ -327,6 +331,16 @@ minimega_node:
           default: false
           example: false
           nullable: true
+        notes:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 4096
+          example:
+          - Domain controller for the corporate network.
+          - Reset the administrator password before each run.
     hardware:
       type: object
       required:
@@ -641,6 +655,15 @@ external_node:
           - ""
           default: vm
           example: vm
+        notes:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 4096
+          example:
+          - Physical PLC on the test bench.
     hardware:
       type: object
       nullable: true

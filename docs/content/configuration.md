@@ -138,6 +138,8 @@ Optional values for a node in the topology configuration can include:
 - additional disk storage
 - file injections (and main disk inject partition)
 - labels, which are typically used by phēnix apps
+- notes (`general.notes`), which become the VM's notes (see
+  [Node Notes](#node-notes))
 - routing ruleset(s)
 - delay triggered by `user`, `timer`, or `c2` (command and control)
 
@@ -174,6 +176,40 @@ three options available to set, but on only one option can be set:
     tag in the Delay column next to the Screenshot column. The tag will indicate
     what type of dealy was set. Once all the delayed VMs have started, the Delay
     column will no longer be visible.
+
+#### Node Notes
+
+`general.notes` is a list of notes about a node: at most 100 notes, each 1 to
+4096 characters long, and a note may span several lines. When an experiment is
+created, phēnix copies each note into the node's labels, in the order of the
+list, under a key made of `__notes_` and a time, such as
+`__notes_2026-10-09T11:34:56.789Z`, the key the web UI gives a note added in
+the VM's Labels dialog. minimega sets a node's labels as its VM's tags when the
+experiment starts, so the notes show under Notes in that dialog (the Labels
+column of the experiment's VM table) and in the VM's
+[State of Health](state-of-health.md) details.
+
+```yaml
+- type: VirtualMachine
+  general:
+    hostname: AD1
+    notes:
+    - Domain controller for the corporate network.
+    - |-
+      Reset the administrator password
+      before each run.
+  hardware:
+    os_type: windows
+    drives:
+    - image: win-svr-2019.qc2
+```
+
+!!! note
+    phēnix copies the notes only when it creates an experiment. A later change
+    to the topology's notes does not reach an existing experiment, and notes
+    edited in the Labels dialog stay when the experiment is stopped and
+    started again. A note is not copied when the node already holds a note
+    with the same text, or when a label already has the note's key.
 
 #### Network Address Translation (NAT)
 

@@ -126,6 +126,7 @@
   import BuilderIcon from '../BuilderIcon.vue';
   import { capitalize } from '@/builder/text.js';
   import {
+    isMultilineList,
     labelWholeValue,
     useInspectorAnnounce,
     useInspectorLocked,
@@ -212,11 +213,18 @@
   });
 
   // A list of primitives (Commands) edits each item with one unlabelled
-  // control; name it after the item.
+  // control; name it after the item. An item of a list of text of several
+  // lines (Notes; see isMultilineList) is a text area.
   function childUiSchema(index) {
-    return primitiveItems.value
-      ? labelWholeValue(itemUiSchema.value, capitalize(itemName(index)))
-      : itemUiSchema.value;
+    if (!primitiveItems.value) {
+      return itemUiSchema.value;
+    }
+
+    return labelWholeValue(
+      itemUiSchema.value,
+      capitalize(itemName(index)),
+      isMultilineList(control.value.path) ? { multi: true } : undefined,
+    );
   }
 
   function itemTitle(index) {

@@ -329,7 +329,11 @@ test.describe('Builder inspector', () => {
         await expect.soft(tip).toHaveCount(0);
 
         // Keyboard focus shows it too, and Escape leaves focus where it is.
-        await specHostname.focus();
+        // Tab comes to Snapshot from the Notes list's Add note, the control
+        // before it.
+        await specGroup(builder, 'General')
+          .getByRole('button', { name: 'Add note' })
+          .focus();
         await page.keyboard.press('Tab');
         await expect.soft(snapshot).toBeFocused();
         await expect.soft(tip).toHaveText(text);

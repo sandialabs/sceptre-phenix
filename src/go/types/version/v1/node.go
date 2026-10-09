@@ -370,11 +370,12 @@ func (n Node) Delayed() string {
 }
 
 type General struct {
-	HostnameF    string `json:"hostname"    mapstructure:"hostname"    structs:"hostname"    yaml:"hostname"`
-	DescriptionF string `json:"description" mapstructure:"description" structs:"description" yaml:"description"`
-	VMTypeF      string `json:"vm_type"     mapstructure:"vm_type"     structs:"vm_type"     yaml:"vm_type"`
-	SnapshotF    *bool  `json:"snapshot"    mapstructure:"snapshot"    structs:"snapshot"    yaml:"snapshot"`
-	DoNotBootF   *bool  `json:"do_not_boot" mapstructure:"do_not_boot" structs:"do_not_boot" yaml:"do_not_boot"`
+	HostnameF    string   `json:"hostname"        mapstructure:"hostname"    structs:"hostname"        yaml:"hostname"`
+	DescriptionF string   `json:"description"     mapstructure:"description" structs:"description"     yaml:"description"`
+	VMTypeF      string   `json:"vm_type"         mapstructure:"vm_type"     structs:"vm_type"         yaml:"vm_type"`
+	SnapshotF    *bool    `json:"snapshot"        mapstructure:"snapshot"    structs:"snapshot"        yaml:"snapshot"`
+	DoNotBootF   *bool    `json:"do_not_boot"     mapstructure:"do_not_boot" structs:"do_not_boot"     yaml:"do_not_boot"`
+	NotesF       []string `json:"notes,omitempty" mapstructure:"notes"       structs:"notes,omitempty" yaml:"notes,omitempty"`
 }
 
 func (g *General) Hostname() string {
@@ -435,6 +436,18 @@ func (g *General) DoNotBoot() *bool {
 
 func (g *General) SetDoNotBoot(b bool) {
 	g.DoNotBootF = &b
+}
+
+// Notes returns the node's notes, in order, or nil when it has none. A new
+// experiment copies them into the node's labels as VM notes. The field is left
+// out of every encoding while it is empty, so a node without notes encodes as
+// it did before the field existed.
+func (g *General) Notes() []string {
+	if g == nil {
+		return nil
+	}
+
+	return g.NotesF
 }
 
 type Hardware struct {
