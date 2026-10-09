@@ -181,8 +181,11 @@ test.describe('command palette', () => {
           .toHaveText('Ungroup is unavailable. Select a group first.');
         await expect.soft(commands.dialog).toBeVisible();
         // Group selection, Ungroup, Auto-group by network, by name and by
-        // name pattern, and Add group.
-        await expect.soft(commands.count).toHaveText('6 results');
+        // name pattern, Move to a group…, and Add group.
+        await expect.soft(commands.count).toHaveText('7 results');
+        await expect
+          .soft(commands.options.filter({ hasText: 'Move to a group…' }))
+          .toHaveCount(1);
         await page.keyboard.press('Escape');
         await expect.soft(builder.canvas).toBeFocused();
       });

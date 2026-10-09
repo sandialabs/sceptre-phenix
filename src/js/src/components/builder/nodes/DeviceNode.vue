@@ -57,8 +57,9 @@
     <span v-if="comment" class="builder-node__comment">{{ comment }}</span>
     <node-issue-mark v-if="data.issue" :node-id="id" :issue="data.issue" />
 
-    <!-- Handles are pointer-only: the outline's Connect form is the keyboard
-         path, so they are hidden from assistive technology. -->
+    <!-- Handles are pointer-only: the toolbar's Add connection dialog, also
+         reached from the command palette, is the keyboard path, so they are
+         hidden from assistive technology. -->
     <Handle
       v-for="(handle, index) in data.handles"
       :id="handle.id"

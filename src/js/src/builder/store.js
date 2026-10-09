@@ -243,6 +243,12 @@ const LAYOUT_TASKS = {
   group: { name: 'Auto-group', dropped: 'no groups were made' },
 };
 
+// Why commit refuses an edit: the draft is read only, or a conflict is
+// being resolved (see refuseWhileResolving).
+const READ_ONLY_REFUSAL = 'This draft is read only.';
+const RESOLVING_REFUSAL =
+  'Not changed: the conflict is being resolved. Edit again once it is.';
+
 // Lays `doc` out for layout or autoGroup (`task`, a LAYOUT_TASKS key). A
 // layout can finish later (ELK runs in a Web Worker): until it does,
 // layoutRunning is set and another request is turned away. Resolves to the
@@ -742,6 +748,15 @@ export const useBuilderStore = defineStore('builder', {
     errors: (state) =>
       validateDocument(state.doc).filter((issue) => issue.level === 'error'),
     hasConflict: (state) => state.saveState.status === 'conflict',
+    // Why commit would refuse an edit now, or '' when it would not. A form
+    // that shows a refusal itself reads it before it changes the diagram.
+    editRefusal: (state) => {
+      if (state.readOnly) {
+        return READ_ONLY_REFUSAL;
+      }
+
+      return state.resolvingConflict ? RESOLVING_REFUSAL : '';
+    },
     saveStateText: (state) => describeState(state.saveState),
     // What the signed-in role may do (see configsAllowed). Blank, Import and
     // Upload, and editing a published diagram, all create a draft.
@@ -983,7 +998,7 @@ export const useBuilderStore = defineStore('builder', {
     commit(doc, label) {
       if (this.readOnly) {
         // The page alert reads it; announcing it too would say it twice.
-        this.setError('This draft is read only.');
+        this.setError(READ_ONLY_REFUSAL);
 
         return null;
       }
@@ -1023,9 +1038,7 @@ export const useBuilderStore = defineStore('builder', {
         return false;
       }
 
-      this.announce(
-        'Not changed: the conflict is being resolved. Edit again once it is.',
-      );
+      this.announce(RESOLVING_REFUSAL);
 
       return true;
     },
@@ -3424,10 +3437,19 @@ export const useBuilderStore = defineStore('builder', {
       );
     },
 
-    setParent(id, parentId) {
+    /**
+     * @param {string} id
+     * @param {string|null} parentId
+     * @param {object} [options] announce: false when the caller shows a
+     *   refusal itself (editRefusal), so the store does not say it too
+     * @returns {object|null} the history entry, or null when nothing moved:
+     *   the node is there already or cannot go there, or the edit was
+     *   refused
+     */
+    setParent(id, parentId, { announce = true } = {}) {
       const next = setParent(this.doc, id, parentId);
 
-      if (next === this.doc) {
+      if (next === this.doc || (!announce && this.editRefusal)) {
         return null;
       }
 
@@ -3539,19 +3561,27 @@ export const useBuilderStore = defineStore('builder', {
      * @param {object} connection
      * @param {object} [options] announce: false when the caller shows the
      *   refusal itself (in its own alert), so it is not read twice
+     * @returns {object} {edge} once connected, else {error}: why the
+     *   connection, or the edit (editRefusal), was refused
      */
     connect(connection, { announce = true } = {}) {
       const result = connect(this.doc, connection);
+      // An edit commit would refuse is found first when the caller says
+      // why itself, as commit would say it too.
+      const error = result.error || (announce ? '' : this.editRefusal);
 
-      if (result.error) {
+      if (error) {
         if (announce) {
-          this.announce(result.error);
+          this.announce(error);
         }
 
-        return { error: result.error };
+        return { error };
       }
 
-      this.commit(result.doc, 'Connected nodes');
+      // commit has said why it refused.
+      if (!this.commit(result.doc, 'Connected nodes')) {
+        return { error: this.editRefusal || 'Not connected.' };
+      }
 
       return { edge: result.edge };
     },

@@ -1833,9 +1833,12 @@
 </script>
 
 <style scoped>
+  /* The column's name, smaller and quieter than what it shows: the muted
+     text keeps 4.5:1 on the panel in either theme. */
   .builder-inspector__title {
-    font-weight: 700;
-    font-size: 0.9rem;
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: var(--bx-text-muted);
     margin: 0 0 0.35rem;
   }
 

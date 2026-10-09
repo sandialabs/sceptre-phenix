@@ -7,14 +7,17 @@
   then names the configs to write and reports the per stage result.
 
   Config names are checked here against the server's naming rule, so a bad
-  name is reported on its field before anything is sent. Whether each config
-  is created or updated follows the server's list of existing configs, which
-  is read again every time the dialog opens. The server lets a draft update
-  only a config it was loaded from or published, so it publishes again after
-  further edits (see updateBlocker), so the hints and the submit button
-  promise an update only then, and any other existing name is refused on its
-  field before anything is sent. Updating a topology that still has a diagram
-  of the legacy Builder replaces that diagram, which the hint says.
+  name is reported on its field before anything is sent. While a name
+  breaks the rule, the field says why under it, with the rule; a name that
+  keeps it shows no rule. Whether each config is created or updated follows
+  the server's list of existing configs, which is read again every time the
+  dialog opens. The server lets a draft update only a config it was loaded
+  from or published, so it publishes again after further edits (see
+  updateBlocker), so the hints and the submit button promise an update only
+  then, and any other existing name is refused on its field before
+  anything is sent. A hint that promises an update warns, as an update
+  replaces the config. Updating a topology that still has a diagram of the
+  legacy Builder replaces that diagram, which the hint says.
 
   An update replaces a config on the server, which no one can undo, so
   Publish asks first, in an alert dialog that names each config replaced
@@ -71,7 +74,11 @@
           :aria-describedby="
             describedBy(
               'topologyName',
-              'publish-topology-action-hint publish-name-rule',
+              nameHintIds(
+                'topologyName',
+                'publish-topology-action-hint',
+                'publish-name-rule',
+              ),
             )
           "
           data-testid="publish-name" />
@@ -81,21 +88,26 @@
             :key="name"
             :value="name"></option>
         </datalist>
+        <!-- An update replaces a config no one can undo, so its hint warns:
+             the sign before the words, on a yellow ground. The words say
+             it as well, for screen readers and without color. -->
         <p
           id="publish-topology-action-hint"
           class="builder-hint"
-          aria-live="polite">
-          {{
-            targetHint(
-              'topology',
-              topologyExists,
-              topologyBlocker,
-              topologyLegacy,
-            )
-          }}
+          :class="{ 'builder-hint--warning': topologyUpdates }"
+          aria-live="polite"
+          data-testid="publish-topology-action-hint">
+          <builder-icon v-if="topologyUpdates" name="warning" :size="14" />
+          <span>{{ topologyHint }}</span>
         </p>
-        <p id="publish-name-rule" class="builder-hint">
-          {{ CONFIG_NAME_RULE }}
+        <!-- Shown only while the name breaks the naming rule: why, then the
+             rule. -->
+        <p
+          v-if="nameHints.topologyName"
+          id="publish-name-rule"
+          class="builder-hint"
+          data-testid="publish-name-rule">
+          {{ nameHints.topologyName }}
         </p>
       </div>
 
@@ -111,7 +123,11 @@
           :aria-describedby="
             describedBy(
               'experimentName',
-              'publish-experiment-hint publish-name-rule',
+              nameHintIds(
+                'experimentName',
+                'publish-experiment-hint',
+                'publish-experiment-rule',
+              ),
             )
           "
           data-testid="publish-experiment" />
@@ -121,8 +137,21 @@
             :key="name"
             :value="name"></option>
         </datalist>
-        <p id="publish-experiment-hint" class="builder-hint" aria-live="polite">
-          {{ targetHint('experiment', experimentExists, experimentBlocker) }}
+        <p
+          id="publish-experiment-hint"
+          class="builder-hint"
+          :class="{ 'builder-hint--warning': experimentUpdates }"
+          aria-live="polite"
+          data-testid="publish-experiment-hint">
+          <builder-icon v-if="experimentUpdates" name="warning" :size="14" />
+          <span>{{ experimentHint }}</span>
+        </p>
+        <p
+          v-if="nameHints.experimentName"
+          id="publish-experiment-rule"
+          class="builder-hint"
+          data-testid="publish-experiment-rule">
+          {{ nameHints.experimentName }}
         </p>
       </div>
 
@@ -146,7 +175,12 @@
             required
             list="publish-scenario-names"
             :aria-invalid="invalid('scenarioName')"
-            :aria-describedby="describedBy('scenarioName', 'publish-name-rule')"
+            :aria-describedby="
+              describedBy(
+                'scenarioName',
+                nameHintIds('scenarioName', '', 'publish-scenario-rule'),
+              )
+            "
             data-testid="publish-scenario-name" />
           <datalist id="publish-scenario-names">
             <option
@@ -154,6 +188,13 @@
               :key="name"
               :value="name"></option>
           </datalist>
+          <p
+            v-if="nameHints.scenarioName"
+            id="publish-scenario-rule"
+            class="builder-hint"
+            data-testid="publish-scenario-rule">
+            {{ nameHints.scenarioName }}
+          </p>
 
           <fieldset :aria-describedby="describedBy('scenarioAction')">
             <legend>Scenario action</legend>
@@ -324,14 +365,15 @@
 
   import BuilderConfirm from '../BuilderConfirm.vue';
   import BuilderDialog from '../BuilderDialog.vue';
+  import BuilderIcon from '../BuilderIcon.vue';
   import { useFieldError, useMessage } from './message.js';
 
   import { count, listOf } from '@/builder/announce.js';
   import { unappliedBlock } from '@/builder/leave.js';
   import {
-    CONFIG_NAME_RULE,
     buildPublishIntent,
     configName,
+    configNameHint,
     describePublishResult,
     keptIncludesText,
     legacyDiagramUpdate,
@@ -470,6 +512,43 @@
       },
     ),
   );
+
+  // What publishing does with each name, under its field. Updating a config
+  // this draft may update is a warning: it replaces the config.
+  const topologyHint = computed(() =>
+    targetHint(
+      'topology',
+      topologyExists.value,
+      topologyBlocker.value,
+      topologyLegacy.value,
+    ),
+  );
+  const experimentHint = computed(() =>
+    targetHint('experiment', experimentExists.value, experimentBlocker.value),
+  );
+  const topologyUpdates = computed(
+    () => topologyExists.value && !topologyBlocker.value,
+  );
+  const experimentUpdates = computed(
+    () => experimentExists.value && !experimentBlocker.value,
+  );
+
+  // Why each name breaks the naming rule, with the rule, while it does; ''
+  // for a name that keeps it, which shows no rule.
+  const nameHints = computed(() => ({
+    topologyName: configNameHint(form.topologyName),
+    experimentName: configNameHint(form.experimentName),
+    scenarioName: configNameHint(form.scenarioName),
+  }));
+
+  // The ids that describe a name field: its hint, when it has one, then its
+  // rule while it shows. The rule is left out while the field's error
+  // shows, which says the same.
+  function nameHintIds(field, hintId, ruleId) {
+    const rule = nameHints.value[field] && !invalid(field) ? ruleId : '';
+
+    return [hintId, rule].filter(Boolean).join(' ');
+  }
 
   // An interface with no VLAN, and an address two interfaces use, is an
   // error here, though not in the draft.

@@ -156,13 +156,16 @@ describe('a command search', () => {
       'Auto-group by network',
       'Auto-group by name',
       'Auto-group by name pattern…',
+      'Move to a group…',
       'Ungroup',
     ]);
     expect(structure.items[0].ranges).toEqual([[0, 5]]);
     expect(structure.items[0].disabled).toBe(
       'Select at least one node to group.',
     );
-    expect(structure.items[4].disabled).toBe('Select a group first.');
+    // Move to a group opens its dialog with nothing selected.
+    expect(structure.items[4].disabled).toBe('');
+    expect(structure.items[5].disabled).toBe('Select a group first.');
     expect(titles(add)).toEqual(['Add group']);
   });
 
@@ -174,6 +177,7 @@ describe('a command search', () => {
       'Auto-group by network',
       'Auto-group by name',
       'Auto-group by name pattern…',
+      'Move to a group…',
     ]);
 
     // The pattern rule is found by what a pattern is, too.
@@ -290,7 +294,9 @@ describe('a command search', () => {
     expect(found('export')).toHaveLength(7);
     expect(paletteResults(full, { query: 'export' }).total).toBe(7);
     expect(found('download')).toHaveLength(7);
-    expect(found('grp')).toHaveLength(6);
+    // Move to a group… is one of them.
+    expect(found('grp')).toHaveLength(7);
+    expect(found('grp')).toContain('Move to a group…');
     expect(found('send')).toEqual(['Share…']);
 
     // "exp" starts Open experiment, and the alias of each download.

@@ -1,11 +1,14 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import {
+  CONFIG_NAME_RULE,
   LEGACY_TOKEN,
   actionFor,
   buildPublishIntent,
   configName,
+  configNameHint,
   configNameProblem,
+  configNameReason,
   describePublishResult,
   draftCanUpdate,
   hasLegacyDiagram,
@@ -282,7 +285,7 @@ describe('publish intent', () => {
       intent: null,
       field: 'topologyName',
       error:
-        'The topology name "Untitled topology" is not allowed. ' +
+        'The topology name "Untitled topology" is not allowed: it contains a space. ' +
         'Names can use only letters, numbers, underscores (_), at signs (@), ' +
         'periods (.) and hyphens (-), with no spaces. ' +
         'For example: Untitled-topology',
@@ -294,7 +297,9 @@ describe('publish intent', () => {
       experimentName: 'bad name',
     });
     expect(experiment.field).toBe('experimentName');
-    expect(experiment.error).toMatch(/^The experiment name "bad name"/);
+    expect(experiment.error).toMatch(
+      /^The experiment name "bad name" is not allowed: it contains a space\. /,
+    );
 
     const scenario = buildPublishIntent(
       {
@@ -307,7 +312,110 @@ describe('publish intent', () => {
       { scenario: { kind: 'uploaded', name: 'sc.yaml' } },
     );
     expect(scenario.field).toBe('scenarioName');
-    expect(scenario.error).toMatch(/^The scenario name "my scenario!"/);
+    expect(scenario.error).toMatch(
+      /^The scenario name "my scenario!" is not allowed: it contains a space and characters that are not allowed: "!"\. /,
+    );
+  });
+
+  test('a refused name says why: its spaces and the characters it may not use', () => {
+    const rule = CONFIG_NAME_RULE;
+
+    expect(configNameReason('a b')).toBe('it contains a space');
+    expect(configNameReason('a b c')).toBe('it contains spaces');
+    expect(configNameReason('a\tb')).toBe('it contains a space');
+    // Each character once, in the order the name has them.
+    expect(configNameReason('a/b#c/d')).toBe(
+      'it contains characters that are not allowed: "/", "#"',
+    );
+    expect(configNameReason('a b/c')).toBe(
+      'it contains a space and characters that are not allowed: "/"',
+    );
+    // At most five, then an ellipsis.
+    expect(configNameReason('a!b"c#d$e%f&g')).toBe(
+      'it contains characters that are not allowed: "!", """, "#", "$", "%", …',
+    );
+    expect(configNameReason('a!b#c$d%e^')).toBe(
+      'it contains characters that are not allowed: "!", "#", "$", "%", "^"',
+    );
+    expect(configNameReason('café')).toBe(
+      'it contains characters that are not allowed: "é"',
+    );
+    // A valid name, and none, have no reason.
+    for (const name of ['', 'core', 'a_b@c.d-e', undefined]) {
+      expect(configNameReason(name), String(name)).toBe('');
+    }
+
+    expect(configNameProblem('topology', 'a b/c')).toBe(
+      `The topology name "a b/c" is not allowed: it contains a space and characters that are not allowed: "/". ${rule} For example: a-b-c`,
+    );
+    expect(configNameProblem('topology', 'x y z!?')).toBe(
+      `The topology name "x y z!?" is not allowed: it contains spaces and characters that are not allowed: "!", "?". ${rule} For example: x-y-z`,
+    );
+    // The messages that are not about the rule stay as they were.
+    expect(configNameProblem('topology', '')).toBe(
+      'Enter a name for the topology.',
+    );
+    expect(configNameProblem('experiment', 'ALL')).toBe(
+      'The experiment name "ALL" is reserved: phenix uses it to mean every experiment. Enter another name.',
+    );
+    expect(configNameProblem('experiment', 'lab')).toBe('');
+  });
+
+  test('a refused character that shows nothing is named by its code point', () => {
+    // Zero-width, control, format, private-use and fill characters, and a
+    // mark that only changes the character before it: quoted, each would
+    // look like "". They are made from their code points, so this source
+    // holds none of them.
+    for (const [point, code] of [
+      [0x200b, 'U+200B'],
+      [0x0000, 'U+0000'],
+      [0x0007, 'U+0007'],
+      [0x007f, 'U+007F'],
+      [0x009f, 'U+009F'],
+      [0x200e, 'U+200E'],
+      [0x00ad, 'U+00AD'],
+      [0x2060, 'U+2060'],
+      [0x0301, 'U+0301'],
+      [0xfe0f, 'U+FE0F'],
+      [0x3164, 'U+3164'],
+      [0xe000, 'U+E000'],
+      [0xe0001, 'U+E0001'],
+    ]) {
+      const name = `a${String.fromCodePoint(point)}b`;
+
+      expect(configNameReason(name), code).toBe(
+        `it contains characters that are not allowed: ${code}`,
+      );
+    }
+
+    const zeroWidth = String.fromCodePoint(0x200b);
+
+    // Visible characters stay quoted, in the order the name has them.
+    expect(configNameReason(`a${zeroWidth}b/c${zeroWidth}d😀`)).toBe(
+      'it contains characters that are not allowed: U+200B, "/", "😀"',
+    );
+    expect(configNameReason(`a b${zeroWidth}`)).toBe(
+      'it contains a space and characters that are not allowed: U+200B',
+    );
+    expect(configNameProblem('topology', `lab${zeroWidth}1`)).toBe(
+      `The topology name "lab${zeroWidth}1" is not allowed: it contains characters that are not allowed: U+200B. ${CONFIG_NAME_RULE} For example: lab-1`,
+    );
+    expect(configNameHint(`lab${zeroWidth}`)).toBe(
+      `This name is not allowed: it contains characters that are not allowed: U+200B. ${CONFIG_NAME_RULE}`,
+    );
+  });
+
+  test('a name field shows the rule only while its name breaks it, with why', () => {
+    expect(configNameHint('two words')).toBe(
+      `This name is not allowed: it contains a space. ${CONFIG_NAME_RULE}`,
+    );
+    // The field's value is trimmed, as the name it publishes is.
+    expect(configNameHint(' a/b ')).toBe(
+      `This name is not allowed: it contains characters that are not allowed: "/". ${CONFIG_NAME_RULE}`,
+    );
+    for (const name of ['', '   ', 'core', ' core ', null]) {
+      expect(configNameHint(name), String(name)).toBe('');
+    }
   });
 
   test('an unknown mode falls back to topology only', () => {
@@ -1065,10 +1173,13 @@ describe('config names', () => {
       'Enter a name for the topology.',
     );
     expect(configNameProblem('experiment', 'a b')).toMatch(
-      /not allowed\. .*no spaces\. For example: a-b$/,
+      /not allowed: it contains a space\. .*no spaces\. For example: a-b$/,
     );
     // Nothing valid to suggest.
     expect(configNameProblem('scenario', '!!')).not.toMatch(/For example/);
+    expect(configNameProblem('scenario', '!!')).toMatch(
+      /^The scenario name "!!" is not allowed: it contains characters that are not allowed: "!"\. /,
+    );
   });
 });
 

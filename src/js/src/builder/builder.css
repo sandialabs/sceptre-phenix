@@ -22,6 +22,9 @@
   --bx-accent-contrast: #ffffff;
   --bx-danger: #a4262c;
   --bx-warning: #8a5300;
+  /* The ground of a warning: the theme's text keeps 4.5:1 on it, and the
+     warning color 3:1. */
+  --bx-warning-bg: #fdf3dc;
   --bx-success: #1a6b3c;
   --bx-focus: #0a58ca;
   --bx-disabled-primary: #667085;
@@ -111,6 +114,7 @@
   --bx-accent-contrast: #10151c;
   --bx-danger: #ef8b90;
   --bx-warning: #e5b567;
+  --bx-warning-bg: #33290f;
   --bx-success: #7fd1a1;
   --bx-focus: #9dc4ff;
   --bx-disabled-primary: #526071;
@@ -2250,6 +2254,29 @@ div.builder-outline__item {
 .builder-dialog .builder-hint {
   font-size: 0.85em;
   color: var(--bx-text-muted);
+}
+
+/* A hint that warns, such as a name that updates a config: the warning
+   sign before the words, which wrap beside it, on a pale ground with a bar
+   in the warning color. The sign and the words say it; the colors only
+   draw the eye. */
+.builder-dialog .builder-hint--warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin: 0.3rem 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--bx-warning);
+  border-left-width: 4px;
+  border-radius: var(--bx-radius);
+  background: var(--bx-warning-bg);
+  color: var(--bx-text);
+  overflow-wrap: anywhere;
+}
+
+.builder-dialog .builder-hint--warning > .builder-icon {
+  margin-top: 0.15em;
+  color: var(--bx-warning);
 }
 
 /* A dialog's status and error regions are rendered, empty, from the start,

@@ -123,7 +123,8 @@ export const VIEW_API = [
   // (name, options) publish, download, upload, scenario, share; download
   // takes {start}, the format to download at once: json, yaml, topology,
   // png, svg or gexf
-  // Also group-pattern, the Auto-group by name pattern dialog.
+  // Also group-pattern, the Auto-group by name pattern dialog, connect, the
+  // Add a connection dialog, and regroup, the Move to a group dialog.
   // Also template, the template editor: {mode: 'diagram-new'} for a new
   // template of the diagram, {mode: 'diagram-edit', id} for one it has,
   // {mode: 'library-new'} for a new one of the user's library and {mode:
@@ -1444,6 +1445,17 @@ export const COMMANDS = [
     run: ({ store }, choice) =>
       store.remove({ nodes: [], edges: [choice.value] }),
   },
+  {
+    // The toolbar's Move to group: a dialog that moves a node into a group,
+    // or out of the one it is in.
+    id: 'dialog.regroup',
+    title: 'Move to a group…',
+    group: 'Structure',
+    keywords: ['group', 'regroup', 'member', 'container', 'parent'],
+    when: editable,
+    detail: () => 'Into a group, or out of one',
+    run: ({ view }) => view.openDialog('regroup'),
+  },
 
   // --- Add
   {
@@ -1490,6 +1502,19 @@ export const COMMANDS = [
       run: (ctx) => addNode(ctx, { kind }),
     };
   }),
+  {
+    // The toolbar's Add connection: a dialog that joins a device, by an
+    // interface it has free or a new one, to a switch, its fields filled
+    // from the selection. After the node commands, so a search for "add"
+    // that matches them alike lists them first.
+    id: 'dialog.connect',
+    title: 'Add a connection…',
+    group: 'Add',
+    keywords: ['connect', 'link', 'cable', 'interface', 'switch', 'network'],
+    when: editable,
+    detail: () => 'A device, its interface and a switch',
+    run: ({ view }) => view.openDialog('connect'),
+  },
   {
     // The palette's "+" beside Device templates: the template editor, on
     // the selected device when one device is selected, else on a plain one.

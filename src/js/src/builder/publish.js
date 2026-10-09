@@ -33,9 +33,101 @@ export function configName(name) {
     .replace(/^-+|-+$/g, '');
 }
 
+// How many of the characters a name may not use a reason names; it ends
+// in "…" when the name has more.
+const NAMED_CHARACTERS = 5;
+
+// A character the naming rule allows.
+const ALLOWED_CHARACTER = /^[A-Za-z0-9_@.-]$/;
+
+function isSpace(character) {
+  return /^\s$/.test(character);
+}
+
+// A character the naming rule refuses that is not a space.
+function isRefused(character) {
+  return !isSpace(character) && !ALLOWED_CHARACTER.test(character);
+}
+
+// A character that shows nothing of its own: a control or format character
+// (U+200B, U+200E), a private-use, unassigned or surrogate code point, a
+// mark that only changes the character before it, or one Unicode says to
+// leave unseen (U+3164).
+const UNSEEN_CHARACTER =
+  /^[\p{C}\p{Mn}\p{Me}\p{Default_Ignorable_Code_Point}]$/u;
+
+// How a reason names a character: quoted, or by its code point, such as
+// U+200B, when quotes around it would look empty.
+function named(character) {
+  if (!UNSEEN_CHARACTER.test(character)) {
+    return `"${character}"`;
+  }
+
+  const code = character.codePointAt(0).toString(16).toUpperCase();
+
+  return `U+${code.padStart(4, '0')}`;
+}
+
+/**
+ * Why a name breaks the naming rule: "it contains a space", "it contains
+ * characters that are not allowed: "/", "#"", or both. Each character is
+ * named once, in the order the name has them, and only the first five,
+ * then "…": quoted, or by its code point (U+200B) when it shows nothing
+ * of its own. '' for a name that keeps the rule, and for none.
+ *
+ * @param {string} name
+ * @returns {string} "it contains a space and characters that are not
+ *   allowed: "/"", or ''
+ */
+export function configNameReason(name) {
+  const text = String(name || '');
+
+  if (!text || CONFIG_NAME.test(text)) {
+    return '';
+  }
+
+  const characters = [...text];
+  const spaces = characters.filter(isSpace).length;
+  const refused = [...new Set(characters.filter(isRefused))];
+  const names = refused.slice(0, NAMED_CHARACTERS).map(named);
+
+  if (refused.length > NAMED_CHARACTERS) {
+    names.push('…');
+  }
+
+  const parts = [];
+
+  if (spaces) {
+    parts.push(spaces === 1 ? 'a space' : 'spaces');
+  }
+
+  if (refused.length) {
+    parts.push(`characters that are not allowed: ${names.join(', ')}`);
+  }
+
+  return `it contains ${parts.join(' and ')}`;
+}
+
+/**
+ * What a name field says under it while the name it holds breaks the
+ * naming rule: why, then the rule. '' for a name that keeps the rule, and
+ * for none, so a valid name shows no rule.
+ *
+ * @param {string} name the field's value
+ * @returns {string}
+ */
+export function configNameHint(name) {
+  const reason = configNameReason(String(name || '').trim());
+
+  return reason
+    ? `This name is not allowed: ${reason}. ${CONFIG_NAME_RULE}`
+    : '';
+}
+
 /**
  * Why `name` cannot name a config of the given kind, or '' when it can. The
- * message names the field, the rule and a valid alternative.
+ * message names the field, why the name breaks the rule, the rule and a
+ * valid alternative.
  *
  * @param {string} kind 'topology', 'experiment' or 'scenario'
  * @param {string} name trimmed name
@@ -59,7 +151,7 @@ export function configNameProblem(kind, name) {
   const suggestion = configName(name);
 
   return [
-    `The ${kind} name "${name}" is not allowed.`,
+    `The ${kind} name "${name}" is not allowed: ${configNameReason(name)}.`,
     CONFIG_NAME_RULE,
     suggestion ? `For example: ${suggestion}` : '',
   ]

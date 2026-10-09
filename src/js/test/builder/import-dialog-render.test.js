@@ -299,7 +299,10 @@ describe('"New topology name"', () => {
 
     expect(newNameProblem('', taken)).toBe('Enter a name for the topology.');
     expect(newNameProblem('my site', taken)).toBe(
-      `The topology name "my site" is not allowed. ${CONFIG_NAME_RULE} For example: my-site`,
+      `The topology name "my site" is not allowed: it contains a space. ${CONFIG_NAME_RULE} For example: my-site`,
+    );
+    expect(newNameProblem('site/b', taken)).toBe(
+      `The topology name "site/b" is not allowed: it contains characters that are not allowed: "/". ${CONFIG_NAME_RULE} For example: site-b`,
     );
     expect(newNameProblem('a'.repeat(513), taken)).toBe(
       'Enter a name of at most 512 bytes.',

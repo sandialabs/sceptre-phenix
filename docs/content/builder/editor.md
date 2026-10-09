@@ -103,7 +103,7 @@ that when you publish (see [Publishing](publishing.md)).
 
 ## Toolbar
 
-![The editor toolbar: Undo, Redo, Copy, Paste, Delete, Group, Ungroup, Auto-group, the ELK layered layout menu, Scenario, Download, Upload, Publish, Minimap, Draft History and the save state All changes saved.](../images/builder/editor-toolbar.png)
+![The editor toolbar with its editing, layout, scenario, download, upload, publish, Minimap and Draft History buttons, and the save state All changes saved.](../images/builder/editor-toolbar.png)
 
 The toolbar's buttons, from left to right:
 
@@ -121,6 +121,8 @@ The toolbar's buttons, from left to right:
 | **Publish** | Write Topology, Scenario and Experiment configs. | [Publishing](publishing.md) |
 | **Share** | Choose who can open the draft. Shown to the owner when phenix has sign-in enabled and their role has `configs` `update`. Shown, unavailable, to the people the draft is shared with. | [Sharing a draft](drafts.md#sharing-a-draft) |
 | **Exp** | Open the experiment the diagram was published with. Shown only while that experiment exists and your role can read it. | [Opening the experiment](drafts.md#opening-the-experiment) |
+| **Add connection** | Open the **Add a connection** dialog, which connects a device to a switch without dragging. | [Add a connection without dragging](diagrams.md#add-a-connection-without-dragging) |
+| **Move to group** | Open the **Move to a group** dialog, which puts a node in a group, or takes it out of one, without dragging. | [Groups](diagrams.md#groups) |
 | **Minimap** | Show or hide the minimap. | [Canvas](#canvas) |
 | **Draft History** | List the draft's snapshots, and restore one. | [Draft History](drafts.md#draft-history) |
 
@@ -253,7 +255,7 @@ groups or more have templates. See
 
 ## Outline
 
-![The Outline listing the CORP, DMZ, INTERNET and OT groups with their switches and devices, dns-01 and ntp-01 marked INCLUDED, ot-fw selected, and the Add a connection form below.](../images/builder/outline-panel.png){ width="242" }
+![The Outline listing the CORP, DMZ, INTERNET and OT groups with their switches and devices, dns-01 and ntp-01 marked INCLUDED, and ot-fw selected.](../images/builder/outline-panel.png){ width="242" }
 
 The **Outline** lists every node of the diagram as a tree: each group with
 the nodes in it, then the nodes that are in no group. Each row shows what
@@ -273,15 +275,14 @@ Keys in the Outline:
   canvas, <kbd>F2</kbd> moves focus to the name in the Inspector instead.)
 - <kbd>Delete</kbd> removes the row, or the selection it is in.
 
-Below the tree, the Outline has three more parts:
+Below the tree, the Outline lists the **Networks**: each network, with its
+VLAN alias (or "no alias"), the number of devices on it, and a button to
+remove it (see
+[Adding switches and networks](diagrams.md#adding-switches-and-networks)).
 
-- **Add a connection**: connects a device to a switch without dragging (see
-  [Connecting interfaces](diagrams.md#connecting-interfaces)).
-- **Move to a group**: puts a node in a group, or takes it out with **No
-  group** (see [Groups](diagrams.md#groups)).
-- **Networks**: each network, with its VLAN alias (or "no alias"), the
-  number of devices on it, and a button to remove it (see
-  [Adding switches and networks](diagrams.md#adding-switches-and-networks)).
+To connect a device to a switch, or move a node into or out of a group,
+without dragging, use the toolbar's **Add connection** and **Move to
+group** (see [Toolbar](#toolbar)).
 
 ## Inspector
 
@@ -758,7 +759,11 @@ You can use Builder with a keyboard only, and with a screen reader.
 - A custom icon is decoration: a node's name, its type and what screen
   readers say of it do not change with its icon.
 - To add nodes and connect them without a pointer, use **Add nodes** and the
-  Outline's **Add a connection**.
+  toolbar's **Add connection**; **Move to group** puts a node in a group.
+  The [command palette](#command-palette) opens the same dialogs: type
+  `connect` for **Add a connection…** or `group` for **Move to a group…**.
+  Each dialog starts from the selection, and <kbd>Esc</kbd> closes it and
+  returns focus to where it was opened from.
 - A screen reader announces what each change did, for example "Updated
   device ws-01." With a screen reader, turn on its focus mode (forms mode in
   JAWS) for the canvas keys, or use the Outline, which lists every node.

@@ -1589,17 +1589,23 @@ test.describe('Builder inspector', () => {
     });
 
     await test.step('connect the new interface', async () => {
-      const device = page.locator('#connect-device');
-      const picked = page.locator('#connect-interface');
+      const opener = builder.toolbar('connect');
+      const dialog = page.getByTestId('connect-dialog');
+      const device = dialog.locator('#connect-device');
+      const picked = dialog.locator('#connect-interface');
 
-      // A device picked again, or another, never keeps the interface picked
-      // for the last.
-      await device.selectOption({ index: 1 });
+      // The selected device fills Device. A device picked again, or
+      // another, never keeps the interface picked for the last.
+      await opener.click();
+      await expect(dialog).toBeVisible();
+      await expect.soft(device.locator('option:checked')).toHaveText('node');
       await picked.selectOption({ label: 'eth0' });
       await device.selectOption({ index: 0 });
       await expect.soft(picked).toHaveValue('');
       await device.selectOption({ index: 1 });
       await expect.soft(picked).toHaveValue('');
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
 
       // Connected while an edit is unapplied, it stays connected once
       // the edit is applied.
@@ -1609,22 +1615,24 @@ test.describe('Builder inspector', () => {
       );
       await expect(builder.inspector).toContainText('Unapplied changes');
 
-      await picked.selectOption({ label: 'eth0' });
-      await page.locator('#connect-switch').selectOption({ index: 1 });
-      const connect = page.getByTestId('outline-connect');
       const view = async () => ({
         page: await page.evaluate(() => window.scrollY),
         canvas: (await builder.canvas.boundingBox())?.y,
       });
-      await connect.scrollIntoViewIfNeeded();
+      await opener.scrollIntoViewIfNeeded();
       const before = await view();
-      await connect.click();
+      await opener.click();
+      await expect(dialog).toBeVisible();
+      await picked.selectOption({ label: 'eth0' });
+      await dialog.locator('#connect-switch').selectOption({ index: 1 });
+      await dialog.getByTestId('connect-dialog-submit').click();
 
       await expect.soft(builder.summary).toContainText('1 connection');
       await expect.soft(rows).toHaveText(['eth0 — network EXP']);
-      // Connect keeps focus and scrolls neither the page nor the canvas
-      // away.
-      await expect.soft(connect).toBeFocused();
+      // Connected, the dialog closes onto Add connection, and neither the
+      // page nor the canvas has scrolled away.
+      await expect.soft(dialog).toHaveCount(0);
+      await expect.soft(opener).toBeFocused();
       expect
         .soft(await view(), 'the page and canvas after Connect')
         .toEqual(before);

@@ -7,9 +7,10 @@
   to right: undo and redo, the clipboard, grouping (Group, Ungroup and the
   Auto-group menu), the layout menu and scenario, the ways out (Download,
   Upload, Publish, Share, and Exp, which opens the experiment the diagram
-  was published with, while there is one), then Minimap and Draft History,
-  followed by the save state. Commands and the theme are in the editor
-  header (Builder.vue).
+  was published with, while there is one), then Add connection and Move to
+  group, which open dialogs that connect and regroup nodes without a drag,
+  Minimap and Draft History, followed by the save state. Commands and the
+  theme are in the editor header (Builder.vue).
   The layout menu is named after the layout the draft keeps, the last one
   that laid it out, or Default for a draft that has none; it lays the
   diagram out with the one chosen, which the draft keeps, and after a layout
@@ -289,6 +290,39 @@
     </div>
 
     <div class="builder-toolbar__group">
+      <!-- The dialogs that connect a device to a switch and move a node
+           into or out of a group: the pointer-free way to do what a drag
+           does on the canvas. -->
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-connect"
+        :aria-keyshortcuts="tips.connect.aria"
+        :aria-describedby="
+          tips.connect.description ? 'toolbar-tip-connect' : undefined
+        "
+        v-on="tipFor('connect')"
+        aria-haspopup="dialog"
+        :aria-disabled="off.connect || undefined"
+        @click="run('connect', () => $emit('connect'))">
+        <builder-icon name="link" :size="14" />
+        Add connection
+      </button>
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-regroup"
+        :aria-keyshortcuts="tips.regroup.aria"
+        :aria-describedby="
+          tips.regroup.description ? 'toolbar-tip-regroup' : undefined
+        "
+        v-on="tipFor('regroup')"
+        aria-haspopup="dialog"
+        :aria-disabled="off.regroup || undefined"
+        @click="run('regroup', () => $emit('regroup'))">
+        <builder-icon name="group" :size="14" />
+        Move to group
+      </button>
       <button
         type="button"
         class="builder-button"
@@ -399,6 +433,8 @@
     'history',
     'experiment',
     'group-pattern',
+    'connect',
+    'regroup',
     'toggle-minimap',
   ]);
 
@@ -430,6 +466,8 @@
     autoGroup: store.readOnly,
     layout: store.readOnly,
     scenario: store.readOnly,
+    connect: store.readOnly,
+    regroup: store.readOnly,
     // Upload makes a new draft; Publish writes configs (see the store's
     // canCreateDrafts and canPublish).
     upload: !store.canCreateDrafts,
@@ -575,7 +613,9 @@
 
   // The command each button runs, for its keys, and its name in the
   // tooltip. aria-keyshortcuts only where the keys work with focus here:
-  // Delete works on the canvas and in the outline.
+  // Delete works on the canvas and in the outline. A button whose tooltip
+  // is `named` shows its name in it, keys or not; any other has a tooltip
+  // only while it has keys.
   const TIPS = {
     undo: { command: 'edit.undo', name: 'Undo' },
     redo: { command: 'edit.redo', name: 'Redo' },
@@ -589,6 +629,16 @@
     upload: { command: 'draft.upload', name: 'Upload' },
     scenario: { command: 'draft.scenario', name: 'Scenario' },
     publish: { command: 'draft.publish', name: 'Publish' },
+    connect: {
+      command: 'dialog.connect',
+      name: 'Add a connection',
+      named: true,
+    },
+    regroup: {
+      command: 'dialog.regroup',
+      name: 'Move to a group',
+      named: true,
+    },
     minimap: { command: 'view.minimap', name: 'Minimap' },
   };
 
@@ -600,11 +650,12 @@
   const tips = computed(() => {
     const entries = Object.entries(TIPS).map(([key, entry]) => {
       const keys = shortcutLabel(entry.command);
+      const name = entry.named ? entry.name : '';
 
       return [
         key,
         {
-          text: keys ? `${entry.name} (${keys})` : '',
+          text: keys ? `${entry.name} (${keys})` : name,
           description: keys,
           aria: entry.local ? undefined : ariaShortcuts(entry.command),
         },

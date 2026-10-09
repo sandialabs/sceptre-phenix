@@ -1472,6 +1472,14 @@ test(
     });
 
     await test.step('the tooltip follows its entry as the side panel scrolls', async () => {
+      // Devices fill the Outline below Add nodes, so the column scrolls far
+      // enough for the entry to leave the view.
+      for (let count = 1; count <= 16; count += 1) {
+        await device.click();
+      }
+      await expect(page.locator('[data-testid^="outline-item-"]')).toHaveCount(
+        16,
+      );
       await resize(page, { width: 1280, height: 600 });
       // A palette entry scrolled under a resting pointer would rightly take
       // over the tooltip.

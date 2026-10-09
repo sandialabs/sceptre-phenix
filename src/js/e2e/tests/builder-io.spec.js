@@ -2109,22 +2109,32 @@ test.describe('import', () => {
       // Combine makes a new topology already, so the copy box goes.
       await expect.soft(dialog.getByTestId('import-copy')).toHaveCount(0);
       await expect(newName).toHaveValue(combined);
+      // A name that keeps the naming rule shows no rule.
       await expect
-        .soft(newName)
-        .toHaveAccessibleDescription(
-          'Names can use only letters, numbers, underscores (_), at signs (@), periods (.) and hyphens (-), with no spaces.',
-        );
+        .soft(dialog.getByTestId('import-new-name-hint'))
+        .toHaveCount(0);
+      await expect.soft(newName).toHaveAccessibleDescription('');
       // Tab reaches the name next, then the buttons.
       await page.keyboard.press('Tab');
       await expect.soft(newName).toBeFocused();
     });
 
     await test.step('a name that cannot be used is refused on its field, before the server is asked', async () => {
+      // While the name breaks the naming rule, the field says why, then the
+      // rule, before anything is pressed.
+      const hint = dialog.getByTestId('import-new-name-hint');
+      const why =
+        'This name is not allowed: it contains a space and characters that are not allowed: "/". ' +
+        'Names can use only letters, numbers, underscores (_), at signs (@), periods (.) and hyphens (-), with no spaces.';
+      await newName.fill('a b/c');
+      await expect.soft(hint).toHaveText(why);
+      await expect.soft(newName).toHaveAccessibleDescription(why);
+
       for (const [typed, message] of [
         [root, `A topology named ${root} already exists. Enter another name.`],
         [
           'two words',
-          'The topology name "two words" is not allowed. Names can use only letters, numbers, underscores (_), at signs (@), periods (.) and hyphens (-), with no spaces. For example: two-words',
+          'The topology name "two words" is not allowed: it contains a space. Names can use only letters, numbers, underscores (_), at signs (@), periods (.) and hyphens (-), with no spaces. For example: two-words',
         ],
         ['', 'Enter a name for the topology.'],
       ]) {
@@ -2133,16 +2143,17 @@ test.describe('import', () => {
         await expect.soft(error).toHaveText(message);
         await expect.soft(newName).toHaveAttribute('aria-invalid', 'true');
         await expect.soft(newName).toBeFocused();
-        await expect
-          .soft(newName)
-          .toHaveAccessibleDescription(new RegExp(' Enter .*name|not allowed'));
+        // The message describes the field; the rule shown under it while
+        // the name breaks it is in the message, so it is not read twice.
+        await expect.soft(newName).toHaveAccessibleDescription(message);
       }
       expect.soft(generates, 'imports asked of the server').toEqual([]);
 
-      // Typing takes the error back.
+      // Typing takes the error back, and a valid name takes the rule.
       await newName.fill(combined);
       await expect.soft(error).toHaveCount(0);
       await expect.soft(newName).not.toHaveAttribute('aria-invalid', 'true');
+      await expect.soft(hint).toHaveCount(0);
     });
 
     const created = waitForApi(page, 'POST', '/builder/drafts');

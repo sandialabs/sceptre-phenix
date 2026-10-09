@@ -168,9 +168,12 @@ new network named EXP, and connects both devices to it. Rename the network
 in the switch's Inspector. Two switches cannot be connected, because each
 switch is one network.
 
-### Add a connection in the Outline
+### Add a connection without dragging
 
-To connect without dragging, use **Add a connection** in the Outline:
+To connect without dragging, select **Add connection** in the toolbar, or
+**Add a connection…** in the [command palette](editor.md#command-palette).
+The **Add a connection** dialog opens with the selection filled in: a
+selected device in **Device**, a selected switch in **Switch**.
 
 1. In **Device**, choose `ws-03`.
 2. Keep **Interface** set to **Add a new interface**, or choose an interface
@@ -178,9 +181,10 @@ To connect without dragging, use **Add a connection** in the Outline:
 3. In **Switch**, choose **CORP (CORP)**.
 4. Select **Connect**.
 
-The form before step 4:
-
-![The Outline's Add a connection form with Device ws-03, Interface Add a new interface and Switch CORP (CORP), and the Connect button.](../images/builder/outline-connect.png){ width="230" }
+The dialog closes and focus returns to **Add connection**. With a field
+empty, **Connect** says which one and moves focus to it, and a connection
+Builder cannot make says why; the dialog stays open. **Cancel** or
+<kbd>Esc</kbd> closes it without a change.
 
 ### Type the VLAN in the Inspector
 
@@ -354,13 +358,16 @@ To take a group apart, select it and select **Ungroup**
 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>). Its nodes stay where they are.
 
 **Group** under **Add nodes** adds an empty group. Dragging a node onto a
-group does not put it in the group. Use **Move to a group** in the Outline
-instead:
+group does not put it in the group. Select **Move to group** in the toolbar
+instead, or **Move to a group…** in the
+[command palette](editor.md#command-palette). The **Move to a group**
+dialog opens on the selected node, and **Group** shows the group it is in:
 
 1. In **Node**, choose the node, for example `web-01 (device)`.
 2. In **Group**, choose the group, or **No group** to take the node out of
    its group.
-3. Select **Move**.
+3. Select **Move**. The dialog closes and focus returns to **Move to
+   group**.
 
 To resize a selected group from the keyboard, press
 <kbd>⌥</kbd>+<kbd>⇧</kbd> (<kbd>Alt</kbd>+<kbd>Shift</kbd>) with an arrow key.

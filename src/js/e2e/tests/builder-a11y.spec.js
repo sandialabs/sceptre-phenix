@@ -71,12 +71,18 @@ async function addWithKeyboard(builder, item, count) {
   }
 }
 
-// Connects through the outline's keyboard form: select the device and switch,
-// then press Enter on Connect.
+// Connects through the toolbar's Add a connection dialog with the keyboard:
+// Enter on Add connection, the device and switch chosen, then Enter on
+// Connect, which closes the dialog.
 async function connectWithKeyboard(builder, device = 'node') {
-  await builder.page.locator('#connect-device').selectOption({ label: device });
-  await builder.page.locator('#connect-switch').selectOption({ index: 1 });
-  await builder.page.getByTestId('outline-connect').press('Enter');
+  const dialog = builder.page.getByTestId('connect-dialog');
+
+  await builder.toolbar('connect').press('Enter');
+  await expect(dialog).toBeVisible();
+  await dialog.locator('#connect-device').selectOption({ label: device });
+  await dialog.locator('#connect-switch').selectOption({ index: 1 });
+  await dialog.getByTestId('connect-dialog-submit').press('Enter');
+  await expect(dialog).toHaveCount(0);
 }
 
 // Lists in the editor with no list item, as the start of their markup. ARIA
@@ -391,10 +397,10 @@ test.afterEach(async ({ builder }) => {
   }
 });
 
-// --- keyboard-only authoring through the outline ---------------------------
+// --- keyboard-only authoring through the outline and the toolbar's dialogs --
 
 test.describe('keyboard-only authoring', () => {
-  test('Connect, F2 on a switch and a second switch build a diagram without a pointer', async ({
+  test('Add connection, F2 on a switch and a second switch build a diagram without a pointer', async ({
     page,
     builder,
     issues,
@@ -406,8 +412,11 @@ test.describe('keyboard-only authoring', () => {
     await expect
       .soft(builder.liveRegion)
       .toHaveAttribute('aria-live', 'polite');
-    const connect = page.getByTestId('outline-connect');
-    const error = page.locator('.builder-outline__error');
+    // The toolbar's Add connection and the dialog it opens.
+    const opener = builder.toolbar('connect');
+    const dialog = page.getByTestId('connect-dialog');
+    const connect = dialog.getByTestId('connect-dialog-submit');
+    const error = dialog.getByTestId('connect-error');
 
     // A blank diagram says it has no nodes or networks instead of showing
     // empty lists, which ARIA does not allow (a list owns list items).
@@ -419,18 +428,42 @@ test.describe('keyboard-only authoring', () => {
       .toHaveText('No networks yet. Adding a switch creates one.');
     expect.soft(await emptyLists(page), 'empty lists').toEqual([]);
 
-    // With nothing to choose, the message says what to add, and it follows
-    // the diagram as the nodes are added.
+    // Enter on Add connection opens the dialog, which takes focus, and
+    // Escape closes it onto the button. With nothing to choose, the message
+    // says what to add; each time the dialog opens it follows the diagram.
+    await expect.soft(opener).toHaveAttribute('aria-haspopup', 'dialog');
+    await opener.press('Enter');
+    await expect(dialog).toBeVisible();
+    await expect.soft(dialog).toHaveAccessibleName('Add a connection');
+    await expect.soft(dialog).toBeFocused();
     await connect.press('Enter');
     await expect
       .soft(error)
       .toHaveText('Add a device and a switch to the diagram first.');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect.soft(opener).toBeFocused();
+
     await addWithKeyboard(builder, 'device', 1);
+    // A selected device fills Device.
+    await builder.selectInOutline('node');
+    await opener.press('Enter');
+    await expect(dialog).toBeVisible();
+    await expect
+      .soft(dialog.locator('#connect-device option:checked'))
+      .toHaveText('node');
+    await connect.press('Enter');
+    await expect.soft(error).toHaveText('Add a switch to the diagram first.');
+    await dialog.locator('#connect-device').selectOption({ index: 0 });
+    await connect.press('Enter');
     await expect
       .soft(error)
       .toHaveText('Choose a device. Add a switch to the diagram first.');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect.soft(opener).toBeFocused();
+
     await addWithKeyboard(builder, 'switch', 2);
-    await expect.soft(error).toHaveText('Choose a device and a switch.');
     await expect
       .soft(builder.summary)
       .toContainText('1 device, 1 switch, 1 network');
@@ -438,13 +471,20 @@ test.describe('keyboard-only authoring', () => {
     const switchTestId = await rowTestId(builder, 'EXP');
     const switchId = switchTestId.replace('outline-item-', '');
 
-    await test.step('Connect form names, marks and focuses a missing device or switch', async () => {
-      const device = page.locator('#connect-device');
-      const sw = page.locator('#connect-switch');
+    await test.step('Add a connection names, marks and focuses a missing device or switch', async () => {
+      const device = dialog.locator('#connect-device');
+      const sw = dialog.locator('#connect-switch');
 
+      await opener.press('Enter');
+      await expect(dialog).toBeVisible();
+      // Whatever the selection filled in is taken out again.
+      await device.selectOption({ index: 0 });
+      await sw.selectOption({ index: 0 });
       await connect.press('Enter');
       await expect.soft(error).toHaveText('Choose a device and a switch.');
-      await expect.soft(error).toHaveAttribute('role', 'alert');
+      await expect
+        .soft(dialog.getByRole('alert'))
+        .toHaveText('Choose a device and a switch.');
       await expect.soft(device).toHaveAttribute('aria-invalid', 'true');
       await expect.soft(sw).toHaveAccessibleDescription(/^Choose a device/);
       await expect.soft(device).toBeFocused();
@@ -467,12 +507,13 @@ test.describe('keyboard-only authoring', () => {
       await expect.soft(builder.summary).toContainText('0 connections');
     });
 
-    await test.step('the completed Connect form connects the device', async () => {
-      await page.locator('#connect-switch').selectOption({ index: 1 });
+    await test.step('the completed dialog connects the device, closes and gives focus back to Add connection', async () => {
+      await dialog.locator('#connect-switch').selectOption({ index: 1 });
       await connect.press('Enter');
       // The rename step below renames this connection's network.
       await builder.expectSummary('1 connection');
-      await expect.soft(error).toHaveCount(0);
+      await expect.soft(dialog).toHaveCount(0);
+      await expect.soft(opener).toBeFocused();
       await expect.soft(builder).toHaveAnnounced('Connected nodes');
       await expect
         .soft(row(builder, 'node'))
@@ -613,25 +654,30 @@ test.describe('keyboard-only authoring', () => {
       // The outline has no connection rows, so the palette names the
       // connection from its device's end, with the interface.
       const device = page.getByTestId(`outline-item-${deviceId}`);
-      const dialog = page.getByTestId('commands-dialog');
+      const palette = page.getByTestId('commands-dialog');
 
       await device.focus();
       await page.keyboard.press('ControlOrMeta+k');
       await page.keyboard.type('Disconnect');
       await page.keyboard.press('Enter');
       await expect
-        .soft(dialog.getByRole('option'))
+        .soft(palette.getByRole('option'))
         .toHaveText([/^node \(eth0\) to .+network MGMT$/]);
       await page.keyboard.press('Enter');
       await builder.expectSummary('0 connections');
-      await expect.soft(dialog).toHaveCount(0);
+      await expect.soft(palette).toHaveCount(0);
       await expect.soft(page.locator('path.builder-edge')).toHaveCount(0);
       await expect.soft(device).toBeFocused();
       // The interface stays, free to connect again.
-      await page.locator('#connect-device').selectOption({ label: 'node' });
+      await opener.press('Enter');
+      await expect(dialog).toBeVisible();
+      await dialog.locator('#connect-device').selectOption({ label: 'node' });
       await expect
-        .soft(page.locator('#connect-interface option', { hasText: 'eth0' }))
+        .soft(dialog.locator('#connect-interface option', { hasText: 'eth0' }))
         .toHaveCount(1);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect.soft(opener).toBeFocused();
 
       // Networks sort by name: EXP, then MGMT.
       await page
@@ -1214,6 +1260,8 @@ const DIALOGS = [
   { action: 'upload', title: 'Upload diagram' },
   { action: 'download', title: 'Download diagram' },
   { action: 'scenario', title: 'Scenario' },
+  { action: 'connect', title: 'Add a connection' },
+  { action: 'regroup', title: 'Move to a group' },
   { action: 'history', title: 'Draft History' },
 ];
 
@@ -1950,6 +1998,34 @@ for (const scheme of ['light', 'dark']) {
               'the button before Draft History',
             )
             .toBe('toolbar-minimap');
+          // Add connection and Move to group come just before Minimap, in
+          // the same group, and say that they open a dialog.
+          expect
+            .soft(
+              await history.evaluate((button) =>
+                [...button.parentElement.querySelectorAll('button')].map(
+                  (each) => each.dataset.testid,
+                ),
+              ),
+              'the buttons of the last group',
+            )
+            .toEqual([
+              'toolbar-connect',
+              'toolbar-regroup',
+              'toolbar-minimap',
+              'toolbar-history',
+            ]);
+          for (const [action, name] of [
+            ['connect', 'Add connection'],
+            ['regroup', 'Move to group'],
+          ]) {
+            await expect
+              .soft(builder.toolbar(action))
+              .toHaveAccessibleName(name);
+            await expect
+              .soft(builder.toolbar(action))
+              .toHaveAttribute('aria-haspopup', 'dialog');
+          }
           await expect
             .soft(
               buttons.filter({ hasText: /^\s*(Commands|System|Light|Dark)/ }),
@@ -2637,7 +2713,6 @@ test.describe('themes and canvas controls', () => {
           await edit.click();
           for (const field of [
             '#builder-doc-name',
-            '#connect-device',
             '.builder-inspector input[type="text"]',
           ]) {
             const locator = page.locator(field).first();
@@ -2649,6 +2724,47 @@ test.describe('themes and canvas controls', () => {
           }
           await page.locator('#builder-doc-name').press('Escape');
           await expect.soft(edit).toBeFocused();
+
+          // A select, in the dialog the toolbar's Add connection opens.
+          const opener = builder.toolbar('connect');
+          await opener.press('Enter');
+          const select = page.locator('#connect-device');
+          await expect.soft(select, `${theme}: #connect-device`).toBeVisible();
+          const [{ ratio: selectBorder }] = await contrast(
+            select,
+            'borderTopColor',
+          );
+          expect
+            .soft(selectBorder, `${theme}: #connect-device border`)
+            .toBeGreaterThanOrEqual(3);
+          await page.keyboard.press('Escape');
+          await expect(page.getByTestId('connect-dialog')).toHaveCount(0);
+          await expect.soft(opener).toBeFocused();
+
+          // The Inspector's heading is smaller and dimmer than what it
+          // heads, and still readable.
+          const heading = page.locator('#inspector-title');
+          await expectReadable(heading, `${theme}: Inspector heading`);
+          expect
+            .soft(
+              await heading.evaluate((element) => {
+                const style = getComputedStyle(element);
+                const rem = parseFloat(
+                  getComputedStyle(document.documentElement).fontSize,
+                );
+                const panel = getComputedStyle(
+                  element.closest('.builder-inspector') || document.body,
+                );
+
+                return {
+                  rem: parseFloat(style.fontSize) / rem,
+                  weight: style.fontWeight,
+                  muted: style.color !== panel.color,
+                };
+              }),
+              `${theme}: Inspector heading style`,
+            )
+            .toEqual({ rem: 0.75, weight: '600', muted: true });
         });
       }
 

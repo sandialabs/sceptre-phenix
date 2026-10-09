@@ -714,12 +714,18 @@ class BuilderPage {
     );
   }
 
-  // Connects a device to a switch through the outline's keyboard form. Both
-  // arguments are option labels or indexes of the Device and Switch selects.
+  // Connects a device to a switch through the toolbar's Add a connection
+  // dialog. Both arguments are option labels or indexes of the Device and
+  // Switch selects. The dialog closes once the store has connected them.
   async connect(device = { index: 1 }, sw = { index: 1 }) {
-    await this.page.locator('#connect-device').selectOption(device);
-    await this.page.locator('#connect-switch').selectOption(sw);
-    await this.page.getByTestId('outline-connect').click();
+    const dialog = this.page.getByTestId('connect-dialog');
+
+    await this.toolbar('connect').click();
+    await expect(dialog).toBeVisible();
+    await dialog.locator('#connect-device').selectOption(device);
+    await dialog.locator('#connect-switch').selectOption(sw);
+    await dialog.getByTestId('connect-dialog-submit').click();
+    await expect(dialog).toHaveCount(0);
   }
 
   // Selects the row alone. Enter on a row that is already the only thing

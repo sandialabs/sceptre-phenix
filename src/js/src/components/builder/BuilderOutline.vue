@@ -2,20 +2,24 @@
   Semantic outline.
 
   This is the accessible mirror of the canvas and a first-class editing
-  surface: create, rename, delete, group and connect are all available here
-  without a single drag gesture. It lists nodes only; a connection is
-  removed with Delete on the canvas, Disconnect in the Inspector's Connection
-  points, or Disconnect in the command palette. It
+  surface: select, rename and delete work here without a single drag
+  gesture, and the toolbar's Add connection and Move to group dialogs
+  connect nodes and move them between groups the same way. It lists nodes
+  only; a connection is removed with Delete on the canvas, Disconnect in the
+  Inspector's Connection points, or Disconnect in the command palette. It
   stays in sync with the canvas because both render the same document.
 -->
 <template>
   <!-- In a narrow window the outline scrolls. With nothing in it to focus
-       (a read-only diagram with no nodes, whose forms are disabled), it is
-       focusable itself, so the keyboard can scroll it (WCAG 2.1.1). -->
+       (no nodes, and no networks or only networks a read-only diagram
+       cannot remove), it is focusable itself, so the keyboard can scroll it
+       (WCAG 2.1.1). -->
   <section
     class="builder-outline builder-panel"
     aria-labelledby="outline-title"
-    :tabindex="store.readOnly && !outline.length ? 0 : undefined">
+    :tabindex="
+      !outline.length && (store.readOnly || !networks.length) ? 0 : undefined
+    ">
     <h2
       id="outline-title"
       ref="titleEl"
@@ -50,132 +54,6 @@
           : 'No nodes yet. Add one from the Add nodes panel.'
       }}
     </p>
-
-    <form class="builder-outline__connect" @submit.prevent="connect">
-      <h3 class="builder-outline__subtitle">Add a connection</h3>
-
-      <div class="builder-field">
-        <label for="connect-device">Device</label>
-        <select
-          id="connect-device"
-          v-model="connectForm.deviceId"
-          :aria-invalid="missingDevice || undefined"
-          :aria-describedby="missingDevice ? CONNECT_ERROR_ID : undefined"
-          :disabled="store.readOnly">
-          <option value="">Select a device</option>
-          <option v-for="node in devices" :key="node.id" :value="node.id">
-            {{ nodeLabel(node) }}
-          </option>
-        </select>
-      </div>
-
-      <div class="builder-field">
-        <label for="connect-interface">Interface</label>
-        <select
-          id="connect-interface"
-          v-model="connectForm.handleId"
-          :disabled="store.readOnly">
-          <option value="">Add a new interface</option>
-          <option
-            v-for="handle in availableHandles"
-            :key="handle.id"
-            :value="handle.id">
-            {{ handle.name }}
-          </option>
-        </select>
-      </div>
-
-      <div class="builder-field">
-        <label for="connect-switch">Switch</label>
-        <select
-          id="connect-switch"
-          v-model="connectForm.switchId"
-          :aria-invalid="missingSwitch || undefined"
-          :aria-describedby="missingSwitch ? CONNECT_ERROR_ID : undefined"
-          :disabled="store.readOnly">
-          <option value="">Select a switch</option>
-          <option v-for="node in switches" :key="node.id" :value="node.id">
-            {{ switchLabel(node) }}
-          </option>
-        </select>
-      </div>
-
-      <!-- A new key replaces the alert, so a repeated message is announced
-           again. Its text follows the fields: once a device is chosen it
-           asks only for the switch. -->
-      <p
-        v-if="connectMessage"
-        :id="CONNECT_ERROR_ID"
-        :key="connectError.seq"
-        class="builder-outline__error"
-        role="alert">
-        {{ connectMessage }}
-      </p>
-
-      <button
-        type="submit"
-        class="builder-button builder-button--primary"
-        :disabled="store.readOnly"
-        data-testid="outline-connect">
-        <builder-icon name="link" :size="14" />
-        Connect
-      </button>
-    </form>
-
-    <!-- Group membership without a drag: the node moves into the group's box,
-         which grows to hold it, or out of the one it leaves. -->
-    <form
-      class="builder-outline__connect"
-      data-testid="outline-regroup"
-      @submit.prevent="moveToGroup">
-      <h3 class="builder-outline__subtitle">Move to a group</h3>
-
-      <div class="builder-field">
-        <label for="regroup-node">Node</label>
-        <select
-          id="regroup-node"
-          v-model="groupForm.nodeId"
-          :aria-invalid="missingNode || undefined"
-          :aria-describedby="missingNode ? GROUP_ERROR_ID : undefined"
-          :disabled="store.readOnly">
-          <option value="">Select a node</option>
-          <option v-for="node in movable" :key="node.id" :value="node.id">
-            {{ nodeLabel(node) }} ({{ node.kind }})
-          </option>
-        </select>
-      </div>
-
-      <div class="builder-field">
-        <label for="regroup-group">Group</label>
-        <select
-          id="regroup-group"
-          v-model="groupForm.groupId"
-          :disabled="store.readOnly">
-          <option value="">No group</option>
-          <option v-for="node in groupChoices" :key="node.id" :value="node.id">
-            {{ nodeLabel(node) }}
-          </option>
-        </select>
-      </div>
-
-      <p
-        v-if="groupError.text"
-        :id="GROUP_ERROR_ID"
-        :key="groupError.seq"
-        class="builder-outline__error"
-        role="alert">
-        {{ groupError.text }}
-      </p>
-
-      <button
-        type="submit"
-        class="builder-button"
-        :disabled="store.readOnly"
-        data-testid="outline-regroup-submit">
-        <builder-icon name="group" :size="14" />
-        Move
-      </button>
-    </form>
 
     <section class="builder-outline__networks" aria-labelledby="networks-title">
       <h3
@@ -249,16 +127,7 @@
 
   import { nodeIconKey } from '@/builder/catalog.js';
   import { iconSrc } from '@/builder/icons.js';
-  import {
-    deviceHandles,
-    findNetwork,
-    findNode,
-    includedFrom,
-    includedReason,
-    isDescendant,
-    networkRefusal,
-    nodeLabel,
-  } from '@/builder/model.js';
+  import { findNode, includedReason, networkRefusal } from '@/builder/model.js';
   import { outlineHint, textFieldCommand } from '@/builder/commands.js';
   import {
     buildOutline,
@@ -270,8 +139,6 @@
   import { useBuilderStore } from '@/builder/store.js';
 
   const HINT_ID = 'outline-hint';
-  const CONNECT_ERROR_ID = 'connect-error';
-  const GROUP_ERROR_ID = 'regroup-error';
 
   const store = useBuilderStore();
   // The view's command context (Builder.vue), whose view brings nodes
@@ -282,16 +149,8 @@
   const activeId = ref('');
   const renamingId = ref('');
   const renameValue = ref('');
-  // `missing`: Connect was pressed with a field empty, and the message is
-  // built from the fields; `refusal`: why the store refused the connection.
-  const connectError = reactive({ refusal: '', missing: false, seq: 0 });
   const titleEl = ref(null);
   const networksTitleEl = ref(null);
-
-  const connectForm = reactive({ deviceId: '', handleId: '', switchId: '' });
-  const groupForm = reactive({ nodeId: '', groupId: '' });
-  // Why Move did nothing; `missing` when no node was chosen.
-  const groupError = reactive({ text: '', missing: false, seq: 0 });
 
   // Rows an edit leaves as they were stay the same objects, so only the
   // rows it changed are drawn again (see keepUnchanged).
@@ -325,134 +184,6 @@
     return items.some((item) => item.id === activeId.value)
       ? activeId.value
       : items[0]?.id || '';
-  });
-
-  // A device from an included topology keeps its connections, so it is not
-  // offered.
-  const devices = computed(() =>
-    (store.doc.nodes || []).filter(
-      (node) => node.kind === 'device' && !includedFrom(node),
-    ),
-  );
-
-  const switches = computed(() =>
-    (store.doc.nodes || []).filter((node) => node.kind === 'switch'),
-  );
-
-  // Only free interfaces are offered: a handle may take part in exactly one
-  // connection, which is the same rule the server enforces.
-  const availableHandles = computed(() => {
-    const device = findNode(store.doc, connectForm.deviceId);
-
-    if (!device) {
-      return [];
-    }
-
-    const used = new Set(
-      (store.doc.edges || []).flatMap((edge) =>
-        [edge.sourceHandleId, edge.targetHandleId].filter(Boolean),
-      ),
-    );
-
-    return deviceHandles(device).filter((handle) => !used.has(handle.id));
-  });
-
-  const missingDevice = computed(
-    () => connectError.missing && !connectForm.deviceId,
-  );
-  const missingSwitch = computed(
-    () => connectError.missing && !connectForm.switchId,
-  );
-
-  // Names only the fields still empty, so the message never goes stale as
-  // they are filled in. A kind the diagram has none of cannot be chosen, so
-  // the message says to add one instead.
-  const connectMessage = computed(() => {
-    if (!connectError.missing) {
-      return connectError.refusal;
-    }
-
-    const empty = [
-      missingDevice.value && { kind: 'device', options: devices.value },
-      missingSwitch.value && { kind: 'switch', options: switches.value },
-    ].filter(Boolean);
-    const choose = empty.filter((field) => field.options.length);
-    const add = empty.filter((field) => !field.options.length);
-    const kinds = (fields) => fields.map((field) => field.kind).join(' and a ');
-
-    return [
-      choose.length ? `Choose a ${kinds(choose)}.` : '',
-      add.length ? `Add a ${kinds(add)} to the diagram first.` : '',
-    ]
-      .filter(Boolean)
-      .join(' ');
-  });
-
-  // The message goes once every field it named has a value.
-  watch([missingDevice, missingSwitch], ([device, sw]) => {
-    if (connectError.missing && !device && !sw) {
-      clearConnectError();
-    }
-  });
-
-  // Another device has other interfaces, so the one picked for the last
-  // goes. A device, switch or interface that is gone (removed, connected
-  // elsewhere, undone) is unpicked, so the form never sends what it no
-  // longer shows.
-  watch(
-    () => connectForm.deviceId,
-    () => {
-      connectForm.handleId = '';
-    },
-  );
-  watch([devices, switches, availableHandles], ([device, sw, handles]) => {
-    const has = (list, id) => list.some((item) => item.id === id);
-
-    if (connectForm.deviceId && !has(device, connectForm.deviceId)) {
-      connectForm.deviceId = '';
-    }
-    if (connectForm.switchId && !has(sw, connectForm.switchId)) {
-      connectForm.switchId = '';
-    }
-    if (connectForm.handleId && !has(handles, connectForm.handleId)) {
-      connectForm.handleId = '';
-    }
-  });
-
-  // Every node can move to a group or out of one.
-  const movable = computed(() => store.doc.nodes || []);
-
-  // The groups the chosen node can move to: not itself, nor a group inside
-  // it.
-  const groupChoices = computed(() =>
-    (store.doc.nodes || []).filter(
-      (node) =>
-        node.kind === 'group' &&
-        node.id !== groupForm.nodeId &&
-        !isDescendant(store.doc, node.id, groupForm.nodeId),
-    ),
-  );
-
-  const missingNode = computed(() => groupError.missing && !groupForm.nodeId);
-
-  // The group shows where the chosen node is now, so Move takes it
-  // elsewhere; a node or group that is gone is unpicked.
-  watch(
-    () => groupForm.nodeId,
-    (id) => {
-      groupForm.groupId = findNode(store.doc, id)?.parentId || '';
-      if (id) {
-        clearGroupError();
-      }
-    },
-  );
-  watch([movable, groupChoices], ([nodes, groups]) => {
-    if (groupForm.nodeId && !nodes.some((n) => n.id === groupForm.nodeId)) {
-      groupForm.nodeId = '';
-    }
-    if (groupForm.groupId && !groups.some((n) => n.id === groupForm.groupId)) {
-      groupForm.groupId = '';
-    }
   });
 
   // The rows that are pressed, hold the tab stop and are being renamed, as
@@ -498,12 +229,6 @@
       onRenameChange,
     }),
   );
-
-  function switchLabel(node) {
-    const network = findNetwork(store.doc, node.switch?.networkId);
-
-    return network ? `${nodeLabel(node)} (${network.name})` : nodeLabel(node);
-  }
 
   function rowId(id) {
     return `outline-row-${id}`;
@@ -769,91 +494,6 @@
     store.updateNode(item.id, { label }, 'Renamed node');
   }
 
-  function clearConnectError() {
-    connectError.refusal = '';
-    connectError.missing = false;
-  }
-
-  function showConnectError({ refusal = '', missing = false }) {
-    connectError.refusal = refusal;
-    connectError.missing = missing;
-    connectError.seq += 1;
-  }
-
-  function connect() {
-    if (!connectForm.deviceId || !connectForm.switchId) {
-      showConnectError({ missing: true });
-      focusLater(connectForm.deviceId ? 'connect-switch' : 'connect-device');
-
-      return;
-    }
-
-    // The alert below reads a refusal out; the store need not as well.
-    const result = store.connect(
-      {
-        sourceNodeId: connectForm.deviceId,
-        sourceHandleId: connectForm.handleId || null,
-        targetNodeId: connectForm.switchId,
-      },
-      { announce: false },
-    );
-
-    if (result.error) {
-      showConnectError({ refusal: result.error });
-
-      return;
-    }
-
-    clearConnectError();
-    connectForm.handleId = '';
-  }
-
-  function clearGroupError() {
-    groupError.text = '';
-    groupError.missing = false;
-  }
-
-  function showGroupError(text, missing = false) {
-    groupError.text = text;
-    groupError.missing = missing;
-    groupError.seq += 1;
-  }
-
-  // The store announces the move; a move that would change nothing says why
-  // here instead. Focus stays on Move.
-  function moveToGroup() {
-    const node = findNode(store.doc, groupForm.nodeId);
-
-    if (!node) {
-      showGroupError(
-        movable.value.length
-          ? 'Choose a node.'
-          : 'Add a node to the diagram first.',
-        true,
-      );
-      focusLater('regroup-node');
-
-      return;
-    }
-
-    const groupId = groupForm.groupId || '';
-
-    if ((node.parentId || '') === groupId) {
-      const group = findNode(store.doc, groupId);
-
-      showGroupError(
-        group
-          ? `${nodeLabel(node)} is in ${nodeLabel(group)} already.`
-          : `${nodeLabel(node)} is in no group already.`,
-      );
-
-      return;
-    }
-
-    clearGroupError();
-    store.setParent(node.id, groupId || null);
-  }
-
   // Focus moves to the next network's Remove button, or the previous one, or
   // the Networks heading once the list is empty.
   function removeNetwork(network) {
@@ -890,10 +530,5 @@
   .builder-outline__empty {
     font-size: 0.78rem;
     margin: 0 0 0.75rem;
-  }
-
-  .builder-outline__error {
-    font-size: 0.78rem;
-    margin-bottom: 0.35rem;
   }
 </style>

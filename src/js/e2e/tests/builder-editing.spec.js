@@ -1343,11 +1343,13 @@ test.describe('Builder canvas editing', () => {
       );
     });
 
-    await test.step('the outline moves a member out of its group and back, and Alt+Shift+arrows resize the group', async () => {
-      const node = page.locator('#regroup-node');
-      const group = page.locator('#regroup-group');
-      const move = page.getByTestId('outline-regroup-submit');
-      const alert = page.getByTestId('outline-regroup').getByRole('alert');
+    await test.step('Move to a group, from the keyboard, moves a member out of its group and back, and Alt+Shift+arrows resize the group', async () => {
+      const opener = builder.toolbar('regroup');
+      const dialog = page.getByTestId('regroup-dialog');
+      const node = dialog.locator('#regroup-node');
+      const group = dialog.locator('#regroup-group');
+      const move = dialog.getByTestId('regroup-dialog-submit');
+      const alert = dialog.getByTestId('regroup-error');
       // Each kind's default size (model.js DEFAULT_SIZES).
       const sizes = { device: [160, 96], switch: [180, 72] };
       const membership = (doc) => {
@@ -1383,11 +1385,23 @@ test.describe('Builder canvas editing', () => {
         };
       };
 
+      // Enter on the toolbar's Move to group opens the dialog, which takes
+      // focus. It starts from the selection: the group, in no group.
+      await opener.press('Enter');
+      await expect(dialog).toBeVisible();
+      await expect.soft(dialog).toHaveAccessibleName('Move to a group');
+      await expect.soft(dialog).toBeFocused();
+      await expect.soft(node).toHaveValue(groupId);
+      await expect.soft(group).toHaveValue('');
+
       await node.selectOption({ label: 'node-2 (device)' });
       // The form shows the group the node is in now.
       await expect.soft(group).toHaveValue(groupId);
       await group.selectOption({ label: 'No group' });
-      await move.click();
+      await move.press('Enter');
+      // Moved, the dialog closes and focus goes back to Move to group.
+      await expect(dialog).toHaveCount(0);
+      await expect.soft(opener).toBeFocused();
       await expect
         .soft(builder)
         .toHaveAnnounced('Removed node-2 from its group');
@@ -1401,21 +1415,35 @@ test.describe('Builder canvas editing', () => {
         clear: true,
       });
 
-      // A move to where it is already changes nothing, and says why.
-      await move.click();
+      // A move to where it is already changes nothing, says why, and the
+      // dialog stays open with focus on Move.
+      await opener.press('Enter');
+      await expect(dialog).toBeVisible();
+      await node.selectOption({ label: 'node-2 (device)' });
+      await expect.soft(group).toHaveValue('');
+      await move.press('Enter');
       await expect.soft(alert).toHaveText('node-2 is in no group already.');
+      await expect.soft(dialog).toBeVisible();
+      await expect.soft(move).toBeFocused();
 
       await group.selectOption({ label: 'Group' });
-      await move.click();
+      await move.press('Enter');
+      await expect(dialog).toHaveCount(0);
+      await expect.soft(opener).toBeFocused();
       await expect.soft(builder).toHaveAnnounced('Added node-2 to group Group');
-      await expect.soft(alert).toHaveCount(0);
-      await expect.soft(move).toBeFocused();
       await builder.persisted(draft, membership, {
         parent: groupId,
         inside: true,
         outside: false,
         clear: true,
       });
+
+      // Escape closes the dialog without a move, onto Move to group.
+      await opener.press('Enter');
+      await expect(dialog).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect.soft(opener).toBeFocused();
 
       // The group is still selected. Right and Down grow it, Left and Up
       // shrink it, never smaller than its members need.

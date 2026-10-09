@@ -156,8 +156,18 @@ leave room; otherwise they move toward the narrower side without covering it.
 The name's box stays at least 8rem wide and "Shared by" on one line: the
 header wraps before either gives way. Below a 64rem header, where the header
 wraps, the counts are centered in the space left on their row. The editor's
-toolbar has Draft History right after Minimap, then the save state, which is text the
-toolbar's arrow keys pass by. Focus
+toolbar has Add connection and Move to group right before Minimap, Draft
+History right after it, then the save state, which is text the toolbar's
+arrow keys pass by. Add connection and Move to group open the dialogs "Add a
+connection" (`dialogs/ConnectDialog.vue`: Device, Interface, Switch) and
+"Move to a group" (`dialogs/RegroupDialog.vue`: Node, Group), whose rules
+are in `dialogs/structureForms.js`; the palette's `dialog.connect` and
+`dialog.regroup` open them too. They start from the selection, and the
+Outline has no such forms. In the Publish dialog the hint of a config that
+will be updated is a warning (`.builder-hint--warning`, a warning icon and
+`--bx-warning-bg`), and the naming rule shows under a name field only while
+the name breaks it, after the reason (`configNameReason`, `configNameHint`
+in `publish.js`). Focus
 mode (⇧⌘F or Ctrl+Shift+F) works on both views and stays on between them,
 until the user turns it off or leaves Builder.
 

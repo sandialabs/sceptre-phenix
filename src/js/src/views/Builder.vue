@@ -427,6 +427,8 @@
         @history="openHistory"
         @experiment="openExperiment()"
         @group-pattern="openDialog('group-pattern')"
+        @connect="runCommand('dialog.connect', commandContext)"
+        @regroup="runCommand('dialog.regroup', commandContext)"
         @toggle-minimap="showMinimap = !showMinimap" />
 
       <builder-panes ref="panes">
@@ -512,6 +514,10 @@
     <group-pattern-dialog
       v-if="dialog === 'group-pattern'"
       @close="dialog = ''" />
+    <!-- Add a connection and Move to a group, from the toolbar's buttons
+         and the palette's commands; each opens on the selection. -->
+    <connect-dialog v-if="dialog === 'connect'" @close="dialog = ''" />
+    <regroup-dialog v-if="dialog === 'regroup'" @close="dialog = ''" />
     <!-- The template editor, from the palette's "+" and the menu of a
          template of the diagram, and from the command palette; and, for a
          template of the user's library, from the Node Templates tab. -->
@@ -626,11 +632,13 @@
   import BuilderToolbar from '@/components/builder/BuilderToolbar.vue';
   import BulkShareDialog from '@/components/builder/dialogs/BulkShareDialog.vue';
   import CollectionDialog from '@/components/builder/dialogs/CollectionDialog.vue';
+  import ConnectDialog from '@/components/builder/dialogs/ConnectDialog.vue';
   import DownloadDialog from '@/components/builder/dialogs/DownloadDialog.vue';
   import GroupPatternDialog from '@/components/builder/dialogs/GroupPatternDialog.vue';
   import HistoryDialog from '@/components/builder/dialogs/HistoryDialog.vue';
   import ImportDialog from '@/components/builder/dialogs/ImportDialog.vue';
   import PublishDialog from '@/components/builder/dialogs/PublishDialog.vue';
+  import RegroupDialog from '@/components/builder/dialogs/RegroupDialog.vue';
   import ScenarioDialog from '@/components/builder/dialogs/ScenarioDialog.vue';
   import ShareDialog from '@/components/builder/dialogs/ShareDialog.vue';
   import TemplateDialog from '@/components/builder/dialogs/TemplateDialog.vue';
@@ -727,7 +735,8 @@
   // The open dialog: publish, share, bulk-share, upload, import, download,
   // scenario, history, commands (the command palette), shortcuts (the
   // shortcut sheet) or settings.
-  // Also group-pattern, the Auto-group by name pattern dialog.
+  // Also group-pattern, the Auto-group by name pattern dialog, connect, the
+  // Add a connection dialog, and regroup, the Move to a group dialog.
   // Also template, the template editor (see openTemplate), collection,
   // the dialog of a collection of the template library (see
   // openCollection), and template-share, the Share dialog of templates and

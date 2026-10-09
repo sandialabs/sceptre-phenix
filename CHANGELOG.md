@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - **Validation Errors**: Config validation errors from the CLI, the API and the web UI name the list item, its hostname or name, and the line. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **etcd**: Automatic history compaction for every etcd store. It compacts the whole etcd cluster. Set it with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
 - **Builder**: New topology editor at `/builder`, with `phenix builder publish` to create a topology from a Builder file. See the [Builder documentation](https://phenix.sceptre.dev/latest/builder/).
+  - The toolbar's **Add connection** and **Move to group** open dialogs that connect a device to a switch and move a node into or out of a group without dragging. The Publish dialog marks an update as a warning, and says why a config name is not allowed.
 - **Node Notes**: Topology nodes take `general.notes`; a new experiment copies them to each VM's notes.
 
 ### Changed

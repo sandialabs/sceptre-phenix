@@ -77,9 +77,17 @@ The confirmation in step 5, and the result in step 6:
 ![The Publish diagram dialog after publishing: Published. Every stage succeeded, with the document created, topology updated and draft ok, and a Close button.](../images/builder/quickstart-publish-result.png)
 
 Config names can use only letters, numbers, underscores (_), at signs (@),
-periods (.) and hyphens (-), with no spaces. A name that breaks the rule is
-refused on its field with a valid form of it, for example "The topology name
-"Riverside Water" is not allowed. … For example: Riverside-Water".
+periods (.) and hyphens (-), with no spaces. The dialog shows this rule only
+while a name breaks it: under the field, it says why, then the rule, for
+example "This name is not allowed: it contains a space. Names can use only
+…". The reason names spaces and each character the rule does not allow,
+quoted, up to five: "it contains characters that are not allowed: "/",
+"#"". A valid name shows no rule. Publishing a name that breaks the rule is
+refused on its field with the reason and a valid form of the name, for
+example "The topology name "Riverside Water" is not allowed: it contains a
+space. … For example: Riverside-Water". The experiment and scenario names,
+and the new topology name of an [import](import-upload-download.md#import-options),
+work the same way.
 
 !!! tip
     The dialog proposes a topology name made from the diagram name each time
@@ -90,7 +98,10 @@ refused on its field with a valid form of it, for example "The topology name
 ### Create or update
 
 The hint under **Topology name** says what publishing does with that name.
-The button then names the action.
+The button then names the action. An update replaces the config on the
+server, so its hint is a warning: it has a warning sign before the words and
+a yellow background. The hint under **Experiment name** warns the same way
+when it says the experiment will be updated.
 
 | Hint | Button |
 |---|---|

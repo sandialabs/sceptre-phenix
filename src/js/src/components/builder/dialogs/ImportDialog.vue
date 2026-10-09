@@ -202,11 +202,17 @@
           autocomplete="off"
           spellcheck="false"
           :aria-invalid="invalid('newName')"
-          :aria-describedby="describedBy('newName', 'import-new-name-hint')"
+          :aria-describedby="describedBy('newName', newNameHintId)"
           data-testid="import-new-name"
           @input="onNewName" />
-        <p id="import-new-name-hint" class="builder-hint">
-          {{ CONFIG_NAME_RULE }}
+        <!-- Shown only while the name breaks the naming rule: why, then the
+             rule. -->
+        <p
+          v-if="newNameHint"
+          id="import-new-name-hint"
+          class="builder-hint"
+          data-testid="import-new-name-hint">
+          {{ newNameHint }}
         </p>
       </div>
 
@@ -258,7 +264,7 @@
   import { describeImport } from '@/builder/announce.js';
   import { LEGACY_ANNOTATION } from '@/builder/configs.js';
   import { withArticle } from '@/builder/decode.js';
-  import { CONFIG_NAME_RULE } from '@/builder/publish.js';
+  import { configNameHint } from '@/builder/publish.js';
   import { useBuilderStore } from '@/builder/store.js';
 
   const props = defineProps({
@@ -363,6 +369,15 @@
 
   const ready = computed(() =>
     form.source === 'stored' ? Boolean(form.name) : Boolean(form.content),
+  );
+
+  // Why the new name breaks the naming rule, with the rule, while it does;
+  // '' for a name that keeps it, which shows no rule. It describes the
+  // field while it shows, but not while the field's error does, which says
+  // the same.
+  const newNameHint = computed(() => configNameHint(options.newName));
+  const newNameHintId = computed(() =>
+    newNameHint.value && !invalid('newName') ? 'import-new-name-hint' : '',
   );
 
   // Before the user continues, nothing has been imported.

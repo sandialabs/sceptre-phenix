@@ -8,6 +8,7 @@ const {
   API,
   test,
   expect,
+  contrast,
   devicesOf,
   draftPath,
   expectAccessible,
@@ -278,6 +279,18 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
     await expect
       .soft(topologyHint(page))
       .toHaveText('A new topology will be created.');
+    // A new topology is no warning, and a valid name shows no naming rule.
+    await expect
+      .soft(topologyHint(page))
+      .not.toHaveClass(/\bbuilder-hint--warning\b/);
+    await expect
+      .soft(topologyHint(page).locator('svg.builder-icon--warning'))
+      .toHaveCount(0);
+    await expect.soft(page.getByTestId('publish-name-rule')).toHaveCount(0);
+    await expect.soft(builder.dialog).not.toContainText('Names can use only');
+    await expect
+      .soft(page.getByTestId('publish-name'))
+      .toHaveAccessibleDescription('A new topology will be created.');
     await expect
       .soft(page.getByTestId('publish-submit'))
       .toHaveText('Create topology');
@@ -290,21 +303,43 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
 
   await test.step('a name the server would refuse is refused on its field, before sending', async () => {
     const name = page.getByTestId('publish-name');
-    await name.fill('Untitled topology');
-    await page.getByTestId('publish-submit').press('Enter');
-    await expect
-      .soft(page.getByTestId('publish-error'))
-      .toHaveText(
-        'The topology name "Untitled topology" is not allowed. ' +
-          'Names can use only letters, numbers, underscores (_), at signs (@), ' +
-          'periods (.) and hyphens (-), with no spaces. ' +
-          'For example: Untitled-topology',
-      );
-    await expect.soft(name).toHaveAttribute('aria-invalid', 'true');
-    await expect.soft(name).toBeFocused();
+    const rule = page.getByTestId('publish-name-rule');
+    const RULE =
+      'Names can use only letters, numbers, underscores (_), at signs (@), ' +
+      'periods (.) and hyphens (-), with no spaces.';
+
+    // While typing, the field says why the name breaks the rule, each
+    // character it may not use once, then the rule.
+    await name.fill('lab/a#b/c');
+    const characters = `This name is not allowed: it contains characters that are not allowed: "/", "#". ${RULE}`;
+    await expect.soft(rule).toHaveText(characters);
     await expect
       .soft(name)
-      .toHaveAccessibleDescription(/no spaces\. The topology name .*$/);
+      .toHaveAccessibleDescription(
+        `A new topology will be created. ${characters}`,
+      );
+    // A valid name takes the rule away.
+    await name.fill(topology);
+    await expect.soft(rule).toHaveCount(0);
+
+    await name.fill('Untitled topology');
+    await expect
+      .soft(rule)
+      .toHaveText(`This name is not allowed: it contains a space. ${RULE}`);
+    await page.getByTestId('publish-submit').press('Enter');
+    const problem =
+      'The topology name "Untitled topology" is not allowed: it contains a space. ' +
+      `${RULE} For example: Untitled-topology`;
+    await expect.soft(page.getByTestId('publish-error')).toHaveText(problem);
+    await expect.soft(name).toHaveAttribute('aria-invalid', 'true');
+    await expect.soft(name).toBeFocused();
+    // The error says what the rule does, so the field is described by its
+    // hint and the error, and the rule is not read twice.
+    await expect
+      .soft(name)
+      .toHaveAccessibleDescription(
+        `A new topology will be created. ${problem}`,
+      );
     await expect(page.getByTestId('publish-result')).toHaveCount(0);
   });
 
@@ -446,6 +481,42 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
     await expect
       .soft(topologyHint(page))
       .toHaveText('A topology with this name exists and will be updated.');
+
+    // An update replaces the topology, so the hint warns: a warning sign
+    // before the same words, which say it without the sign or the color, on
+    // a yellow ground that keeps them readable in either theme.
+    const hint = topologyHint(page);
+    const sign = hint.locator('svg.builder-icon--warning');
+    await expect.soft(hint).toHaveClass(/\bbuilder-hint--warning\b/);
+    await expect.soft(sign).toBeVisible();
+    await expect.soft(sign).toHaveAttribute('aria-hidden', 'true');
+    expect
+      .soft(
+        await hint.evaluate((element) =>
+          [...element.children].map((child) => child.tagName.toLowerCase()),
+        ),
+        'the sign comes before the words',
+      )
+      .toEqual(['svg', 'span']);
+    // Reduced motion turns color transitions off, so the colors are
+    // measured as they end.
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+      await expect(page.locator('.builder-root')).toHaveAttribute(
+        'data-builder-theme',
+        scheme,
+      );
+      const [{ ratio: words }] = await contrast(hint.locator('span'));
+      expect
+        .soft(words, `${scheme}: the warning's words`)
+        .toBeGreaterThanOrEqual(4.5);
+      const [{ ratio: icon }] = await contrast(sign);
+      expect
+        .soft(icon, `${scheme}: the warning sign`)
+        .toBeGreaterThanOrEqual(3);
+    }
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: null });
+
     // The button says it overwrites, not just "Publish".
     const submit = page.getByTestId('publish-submit');
     await expect.soft(submit).toHaveText('Update topology');
