@@ -21,16 +21,23 @@ const (
 )
 
 const (
-	// MaxUserBytes bounds a user a document names (see [Document.Author] and
-	// [Document.UpdatedBy]). It is the bound the draft service puts on the
-	// owner and the actors of a draft.
+	// MaxUserBytes bounds a user a document names (see [Metadata.CreatedBy]
+	// and [Metadata.UpdatedBy]). It is the bound the draft service puts on
+	// the owner and the actors of a draft.
 	MaxUserBytes = 256
 
-	// TimeLayout is the one form a time in the document header takes (see
-	// [Document.CreatedAt] and [Document.UpdatedAt]): RFC 3339 in UTC, whole
+	// TimeLayout is the one form a time in the document metadata takes (see
+	// [Metadata.CreatedAt] and [Metadata.UpdatedAt]): RFC 3339 in UTC, whole
 	// seconds, with a literal "Z". The editor checks the same form, so a
 	// document is accepted or refused the same way on both sides.
 	TimeLayout = "2006-01-02T15:04:05Z"
+
+	// MaxDiagramNotes is the most notes a document's metadata may carry (see
+	// [Metadata.Notes]).
+	MaxDiagramNotes = 100
+
+	// MaxDiagramNoteBytes bounds one of those notes.
+	MaxDiagramNoteBytes = 4096
 )
 
 // NodeKind enumerates the kinds of nodes a builder document can contain.
@@ -78,30 +85,18 @@ const (
 // Document is the root of the builder model. It is versioned by [Document.Schema]
 // and [Document.Revision] and is safe to persist verbatim.
 type Document struct {
-	Schema      string `json:"$schema"`
-	Revision    int    `json:"revision"`
-	ID          string `json:"id"`
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
-	// Author is the user who first made the document, and CreatedAt is when,
-	// in [TimeLayout]. The draft service sets each when a draft is created
-	// from a document that has none, and writes both into every later
-	// snapshot of that draft (see phenix/api/builder). A document it never
-	// stored may have neither.
-	Author    string `json:"author,omitempty"`
-	CreatedAt string `json:"createdAt,omitempty"`
-	// UpdatedBy is the user whose save stored this content, and UpdatedAt is
-	// when, in [TimeLayout]. The draft service sets both on every save. They
-	// are not [Source.UpdatedAt], which is a time of the source config.
-	UpdatedBy string       `json:"updatedBy,omitempty"`
-	UpdatedAt string       `json:"updatedAt,omitempty"`
-	Nodes     []Node       `json:"nodes"`
-	Networks  []Network    `json:"networks"`
-	Edges     []Edge       `json:"edges"`
-	Viewport  Viewport     `json:"viewport"`
-	Grid      Grid         `json:"grid"`
-	Scenario  *ScenarioRef `json:"scenario,omitempty"`
-	Source    *Source      `json:"source,omitempty"`
+	Schema   string `json:"$schema"`
+	Revision int    `json:"revision"`
+	// Metadata is what the document says of itself: its identity, name and
+	// description, who made and last saved it and when, and its notes.
+	Metadata Metadata     `json:"metadata"`
+	Nodes    []Node       `json:"nodes"`
+	Networks []Network    `json:"networks"`
+	Edges    []Edge       `json:"edges"`
+	Viewport Viewport     `json:"viewport"`
+	Grid     Grid         `json:"grid"`
+	Scenario *ScenarioRef `json:"scenario,omitempty"`
+	Source   *Source      `json:"source,omitempty"`
 	// Layout is the id of the automatic layout that last laid this document
 	// out, which the editor names in its layout menu. Empty, or an id the
 	// editor does not know, means the positions were not made by a layout. It
@@ -114,6 +109,33 @@ type Document struct {
 	// Icons holds the custom icons the document's nodes and templates use, by
 	// icon id (see [IconID]). Presentation only, never written to a config.
 	Icons map[string]Icon `json:"icons,omitempty"`
+}
+
+// Metadata is the part of a [Document] that describes the document itself
+// rather than the diagram on its canvas. It is document content and part of
+// the document's digest; none of it is written to a config.
+type Metadata struct {
+	// ID is the document's identifier, a UUID (see [DocumentID]).
+	ID          string `json:"id"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	// CreatedBy is the user who first made the document, and CreatedAt is
+	// when, in [TimeLayout]. The draft service sets each when a draft is
+	// created from a document that has none, and writes both into every
+	// later snapshot of that draft (see phenix/api/builder). A document it
+	// never stored may have neither.
+	CreatedBy string `json:"createdBy,omitempty"`
+	CreatedAt string `json:"createdAt,omitempty"`
+	// UpdatedBy is the user whose save stored this content, and UpdatedAt is
+	// when, in [TimeLayout]. The draft service sets both on every save. They
+	// are not [Source.UpdatedAt], which is a time of the source config.
+	UpdatedBy string `json:"updatedBy,omitempty"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
+	// Notes are free text about the diagram as a whole, in the order the
+	// editor lists them: at most [MaxDiagramNotes], each not blank, at most
+	// [MaxDiagramNoteBytes] and free of control characters but newline and
+	// tab.
+	Notes []string `json:"notes,omitempty"`
 }
 
 // Node is a single item on the canvas. Exactly one of the kind-specific payload
@@ -331,8 +353,10 @@ func NewDocument(name string) *Document {
 	return &Document{ //nolint:exhaustruct // optional sections start empty
 		Schema:   SchemaURI,
 		Revision: SchemaRevision,
-		ID:       DocumentID(name),
-		Name:     name,
+		Metadata: Metadata{ //nolint:exhaustruct // provenance and notes start empty
+			ID:   DocumentID(name),
+			Name: name,
+		},
 		Nodes:    []Node{},
 		Networks: []Network{},
 		Edges:    []Edge{},
@@ -342,39 +366,39 @@ func NewDocument(name string) *Document {
 }
 
 // Provenance is who made a document and who last saved it, and when: the
-// four header fields the draft service sets (see [Document.Author] and
-// [Document.UpdatedBy]). An empty field is one the document does not have.
+// four metadata fields the draft service sets (see [Metadata.CreatedBy] and
+// [Metadata.UpdatedBy]). An empty field is one the document does not have.
 type Provenance struct {
-	Author    string `json:"author,omitempty"`
+	CreatedBy string `json:"createdBy,omitempty"`
 	CreatedAt string `json:"createdAt,omitempty"`
 	UpdatedBy string `json:"updatedBy,omitempty"`
 	UpdatedAt string `json:"updatedAt,omitempty"`
 }
 
-// FormatTime returns t as a time of the document header, in [TimeLayout]:
-// in UTC, cut to whole seconds.
+// FormatTime returns t as a time of the document metadata, in
+// [TimeLayout]: in UTC, cut to whole seconds.
 func FormatTime(t time.Time) string {
 	return t.UTC().Format(TimeLayout)
 }
 
-// Provenance returns the document's author, creation time, last editor and
-// last edit time.
+// Provenance returns who made the document and when, and who last saved it
+// and when.
 func (d *Document) Provenance() Provenance {
 	return Provenance{
-		Author:    d.Author,
-		CreatedAt: d.CreatedAt,
-		UpdatedBy: d.UpdatedBy,
-		UpdatedAt: d.UpdatedAt,
+		CreatedBy: d.Metadata.CreatedBy,
+		CreatedAt: d.Metadata.CreatedAt,
+		UpdatedBy: d.Metadata.UpdatedBy,
+		UpdatedAt: d.Metadata.UpdatedAt,
 	}
 }
 
-// SetProvenance replaces the document's author, creation time, last editor
-// and last edit time. An empty field removes the one the document had.
+// SetProvenance replaces who made the document and when, and who last saved
+// it and when. An empty field removes the one the document had.
 func (d *Document) SetProvenance(provenance Provenance) {
-	d.Author = provenance.Author
-	d.CreatedAt = provenance.CreatedAt
-	d.UpdatedBy = provenance.UpdatedBy
-	d.UpdatedAt = provenance.UpdatedAt
+	d.Metadata.CreatedBy = provenance.CreatedBy
+	d.Metadata.CreatedAt = provenance.CreatedAt
+	d.Metadata.UpdatedBy = provenance.UpdatedBy
+	d.Metadata.UpdatedAt = provenance.UpdatedAt
 }
 
 // NodeByID returns the node with the given ID, or nil.

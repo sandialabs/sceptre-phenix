@@ -100,8 +100,35 @@ func TestDecodeRejects(t *testing.T) {
 		},
 		{
 			name:    "missing schema",
-			data:    `{"revision": 1, "id": "x"}`,
+			data:    `{"revision": 1, "metadata": {"id": "x"}}`,
 			wantErr: builder.ErrUnsupportedSchema,
+		},
+		{
+			// The metadata fields are not root fields, and no alias
+			// reads them there.
+			name:    "a document name at the root",
+			data:    strings.Replace(string(valid), `"revision": 1,`, `"revision": 1, "name": "root",`, 1),
+			wantMsg: `unknown field "name"`,
+		},
+		{
+			name:    "an author at the root",
+			data:    strings.Replace(string(valid), `"revision": 1,`, `"revision": 1, "author": "alice",`, 1),
+			wantMsg: `unknown field "author"`,
+		},
+		{
+			name:    "an author in the metadata",
+			data:    strings.Replace(string(valid), `"name": "hand-authored"`, `"author": "alice"`, 1),
+			wantMsg: `unknown field "author"`,
+		},
+		{
+			name:    "metadata that is not an object",
+			data:    strings.Replace(string(valid), `"metadata": {`, `"metadata": "hand-authored", "unused": {`, 1),
+			wantMsg: "decoding builder document",
+		},
+		{
+			name:    "notes that are not a list",
+			data:    strings.Replace(string(valid), `"name": "hand-authored"`, `"notes": "one note"`, 1),
+			wantMsg: "decoding builder document",
 		},
 		{
 			name:    "legacy schema field",
@@ -251,8 +278,8 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 func TestNewDocumentIsValid(t *testing.T) {
 	doc := builder.NewDocument("fresh")
 
-	if doc.ID != builder.DocumentID("fresh") {
-		t.Fatalf("document ID = %q, want %q", doc.ID, builder.DocumentID("fresh"))
+	if doc.Metadata.ID != builder.DocumentID("fresh") || doc.Metadata.Name != "fresh" {
+		t.Fatalf("metadata = %+v, want the name fresh and its document ID %q", doc.Metadata, builder.DocumentID("fresh"))
 	}
 
 	if err := doc.Validate(); err != nil {

@@ -289,7 +289,7 @@ test(
       // its last editor, until the editor saves a change.
       const made = draft.stamp;
       expect(made).toEqual({
-        author: owner.username,
+        createdBy: owner.username,
         createdAt: expect.stringMatching(DOCUMENT_TIME),
         updatedBy: owner.username,
         updatedAt: made.createdAt,

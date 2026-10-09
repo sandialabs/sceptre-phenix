@@ -550,11 +550,11 @@ SVG include them. An icon that no node or template of the diagram uses any
 more leaves the diagram with the edit that removed its last use; **Undo**
 brings it back.
 
-A diagram holds at most 32 custom icons. The dialog refuses a 33rd: "This
-diagram already has 32 custom icons. Remove one from a node first." A paste
-or another edit that would pass 32 leaves the icon out, the node keeps its
+A diagram holds at most 50 custom icons. The dialog refuses a 51st: "This
+diagram already has 50 custom icons. Remove one from a node first." A paste
+or another edit that would pass 50 leaves the icon out, the node keeps its
 built-in icon, and Builder says "1 custom icon was left out: a diagram holds
-at most 32."
+at most 50."
 
 ### Your icon library
 

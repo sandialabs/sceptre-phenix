@@ -489,13 +489,15 @@ describe('inspector field accessibility', () => {
 
 // Renders the whole Inspector for the sample document's alpha device. `schema`
 // sets the store's schema state (schemaSource, schemaError), `patch` adds to
-// the document, and `document` selects nothing, so the Inspector shows the
-// diagram's own section. `change` makes another document of the sample one,
-// and `select` picks the node to show from the sample's parts.
+// the document and `metadata` to its metadata, and `document` selects
+// nothing, so the Inspector shows the diagram's own section. `change` makes
+// another document of the sample one, and `select` picks the node to show
+// from the sample's parts.
 async function renderInspector({
   readOnly = false,
   schema = {},
   patch = {},
+  metadata = {},
   document = false,
   draft = {},
   change = (sample) => sample.doc,
@@ -507,7 +509,13 @@ async function renderInspector({
 
   const store = useBuilderStore(pinia);
   const sample = sampleDocument();
-  store.doc = { ...change(sample), ...patch };
+  const doc = change(sample);
+
+  store.doc = {
+    ...doc,
+    ...patch,
+    metadata: { ...doc.metadata, ...metadata },
+  };
   store.readOnly = readOnly;
   store.rememberDraft(draft);
   Object.assign(store, schema);
@@ -637,10 +645,11 @@ describe('the diagram section', () => {
   };
 
   // Who made the diagram and who saved it last, as the server wrote them
-  // into the document, and the uploaded file the draft was made from.
+  // into the document's metadata, and the uploaded file the draft was made
+  // from.
   describe('Details', () => {
     const stamp = {
-      author: 'alice',
+      createdBy: 'alice',
       createdAt: '2026-10-01T15:04:05Z',
       updatedBy: 'bob@example.com',
       updatedAt: '2026-10-01T16:10:00Z',
@@ -662,7 +671,7 @@ describe('the diagram section', () => {
       }).format(new Date(value));
 
     test('says who made the diagram and who saved it last, each with a machine-readable time', async () => {
-      const html = await renderInspector({ document: true, patch: stamp });
+      const html = await renderInspector({ document: true, metadata: stamp });
       const block = details(html);
 
       expect(text(block)).toBe(
@@ -692,7 +701,7 @@ describe('the diagram section', () => {
       const some = details(
         await renderInspector({
           document: true,
-          patch: { author: 'alice', updatedAt: stamp.updatedAt },
+          metadata: { createdBy: 'alice', updatedAt: stamp.updatedAt },
         }),
       );
 
@@ -705,7 +714,7 @@ describe('the diagram section', () => {
       const edited = details(
         await renderInspector({
           document: true,
-          patch: { updatedBy: 'bob', updatedAt: stamp.updatedAt },
+          metadata: { updatedBy: 'bob', updatedAt: stamp.updatedAt },
         }),
       );
 
@@ -726,7 +735,7 @@ describe('the diagram section', () => {
     test('a draft made from an uploaded file names the file', async () => {
       const html = await renderInspector({
         document: true,
-        patch: stamp,
+        metadata: stamp,
         draft: { id: 'd1', sourceFile: 'pump station (v2).builder.json' },
       });
 
@@ -751,9 +760,150 @@ describe('the diagram section', () => {
     });
 
     test('is shown for a node selection no more than the rest of the Diagram section', async () => {
-      const html = await renderInspector({ patch: stamp });
+      const html = await renderInspector({ metadata: stamp });
 
       expect(html).not.toContain('inspector-details');
+    });
+  });
+
+  // The notes of the diagram, which its metadata holds: a text box each,
+  // with its Delete button, and Add note.
+  describe('Notes', () => {
+    // The block holds no other <div>, so it ends at the first </div>.
+    const notesBlock = (html) => {
+      const from = html.indexOf('data-testid="inspector-notes"');
+
+      return from < 0
+        ? ''
+        : html.slice(
+            html.lastIndexOf('<div', from),
+            html.indexOf('</div>', from) + '</div>'.length,
+          );
+    };
+
+    test('come after the scenario, a box and a Delete button each, then Add note', async () => {
+      const html = await renderInspector({
+        document: true,
+        metadata: { notes: ['Snapshot the PLCs.', 'Two lines\n\tand a tab'] },
+      });
+      const block = notesBlock(html);
+      const boxes = tags(block, 'textarea');
+      const buttons = tags(block, 'button');
+
+      expect(html.indexOf('inspector-scenario')).toBeLessThan(
+        html.indexOf('inspector-notes'),
+      );
+      expect(block).toMatch(/<h3[^>]*>Notes<\/h3>/);
+      expect(boxes).toHaveLength(2);
+      expect(boxes[0]).toContain('aria-label="Note 1"');
+      expect(boxes[0]).toContain('data-testid="inspector-note-1"');
+      expect(boxes[1]).toContain('aria-label="Note 2"');
+      // Each box holds its note as written, line breaks and tabs included.
+      expect(block).toContain('>Snapshot the PLCs.</textarea>');
+      expect(block).toContain('>Two lines\n\tand a tab</textarea>');
+      // A Delete button each, named for its note, then Add note.
+      expect(text(block)).toContain('Delete note 1');
+      expect(text(block)).toContain('Delete note 2');
+      expect(buttons).toHaveLength(3);
+      expect(buttons[0]).toContain('class="builder-button');
+      expect(buttons[2]).toContain('data-testid="inspector-note-add"');
+      expect(buttons[2]).not.toContain(' disabled');
+      expect(text(block)).toContain('Add note');
+      expect(text(block)).not.toContain('No notes.');
+    });
+
+    test('a note the server would refuse is marked invalid, with its error under its box', async () => {
+      const block = notesBlock(
+        await renderInspector({
+          document: true,
+          metadata: {
+            notes: ['Snapshot the PLCs.', 'x'.repeat(4097), 'bell\u0007'],
+          },
+        }),
+      );
+      const boxes = tags(block, 'textarea');
+      const errors = tags(block, 'p').filter((tag) =>
+        tag.includes('inspector-note-error-'),
+      );
+
+      expect(boxes[0]).not.toContain('aria-invalid');
+      expect(boxes[0]).not.toContain('aria-describedby');
+      expect(errors).toHaveLength(2);
+
+      for (const [index, number] of [
+        [0, 2],
+        [1, 3],
+      ]) {
+        const box = boxes[number - 1];
+        const [, id] = box.match(/aria-describedby="([^"]+)"/) || [];
+
+        expect(box).toContain('aria-invalid="true"');
+        expect(errors[index]).toContain(`id="${id}"`);
+        expect(errors[index]).toContain('role="alert"');
+        expect(errors[index]).toContain(
+          `data-testid="inspector-note-error-${number}"`,
+        );
+      }
+
+      expect(text(block)).toContain(
+        'A note holds at most 4096 bytes in UTF-8, and this one is longer, so it is not saved until it is shorter.',
+      );
+      expect(text(block)).toContain(
+        'A note cannot hold control characters other than newline and tab, so it is not saved until they are removed.',
+      );
+    });
+
+    test('say so when there are none', async () => {
+      const block = notesBlock(await renderInspector({ document: true }));
+
+      expect(text(block)).toContain('Notes No notes. Add note');
+      expect(tags(block, 'textarea')).toEqual([]);
+    });
+
+    test('Add note is disabled, and says why, once the diagram holds the most notes', async () => {
+      const block = notesBlock(
+        await renderInspector({
+          document: true,
+          metadata: { notes: Array.from({ length: 100 }, (_, i) => `n${i}`) },
+        }),
+      );
+      const add = tags(block, 'button').find((tag) =>
+        tag.includes('inspector-note-add'),
+      );
+
+      expect(tags(block, 'textarea')).toHaveLength(100);
+      expect(add).toContain(' disabled');
+      expect(add).toContain('aria-describedby="inspector-notes-limit"');
+      expect(block).toContain('id="inspector-notes-limit"');
+      expect(text(block)).toContain('A diagram holds at most 100 notes.');
+    });
+
+    test('a read-only draft shows them as text, with nothing to edit', async () => {
+      const block = notesBlock(
+        await renderInspector({
+          document: true,
+          readOnly: true,
+          metadata: { notes: ['Snapshot the PLCs.', '<b>not markup</b>'] },
+        }),
+      );
+
+      expect(text(block)).toBe(
+        'Notes Snapshot the PLCs. &lt;b&gt;not markup&lt;/b&gt;',
+      );
+      expect(block).not.toMatch(/<(textarea|button|input)\b/);
+      expect(block).not.toContain('<b>');
+
+      const none = notesBlock(
+        await renderInspector({ document: true, readOnly: true }),
+      );
+
+      expect(text(none)).toBe('Notes No notes.');
+    });
+
+    test('are shown for the diagram only, not for a node', async () => {
+      const html = await renderInspector({ metadata: { notes: ['A note'] } });
+
+      expect(html).not.toContain('inspector-notes');
     });
   });
 

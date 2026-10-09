@@ -7,10 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -1762,6 +1765,103 @@ func TestBuilderRoutesDocumented(t *testing.T) {
 	if operations == 0 {
 		t.Fatal("no Builder routes were registered")
 	}
+}
+
+// openAPIProperty is what TestBuilderDocumentDocumented reads of a property
+// in openapi.yml.
+type openAPIProperty struct {
+	Title       string `yaml:"title"`
+	Description string `yaml:"description"`
+	Example     any    `yaml:"example"`
+}
+
+// openAPIObject is what TestBuilderDocumentDocumented reads of a component.
+type openAPIObject struct {
+	Properties map[string]openAPIProperty `yaml:"properties"`
+}
+
+// TestBuilderDocumentDocumented asserts the BuilderDocument and
+// BuilderDocumentMetadata components of the OpenAPI document list exactly
+// the JSON fields of [bdoc.Document] and [bdoc.Metadata], each with a
+// title, a description and an example.
+func TestBuilderDocumentDocumented(t *testing.T) {
+	t.Parallel()
+
+	source, err := os.ReadFile("public/docs/openapi.yml")
+	if err != nil {
+		t.Fatalf("reading openapi.yml: %v", err)
+	}
+
+	var spec struct {
+		Components struct {
+			Schemas struct {
+				Document openAPIObject `yaml:"BuilderDocument"`
+				Metadata openAPIObject `yaml:"BuilderDocumentMetadata"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+
+	if err := yaml.Unmarshal(source, &spec); err != nil {
+		t.Fatalf("parsing openapi.yml: %v", err)
+	}
+
+	components := []struct {
+		name   string
+		object openAPIObject
+		model  reflect.Type
+	}{
+		{"BuilderDocument", spec.Components.Schemas.Document, reflect.TypeFor[bdoc.Document]()},
+		{"BuilderDocumentMetadata", spec.Components.Schemas.Metadata, reflect.TypeFor[bdoc.Metadata]()},
+	}
+
+	for _, component := range components {
+		documented := slices.Sorted(maps.Keys(component.object.Properties))
+
+		if want := jsonFieldNames(component.model); !slices.Equal(documented, want) {
+			t.Errorf("%s documents properties %v, want the JSON fields of %s: %v",
+				component.name, documented, component.model, want)
+		}
+
+		for _, name := range documented {
+			property := component.object.Properties[name]
+
+			if strings.TrimSpace(property.Title) == "" {
+				t.Errorf("%s.%s has no title", component.name, name)
+			}
+
+			if strings.TrimSpace(property.Description) == "" {
+				t.Errorf("%s.%s has no description", component.name, name)
+			}
+
+			if property.Example == nil {
+				t.Errorf("%s.%s has no example", component.name, name)
+			}
+		}
+	}
+}
+
+// jsonFieldNames returns the names encoding/json gives the fields of a
+// struct type, sorted.
+func jsonFieldNames(model reflect.Type) []string {
+	names := make([]string, 0, model.NumField())
+
+	for index := range model.NumField() {
+		field := model.Field(index)
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+
+		switch {
+		case name == "-" || !field.IsExported():
+			continue
+		case name == "":
+			name = field.Name
+		}
+
+		names = append(names, name)
+	}
+
+	slices.Sort(names)
+
+	return names
 }
 
 // TestBuilderOutOfSpaceDocumented asserts every Builder route that

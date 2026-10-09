@@ -14,6 +14,7 @@ import {
   DEFAULT_GRID_SIZE,
   deviceHandles,
   deviceTypeLabel,
+  diagramNoteProblem,
   documentSummary,
   edgeEndpoints,
   findEdge,
@@ -23,6 +24,9 @@ import {
   groupNodes,
   LOOK_KEYS,
   lookOf,
+  MAX_DIAGRAM_NOTE_BYTES,
+  MAX_DIAGRAM_NOTES,
+  metadataOf,
   moveNodes,
   networkOfSwitch,
   nextInterfaceName,
@@ -37,6 +41,8 @@ import {
   scenarioApps,
   SCHEMA_REVISION,
   SCHEMA_URI,
+  setDiagramNotes,
+  setDocumentInfo,
   setParent,
   setScenario,
   setViewport,
@@ -70,9 +76,19 @@ describe('document shape', () => {
     expect(SCHEMA_URI).toBe('https://phenix.sandia.gov/schemas/builder/v1');
     expect(doc.revision).toBe(SCHEMA_REVISION);
     expect(doc.revision).toBe(1);
-    expect(doc.id).toMatch(
+    // The document's own fields are in its metadata, right after the
+    // revision, as the server encodes them.
+    expect(Object.keys(doc).slice(0, 3)).toEqual([
+      '$schema',
+      'revision',
+      'metadata',
+    ]);
+    expect(doc.metadata.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
+    expect(doc.metadata.name).toBe('Topology');
+    expect(doc).not.toHaveProperty('id');
+    expect(doc).not.toHaveProperty('name');
     expect(doc.nodes).toEqual([]);
     expect(doc.networks).toEqual([]);
     expect(doc.edges).toEqual([]);
@@ -1681,55 +1697,56 @@ describe('source annotations', () => {
   });
 });
 
-// The author, creation time, last editor and last edit time the server
-// writes into every document it stores (stampedSnapshot in api/builder).
+// The creator, creation time, last editor and last edit time the server
+// writes into the metadata of every document it stores (stampedSnapshot in
+// api/builder).
 describe('the stamp of a stored document', () => {
   const stamp = {
-    author: 'alice',
+    createdBy: 'alice',
     createdAt: '2026-10-01T15:04:05Z',
     updatedBy: 'bob',
     updatedAt: '2026-10-01T16:10:00Z',
   };
 
-  test('is set after the description, as the server encodes it', () => {
+  test('is set in the metadata after the description, as the server encodes it', () => {
     const doc = createDocument({ name: 'Lab', description: 'A lab' });
     const stamped = withStamp(doc, stamp);
 
-    expect(stamped).toMatchObject(stamp);
-    expect(Object.keys(stamped).slice(0, 10)).toEqual([
-      '$schema',
-      'revision',
+    expect(stamped.metadata).toMatchObject(stamp);
+    expect(Object.keys(stamped.metadata)).toEqual([
       'id',
       'name',
       'description',
-      'author',
+      'createdBy',
       'createdAt',
       'updatedBy',
       'updatedAt',
-      'nodes',
     ]);
+    expect(Object.keys(stamped)).toEqual(Object.keys(doc));
     // A new document: the one given keeps what it had.
     expect(stamped).not.toBe(doc);
-    expect(doc.author).toBeUndefined();
+    expect(doc.metadata.createdBy).toBeUndefined();
     expect(stamped.nodes).toBe(doc.nodes);
   });
 
-  test('follows the last header key a document without a description has', () => {
-    const { description, ...bare } = createDocument({ name: 'Lab' });
+  test('comes before the notes, and after the last key before it that the metadata has', () => {
+    const { description, ...bare } = createDocument({
+      name: 'Lab',
+      notes: ['Snapshot first.'],
+    }).metadata;
     const { name, ...nameless } = bare;
 
     expect(description).toBe('');
     expect(name).toBe('Lab');
-    expect(Object.keys(withStamp(bare, stamp)).slice(3, 9)).toEqual([
+    expect(Object.keys(withStamp({ metadata: bare }, stamp).metadata)).toEqual([
+      'id',
       'name',
       ...STAMP_KEYS,
-      'nodes',
+      'notes',
     ]);
-    expect(Object.keys(withStamp(nameless, stamp)).slice(2, 8)).toEqual([
-      'id',
-      ...STAMP_KEYS,
-      'nodes',
-    ]);
+    expect(
+      Object.keys(withStamp({ metadata: nameless }, stamp).metadata),
+    ).toEqual(['id', ...STAMP_KEYS, 'notes']);
   });
 
   test('replaces every value: one the stamp lacks is removed', () => {
@@ -1739,32 +1756,37 @@ describe('the stamp of a stored document', () => {
       updatedAt: '2026-10-02T08:00:00Z',
     });
 
-    expect(saved.updatedBy).toBe('carol');
-    expect(saved.updatedAt).toBe('2026-10-02T08:00:00Z');
-    expect('author' in saved).toBe(false);
-    expect('createdAt' in saved).toBe(false);
+    expect(saved.metadata.updatedBy).toBe('carol');
+    expect(saved.metadata.updatedAt).toBe('2026-10-02T08:00:00Z');
+    expect('createdBy' in saved.metadata).toBe(false);
+    expect('createdAt' in saved.metadata).toBe(false);
 
     // An empty stamp is that of a document that names no one. Empty text
     // and values that are not text are none.
     const cleared = withStamp(doc, {});
 
-    expect(STAMP_KEYS.some((key) => key in cleared)).toBe(false);
+    expect(STAMP_KEYS.some((key) => key in cleared.metadata)).toBe(false);
     expect(
       Object.keys(
-        withStamp(doc, { author: '', createdAt: null, updatedBy: 7 }),
+        withStamp(doc, { createdBy: '', createdAt: null, updatedBy: 7 })
+          .metadata,
       ),
-    ).toEqual(Object.keys(createDocument()));
+    ).toEqual(Object.keys(createDocument().metadata));
   });
 
   test('moves keys that are out of place, and keeps a document that holds it already', () => {
     const doc = withStamp(createDocument(), stamp);
-    const { author, ...rest } = doc;
-    const misplaced = { ...rest, author };
+    const { createdBy, ...rest } = doc.metadata;
+    const misplaced = { ...doc, metadata: { ...rest, createdBy } };
 
-    expect(Object.keys(misplaced).at(-1)).toBe('author');
-    expect(Object.keys(withStamp(misplaced, stamp))).toEqual(Object.keys(doc));
+    expect(Object.keys(misplaced.metadata).at(-1)).toBe('createdBy');
+    expect(Object.keys(withStamp(misplaced, stamp).metadata)).toEqual(
+      Object.keys(doc.metadata),
+    );
     expect(withStamp(doc, { ...stamp })).toBe(doc);
-    expect(withStamp(createDocument(), {})).not.toHaveProperty('author');
+    expect(withStamp(createDocument(), {}).metadata).not.toHaveProperty(
+      'createdBy',
+    );
 
     const plain = createDocument();
 
@@ -1783,7 +1805,7 @@ describe('the stamp of a stored document', () => {
         createdAt: '2026-10-03T09:30:15.987654321Z',
       }),
     ).toEqual({
-      author: 'alice',
+      createdBy: 'alice',
       createdAt: '2026-10-01T15:04:05Z',
       updatedBy: 'dana',
       updatedAt: '2026-10-03T09:30:15Z',
@@ -1801,14 +1823,15 @@ describe('the stamp of a stored document', () => {
     ).toBe('2026-10-03T09:30:15Z');
     // Nothing is made up for a snapshot that does not say.
     expect(savedStamp(createDocument(), {})).toEqual({
-      author: undefined,
+      createdBy: undefined,
       createdAt: undefined,
       updatedBy: undefined,
       updatedAt: '',
     });
     expect(savedStamp(doc, { createdAt: 'yesterday' }).updatedAt).toBe('');
     expect(
-      withStamp(createDocument(), savedStamp(createDocument(), undefined)),
+      withStamp(createDocument(), savedStamp(createDocument(), undefined))
+        .metadata,
     ).not.toHaveProperty('updatedAt');
   });
 
@@ -1819,13 +1842,132 @@ describe('the stamp of a stored document', () => {
     expect(sameButStamp(doc, stamped)).toBe(true);
     expect(sameButStamp(stamped, withStamp(stamped, {}))).toBe(true);
     expect(sameButStamp(doc, doc)).toBe(true);
-    // Any other change is content, a pan included.
+    // Any other change is content, a pan and the rest of the metadata
+    // included.
     expect(
       sameButStamp(doc, setViewport(stamped, { x: 4, y: 0, zoom: 1 })),
     ).toBe(false);
-    expect(sameButStamp(doc, { ...stamped, name: 'Other' })).toBe(false);
+    expect(sameButStamp(doc, setDocumentInfo(stamped, { name: 'Other' }))).toBe(
+      false,
+    );
+    expect(sameButStamp(doc, setDiagramNotes(stamped, ['A note']))).toBe(false);
     expect(sameButStamp(doc, { ...stamped, layout: 'elk' })).toBe(false);
     expect(sameButStamp(doc, null)).toBe(false);
+  });
+});
+
+// The notes of a diagram, which its metadata holds.
+describe('the notes of a diagram', () => {
+  test('are kept in order and as written, and a blank one is dropped', () => {
+    const doc = createDocument({ name: 'Lab' });
+    const noted = setDiagramNotes(doc, [
+      'Snapshot the PLCs.',
+      '  ',
+      'Two lines\n\tand a tab',
+      '\n',
+    ]);
+
+    expect(noted.metadata.notes).toEqual([
+      'Snapshot the PLCs.',
+      'Two lines\n\tand a tab',
+    ]);
+    expect(Object.keys(noted.metadata).at(-1)).toBe('notes');
+    expect(doc.metadata).not.toHaveProperty('notes');
+    expect(noted.nodes).toBe(doc.nodes);
+    expect(
+      validateDocument(noted).filter((issue) => issue.level === 'error'),
+    ).toEqual([]);
+  });
+
+  test('the same notes keep the same document, and none leave no key', () => {
+    const noted = setDiagramNotes(createDocument(), ['one', 'two']);
+
+    expect(setDiagramNotes(noted, ['one', 'two'])).toBe(noted);
+    expect(setDiagramNotes(noted, ['two', 'one']).metadata.notes).toEqual([
+      'two',
+      'one',
+    ]);
+
+    const cleared = setDiagramNotes(noted, ['', ' ']);
+
+    expect(cleared.metadata).not.toHaveProperty('notes');
+    expect(setDiagramNotes(cleared, [])).toBe(cleared);
+    expect(setDiagramNotes(cleared, undefined)).toBe(cleared);
+    // An empty list the document holds is no notes, written as none.
+    expect(
+      setDiagramNotes(
+        { ...cleared, metadata: { ...cleared.metadata, notes: [] } },
+        [],
+      ).metadata,
+    ).not.toHaveProperty('notes');
+  });
+
+  test('are bounded as the server bounds them', () => {
+    const issues = (notes) =>
+      validateDocument({
+        ...createDocument(),
+        metadata: { ...createDocument().metadata, notes },
+      })
+        .filter((issue) => issue.path.startsWith('metadata.notes'))
+        .map((issue) => `${issue.path}: ${issue.message}`);
+
+    expect(MAX_DIAGRAM_NOTES).toBe(100);
+    expect(issues(Array(MAX_DIAGRAM_NOTES).fill('note'))).toEqual([]);
+    expect(issues(Array(MAX_DIAGRAM_NOTES + 1).fill('note'))).toEqual([
+      'metadata.notes: at most 100 notes are allowed, not 101',
+    ]);
+    expect(issues(['é'.repeat(2048)])).toEqual([]);
+    expect(issues([`${'é'.repeat(2048)}x`])).toEqual([
+      'metadata.notes[0]: note must be at most 4096 bytes',
+    ]);
+    expect(issues(['ok', '\u0085'])).toEqual([
+      'metadata.notes[1]: note must not be blank',
+    ]);
+    expect(issues(['bell\u0007', 'one\r\ntwo'])).toEqual([
+      'metadata.notes[0]: note must not contain control characters other than newline and tab',
+      'metadata.notes[1]: note must not contain control characters other than newline and tab',
+    ]);
+  });
+
+  test('a note the server would refuse is never written', () => {
+    const noted = setDiagramNotes(createDocument(), ['kept']);
+    const longest = 'é'.repeat(MAX_DIAGRAM_NOTE_BYTES / 2);
+    const tooLong = `${longest}x`;
+
+    // Too long in UTF-8 bytes, not in characters: 2049 characters, 4097
+    // bytes.
+    expect(MAX_DIAGRAM_NOTE_BYTES).toBe(4096);
+    expect(diagramNoteProblem(longest)).toBe('');
+    expect(diagramNoteProblem(tooLong)).toMatch(/at most 4096 bytes in UTF-8/);
+    // A control character but the newline and the tab.
+    expect(diagramNoteProblem('two\nlines\tand a tab')).toBe('');
+    expect(diagramNoteProblem('bell\u0007')).toMatch(/control characters/);
+    expect(diagramNoteProblem('one\r\ntwo')).toMatch(/control characters/);
+    expect(diagramNoteProblem('delete\u007f')).toMatch(/control characters/);
+    // A blank note is dropped, not refused.
+    expect(diagramNoteProblem(' \n')).toBe('');
+
+    // The document keeps the notes it had, the valid ones sent beside the
+    // refused one included.
+    for (const refused of [tooLong, 'bell\u0007', 'one\r\ntwo']) {
+      expect(setDiagramNotes(noted, ['kept', refused])).toBe(noted);
+      expect(setDiagramNotes(noted, ['other', refused])).toBe(noted);
+    }
+
+    const longestNoted = setDiagramNotes(noted, [longest]);
+
+    expect(longestNoted.metadata.notes).toEqual([longest]);
+    expect(
+      validateDocument(longestNoted).filter((issue) => issue.level === 'error'),
+    ).toEqual([]);
+  });
+
+  test('metadataOf gives a document its metadata, and other values none', () => {
+    const doc = createDocument({ name: 'Lab' });
+
+    expect(metadataOf(doc)).toBe(doc.metadata);
+    expect(metadataOf(null)).toEqual({});
+    expect(metadataOf({ nodes: [] })).toEqual({});
   });
 });
 

@@ -20,7 +20,12 @@ func namedDocument(t *testing.T, name string) []byte {
 		t.Fatalf("decoding the test document: %v", err)
 	}
 
-	doc["name"] = name
+	metadata, ok := doc["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("the test document has no metadata object: %v", doc)
+	}
+
+	metadata["name"] = name
 
 	data, err := json.Marshal(doc)
 	if err != nil {

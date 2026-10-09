@@ -470,7 +470,7 @@ list them. Limits:
 - A draft keeps at most 50 snapshots and 50 MiB of them. Past either limit,
   the oldest snapshots are dropped.
 - A diagram (a Builder document) can be at most 5 MiB. It can hold at most
-  32 custom icons and 50 device templates of its own.
+  50 custom icons, 50 device templates and 100 notes of its own.
 - A draft can be shared with at most 25 people.
 
 A diagram keeps its own copy of each custom icon it uses, so it opens on any
@@ -483,7 +483,7 @@ They are records in the phenix store too:
 | Library | Records | Limits |
 |---|---|---|
 | Icons | Namespace `builder.icons`, one record per icon | 64 icons and 1 MiB of PNG data per user. An icon is a PNG of at most 96 × 96 pixels and 40,960 bytes, and a record is about 1.4 times the size of its PNG |
-| Templates | Namespace `builder.templates`, one record per user, under `lib/` and the SHA-256 of the user name | 512 KiB per user: at most 200 templates, 50 collections, 200 templates in a collection and 32 custom icons. A template's name is at most 128 bytes, its description 1024 bytes, and its device 16 KiB as JSON. A template or collection is shared with at most 25 people |
+| Templates | Namespace `builder.templates`, one record per user, under `lib/` and the SHA-256 of the user name | 512 KiB per user: at most 200 templates, 50 collections, 200 templates in a collection and 50 custom icons. A template's name is at most 128 bytes, its description 1024 bytes, and its device 16 KiB as JSON. A template or collection is shared with at most 25 people |
 
 Sharing and server-wide publishing also write small records under `in/` and
 `pub/` in `builder.templates`, which are never removed. A library belongs to
@@ -576,8 +576,8 @@ metadata:
   name: pump-station
   annotations:
     builder-doc:
-      digest: sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
-      id: b856fc9e35107594f72e715f74ee1cae3eb951b41bf09a504327924e0a220d34
+      digest: sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
+      id: fd063e784604f43e5c39cc9959501cf117b4dc2be895e92f9bb98e23f8465c4b
       path: /phenix/topologies/pump-station/pump-station.builder.json
 ```
 
@@ -598,8 +598,8 @@ of a config is text. In the JSON of a config it is an object:
 ```json
 "annotations": {
   "builder-doc": {
-    "digest": "sha256:82a1aba006d86a043d3d0ed615a7aa05aeff52407f1121f6e9224595c5dea308",
-    "id": "ae78c07ebf467ded1928a0f144b109fa47416e549c901fe0dd54f7753932e9b5"
+    "digest": "sha256:a3c6569728e1ea77cc3519c48c904cf2e300f2ed535821cb50d05963c17cc1f5",
+    "id": "9b8b4b74fb6835c64b543443ad341b21c4812e185c40e7221f292995fead6761"
   },
   "maintainer": "range-team",
   "purpose": "Water utility training range"
@@ -799,7 +799,7 @@ With `path` alone, the topology shows whatever document the file holds. Add
 
 ```yaml
     builder-doc:
-      digest: sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+      digest: sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
       path: /phenix/topologies/pump-station/pump-station.builder.json
 ```
 
@@ -819,8 +819,8 @@ either of these:
     $ phenix builder publish /phenix/topologies/pump-station/pump-station.builder.json --dry-run
     Document:     Pump station
     File:         /phenix/topologies/pump-station/pump-station.builder.json
-    Digest:       sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
-    Document ID:  1e13fa9bd9417c696159a9d0f1496953909516221c6600383cea29fa1fa8dc90
+    Digest:       sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
+    Document ID:  730b1f91c47dfcecd644e07b61dd22896d34381a505426652b826e94423347fd
     Topology:     Pump-station (would be created)
     Nodes:        3
     Nothing was written.
@@ -1022,7 +1022,7 @@ does. `POST /builder/generate` makes the document and writes nothing; `POST
 ```bash
 curl -s -X POST -H "X-Phenix-Auth-Token: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"source":"Topology/riverside-water"}' "$PHENIX/api/v1/builder/generate" > generated.json
-jq '{name: .document.name, source: .source.fullName, warnings}' generated.json
+jq '{name: .document.metadata.name, source: .source.fullName, warnings}' generated.json
 ```
 
 ```json
@@ -1036,7 +1036,7 @@ jq '{name: .document.name, source: .source.fullName, warnings}' generated.json
 ```
 
 ```bash
-jq '{title: .document.name, sourceToken: .source.fullName, document}' generated.json \
+jq '{title: .document.metadata.name, sourceToken: .source.fullName, document}' generated.json \
   | curl -s -X POST -H "X-Phenix-Auth-Token: Bearer $TOKEN" -H 'Content-Type: application/json' \
       -d @- "$PHENIX/api/v1/builder/drafts" > created.json
 jq '{id, owner, title, etag}' created.json
@@ -1063,14 +1063,14 @@ topology. Nothing is written:
 jq -Rs '{content: ., name: "plant"}' plant.xml \
   | curl -s -X POST -H "X-Phenix-Auth-Token: Bearer $TOKEN" -H 'Content-Type: application/json' \
       -d @- "$PHENIX/api/v1/builder/legacy" > converted.json
-jq '{name: .document.name, warnings}' converted.json
+jq '{name: .document.metadata.name, warnings}' converted.json
 ```
 
 The answer has the same form as that of `POST /builder/generate`. Create a
 draft from its `document` as above.
 
-The server writes who made and last saved the diagram into the document it
-stores (see
+The server writes who made and last saved the diagram into the `metadata` of
+the document it stores (see
 [Who made and last saved a diagram](import-upload-download.md#who-made-and-last-saved-a-diagram)).
 The answers to creating a draft and to saving one have no document, so they
 return these four values as `stamp`:
@@ -1081,7 +1081,7 @@ jq .stamp created.json
 
 ```json
 {
-  "author": "e2e-admin",
+  "createdBy": "e2e-admin",
   "createdAt": "2026-10-02T03:53:41Z",
   "updatedBy": "e2e-admin",
   "updatedAt": "2026-10-02T03:53:41Z"
@@ -1123,8 +1123,8 @@ curl -s -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
 ```json
 {
   "source": "file",
-  "digest": "sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184",
-  "size": 6480,
+  "digest": "sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732",
+  "size": 6517,
   "target": "pump-station",
   "kind": "Topology",
   "config": "Topology/pump-station",

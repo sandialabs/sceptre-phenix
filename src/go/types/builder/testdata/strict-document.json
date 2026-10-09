@@ -1,9 +1,11 @@
 {
   "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
   "revision": 1,
-  "id": "f8303221-fe85-5254-b687-e3c4f3d6aa99",
-  "name": "publishable",
-  "description": "fixture whose projection satisfies the phenix topology schema",
+  "metadata": {
+    "id": "f8303221-fe85-5254-b687-e3c4f3d6aa99",
+    "name": "publishable",
+    "description": "fixture whose projection satisfies the phenix topology schema"
+  },
   "nodes": [
     {
       "id": "4113dfc0-f4be-57f9-8115-6cecd1f1aea3",

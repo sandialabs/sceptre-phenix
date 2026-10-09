@@ -104,8 +104,8 @@ func TestIsUUID(t *testing.T) {
 func TestGeneratedDocumentsUseUUIDs(t *testing.T) {
 	doc, _ := documentFromConfig(t, loadConfig(t, "experiment.json"))
 
-	if !builder.IsUUID(doc.ID) {
-		t.Fatalf("document ID %q is not a UUID", doc.ID)
+	if !builder.IsUUID(doc.Metadata.ID) {
+		t.Fatalf("document ID %q is not a UUID", doc.Metadata.ID)
 	}
 
 	for _, node := range doc.Nodes {

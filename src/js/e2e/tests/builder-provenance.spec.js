@@ -1,9 +1,9 @@
 // Builder document provenance: who made a diagram and who saved it last.
-// The server writes both into the document when it stores it, answers each
-// create and save with them (`stamp`), and the Inspector's Details block
-// shows them. With authentication off, as here, every user is the same one;
-// builder-sharing.spec.js checks that a second user's edit changes the last
-// editor only.
+// The server writes both into the document's metadata when it stores it,
+// answers each create and save with them (`stamp`), and the Inspector's
+// Details block shows them. With authentication off, as here, every user is
+// the same one; builder-sharing.spec.js checks that a second user's edit
+// changes the last editor only.
 
 const fs = require('node:fs');
 
@@ -25,7 +25,7 @@ const {
 
 test.use({ announceHold: 100 });
 
-const STAMP_KEYS = ['author', 'createdAt', 'updatedBy', 'updatedAt'];
+const STAMP_KEYS = ['createdBy', 'createdAt', 'updatedBy', 'updatedAt'];
 
 // The Details block, and its Source file row.
 function details(builder) {
@@ -53,7 +53,7 @@ test('a new draft says who made it and who edited it last, an edit moves only th
 
   await test.step('the draft is made by, and last edited by, its maker', async () => {
     expect(draft.stamp, 'stamp of the create').toEqual({
-      author: user,
+      createdBy: user,
       createdAt: expect.stringMatching(DOCUMENT_TIME),
       updatedBy: user,
       updatedAt: draft.stamp.createdAt,
@@ -90,13 +90,14 @@ test('a new draft says who made it and who edited it last, an edit moves only th
       return written;
     });
 
-  await test.step('the stored document holds them, after its description', async () => {
+  await test.step('the stored document holds them in its metadata, after its name', async () => {
     const stored = await builder.serverDocument(draft);
     expect.soft(provenanceOf(stored)).toEqual(stamp);
-    const keys = Object.keys(stored);
     expect
-      .soft(keys.slice(keys.indexOf('name') + 1, keys.indexOf('nodes')))
-      .toEqual(STAMP_KEYS);
+      .soft(Object.keys(stored).slice(0, 4))
+      .toEqual(['$schema', 'revision', 'metadata', 'nodes']);
+    const keys = Object.keys(stored.metadata);
+    expect.soft(keys.slice(keys.indexOf('name') + 1)).toEqual(STAMP_KEYS);
   });
 
   await test.step('the Builder JSON download holds the four fields', async () => {
@@ -106,7 +107,7 @@ test('a new draft says who made it and who edited it last, an edit moves only th
       dialog.getByTestId('download-json').click(),
     ]);
     const downloaded = JSON.parse(fs.readFileSync(await file.path(), 'utf8'));
-    expect.soft(downloaded.name).toBe(title);
+    expect.soft(downloaded.metadata.name).toBe(title);
     expect.soft(provenanceOf(downloaded)).toEqual(stamp);
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(builder.dialog).toBeHidden();
@@ -148,7 +149,7 @@ test('Edit as a draft of a published diagram keeps who made and last edited it, 
   const made = provenanceOf(record.document);
   expect(record).toMatchObject({ source: 'store', id: published.documentId });
   expect(made).toEqual({
-    author: published.draft.owner,
+    createdBy: published.draft.owner,
     createdAt: expect.stringMatching(DOCUMENT_TIME),
     updatedBy: published.draft.owner,
     updatedAt: expect.stringMatching(DOCUMENT_TIME),
@@ -163,7 +164,7 @@ test('Edit as a draft of a published diagram keeps who made and last edited it, 
   );
 
   await test.step('the published diagram shows who made it, read only', async () => {
-    await expectDetail(page, 'created', made.author, made.createdAt);
+    await expectDetail(page, 'created', made.createdBy, made.createdAt);
     await expectDetail(page, 'edited', made.updatedBy, made.updatedAt);
   });
 
@@ -181,7 +182,7 @@ test('Edit as a draft of a published diagram keeps who made and last edited it, 
       expect.soft(body.sourceToken).toBe(`builder-doc/${published.documentId}`);
       expect.soft(body.digest, 'digest').toBe(record.digest);
       expect.soft(body.stamp, 'stamp').toEqual(made);
-      await expectDetail(page, 'created', made.author, made.createdAt);
+      await expectDetail(page, 'created', made.createdBy, made.createdAt);
       await expectDetail(page, 'edited', made.updatedBy, made.updatedAt);
       expect
         .soft(provenanceOf(await builder.serverDocument(body)))
@@ -229,17 +230,23 @@ test('Edit as a draft of a published diagram keeps who made and last edited it, 
   expectNoFatal(issues);
 });
 
-test('a pasted document keeps the author it names, and has no source file', async ({
+test('a pasted document keeps the creator it names, and has no source file', async ({
   page,
   builder,
   issues,
 }, testInfo) => {
   const title = uniqueName(testInfo, 'pasted');
   const claimed = {
-    author: 'alice',
+    createdBy: 'alice',
     createdAt: '2020-01-02T03:04:05Z',
     updatedBy: 'alice',
     updatedAt: '2020-02-03T04:05:06Z',
+  };
+  // The blank document of the title, its metadata naming these too.
+  const claiming = (fields) => {
+    const doc = blankDocument(title);
+
+    return { ...doc, metadata: { ...doc.metadata, ...fields } };
   };
 
   await builder.open();
@@ -248,7 +255,7 @@ test('a pasted document keeps the author it names, and has no source file', asyn
   await dialog.getByLabel('Paste text', { exact: true }).check();
   await dialog
     .getByTestId('upload-text')
-    .fill(JSON.stringify({ ...blankDocument(title), ...claimed }));
+    .fill(JSON.stringify(claiming(claimed)));
   const answered = waitForApi(page, 'POST', '/builder/drafts');
   await dialog.getByTestId('upload-submit').click();
   const response = await answered;
@@ -263,16 +270,16 @@ test('a pasted document keeps the author it names, and has no source file', asyn
   expect.soft(draft.sourceFile, 'sourceFile').toBeUndefined();
   await expect.soft(sourceFile(builder)).toHaveCount(0);
 
-  // The author and the time it was made are the document's own; the last
+  // The creator and the time it was made are the document's own; the last
   // edit is the upload, by the user who made it.
   expect(draft.stamp).toEqual({
-    author: claimed.author,
+    createdBy: claimed.createdBy,
     createdAt: claimed.createdAt,
     updatedBy: draft.owner,
     updatedAt: expect.stringMatching(DOCUMENT_TIME),
   });
   expect.soft(draft.stamp.updatedAt).not.toBe(claimed.updatedAt);
-  await expectDetail(page, 'created', claimed.author, claimed.createdAt);
+  await expectDetail(page, 'created', claimed.createdBy, claimed.createdAt);
   await expectDetail(page, 'edited', draft.owner, draft.stamp.updatedAt);
 
   // A malformed time is refused, on the text field, and nothing is made.
@@ -281,15 +288,11 @@ test('a pasted document keeps the author it names, and has no source file', asyn
   await dialog.getByLabel('Paste text', { exact: true }).check();
   const field = dialog.getByTestId('upload-text');
   await field.fill(
-    JSON.stringify({
-      ...blankDocument(title),
-      ...claimed,
-      createdAt: '2020-01-02 03:04:05',
-    }),
+    JSON.stringify(claiming({ ...claimed, createdAt: '2020-01-02 03:04:05' })),
   );
   await dialog.getByTestId('upload-submit').click();
   await expect(dialog.getByTestId('upload-error')).toContainText(
-    'createdAt must be a UTC time in the form YYYY-MM-DDTHH:MM:SSZ',
+    'metadata.createdAt must be a UTC time in the form YYYY-MM-DDTHH:MM:SSZ',
   );
   await expect.soft(field).toHaveAttribute('aria-invalid', 'true');
 

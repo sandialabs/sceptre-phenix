@@ -430,7 +430,7 @@
   // follow the server's naming rule, so each starts as a valid form of it.
   const form = reactive({
     mode: 'topology',
-    topologyName: configName(store.doc.name),
+    topologyName: configName(store.doc.metadata?.name),
     experimentName: '',
     scenarioName: configName(scenario.value?.name),
     scenarioAction: '',

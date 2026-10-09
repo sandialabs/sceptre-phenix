@@ -56,8 +56,8 @@ func TestCreateDraftAndReadCurrentDocument(t *testing.T) {
 		t.Fatalf("Snapshot.Decode returned error: %v", err)
 	}
 
-	if doc.ID != builder.DocumentID("topo-a") {
-		t.Fatalf("decoded document ID = %q, want %q", doc.ID, builder.DocumentID("topo-a"))
+	if doc.Metadata.ID != builder.DocumentID("topo-a") {
+		t.Fatalf("decoded document ID = %q, want %q", doc.Metadata.ID, builder.DocumentID("topo-a"))
 	}
 
 	fetched, err := h.service.GetDraft(ctx, meta.ID)

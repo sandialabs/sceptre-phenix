@@ -171,7 +171,7 @@ describe('the topology name’s hints', () => {
   const imported = (store) => {
     store.doc = {
       ...store.doc,
-      name: 'lab',
+      metadata: { ...store.doc.metadata, name: 'lab' },
       source: { kind: 'topology', name: 'lab' },
     };
     store.sources = { ...store.sources, topologies: ['lab'] };
@@ -237,7 +237,7 @@ describe('the experiment name’s hints', () => {
   const imported = (store) => {
     store.doc = {
       ...store.doc,
-      name: 'core',
+      metadata: { ...store.doc.metadata, name: 'core' },
       source: { kind: 'experiment', name: 'exp', topology: 'core' },
     };
     store.sources = { ...store.sources, experiments: ['exp', 'other'] };

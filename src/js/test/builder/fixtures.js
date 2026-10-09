@@ -106,7 +106,7 @@ export function libraryOf({
       nameBytes: 128,
       descriptionBytes: 1024,
       deviceBytes: 16384,
-      icons: 32,
+      icons: 50,
     },
     ...rest,
   };

@@ -1802,7 +1802,7 @@
   // through the Builder's one live region, after the edit's own announcement.
   watch(
     () => ({
-      id: host.doc?.id,
+      id: host.doc?.metadata?.id,
       texts: issues.value
         .filter((issue) => issue.level === 'error')
         .map((issue) => issueText(host.doc, issue)),

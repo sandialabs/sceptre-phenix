@@ -26,7 +26,7 @@ export const ICON_ID = /^sha256:[0-9a-f]{64}$/;
 export const MAX_ICON_PIXELS = 96;
 export const MAX_ICON_BYTES = 40960;
 export const MAX_ICON_NAME_BYTES = 64;
-export const MAX_DOCUMENT_ICONS = 32;
+export const MAX_DOCUMENT_ICONS = 50;
 
 // The length of the base64 text of the largest icon.
 export const MAX_ICON_DATA_LENGTH = Math.ceil(MAX_ICON_BYTES / 3) * 4;

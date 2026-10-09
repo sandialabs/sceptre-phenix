@@ -24,8 +24,14 @@ import {
   unloadCopyKey,
   writeUnloadCopy,
 } from '@/builder/idb.js';
+import { setDocumentInfo, withStamp } from '@/builder/model.js';
 
 import { memoryStorage, sampleDocument } from './fixtures.js';
+
+// The document renamed, which tells the snapshots of a test apart.
+function named(doc, name) {
+  return setDocumentInfo(doc, { name });
+}
 
 // The store the queue falls back to without IndexedDB. Like the database, it
 // keeps each entry's snapshot apart from the draft record; `written` lists
@@ -201,7 +207,7 @@ describe('one commit, one snapshot', () => {
     const { queue } = await attached({ store, isOnline: () => false });
 
     for (const id of ['c1', 'c2', 'c3']) {
-      await queue.commit({ id, label: id, snapshot: { ...doc, name: id } });
+      await queue.commit({ id, label: id, snapshot: named(doc, id) });
     }
     await queue.moveCursor({ commitId: 'c2' });
 
@@ -212,7 +218,9 @@ describe('one commit, one snapshot', () => {
     expect(record.entries.map((entry) => entry.id)).toEqual(['c1', 'c2', 'c3']);
     expect(record.entries.some((entry) => 'snapshot' in entry)).toBe(false);
     expect(
-      (await store.get(record.key)).entries.map((entry) => entry.snapshot.name),
+      (await store.get(record.key)).entries.map(
+        (entry) => entry.snapshot.metadata.name,
+      ),
     ).toEqual(['c1', 'c2', 'c3']);
   });
 
@@ -229,18 +237,19 @@ describe('one commit, one snapshot', () => {
 });
 
 // The server writes who made the document and who saved it last, and when,
-// into the copy it stores, and answers the save with them (see withStamp in
-// model.js). The queue's own copy takes them, and no others.
+// into the metadata of the copy it stores, and answers the save with them
+// (see withStamp in model.js). The queue's own copy takes them, and no
+// others.
 describe('the stamp a save answers with', () => {
   const stamps = [
     {
-      author: 'alice',
+      createdBy: 'alice',
       createdAt: '2026-10-01T15:04:05Z',
       updatedBy: 'alice',
       updatedAt: '2026-10-01T16:00:00Z',
     },
     {
-      author: 'alice',
+      createdBy: 'alice',
       createdAt: '2026-10-01T15:04:05Z',
       updatedBy: 'alice',
       updatedAt: '2026-10-01T16:00:07Z',
@@ -286,7 +295,7 @@ describe('the stamp a save answers with', () => {
       api,
       extra: { onDraft: (envelope, op) => seen.push([op.commitId, envelope]) },
     });
-    const first = { ...doc, name: 'first' };
+    const first = named(doc, 'first');
 
     await queue.commit({ id: 'c1', label: 'one', snapshot: first });
 
@@ -294,16 +303,21 @@ describe('the stamp a save answers with', () => {
 
     // What was sent is what the editor held: the stamp is the server's.
     expect(api.appendSnapshot.mock.calls[0][2].document).toBe(first);
-    expect(entry.snapshot).toMatchObject({ name: 'first', ...stamps[0] });
-    expect(Object.keys(entry.snapshot).slice(4, 9)).toEqual([
+    expect(entry.snapshot.metadata).toMatchObject({
+      name: 'first',
+      ...stamps[0],
+    });
+    expect(Object.keys(entry.snapshot.metadata)).toEqual([
+      'id',
+      'name',
       'description',
-      'author',
+      'createdBy',
       'createdAt',
       'updatedBy',
       'updatedAt',
     ]);
     // The document handed in is not changed under its owner.
-    expect(first).not.toHaveProperty('updatedAt');
+    expect(first.metadata).not.toHaveProperty('updatedAt');
     expect(seen.map(([id, envelope]) => [id, stampOf(envelope)])).toEqual([
       ['c1', stamps[0]],
     ]);
@@ -313,15 +327,15 @@ describe('the stamp a save answers with', () => {
     await queue.commit({
       id: 'c2',
       label: 'two',
-      snapshot: { ...entry.snapshot, name: 'second' },
+      snapshot: named(entry.snapshot, 'second'),
     });
 
-    expect(api.appendSnapshot.mock.calls[1][2].document.updatedAt).toBe(
-      stamps[0].updatedAt,
-    );
-    expect(queue.record.entries.map((item) => item.snapshot.updatedAt)).toEqual(
-      [stamps[0].updatedAt, stamps[1].updatedAt],
-    );
+    expect(
+      api.appendSnapshot.mock.calls[1][2].document.metadata.updatedAt,
+    ).toBe(stamps[0].updatedAt);
+    expect(
+      queue.record.entries.map((item) => item.snapshot.metadata.updatedAt),
+    ).toEqual([stamps[0].updatedAt, stamps[1].updatedAt]);
   });
 
   test('a save without one leaves the entry as it was', async () => {
@@ -358,7 +372,7 @@ describe('the stamp a save answers with', () => {
     const kept = await queue.recover('alice', 'd1');
 
     expect(kept.entries.map((entry) => entry.id)).toEqual(['c1']);
-    expect(kept.entries[0].snapshot).toMatchObject(stamps[0]);
+    expect(kept.entries[0].snapshot.metadata).toMatchObject(stamps[0]);
   });
 
   test('a fork gives each entry the stamp the new draft stored it with', async () => {
@@ -390,11 +404,11 @@ describe('the stamp a save answers with', () => {
     const queue = createAutosave({ api, store: memoryStore(), actor: 'bob' });
     // The history as the editor holds it: each entry with the stamp of the
     // save that stored it in the draft it leaves.
-    const held = { ...doc, ...stamps[0] };
+    const held = withStamp(doc, stamps[0]);
     const history = [
       { id: 'base', label: 'initial', snapshot: held },
-      { id: 'kept', label: 'Added device', snapshot: { ...held, name: 'b' } },
-      { id: 'redo', label: 'Added switch', snapshot: { ...held, name: 'c' } },
+      { id: 'kept', label: 'Added device', snapshot: named(held, 'b') },
+      { id: 'redo', label: 'Added switch', snapshot: named(held, 'c') },
     ];
 
     await queue.attach({ owner: 'alice', draftId: 'd1', etag: '"1"' });
@@ -405,10 +419,11 @@ describe('the stamp a save answers with', () => {
       index: 1,
     });
 
-    // The first document carries the author the editor got from the server,
-    // which the new draft keeps. No file name is sent: a fork has none.
-    expect(api.createDraft.mock.calls[0][0].document).toMatchObject({
-      author: 'alice',
+    // The first document carries the creator the editor got from the
+    // server, which the new draft keeps. No file name is sent: a fork has
+    // none.
+    expect(api.createDraft.mock.calls[0][0].document.metadata).toMatchObject({
+      createdBy: 'alice',
       createdAt: '2026-10-01T15:04:05Z',
     });
     expect(api.createDraft.mock.calls[0][0]).not.toHaveProperty('sourceFile');
@@ -419,12 +434,12 @@ describe('the stamp a save answers with', () => {
     ]);
     expect(
       queue.record.entries.map((entry) => [
-        entry.snapshot.updatedBy,
-        entry.snapshot.updatedAt,
+        entry.snapshot.metadata.updatedBy,
+        entry.snapshot.metadata.updatedAt,
       ]),
     ).toEqual(forked.map((stamp) => [stamp.updatedBy, stamp.updatedAt]));
     // The entries handed in are the caller's to stamp.
-    expect(history[1].snapshot.updatedBy).toBe('alice');
+    expect(history[1].snapshot.metadata.updatedBy).toBe('alice');
   });
 });
 
@@ -696,6 +711,32 @@ describe('failure states', () => {
     expect(queue.record.draftId).toBe('d2');
     expect(queue.record.queue).toHaveLength(0);
     expect(queue.record.entries).toHaveLength(2);
+  });
+
+  // Without a title, the new draft is named for the first document of the
+  // history, which its metadata names; one that names none is a recovered
+  // diagram.
+  test('a fork without a title takes the name of the first document', async () => {
+    const forkTitle = async (first) => {
+      const api = fakeApi({
+        appendSnapshot: vi.fn(async () => {
+          throw conflict();
+        }),
+      });
+      const { queue } = await attached({ api });
+
+      await queue.commit({ id: 'c1', label: 'one', snapshot: first });
+      await queue.forkLocalHistory();
+
+      return api.createDraft.mock.calls[0][0].title;
+    };
+    const { name, ...unnamed } = doc.metadata;
+
+    expect(name).toBeTruthy();
+    expect(await forkTitle(named(doc, 'Pump station'))).toBe('Pump station');
+    expect(await forkTitle({ ...doc, metadata: unnamed })).toBe(
+      'Recovered diagram',
+    );
   });
 
   // The fork saves the history on screen, in order, with its cursor on the
@@ -1502,8 +1543,8 @@ describe('refused snapshots', () => {
   });
 
   test('the next edit replaces a refused snapshot instead of queuing behind it', async () => {
-    const bad = { ...doc, name: 'bad' };
-    const api = refusing((document) => document.name === 'bad');
+    const bad = named(doc, 'bad');
+    const api = refusing((document) => document.metadata.name === 'bad');
     const { queue } = await attached({ api });
 
     await queue.commit({ id: 'c1', label: 'bad', snapshot: bad });
@@ -1518,10 +1559,10 @@ describe('refused snapshots', () => {
   test('an oversized snapshot is not retried, and the next edit replaces it', async () => {
     const timers = [];
     const store = memoryStore();
-    const big = { ...doc, name: 'big' };
+    const big = named(doc, 'big');
     const api = fakeApi({
       appendSnapshot: vi.fn(async (...args) => {
-        if (args[2].document.name === 'big') {
+        if (args[2].document.metadata.name === 'big') {
           throw Object.assign(new Error('too large'), {
             response: {
               status: 413,
@@ -1647,7 +1688,7 @@ describe('local storage', () => {
   // the caller does next.
   test('the memory store keeps what was stored, as IndexedDB does', async () => {
     const store = createMemoryStore();
-    const { name } = doc;
+    const { name } = doc.metadata;
     const record = {
       key: draftKey('alice', 'alice', 'd1'),
       etag: '"1"',
@@ -1657,12 +1698,12 @@ describe('local storage', () => {
 
     await store.put(record, { write: record.entries });
     record.queue.shift();
-    record.entries[0].snapshot.name = 'changed';
+    record.entries[0].snapshot.metadata.name = 'changed';
 
     const stored = await store.get(record.key);
 
     expect(stored.queue).toHaveLength(1);
-    expect(stored.entries[0].snapshot.name).toBe(name);
+    expect(stored.entries[0].snapshot.metadata.name).toBe(name);
     expect(isProxy(stored.entries[0].snapshot)).toBe(false);
 
     // Each read is a copy of its own, and the draft record holds no
@@ -1828,7 +1869,7 @@ describe('leaving the page', () => {
     const storage = memoryStorage();
     const store = slowStore(storage);
     const first = await offline(store);
-    const second = { ...doc, name: 'second' };
+    const second = named(doc, 'second');
 
     first.commit({ id: 'c1', label: 'one', snapshot: doc });
     await store.finish();
@@ -1892,7 +1933,7 @@ describe('leaving the page', () => {
 
     queue.commit({ id: 'c1', label: 'one', snapshot: doc });
     queue.keepForUnload();
-    queue.commit({ id: 'c2', label: 'two', snapshot: { ...doc, name: 'two' } });
+    queue.commit({ id: 'c2', label: 'two', snapshot: named(doc, 'two') });
 
     await store.finish(1);
     expect(storage.entries.has(unloadKey)).toBe(false);
@@ -1901,7 +1942,7 @@ describe('leaving the page', () => {
     expect(queue.keepForUnload()).toBe(true);
     expect(storedCopy(storage).entries).toEqual([
       { id: 'c1', label: 'one' },
-      { id: 'c2', label: 'two', snapshot: { ...doc, name: 'two' } },
+      { id: 'c2', label: 'two', snapshot: named(doc, 'two') },
     ]);
 
     await store.finish();
@@ -1934,7 +1975,7 @@ describe('leaving the page', () => {
       });
     const a = tab(tabA);
     const b = tab(shared);
-    const added = { ...doc, name: 'added' };
+    const added = named(doc, 'added');
 
     await a.attach({ owner: 'alice', draftId: 'd1', etag: '"1"' });
     await b.attach({ owner: 'alice', draftId: 'd1', etag: '"1"' });

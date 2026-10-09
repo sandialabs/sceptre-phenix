@@ -314,7 +314,7 @@
   // the current draft is detached first, so a later edit never overwrites
   // it. The conversion is announced once the draft exists.
   function openConverted(result) {
-    store.newDocument({ name: result.document.name });
+    store.newDocument({ name: result.document.metadata?.name });
 
     const opened = store.setDocument(result.document, {
       label: 'Converted diagram',
@@ -483,7 +483,7 @@
 
     // Upload always starts a new draft. Detach the current draft before loading
     // uploaded content so a later edit can never overwrite that draft.
-    store.newDocument({ name: result.document.name });
+    store.newDocument({ name: result.document.metadata?.name });
 
     const opened = store.setDocument(result.document, {
       label: 'Uploaded diagram',

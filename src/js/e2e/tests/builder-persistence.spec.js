@@ -108,6 +108,12 @@ async function writeElsewhere(request, draft, change) {
   expect(response.ok(), await response.text()).toBeTruthy();
 }
 
+// The document with `fields` written into its metadata, as another editor
+// renaming or describing the diagram would.
+function withMetadata(doc, fields) {
+  return { ...doc, metadata: { ...doc.metadata, ...fields } };
+}
+
 // Freezes page timers so the autosave retry backoff never fires on its own:
 // anything sent after this point was sent because the test asked for it.
 // Requires page.clock.install() before the page was opened.
@@ -129,10 +135,9 @@ async function forkAfterConflict(builder, testInfo) {
   await expectServerCounts(builder, draft, { devices: 1 });
   await builder.waitSaved();
 
-  await writeElsewhere(builder.request, draft, (doc) => ({
-    ...doc,
-    description: 'Changed elsewhere',
-  }));
+  await writeElsewhere(builder.request, draft, (doc) =>
+    withMetadata(doc, { description: 'Changed elsewhere' }),
+  );
   builder.tracker.config('Topology', title);
   const current = await builder.request.get(draftPath(draft));
   const published = await builder.request.post(`${draftPath(draft)}/publish`, {
@@ -589,10 +594,9 @@ test.describe('Builder persistence', () => {
         await expect(builder.toolbar('retry')).toBeVisible();
         await builder.toolbar('retry').focus();
 
-        await writeElsewhere(builder.request, draft, (doc) => ({
-          ...doc,
-          description: 'Changed elsewhere',
-        }));
+        await writeElsewhere(builder.request, draft, (doc) =>
+          withMetadata(doc, { description: 'Changed elsewhere' }),
+        );
         await page.unroute(DRAFT_ROUTES);
         // Past the first retry delay: the automatic retry, not a press,
         // sends the edit and meets the conflict.
@@ -629,10 +633,9 @@ test.describe('Builder persistence', () => {
     await builder.waitSaved();
 
     const elsewhere = uniqueName(testInfo, 'elsewhere');
-    await writeElsewhere(builder.request, draft, (doc) => ({
-      ...doc,
-      name: elsewhere,
-    }));
+    await writeElsewhere(builder.request, draft, (doc) =>
+      withMetadata(doc, { name: elsewhere }),
+    );
 
     await addDevices(builder, 1);
     const banner = builder.page.getByTestId('builder-conflict');
@@ -655,7 +658,7 @@ test.describe('Builder persistence', () => {
 
     // Local work is never written over the newer server copy.
     const server = await builder.serverDocument(draft);
-    expect(server.name).toBe(elsewhere);
+    expect(server.metadata.name).toBe(elsewhere);
     expect(countKind(server, 'device')).toBe(1);
 
     // Discarding local work asks first, with focus on the safe choice.
@@ -688,14 +691,13 @@ test.describe('Builder persistence', () => {
     await addDevices(builder, 1);
     await expectServerCounts(builder, draft, { devices: 2 });
     await builder.waitSaved();
-    expect((await builder.serverDocument(draft)).name).toBe(elsewhere);
+    expect((await builder.serverDocument(draft)).metadata.name).toBe(elsewhere);
 
     await test.step('a conflict raised while typing leaves focus and text in the name field', async () => {
       const { page } = builder;
-      await writeElsewhere(builder.request, draft, (doc) => ({
-        ...doc,
-        description: 'Changed again',
-      }));
+      await writeElsewhere(builder.request, draft, (doc) =>
+        withMetadata(doc, { description: 'Changed again' }),
+      );
       // An edit's save, held until the name is being typed, meets the
       // conflict; typing goes on.
       let release;
@@ -758,7 +760,7 @@ test.describe('Builder persistence', () => {
 
     // The conflicting draft keeps the other editor's version.
     const original = await builder.serverDocument(draft);
-    expect(original.description).toBe('Changed elsewhere');
+    expect(original.metadata.description).toBe('Changed elsewhere');
     expect(countKind(original, 'device')).toBe(1);
 
     await test.step('undo and redo move the new draft’s cursor', async () => {
@@ -876,7 +878,7 @@ test.describe('Builder persistence', () => {
     await page.keyboard.press('ControlOrMeta+s');
     await expect.soft(builder).toHaveAnnounced('All changes saved');
     await expect.soft
-      .poll(async () => (await builder.serverDocument(draft)).name)
+      .poll(async () => (await builder.serverDocument(draft)).metadata.name)
       .toBe('Saved by its key');
     await expect.soft(edit).toBeFocused();
     // With nothing left to save, the key sends nothing, so it makes no
@@ -1121,10 +1123,9 @@ test.describe('Builder persistence', () => {
 
     // Someone saves meanwhile: the delete reads the list again and says
     // so, and trying again deletes it.
-    await writeElsewhere(builder.request, draft, (doc) => ({
-      ...doc,
-      description: 'Changed elsewhere',
-    }));
+    await writeElsewhere(builder.request, draft, (doc) =>
+      withMetadata(doc, { description: 'Changed elsewhere' }),
+    );
     const before = await listSnapshots(builder.request, draft);
     await second.press('Enter');
     await confirm.getByRole('button', { name: 'Delete snapshot' }).click();

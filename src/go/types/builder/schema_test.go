@@ -61,12 +61,84 @@ func TestSchemaHeader(t *testing.T) {
 	}
 
 	for _, required := range []string{
-		"$schema", "revision", "id", "nodes", "networks", "edges", "viewport", "grid",
+		"$schema", "revision", "metadata", "nodes", "networks", "edges", "viewport", "grid",
 	} {
 		if !containsAny(schema["required"], required) {
 			t.Fatalf("required does not include %q: %v", required, schema["required"])
 		}
 	}
+
+	metadata := mapAt(t, mapAt(t, schema, "$defs"), "metadata")
+	if mapAt(t, properties, "metadata")["$ref"] != "#/$defs/metadata" || !reflect.DeepEqual(metadata["required"], []any{"id"}) ||
+		metadata["additionalProperties"] != false {
+		t.Fatalf("metadata is not a required object that needs only its id: %v", metadata)
+	}
+}
+
+// TestSchemaDocumentsEveryProperty holds every part of the schema the
+// Builder owns to the documentation its readers rely on: each definition and
+// each property has a title, a description and at least one example. The
+// phenix config schemas bundled under $defs keep their own documentation and
+// are left out. That every example is valid against its schema is checked
+// with ajv by the front end's schema-examples.test.js.
+func TestSchemaDocumentsEveryProperty(t *testing.T) {
+	schema := mustSchema(t)
+
+	var missing []string
+
+	for name, property := range mapAt(t, schema, "properties") {
+		missing = append(missing, undocumented("properties."+name, property, true)...)
+	}
+
+	for name, def := range mapAt(t, schema, "$defs") {
+		if strings.HasPrefix(name, builder.PhenixDefPrefix) || strings.HasPrefix(name, builder.PhenixV2DefPrefix) {
+			continue
+		}
+
+		missing = append(missing, undocumented("$defs."+name, def, true)...)
+	}
+
+	if len(missing) > 0 {
+		slices.Sort(missing)
+		t.Fatalf("these lack a title, a description or examples:\n  %s", strings.Join(missing, "\n  "))
+	}
+}
+
+// undocumented walks a Builder-owned schema and returns the paths of the
+// parts it finds without a title, a description or a non-empty list of
+// examples: the schema itself when own is set, as it is for a definition or
+// a property, then the properties it declares, also those of the items of a
+// list and of the values of a map. Conditions (if, then, not) declare no
+// properties of their own and are not walked.
+func undocumented(path string, value any, own bool) []string {
+	schema, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	var missing []string
+
+	if own {
+		title, _ := schema["title"].(string)
+		description, _ := schema["description"].(string)
+		examples, _ := schema["examples"].([]any)
+
+		if strings.TrimSpace(title) == "" || strings.TrimSpace(description) == "" || len(examples) == 0 {
+			missing = append(missing, path)
+		}
+	}
+
+	if properties, ok := schema["properties"].(map[string]any); ok {
+		for name, property := range properties {
+			missing = append(missing, undocumented(path+".properties."+name, property, true)...)
+		}
+	}
+
+	for _, key := range []string{"items", "additionalProperties"} {
+		missing = append(missing, undocumented(path+"."+key, schema[key], false)...)
+	}
+
+	return missing
 }
 
 func TestSchemaDefinesBuilderStructures(t *testing.T) {
@@ -140,6 +212,7 @@ func TestSchemaPropertiesMatchDocument(t *testing.T) {
 	defs := mapAt(t, schema, "$defs")
 
 	for name, value := range map[string]any{
+		"metadata":       builder.Metadata{},
 		"device":         builder.Device{},
 		"switch":         builder.Switch{},
 		"note":           builder.Note{},
@@ -202,7 +275,10 @@ func TestSchemaPresentationFields(t *testing.T) {
 		t.Fatalf("edge.lineStyle refers to %v", got)
 	}
 
-	if got := mapAt(t, mapAt(t, mapAt(t, defs, "group"), "properties"), "description"); got["type"] != "string" || len(got) != 1 {
+	// Free text: a string and nothing that bounds it, besides what documents
+	// it.
+	if got := mapAt(t, mapAt(t, mapAt(t, defs, "group"), "properties"), "description"); got["type"] != "string" ||
+		len(got) != len([]string{"type", "title", "description", "examples"}) {
 		t.Fatalf("group.description is not free text: %v", got)
 	}
 

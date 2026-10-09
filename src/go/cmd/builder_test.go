@@ -190,7 +190,7 @@ func TestBuilderPublish(t *testing.T) { //nolint:paralleltest // replaces the ph
 	}
 
 	// The record names the OS account, and the document is the file's: its
-	// author and times are not set by publishing.
+	// creator and times are not set by publishing.
 	record, data, err := service.GetPublishedDocumentData(t.Context(), reference.ID)
 	if err != nil {
 		t.Fatalf("GetPublishedDocumentData returned error: %v", err)

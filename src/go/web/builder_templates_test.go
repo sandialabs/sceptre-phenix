@@ -208,7 +208,7 @@ func TestBuilderTemplateLibraryStartsWithBuiltins(t *testing.T) {
 	}
 
 	if got, want := string(raw.Limits),
-		`{"templates":200,"collections":50,"shares":25,"nameBytes":128,"descriptionBytes":1024,"deviceBytes":16384,"icons":32}`; got != want {
+		`{"templates":200,"collections":50,"shares":25,"nameBytes":128,"descriptionBytes":1024,"deviceBytes":16384,"icons":50}`; got != want {
 		t.Errorf("limits = %s, want %s", got, want)
 	}
 
@@ -1114,14 +1114,14 @@ func TestBuilderTemplateLibraryLimits(t *testing.T) {
 	}
 
 	recorder = harness.post("/items", builderJSON(t, drawn))
-	if recorder.Code != http.StatusRequestEntityTooLarge || builderMessage(t, recorder) != "a library holds at most 32 custom icons" {
-		t.Fatalf("33 icons = %d %.300s", recorder.Code, recorder.Body)
+	if recorder.Code != http.StatusRequestEntityTooLarge || builderMessage(t, recorder) != "a library holds at most 50 custom icons" {
+		t.Fatalf("51 icons = %d %.300s", recorder.Code, recorder.Body)
 	}
 
 	drawn.Templates = drawn.Templates[:bapi.MaxLibraryTemplateIcons]
 
 	if added := harness.post("/items", builderJSON(t, drawn)); added.Code != http.StatusCreated {
-		t.Fatalf("32 icons = %d %.300s", added.Code, added.Body)
+		t.Fatalf("50 icons = %d %.300s", added.Code, added.Body)
 	}
 
 	list := harness.templates(builderTestOwner)

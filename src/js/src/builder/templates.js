@@ -163,10 +163,14 @@ export function blankTemplate() {
  * @returns {object} document
  */
 export function templateDocument(template, icons = null) {
+  const base = createDocument();
   const empty = {
-    ...createDocument(),
-    name: template?.name || '',
-    description: template?.description || '',
+    ...base,
+    metadata: {
+      ...base.metadata,
+      name: template?.name || '',
+      description: template?.description || '',
+    },
   };
   const { doc } = addNode(empty, nodeOptionsFromTemplate(template, empty));
 
@@ -185,8 +189,8 @@ export function templateDocument(template, icons = null) {
 export function templateFromDocument(doc) {
   const node = (doc?.nodes || []).find((entry) => entry.kind === 'device');
   const template = templateFromNode(node, {
-    name: doc?.name || '',
-    description: doc?.description || '',
+    name: doc?.metadata?.name || '',
+    description: doc?.metadata?.description || '',
   });
   const icons = {};
   const id = template.device.icon;

@@ -8,7 +8,11 @@
 import YAML from 'js-yaml';
 
 import { MAX_DOCUMENT_BYTES } from './limits.js';
-import { SCHEMA_REVISION, SCHEMA_URI, STAMP_KEYS } from './model.js';
+import {
+  METADATA_KEYS as METADATA_KEY_ORDER,
+  SCHEMA_REVISION,
+  SCHEMA_URI,
+} from './model.js';
 import { utf8Length } from './text.js';
 import { validateDocument } from './validate.js';
 
@@ -51,10 +55,7 @@ export class DocumentError extends Error {
 export const DOCUMENT_KEYS = new Set([
   '$schema',
   'revision',
-  'id',
-  'name',
-  'description',
-  ...STAMP_KEYS,
+  'metadata',
   'nodes',
   'networks',
   'edges',
@@ -66,6 +67,8 @@ export const DOCUMENT_KEYS = new Set([
   'templates',
   'icons',
 ]);
+
+export const METADATA_KEYS = new Set(METADATA_KEY_ORDER);
 
 // The keys of each object of a document: the properties of its definition
 // in the schema bundle, which a test compares them with.
@@ -251,6 +254,22 @@ export function decodeDocument(value) {
 
   rejectUnknown(value, DOCUMENT_KEYS, 'document');
 
+  // Left out or null, the metadata is empty, as Go decodes it, and
+  // validation then asks for its id.
+  if (value.metadata !== undefined && value.metadata !== null) {
+    if (typeof value.metadata !== 'object' || Array.isArray(value.metadata)) {
+      throw new DocumentError('document: "metadata" must be an object');
+    }
+
+    rejectUnknown(value.metadata, METADATA_KEYS, 'metadata');
+
+    const { notes } = value.metadata;
+
+    if (notes !== undefined && notes !== null && !Array.isArray(notes)) {
+      throw new DocumentError('document: "metadata.notes" must be an array');
+    }
+  }
+
   if (!Array.isArray(value.nodes)) {
     throw new DocumentError('document: "nodes" must be an array');
   }
@@ -329,11 +348,18 @@ export function decodeDocument(value) {
 
   doc.viewport = doc.viewport || { x: 0, y: 0, zoom: 1 };
   doc.grid = doc.grid || { enabled: true, size: 16, snap: true };
+  doc.metadata = doc.metadata || {};
 
   // Null is none, as Go decodes it.
-  ['layout', 'templates', 'icons', ...STAMP_KEYS].forEach((key) => {
+  ['layout', 'templates', 'icons'].forEach((key) => {
     if (doc[key] === null) {
       delete doc[key];
+    }
+  });
+
+  METADATA_KEY_ORDER.forEach((key) => {
+    if (doc.metadata[key] === null) {
+      delete doc.metadata[key];
     }
   });
 

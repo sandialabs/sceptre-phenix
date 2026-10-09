@@ -222,7 +222,7 @@ const BASE = draftKey('alice', 'alice', 'd1');
 const edit = (id, name = id) => ({
   id,
   label: `Edit ${id}`,
-  snapshot: { name, nodes: [], edges: [] },
+  snapshot: { metadata: { name }, nodes: [], edges: [] },
 });
 
 async function twoTabsOffline() {
@@ -977,7 +977,9 @@ describe('the choice', () => {
     expect(api.createDraft).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Lab (local copy)',
-        document: expect.objectContaining({ name: 'Lab (local copy)' }),
+        document: expect.objectContaining({
+          metadata: expect.objectContaining({ name: 'Lab (local copy)' }),
+        }),
         forkOf: 'alice/d1',
       }),
     );
@@ -985,7 +987,9 @@ describe('the choice', () => {
       'alice',
       'fork-Lab (local copy)',
       expect.objectContaining({
-        document: expect.objectContaining({ name: 'Lab (local copy)' }),
+        document: expect.objectContaining({
+          metadata: expect.objectContaining({ name: 'Lab (local copy)' }),
+        }),
       }),
       '"f1"',
     );
@@ -1064,7 +1068,7 @@ describe('taking a closed tab’s queue', () => {
     const taken = await device.get(to);
 
     expect(taken.queue.map((op) => op.opId)).toEqual(['e1', 'e2']);
-    expect(taken.entries.map((entry) => entry.snapshot.name)).toEqual([
+    expect(taken.entries.map((entry) => entry.snapshot.metadata.name)).toEqual([
       'e1',
       'e2',
     ]);

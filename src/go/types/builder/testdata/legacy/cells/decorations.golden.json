@@ -1,8 +1,10 @@
 {
   "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
   "revision": 1,
-  "id": "7036f382-0809-5ece-a886-90bac1709c16",
-  "name": "decorations",
+  "metadata": {
+    "id": "7036f382-0809-5ece-a886-90bac1709c16",
+    "name": "decorations"
+  },
   "nodes": [
     {
       "id": "f6e4ab30-adf5-58de-9ed9-ab1de32ad683",

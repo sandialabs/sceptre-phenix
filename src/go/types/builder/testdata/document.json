@@ -1,9 +1,11 @@
 {
   "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
   "revision": 1,
-  "id": "49d876d1-571a-5b5c-91b7-aadf5bb5209c",
-  "name": "hand-authored",
-  "description": "fixture exercising every node kind",
+  "metadata": {
+    "id": "49d876d1-571a-5b5c-91b7-aadf5bb5209c",
+    "name": "hand-authored",
+    "description": "fixture exercising every node kind"
+  },
   "nodes": [
     {
       "id": "c60601dd-6d6b-56c7-97e5-149caf5ed993",

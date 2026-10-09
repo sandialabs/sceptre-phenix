@@ -135,7 +135,7 @@ describe('custom icons in the store', () => {
     expect('icons' in store.doc).toBe(false);
     expect(announced).toEqual([
       'Changed the custom icon',
-      '1 custom icon was left out: a diagram holds at most 32.',
+      '1 custom icon was left out: a diagram holds at most 50.',
     ]);
 
     const other = iconOf(1);
@@ -147,7 +147,7 @@ describe('custom icons in the store', () => {
     expect(errorsOf(store.doc)).toEqual([]);
   });
 
-  test('a diagram takes 32 icons; one more is left out and announced', () => {
+  test('a diagram takes 50 icons; one more is left out and announced', () => {
     const icons = Array.from({ length: MAX_DOCUMENT_ICONS + 2 }, (_, index) =>
       iconOf(index),
     );
@@ -175,9 +175,9 @@ describe('custom icons in the store', () => {
     expect(errorsOf(doc)).toEqual([]);
     expect(announced.slice(-4)).toEqual([
       'Added device',
-      '1 custom icon was left out: a diagram holds at most 32.',
+      '1 custom icon was left out: a diagram holds at most 50.',
       'Added device',
-      '1 custom icon was left out: a diagram holds at most 32.',
+      '1 custom icon was left out: a diagram holds at most 50.',
     ]);
   });
 
@@ -238,7 +238,7 @@ describe('custom icons in the store', () => {
     expect(Object.keys(store.doc.icons)).toHaveLength(MAX_DOCUMENT_ICONS);
     expect(announced).toEqual([
       'Pasted 1 node',
-      '1 custom icon was left out: a diagram holds at most 32.',
+      '1 custom icon was left out: a diagram holds at most 50.',
     ]);
   });
 

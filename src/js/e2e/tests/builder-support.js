@@ -346,8 +346,7 @@ function blankDocument(name, { nodes = [], networks = [], edges = [] } = {}) {
   return {
     $schema: SCHEMA_URI,
     revision: 1,
-    id: crypto.randomUUID(),
-    name,
+    metadata: { id: crypto.randomUUID(), name },
     nodes,
     networks,
     edges,
@@ -411,7 +410,7 @@ async function seedDraft(
   request,
   tracker,
   document,
-  { title = document.name, sourceToken } = {},
+  { title = document.metadata.name, sourceToken } = {},
 ) {
   const response = await request.post(`${API}/builder/drafts`, {
     data: { title, document, ...(sourceToken ? { sourceToken } : {}) },
@@ -519,12 +518,13 @@ async function openConfigs(page) {
 // A time as a Builder document writes it: UTC, in whole seconds.
 const DOCUMENT_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/;
 
-// The four fields the server writes into a document when it stores it: who
-// made the diagram and when, and who saved it last and when.
+// The four fields the server writes into a document's metadata when it
+// stores it: who made the diagram and when, and who saved it last and when.
 function provenanceOf(document) {
-  const { author, createdAt, updatedBy, updatedAt } = document || {};
+  const { createdBy, createdAt, updatedBy, updatedAt } =
+    document?.metadata || {};
 
-  return { author, createdAt, updatedBy, updatedAt };
+  return { createdBy, createdAt, updatedBy, updatedAt };
 }
 
 // Expects the row `id` of the Inspector's Details block on `page`

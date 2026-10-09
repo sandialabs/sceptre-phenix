@@ -15,6 +15,9 @@ All notable changes to this project will be documented in this file.
 - **Builder**: New topology editor at `/builder`, with `phenix builder publish` to create a topology from a Builder file. See the [Builder documentation](https://phenix.sceptre.dev/latest/builder/).
   - The toolbar's **Add connection** and **Move to group** open dialogs that connect a device to a switch and move a node into or out of a group without dragging. The Publish dialog marks an update as a warning, and says why a config name is not allowed.
 - **Node Notes**: Topology nodes take `general.notes`; a new experiment copies them to each VM's notes.
+- **Builder documents**: A Builder document keeps its ID, name, description, notes, and who made and last saved it (`createdBy`, `createdAt`, `updatedBy`, `updatedAt`) in a required `metadata` object. Its JSON Schema gives every field a title, a description and examples.
+- **Builder notes**: A diagram can carry up to 100 notes, which the Inspector lists and edits.
+- **Builder icons**: A diagram, and a user's template library, can hold up to 50 custom icons.
 
 ### Changed
 

@@ -109,6 +109,7 @@ import {
   findNode,
   groupNodes,
   includedReason,
+  metadataOf,
   moveNodes,
   namedSwitches,
   networkRefusal,
@@ -122,6 +123,7 @@ import {
   renameInterface,
   resizeNode,
   savedStamp,
+  setDiagramNotes,
   setGrid,
   setParent,
   setDocumentInfo,
@@ -396,7 +398,7 @@ const LIBRARY_LIMITS = Object.freeze({
   nameBytes: 128,
   descriptionBytes: 1024,
   deviceBytes: 16384,
-  icons: 32,
+  icons: 50,
 });
 
 // The user's template library as it is before it is read.
@@ -1284,7 +1286,7 @@ export const useBuilderStore = defineStore('builder', {
       this.selection = emptySelection();
       this.openedSeq += 1;
       this.owner = '';
-      this.draftId = doc.id;
+      this.draftId = doc.metadata.id;
       this.etag = null;
       this.readOnly = false;
       this.access = '';
@@ -1374,7 +1376,7 @@ export const useBuilderStore = defineStore('builder', {
 
       try {
         const envelope = await builderApi.createDraft({
-          title: title || doc.name || 'Untitled diagram',
+          title: title || metadataOf(doc).name || 'Untitled diagram',
           sourceToken,
           // Left out of the request when there is none, or none the server
           // would record.
@@ -1387,7 +1389,7 @@ export const useBuilderStore = defineStore('builder', {
         }
 
         this.owner = envelope.draft?.owner || phenix.username || '';
-        this.draftId = envelope.draft?.id || doc.id;
+        this.draftId = envelope.draft?.id || metadataOf(doc).id;
         this.etag = envelope.etag;
         this.serverHistory = envelope.history || [];
         this.readOnly = false;
@@ -1515,7 +1517,8 @@ export const useBuilderStore = defineStore('builder', {
         // Another user's draft says whose it is, and whether it can be
         // edited: others may be editing it at the same time.
         if (!quiet && phenix.username && this.owner !== phenix.username) {
-          const name = this.doc.name || envelope.draft?.title || 'Untitled';
+          const name =
+            metadataOf(this.doc).name || envelope.draft?.title || 'Untitled';
 
           this.announce(
             this.readOnly
@@ -1780,7 +1783,7 @@ export const useBuilderStore = defineStore('builder', {
 
     async settleConflict(choice, options) {
       if (choice === 'fork') {
-        const title = options.title || forkTitle(this.doc.name);
+        const title = options.title || forkTitle(metadataOf(this.doc).name);
         // The server titles a draft after its document's name, so every
         // saved snapshot carries the new name, or the fork would look like
         // the draft it leaves.
@@ -2381,7 +2384,8 @@ export const useBuilderStore = defineStore('builder', {
 
         const listed = this.documents.find((item) => item.id === id);
         const target = read.target || listed?.target || '';
-        const name = read.document.name || listed?.name || target || id;
+        const name =
+          metadataOf(read.document).name || listed?.name || target || id;
         const file = read.source === 'file';
 
         this.newDocument();
@@ -2507,7 +2511,7 @@ export const useBuilderStore = defineStore('builder', {
 
           // Another user's draft has said whose it is (see loadDraft).
           if (opened && how !== 'shared') {
-            const name = opened.name || existing.title || id;
+            const name = metadataOf(opened).name || existing.title || id;
 
             this.announce(
               how === 'publisher'
@@ -2530,15 +2534,16 @@ export const useBuilderStore = defineStore('builder', {
         }
 
         // One message for the whole operation, so neither half is lost.
+        const readName = metadataOf(read.document).name;
         const created = await this.createDraft({
           document: read.document,
-          title: read.document.name,
+          title: readName,
           sourceToken: token,
           announcement:
             announcement ||
             (topology
               ? `Opened the diagram of topology ${topology} as a new draft.`
-              : `Opened published diagram ${read.document.name || id} as a new draft.`),
+              : `Opened published diagram ${readName || id} as a new draft.`),
         });
 
         return created ? this.doc : null;
@@ -3100,7 +3105,7 @@ export const useBuilderStore = defineStore('builder', {
         // always starts separately; it must never reuse the prior draft's queue.
         const generated = serverDocument(result.document);
 
-        this.newDocument({ name: generated.name });
+        this.newDocument({ name: metadataOf(generated).name });
 
         // Nothing is imported yet: the user may still cancel on the
         // warnings, and the draft may fail to be created. The import is
@@ -3238,17 +3243,15 @@ export const useBuilderStore = defineStore('builder', {
      */
     async combineIncluded() {
       const mine = await this.listMine();
-      const from = this.doc.name || 'Untitled diagram';
+      const { name: current } = metadataOf(this.doc);
+      const from = current || 'Untitled diagram';
       const included = this.summary.included;
-      const name = uniqueName(
-        `${configName(this.doc.name) || 'diagram'}-combined`,
-        [
-          ...(this.sources.topologies || []).map((entry) =>
-            typeof entry === 'string' ? entry : entry?.name,
-          ),
-          ...(mine || []).map((draft) => draft?.title),
-        ],
-      );
+      const name = uniqueName(`${configName(current) || 'diagram'}-combined`, [
+        ...(this.sources.topologies || []).map((entry) =>
+          typeof entry === 'string' ? entry : entry?.name,
+        ),
+        ...(mine || []).map((draft) => draft?.title),
+      ]);
       const combined = combineIncluded(toRaw(this.doc), name);
 
       this.newDocument({ name });
@@ -4331,6 +4334,28 @@ export const useBuilderStore = defineStore('builder', {
 
     setInfo(patch) {
       this.commit(setDocumentInfo(this.doc, patch), 'Renamed diagram');
+    },
+
+    /**
+     * Replaces the notes of the diagram, in its metadata, in one undo step
+     * (see setDiagramNotes in model.js): a blank note is dropped, so a note
+     * cleared and left is removed. Notes that are those already take no
+     * step, and neither do notes of which one cannot be written (too long,
+     * or holding a control character; see diagramNoteProblem): the diagram
+     * keeps the notes it had.
+     *
+     * @param {string[]} notes
+     * @returns {object|null} the history entry, or null when nothing changed,
+     *   a note cannot be written or the draft is read only
+     */
+    setDiagramNotes(notes) {
+      const next = setDiagramNotes(this.doc, notes);
+
+      if (next === this.doc) {
+        return null;
+      }
+
+      return this.commit(next, 'Updated diagram notes');
     },
 
     setViewport(viewport) {

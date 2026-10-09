@@ -1,10 +1,13 @@
 package builder_test
 
 import (
+	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -21,17 +24,17 @@ var docsExamples = filepath.Join( //nolint:gochecknoglobals // test fixture path
 
 func testProvenance() builder.Provenance {
 	return builder.Provenance{
-		Author:    "alice",
+		CreatedBy: "alice",
 		CreatedAt: "2026-10-01T15:04:05Z",
 		UpdatedBy: "bob",
 		UpdatedAt: "2026-10-01T16:10:00Z",
 	}
 }
 
-// TestProvenanceRoundTrip covers the four header fields the draft service
+// TestProvenanceRoundTrip covers the four metadata fields the draft service
 // sets: they survive encoding and strict decoding, are written after the
-// description and before the nodes, and are left out when the document has
-// none.
+// description, and are left out when the document has none. The metadata
+// itself is written right after the revision.
 func TestProvenanceRoundTrip(t *testing.T) {
 	plain := loadDocumentFixture(t, "document.json")
 	stamped := loadDocumentFixture(t, "document.json")
@@ -65,11 +68,12 @@ func TestProvenanceRoundTrip(t *testing.T) {
 	last := -1
 
 	for _, key := range []string{
-		`"description"`, `"author"`, `"createdAt"`, `"updatedBy"`, `"updatedAt"`, `"nodes"`,
+		"\n  \"revision\"", "\n  \"metadata\"", "\n    \"id\"", "\n    \"name\"", "\n    \"description\"",
+		"\n    \"createdBy\"", "\n    \"createdAt\"", "\n    \"updatedBy\"", "\n    \"updatedAt\"", "\n  \"nodes\"",
 	} {
-		at := strings.Index(string(data), "\n  "+key)
+		at := strings.Index(string(data), key)
 		if at <= last {
-			t.Fatalf("%s is not written in header order (at %d, after %d):\n%.400s", key, at, last, data)
+			t.Fatalf("%q is not written in metadata order (at %d, after %d):\n%.400s", key, at, last, data)
 		}
 
 		last = at
@@ -84,10 +88,17 @@ func TestProvenanceRoundTrip(t *testing.T) {
 			t.Fatalf("Encode(%s): %v", name, err)
 		}
 
-		for _, key := range []string{`"author"`, `"createdAt"`, `"updatedBy"`, `"updatedAt"`} {
-			// source.updatedAt is another field, indented further.
-			if strings.Contains(string(encoded), "\n  "+key) {
-				t.Fatalf("the %s document encodes %s", name, key)
+		var raw struct {
+			Metadata map[string]any `json:"metadata"`
+		}
+
+		if err := json.Unmarshal(encoded, &raw); err != nil {
+			t.Fatalf("decoding the %s document: %v", name, err)
+		}
+
+		for _, key := range []string{"createdBy", "createdAt", "updatedBy", "updatedAt"} {
+			if _, ok := raw.Metadata[key]; ok {
+				t.Fatalf("the %s document encodes metadata.%s", name, key)
 			}
 		}
 	}
@@ -106,7 +117,7 @@ func TestProvenanceIsPartOfTheContent(t *testing.T) {
 	}
 
 	for name, change := range map[string]func(*builder.Provenance){
-		"author":    func(p *builder.Provenance) { p.Author = "carol" },
+		"createdBy": func(p *builder.Provenance) { p.CreatedBy = "carol" },
 		"createdAt": func(p *builder.Provenance) { p.CreatedAt = "2026-10-01T15:04:06Z" },
 		"updatedBy": func(p *builder.Provenance) { p.UpdatedBy = "carol" },
 		"updatedAt": func(p *builder.Provenance) { p.UpdatedAt = "2026-10-01T16:10:01Z" },
@@ -148,7 +159,7 @@ func TestFormatTime(t *testing.T) {
 
 			// What the service writes is always what the validator accepts.
 			doc := builder.NewDocument("times")
-			doc.CreatedAt, doc.UpdatedAt = got, got
+			doc.Metadata.CreatedAt, doc.Metadata.UpdatedAt = got, got
 
 			if err := doc.Validate(); err != nil {
 				t.Fatalf("a formatted time is refused: %v", err)
@@ -157,8 +168,8 @@ func TestFormatTime(t *testing.T) {
 	}
 }
 
-// TestValidateProvenance covers each rule of the four header fields, and the
-// path its issue is reported at.
+// TestValidateProvenance covers each rule of the four metadata fields, and
+// the path its issue is reported at.
 func TestValidateProvenance(t *testing.T) {
 	longest := strings.Repeat("a", builder.MaxUserBytes)
 
@@ -218,8 +229,8 @@ func TestValidateProvenance(t *testing.T) {
 		path string
 		set  func(*builder.Document, string)
 	}{
-		{path: "author", set: func(d *builder.Document, v string) { d.Author = v }},
-		{path: "updatedBy", set: func(d *builder.Document, v string) { d.UpdatedBy = v }},
+		{path: "metadata.createdBy", set: func(d *builder.Document, v string) { d.Metadata.CreatedBy = v }},
+		{path: "metadata.updatedBy", set: func(d *builder.Document, v string) { d.Metadata.UpdatedBy = v }},
 	} {
 		for _, test := range users {
 			t.Run(field.path+"/"+test.name, func(t *testing.T) {
@@ -235,8 +246,8 @@ func TestValidateProvenance(t *testing.T) {
 		path string
 		set  func(*builder.Document, string)
 	}{
-		{path: "createdAt", set: func(d *builder.Document, v string) { d.CreatedAt = v }},
-		{path: "updatedAt", set: func(d *builder.Document, v string) { d.UpdatedAt = v }},
+		{path: "metadata.createdAt", set: func(d *builder.Document, v string) { d.Metadata.CreatedAt = v }},
+		{path: "metadata.updatedAt", set: func(d *builder.Document, v string) { d.Metadata.UpdatedAt = v }},
 	} {
 		for _, test := range times {
 			t.Run(field.path+"/"+test.name, func(t *testing.T) {
@@ -259,11 +270,11 @@ func TestValidateProvenance(t *testing.T) {
 // after the last edit, which a document made on another server may hold.
 func TestValidateProvenanceHasNoPairingRule(t *testing.T) {
 	for name, provenance := range map[string]builder.Provenance{
-		"author only":             {Author: "alice", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
-		"createdAt only":          {Author: "", CreatedAt: "2026-10-01T15:04:05Z", UpdatedBy: "", UpdatedAt: ""},
-		"updatedBy only":          {Author: "", CreatedAt: "", UpdatedBy: "bob", UpdatedAt: ""},
-		"updatedAt only":          {Author: "", CreatedAt: "", UpdatedBy: "", UpdatedAt: "2026-10-01T15:04:05Z"},
-		"created after last edit": {Author: "", CreatedAt: "2026-10-02T00:00:00Z", UpdatedBy: "", UpdatedAt: "2026-10-01T00:00:00Z"},
+		"createdBy only":          {CreatedBy: "alice", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
+		"createdAt only":          {CreatedBy: "", CreatedAt: "2026-10-01T15:04:05Z", UpdatedBy: "", UpdatedAt: ""},
+		"updatedBy only":          {CreatedBy: "", CreatedAt: "", UpdatedBy: "bob", UpdatedAt: ""},
+		"updatedAt only":          {CreatedBy: "", CreatedAt: "", UpdatedBy: "", UpdatedAt: "2026-10-01T15:04:05Z"},
+		"created after last edit": {CreatedBy: "", CreatedAt: "2026-10-02T00:00:00Z", UpdatedBy: "", UpdatedAt: "2026-10-01T00:00:00Z"},
 	} {
 		doc := loadDocumentFixture(t, "document.json")
 		doc.SetProvenance(provenance)
@@ -299,13 +310,14 @@ func assertHeaderIssue(t *testing.T, err error, path, want string) {
 	}
 }
 
-// TestSchemaProvenanceProperties checks the schema of the four header fields:
-// optional strings, bounded and patterned as the validator checks them.
+// TestSchemaProvenanceProperties checks the schema of the four metadata
+// fields the draft service sets: optional strings, bounded and patterned as
+// the validator checks them.
 func TestSchemaProvenanceProperties(t *testing.T) {
-	schema := mustSchema(t)
-	properties := mapAt(t, schema, "properties")
+	metadata := mapAt(t, mapAt(t, mustSchema(t), "$defs"), "metadata")
+	properties := mapAt(t, metadata, "properties")
 
-	for _, name := range []string{"author", "updatedBy"} {
+	for _, name := range []string{"createdBy", "updatedBy"} {
 		property := mapAt(t, properties, name)
 
 		if property["type"] != "string" || property["maxLength"] != builder.MaxUserBytes ||
@@ -323,35 +335,89 @@ func TestSchemaProvenanceProperties(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"author", "createdAt", "updatedBy", "updatedAt"} {
-		if containsAny(schema["required"], name) {
+	for _, name := range []string{"createdBy", "createdAt", "updatedBy", "updatedAt"} {
+		if containsAny(metadata["required"], name) {
 			t.Fatalf("%s is required", name)
 		}
 
 		description, _ := mapAt(t, properties, name)["description"].(string)
-		if !strings.Contains(description, "The server sets it") {
+		if !strings.Contains(description, "the server sets") {
 			t.Fatalf("the description of %s does not say who sets it: %q", name, description)
 		}
 	}
 }
 
-// TestDocumentFieldsMatchSchemaProperties ties the document struct to the
-// hand-built schema: both decode strictly, so a field one of them lacks is a
-// document the other refuses.
-func TestDocumentFieldsMatchSchemaProperties(t *testing.T) {
-	document := reflect.TypeFor[builder.Document]()
+// TestSchemaNotesProperty checks the schema of the diagram notes: a bounded
+// list of bounded text, whose pattern takes newlines and tabs but no other
+// control character, and no note that is only white space.
+func TestSchemaNotesProperty(t *testing.T) {
+	metadata := mapAt(t, mapAt(t, mustSchema(t), "$defs"), "metadata")
+	notes := mapAt(t, mapAt(t, metadata, "properties"), "notes")
+	note := mapAt(t, notes, "items")
+
+	if notes["type"] != "array" || notes["maxItems"] != builder.MaxDiagramNotes || containsAny(metadata["required"], "notes") ||
+		note["type"] != "string" || note["minLength"] != 1 || note["maxLength"] != builder.MaxDiagramNoteBytes {
+		t.Fatalf("notes are not an optional, bounded list of bounded text: %v", notes)
+	}
+
+	pattern, ok := note["pattern"].(string)
+	if !ok {
+		t.Fatalf("a note has no pattern: %v", note)
+	}
+
+	matcher := regexp.MustCompile(pattern)
+
+	for _, text := range []string{"one", " padded ", "two\nlines", "a\ttab", "é"} {
+		if !matcher.MatchString(text) {
+			t.Fatalf("the note pattern rejects %q", text)
+		}
+	}
+
+	for _, text := range []string{"", " ", "\n\t", "bell\a", "carriage\rreturn", "delete\x7f"} {
+		if matcher.MatchString(text) {
+			t.Fatalf("the note pattern accepts %q", text)
+		}
+	}
+
+	// A note of one character matches exactly when Validate accepts it: white
+	// space past ASCII is blank to both (U+0085, U+00A0, U+2028), U+FEFF and
+	// the zero width characters are not, and the control characters Validate
+	// refuses the pattern refuses.
+	doc := loadDocumentFixture(t, "document.json")
+	spans := [][2]rune{
+		{0, 0xff}, {0x1680, 0x1680}, {0x180e, 0x180e}, {0x2000, 0x2010},
+		{0x2028, 0x2030}, {0x205f, 0x2060}, {0x3000, 0x3001}, {0xfeff, 0xfeff},
+	}
+
+	for _, span := range spans {
+		for r := span[0]; r <= span[1]; r++ {
+			text := string(r)
+			doc.Metadata.Notes = []string{text}
+			accepted := doc.Validate() == nil
+
+			if matched := matcher.MatchString(text); matched != accepted {
+				t.Errorf("a note of %U: the pattern matches it: %t, Validate accepts it: %t", r, matched, accepted)
+			}
+		}
+	}
+}
+
+// jsonFieldNames returns the JSON names of a struct's fields, and those it
+// leaves out when empty.
+func jsonFieldNames(t *testing.T, typ reflect.Type) ([]string, []string) {
+	t.Helper()
 
 	var (
-		fields   = make([]string, 0, document.NumField())
+		fields   = make([]string, 0, typ.NumField())
 		optional []string
 	)
 
-	for i := range document.NumField() {
-		tag := document.Field(i).Tag.Get("json")
+	for i := range typ.NumField() {
+		tag := typ.Field(i).Tag.Get("json")
 
 		name, options, _ := strings.Cut(tag, ",")
 		if name == "" || name == "-" {
-			t.Fatalf("field %s has no JSON name", document.Field(i).Name)
+			t.Fatalf("field %s.%s has no JSON name", typ.Name(), typ.Field(i).Name)
 		}
 
 		fields = append(fields, name)
@@ -361,29 +427,41 @@ func TestDocumentFieldsMatchSchemaProperties(t *testing.T) {
 		}
 	}
 
+	return fields, optional
+}
+
+// TestDocumentFieldsMatchSchemaProperties ties the document struct, and its
+// metadata, to the hand-built schema: both decode strictly, so a field one of
+// them lacks is a document the other refuses.
+func TestDocumentFieldsMatchSchemaProperties(t *testing.T) {
 	schema := mustSchema(t)
-	properties := mapAt(t, schema, "properties")
 
-	names := make([]string, 0, len(properties))
-	for name := range properties {
-		names = append(names, name)
-	}
+	for name, test := range map[string]struct {
+		typ    reflect.Type
+		schema map[string]any
+	}{
+		"document": {typ: reflect.TypeFor[builder.Document](), schema: schema},
+		"metadata": {typ: reflect.TypeFor[builder.Metadata](), schema: mapAt(t, mapAt(t, schema, "$defs"), "metadata")},
+	} {
+		fields, optional := jsonFieldNames(t, test.typ)
+		properties := mapAt(t, test.schema, "properties")
 
-	slices.Sort(names)
+		names := slices.Sorted(maps.Keys(properties))
 
-	sorted := slices.Clone(fields)
-	slices.Sort(sorted)
+		sorted := slices.Clone(fields)
+		slices.Sort(sorted)
 
-	if !slices.Equal(sorted, names) {
-		t.Fatalf("document fields %v are not the schema's root properties %v", sorted, names)
-	}
+		if !slices.Equal(sorted, names) {
+			t.Fatalf("%s fields %v are not the schema's properties %v", name, sorted, names)
+		}
 
-	// A field left out when empty cannot be required, and the others are
-	// always written.
-	for _, name := range fields {
-		if required := containsAny(schema["required"], name); required == slices.Contains(optional, name) {
-			t.Fatalf("%s: required = %t, but the struct omits it when empty = %t",
-				name, required, slices.Contains(optional, name))
+		// A field left out when empty cannot be required, and the others
+		// are always written.
+		for _, field := range fields {
+			if required := containsAny(test.schema["required"], field); required == slices.Contains(optional, field) {
+				t.Fatalf("%s.%s: required = %t, but the struct omits it when empty = %t",
+					name, field, required, slices.Contains(optional, field))
+			}
 		}
 	}
 }

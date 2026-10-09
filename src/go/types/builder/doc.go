@@ -6,8 +6,11 @@
 // structures, so the same document can be rendered by a different front end (or
 // no front end at all) without migration.
 //
-// A [Document] carries three kinds of information:
+// A [Document] carries four kinds of information:
 //
+//   - Metadata ([Metadata]): the document's identifier, name and
+//     description, and notes about the diagram as a whole. None of it is
+//     ever written to a config.
 //   - Canvas presentation: node positions/sizes, parent groups, free notes,
 //     viewport, and grid settings; the colors of nodes, the line style of
 //     networks and edges, and the description, border and icon of groups;
@@ -19,8 +22,9 @@
 //     networks (VLANs) with optional integer aliases, and the edges that bind
 //     device interfaces to networks.
 //   - Provenance: who made the document and who last saved it, and when
-//     ([Provenance]), where the document came from ([Source]) and an optional
-//     reference to a stored or uploaded scenario ([ScenarioRef]).
+//     ([Provenance], kept in the metadata), where the document came from
+//     ([Source]) and an optional reference to a stored or uploaded scenario
+//     ([ScenarioRef]).
 //
 // Two authoritative transformations are provided:
 //
@@ -100,24 +104,27 @@
 // embedded under $defs so device spec forms and scenario content resolve every
 // field without a second fetch. Device specs reference the v1 node schemas;
 // scenario content references the v2 Scenario schema, matching
-// [ScenarioAPIVersion].
+// [ScenarioAPIVersion]. Every definition and property the Builder owns in
+// the bundle has a title, a description and examples.
 //
 // Size limits (node counts, payload sizes, etc.) are deliberately *not*
 // enforced here; they belong to the API/transport layer. This package enforces
 // structural and semantic correctness only, and the bounds on the document
-// name, which the draft service records as a title, on the users the header
-// names, which are bounded like the owner of a draft, on the source config
-// annotations a document carries only to show them, and on the custom icons
-// and the templates the editor adds ([MaxDocumentIcons], [MaxIconBytes],
-// [MaxIconPixels], [MaxTemplates], [MaxTemplateDeviceBytes]), which it
-// checks by the same rules before it saves.
+// name, which the draft service records as a title, on the users the
+// metadata names, which are bounded like the owner of a draft, on the
+// diagram notes ([MaxDiagramNotes], [MaxDiagramNoteBytes]), on the source
+// config annotations a document carries only to show them, and on the custom
+// icons and the templates the editor adds ([MaxDocumentIcons],
+// [MaxIconBytes], [MaxIconPixels], [MaxTemplates],
+// [MaxTemplateDeviceBytes]), which it checks by the same rules before it
+// saves.
 //
 // A custom icon is untrusted image data that other users' browsers draw. The
 // only form accepted is a small PNG holding nothing but its pixels
 // ([ValidateIconPNG]); [NormalizeIconPNG] makes one from any PNG by decoding
 // and encoding it again. Nothing here reads SVG or any other format.
 //
-// The header's author, createdAt, updatedBy and updatedAt are ordinary
+// The metadata's createdBy, createdAt, updatedBy and updatedAt are ordinary
 // content: this package checks their form ([MaxUserBytes], [TimeLayout]) and
 // never sets them. The draft service does, when it stores a snapshot.
 package builder

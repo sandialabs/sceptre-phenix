@@ -14,15 +14,27 @@ import (
 )
 
 // claimedDocument returns the test document of name, claiming the given
-// author, creation time, last editor and last edit time.
+// creator, creation time, last editor and last edit time.
 func claimedDocument(t *testing.T, name string, claim builder.Provenance) []byte {
 	t.Helper()
 
 	return stampedDocument(t, testDocument(t, name, 0), claim)
 }
 
+// metadataOf returns the metadata object of a document decoded as a map.
+func metadataOf(t *testing.T, doc map[string]any) map[string]any {
+	t.Helper()
+
+	metadata, ok := doc["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("the document has no metadata object: %v", doc)
+	}
+
+	return metadata
+}
+
 // snapshotProvenance returns what the document of one snapshot of a draft
-// holds in its four header fields.
+// holds in its four provenance fields.
 func snapshotProvenance(t *testing.T, h *testHarness, draftID, snapshotID string) builder.Provenance {
 	t.Helper()
 
@@ -67,9 +79,9 @@ func TestCreateDraftStampsTheDocument(t *testing.T) {
 	switch {
 	case meta.Stamp == nil || *meta.Stamp != want:
 		t.Fatalf("stamp = %+v, want %+v", meta.Stamp, want)
-	case meta.DocumentAuthor != testActor || meta.DocumentCreatedAt != want.CreatedAt:
+	case meta.DocumentCreatedBy != testActor || meta.DocumentCreatedAt != want.CreatedAt:
 		t.Fatalf("the draft records %q at %q, want %q at %q",
-			meta.DocumentAuthor, meta.DocumentCreatedAt, testActor, want.CreatedAt)
+			meta.DocumentCreatedBy, meta.DocumentCreatedAt, testActor, want.CreatedAt)
 	case !meta.Created.Equal(memrecord.Time(1)) || !meta.Updated.Equal(memrecord.Time(1)) ||
 		!meta.History[0].CreatedAt.Equal(memrecord.Time(1)):
 		t.Fatalf("created %s, updated %s, snapshot %s; want one time for all three",
@@ -88,16 +100,16 @@ func TestCreateDraftStampsTheDocument(t *testing.T) {
 		t.Fatalf("GetDraft = stamp %+v, %s; want none", stored.Stamp, fmtErr(err))
 	}
 
-	if stored.DocumentAuthor != testActor || stored.DocumentCreatedAt != want.CreatedAt {
-		t.Fatalf("the stored draft records %q at %q", stored.DocumentAuthor, stored.DocumentCreatedAt)
+	if stored.DocumentCreatedBy != testActor || stored.DocumentCreatedAt != want.CreatedAt {
+		t.Fatalf("the stored draft records %q at %q", stored.DocumentCreatedBy, stored.DocumentCreatedAt)
 	}
 }
 
-// TestCreateDraftKeepsTheAuthorADocumentNames covers a draft made from a
-// request body, such as an uploaded file: the author and the creation time
+// TestCreateDraftKeepsTheCreatorADocumentNames covers a draft made from a
+// request body, such as an uploaded file: the creator and the creation time
 // the document names are kept, each on its own, and what it says of its last
 // edit never is.
-func TestCreateDraftKeepsTheAuthorADocumentNames(t *testing.T) {
+func TestCreateDraftKeepsTheCreatorADocumentNames(t *testing.T) {
 	const (
 		elsewhere = "2019-05-06T07:08:09Z"
 		forged    = "2031-01-01T00:00:00Z"
@@ -110,34 +122,34 @@ func TestCreateDraftKeepsTheAuthorADocumentNames(t *testing.T) {
 	}{
 		{
 			name:  "all four",
-			claim: builder.Provenance{Author: "carol", CreatedAt: elsewhere, UpdatedBy: "mallory", UpdatedAt: forged},
-			want:  builder.Provenance{Author: "carol", CreatedAt: elsewhere, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z"},
+			claim: builder.Provenance{CreatedBy: "carol", CreatedAt: elsewhere, UpdatedBy: "mallory", UpdatedAt: forged},
+			want:  builder.Provenance{CreatedBy: "carol", CreatedAt: elsewhere, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z"},
 		},
 		{
-			name:  "an author and no creation time",
-			claim: builder.Provenance{Author: "carol", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
+			name:  "a creator and no creation time",
+			claim: builder.Provenance{CreatedBy: "carol", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
 			want:  stampAt("carol", 1, testActor, 1),
 		},
 		{
-			name:  "a creation time and no author",
-			claim: builder.Provenance{Author: "", CreatedAt: elsewhere, UpdatedBy: "", UpdatedAt: ""},
-			want:  builder.Provenance{Author: testActor, CreatedAt: elsewhere, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z"},
+			name:  "a creation time and no creator",
+			claim: builder.Provenance{CreatedBy: "", CreatedAt: elsewhere, UpdatedBy: "", UpdatedAt: ""},
+			want:  builder.Provenance{CreatedBy: testActor, CreatedAt: elsewhere, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z"},
 		},
 		{
 			name:  "a last edit only",
-			claim: builder.Provenance{Author: "", CreatedAt: "", UpdatedBy: "mallory", UpdatedAt: forged},
+			claim: builder.Provenance{CreatedBy: "", CreatedAt: "", UpdatedBy: "mallory", UpdatedAt: forged},
 			want:  stampAt(testActor, 1, testActor, 1),
 		},
 		{
-			// The longest author a document may name is one the draft record
+			// The longest creator a document may name is one the draft record
 			// can hold too, so the draft stays readable.
-			name:  "the longest author",
-			claim: builder.Provenance{Author: strings.Repeat("é", builder.MaxUserBytes/2), CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
+			name:  "the longest creator",
+			claim: builder.Provenance{CreatedBy: strings.Repeat("é", builder.MaxUserBytes/2), CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
 			want:  stampAt(strings.Repeat("é", builder.MaxUserBytes/2), 1, testActor, 1),
 		},
 		{
 			name:  "a name no phenix user has",
-			claim: builder.Provenance{Author: "Carol <carol@example.com>", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
+			claim: builder.Provenance{CreatedBy: "Carol <carol@example.com>", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
 			want:  stampAt("Carol <carol@example.com>", 1, testActor, 1),
 		},
 	} {
@@ -160,9 +172,9 @@ func TestCreateDraftKeepsTheAuthorADocumentNames(t *testing.T) {
 				t.Fatalf("the stored document holds %+v, want %+v", got, test.want)
 			}
 
-			if meta.DocumentAuthor != test.want.Author || meta.DocumentCreatedAt != test.want.CreatedAt {
+			if meta.DocumentCreatedBy != test.want.CreatedBy || meta.DocumentCreatedAt != test.want.CreatedAt {
 				t.Fatalf("the draft records %q at %q, want what the document was stored with",
-					meta.DocumentAuthor, meta.DocumentCreatedAt)
+					meta.DocumentCreatedBy, meta.DocumentCreatedAt)
 			}
 
 			assertSavedBy(t, h, meta)
@@ -171,8 +183,8 @@ func TestCreateDraftKeepsTheAuthorADocumentNames(t *testing.T) {
 }
 
 // TestAppendSnapshotStampsTheDocument covers a save by another user: the
-// author and the creation time are the draft's, the last edit is the saver's,
-// and nothing the request says of any of the four is kept.
+// creator and the creation time are the draft's, the last edit is the
+// saver's, and nothing the request says of any of the four is kept.
 func TestAppendSnapshotStampsTheDocument(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -182,7 +194,7 @@ func TestAppendSnapshotStampsTheDocument(t *testing.T) {
 	ticks := h.now.Load()
 
 	forged := builder.Provenance{
-		Author: "mallory", CreatedAt: "1999-01-01T00:00:00Z", UpdatedBy: testOwner, UpdatedAt: "2031-01-01T00:00:00Z",
+		CreatedBy: "mallory", CreatedAt: "1999-01-01T00:00:00Z", UpdatedBy: testOwner, UpdatedAt: "2031-01-01T00:00:00Z",
 	}
 
 	updated, err := h.service.AppendSnapshot(ctx, AppendSnapshotRequest{
@@ -202,9 +214,9 @@ func TestAppendSnapshotStampsTheDocument(t *testing.T) {
 	switch {
 	case updated.Stamp == nil || *updated.Stamp != want:
 		t.Fatalf("stamp = %+v, want %+v", updated.Stamp, want)
-	case updated.DocumentAuthor != testActor || updated.DocumentCreatedAt != first.CreatedAt:
+	case updated.DocumentCreatedBy != testActor || updated.DocumentCreatedAt != first.CreatedAt:
 		t.Fatalf("the draft now records %q at %q; a save must not change either",
-			updated.DocumentAuthor, updated.DocumentCreatedAt)
+			updated.DocumentCreatedBy, updated.DocumentCreatedAt)
 	case !updated.Updated.Equal(updated.Current().CreatedAt):
 		t.Fatalf("the draft was updated at %s and its snapshot stored at %s; want one time",
 			updated.Updated, updated.Current().CreatedAt)
@@ -219,7 +231,7 @@ func TestAppendSnapshotStampsTheDocument(t *testing.T) {
 		t.Fatalf("the first document now holds %+v, want %+v", got, first)
 	}
 
-	// The owner saves again: the author stays, the last editor changes back.
+	// The owner saves again: the creator stays, the last editor changes back.
 	updated = appendTestSnapshot(t, h, updated, "topo-v3", testOwner)
 
 	if want := stampAt(testActor, 1, testOwner, 3); *updated.Stamp != want {
@@ -328,7 +340,7 @@ func originOf(data []byte) *DocumentOrigin {
 // draft holds the origin's content under the origin's digest.
 func TestCreateDraftKeepsAnUnchangedCopy(t *testing.T) {
 	published := builder.Provenance{
-		Author: "carol", CreatedAt: "2025-03-04T05:06:07Z", UpdatedBy: "dave", UpdatedAt: "2025-06-07T08:09:10Z",
+		CreatedBy: "carol", CreatedAt: "2025-03-04T05:06:07Z", UpdatedBy: "dave", UpdatedAt: "2025-06-07T08:09:10Z",
 	}
 
 	for _, test := range []struct {
@@ -336,10 +348,10 @@ func TestCreateDraftKeepsAnUnchangedCopy(t *testing.T) {
 		origin builder.Provenance
 	}{
 		{name: "an origin with all four", origin: published},
-		{name: "an origin with no author", origin: builder.Provenance{Author: "", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""}},
+		{name: "an origin with no creator", origin: builder.Provenance{CreatedBy: "", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""}},
 		{
 			name:   "an origin with a last edit only",
-			origin: builder.Provenance{Author: "", CreatedAt: "", UpdatedBy: "dave", UpdatedAt: "2025-06-07T08:09:10Z"},
+			origin: builder.Provenance{CreatedBy: "", CreatedAt: "", UpdatedBy: "dave", UpdatedAt: "2025-06-07T08:09:10Z"},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -374,19 +386,19 @@ func TestCreateDraftKeepsAnUnchangedCopy(t *testing.T) {
 				t.Fatalf("digest = %s, want the origin's %s", meta.History[0].Digest, digestOf(origin))
 			case *meta.Stamp != test.origin:
 				t.Fatalf("stamp = %+v, want the origin's %+v", *meta.Stamp, test.origin)
-			case meta.DocumentAuthor != test.origin.Author || meta.DocumentCreatedAt != test.origin.CreatedAt:
+			case meta.DocumentCreatedBy != test.origin.CreatedBy || meta.DocumentCreatedAt != test.origin.CreatedAt:
 				t.Fatalf("the draft records %q at %q, want the origin's %q at %q",
-					meta.DocumentAuthor, meta.DocumentCreatedAt, test.origin.Author, test.origin.CreatedAt)
+					meta.DocumentCreatedBy, meta.DocumentCreatedAt, test.origin.CreatedBy, test.origin.CreatedAt)
 			case meta.History[0].CreatedBy != testActor || meta.Owner != testOwner:
 				t.Fatalf("the snapshot was stored by %q for %q", meta.History[0].CreatedBy, meta.Owner)
 			}
 
 			// A save then is the caller's edit of the origin's document: the
-			// origin's author stays, also when it has none.
+			// origin's creator stays, also when it has none.
 			meta = appendTestSnapshot(t, h, meta, "topo-v2", testPeer)
 
 			want := builder.Provenance{
-				Author:    test.origin.Author,
+				CreatedBy: test.origin.CreatedBy,
 				CreatedAt: test.origin.CreatedAt,
 				UpdatedBy: testPeer,
 				UpdatedAt: builder.FormatTime(meta.Current().CreatedAt),
@@ -404,7 +416,7 @@ func TestCreateDraftKeepsAnUnchangedCopy(t *testing.T) {
 // caller's edit, stamped like any other body.
 func TestCreateDraftStampsAChangedCopy(t *testing.T) {
 	published := builder.Provenance{
-		Author: "carol", CreatedAt: "2025-03-04T05:06:07Z", UpdatedBy: "dave", UpdatedAt: "2025-06-07T08:09:10Z",
+		CreatedBy: "carol", CreatedAt: "2025-03-04T05:06:07Z", UpdatedBy: "dave", UpdatedAt: "2025-06-07T08:09:10Z",
 	}
 
 	origin := claimedDocument(t, "topo", published)
@@ -416,30 +428,37 @@ func TestCreateDraftStampsAChangedCopy(t *testing.T) {
 	}{
 		{
 			name: "changed content",
-			body: mutateDocument(t, origin, func(doc map[string]any) { doc["description"] = "edited" }),
+			body: mutateDocument(t, origin, func(doc map[string]any) { metadataOf(t, doc)["description"] = "edited" }),
 			want: builder.Provenance{
-				Author: "carol", CreatedAt: published.CreatedAt, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
+				CreatedBy: "carol", CreatedAt: published.CreatedAt, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
+			},
+		},
+		{
+			name: "changed notes",
+			body: mutateDocument(t, origin, func(doc map[string]any) { metadataOf(t, doc)["notes"] = []any{"edited"} }),
+			want: builder.Provenance{
+				CreatedBy: "carol", CreatedAt: published.CreatedAt, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
 			},
 		},
 		{
 			name: "a forged last editor",
-			body: mutateDocument(t, origin, func(doc map[string]any) { doc["updatedBy"] = "mallory" }),
+			body: mutateDocument(t, origin, func(doc map[string]any) { metadataOf(t, doc)["updatedBy"] = "mallory" }),
 			want: builder.Provenance{
-				Author: "carol", CreatedAt: published.CreatedAt, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
+				CreatedBy: "carol", CreatedAt: published.CreatedAt, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
 			},
 		},
 		{
-			name: "another author",
-			body: mutateDocument(t, origin, func(doc map[string]any) { doc["author"] = "mallory" }),
+			name: "another creator",
+			body: mutateDocument(t, origin, func(doc map[string]any) { metadataOf(t, doc)["createdBy"] = "mallory" }),
 			want: builder.Provenance{
-				Author: "mallory", CreatedAt: published.CreatedAt, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
+				CreatedBy: "mallory", CreatedAt: published.CreatedAt, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
 			},
 		},
 		{
-			name: "the author removed",
-			body: mutateDocument(t, origin, func(doc map[string]any) { delete(doc, "author") }),
+			name: "the creator removed",
+			body: mutateDocument(t, origin, func(doc map[string]any) { delete(metadataOf(t, doc), "createdBy") }),
 			want: builder.Provenance{
-				Author: testActor, CreatedAt: published.CreatedAt, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
+				CreatedBy: testActor, CreatedAt: published.CreatedAt, UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
 			},
 		},
 	} {
@@ -474,7 +493,7 @@ func TestCreateDraftWithoutAnOriginStampsAnEqualDocument(t *testing.T) {
 	h := newHarness(t)
 
 	origin := claimedDocument(t, "topo", builder.Provenance{
-		Author: "carol", CreatedAt: "2025-03-04T05:06:07Z", UpdatedBy: "dave", UpdatedAt: "2025-06-07T08:09:10Z",
+		CreatedBy: "carol", CreatedAt: "2025-03-04T05:06:07Z", UpdatedBy: "dave", UpdatedAt: "2025-06-07T08:09:10Z",
 	})
 
 	meta, err := h.service.CreateDraft(context.Background(), CreateDraftRequest{
@@ -486,7 +505,7 @@ func TestCreateDraftWithoutAnOriginStampsAnEqualDocument(t *testing.T) {
 	}
 
 	want := builder.Provenance{
-		Author: "carol", CreatedAt: "2025-03-04T05:06:07Z", UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
+		CreatedBy: "carol", CreatedAt: "2025-03-04T05:06:07Z", UpdatedBy: testActor, UpdatedAt: "2024-01-01T00:00:01Z",
 	}
 
 	if *meta.Stamp != want || meta.History[0].Digest == digestOf(origin) {
@@ -504,10 +523,10 @@ func TestCreateDraftWithoutAnOriginStampsAnEqualDocument(t *testing.T) {
 	}
 }
 
-// TestAppendSnapshotToADraftWithoutAnAuthor covers a draft stored before its
-// record held the document's author: a save works, writes the last edit, and
-// leaves the author and the creation time out, whatever the request says.
-func TestAppendSnapshotToADraftWithoutAnAuthor(t *testing.T) {
+// TestAppendSnapshotToADraftWithoutACreator covers a draft stored before its
+// record held the document's creator: a save works, writes the last edit, and
+// leaves the creator and the creation time out, whatever the request says.
+func TestAppendSnapshotToADraftWithoutACreator(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 
@@ -519,7 +538,7 @@ func TestAppendSnapshotToADraftWithoutAnAuthor(t *testing.T) {
 			return nil, err
 		}
 
-		delete(record, "documentAuthor")
+		delete(record, "documentCreatedBy")
 		delete(record, "documentCreatedAt")
 
 		return json.Marshal(record)
@@ -529,11 +548,11 @@ func TestAppendSnapshotToADraftWithoutAnAuthor(t *testing.T) {
 	}
 
 	stored, err := h.service.GetDraft(ctx, meta.ID)
-	if err != nil || stored.DocumentAuthor != "" || stored.DocumentCreatedAt != "" {
-		t.Fatalf("GetDraft = %+v, %s; want a draft that records no author", stored, fmtErr(err))
+	if err != nil || stored.DocumentCreatedBy != "" || stored.DocumentCreatedAt != "" {
+		t.Fatalf("GetDraft = %+v, %s; want a draft that records no creator", stored, fmtErr(err))
 	}
 
-	claim := builder.Provenance{Author: "mallory", CreatedAt: "1999-01-01T00:00:00Z", UpdatedBy: "", UpdatedAt: ""}
+	claim := builder.Provenance{CreatedBy: "mallory", CreatedAt: "1999-01-01T00:00:00Z", UpdatedBy: "", UpdatedAt: ""}
 
 	updated, err := h.service.AppendSnapshot(ctx, AppendSnapshotRequest{
 		DraftID: meta.ID, Actor: testPeer, ExpectedRevision: stored.Revision,
@@ -544,15 +563,15 @@ func TestAppendSnapshotToADraftWithoutAnAuthor(t *testing.T) {
 	}
 
 	want := builder.Provenance{
-		Author: "", CreatedAt: "", UpdatedBy: testPeer, UpdatedAt: builder.FormatTime(updated.Current().CreatedAt),
+		CreatedBy: "", CreatedAt: "", UpdatedBy: testPeer, UpdatedAt: builder.FormatTime(updated.Current().CreatedAt),
 	}
 
 	if got := snapshotProvenance(t, h, meta.ID, updated.Current().ID); got != want || *updated.Stamp != want {
 		t.Fatalf("the saved document holds %+v (stamp %+v), want %+v", got, *updated.Stamp, want)
 	}
 
-	if updated.DocumentAuthor != "" || updated.DocumentCreatedAt != "" {
-		t.Fatalf("the save recorded %q at %q; a save never sets either", updated.DocumentAuthor, updated.DocumentCreatedAt)
+	if updated.DocumentCreatedBy != "" || updated.DocumentCreatedAt != "" {
+		t.Fatalf("the save recorded %q at %q; a save never sets either", updated.DocumentCreatedBy, updated.DocumentCreatedAt)
 	}
 
 	current, err := h.service.GetCurrentDocument(ctx, meta.ID)
@@ -560,7 +579,7 @@ func TestAppendSnapshotToADraftWithoutAnAuthor(t *testing.T) {
 		t.Fatalf("GetCurrentDocument returned error: %v", err)
 	}
 
-	for _, key := range []string{`"author"`, `"createdAt"`} {
+	for _, key := range []string{`"createdBy"`, `"createdAt"`} {
 		if bytes.Contains(current.Data, []byte(key)) {
 			t.Fatalf("the saved document holds %s:\n%s", key, current.Data)
 		}
@@ -577,15 +596,15 @@ func TestMalformedProvenanceRefusesTheRequest(t *testing.T) {
 	meta := createTestDraft(t, h, "topo")
 
 	for name, claim := range map[string]builder.Provenance{
-		"author with a control character": {Author: "al\x07ice", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
-		"author too long": {
-			Author: strings.Repeat("a", builder.MaxUserBytes+1), CreatedAt: "", UpdatedBy: "", UpdatedAt: "",
+		"createdBy with a control character": {CreatedBy: "al\x07ice", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
+		"createdBy too long": {
+			CreatedBy: strings.Repeat("a", builder.MaxUserBytes+1), CreatedAt: "", UpdatedBy: "", UpdatedAt: "",
 		},
-		"createdAt with an offset": {Author: "", CreatedAt: "2026-10-01T15:04:05+00:00", UpdatedBy: "", UpdatedAt: ""},
+		"createdAt with an offset": {CreatedBy: "", CreatedAt: "2026-10-01T15:04:05+00:00", UpdatedBy: "", UpdatedAt: ""},
 		"updatedBy too long": {
-			Author: "", CreatedAt: "", UpdatedBy: strings.Repeat("b", builder.MaxUserBytes+1), UpdatedAt: "",
+			CreatedBy: "", CreatedAt: "", UpdatedBy: strings.Repeat("b", builder.MaxUserBytes+1), UpdatedAt: "",
 		},
-		"updatedAt that is no time": {Author: "", CreatedAt: "", UpdatedBy: "", UpdatedAt: "yesterday"},
+		"updatedAt that is no time": {CreatedBy: "", CreatedAt: "", UpdatedBy: "", UpdatedAt: "yesterday"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			document := claimedDocument(t, "topo-v2", claim)
@@ -710,7 +729,7 @@ func mustDecode(t *testing.T, data []byte) *builder.Document {
 }
 
 // TestPutPublishedDocumentNeverStamps checks that publishing stores a
-// document as it is, whatever it says of its author and its last edit: a
+// document as it is, whatever it says of its creator and its last edit: a
 // published document holds exactly the snapshot it was published from, and a
 // document a file holds is stored as the file has it.
 func TestPutPublishedDocumentNeverStamps(t *testing.T) {
@@ -731,7 +750,7 @@ func TestPutPublishedDocumentNeverStamps(t *testing.T) {
 		"a snapshot":                   snapshot.Data,
 		"a document that names nobody": testDocument(t, "plain", 0),
 		"a document from elsewhere": claimedDocument(t, "elsewhere", builder.Provenance{
-			Author: "carol", CreatedAt: "2019-05-06T07:08:09Z", UpdatedBy: "dave", UpdatedAt: "2031-01-01T00:00:00Z",
+			CreatedBy: "carol", CreatedAt: "2019-05-06T07:08:09Z", UpdatedBy: "dave", UpdatedAt: "2031-01-01T00:00:00Z",
 		}),
 	} {
 		published, err := h.service.PutPublishedDocument(ctx, PutPublishedDocumentRequest{
@@ -789,8 +808,8 @@ func TestAmbiguousWritesReturnTheStamp(t *testing.T) {
 		t.Fatalf("stamp = %+v, want %+v", created.Stamp, want)
 	}
 
-	if created.SourceFile != "upload.json" || created.DocumentAuthor != testActor {
-		t.Fatalf("the settled draft records file %q and author %q", created.SourceFile, created.DocumentAuthor)
+	if created.SourceFile != "upload.json" || created.DocumentCreatedBy != testActor {
+		t.Fatalf("the settled draft records file %q and creator %q", created.SourceFile, created.DocumentCreatedBy)
 	}
 
 	appended, err := h.service.AppendSnapshot(ctx, AppendSnapshotRequest{
@@ -812,7 +831,7 @@ func TestAmbiguousWritesReturnTheStamp(t *testing.T) {
 	}
 }
 
-// TestDraftRecordProvenanceIsValidated checks that the author, the creation
+// TestDraftRecordProvenanceIsValidated checks that the creator, the creation
 // time and the source file a stored draft record holds are read as strictly
 // as the rest of it: a record with a value no draft could have been stored
 // with is damaged.
@@ -823,8 +842,8 @@ func TestDraftRecordProvenanceIsValidated(t *testing.T) {
 	meta := createTestDraft(t, h, "topo")
 
 	for name, change := range map[string]map[string]any{
-		"an author with a control character":  {"documentAuthor": "al\nice"},
-		"an author that is too long":          {"documentAuthor": strings.Repeat("a", MaxOwnerLength+1)},
+		"a creator with a control character":  {"documentCreatedBy": "al\nice"},
+		"a creator that is too long":          {"documentCreatedBy": strings.Repeat("a", MaxOwnerLength+1)},
 		"a creation time with an offset":      {"documentCreatedAt": "2026-10-01T15:04:05+00:00"},
 		"a creation time with a fraction":     {"documentCreatedAt": "2026-10-01T15:04:05.5Z"},
 		"a creation time that is no time":     {"documentCreatedAt": "then"},
@@ -833,8 +852,9 @@ func TestDraftRecordProvenanceIsValidated(t *testing.T) {
 		"a source file that is too long":      {"sourceFile": strings.Repeat("f", MaxSourceFileLength+1)},
 		"a source file with a control":        {"sourceFile": "file\x00.json"},
 		"a field this version does not know":  {"documentUpdatedBy": "alice"},
-		"an author that is not text":          {"documentAuthor": 7},
-		"a stored stamp, which is never kept": {"stamp": map[string]any{"author": "alice"}},
+		"a creator that is not text":          {"documentCreatedBy": 7},
+		"the author key of an older record":   {"documentAuthor": "alice"},
+		"a stored stamp, which is never kept": {"stamp": map[string]any{"createdBy": "alice"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			original, err := h.store.GetRecord(NamespaceDrafts, meta.ID)
@@ -893,14 +913,14 @@ func TestStampIsNeverStored(t *testing.T) {
 		}
 	}
 
-	if stored["documentAuthor"] != testActor || stored["documentCreatedAt"] != meta.Stamp.CreatedAt {
-		t.Fatalf("the draft record holds author %v at %v", stored["documentAuthor"], stored["documentCreatedAt"])
+	if stored["documentCreatedBy"] != testActor || stored["documentCreatedAt"] != meta.Stamp.CreatedAt {
+		t.Fatalf("the draft record holds creator %v at %v", stored["documentCreatedBy"], stored["documentCreatedAt"])
 	}
 
 	clone := meta.Clone()
-	clone.Stamp.Author = "changed"
+	clone.Stamp.CreatedBy = "changed"
 
-	if meta.Stamp.Author != testActor {
+	if meta.Stamp.CreatedBy != testActor {
 		t.Fatal("a clone shares its stamp with the metadata it was made from")
 	}
 }

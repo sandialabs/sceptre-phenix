@@ -40,12 +40,12 @@
 // creates or updates the Topology config through phenix/api/config. That is
 // the only config this package stores.
 //
-// A document names who made it and who last saved it, and when (see
-// [phenix/types/builder.Provenance]). This package sets those four fields,
-// and only when it stores a draft snapshot: [Service.CreateDraft] keeps the
-// author and the creation time a document already names and otherwise writes
-// the actor and now, [Service.AppendSnapshot] writes the ones the draft
-// records, and both write the actor and now as the last editor and the last
+// A document's metadata names who made it and who last saved it, and when
+// (see [phenix/types/builder.Provenance]). This package sets those four
+// fields, and only when it stores a draft snapshot: [Service.CreateDraft]
+// keeps the creator and the creation time a document already names and
+// otherwise writes the actor and now, [Service.AppendSnapshot] writes the
+// ones the draft records, and both write the actor and now as the last editor and the last
 // edit time, whatever the request says of them. So the last editor of every
 // snapshot a save stored is the actor of that save, at the time its manifest
 // records. A draft opened from a document the caller read itself, and sent

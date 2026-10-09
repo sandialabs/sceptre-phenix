@@ -1,13 +1,15 @@
 {
   "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
   "revision": 1,
-  "id": "35923065-de11-56bc-9e1d-a307308716a7",
-  "name": "Riverside Water",
-  "description": "Water utility training range: internet edge, DMZ, corporate and OT networks.",
-  "author": "e2e-admin",
-  "createdAt": "2026-09-29T18:17:59Z",
-  "updatedBy": "e2e-admin",
-  "updatedAt": "2026-09-29T18:31:44Z",
+  "metadata": {
+    "id": "35923065-de11-56bc-9e1d-a307308716a7",
+    "name": "Riverside Water",
+    "description": "Water utility training range: internet edge, DMZ, corporate and OT networks.",
+    "createdBy": "e2e-admin",
+    "createdAt": "2026-09-29T18:17:59Z",
+    "updatedBy": "e2e-admin",
+    "updatedAt": "2026-09-29T18:31:44Z"
+  },
   "nodes": [
     {
       "id": "017b57e6-1d23-5555-a576-d0cdc682109a",

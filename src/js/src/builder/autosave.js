@@ -26,11 +26,11 @@
 // are ordered, awaited and carry If-Match. "Cursor" here means the position in
 // the draft's own undo history, not a collaborator's caret.
 //
-// A save stores the document with the author, creation time, last editor and
-// last edit time the server writes into it, and answers with them (the
-// stamp). The queue copies the stamp into its own copy of the snapshot it
-// sent, so that copy is the document the server stores (see withStamp in
-// model.js). It never makes these values up.
+// A save stores the document with the creator, creation time, last editor
+// and last edit time the server writes into its metadata, and answers with
+// them (the stamp). The queue copies the stamp into its own copy of the
+// snapshot it sent, so that copy is the document the server stores (see
+// withStamp in model.js). It never makes these values up.
 //
 // Other tabs of this browser are another matter (see tabs.js). Each tab
 // keeps its own local record of a draft, and while another tab, or a queue
@@ -145,7 +145,7 @@ export function snapshotIdOf(envelope) {
 }
 
 /**
- * The stamp a create or save answered with: the author, creation time, last
+ * The stamp a create or save answered with: the creator, creation time, last
  * editor and last edit time of the document it stored. Empty for a document
  * that names none of them.
  *
@@ -1564,7 +1564,10 @@ export function createAutosave(options = {}) {
       const index = Math.min(Math.max(options.index ?? last, 0), last);
       const [first, ...rest] = entries;
       const request = {
-        title: options.title || first.snapshot?.name || 'Recovered diagram',
+        title:
+          options.title ||
+          first.snapshot?.metadata?.name ||
+          'Recovered diagram',
         document: first.snapshot,
         // An editor history starts at the document as opened, which names
         // no edit.

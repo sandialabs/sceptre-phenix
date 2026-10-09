@@ -50,7 +50,7 @@ describe('newId', () => {
 
     const doc = createDocument({ name: 'Plain HTTP' });
 
-    expect(doc.id).toMatch(UUID_V4);
+    expect(doc.metadata.id).toMatch(UUID_V4);
     // The digest the server computes for {"a":1}.
     await expect(contentDigest({ a: 1 })).resolves.toBe(
       'sha256:015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862',

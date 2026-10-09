@@ -84,7 +84,7 @@ imported from, sorted by key and without `builder-` ones, under "From <Kind>
 value too long for its box scrolls in it, and Tab reaches the box only while
 it scrolls. Above Annotations, a read-only Details block shows the document's
 provenance (see [Document provenance](#document-provenance)): "Created
-<time> by <author>", "Last edited <time> by <updatedBy>", and "Source file
+<time> by <createdBy>", "Last edited <time> by <updatedBy>", and "Source file
 <name>" when the draft record has `sourceFile`; a row without a value is
 left out, and the block when no row is left. Scenario says whether the
 scenario is stored or uploaded and lists
@@ -649,8 +649,8 @@ is refused (`POST`/`PUT /configs` answer 400).
 metadata:
   annotations:
     builder-doc:
-      digest: sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
-      id: b856fc9e35107594f72e715f74ee1cae3eb951b41bf09a504327924e0a220d34
+      digest: sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
+      id: fd063e784604f43e5c39cc9959501cf117b4dc2be895e92f9bb98e23f8465c4b
       path: /phenix/topologies/pump-station/pump-station.builder.json
 ```
 
@@ -803,11 +803,61 @@ In the UI a file row has the local id `file/<topology>`, a text tag File,
 viewing the diagram of topology <t>, read from <path> on the phenix
 server.", plus a sentence when `topologyDiffers`.
 
+## Document metadata
+
+A Builder document's root keys are, in this order, `$schema`, `revision`,
+`metadata`, then the content: `nodes`, `networks`, `edges`, `viewport`,
+`grid`, and the optional `scenario`, `source`, `layout`, `templates` and
+`icons`. `metadata` (`bdoc.Metadata`) is required and holds only `id`
+(required, the document ID), `name`, `description`, the four provenance
+fields below, and `notes`. Strict decoding refuses any other key there, and
+refuses the metadata keys at the root (there is no shim for the old root
+fields `id`, `name`, `description`, `author`, ...). A missing or null
+`metadata` is reported as `metadata.id` "document ID is required"; issue
+paths name the new place (`metadata.createdBy`, `metadata.notes[3]`). Go
+(`validateMetadata` in `validate.go`) and JS (`validate.js`, `decode.js`)
+check it alike through the shared corpus.
+
+`metadata.notes` are free text about the diagram as a whole: at most 100
+(`MaxDiagramNotes`, `MAX_DIAGRAM_NOTES`), each not blank after trimming, at
+most 4096 bytes (`MaxDiagramNoteBytes`) and free of control characters but
+newline and tab. They are document content (in the digest) and never
+written to a config. The Inspector's Diagram view lists them after Scenario
+under Notes (`InspectorDiagram.vue`, testids `inspector-notes`,
+`inspector-note-N`, `inspector-note-add`): a textarea "Note N" and a
+"Delete note N" button each, "No notes." when there are none, and Add note,
+disabled at 100 with a hint. A note is written when its textarea fires
+`change`, through `store.setDiagramNotes(notes)` (model `setDiagramNotes`,
+one undo step "Updated diagram notes"); blank rows are dropped. Text over
+4096 UTF-8 bytes or with another control character is never written:
+`diagramNoteProblem` (`model.js`) names why, the textarea gets
+`aria-invalid` and an error under it (`role="alert"`, testid
+`inspector-note-error-N`, named by `aria-describedby`), and the diagram
+keeps that note as last saved until the text is fixed; model
+`setDiagramNotes` returns the document unchanged for a list holding such a
+note. "Blank" means only Go's `unicode.IsSpace` white space everywhere
+(`isBlank` in `text.js`, `trimSpace` in `validate.js`, and `notePattern` in
+`schema.go`, which spells the set out as `\x00-\x20\x7f\x85\p{Z}` since `\s`
+differs between Go and ECMAScript): U+0085 is blank, U+FEFF is not. A
+read-only draft shows the notes as text.
+
+The generated schema (`builder.Schema()`, committed as
+`src/js/src/builder/schema/builder-v1.schema.json`) gives every
+Builder-owned property a `title`, a `description` and `examples`
+(`documented()` in `schema.go`, values in `schema_examples.go`; the bundled
+phenix `$defs` are left alone). `TestSchemaDocumentsEveryProperty` walks it in Go and
+`schema-examples.test.js` checks each example against its subschema with
+ajv. The Inspector does not show these titles: `schema.js` strips them from
+the fields it builds, so labels stay as they were. `openapi.yml` lists the
+root (`BuilderDocument`) and metadata (`BuilderDocumentMetadata`)
+properties, which `TestBuilderDocumentDocumented` in `web/builder_test.go`
+holds to the Go structs.
+
 ## Document provenance
 
-A document has four optional top-level string fields after `description`:
-`author`, `createdAt`, `updatedBy`, `updatedAt`. Users are at most 256
-bytes with no control characters; times are exactly
+A document's `metadata` has four optional string fields after
+`description`: `createdBy`, `createdAt`, `updatedBy`, `updatedAt`. Users are
+at most 256 bytes with no control characters; times are exactly
 `YYYY-MM-DDTHH:MM:SSZ` (UTC, whole seconds); an empty string or null is
 none; no pairing or ordering rule. Revision stays 1. They are document
 content and part of its digest. `source.updatedAt` is a different field
@@ -816,11 +866,12 @@ content and part of its digest. `source.updatedAt` is a different field
 The server stamps them in `api/builder` when it stores a draft snapshot;
 the editor never sets them:
 
-- `POST /builder/drafts` (`CreateDraft`): `author` and `createdAt` are the
-  body's when present, else the caller and now; `updatedBy` and `updatedAt`
-  are always the caller and now. The draft record keeps the two as
-  `documentAuthor` and `documentCreatedAt`. So an Upload keeps the file's
-  author, and anyone with `configs` `create` can name any author. A body
+- `POST /builder/drafts` (`CreateDraft`): `createdBy` and `createdAt` are
+  the body's when present, else the caller and now; `updatedBy` and
+  `updatedAt` are always the caller and now. The draft record keeps the two
+  as `documentCreatedBy` and `documentCreatedAt` (a record with the old key
+  `documentAuthor` is refused as corrupt). So an Upload keeps the file's
+  `createdBy`, and anyone with `configs` `create` can name anyone. A body
   cannot set `updatedBy` or `updatedAt`, except through the unchanged copy
   below.
 - Unchanged copy: with `sourceToken` `builder-doc/<id>` or
@@ -832,7 +883,7 @@ the editor never sets them:
   says, also in what the draft publishes before its first save, as in a
   document `phenix builder publish` stores: they are only as trustworthy as
   whoever can write the file.
-- `POST .../snapshots` (`AppendSnapshot`): `author` and `createdAt` come from
+- `POST .../snapshots` (`AppendSnapshot`): `createdBy` and `createdAt` come from
   the draft record (left out when it has none); `updatedBy` and `updatedAt`
   are the caller and now, equal to the snapshot's `createdBy` and its
   `createdAt` cut to seconds. Every save is an edit, also one that changes
@@ -844,7 +895,7 @@ the editor never sets them:
   and save.
 
 Create and save responses have no document, so they carry `stamp:
-{author?, createdAt?, updatedBy?, updatedAt?}` (empty fields left out, `{}`
+{createdBy?, createdAt?, updatedBy?, updatedAt?}` (empty fields left out, `{}`
 for an unchanged copy of a document that names nobody); the editor copies
 it into its document (`withStamp` in `model.js`). No other response has
 `stamp`. Copying it replaces `store.doc`, so the Inspector's watch on the
@@ -1015,7 +1066,7 @@ device and switch `outlineColor`, `fillColor` (`#rrggbb`); network and edge
 `lineStyle` (`solid`, `dashed`, `dotted`, `dash-dot`; empty is Auto); group
 `description`, `borderStyle` (`solid`, `dashed`, `dotted`, `double`),
 `iconKey`, `icon`; device `icon`; root `icons` (`{"sha256:<hex>": {name?,
-data}}`, at most 32, each a PNG of 1 to 96 pixels a side and at most 40960
+data}}`, at most 50 (`MaxDocumentIcons`, `MAX_DOCUMENT_ICONS`), each a PNG of 1 to 96 pixels a side and at most 40960
 bytes, chunks `IHDR`, `PLTE`, `tRNS`, `IDAT`, `IEND` only, key = SHA-256 of
 the bytes; `bdoc.ValidateIcons`, `customicons.go`) and root `templates` (at
 most 50; see [Node templates](#node-templates)). Go and JS validate them
@@ -1068,7 +1119,7 @@ one record per user in `builder.templates` under `lib/<OwnerScope(user)>`
 custom icons they name (`icons`). A user with no record has the five
 built-in templates at version 1; the first change stores them, and a
 deleted one never comes back. Limits: 200 templates, 50 collections, 200
-templates per collection, 32 icons, 25 users per item. Every write is
+templates per collection, 50 icons, 25 users per item. Every write is
 `Service.UpdateLibrary(ctx, owner, actor, change)`: read, run `change`,
 drop unused icons, stamp versions and times, validate, write against the
 read revision; up to 5 tries, then `ErrBusy` (503, `Retry-After: 1`).

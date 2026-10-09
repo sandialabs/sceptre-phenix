@@ -44,3 +44,33 @@ export function hasControlCharacters(text) {
     (ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f,
   );
 }
+
+/**
+ * @param {string} text
+ * @returns {boolean} whether the text holds a control character other than
+ *   the newline and the tab, which text of several lines needs: what the
+ *   server refuses in a diagram note
+ */
+export function hasControlCharactersInLines(text) {
+  return [...text].some(
+    (ch) => ch !== '\n' && ch !== '\t' && hasControlCharacters(ch),
+  );
+}
+
+// The code points of the white space Go's strings.TrimSpace trims
+// (unicode.IsSpace). String's own trim differs by two characters: it keeps
+// U+0085 and trims U+FEFF.
+const GO_SPACE = new Set([
+  0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0x85, 0xa0, 0x1680, 0x2000, 0x2001,
+  0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a,
+  0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
+]);
+
+/**
+ * @param {string} text
+ * @returns {boolean} whether the text is empty or only white space, as the
+ *   server finds it blank
+ */
+export function isBlank(text) {
+  return [...String(text ?? '')].every((ch) => GO_SPACE.has(ch.codePointAt(0)));
+}

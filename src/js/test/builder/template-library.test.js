@@ -714,7 +714,7 @@ describe('the template library in the store', () => {
       nameBytes: 128,
       descriptionBytes: 1024,
       deviceBytes: 16384,
-      icons: 32,
+      icons: 50,
     });
     expect(store.ownTemplates).toEqual([]);
     expect(store.paletteTemplateGroups.map((group) => group.id)).toEqual([

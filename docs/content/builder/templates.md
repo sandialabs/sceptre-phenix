@@ -369,7 +369,7 @@ storage.
 | Templates in a library | 200 |
 | Collections in a library | 50 |
 | Templates in a collection | 200 |
-| Custom icons used by a library's templates | 32 |
+| Custom icons used by a library's templates | 50 |
 | Whole library: templates, collections and icons | 512 KiB |
 | Template name | 1 to 128 bytes, one line |
 | Template description | 1024 bytes, one line |

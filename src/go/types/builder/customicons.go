@@ -34,7 +34,7 @@ const (
 
 	// MaxDocumentIcons is the most custom icons a document may carry (see
 	// [Document.Icons]).
-	MaxDocumentIcons = 32
+	MaxDocumentIcons = 50
 )
 
 // pngSignature starts every PNG file. It is what makes bytes a PNG here: no

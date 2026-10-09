@@ -274,7 +274,7 @@ func TestPublishTopologyCreates(t *testing.T) { //nolint:paralleltest // replace
 
 	doc := publishableDocument(" Lab topology (2) ", "alpha", "beta")
 	doc.SetProvenance(builder.Provenance{
-		Author: "carol", CreatedAt: "2026-01-02T03:04:05Z", UpdatedBy: "dave", UpdatedAt: "2026-02-03T04:05:06Z",
+		CreatedBy: "carol", CreatedAt: "2026-01-02T03:04:05Z", UpdatedBy: "dave", UpdatedAt: "2026-02-03T04:05:06Z",
 	})
 
 	data, err := EncodeDocument(doc)

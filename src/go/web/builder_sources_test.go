@@ -856,8 +856,8 @@ func TestBuilderGenerateChoices(t *testing.T) {
 		`{"content":"` + file + `","includes":"combine"}`:              "plant-combined",
 		`{"content":"` + file + `","includes":"keep","copy":true}`:     "plant-copy",
 	} {
-		if _, document := builderGenerate(t, harness, nil, body); document.Name != want {
-			t.Errorf("%.80s: document name = %q, want %q", body, document.Name, want)
+		if _, document := builderGenerate(t, harness, nil, body); document.Metadata.Name != want {
+			t.Errorf("%.80s: document name = %q, want %q", body, document.Metadata.Name, want)
 		}
 	}
 }
@@ -883,8 +883,8 @@ func TestBuilderGenerateCopy(t *testing.T) {
 	} {
 		response, document := builderGenerate(t, harness, nil, body)
 
-		if document.Name != name || document.ID != bdoc.DocumentID(name) {
-			t.Errorf("%s: name = %q, id = %q, want %q and its document ID", body, document.Name, document.ID, name)
+		if document.Metadata.Name != name || document.Metadata.ID != bdoc.DocumentID(name) {
+			t.Errorf("%s: name = %q, id = %q, want %q and its document ID", body, document.Metadata.Name, document.Metadata.ID, name)
 		}
 
 		source := document.Source
@@ -932,8 +932,8 @@ func TestBuilderGenerateCombine(t *testing.T) {
 
 	response, document := builderGenerate(t, harness, &role, `{"source":"Topology/root","includes":"combine"}`)
 
-	if document.Name != "root-combined" || document.ID != bdoc.DocumentID("root-combined") {
-		t.Errorf("name = %q, id = %q, want root-combined and its document ID", document.Name, document.ID)
+	if document.Metadata.Name != "root-combined" || document.Metadata.ID != bdoc.DocumentID("root-combined") {
+		t.Errorf("name = %q, id = %q, want root-combined and its document ID", document.Metadata.Name, document.Metadata.ID)
 	}
 
 	if strings.Contains(string(response.Document), "secret-host") || strings.Contains(string(response.Document), "includedFrom") {
@@ -987,10 +987,10 @@ func TestBuilderGenerateCombine(t *testing.T) {
 	_, document = builderGenerate(t, harness, nil,
 		`{"source":"Topology/root","includes":"combine","copy":true,"name":"site_all"}`)
 
-	if document.Name != "site_all" || document.FindDevice("secret-host") == nil ||
+	if document.Metadata.Name != "site_all" || document.FindDevice("secret-host") == nil ||
 		!reflect.DeepEqual(document.Source.IncludeTopologies, []string{"../outside.yml"}) {
 		t.Errorf("name = %q, source = %s, want site_all with secret-host and only the file still included",
-			document.Name, asBuilderJSON(t, document.Source))
+			document.Metadata.Name, asBuilderJSON(t, document.Source))
 	}
 
 	// A config file is combined the same way, from the store.
@@ -1002,8 +1002,8 @@ func TestBuilderGenerateCombine(t *testing.T) {
 	response, document = builderGenerate(t, harness, nil,
 		asBuilderJSON(t, map[string]string{"content": string(content), "includes": "combine"}))
 
-	if document.Name != "root-combined" || document.FindDevice("visible-host") == nil || response.Source.Stored {
-		t.Errorf("name = %q, source = %+v, want root-combined made from the file", document.Name, response.Source)
+	if document.Metadata.Name != "root-combined" || document.FindDevice("visible-host") == nil || response.Source.Stored {
+		t.Errorf("name = %q, source = %+v, want root-combined made from the file", document.Metadata.Name, response.Source)
 	}
 
 	if harness.configWrites != 0 {
@@ -1030,7 +1030,7 @@ func TestBuilderGenerateLegacyTopologyChoices(t *testing.T) {
 
 	response, copied := builderGenerate(t, harness, nil, `{"source":"Topology/sample","copy":true}`)
 
-	if response.Source.Builder != bdoc.LegacyXMLAnnotation || copied.Name != "sample-copy" ||
+	if response.Source.Builder != bdoc.LegacyXMLAnnotation || copied.Metadata.Name != "sample-copy" ||
 		copied.Source.Kind != bdoc.SourceKindManual || copied.Source.Name != "" || copied.Source.Digest != "" {
 		t.Errorf("copy: response source = %+v, document source = %+v, want a legacy conversion linked to nothing",
 			response.Source, copied.Source)
@@ -1051,11 +1051,11 @@ func TestBuilderGenerateLegacyTopologyChoices(t *testing.T) {
 		t.Errorf("combined: position = %+v, want the diagram's", got)
 	}
 
-	if host := combined.FindDevice("inc-host"); combined.Name != "sample-combined" || host == nil ||
+	if host := combined.FindDevice("inc-host"); combined.Metadata.Name != "sample-combined" || host == nil ||
 		host.Device.IncludedFrom != "" || !reflect.DeepEqual(combined.Source.IncludeTopologies, []string{"gone"}) ||
 		combined.Source.Kind != bdoc.SourceKindManual {
 		t.Errorf("combined: name = %q, source = %+v, want inc-host as its own node and only the missing include kept",
-			combined.Name, combined.Source)
+			combined.Metadata.Name, combined.Source)
 	}
 
 	for _, want := range []string{

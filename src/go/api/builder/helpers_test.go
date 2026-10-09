@@ -76,7 +76,7 @@ func testDocument(t *testing.T, name string, padding int) []byte {
 	return data
 }
 
-// documentProvenance returns the author, creation time, last editor and last
+// documentProvenance returns the creator, creation time, last editor and last
 // edit time an encoded document holds.
 func documentProvenance(t *testing.T, data []byte) builder.Provenance {
 	t.Helper()
@@ -90,7 +90,7 @@ func documentProvenance(t *testing.T, data []byte) builder.Provenance {
 }
 
 // stampedDocument returns the canonical encoding of an encoded document with
-// its author, creation time, last editor and last edit time replaced.
+// its creator, creation time, last editor and last edit time replaced.
 func stampedDocument(t *testing.T, data []byte, provenance builder.Provenance) []byte {
 	t.Helper()
 
@@ -121,9 +121,9 @@ func sameContent(t *testing.T, got, want []byte) bool {
 
 // stampAt is what a save by actor leaves in a document at the test clock's
 // tick: the time the harness clock returned on its tick-th read.
-func stampAt(author string, created int64, actor string, tick int64) builder.Provenance {
+func stampAt(creator string, created int64, actor string, tick int64) builder.Provenance {
 	return builder.Provenance{
-		Author:    author,
+		CreatedBy: creator,
 		CreatedAt: builder.FormatTime(memrecord.Time(created)),
 		UpdatedBy: actor,
 		UpdatedAt: builder.FormatTime(memrecord.Time(tick)),

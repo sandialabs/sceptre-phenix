@@ -991,7 +991,7 @@ export async function forkClosedQueue({ api, store, actor, key, title }) {
     return null;
   }
 
-  const name = title(entries[index]?.snapshot?.name);
+  const name = title(entries[index]?.snapshot?.metadata?.name);
   const queue = createAutosave({ api, store, actor });
 
   try {

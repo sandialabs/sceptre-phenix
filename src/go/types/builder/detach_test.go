@@ -52,8 +52,8 @@ func TestCombineIncludes(t *testing.T) {
 
 	// Nothing but the marks changes: the source still names the topology,
 	// and the nodes are where they were.
-	if doc.Source.Kind != builder.SourceKindTopology || doc.Source.Name != "site" || doc.Name != "site" {
-		t.Errorf("source = %s, name = %q, want the topology still named", asJSON(t, doc.Source), doc.Name)
+	if doc.Source.Kind != builder.SourceKindTopology || doc.Source.Name != "site" || doc.Metadata.Name != "site" {
+		t.Errorf("source = %s, name = %q, want the topology still named", asJSON(t, doc.Source), doc.Metadata.Name)
 	}
 
 	unmarked := keptDocument(t)
@@ -123,8 +123,8 @@ func TestDetach(t *testing.T) {
 
 	doc.Detach("site-copy")
 
-	if doc.Name != "site-copy" || doc.ID != builder.DocumentID("site-copy") {
-		t.Errorf("name = %q, id = %q, want site-copy and its document ID", doc.Name, doc.ID)
+	if doc.Metadata.Name != "site-copy" || doc.Metadata.ID != builder.DocumentID("site-copy") {
+		t.Errorf("name = %q, id = %q, want site-copy and its document ID", doc.Metadata.Name, doc.Metadata.ID)
 	}
 
 	want := &builder.Source{
@@ -177,8 +177,8 @@ func TestDetachCombined(t *testing.T) {
 		t.Errorf("source = %s, want %s", asJSON(t, doc.Source), asJSON(t, want))
 	}
 
-	if doc.ID != builder.DocumentID("site-combined") {
-		t.Errorf("id = %q, want the ID of a document named site-combined", doc.ID)
+	if doc.Metadata.ID != builder.DocumentID("site-combined") {
+		t.Errorf("id = %q, want the ID of a document named site-combined", doc.Metadata.ID)
 	}
 
 	if err := doc.Validate(); err != nil {
@@ -192,7 +192,7 @@ func TestDetachWithoutSource(t *testing.T) {
 	doc := builder.NewDocument("drawn")
 	doc.Detach("redrawn")
 
-	if doc.Name != "redrawn" || doc.ID != builder.DocumentID("redrawn") || doc.Source != nil {
+	if doc.Metadata.Name != "redrawn" || doc.Metadata.ID != builder.DocumentID("redrawn") || doc.Source != nil {
 		t.Errorf("document = %s, want it renamed and without a source", asJSON(t, doc))
 	}
 }

@@ -406,9 +406,9 @@ describe('combining included devices into a new diagram', () => {
     const { doc } = imported();
     const combined = combineIncluded(doc, 'root-combined');
 
-    expect(combined.id).not.toBe(doc.id);
-    expect(combined.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(combined.name).toBe('root-combined');
+    expect(combined.metadata.id).not.toBe(doc.metadata.id);
+    expect(combined.metadata.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(combined.metadata.name).toBe('root-combined');
     expect(combined.source).toEqual({
       kind: 'manual',
       importedAt: '2026-09-02T00:00:00Z',
@@ -432,7 +432,7 @@ describe('combining included devices into a new diagram', () => {
     const { doc, alpha, bravo } = imported();
     const marked = {
       ...doc,
-      description: 'Plant floor',
+      metadata: { ...doc.metadata, description: 'Plant floor' },
       scenario: { kind: 'stored', name: 'plant-apps' },
       templates: [{ id: alpha.id, name: 'PLC', device: { spec: {} } }],
       icons: { abc: { name: 'plc.png', data: 'AAAA' } },
@@ -442,13 +442,16 @@ describe('combining included devices into a new diagram', () => {
 
     expect(marked).toEqual(before);
 
-    // Everything but what a combined diagram replaces.
-    const rest = (document) =>
+    // Everything but what a combined diagram replaces: its identifier and
+    // name, its source and its nodes.
+    const without = (object, keys) =>
       Object.fromEntries(
-        Object.entries(document).filter(
-          ([key]) => !['id', 'name', 'source', 'nodes'].includes(key),
-        ),
+        Object.entries(object).filter(([key]) => !keys.includes(key)),
       );
+    const rest = (document) => ({
+      ...without(document, ['metadata', 'source', 'nodes']),
+      metadata: without(document.metadata, ['id', 'name']),
+    });
     const { nodes } = combined;
     const { nodes: oldNodes } = marked;
 
@@ -556,7 +559,7 @@ describe('Combine included nodes into a new draft', () => {
     fixture = includedDocument();
     store.setDocument({
       ...fixture.doc,
-      name: 'Riverside water',
+      metadata: { ...fixture.doc.metadata, name: 'Riverside water' },
       source: {
         kind: 'topology',
         name: 'root',
@@ -590,8 +593,8 @@ describe('Combine included nodes into a new draft', () => {
     // "Riverside water" as a config name, and a topology has "-combined".
     expect(sent.title).toBe('Riverside-water-combined-2');
     expect(sent.sourceToken).toBe('');
-    expect(sent.document.name).toBe('Riverside-water-combined-2');
-    expect(sent.document.id).not.toBe(open.id);
+    expect(sent.document.metadata.name).toBe('Riverside-water-combined-2');
+    expect(sent.document.metadata.id).not.toBe(open.metadata.id);
     expect(sent.document.source).toEqual({
       kind: 'manual',
       includeTopologies: ['site-b'],
@@ -600,7 +603,7 @@ describe('Combine included nodes into a new draft', () => {
 
     // The new draft is the one open, and it can be edited.
     expect(store.draftId).toBe('d9');
-    expect(store.doc.name).toBe('Riverside-water-combined-2');
+    expect(store.doc.metadata.name).toBe('Riverside-water-combined-2');
     expect(store.summary.included).toBe(0);
     store.updateNode(fixture.bravo.id, { device: { hostname: 'charlie' } });
     expect(findNode(store.doc, fixture.bravo.id).device.hostname).toBe(
@@ -627,14 +630,14 @@ describe('Combine included nodes into a new draft', () => {
     // A topology has "-combined" and a draft of mine "-combined-2".
     // Another user's draft takes no name of mine.
     expect(sent.title).toBe('Riverside-water-combined-3');
-    expect(sent.document.name).toBe('Riverside-water-combined-3');
+    expect(sent.document.metadata.name).toBe('Riverside-water-combined-3');
 
     // When the drafts cannot be read, those listed last say.
     api.listDrafts.mockRejectedValueOnce(new Error('offline'));
     api.createDraft.mockClear();
     store.setDocument({
       ...fixture.doc,
-      name: 'Riverside water',
+      metadata: { ...fixture.doc.metadata, name: 'Riverside water' },
       source: { kind: 'topology', name: 'root', includeTopologies: ['shared'] },
     });
 

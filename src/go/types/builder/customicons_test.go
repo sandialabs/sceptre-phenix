@@ -709,7 +709,7 @@ func TestValidateIconsRefuses(t *testing.T) {
 		{
 			name:    "one icon too many",
 			icons:   distinctIcons(t, builder.MaxDocumentIcons+1),
-			wantMsg: "at most 32 custom icons are allowed, not 33",
+			wantMsg: "at most 50 custom icons are allowed, not 51",
 		},
 		{
 			name:    "a key that is no icon id",

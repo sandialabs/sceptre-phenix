@@ -208,10 +208,10 @@ func TestBuilderConvertLegacyDiagram(t *testing.T) {
 		t.Errorf("warnings = %q and %q in the document, want %q", response.Warnings, document.Source.Warnings, want)
 	}
 
-	if document.Name != "branch-office" || document.Source.Kind != bdoc.SourceKindManual ||
+	if document.Metadata.Name != "branch-office" || document.Source.Kind != bdoc.SourceKindManual ||
 		document.Source.Name != "" || document.Source.Digest != "" {
 		t.Errorf("name = %q, source = %+v, want the name asked for and a source that names no config",
-			document.Name, document.Source)
+			document.Metadata.Name, document.Source)
 	}
 
 	imported, err := time.Parse(time.RFC3339, document.Source.ImportedAt)
@@ -225,8 +225,8 @@ func TestBuilderConvertLegacyDiagram(t *testing.T) {
 
 	// Without a name, and with a blank one, the document gets the default.
 	for _, request := range []map[string]any{{"content": sample}, {"content": "\xef\xbb\xbf \n" + sample, "name": "  "}} {
-		if _, unnamed := convertBuilderLegacy(t, harness, request); unnamed.Name != "legacy-diagram" {
-			t.Errorf("name = %q, want the default", unnamed.Name)
+		if _, unnamed := convertBuilderLegacy(t, harness, request); unnamed.Metadata.Name != "legacy-diagram" {
+			t.Errorf("name = %q, want the default", unnamed.Metadata.Name)
 		}
 	}
 
@@ -315,9 +315,9 @@ func TestBuilderConvertLegacyTopology(t *testing.T) {
 				t.Fatalf("source = %+v, want the uploaded topology with its legacy diagram and digest", source)
 			}
 
-			if document.Name != "sample" || document.Source.Kind != bdoc.SourceKindTopology ||
+			if document.Metadata.Name != "sample" || document.Source.Kind != bdoc.SourceKindTopology ||
 				document.Source.Name != "sample" || document.Source.Digest != digest {
-				t.Errorf("name = %q, source = %+v, want those of the topology", document.Name, document.Source)
+				t.Errorf("name = %q, source = %+v, want those of the topology", document.Metadata.Name, document.Source)
 			}
 
 			if want := map[string]string{"owner": "ops"}; !reflect.DeepEqual(document.Source.Annotations, want) {

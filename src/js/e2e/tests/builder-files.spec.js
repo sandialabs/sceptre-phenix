@@ -485,7 +485,10 @@ test('a Builder file changed after it was opened is neither edited nor published
   // The same diagram with a description: another document, which publishes
   // as the same topology.
   const rewrite = (description) =>
-    writeBuilderFile(file, { ...document, description });
+    writeBuilderFile(file, {
+      ...document,
+      metadata: { ...document.metadata, description },
+    });
 
   await test.step('Edit as a draft of a view the file has left behind is refused', async () => {
     rewrite('changed while it was shown');
@@ -629,14 +632,18 @@ for (const scheme of ['light', 'dark']) {
       const name = uniqueName(testInfo, `file-axe-${scheme}`);
       const file = path.join(filesDir, `${name}.builder.json`);
       const made = {
-        author: 'alice',
+        createdBy: 'alice',
         createdAt: '2020-01-02T03:04:05Z',
         updatedBy: 'bob',
         updatedAt: '2020-02-03T04:05:06Z',
       };
       // The stored topology lacks a device the file has, so the banner says
       // that the two differ.
-      writeBuilderFile(file, { ...labDocument(name), ...made });
+      const lab = labDocument(name);
+      writeBuilderFile(file, {
+        ...lab,
+        metadata: { ...lab.metadata, ...made },
+      });
       await referTopology(request, tracker, name, oneServerDocument(name), {
         path: file,
       });
@@ -673,9 +680,9 @@ for (const scheme of ['light', 'dark']) {
             `as a new topology, not as an update of ${name}. ` +
             'Edit it as a draft to make changes.',
         );
-        // A file's document holds what its author wrote: the server does not
+        // A file's document holds what its maker wrote: the server does not
         // stamp it.
-        await expectDetail(page, 'created', made.author, made.createdAt);
+        await expectDetail(page, 'created', made.createdBy, made.createdAt);
         await expectDetail(page, 'edited', made.updatedBy, made.updatedAt);
         await expect(page.getByTestId('published-edit')).not.toHaveAttribute(
           'aria-disabled',

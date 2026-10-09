@@ -321,17 +321,17 @@ upload `riverside-water.yaml`: the new draft has the same 12 devices,
 
 A Builder document also says who made the diagram and who saved it last
 (see [Who made and last saved a diagram](#who-made-and-last-saved-a-diagram)).
-An uploaded draft keeps the author and the creation time the document
-names, and you are the one who saved it last. The example file names
-`e2e-admin` as its author. So after alice uploads it, the Inspector shows
-these **Details**:
+An uploaded draft keeps the maker (`createdBy`) and the creation time the
+document names, and you are the one who saved it last. The example file
+names `e2e-admin` as its maker. So after alice uploads it, the Inspector
+shows these **Details**:
 
 - **Created**: "Sep 29, 2026, 12:38 PM by e2e-admin", as the file says. The
   time is shown in the time zone of your browser, here US Mountain Time.
 - **Last edited**: the time of the upload, and "by alice".
 - **Source file**: "pump-station.builder.json".
 
-A document that names no author gets you as its author, and the time of the
+A document that names no maker gets you as its maker, and the time of the
 upload as its creation time.
 
 Upload makes a draft, which needs the `configs` `create` permission.
@@ -381,7 +381,8 @@ first.", and no file is saved.
 Builder JSON and Builder YAML hold the whole Builder document: every node
 with its settings and position, the networks, the connections, the groups
 and notes, the layout, the scenario, where the diagram was imported from,
-and who made and last saved it. They also hold how the diagram looks: the
+and under `metadata` the diagram's name, description and notes and who made
+and last saved it. They also hold how the diagram looks: the
 colors and line styles of nodes and connections, the description, border
 pattern and icon of each group, the diagram's own device templates
 (`templates`), and a copy of each custom icon the diagram uses (`icons`),
@@ -391,13 +392,14 @@ so the file opens the same on another phenix server. The example file
 ```yaml
 $schema: https://phenix.sandia.gov/schemas/builder/v1
 revision: 1
-id: 35923065-de11-56bc-9e1d-a307308716a7
-name: Riverside Water
-description: 'Water utility training range: internet edge, DMZ, corporate and OT networks.'
-author: e2e-admin
-createdAt: '2026-09-29T18:17:59Z'
-updatedBy: e2e-admin
-updatedAt: '2026-09-29T18:31:44Z'
+metadata:
+  id: 35923065-de11-56bc-9e1d-a307308716a7
+  name: Riverside Water
+  description: 'Water utility training range: internet edge, DMZ, corporate and OT networks.'
+  createdBy: e2e-admin
+  createdAt: '2026-09-29T18:17:59Z'
+  updatedBy: e2e-admin
+  updatedAt: '2026-09-29T18:31:44Z'
 nodes:
   - id: 017b57e6-1d23-5555-a576-d0cdc682109a
     kind: device
@@ -409,19 +411,37 @@ server, or to hand it to someone. **Upload** opens them as a new draft (see
 [Uploading a Builder document](#uploading-a-builder-document)), and
 `phenix builder publish` makes a topology from them (see
 [From the command line](#from-the-command-line)). The phenix
-server describes the format as a JSON Schema at `/api/v1/schemas/builder/v1`.
+server describes the format as a JSON Schema at `/api/v1/schemas/builder/v1`,
+with a title, a description and examples for every field.
+
+#### The metadata of a diagram
+
+The `metadata` object at the top of the document holds what the document
+says of itself. It is required, and it holds only these fields:
+
+| Field | What it holds |
+|---|---|
+| `id` | The document's identifier, which every document needs |
+| `name` | The diagram name, at most 512 bytes; a draft takes it as its title |
+| `description` | Free text about the diagram |
+| `createdBy`, `createdAt`, `updatedBy`, `updatedAt` | Who made the diagram and who saved it last (see below) |
+| `notes` | The diagram's notes, which the Inspector lists under **Notes**: at most 100, each not blank and at most 4096 bytes, with no control characters but line breaks and tabs |
+
+A document that still has one of these fields at its top level, outside
+`metadata`, is refused, as is a field `metadata` does not list. None of the
+metadata is written to a config.
 
 #### Who made and last saved a diagram
 
-Four fields at the top of the document say who made the diagram and who
+Four fields of the document's `metadata` say who made the diagram and who
 saved it last. The phenix server writes them each time it saves a draft;
 the editor never does. The Inspector shows them under **Details** (see
 [With nothing selected](editor.md#with-nothing-selected)).
 
 | Field | What it holds | Set |
 |---|---|---|
-| `author` | The user who made the diagram | When a draft is created: the `author` the document already names, else the user who creates the draft. Every later save keeps it. |
-| `createdAt` | When the diagram was made | With `author`, the same way |
+| `createdBy` | The user who made the diagram | When a draft is created: the `createdBy` the document already names, else the user who creates the draft. Every later save keeps it. |
+| `createdAt` | When the diagram was made | With `createdBy`, the same way |
 | `updatedBy` | The user whose save stored this content | On every save: the user who saves |
 | `updatedAt` | When that save was | On every save: the time of the save |
 
@@ -433,13 +453,13 @@ shows no **Details**.
 What this means for each way of making a draft:
 
 - **Blank diagram**, **Import**, and a legacy diagram converted with
-  **Upload**: you are the author, and the diagram is created now.
-- **Upload**: the author and creation time the file names are kept. When the
-  file names none, you are the author.
+  **Upload**: you made the diagram, and it is created now.
+- **Upload**: the `createdBy` and `createdAt` the file names are kept. When
+  the file names none, you made the diagram.
 - **Edit as a draft** on a published diagram or on a diagram read from a
   file: the draft starts as that document, unchanged, so all four fields
   are the document's. Your first edit makes you the one who saved it last.
-- A draft shared with **Can edit**: the author stays, and a save by the
+- A draft shared with **Can edit**: `createdBy` stays, and a save by the
   other person names that person in `updatedBy`.
 - **Undo**, **Redo** and **Restore** go back to an earlier snapshot, which
   holds the `updatedBy` and `updatedAt` of the save that made it.
@@ -449,8 +469,8 @@ the four fields it has. They are part of the document, so they count in its
 digest.
 
 !!! note
-    `author` and `createdAt` are what the document says. Someone who uploads
-    a document can name any author in it. The server writes `updatedBy` and
+    `createdBy` and `createdAt` are what the document says. Someone who
+    uploads a document can name anyone in it. The server writes `updatedBy` and
     `updatedAt` on every save it makes. A document that phenix takes
     unchanged from a file keeps all four fields as the file has them: a
     diagram read from a Builder file, the draft **Edit as a draft** makes
@@ -690,7 +710,7 @@ To publish the example file
 
 ```console
 $ phenix builder publish pump-station.builder.json
-2026-10-01 21:51:06.342 INF topology created type=SYSTEM name=Pump-station document=1e13fa9bd9417c696159a9d0f1496953909516221c6600383cea29fa1fa8dc90 digest=sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+2026-10-01 21:51:06.342 INF topology created type=SYSTEM name=Pump-station document=730b1f91c47dfcecd644e07b61dd22896d34381a505426652b826e94423347fd digest=sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
 ```
 
 The topology is named after the diagram, the way the Publish dialog
@@ -715,8 +735,8 @@ metadata:
     updated: "2026-10-01T21:51:06-06:00"
     annotations:
         builder-doc:
-            digest: sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
-            id: 1e13fa9bd9417c696159a9d0f1496953909516221c6600383cea29fa1fa8dc90
+            digest: sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
+            id: 730b1f91c47dfcecd644e07b61dd22896d34381a505426652b826e94423347fd
 spec:
     nodes:
         - general:
@@ -732,7 +752,7 @@ command each time:
 
 ```console
 $ phenix builder publish pump-station.builder.json
-2026-10-01 21:51:06.527 INF topology already up to date type=SYSTEM name=Pump-station document=1e13fa9bd9417c696159a9d0f1496953909516221c6600383cea29fa1fa8dc90 digest=sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+2026-10-01 21:51:06.527 INF topology already up to date type=SYSTEM name=Pump-station document=730b1f91c47dfcecd644e07b61dd22896d34381a505426652b826e94423347fd digest=sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
 ```
 
 The command exits with 0 when the topology was created, updated or already
@@ -751,8 +771,8 @@ $ cd /phenix/topologies/riverside-water
 $ phenix builder publish riverside-water.builder.json --dry-run
 Document:     Riverside Water
 File:         /phenix/topologies/riverside-water/riverside-water.builder.json
-Digest:       sha256:82a1aba006d86a043d3d0ed615a7aa05aeff52407f1121f6e9224595c5dea308
-Document ID:  85cabd30f51263863fb0282819aa4a88417556761a83b8a643f1d31be033df68
+Digest:       sha256:a3c6569728e1ea77cc3519c48c904cf2e300f2ed535821cb50d05963c17cc1f5
+Document ID:  0dff463189b8e26b702884a420105cf01fb91130338892a98feb45b3786e8583
 Topology:     Riverside-Water (would be created)
 Nodes:        10
 Warnings:
@@ -773,7 +793,7 @@ The command replaces an existing topology only with `--update`:
 $ phenix builder publish pump-station.builder.json
 Error: topology Pump-station already exists; use --update to replace it
 $ phenix builder publish pump-station.builder.json --update
-2026-10-01 21:51:06.957 INF topology updated type=SYSTEM name=Pump-station document=0e98ffde0792cd8fd6b1e5e16ff0b865978ae5b605434125d54f6a3382ce8e43 digest=sha256:53953338b10e2e824be1f4da08fc9178026d89dfef63cc7adfd406c0a918468d
+2026-10-01 21:51:06.957 INF topology updated type=SYSTEM name=Pump-station document=01211d6f143060dd6ef56d26cb67e86770671b059e263060f73ee344f4fc4362 digest=sha256:4ba9ae46494bb7d2498f5119b55996f332c52c1b95d79502361afbf50707cbc3
 ```
 
 Here the file was changed after it was first published: the description of
@@ -795,7 +815,7 @@ in two cases only:
     ```console
     $ phenix builder publish riverside-water.builder.json --name riverside-water --update
     2026-10-01 21:51:07.132 WRN The document's scenario is not published: only the topology is. type=SYSTEM topology=riverside-water
-    2026-10-01 21:51:07.132 INF topology updated type=SYSTEM name=riverside-water document=ae78c07ebf467ded1928a0f144b109fa47416e549c901fe0dd54f7753932e9b5 digest=sha256:82a1aba006d86a043d3d0ed615a7aa05aeff52407f1121f6e9224595c5dea308
+    2026-10-01 21:51:07.132 INF topology updated type=SYSTEM name=riverside-water document=9b8b4b74fb6835c64b543443ad341b21c4812e185c40e7221f292995fead6761 digest=sha256:a3c6569728e1ea77cc3519c48c904cf2e300f2ed535821cb50d05963c17cc1f5
     ```
 
 !!! note
@@ -901,14 +921,14 @@ annotation, as `path`. Here no topology `pump-station` exists yet:
 ```console
 $ cd /phenix/topologies/pump-station
 $ phenix builder publish pump-station.builder.json --name pump-station --record-path
-2026-10-01 21:51:22.878 INF topology created type=SYSTEM name=pump-station document=b856fc9e35107594f72e715f74ee1cae3eb951b41bf09a504327924e0a220d34 digest=sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+2026-10-01 21:51:22.878 INF topology created type=SYSTEM name=pump-station document=fd063e784604f43e5c39cc9959501cf117b4dc2be895e92f9bb98e23f8465c4b digest=sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
 ```
 
 ```yaml
     annotations:
         builder-doc:
-            digest: sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
-            id: b856fc9e35107594f72e715f74ee1cae3eb951b41bf09a504327924e0a220d34
+            digest: sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
+            id: fd063e784604f43e5c39cc9959501cf117b4dc2be895e92f9bb98e23f8465c4b
             path: /phenix/topologies/pump-station/pump-station.builder.json
 ```
 
@@ -926,7 +946,7 @@ still publishes, and warns:
 $ cd /home/alice
 $ phenix builder publish pump-station.builder.json --name pump-home --record-path
 2026-10-01 21:51:08.761 WRN The phenix server does not read Builder files from /home/alice/pump-station.builder.json: it reads them below /phenix, except below /phenix/mounts. The topology opens from the stored document. type=SYSTEM topology=pump-home
-2026-10-01 21:51:08.761 INF topology created type=SYSTEM name=pump-home document=7ec10c84ea722c79c705731e516ea400dc6a18312de3f50aaafc55b7344abc3d digest=sha256:5bbc6d046a1b98011f227ded600b90947bd1f44be35858654b4cae6b4cca9184
+2026-10-01 21:51:08.761 INF topology created type=SYSTEM name=pump-home document=6978dcd05cb671ffd6c547d994d01d69eac9f76bac85503809750cd42db05e19 digest=sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
 ```
 
 A later `--update` from another file keeps the recorded path, and warns

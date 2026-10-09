@@ -1,8 +1,10 @@
 {
   "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
   "revision": 1,
-  "id": "c6b33e7a-a681-5522-8fd7-cbe73b75d5cc",
-  "name": "switches",
+  "metadata": {
+    "id": "c6b33e7a-a681-5522-8fd7-cbe73b75d5cc",
+    "name": "switches"
+  },
   "nodes": [
     {
       "id": "86076cff-3aa1-5f66-bb80-1e3826d77ac3",

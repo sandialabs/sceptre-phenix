@@ -520,7 +520,7 @@ export async function draftExport({
  * @returns {{name: string, text: string}}
  */
 export function diagramFile(doc) {
-  const base = String(doc?.name || 'topology')
+  const base = String(doc?.metadata?.name || 'topology')
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')

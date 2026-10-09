@@ -815,18 +815,28 @@ const BORDER_STYLE_TITLES = {
   double: 'Double',
 };
 
+// A Builder definition or property of the bundle as an Inspector field
+// starts from it: without the title, description and examples that document
+// it in the bundle. The Inspector gives each field its own label and help,
+// so the bundle's documentation never changes what a form shows.
+const DOCUMENTATION = ['title', 'description', 'examples'];
+
+function field(def, fallback) {
+  return omit(def || fallback, DOCUMENTATION);
+}
+
 // The outline or fill color of a device or a switch: the definition
 // itself, not the reference the bundle holds at the property, so the
 // field's own schema has the pattern its control and its error are chosen
 // by.
 function hexColorField(defs) {
-  return defs.hexColor || { type: 'string' };
+  return field(defs.hexColor, { type: 'string' });
 }
 
 // The custom icon of a device or a group: the definition itself, as for a
 // color, so the field's own schema says an icon id is what it takes.
 function iconRefField(defs) {
-  return defs.iconRef || { type: 'string' };
+  return field(defs.iconRef, { type: 'string' });
 }
 
 // What the Custom icon field says of itself, on a device and on a group.
@@ -888,12 +898,12 @@ function kindSchema(bundle, kind, context = {}) {
         required: ['hostname', 'spec'],
         properties: {
           hostname: {
-            ...(defs.device?.properties?.hostname || { type: 'string' }),
+            ...field(defs.device?.properties?.hostname, { type: 'string' }),
             title: 'Hostname',
             description: help.hostname,
           },
           iconKey: {
-            ...offeredIconKeys(defs.iconKey, context.iconKey),
+            ...field(offeredIconKeys(defs.iconKey, context.iconKey)),
             title: 'Icon',
             description: help.iconKey,
           },
@@ -927,23 +937,25 @@ function kindSchema(bundle, kind, context = {}) {
         required: ['name'],
         properties: {
           name: {
-            ...(defs.network?.properties?.name || { type: 'string' }),
+            ...field(defs.network?.properties?.name, { type: 'string' }),
             title: 'Name',
             description:
               'VLAN name used by every interface attached to this switch.',
           },
           alias: {
-            ...(defs.network?.properties?.alias || { type: 'integer' }),
+            ...field(defs.network?.properties?.alias, { type: 'integer' }),
             title: 'VLAN alias',
             description:
               'Optional integer VLAN alias published to an experiment (1-4094).',
           },
           description: {
-            ...(defs.network?.properties?.description || { type: 'string' }),
+            ...field(defs.network?.properties?.description, {
+              type: 'string',
+            }),
             title: 'Description',
           },
           color: {
-            ...(defs.network?.properties?.color || { type: 'string' }),
+            ...field(defs.network?.properties?.color, { type: 'string' }),
             title: 'Edge Color',
             description:
               "Color of this network's connection lines. Never the only cue for network identity.",
@@ -975,11 +987,11 @@ function kindSchema(bundle, kind, context = {}) {
         required: ['text'],
         properties: {
           text: {
-            ...(defs.note?.properties?.text || { type: 'string' }),
+            ...field(defs.note?.properties?.text, { type: 'string' }),
             title: 'Text',
           },
           color: {
-            ...(defs.note?.properties?.color || { type: 'string' }),
+            ...field(defs.note?.properties?.color, { type: 'string' }),
             title: 'Color',
           },
         },
@@ -990,16 +1002,16 @@ function kindSchema(bundle, kind, context = {}) {
         title: 'Group',
         properties: {
           title: {
-            ...(defs.group?.properties?.title || { type: 'string' }),
+            ...field(defs.group?.properties?.title, { type: 'string' }),
             title: 'Title',
           },
           description: {
-            ...(defs.group?.properties?.description || { type: 'string' }),
+            ...field(defs.group?.properties?.description, { type: 'string' }),
             title: 'Description',
             description: 'Shown under the title on the canvas.',
           },
           color: {
-            ...(defs.group?.properties?.color || { type: 'string' }),
+            ...field(defs.group?.properties?.color, { type: 'string' }),
             title: 'Color',
           },
           borderStyle: {
@@ -1012,7 +1024,7 @@ function kindSchema(bundle, kind, context = {}) {
             description: "Line pattern of the group's border.",
           },
           iconKey: {
-            ...offeredIconKeys(defs.iconKey, context.iconKey),
+            ...field(offeredIconKeys(defs.iconKey, context.iconKey)),
             title: 'Icon',
             description:
               "Icon beside the group's title. A custom icon, when set, is drawn in its place.",
@@ -1032,11 +1044,11 @@ function kindSchema(bundle, kind, context = {}) {
         title: 'Connection',
         properties: {
           label: {
-            ...(defs.edge?.properties?.label || { type: 'string' }),
+            ...field(defs.edge?.properties?.label, { type: 'string' }),
             title: 'Label',
           },
           color: {
-            ...(defs.edge?.properties?.color || { type: 'string' }),
+            ...field(defs.edge?.properties?.color, { type: 'string' }),
             title: 'Color',
             description: "Line color, in place of the network's.",
           },
@@ -1055,11 +1067,13 @@ function kindSchema(bundle, kind, context = {}) {
         title: 'Diagram',
         properties: {
           name: {
-            ...(source.properties?.name || { type: 'string' }),
+            ...field(defs.metadata?.properties?.name, { type: 'string' }),
             title: 'Name',
           },
           description: {
-            ...(source.properties?.description || { type: 'string' }),
+            ...field(defs.metadata?.properties?.description, {
+              type: 'string',
+            }),
             title: 'Description',
           },
         },

@@ -1,8 +1,10 @@
 {
   "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
   "revision": 1,
-  "id": "9e05a6cf-742c-539d-ba7a-c2dd2d2829f9",
-  "name": "sample",
+  "metadata": {
+    "id": "9e05a6cf-742c-539d-ba7a-c2dd2d2829f9",
+    "name": "sample"
+  },
   "nodes": [
     {
       "id": "2da456ec-b24f-5229-b330-14c78ea2a69f",

@@ -160,7 +160,7 @@
                 id="builder-name-text"
                 ref="nameText"
                 class="builder-header__name-text"
-                :class="{ 'is-empty': !store.doc.name }"
+                :class="{ 'is-empty': !store.doc.metadata?.name }"
                 data-testid="builder-name"
                 v-on="nameTip">
                 {{ diagramName }}
@@ -825,7 +825,7 @@
     }
 
     hideTip();
-    nameField.value = store.doc.name || '';
+    nameField.value = store.doc.metadata?.name || '';
     editingName.value = true;
     await nextTick();
     nameInput.value?.focus();
@@ -1000,7 +1000,9 @@
     return 'You can view this draft but not change it. Use Download to keep a copy.';
   });
 
-  const diagramName = computed(() => store.doc.name || 'Untitled diagram');
+  const diagramName = computed(
+    () => store.doc.metadata?.name || 'Untitled diagram',
+  );
 
   // The owner of the open draft when it is not the user's, for the heading.
   const ownerOfOthers = computed(() =>
@@ -1734,7 +1736,7 @@
 
   // Returns whether the name changed.
   function rename(name) {
-    if (name === (store.doc.name || '')) {
+    if (name === (store.doc.metadata?.name || '')) {
       return false;
     }
 

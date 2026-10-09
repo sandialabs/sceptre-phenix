@@ -415,14 +415,14 @@ describe('envelopes', () => {
     const envelope = readEnvelope({
       data: {
         draft: { id: 'd1', owner: 'alice', cursor: 2 },
-        document: { id: 'doc' },
+        document: { metadata: { id: 'doc' } },
         history: [{ id: 's1' }],
       },
       headers: { etag: '"7"' },
     });
 
     expect(envelope.draft.owner).toBe('alice');
-    expect(envelope.document.id).toBe('doc');
+    expect(envelope.document.metadata.id).toBe('doc');
     expect(envelope.history).toEqual([{ id: 's1' }]);
     expect(envelope.cursor).toBe(2);
     expect(envelope.etag).toBe('"7"');

@@ -1,13 +1,13 @@
 <!--
   The rest of the Inspector's Diagram section, below the diagram's Name and
   Description: who made the diagram and who saved it last, the annotations
-  of the config the diagram was imported from, and its scenario, with the
-  hosts each app runs on. All are read only here. Edit scenario opens the
-  Scenario dialog the toolbar's Scenario button opens, and like it, not in
-  a read-only draft.
+  of the config the diagram was imported from, its scenario, with the hosts
+  each app runs on, and the notes of the diagram. All but the notes are
+  read only here. Edit scenario opens the Scenario dialog the toolbar's
+  Scenario button opens, and like it, not in a read-only draft.
 
-  Details shows what the server wrote into the document when it stored it:
-  its author and creation time, and the user and time of the save that
+  Details shows what the server wrote into the document's metadata when it
+  stored it: who made it and when, and the user and time of the save that
   stored the content shown. The editor never sets them, so they are those
   of the last save the server confirmed, and of an older save after an
   undo. A draft made from an uploaded file also names that file. It is
@@ -17,6 +17,14 @@
   A stored scenario reference carries no content (see ScenarioDialog), so
   the apps of a stored scenario are read from its config (see the store's
   fetchScenario), when the role may read it.
+
+  Notes are the metadata's notes, one text box each. A note is written
+  into the diagram when its box changes and loses focus, as one undo step
+  (the store's setDiagramNotes); a box left empty drops its note. Text the
+  server would refuse (longer than its byte limit, or holding a control
+  character other than newline and tab) shows an error under its box, and
+  the diagram keeps the note as last saved until the text is fixed. A
+  read-only draft shows the notes as text.
 -->
 <template>
   <!-- A diagram stored before the server kept these has none to show. -->
@@ -118,20 +126,105 @@
       {{ scenario ? 'Edit scenario' : 'Add scenario' }}
     </button>
   </div>
+
+  <div class="inspector-diagram" data-testid="inspector-notes">
+    <h3>Notes</h3>
+    <template v-if="store.readOnly">
+      <ul v-if="notes.length" class="inspector-diagram__notes">
+        <li
+          v-for="(note, index) in notes"
+          :key="index"
+          v-text="note"
+          class="inspector-diagram__note-text"
+          :data-testid="`inspector-note-${index + 1}`" />
+      </ul>
+      <p v-else class="inspector-diagram__none">No notes.</p>
+    </template>
+    <template v-else>
+      <ul v-if="rows.length" class="inspector-diagram__notes">
+        <li
+          v-for="(row, index) in rows"
+          :key="row.key"
+          class="inspector-diagram__note">
+          <textarea
+            :ref="(element) => setNoteBox(row.key, element)"
+            v-model="row.text"
+            class="inspector-diagram__note-box"
+            rows="3"
+            :aria-label="`Note ${index + 1}`"
+            :aria-invalid="noteProblem(row) ? 'true' : undefined"
+            :aria-describedby="
+              noteProblem(row) ? `inspector-note-error-${row.key}` : undefined
+            "
+            :data-testid="`inspector-note-${index + 1}`"
+            @change="commitNotes" />
+          <p
+            v-if="noteProblem(row)"
+            :id="`inspector-note-error-${row.key}`"
+            class="inspector-diagram__note-error"
+            role="alert"
+            :data-testid="`inspector-note-error-${index + 1}`">
+            <builder-icon name="close" :size="14" />
+            <span>{{ noteProblem(row) }}</span>
+          </p>
+          <button
+            type="button"
+            class="builder-button inspector-diagram__note-delete"
+            :data-testid="`inspector-note-delete-${index + 1}`"
+            @click="deleteNote(index)">
+            <builder-icon name="trash" :size="14" />
+            Delete<span class="builder-visually-hidden">
+              note {{ index + 1 }}</span
+            >
+          </button>
+        </li>
+      </ul>
+      <p v-else class="inspector-diagram__none">No notes.</p>
+      <button
+        ref="addNoteButton"
+        type="button"
+        class="builder-button"
+        data-testid="inspector-note-add"
+        :disabled="notesFull"
+        :aria-describedby="notesFull ? 'inspector-notes-limit' : undefined"
+        @click="addNote">
+        <builder-icon name="plus" :size="14" />
+        Add note
+      </button>
+      <p
+        v-if="notesFull"
+        id="inspector-notes-limit"
+        class="inspector-diagram__none"
+        data-testid="inspector-notes-limit">
+        A diagram holds at most {{ MAX_DIAGRAM_NOTES }} notes.
+      </p>
+    </template>
+  </div>
 </template>
 
 <script setup>
-  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+  import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+  } from 'vue';
 
   import BuilderIcon from '../BuilderIcon.vue';
 
   import { formatTimestamp } from '@/builder/format.js';
   import {
+    diagramNoteProblem,
+    MAX_DIAGRAM_NOTES,
+    metadataOf,
     scenarioApps,
     sourceAnnotations,
     storedScenarioName,
   } from '@/builder/model.js';
   import { useBuilderStore } from '@/builder/store.js';
+  import { isBlank } from '@/builder/text.js';
 
   defineEmits(['scenario']);
 
@@ -152,11 +245,13 @@
   // Who made the diagram and who saved it last, and when, and the uploaded
   // file the draft was made from.
   const details = computed(() => {
-    const { author, createdAt, updatedBy, updatedAt } = store.doc;
+    const { createdBy, createdAt, updatedBy, updatedAt } = metadataOf(
+      store.doc,
+    );
     const file = store.draftRecord.sourceFile;
 
     return [
-      stampRow('created', 'Created', author, createdAt),
+      stampRow('created', 'Created', createdBy, createdAt),
       stampRow('edited', 'Last edited', updatedBy, updatedAt),
       file
         ? { id: 'source-file', label: 'Source file', time: '', text: file }
@@ -226,6 +321,155 @@
       note: PROBLEMS[read.problem] || 'Its apps could not be read.',
     };
   });
+
+  // --- notes -----------------------------------------------------------
+
+  // The notes the diagram holds. The same list comes back while they stay
+  // the same (an edit elsewhere copies the list as it is), so the rows below
+  // are not reset by it, and lose no text being typed.
+  const NO_NOTES = Object.freeze([]);
+  const notes = computed(() => {
+    const held = metadataOf(store.doc).notes;
+
+    return Array.isArray(held) && held.length > 0 ? held : NO_NOTES;
+  });
+
+  // The notes being edited, one row each, with a key of their own so a row
+  // keeps its text box, and the focus in it, while other rows come and go.
+  // A row's `saved` is the note the diagram holds for it, which it keeps
+  // while the row's text cannot be written; a row added and not written yet
+  // has none, and is only here.
+  const rows = ref([]);
+  const noteBoxes = new Map();
+  const addNoteButton = ref(null);
+  let nextKey = 0;
+
+  function setNoteBox(key, element) {
+    if (element) {
+      noteBoxes.set(key, element);
+    } else {
+      noteBoxes.delete(key);
+    }
+  }
+
+  // Why a row's text cannot be written into the diagram (too long, or a
+  // control character in it), or ''. A blank row has none: it is dropped.
+  function noteProblem(row) {
+    return isBlank(row.text) ? '' : diagramNoteProblem(row.text);
+  }
+
+  // The note a row puts in the diagram: its text, or, while that cannot be
+  // written, the note the diagram holds for it, so a note that is too long
+  // keeps its last saved text until it is fixed. A blank row, and a new one
+  // whose text cannot be written, put none.
+  function noteOf(row) {
+    if (isBlank(row.text)) {
+      return null;
+    }
+
+    return noteProblem(row) ? (row.saved ?? null) : row.text;
+  }
+
+  // The rows follow the diagram's notes. Rows that already put in what the
+  // diagram holds are kept as they are, the text that cannot be written
+  // included, less the blank ones, which the diagram never holds.
+  watch(
+    notes,
+    (held) => {
+      const kept = rows.value.filter((row) => !isBlank(row.text));
+      const written = kept.filter((row) => noteOf(row) !== null);
+      const same =
+        written.length === held.length &&
+        written.every((row, index) => noteOf(row) === held[index]);
+
+      if (same) {
+        written.forEach((row) => {
+          row.saved = noteOf(row);
+        });
+        rows.value = kept;
+      } else {
+        rows.value = held.map((text) => ({
+          key: (nextKey += 1),
+          text,
+          saved: text,
+        }));
+      }
+    },
+    { immediate: true },
+  );
+
+  const notesFull = computed(() => rows.value.length >= MAX_DIAGRAM_NOTES);
+
+  // Where the focus goes when the row it was in goes: the text box now at
+  // that place, else the last one, else Add note, so it never falls to the
+  // page. A focus that is still somewhere is left there.
+  function keepFocus(index) {
+    nextTick(() => {
+      const active = document.activeElement;
+
+      if (active && active !== document.body) {
+        return;
+      }
+
+      const row = rows.value[Math.min(index, rows.value.length - 1)];
+      const target = row ? noteBoxes.get(row.key) : addNoteButton.value;
+
+      target?.focus();
+    });
+  }
+
+  // Writes the rows into the diagram, as one undo step; a blank row is
+  // dropped, also when the diagram's notes stay as they were. A row whose
+  // text cannot be written keeps its text box, with its error, and the
+  // diagram its saved note.
+  function writeNotes() {
+    const entry = store.setDiagramNotes(
+      rows.value.map(noteOf).filter((note) => note !== null),
+    );
+
+    if (!entry) {
+      rows.value = rows.value.filter((row) => !isBlank(row.text));
+    }
+  }
+
+  // A box left empty takes its row, and the focus may have been on that
+  // row's Delete button; a box left with text keeps its row, and the focus
+  // goes wherever the user moved it.
+  function commitNotes(event) {
+    const index = rows.value.findIndex(
+      (row) => noteBoxes.get(row.key) === event?.target,
+    );
+    const dropped = index >= 0 && isBlank(rows.value[index].text);
+
+    writeNotes();
+
+    if (dropped) {
+      keepFocus(index);
+    }
+  }
+
+  function deleteNote(index) {
+    const [removed] = rows.value.splice(index, 1);
+
+    if (removed) {
+      noteBoxes.delete(removed.key);
+    }
+
+    writeNotes();
+    keepFocus(index);
+  }
+
+  async function addNote() {
+    if (notesFull.value) {
+      return;
+    }
+
+    const row = { key: (nextKey += 1), text: '', saved: null };
+
+    rows.value.push(row);
+    await nextTick();
+    noteBoxes.get(row.key)?.focus();
+  }
 
   // --- values that scroll ----------------------------------------------
 
@@ -330,6 +574,50 @@
 
   .inspector-diagram__hosts,
   .inspector-diagram__detail {
+    overflow-wrap: anywhere;
+  }
+
+  /* A note is its text box over its Delete button; its text keeps its line
+     breaks when the draft is read only. */
+  .inspector-diagram__notes {
+    margin: 0 0 0.4rem;
+    padding: 0;
+    list-style: none;
+  }
+
+  .inspector-diagram__notes > li + li {
+    margin-top: 0.5rem;
+  }
+
+  .inspector-diagram__note {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .inspector-diagram__note-box {
+    width: 100%;
+    min-height: 3.5rem;
+    font-size: 0.8rem;
+    resize: vertical;
+  }
+
+  .inspector-diagram__note-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* The message under a box whose text cannot be saved, which also has the
+     Inspector's thicker border for aria-invalid: a cross before the words,
+     so color is not the only sign. */
+  .inspector-diagram p.inspector-diagram__note-error {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    margin: 0;
+    color: var(--bx-danger);
+    font-weight: 600;
     overflow-wrap: anywhere;
   }
 

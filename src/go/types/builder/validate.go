@@ -113,16 +113,19 @@ type validator struct {
 //
 // Size limits (counts, lengths, payload sizes) are intentionally not checked
 // here; they belong to the API layer. The exceptions are bounds the editor
-// checks too, by the same rules, before it saves: those on the header's
-// names, the source annotations, the templates and the custom icons.
-// Validate rejects:
+// checks too, by the same rules, before it saves: those on the metadata's
+// names and notes, the source annotations, the templates and the custom
+// icons. Validate rejects:
 //
 //   - wrong schema URI or revision,
 //   - a document name longer than [MaxNameBytes] or containing control
 //     characters, which the draft service could not record as a title,
-//   - an author or updatedBy longer than [MaxUserBytes] or containing control
-//     characters,
+//   - a createdBy or updatedBy longer than [MaxUserBytes] or containing
+//     control characters,
 //   - a createdAt or updatedAt that is not a time in [TimeLayout],
+//   - more than [MaxDiagramNotes] notes, and a note that is blank, longer
+//     than [MaxDiagramNoteBytes] or holds a control character other than a
+//     newline or a tab,
 //   - missing or null nodes, networks, or edges (the editor requires arrays,
 //     empty when there is nothing in them),
 //   - identifiers that are not RFC 4122 UUIDs, and duplicate
@@ -203,19 +206,7 @@ func (v *validator) validateHeader() {
 		v.addf("revision", "expected %d, got %d", SchemaRevision, v.doc.Revision)
 	}
 
-	v.validateID("id", "document", v.doc.ID)
-
-	switch {
-	case len(v.doc.Name) > MaxNameBytes:
-		v.addf("name", "document name must be at most %d bytes", MaxNameBytes)
-	case strings.ContainsFunc(v.doc.Name, isControl):
-		v.addf("name", "document name must not contain control characters")
-	}
-
-	v.validateUser(keyAuthor, v.doc.Author)
-	v.validateTime(keyCreatedAt, v.doc.CreatedAt)
-	v.validateUser(keyUpdatedBy, v.doc.UpdatedBy)
-	v.validateTime(keyUpdatedAt, v.doc.UpdatedAt)
+	v.validateMetadata()
 
 	// decodeDocument in the front end's decode.js refuses a document without
 	// these arrays, so one stored here could never be opened.
@@ -242,13 +233,68 @@ func (v *validator) validateHeader() {
 	}
 }
 
-// isControl reports whether r is a control character, which no text the
-// document header carries may hold.
+// metadataPath is the path of a field of the document metadata.
+func metadataPath(key string) string {
+	return keyMetadata + "." + key
+}
+
+// validateMetadata checks the document metadata: its identifier, the name,
+// the users and times it names, and its notes.
+func (v *validator) validateMetadata() {
+	meta := &v.doc.Metadata
+
+	v.validateID(metadataPath(keyID), "document", meta.ID)
+
+	switch {
+	case len(meta.Name) > MaxNameBytes:
+		v.addf(metadataPath(keyName), "document name must be at most %d bytes", MaxNameBytes)
+	case strings.ContainsFunc(meta.Name, isControl):
+		v.addf(metadataPath(keyName), "document name must not contain control characters")
+	}
+
+	v.validateUser(metadataPath(keyCreatedBy), meta.CreatedBy)
+	v.validateTime(metadataPath(keyCreatedAt), meta.CreatedAt)
+	v.validateUser(metadataPath(keyUpdatedBy), meta.UpdatedBy)
+	v.validateTime(metadataPath(keyUpdatedAt), meta.UpdatedAt)
+	v.validateNotes(meta.Notes)
+}
+
+// isControl reports whether r is a control character, which no single line
+// of text the document metadata carries may hold.
 func isControl(r rune) bool {
 	return r < 0x20 || r == 0x7f
 }
 
-// validateUser checks a user the document header names: bounded like the
+// isNoteControl reports whether r is a control character a diagram note
+// may not hold: any but the newline and the tab, which multiline text
+// needs.
+func isNoteControl(r rune) bool {
+	return isControl(r) && r != '\n' && r != '\t'
+}
+
+// validateNotes checks the diagram notes: at most [MaxDiagramNotes], each
+// not blank, at most [MaxDiagramNoteBytes], and free of control characters
+// but newlines and tabs.
+func (v *validator) validateNotes(notes []string) {
+	if len(notes) > MaxDiagramNotes {
+		v.addf(metadataPath(keyNotes), "at most %d notes are allowed, not %d", MaxDiagramNotes, len(notes))
+	}
+
+	for i, note := range notes {
+		path := fmt.Sprintf("%s[%d]", metadataPath(keyNotes), i)
+
+		switch {
+		case strings.TrimSpace(note) == "":
+			v.addf(path, "note must not be blank")
+		case len(note) > MaxDiagramNoteBytes:
+			v.addf(path, "note must be at most %d bytes", MaxDiagramNoteBytes)
+		case strings.ContainsFunc(note, isNoteControl):
+			v.addf(path, "note must not contain control characters other than newline and tab")
+		}
+	}
+}
+
+// validateUser checks a user the document metadata names: bounded like the
 // owner of a draft, and free of control characters. The name itself is not
 // checked against the names this server issues, since a document made on
 // another server may name a user of that one.
@@ -270,7 +316,7 @@ func IsTime(value string) bool {
 	return err == nil && parsed.Format(TimeLayout) == value
 }
 
-// validateTime checks a time of the document header, when it has one.
+// validateTime checks a time of the document metadata, when it has one.
 func (v *validator) validateTime(path, value string) {
 	if value != "" && !IsTime(value) {
 		v.addf(path, "%s must be a UTC time in the form YYYY-MM-DDTHH:MM:SSZ", path)

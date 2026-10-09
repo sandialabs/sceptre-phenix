@@ -397,7 +397,7 @@
       mode,
       legacy: result.source?.builder === LEGACY_ANNOTATION,
       source: result.source?.name || '',
-      name: result.document?.name || '',
+      name: result.document?.metadata?.name || '',
     });
 
     return { ...result, announcement: `${said} Draft created.` };

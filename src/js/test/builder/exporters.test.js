@@ -25,6 +25,8 @@ import {
   connect,
   createDocument,
   groupNodes,
+  setDiagramNotes,
+  setDocumentInfo,
   updateEdge,
   updateNetwork,
   updateNode,
@@ -222,33 +224,37 @@ describe('document download', () => {
     expect(parseDocument(YAML.load(toYAMLString(doc)))).toEqual(doc);
   });
 
-  // Who made the diagram and who saved it last are part of the document,
-  // so a download holds them where the server's own encoding has them.
-  test('downloads hold who made and last saved the diagram, after the description', () => {
+  // Who made the diagram and who saved it last are part of the document's
+  // metadata, so a download holds them where the server's own encoding has
+  // them.
+  test('downloads hold who made and last saved the diagram in its metadata, after the description', () => {
     const stamp = {
-      author: 'alice',
+      createdBy: 'alice',
       createdAt: '2026-10-01T15:04:05Z',
       updatedBy: 'bob',
       updatedAt: '2026-10-01T16:10:00Z',
     };
-    const doc = withStamp(sampleDocument().doc, stamp);
+    const doc = withStamp(
+      setDiagramNotes(sampleDocument().doc, ['Snapshot first.']),
+      stamp,
+    );
     const json = toJSONString(doc);
-    const header = Object.keys(JSON.parse(json)).slice(0, 10);
-    const expected = [
-      '$schema',
-      'revision',
+    const header = Object.keys(JSON.parse(json)).slice(0, 4);
+    const expected = ['$schema', 'revision', 'metadata', 'nodes'];
+    const metadataKeys = [
       'id',
       'name',
       'description',
-      'author',
+      'createdBy',
       'createdAt',
       'updatedBy',
       'updatedAt',
-      'nodes',
+      'notes',
     ];
 
     expect(header).toEqual(expected);
-    expect(JSON.parse(json)).toMatchObject(stamp);
+    expect(Object.keys(JSON.parse(json).metadata)).toEqual(metadataKeys);
+    expect(JSON.parse(json).metadata).toMatchObject(stamp);
     expect(parseDocument(JSON.parse(json))).toEqual(doc);
 
     // YAML keeps the order too, and its times read back as the same text,
@@ -256,21 +262,26 @@ describe('document download', () => {
     const yaml = toYAMLString(doc);
     const read = YAML.load(yaml, { schema: YAML.JSON_SCHEMA });
 
-    expect(Object.keys(read).slice(0, 10)).toEqual(expected);
-    expect(read).toMatchObject(stamp);
+    expect(Object.keys(read).slice(0, 4)).toEqual(expected);
+    expect(Object.keys(read.metadata)).toEqual(metadataKeys);
+    expect(read.metadata).toMatchObject(stamp);
     expect(parseDocument(read)).toEqual(doc);
-    expect(yaml.indexOf('description:')).toBeLessThan(yaml.indexOf('author:'));
+    expect(yaml.indexOf('description:')).toBeLessThan(
+      yaml.indexOf('createdBy:'),
+    );
     expect(yaml.indexOf('updatedAt:')).toBeLessThan(yaml.indexOf('nodes:'));
 
     // A diagram stored before the server kept them downloads without them.
-    expect(toJSONString(sampleDocument().doc)).not.toContain('"author"');
+    expect(toJSONString(sampleDocument().doc)).not.toContain('"createdBy"');
   });
 
-  test('file names are filesystem safe', () => {
-    expect(exportFileName({ name: 'My Topology!' }, 'json')).toBe(
+  test('file names are filesystem safe, and follow the diagram name', () => {
+    expect(exportFileName({ metadata: { name: 'My Topology!' } }, 'json')).toBe(
       'my-topology.json',
     );
     expect(exportFileName({}, 'png')).toBe('topology.png');
+    // The name is the metadata's: one at the root is no document's.
+    expect(exportFileName({ name: 'Root' }, 'png')).toBe('topology.png');
   });
 });
 
@@ -514,7 +525,7 @@ describe('savers', () => {
 
   test('Topology YAML is the text the server sends, named as Publish names it, in a file apart from Builder YAML', async () => {
     const { doc } = sampleDocument();
-    const named = { ...doc, name: 'Lab #2 (copy)' };
+    const named = setDocumentInfo(doc, { name: 'Lab #2 (copy)' });
     const saveAs = vi.fn();
     const yaml = 'apiVersion: phenix.sandia.gov/v1\nkind: Topology\n';
     const exportTopology = vi.fn(async (_, name) => ({
@@ -874,7 +885,7 @@ describe('GEXF', () => {
 
     expect(meta.attributes.lastmodifieddate).toBe('2026-03-04');
     expect(childOf(meta, 'creator').text).toBe('phēnix Builder');
-    expect(childOf(meta, 'description').text).toBe(doc.description);
+    expect(childOf(meta, 'description').text).toBe(doc.metadata.description);
     expect(graph.attributes).toEqual({
       mode: 'static',
       defaultedgetype: 'undirected',
@@ -1275,7 +1286,7 @@ describe('GEXF', () => {
   // draft.
   test('is dated by the last change known of the diagram', () => {
     const { doc } = gexfDocument();
-    const saved = { ...doc, updatedAt: '2026-05-06T12:00:00Z' };
+    const saved = withStamp(doc, { updatedAt: '2026-05-06T12:00:00Z' });
     const times = {
       changedAt: '2026-07-08T12:00:00Z',
       doc: saved,

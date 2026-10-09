@@ -600,7 +600,10 @@ export function inspectorTarget(doc, selection) {
       kind: 'document',
       title: 'Diagram',
       target: null,
-      data: { name: doc.name || '', description: doc.description || '' },
+      data: {
+        name: doc.metadata?.name || '',
+        description: doc.metadata?.description || '',
+      },
     };
   }
 

@@ -135,7 +135,7 @@ func TestReadDocumentFile(t *testing.T) {
 					len(file.Data), file.Digest, digestOf(canonical))
 			}
 
-			if file.Document == nil || file.Document.Name != "site" {
+			if file.Document == nil || file.Document.Metadata.Name != "site" {
 				t.Fatalf("document = %+v, want the document named site", file.Document)
 			}
 
@@ -504,7 +504,7 @@ func TestParseDocumentText(t *testing.T) { //nolint:paralleltest // sets the env
 			t.Fatalf("%s: ParseDocumentText returned error: %v", name, err)
 		}
 
-		if !bytes.Equal(file.Data, canonical) || file.Digest != digestOf(canonical) || file.Document.Name != "site" {
+		if !bytes.Equal(file.Data, canonical) || file.Digest != digestOf(canonical) || file.Document.Metadata.Name != "site" {
 			t.Fatalf("%s: file = %d bytes with digest %s, want the canonical document", name, len(file.Data), file.Digest)
 		}
 	}
@@ -513,7 +513,7 @@ func TestParseDocumentText(t *testing.T) { //nolint:paralleltest // sets the env
 	t.Setenv("BUILDER_FILE_TEST", "expanded")
 
 	file, err := ParseDocumentText(bytes.Replace(canonical, []byte(`"site"`), []byte(`"${BUILDER_FILE_TEST}"`), 1))
-	if err != nil || file.Document.Name != "${BUILDER_FILE_TEST}" {
+	if err != nil || file.Document.Metadata.Name != "${BUILDER_FILE_TEST}" {
 		t.Fatalf("ParseDocumentText = %+v, %v; want the name kept as it is written", file, err)
 	}
 
@@ -576,9 +576,9 @@ func TestLoadDocumentFile(t *testing.T) { //nolint:paralleltest // sets the envi
 		}
 
 		if !bytes.Equal(file.Data, canonical) || file.Digest != digestOf(canonical) ||
-			file.Document.Name != "site ${BUILDER_FILE_TEST}" {
+			file.Document.Metadata.Name != "site ${BUILDER_FILE_TEST}" {
 			t.Errorf("%s: document %q with digest %s, want the file's, unexpanded, with digest %s",
-				name, file.Document.Name, file.Digest, digestOf(canonical))
+				name, file.Document.Metadata.Name, file.Digest, digestOf(canonical))
 		}
 	}
 }

@@ -934,8 +934,8 @@ func TestLibraryIconLimit(t *testing.T) {
 
 	err := add(templates[MaxLibraryTemplateIcons:])
 
-	if reason, limit := refusal(t, err); reason != "a library holds at most 32 custom icons" || !limit {
-		t.Fatalf("the 33rd icon is refused with %q (limit %v)", reason, limit)
+	if reason, limit := refusal(t, err); reason != "a library holds at most 50 custom icons" || !limit {
+		t.Fatalf("the 51st icon is refused with %q (limit %v)", reason, limit)
 	}
 
 	// One more template with an icon the library has is not one more icon.

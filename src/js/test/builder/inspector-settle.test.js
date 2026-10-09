@@ -565,14 +565,14 @@ describe("a device's look is applied without Apply", () => {
     expect('icon' in findNode(store.doc, alpha.id).device).toBe(false);
     expect('icons' in store.doc).toBe(false);
     expect(store.announcement).toBe(
-      '1 custom icon was left out: a diagram holds at most 32.',
+      '1 custom icon was left out: a diagram holds at most 50.',
     );
   });
 
-  test('a diagram with 32 icons is full for an icon it does not carry', async () => {
+  test('a diagram with 50 icons is full for an icon it does not carry', async () => {
     const { doc, alpha } = sampleDocument();
     const carried = Object.fromEntries(
-      Array.from({ length: 32 }, (_, index) => [
+      Array.from({ length: 50 }, (_, index) => [
         `sha256:${String(index).padStart(64, '0')}`,
         { data: ICON_DATA },
       ]),
@@ -586,7 +586,7 @@ describe("a device's look is applied without Apply", () => {
       },
     );
 
-    expect(icons.diagram()).toHaveLength(32);
+    expect(icons.diagram()).toHaveLength(50);
     expect(icons.full(ICON_KEY)).toBe(true);
     expect(icons.full(Object.keys(carried)[0])).toBe(false);
     // Nothing of an object's own makes an id look carried.

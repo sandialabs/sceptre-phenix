@@ -32,16 +32,23 @@ import {
   BORDER_STYLES,
   HEX_COLOR,
   LINE_STYLES,
+  MAX_DIAGRAM_NOTE_BYTES,
+  MAX_DIAGRAM_NOTES,
   SCHEMA_REVISION,
   SCHEMA_URI,
   deviceHandles,
   edgeEndpoints,
+  metadataOf,
   sizeOf,
   specInterfaces,
 } from './model.js';
-import { hasControlCharacters, utf8Length } from './text.js';
+import {
+  hasControlCharacters,
+  hasControlCharactersInLines,
+  utf8Length,
+} from './text.js';
 
-export { MAX_USER_BYTES };
+export { MAX_DIAGRAM_NOTE_BYTES, MAX_DIAGRAM_NOTES, MAX_USER_BYTES };
 
 export const MAX_VLAN_ALIAS = 4094;
 
@@ -550,7 +557,7 @@ function validateUUID(issues, path, kind, id) {
   }
 }
 
-// A user the document header names (validateUser in validate.go): text of
+// A user the document metadata names (validateUser in validate.go): text of
 // at most MAX_USER_BYTES bytes without control characters. Empty or null is
 // none, as Go decodes it.
 function validateUser(issues, path, user) {
@@ -618,6 +625,86 @@ function validateTime(issues, path, value) {
   }
 }
 
+// The notes of a diagram (validateNotes in validate.go): at most
+// MAX_DIAGRAM_NOTES, each text that is not blank, at most
+// MAX_DIAGRAM_NOTE_BYTES long, and without control characters but the
+// newline and the tab.
+function validateNotes(notes, issues) {
+  if (notes === undefined || notes === null) {
+    return;
+  }
+
+  // The server refuses any other value when it decodes the document.
+  if (!Array.isArray(notes)) {
+    issue(issues, 'metadata.notes', 'notes must be a list of text');
+
+    return;
+  }
+
+  if (notes.length > MAX_DIAGRAM_NOTES) {
+    issue(
+      issues,
+      'metadata.notes',
+      `at most ${MAX_DIAGRAM_NOTES} notes are allowed, not ${notes.length}`,
+    );
+  }
+
+  notes.forEach((note, index) => {
+    const path = `metadata.notes[${index}]`;
+
+    if (typeof note !== 'string') {
+      issue(issues, path, 'note must be text');
+    } else if (!trimSpace(note)) {
+      issue(issues, path, 'note must not be blank');
+    } else if (utf8Length(note) > MAX_DIAGRAM_NOTE_BYTES) {
+      issue(
+        issues,
+        path,
+        `note must be at most ${MAX_DIAGRAM_NOTE_BYTES} bytes`,
+      );
+    } else if (hasControlCharactersInLines(note)) {
+      issue(
+        issues,
+        path,
+        'note must not contain control characters other than newline and tab',
+      );
+    }
+  });
+}
+
+// The document's metadata (validateMetadata in validate.go): its id, its
+// name, the users and times it names, and its notes. Issues are at
+// metadata.<field>, as the server reports them.
+function validateMetadata(metadata, issues) {
+  if (!trimSpace(String(metadata.id || ''))) {
+    issue(issues, 'metadata.id', 'document ID is required');
+  }
+
+  validateUUID(issues, 'metadata.id', 'document', metadata.id);
+
+  const name = String(metadata.name ?? '');
+
+  if (utf8Length(name) > MAX_NAME_BYTES) {
+    issue(
+      issues,
+      'metadata.name',
+      `document name must be at most ${MAX_NAME_BYTES} bytes`,
+    );
+  } else if (hasControlCharacters(name)) {
+    issue(
+      issues,
+      'metadata.name',
+      'document name must not contain control characters',
+    );
+  }
+
+  validateUser(issues, 'metadata.createdBy', metadata.createdBy);
+  validateTime(issues, 'metadata.createdAt', metadata.createdAt);
+  validateUser(issues, 'metadata.updatedBy', metadata.updatedBy);
+  validateTime(issues, 'metadata.updatedAt', metadata.updatedAt);
+  validateNotes(metadata.notes, issues);
+}
+
 function validateHeader(doc, issues) {
   if (doc.$schema !== SCHEMA_URI) {
     issue(
@@ -635,28 +722,7 @@ function validateHeader(doc, issues) {
     );
   }
 
-  if (!trimSpace(String(doc.id || ''))) {
-    issue(issues, 'id', 'document ID is required');
-  }
-
-  validateUUID(issues, 'id', 'document', doc.id);
-
-  const name = String(doc.name ?? '');
-
-  if (utf8Length(name) > MAX_NAME_BYTES) {
-    issue(
-      issues,
-      'name',
-      `document name must be at most ${MAX_NAME_BYTES} bytes`,
-    );
-  } else if (hasControlCharacters(name)) {
-    issue(issues, 'name', 'document name must not contain control characters');
-  }
-
-  validateUser(issues, 'author', doc.author);
-  validateTime(issues, 'createdAt', doc.createdAt);
-  validateUser(issues, 'updatedBy', doc.updatedBy);
-  validateTime(issues, 'updatedAt', doc.updatedAt);
+  validateMetadata(metadataOf(doc), issues);
 
   const viewport = doc.viewport || {};
 

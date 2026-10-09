@@ -849,7 +849,7 @@ describe("the Builder's changes this browser holds", () => {
   const entry = (id, name) => ({
     id,
     label: `Edit ${id}`,
-    snapshot: { name, nodes: [], edges: [] },
+    snapshot: { metadata: { name }, nodes: [], edges: [] },
   });
 
   async function stored(...records) {
@@ -872,7 +872,7 @@ describe("the Builder's changes this browser holds", () => {
     const draft = {
       store: {
         readOnly,
-        doc: { name: 'Open lab' },
+        doc: { metadata: { name: 'Open lab' } },
         autosave: {
           record: {
             key: draftKey('alice', 'alice', 'd1'),
@@ -1181,7 +1181,7 @@ describe("the Builder's changes this browser holds", () => {
       'alice',
       'd2',
       {
-        document: { name: 'Other lab', nodes: [], edges: [] },
+        document: { metadata: { name: 'Other lab' }, nodes: [], edges: [] },
         summary: 'Edit b',
         opId: 'b',
       },
@@ -1305,7 +1305,7 @@ describe("the Builder's changes this browser holds", () => {
       }),
     ).resolves.toEqual({
       name: 'open-lab-2.json',
-      text: `${JSON.stringify({ name: 'Open lab', nodes: [], edges: [] }, null, 2)}\n`,
+      text: `${JSON.stringify({ metadata: { name: 'Open lab' }, nodes: [], edges: [] }, null, 2)}\n`,
     });
     await expect(
       draftExport({
@@ -1316,7 +1316,7 @@ describe("the Builder's changes this browser holds", () => {
       }),
     ).resolves.toEqual({
       name: 'open-lab.json',
-      text: '{\n  "name": "Open lab"\n}\n',
+      text: '{\n  "metadata": {\n    "name": "Open lab"\n  }\n}\n',
     });
     // Nor another user's, or one no longer here.
     await expect(
@@ -1333,9 +1333,9 @@ describe("the Builder's changes this browser holds", () => {
   });
 
   test('is saved as Download saves JSON', () => {
-    expect(diagramFile({ name: '  Core Lab: v2! ' })).toEqual({
+    expect(diagramFile({ metadata: { name: '  Core Lab: v2! ' } })).toEqual({
       name: 'core-lab-v2.json',
-      text: '{\n  "name": "  Core Lab: v2! "\n}\n',
+      text: '{\n  "metadata": {\n    "name": "  Core Lab: v2! "\n  }\n}\n',
     });
     expect(diagramFile({}).name).toBe('topology.json');
   });

@@ -27,8 +27,8 @@ func TestFromTopologyConfig(t *testing.T) {
 		t.Fatalf("document is not versioned: %s/%d", doc.Schema, doc.Revision)
 	}
 
-	if doc.ID != builder.DocumentID("builder-fixture") {
-		t.Fatalf("document ID = %q, want deterministic ID", doc.ID)
+	if doc.Metadata.ID != builder.DocumentID("builder-fixture") {
+		t.Fatalf("document ID = %q, want deterministic ID", doc.Metadata.ID)
 	}
 
 	if doc.Source == nil || doc.Source.Kind != builder.SourceKindTopology ||

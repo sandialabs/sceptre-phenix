@@ -668,7 +668,7 @@ test.describe('Configs page', () => {
       const stored = await builder.serverDraft(draft);
       expect.soft(stored.sourceToken).toMatch(/^builder-doc\//);
       const document = await builder.serverDocument(draft);
-      expect.soft(document.name).toBe(orphan);
+      expect.soft(document.metadata.name).toBe(orphan);
       expect
         .soft(document.nodes.map((node) => node.device?.hostname))
         .toEqual(['host-o']);

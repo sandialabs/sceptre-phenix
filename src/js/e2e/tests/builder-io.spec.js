@@ -206,7 +206,7 @@ async function buildConnectedDiagram(builder, title) {
       );
 
       return (
-        doc.name === title &&
+        doc.metadata.name === title &&
         doc.nodes.length === 2 &&
         doc.edges.length === 1 &&
         node.position.y - sw.position.y === 160
@@ -615,7 +615,7 @@ test.describe('download and upload', () => {
           const downloaded = JSON.parse(file.buffer.toString('utf8'));
           expect.soft(downloaded.$schema).toBe(SCHEMA_URI);
           expect.soft(downloaded.revision).toBe(1);
-          expect.soft(downloaded.name).toBe(title);
+          expect.soft(downloaded.metadata.name).toBe(title);
           expect
             .soft(downloaded.nodes.map((node) => node.kind).sort())
             .toEqual(['device', 'switch']);
@@ -623,7 +623,7 @@ test.describe('download and upload', () => {
             .soft(downloaded.networks.map((network) => network.name))
             .toEqual(['EXP']);
           expect.soft(downloaded.edges).toHaveLength(1);
-          expect.soft(downloaded.id).toBe(saved.id);
+          expect.soft(downloaded.metadata.id).toBe(saved.metadata.id);
           expect.soft(downloaded.nodes).toEqual(saved.nodes);
           expect.soft(downloaded.edges).toEqual(saved.edges);
 
@@ -646,7 +646,8 @@ test.describe('download and upload', () => {
               /^\$schema: https:\/\/phenix\.sandia\.gov\/schemas\/builder\/v1$/m,
             );
           expect.soft(text).toMatch(/^revision: 1$/m);
-          expect.soft(text).toContain(`name: ${title}\n`);
+          expect.soft(text).toMatch(/^metadata:$/m);
+          expect.soft(text).toContain(`\n  name: ${title}\n`);
           expect.soft(text).toMatch(/^nodes:$/m);
           expect.soft(text.match(/^ {4}kind: device$/gm)).toHaveLength(1);
           expect.soft(text.match(/^ {4}kind: switch$/gm)).toHaveLength(1);
@@ -1026,14 +1027,15 @@ test.describe('download and upload', () => {
 
       expect.soft((await builder.serverDraft(draft)).title).toBe(title);
       const doc = await builder.serverDocument(draft);
-      expect
-        .soft(doc)
-        .toMatchObject({ $schema: SCHEMA_URI, id: document.id, name: title });
+      expect.soft(doc).toMatchObject({
+        $schema: SCHEMA_URI,
+        metadata: { id: document.metadata.id, name: title },
+      });
     });
     expectNoFatal(issues);
   });
 
-  test('an uploaded file keeps the author it names, shows the uploader as its last editor, and is named in Details', async ({
+  test('an uploaded file keeps the creator it names, shows the uploader as its last editor, and is named in Details', async ({
     page,
     builder,
     issues,
@@ -1041,11 +1043,12 @@ test.describe('download and upload', () => {
     const title = uniqueName(testInfo, 'claimed');
     const fileName = `${title}.builder.json`;
     const claimed = {
-      author: 'alice',
+      createdBy: 'alice',
       createdAt: '2020-01-02T03:04:05Z',
       updatedBy: 'alice',
       updatedAt: '2020-02-03T04:05:06Z',
     };
+    const blank = blankDocument(title);
 
     await builder.open();
     const dialog = await openUpload(page);
@@ -1053,7 +1056,10 @@ test.describe('download and upload', () => {
       name: fileName,
       mimeType: 'application/json',
       buffer: Buffer.from(
-        JSON.stringify({ ...blankDocument(title), ...claimed }),
+        JSON.stringify({
+          ...blank,
+          metadata: { ...blank.metadata, ...claimed },
+        }),
       ),
     });
     const answered = waitForApi(page, 'POST', '/builder/drafts');
@@ -1072,15 +1078,15 @@ test.describe('download and upload', () => {
       await expect.soft(row.locator('dd')).toHaveText(fileName);
     });
 
-    await test.step('the author the file names is kept, and the uploader edited it last', async () => {
+    await test.step('the creator the file names is kept, and the uploader edited it last', async () => {
       expect(draft.stamp).toEqual({
-        author: claimed.author,
+        createdBy: claimed.createdBy,
         createdAt: claimed.createdAt,
         updatedBy: draft.owner,
         updatedAt: expect.stringMatching(DOCUMENT_TIME),
       });
       expect.soft(draft.stamp.updatedAt).not.toBe(claimed.updatedAt);
-      await expectDetail(page, 'created', claimed.author, claimed.createdAt);
+      await expectDetail(page, 'created', claimed.createdBy, claimed.createdAt);
       await expectDetail(page, 'edited', draft.owner, draft.stamp.updatedAt);
     });
 
@@ -1089,12 +1095,12 @@ test.describe('download and upload', () => {
       await builder.rename(`${title} renamed`);
       const { stamp, sourceFile } = await (await saved).json();
       expect.soft(stamp).toMatchObject({
-        author: claimed.author,
+        createdBy: claimed.createdBy,
         createdAt: claimed.createdAt,
         updatedBy: draft.owner,
       });
       expect.soft(sourceFile).toBe(fileName);
-      await expectDetail(page, 'created', claimed.author, claimed.createdAt);
+      await expectDetail(page, 'created', claimed.createdBy, claimed.createdAt);
       await expect
         .soft(builder.inspector.getByTestId('inspector-source-file'))
         .toContainText(fileName);
@@ -2182,7 +2188,7 @@ test.describe('import', () => {
       const stored = await builder.serverDraft(draft);
       expect.soft(stored.sourceToken || '').toBe('');
       const doc = await builder.serverDocument(draft);
-      expect.soft(doc.name).toBe(combined);
+      expect.soft(doc.metadata.name).toBe(combined);
       expect.soft(doc.source.kind).toBe('manual');
       for (const key of [
         'name',
@@ -2371,7 +2377,7 @@ test.describe('import', () => {
         .soft((await builder.serverDraft(draft)).sourceToken || '')
         .toBe('');
       const doc = await builder.serverDocument(draft);
-      expect.soft(doc.name).toBe(copyName);
+      expect.soft(doc.metadata.name).toBe(copyName);
       expect.soft(doc.source).toMatchObject({
         kind: 'manual',
         includeTopologies: [child, missing],

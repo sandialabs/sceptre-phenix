@@ -6,19 +6,23 @@
 //
 // Wire shape (see src/go/types/builder/document.go):
 //
-//   { $schema, revision, id, name?, description?, author?, createdAt?,
-//     updatedBy?, updatedAt?, nodes[], networks[], edges[], viewport, grid,
-//     scenario?, source?, layout?, templates?, icons? }
+//   { $schema, revision, metadata, nodes[], networks[], edges[], viewport,
+//     grid, scenario?, source?, layout?, templates?, icons? }
+//
+// where metadata is { id, name?, description?, createdBy?, createdAt?,
+// updatedBy?, updatedAt?, notes? }.
 //
 // Node payloads are discriminated by kind: device | switch | note | group.
 // `owner` is a property of the draft envelope and is never part of a document.
-// `author`, `createdAt`, `updatedBy` and `updatedAt` are, and only the server
-// sets them: it answers a create and a save with the values it wrote (the
-// stamp), which the editor copies into its own copy (see withStamp).
+// The metadata's `createdBy`, `createdAt`, `updatedBy` and `updatedAt` are,
+// and only the server sets them: it answers a create and a save with the
+// values it wrote (the stamp), which the editor copies into its own copy (see
+// withStamp).
 
 import { iconKeyForSpec, isIconKey, kindMeta } from './catalog.js';
 import { isBuilderAnnotation } from './configs.js';
 import { newId, uniqueName } from './ids.js';
+import { hasControlCharactersInLines, isBlank, utf8Length } from './text.js';
 
 export const SCHEMA_URI = 'https://phenix.sandia.gov/schemas/builder/v1';
 export const SCHEMA_REVISION = 1;
@@ -114,16 +118,25 @@ export function sizeOf(node) {
 /**
  * Creates a new, valid, empty document.
  *
- * @param {object} [init] name, description, id
+ * @param {object} [init] name, description, id, notes: what its metadata
+ *   starts with
  * @returns {object} document
  */
 export function createDocument(init = {}) {
-  return {
-    $schema: SCHEMA_URI,
-    revision: SCHEMA_REVISION,
+  const metadata = {
     id: init.id || newId(),
     name: init.name || 'Untitled diagram',
     description: init.description || '',
+  };
+
+  if (Array.isArray(init.notes) && init.notes.length > 0) {
+    metadata.notes = [...init.notes];
+  }
+
+  return {
+    $schema: SCHEMA_URI,
+    revision: SCHEMA_REVISION,
+    metadata,
     nodes: [],
     networks: [],
     edges: [],
@@ -269,8 +282,7 @@ export function combineIncluded(doc, name) {
 
   return {
     ...doc,
-    id: newId(),
-    name,
+    metadata: orderedMetadata({ ...metadataOf(doc), id: newId(), name }),
     nodes: (doc.nodes || []).map((node) => {
       if (!includedFrom(node)) {
         return node;
@@ -2793,57 +2805,89 @@ export function setGrid(doc, patch = {}) {
   return { ...doc, grid: { ...doc.grid, ...patch } };
 }
 
-// --- who made and last saved the document -----------------------------------
+// --- the document's metadata -------------------------------------------------
 
-// The header fields the server sets, in the order its encoding has them,
-// after `description` (Document in document.go).
-export const STAMP_KEYS = ['author', 'createdAt', 'updatedBy', 'updatedAt'];
-
-// The header keys the stamp follows.
-const BEFORE_STAMP = new Set([
-  '$schema',
-  'revision',
+// The keys of a document's metadata, in the order the server's encoding has
+// them (Metadata in document.go).
+export const METADATA_KEYS = [
   'id',
   'name',
   'description',
-]);
+  'createdBy',
+  'createdAt',
+  'updatedBy',
+  'updatedAt',
+  'notes',
+];
+
+// The metadata the server sets, after `description`.
+export const STAMP_KEYS = ['createdBy', 'createdAt', 'updatedBy', 'updatedAt'];
+
+// The most notes a diagram's metadata holds, and the longest one in UTF-8
+// bytes (MaxDiagramNotes and MaxDiagramNoteBytes in document.go).
+export const MAX_DIAGRAM_NOTES = 100;
+export const MAX_DIAGRAM_NOTE_BYTES = 4096;
 
 /**
- * The document with the author, creation time, last editor and last edit
- * time the server wrote into the stored copy of it (the `stamp` of a create
- * or save response). A value the stamp lacks is removed, as the stored
- * document has none. The four keys follow the description, as in the
- * server's encoding, so a download reads like the stored document. The same
- * document is returned when it holds exactly the stamp already.
+ * The metadata of a document: what it says of itself, its identifier, name,
+ * description, who made and last saved it, and its notes. A document always
+ * has one; this is an empty one for a value that is not a document.
  *
  * @param {object} doc
- * @param {{author?: string, createdAt?: string, updatedBy?: string,
+ * @returns {object}
+ */
+export function metadataOf(doc) {
+  return doc?.metadata && typeof doc.metadata === 'object' ? doc.metadata : {};
+}
+
+// The metadata with its keys in the server's order, and any other after.
+function orderedMetadata(metadata) {
+  return Object.fromEntries(
+    [
+      ...METADATA_KEYS.filter((key) => key in metadata),
+      ...Object.keys(metadata).filter((key) => !METADATA_KEYS.includes(key)),
+    ].map((key) => [key, metadata[key]]),
+  );
+}
+
+/**
+ * The document with the creator, creation time, last editor and last edit
+ * time the server wrote into the stored copy of it (the `stamp` of a create
+ * or save response) in its metadata. A value the stamp lacks is removed, as
+ * the stored document has none. The metadata keeps the server's order, so a
+ * download reads like the stored document. The same document is returned
+ * when it holds exactly the stamp already.
+ *
+ * @param {object} doc
+ * @param {{createdBy?: string, createdAt?: string, updatedBy?: string,
  *   updatedAt?: string}} [stamp]
  * @returns {object} document
  */
 export function withStamp(doc, stamp) {
-  const fields = STAMP_KEYS.filter(
-    (key) => typeof stamp?.[key] === 'string' && stamp[key] !== '',
-  ).map((key) => [key, stamp[key]]);
-  const rest = Object.entries(doc).filter(([key]) => !STAMP_KEYS.includes(key));
-  const header = rest.findLastIndex(([key]) => BEFORE_STAMP.has(key)) + 1;
-  const next = Object.fromEntries([
-    ...rest.slice(0, header),
-    ...fields,
-    ...rest.slice(header),
-  ]);
+  const current = metadataOf(doc);
+  const metadata = Object.fromEntries(
+    Object.entries(current).filter(([key]) => !STAMP_KEYS.includes(key)),
+  );
 
-  return JSON.stringify(Object.keys(next)) ===
-    JSON.stringify(Object.keys(doc)) &&
-    STAMP_KEYS.every((key) => next[key] === doc[key])
-    ? doc
-    : next;
+  STAMP_KEYS.forEach((key) => {
+    if (typeof stamp?.[key] === 'string' && stamp[key] !== '') {
+      metadata[key] = stamp[key];
+    }
+  });
+
+  const next = orderedMetadata(metadata);
+  const unchanged =
+    JSON.stringify(Object.keys(next)) ===
+      JSON.stringify(Object.keys(current)) &&
+    STAMP_KEYS.every((key) => next[key] === current[key]);
+
+  return unchanged ? doc : { ...doc, metadata: next };
 }
 
 /**
  * The stamp of the document a snapshot the server lists holds: every save
  * stores its user and its time, to the second, as the document's last
- * editor and last edit time, and keeps the author and creation time of the
+ * editor and last edit time, and keeps the creator and creation time of the
  * draft, which `doc`, another snapshot of it, holds too.
  *
  * @param {object} doc a document of the draft
@@ -2858,8 +2902,8 @@ export function savedStamp(doc, snapshot) {
   const parsed = whole || !at ? null : new Date(at);
 
   return {
-    author: doc?.author,
-    createdAt: doc?.createdAt,
+    createdBy: metadataOf(doc).createdBy,
+    createdAt: metadataOf(doc).createdAt,
     updatedBy: snapshot?.createdBy,
     updatedAt: whole
       ? `${whole[1]}Z`
@@ -2871,21 +2915,29 @@ export function savedStamp(doc, snapshot) {
 
 /**
  * Whether two documents differ at most in what the server stamps (see
- * withStamp): everything else is the very same content.
+ * withStamp): everything else, the rest of the metadata included, is the
+ * very same content.
  *
  * @param {object} a
  * @param {object} b
  * @returns {boolean}
  */
 export function sameButStamp(a, b) {
-  const keys = (doc) =>
-    Object.keys(doc || {}).filter((key) => !STAMP_KEYS.includes(key));
-  const left = keys(a);
+  const same = (left, right, skipped) => {
+    const keys = (value) =>
+      Object.keys(value || {}).filter((key) => !skipped.includes(key));
+    const own = keys(left);
+
+    return (
+      own.length === keys(right).length &&
+      own.every((key) => left[key] === right[key])
+    );
+  };
 
   return (
     Boolean(a && b) &&
-    left.length === keys(b).length &&
-    left.every((key) => a[key] === b[key])
+    same(a, b, ['metadata']) &&
+    same(metadataOf(a), metadataOf(b), STAMP_KEYS)
   );
 }
 
@@ -2895,17 +2947,86 @@ export function sameButStamp(a, b) {
  * @returns {object} document
  */
 export function setDocumentInfo(doc, patch = {}) {
-  const next = { ...doc };
+  const metadata = { ...metadataOf(doc) };
 
   if (patch.name !== undefined) {
-    next.name = patch.name;
+    metadata.name = patch.name;
   }
 
   if (patch.description !== undefined) {
-    next.description = patch.description;
+    metadata.description = patch.description;
   }
 
-  return next;
+  return { ...doc, metadata: orderedMetadata(metadata) };
+}
+
+/**
+ * Why a diagram note cannot be written into the document, as the server
+ * would refuse it (validateNotes in validate.go): it is longer than
+ * MAX_DIAGRAM_NOTE_BYTES in UTF-8, or holds a control character other than
+ * the newline and the tab. A blank note has no problem here, since
+ * setDiagramNotes drops it.
+ *
+ * @param {string} note
+ * @returns {string} the reason, as a sentence for the editor, or '' for a
+ *   note that can be written
+ */
+export function diagramNoteProblem(note) {
+  const text = String(note ?? '');
+
+  if (utf8Length(text) > MAX_DIAGRAM_NOTE_BYTES) {
+    return `A note holds at most ${MAX_DIAGRAM_NOTE_BYTES} bytes in UTF-8, and this one is longer, so it is not saved until it is shorter.`;
+  }
+
+  if (hasControlCharactersInLines(text)) {
+    return 'A note cannot hold control characters other than newline and tab, so it is not saved until they are removed.';
+  }
+
+  return '';
+}
+
+/**
+ * The document with the notes of its diagram, in order. A note that is only
+ * white space is dropped, as the server would refuse it, and the others are
+ * kept as written. A diagram left with no notes has no `notes` in its
+ * metadata, as one that never had any. The same document is returned when
+ * its notes are those already, and also when one of them cannot be written
+ * (see diagramNoteProblem): the document then keeps the notes it had, so no
+ * caller writes a note the server would refuse.
+ *
+ * @param {object} doc
+ * @param {string[]} notes
+ * @returns {object} document
+ */
+export function setDiagramNotes(doc, notes) {
+  const kept = (Array.isArray(notes) ? notes : []).filter(
+    (note) => typeof note === 'string' && !isBlank(note),
+  );
+
+  if (kept.some((note) => diagramNoteProblem(note))) {
+    return doc;
+  }
+
+  const current = metadataOf(doc).notes;
+  const before = Array.isArray(current) ? current : [];
+
+  if (
+    kept.length === before.length &&
+    kept.every((note, index) => note === before[index]) &&
+    (kept.length > 0 || current === undefined)
+  ) {
+    return doc;
+  }
+
+  const metadata = { ...metadataOf(doc) };
+
+  if (kept.length > 0) {
+    metadata.notes = kept;
+  } else {
+    delete metadata.notes;
+  }
+
+  return { ...doc, metadata: orderedMetadata(metadata) };
 }
 
 /**

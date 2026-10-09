@@ -754,7 +754,7 @@ describe('settleIcons', () => {
     }
   });
 
-  test('holds at most 32 icons: one more is left out, and one freed makes room', () => {
+  test('holds at most 50 icons: one more is left out, and one freed makes room', () => {
     const many = Array.from({ length: MAX_DOCUMENT_ICONS + 1 }, (_, index) =>
       iconOf([index, 7, 9, 255], `icon ${index}`),
     );
@@ -794,10 +794,10 @@ describe('settleIcons', () => {
     expect(droppedIconsNote(0)).toBe('');
     expect(droppedIconsNote(undefined)).toBe('');
     expect(droppedIconsNote(1)).toBe(
-      '1 custom icon was left out: a diagram holds at most 32.',
+      '1 custom icon was left out: a diagram holds at most 50.',
     );
     expect(droppedIconsNote(3)).toBe(
-      '3 custom icons were left out: a diagram holds at most 32.',
+      '3 custom icons were left out: a diagram holds at most 50.',
     );
   });
 });

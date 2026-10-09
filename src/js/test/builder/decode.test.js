@@ -9,6 +9,7 @@ import {
   GROUP_KEYS,
   HANDLE_KEYS,
   ICON_ENTRY_KEYS,
+  METADATA_KEYS,
   NETWORK_KEYS,
   NODE_KEYS,
   NOTE_KEYS,
@@ -194,6 +195,7 @@ describe('strict decoding', () => {
   // The same holds for every object in a document: a test on the server
   // holds each definition of the bundle to the fields of its Go type.
   test.each([
+    ['metadata', METADATA_KEYS],
     ['node', NODE_KEYS],
     ['device', DEVICE_KEYS],
     ['interfaceHandle', HANDLE_KEYS],
@@ -350,30 +352,86 @@ describe('strict decoding', () => {
   test('accepts who made and last saved the document, and reads null as none', () => {
     const { doc } = sampleDocument();
     const stamp = {
-      author: 'alice',
+      createdBy: 'alice',
       createdAt: '2026-10-01T15:04:05Z',
       updatedBy: 'bob@example.com',
       updatedAt: '2026-10-01T16:10:00Z',
     };
-    const decoded = parseDocument({ ...doc, ...stamp });
-
-    expect(decoded).toMatchObject(stamp);
-
-    const none = parseDocument({
+    const withMetadata = (fields) => ({
       ...doc,
-      author: null,
-      createdAt: null,
-      updatedBy: null,
-      updatedAt: null,
+      metadata: { ...doc.metadata, ...fields },
     });
+    const decoded = parseDocument(withMetadata(stamp));
 
-    expect(STAMP_KEYS.some((key) => key in none)).toBe(false);
-    // A key near one of them is still unknown.
-    expect(() => decodeDocument({ ...doc, updatedby: 'bob' })).toThrowError(
-      /document: unknown field "updatedby"/,
+    expect(decoded.metadata).toMatchObject(stamp);
+
+    const none = parseDocument(
+      withMetadata({
+        createdBy: null,
+        createdAt: null,
+        updatedBy: null,
+        updatedAt: null,
+        notes: null,
+      }),
     );
+
+    expect(STAMP_KEYS.some((key) => key in none.metadata)).toBe(false);
+    expect('notes' in none.metadata).toBe(false);
+    // A key near one of them is still unknown.
+    expect(() =>
+      decodeDocument(withMetadata({ updatedby: 'bob' })),
+    ).toThrowError(/metadata: unknown field "updatedby"/);
     expect(() => decodeDocument({ ...doc, owner: 'bob' })).toThrowError(
       /document: unknown field "owner"/,
+    );
+  });
+
+  // The fields a document says of itself are in its metadata only: a
+  // document of the shape before it had metadata is refused.
+  test('the metadata fields are refused at the root, and the author by its old name', () => {
+    const { doc } = sampleDocument();
+
+    for (const key of [
+      'id',
+      'name',
+      'description',
+      'author',
+      'createdAt',
+      'updatedBy',
+      'updatedAt',
+      'notes',
+    ]) {
+      expect(() => decodeDocument({ ...doc, [key]: 'x' }), key).toThrowError(
+        `document: unknown field "${key}"`,
+      );
+    }
+
+    expect(() =>
+      decodeDocument({ ...doc, metadata: { ...doc.metadata, author: 'x' } }),
+    ).toThrowError('metadata: unknown field "author"');
+  });
+
+  test('metadata and notes of the wrong shape are refused', () => {
+    const { doc } = sampleDocument();
+
+    expect(() => decodeDocument({ ...doc, metadata: 'x' })).toThrowError(
+      'document: "metadata" must be an object',
+    );
+    expect(() => decodeDocument({ ...doc, metadata: [] })).toThrowError(
+      'document: "metadata" must be an object',
+    );
+    expect(() =>
+      decodeDocument({ ...doc, metadata: { ...doc.metadata, notes: 'x' } }),
+    ).toThrowError('document: "metadata.notes" must be an array');
+
+    // Left out, the metadata is empty, as Go decodes it, and the document
+    // is refused for the id it lacks.
+    const { metadata, ...bare } = doc;
+
+    expect(metadata.id).toBeTruthy();
+    expect(decodeDocument(bare).metadata).toEqual({});
+    expect(() => parseDocument(bare)).toThrowError(
+      'metadata.id: document ID is required',
     );
   });
 });
@@ -384,10 +442,10 @@ describe('parseImport', () => {
     const json = parseImport(JSON.stringify(doc));
 
     expect(json.ok).toBe(true);
-    expect(json.document.id).toBe(doc.id);
+    expect(json.document.metadata.id).toBe(doc.metadata.id);
 
     const yaml = parseImport(
-      `$schema: ${doc.$schema}\nrevision: 1\nid: ${doc.id}\nnodes: []\nnetworks: []\nedges: []\nviewport: {x: 0, y: 0, zoom: 1}\ngrid: {enabled: true, size: 16, snap: true}\n`,
+      `$schema: ${doc.$schema}\nrevision: 1\nmetadata: {id: ${doc.metadata.id}}\nnodes: []\nnetworks: []\nedges: []\nviewport: {x: 0, y: 0, zoom: 1}\ngrid: {enabled: true, size: 16, snap: true}\n`,
     );
 
     expect(yaml.ok).toBe(true);

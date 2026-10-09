@@ -1674,7 +1674,10 @@ paths:
       operationId: getBuilderSchema
       responses:
         "200":
-          description: successful operation
+          description: >
+            the complete JSON Schema (draft 2020-12) of a Builder document,
+            the document the `BuilderDocument` component outlines, with a
+            title, a description and examples for each of its properties
           content:
             application/json:
               schema:
@@ -1728,10 +1731,11 @@ paths:
         same permission and the same answers when it cannot be used, and the
         draft is refused with 409 when the file no longer holds the document
         the token names, or the topology is no longer read from its file.
-        The server stamps the document before it stores it: `author` and
-        `createdAt` are kept when the document has them, and are otherwise the
-        caller and the current time; `updatedBy` and `updatedAt` are always
-        the caller and the current time, and values sent are replaced. One
+        The server stamps the document's `metadata` before it stores it:
+        `createdBy` and `createdAt` are kept when the document has them, and
+        are otherwise the caller and the current time; `updatedBy` and
+        `updatedAt` are always the caller and the current time, and values
+        sent are replaced. One
         document is stored as it is: the document a `sourceToken` of the
         `builder-doc/` or `builder-file/` form names, sent back unchanged, so
         the draft holds exactly what was opened, under the same digest. A
@@ -1895,9 +1899,10 @@ paths:
         snapshots after the cursor (the redo branch), and moves the cursor to
         the new snapshot. A draft keeps at most 50 snapshots of at most 50 MiB
         in total; the oldest are dropped to make room for the new one.
-        The server stamps the document before it stores it: `author` and
-        `createdAt` are the ones the draft was created with, and `updatedBy`
-        and `updatedAt` are the caller and the current time. Values sent in
+        The server stamps the document's `metadata` before it stores it:
+        `createdBy` and `createdAt` are the ones the draft was created with,
+        and `updatedBy` and `updatedAt` are the caller and the current time.
+        Values sent in
         any of the four fields are replaced, and one that is not valid refuses
         the request (422). The response has no document; its `stamp` holds
         the four values written.
@@ -3602,52 +3607,427 @@ components:
           additionalProperties:
             type: string
     BuilderDocument:
+      title: Builder Document
       description: >
-        A Builder document. GET /schemas/builder/v1 serves its complete
-        JSON Schema. The server sets `author`, `createdAt`, `updatedBy` and
-        `updatedAt` when it stores a draft snapshot (see POST
-        /builder/drafts and POST
-        /builder/drafts/{owner}/{draft}/snapshots). Each is optional: a
-        document that was never saved as a draft, such as a Builder file
-        written by hand, may have none. `templates` (the device templates
-        saved with the diagram) and `icons` (the custom icons its nodes and
-        templates use: base64 PNG data by icon id, `sha256:` and the SHA-256
-        of the PNG bytes) travel with the document and are never written to
-        a config.
+        A Builder document: the diagram of a topology, with its nodes,
+        networks and connections, how the canvas shows them, and under
+        `metadata` what the document says of itself. This component lists
+        every property of the document and outlines the nested ones; GET
+        /schemas/builder/v1 serves the complete JSON Schema every document
+        is checked against, with a title, a description and examples for
+        each property. A document holds no other property: one that does,
+        such as a metadata field at the root, is refused. `layout`,
+        `templates` and `icons` are presentation only and are never written
+        to a config.
       type: object
-      additionalProperties: true
+      additionalProperties: false
+      required:
+        - "$schema"
+        - revision
+        - metadata
+        - nodes
+        - networks
+        - edges
+        - viewport
+        - grid
       properties:
         "$schema":
+          title: Schema URI
+          description: >
+            the Builder document schema, which a document must name exactly
           type: string
           enum:
             - https://phenix.sandia.gov/schemas/builder/v1
+          example: https://phenix.sandia.gov/schemas/builder/v1
         revision:
+          title: Schema Revision
+          description: >
+            the revision of the Builder document schema the document follows
           type: integer
+          enum:
+            - 1
+          example: 1
+        metadata:
+          title: Metadata
+          description: >
+            what the document says of itself: its identifier, name and
+            description, who made and last saved it and when, and its notes
+          allOf:
+            - $ref: "#/components/schemas/BuilderDocumentMetadata"
+          example:
+            id: 49d876d1-571a-5b5c-91b7-aadf5bb5209c
+            name: Pump station
+            createdBy: alice
+            createdAt: "2026-10-01T15:04:05Z"
+            updatedBy: bob
+            updatedAt: "2026-10-02T09:30:00Z"
+            notes:
+              - Snapshot the PLC images before each run.
+        nodes:
+          title: Nodes
+          description: >
+            the items on the canvas: devices, switches, notes and groups
+          type: array
+          items:
+            title: Node
+            description: >
+              an item on the canvas. It carries the payload its `kind` names,
+              and no other.
+            type: object
+            required:
+              - id
+              - kind
+              - position
+            properties:
+              id:
+                description: >
+                  identifier of the node, unique among the document's nodes
+                type: string
+              kind:
+                description: what the node is, which names its payload
+                type: string
+                enum:
+                  - device
+                  - switch
+                  - note
+                  - group
+              label:
+                description: text shown on the node
+                type: string
+              position:
+                description: >
+                  where the node is on the canvas: `x` and `y` in pixels,
+                  relative to its parent group when it has one
+                type: object
+                additionalProperties: true
+              size:
+                description: >
+                  explicit `width` and `height` of the node in pixels; without
+                  one the editor sizes the node itself
+                type: object
+                additionalProperties: true
+              parentId:
+                description: identifier of the group node this node belongs to
+                type: string
+              device:
+                description: >
+                  payload of a device node: its hostname, its complete phenix
+                  node spec, its interface handles, and its icon and colors
+                type: object
+                additionalProperties: true
+              switch:
+                description: >
+                  payload of a switch node: the network it stands for, and its
+                  colors
+                type: object
+                additionalProperties: true
+              note:
+                description: payload of a note node, its text and color
+                type: object
+                additionalProperties: true
+              group:
+                description: >
+                  payload of a group node: its title, description, color,
+                  border style and icon, and whether it is collapsed
+                type: object
+                additionalProperties: true
+          example:
+            - id: 4113dfc0-f4be-57f9-8115-6cecd1f1aea3
+              kind: device
+              label: router
+              position:
+                x: 0
+                y: 0
+              device:
+                hostname: router
+                iconKey: router
+                spec:
+                  type: Router
+                  general:
+                    hostname: router
+                  hardware:
+                    os_type: vyos
+                    drives:
+                      - image: vyos.qc2
+                  network:
+                    interfaces:
+                      - name: eth0
+                        type: ethernet
+                        proto: static
+                        address: 10.0.0.1
+                        mask: 24
+                        vlan: EXP
+                interfaces:
+                  - id: 7f010dcd-e23d-514c-9206-3609df999026
+                    name: eth0
+                    index: 0
+            - id: dee6bc70-8103-581e-8b31-6c95cda798a0
+              kind: switch
+              label: EXP
+              position:
+                x: 160
+                y: 256
+              switch:
+                networkId: a8af611d-c68f-54e0-94a5-9176cea64e44
+        networks:
+          title: Networks
+          description: >
+            the networks (VLANs) the switches and connections of the document
+            belong to
+          type: array
+          items:
+            title: Network
+            description: a phenix network (VLAN)
+            type: object
+            required:
+              - id
+              - name
+            properties:
+              id:
+                description: identifier of the network
+                type: string
+              name:
+                description: >
+                  VLAN name, unique in the document and without white space,
+                  which device interfaces name as their `vlan`
+                type: string
+              alias:
+                description: >
+                  VLAN number published to an experiment's `vlans.aliases`
+                type: integer
+                minimum: 1
+                maximum: 4094
+              description:
+                description: free text describing the network
+                type: string
+              color:
+                description: >
+                  color of the network's connection lines, as CSS color text
+                type: string
+              lineStyle:
+                description: dash pattern of the network's connection lines
+                type: string
+          example:
+            - id: a8af611d-c68f-54e0-94a5-9176cea64e44
+              name: EXP
+              alias: 101
+              description: Experiment network
+        edges:
+          title: Connections
+          description: >
+            the connections, each joining one device interface to one switch,
+            and so to its network
+          type: array
+          items:
+            title: Connection
+            description: >
+              a device interface handle attached to a switch. The server checks
+              the nodes, handles and network it names.
+            type: object
+            required:
+              - id
+              - sourceNodeId
+              - targetNodeId
+              - networkId
+            properties:
+              id:
+                description: identifier of the connection
+                type: string
+              sourceNodeId:
+                description: identifier of the node the connection starts at
+                type: string
+              sourceHandleId:
+                description: >
+                  interface handle of the source node, when it is a device
+                type: string
+              targetNodeId:
+                description: identifier of the node the connection ends at
+                type: string
+              targetHandleId:
+                description: >
+                  interface handle of the target node, when it is a device
+                type: string
+              networkId:
+                description: >
+                  identifier of the network of the switch the connection joins
+                type: string
+              label:
+                description: text shown on the connection
+                type: string
+              color:
+                description: >
+                  line color drawn in place of the network's, as CSS color text
+                type: string
+              lineStyle:
+                description: dash pattern drawn in place of the network's
+                type: string
+              route:
+                description: >
+                  the path an automatic layout drew, as canvas positions from
+                  the source handle to the target handle; never published
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+          example:
+            - id: 503c4f01-e7e0-5a2e-a07d-26e2776fea8f
+              sourceNodeId: 4113dfc0-f4be-57f9-8115-6cecd1f1aea3
+              sourceHandleId: 7f010dcd-e23d-514c-9206-3609df999026
+              targetNodeId: dee6bc70-8103-581e-8b31-6c95cda798a0
+              networkId: a8af611d-c68f-54e0-94a5-9176cea64e44
+        viewport:
+          title: Viewport
+          description: >
+            the pan (`x`, `y`, in screen pixels) and `zoom` of the canvas when
+            the document was saved
+          type: object
+          additionalProperties: true
+          example:
+            x: 0
+            y: 0
+            zoom: 1
+        grid:
+          title: Grid
+          description: >
+            the grid the canvas draws and snaps nodes to: whether it is shown,
+            its `size` in pixels, and whether moved nodes snap to it
+          type: object
+          additionalProperties: true
+          example:
+            enabled: true
+            size: 16
+            snap: true
+        scenario:
+          title: Scenario
+          description: >
+            the scenario the document publishes with, when it has one: a
+            stored scenario by name and digest, or uploaded scenario content
+          type: object
+          additionalProperties: true
+          example:
+            kind: stored
+            name: pump-station-ntp
+            apiVersion: phenix.sandia.gov/v2
+            digest: sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4
+        source:
+          title: Source
+          description: >
+            the config the document was generated from, when it was, and the
+            warnings raised while generating it
+          type: object
+          additionalProperties: true
+          example:
+            kind: topology
+            name: pump-station
+            apiVersion: phenix.sandia.gov/v1
+            importedAt: "2026-10-01T15:04:05Z"
+            digest: sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4
+            updatedAt: "2026-09-30T08:00:00Z"
+        layout:
+          title: Layout
+          description: >
+            the automatic layout that last laid the document out, which the
+            editor names in its layout menu; empty, or an id the editor does
+            not know, means a layout did not make the positions
+          type: string
+          example: elk
+        templates:
+          title: Templates
+          description: >
+            the device templates saved with the diagram, at most 50, which the
+            editor offers beside its own
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: true
+          example:
+            - id: 0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11
+              name: Edge router
+              description: VyOS router with one static interface
+              device:
+                iconKey: router
+                spec:
+                  type: Router
+                  general:
+                    hostname: router
+        icons:
+          title: Custom Icons
+          description: >
+            the custom icons the nodes and templates use, at most 50: base64
+            PNG data and a name by icon id (`sha256:` and the SHA-256 of the
+            PNG bytes)
+          type: object
+          maxProperties: 50
+          additionalProperties:
+            type: object
+            additionalProperties: true
+          example:
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581":
+              name: plc
+              data: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==
+    BuilderDocumentMetadata:
+      title: Builder Document Metadata
+      description: >
+        What a Builder document says of itself: its identifier, name and
+        description, who made it and who saved it last and when, and its
+        notes. It is part of the document's content and digest, and none of
+        it is written to a config. The server sets `createdBy`, `createdAt`,
+        `updatedBy` and `updatedAt` when it stores a draft snapshot (see POST
+        /builder/drafts and POST /builder/drafts/{owner}/{draft}/snapshots).
+        Each is optional: a document that was never saved as a draft, such
+        as a Builder file written by hand, may have none. GET
+        /schemas/builder/v1 serves its complete JSON Schema.
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
         id:
+          title: Document ID
+          description: identifier of the document
           type: string
+          example: 49d876d1-571a-5b5c-91b7-aadf5bb5209c
         name:
+          title: Name
+          description: >
+            name of the diagram, which a draft takes as its title: at most 512
+            bytes, without control characters
           type: string
-        author:
+          example: Pump station
+        description:
+          title: Description
+          description: free text describing the diagram
+          type: string
+          example: Water treatment pump station with two PLCs and an HMI.
+        createdBy:
+          title: Created By
           description: >
             user who first made the document. Kept from the document a draft
             is created with, or else the user who created the draft; every
             later save writes the same value.
           type: string
           maxLength: 256
+          example: alice
         createdAt:
+          title: Created At
           description: >
             when the document was first made, in UTC to the second
-            (`YYYY-MM-DDTHH:MM:SSZ`). Set and kept as `author` is.
+            (`YYYY-MM-DDTHH:MM:SSZ`). Set and kept as `createdBy` is.
           type: string
           format: date-time
           pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+          example: "2026-10-01T15:04:05Z"
         updatedBy:
+          title: Updated By
           description: >
             user whose save stored this content. Set by the server on every
             save; a value sent is replaced.
           type: string
           maxLength: 256
+          example: bob
         updatedAt:
+          title: Updated At
           description: >
             when that save was, in the form of `createdAt`. Set by the server
             on every save; a value sent is replaced. It is not
@@ -3656,15 +4036,33 @@ components:
           type: string
           format: date-time
           pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+          example: "2026-10-02T09:30:00Z"
+        notes:
+          title: Notes
+          description: >
+            free text notes about the diagram as a whole, in the order the
+            editor lists them: at most 100, each not only white space, at
+            most 4096 bytes in UTF-8 (maxLength counts characters, so the
+            byte limit is the stricter one outside ASCII), and without
+            control characters but newline and tab
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 4096
+          example:
+            - Snapshot the PLC images before each run.
+            - "VLAN EXP carries the control traffic.\nKeep it isolated."
     BuilderDocumentStamp:
       description: >
-        The `author`, `createdAt`, `updatedBy` and `updatedAt` of the document
-        a request stored. A field the stored document does not have is left
-        out, so a draft opened unchanged from a document that names nobody
-        has an empty stamp.
+        The `createdBy`, `createdAt`, `updatedBy` and `updatedAt` of the
+        `metadata` of the document a request stored. A field the stored
+        document does not have is left out, so a draft opened unchanged from
+        a document that names nobody has an empty stamp.
       type: object
       properties:
-        author:
+        createdBy:
           type: string
         createdAt:
           type: string
@@ -3812,8 +4210,8 @@ components:
           $ref: "#/components/schemas/BuilderDocument"
         stamp:
           description: >
-            what the stored document holds in `author`, `createdAt`,
-            `updatedBy` and `updatedAt` (creating a draft and saving one
+            what the stored document holds in `metadata.createdBy`,
+            `createdAt`, `updatedBy` and `updatedAt` (creating a draft and saving one
             only, whose responses have no document). An editor copies it
             into its own copy of the document.
           allOf:
@@ -4568,7 +4966,7 @@ components:
       description: >
         Custom icons by icon ID (`sha256:` and the SHA-256 of the PNG bytes),
         in the shape of a Builder document's `icons`. A library holds at most
-        32, and only the ones its templates name.
+        50, and only the ones its templates name.
       type: object
       additionalProperties:
         type: object
@@ -5404,7 +5802,7 @@ components:
         The request body is larger than the route allows (6 MiB to add
         templates, 1 MiB to replace one, 64 KiB otherwise); or the library
         would hold more than 200 templates, 50 collections, 200 templates in
-        one collection or 32 custom icons, or take more than 512 KiB.
+        one collection or 50 custom icons, or take more than 512 KiB.
       content:
         application/json:
           schema:

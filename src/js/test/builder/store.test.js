@@ -122,7 +122,13 @@ vi.mock('@/builder/idb.js', async (importOriginal) => {
 });
 
 import { createMemoryStore } from '@/builder/idb.js';
-import { createDocument, findNode, STAMP_KEYS } from '@/builder/model.js';
+import {
+  createDocument,
+  findNode,
+  setDocumentInfo,
+  STAMP_KEYS,
+  withStamp,
+} from '@/builder/model.js';
 import { builderSchemaV1 } from '@/builder/schema.js';
 import { draftForPublished, useBuilderStore } from '@/builder/store.js';
 
@@ -148,6 +154,57 @@ describe('documents', () => {
     expect(store.doc.$schema).toContain('schemas/builder/v1');
     expect(store.canUndo).toBe(false);
     expect(store.summary.devices).toBe(0);
+  });
+
+  test('the notes of the diagram are set in one undo step, and a blank one is dropped', () => {
+    const steps = store.history.entries.length;
+
+    expect(store.setDiagramNotes(['First', ' \n', 'Second'])).toBeTruthy();
+    expect(store.doc.metadata.notes).toEqual(['First', 'Second']);
+    expect(store.history.entries).toHaveLength(steps + 1);
+    expect(store.announcement).toMatch(/^Updated diagram notes/);
+
+    // The same notes take no step.
+    expect(store.setDiagramNotes(['First', 'Second'])).toBeNull();
+    expect(store.history.entries).toHaveLength(steps + 1);
+
+    store.undo();
+    expect(store.doc.metadata).not.toHaveProperty('notes');
+    store.redo();
+    expect(store.doc.metadata.notes).toEqual(['First', 'Second']);
+
+    // Deleting the last note leaves the diagram without notes.
+    expect(store.setDiagramNotes(['First'])).toBeTruthy();
+    expect(store.setDiagramNotes([])).toBeTruthy();
+    expect(store.doc.metadata).not.toHaveProperty('notes');
+  });
+
+  test('a note the server would refuse takes no step, and the diagram keeps its notes', () => {
+    expect(store.setDiagramNotes(['First'])).toBeTruthy();
+
+    const steps = store.history.entries.length;
+    const doc = store.doc;
+
+    for (const refused of ['x'.repeat(4097), 'bell\u0007', 'one\r\ntwo']) {
+      expect(store.setDiagramNotes(['First', refused])).toBeNull();
+      expect(store.setDiagramNotes([refused])).toBeNull();
+    }
+
+    expect(store.doc).toBe(doc);
+    expect(store.doc.metadata.notes).toEqual(['First']);
+    expect(store.history.entries).toHaveLength(steps);
+
+    // The longest note is written.
+    expect(store.setDiagramNotes(['x'.repeat(4096)])).toBeTruthy();
+    expect(store.doc.metadata.notes).toEqual(['x'.repeat(4096)]);
+  });
+
+  test('a read-only draft keeps its notes', () => {
+    store.readOnly = true;
+
+    expect(store.setDiagramNotes(['First'])).toBeNull();
+    expect(store.doc.metadata).not.toHaveProperty('notes');
+    expect(store.error).toBe('This draft is read only.');
   });
 
   test('starting a new document detaches the previous draft queue', () => {
@@ -621,7 +678,7 @@ describe('editing commits', () => {
       '"1"',
     );
     expect(api.appendSnapshot).not.toHaveBeenCalled();
-    expect(store.doc.id).toBe(doc.id);
+    expect(store.doc.metadata.id).toBe(doc.metadata.id);
     expect(store.etag).toBe('"3"');
   });
 
@@ -925,8 +982,10 @@ describe('editing commits', () => {
 
   test('recovered edits after undo keep the final branch aligned with the server', async () => {
     await withDraft();
-    const abandoned = { ...sampleDocument().doc, name: 'Abandoned' };
-    const final = { ...sampleDocument().doc, name: 'Final' };
+    const abandoned = setDocumentInfo(sampleDocument().doc, {
+      name: 'Abandoned',
+    });
+    const final = setDocumentInfo(sampleDocument().doc, { name: 'Final' });
 
     // As the server answers: the draft alone, without its history.
     api.appendSnapshot
@@ -966,12 +1025,12 @@ describe('editing commits', () => {
 
     expect(await store.recoverLocalHistory('"1"')).toBe(true);
     expect({
-      document: store.doc.name,
+      document: store.doc.metadata.name,
       saveState: store.saveState,
       index: store.history.index,
       entries: store.history.entries.map((entry) => ({
         id: entry.id,
-        name: entry.snapshot.name,
+        name: entry.snapshot.metadata.name,
         serverSnapshotId: entry.serverSnapshotId,
       })),
     }).toEqual({
@@ -1012,7 +1071,7 @@ describe('editing commits', () => {
   // reported as a conflict, and the rest of the queue goes on.
   test('a recovered save the server already holds is not a conflict', async () => {
     const sent = createDocument({ name: 'Sent' });
-    const later = { ...sent, name: 'Later' };
+    const later = setDocumentInfo(sent, { name: 'Later' });
 
     await device.store.put(
       {
@@ -1064,7 +1123,7 @@ describe('editing commits', () => {
       expect.objectContaining({ summary: 'Later', opId: 'c2' }),
       '"2"',
     );
-    expect(store.doc.name).toBe('Later');
+    expect(store.doc.metadata.name).toBe('Later');
     expect(store.saveState).toMatchObject({ status: 'saved', pending: 0 });
     expect(await device.store.all()).toEqual([]);
   });
@@ -1226,7 +1285,9 @@ describe('conflicts', () => {
 
     // The server titles a draft after its document's name.
     const renamed = expect.objectContaining({
-      document: expect.objectContaining({ name: 'Recovered' }),
+      document: expect.objectContaining({
+        metadata: expect.objectContaining({ name: 'Recovered' }),
+      }),
     });
 
     expect(api.createDraft).toHaveBeenCalledWith(
@@ -1239,7 +1300,7 @@ describe('conflicts', () => {
       renamed,
       expect.anything(),
     );
-    expect(store.doc.name).toBe('Recovered');
+    expect(store.doc.metadata.name).toBe('Recovered');
     expect(store.draftId).toBe('d1');
   });
 
@@ -1345,7 +1406,9 @@ describe('conflicts', () => {
       'alice',
       'd2',
       expect.objectContaining({
-        document: expect.objectContaining({ name: 'Recovered' }),
+        document: expect.objectContaining({
+          metadata: expect.objectContaining({ name: 'Recovered' }),
+        }),
       }),
       '"f2"',
     );
@@ -1371,7 +1434,7 @@ describe('conflicts', () => {
       expect(title).toMatch(/^(x+|é+) \(local copy\)$/);
       expect(bytes(title)).toBeLessThanOrEqual(512);
       expect(bytes(title)).toBeGreaterThan(510);
-      expect(store.doc.name).toBe(title);
+      expect(store.doc.metadata.name).toBe(title);
     }
   });
 
@@ -1440,7 +1503,7 @@ describe('server data', () => {
 
     const viewed = await store.viewPublishedDocument('published-1');
 
-    expect(viewed.name).toBe(sampleDocument().doc.name);
+    expect(viewed.metadata.name).toBe(sampleDocument().doc.metadata.name);
     expect(api.createDraft).not.toHaveBeenCalled();
     expect(store.readOnly).toBe(true);
     expect(store.published).toEqual(
@@ -1496,7 +1559,7 @@ describe('server data', () => {
     expect(api.getDraft).toHaveBeenLastCalledWith('alice', 'd7');
     expect(store.draftId).toBe('d7');
     expect(store.announcement).toBe(
-      `Opened your draft of published diagram ${doc.name}.`,
+      `Opened your draft of published diagram ${doc.metadata.name}.`,
     );
     expect(api.createDraft).toHaveBeenCalledTimes(1);
   });
@@ -2135,7 +2198,10 @@ describe('server data', () => {
   test('a copy and a combined import say they are linked to no config', async () => {
     const { doc } = sampleDocument();
     const answer = {
-      document: { ...doc, name: 'core-copy', source: { kind: 'manual' } },
+      document: {
+        ...setDocumentInfo(doc, { name: 'core-copy' }),
+        source: { kind: 'manual' },
+      },
       warnings: [],
       source: { fullName: 'Topology/core', name: 'core', stored: true },
     };
@@ -2154,7 +2220,7 @@ describe('server data', () => {
       expect(result.detached).toBe(true);
       // The source is still the config that was read.
       expect(result.source.fullName).toBe('Topology/core');
-      expect(result.document.name).toBe('core-copy');
+      expect(result.document.metadata.name).toBe('core-copy');
     }
 
     // A plain import, and one that keeps its includes, is still linked.
@@ -2615,7 +2681,7 @@ describe('sharing', () => {
     expect(store.shares).toEqual([{ user: 'bob', access: 'edit' }]);
     expect(store.sharedBy).toBe('');
 
-    const name = sampleDocument().doc.name;
+    const { name } = sampleDocument().doc.metadata;
 
     api.getDraft.mockResolvedValueOnce(
       readDraft({ owner: 'bob', access: 'edit', via: 'share' }),
@@ -2983,24 +3049,28 @@ describe('theme', () => {
 });
 
 // The server writes who made the document and who saved it last, and when,
-// into the copy it stores, and answers a create and a save with them. The
-// editor copies them into its own copy, and never makes them up.
+// into the metadata of the copy it stores, and answers a create and a save
+// with them. The editor copies them into its own copy, and never makes them
+// up.
 describe('who made and last saved the diagram', () => {
   const created = {
-    author: 'alice',
+    createdBy: 'alice',
     createdAt: '2026-10-01T15:04:05Z',
     updatedBy: 'alice',
     updatedAt: '2026-10-01T15:04:05Z',
   };
   const saved = (seconds, by = 'alice') => ({
-    author: 'alice',
+    createdBy: 'alice',
     createdAt: '2026-10-01T15:04:05Z',
     updatedBy: by,
     updatedAt: `2026-10-01T16:00:${String(seconds).padStart(2, '0')}Z`,
   });
   const stampOf = (doc) =>
     Object.fromEntries(
-      STAMP_KEYS.filter((key) => key in doc).map((key) => [key, doc[key]]),
+      STAMP_KEYS.filter((key) => key in doc.metadata).map((key) => [
+        key,
+        doc.metadata[key],
+      ]),
     );
 
   // A save that answers with the stamp the server wrote.
@@ -3026,10 +3096,11 @@ describe('who made and last saved the diagram', () => {
     // What was sent names no one: the editor does not sign its documents.
     expect(stampOf(api.createDraft.mock.calls[0][0].document)).toEqual({});
     expect(stampOf(store.doc)).toEqual(created);
-    expect(Object.keys(store.doc).slice(4, 10)).toEqual([
+    expect(Object.keys(store.doc.metadata)).toEqual([
+      'id',
+      'name',
       'description',
       ...STAMP_KEYS,
-      'nodes',
     ]);
     // The history starts from the stamped document, so the first edit is
     // built from it.
@@ -3196,7 +3267,7 @@ describe('who made and last saved the diagram', () => {
       store.history.entries.map((entry) => stampOf(entry.snapshot)),
     ).toEqual([forked(1), forked(2), forked(3)]);
     expect(stampOf(store.doc)).toEqual(forked(3));
-    expect(store.doc.name).toBe('Mine');
+    expect(store.doc.metadata.name).toBe('Mine');
     // No file name is sent: a fork is not an upload.
     expect(api.createDraft.mock.calls[0][0]).not.toHaveProperty('sourceFile');
 
@@ -3210,9 +3281,9 @@ describe('who made and last saved the diagram', () => {
   // The entry of that save is the snapshot the server lists: its stamp is
   // read from there, who stored it and when, to the second.
   test('a recovered save the server already holds takes its snapshot’s user and time', async () => {
-    const opened = { ...createDocument({ name: 'Opened' }), ...created };
-    const sent = { ...opened, name: 'Sent' };
-    const later = { ...opened, name: 'Later' };
+    const opened = withStamp(createDocument({ name: 'Opened' }), created);
+    const sent = setDocumentInfo(opened, { name: 'Sent' });
+    const later = setDocumentInfo(opened, { name: 'Later' });
 
     await device.store.put(
       {
@@ -3243,7 +3314,7 @@ describe('who made and last saved the diagram', () => {
       draft: { id: 'd1', owner: 'alice' },
       // The server's copy of that save, which the editor reads but does
       // not put in place of the entry this device holds.
-      document: { ...sent, ...saved(30, 'bob') },
+      document: withStamp(sent, saved(30, 'bob')),
       history: [
         { id: 's1', current: false, createdBy: 'alice' },
         {
@@ -3272,12 +3343,12 @@ describe('who made and last saved the diagram', () => {
     );
     // The undo left the diagram at the save recovered, which this device
     // held without a stamp.
-    expect(store.doc.name).toBe('Sent');
+    expect(store.doc.metadata.name).toBe('Sent');
     expect(store.history.currentEntry().id).toBe('c1');
     expect(stampOf(store.doc)).toEqual(saved(30, 'bob'));
 
     store.redo();
-    expect(store.doc.name).toBe('Later');
+    expect(store.doc.metadata.name).toBe('Later');
     expect(stampOf(store.doc)).toEqual(saved(45));
     await store.saveNow();
   });
@@ -3523,7 +3594,7 @@ describe('the draft a published diagram is edited in', () => {
     expect(api.getDocument).not.toHaveBeenCalled();
     expect(store.draftId).toBe('d5');
     expect(store.announcement).toBe(
-      `Opened the draft that published diagram ${doc.name}.`,
+      `Opened the draft that published diagram ${doc.metadata.name}.`,
     );
   });
 
@@ -3598,7 +3669,7 @@ describe('the draft a published diagram is edited in', () => {
     expect(store.owner).toBe('bob');
     // Whose draft it is has been said already: nothing calls it mine.
     expect(store.announcement).toBe(
-      `Opened bob's draft ${doc.name}. You can edit it; others may be editing too.`,
+      `Opened bob's draft ${doc.metadata.name}. You can edit it; others may be editing too.`,
     );
   });
 
@@ -3649,7 +3720,7 @@ describe('the diagram of a topology read from its Builder file', () => {
 
     const viewed = await store.viewPublishedDocument('file/plant');
 
-    expect(viewed.name).toBe('Sample');
+    expect(viewed.metadata.name).toBe('Sample');
     expect(api.getTopologyDocument).toHaveBeenCalledWith('plant');
     expect(api.getDocument).not.toHaveBeenCalled();
     expect(api.createDraft).not.toHaveBeenCalled();
@@ -3678,7 +3749,9 @@ describe('the diagram of a topology read from its Builder file', () => {
     expect(api.createDraft).toHaveBeenCalledWith(
       expect.objectContaining({
         sourceToken: `builder-file/plant/${FILE_DIGEST}`,
-        document: expect.objectContaining({ name: 'Sample' }),
+        document: expect.objectContaining({
+          metadata: expect.objectContaining({ name: 'Sample' }),
+        }),
       }),
     );
     expect(store.readOnly).toBe(false);
@@ -3756,7 +3829,7 @@ describe('the diagram of a topology read from its Builder file', () => {
       ...row,
       digest: changed,
       topologyDiffers: false,
-      document: { ...sampleDocument().doc, name: 'Changed' },
+      document: setDocumentInfo(sampleDocument().doc, { name: 'Changed' }),
     });
 
     await expect(
@@ -3905,11 +3978,12 @@ describe('editing a published diagram sends it back as it was read', () => {
     return {
       sw,
       doc: {
-        ...doc,
-        author: 'carol',
-        createdAt: '2026-09-01T08:00:00Z',
-        updatedBy: 'dave',
-        updatedAt: '2026-09-02T09:30:00Z',
+        ...withStamp(doc, {
+          createdBy: 'carol',
+          createdAt: '2026-09-01T08:00:00Z',
+          updatedBy: 'dave',
+          updatedAt: '2026-09-02T09:30:00Z',
+        }),
         nodes: doc.nodes.map((node) =>
           node.id === sw.id ? { ...node, label: 'OLD' } : node,
         ),
@@ -3935,7 +4009,7 @@ describe('editing a published diagram sends it back as it was read', () => {
   ])('%s', async (_, id, read, answer) => {
     const { doc, sw } = staleDocument();
     const stamp = {
-      author: 'carol',
+      createdBy: 'carol',
       createdAt: '2026-09-01T08:00:00Z',
       updatedBy: 'dave',
       updatedAt: '2026-09-02T09:30:00Z',
@@ -3964,7 +4038,7 @@ describe('editing a published diagram sends it back as it was read', () => {
     expect(JSON.stringify(sent)).toBe(JSON.stringify(doc));
     // The draft opens as it was shown, with the stamp the document had.
     expect(findNode(store.doc, sw.id).label).toBe('EXP');
-    expect(store.doc).toMatchObject(stamp);
+    expect(store.doc.metadata).toMatchObject(stamp);
     expect(store.history.current()).toEqual(store.doc);
 
     // Opened without viewing it first, the same document is sent.
@@ -4241,7 +4315,7 @@ describe('a draft loaded for its card’s Publish', () => {
 
     expect(said).toEqual([
       'Draft loaded',
-      `Opened bob's draft ${sampleDocument().doc.name}. You can edit it; others may be editing too.`,
+      `Opened bob's draft ${sampleDocument().doc.metadata.name}. You can edit it; others may be editing too.`,
     ]);
   });
 

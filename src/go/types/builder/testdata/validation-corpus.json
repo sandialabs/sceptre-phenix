@@ -1,5 +1,5 @@
 {
-  "description": "Documents validate.go and the front end's validate.js must agree on. Each case changes document.json: every set entry puts value at path (object keys and array indexes), or, in place of a value, the text its join parts make, where a part is text, or text and how many times to repeat it. A case with an error is refused by both, with an issue at that path, which says the case's message when it has one; one without is accepted by both. A case with issues is refused with those issues and no others, in any order. Read by TestValidationCorpus and validate.test.js.",
+  "description": "Documents validate.go and the front end's validate.js must agree on. Each case changes document.json: every set entry puts value at path (object keys and array indexes), removes the key there when it has delete, or, in place of a value, the text its join parts make, where a part is text, or text and how many times to repeat it. A case with an error is refused by both, with an issue at that path, which says the case's message when it has one; one without is accepted by both. A case with issues is refused with those issues and no others, in any order. Read by TestValidationCorpus and validate.test.js.",
   "document": "document.json",
   "cases": [
     {
@@ -53,12 +53,13 @@
       "set": [
         {
           "path": [
+            "metadata",
             "id"
           ],
           "value": "doc-1"
         }
       ],
-      "error": "id"
+      "error": "metadata.id"
     },
     {
       "name": "node ID that is not a UUID",
@@ -137,6 +138,7 @@
       "set": [
         {
           "path": [
+            "metadata",
             "id"
           ],
           "value": "49D876D1-571A-5B5C-91B7-AADF5BB5209C"
@@ -496,24 +498,26 @@
       "set": [
         {
           "path": [
+            "metadata",
             "name"
           ],
           "value": "my\ttopology"
         }
       ],
-      "error": "name"
+      "error": "metadata.name"
     },
     {
       "name": "document name of 514 bytes in 257 characters",
       "set": [
         {
           "path": [
+            "metadata",
             "name"
           ],
           "value": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
         }
       ],
-      "error": "name"
+      "error": "metadata.name"
     },
     {
       "name": "the draft's own layout",
@@ -612,28 +616,32 @@
       "error": "edges[0].route"
     },
     {
-      "name": "author, createdAt, updatedBy and updatedAt",
+      "name": "createdBy, createdAt, updatedBy and updatedAt",
       "set": [
         {
           "path": [
-            "author"
+            "metadata",
+            "createdBy"
           ],
           "value": "alice"
         },
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": "2026-10-01T15:04:05Z"
         },
         {
           "path": [
+            "metadata",
             "updatedBy"
           ],
           "value": "bob@example.com"
         },
         {
           "path": [
+            "metadata",
             "updatedAt"
           ],
           "value": "2026-10-01T16:10:00Z"
@@ -645,18 +653,21 @@
       "set": [
         {
           "path": [
+            "metadata",
             "updatedBy"
           ],
           "value": "bob"
         },
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": "2026-10-02T00:00:00Z"
         },
         {
           "path": [
+            "metadata",
             "updatedAt"
           ],
           "value": "2024-02-29T23:59:59Z"
@@ -664,81 +675,88 @@
       ]
     },
     {
-      "name": "author of 256 bytes",
+      "name": "createdBy of 256 bytes",
       "set": [
         {
           "path": [
-            "author"
+            "metadata",
+            "createdBy"
           ],
           "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         }
       ]
     },
     {
-      "name": "author of 257 bytes",
+      "name": "createdBy of 257 bytes",
       "set": [
         {
           "path": [
-            "author"
+            "metadata",
+            "createdBy"
           ],
           "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         }
       ],
-      "error": "author"
+      "error": "metadata.createdBy"
     },
     {
-      "name": "author of 86 characters in 258 bytes",
+      "name": "createdBy of 86 characters in 258 bytes",
       "set": [
         {
           "path": [
-            "author"
+            "metadata",
+            "createdBy"
           ],
           "value": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€"
         }
       ],
-      "error": "author"
+      "error": "metadata.createdBy"
     },
     {
-      "name": "author with a tab",
+      "name": "createdBy with a tab",
       "set": [
         {
           "path": [
-            "author"
+            "metadata",
+            "createdBy"
           ],
           "value": "alice\tsmith"
         }
       ],
-      "error": "author"
+      "error": "metadata.createdBy"
     },
     {
-      "name": "author that is a number",
+      "name": "createdBy that is a number",
       "set": [
         {
           "path": [
-            "author"
+            "metadata",
+            "createdBy"
           ],
           "value": 7
         }
       ],
-      "error": "author"
+      "error": "metadata.createdBy"
     },
     {
-      "name": "null author, which Go decodes as none",
+      "name": "null createdBy, which Go decodes as none",
       "set": [
         {
           "path": [
-            "author"
+            "metadata",
+            "createdBy"
           ],
           "value": null
         }
       ]
     },
     {
-      "name": "empty author, which is none",
+      "name": "empty createdBy, which is none",
       "set": [
         {
           "path": [
-            "author"
+            "metadata",
+            "createdBy"
           ],
           "value": ""
         }
@@ -749,42 +767,46 @@
       "set": [
         {
           "path": [
+            "metadata",
             "updatedBy"
           ],
           "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         }
       ],
-      "error": "updatedBy"
+      "error": "metadata.updatedBy"
     },
     {
       "name": "updatedBy with a control character",
       "set": [
         {
           "path": [
+            "metadata",
             "updatedBy"
           ],
           "value": "bob\u0007"
         }
       ],
-      "error": "updatedBy"
+      "error": "metadata.updatedBy"
     },
     {
       "name": "updatedBy with a delete character",
       "set": [
         {
           "path": [
+            "metadata",
             "updatedBy"
           ],
           "value": "bob\u007f"
         }
       ],
-      "error": "updatedBy"
+      "error": "metadata.updatedBy"
     },
     {
       "name": "updatedBy that is an object",
       "set": [
         {
           "path": [
+            "metadata",
             "updatedBy"
           ],
           "value": {
@@ -792,13 +814,14 @@
           }
         }
       ],
-      "error": "updatedBy"
+      "error": "metadata.updatedBy"
     },
     {
       "name": "empty createdAt, which is none",
       "set": [
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": ""
@@ -810,180 +833,195 @@
       "set": [
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": "2026-10-01T15:04:05+00:00"
         }
       ],
-      "error": "createdAt"
+      "error": "metadata.createdAt"
     },
     {
       "name": "createdAt with a fraction of a second",
       "set": [
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": "2026-10-01T15:04:05.000Z"
         }
       ],
-      "error": "createdAt"
+      "error": "metadata.createdAt"
     },
     {
       "name": "createdAt with a space for the T",
       "set": [
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": "2026-10-01 15:04:05Z"
         }
       ],
-      "error": "createdAt"
+      "error": "metadata.createdAt"
     },
     {
       "name": "createdAt with a lower case z",
       "set": [
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": "2026-10-01T15:04:05z"
         }
       ],
-      "error": "createdAt"
+      "error": "metadata.createdAt"
     },
     {
       "name": "createdAt without a zone",
       "set": [
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": "2026-10-01T15:04:05"
         }
       ],
-      "error": "createdAt"
+      "error": "metadata.createdAt"
     },
     {
       "name": "createdAt on February 30",
       "set": [
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": "2026-02-30T00:00:00Z"
         }
       ],
-      "error": "createdAt"
+      "error": "metadata.createdAt"
     },
     {
       "name": "createdAt on February 29 of a year that is not a leap year",
       "set": [
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": "2026-02-29T00:00:00Z"
         }
       ],
-      "error": "createdAt"
+      "error": "metadata.createdAt"
     },
     {
       "name": "createdAt at hour 24",
       "set": [
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": "2026-10-01T24:00:00Z"
         }
       ],
-      "error": "createdAt"
+      "error": "metadata.createdAt"
     },
     {
       "name": "createdAt that is a date only",
       "set": [
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": "2026-10-01"
         }
       ],
-      "error": "createdAt"
+      "error": "metadata.createdAt"
     },
     {
       "name": "createdAt that is a number",
       "set": [
         {
           "path": [
+            "metadata",
             "createdAt"
           ],
           "value": 1790866800
         }
       ],
-      "error": "createdAt"
+      "error": "metadata.createdAt"
     },
     {
       "name": "updatedAt with an offset",
       "set": [
         {
           "path": [
+            "metadata",
             "updatedAt"
           ],
           "value": "2026-10-01T09:04:05-06:00"
         }
       ],
-      "error": "updatedAt"
+      "error": "metadata.updatedAt"
     },
     {
       "name": "updatedAt with a leap second",
       "set": [
         {
           "path": [
+            "metadata",
             "updatedAt"
           ],
           "value": "2026-12-31T23:59:60Z"
         }
       ],
-      "error": "updatedAt"
+      "error": "metadata.updatedAt"
     },
     {
       "name": "updatedAt in month 13",
       "set": [
         {
           "path": [
+            "metadata",
             "updatedAt"
           ],
           "value": "2026-13-01T00:00:00Z"
         }
       ],
-      "error": "updatedAt"
+      "error": "metadata.updatedAt"
     },
     {
       "name": "updatedAt with surrounding space",
       "set": [
         {
           "path": [
+            "metadata",
             "updatedAt"
           ],
           "value": " 2026-10-01T15:04:05Z"
         }
       ],
-      "error": "updatedAt"
+      "error": "metadata.updatedAt"
     },
     {
       "name": "updatedAt that is true",
       "set": [
         {
           "path": [
+            "metadata",
             "updatedAt"
           ],
           "value": true
         }
       ],
-      "error": "updatedAt"
+      "error": "metadata.updatedAt"
     },
     {
       "name": "custom icon that a device, a group and a template use",
@@ -1335,225 +1373,333 @@
       ]
     },
     {
-      "name": "32 custom icons",
+      "name": "50 custom icons",
       "set": [
         {
           "path": [
             "icons"
           ],
           "value": {
-            "sha256:f924c21b69002c242477a9712f89ccd0a762d5ce2618b9c92b2825bf084a7458": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYGD/DwABEgEHw9OltAAAAABJRU5ErkJggg=="
+            "sha256:12fee944a6ef0c4d35d961e4ec2ecd36215339feb3ff2b914de56f7372f6aa22": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgiFr6HwADXAH/u+vksQAAAABJRU5ErkJggg=="
             },
-            "sha256:b0870c7852940ae309cdbce34ba1bfbfc63c650e397fd0489b1f98ae6e8a4fc2": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZGD/DwABFgEICYlB9QAAAABJRU5ErkJggg=="
+            "sha256:c078aeb7b307e68aff1935e031374aef4b25daa4ed09a4dd39d1704c661bc352": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgjFr6HwADYAIAzVkVBwAAAABJRU5ErkJggg=="
             },
-            "sha256:68ea613d754a9ab43771bec097ce9b88542a456ef195c1421b96c5a0be8bc270": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYmD/DwABGgEJBI7xjQAAAABJRU5ErkJggg=="
+            "sha256:91a0a9981329b4fa55418af91f5f97983d7afa9867b797f17ad1ef3e0c952dfa": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgilr6HwADZAIBzk30xwAAAABJRU5ErkJggg=="
             },
-            "sha256:096977fa32cbad547ba1fcfed89e0190f378e79af3c10878fc33a57b0c3463ee": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZmD/DwABHgEKx2JZ5wAAAABJRU5ErkJggg=="
+            "sha256:3f5fac89229f5f587acade9dab5a9b31e6ab9d90c8e3a8d82cdadfee154ad0d1": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgjlr6HwADaAICA7INFQAAAABJRU5ErkJggg=="
             },
-            "sha256:d67db7619d9cc0edd7d4326be41e4c64228966a54fdae355c67c63cb0dde9af7": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYWD/DwABIgEL+XUYTAAAAABJRU5ErkJggg=="
+            "sha256:e6378ff37ec973c9f7cfc05ae40b87c4db3807fea73fe483a7080b5ab40b117a": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgiVr6HwADbAIDF934lgAAAABJRU5ErkJggg=="
             },
-            "sha256:eb8ae2a83e8e8355e10e5577b7ae890ff4c49aa1ee740832872e0c7d52a6f651": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZWD/DwABJgEMPfR0PwAAAABJRU5ErkJggg=="
+            "sha256:717a45a40756febef2e4ed93d2dd1f7771fe1432ed64acd5ad02b443958052fd": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgjVr6HwADcAIEwWlmLQAAAABJRU5ErkJggg=="
             },
-            "sha256:4a7b3cd50132835bbb8dba739e1bec59997b57d67f44b0b57ce63192d6ab3c69": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgY2D/DwABKgENMPPERwAAAABJRU5ErkJggg=="
+            "sha256:e4861421a8d6afb1ab85bf25970c609460a15899eb3b42634335af6d31487a6c": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgi1r6HwADdAIFwn2H7QAAAABJRU5ErkJggg=="
             },
-            "sha256:e4fe7bb60e1330d239df56c3b2af739bf38351d7c5d26e0c907f93181f3492d5": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZ2D/DwABLgEO8x9sLQAAAABJRU5ErkJggg=="
+            "sha256:48039e3dd05ee3488b4e5cdadef3f2def03783f82a41771b016f66be090ed7a2": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgj1r6HwADeAIGD4J+PwAAAABJRU5ErkJggg=="
             },
-            "sha256:0f53ed2842f0d311506dfaf6d642bd6efbd4373bbae7871c7a878027fc3638f4": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYGD/DwABMgEPE0BiZwAAAABJRU5ErkJggg=="
+            "sha256:3a399ddbabbbc229d4404c845e32c6da32741c7c1e366351a99eb2ef824d34e5": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgiFr6HwADfAIH/eiCvQAAAABJRU5ErkJggg=="
             },
-            "sha256:3e72395940a7b2de466cfef90861bb9bbeebc09be5d0cb47609939f157355579": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZGD/DwABNgEQxK2WQgAAAABJRU5ErkJggg=="
+            "sha256:6cc0496a599d11a85af7e04bd6b0900f0c34a7997027b44798d40ae7a3058b86": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgjFr6HwADgAIIjGVElAAAAABJRU5ErkJggg=="
             },
-            "sha256:43d01e3d93ae854076629374146a82c165967958d0ce823bcab132ac2c54dd80": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYmD/DwABOgERyaomOgAAAABJRU5ErkJggg=="
+            "sha256:cab36f7a9736fb5574504c0fee4dd41475653bced421ec52f1038784bf73cdfd": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgilr6HwADhAIJj3GlVAAAAABJRU5ErkJggg=="
             },
-            "sha256:cf4b21553c756e420054d4ef78226952222bc05165cbf449de8a5d46f2e8251a": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZmD/DwABPgESCkaOUAAAAABJRU5ErkJggg=="
+            "sha256:2d97ab5d90c01f65e786841c20cf045528c6595a840d73a27488b449df3727a9": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgjlr6HwADiAIKQo5chgAAAABJRU5ErkJggg=="
             },
-            "sha256:a9ae2a948b63ceceeb8d751bd3e9aa5dc859de9bb5a4d408a388f6e814446e2d": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYWD/DwABQgETRMtCOwAAAABJRU5ErkJggg=="
+            "sha256:b8879d78c961d1bc0a1be49ba7abbff1409532c153a8db10eaf71694e0a9ac5b": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgiVr6HwADjAILVuGpBQAAAABJRU5ErkJggg=="
             },
-            "sha256:86265be38ba27998fe391070238115b56d56689b3b95d23de8b283e56394ad60": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZWD/DwABRgEUgEouSAAAAABJRU5ErkJggg=="
+            "sha256:f5ae52ea1787067fe930039c5e4895d736a8f5cc6f801edef54fa6ba7b3aa96a": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgjVr6HwADkAIMgFU3vgAAAABJRU5ErkJggg=="
             },
-            "sha256:60d9e0d384803ff5c8349df5ad84a5d9b4680fbb8f960fbe81ca1de175b0a8fe": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgY2D/DwABSgEVjU2eMAAAAABJRU5ErkJggg=="
+            "sha256:1653680a1f59724e80e2789cb53a5c106e29ca5d8260476df2e69d46bba2c511": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgi1r6HwADlAINg0HWfgAAAABJRU5ErkJggg=="
             },
-            "sha256:feb0c776b4fecab52442f2157bb6d44c0c390c0780e972f3b0161c9cf26492e8": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZ2D/DwABTgEWTqE2WgAAAABJRU5ErkJggg=="
+            "sha256:59c69bd0b7ebe8405711269dadde34042cce281e201ae4a19314414db14022a1": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgj1r6HwADmAIOTr4vrAAAAABJRU5ErkJggg=="
             },
-            "sha256:0ab2628caa8234ce8b2bcb79092de340fcf0a239ad54521d91214a43920ffe64": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYGD/DwABUgEXWLe9iAAAAABJRU5ErkJggg=="
+            "sha256:13e41667fed6d56ff05c9b9e8031961fb49b27d8a3393bc51f5d3430a77fe666": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQiFr6HwADnAIPSp1WtgAAAABJRU5ErkJggg=="
             },
-            "sha256:71ed3a2c24bbdcd8e81fff4d0ad1081d5e99a3fd07e4eccdc1478b37385fd363": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZGD/DwABVgEYku1ZyQAAAABJRU5ErkJggg=="
+            "sha256:4b34d5621816ca6e41892cc29ca58074bde66e5e06ead31c4028679abf7c8cd4": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQjFr6HwADoAIQtwgWuwAAAABJRU5ErkJggg=="
             },
-            "sha256:464ee2407087cb4f4fab759cf6180bf2ead09fd5cefa6a4b7b3cb63f4bb5d133": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYmD/DwABWgEZn+rpsQAAAABJRU5ErkJggg=="
+            "sha256:6c3ad84e8bd176d01393c7deba42be146a0a41f6633ad90b3d5a619636224cb1": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQilr6HwADpAIRtBz3ewAAAABJRU5ErkJggg=="
             },
-            "sha256:3d49776bf5937e705f05aed767cee91787b9983559cd741e46fab45de5d79b2a": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZmD/DwABXgEaXAZB2wAAAABJRU5ErkJggg=="
+            "sha256:9901455b854ab9db8121609d190532dff46c8663f890d316da72ca175dd2fa4c": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQjlr6HwADqAISeeMOqQAAAABJRU5ErkJggg=="
             },
-            "sha256:5fef1e291e04e6516986bf11b55ccb8f94d922d72b89e253a8af471200051319": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYWD/DwABYgEbYhEAcAAAAABJRU5ErkJggg=="
+            "sha256:831379063d478d7a165e4126fcb62f34aa64061fb8e3e7647ae9c8d20e2bdd8c": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQiVr6HwADrAITbYz7KgAAAABJRU5ErkJggg=="
             },
-            "sha256:e6e519d1d18de5ab42544d7f16b2dad93271525826f9c602aa938149272e6b64": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZWD/DwABZgEcppBsAwAAAABJRU5ErkJggg=="
+            "sha256:39ea54af224ab427f3cf572c704ad22a157f5764f8f0aa5ff222bb26e9809da9": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQjVr6HwADsAIUuzhlkQAAAABJRU5ErkJggg=="
             },
-            "sha256:e76dbc98a4ff27f26b56d3f9a6718e0bf18806e4daecf5b7ec2bdaaae3ee446c": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQY2D/DwABagEdq5fcewAAAABJRU5ErkJggg=="
+            "sha256:2d67b8cbc722faf0a61171382902decd3893d24b8acb3f63888a010ccfb53cac": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQi1r6HwADtAIVuCyEUQAAAABJRU5ErkJggg=="
             },
-            "sha256:783aa4c88fc0d2f9d82980901844295faa2b8d73465a082af896576af73a27c7": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZ2D/DwABbgEeaHt0EQAAAABJRU5ErkJggg=="
+            "sha256:7fb352c3365d015ca124348ea0bf954c8925703f4605d5f7019dfb375fd67a87": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQj1r6HwADuAIWddN9gwAAAABJRU5ErkJggg=="
             },
-            "sha256:f333e1b11a8db75fe6794116d87538be0003b4d971ee73aaf104138a9a398df7": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYGD/DwABcgEfiCR6WwAAAABJRU5ErkJggg=="
+            "sha256:c344ce10efcc0c08594b79876866607830342db5ec188cf01be9b87df897d8ee": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQiFr6HwADvAIXh7mBAQAAAABJRU5ErkJggg=="
             },
-            "sha256:0f10a7bb3a0ad65f19bf26d741c02a72d52be4babb682a091986c86933665cc7": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZGD/DwABdgEgZKeutgAAAABJRU5ErkJggg=="
+            "sha256:bf6929f490534104ded214b2859e28cc86ecfda442aa54f1d437f8e95f0f133e": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQjFr6HwADwAIYFwFcqAAAAABJRU5ErkJggg=="
             },
-            "sha256:faa1f8aace2974ffcaa351bc37e74538bef5468b8b0c59ec6afc0a6af5d2039d": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYmD/DwABegEhaaAezgAAAABJRU5ErkJggg=="
+            "sha256:3736378517b0b1134ba3251ed67b374e7588eeb721958af945e1db666cbe65b4": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQilr6HwADxAIZFBW9aAAAAABJRU5ErkJggg=="
             },
-            "sha256:c42f1d8f6bbec9e527684a175931471d3c44c824be0229b530985b6503816ebf": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZmD/DwABfgEiqky2pAAAAABJRU5ErkJggg=="
+            "sha256:7bce9091a0e3b307e4fb50f8e25df2e78c3265b80cd3497002ad87904abaabba": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQjlr6HwADyAIa2epEugAAAABJRU5ErkJggg=="
             },
-            "sha256:2b65aaa29c159db121673d353c2b538c92b0e11630cda84523fddcef921e200a": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYWD/DwABggEjBfRhTwAAAABJRU5ErkJggg=="
+            "sha256:4079b7eb552d1c10ebc7db1bb9565f2969960a01e3c65678b6448ea609d358fb": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQiVr6HwADzAIbzYWxOQAAAABJRU5ErkJggg=="
             },
-            "sha256:5ab577eb37b0e59545060bc47d2ef44c89565901ec137ca0557dc460b86c8f8b": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZWD/DwABhgEkwXUNPAAAAABJRU5ErkJggg=="
+            "sha256:e83b4215b2f1f619ccd91bd591485bbf1f64eb3efebb2d2e0cc16940465cdd00": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQjVr6HwAD0AIcGzEvggAAAABJRU5ErkJggg=="
             },
-            "sha256:1f983239c1f66304264bcf605cc79b0713882a77ba95cccbfdaff461878638c5": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQY2D/DwABigElzHK9RAAAAABJRU5ErkJggg=="
+            "sha256:a86d47ac77beed14993a2dadda48e5abf6e7922baf4e06b7a6491f5539bcc199": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQi1r6HwAD1AIdGCXOQgAAAABJRU5ErkJggg=="
             },
-            "sha256:2384376591337d54314f848ef0df0da6c85ec7ef8e5ba330f018dcda6f730de5": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZ2D/DwABjgEmD54VLgAAAABJRU5ErkJggg=="
+            "sha256:3c77cde5225e6dee660194ff0110fcc906aba87694abf82b967cecc09a16936d": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQj1r6HwAD2AIe1do3kAAAAABJRU5ErkJggg=="
+            },
+            "sha256:fa1593823baaee7bff8b443b6eb6fd532df31301fb69d972cb97d5e510b25506": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQiFr6HwAD3AIfuQrMsgAAAABJRU5ErkJggg=="
+            },
+            "sha256:e4da46791d5eb942aa7397032994b4f4dbf1601b75eb5bfd4d3bba1cb00b563c": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQjFr6HwAD4AIgf/GsdwAAAABJRU5ErkJggg=="
+            },
+            "sha256:40146ae51a6fa73a88af7ec5e791a1dbc9f050f6035d23cd04098308a25c1d58": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQilr6HwAD5AIhfOVNtwAAAABJRU5ErkJggg=="
+            },
+            "sha256:c6db89f04c0397aca2274d4e91e80ca01e6507fe0ccf44a13fa8f9e560d17179": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQjlr6HwAD6AIisRq0ZQAAAABJRU5ErkJggg=="
+            },
+            "sha256:dfa35be47d05be5f2d6d0a949cc10c9031012084efeb08063dc34f572e8d6676": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQiVr6HwAD7AIjpXVB5gAAAABJRU5ErkJggg=="
+            },
+            "sha256:3217185a80ecaf4eb2bf52cb34f9c37788aff16b2a2e55bff8ac8ba45b71a35e": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQjVr6HwAD8AIkc8HfXQAAAABJRU5ErkJggg=="
+            },
+            "sha256:dfafedeedfa5a7317e04099732b4a26f33cb87bad0950823f9a639eeffe1fbff": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQi1r6HwAD9AIlcNU+nQAAAABJRU5ErkJggg=="
+            },
+            "sha256:3499e372725554b7345724c3011d9d5903533ee45beffa6cbb0793defaa47380": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQj1r6HwAD+AImvSrHTwAAAABJRU5ErkJggg=="
+            },
+            "sha256:bfc052183098d0403b2a0b8df29710c7fa67c1342514db3ef86c39c11004d170": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQiFr6HwAD/AInT0A7zQAAAABJRU5ErkJggg=="
+            },
+            "sha256:28d662a5b5b86d6de3942b96d96d7e295b17c7b6c709bde9e0e1c235a9876012": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQjFr6HwAEAAIooxrFXQAAAABJRU5ErkJggg=="
+            },
+            "sha256:d4846421dfada3ffbf7bf1f40f769d26f43aaeac5b39782af0f84c51f4ad1944": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQilr6HwAEBAIpoA4knQAAAABJRU5ErkJggg=="
+            },
+            "sha256:295e46bbec5ef7f812912f61e54cc477700af04b794c13a92ca75fad13b3fde6": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQjlr6HwAECAIqbfHdTwAAAABJRU5ErkJggg=="
+            },
+            "sha256:1be1ea8a7909f5dbec27d2d35d07b6ab7e4aa0d81a2e253173a90be439b6d6cf": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQiVr6HwAEDAIreZ4ozAAAAABJRU5ErkJggg=="
+            },
+            "sha256:11950a16942471fcf099a8d178f3f806c2555f5341f0d3e9f69db44d4316e8d5": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQjVr6HwAEEAIsryq2dwAAAABJRU5ErkJggg=="
+            },
+            "sha256:543a376722083bb63287a5b6061ca18a297ed2521bbe97ef4dd5e98923b5bf35": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQi1r6HwAEFAItrD5XtwAAAABJRU5ErkJggg=="
+            },
+            "sha256:93660d043feb963300b06c43d7f619dfd4e66725c384a7752feaa0c67f36008b": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQj1r6HwAEGAIuYcGuZQAAAABJRU5ErkJggg=="
+            },
+            "sha256:275113deb9e66c9b0884c7e7e385f0bc4c62c86bf042d44e4819c74e0590e2ca": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMwiFr6HwAEHAIvQkxWlwAAAABJRU5ErkJggg=="
+            },
+            "sha256:797aad13855466284a8706a2e7fc5809de777b003e26d10a44a54498df2e7932": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMwjFr6HwAEIAIwv9kWmgAAAABJRU5ErkJggg=="
             }
           }
         }
       ]
     },
     {
-      "name": "33 custom icons",
+      "name": "51 custom icons",
       "set": [
         {
           "path": [
             "icons"
           ],
           "value": {
-            "sha256:f924c21b69002c242477a9712f89ccd0a762d5ce2618b9c92b2825bf084a7458": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYGD/DwABEgEHw9OltAAAAABJRU5ErkJggg=="
+            "sha256:12fee944a6ef0c4d35d961e4ec2ecd36215339feb3ff2b914de56f7372f6aa22": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgiFr6HwADXAH/u+vksQAAAABJRU5ErkJggg=="
             },
-            "sha256:b0870c7852940ae309cdbce34ba1bfbfc63c650e397fd0489b1f98ae6e8a4fc2": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZGD/DwABFgEICYlB9QAAAABJRU5ErkJggg=="
+            "sha256:c078aeb7b307e68aff1935e031374aef4b25daa4ed09a4dd39d1704c661bc352": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgjFr6HwADYAIAzVkVBwAAAABJRU5ErkJggg=="
             },
-            "sha256:68ea613d754a9ab43771bec097ce9b88542a456ef195c1421b96c5a0be8bc270": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYmD/DwABGgEJBI7xjQAAAABJRU5ErkJggg=="
+            "sha256:91a0a9981329b4fa55418af91f5f97983d7afa9867b797f17ad1ef3e0c952dfa": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgilr6HwADZAIBzk30xwAAAABJRU5ErkJggg=="
             },
-            "sha256:096977fa32cbad547ba1fcfed89e0190f378e79af3c10878fc33a57b0c3463ee": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZmD/DwABHgEKx2JZ5wAAAABJRU5ErkJggg=="
+            "sha256:3f5fac89229f5f587acade9dab5a9b31e6ab9d90c8e3a8d82cdadfee154ad0d1": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgjlr6HwADaAICA7INFQAAAABJRU5ErkJggg=="
             },
-            "sha256:d67db7619d9cc0edd7d4326be41e4c64228966a54fdae355c67c63cb0dde9af7": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYWD/DwABIgEL+XUYTAAAAABJRU5ErkJggg=="
+            "sha256:e6378ff37ec973c9f7cfc05ae40b87c4db3807fea73fe483a7080b5ab40b117a": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgiVr6HwADbAIDF934lgAAAABJRU5ErkJggg=="
             },
-            "sha256:eb8ae2a83e8e8355e10e5577b7ae890ff4c49aa1ee740832872e0c7d52a6f651": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZWD/DwABJgEMPfR0PwAAAABJRU5ErkJggg=="
+            "sha256:717a45a40756febef2e4ed93d2dd1f7771fe1432ed64acd5ad02b443958052fd": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgjVr6HwADcAIEwWlmLQAAAABJRU5ErkJggg=="
             },
-            "sha256:4a7b3cd50132835bbb8dba739e1bec59997b57d67f44b0b57ce63192d6ab3c69": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgY2D/DwABKgENMPPERwAAAABJRU5ErkJggg=="
+            "sha256:e4861421a8d6afb1ab85bf25970c609460a15899eb3b42634335af6d31487a6c": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgi1r6HwADdAIFwn2H7QAAAABJRU5ErkJggg=="
             },
-            "sha256:e4fe7bb60e1330d239df56c3b2af739bf38351d7c5d26e0c907f93181f3492d5": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZ2D/DwABLgEO8x9sLQAAAABJRU5ErkJggg=="
+            "sha256:48039e3dd05ee3488b4e5cdadef3f2def03783f82a41771b016f66be090ed7a2": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgj1r6HwADeAIGD4J+PwAAAABJRU5ErkJggg=="
             },
-            "sha256:0f53ed2842f0d311506dfaf6d642bd6efbd4373bbae7871c7a878027fc3638f4": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYGD/DwABMgEPE0BiZwAAAABJRU5ErkJggg=="
+            "sha256:3a399ddbabbbc229d4404c845e32c6da32741c7c1e366351a99eb2ef824d34e5": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgiFr6HwADfAIH/eiCvQAAAABJRU5ErkJggg=="
             },
-            "sha256:3e72395940a7b2de466cfef90861bb9bbeebc09be5d0cb47609939f157355579": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZGD/DwABNgEQxK2WQgAAAABJRU5ErkJggg=="
+            "sha256:6cc0496a599d11a85af7e04bd6b0900f0c34a7997027b44798d40ae7a3058b86": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgjFr6HwADgAIIjGVElAAAAABJRU5ErkJggg=="
             },
-            "sha256:43d01e3d93ae854076629374146a82c165967958d0ce823bcab132ac2c54dd80": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYmD/DwABOgERyaomOgAAAABJRU5ErkJggg=="
+            "sha256:cab36f7a9736fb5574504c0fee4dd41475653bced421ec52f1038784bf73cdfd": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgilr6HwADhAIJj3GlVAAAAABJRU5ErkJggg=="
             },
-            "sha256:cf4b21553c756e420054d4ef78226952222bc05165cbf449de8a5d46f2e8251a": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZmD/DwABPgESCkaOUAAAAABJRU5ErkJggg=="
+            "sha256:2d97ab5d90c01f65e786841c20cf045528c6595a840d73a27488b449df3727a9": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgjlr6HwADiAIKQo5chgAAAABJRU5ErkJggg=="
             },
-            "sha256:a9ae2a948b63ceceeb8d751bd3e9aa5dc859de9bb5a4d408a388f6e814446e2d": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYWD/DwABQgETRMtCOwAAAABJRU5ErkJggg=="
+            "sha256:b8879d78c961d1bc0a1be49ba7abbff1409532c153a8db10eaf71694e0a9ac5b": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgiVr6HwADjAILVuGpBQAAAABJRU5ErkJggg=="
             },
-            "sha256:86265be38ba27998fe391070238115b56d56689b3b95d23de8b283e56394ad60": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZWD/DwABRgEUgEouSAAAAABJRU5ErkJggg=="
+            "sha256:f5ae52ea1787067fe930039c5e4895d736a8f5cc6f801edef54fa6ba7b3aa96a": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgjVr6HwADkAIMgFU3vgAAAABJRU5ErkJggg=="
             },
-            "sha256:60d9e0d384803ff5c8349df5ad84a5d9b4680fbb8f960fbe81ca1de175b0a8fe": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgY2D/DwABSgEVjU2eMAAAAABJRU5ErkJggg=="
+            "sha256:1653680a1f59724e80e2789cb53a5c106e29ca5d8260476df2e69d46bba2c511": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgi1r6HwADlAINg0HWfgAAAABJRU5ErkJggg=="
             },
-            "sha256:feb0c776b4fecab52442f2157bb6d44c0c390c0780e972f3b0161c9cf26492e8": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZ2D/DwABTgEWTqE2WgAAAABJRU5ErkJggg=="
+            "sha256:59c69bd0b7ebe8405711269dadde34042cce281e201ae4a19314414db14022a1": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgj1r6HwADmAIOTr4vrAAAAABJRU5ErkJggg=="
             },
-            "sha256:0ab2628caa8234ce8b2bcb79092de340fcf0a239ad54521d91214a43920ffe64": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYGD/DwABUgEXWLe9iAAAAABJRU5ErkJggg=="
+            "sha256:13e41667fed6d56ff05c9b9e8031961fb49b27d8a3393bc51f5d3430a77fe666": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQiFr6HwADnAIPSp1WtgAAAABJRU5ErkJggg=="
             },
-            "sha256:71ed3a2c24bbdcd8e81fff4d0ad1081d5e99a3fd07e4eccdc1478b37385fd363": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZGD/DwABVgEYku1ZyQAAAABJRU5ErkJggg=="
+            "sha256:4b34d5621816ca6e41892cc29ca58074bde66e5e06ead31c4028679abf7c8cd4": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQjFr6HwADoAIQtwgWuwAAAABJRU5ErkJggg=="
             },
-            "sha256:464ee2407087cb4f4fab759cf6180bf2ead09fd5cefa6a4b7b3cb63f4bb5d133": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYmD/DwABWgEZn+rpsQAAAABJRU5ErkJggg=="
+            "sha256:6c3ad84e8bd176d01393c7deba42be146a0a41f6633ad90b3d5a619636224cb1": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQilr6HwADpAIRtBz3ewAAAABJRU5ErkJggg=="
             },
-            "sha256:3d49776bf5937e705f05aed767cee91787b9983559cd741e46fab45de5d79b2a": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZmD/DwABXgEaXAZB2wAAAABJRU5ErkJggg=="
+            "sha256:9901455b854ab9db8121609d190532dff46c8663f890d316da72ca175dd2fa4c": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQjlr6HwADqAISeeMOqQAAAABJRU5ErkJggg=="
             },
-            "sha256:5fef1e291e04e6516986bf11b55ccb8f94d922d72b89e253a8af471200051319": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYWD/DwABYgEbYhEAcAAAAABJRU5ErkJggg=="
+            "sha256:831379063d478d7a165e4126fcb62f34aa64061fb8e3e7647ae9c8d20e2bdd8c": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQiVr6HwADrAITbYz7KgAAAABJRU5ErkJggg=="
             },
-            "sha256:e6e519d1d18de5ab42544d7f16b2dad93271525826f9c602aa938149272e6b64": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZWD/DwABZgEcppBsAwAAAABJRU5ErkJggg=="
+            "sha256:39ea54af224ab427f3cf572c704ad22a157f5764f8f0aa5ff222bb26e9809da9": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQjVr6HwADsAIUuzhlkQAAAABJRU5ErkJggg=="
             },
-            "sha256:e76dbc98a4ff27f26b56d3f9a6718e0bf18806e4daecf5b7ec2bdaaae3ee446c": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQY2D/DwABagEdq5fcewAAAABJRU5ErkJggg=="
+            "sha256:2d67b8cbc722faf0a61171382902decd3893d24b8acb3f63888a010ccfb53cac": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQi1r6HwADtAIVuCyEUQAAAABJRU5ErkJggg=="
             },
-            "sha256:783aa4c88fc0d2f9d82980901844295faa2b8d73465a082af896576af73a27c7": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZ2D/DwABbgEeaHt0EQAAAABJRU5ErkJggg=="
+            "sha256:7fb352c3365d015ca124348ea0bf954c8925703f4605d5f7019dfb375fd67a87": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQj1r6HwADuAIWddN9gwAAAABJRU5ErkJggg=="
             },
-            "sha256:f333e1b11a8db75fe6794116d87538be0003b4d971ee73aaf104138a9a398df7": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYGD/DwABcgEfiCR6WwAAAABJRU5ErkJggg=="
+            "sha256:c344ce10efcc0c08594b79876866607830342db5ec188cf01be9b87df897d8ee": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQiFr6HwADvAIXh7mBAQAAAABJRU5ErkJggg=="
             },
-            "sha256:0f10a7bb3a0ad65f19bf26d741c02a72d52be4babb682a091986c86933665cc7": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZGD/DwABdgEgZKeutgAAAABJRU5ErkJggg=="
+            "sha256:bf6929f490534104ded214b2859e28cc86ecfda442aa54f1d437f8e95f0f133e": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQjFr6HwADwAIYFwFcqAAAAABJRU5ErkJggg=="
             },
-            "sha256:faa1f8aace2974ffcaa351bc37e74538bef5468b8b0c59ec6afc0a6af5d2039d": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYmD/DwABegEhaaAezgAAAABJRU5ErkJggg=="
+            "sha256:3736378517b0b1134ba3251ed67b374e7588eeb721958af945e1db666cbe65b4": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQilr6HwADxAIZFBW9aAAAAABJRU5ErkJggg=="
             },
-            "sha256:c42f1d8f6bbec9e527684a175931471d3c44c824be0229b530985b6503816ebf": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZmD/DwABfgEiqky2pAAAAABJRU5ErkJggg=="
+            "sha256:7bce9091a0e3b307e4fb50f8e25df2e78c3265b80cd3497002ad87904abaabba": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQjlr6HwADyAIa2epEugAAAABJRU5ErkJggg=="
             },
-            "sha256:2b65aaa29c159db121673d353c2b538c92b0e11630cda84523fddcef921e200a": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYWD/DwABggEjBfRhTwAAAABJRU5ErkJggg=="
+            "sha256:4079b7eb552d1c10ebc7db1bb9565f2969960a01e3c65678b6448ea609d358fb": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQiVr6HwADzAIbzYWxOQAAAABJRU5ErkJggg=="
             },
-            "sha256:5ab577eb37b0e59545060bc47d2ef44c89565901ec137ca0557dc460b86c8f8b": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZWD/DwABhgEkwXUNPAAAAABJRU5ErkJggg=="
+            "sha256:e83b4215b2f1f619ccd91bd591485bbf1f64eb3efebb2d2e0cc16940465cdd00": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQjVr6HwAD0AIcGzEvggAAAABJRU5ErkJggg=="
             },
-            "sha256:1f983239c1f66304264bcf605cc79b0713882a77ba95cccbfdaff461878638c5": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQY2D/DwABigElzHK9RAAAAABJRU5ErkJggg=="
+            "sha256:a86d47ac77beed14993a2dadda48e5abf6e7922baf4e06b7a6491f5539bcc199": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQi1r6HwAD1AIdGCXOQgAAAABJRU5ErkJggg=="
             },
-            "sha256:2384376591337d54314f848ef0df0da6c85ec7ef8e5ba330f018dcda6f730de5": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZ2D/DwABjgEmD54VLgAAAABJRU5ErkJggg=="
+            "sha256:3c77cde5225e6dee660194ff0110fcc906aba87694abf82b967cecc09a16936d": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQj1r6HwAD2AIe1do3kAAAAABJRU5ErkJggg=="
             },
-            "sha256:9be78e4f2daa8bb21d86d6db8d1ed518a46985af80c41904e0184e92c5b5ab64": {
-              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNQYGD/DwABkgEncXscxAAAAABJRU5ErkJggg=="
+            "sha256:fa1593823baaee7bff8b443b6eb6fd532df31301fb69d972cb97d5e510b25506": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQiFr6HwAD3AIfuQrMsgAAAABJRU5ErkJggg=="
+            },
+            "sha256:e4da46791d5eb942aa7397032994b4f4dbf1601b75eb5bfd4d3bba1cb00b563c": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQjFr6HwAD4AIgf/GsdwAAAABJRU5ErkJggg=="
+            },
+            "sha256:40146ae51a6fa73a88af7ec5e791a1dbc9f050f6035d23cd04098308a25c1d58": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQilr6HwAD5AIhfOVNtwAAAABJRU5ErkJggg=="
+            },
+            "sha256:c6db89f04c0397aca2274d4e91e80ca01e6507fe0ccf44a13fa8f9e560d17179": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQjlr6HwAD6AIisRq0ZQAAAABJRU5ErkJggg=="
+            },
+            "sha256:dfa35be47d05be5f2d6d0a949cc10c9031012084efeb08063dc34f572e8d6676": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQiVr6HwAD7AIjpXVB5gAAAABJRU5ErkJggg=="
+            },
+            "sha256:3217185a80ecaf4eb2bf52cb34f9c37788aff16b2a2e55bff8ac8ba45b71a35e": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQjVr6HwAD8AIkc8HfXQAAAABJRU5ErkJggg=="
+            },
+            "sha256:dfafedeedfa5a7317e04099732b4a26f33cb87bad0950823f9a639eeffe1fbff": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQi1r6HwAD9AIlcNU+nQAAAABJRU5ErkJggg=="
+            },
+            "sha256:3499e372725554b7345724c3011d9d5903533ee45beffa6cbb0793defaa47380": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQj1r6HwAD+AImvSrHTwAAAABJRU5ErkJggg=="
+            },
+            "sha256:bfc052183098d0403b2a0b8df29710c7fa67c1342514db3ef86c39c11004d170": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQiFr6HwAD/AInT0A7zQAAAABJRU5ErkJggg=="
+            },
+            "sha256:28d662a5b5b86d6de3942b96d96d7e295b17c7b6c709bde9e0e1c235a9876012": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQjFr6HwAEAAIooxrFXQAAAABJRU5ErkJggg=="
+            },
+            "sha256:d4846421dfada3ffbf7bf1f40f769d26f43aaeac5b39782af0f84c51f4ad1944": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQilr6HwAEBAIpoA4knQAAAABJRU5ErkJggg=="
+            },
+            "sha256:295e46bbec5ef7f812912f61e54cc477700af04b794c13a92ca75fad13b3fde6": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQjlr6HwAECAIqbfHdTwAAAABJRU5ErkJggg=="
+            },
+            "sha256:1be1ea8a7909f5dbec27d2d35d07b6ab7e4aa0d81a2e253173a90be439b6d6cf": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQiVr6HwAEDAIreZ4ozAAAAABJRU5ErkJggg=="
+            },
+            "sha256:11950a16942471fcf099a8d178f3f806c2555f5341f0d3e9f69db44d4316e8d5": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQjVr6HwAEEAIsryq2dwAAAABJRU5ErkJggg=="
+            },
+            "sha256:543a376722083bb63287a5b6061ca18a297ed2521bbe97ef4dd5e98923b5bf35": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQi1r6HwAEFAItrD5XtwAAAABJRU5ErkJggg=="
+            },
+            "sha256:93660d043feb963300b06c43d7f619dfd4e66725c384a7752feaa0c67f36008b": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQj1r6HwAEGAIuYcGuZQAAAABJRU5ErkJggg=="
+            },
+            "sha256:275113deb9e66c9b0884c7e7e385f0bc4c62c86bf042d44e4819c74e0590e2ca": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMwiFr6HwAEHAIvQkxWlwAAAABJRU5ErkJggg=="
+            },
+            "sha256:797aad13855466284a8706a2e7fc5809de777b003e26d10a44a54498df2e7932": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMwjFr6HwAEIAIwv9kWmgAAAABJRU5ErkJggg=="
+            },
+            "sha256:70f158414a93d29d14a381ab0cca641fd48ab0e9288ed35536d313bc65cd2236": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMwilr6HwAEJAIxvM33WgAAAABJRU5ErkJggg=="
             }
           }
         }
       ],
       "error": "icons",
-      "message": "at most 32 custom icons are allowed, not 33"
+      "message": "at most 50 custom icons are allowed, not 51"
     },
     {
       "name": "custom icon of 40960 bytes",
@@ -5663,7 +5809,7 @@
           "value": [
             {
               "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
-              "name": "\u0085",
+              "name": "",
               "device": {
                 "spec": {
                   "general": {
@@ -5688,7 +5834,7 @@
           "value": [
             {
               "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
-              "name": "\ufeff",
+              "name": "﻿",
               "device": {
                 "spec": {
                   "general": {
@@ -5715,7 +5861,7 @@
               "device": {
                 "spec": {
                   "general": {
-                    "hostname": "\u0085"
+                    "hostname": ""
                   }
                 }
               }
@@ -5740,7 +5886,7 @@
               "device": {
                 "spec": {
                   "general": {
-                    "hostname": "\ufeff"
+                    "hostname": "﻿"
                   }
                 }
               }
@@ -5758,7 +5904,7 @@
           ],
           "value": [
             {
-              "id": "\u0085",
+              "id": "",
               "name": "PLC",
               "device": {
                 "spec": {
@@ -5789,7 +5935,7 @@
             1,
             "name"
           ],
-          "value": "\u0085"
+          "value": ""
         }
       ],
       "error": "networks[1].name",
@@ -5804,7 +5950,7 @@
             1,
             "name"
           ],
-          "value": "\ufeff"
+          "value": "﻿"
         }
       ]
     },
@@ -5817,7 +5963,7 @@
             "annotations"
           ],
           "value": {
-            "\u0085": "blank"
+            "": "blank"
           }
         }
       ],
@@ -6123,7 +6269,7 @@
             "switch",
             "fillColor"
           ],
-          "value": "\u0007\u007f\u0085\u00a0\u2028\udb40\udc01é😀"
+          "value": "\u0007\u007f  󠀁é😀"
         }
       ],
       "error": "nodes[3].switch.fillColor",
@@ -6254,6 +6400,574 @@
       ],
       "error": "templates[0].device.spec.general.hostname",
       "message": "template hostname \"aééééééééééééééééééééééééééééééé...\" must not contain whitespace"
+    },
+    {
+      "name": "the metadata left out, which Go decodes as empty",
+      "set": [
+        {
+          "path": [
+            "metadata"
+          ],
+          "delete": true
+        }
+      ],
+      "error": "metadata.id",
+      "message": "document ID is required"
+    },
+    {
+      "name": "null metadata, which Go decodes as empty",
+      "set": [
+        {
+          "path": [
+            "metadata"
+          ],
+          "value": null
+        }
+      ],
+      "error": "metadata.id",
+      "message": "document ID is required"
+    },
+    {
+      "name": "metadata that is text",
+      "set": [
+        {
+          "path": [
+            "metadata"
+          ],
+          "value": "hand-authored"
+        }
+      ],
+      "error": "metadata"
+    },
+    {
+      "name": "metadata that is a list",
+      "set": [
+        {
+          "path": [
+            "metadata"
+          ],
+          "value": []
+        }
+      ],
+      "error": "metadata"
+    },
+    {
+      "name": "an author in the metadata, which names its creator createdBy",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "author"
+          ],
+          "value": "alice"
+        }
+      ],
+      "error": "metadata.author"
+    },
+    {
+      "name": "an author at the root, where the metadata is not",
+      "set": [
+        {
+          "path": [
+            "author"
+          ],
+          "value": "alice"
+        }
+      ],
+      "error": "author"
+    },
+    {
+      "name": "a name at the root, where the metadata is not",
+      "set": [
+        {
+          "path": [
+            "name"
+          ],
+          "value": "hand-authored"
+        }
+      ],
+      "error": "name"
+    },
+    {
+      "name": "notes on several lines and with tabs",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            "Snapshot the PLCs before each run.",
+            "Two lines\n\tand a tab"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "no notes",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": []
+        }
+      ]
+    },
+    {
+      "name": "null notes, which Go decodes as none",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "100 notes",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "101 notes",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note"
+          ]
+        }
+      ],
+      "error": "metadata.notes",
+      "message": "at most 100 notes are allowed, not 101"
+    },
+    {
+      "name": "a blank note",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            "kept",
+            " \n\t "
+          ]
+        }
+      ],
+      "error": "metadata.notes[1]",
+      "message": "note must not be blank"
+    },
+    {
+      "name": "an empty note",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            ""
+          ]
+        }
+      ],
+      "error": "metadata.notes[0]",
+      "message": "note must not be blank"
+    },
+    {
+      "name": "a note of only U+0085, white space to strings.TrimSpace though not to String.prototype.trim",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            "\u0085"
+          ]
+        }
+      ],
+      "error": "metadata.notes[0]",
+      "message": "note must not be blank"
+    },
+    {
+      "name": "a note of only U+00A0",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            " "
+          ]
+        }
+      ],
+      "error": "metadata.notes[0]",
+      "message": "note must not be blank"
+    },
+    {
+      "name": "a note of only U+2028",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            " "
+          ]
+        }
+      ],
+      "error": "metadata.notes[0]",
+      "message": "note must not be blank"
+    },
+    {
+      "name": "a note of only U+FEFF, white space to String.prototype.trim though not to strings.TrimSpace",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            "﻿"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a note of 4096 bytes in 2048 characters",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            ""
+          ]
+        },
+        {
+          "path": [
+            "metadata",
+            "notes",
+            0
+          ],
+          "join": [
+            [
+              "é",
+              2048
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a note of 4097 bytes",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            ""
+          ]
+        },
+        {
+          "path": [
+            "metadata",
+            "notes",
+            0
+          ],
+          "join": [
+            [
+              "é",
+              2048
+            ],
+            "x"
+          ]
+        }
+      ],
+      "error": "metadata.notes[0]",
+      "message": "note must be at most 4096 bytes"
+    },
+    {
+      "name": "a note with a control character",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            "ring\u0007"
+          ]
+        }
+      ],
+      "error": "metadata.notes[0]",
+      "message": "note must not contain control characters other than newline and tab"
+    },
+    {
+      "name": "a note with a carriage return",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            "one\r\ntwo"
+          ]
+        }
+      ],
+      "error": "metadata.notes[0]",
+      "message": "note must not contain control characters other than newline and tab"
+    },
+    {
+      "name": "a note with a delete character",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": [
+            "delete\u007f"
+          ]
+        }
+      ],
+      "error": "metadata.notes[0]",
+      "message": "note must not contain control characters other than newline and tab"
+    },
+    {
+      "name": "notes that are not a list",
+      "set": [
+        {
+          "path": [
+            "metadata",
+            "notes"
+          ],
+          "value": "one note"
+        }
+      ],
+      "error": "metadata.notes"
     }
   ]
 }

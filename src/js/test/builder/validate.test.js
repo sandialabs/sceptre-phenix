@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 
+import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, test } from 'vitest';
 
 import { parseDocument } from '@/builder/decode.js';
@@ -17,6 +18,8 @@ import {
   isTime,
   MAX_ANNOTATION_BYTES,
   MAX_ANNOTATIONS,
+  MAX_DIAGRAM_NOTE_BYTES,
+  MAX_DIAGRAM_NOTES,
   MAX_NAME_BYTES,
   MAX_TEMPLATE_DESCRIPTION_BYTES,
   MAX_TEMPLATE_DEVICE_BYTES,
@@ -41,6 +44,13 @@ function paths(doc) {
   return errorsFor(doc).map((issue) => issue.path);
 }
 
+// A new document whose metadata holds the given fields too.
+function withMetadata(fields) {
+  const doc = createDocument();
+
+  return { ...doc, metadata: { ...doc.metadata, ...fields } };
+}
+
 describe('document validation', () => {
   test('a well formed document has no errors', () => {
     const { doc } = sampleDocument();
@@ -63,92 +73,149 @@ describe('document validation', () => {
     );
     // The schema's maxLength counts characters, where the server counts
     // bytes (MaxNameBytes), so it is only equal, not the same bound.
-    expect(MAX_NAME_BYTES).toBe(bundle.properties.name.maxLength);
-    expect(MAX_USER_BYTES).toBe(bundle.properties.author.maxLength);
-    expect(MAX_USER_BYTES).toBe(bundle.properties.updatedBy.maxLength);
+    const metadata = bundle.$defs.metadata.properties;
+
+    expect(MAX_NAME_BYTES).toBe(metadata.name.maxLength);
+    expect(MAX_USER_BYTES).toBe(metadata.createdBy.maxLength);
+    expect(MAX_USER_BYTES).toBe(metadata.updatedBy.maxLength);
+    expect(MAX_DIAGRAM_NOTES).toBe(metadata.notes.maxItems);
+    expect(MAX_DIAGRAM_NOTE_BYTES).toBe(metadata.notes.items.maxLength);
+  });
+
+  // The bundle's note pattern (notePattern in schema.go), read by ajv as the
+  // Inspector reads the bundle, takes a note of one character exactly when
+  // validation does: white space past ASCII is blank to both (U+0085, U+00A0,
+  // U+2028), U+FEFF and the zero width characters are not, and the control
+  // characters validation refuses the pattern refuses.
+  test('the schema takes the notes validation takes', () => {
+    const accepts = new Ajv2020({ strict: false }).compile(
+      bundle.$defs.metadata.properties.notes.items,
+    );
+    const spans = [
+      [0, 0xff],
+      [0x1680, 0x1680],
+      [0x180e, 0x180e],
+      [0x2000, 0x2010],
+      [0x2028, 0x2030],
+      [0x205f, 0x2060],
+      [0x3000, 0x3001],
+      [0xfeff, 0xfeff],
+    ];
+    const differ = [];
+
+    for (const [from, to] of spans) {
+      for (let code = from; code <= to; code += 1) {
+        const note = String.fromCodePoint(code);
+        const valid = errorsFor(withMetadata({ notes: [note] })).length === 0;
+
+        if (accepts(note) !== valid) {
+          differ.push(`U+${code.toString(16).toUpperCase().padStart(4, '0')}`);
+        }
+      }
+    }
+
+    expect(differ).toEqual([]);
   });
 
   test('the name is bounded the way the server bounds a draft title', () => {
-    const named = (name) => ({ ...createDocument(), name });
+    const named = (name) => withMetadata({ name });
 
     expect(paths(named('n'.repeat(MAX_NAME_BYTES)))).toEqual([]);
     // Bytes, not characters: 257 two-byte characters are 514 bytes.
-    expect(paths(named('é'.repeat(MAX_NAME_BYTES / 2 + 1)))).toEqual(['name']);
-    expect(paths(named('my\ttopology'))).toEqual(['name']);
+    expect(paths(named('é'.repeat(MAX_NAME_BYTES / 2 + 1)))).toEqual([
+      'metadata.name',
+    ]);
+    expect(paths(named('my\ttopology'))).toEqual(['metadata.name']);
+  });
+
+  test('the metadata is where a document says what it is', () => {
+    const { metadata, ...rest } = createDocument();
+
+    // Left out, it is empty, as Go decodes it, and has no id.
+    expect(errorsFor(rest).map(({ path, message }) => [path, message])).toEqual(
+      [['metadata.id', 'document ID is required']],
+    );
+    expect(paths({ ...rest, metadata: { ...metadata, id: 'doc-1' } })).toEqual([
+      'metadata.id',
+    ]);
   });
 
   // validateUser and validateTime in validate.go, message for message.
-  test('the author and the last editor are bounded text', () => {
-    const errors = (field, value) =>
-      errorsFor({ ...createDocument(), [field]: value }).map(
-        ({ path, message }) => [path, message],
-      );
+  test('the creator and the last editor are bounded text', () => {
+    const errors = (key, value) =>
+      errorsFor(withMetadata({ [key]: value })).map(({ path, message }) => [
+        path,
+        message,
+      ]);
 
-    for (const field of ['author', 'updatedBy']) {
-      expect(errors(field, 'alice')).toEqual([]);
-      expect(errors(field, 'a'.repeat(MAX_USER_BYTES))).toEqual([]);
+    for (const key of ['createdBy', 'updatedBy']) {
+      const field = `metadata.${key}`;
+
+      expect(errors(key, 'alice')).toEqual([]);
+      expect(errors(key, 'a'.repeat(MAX_USER_BYTES))).toEqual([]);
       // None, as Go decodes them.
-      expect(errors(field, '')).toEqual([]);
-      expect(errors(field, null)).toEqual([]);
-      expect(errors(field, undefined)).toEqual([]);
-      expect(errors(field, 'a'.repeat(MAX_USER_BYTES + 1))).toEqual([
+      expect(errors(key, '')).toEqual([]);
+      expect(errors(key, null)).toEqual([]);
+      expect(errors(key, undefined)).toEqual([]);
+      expect(errors(key, 'a'.repeat(MAX_USER_BYTES + 1))).toEqual([
         [field, `${field} must be at most 256 bytes`],
       ]);
       // Bytes, not characters: 86 three-byte characters are 258 bytes.
-      expect(errors(field, '€'.repeat(86))).toEqual([
+      expect(errors(key, '€'.repeat(86))).toEqual([
         [field, `${field} must be at most 256 bytes`],
       ]);
-      expect(errors(field, 'alice\tsmith')).toEqual([
+      expect(errors(key, 'alice\tsmith')).toEqual([
         [field, `${field} must not contain control characters`],
       ]);
-      expect(errors(field, 'bob\u007f')).toEqual([
+      expect(errors(key, 'bob\u007f')).toEqual([
         [field, `${field} must not contain control characters`],
       ]);
       // Too long is said once, not with the control character too.
-      expect(errors(field, `${'a'.repeat(MAX_USER_BYTES)}\n`)).toEqual([
+      expect(errors(key, `${'a'.repeat(MAX_USER_BYTES)}\n`)).toEqual([
         [field, `${field} must be at most 256 bytes`],
       ]);
-      expect(errors(field, 7)).toEqual([[field, `${field} must be a string`]]);
-      expect(errors(field, { user: 'bob' })).toEqual([
+      expect(errors(key, 7)).toEqual([[field, `${field} must be a string`]]);
+      expect(errors(key, { user: 'bob' })).toEqual([
         [field, `${field} must be a string`],
       ]);
     }
   });
 
   test('the creation time and the last edit time have one form', () => {
-    const errors = (field, value) =>
-      errorsFor({ ...createDocument(), [field]: value }).map(
-        ({ path, message }) => [path, message],
-      );
+    const errors = (key, value) =>
+      errorsFor(withMetadata({ [key]: value })).map(({ path, message }) => [
+        path,
+        message,
+      ]);
 
-    for (const field of ['createdAt', 'updatedAt']) {
+    for (const key of ['createdAt', 'updatedAt']) {
+      const field = `metadata.${key}`;
       const refused = [
         [field, `${field} must be a UTC time in the form YYYY-MM-DDTHH:MM:SSZ`],
       ];
 
-      expect(errors(field, '2026-10-01T15:04:05Z')).toEqual([]);
-      expect(errors(field, '')).toEqual([]);
-      expect(errors(field, null)).toEqual([]);
-      expect(errors(field, '2026-10-01T15:04:05+00:00')).toEqual(refused);
-      expect(errors(field, '2026-10-01T15:04:05.000Z')).toEqual(refused);
-      expect(errors(field, '2026-02-30T00:00:00Z')).toEqual(refused);
-      expect(errors(field, 1790866800)).toEqual([
+      expect(errors(key, '2026-10-01T15:04:05Z')).toEqual([]);
+      expect(errors(key, '')).toEqual([]);
+      expect(errors(key, null)).toEqual([]);
+      expect(errors(key, '2026-10-01T15:04:05+00:00')).toEqual(refused);
+      expect(errors(key, '2026-10-01T15:04:05.000Z')).toEqual(refused);
+      expect(errors(key, '2026-02-30T00:00:00Z')).toEqual(refused);
+      expect(errors(key, 1790866800)).toEqual([
         [field, `${field} must be a string`],
       ]);
-      expect(errors(field, true)).toEqual([
-        [field, `${field} must be a string`],
-      ]);
+      expect(errors(key, true)).toEqual([[field, `${field} must be a string`]]);
     }
 
     // There is no rule between the four: an editor without a time, and a
     // creation after the last edit, are valid.
     expect(
-      errorsFor({
-        ...createDocument(),
-        updatedBy: 'bob',
-        createdAt: '2026-10-02T00:00:00Z',
-        updatedAt: '2024-02-29T23:59:59Z',
-      }),
+      errorsFor(
+        withMetadata({
+          updatedBy: 'bob',
+          createdAt: '2026-10-02T00:00:00Z',
+          updatedAt: '2024-02-29T23:59:59Z',
+        }),
+      ),
     ).toEqual([]);
   });
 
@@ -222,7 +289,7 @@ describe('document validation', () => {
   });
 
   test('issues are sorted by path', () => {
-    const doc = { ...createDocument(), $schema: '', revision: 0, id: '' };
+    const doc = { ...withMetadata({ id: '' }), $schema: '', revision: 0 };
     const sorted = [...paths(doc)].sort();
 
     expect(paths(doc)).toEqual(sorted);
@@ -677,11 +744,12 @@ describe('interface VLANs and drive images', () => {
     expect(about('networks[1]')).toMatchObject({ networkId: 'n2' });
     // Issues about the document itself carry none.
     expect(
-      validateDocument({ ...broken, id: '' }).find(
-        (issue) => issue.path === 'id',
-      ),
+      validateDocument({
+        ...broken,
+        metadata: { ...broken.metadata, id: '' },
+      }).find((issue) => issue.path === 'metadata.id'),
     ).toEqual({
-      path: 'id',
+      path: 'metadata.id',
       message: 'document ID is required',
       level: 'error',
     });
@@ -1275,7 +1343,7 @@ describe('colors, styles, custom icons and templates', () => {
       properties.description.maxLength,
     );
     expect(bundle.$defs.templateDevice.description).toBe(
-      `Fields a template fills in. At most ${MAX_TEMPLATE_DEVICE_BYTES} bytes as JSON.`,
+      `Fields a template fills in, at most ${MAX_TEMPLATE_DEVICE_BYTES} bytes as JSON.`,
     );
   });
 
@@ -1403,7 +1471,7 @@ describe('colors, styles, custom icons and templates', () => {
     // Each key is the id of other bytes, so each is reported, in order.
     const issues = messages(validateIcons(icons(MAX_DOCUMENT_ICONS + 1)));
 
-    expect(issues[0]).toBe('at most 32 custom icons are allowed, not 33');
+    expect(issues[0]).toBe('at most 50 custom icons are allowed, not 51');
     expect(issues).toHaveLength(MAX_DOCUMENT_ICONS + 2);
     expect(issues.slice(1)).toEqual([...issues.slice(1)].sort());
     expect(messages(validateIcons(icons(MAX_DOCUMENT_ICONS)))).not.toContain(
@@ -1617,12 +1685,26 @@ describe('the validation corpus shared with the server', () => {
   const read = (name) => JSON.parse(readFileSync(new URL(name, testdata)));
   const corpus = read('validation-corpus.json');
 
-  function setIn(doc, path, value) {
+  // Puts value at path, or removes the key there when remove is set.
+  function setIn(doc, path, value, remove = false) {
     const parent = path
       .slice(0, -1)
       .reduce((container, key) => container[key], doc);
 
-    parent[path[path.length - 1]] = value;
+    if (remove) {
+      delete parent[path[path.length - 1]];
+    } else {
+      parent[path[path.length - 1]] = value;
+    }
+  }
+
+  // Whether a decoding error refuses the key at path: an unknown key is
+  // named in the object it is in (rejectUnknown in decode.js).
+  function unknownKey(message, path) {
+    const at = path.lastIndexOf('.');
+    const object = at < 0 ? 'document' : path.slice(0, at);
+
+    return message.includes(`${object}: unknown field "${path.slice(at + 1)}"`);
   }
 
   // The text the join parts of a set entry make: each is text, or text and
@@ -1644,8 +1726,8 @@ describe('the validation corpus shared with the server', () => {
     (_, entry) => {
       const doc = read(corpus.document);
 
-      (entry.set || []).forEach(({ path, value, join }) =>
-        setIn(doc, path, join ? joinParts(join) : value),
+      (entry.set || []).forEach(({ path, value, join, delete: remove }) =>
+        setIn(doc, path, join ? joinParts(join) : value, remove),
       );
 
       if (!entry.error) {
@@ -1683,7 +1765,8 @@ describe('the validation corpus shared with the server', () => {
       // An issue at the path, or a decoding error naming the key.
       expect(
         refusal?.issues?.some((issue) => issue.path === entry.error) ||
-          refusal?.message.includes(`"${entry.error}"`),
+          refusal?.message.includes(`"${entry.error}"`) ||
+          unknownKey(refusal?.message || '', entry.error),
         refusal?.message || 'accepted',
       ).toBe(true);
     },

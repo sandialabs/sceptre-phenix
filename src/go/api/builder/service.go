@@ -423,9 +423,9 @@ func (s *Service) GetSnapshot(ctx context.Context, draftID, snapshotID string) (
 // before it is hashed or stored; invalid documents are rejected with an error
 // matching [ErrInvalid].
 //
-// The document is validated as it was sent, then stamped: its author and
+// The document is validated as it was sent, then stamped: its createdBy and
 // createdAt are kept when it has them, and are otherwise the actor and now,
-// and its updatedBy and updatedAt are always the actor and now. The author
+// and its updatedBy and updatedAt are always the actor and now. The createdBy
 // and createdAt it is stored with are recorded in the draft, and every later
 // snapshot carries them (see [Service.AppendSnapshot]). One document is not
 // stamped: the unchanged copy of req.Origin, the document the draft is opened
@@ -491,7 +491,7 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 		Publication:       nil,
 		Forked:            nil,
 		Sharing:           nil,
-		DocumentAuthor:    stamp.Author,
+		DocumentCreatedBy: stamp.CreatedBy,
 		DocumentCreatedAt: stamp.CreatedAt,
 		Revision:          store.AnyRevision,
 		Stamp:             &stamp,
@@ -539,7 +539,7 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 //
 // The unchanged copy of the request's origin is returned as it is: its digest
 // says it is the origin, byte for byte, and the origin was not this caller's
-// edit. Any other document is stamped. It keeps the author and the creation
+// edit. Any other document is stamped. It keeps the creator and the creation
 // time it names, since a document made elsewhere was not made by the actor
 // now, and takes the actor and now for whichever it lacks. Its last editor
 // and last edit time are always the actor and now: nothing a request says of
@@ -554,8 +554,8 @@ func firstDocument(doc *builder.Document, req CreateDraftRequest, now time.Time)
 
 	stamp := doc.Provenance()
 
-	if stamp.Author == "" {
-		stamp.Author = req.Actor
+	if stamp.CreatedBy == "" {
+		stamp.CreatedBy = req.Actor
 	}
 
 	if stamp.CreatedAt == "" {
@@ -588,9 +588,9 @@ func firstDocument(doc *builder.Document, req CreateDraftRequest, now time.Time)
 // failed, the updated metadata is returned together with an error matching
 // [ErrCleanup].
 //
-// The document is validated as it was sent, then stamped: its author and
+// The document is validated as it was sent, then stamped: its createdBy and
 // createdAt become the ones the draft records (see
-// [DraftMetadata.DocumentAuthor]), or are removed when the draft records
+// [DraftMetadata.DocumentCreatedBy]), or are removed when the draft records
 // none, and its updatedBy and updatedAt become the actor and now. Nothing a
 // request says of the four is kept, so every snapshot names the user who
 // really saved it. The same time is the snapshot's and the draft's, cut to
@@ -631,7 +631,7 @@ func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest)
 	now := s.clock().UTC()
 
 	stamp := builder.Provenance{
-		Author:    meta.DocumentAuthor,
+		CreatedBy: meta.DocumentCreatedBy,
 		CreatedAt: meta.DocumentCreatedAt,
 		UpdatedBy: req.Actor,
 		UpdatedAt: builder.FormatTime(now),

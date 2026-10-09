@@ -175,20 +175,20 @@ type DraftMetadata struct {
 	// changing it changes the draft's revision: a save authorized by a share
 	// that has since been removed can never land.
 	Sharing *SharingState `json:"sharing,omitempty"`
-	// DocumentAuthor and DocumentCreatedAt are the author and createdAt the
-	// document of every snapshot of this draft carries. They are fixed when
-	// the draft is created (see [Service.CreateDraft]), so a save never has
-	// to read the previous snapshot to keep them. Either is empty for a draft
-	// whose document has none, and both for a draft stored before the
-	// fields existed.
-	DocumentAuthor    string `json:"documentAuthor,omitempty"`
+	// DocumentCreatedBy and DocumentCreatedAt are the metadata.createdBy and
+	// metadata.createdAt the document of every snapshot of this draft
+	// carries. They are fixed when the draft is created (see
+	// [Service.CreateDraft]), so a save never has to read the previous
+	// snapshot to keep them. Either is empty for a draft whose document has
+	// none, and both for a draft stored before the fields existed.
+	DocumentCreatedBy string `json:"documentCreatedBy,omitempty"`
 	DocumentCreatedAt string `json:"documentCreatedAt,omitempty"`
 
 	// Revision is the store record revision this metadata was read at. It is
 	// never serialized: it is filled in from the record on read and is what
 	// callers pass back as the expected revision of a mutation.
 	Revision int64 `json:"-"`
-	// Stamp is the author, creation time, last editor and last edit time of
+	// Stamp is the creator, creation time, last editor and last edit time of
 	// the document the call that returned this metadata stored: what
 	// [Service.CreateDraft] and [Service.AppendSnapshot] wrote into it, or,
 	// for a draft created as an unchanged copy, what it already held. It is

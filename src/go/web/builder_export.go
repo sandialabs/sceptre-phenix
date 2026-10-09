@@ -90,7 +90,7 @@ func (b *builderAPI) exportTopology(w http.ResponseWriter, r *http.Request) erro
 
 	name := request.Name
 	if name == "" {
-		name = bdoc.TopologyName(document.Name)
+		name = bdoc.TopologyName(document.Metadata.Name)
 	}
 
 	// The name is checked as a publish checks its topology target.

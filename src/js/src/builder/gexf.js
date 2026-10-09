@@ -905,7 +905,7 @@ function edgeElement(connection, used) {
 
 /**
  * When the diagram last changed, which dates the file: the last change made
- * in this tab, else the save that stored the content shown (the document's
+ * in this tab, else the save that stored the content shown (the metadata's
  * updatedAt, which a published diagram opened read only has too), else the
  * server's last change to the draft.
  *
@@ -914,7 +914,7 @@ function edgeElement(connection, used) {
  * @returns {string} a time, or '' when none is known
  */
 export function lastModified({ changedAt, doc, updated } = {}) {
-  return changedAt || doc?.updatedAt || updated || '';
+  return changedAt || doc?.metadata?.updatedAt || updated || '';
 }
 
 // YYYY-MM-DD of the day `value` falls on here, or of today when it is no
@@ -937,7 +937,7 @@ function metaElement(doc, lastChange) {
     source.topology,
     doc?.scenario?.name,
   ]);
-  const description = doc?.description || doc?.name;
+  const description = doc?.metadata?.description || doc?.metadata?.name;
 
   return element('meta', { lastmodifieddate: lastChange }, [
     element('creator', {}, ['phēnix Builder']),

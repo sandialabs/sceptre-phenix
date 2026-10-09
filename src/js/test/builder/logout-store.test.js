@@ -63,7 +63,7 @@ function openDraft(pending, saveNow = vi.fn(async () => {})) {
   return registerOpenDraft({
     store: {
       readOnly: false,
-      doc: { name: 'Lab' },
+      doc: { metadata: { name: 'Lab' } },
       autosave: { record: { key: 'alice::alice::d1', queue: Array(pending) } },
       saveNow,
     },

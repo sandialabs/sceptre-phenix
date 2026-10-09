@@ -36,7 +36,7 @@ export function toYAMLString(doc) {
  * @returns {string}
  */
 export function exportFileName(doc, extension) {
-  const base = String(doc?.name || 'topology')
+  const base = String(doc?.metadata?.name || 'topology')
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
@@ -321,7 +321,10 @@ export function saveText(params) {
  */
 export async function saveTopologyYAML(params) {
   const { doc, exportTopology, saveAs, BlobCtor } = params;
-  const { yaml, ...result } = await exportTopology(doc, configName(doc?.name));
+  const { yaml, ...result } = await exportTopology(
+    doc,
+    configName(doc?.metadata?.name),
+  );
   const fileName = exportFileName(doc, 'topology.yaml');
 
   saveText({ text: yaml, mime: 'text/yaml', fileName, saveAs, BlobCtor });

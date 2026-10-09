@@ -93,7 +93,7 @@ func asJSONValue(t *testing.T, value any) any {
 func TestBuilderExportTopologyMatchesPublish(t *testing.T) {
 	harness := newBuilderHarness(t, includedTopologyFixture(t, "shared")...)
 	document := generateBuilderDocument(t, harness, "Topology/root")
-	document.Name = " Lab topology (2) "
+	document.Metadata.Name = " Lab topology (2) "
 
 	if included := document.FindDevice("inc-host"); included == nil || included.Device.IncludedFrom != "shared" {
 		t.Fatalf("inc-host is not marked as included: %s", asBuilderJSON(t, document))

@@ -93,8 +93,8 @@ func parseStored(kind, id string, data []byte) (*builder.Document, error) {
 // unusable instead of silently storing a different title than it sent.
 func documentTitle(doc *builder.Document, fallback string) (string, error) {
 	title := fallback
-	if doc != nil && doc.Name != "" {
-		title = doc.Name
+	if doc != nil && doc.Metadata.Name != "" {
+		title = doc.Metadata.Name
 	}
 
 	if err := validateText("title", title, MaxTitleLength, false); err != nil {
@@ -210,8 +210,8 @@ func validateDraftMetadata(key string, meta *DraftMetadata) error {
 		return newCorruptError(kindDraft, key, fmt.Sprintf("cursor %d is outside its history", meta.Cursor))
 	case ValidateSourceFile(meta.SourceFile) != nil:
 		return newCorruptError(kindDraft, key, "source file is not a usable file name")
-	case validateText("documentAuthor", meta.DocumentAuthor, MaxOwnerLength, false) != nil:
-		return newCorruptError(kindDraft, key, "document author is not a usable user")
+	case validateText("documentCreatedBy", meta.DocumentCreatedBy, MaxOwnerLength, false) != nil:
+		return newCorruptError(kindDraft, key, "document creator is not a usable user")
 	case meta.DocumentCreatedAt != "" && !builder.IsTime(meta.DocumentCreatedAt):
 		return newCorruptError(kindDraft, key, "document creation time is not a time a document may hold")
 	}

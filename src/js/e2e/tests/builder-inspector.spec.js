@@ -996,8 +996,8 @@ test.describe('Builder inspector', () => {
           .poll(
             () =>
               persisted((doc) => ({
-                name: doc.name,
-                description: doc.description,
+                name: doc.metadata.name,
+                description: doc.metadata.description,
               })),
             PERSIST,
           )
@@ -1007,7 +1007,7 @@ test.describe('Builder inspector', () => {
         await builder.rename(renamed);
         await expect.soft(nameField).toHaveValue(renamed);
         await expect.soft
-          .poll(() => persisted((doc) => doc.name), PERSIST)
+          .poll(() => persisted((doc) => doc.metadata.name), PERSIST)
           .toBe(renamed);
       });
 
@@ -2434,6 +2434,111 @@ test.describe('Builder inspector', () => {
       soft: false,
     });
     await expect(description).toHaveValue('typed while saving');
+
+    expectNoFatal(issues);
+  });
+
+  // The diagram's notes, in its metadata: a note is written when its box is
+  // left, the draft keeps it, and Delete takes one away for good, as does
+  // clearing its box. A note too long to save is never written.
+  test('diagram notes are kept by the draft, and a deleted one stays deleted', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    await builder.open();
+    const draft = await builder.createBlank();
+    const section = builder.inspector.getByTestId('inspector-notes');
+    const box = (number) =>
+      section.getByRole('textbox', { name: `Note ${number}`, exact: true });
+    const first = 'The core switch sits in rack 4.';
+    const second = 'Firewall rules are reviewed\nevery Monday.';
+
+    await test.step('two notes are added from the keyboard and written', async () => {
+      await expect.soft(section.getByRole('heading')).toHaveText('Notes');
+      await expect.soft(section).toContainText('No notes.');
+
+      for (const [index, text] of [first, second].entries()) {
+        await section.getByTestId('inspector-note-add').press('Enter');
+        await expect(box(index + 1)).toBeFocused();
+        await box(index + 1).fill(text);
+        await box(index + 1).blur();
+        await expect.soft(builder).toHaveAnnounced('Updated diagram notes');
+      }
+
+      await builder.persisted(draft, (doc) => doc.metadata.notes, [
+        first,
+        second,
+      ]);
+    });
+
+    await test.step('the draft opened again shows both', async () => {
+      await builder.backToDrafts();
+      await builder.openDraft(draft);
+      await expect(box(1)).toHaveValue(first);
+      await expect(box(2)).toHaveValue(second);
+      await expect.soft(section).not.toContainText('No notes.');
+    });
+
+    await test.step('Delete takes one away, and it stays away', async () => {
+      await section
+        .getByRole('button', { name: 'Delete note 1', exact: true })
+        .click();
+      await expect(box(1)).toHaveValue(second);
+      await expect(box(2)).toHaveCount(0);
+      await builder.persisted(draft, (doc) => doc.metadata.notes, [second]);
+
+      await page.reload();
+      await builder.openDraft(draft);
+      await expect(box(1)).toHaveValue(second);
+      await expect(box(2)).toHaveCount(0);
+    });
+
+    await test.step('a note too long to save shows its error, and the draft keeps the note as saved', async () => {
+      // fill puts the whole text in at once, as a paste does: 4097 bytes,
+      // one past the limit.
+      await box(1).fill('x'.repeat(4097));
+
+      const error = section.getByTestId('inspector-note-error-1');
+
+      await expect(error).toBeVisible();
+      await expect.soft(error).toHaveAttribute('role', 'alert');
+      await expect
+        .soft(error)
+        .toContainText('A note holds at most 4096 bytes in UTF-8');
+      await expect(box(1)).toHaveAttribute('aria-invalid', 'true');
+
+      const errorId = await error.getAttribute('id');
+
+      expect(errorId).toMatch(/^inspector-note-error-/);
+      await expect(box(1)).toHaveAttribute('aria-describedby', errorId);
+
+      // Leaving the box writes nothing: the text stays, with its error.
+      await box(1).blur();
+      await expect(box(1)).toHaveValue('x'.repeat(4097));
+      await expect(error).toBeVisible();
+      await builder.waitSaved();
+      await builder.persisted(draft, (doc) => doc.metadata.notes, [second]);
+
+      await page.reload();
+      await builder.openDraft(draft);
+      await expect(box(1)).toHaveValue(second);
+      await expect(box(1)).not.toHaveAttribute('aria-invalid', 'true');
+      await expect(section.getByRole('alert')).toHaveCount(0);
+    });
+
+    await test.step('a note cleared and left is removed, and stays removed', async () => {
+      await box(1).fill('');
+      await box(1).blur();
+      await expect(box(1)).toHaveCount(0);
+      await expect(section).toContainText('No notes.');
+      await builder.persisted(draft, (doc) => 'notes' in doc.metadata, false);
+
+      await page.reload();
+      await builder.openDraft(draft);
+      await expect(section).toContainText('No notes.');
+      await expect(box(1)).toHaveCount(0);
+    });
 
     expectNoFatal(issues);
   });

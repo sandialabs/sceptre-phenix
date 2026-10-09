@@ -86,7 +86,22 @@ func TestServiceRejectsInvalidDocuments(t *testing.T) {
 			// is refused rather than truncated.
 			name: "name longer than a draft title",
 			document: mutateDocument(t, valid, func(doc map[string]any) {
-				doc["name"] = strings.Repeat("n", MaxTitleLength+1)
+				metadata, _ := doc["metadata"].(map[string]any)
+				metadata["name"] = strings.Repeat("n", MaxTitleLength+1)
+			}),
+			is: ErrInvalid,
+		},
+		{
+			// The metadata fields live in the metadata object only.
+			name:     "a name at the root",
+			document: mutateDocument(t, valid, func(doc map[string]any) { doc["name"] = "root" }),
+			is:       ErrInvalid,
+		},
+		{
+			name: "an unknown metadata field",
+			document: mutateDocument(t, valid, func(doc map[string]any) {
+				metadata, _ := doc["metadata"].(map[string]any)
+				metadata["author"] = testActor
 			}),
 			is: ErrInvalid,
 		},
@@ -248,7 +263,10 @@ func TestDraftTitleFollowsDocumentName(t *testing.T) {
 	}
 
 	// A document without a name falls back to the caller supplied title.
-	unnamed := mutateDocument(t, testDocument(t, "topo", 0), func(doc map[string]any) { delete(doc, "name") })
+	unnamed := mutateDocument(t, testDocument(t, "topo", 0), func(doc map[string]any) {
+		metadata, _ := doc["metadata"].(map[string]any)
+		delete(metadata, "name")
+	})
 
 	fallback, err := h.service.CreateDraft(ctx, CreateDraftRequest{
 		Owner: testOwner, Actor: testActor, Title: "Fallback Title",

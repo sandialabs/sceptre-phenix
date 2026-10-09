@@ -344,7 +344,7 @@ describe('the template editor’s document', () => {
     const blank = blankTemplate();
     const doc = templateDocument(blank);
 
-    expect(doc.name).toBe('');
+    expect(doc.metadata.name).toBe('');
     expect(templateFromDocument(doc).template).toEqual(blank);
   });
 

@@ -534,7 +534,7 @@ func TestLegacySampleTopology(t *testing.T) {
 
 	bare, _ := convertLegacy(t, string(legacyFile(t, "sample.xml")), "sample")
 	if !reflect.DeepEqual(doc.Nodes, bare.Nodes) || !reflect.DeepEqual(doc.Networks, bare.Networks) ||
-		!reflect.DeepEqual(doc.Edges, bare.Edges) || doc.ID != bare.ID {
+		!reflect.DeepEqual(doc.Edges, bare.Edges) || doc.Metadata.ID != bare.Metadata.ID {
 		t.Error("the diagram converted with its topology differs from the diagram converted alone")
 	}
 }

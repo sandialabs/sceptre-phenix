@@ -309,8 +309,8 @@ The **Diagram** section has:
       file.
 
     In the picture, the draft was made by uploading a Builder file named
-    `riverside-water.builder.json` that names `e2e-admin` as the author of
-    the diagram, and **Upload** keeps the author. The upload itself is the
+    `riverside-water.builder.json` that names `e2e-admin` as the maker of
+    the diagram (its `createdBy`), and **Upload** keeps it. The upload itself is the
     last edit. Its user is `global-admin`, the user everyone has on a phenix
     server with authentication disabled. The times are those of the day the
     picture was taken: uploading the example file of that name shows the
@@ -329,6 +329,19 @@ The **Diagram** section has:
   edge-rtr, and ntp on ntp-01, ws-01, ws-02, hmi-01 and historian-01.
   **Edit scenario** opens the **Scenario** dialog (see
   [Attaching a scenario](diagrams.md#attaching-a-scenario)).
+- **Notes**: free text about the diagram as a whole, one box for each note,
+  or "No notes.". **Add note** adds an empty box and moves the focus to it.
+  A note is saved when you leave its box, as one step that **Undo** takes
+  back. Leave a box empty to remove its note, or select its **Delete**
+  button. A diagram holds at most 100 notes of at most 4096 bytes each
+  (in UTF-8, so fewer characters outside ASCII); at 100, **Add note** is
+  unavailable and says so. A note that is too long, or that holds a control
+  character other than a line break or a tab, shows an error under its box
+  and is not saved: the diagram keeps the note as it was until you fix the
+  text. In a draft you can only
+  view, the notes are shown as text. The notes are part of the diagram and
+  travel with it in Builder JSON and YAML, but publishing writes them to no
+  config.
 
 ### Editing a node
 

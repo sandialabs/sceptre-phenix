@@ -500,14 +500,24 @@ describe('applying a working copy', () => {
 
   test('an emptied diagram description clears it', () => {
     const { doc } = sampleDocument();
-    const described = { ...doc, description: 'Lab' };
+    const described = {
+      ...doc,
+      metadata: { ...doc.metadata, description: 'Lab' },
+    };
     const base = inspectorTarget(described, { type: 'document' }).data;
 
+    expect(base).toEqual({ name: 'Sample', description: 'Lab' });
     expect(formDataChanged({ name: 'Sample' }, base)).toBe(true);
-    expect(
-      applyFormData(described, { type: 'document' }, { name: 'Sample' })
-        .description,
-    ).toBe('');
+
+    const applied = applyFormData(
+      described,
+      { type: 'document' },
+      { name: 'Sample' },
+    );
+
+    expect(applied.metadata.description).toBe('');
+    expect(applied.metadata.id).toBe(doc.metadata.id);
+    expect(applied).not.toHaveProperty('description');
   });
 
   test("a connection's label and color apply, and emptied ones go", () => {

@@ -2243,7 +2243,7 @@ test('a custom icon a diagram carries is removed and undone, copied with its nod
 
 // A device for each of `icons`, in rows of eight, each with its icon, which
 // the document carries: as many custom icons as a diagram holds, when there
-// are 32.
+// are 50.
 function iconsDocument(name, icons) {
   return {
     ...blankDocument(name, {
@@ -2287,7 +2287,7 @@ for (const scheme of ['light', 'dark']) {
     async ({ page, builder, issues }, testInfo) => {
       await page.emulateMedia({ colorScheme: scheme });
 
-      const icons = Array.from({ length: 32 }, (_, index) =>
+      const icons = Array.from({ length: 50 }, (_, index) =>
         iconOf(
           pngOf(4, 4, ownColor()),
           `icon ${String(index).padStart(2, '0')}`,
@@ -2330,10 +2330,10 @@ for (const scheme of ['light', 'dark']) {
         'data-builder-theme',
         scheme,
       );
-      await expect(customIcon(builder.nodes('device'))).toHaveCount(32);
+      await expect(customIcon(builder.nodes('device'))).toHaveCount(50);
       await expect
         .soft(customIcon(page.getByTestId('builder-outline')))
-        .toHaveCount(32);
+        .toHaveCount(50);
 
       await builder.selectInOutline('plc-01');
       await expect(field.name).toHaveText('icon 01');
@@ -2344,7 +2344,7 @@ for (const scheme of ['light', 'dark']) {
 
       await field.choose.click();
       await expect(
-        field.dialog.getByRole('heading', { name: 'In this diagram (32)' }),
+        field.dialog.getByRole('heading', { name: 'In this diagram (50)' }),
       ).toBeVisible();
       await expect(field.heading).toHaveText(
         /^My library \(2 of 64, [\d.]+ KiB of 1 MiB\)$/,
@@ -2352,12 +2352,12 @@ for (const scheme of ['light', 'dark']) {
       await expect
         .soft(field.inDiagram(icons[0].id))
         .toContainText('In my library');
-      await expect.soft(field.dialog.getByTestId('icon-save')).toHaveCount(31);
+      await expect.soft(field.dialog.getByTestId('icon-save')).toHaveCount(49);
 
       // The diagram is full for an icon it does not carry yet.
       await field.inLibrary(spare.id).getByTestId('icon-use').click();
       await expect(field.error).toHaveText(
-        'This diagram already has 32 custom icons. Remove one from a node first.',
+        'This diagram already has 50 custom icons. Remove one from a node first.',
       );
       await expect(field.dialog).toBeVisible();
       await expectAccessible(page, {

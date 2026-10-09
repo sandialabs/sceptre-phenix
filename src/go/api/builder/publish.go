@@ -334,7 +334,7 @@ func (s *Service) planTopology(ctx context.Context, req PublishTopologyRequest) 
 		data:   data,
 		config: cfg,
 		publication: &TopologyPublication{
-			Name: name, Outcome: outcome, Title: document.Name, Digest: digest, Reference: reference,
+			Name: name, Outcome: outcome, Title: document.Metadata.Name, Digest: digest, Reference: reference,
 			Document: nil, Config: cfg, Warnings: warnings,
 		},
 	}, nil
@@ -373,7 +373,7 @@ func ReplaceLegacyDiagram(topology *store.Config) (string, bool) {
 func publishedName(req PublishTopologyRequest, document *builder.Document) (string, error) {
 	name := req.Name
 	if name == "" {
-		name = builder.TopologyName(document.Name)
+		name = builder.TopologyName(document.Metadata.Name)
 	}
 
 	if !validTopologyName(name) {

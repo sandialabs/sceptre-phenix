@@ -24,8 +24,8 @@ func TestValidateRejects(t *testing.T) {
 	}{
 		{
 			name:    "missing document id",
-			mutate:  func(d *builder.Document) { d.ID = "" },
-			wantMsg: "document ID is required",
+			mutate:  func(d *builder.Document) { d.Metadata.ID = "" },
+			wantMsg: "metadata.id: document ID is required",
 		},
 		{
 			name:    "wrong schema",
@@ -40,13 +40,42 @@ func TestValidateRejects(t *testing.T) {
 		{
 			// The draft service records the name as the draft title.
 			name:    "name longer than a draft title",
-			mutate:  func(d *builder.Document) { d.Name = strings.Repeat("é", builder.MaxNameBytes/2+1) },
-			wantMsg: "document name must be at most 512 bytes",
+			mutate:  func(d *builder.Document) { d.Metadata.Name = strings.Repeat("é", builder.MaxNameBytes/2+1) },
+			wantMsg: "metadata.name: document name must be at most 512 bytes",
 		},
 		{
 			name:    "name with a control character",
-			mutate:  func(d *builder.Document) { d.Name = "my\ttopology" },
-			wantMsg: "document name must not contain control characters",
+			mutate:  func(d *builder.Document) { d.Metadata.Name = "my\ttopology" },
+			wantMsg: "metadata.name: document name must not contain control characters",
+		},
+		{
+			name: "more notes than a document holds",
+			mutate: func(d *builder.Document) {
+				d.Metadata.Notes = slices.Repeat([]string{"note"}, builder.MaxDiagramNotes+1)
+			},
+			wantMsg: "metadata.notes: at most 100 notes are allowed, not 101",
+		},
+		{
+			name:    "a blank note",
+			mutate:  func(d *builder.Document) { d.Metadata.Notes = []string{"kept", " \n\t"} },
+			wantMsg: "metadata.notes[1]: note must not be blank",
+		},
+		{
+			name: "a note longer than a note may be",
+			mutate: func(d *builder.Document) {
+				d.Metadata.Notes = []string{strings.Repeat("é", builder.MaxDiagramNoteBytes/2) + "x"}
+			},
+			wantMsg: "metadata.notes[0]: note must be at most 4096 bytes",
+		},
+		{
+			name:    "a note with a control character",
+			mutate:  func(d *builder.Document) { d.Metadata.Notes = []string{"ring\a"} },
+			wantMsg: "metadata.notes[0]: note must not contain control characters other than newline and tab",
+		},
+		{
+			name:    "a note with a carriage return",
+			mutate:  func(d *builder.Document) { d.Metadata.Notes = []string{"one\r\ntwo"} },
+			wantMsg: "metadata.notes[0]: note must not contain control characters other than newline and tab",
 		},
 		{
 			name: "duplicate node id ignoring case",
@@ -384,7 +413,7 @@ func TestValidateRejects(t *testing.T) {
 		},
 		{
 			name:    "document id that is no UUID",
-			mutate:  func(d *builder.Document) { d.ID = "doc-fixture" },
+			mutate:  func(d *builder.Document) { d.Metadata.ID = "doc-fixture" },
 			wantMsg: "document ID \"doc-fixture\" is not a valid UUID",
 		},
 		{
@@ -622,10 +651,31 @@ func TestValidateAllowsNestedGroups(t *testing.T) {
 	}
 }
 
+// TestValidateAcceptsDiagramNotes checks the notes a document may carry: as
+// many as MaxDiagramNotes, each as long as MaxDiagramNoteBytes, on several
+// lines and with tabs.
+func TestValidateAcceptsDiagramNotes(t *testing.T) {
+	for name, notes := range map[string][]string{
+		"none":                   nil,
+		"an empty list":          {},
+		"lines and tabs":         {"Snapshot the PLCs.\n\tThen start the HMI.", "Second note"},
+		"the most notes":         slices.Repeat([]string{"note"}, builder.MaxDiagramNotes),
+		"the longest note":       {strings.Repeat("é", builder.MaxDiagramNoteBytes/2)},
+		"space around some text": {"  padded  "},
+	} {
+		doc := loadDocumentFixture(t, "document.json")
+		doc.Metadata.Notes = notes
+
+		if err := doc.Validate(); err != nil {
+			t.Errorf("%s: refused: %v", name, err)
+		}
+	}
+}
+
 func TestValidateReportsEveryIssue(t *testing.T) {
 	doc := loadDocumentFixture(t, "document.json")
 
-	doc.ID = ""
+	doc.Metadata.ID = ""
 	doc.Networks[0].Name = ""
 	doc.Edges[0].NetworkID = idNetNope
 
@@ -744,6 +794,8 @@ type validationCorpus struct {
 			// Join stands in for a long text value: its parts, each text, or
 			// text and how many times to repeat it.
 			Join []any `json:"join"`
+			// Delete removes the key at Path in place of setting it.
+			Delete bool `json:"delete"`
 		} `json:"set"`
 		Error string `json:"error"`
 		// Message is what the issue at Error says, when the case pins it.
@@ -785,8 +837,9 @@ func joinParts(t *testing.T, parts []any) string {
 	return text.String()
 }
 
-// setIn puts value at path in a decoded JSON document.
-func setIn(t *testing.T, doc any, path []any, value any) {
+// setIn puts value at path in a decoded JSON document, or removes the key
+// there when remove is set.
+func setIn(t *testing.T, doc any, path []any, value any, remove bool) {
 	t.Helper()
 
 	for i, key := range path {
@@ -794,9 +847,12 @@ func setIn(t *testing.T, doc any, path []any, value any) {
 
 		switch container := doc.(type) {
 		case map[string]any:
-			if last {
+			switch {
+			case last && remove:
+				delete(container, key.(string)) //nolint:forcetypeassert // corpus keys are strings
+			case last:
 				container[key.(string)] = value //nolint:forcetypeassert // corpus keys are strings
-			} else {
+			default:
 				doc = container[key.(string)] //nolint:forcetypeassert // corpus keys are strings
 			}
 		case []any:
@@ -843,7 +899,7 @@ func TestValidationCorpus(t *testing.T) {
 					value = joinParts(t, set.Join)
 				}
 
-				setIn(t, doc, set.Path, value)
+				setIn(t, doc, set.Path, value, set.Delete)
 			}
 
 			encoded, err := json.Marshal(doc)
@@ -894,10 +950,12 @@ func issueLines(issues []builder.Issue) []string {
 }
 
 // refusedAt reports whether err refuses a document at exactly path: an issue
-// of a validation error there, saying message when one is given, or a value
-// of the wrong type there, which the decoder refuses before validation. For
-// a map value of the wrong type, Go before 1.27 names only the map, so the
-// map's own path counts too.
+// of a validation error there, saying message when one is given, a value of
+// the wrong type there, or a key there the document may not have, both of
+// which the decoder refuses before validation. For a map value of the wrong
+// type, Go before 1.27 names only the map, so the map's own path counts too.
+// The decoder names an unknown key without the object it is in, so only the
+// last part of the path is compared.
 func refusedAt(err error, path, message string) bool {
 	var (
 		invalid  *builder.ValidationError
@@ -910,13 +968,17 @@ func refusedAt(err error, path, message string) bool {
 		})
 	}
 
-	if !errors.As(err, &mistyped) || message != "" {
+	if message != "" {
 		return false
 	}
 
-	parent := path
+	parent, key := path, path
 	if i := strings.LastIndex(path, "."); i >= 0 {
-		parent = path[:i]
+		parent, key = path[:i], path[i+1:]
+	}
+
+	if !errors.As(err, &mistyped) {
+		return strings.Contains(err.Error(), "unknown field "+strconv.Quote(key))
 	}
 
 	return mistyped.Field == path || mistyped.Field == parent

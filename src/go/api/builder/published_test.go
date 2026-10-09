@@ -63,8 +63,8 @@ func TestPublishedDocumentRoundTrip(t *testing.T) {
 		t.Fatalf("decoding published document returned error: %v", err)
 	}
 
-	if parsed.ID != builder.DocumentID("topo") {
-		t.Fatalf("decoded document ID = %q, want %q", parsed.ID, builder.DocumentID("topo"))
+	if parsed.Metadata.ID != builder.DocumentID("topo") {
+		t.Fatalf("decoded document ID = %q, want %q", parsed.Metadata.ID, builder.DocumentID("topo"))
 	}
 }
 

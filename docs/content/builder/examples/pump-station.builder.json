@@ -1,13 +1,15 @@
 {
   "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
   "revision": 1,
-  "id": "cbc6d926-51d1-5dc0-9c60-22ac8887c52f",
-  "name": "Pump station",
-  "description": "Remote pump station: cellular router, RTU and a field laptop.",
-  "author": "e2e-admin",
-  "createdAt": "2026-09-29T18:38:08Z",
-  "updatedBy": "e2e-admin",
-  "updatedAt": "2026-09-29T18:39:21Z",
+  "metadata": {
+    "id": "cbc6d926-51d1-5dc0-9c60-22ac8887c52f",
+    "name": "Pump station",
+    "description": "Remote pump station: cellular router, RTU and a field laptop.",
+    "createdBy": "e2e-admin",
+    "createdAt": "2026-09-29T18:38:08Z",
+    "updatedBy": "e2e-admin",
+    "updatedAt": "2026-09-29T18:39:21Z"
+  },
   "nodes": [
     {
       "id": "59a81426-0b05-590b-9024-2ae5ef766653",

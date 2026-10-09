@@ -13,7 +13,7 @@ import (
 	bdoc "phenix/types/builder"
 )
 
-// builderStamp is the author, creation time, last editor and last edit time
+// builderStamp is the creator, creation time, last editor and last edit time
 // an encoded document holds.
 func builderStamp(t *testing.T, data []byte) bdoc.Provenance {
 	t.Helper()
@@ -26,7 +26,7 @@ func builderStamp(t *testing.T, data []byte) bdoc.Provenance {
 	return document.Provenance()
 }
 
-// builderClaim returns an encoded document changed to claim an author, a
+// builderClaim returns an encoded document changed to claim a creator, a
 // creation time, a last editor and a last edit time.
 func builderClaim(t *testing.T, data []byte, claim bdoc.Provenance) []byte {
 	t.Helper()
@@ -138,23 +138,23 @@ func TestBuilderDraftResponsesCarryTheStamp(t *testing.T) {
 	created := bdoc.FormatTime(draft.Created)
 
 	want := bdoc.Provenance{
-		Author: builderTestOwner, CreatedAt: created, UpdatedBy: builderTestOwner, UpdatedAt: created,
+		CreatedBy: builderTestOwner, CreatedAt: created, UpdatedBy: builderTestOwner, UpdatedAt: created,
 	}
 
 	if draft.Stamp == nil || *draft.Stamp != want || !draft.Updated.Equal(draft.Created) {
 		t.Fatalf("stamp of the new draft = %+v, want %+v", draft.Stamp, want)
 	}
 
-	// The response spells the stamp with the document's own keys.
+	// The response spells the stamp with the keys of the document's metadata.
 	var raw struct {
 		Stamp map[string]string `json:"stamp"`
 	}
 
 	harness.decode(recorder, &raw)
 
-	if len(raw.Stamp) != 4 || raw.Stamp["author"] != want.Author || raw.Stamp["createdAt"] != want.CreatedAt ||
+	if len(raw.Stamp) != 4 || raw.Stamp["createdBy"] != want.CreatedBy || raw.Stamp["createdAt"] != want.CreatedAt ||
 		raw.Stamp["updatedBy"] != want.UpdatedBy || raw.Stamp["updatedAt"] != want.UpdatedAt {
-		t.Fatalf("stamp = %v, want author, createdAt, updatedBy and updatedAt", raw.Stamp)
+		t.Fatalf("stamp = %v, want createdBy, createdAt, updatedBy and updatedAt", raw.Stamp)
 	}
 
 	read := getBuilderDraft(t, harness, builderTestOwner, draft)
@@ -210,7 +210,7 @@ func TestBuilderDraftResponsesCarryTheStamp(t *testing.T) {
 }
 
 // TestBuilderStampNamesTheSaver saves a shared draft as its owner and as
-// a user it is shared with. The last editor is whoever saved, the author
+// a user it is shared with. The last editor is whoever saved, the creator
 // stays, and nothing a request claims about either is kept by a save.
 func TestBuilderStampNamesTheSaver(t *testing.T) {
 	fixture := newBuilderShareFixture(t)
@@ -223,13 +223,13 @@ func TestBuilderStampNamesTheSaver(t *testing.T) {
 	created := bdoc.FormatTime(meta.Created)
 
 	forged := builderClaim(t, builderDocument(t, "edited"), bdoc.Provenance{
-		Author: builderTestPeer, CreatedAt: "2001-01-01T00:00:00Z", UpdatedBy: builderTestOwner, UpdatedAt: "2031-01-01T00:00:00Z",
+		CreatedBy: builderTestPeer, CreatedAt: "2001-01-01T00:00:00Z", UpdatedBy: builderTestOwner, UpdatedAt: "2031-01-01T00:00:00Z",
 	})
 
 	saved := saveBuilderDraft(t, harness, builderTestPeer, draft, forged)
 
 	want := bdoc.Provenance{
-		Author: builderTestOwner, CreatedAt: created, UpdatedBy: builderTestPeer,
+		CreatedBy: builderTestOwner, CreatedAt: created, UpdatedBy: builderTestPeer,
 		UpdatedAt: bdoc.FormatTime(saved.Updated),
 	}
 
@@ -259,7 +259,7 @@ func TestBuilderStampNamesTheSaver(t *testing.T) {
 	// A value no document may hold refuses the save, though it would have
 	// been replaced.
 	invalid := mustBuilderJSON(t, map[string]any{"document": json.RawMessage(
-		strings.Replace(string(builderDocument(t, "bad")), `"revision": 1,`, `"revision": 1, "updatedAt": "today",`, 1),
+		strings.Replace(string(builderDocument(t, "bad")), `"metadata": {`, `"metadata": {"updatedAt": "today",`, 1),
 	)})
 
 	recorder := harness.do(builderRequest{
@@ -271,15 +271,15 @@ func TestBuilderStampNamesTheSaver(t *testing.T) {
 	}
 }
 
-// TestBuilderCreateDraftKeepsTheBodysAuthor creates drafts from request
-// bodies, as an upload does. The author and the creation time a document
+// TestBuilderCreateDraftKeepsTheBodysCreator creates drafts from request
+// bodies, as an upload does. The creator and the creation time a document
 // names are kept, the last editor and the last edit time never are, and a
 // value no document may hold refuses the request.
-func TestBuilderCreateDraftKeepsTheBodysAuthor(t *testing.T) {
+func TestBuilderCreateDraftKeepsTheBodysCreator(t *testing.T) {
 	harness := newBuilderHarness(t)
 
 	uploaded := builderClaim(t, builderDocument(t, "uploaded"), bdoc.Provenance{
-		Author: "carol@elsewhere", CreatedAt: "2019-05-06T07:08:09Z", UpdatedBy: "mallory", UpdatedAt: "2031-01-01T00:00:00Z",
+		CreatedBy: "carol@elsewhere", CreatedAt: "2019-05-06T07:08:09Z", UpdatedBy: "mallory", UpdatedAt: "2031-01-01T00:00:00Z",
 	})
 
 	recorder, draft := postBuilderDraft(t, harness, builderTestPeer, map[string]any{
@@ -290,7 +290,7 @@ func TestBuilderCreateDraftKeepsTheBodysAuthor(t *testing.T) {
 	}
 
 	want := bdoc.Provenance{
-		Author: "carol@elsewhere", CreatedAt: "2019-05-06T07:08:09Z", UpdatedBy: builderTestPeer,
+		CreatedBy: "carol@elsewhere", CreatedAt: "2019-05-06T07:08:09Z", UpdatedBy: builderTestPeer,
 		UpdatedAt: bdoc.FormatTime(draft.Created),
 	}
 
@@ -302,7 +302,7 @@ func TestBuilderCreateDraftKeepsTheBodysAuthor(t *testing.T) {
 		t.Fatalf("the document holds %+v, want %+v", got, want)
 	}
 
-	// A later save keeps that author, whatever it sends.
+	// A later save keeps that creator, whatever it sends.
 	saved := saveBuilderDraft(t, harness, builderTestPeer, draft, builderDocument(t, "uploaded"))
 
 	want.UpdatedAt = bdoc.FormatTime(saved.Updated)
@@ -314,12 +314,12 @@ func TestBuilderCreateDraftKeepsTheBodysAuthor(t *testing.T) {
 	drafts := harness.store.Count(bapi.NamespaceDrafts)
 
 	for name, claim := range map[string]bdoc.Provenance{
-		"an author with a control character": {Author: "carol\x00", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
-		"a creation time with an offset":     {Author: "", CreatedAt: "2019-05-06T07:08:09+02:00", UpdatedBy: "", UpdatedAt: ""},
+		"a creator with a control character": {CreatedBy: "carol\x00", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
+		"a creation time with an offset":     {CreatedBy: "", CreatedAt: "2019-05-06T07:08:09+02:00", UpdatedBy: "", UpdatedAt: ""},
 		"a last editor that is too long": {
-			Author: "", CreatedAt: "", UpdatedBy: strings.Repeat("m", bdoc.MaxUserBytes+1), UpdatedAt: "",
+			CreatedBy: "", CreatedAt: "", UpdatedBy: strings.Repeat("m", bdoc.MaxUserBytes+1), UpdatedAt: "",
 		},
-		"a last edit time with a fraction": {Author: "", CreatedAt: "", UpdatedBy: "", UpdatedAt: "2031-01-01T00:00:00.5Z"},
+		"a last edit time with a fraction": {CreatedBy: "", CreatedAt: "", UpdatedBy: "", UpdatedAt: "2031-01-01T00:00:00.5Z"},
 	} {
 		// Encoded without validation, as a client can send anything.
 		document, err := bdoc.Decode(builderDocument(t, "refused"))
@@ -373,7 +373,7 @@ func publishedBuilderDiagram(t *testing.T, harness *builderHarness, name string)
 
 // TestBuilderEditAsDraftKeepsThePublishedDocument opens a published
 // diagram as a draft, as another user. Sent back unchanged, the draft holds
-// the published document itself: its digest, its author and its last editor,
+// the published document itself: its digest, its creator and its last editor,
 // so opening is not an edit, and publishing it again stores no new document.
 // A save, or a body that is not that document, is the caller's edit.
 func TestBuilderEditAsDraftKeepsThePublishedDocument(t *testing.T) {
@@ -384,7 +384,7 @@ func TestBuilderEditAsDraftKeepsThePublishedDocument(t *testing.T) {
 	reference := builderTopologyReference(t, harness, "lab")
 	original := builderStamp(t, published)
 
-	if original.Author != builderTestOwner || original.UpdatedBy != builderTestOwner {
+	if original.CreatedBy != builderTestOwner || original.UpdatedBy != builderTestOwner {
 		t.Fatalf("the published document holds %+v, want it made and saved by %s", original, builderTestOwner)
 	}
 
@@ -433,11 +433,11 @@ func TestBuilderEditAsDraftKeepsThePublishedDocument(t *testing.T) {
 		t.Fatalf("publishing returned a stamp, though it stored no snapshot: %s", recorder.Body)
 	}
 
-	// A save is the opener's edit of the author's diagram.
+	// A save is the opener's edit of the creator's diagram.
 	saved := saveBuilderDraft(t, harness, builderTestPeer, response.Draft, read.Document)
 
 	want := bdoc.Provenance{
-		Author: original.Author, CreatedAt: original.CreatedAt, UpdatedBy: builderTestPeer,
+		CreatedBy: original.CreatedBy, CreatedAt: original.CreatedAt, UpdatedBy: builderTestPeer,
 		UpdatedAt: bdoc.FormatTime(saved.Updated),
 	}
 
@@ -446,13 +446,13 @@ func TestBuilderEditAsDraftKeepsThePublishedDocument(t *testing.T) {
 	}
 
 	// A body that is not the published document is the caller's edit from
-	// the start, with the author the body names.
+	// the start, with the creator the body names.
 	changed, err := bdoc.Decode(published)
 	if err != nil {
 		t.Fatalf("decoding the published document: %v", err)
 	}
 
-	changed.Description = "changed before the draft was made"
+	changed.Metadata.Description = "changed before the draft was made"
 
 	recorder, edited := postBuilderDraft(t, harness, builderTestPeer, map[string]any{
 		"document": changed, "sourceToken": builderDocTokenPrefix + id,
@@ -487,7 +487,7 @@ func TestBuilderEditAsDraftKeepsThePublishedDocument(t *testing.T) {
 // TestBuilderFileDraftKeepsTheFileDocument opens the Builder file a
 // topology names as a draft. Sent back unchanged, the draft holds the file's
 // document under the file's digest, with whatever the file says of its
-// author, also when it says nothing. A changed body is the caller's edit.
+// creator, also when it says nothing. A changed body is the caller's edit.
 func TestBuilderFileDraftKeepsTheFileDocument(t *testing.T) {
 	harness := newBuilderHarness(t)
 
@@ -499,7 +499,7 @@ func TestBuilderFileDraftKeepsTheFileDocument(t *testing.T) {
 
 	// One exported from another server names its users.
 	elsewhere := bdoc.Provenance{
-		Author: "carol@elsewhere", CreatedAt: "2019-05-06T07:08:09Z", UpdatedBy: "dave@elsewhere", UpdatedAt: "2020-01-02T03:04:05Z",
+		CreatedBy: "carol@elsewhere", CreatedAt: "2019-05-06T07:08:09Z", UpdatedBy: "dave@elsewhere", UpdatedAt: "2020-01-02T03:04:05Z",
 	}
 	exported := builderClaim(t, builderDocument(t, "exported"), elsewhere)
 	harness.addFileTopology("exported", bapi.DocumentReference{
@@ -507,7 +507,7 @@ func TestBuilderFileDraftKeepsTheFileDocument(t *testing.T) {
 	})
 
 	for name, want := range map[string]bdoc.Provenance{
-		"plain":    {Author: "", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
+		"plain":    {CreatedBy: "", CreatedAt: "", UpdatedBy: "", UpdatedAt: ""},
 		"exported": elsewhere,
 	} {
 		opened := openBuilderFile(t, harness, name)
@@ -529,11 +529,11 @@ func TestBuilderFileDraftKeepsTheFileDocument(t *testing.T) {
 			t.Fatalf("%s: the draft's document holds %+v, want the file's %+v", name, got, want)
 		}
 
-		// A save writes the last edit, and no author the file did not name.
+		// A save writes the last edit, and no creator the file did not name.
 		saved := saveBuilderDraft(t, harness, builderTestOwner, draft, mustBuilderJSON(t, opened.document))
 
 		edit := bdoc.Provenance{
-			Author: want.Author, CreatedAt: want.CreatedAt, UpdatedBy: builderTestOwner,
+			CreatedBy: want.CreatedBy, CreatedAt: want.CreatedAt, UpdatedBy: builderTestOwner,
 			UpdatedAt: bdoc.FormatTime(saved.Updated),
 		}
 
@@ -542,15 +542,15 @@ func TestBuilderFileDraftKeepsTheFileDocument(t *testing.T) {
 		}
 
 		// A changed body is stamped when the draft is made.
-		opened.document.Description = "changed before the draft was made"
+		opened.document.Metadata.Description = "changed before the draft was made"
 
 		recorder, changed := createBuilderFileDraft(t, harness, opened.document, opened.token)
 		if recorder.Code != http.StatusCreated {
 			t.Fatalf("%s: opening a changed copy as a draft: status = %d: %s", name, recorder.Code, recorder.Body)
 		}
 
-		if want.Author == "" {
-			edit.Author, edit.CreatedAt = builderTestOwner, bdoc.FormatTime(changed.Updated)
+		if want.CreatedBy == "" {
+			edit.CreatedBy, edit.CreatedAt = builderTestOwner, bdoc.FormatTime(changed.Updated)
 		}
 
 		edit.UpdatedAt = bdoc.FormatTime(changed.Updated)
@@ -565,7 +565,7 @@ func TestBuilderFileDraftKeepsTheFileDocument(t *testing.T) {
 // TestBuilderForkIsTheForkersSave saves a draft as a new one. The fork's
 // document is what the forking user's editor holds, so its last editor is
 // that user, also when it is the very document the forked draft was opened
-// from, and its author is the one the body names.
+// from, and its creator is the one the body names.
 func TestBuilderForkIsTheForkersSave(t *testing.T) {
 	harness := newBuilderHarness(t)
 	id, published := publishedBuilderDiagram(t, harness, "lab")
@@ -587,7 +587,7 @@ func TestBuilderForkIsTheForkersSave(t *testing.T) {
 	}
 
 	want := bdoc.Provenance{
-		Author: original.Author, CreatedAt: original.CreatedAt, UpdatedBy: builderTestPeer,
+		CreatedBy: original.CreatedBy, CreatedAt: original.CreatedAt, UpdatedBy: builderTestPeer,
 		UpdatedAt: bdoc.FormatTime(fork.Updated),
 	}
 
@@ -597,11 +597,11 @@ func TestBuilderForkIsTheForkersSave(t *testing.T) {
 			fork.Stamp, fork.SourceToken, fork.Owner, fork.Digest == reference.Digest, want)
 	}
 
-	// A fork of a document that names no author is the forker's.
+	// A fork of a document that names no creator is the forker's.
 	recorder, bare := postBuilderDraft(t, harness, builderTestPeer, map[string]any{
 		"document": json.RawMessage(builderDocument(t, "bare")), "forkOf": opened.Owner + "/" + opened.ID,
 	})
-	if recorder.Code != http.StatusCreated || bare.Stamp == nil || bare.Stamp.Author != builderTestPeer ||
+	if recorder.Code != http.StatusCreated || bare.Stamp == nil || bare.Stamp.CreatedBy != builderTestPeer ||
 		bare.Stamp.UpdatedBy != builderTestPeer {
 		t.Fatalf("forking with a document that names nobody: status = %d, stamp %+v", recorder.Code, bare.Stamp)
 	}

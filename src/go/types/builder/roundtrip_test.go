@@ -258,8 +258,8 @@ func TestFixtureEncodingsArePinned(t *testing.T) {
 		size   int
 		digest string
 	}{
-		"document.json":        {4830, "sha256:b8cc4c1b4e28fab353ff961c23a7912b3db0b953ff650d6b44fb1d090de17984"},
-		"strict-document.json": {3717, "sha256:41798cd1a4a3b31e05d4f352fed560f45dbbf008ded062acb4598b584bf19b79"},
+		"document.json":        {4856, "sha256:6fce9d0ee40a109453ddf587c8a1b302ab77449362f1b29f575e504f4f55810c"},
+		"strict-document.json": {3743, "sha256:891f1ec9c5695582dec1ffcfe6f1d79dcb5bd58341af1ce38f9af45045a0a8aa"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			data, err := builder.Encode(loadDocumentFixture(t, name))

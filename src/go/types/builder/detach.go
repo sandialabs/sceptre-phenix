@@ -33,8 +33,8 @@ func (d *Document) CombineIncludes() {
 // detached document therefore never updates the config it came from. A
 // document without a source is only renamed.
 func (d *Document) Detach(name string) {
-	d.Name = name
-	d.ID = DocumentID(name)
+	d.Metadata.Name = name
+	d.Metadata.ID = DocumentID(name)
 
 	if d.Source == nil {
 		return

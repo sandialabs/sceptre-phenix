@@ -86,8 +86,8 @@ type builderDraftResponse struct {
 	ETag         string                    `json:"etag"`
 	Document     json.RawMessage           `json:"document,omitempty"`
 	History      []builderSnapshotResponse `json:"history,omitempty"`
-	// Stamp is the author, creation time, last editor and last edit time of
-	// the document the request stored. Only creating a draft and saving one
+	// Stamp is the creator, creation time, last editor and last edit time of
+	// the document the request stored, as its metadata names them. Only creating a draft and saving one
 	// store a document, and neither returns it: the editor copies the stamp
 	// into its own copy instead. A field the stored document lacks is left
 	// out.

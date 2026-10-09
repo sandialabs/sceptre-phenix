@@ -9,10 +9,10 @@
 // and so the largest file the Builder reads.
 export const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
 
-// The longest name of a user, in UTF-8 bytes: one a document names as its
-// author or last editor (MaxUserBytes in types/builder document.go), and one
-// a draft is shared with (MaxOwnerLength in api/builder, which is that
-// limit).
+// The longest name of a user, in UTF-8 bytes: one a document's metadata
+// names as its creator or last editor (MaxUserBytes in types/builder
+// document.go), and one a draft is shared with (MaxOwnerLength in
+// api/builder, which is that limit).
 export const MAX_USER_BYTES = 256;
 
 // The most people a draft, or a template or collection of the template

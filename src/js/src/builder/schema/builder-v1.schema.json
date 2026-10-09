@@ -9,42 +9,154 @@
         "dotted",
         "double"
       ],
+      "examples": [
+        "double"
+      ],
+      "title": "Border Style",
       "type": "string"
     },
     "device": {
       "additionalProperties": false,
+      "description": "Payload of a device node: a phenix topology node and how the canvas draws it.",
+      "examples": [
+        {
+          "hostname": "router",
+          "iconKey": "router",
+          "interfaces": [
+            {
+              "id": "7f010dcd-e23d-514c-9206-3609df999026",
+              "index": 0,
+              "name": "eth0"
+            }
+          ],
+          "spec": {
+            "general": {
+              "hostname": "router"
+            },
+            "hardware": {
+              "drives": [
+                {
+                  "image": "vyos.qc2"
+                }
+              ],
+              "os_type": "vyos"
+            },
+            "network": {
+              "interfaces": [
+                {
+                  "address": "10.0.0.1",
+                  "mask": 24,
+                  "name": "eth0",
+                  "proto": "static",
+                  "type": "ethernet",
+                  "vlan": "EXP"
+                }
+              ]
+            },
+            "type": "Router"
+          }
+        }
+      ],
       "properties": {
         "fillColor": {
-          "$ref": "#/$defs/hexColor"
+          "$ref": "#/$defs/hexColor",
+          "description": "Background color of the device on the canvas.",
+          "examples": [
+            "#eef3fb"
+          ],
+          "title": "Fill Color"
         },
         "hostname": {
+          "description": "Hostname of the device, unique in the document ignoring case and without whitespace.",
+          "examples": [
+            "router"
+          ],
           "minLength": 1,
           "pattern": "^\\S+$",
+          "title": "Hostname",
           "type": "string"
         },
         "icon": {
-          "$ref": "#/$defs/iconRef"
+          "$ref": "#/$defs/iconRef",
+          "description": "Custom icon drawn in place of the built-in one; empty for none.",
+          "examples": [
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+          ],
+          "title": "Custom Icon"
         },
         "iconKey": {
-          "$ref": "#/$defs/iconKey"
+          "$ref": "#/$defs/iconKey",
+          "description": "Built-in icon the canvas draws for the device.",
+          "examples": [
+            "router"
+          ],
+          "title": "Icon"
         },
         "includedFrom": {
-          "description": "Topology that defines this device when it came from an included topology. Included devices are shown read only and are never published.",
+          "description": "Topology that defines the device when it came from an included topology, which keeps it read only and out of what publishing writes.",
+          "examples": [
+            "shared-services"
+          ],
           "minLength": 1,
           "pattern": "^\\S+$",
+          "title": "Included From",
           "type": "string"
         },
         "interfaces": {
+          "description": "Connection handles of the device, one for each interface a connection can attach to.",
+          "examples": [
+            [
+              {
+                "id": "7f010dcd-e23d-514c-9206-3609df999026",
+                "index": 0,
+                "name": "eth0"
+              }
+            ]
+          ],
           "items": {
             "$ref": "#/$defs/interfaceHandle"
           },
+          "title": "Interface Handles",
           "type": "array"
         },
         "outlineColor": {
-          "$ref": "#/$defs/hexColor"
+          "$ref": "#/$defs/hexColor",
+          "description": "Border color of the device on the canvas.",
+          "examples": [
+            "#2f6fbf"
+          ],
+          "title": "Outline Color"
         },
         "spec": {
-          "description": "Complete phenix topology node spec.",
+          "description": "Complete phenix topology node spec, in the stored snake_case form, which publishing writes to the topology.",
+          "examples": [
+            {
+              "general": {
+                "hostname": "router"
+              },
+              "hardware": {
+                "drives": [
+                  {
+                    "image": "vyos.qc2"
+                  }
+                ],
+                "os_type": "vyos"
+              },
+              "network": {
+                "interfaces": [
+                  {
+                    "address": "10.0.0.1",
+                    "mask": 24,
+                    "name": "eth0",
+                    "proto": "static",
+                    "type": "ethernet",
+                    "vlan": "EXP"
+                  }
+                ]
+              },
+              "type": "Router"
+            }
+          ],
           "oneOf": [
             {
               "$ref": "#/$defs/phenix.v1.minimega_node"
@@ -52,7 +164,8 @@
             {
               "$ref": "#/$defs/phenix.v1.external_node"
             }
-          ]
+          ],
+          "title": "Node Spec"
         }
       },
       "required": [
@@ -60,20 +173,44 @@
         "spec",
         "interfaces"
       ],
+      "title": "Device",
       "type": "object"
     },
     "edge": {
       "additionalProperties": false,
-      "description": "Attaches a device interface handle to a switch hub. Reference targets are validated by the server, not by this schema.",
+      "description": "Attaches a device interface handle to a switch, and so to its network; the server checks the nodes, handles and network it names, which this schema cannot.",
+      "examples": [
+        {
+          "id": "503c4f01-e7e0-5a2e-a07d-26e2776fea8f",
+          "networkId": "a8af611d-c68f-54e0-94a5-9176cea64e44",
+          "sourceHandleId": "7f010dcd-e23d-514c-9206-3609df999026",
+          "sourceNodeId": "4113dfc0-f4be-57f9-8115-6cecd1f1aea3",
+          "targetNodeId": "dee6bc70-8103-581e-8b31-6c95cda798a0"
+        }
+      ],
       "properties": {
         "color": {
-          "description": "Drawn in place of the network's color.",
+          "description": "Line color drawn in place of the network's, as CSS color text.",
+          "examples": [
+            "#c0392b"
+          ],
+          "title": "Color",
           "type": "string"
         },
         "id": {
-          "$ref": "#/$defs/identifier"
+          "$ref": "#/$defs/identifier",
+          "description": "Identifier of the connection.",
+          "examples": [
+            "503c4f01-e7e0-5a2e-a07d-26e2776fea8f"
+          ],
+          "title": "Connection ID"
         },
         "label": {
+          "description": "Text shown on the connection.",
+          "examples": [
+            "uplink"
+          ],
+          "title": "Label",
           "type": "string"
         },
         "lineStyle": {
@@ -82,17 +219,39 @@
               "$ref": "#/$defs/lineStyle"
             }
           ],
-          "description": "Drawn in place of the network's line style."
+          "description": "Dash pattern drawn in place of the network's.",
+          "examples": [
+            "dotted"
+          ],
+          "title": "Line Style"
         },
         "networkId": {
-          "$ref": "#/$defs/identifier"
+          "$ref": "#/$defs/identifier",
+          "description": "Identifier of the network of the switch the connection joins.",
+          "examples": [
+            "a8af611d-c68f-54e0-94a5-9176cea64e44"
+          ],
+          "title": "Network ID"
         },
         "route": {
-          "description": "Path an automatic layout drew, in absolute canvas coordinates from the source handle to the target handle. Never published.",
+          "description": "Path an automatic layout drew, in absolute canvas coordinates from the source handle to the target handle, which is never published.",
+          "examples": [
+            [
+              {
+                "x": 160,
+                "y": 0
+              },
+              {
+                "x": 160,
+                "y": 256
+              }
+            ]
+          ],
           "items": {
             "$ref": "#/$defs/position"
           },
           "minItems": 2,
+          "title": "Route",
           "type": "array"
         },
         "sourceHandleId": {
@@ -101,10 +260,19 @@
               "$ref": "#/$defs/identifier"
             }
           ],
-          "description": "Handle of the source node, when it is a device."
+          "description": "Interface handle of the source node, when it is a device.",
+          "examples": [
+            "7f010dcd-e23d-514c-9206-3609df999026"
+          ],
+          "title": "Source Handle"
         },
         "sourceNodeId": {
-          "$ref": "#/$defs/identifier"
+          "$ref": "#/$defs/identifier",
+          "description": "Identifier of the node the connection starts at.",
+          "examples": [
+            "4113dfc0-f4be-57f9-8115-6cecd1f1aea3"
+          ],
+          "title": "Source Node"
         },
         "targetHandleId": {
           "allOf": [
@@ -112,10 +280,19 @@
               "$ref": "#/$defs/identifier"
             }
           ],
-          "description": "Handle of the target node, when it is a device."
+          "description": "Interface handle of the target node, when it is a device.",
+          "examples": [
+            "7f010dcd-e23d-514c-9206-3609df999026"
+          ],
+          "title": "Target Handle"
         },
         "targetNodeId": {
-          "$ref": "#/$defs/identifier"
+          "$ref": "#/$defs/identifier",
+          "description": "Identifier of the node the connection ends at.",
+          "examples": [
+            "dee6bc70-8103-581e-8b31-6c95cda798a0"
+          ],
+          "title": "Target Node"
         }
       },
       "required": [
@@ -124,19 +301,43 @@
         "targetNodeId",
         "networkId"
       ],
+      "title": "Connection",
       "type": "object"
     },
     "grid": {
       "additionalProperties": false,
+      "description": "Grid the canvas draws and snaps nodes to.",
+      "examples": [
+        {
+          "enabled": true,
+          "size": 16,
+          "snap": true
+        }
+      ],
       "properties": {
         "enabled": {
+          "description": "Whether the canvas draws the grid.",
+          "examples": [
+            true
+          ],
+          "title": "Grid Shown",
           "type": "boolean"
         },
         "size": {
+          "description": "Spacing of the grid in canvas pixels, greater than zero.",
+          "examples": [
+            16
+          ],
           "exclusiveMinimum": 0,
+          "title": "Grid Size",
           "type": "number"
         },
         "snap": {
+          "description": "Whether moved nodes snap to the grid.",
+          "examples": [
+            true
+          ],
+          "title": "Snap to Grid",
           "type": "boolean"
         }
       },
@@ -145,64 +346,128 @@
         "size",
         "snap"
       ],
+      "title": "Grid",
       "type": "object"
     },
     "group": {
       "additionalProperties": false,
+      "description": "Payload of a group node: a visual container other nodes may belong to, with no phenix meaning.",
+      "examples": [
+        {
+          "title": "Control network"
+        }
+      ],
       "properties": {
         "borderStyle": {
-          "$ref": "#/$defs/borderStyle"
+          "$ref": "#/$defs/borderStyle",
+          "description": "Pattern of the group's border.",
+          "examples": [
+            "double"
+          ],
+          "title": "Border Pattern"
         },
         "collapsed": {
+          "description": "Whether the group is collapsed.",
+          "examples": [
+            false
+          ],
+          "title": "Collapsed",
           "type": "boolean"
         },
         "color": {
+          "description": "Background color of the group, as CSS color text.",
+          "examples": [
+            "#eef"
+          ],
+          "title": "Color",
           "type": "string"
         },
         "description": {
+          "description": "Free text shown under the group's title.",
+          "examples": [
+            "Two PLCs and the HMI that controls them."
+          ],
+          "title": "Description",
           "type": "string"
         },
         "icon": {
-          "$ref": "#/$defs/iconRef"
+          "$ref": "#/$defs/iconRef",
+          "description": "Custom icon drawn in place of the built-in one; empty for none.",
+          "examples": [
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+          ],
+          "title": "Custom Icon"
         },
         "iconKey": {
-          "$ref": "#/$defs/iconKey"
+          "$ref": "#/$defs/iconKey",
+          "description": "Built-in icon beside the group's title.",
+          "examples": [
+            "server"
+          ],
+          "title": "Icon"
         },
         "title": {
+          "description": "Title shown at the top of the group.",
+          "examples": [
+            "Control network"
+          ],
+          "title": "Title",
           "type": "string"
         }
       },
+      "title": "Group",
       "type": "object"
     },
     "hexColor": {
       "description": "Opaque color as #rrggbb; empty for none.",
+      "examples": [
+        "#2f6fbf"
+      ],
       "pattern": "^(#[0-9a-fA-F]{6})?$",
+      "title": "Hex Color",
       "type": "string"
     },
     "icon": {
       "additionalProperties": false,
       "description": "Custom icon: a PNG of at most 96 by 96 pixels and 40960 bytes.",
+      "examples": [
+        {
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+          "name": "plc"
+        }
+      ],
       "properties": {
         "data": {
           "contentEncoding": "base64",
           "contentMediaType": "image/png",
+          "description": "The PNG bytes of the icon, in standard base64 with padding and no line breaks.",
+          "examples": [
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+          ],
           "maxLength": 54616,
           "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+          "title": "Icon Data",
           "type": "string"
         },
         "name": {
+          "description": "Name the icon is listed under, at most 64 bytes without control characters.",
+          "examples": [
+            "plc"
+          ],
           "maxLength": 64,
           "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "title": "Icon Name",
           "type": "string"
         }
       },
       "required": [
         "data"
       ],
+      "title": "Custom Icon",
       "type": "object"
     },
     "iconKey": {
-      "description": "Builder local icon hint; empty selects the default icon.",
+      "description": "Built-in icon a node shows, from the Builder's icon registry; empty selects the default icon.",
       "enum": [
         "",
         "centos",
@@ -219,33 +484,67 @@
         "vlan",
         "windows"
       ],
+      "examples": [
+        "router"
+      ],
+      "title": "Icon Key",
       "type": "string"
     },
     "iconRef": {
-      "description": "Custom icon of the document's icons; empty for none.",
+      "description": "Custom icon of the document's icons, by icon id; empty for none.",
+      "examples": [
+        "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+      ],
       "pattern": "^(sha256:[0-9a-f]{64})?$",
+      "title": "Custom Icon Reference",
       "type": "string"
     },
     "identifier": {
-      "description": "Stable RFC 4122 UUID. Duplicate identifiers are found ignoring case, but a reference must repeat an identifier exactly; the front end mints new identifiers as random (version 4) UUIDs.",
+      "description": "Stable RFC 4122 UUID, found duplicate ignoring case but repeated exactly by every reference; the front end mints random (version 4) ones.",
+      "examples": [
+        "4113dfc0-f4be-57f9-8115-6cecd1f1aea3"
+      ],
       "format": "uuid",
       "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+      "title": "Identifier",
       "type": "string"
     },
     "interfaceHandle": {
       "additionalProperties": false,
-      "description": "Stable mapping of a canvas handle onto a named interface of the device spec.",
+      "description": "Stable mapping of a canvas connection handle onto a named interface of the device spec.",
+      "examples": [
+        {
+          "id": "7f010dcd-e23d-514c-9206-3609df999026",
+          "index": 0,
+          "name": "eth0"
+        }
+      ],
       "properties": {
         "id": {
-          "$ref": "#/$defs/identifier"
+          "$ref": "#/$defs/identifier",
+          "description": "Identifier of the connection handle, which connections name.",
+          "examples": [
+            "7f010dcd-e23d-514c-9206-3609df999026"
+          ],
+          "title": "Handle ID"
         },
         "index": {
+          "description": "Place of the interface in the spec's interface list when the handle was made, for ordering only.",
+          "examples": [
+            0
+          ],
           "minimum": 0,
+          "title": "Interface Index",
           "type": "integer"
         },
         "name": {
+          "description": "Name of the interface in the device spec, such as eth0.",
+          "examples": [
+            "eth0"
+          ],
           "minLength": 1,
           "pattern": "^\\S+$",
+          "title": "Interface Name",
           "type": "string"
         }
       },
@@ -254,6 +553,7 @@
         "name",
         "index"
       ],
+      "title": "Interface Handle",
       "type": "object"
     },
     "lineStyle": {
@@ -265,33 +565,184 @@
         "dotted",
         "dash-dot"
       ],
+      "examples": [
+        "dashed"
+      ],
+      "title": "Line Style",
       "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "description": "Identifier, name, description, provenance and notes of a document; none of it is published to a config.",
+      "examples": [
+        {
+          "createdAt": "2026-10-01T15:04:05Z",
+          "createdBy": "alice",
+          "description": "Water treatment pump station with two PLCs and an HMI.",
+          "id": "49d876d1-571a-5b5c-91b7-aadf5bb5209c",
+          "name": "Pump station",
+          "notes": [
+            "Snapshot the PLC images before each run.",
+            "VLAN EXP carries the control traffic.\nKeep it isolated."
+          ],
+          "updatedAt": "2026-10-02T09:30:00Z",
+          "updatedBy": "bob"
+        }
+      ],
+      "properties": {
+        "createdAt": {
+          "description": "When the document was first made, as RFC 3339 in UTC with whole seconds (YYYY-MM-DDTHH:MM:SSZ), which the server sets and keeps the way it does createdBy.",
+          "examples": [
+            "2026-10-01T15:04:05Z"
+          ],
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+          "title": "Created At",
+          "type": "string"
+        },
+        "createdBy": {
+          "description": "User who first made the document, which the server sets when a draft is created from a document that names none and keeps in every later save of that draft.",
+          "examples": [
+            "alice"
+          ],
+          "maxLength": 256,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "title": "Created By",
+          "type": "string"
+        },
+        "description": {
+          "description": "Free text describing the diagram.",
+          "examples": [
+            "Water treatment pump station with two PLCs and an HMI."
+          ],
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier",
+          "description": "Identifier of the document.",
+          "examples": [
+            "49d876d1-571a-5b5c-91b7-aadf5bb5209c"
+          ],
+          "title": "Document ID"
+        },
+        "name": {
+          "description": "Name of the diagram, which a draft takes as its title: at most 512 bytes, without control characters.",
+          "examples": [
+            "Pump station"
+          ],
+          "maxLength": 512,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "notes": {
+          "description": "Free text notes about the diagram as a whole: at most 100, each not only white space, at most 4096 bytes in UTF-8 (maxLength counts characters, so the byte limit is the stricter one outside ASCII), and without control characters but newlines and tabs.",
+          "examples": [
+            [
+              "Snapshot the PLC images before each run.",
+              "VLAN EXP carries the control traffic.\nKeep it isolated."
+            ]
+          ],
+          "items": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f]*[^\\x00-\\x20\\x7f\\x85\\p{Z}][^\\x00-\\x08\\x0b-\\x1f\\x7f]*$",
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Notes",
+          "type": "array"
+        },
+        "updatedAt": {
+          "description": "When this content was saved, as RFC 3339 in UTC with whole seconds, which the server sets on every save; it is not source.updatedAt, a time of the source config.",
+          "examples": [
+            "2026-10-02T09:30:00Z"
+          ],
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "updatedBy": {
+          "description": "User whose save stored this content, which the server sets on every save in place of any value sent.",
+          "examples": [
+            "bob"
+          ],
+          "maxLength": 256,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "title": "Updated By",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Document Metadata",
+      "type": "object"
     },
     "network": {
       "additionalProperties": false,
       "description": "Canonical phenix network (VLAN).",
+      "examples": [
+        {
+          "alias": 101,
+          "description": "Experiment network",
+          "id": "a8af611d-c68f-54e0-94a5-9176cea64e44",
+          "name": "EXP"
+        }
+      ],
       "properties": {
         "alias": {
-          "description": "Optional integer VLAN alias published to an experiment.",
+          "description": "Optional VLAN number published to an experiment's vlans.aliases, from 1 to 4094.",
+          "examples": [
+            101
+          ],
           "maximum": 4094,
           "minimum": 1,
+          "title": "VLAN Alias",
           "type": "integer"
         },
         "color": {
+          "description": "Color of the network's connection lines, as CSS color text.",
+          "examples": [
+            "#2f6fbf"
+          ],
+          "title": "Color",
           "type": "string"
         },
         "description": {
+          "description": "Free text describing the network.",
+          "examples": [
+            "Experiment network"
+          ],
+          "title": "Description",
           "type": "string"
         },
         "id": {
-          "$ref": "#/$defs/identifier"
+          "$ref": "#/$defs/identifier",
+          "description": "Identifier of the network.",
+          "examples": [
+            "a8af611d-c68f-54e0-94a5-9176cea64e44"
+          ],
+          "title": "Network ID"
         },
         "lineStyle": {
-          "$ref": "#/$defs/lineStyle"
+          "$ref": "#/$defs/lineStyle",
+          "description": "Dash pattern of the network's connection lines.",
+          "examples": [
+            "dashed"
+          ],
+          "title": "Line Style"
         },
         "name": {
+          "description": "VLAN name, unique in the document and without whitespace, which device interfaces name as their vlan.",
+          "examples": [
+            "EXP"
+          ],
           "minLength": 1,
           "pattern": "^\\S+$",
+          "title": "Name",
           "type": "string"
         }
       },
@@ -299,6 +750,7 @@
         "id",
         "name"
       ],
+      "title": "Network",
       "type": "object"
     },
     "node": {
@@ -449,31 +901,160 @@
           }
         }
       ],
-      "description": "Canvas node. The payload key must match the node kind.",
+      "description": "Item on the canvas, whose payload key matches its kind.",
+      "examples": [
+        {
+          "device": {
+            "hostname": "router",
+            "iconKey": "router",
+            "interfaces": [
+              {
+                "id": "7f010dcd-e23d-514c-9206-3609df999026",
+                "index": 0,
+                "name": "eth0"
+              }
+            ],
+            "spec": {
+              "general": {
+                "hostname": "router"
+              },
+              "hardware": {
+                "drives": [
+                  {
+                    "image": "vyos.qc2"
+                  }
+                ],
+                "os_type": "vyos"
+              },
+              "network": {
+                "interfaces": [
+                  {
+                    "address": "10.0.0.1",
+                    "mask": 24,
+                    "name": "eth0",
+                    "proto": "static",
+                    "type": "ethernet",
+                    "vlan": "EXP"
+                  }
+                ]
+              },
+              "type": "Router"
+            }
+          },
+          "id": "4113dfc0-f4be-57f9-8115-6cecd1f1aea3",
+          "kind": "device",
+          "label": "router",
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+          "kind": "note",
+          "note": {
+            "text": "Snapshot the PLC images before each run."
+          },
+          "position": {
+            "x": 320,
+            "y": 0
+          }
+        }
+      ],
       "properties": {
         "device": {
-          "$ref": "#/$defs/device"
+          "$ref": "#/$defs/device",
+          "description": "Payload of a device node.",
+          "examples": [
+            {
+              "hostname": "router",
+              "iconKey": "router",
+              "interfaces": [
+                {
+                  "id": "7f010dcd-e23d-514c-9206-3609df999026",
+                  "index": 0,
+                  "name": "eth0"
+                }
+              ],
+              "spec": {
+                "general": {
+                  "hostname": "router"
+                },
+                "hardware": {
+                  "drives": [
+                    {
+                      "image": "vyos.qc2"
+                    }
+                  ],
+                  "os_type": "vyos"
+                },
+                "network": {
+                  "interfaces": [
+                    {
+                      "address": "10.0.0.1",
+                      "mask": 24,
+                      "name": "eth0",
+                      "proto": "static",
+                      "type": "ethernet",
+                      "vlan": "EXP"
+                    }
+                  ]
+                },
+                "type": "Router"
+              }
+            }
+          ],
+          "title": "Device"
         },
         "group": {
-          "$ref": "#/$defs/group"
+          "$ref": "#/$defs/group",
+          "description": "Payload of a group node.",
+          "examples": [
+            {
+              "title": "Control network"
+            }
+          ],
+          "title": "Group"
         },
         "id": {
-          "$ref": "#/$defs/identifier"
+          "$ref": "#/$defs/identifier",
+          "description": "Identifier of the node, unique among the document's nodes.",
+          "examples": [
+            "4113dfc0-f4be-57f9-8115-6cecd1f1aea3"
+          ],
+          "title": "Node ID"
         },
         "kind": {
+          "description": "What the node is, which names the payload it carries.",
           "enum": [
             "device",
             "switch",
             "note",
             "group"
           ],
+          "examples": [
+            "device"
+          ],
+          "title": "Node Kind",
           "type": "string"
         },
         "label": {
+          "description": "Text shown on the node.",
+          "examples": [
+            "router"
+          ],
+          "title": "Label",
           "type": "string"
         },
         "note": {
-          "$ref": "#/$defs/note"
+          "$ref": "#/$defs/note",
+          "description": "Payload of a note node.",
+          "examples": [
+            {
+              "text": "Snapshot the PLC images before each run."
+            }
+          ],
+          "title": "Note"
         },
         "parentId": {
           "allOf": [
@@ -481,16 +1062,43 @@
               "$ref": "#/$defs/identifier"
             }
           ],
-          "description": "Identifier of the group node this node belongs to."
+          "description": "Identifier of the group node this node belongs to.",
+          "examples": [
+            "c60601dd-6d6b-56c7-97e5-149caf5ed993"
+          ],
+          "title": "Parent Group"
         },
         "position": {
-          "$ref": "#/$defs/position"
+          "$ref": "#/$defs/position",
+          "description": "Where the node is on the canvas.",
+          "examples": [
+            {
+              "x": 160,
+              "y": 256
+            }
+          ],
+          "title": "Position"
         },
         "size": {
-          "$ref": "#/$defs/size"
+          "$ref": "#/$defs/size",
+          "description": "Explicit size of the node; without one the editor sizes the node itself.",
+          "examples": [
+            {
+              "height": 420,
+              "width": 720
+            }
+          ],
+          "title": "Size"
         },
         "switch": {
-          "$ref": "#/$defs/switch"
+          "$ref": "#/$defs/switch",
+          "description": "Payload of a switch node.",
+          "examples": [
+            {
+              "networkId": "a8af611d-c68f-54e0-94a5-9176cea64e44"
+            }
+          ],
+          "title": "Switch"
         }
       },
       "required": [
@@ -498,21 +1106,39 @@
         "kind",
         "position"
       ],
+      "title": "Node",
       "type": "object"
     },
     "note": {
       "additionalProperties": false,
+      "description": "Payload of a note node: free text on the canvas, with no phenix meaning.",
+      "examples": [
+        {
+          "text": "Snapshot the PLC images before each run."
+        }
+      ],
       "properties": {
         "color": {
+          "description": "Background color of the note, as CSS color text.",
+          "examples": [
+            "#ffd"
+          ],
+          "title": "Color",
           "type": "string"
         },
         "text": {
+          "description": "Text of the note.",
+          "examples": [
+            "Snapshot the PLC images before each run."
+          ],
+          "title": "Text",
           "type": "string"
         }
       },
       "required": [
         "text"
       ],
+      "title": "Note",
       "type": "object"
     },
     "phenix.v1.Experiment": {
@@ -3123,11 +3749,28 @@
     },
     "position": {
       "additionalProperties": false,
+      "description": "Point on the canvas, in canvas pixels.",
+      "examples": [
+        {
+          "x": 160,
+          "y": 256
+        }
+      ],
       "properties": {
         "x": {
+          "description": "Horizontal canvas coordinate, in pixels.",
+          "examples": [
+            160
+          ],
+          "title": "X",
           "type": "number"
         },
         "y": {
+          "description": "Vertical canvas coordinate, in pixels.",
+          "examples": [
+            256
+          ],
+          "title": "Y",
           "type": "number"
         }
       },
@@ -3135,6 +3778,7 @@
         "x",
         "y"
       ],
+      "title": "Position",
       "type": "object"
     },
     "scenario": {
@@ -3179,27 +3823,73 @@
           }
         }
       ],
-      "description": "Optional stored or uploaded scenario reference.",
+      "description": "Stored or uploaded scenario the document publishes with.",
+      "examples": [
+        {
+          "apiVersion": "phenix.sandia.gov/v2",
+          "digest": "sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4",
+          "kind": "stored",
+          "name": "pump-station-ntp"
+        }
+      ],
       "properties": {
         "apiVersion": {
+          "description": "Config apiVersion of the scenario the reference was taken from.",
+          "examples": [
+            "phenix.sandia.gov/v2"
+          ],
+          "title": "API Version",
           "type": "string"
         },
         "content": {
-          "$ref": "#/$defs/phenix.v2.Scenario"
+          "$ref": "#/$defs/phenix.v2.Scenario",
+          "description": "Scenario spec, which an uploaded scenario requires and which must pass the phenix scenario schema.",
+          "examples": [
+            {
+              "apps": [
+                {
+                  "hosts": [
+                    {
+                      "hostname": "router",
+                      "metadata": {
+                        "server": "10.0.0.1"
+                      }
+                    }
+                  ],
+                  "name": "ntp"
+                }
+              ]
+            }
+          ],
+          "title": "Content"
         },
         "digest": {
-          "description": "Digest of the scenario content. Required on every scenario reference, and must match the content when the content is present.",
+          "description": "Digest of the scenario content, which every reference carries and which must match the content when present.",
+          "examples": [
+            "sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4"
+          ],
           "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
           "type": "string"
         },
         "kind": {
+          "description": "How the scenario is referenced: stored names a config on the server, and uploaded carries its content.",
           "enum": [
             "stored",
             "uploaded"
           ],
+          "examples": [
+            "stored"
+          ],
+          "title": "Kind",
           "type": "string"
         },
         "name": {
+          "description": "Name of the stored scenario config, or of the uploaded file.",
+          "examples": [
+            "pump-station-ntp"
+          ],
+          "title": "Name",
           "type": "string"
         }
       },
@@ -3208,17 +3898,35 @@
         "apiVersion",
         "digest"
       ],
+      "title": "Scenario Reference",
       "type": "object"
     },
     "size": {
       "additionalProperties": false,
+      "description": "Explicit width and height of a node on the canvas.",
+      "examples": [
+        {
+          "height": 420,
+          "width": 720
+        }
+      ],
       "properties": {
         "height": {
+          "description": "Height in canvas pixels, greater than zero.",
+          "examples": [
+            420
+          ],
           "exclusiveMinimum": 0,
+          "title": "Height",
           "type": "number"
         },
         "width": {
+          "description": "Width in canvas pixels, greater than zero.",
+          "examples": [
+            720
+          ],
           "exclusiveMinimum": 0,
+          "title": "Width",
           "type": "number"
         }
       },
@@ -3226,17 +3934,34 @@
         "width",
         "height"
       ],
+      "title": "Size",
       "type": "object"
     },
     "source": {
       "additionalProperties": false,
-      "description": "Document provenance and generation warnings.",
+      "description": "Where the document came from, and the warnings raised while generating it.",
+      "examples": [
+        {
+          "apiVersion": "phenix.sandia.gov/v1",
+          "digest": "sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4",
+          "importedAt": "2026-10-01T15:04:05Z",
+          "kind": "topology",
+          "name": "pump-station",
+          "updatedAt": "2026-09-30T08:00:00Z"
+        }
+      ],
       "properties": {
         "annotations": {
           "additionalProperties": {
             "type": "string"
           },
-          "description": "metadata.annotations of the source config at import time, without the Builders' own (builder-*). Shown only, never published. At most 256 KiB of keys and values in all.",
+          "description": "metadata.annotations of the source config at import time without the Builder's own (builder-*), shown only and never published: at most 100, and 256 KiB of keys and values in all.",
+          "examples": [
+            {
+              "scenario": "pump-station-ntp",
+              "topology": "pump-station"
+            }
+          ],
           "maxProperties": 100,
           "propertyNames": {
             "maxLength": 512,
@@ -3244,106 +3969,264 @@
             "pattern": "^[^\\x00-\\x1f\\x7f]*\\S[^\\x00-\\x1f\\x7f]*$",
             "type": "string"
           },
+          "title": "Annotations",
           "type": "object"
         },
         "apiVersion": {
+          "description": "apiVersion of the source config.",
+          "examples": [
+            "phenix.sandia.gov/v1"
+          ],
+          "title": "API Version",
           "type": "string"
         },
         "digest": {
-          "description": "Digest of the source config identity and spec.",
+          "description": "Digest of the source config's identity and spec, which publishing compares with the stored config.",
+          "examples": [
+            "sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4"
+          ],
           "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
           "type": "string"
         },
         "importedAt": {
+          "description": "When the document was generated from the source config, as an RFC 3339 time.",
+          "examples": [
+            "2026-10-01T15:04:05Z"
+          ],
+          "title": "Imported At",
           "type": "string"
         },
         "includeTopologies": {
+          "description": "includeTopologies of the source topology, which publishing writes back in place of their nodes.",
+          "examples": [
+            [
+              "shared-services"
+            ]
+          ],
           "items": {
-            "description": "Topology included by the generated source topology.",
             "minLength": 1,
             "pattern": "^\\S+$",
             "type": "string"
           },
+          "title": "Included Topologies",
           "type": "array"
         },
         "kind": {
+          "description": "What the document was made from: manual for one drawn in the editor, a topology or an experiment.",
           "enum": [
             "manual",
             "topology",
             "experiment"
           ],
+          "examples": [
+            "topology"
+          ],
+          "title": "Kind",
           "type": "string"
         },
         "name": {
+          "description": "Name of the source config.",
+          "examples": [
+            "pump-station"
+          ],
+          "title": "Name",
           "type": "string"
         },
         "topology": {
+          "description": "Topology an imported experiment was built from, when known.",
+          "examples": [
+            "pump-station"
+          ],
+          "title": "Topology",
           "type": "string"
         },
         "unresolvedIncludes": {
+          "description": "Included topologies, at any depth, whose nodes are not in the document because they could not be read.",
+          "examples": [
+            [
+              "shared-services"
+            ]
+          ],
           "items": {
-            "description": "Included topology whose nodes are not in the document.",
             "minLength": 1,
             "pattern": "^\\S+$",
             "type": "string"
           },
+          "title": "Unresolved Includes",
           "type": "array"
         },
         "updatedAt": {
           "description": "metadata.updated of the source config at import time.",
+          "examples": [
+            "2026-09-30T08:00:00Z"
+          ],
+          "title": "Source Updated At",
           "type": "string"
         },
         "warnings": {
+          "description": "Warnings raised while the document was generated.",
+          "examples": [
+            [
+              "included topology shared-services could not be read and its nodes are not shown"
+            ]
+          ],
           "items": {
             "type": "string"
           },
+          "title": "Warnings",
           "type": "array"
         }
       },
       "required": [
         "kind"
       ],
+      "title": "Source",
       "type": "object"
     },
     "switch": {
       "additionalProperties": false,
-      "description": "Visual hub bound to exactly one network.",
+      "description": "Payload of a switch node: a visual hub bound to exactly one network.",
+      "examples": [
+        {
+          "networkId": "a8af611d-c68f-54e0-94a5-9176cea64e44"
+        }
+      ],
       "properties": {
         "fillColor": {
-          "$ref": "#/$defs/hexColor"
+          "$ref": "#/$defs/hexColor",
+          "description": "Background color of the switch on the canvas.",
+          "examples": [
+            "#eef3fb"
+          ],
+          "title": "Fill Color"
         },
         "networkId": {
-          "$ref": "#/$defs/identifier"
+          "$ref": "#/$defs/identifier",
+          "description": "Identifier of the network the switch stands for.",
+          "examples": [
+            "a8af611d-c68f-54e0-94a5-9176cea64e44"
+          ],
+          "title": "Network ID"
         },
         "outlineColor": {
-          "$ref": "#/$defs/hexColor"
+          "$ref": "#/$defs/hexColor",
+          "description": "Border color of the switch on the canvas.",
+          "examples": [
+            "#2f6fbf"
+          ],
+          "title": "Outline Color"
         }
       },
       "required": [
         "networkId"
       ],
+      "title": "Switch",
       "type": "object"
     },
     "template": {
       "additionalProperties": false,
       "description": "Named set of prefilled fields for a device node.",
+      "examples": [
+        {
+          "description": "VyOS router with one static interface",
+          "device": {
+            "iconKey": "router",
+            "spec": {
+              "general": {
+                "hostname": "router"
+              },
+              "hardware": {
+                "drives": [
+                  {
+                    "image": "vyos.qc2"
+                  }
+                ],
+                "os_type": "vyos"
+              },
+              "network": {
+                "interfaces": [
+                  {
+                    "address": "10.0.0.1",
+                    "mask": 24,
+                    "name": "eth0",
+                    "proto": "static",
+                    "type": "ethernet",
+                    "vlan": "EXP"
+                  }
+                ]
+              },
+              "type": "Router"
+            }
+          },
+          "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+          "name": "Edge router"
+        }
+      ],
       "properties": {
         "description": {
-          "description": "Shown with the template. Never written into a node.",
+          "description": "Text shown with the template, at most 1024 bytes on one line, which is never written into a node.",
+          "examples": [
+            "VyOS router with one static interface"
+          ],
           "maxLength": 1024,
           "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "title": "Template Description",
           "type": "string"
         },
         "device": {
-          "$ref": "#/$defs/templateDevice"
+          "$ref": "#/$defs/templateDevice",
+          "description": "Fields the template fills in on a device made from it.",
+          "examples": [
+            {
+              "iconKey": "router",
+              "spec": {
+                "general": {
+                  "hostname": "router"
+                },
+                "hardware": {
+                  "drives": [
+                    {
+                      "image": "vyos.qc2"
+                    }
+                  ],
+                  "os_type": "vyos"
+                },
+                "network": {
+                  "interfaces": [
+                    {
+                      "address": "10.0.0.1",
+                      "mask": 24,
+                      "name": "eth0",
+                      "proto": "static",
+                      "type": "ethernet",
+                      "vlan": "EXP"
+                    }
+                  ]
+                },
+                "type": "Router"
+              }
+            }
+          ],
+          "title": "Template Device"
         },
         "id": {
-          "$ref": "#/$defs/identifier"
+          "$ref": "#/$defs/identifier",
+          "description": "Identifier of the template, unique among the document's templates.",
+          "examples": [
+            "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11"
+          ],
+          "title": "Template ID"
         },
         "name": {
+          "description": "Name the template is offered under, 1 to 128 bytes on one line.",
+          "examples": [
+            "Edge router"
+          ],
           "maxLength": 128,
           "minLength": 1,
           "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "title": "Template Name",
           "type": "string"
         }
       },
@@ -3352,26 +4235,106 @@
         "name",
         "device"
       ],
+      "title": "Template",
       "type": "object"
     },
     "templateDevice": {
       "additionalProperties": false,
-      "description": "Fields a template fills in. At most 16384 bytes as JSON.",
+      "description": "Fields a template fills in, at most 16384 bytes as JSON.",
+      "examples": [
+        {
+          "iconKey": "router",
+          "spec": {
+            "general": {
+              "hostname": "router"
+            },
+            "hardware": {
+              "drives": [
+                {
+                  "image": "vyos.qc2"
+                }
+              ],
+              "os_type": "vyos"
+            },
+            "network": {
+              "interfaces": [
+                {
+                  "address": "10.0.0.1",
+                  "mask": 24,
+                  "name": "eth0",
+                  "proto": "static",
+                  "type": "ethernet",
+                  "vlan": "EXP"
+                }
+              ]
+            },
+            "type": "Router"
+          }
+        }
+      ],
       "properties": {
         "fillColor": {
-          "$ref": "#/$defs/hexColor"
+          "$ref": "#/$defs/hexColor",
+          "description": "Background color of the devices made from the template.",
+          "examples": [
+            "#eef3fb"
+          ],
+          "title": "Fill Color"
         },
         "icon": {
-          "$ref": "#/$defs/iconRef"
+          "$ref": "#/$defs/iconRef",
+          "description": "Custom icon of the devices made from the template; empty for none.",
+          "examples": [
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+          ],
+          "title": "Custom Icon"
         },
         "iconKey": {
-          "$ref": "#/$defs/iconKey"
+          "$ref": "#/$defs/iconKey",
+          "description": "Built-in icon of the devices made from the template.",
+          "examples": [
+            "router"
+          ],
+          "title": "Icon"
         },
         "outlineColor": {
-          "$ref": "#/$defs/hexColor"
+          "$ref": "#/$defs/hexColor",
+          "description": "Border color of the devices made from the template.",
+          "examples": [
+            "#2f6fbf"
+          ],
+          "title": "Outline Color"
         },
         "spec": {
-          "description": "Complete phenix topology node spec.",
+          "description": "Complete phenix topology node spec, in the stored snake_case form, which publishing writes to the topology.",
+          "examples": [
+            {
+              "general": {
+                "hostname": "router"
+              },
+              "hardware": {
+                "drives": [
+                  {
+                    "image": "vyos.qc2"
+                  }
+                ],
+                "os_type": "vyos"
+              },
+              "network": {
+                "interfaces": [
+                  {
+                    "address": "10.0.0.1",
+                    "mask": 24,
+                    "name": "eth0",
+                    "proto": "static",
+                    "type": "ethernet",
+                    "vlan": "EXP"
+                  }
+                ]
+              },
+              "type": "Router"
+            }
+          ],
           "oneOf": [
             {
               "$ref": "#/$defs/phenix.v1.minimega_node"
@@ -3379,25 +4342,50 @@
             {
               "$ref": "#/$defs/phenix.v1.external_node"
             }
-          ]
+          ],
+          "title": "Node Spec"
         }
       },
       "required": [
         "spec"
       ],
+      "title": "Template Device",
       "type": "object"
     },
     "viewport": {
       "additionalProperties": false,
+      "description": "Pan and zoom of the canvas.",
+      "examples": [
+        {
+          "x": 0,
+          "y": 0,
+          "zoom": 1
+        }
+      ],
       "properties": {
         "x": {
+          "description": "Horizontal pan of the canvas, in screen pixels.",
+          "examples": [
+            0
+          ],
+          "title": "Pan X",
           "type": "number"
         },
         "y": {
+          "description": "Vertical pan of the canvas, in screen pixels.",
+          "examples": [
+            0
+          ],
+          "title": "Pan Y",
           "type": "number"
         },
         "zoom": {
+          "description": "Zoom factor of the canvas, greater than zero, where 1 is 100 percent.",
+          "examples": [
+            1
+          ],
           "exclusiveMinimum": 0,
+          "title": "Zoom",
           "type": "number"
         }
       },
@@ -3406,6 +4394,7 @@
         "y",
         "zoom"
       ],
+      "title": "Viewport",
       "type": "object"
     }
   },
@@ -3416,105 +4405,290 @@
   "properties": {
     "$schema": {
       "const": "https://phenix.sandia.gov/schemas/builder/v1",
-      "description": "Identifies the builder document schema."
-    },
-    "author": {
-      "description": "User who first made the document. The server sets it when a draft is created from a document that names none, and writes the same value into every later save of that draft.",
-      "maxLength": 256,
-      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "When the document was first made. The server sets it when a draft is created from a document that has none, and writes the same value into every later save of that draft. RFC 3339 in UTC, whole seconds: YYYY-MM-DDTHH:MM:SSZ.",
-      "format": "date-time",
-      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
-      "type": "string"
-    },
-    "description": {
-      "type": "string"
+      "description": "Identifies the Builder document schema, which a document must name exactly.",
+      "examples": [
+        "https://phenix.sandia.gov/schemas/builder/v1"
+      ],
+      "title": "Schema URI"
     },
     "edges": {
+      "description": "Connections, each joining one device interface to one switch.",
+      "examples": [
+        [
+          {
+            "id": "503c4f01-e7e0-5a2e-a07d-26e2776fea8f",
+            "networkId": "a8af611d-c68f-54e0-94a5-9176cea64e44",
+            "sourceHandleId": "7f010dcd-e23d-514c-9206-3609df999026",
+            "sourceNodeId": "4113dfc0-f4be-57f9-8115-6cecd1f1aea3",
+            "targetNodeId": "dee6bc70-8103-581e-8b31-6c95cda798a0"
+          }
+        ]
+      ],
       "items": {
         "$ref": "#/$defs/edge"
       },
+      "title": "Connections",
       "type": "array"
     },
     "grid": {
-      "$ref": "#/$defs/grid"
+      "$ref": "#/$defs/grid",
+      "description": "Grid the canvas draws and snaps nodes to.",
+      "examples": [
+        {
+          "enabled": true,
+          "size": 16,
+          "snap": true
+        }
+      ],
+      "title": "Grid"
     },
     "icons": {
       "additionalProperties": {
         "$ref": "#/$defs/icon"
       },
-      "description": "Custom icons the nodes and templates use, by icon id: sha256: and the SHA-256 of the PNG bytes. Never published.",
-      "maxProperties": 32,
+      "description": "Custom icons the nodes and templates use, at most 50, each by its icon id (sha256: and the SHA-256 of its PNG bytes); never published.",
+      "examples": [
+        {
+          "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+            "name": "plc"
+          }
+        }
+      ],
+      "maxProperties": 50,
       "propertyNames": {
         "pattern": "^sha256:[0-9a-f]{64}$"
       },
+      "title": "Custom Icons",
       "type": "object"
     },
-    "id": {
-      "$ref": "#/$defs/identifier"
-    },
     "layout": {
-      "description": "Automatic layout that last laid this document out, which the editor names in its layout menu. Empty, or an id the editor does not know, means the positions were not made by a layout. Never published.",
+      "description": "Automatic layout that last laid the document out, which the editor names in its layout menu; empty, or an id the editor does not know, means a layout did not make the positions.",
+      "examples": [
+        "elk"
+      ],
+      "title": "Layout",
       "type": "string"
     },
-    "name": {
-      "maxLength": 512,
-      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
-      "type": "string"
+    "metadata": {
+      "$ref": "#/$defs/metadata",
+      "description": "What the document says of itself: its identifier, name, description, provenance and notes.",
+      "examples": [
+        {
+          "createdAt": "2026-10-01T15:04:05Z",
+          "createdBy": "alice",
+          "description": "Water treatment pump station with two PLCs and an HMI.",
+          "id": "49d876d1-571a-5b5c-91b7-aadf5bb5209c",
+          "name": "Pump station",
+          "notes": [
+            "Snapshot the PLC images before each run.",
+            "VLAN EXP carries the control traffic.\nKeep it isolated."
+          ],
+          "updatedAt": "2026-10-02T09:30:00Z",
+          "updatedBy": "bob"
+        }
+      ],
+      "title": "Metadata"
     },
     "networks": {
+      "description": "Networks (VLANs) the switches and connections of the document belong to.",
+      "examples": [
+        [
+          {
+            "alias": 101,
+            "description": "Experiment network",
+            "id": "a8af611d-c68f-54e0-94a5-9176cea64e44",
+            "name": "EXP"
+          }
+        ]
+      ],
       "items": {
         "$ref": "#/$defs/network"
       },
+      "title": "Networks",
       "type": "array"
     },
     "nodes": {
+      "description": "Items on the canvas: devices, switches, notes and groups.",
+      "examples": [
+        [
+          {
+            "device": {
+              "hostname": "router",
+              "iconKey": "router",
+              "interfaces": [
+                {
+                  "id": "7f010dcd-e23d-514c-9206-3609df999026",
+                  "index": 0,
+                  "name": "eth0"
+                }
+              ],
+              "spec": {
+                "general": {
+                  "hostname": "router"
+                },
+                "hardware": {
+                  "drives": [
+                    {
+                      "image": "vyos.qc2"
+                    }
+                  ],
+                  "os_type": "vyos"
+                },
+                "network": {
+                  "interfaces": [
+                    {
+                      "address": "10.0.0.1",
+                      "mask": 24,
+                      "name": "eth0",
+                      "proto": "static",
+                      "type": "ethernet",
+                      "vlan": "EXP"
+                    }
+                  ]
+                },
+                "type": "Router"
+              }
+            },
+            "id": "4113dfc0-f4be-57f9-8115-6cecd1f1aea3",
+            "kind": "device",
+            "label": "router",
+            "position": {
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "id": "dee6bc70-8103-581e-8b31-6c95cda798a0",
+            "kind": "switch",
+            "label": "EXP",
+            "position": {
+              "x": 160,
+              "y": 256
+            },
+            "switch": {
+              "networkId": "a8af611d-c68f-54e0-94a5-9176cea64e44"
+            }
+          },
+          {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "note",
+            "note": {
+              "text": "Snapshot the PLC images before each run."
+            },
+            "position": {
+              "x": 320,
+              "y": 0
+            }
+          }
+        ]
+      ],
       "items": {
         "$ref": "#/$defs/node"
       },
+      "title": "Nodes",
       "type": "array"
     },
     "revision": {
       "const": 1,
-      "description": "Revision of the builder document schema."
+      "description": "Revision of the Builder document schema the document follows.",
+      "examples": [
+        1
+      ],
+      "title": "Schema Revision"
     },
     "scenario": {
-      "$ref": "#/$defs/scenario"
+      "$ref": "#/$defs/scenario",
+      "description": "Optional stored or uploaded scenario the document publishes with.",
+      "examples": [
+        {
+          "apiVersion": "phenix.sandia.gov/v2",
+          "digest": "sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4",
+          "kind": "stored",
+          "name": "pump-station-ntp"
+        }
+      ],
+      "title": "Scenario"
     },
     "source": {
-      "$ref": "#/$defs/source"
+      "$ref": "#/$defs/source",
+      "description": "Where the document came from, and the warnings raised while generating it.",
+      "examples": [
+        {
+          "apiVersion": "phenix.sandia.gov/v1",
+          "digest": "sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4",
+          "importedAt": "2026-10-01T15:04:05Z",
+          "kind": "topology",
+          "name": "pump-station",
+          "updatedAt": "2026-09-30T08:00:00Z"
+        }
+      ],
+      "title": "Source"
     },
     "templates": {
-      "description": "Device templates saved with this diagram. Never published to a config.",
+      "description": "Device templates saved with the diagram, at most 50; never published to a config.",
+      "examples": [
+        [
+          {
+            "description": "VyOS router with one static interface",
+            "device": {
+              "iconKey": "router",
+              "spec": {
+                "general": {
+                  "hostname": "router"
+                },
+                "hardware": {
+                  "drives": [
+                    {
+                      "image": "vyos.qc2"
+                    }
+                  ],
+                  "os_type": "vyos"
+                },
+                "network": {
+                  "interfaces": [
+                    {
+                      "address": "10.0.0.1",
+                      "mask": 24,
+                      "name": "eth0",
+                      "proto": "static",
+                      "type": "ethernet",
+                      "vlan": "EXP"
+                    }
+                  ]
+                },
+                "type": "Router"
+              }
+            },
+            "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+            "name": "Edge router"
+          }
+        ]
+      ],
       "items": {
         "$ref": "#/$defs/template"
       },
       "maxItems": 50,
+      "title": "Templates",
       "type": "array"
     },
-    "updatedAt": {
-      "description": "When this content was saved. The server sets it on every save, and a value sent is replaced. It is not source.updatedAt, which is a time of the source config. RFC 3339 in UTC, whole seconds: YYYY-MM-DDTHH:MM:SSZ.",
-      "format": "date-time",
-      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
-      "type": "string"
-    },
-    "updatedBy": {
-      "description": "User whose save stored this content. The server sets it on every save, and a value sent is replaced.",
-      "maxLength": 256,
-      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
-      "type": "string"
-    },
     "viewport": {
-      "$ref": "#/$defs/viewport"
+      "$ref": "#/$defs/viewport",
+      "description": "Pan and zoom of the canvas when the document was saved.",
+      "examples": [
+        {
+          "x": 0,
+          "y": 0,
+          "zoom": 1
+        }
+      ],
+      "title": "Viewport"
     }
   },
   "required": [
     "$schema",
     "revision",
-    "id",
+    "metadata",
     "nodes",
     "networks",
     "edges",
