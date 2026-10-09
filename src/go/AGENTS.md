@@ -55,7 +55,8 @@ the root target does.
 
 ## CI
 
-`.github/workflows/ci.yml` generates artifacts, runs `make check`, and executes
-race-enabled tests. Go changes can also trigger `.github/workflows/frontend.yml`
-because browser smoke tests build and run the backend. Keep workflow paths,
-Go/tool versions, and local commands aligned.
+`.github/workflows/ci.yml` runs golangci-lint through prek (`Lint (Go)`) and
+race-enabled tests with a coverage summary (`Test (Go)`). Go changes also
+rebuild the backend for the Playwright e2e jobs and the examples. Go comes
+from `go.mod` via `.github/actions/setup-go`; keep the `changes` filters and
+local commands aligned.

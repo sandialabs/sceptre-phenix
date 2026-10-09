@@ -6,17 +6,19 @@ a CI-built binary, a container, or a full range node.
 
 ## What runs where
 
-| Spec                           | Needs                                                                 | CI                               |
-| ------------------------------ | --------------------------------------------------------------------- | -------------------------------- |
-| `routes.spec.js`               | just a running server (empty store is fine)                           | yes                              |
-| `forms.spec.js`                | just a running server                                                 | yes                              |
-| `builder.spec.js`              | just a running server                                                 | yes                              |
-| `experiment-lifecycle.spec.js` | minimega, VM images, a topology                                       | opt-in (`E2E_LIFECYCLE=1`)       |
-| `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`         | opt-in (`E2E_AUTH_MODE=enabled`) |
-| `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt` | opt-in (`E2E_AUTH_MODE=proxy`)   |
+| Spec                           | Needs                                                                 | CI                            |
+| ------------------------------ | --------------------------------------------------------------------- | ----------------------------- |
+| `routes.spec.js`               | just a running server (empty store is fine)                           | yes                           |
+| `forms.spec.js`                | just a running server                                                 | yes                           |
+| `builder.spec.js`              | just a running server                                                 | yes                           |
+| `experiment-lifecycle.spec.js` | minimega, VM images, a topology                                       | opt-in (`E2E_LIFECYCLE=1`)    |
+| `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`         | yes (`E2E_AUTH_MODE=enabled`) |
+| `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt` | yes (`E2E_AUTH_MODE=proxy`)   |
 
-CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`,
-starts `bin/phenix ui` against a throw-away store, and runs the default set.
+CI (`.github/workflows/ci.yml`) builds the UI and backend once per auth mode,
+starts `bin/phenix ui` against a throw-away store, and runs the default set
+against the `VITE_AUTH=disabled` build and each auth spec against its own
+build.
 Every route in `routes.spec.js` is also scanned with axe-core (WCAG 2.x A/AA
 rule tags) as rendered against the empty store and fails on any violation.
 Content that only appears with data (table rows, modals, notifications) is

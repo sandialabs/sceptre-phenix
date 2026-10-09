@@ -43,7 +43,7 @@ make docker
 
 ### Native Installation (.deb)
 
-As an alternative to running phēnix using Docker, you can build a native Debian package (`.deb`) which installs the binaries and dependencies directly onto your system.
+As an alternative to running phēnix using Docker, you can install a native Debian package (`.deb`) which installs the binaries and dependencies directly onto your system. Each [release](https://github.com/sandialabs/sceptre-phenix/releases) has a prebuilt `.deb` attached, or you can build one yourself:
 
 ```bash
 ./scripts/build-deb.sh

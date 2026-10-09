@@ -1,6 +1,9 @@
-# Changelog
+## Before automated releases
 
-All notable changes to this project will be documented in this file.
+Release notes above this section are generated from the Conventional Commit
+subjects on `main` when each release is made. The notes below were written by
+hand before releases were automated; most of `[Unreleased]` shipped in
+v2026.10.02 or earlier.
 
 ## [Unreleased]
 

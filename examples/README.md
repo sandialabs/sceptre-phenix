@@ -1,6 +1,6 @@
 # phēnix Example Applications
 
-[![Examples Check](https://github.com/sandialabs/sceptre-phenix/actions/workflows/examples.yml/badge.svg)](https://github.com/sandialabs/sceptre-phenix/actions/workflows/examples.yml)
+[![CI](https://github.com/sandialabs/sceptre-phenix/actions/workflows/ci.yml/badge.svg)](https://github.com/sandialabs/sceptre-phenix/actions/workflows/ci.yml)
 
 > [!TIP]
 > **New to phēnix apps?** Check out the step-by-step [Tutorial](TUTORIAL.md) to learn how to run and modify these examples.

@@ -1,0 +1,39 @@
+name: Set up prek
+description: >-
+  Install a pinned prek and restore its hook environments, scoped to the
+  calling job.
+
+inputs:
+  cache-key:
+    description: >-
+      Name for this job's prek cache. Jobs that run different hooks keep
+      separate caches so they don't overwrite each other.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Restore prek cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/prek
+        key: prek-${{ inputs.cache-key }}-${{ runner.os }}-${{ hashFiles('**/prek.toml') }}
+        restore-keys: prek-${{ inputs.cache-key }}-${{ runner.os }}-
+
+    - name: Install prek
+      shell: bash
+      env:
+        # Keep in sync with the version `make install-dev` installs
+        PREK_VERSION: '0.4.14'
+        PREK_SHA256: d1eacb826b9f71ce9098636d2c3e96df0ed1cf08c9c17c57bf358b401f5a995d
+      run: |
+        tarball="$RUNNER_TEMP/prek.tar.gz"
+        curl -fsSLo "$tarball" \
+          "https://github.com/j178/prek/releases/download/v${PREK_VERSION}/prek-x86_64-unknown-linux-gnu.tar.gz"
+        echo "${PREK_SHA256}  ${tarball}" | sha256sum -c -
+        tar -xzf "$tarball" -C "$RUNNER_TEMP"
+        sudo install -m 0755 "$RUNNER_TEMP/prek-x86_64-unknown-linux-gnu/prek" /usr/local/bin/prek
+
+    - name: Validate prek config
+      shell: bash
+      run: prek validate-config prek.toml

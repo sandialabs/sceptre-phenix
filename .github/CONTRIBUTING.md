@@ -75,11 +75,15 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
    Where `type` can be one of the following:
     - `feat`: A new feature
     - `fix`: A bug fix
+    - `perf`: A code change that improves performance
     - `docs`: Documentation only changes
     - `style`: Changes that do not affect the meaning of the code (white-space, formatting, etc.)
     - `refactor`: A code change that neither fixes a bug nor adds a feature
     - `test`: Adding missing tests or correcting existing tests
-    - `chore`: Changes to the build process or auxiliary tools and libraries
+    - `build`: Changes to the build system, container images, or packaging
+    - `ci`: Changes to the GitHub Actions workflows
+    - `chore`: Other maintenance, such as dependency updates
+    - `revert`: Reverting a previous commit
 
    Example:
 
@@ -127,6 +131,8 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
     This commit introduces a new authentication system that allows users to log in using their email and password. It also includes validation for user input and error handling.
     ```
 
+   Commit subjects become the release notes: the changelog is generated from them at release time, so describe the change for someone upgrading, and don't edit `CHANGELOG.md` by hand. Squash merges use the pull request title as the subject, so the title must follow the same format (CI checks it).
+
 5. **Rebase Your Branch**: Before opening a pull request, ensure your branch is up to date with the main branch.
     - Fetch the latest changes from the upstream repository.
 
@@ -157,6 +163,10 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
     ```
 
 7. **Open a Pull Request**: Go to the original repository and open a [pull request](https://github.com/sandialabs/sceptre-phenix/pulls). Provide a clear description of your changes and reference any related issues.
+
+## Releases
+
+Releases are automated with [releasaurus](https://releasaurus.rgon.io) and use calendar versions (`vYYYY.MM.DD`). Every push to `main` opens or updates a release pull request that names the next version and adds its changelog to `CHANGELOG.md`. A maintainer releases by merging it: that tags the commit, publishes the GitHub release, pushes the container images, attaches the `.deb`, and publishes that version's documentation. Highlights that should appear above the generated notes go in the header section of the release pull request's description.
 
 ## Documentation
 

@@ -44,6 +44,20 @@ args = [
     "--fix"
 ]
 
+# Linting of GitHub Actions workflows for correctness (expressions, job
+# dependencies, action inputs); zizmor above covers security.
+[[repos]]
+repo = "https://github.com/rhysd/actionlint"
+rev = "v1.7.12"
+
+[[repos.hooks]]
+id = "actionlint"
+# actionlint v1.7.12 needs Go 1.25+ to build; see src/go/prek.toml for why
+# the minor version is pinned.
+language_version = "1.25"
+priority = "lint"
+
+
 # Spell checking
 [[repos]]
 repo = "https://github.com/codespell-project/codespell"
@@ -187,14 +201,19 @@ rev = "v4.4.0"
 [[repos.hooks]]
 id = "conventional-pre-commit"
 stages = ["commit-msg"]
+# Keep in sync with the PR title check in .github/workflows/pr-title.yml
 args = [
   "feat",
   "fix",
+  "perf",
   "docs",
   "style",
   "refactor",
   "test",
-  "chore"
+  "build",
+  "ci",
+  "chore",
+  "revert"
 ]
 priority = "format"
 
