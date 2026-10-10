@@ -7,7 +7,7 @@
 <template>
   <div
     class="builder-node builder-node--note"
-    :class="{ 'is-selected': selected }"
+    :class="{ 'is-selected': selected, 'has-resize-frame': framed }"
     :data-node-id="id"
     data-node-kind="note"
     data-testid="builder-node">
@@ -31,6 +31,7 @@
 
   import BuilderIcon from '../BuilderIcon.vue';
   import NodeIssueMark from './NodeIssueMark.vue';
+  import { useResizeFrame } from './canvasEditing.js';
   import NodeResize from './NodeResize.vue';
 
   import { drawnColor } from '@/builder/colors.js';
@@ -59,4 +60,5 @@
     return label && label !== 'Note' ? label : 'Note';
   });
   const accent = computed(() => drawnColor(props.data.node.note?.color));
+  const framed = useResizeFrame(() => props.selected);
 </script>

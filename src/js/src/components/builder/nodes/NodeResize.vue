@@ -20,6 +20,8 @@
   The handles are for the pointer only, with the keyboard and the Inspector
   as their equivalents, so nothing here takes focus or is announced. Drawn
   without the canvas (see canvasEditing.js), the node has no handles.
+  While the handles show, the node hides its selection check mark, which
+  the top right handle covers (see useResizeFrame in canvasEditing.js).
 -->
 <template>
   <Teleport v-if="visible && labelLayer" :to="labelLayer">
@@ -48,7 +50,7 @@
 
   import '@vue-flow/node-resizer/dist/style.css';
 
-  import { useCanvasEditing } from './canvasEditing.js';
+  import { useCanvasEditing, useResizeFrame } from './canvasEditing.js';
 
   import { minimumSize, sizeOf } from '@/builder/model.js';
   import { builderSettings } from '@/builder/settings.js';
@@ -67,9 +69,7 @@
   // BuilderCanvas.vue).
   const labelLayer = inject('builderEdgeLabels', null);
 
-  const visible = computed(
-    () => Boolean(canvas) && props.selected && !canvas.store.readOnly,
-  );
+  const visible = useResizeFrame(() => props.selected);
 
   // The node's box as Vue Flow draws it, on the canvas: it follows the node
   // while it is dragged or resized, before the document has its new box.

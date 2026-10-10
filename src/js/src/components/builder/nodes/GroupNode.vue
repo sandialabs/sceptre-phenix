@@ -17,6 +17,7 @@
     :class="[
       {
         'is-selected': selected,
+        'has-resize-frame': framed,
         'builder-node--title-only': !data.comment,
       },
       iconClass,
@@ -51,6 +52,7 @@
 
   import BuilderIcon from '../BuilderIcon.vue';
   import NodeIssueMark from './NodeIssueMark.vue';
+  import { useResizeFrame } from './canvasEditing.js';
   import NodeResize from './NodeResize.vue';
   import { iconSizeClass } from './nodeIconSize.js';
 
@@ -72,6 +74,7 @@
   });
 
   const accent = computed(() => drawnColor(props.data.node.group?.color));
+  const framed = useResizeFrame(() => props.selected);
   const iconSize = computed(() => props.data.iconSize || DEFAULT_ICON_SIZE);
   const iconClass = computed(() => iconSizeClass(iconSize.value));
   // A pattern the editor does not know, which only an edited file can

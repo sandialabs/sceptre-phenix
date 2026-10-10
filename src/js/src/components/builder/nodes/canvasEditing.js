@@ -4,7 +4,7 @@
 // A node drawn without the canvas, as a test renders one, gets none, and
 // then offers neither.
 
-import { inject } from 'vue';
+import { computed, inject, toValue } from 'vue';
 
 export const CANVAS_EDITING = Symbol('builder canvas editing');
 
@@ -18,4 +18,21 @@ export const CANVAS_EDITING = Symbol('builder canvas editing');
  */
 export function useCanvasEditing() {
   return inject(CANVAS_EDITING, null);
+}
+
+/**
+ * Whether a node shows its resize frame (NodeResize.vue): it is selected,
+ * on the canvas, in a draft the user can change. The node then hides its
+ * selection check mark, which the frame's top right handle would cover.
+ *
+ * @param {boolean|(() => boolean)} selected whether the node is selected
+ * @returns {import('vue').ComputedRef<boolean>} true while the frame shows
+ */
+export function useResizeFrame(selected) {
+  const canvas = useCanvasEditing();
+
+  return computed(
+    () =>
+      Boolean(canvas) && Boolean(toValue(selected)) && !canvas.store.readOnly,
+  );
 }

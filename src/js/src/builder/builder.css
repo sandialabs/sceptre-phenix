@@ -459,6 +459,15 @@
   pointer-events: none;
 }
 
+/* A selected note, group, shape or icon in a draft the user can change
+   shows its resize frame (NodeResize.vue). The frame's top right handle
+   sits on the check mark, so the node hides the check mark. The frame
+   shows the selection. A read-only draft has no frame and keeps the
+   check mark. */
+.builder-node.is-selected.has-resize-frame::after {
+  content: none;
+}
+
 /* What the diagram checks found about a node, on its top left corner (the
    selection's check mark takes the other): a cross for errors, a triangle
    for warnings, so the two differ by shape as well as color. */

@@ -2791,6 +2791,17 @@ test.describe('Builder canvas editing', () => {
 
       const handle = resizeHandle(page, rectangle, 'bottom.right');
       await expect(handle).toBeVisible();
+      // The frame shows the selection. The node hides its check mark,
+      // which the top right handle would cover.
+      const shape = flowNode(page, rectangle).locator('.builder-node');
+      await expect.soft(shape).toHaveClass(/\bhas-resize-frame\b/);
+      expect
+        .soft(
+          await shape.evaluate(
+            (node) => getComputedStyle(node, '::after').content,
+          ),
+        )
+        .toBe('none');
 
       const zoom = await canvasZoom(page);
       const start = center(await handle.boundingBox());

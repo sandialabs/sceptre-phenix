@@ -17,7 +17,10 @@
 <template>
   <div
     class="builder-node builder-node--shape"
-    :class="[{ 'is-selected': selected }, colorClasses]"
+    :class="[
+      { 'is-selected': selected, 'has-resize-frame': framed },
+      colorClasses,
+    ]"
     :style="colorStyle"
     :data-shape="figure"
     :data-border="border"
@@ -38,6 +41,7 @@
   import { computed } from 'vue';
 
   import NodeIssueMark from './NodeIssueMark.vue';
+  import { useResizeFrame } from './canvasEditing.js';
   import NodeResize from './NodeResize.vue';
   import { useNodeColors } from './nodeColors.js';
 
@@ -66,4 +70,5 @@
       : undefined,
   );
   const { colorClasses, colorStyle } = useNodeColors(() => shape.value);
+  const framed = useResizeFrame(() => props.selected);
 </script>

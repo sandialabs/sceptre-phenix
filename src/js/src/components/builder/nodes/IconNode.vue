@@ -10,7 +10,7 @@
 <template>
   <div
     class="builder-node builder-node--icon"
-    :class="{ 'is-selected': selected }"
+    :class="{ 'is-selected': selected, 'has-resize-frame': framed }"
     :data-node-id="id"
     data-node-kind="icon"
     data-testid="builder-node">
@@ -28,6 +28,7 @@
 
   import BuilderIcon from '../BuilderIcon.vue';
   import NodeIssueMark from './NodeIssueMark.vue';
+  import { useResizeFrame } from './canvasEditing.js';
   import NodeResize from './NodeResize.vue';
 
   // Vue Flow passes its node state as attributes as well; none belong on
@@ -41,4 +42,5 @@
   });
 
   const label = computed(() => props.data.node.icon?.label || '');
+  const framed = useResizeFrame(() => props.selected);
 </script>
