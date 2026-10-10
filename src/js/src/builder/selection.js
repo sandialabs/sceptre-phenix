@@ -7,10 +7,18 @@
 // header selects every item of its kind (kindSelection).
 
 import { count } from './announce.js';
-import { connectionEndLabel, findNode, nodeLabel } from './model.js';
+import {
+  connectionEndLabel,
+  DRAWING_KINDS,
+  findNode,
+  kindLabel,
+  nodeLabel,
+} from './model.js';
 
 /**
- * Name of a node or connection in selection announcements.
+ * Name of a node or connection in selection announcements. A shape, an
+ * icon or a line says what it is too, which its label alone does not:
+ * "line uplink", "the circle".
  *
  * @param {object} doc
  * @param {{kind: 'nodes'|'edges', id: string}} item
@@ -18,7 +26,16 @@ import { connectionEndLabel, findNode, nodeLabel } from './model.js';
  */
 export function selectionItemName(doc, { kind, id }) {
   if (kind === 'nodes') {
-    return nodeLabel(findNode(doc, id)) || 'node';
+    const node = findNode(doc, id);
+
+    if (DRAWING_KINDS.includes(node?.kind)) {
+      const what = kindLabel(node).toLowerCase();
+      const label = node[node.kind]?.label;
+
+      return label ? `${what} ${label}` : `the ${what}`;
+    }
+
+    return nodeLabel(node) || 'node';
   }
 
   const edge = (doc?.edges || []).find((entry) => entry.id === id);

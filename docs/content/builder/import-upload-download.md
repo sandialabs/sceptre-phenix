@@ -555,8 +555,8 @@ What to note in the file:
   `nodes`. `includeTopologies` names corp-services instead, as publishing
   does.
 - Each interface's `vlan` is the name of the network it is connected to.
-- Notes, groups, colors, line styles, icons, device templates and positions
-  are not in the file.
+- Notes, groups, drawings (rectangles, circles, icons and lines), colors,
+  line styles, icons, device templates and positions are not in the file.
 
 To store the file in phenix as a Topology config named `Riverside-Water`:
 
@@ -596,9 +596,12 @@ picture covers the diagram bounds that the dialog shows, and is scaled to
 at most 4096 pixels on its longer side. The Riverside Water PNG is 4096 ×
 1801 pixels.
 
-The picture shows colors, line styles, group borders and custom icons as
+The picture shows colors, line styles, group borders, custom icons and the
+drawings (rectangles, circles, icons, and lines with their arrowheads) as
 the canvas draws them. It leaves out what is only there for editing: the
-selection, the connection points, the warning marks and the info tooltips. Its background follows the theme:
+selection, the connection points, the handles that resize a node or move
+the points of a line, the warning marks and the info tooltips. Its
+background follows the theme:
 white in the light theme, dark in the dark theme (see
 [Themes](editor.md#themes)).
 
@@ -623,8 +626,8 @@ The graph has:
   **Edge Color**. Colors written in hex or `rgb()` are kept; a color written
   as a name, such as `red`, is not.
 
-Notes and groups are not nodes. A node's groups are in its **Group** and
-**Groups** columns instead.
+Notes, groups and drawings (rectangles, circles, icons and lines) are not
+nodes. A node's groups are in its **Group** and **Groups** columns instead.
 
 Each node and edge carries columns with its settings. A column is in the
 file only when some node or edge has a value for it. For Riverside Water:

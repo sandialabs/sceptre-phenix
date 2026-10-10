@@ -3677,7 +3677,8 @@ components:
         nodes:
           title: Nodes
           description: >
-            the items on the canvas: devices, switches, notes and groups
+            the items on the canvas: devices, switches, notes and groups, and
+            the shapes, icons and lines drawn beside them
           type: array
           items:
             title: Node
@@ -3702,6 +3703,9 @@ components:
                   - switch
                   - note
                   - group
+                  - shape
+                  - icon
+                  - line
               label:
                 description: text shown on the node
                 type: string
@@ -3740,6 +3744,25 @@ components:
                 description: >
                   payload of a group node: its title, description, color,
                   border style and icon, and whether it is collapsed
+                type: object
+                additionalProperties: true
+              shape:
+                description: >
+                  payload of a shape node: `rectangle` or `circle`, its label,
+                  fill and outline colors and border style; never published
+                type: object
+                additionalProperties: true
+              icon:
+                description: >
+                  payload of an icon node: exactly one of a built-in `iconKey`
+                  and a custom `icon`, and its label; never published
+                type: object
+                additionalProperties: true
+              line:
+                description: >
+                  payload of a line node: its 2 to 64 `points`, relative to the
+                  node's position, its label, color and line style, and its
+                  `startArrow` and `endArrow`; never published
                 type: object
                 additionalProperties: true
           example:

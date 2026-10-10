@@ -1367,17 +1367,25 @@ test(
           'Switch',
           'Note',
           'Group',
+          'Rectangle',
+          'Circle',
+          'Icon',
+          'Line',
           'Server',
           'Workstation',
           'Router',
           'Firewall',
           'External device',
         ]);
-      await expect
-        .soft(page.locator('.builder-palette'))
-        .not.toContainText('A virtual machine, container or external device', {
-          useInnerText: true,
-        });
+      for (const hint of [
+        'A virtual machine, container or external device',
+        'A rectangle drawn on the canvas, with no phenix semantics',
+        'A line drawn on the canvas, joined to no node or network, with optional arrowheads',
+      ]) {
+        await expect
+          .soft(page.locator('.builder-palette'))
+          .not.toContainText(hint, { useInnerText: true });
+      }
       await expect.soft(builder.palette('template-printer')).toHaveCount(0);
       await expect.soft(tooltip).toHaveCount(0);
     });
@@ -1441,6 +1449,35 @@ test(
         .toHaveAccessibleDescription(
           'A virtual machine, container or external device',
         );
+      // The drawings describe themselves the same way.
+      for (const [item, hint] of [
+        [
+          'rectangle',
+          'A rectangle drawn on the canvas, with no phenix semantics',
+        ],
+        ['circle', 'A circle drawn on the canvas, with no phenix semantics'],
+        [
+          'icon',
+          'A built-in or custom icon drawn on the canvas, with no phenix semantics',
+        ],
+        [
+          'line',
+          'A line drawn on the canvas, joined to no node or network, with optional arrowheads',
+        ],
+      ]) {
+        await expect
+          .soft(builder.palette(item), `${item} description`)
+          .toHaveAccessibleDescription(hint);
+      }
+      const line = builder.palette('line');
+      await line.focus();
+      await expect
+        .soft(tooltip)
+        .toHaveText(
+          'A line drawn on the canvas, joined to no node or network, with optional arrowheads',
+        );
+      await line.press('Escape');
+      await expect.soft(tooltip).toHaveCount(0);
     });
 
     await test.step('a help button beside the Add nodes heading explains it in a tooltip', async () => {

@@ -1,7 +1,9 @@
 package builder
 
 // The examples of the schema's documentation (see [documented]) describe one
-// small diagram: a router on network EXP, a note beside it and a group. Each
+// small diagram: a router on network EXP, a note beside it, a group, and
+// drawn beside them the Internet as an icon, a rectangle around the DMZ and
+// a line from the Internet to the router. Each
 // function returns a value of its own, so a caller that changes one schema
 // [Schema] returns changes no other. Every example is valid against the
 // schema it documents, which a test in the front end checks with ajv.
@@ -15,6 +17,9 @@ const (
 	exampleHandleID   = "7f010dcd-e23d-514c-9206-3609df999026"
 	exampleEdgeID     = "503c4f01-e7e0-5a2e-a07d-26e2776fea8f"
 	exampleTemplateID = "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11"
+	exampleShapeID    = "3c9e5d2a-7b41-5f08-9a6e-2d4b8c1f0e73"
+	exampleIconNodeID = "b2f4a6c8-1d3e-5f70-8a9b-0c1d2e3f4a5b"
+	exampleLineID     = "e7d1c3b5-9a8f-5e6d-b4c3-a2918f7e6d5c"
 
 	exampleHostname      = "router"
 	exampleIconKey       = "router"
@@ -34,6 +39,11 @@ const (
 	exampleUpdatedBy     = "bob"
 	exampleUpdatedAt     = "2026-10-02T09:30:00Z"
 	exampleSourceUpdated = "2026-09-30T08:00:00Z"
+	exampleShapeLabel    = "DMZ"
+	exampleIconLabel     = "Internet"
+	exampleIconNodeKey   = "external"
+	exampleLineLabel     = "uplink to ISP"
+	exampleLineColor     = "#c0392b"
 
 	// exampleIconID is the icon id of exampleIconData, a PNG of one pixel.
 	exampleIconID   = "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
@@ -43,6 +53,7 @@ const (
 	// Canvas coordinates and sizes, in pixels, and the router's address.
 	exampleX       = 160
 	exampleY       = 256
+	exampleLineX   = 80
 	exampleNoteX   = 320
 	exampleWidth   = 720
 	exampleHeight  = 420
@@ -159,6 +170,77 @@ func exampleNoteNode() map[string]any {
 // exampleGroup returns the payload of a group.
 func exampleGroup() map[string]any {
 	return map[string]any{"title": exampleGroupTitle}
+}
+
+// exampleShape returns the payload of a rectangle marking the DMZ.
+func exampleShape() map[string]any {
+	return map[string]any{
+		"shape":         "rectangle",
+		keyLabel:        exampleShapeLabel,
+		keyFillColor:    exampleFillColor,
+		keyOutlineColor: exampleOutlineColor,
+		keyBorderStyle:  "dashed",
+	}
+}
+
+// exampleShapeNode returns the rectangle marking the DMZ.
+func exampleShapeNode() map[string]any {
+	return map[string]any{
+		keyID:                 exampleShapeID,
+		keyKind:               string(NodeKindShape),
+		keyPosition:           examplePosition(-exampleNoteX, 0),
+		keySize:               map[string]any{"width": exampleNoteX, "height": exampleX},
+		string(NodeKindShape): exampleShape(),
+	}
+}
+
+// exampleIconMark returns the payload of the icon standing for the
+// Internet.
+func exampleIconMark() map[string]any {
+	return map[string]any{keyIconKey: exampleIconNodeKey, keyLabel: exampleIconLabel}
+}
+
+// exampleIconNode returns the icon standing for the Internet.
+func exampleIconNode() map[string]any {
+	return map[string]any{
+		keyID:                exampleIconNodeID,
+		keyKind:              string(NodeKindIcon),
+		keyPosition:          examplePosition(0, -exampleY),
+		string(NodeKindIcon): exampleIconMark(),
+	}
+}
+
+// exampleLinePoints returns the points of the line from the Internet to the
+// router: down, then across, relative to the line node's position.
+func exampleLinePoints() []any {
+	return []any{
+		examplePosition(0, 0),
+		examplePosition(0, exampleX),
+		examplePosition(exampleX, exampleX),
+	}
+}
+
+// exampleLine returns the payload of the line from the Internet to the
+// router, with an arrowhead at the router.
+func exampleLine() map[string]any {
+	return map[string]any{
+		"points":     exampleLinePoints(),
+		keyLabel:     exampleLineLabel,
+		keyColor:     exampleLineColor,
+		keyLineStyle: "dashed",
+		"endArrow":   true,
+	}
+}
+
+// exampleLineNode returns the line from the Internet to the router.
+func exampleLineNode() map[string]any {
+	return map[string]any{
+		keyID:                exampleLineID,
+		keyKind:              string(NodeKindLine),
+		keyPosition:          examplePosition(exampleLineX, -exampleX),
+		keySize:              map[string]any{"width": exampleX, "height": exampleX},
+		string(NodeKindLine): exampleLine(),
+	}
 }
 
 // exampleNetwork returns network EXP.

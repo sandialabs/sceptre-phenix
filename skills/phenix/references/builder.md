@@ -620,10 +620,10 @@ the schema refuses too, and otherwise gives the schema's reason.
 The Download dialog's Gephi (GEXF) saves `<diagram name>.gexf`, a GEXF 1.3
 graph for Gephi that Builder cannot open, made in the browser. Devices
 and networks are its nodes, each connection an edge from a device to its
-network, and their settings are columns; notes and groups are not nodes. It
-lists each device's scenario apps (`apps`, `disabled_apps`) of every listed
-scenario, reading each as the Inspector does; when it cannot read one, it
-leaves the apps out and
+network, and their settings are columns; notes, groups and drawings are not
+nodes. It lists each device's scenario apps (`apps`, `disabled_apps`) of
+every listed scenario, reading each as the Inspector does; when it cannot
+read one, it leaves the apps out and
 the dialog says why. The file names gexf.xsd in `xsi:schemaLocation`, as
 Gephi writes it. The official RelaxNG grammar, gexf.rng, rejects that
 attribute (gexf.net says to remove it before using xmllint), so to check a
@@ -1157,6 +1157,57 @@ the bytes; `bdoc.ValidateIcons`, `customicons.go`) and root `templates` (at
 most 50; see [Node templates](#node-templates)). Go and JS validate them
 alike (`testdata/validation-corpus.json`). The Inspector writes them; the
 network's own `color` is labelled "Edge Color".
+
+Drawings: node kinds `shape` (`shape: {shape: rectangle|circle, label?,
+fillColor?, outlineColor?, borderStyle?}`), `icon` (`icon: {iconKey?, icon?,
+label?}`, exactly one of a built-in key and a custom icon) and `line`
+(`line: {points, label?, color?, lineStyle?, startArrow?, endArrow?}`, 2 to
+64 points (`MinLinePoints`, `MaxLinePoints`) relative to the node's
+position, which the editor keeps at the top left of the points' box with
+the box as `size`: `placedLine` in `model.js`). Colors are `#rrggbb`, styles
+the border and line styles above; the payload's `label` is the node's
+label. Like notes and groups they never reach a config
+(`TestToTopologyOmitsVisualNodes`), GEXF or Topology YAML, take no
+connections, may have a group `parentId`, and Go and JS check them through
+the shared corpus. The schema's payload definitions are `shape`, `iconNode`
+(the node key is `icon`; `$defs.icon` is a custom icon) and `line`. The
+palette (`PALETTE` in `catalog.js`, entries `rectangle`, `circle`, `icon`,
+`line`; testids `palette-<id>`) and the commands `add.rectangle`,
+`add.circle`, `add.icon`, `add.line` add them. Canvas: `nodes/ShapeNode.vue`,
+`IconNode.vue`, `LineNode.vue` (flow types `builderShape`, `builderIcon`,
+`builderLine`; shapes and lines on the groups' layer, under devices). The
+canvas turns Vue Flow's `elevateNodesOnSelect` off and stacks nodes itself
+(`nodeZIndex` in `adapters/vueflow.js`, applied by `toFlowNodes` and
+`withSelection`): a selected node, and every node in a selected group, is
+lifted by 1000, but a shape or a line never is, so a selected one never
+covers a device, a switch or their connection handles. A selected line has
+a handle per point (`line-point-N`, pointer only and `aria-hidden`;
+dragging commits one `store.setLinePoints`, double-click on the line
+`store.insertLinePoint`, and on a clicked handle the keys of
+`linePointKey` in `model.js`: arrows `moveLinePoint`, Delete and Backspace
+`removeLinePoint`, which keeps two points, Escape back to the line); the
+Inspector's Points list (absolute canvas coordinates) is the keyboard path:
+X and Y, Add, Remove, and "Insert point after point N"
+(`insertedListItem` in `adapters/forms.js`, offered through
+`INSPECTOR_INSERT_ITEM` to `InspectorArrayRenderer.vue`: a bend halfway to
+the next point, in the working copy that Apply commits as one step).
+Layouts leave drawings where they are, moving one in a group with its
+group, and then grow each group right and down to hold its drawings with
+the layouts' `GROUP_PADDING`, innermost first (`runLayout` and
+`growAroundDrawings` in `layouts/index.js`). Notes, groups, shapes and
+icons resize with `@vue-flow/node-resizer` (`nodes/NodeResize.vue`,
+committed by `store.resizeNodeBox`, which keeps a group around its
+members) and with Alt+Shift and an arrow key (`keyResizedSize`,
+`minimumSize`, `RESIZABLE_KINDS` in `model.js`). The resizer's handles
+(`.builder-resizer[data-node-id]`) and the line's handles are in Vue
+Flow's edge label layer (z-index 2000, over every node), outside the
+node's wrapper (a button, which holds nothing focusable); `NodeResize.vue`
+and `LineNode.vue` reach the store through what `BuilderCanvas.vue`
+provides (`nodes/canvasEditing.js`), so a node rendered alone imports no
+store. PNG and SVG downloads keep a line's arrowheads: `exportCopy` in
+`exporters.js` removes the copy's IDs but renames each one an SVG
+`marker-start`, `marker-mid` or `marker-end` points at (`<id>-image-<n>`),
+with the references.
 
 A device node shows `spec.type` as stored ("External" when `spec.external`,
 "Device" without a type). Devices and switches have an info tooltip on

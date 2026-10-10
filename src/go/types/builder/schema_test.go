@@ -149,6 +149,7 @@ func TestSchemaDefinesBuilderStructures(t *testing.T) {
 		"interfaceHandle", "device", "switch", "note", "group", "node",
 		"network", "edge", "source",
 		"hexColor", "lineStyle", "borderStyle", "iconRef", "icon", "template", "templateDevice",
+		"shape", "iconNode", "line",
 	} {
 		def := mapAt(t, defs, name)
 
@@ -217,6 +218,9 @@ func TestSchemaPropertiesMatchDocument(t *testing.T) {
 		"switch":         builder.Switch{},
 		"note":           builder.Note{},
 		"group":          builder.Group{},
+		"shape":          builder.Shape{},
+		"iconNode":       builder.IconNode{},
+		"line":           builder.Line{},
 		"node":           builder.Node{},
 		"network":        builder.Network{},
 		"edge":           builder.Edge{},
@@ -261,6 +265,16 @@ func TestSchemaPresentationFields(t *testing.T) {
 		"templateDevice.icon":         "#/$defs/iconRef",
 		"templateDevice.outlineColor": "#/$defs/hexColor",
 		"templateDevice.fillColor":    "#/$defs/hexColor",
+		"shape.fillColor":             "#/$defs/hexColor",
+		"shape.outlineColor":          "#/$defs/hexColor",
+		"shape.borderStyle":           "#/$defs/borderStyle",
+		"iconNode.iconKey":            "#/$defs/iconKey",
+		"iconNode.icon":               "#/$defs/iconRef",
+		"line.color":                  "#/$defs/hexColor",
+		"line.lineStyle":              "#/$defs/lineStyle",
+		"node.shape":                  "#/$defs/shape",
+		"node.icon":                   "#/$defs/iconNode",
+		"node.line":                   "#/$defs/line",
 	} {
 		def, property, _ := strings.Cut(path, ".")
 
@@ -321,9 +335,51 @@ func TestSchemaStyles(t *testing.T) {
 	// Each call returns a list of its own.
 	builder.LineStyles()[0] = "changed"
 	builder.BorderStyles()[0] = "changed"
+	builder.ShapeFigures()[0] = "changed"
 
-	if builder.LineStyles()[0] != "solid" || builder.BorderStyles()[0] != "solid" {
+	if builder.LineStyles()[0] != "solid" || builder.BorderStyles()[0] != "solid" ||
+		builder.ShapeFigures()[0] != "rectangle" {
 		t.Fatal("the style lists are shared state")
+	}
+}
+
+// TestSchemaVisualNodes holds the payloads of shape, icon and line nodes to
+// what Document.Validate checks: a figure that is required and has no empty
+// choice, exactly one icon, and a bounded list of points.
+func TestSchemaVisualNodes(t *testing.T) {
+	defs := mapAt(t, mustSchema(t), "$defs")
+
+	shape := mapAt(t, defs, "shape")
+	figure := mapAt(t, mapAt(t, shape, "properties"), "shape")
+
+	if !reflect.DeepEqual(shape["required"], []any{"shape"}) ||
+		!reflect.DeepEqual(figure["enum"], anyOf(builder.ShapeFigures())) {
+		t.Fatalf("a shape does not require one of %v: %v", builder.ShapeFigures(), shape)
+	}
+
+	if got, want := strings.Join(builder.ShapeFigures(), " "), "rectangle circle"; got != want {
+		t.Fatalf("shape figures are %q, want %q", got, want)
+	}
+
+	branches, ok := mapAt(t, defs, "iconNode")["oneOf"].([]any)
+	if !ok || len(branches) != 2 {
+		t.Fatalf("an icon node does not name exactly one icon: %v", mapAt(t, defs, "iconNode"))
+	}
+
+	for i, key := range []string{"iconKey", "icon"} {
+		branch, _ := branches[i].(map[string]any)
+		if !reflect.DeepEqual(branch["required"], []any{key}) ||
+			mapAt(t, mapAt(t, branch, "properties"), key)["minLength"] != 1 {
+			t.Fatalf("icon node branch %d does not require a non-empty %s: %v", i, key, branch)
+		}
+	}
+
+	line := mapAt(t, defs, "line")
+	points := mapAt(t, mapAt(t, line, "properties"), "points")
+
+	if !reflect.DeepEqual(line["required"], []any{"points"}) || points["minItems"] != builder.MinLinePoints ||
+		points["maxItems"] != builder.MaxLinePoints || mapAt(t, points, "items")["$ref"] != "#/$defs/position" {
+		t.Fatalf("a line is not a bounded list of positions: %v", line)
 	}
 }
 
@@ -459,7 +515,7 @@ func TestSchemaDiscriminatesNodeKinds(t *testing.T) {
 	node := mapAt(t, defs, "node")
 
 	branches, ok := node["allOf"].([]any)
-	if !ok || len(branches) != 4 {
+	if !ok || len(branches) != 7 {
 		t.Fatalf("node schema has no per-kind branches: %v", node["allOf"])
 	}
 
@@ -482,7 +538,7 @@ func TestSchemaDiscriminatesNodeKinds(t *testing.T) {
 		seen[kind] = true
 	}
 
-	for _, kind := range []string{"device", "switch", "note", "group"} {
+	for _, kind := range []string{"device", "switch", "note", "group", "shape", "icon", "line"} {
 		if !seen[kind] {
 			t.Fatalf("node schema does not discriminate kind %q", kind)
 		}

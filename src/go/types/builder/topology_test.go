@@ -1143,6 +1143,42 @@ func TestExportTopologyConfigReturnsVLANAliases(t *testing.T) {
 	}
 }
 
+// TestToTopologyOmitsVisualNodes publishes a document with a shape, an icon
+// and a line, one of them in a group: the topology is the one of the same
+// document without them, and nothing of theirs reaches it.
+func TestToTopologyOmitsVisualNodes(t *testing.T) {
+	plain := loadDocumentFixture(t, "document.json")
+
+	want, _, err := plain.ToTopologyConfig("visual")
+	if err != nil {
+		t.Fatalf("ToTopologyConfig: %v", err)
+	}
+
+	drawn := loadDocumentFixture(t, "document.json")
+	drawn.Nodes = append(drawn.Nodes, visualNodes()...)
+
+	if err := drawn.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	got, _, err := drawn.ToTopologyConfig("visual")
+	if err != nil {
+		t.Fatalf("ToTopologyConfig: %v", err)
+	}
+
+	if asJSON(t, got) != asJSON(t, want) {
+		t.Fatalf("a visual node reached the topology:\nwant: %s\ngot:  %s", asJSON(t, want), asJSON(t, got))
+	}
+
+	encoded := asJSON(t, got)
+
+	for _, text := range []string{"DMZ", "Internet", "uplink", "rectangle", "#c0392b", `"points"`} {
+		if strings.Contains(encoded, text) {
+			t.Fatalf("the topology holds %s: %s", text, encoded)
+		}
+	}
+}
+
 // TestToTopologyOmitsPresentationFields publishes a document that uses every
 // presentation field: the topology is the one of the same document without
 // them. Colors, line and border styles, custom icons, templates, the notes of

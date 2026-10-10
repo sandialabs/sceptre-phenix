@@ -14,6 +14,7 @@ import {
   connect,
   DEFAULT_NETWORK_COLORS,
   deviceHandles,
+  DRAWING_KINDS,
   findNetwork,
   findNode,
   lookOf,
@@ -220,6 +221,13 @@ export function pasteClipboard(doc, payload, options = {}) {
       init.borderStyle = node.group?.borderStyle;
       init.iconKey = node.group?.iconKey;
       init.icon = node.group?.icon;
+    }
+
+    // A drawing's payload is what addNode takes for it: a shape's figure,
+    // an icon's icon, a line's points (relative to its position), and the
+    // label, colors and styles of each.
+    if (DRAWING_KINDS.includes(node.kind)) {
+      Object.assign(init, node[node.kind]);
     }
 
     const added = addNode(next, init);

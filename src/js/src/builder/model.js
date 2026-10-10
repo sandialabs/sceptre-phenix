@@ -12,7 +12,9 @@
 // where metadata is { id, name?, description?, createdBy?, createdAt?,
 // updatedBy?, updatedAt?, notes? }.
 //
-// Node payloads are discriminated by kind: device | switch | note | group.
+// Node payloads are discriminated by kind: device | switch | note | group |
+// shape | icon | line. The last three are drawings only, as notes and groups
+// are: nothing of theirs reaches a config.
 // `owner` is a property of the draft envelope and is never part of a document.
 // The metadata's `createdBy`, `createdAt`, `updatedBy` and `updatedAt` are,
 // and only the server sets them: it answers a create and a save with the
@@ -33,7 +35,53 @@ const DEFAULT_SIZES = {
   switch: { width: 180, height: 72 },
   note: { width: 200, height: 120 },
   group: { width: 320, height: 240 },
+  shape: { width: 160, height: 96 },
+  icon: { width: 64, height: 64 },
 };
+
+// The size a new circle takes, which a rectangle would make an ellipse.
+const CIRCLE_SIZE = { width: 120, height: 120 };
+
+// The kinds of nodes a document holds, each the key of its payload (Node in
+// document.go).
+export const NODE_KINDS = [
+  'device',
+  'switch',
+  'note',
+  'group',
+  'shape',
+  'icon',
+  'line',
+];
+
+// The kinds of nodes that are drawings only: shapes, icons and lines. Like
+// notes and groups they never reach a config and take no connections.
+export const DRAWING_KINDS = ['shape', 'icon', 'line'];
+
+// The figures a shape draws (ShapeFigures in validate.go).
+export const SHAPE_FIGURES = ['rectangle', 'circle'];
+
+// The fewest and the most points a line has (MinLinePoints and
+// MaxLinePoints in document.go): its two ends, and the bends between them.
+export const MIN_LINE_POINTS = 2;
+export const MAX_LINE_POINTS = 64;
+
+// How far apart the two ends of a new line are, across.
+const NEW_LINE_LENGTH = 160;
+
+// The icon a new icon node shows.
+const DEFAULT_DRAWN_ICON = 'external';
+
+// The fields of a shape, an icon and a line written only when set.
+const SHAPE_OPTIONAL_KEYS = [
+  'label',
+  'fillColor',
+  'outlineColor',
+  'borderStyle',
+];
+const ICON_OPTIONAL_KEYS = ['iconKey', 'icon', 'label'];
+const LINE_OPTIONAL_KEYS = ['label', 'color', 'lineStyle'];
+const LINE_ARROW_KEYS = ['startArrow', 'endArrow'];
 
 // The colors addNetwork gives networks in turn. A network with one of them is
 // drawn in its theme token instead (see colors.js).
@@ -100,6 +148,34 @@ function dropEmpty(payload, keys) {
   return payload;
 }
 
+// The payload of an icon node with a patch applied. It keeps exactly one
+// icon: a custom icon the patch sets replaces the built-in key, a key it
+// sets replaces the custom icon, and with neither left the node shows the
+// default icon.
+function drawnIcon(current, patch) {
+  const icon = dropEmpty({ ...current, ...patch }, ICON_OPTIONAL_KEYS);
+
+  if (patch.icon) {
+    delete icon.iconKey;
+  } else if (patch.iconKey) {
+    delete icon.icon;
+  }
+
+  if (icon.iconKey !== undefined && !isIconKey(icon.iconKey)) {
+    delete icon.iconKey;
+  }
+
+  if (!icon.icon && !icon.iconKey) {
+    icon.iconKey = DEFAULT_DRAWN_ICON;
+  }
+
+  // In the server's order: iconKey, icon, label.
+  return dropEmpty(
+    Object.fromEntries(ICON_OPTIONAL_KEYS.map((key) => [key, icon[key]])),
+    ICON_OPTIONAL_KEYS,
+  );
+}
+
 /**
  * Size of a node, falling back to the default for its kind.
  *
@@ -107,7 +183,12 @@ function dropEmpty(payload, keys) {
  * @returns {{width: number, height: number}}
  */
 export function sizeOf(node) {
-  const fallback = DEFAULT_SIZES[node?.kind] || DEFAULT_SIZES.device;
+  const fallback =
+    node?.kind === 'line'
+      ? lineExtent(node.line?.points)
+      : node?.kind === 'shape' && node.shape?.shape === 'circle'
+        ? CIRCLE_SIZE
+        : DEFAULT_SIZES[node?.kind] || DEFAULT_SIZES.device;
 
   return {
     width: node?.size?.width ?? fallback.width,
@@ -139,6 +220,73 @@ export function nodeNotes(node) {
   return Array.isArray(notes)
     ? notes.filter((note) => typeof note === 'string' && !isBlank(note))
     : [];
+}
+
+/**
+ * The size addNode gives a new node of these options when they name none:
+ * its kind's, a circle's for a circle, and for a line the box of its two
+ * ends.
+ *
+ * @param {object} [options] addNode's: kind, shape
+ * @returns {{width: number, height: number}}
+ */
+export function newNodeSize(options = {}) {
+  if (options.kind === 'line') {
+    return { width: NEW_LINE_LENGTH, height: 1 };
+  }
+
+  return sizeOf({ kind: options.kind, shape: { shape: options.shape } });
+}
+
+// The box from a line node's position to its farthest point, at least one
+// pixel a side: what a line without a size of its own takes.
+function lineExtent(points) {
+  const listed = Array.isArray(points) ? points : [];
+
+  return {
+    width: Math.max(1, ...listed.map((point) => Number(point?.x) || 0)),
+    height: Math.max(1, ...listed.map((point) => Number(point?.y) || 0)),
+  };
+}
+
+/**
+ * A line's points as the model keeps them: the line node's position moved
+ * to the top left corner of the points' box, each point relative to it, and
+ * the size that box, at least one pixel a side.
+ *
+ * @param {{x: number, y: number}} position the line node's position, which
+ *   `points` are relative to
+ * @param {{x: number, y: number}[]} points
+ * @returns {{position: {x: number, y: number}, points: {x: number,
+ *   y: number}[], size: {width: number, height: number}}}
+ */
+export function placedLine(position, points) {
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const left = Math.min(...xs);
+  const top = Math.min(...ys);
+
+  return {
+    position: { x: position.x + left, y: position.y + top },
+    points: points.map((point) => ({ x: point.x - left, y: point.y - top })),
+    size: {
+      width: Math.max(1, Math.max(...xs) - left),
+      height: Math.max(1, Math.max(...ys) - top),
+    },
+  };
+}
+
+// Whether a list of points is one a line can have: from MIN_LINE_POINTS to
+// MAX_LINE_POINTS points, each a finite coordinate.
+function linePoints(points) {
+  return (
+    Array.isArray(points) &&
+    points.length >= MIN_LINE_POINTS &&
+    points.length <= MAX_LINE_POINTS &&
+    points.every(
+      (point) => Number.isFinite(point?.x) && Number.isFinite(point?.y),
+    )
+  );
 }
 
 /**
@@ -634,9 +782,13 @@ function uniqueHostname(doc, wanted) {
  *   specific fields: a device's hostname, spec, look (its presentation
  *   fields, see LOOK_KEYS) and interfaces; a switch's networkId, outlineColor,
  *   fillColor and notes; a note's text; a group's title, description,
- *   borderStyle, iconKey and icon. A custom icon (a look's or a group's `icon`) is an
- *   icon id: the document comes to carry the icon when it is committed (see
- *   settleIcons in icons.js)
+ *   borderStyle, iconKey and icon; a shape's shape (its figure), fillColor,
+ *   outlineColor and borderStyle; an icon's iconKey or icon; a line's points
+ *   (relative to `position`; by default two ends 160 pixels apart across),
+ *   color, lineStyle, startArrow and endArrow. The label of a shape, an icon
+ *   or a line is its payload's. A custom icon (a look's, a group's or an
+ *   icon's `icon`) is an icon id: the document comes to carry the icon when
+ *   it is committed (see settleIcons in icons.js)
  * @returns {{doc: object, node: object, network?: object}}
  */
 export function addNode(doc, options = {}) {
@@ -762,6 +914,73 @@ export function addNode(doc, options = {}) {
 
       node.label = node.label || node.group.title;
       break;
+    case 'shape': {
+      const figure = SHAPE_FIGURES.includes(options.shape)
+        ? options.shape
+        : SHAPE_FIGURES[0];
+
+      node.shape = dropEmpty(
+        {
+          shape: figure,
+          ...Object.fromEntries(
+            SHAPE_OPTIONAL_KEYS.map((key) => [key, options[key]]),
+          ),
+        },
+        SHAPE_OPTIONAL_KEYS,
+      );
+      node.size = node.size || {
+        ...(figure === 'circle' ? CIRCLE_SIZE : DEFAULT_SIZES.shape),
+      };
+      node.label = node.shape.label || '';
+      break;
+    }
+    case 'icon':
+      // Exactly one icon: a custom one in place of a built-in key.
+      node.icon = dropEmpty(
+        {
+          iconKey: options.icon
+            ? ''
+            : isIconKey(options.iconKey)
+              ? options.iconKey
+              : DEFAULT_DRAWN_ICON,
+          icon: options.icon || '',
+          label: options.label || '',
+        },
+        ICON_OPTIONAL_KEYS,
+      );
+      node.size = node.size || { ...DEFAULT_SIZES.icon };
+      node.label = node.icon.label || '';
+      break;
+    case 'line': {
+      const points = linePoints(options.points)
+        ? options.points
+        : [
+            { x: 0, y: 0 },
+            { x: NEW_LINE_LENGTH, y: 0 },
+          ];
+      const placed = placedLine(position, points);
+
+      node.position = placed.position;
+      node.size = placed.size;
+      node.line = dropEmpty(
+        {
+          points: placed.points,
+          ...Object.fromEntries(
+            LINE_OPTIONAL_KEYS.map((key) => [key, options[key]]),
+          ),
+        },
+        LINE_OPTIONAL_KEYS,
+      );
+
+      for (const key of LINE_ARROW_KEYS) {
+        if (options[key] === true) {
+          node.line[key] = true;
+        }
+      }
+
+      node.label = node.line.label || '';
+      break;
+    }
     default:
       throw new Error(`Unknown node kind: ${kind}`);
   }
@@ -908,6 +1127,58 @@ export function updateNode(doc, id, patch = {}) {
 
     if (patch.group.title !== undefined && patch.label === undefined) {
       updated.label = patch.group.title;
+    }
+  }
+
+  // A drawing's label is its payload's, and an emptied field is none.
+  if (patch.shape && node.kind === 'shape') {
+    updated.shape = dropEmpty(
+      { ...node.shape, ...patch.shape },
+      SHAPE_OPTIONAL_KEYS,
+    );
+
+    if (!SHAPE_FIGURES.includes(updated.shape.shape)) {
+      updated.shape.shape = node.shape?.shape || SHAPE_FIGURES[0];
+    }
+
+    updated.label = updated.shape.label || '';
+  }
+
+  if (patch.icon && node.kind === 'icon') {
+    updated.icon = drawnIcon(node.icon, patch.icon);
+    updated.label = updated.icon.label || '';
+  }
+
+  if (node.kind === 'line') {
+    updated.line = { ...node.line };
+
+    if (patch.line) {
+      updated.line = dropEmpty(
+        { ...node.line, ...patch.line },
+        LINE_OPTIONAL_KEYS,
+      );
+
+      for (const key of LINE_ARROW_KEYS) {
+        if (updated.line[key] !== true) {
+          delete updated.line[key];
+        }
+      }
+
+      if (!linePoints(updated.line.points)) {
+        updated.line.points = node.line?.points || [];
+      }
+
+      updated.label = updated.line.label || '';
+    }
+
+    // The position is the points' top left corner, and the size their box,
+    // whatever the patch says of either.
+    if (linePoints(updated.line.points)) {
+      const placed = placedLine(updated.position, updated.line.points);
+
+      updated.position = placed.position;
+      updated.size = placed.size;
+      updated.line.points = placed.points;
     }
   }
 
@@ -1182,6 +1453,246 @@ function descendantsOf(nodes, groupId) {
  */
 export function resizeNode(doc, id, size) {
   return updateNode(doc, id, { size });
+}
+
+/**
+ * Sets the points of a line, relative to its position as it is: the line
+ * node then moves to the top left corner of their box, and takes the box as
+ * its size (see placedLine). Points a line cannot have (fewer than
+ * MIN_LINE_POINTS, more than MAX_LINE_POINTS, or not finite) change
+ * nothing.
+ *
+ * @param {object} doc
+ * @param {string} id line node
+ * @param {{x: number, y: number}[]} points
+ * @returns {object} document; the same one when nothing changes
+ */
+export function setLinePoints(doc, id, points) {
+  const node = findNode(doc, id);
+
+  if (node?.kind !== 'line' || !linePoints(points)) {
+    return doc;
+  }
+
+  return updateNode(doc, id, {
+    line: { points: points.map((point) => ({ x: point.x, y: point.y })) },
+  });
+}
+
+/**
+ * Moves one point of a line, an end or a bend.
+ *
+ * @param {object} doc
+ * @param {string} id line node
+ * @param {number} index the point's index
+ * @param {{x: number, y: number}} point where it goes, relative to the line
+ *   node's position as it is
+ * @returns {object} document
+ */
+export function moveLinePoint(doc, id, index, point) {
+  const points = findNode(doc, id)?.line?.points || [];
+
+  if (index < 0 || index >= points.length) {
+    return doc;
+  }
+
+  return setLinePoints(
+    doc,
+    id,
+    points.map((entry, at) => (at === index ? point : entry)),
+  );
+}
+
+/**
+ * Adds a bend to a line, in the segment that ends at point `index`; at the
+ * middle of that segment unless a point is given. A line with
+ * MAX_LINE_POINTS points takes no more.
+ *
+ * @param {object} doc
+ * @param {string} id line node
+ * @param {number} index the point after the new one, from 1 to the number
+ *   of points less one
+ * @param {{x: number, y: number}} [point] relative to the line node's
+ *   position
+ * @returns {object} document
+ */
+export function insertLinePoint(doc, id, index, point) {
+  const points = findNode(doc, id)?.line?.points || [];
+
+  if (index < 1 || index >= points.length) {
+    return doc;
+  }
+
+  const before = points[index - 1];
+  const after = points[index];
+  const bend = point || {
+    x: (before.x + after.x) / 2,
+    y: (before.y + after.y) / 2,
+  };
+
+  return setLinePoints(doc, id, [
+    ...points.slice(0, index),
+    bend,
+    ...points.slice(index),
+  ]);
+}
+
+/**
+ * The segment of a line nearest to a point, as insertLinePoint takes it:
+ * the index of the point that ends it.
+ *
+ * @param {{x: number, y: number}[]} points the line's
+ * @param {{x: number, y: number}} point in the same coordinates
+ * @returns {number} from 1 to the number of points less one; 1 for a line
+ *   of fewer than two points
+ */
+export function nearestSegment(points, point) {
+  let best = 1;
+  let bestDistance = Infinity;
+
+  for (let index = 1; index < (points?.length || 0); index += 1) {
+    const from = points[index - 1];
+    const to = points[index];
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = dx * dx + dy * dy;
+    // How far along the segment the point's foot is, from 0 to 1.
+    const along =
+      length > 0
+        ? Math.min(
+            1,
+            Math.max(
+              0,
+              ((point.x - from.x) * dx + (point.y - from.y) * dy) / length,
+            ),
+          )
+        : 0;
+    const distance = Math.hypot(
+      from.x + along * dx - point.x,
+      from.y + along * dy - point.y,
+    );
+
+    if (distance < bestDistance) {
+      best = index;
+      bestDistance = distance;
+    }
+  }
+
+  return best;
+}
+
+/**
+ * What a point of a line is called, as its handle and announcements name
+ * it: its start, its end, or a bend between them, numbered from the start.
+ *
+ * @param {object} node line node
+ * @param {number} index
+ * @returns {string} "the start of uplink", "bend 2 of uplink", "the end of
+ *   uplink"
+ */
+export function linePointName(node, index) {
+  const count = node?.line?.points?.length || 0;
+  const name = nodeLabel(node);
+
+  if (index === 0) {
+    return `the start of ${name}`;
+  }
+
+  return index === count - 1
+    ? `the end of ${name}`
+    : `bend ${index} of ${name}`;
+}
+
+/**
+ * A point of a line on the grid while the diagram snaps to it, or else on a
+ * whole pixel; relative to the line's position, as the line's points are.
+ *
+ * @param {object} node line node
+ * @param {{x: number, y: number}} point
+ * @param {{size?: number, snap?: boolean}} [grid] the document's
+ * @returns {{x: number, y: number}}
+ */
+export function snappedLinePoint(node, point, grid) {
+  const size = grid?.snap !== false ? grid?.size || 0 : 0;
+  const origin = node?.position || { x: 0, y: 0 };
+  const snap = (value, start) =>
+    size > 0
+      ? Math.round((start + value) / size) * size - start
+      : Math.round(value);
+
+  return { x: snap(point.x, origin.x), y: snap(point.y, origin.y) };
+}
+
+// How far an arrow key moves a point of a line with Shift, in pixels.
+const LINE_POINT_FINE_STEP = 1;
+const LINE_POINT_ARROWS = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+};
+
+/**
+ * What a key does on the focused handle of a point of a line (see
+ * LineNode.vue): an arrow key moves the point by a grid step, onto the grid
+ * while the diagram snaps to it, or by a pixel with Shift; Delete and
+ * Backspace remove the point (removeLinePoint keeps at least
+ * MIN_LINE_POINTS); Escape leaves the handle for the line. Any other key,
+ * or an arrow key with Alt, Ctrl or ⌘, is not the handle's.
+ *
+ * @param {object} node line node
+ * @param {number} index the point's
+ * @param {{key: string, shiftKey?: boolean, altKey?: boolean,
+ *   ctrlKey?: boolean, metaKey?: boolean}} event
+ * @param {{size?: number, snap?: boolean}} [grid] the document's
+ * @returns {{action: 'move', point: {x: number, y: number}}|
+ *   {action: 'remove'}|{action: 'leave'}|null} the point relative to the
+ *   line's position, as moveLinePoint takes it
+ */
+export function linePointKey(node, index, event, grid) {
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    return { action: 'remove' };
+  }
+
+  if (event.key === 'Escape') {
+    return { action: 'leave' };
+  }
+
+  const arrow = LINE_POINT_ARROWS[event.key];
+  const point = node?.line?.points?.[index];
+
+  if (!arrow || !point || event.altKey || event.ctrlKey || event.metaKey) {
+    return null;
+  }
+
+  const step = event.shiftKey ? LINE_POINT_FINE_STEP : grid?.size || 1;
+  const target = {
+    x: point.x + arrow[0] * step,
+    y: point.y + arrow[1] * step,
+  };
+
+  return {
+    action: 'move',
+    point: event.shiftKey ? target : snappedLinePoint(node, target, grid),
+  };
+}
+
+/**
+ * Removes a point of a line, never leaving it fewer than MIN_LINE_POINTS.
+ *
+ * @param {object} doc
+ * @param {string} id line node
+ * @param {number} index
+ * @returns {object} document
+ */
+export function removeLinePoint(doc, id, index) {
+  const points = findNode(doc, id)?.line?.points || [];
+
+  return setLinePoints(
+    doc,
+    id,
+    points.filter((_, at) => at !== index),
+  );
 }
 
 // Room between a group's border and its members, as groupNodes leaves it.
@@ -1521,6 +2032,113 @@ export function groupMinimumSize(doc, id) {
       GROUP_MIN_SIZE.height,
       bounds.y + bounds.height + spare - group.position.y,
     ),
+  };
+}
+
+// The kinds of nodes that are resized, with the mouse or the keyboard, and
+// the least each other than a group can be: enough for its label, or for
+// an icon to show.
+export const RESIZABLE_KINDS = ['note', 'group', 'shape', 'icon'];
+export const MINIMUM_SIZES = {
+  note: { width: 80, height: 48 },
+  shape: { width: 16, height: 16 },
+  icon: { width: 24, height: 24 },
+};
+
+/**
+ * The smallest size a node can be resized to: a group's holds its members
+ * (see groupMinimumSize), and a note, a shape or an icon has a least size
+ * of its own.
+ *
+ * @param {object} doc
+ * @param {string} id
+ * @returns {{width: number, height: number}}
+ */
+export function minimumSize(doc, id) {
+  const node = findNode(doc, id);
+
+  if (node?.kind === 'group') {
+    return groupMinimumSize(doc, id);
+  }
+
+  return { ...(MINIMUM_SIZES[node?.kind] || MINIMUM_SIZES.shape) };
+}
+
+// How each arrow key resizes a node from its bottom right corner.
+const RESIZE_ARROWS = {
+  ArrowRight: [1, 0],
+  ArrowLeft: [-1, 0],
+  ArrowDown: [0, 1],
+  ArrowUp: [0, -1],
+};
+
+/**
+ * The size Alt+Shift and an arrow key resize a node of RESIZABLE_KINDS to,
+ * from its bottom right corner (see BuilderCanvas.vue): Right and Down grow
+ * it by `step`, Left and Up shrink it by as much, never past its least size
+ * (minimumSize). A node smaller than that already keeps its size.
+ *
+ * @param {object} doc
+ * @param {string} id
+ * @param {string} key ArrowRight, ArrowLeft, ArrowDown or ArrowUp
+ * @param {number} step pixels
+ * @returns {{width: number, height: number}|null} null when the node is
+ *   none of RESIZABLE_KINDS, or the key is no arrow
+ */
+export function keyResizedSize(doc, id, key, step) {
+  const node = findNode(doc, id);
+  const arrow = RESIZE_ARROWS[key];
+
+  if (!RESIZABLE_KINDS.includes(node?.kind) || !arrow) {
+    return null;
+  }
+
+  const size = sizeOf(node);
+  const least = minimumSize(doc, id);
+  const resized = (now, delta, min) =>
+    delta < 0 ? Math.min(now, Math.max(min, now + delta)) : now + delta;
+
+  return {
+    width: resized(size.width, arrow[0] * step, least.width),
+    height: resized(size.height, arrow[1] * step, least.height),
+  };
+}
+
+/**
+ * The box a node resized with the mouse takes: the box it was dragged to,
+ * at least its least size, and for a group as large as its members need,
+ * with a grid step to spare, from whichever corner or side it was dragged.
+ * Positions and sizes are whole pixels.
+ *
+ * @param {object} doc
+ * @param {string} id
+ * @param {{x: number, y: number, width: number, height: number}} box
+ *   absolute
+ * @returns {{position: {x: number, y: number}, size: {width: number,
+ *   height: number}}}
+ */
+export function resizedBox(doc, id, box) {
+  const node = findNode(doc, id);
+  const least = MINIMUM_SIZES[node?.kind] || GROUP_MIN_SIZE;
+  let left = Math.round(box.x);
+  let top = Math.round(box.y);
+  let right = left + Math.max(least.width, Math.round(box.width));
+  let bottom = top + Math.max(least.height, Math.round(box.height));
+  const members = (doc?.nodes || []).filter((entry) => entry.parentId === id);
+
+  if (node?.kind === 'group' && members.length) {
+    const spare = doc?.grid?.size || DEFAULT_GRID_SIZE;
+    const need = boundsOf(members, spare);
+
+    left = Math.min(left, need.x);
+    top = Math.min(top, need.y);
+    right = Math.max(right, need.x + need.width);
+    bottom = Math.max(bottom, need.y + need.height);
+  }
+
+  return {
+    position: { x: left, y: top },
+    size: { width: right - left, height: bottom - top },
   };
 }
 
@@ -2197,7 +2815,8 @@ export function connect(doc, connection = {}) {
  * - two devices: they get a network of their own, drawn as a new switch
  *   between them (a network is always a switch here), each on the given
  *   interface or a new one;
- * - anything else (two switches, notes, groups) is refused with a reason.
+ * - anything else (two switches, notes, groups, and the shapes, icons and
+ *   lines drawn beside them) is refused with a reason.
  *
  * @param {object} doc
  * @param {object} connection sourceNodeId, sourceHandleId, targetNodeId,
@@ -2252,6 +2871,13 @@ export function canConnect(doc, connection = {}) {
     return {
       valid: false,
       reason: 'Notes and groups do not take connections.',
+    };
+  }
+
+  if (kinds.some((kind) => DRAWING_KINDS.includes(kind))) {
+    return {
+      valid: false,
+      reason: 'Shapes, icons and lines do not take connections.',
     };
   }
 
@@ -3160,8 +3786,9 @@ export function scenarioApps(content) {
  * @param {object} doc
  * @returns {{devices: number, included: number, switches: number,
  *   includedSwitches: number, notes: number, groups: number,
- *   networks: number, includedNetworks: number, links: number,
- *   includedLinks: number}}
+ *   drawings: number, networks: number, includedNetworks: number,
+ *   links: number, includedLinks: number}} drawings counts the shapes,
+ *   icons and lines
  */
 export function documentSummary(doc) {
   const nodes = doc?.nodes || [];
@@ -3195,6 +3822,7 @@ export function documentSummary(doc) {
     includedSwitches: switches.filter((node) => nodeTheirs.get(node.id)).length,
     notes: nodes.filter((node) => node.kind === 'note').length,
     groups: nodes.filter((node) => node.kind === 'group').length,
+    drawings: nodes.filter((node) => DRAWING_KINDS.includes(node.kind)).length,
     networks: networks.length,
     includedNetworks: networks.filter((network) =>
       networkTheirs.get(network.id),
@@ -3243,9 +3871,33 @@ export function nodeLabel(node) {
       return node.group?.title || 'Group';
     case 'note':
       return noteTitle(node) || 'Note';
+    case 'shape':
+      return (
+        node.shape?.label ||
+        (node.shape?.shape === 'circle' ? 'Circle' : 'Rectangle')
+      );
+    case 'icon':
+      return node.icon?.label || 'Icon';
+    case 'line':
+      return node.line?.label || 'Line';
     default:
       return kindMeta(node.kind).label;
   }
+}
+
+/**
+ * What a node is called by its kind, as the outline and announcements name
+ * it: a shape by its figure.
+ *
+ * @param {object} node
+ * @returns {string} "Device", "Rectangle", "Circle", "Icon", "Line", ...
+ */
+export function kindLabel(node) {
+  if (node?.kind === 'shape') {
+    return node.shape?.shape === 'circle' ? 'Circle' : 'Rectangle';
+  }
+
+  return kindMeta(node?.kind).label;
 }
 
 /**

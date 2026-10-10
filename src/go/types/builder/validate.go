@@ -48,22 +48,31 @@ var (
 	// names its scenarios by (see [IsConfigName]).
 	configNameRegexp = regexp.MustCompile(configNamePattern)
 
-	// lineStyles are the dash patterns a network or an edge may name, and
-	// borderStyles the border patterns a group may. In each, none (the empty
-	// string) leaves the pattern to the editor.
+	// lineStyles are the dash patterns a network, an edge or a line may
+	// name, and borderStyles the border patterns a group or a shape may. In
+	// each, none (the empty string) leaves the pattern to the editor.
 	lineStyles   = []string{"solid", "dashed", "dotted", "dash-dot"} //nolint:gochecknoglobals // immutable list
 	borderStyles = []string{"solid", "dashed", "dotted", "double"}   //nolint:gochecknoglobals // immutable list
+
+	// shapeFigures are the figures a shape node may draw.
+	shapeFigures = []string{"rectangle", "circle"} //nolint:gochecknoglobals // immutable list
 )
 
-// LineStyles returns the dash patterns [Network.LineStyle] and
-// [Edge.LineStyle] may name.
+// LineStyles returns the dash patterns [Network.LineStyle],
+// [Edge.LineStyle] and [Line.LineStyle] may name.
 func LineStyles() []string {
 	return slices.Clone(lineStyles)
 }
 
-// BorderStyles returns the border patterns [Group.BorderStyle] may name.
+// BorderStyles returns the border patterns [Group.BorderStyle] and
+// [Shape.BorderStyle] may name.
 func BorderStyles() []string {
 	return slices.Clone(borderStyles)
+}
+
+// ShapeFigures returns the figures [Shape.Shape] may name.
+func ShapeFigures() []string {
+	return slices.Clone(shapeFigures)
 }
 
 // Issue is a single validation failure, located by a JSON-ish path within the
@@ -145,12 +154,15 @@ type validator struct {
 //     twice (case-insensitive),
 //   - icon keys outside the bounded icon key registry (see [IsIconKey]), on
 //     a device or a group,
-//   - an outline or fill color of a device or a switch that is not
-//     "#rrggbb",
-//   - a group border style outside [BorderStyles], and a network or edge
-//     line style outside [LineStyles],
-//   - custom icons [ValidateIcons] refuses, and a device, group or template
-//     naming a custom icon the document does not carry,
+//   - an outline or fill color of a device, a switch or a shape, and the
+//     color of a line, that is not "#rrggbb",
+//   - a group or shape border style outside [BorderStyles], and a network,
+//     edge or line style outside [LineStyles],
+//   - a shape whose figure is not one of [ShapeFigures], an icon node that
+//     does not name exactly one of a built-in and a custom icon, and a line
+//     with fewer than [MinLinePoints] or more than [MaxLinePoints] points,
+//   - custom icons [ValidateIcons] refuses, and a device, group, icon node
+//     or template naming a custom icon the document does not carry,
 //   - more than [MaxTemplates] templates, a template whose id is not a UUID
 //     or is used twice (case-insensitive), and one [Template.Issues]
 //     refuses,
@@ -161,8 +173,8 @@ type validator struct {
 //   - source annotations beyond [MaxAnnotations] or [MaxAnnotationBytes], or
 //     with a blank key, a key longer than [MaxNameBytes] or one containing
 //     control characters,
-//   - non-finite geometry, and sizes, zoom, or grid spacing that are not
-//     strictly positive,
+//   - non-finite geometry (line points included), and sizes, zoom, or grid
+//     spacing that are not strictly positive,
 //   - an edge route with fewer than two points.
 //
 // It returns nil or a *[ValidationError].
@@ -414,80 +426,95 @@ func (v *validator) validateNodes() {
 		}
 
 		v.validateNodePayload(node, path)
+		v.validateKind(node, path, i, seenHostnames)
+	}
+}
 
-		switch node.Kind {
-		case NodeKindDevice:
-			if node.Device == nil {
-				break
-			}
-
-			hostname := node.Device.Hostname
-
-			switch {
-			case strings.TrimSpace(hostname) == "":
-				v.addf(path+".device.hostname", "hostname is required")
-			case strings.ContainsAny(hostname, " \t\n"):
-				v.addf(path+".device.hostname", "hostname %q must not contain whitespace", hostname)
-			default:
-				if prev, ok := seenHostnames[foldKey(hostname)]; ok {
-					v.addf(
-						path+".device.hostname",
-						"duplicate hostname %q (also nodes[%d])",
-						hostname, prev,
-					)
-				} else {
-					seenHostnames[foldKey(hostname)] = i
-				}
-			}
-
-			v.validateDeviceHandles(node, path)
-			v.validateIconKey(node.Device.IconKey, path+".device.iconKey")
-			v.validateIconRef(node.Device.Icon, path+".device.icon")
-			v.validateColor(node.Device.OutlineColor, path+".device.outlineColor")
-			v.validateColor(node.Device.FillColor, path+".device.fillColor")
-			v.validateIncludedFrom(node.Device.IncludedFrom, path+".device.includedFrom")
-		case NodeKindSwitch:
-			if node.Switch == nil {
-				break
-			}
-
-			if node.Switch.NetworkID == "" {
-				v.addf(path+".switch.networkId", "switch must reference a network")
-			} else if _, ok := v.networksByID[node.Switch.NetworkID]; !ok {
-				v.addf(
-					path+".switch.networkId",
-					"unknown network %q",
-					node.Switch.NetworkID,
-				)
-			}
-
-			v.validateColor(node.Switch.OutlineColor, path+".switch.outlineColor")
-			v.validateColor(node.Switch.FillColor, path+".switch.fillColor")
-			v.validateNotes(path+".switch."+keyNotes, node.Switch.Notes)
-		case NodeKindGroup:
-			if node.Group == nil {
-				break
-			}
-
-			if style := node.Group.BorderStyle; style != "" && !slices.Contains(borderStyles, style) {
-				v.addf(
-					path+".group.borderStyle",
-					"unknown border style %q (expected one of %s)",
-					truncate(style), strings.Join(borderStyles, ", "),
-				)
-			}
-
+// validateKind checks what the payload of the node at index i says, by its
+// kind. seenHostnames holds the index of each device hostname seen so far,
+// folded, to find a duplicate.
+func (v *validator) validateKind(node *Node, path string, i int, seenHostnames map[string]int) {
+	switch node.Kind {
+	case NodeKindDevice:
+		if node.Device != nil {
+			v.validateDevice(node, path, i, seenHostnames)
+		}
+	case NodeKindSwitch:
+		if node.Switch != nil {
+			v.validateSwitch(node.Switch, path+".switch")
+		}
+	case NodeKindGroup:
+		if node.Group != nil {
+			v.validateBorderStyle(node.Group.BorderStyle, path+".group.borderStyle")
 			v.validateIconKey(node.Group.IconKey, path+".group.iconKey")
 			v.validateIconRef(node.Group.Icon, path+".group.icon")
-		case NodeKindNote:
-			// Notes carry no phenix semantics and nothing to check.
+		}
+	case NodeKindShape:
+		if node.Shape != nil {
+			v.validateShape(node.Shape, path+".shape")
+		}
+	case NodeKindIcon:
+		if node.Icon != nil {
+			v.validateIconNode(node.Icon, path+".icon")
+		}
+	case NodeKindLine:
+		if node.Line != nil {
+			v.validateLine(node.Line, path+".line")
+		}
+	case NodeKindNote:
+		// Notes carry no phenix semantics and nothing to check.
+	}
+}
+
+// validateDevice checks the payload of the device node at index i: its
+// hostname, unique among the devices ignoring case, its interface handles,
+// its icon and colors, and the topology it is included from.
+func (v *validator) validateDevice(node *Node, path string, i int, seenHostnames map[string]int) {
+	hostname := node.Device.Hostname
+
+	switch {
+	case strings.TrimSpace(hostname) == "":
+		v.addf(path+".device.hostname", "hostname is required")
+	case strings.ContainsAny(hostname, " \t\n"):
+		v.addf(path+".device.hostname", "hostname %q must not contain whitespace", hostname)
+	default:
+		if prev, ok := seenHostnames[foldKey(hostname)]; ok {
+			v.addf(
+				path+".device.hostname",
+				"duplicate hostname %q (also nodes[%d])",
+				hostname, prev,
+			)
+		} else {
+			seenHostnames[foldKey(hostname)] = i
 		}
 	}
+
+	v.validateDeviceHandles(node, path)
+	v.validateIconKey(node.Device.IconKey, path+".device.iconKey")
+	v.validateIconRef(node.Device.Icon, path+".device.icon")
+	v.validateColor(node.Device.OutlineColor, path+".device.outlineColor")
+	v.validateColor(node.Device.FillColor, path+".device.fillColor")
+	v.validateIncludedFrom(node.Device.IncludedFrom, path+".device.includedFrom")
+}
+
+// validateSwitch checks the payload of a switch node at path: the network
+// it names, which the document has, its colors and its notes.
+func (v *validator) validateSwitch(hub *Switch, path string) {
+	if hub.NetworkID == "" {
+		v.addf(path+".networkId", "switch must reference a network")
+	} else if _, ok := v.networksByID[hub.NetworkID]; !ok {
+		v.addf(path+".networkId", "unknown network %q", hub.NetworkID)
+	}
+
+	v.validateColor(hub.OutlineColor, path+".outlineColor")
+	v.validateColor(hub.FillColor, path+".fillColor")
+	v.validateNotes(path+"."+keyNotes, hub.Notes)
 }
 
 func (v *validator) validateNodePayload(node *Node, path string) {
 	switch node.Kind {
-	case NodeKindDevice, NodeKindSwitch, NodeKindNote, NodeKindGroup:
+	case NodeKindDevice, NodeKindSwitch, NodeKindNote, NodeKindGroup,
+		NodeKindShape, NodeKindIcon, NodeKindLine:
 	default:
 		v.addf(path+".kind", "unknown node kind %q", node.Kind)
 
@@ -499,6 +526,9 @@ func (v *validator) validateNodePayload(node *Node, path string) {
 		NodeKindSwitch: node.Switch != nil,
 		NodeKindNote:   node.Note != nil,
 		NodeKindGroup:  node.Group != nil,
+		NodeKindShape:  node.Shape != nil,
+		NodeKindIcon:   node.Icon != nil,
+		NodeKindLine:   node.Line != nil,
 	}
 
 	if !payloads[node.Kind] {
@@ -537,8 +567,9 @@ func iconKeyProblem(key string) string {
 	}
 }
 
-// validateIconRef checks the custom icon a device, a group or a template
-// names: none, or one the document carries (see [Document.Icons]).
+// validateIconRef checks the custom icon a device, a group, an icon node or
+// a template names: none, or one the document carries (see
+// [Document.Icons]).
 func (v *validator) validateIconRef(id, path string) {
 	if id == "" {
 		return
@@ -573,6 +604,65 @@ func (v *validator) validateLineStyle(style, path string) {
 	}
 
 	v.addf(path, "unknown line style %q (expected one of %s)", truncate(style), strings.Join(lineStyles, ", "))
+}
+
+// validateBorderStyle checks the border style of a group or a shape: none,
+// or one of [BorderStyles].
+func (v *validator) validateBorderStyle(style, path string) {
+	if style == "" || slices.Contains(borderStyles, style) {
+		return
+	}
+
+	v.addf(path, "unknown border style %q (expected one of %s)", truncate(style), strings.Join(borderStyles, ", "))
+}
+
+// validateShape checks the payload of a shape node at path: its figure, its
+// colors and its border style.
+func (v *validator) validateShape(shape *Shape, path string) {
+	if !slices.Contains(shapeFigures, shape.Shape) {
+		v.addf(
+			path+".shape", "unknown shape %q (expected one of %s)",
+			truncate(shape.Shape), strings.Join(shapeFigures, ", "),
+		)
+	}
+
+	v.validateColor(shape.FillColor, path+".fillColor")
+	v.validateColor(shape.OutlineColor, path+".outlineColor")
+	v.validateBorderStyle(shape.BorderStyle, path+".borderStyle")
+}
+
+// validateIconNode checks the payload of an icon node at path: exactly one
+// of a built-in icon key and a custom icon the document carries.
+func (v *validator) validateIconNode(icon *IconNode, path string) {
+	if (icon.IconKey == "") == (icon.Icon == "") {
+		v.addf(path, "an icon node must name exactly one of a built-in icon and a custom icon")
+	}
+
+	v.validateIconKey(icon.IconKey, path+".iconKey")
+	v.validateIconRef(icon.Icon, path+".icon")
+}
+
+// validateLine checks the payload of a line node at path: from
+// [MinLinePoints] to [MaxLinePoints] points, each a finite coordinate, and
+// its color and line style.
+func (v *validator) validateLine(line *Line, path string) {
+	switch {
+	case len(line.Points) < MinLinePoints:
+		v.addf(path+".points", "a line must have at least %d points", MinLinePoints)
+	case len(line.Points) > MaxLinePoints:
+		v.addf(path+".points", "a line must have at most %d points", MaxLinePoints)
+	default:
+		for _, point := range line.Points {
+			if !finite(point.X) || !finite(point.Y) {
+				v.addf(path+".points", "line points must be finite numbers")
+
+				break
+			}
+		}
+	}
+
+	v.validateColor(line.Color, path+".color")
+	v.validateLineStyle(line.LineStyle, path+".lineStyle")
 }
 
 // validateTemplates checks the document's templates: how many, the id of

@@ -95,8 +95,11 @@ func rootProperties() map[string]any {
 		),
 		keyNodes: documented(
 			arrayDef(ref("node")), "Nodes",
-			"Items on the canvas: devices, switches, notes and groups.",
-			[]any{[]any{exampleDeviceNode(), exampleSwitchNode(), exampleNoteNode()}},
+			"Items on the canvas: devices, switches, notes, groups, and the shapes, icons and lines drawn beside them.",
+			[]any{[]any{
+				exampleDeviceNode(), exampleSwitchNode(), exampleNoteNode(),
+				exampleShapeNode(), exampleIconNode(), exampleLineNode(),
+			}},
 		),
 		keyNetworks: documented(
 			arrayDef(ref("network")), "Networks",
@@ -321,6 +324,13 @@ const (
 	defIconRef    = "iconRef"
 	defIdentifier = "identifier"
 
+	// defIconNode is the definition of the payload of an icon node, which
+	// the node holds under its kind, "icon": that name is the custom icon's
+	// definition.
+	defIconNode = "iconNode"
+
+	keyLabel = "label"
+
 	// digestPattern matches a digest (see [IsDigest]), which is also the
 	// form of an icon id (see [IconID]).
 	digestPattern = `sha256:[0-9a-f]{64}`
@@ -493,7 +503,20 @@ func anyStrings(values []string) []any {
 
 // nodeKindKeys returns the node kinds in their canonical order.
 func nodeKindKeys() []NodeKind {
-	return []NodeKind{NodeKindDevice, NodeKindSwitch, NodeKindNote, NodeKindGroup}
+	return []NodeKind{
+		NodeKindDevice, NodeKindSwitch, NodeKindNote, NodeKindGroup,
+		NodeKindShape, NodeKindIcon, NodeKindLine,
+	}
+}
+
+// payloadDef returns the name of the definition of a node kind's payload,
+// which is the kind's own but for an icon node's.
+func payloadDef(kind NodeKind) string {
+	if kind == NodeKindIcon {
+		return defIconNode
+	}
+
+	return string(kind)
 }
 
 // builderDefs returns the builder specific definitions of the schema bundle.
@@ -513,7 +536,7 @@ func builderDefs() map[string]any {
 		),
 		keyBorderStyle: documented(
 			enumDef(styleEnum(borderStyles)), "Border Style",
-			"Border pattern of a group; empty selects the default, dashed.",
+			"Border pattern of a group or a shape; empty selects the default, dashed for a group and solid for a shape.",
 			[]any{"double"},
 		),
 		defIconRef:        iconRefDef(),
@@ -536,6 +559,9 @@ func builderDefs() map[string]any {
 	defs[string(NodeKindSwitch)] = switchDef()
 	defs[string(NodeKindNote)] = noteDef()
 	defs[string(NodeKindGroup)] = groupDef()
+	defs[payloadDef(NodeKindShape)] = shapeDef()
+	defs[payloadDef(NodeKindIcon)] = iconNodeDef()
+	defs[payloadDef(NodeKindLine)] = lineDef()
 
 	return defs
 }
@@ -844,6 +870,103 @@ func groupDef() map[string]any {
 	)
 }
 
+func shapeDef() map[string]any {
+	return documented(
+		objectDef([]string{"shape"}, map[string]any{
+			"shape": documented(
+				enumDef(anyStrings(shapeFigures)), "Figure",
+				"Figure drawn to fill the node's box: a rectangle, or a circle, which is an ellipse in a box that is "+
+					"not square.",
+				[]any{"rectangle"},
+			),
+			keyLabel: documented(
+				stringDef(), "Label", "Text shown at the center of the figure.", []any{exampleShapeLabel},
+			),
+			keyFillColor: documentedRef(
+				defHexColor, "Fill Color", "Color inside the figure.", []any{exampleFillColor},
+			),
+			keyOutlineColor: documentedRef(
+				defHexColor, "Outline Color", "Color of the figure's border.", []any{exampleOutlineColor},
+			),
+			keyBorderStyle: documentedRef(
+				keyBorderStyle, "Border Pattern", "Pattern of the figure's border; empty is solid.", []any{"dashed"},
+			),
+		}),
+		"Shape", "Payload of a shape node: a rectangle or a circle drawn on the canvas, which is never published.",
+		[]any{exampleShape()},
+	)
+}
+
+// iconNodeDef builds the schema of an icon node's payload, which names
+// exactly one icon: a built-in key or a custom icon, each not empty.
+func iconNodeDef() map[string]any {
+	def := objectDef(nil, map[string]any{
+		keyIconKey: documentedRef(
+			keyIconKey, "Icon", "Built-in icon drawn, when the node names no custom icon.", []any{exampleIconNodeKey},
+		),
+		keyIcon: documentedRef(
+			defIconRef, "Custom Icon", "Custom icon drawn, when the node names no built-in icon.",
+			[]any{exampleIconID},
+		),
+		keyLabel: documented(stringDef(), "Label", "Text shown below the icon.", []any{exampleIconLabel}),
+	})
+
+	named := func(key string) map[string]any {
+		return map[string]any{
+			keyRequired:   []any{key},
+			keyProperties: map[string]any{key: map[string]any{"minLength": 1}},
+		}
+	}
+
+	def["oneOf"] = []any{named(keyIconKey), named(keyIcon)}
+
+	return documented(
+		def, "Icon Node",
+		"Payload of an icon node: exactly one of a built-in icon and a custom icon, scaled to the node's box with "+
+			"an optional label below it, which is never published.",
+		[]any{exampleIconMark()},
+	)
+}
+
+// lineDef builds the schema of a line node's payload, bounded the way
+// [Document.Validate] bounds it.
+func lineDef() map[string]any {
+	points := arrayDef(ref(keyPosition))
+	points["minItems"] = MinLinePoints
+	points["maxItems"] = MaxLinePoints
+
+	return documented(
+		objectDef([]string{"points"}, map[string]any{
+			"points": documented(
+				points, "Points",
+				fmt.Sprintf(
+					"Ends and bends of the line in order, %d to %d of them, relative to the node's position, which the "+
+						"editor keeps at the top left corner of their box.",
+					MinLinePoints, MaxLinePoints,
+				),
+				[]any{exampleLinePoints()},
+			),
+			keyLabel: documented(
+				stringDef(), "Label", "Text shown at the middle segment of the line.", []any{exampleLineLabel},
+			),
+			keyColor: documentedRef(defHexColor, "Color", "Color of the line.", []any{exampleLineColor}),
+			keyLineStyle: documentedRef(
+				keyLineStyle, "Line Style", "Dash pattern of the line; empty is solid.", []any{"dashed"},
+			),
+			"startArrow": documented(
+				boolDef(), "Start Arrow", "Whether an arrowhead is drawn at the first point.", []any{false},
+			),
+			"endArrow": documented(
+				boolDef(), "End Arrow", "Whether an arrowhead is drawn at the last point.", []any{true},
+			),
+		}),
+		"Line",
+		"Payload of a line node: a polyline drawn on the canvas, tied to no node or network, "+
+			"which is never published.",
+		[]any{exampleLine()},
+	)
+}
+
 // hexColorDef builds the schema of an outline or fill color. The empty
 // string is in the pattern, as it is in the iconKey enum, because the editor
 // may send it for none.
@@ -1042,7 +1165,7 @@ func nodeDef() map[string]any {
 				enumDef(enum), "Node Kind", "What the node is, which names the payload it carries.",
 				[]any{string(NodeKindDevice)},
 			),
-			"label": documented(stringDef(), "Label", "Text shown on the node.", []any{exampleHostname}),
+			keyLabel: documented(stringDef(), "Label", "Text shown on the node.", []any{exampleHostname}),
 			keyPosition: documentedRef(
 				keyPosition, "Position", "Where the node is on the canvas.", []any{examplePosition(exampleX, exampleY)},
 			),
@@ -1066,6 +1189,15 @@ func nodeDef() map[string]any {
 			),
 			string(NodeKindGroup): documentedRef(
 				string(NodeKindGroup), "Group", "Payload of a group node.", []any{exampleGroup()},
+			),
+			string(NodeKindShape): documentedRef(
+				payloadDef(NodeKindShape), "Shape", "Payload of a shape node.", []any{exampleShape()},
+			),
+			string(NodeKindIcon): documentedRef(
+				payloadDef(NodeKindIcon), "Icon", "Payload of an icon node.", []any{exampleIconMark()},
+			),
+			string(NodeKindLine): documentedRef(
+				payloadDef(NodeKindLine), "Line", "Payload of a line node.", []any{exampleLine()},
 			),
 		},
 	)
@@ -1173,7 +1305,7 @@ func edgeDef() map[string]any {
 					defIdentifier, "Network ID", "Identifier of the network of the switch the connection joins.",
 					[]any{exampleNetworkID},
 				),
-				"label": documented(stringDef(), "Label", "Text shown on the connection.", []any{"uplink"}),
+				keyLabel: documented(stringDef(), "Label", "Text shown on the connection.", []any{"uplink"}),
 				keyColor: documented(
 					stringDef(), "Color", "Line color drawn in place of the network's, as CSS color text.",
 					[]any{"#c0392b"},

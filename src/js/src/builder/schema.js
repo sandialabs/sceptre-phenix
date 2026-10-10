@@ -10,7 +10,15 @@ import bundledSchema from './schema/builder-v1.schema.json';
 
 import { RETIRED_ICON_KEYS } from './catalog.js';
 import { itemNoun, startCase } from './form-validator.js';
-import { BORDER_STYLES, LINE_STYLES, SCHEMA_URI } from './model.js';
+import {
+  BORDER_STYLES,
+  LINE_STYLES,
+  MAX_LINE_POINTS,
+  MIN_LINE_POINTS,
+  MINIMUM_SIZES,
+  SCHEMA_URI,
+  SHAPE_FIGURES,
+} from './model.js';
 
 export const BUILDER_SCHEMA_ID = SCHEMA_URI;
 const PHENIX_DEF_PREFIX = 'phenix.v1.';
@@ -291,7 +299,8 @@ function mergeParts(parts) {
 const kindSchemas = new WeakMap();
 
 // What an Inspector schema depends on besides its bundle: the variant of a
-// device's spec, the retired icon key a device or a group still uses (see
+// device's spec, the retired icon key a device, a group or an icon still
+// uses (see
 // offeredIconKeys), and whether the device is a template's (see
 // DEVICE_HELP).
 function schemaKey(kind, context) {
@@ -299,8 +308,8 @@ function schemaKey(kind, context) {
     ? context.iconKey
     : '';
 
-  if (kind === 'group') {
-    return `group ${icon}`;
+  if (kind === 'group' || kind === 'icon') {
+    return `${kind} ${icon}`;
   }
 
   if (kind !== 'device') {
@@ -878,6 +887,27 @@ function deviceHelp(context) {
   return context.template ? DEVICE_HELP.template : DEVICE_HELP.canvas;
 }
 
+// The Width and Height of a shape or an icon, in canvas pixels, at least
+// the least size the node can be resized to (see minimumSize in model.js).
+function sizeFields(kind) {
+  const least = MINIMUM_SIZES[kind];
+
+  return {
+    width: {
+      type: 'number',
+      minimum: least.width,
+      title: 'Width',
+      description: `Width on the canvas in pixels, at least ${least.width}.`,
+    },
+    height: {
+      type: 'number',
+      minimum: least.height,
+      title: 'Height',
+      description: `Height on the canvas in pixels, at least ${least.height}.`,
+    },
+  };
+}
+
 function kindSchema(bundle, kind, context = {}) {
   const source = normalizeSchemaBundle(bundle);
   const defs = source.$defs || {};
@@ -1047,6 +1077,124 @@ function kindSchema(bundle, kind, context = {}) {
           },
           // Not `collapsed`: the canvas does not draw a collapsed group yet.
           // A document that has it keeps it (applyFormData in forms.js).
+        },
+      };
+    case 'shape':
+      return {
+        ...base,
+        title: 'Shape',
+        required: ['shape'],
+        properties: {
+          shape: {
+            ...choiceField(defs.shape?.properties?.shape, SHAPE_FIGURES, {
+              rectangle: 'Rectangle',
+              circle: 'Circle',
+            }),
+            title: 'Shape',
+            description:
+              'The figure drawn. A circle in a box that is not square is an ellipse.',
+          },
+          label: {
+            ...field(defs.shape?.properties?.label, { type: 'string' }),
+            title: 'Label',
+            description: 'Shown at the center of the shape.',
+          },
+          fillColor: {
+            ...hexColorField(defs),
+            title: 'Fill Color',
+            description:
+              'Color inside the shape; see-through without one. The label turns black or white to stay readable.',
+          },
+          outlineColor: {
+            ...hexColorField(defs),
+            title: 'Outline Color',
+            description: "Color of the shape's border.",
+          },
+          borderStyle: {
+            ...choiceField(
+              defs.borderStyle,
+              BORDER_STYLES,
+              BORDER_STYLE_TITLES,
+            ),
+            title: 'Border pattern',
+            description:
+              "Line pattern of the shape's border; solid without one.",
+          },
+          ...sizeFields('shape'),
+        },
+      };
+    case 'icon':
+      return {
+        ...base,
+        title: 'Icon',
+        properties: {
+          iconKey: {
+            ...field(offeredIconKeys(defs.iconKey, context.iconKey)),
+            title: 'Icon',
+            description:
+              'The built-in icon drawn. A custom icon, when set, is drawn in its place.',
+          },
+          icon: {
+            ...iconRefField(defs),
+            title: 'Custom icon',
+            description: CUSTOM_ICON_HELP,
+          },
+          label: {
+            ...field(defs.iconNode?.properties?.label, { type: 'string' }),
+            title: 'Label',
+            description: 'Shown below the icon.',
+          },
+          ...sizeFields('icon'),
+        },
+      };
+    case 'line':
+      return {
+        ...base,
+        title: 'Line',
+        required: ['points'],
+        properties: {
+          label: {
+            ...field(defs.line?.properties?.label, { type: 'string' }),
+            title: 'Label',
+            description: 'Shown at the middle of the line.',
+          },
+          color: {
+            ...hexColorField(defs),
+            title: 'Color',
+            description: 'Color of the line; the text color without one.',
+          },
+          lineStyle: {
+            ...choiceField(defs.lineStyle, LINE_STYLES, LINE_STYLE_TITLES),
+            title: 'Line style',
+            description: 'Dash pattern of the line; solid without one.',
+          },
+          startArrow: {
+            type: 'boolean',
+            title: 'Arrowhead at the start',
+            description: 'Draws an arrowhead at the first point.',
+          },
+          endArrow: {
+            type: 'boolean',
+            title: 'Arrowhead at the end',
+            description: 'Draws an arrowhead at the last point.',
+          },
+          points: {
+            type: 'array',
+            title: 'Points',
+            description: `Where the line runs, from its start to its end, on the canvas: ${MIN_LINE_POINTS} to ${MAX_LINE_POINTS} points.`,
+            minItems: MIN_LINE_POINTS,
+            maxItems: MAX_LINE_POINTS,
+            items: {
+              type: 'object',
+              title: 'Point',
+              additionalProperties: false,
+              required: ['x', 'y'],
+              properties: {
+                x: { type: 'number', title: 'X' },
+                y: { type: 'number', title: 'Y' },
+              },
+            },
+          },
         },
       };
     case 'edge':

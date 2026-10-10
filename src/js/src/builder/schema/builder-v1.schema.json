@@ -1,7 +1,7 @@
 {
   "$defs": {
     "borderStyle": {
-      "description": "Border pattern of a group; empty selects the default, dashed.",
+      "description": "Border pattern of a group or a shape; empty selects the default, dashed for a group and solid for a shape.",
       "enum": [
         "",
         "solid",
@@ -490,6 +490,66 @@
       "title": "Icon Key",
       "type": "string"
     },
+    "iconNode": {
+      "additionalProperties": false,
+      "description": "Payload of an icon node: exactly one of a built-in icon and a custom icon, scaled to the node's box with an optional label below it, which is never published.",
+      "examples": [
+        {
+          "iconKey": "external",
+          "label": "Internet"
+        }
+      ],
+      "oneOf": [
+        {
+          "properties": {
+            "iconKey": {
+              "minLength": 1
+            }
+          },
+          "required": [
+            "iconKey"
+          ]
+        },
+        {
+          "properties": {
+            "icon": {
+              "minLength": 1
+            }
+          },
+          "required": [
+            "icon"
+          ]
+        }
+      ],
+      "properties": {
+        "icon": {
+          "$ref": "#/$defs/iconRef",
+          "description": "Custom icon drawn, when the node names no built-in icon.",
+          "examples": [
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+          ],
+          "title": "Custom Icon"
+        },
+        "iconKey": {
+          "$ref": "#/$defs/iconKey",
+          "description": "Built-in icon drawn, when the node names no custom icon.",
+          "examples": [
+            "external"
+          ],
+          "title": "Icon"
+        },
+        "label": {
+          "description": "Text shown below the icon.",
+          "examples": [
+            "Internet"
+          ],
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "title": "Icon Node",
+      "type": "object"
+    },
     "iconRef": {
       "description": "Custom icon of the document's icons, by icon id; empty for none.",
       "examples": [
@@ -554,6 +614,105 @@
         "index"
       ],
       "title": "Interface Handle",
+      "type": "object"
+    },
+    "line": {
+      "additionalProperties": false,
+      "description": "Payload of a line node: a polyline drawn on the canvas, tied to no node or network, which is never published.",
+      "examples": [
+        {
+          "color": "#c0392b",
+          "endArrow": true,
+          "label": "uplink to ISP",
+          "lineStyle": "dashed",
+          "points": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 0,
+              "y": 160
+            },
+            {
+              "x": 160,
+              "y": 160
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/hexColor",
+          "description": "Color of the line.",
+          "examples": [
+            "#c0392b"
+          ],
+          "title": "Color"
+        },
+        "endArrow": {
+          "description": "Whether an arrowhead is drawn at the last point.",
+          "examples": [
+            true
+          ],
+          "title": "End Arrow",
+          "type": "boolean"
+        },
+        "label": {
+          "description": "Text shown at the middle segment of the line.",
+          "examples": [
+            "uplink to ISP"
+          ],
+          "title": "Label",
+          "type": "string"
+        },
+        "lineStyle": {
+          "$ref": "#/$defs/lineStyle",
+          "description": "Dash pattern of the line; empty is solid.",
+          "examples": [
+            "dashed"
+          ],
+          "title": "Line Style"
+        },
+        "points": {
+          "description": "Ends and bends of the line in order, 2 to 64 of them, relative to the node's position, which the editor keeps at the top left corner of their box.",
+          "examples": [
+            [
+              {
+                "x": 0,
+                "y": 0
+              },
+              {
+                "x": 0,
+                "y": 160
+              },
+              {
+                "x": 160,
+                "y": 160
+              }
+            ]
+          ],
+          "items": {
+            "$ref": "#/$defs/position"
+          },
+          "maxItems": 64,
+          "minItems": 2,
+          "title": "Points",
+          "type": "array"
+        },
+        "startArrow": {
+          "description": "Whether an arrowhead is drawn at the first point.",
+          "examples": [
+            false
+          ],
+          "title": "Start Arrow",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "points"
+      ],
+      "title": "Line",
       "type": "object"
     },
     "lineStyle": {
@@ -784,6 +943,21 @@
                   "required": [
                     "group"
                   ]
+                },
+                {
+                  "required": [
+                    "shape"
+                  ]
+                },
+                {
+                  "required": [
+                    "icon"
+                  ]
+                },
+                {
+                  "required": [
+                    "line"
+                  ]
                 }
               ]
             },
@@ -819,6 +993,21 @@
                 {
                   "required": [
                     "group"
+                  ]
+                },
+                {
+                  "required": [
+                    "shape"
+                  ]
+                },
+                {
+                  "required": [
+                    "icon"
+                  ]
+                },
+                {
+                  "required": [
+                    "line"
                   ]
                 }
               ]
@@ -856,6 +1045,21 @@
                   "required": [
                     "group"
                   ]
+                },
+                {
+                  "required": [
+                    "shape"
+                  ]
+                },
+                {
+                  "required": [
+                    "icon"
+                  ]
+                },
+                {
+                  "required": [
+                    "line"
+                  ]
                 }
               ]
             },
@@ -892,11 +1096,179 @@
                   "required": [
                     "note"
                   ]
+                },
+                {
+                  "required": [
+                    "shape"
+                  ]
+                },
+                {
+                  "required": [
+                    "icon"
+                  ]
+                },
+                {
+                  "required": [
+                    "line"
+                  ]
                 }
               ]
             },
             "required": [
               "group"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "shape"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "device"
+                  ]
+                },
+                {
+                  "required": [
+                    "switch"
+                  ]
+                },
+                {
+                  "required": [
+                    "note"
+                  ]
+                },
+                {
+                  "required": [
+                    "group"
+                  ]
+                },
+                {
+                  "required": [
+                    "icon"
+                  ]
+                },
+                {
+                  "required": [
+                    "line"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "shape"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "icon"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "device"
+                  ]
+                },
+                {
+                  "required": [
+                    "switch"
+                  ]
+                },
+                {
+                  "required": [
+                    "note"
+                  ]
+                },
+                {
+                  "required": [
+                    "group"
+                  ]
+                },
+                {
+                  "required": [
+                    "shape"
+                  ]
+                },
+                {
+                  "required": [
+                    "line"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "icon"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "line"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "device"
+                  ]
+                },
+                {
+                  "required": [
+                    "switch"
+                  ]
+                },
+                {
+                  "required": [
+                    "note"
+                  ]
+                },
+                {
+                  "required": [
+                    "group"
+                  ]
+                },
+                {
+                  "required": [
+                    "shape"
+                  ]
+                },
+                {
+                  "required": [
+                    "icon"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "line"
             ]
           }
         }
@@ -1016,6 +1388,17 @@
           ],
           "title": "Group"
         },
+        "icon": {
+          "$ref": "#/$defs/iconNode",
+          "description": "Payload of an icon node.",
+          "examples": [
+            {
+              "iconKey": "external",
+              "label": "Internet"
+            }
+          ],
+          "title": "Icon"
+        },
         "id": {
           "$ref": "#/$defs/identifier",
           "description": "Identifier of the node, unique among the document's nodes.",
@@ -1030,7 +1413,10 @@
             "device",
             "switch",
             "note",
-            "group"
+            "group",
+            "shape",
+            "icon",
+            "line"
           ],
           "examples": [
             "device"
@@ -1045,6 +1431,33 @@
           ],
           "title": "Label",
           "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/line",
+          "description": "Payload of a line node.",
+          "examples": [
+            {
+              "color": "#c0392b",
+              "endArrow": true,
+              "label": "uplink to ISP",
+              "lineStyle": "dashed",
+              "points": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 0,
+                  "y": 160
+                },
+                {
+                  "x": 160,
+                  "y": 160
+                }
+              ]
+            }
+          ],
+          "title": "Line"
         },
         "note": {
           "$ref": "#/$defs/note",
@@ -1078,6 +1491,20 @@
             }
           ],
           "title": "Position"
+        },
+        "shape": {
+          "$ref": "#/$defs/shape",
+          "description": "Payload of a shape node.",
+          "examples": [
+            {
+              "borderStyle": "dashed",
+              "fillColor": "#eef3fb",
+              "label": "DMZ",
+              "outlineColor": "#2f6fbf",
+              "shape": "rectangle"
+            }
+          ],
+          "title": "Shape"
         },
         "size": {
           "$ref": "#/$defs/size",
@@ -2500,6 +2927,70 @@
       "title": "Position",
       "type": "object"
     },
+    "shape": {
+      "additionalProperties": false,
+      "description": "Payload of a shape node: a rectangle or a circle drawn on the canvas, which is never published.",
+      "examples": [
+        {
+          "borderStyle": "dashed",
+          "fillColor": "#eef3fb",
+          "label": "DMZ",
+          "outlineColor": "#2f6fbf",
+          "shape": "rectangle"
+        }
+      ],
+      "properties": {
+        "borderStyle": {
+          "$ref": "#/$defs/borderStyle",
+          "description": "Pattern of the figure's border; empty is solid.",
+          "examples": [
+            "dashed"
+          ],
+          "title": "Border Pattern"
+        },
+        "fillColor": {
+          "$ref": "#/$defs/hexColor",
+          "description": "Color inside the figure.",
+          "examples": [
+            "#eef3fb"
+          ],
+          "title": "Fill Color"
+        },
+        "label": {
+          "description": "Text shown at the center of the figure.",
+          "examples": [
+            "DMZ"
+          ],
+          "title": "Label",
+          "type": "string"
+        },
+        "outlineColor": {
+          "$ref": "#/$defs/hexColor",
+          "description": "Color of the figure's border.",
+          "examples": [
+            "#2f6fbf"
+          ],
+          "title": "Outline Color"
+        },
+        "shape": {
+          "description": "Figure drawn to fill the node's box: a rectangle, or a circle, which is an ellipse in a box that is not square.",
+          "enum": [
+            "rectangle",
+            "circle"
+          ],
+          "examples": [
+            "rectangle"
+          ],
+          "title": "Figure",
+          "type": "string"
+        }
+      },
+      "required": [
+        "shape"
+      ],
+      "title": "Shape",
+      "type": "object"
+    },
     "size": {
       "additionalProperties": false,
       "description": "Explicit width and height of a node on the canvas.",
@@ -3126,7 +3617,7 @@
       "type": "array"
     },
     "nodes": {
-      "description": "Items on the canvas: devices, switches, notes and groups.",
+      "description": "Items on the canvas: devices, switches, notes, groups, and the shapes, icons and lines drawn beside them.",
       "examples": [
         [
           {
@@ -3196,6 +3687,69 @@
             "position": {
               "x": 320,
               "y": 0
+            }
+          },
+          {
+            "id": "3c9e5d2a-7b41-5f08-9a6e-2d4b8c1f0e73",
+            "kind": "shape",
+            "position": {
+              "x": -320,
+              "y": 0
+            },
+            "shape": {
+              "borderStyle": "dashed",
+              "fillColor": "#eef3fb",
+              "label": "DMZ",
+              "outlineColor": "#2f6fbf",
+              "shape": "rectangle"
+            },
+            "size": {
+              "height": 160,
+              "width": 320
+            }
+          },
+          {
+            "icon": {
+              "iconKey": "external",
+              "label": "Internet"
+            },
+            "id": "b2f4a6c8-1d3e-5f70-8a9b-0c1d2e3f4a5b",
+            "kind": "icon",
+            "position": {
+              "x": 0,
+              "y": -256
+            }
+          },
+          {
+            "id": "e7d1c3b5-9a8f-5e6d-b4c3-a2918f7e6d5c",
+            "kind": "line",
+            "line": {
+              "color": "#c0392b",
+              "endArrow": true,
+              "label": "uplink to ISP",
+              "lineStyle": "dashed",
+              "points": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 0,
+                  "y": 160
+                },
+                {
+                  "x": 160,
+                  "y": 160
+                }
+              ]
+            },
+            "position": {
+              "x": 80,
+              "y": -160
+            },
+            "size": {
+              "height": 160,
+              "width": 160
             }
           }
         ]

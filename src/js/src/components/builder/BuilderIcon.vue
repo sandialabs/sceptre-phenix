@@ -204,6 +204,11 @@
       '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/>',
     // Book spines on a shelf, one leaning: the Node Templates library.
     library: '<path d="M4 4v16M8 8v12M12 6v14M16 6l4 14"/>',
+    // The drawings of Add nodes: a rectangle, a circle, and a line with a
+    // bend and an arrowhead.
+    rectangle: '<rect x="3" y="6" width="18" height="12" rx="1"/>',
+    circle: '<circle cx="12" cy="12" r="8"/>',
+    line: '<path d="M3 19l7-7h4l6-6"/><path d="M15 6h5v5"/>',
   };
 
   const path = computed(() => PATHS[props.name] || PATHS.server);

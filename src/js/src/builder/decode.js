@@ -10,6 +10,7 @@ import YAML from 'js-yaml';
 import { MAX_DOCUMENT_BYTES } from './limits.js';
 import {
   METADATA_KEYS as METADATA_KEY_ORDER,
+  NODE_KINDS,
   SCHEMA_REVISION,
   SCHEMA_URI,
 } from './model.js';
@@ -83,7 +84,13 @@ export const NODE_KEYS = new Set([
   'switch',
   'note',
   'group',
+  'shape',
+  'icon',
+  'line',
 ]);
+
+// A node holds its payload under the name of its kind.
+const PAYLOAD_KEYS = NODE_KINDS;
 
 export const DEVICE_KEYS = new Set([
   'hostname',
@@ -111,6 +118,22 @@ export const GROUP_KEYS = new Set([
   'iconKey',
   'icon',
   'collapsed',
+]);
+export const SHAPE_KEYS = new Set([
+  'shape',
+  'label',
+  'fillColor',
+  'outlineColor',
+  'borderStyle',
+]);
+export const ICON_NODE_KEYS = new Set(['iconKey', 'icon', 'label']);
+export const LINE_KEYS = new Set([
+  'points',
+  'label',
+  'color',
+  'lineStyle',
+  'startArrow',
+  'endArrow',
 ]);
 export const NETWORK_KEYS = new Set([
   'id',
@@ -179,7 +202,7 @@ function checkNode(node, index) {
 
   rejectUnknown(node, NODE_KEYS, path);
 
-  const payloads = ['device', 'switch', 'note', 'group'].filter(
+  const payloads = PAYLOAD_KEYS.filter(
     (key) => node[key] !== undefined && node[key] !== null,
   );
 
@@ -230,6 +253,24 @@ function checkNode(node, index) {
 
   if (node.group !== undefined) {
     rejectUnknown(node.group, GROUP_KEYS, `${path}.group`);
+  }
+
+  if (node.shape !== undefined) {
+    rejectUnknown(node.shape, SHAPE_KEYS, `${path}.shape`);
+  }
+
+  if (node.icon !== undefined) {
+    rejectUnknown(node.icon, ICON_NODE_KEYS, `${path}.icon`);
+  }
+
+  if (node.line !== undefined) {
+    rejectUnknown(node.line, LINE_KEYS, `${path}.line`);
+
+    if (Array.isArray(node.line.points)) {
+      node.line.points.forEach((point, i) => {
+        rejectUnknown(point, POINT_KEYS, `${path}.line.points[${i}]`);
+      });
+    }
   }
 }
 

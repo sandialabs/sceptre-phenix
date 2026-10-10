@@ -4,7 +4,8 @@
   group's color is an accent bar across its top, its description a line
   under its title, and its border the pattern chosen for it (dashed without
   one). A custom icon, when the group has one, is drawn in place of the icon
-  of its key.
+  of its key. A selected group has handles to resize it with the mouse,
+  never smaller than its members need (see NodeResize.vue).
 -->
 <template>
   <div
@@ -27,6 +28,7 @@
       {{ data.comment }}
     </span>
     <node-issue-mark v-if="data.issue" :node-id="id" :issue="data.issue" />
+    <node-resize :id="id" :node="data.node" :selected="selected" />
   </div>
 </template>
 
@@ -35,6 +37,7 @@
 
   import BuilderIcon from '../BuilderIcon.vue';
   import NodeIssueMark from './NodeIssueMark.vue';
+  import NodeResize from './NodeResize.vue';
 
   import { drawnColor } from '@/builder/colors.js';
   import { BORDER_STYLES } from '@/builder/model.js';

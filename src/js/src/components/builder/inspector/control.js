@@ -383,6 +383,18 @@ export function useInspectorNewItem() {
   return inject(INSPECTOR_NEW_ITEM, () => () => undefined, true);
 }
 
+// Provided by BuilderInspector: the item a list's "Insert … after" button
+// puts after one of its items, given the list's data path, the item's index
+// and the form's data, for a list that takes an item between two others (a
+// line's points: a bend halfway along the segment after the point).
+// Undefined, as for every other list and for renderers rendered anywhere
+// else, leaves the item without the button.
+export const INSPECTOR_INSERT_ITEM = Symbol('inspector-insert-item');
+
+export function useInspectorInsertItem() {
+  return inject(INSPECTOR_INSERT_ITEM, () => () => undefined, true);
+}
+
 // Provided by BuilderInspector: values a free-text field suggests as the
 // user types, by kind ({disks: [...]}: the server's disk images, or null
 // while they are unknown). Renderers rendered anywhere else suggest nothing.

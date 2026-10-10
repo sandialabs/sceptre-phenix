@@ -1,7 +1,8 @@
 <!--
   Note node: annotation only, never exported to the topology. Vue Flow's
   wrapper is the focusable, named element (see DeviceNode.vue). A note's
-  color is an accent bar across its top.
+  color is an accent bar across its top. A selected note has handles to
+  resize it with the mouse (see NodeResize.vue).
 -->
 <template>
   <div
@@ -21,6 +22,7 @@
     </div>
     <p class="builder-node__text">{{ text }}</p>
     <node-issue-mark v-if="data.issue" :node-id="id" :issue="data.issue" />
+    <node-resize :id="id" :node="data.node" :selected="selected" />
   </div>
 </template>
 
@@ -29,6 +31,7 @@
 
   import BuilderIcon from '../BuilderIcon.vue';
   import NodeIssueMark from './NodeIssueMark.vue';
+  import NodeResize from './NodeResize.vue';
 
   import { drawnColor } from '@/builder/colors.js';
 

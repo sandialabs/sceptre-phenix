@@ -660,7 +660,7 @@ func newLegacyOverlay(doc *Document, diagram *LegacyDiagram, notes *legacyNotes,
 		case NodeKindSwitch:
 			overlay.hubs = append(overlay.hubs, &node)
 			overlay.hubOf[node.Switch.NetworkID] = &node
-		case NodeKindNote, NodeKindGroup:
+		case NodeKindNote, NodeKindGroup, NodeKindShape, NodeKindIcon, NodeKindLine:
 		}
 	}
 

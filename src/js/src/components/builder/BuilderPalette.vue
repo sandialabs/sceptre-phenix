@@ -50,7 +50,7 @@
           class="builder-palette__item"
           :draggable="!store.readOnly"
           :disabled="store.readOnly"
-          :data-testid="`palette-${item.kind}`"
+          :data-testid="`palette-${item.id}`"
           :aria-label="`Add ${item.label}`"
           :aria-describedby="`palette-hint-${item.id}`"
           @click="add(item)"
@@ -254,16 +254,17 @@
   // In a free spot of the part of the canvas in view, as the command
   // palette's Add commands do.
   function add(item) {
-    addInView(commands || { store }, { kind: item.kind });
+    addInView(commands || { store }, paletteNode(store, item.id));
   }
 
   function addTemplate(entry) {
     addInView(commands || { store }, paletteNode(store, 'device', entry.key));
   }
 
-  // A template goes by its key, so the canvas adds the node a click adds.
+  // An entry goes by its id, and a template by its key, so the canvas adds
+  // the node a click adds.
   function onDragStart(event, item) {
-    event.dataTransfer?.setData(PALETTE_MIME, item.kind);
+    event.dataTransfer?.setData(PALETTE_MIME, item.id || item.kind);
 
     if (item.key) {
       event.dataTransfer?.setData(PALETTE_TEMPLATE_MIME, item.key);

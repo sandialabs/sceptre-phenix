@@ -374,6 +374,7 @@
     INSPECTOR_FIELD_WARNINGS,
     INSPECTOR_ICON_LIBRARY,
     INSPECTOR_ICONS,
+    INSPECTOR_INSERT_ITEM,
     INSPECTOR_LOCAL_PROBLEMS,
     INSPECTOR_LOCKED,
     INSPECTOR_NEW_ITEM,
@@ -388,6 +389,7 @@
     fieldChanged,
     fieldDefault,
     formDataChanged,
+    insertedListItem,
     inspectorI18n,
     inspectorLock,
     inspectorName,
@@ -596,6 +598,18 @@
   // on the canvas is (see newListItem).
   provide(INSPECTOR_NEW_ITEM, (path, data) =>
     newListItem(host.doc, selection.value, path, data ?? draft.value),
+  );
+
+  // A point inserted in a line's Points list is a bend halfway along the
+  // segment after the point it follows (see insertedListItem).
+  provide(INSPECTOR_INSERT_ITEM, (path, index, data) =>
+    insertedListItem(
+      host.doc,
+      selection.value,
+      path,
+      index,
+      data ?? draft.value,
+    ),
   );
 
   // What a field shows while it is not set (see fieldDefault): Memory the

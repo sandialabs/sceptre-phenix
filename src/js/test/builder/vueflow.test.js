@@ -30,6 +30,7 @@ import {
   nodeInfoId,
   nodeIssueId,
   nodePoint,
+  nodeZIndex,
   relativePosition,
   SWITCH_HANDLE_ID,
   toFlowEdges,
@@ -76,7 +77,128 @@ describe('flow nodes', () => {
       switch: 'builderSwitch',
       note: 'builderNote',
       group: 'builderGroup',
+      shape: 'builderShape',
+      icon: 'builderIcon',
+      line: 'builderLine',
     });
+  });
+
+  // Shapes and lines are drawn over groups and under the nodes they are
+  // drawn around; a line takes the pointer only on its stroke.
+  test('shapes, icons and lines map with their layer, size and look', () => {
+    const { doc } = sampleDocument();
+    const shape = addNode(doc, {
+      kind: 'shape',
+      shape: 'circle',
+      label: 'DMZ',
+      position: { x: 10, y: 20 },
+    });
+    const icon = addNode(shape.doc, {
+      kind: 'icon',
+      iconKey: 'firewall',
+      label: 'Edge',
+    });
+    const line = addNode(icon.doc, {
+      kind: 'line',
+      position: { x: 100, y: 100 },
+      points: [
+        { x: 0, y: 40 },
+        { x: 80, y: 0 },
+        { x: 160, y: 40 },
+      ],
+      lineStyle: 'dotted',
+      label: 'uplink',
+      endArrow: true,
+    });
+    const flow = toFlowNodes(line.doc);
+    const find = (id) => flow.find((entry) => entry.id === id);
+    const device = flow.find((entry) => entry.type === 'builderDevice');
+
+    expect(find(shape.node.id)).toMatchObject({
+      type: 'builderShape',
+      zIndex: 0,
+      style: { width: '120px', height: '120px' },
+      data: { label: 'DMZ', kindLabel: 'Circle' },
+      ariaLabel: 'Circle DMZ',
+    });
+    expect(find(icon.node.id)).toMatchObject({
+      type: 'builderIcon',
+      zIndex: device.zIndex,
+      style: { width: '64px', height: '64px' },
+      data: { iconKey: 'firewall', iconSrc: '', kindLabel: 'Icon' },
+      ariaLabel: 'Icon Edge',
+    });
+    expect(find(line.node.id)).toMatchObject({
+      type: 'builderLine',
+      zIndex: 0,
+      position: { x: 100, y: 100 },
+      style: { width: '160px', height: '40px', pointerEvents: 'none' },
+      data: { dashArray: '2 4', kindLabel: 'Line' },
+      ariaLabel: 'Line uplink, arrowhead at its end',
+    });
+    expect(device.zIndex).toBeGreaterThan(0);
+    expect(find(shape.node.id).data.handles).toEqual([]);
+  });
+
+  // The canvas turns Vue Flow's own lift of a selected node off (see
+  // BuilderCanvas.vue) and lifts a selected node, and the members of a
+  // selected group, itself; but never a shape or a line, which would then
+  // cover the devices and switches it is drawn around, and their
+  // connection handles.
+  test('a selected shape or line stays under the devices; other selected nodes are lifted', () => {
+    const { doc, alpha, bravo, sw } = sampleDocument();
+    const grouped = groupNodes(doc, [bravo.id]);
+    const group = grouped.group;
+    const shape = addNode(grouped.doc, {
+      kind: 'shape',
+      position: alpha.position,
+    });
+    const line = addNode(shape.doc, { kind: 'line', position: alpha.position });
+    const inside = addNode(line.doc, {
+      kind: 'shape',
+      parentId: group.id,
+      position: { x: group.position.x + 8, y: group.position.y + 8 },
+    });
+    const flow = toFlowNodes(inside.doc);
+    const zOf = (list, id) => list.find((entry) => entry.id === id).zIndex;
+    const drawings = [shape.node.id, line.node.id, inside.node.id];
+
+    for (const selection of [[shape.node.id], [line.node.id], drawings]) {
+      const selected = withSelection(flow, selection);
+
+      for (const id of selection) {
+        expect(zOf(selected, id)).toBe(zOf(flow, id));
+        expect(zOf(selected, id)).toBeLessThan(zOf(selected, alpha.id));
+        expect(zOf(selected, id)).toBeLessThan(zOf(selected, sw.id));
+      }
+    }
+    expect(
+      zOf(toFlowNodes(inside.doc, { selectedIds: drawings }), shape.node.id),
+    ).toBe(zOf(flow, shape.node.id));
+
+    // A selected device is lifted over the rest, as toFlowNodes has it too.
+    const device = withSelection(flow, [alpha.id]);
+
+    expect(zOf(device, alpha.id)).toBeGreaterThan(zOf(device, sw.id));
+    expect(zOf(device, alpha.id)).toBe(
+      zOf(toFlowNodes(inside.doc, { selectedIds: [alpha.id] }), alpha.id),
+    );
+    expect(withSelection(device, [])).toEqual(flow);
+
+    // A selected group is lifted with its members, over the nodes outside
+    // it, and a device in it stays over a drawing in it.
+    const lifted = withSelection(flow, [group.id]);
+
+    expect(zOf(lifted, group.id)).toBeGreaterThan(zOf(lifted, alpha.id));
+    expect(zOf(lifted, bravo.id)).toBeGreaterThan(zOf(lifted, group.id));
+    expect(zOf(lifted, inside.node.id)).toBe(zOf(flow, inside.node.id));
+    expect(zOf(lifted, alpha.id)).toBe(zOf(flow, alpha.id));
+
+    expect(nodeZIndex('shape', true, true)).toBe(nodeZIndex('shape'));
+    expect(nodeZIndex('line', true)).toBe(nodeZIndex('line'));
+    expect(nodeZIndex('note', true)).toBeGreaterThan(nodeZIndex('note'));
+    expect(nodeZIndex('icon', false, true)).toBeGreaterThan(nodeZIndex('icon'));
+    expect(nodeZIndex('group')).toBeLessThan(nodeZIndex('device'));
   });
 
   test('nodes carry icon key, comment and handles', () => {

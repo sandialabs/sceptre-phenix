@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - **Builder node notes**: Devices and switches show their notes in a card below them on the canvas, in their info tooltips and in PNG and SVG downloads, and layouts leave room for them. A device's notes are its `general.notes`; a switch keeps up to 100 of its own in the diagram. **Show node notes** in the Builder settings hides them.
 - **Builder icons**: A diagram, and a user's template library, can hold up to 50 custom icons.
 - **Builder scenarios**: A diagram lists up to 20 Scenario configs by name (`scenarios`). The Scenarios dialog adds stored scenarios or stores an uploaded scenario file as a Scenario config (replacing one keeps its annotations), Publish adds the topology to each listed scenario's `topology` annotation, and the Publish dialog picks the experiment's scenario.
+- **Builder drawings**: Rectangles, circles, icons and lines (with bends and arrowheads) that are drawn in a diagram and never published. Shapes, icons, notes and groups resize with the mouse.
 
 ### Changed
 

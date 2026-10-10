@@ -66,6 +66,8 @@ function fakeElement(
     setAttribute: (name, value) => {
       element.attributes[name] = value;
     },
+    getAttribute: (name) =>
+      name === 'id' ? element.id : (element.attributes[name] ?? null),
     removeAttribute: (name) => {
       if (name === 'id') {
         element.id = null;
@@ -381,6 +383,81 @@ describe('image content', () => {
     );
     expect(find(pane, 'builder-edge').id).toBe('edge-1');
     expect(find(pane, 'vue-flow__handle')).toBeTruthy();
+  });
+
+  // A line's arrowheads are drawn with a <marker> that its stroke points at
+  // by url(#id) (see LineNode.vue). Each copy gives the marker an ID of its
+  // own and points the stroke at it, so the image keeps the arrowheads while
+  // the canvas keeps its IDs.
+  test("a line's arrowheads keep their marker in the image copy, under an ID of its own", () => {
+    const arrow = 'builder-line-arrow-n1';
+    const pane = fakeElement('div', 'vue-flow__transformationpane', {
+      children: [
+        fakeElement('div', 'vue-flow__node', {
+          children: [
+            fakeElement('div', 'builder-line', {
+              children: [
+                fakeElement('svg', 'builder-line__drawing', {
+                  children: [
+                    fakeElement('defs', '', {
+                      children: [
+                        fakeElement('marker', '', {
+                          id: arrow,
+                          children: [
+                            fakeElement('path', 'builder-line__arrow'),
+                          ],
+                        }),
+                      ],
+                    }),
+                    fakeElement('polyline', 'builder-line__hit'),
+                    fakeElement(
+                      'polyline',
+                      'builder-edge builder-line__stroke',
+                      {
+                        attributes: {
+                          'marker-start': `url(#${arrow})`,
+                          'marker-end': `url(#${arrow})`,
+                        },
+                      },
+                    ),
+                  ],
+                }),
+                fakeElement('span', 'builder-line__label', { id: 'label-n1' }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    });
+
+    fakeElement('div', 'vue-flow__pane', { children: [pane] });
+
+    const markerOf = (root) =>
+      descendants(root).find((item) => item.tag === 'marker');
+    const strokeOf = (root) => find(root, 'builder-line__stroke');
+    const copies = [exportCopy(pane).copy, exportCopy(pane).copy];
+
+    for (const copy of copies) {
+      const id = markerOf(copy).id;
+
+      expect(id).toMatch(new RegExp(`^${arrow}-image-\\d+$`));
+      expect(strokeOf(copy).attributes).toMatchObject({
+        'marker-start': `url(#${id})`,
+        'marker-end': `url(#${id})`,
+      });
+      // Every other ID is removed, as before.
+      expect(
+        descendants(copy)
+          .filter((item) => item.id)
+          .map((item) => item.tag),
+      ).toEqual(['marker']);
+    }
+    expect(markerOf(copies[0]).id).not.toBe(markerOf(copies[1]).id);
+
+    // The canvas keeps its own.
+    expect(markerOf(pane).id).toBe(arrow);
+    expect(strokeOf(pane).attributes['marker-end']).toBe(`url(#${arrow})`);
+    expect(find(pane, 'builder-line__label').id).toBe('label-n1');
   });
 
   // html-to-image copies an <svg> without its class styles, so a connection

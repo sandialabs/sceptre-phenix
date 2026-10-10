@@ -287,7 +287,8 @@ func legacyNodes(doc *builder.Document, kind builder.NodeKind) map[string]*build
 			nodes[node.Group.Title] = node
 		case builder.NodeKindNote:
 			nodes[node.Note.Text] = node
-		case builder.NodeKindDevice, builder.NodeKindSwitch:
+		case builder.NodeKindDevice, builder.NodeKindSwitch,
+			builder.NodeKindShape, builder.NodeKindIcon, builder.NodeKindLine:
 			nodes[node.Label] = node
 		}
 	}

@@ -2113,6 +2113,28 @@ for (const scheme of ['light', 'dark']) {
           .toBeFocused();
       });
 
+      await test.step('axe finds no serious violations in a diagram with shapes, icons and lines', async () => {
+        for (const item of ['rectangle', 'circle', 'icon', 'line']) {
+          await builder.palette(item).click();
+        }
+        await expect(rows(builder)).toHaveCount(4);
+        // The new line is selected: its points have their handles.
+        await expect(page.getByTestId('line-point-1')).toBeVisible();
+        await expectAccessible(page, {
+          soft: true,
+          label: `axe on a diagram with a selected line (${scheme})`,
+        });
+        // A selected rectangle has the handles that resize it.
+        await builder.selectInOutline('Rectangle');
+        await expect(
+          page.locator('.vue-flow__resize-control').first(),
+        ).toBeVisible();
+        await expectAccessible(page, {
+          soft: true,
+          label: `axe on a diagram with a selected rectangle (${scheme})`,
+        });
+      });
+
       await test.step('drafts landing', async () => {
         await builder.backToDrafts();
         const open = page.getByTestId(`draft-open-${draft.id}`);

@@ -168,6 +168,44 @@ export const PALETTE = [
     shape: 'container',
     hint: 'A container that visually groups member nodes',
   },
+  // Drawings: shapes, icons and lines with no phenix semantics. The two
+  // figures of a shape are entries of their own, so each is one click
+  // away; `options` are the store.addNode options an entry adds besides
+  // its kind.
+  {
+    kind: 'shape',
+    id: 'rectangle',
+    label: 'Rectangle',
+    iconKey: 'rectangle',
+    shape: 'shape',
+    options: { shape: 'rectangle' },
+    hint: 'A rectangle drawn on the canvas, with no phenix semantics',
+  },
+  {
+    kind: 'shape',
+    id: 'circle',
+    label: 'Circle',
+    iconKey: 'circle',
+    shape: 'shape',
+    options: { shape: 'circle' },
+    hint: 'A circle drawn on the canvas, with no phenix semantics',
+  },
+  {
+    kind: 'icon',
+    id: 'icon',
+    label: 'Icon',
+    iconKey: 'external',
+    shape: 'icon',
+    hint: 'A built-in or custom icon drawn on the canvas, with no phenix semantics',
+  },
+  {
+    kind: 'line',
+    id: 'line',
+    label: 'Line',
+    iconKey: 'line',
+    shape: 'line',
+    hint: 'A line drawn on the canvas, joined to no node or network, with optional arrowheads',
+  },
 ];
 
 const KIND_META = {
@@ -175,7 +213,21 @@ const KIND_META = {
   switch: { iconKey: 'switch', shape: 'hexagon', label: 'Switch' },
   note: { iconKey: 'vlan', shape: 'note', label: 'Note' },
   group: { iconKey: 'container', shape: 'container', label: 'Group' },
+  shape: { iconKey: 'vlan', shape: 'shape', label: 'Shape' },
+  icon: { iconKey: 'external', shape: 'icon', label: 'Icon' },
+  line: { iconKey: 'vlan', shape: 'line', label: 'Line' },
 };
+
+/**
+ * The palette entry of an id, as a palette entry dragged onto the canvas
+ * names it.
+ *
+ * @param {string} id
+ * @returns {object|undefined}
+ */
+export function paletteEntry(id) {
+  return PALETTE.find((item) => item.id === id);
+}
 
 /**
  * @param {string} kind
@@ -207,20 +259,27 @@ export function nodeIconKey(node) {
     return node.group.iconKey;
   }
 
+  if (node.kind === 'icon' && isIconKey(node.icon?.iconKey)) {
+    return node.icon.iconKey;
+  }
+
   return kindMeta(node.kind).iconKey;
 }
 
 /**
- * The custom icon a node names: a device's or a group's, which is drawn in
- * place of the icon of its key when the document carries it (see iconSrc in
- * icons.js). Other kinds of nodes have none.
+ * The custom icon a node names: a device's, a group's or an icon node's,
+ * which is drawn in place of the icon of its key when the document carries
+ * it (see iconSrc in icons.js). Other kinds of nodes have none.
  *
  * @param {object} node builder document node
  * @returns {string} an icon id, or '' for none and for a value that is no
  *   icon id
  */
 export function nodeIcon(node) {
-  const id = node?.device?.icon || node?.group?.icon;
+  const id =
+    node?.device?.icon ||
+    node?.group?.icon ||
+    (node?.kind === 'icon' ? node.icon?.icon : '');
 
   return typeof id === 'string' && ICON_ID.test(id) ? id : '';
 }

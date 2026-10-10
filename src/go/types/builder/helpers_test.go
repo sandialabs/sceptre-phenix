@@ -288,7 +288,45 @@ const (
 	idNote1       = "874e945f-4f75-57c7-9533-0d8ffd6ec32b" // note-1
 	idNoteFree    = "a74971fd-94b9-545e-ae5d-353d4ec5236e" // note-free
 	idSwExp       = "dee6bc70-8103-581e-8b31-6c95cda798a0" // sw-exp
+	idShapeDMZ    = "3f2b6c1e-8d4a-5b7e-9c0f-1a2b3c4d5e6f" // shape-dmz
+	idIconNet     = "5a6b7c8d-9e0f-5a1b-8c2d-3e4f5a6b7c8d" // icon-net
+	idLineUplink  = "7c8d9e0f-1a2b-5c3d-ae4f-5a6b7c8d9e0f" // line-uplink
 )
+
+// visualNodes returns a shape inside group grp-rack, an icon and a line with
+// an arrowhead and a bend: one node of each kind that is drawn and never
+// published.
+func visualNodes() []builder.Node {
+	return []builder.Node{
+		{
+			ID: idShapeDMZ, Kind: builder.NodeKindShape, ParentID: idGrpRack,
+			Position: builder.Position{X: 0, Y: 200}, Size: &builder.Size{Width: 160, Height: 96},
+			Shape: &builder.Shape{
+				Shape:        "rectangle",
+				Label:        "DMZ",
+				FillColor:    "#eef4fb",
+				OutlineColor: "#2f6fbf",
+				BorderStyle:  "dashed",
+			},
+		},
+		{
+			ID: idIconNet, Kind: builder.NodeKindIcon,
+			Position: builder.Position{X: 900, Y: 0}, Size: &builder.Size{Width: 64, Height: 64},
+			Icon: &builder.IconNode{IconKey: "external", Label: "Internet"},
+		},
+		{
+			ID: idLineUplink, Kind: builder.NodeKindLine,
+			Position: builder.Position{X: 700, Y: 200}, Size: &builder.Size{Width: 160, Height: 80},
+			Line: &builder.Line{
+				Points:    []builder.Position{{X: 0, Y: 0}, {X: 0, Y: 80}, {X: 160, Y: 80}},
+				Label:     "uplink",
+				Color:     "#c0392b",
+				LineStyle: "dotted",
+				EndArrow:  true,
+			},
+		},
+	}
+}
 
 // decorationKeys are the JSON keys of what decorates a document and is left
 // out when not set: custom icons, colors, line and border styles, templates,

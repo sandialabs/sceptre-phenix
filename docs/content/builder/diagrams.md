@@ -1,8 +1,8 @@
 # Building a Diagram
 
 This page shows how to draw and change a diagram: devices, switches and the
-connections between them, device settings, groups, notes, colors, line
-styles, custom icons, layouts and the scenarios. For the parts of the editor that these tasks use, see
+connections between them, device settings, groups, notes, shapes, icons and
+lines, colors, line styles, custom icons, layouts and the scenarios. For the parts of the editor that these tasks use, see
 [The Editor](editor.md).
 
 The examples on this page use the Riverside Water draft of the
@@ -20,6 +20,7 @@ to the topology like this:
 | A connection from a device to a switch | An interface of the device, whose `vlan` is the network's name |
 | A device from an included topology | Nothing: `includeTopologies` names that topology |
 | A note or a group | Nothing: notes and groups only help people read the diagram |
+| A shape, an icon or a line | Nothing: they are drawings in the diagram |
 | Colors, line styles, custom icons and the diagram's templates | Nothing: they stay in the Builder document |
 
 For example, the connection from ws-01 to the CORP switch is this interface
@@ -392,8 +393,58 @@ dialog opens on the selected node, and **Group** shows the group it is in:
 3. Select **Move**. The dialog closes and focus returns to **Move to
    group**.
 
-To resize a selected group from the keyboard, press
-<kbd>⌥</kbd>+<kbd>⇧</kbd> (<kbd>Alt</kbd>+<kbd>Shift</kbd>) with an arrow key.
+To resize a selected group, drag the handles on its corners and sides, or
+press <kbd>⌥</kbd>+<kbd>⇧</kbd> (<kbd>Alt</kbd>+<kbd>Shift</kbd>) with an
+arrow key. A group never gets smaller than its members need. Notes resize
+the same way.
+
+## Shapes, icons and lines
+
+Rectangles, circles, icons and lines are drawings: they help people read the
+diagram, and publishing ignores them, as it ignores notes and groups. They
+take no connections. Add one under **Add nodes** (**Rectangle**,
+**Circle**, **Icon** or **Line**) or with the command palette's **Add
+rectangle**, **Add circle**, **Add icon** and **Add line**. Like any node,
+a drawing can be moved, put in a group, copied, duplicated and deleted, and
+the layouts leave it where it is: one in a group moves with its group, and
+the group grows to hold it when the layout makes it smaller.
+
+Select a drawing to change it in the Inspector, then select **Apply**:
+
+- A **rectangle** or a **circle** (**Shape**) fills its box; a circle in a
+  box that is not square is an ellipse. It has a **Label** at its center, a
+  **Fill Color** (see-through without one), an **Outline Color**, a **Border
+  pattern** (**Solid**, the default, **Dashed**, **Dotted** or **Double**),
+  and a **Width** and **Height**.
+- An **icon** shows one of the built-in icons (**Icon**) or an image of your
+  own (**Custom icon**, see [Custom icons](#custom-icons)), scaled to its
+  box, with an optional **Label** under it, and a **Width** and **Height**.
+- A **line** joins no node or network. It has a **Label** at its middle, a
+  **Color** and **Line style** like a connection's (solid without one), an
+  **Arrowhead at the start** and an **Arrowhead at the end**, and its
+  **Points**, from its start to its end, each with an **X** and **Y** on the
+  canvas: 2 to 64 of them. A new line runs 160 pixels across.
+
+Rectangles, circles and lines lie under the devices and switches, also
+while they are selected, so a drawing never hides a device or its
+connection points. The handles of a selected drawing are drawn over
+everything.
+
+To resize a selected rectangle, circle or icon, drag the handles on its
+corners and sides, or press <kbd>⌥</kbd>+<kbd>⇧</kbd>
+(<kbd>Alt</kbd>+<kbd>Shift</kbd>) with an arrow key. A selected line shows
+a handle on each point: a circle on each end and a square on each bend.
+Drag a handle to move its point, and double-click the line to add a bend
+there. After you click a handle, the arrow keys move its point by a grid
+step (by a pixel with <kbd>⇧</kbd>), <kbd>Delete</kbd> or
+<kbd>Backspace</kbd> removes it, and <kbd>Esc</kbd> returns to the line; a
+line keeps at least two points. Each of these is one step for **Undo**.
+
+Without a mouse, edit the points in the Inspector's **Points**: change a
+point's **X** and **Y**, **Add point** adds a new end, **Remove point N**
+removes a point, and **Insert point after point N** adds a bend halfway to
+the next point. Select **Apply** to make the changes, as one step for
+**Undo**.
 
 ## Auto-group
 
@@ -472,6 +523,8 @@ Each kind of node and connection has its own color fields:
 | Device, switch | **Outline Color** | The node's border | `#rrggbb` only |
 | Device, switch | **Fill Color** | The node's background | `#rrggbb` only |
 | Note, group | **Color** | The note or the group | Any CSS color |
+| Rectangle, circle | **Outline Color**, **Fill Color** | The shape's border and inside | `#rrggbb` only |
+| Line | **Color** | The line and its arrowheads | `#rrggbb` only |
 
 To set a color:
 
@@ -519,10 +572,10 @@ switch it joins and its name for screen readers still name its network.
 
 ## Custom icons
 
-A device or a group can show an image of your own in place of its icon. To
-choose one:
+A device, a group or an icon can show an image of your own in place of its
+built-in icon. To choose one:
 
-1. Select the device or the group.
+1. Select the device, the group or the icon.
 2. Under **Custom icon** in the Inspector, select **Choose…**. The **Custom
    icons** dialog opens.
 3. Select **Upload icon…** and choose an image file, or select **Use** on an

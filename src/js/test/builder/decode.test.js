@@ -9,12 +9,15 @@ import {
   GROUP_KEYS,
   HANDLE_KEYS,
   ICON_ENTRY_KEYS,
+  ICON_NODE_KEYS,
+  LINE_KEYS,
   METADATA_KEYS,
   NETWORK_KEYS,
   NODE_KEYS,
   NOTE_KEYS,
   parseDocument,
   parseImport,
+  SHAPE_KEYS,
   SOURCE_KEYS,
   SWITCH_KEYS,
   TEMPLATE_DEVICE_KEYS,
@@ -140,6 +143,57 @@ describe('strict decoding', () => {
     expect(SCHEMA_URI).toContain('/schemas/builder/v1');
   });
 
+  test('keeps shapes, icons and lines, and refuses unknown fields in them', () => {
+    const { doc } = sampleDocument();
+    const shape = addNode(doc, {
+      kind: 'shape',
+      shape: 'circle',
+      label: 'DMZ',
+      fillColor: '#eef4fb',
+      borderStyle: 'dotted',
+    });
+    const icon = addNode(shape.doc, {
+      kind: 'icon',
+      iconKey: 'external',
+      label: 'Internet',
+    });
+    const line = addNode(icon.doc, {
+      kind: 'line',
+      points: [
+        { x: 0, y: 0 },
+        { x: 160, y: 40 },
+      ],
+      color: '#c0392b',
+      lineStyle: 'dashed',
+      endArrow: true,
+    });
+    const payload = JSON.parse(JSON.stringify(line.doc));
+
+    expect(parseDocument(payload)).toEqual(line.doc);
+
+    const at = (id) => payload.nodes.findIndex((node) => node.id === id);
+
+    payload.nodes[at(line.node.id)].line.points[1].z = 1;
+
+    expect(() => decodeDocument(payload)).toThrowError(
+      /line\.points\[1\]: unknown field "z"/,
+    );
+
+    delete payload.nodes[at(line.node.id)].line.points[1].z;
+    payload.nodes[at(icon.node.id)].icon.color = '#000000';
+
+    expect(() => decodeDocument(payload)).toThrowError(
+      /\.icon: unknown field "color"/,
+    );
+
+    delete payload.nodes[at(icon.node.id)].icon.color;
+    payload.nodes[at(shape.node.id)].shape.text = 'DMZ';
+
+    expect(() => decodeDocument(payload)).toThrowError(
+      /\.shape: unknown field "text"/,
+    );
+  });
+
   test('a node must carry exactly one payload', () => {
     const { doc } = sampleDocument();
     const payload = JSON.parse(JSON.stringify(doc));
@@ -201,6 +255,9 @@ describe('strict decoding', () => {
     ['switch', SWITCH_KEYS],
     ['note', NOTE_KEYS],
     ['group', GROUP_KEYS],
+    ['shape', SHAPE_KEYS],
+    ['iconNode', ICON_NODE_KEYS],
+    ['line', LINE_KEYS],
     ['network', NETWORK_KEYS],
     ['edge', EDGE_KEYS],
     ['viewport', VIEWPORT_KEYS],

@@ -11,6 +11,9 @@
 // each node's position, each group's size and, for some, each connection's
 // route out (runLayout).
 
+import { DRAWING_KINDS, sizeOf } from '../model.js';
+
+import { GROUP_PADDING, snapUp } from './common.js';
 import { layout as cards } from './cards.js';
 import { layout as dagre } from './dagre.js';
 import { layout as elk } from './elk.js';
@@ -95,6 +98,13 @@ const LAYOUTS = { elk, cards, dagre, standard };
  * Lays a document out with one of the algorithms. Positions are absolute,
  * as the document keeps them; ELK's arrive later, from a Web Worker.
  *
+ * Shapes, icons and lines are drawn where the user put them, so no
+ * algorithm sees them: one in no group stays where it is, and one in a
+ * group moves as far as its group does, keeping its place in it. A group
+ * the algorithm sized around its other members then grows, to the right
+ * and down, to hold its drawings with the room it leaves around members
+ * (growAroundDrawings).
+ *
  * @param {string} id a LAYOUT_ALGORITHMS id; an unknown one runs the default
  * @param {object} doc builder document
  * @param {object} [options] the algorithm's own
@@ -105,6 +115,114 @@ const LAYOUTS = { elk, cards, dagre, standard };
  */
 export async function runLayout(id, doc, options = {}) {
   const run = LAYOUTS[layoutAlgorithm(id) ? id : DEFAULT_LAYOUT_ALGORITHM];
+  const nodes = doc?.nodes || [];
+  const drawings = nodes.filter((node) => DRAWING_KINDS.includes(node.kind));
 
-  return run(doc, options);
+  if (drawings.length === 0) {
+    return run(doc, options);
+  }
+
+  const laid = await run(
+    { ...doc, nodes: nodes.filter((node) => !drawings.includes(node)) },
+    options,
+  );
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const positions = { ...laid.positions };
+
+  for (const drawing of drawings) {
+    const group = byId.get(drawing.parentId);
+    const moved = group && laid.positions[group.id];
+
+    if (moved) {
+      positions[drawing.id] = {
+        x: drawing.position.x + moved.x - group.position.x,
+        y: drawing.position.y + moved.y - group.position.y,
+      };
+    }
+  }
+
+  const sizes = { ...laid.sizes };
+
+  growAroundDrawings(nodes, byId, positions, sizes);
+
+  return { ...laid, positions, sizes };
+}
+
+// How many groups a node is in, through its group and the groups that one
+// is in.
+function groupDepth(node, byId) {
+  const seen = new Set([node.id]);
+  let depth = 0;
+
+  for (
+    let above = byId.get(node.parentId);
+    above && !seen.has(above.id);
+    above = byId.get(above.parentId)
+  ) {
+    seen.add(above.id);
+    depth += 1;
+  }
+
+  return depth;
+}
+
+/**
+ * Grows each group that holds a shape, an icon or a line, to the right and
+ * down, so the drawing is inside it with GROUP_PADDING to spare, as a
+ * layout leaves around a group's members; innermost groups first, so a
+ * group that holds a grown group grows around it too. A drawing keeps its
+ * place in its group, so the group's top left corner never needs to move.
+ * A group's new size is on the grid.
+ *
+ * @param {object[]} nodes the document's
+ * @param {Map<string, object>} byId the document's nodes by id
+ * @param {object} positions the layout's, by node id: positions of the
+ *   drawings in groups included
+ * @param {object} sizes the layout's group sizes, by node id; changed in
+ *   place
+ */
+function growAroundDrawings(nodes, byId, positions, sizes) {
+  const at = (node) => positions[node.id] || node.position;
+  const boxOf = (node) => sizes[node.id] || sizeOf(node);
+  const groups = nodes
+    .filter((node) => node.kind === 'group')
+    .sort((a, b) => groupDepth(b, byId) - groupDepth(a, byId));
+  const grown = new Set();
+
+  for (const group of groups) {
+    const members = nodes.filter(
+      (node) =>
+        node.parentId === group.id &&
+        (DRAWING_KINDS.includes(node.kind) || grown.has(node.id)),
+    );
+
+    if (members.length === 0) {
+      continue;
+    }
+
+    const origin = at(group);
+    const size = boxOf(group);
+    let right = origin.x + size.width;
+    let bottom = origin.y + size.height;
+
+    for (const member of members) {
+      const corner = at(member);
+      const box = boxOf(member);
+
+      right = Math.max(right, corner.x + box.width + GROUP_PADDING);
+      bottom = Math.max(bottom, corner.y + box.height + GROUP_PADDING);
+    }
+
+    if (right > origin.x + size.width || bottom > origin.y + size.height) {
+      sizes[group.id] = {
+        width:
+          right > origin.x + size.width ? snapUp(right - origin.x) : size.width,
+        height:
+          bottom > origin.y + size.height
+            ? snapUp(bottom - origin.y)
+            : size.height,
+      };
+      grown.add(group.id);
+    }
+  }
 }

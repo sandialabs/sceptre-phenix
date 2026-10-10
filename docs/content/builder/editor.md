@@ -143,8 +143,12 @@ automatically. ⌥⇧G groups by network".
 
 ## Canvas
 
-The canvas shows the diagram: devices, switches, notes and groups, and the
-connections between devices and switches.
+The canvas shows the diagram: devices, switches, notes, groups and
+drawings (rectangles, circles, icons and lines; see
+[Shapes, icons and lines](diagrams.md#shapes-icons-and-lines)), and the
+connections between devices and switches. Rectangles, circles and lines
+lie under the devices and switches, also while they are selected, so they
+never hide a device or its connection points.
 
 - **Select** a node or connection: click it. Shift-click adds a node to the
   selection or takes it out. Click an empty spot to clear the selection.
@@ -190,8 +194,9 @@ type says "Not set".
 
 The tooltip stays while the pointer is on the node or on the tooltip, and
 while the node has keyboard focus. <kbd>Esc</kbd> closes it and keeps the
-selection; a second <kbd>Esc</kbd> clears the selection. Notes, groups and
-connections have no tooltip, and PNG and SVG downloads do not show it.
+selection; a second <kbd>Esc</kbd> clears the selection. Notes, groups,
+drawings and connections have no tooltip, and PNG and SVG downloads do not
+show it.
 Screen readers read the same facts as the node's description, with the
 notes the card below the node shows: its first five notes, each in full (a
 note longer than the card's three lines can hold at the node's width is cut
@@ -239,8 +244,10 @@ In a window narrower than about 900 pixels, the columns stack: the toolbar,
 
 ## Add nodes
 
-**Add nodes** lists what you can add: **Device**, **Switch**, **Note** and
-**Group**, then the **Device templates**, such as **Server**,
+**Add nodes** lists what you can add: **Device**, **Switch**, **Note**,
+**Group**, and the drawings **Rectangle**, **Circle**, **Icon** and **Line**
+(see [Shapes, icons and lines](diagrams.md#shapes-icons-and-lines)), then
+the **Device templates**, such as **Server**,
 **Workstation**, **Router**, **Firewall** and **External device**. Select an
 item to add it to the diagram, or drag it onto the canvas. The new node is
 placed in free space and selected. Point at an item to see its description.
@@ -267,8 +274,9 @@ groups or more have templates. See
 The **Outline** lists every node of the diagram as a tree: each group with
 the nodes in it, then the nodes that are in no group. Each row shows what
 the node is: GROUP, SWITCH, DEVICE, INCLUDED (a device from an included
-topology) or NOTE. Selecting a row selects the node on the canvas, and the
-canvas shows it.
+topology), NOTE, or for a drawing SHAPE (a rectangle or a circle), ICON or
+LINE. Selecting a row selects the node on the canvas, and the canvas shows
+it.
 
 Keys in the Outline:
 
@@ -431,6 +439,13 @@ the Builder instead, which may differ from what this server accepts." See
 - A connection has **Label** (by default, the network's name), **Color** and
   **Line style**. Its Inspector names it, for example "Connection from
   ntp-01 (eth0) to CORP".
+- A rectangle or a circle has **Shape**, **Label**, **Fill Color**,
+  **Outline Color**, **Border pattern**, **Width** and **Height**; an icon
+  has **Icon**, **Custom icon**, **Label**, **Width** and **Height**; and a
+  line has **Label**, **Color**, **Line style**, **Arrowhead at the start**,
+  **Arrowhead at the end** and **Points**, each point's **X** and **Y** on
+  the canvas (see
+  [Shapes, icons and lines](diagrams.md#shapes-icons-and-lines)).
 
 These fields wait for **Apply**, the colors and icons of switches and groups
 too. Only a device's icons and colors take effect at once.
@@ -584,7 +599,7 @@ The default shortcuts:
 | Move to the nearest node that way | Canvas | <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> | <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> |
 | Move through the focused node’s connections | Canvas | <kbd>⇟</kbd> or <kbd>⇞</kbd> | <kbd>PgDn</kbd> or <kbd>PgUp</kbd> |
 | Move the selected nodes 10 pixels | Canvas | <kbd>⇧</kbd> with an arrow key | <kbd>Shift</kbd> with an arrow key |
-| Resize the selected group 10 pixels | Canvas | <kbd>⌥</kbd>+<kbd>⇧</kbd> with an arrow key | <kbd>Alt</kbd>+<kbd>Shift</kbd> with an arrow key |
+| Resize the selected group, note, shape or icon 10 pixels | Canvas | <kbd>⌥</kbd>+<kbd>⇧</kbd> with an arrow key | <kbd>Alt</kbd>+<kbd>Shift</kbd> with an arrow key |
 | Move between outline rows | Outline rows | <kbd>↑</kbd> <kbd>↓</kbd> <kbd>↖</kbd> <kbd>↘</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Home</kbd> <kbd>End</kbd> |
 | Group selection | Editor, not in text fields | <kbd>⌘</kbd>+<kbd>G</kbd> | <kbd>Ctrl</kbd>+<kbd>G</kbd> |
 | Ungroup | Editor, not in text fields | <kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>G</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> |
@@ -629,8 +644,9 @@ on its nodes and on its connections, not on the zoom buttons:
 - <kbd>Shift</kbd> with an arrow key moves the selected nodes 10 pixels.
   For an exact position, use **Position** in the Inspector.
 - <kbd>Alt</kbd>+<kbd>Shift</kbd> (<kbd>⌥</kbd>+<kbd>⇧</kbd>) with an arrow
-  key resizes the selected group 10 pixels: <kbd>→</kbd> and <kbd>↓</kbd>
-  grow it, <kbd>←</kbd> and <kbd>↑</kbd> shrink it.
+  key resizes the selected group, note, shape or icon 10 pixels:
+  <kbd>→</kbd> and <kbd>↓</kbd> grow it, <kbd>←</kbd> and <kbd>↑</kbd>
+  shrink it. With the mouse, drag the handles on its corners and sides.
 - <kbd>Delete</kbd> or <kbd>Backspace</kbd> (<kbd>⌫</kbd> or <kbd>⌦</kbd>)
   deletes the focused item, or the whole selection when the focused item is
   part of it.

@@ -30,17 +30,27 @@ export const GRID = DEFAULT_GRID_SIZE;
 
 // Room between a group's border and its members: groupNodes' 40, on the
 // grid.
-const GROUP_PADDING = 48;
+export const GROUP_PADDING = 48;
 
 // Where the diagram's top-left corner goes.
 const ORIGIN = { x: 32, y: 32 };
 
 // Nodes that join no network (notes, unconnected devices, groups with no
-// connection out of them) go in rows below the rest.
+// connection out of them) go in rows below the rest. Shapes, icons and
+// lines are left where they are drawn (see runLayout in index.js); given
+// one, a layout puts it with the notes.
 const LOOSE_GAP = 32;
 const LOOSE_BELOW = 64;
 const LOOSE_MIN_WIDTH = 960;
-const LOOSE_ORDER = ['device', 'group', 'switch', 'note'];
+const LOOSE_ORDER = [
+  'device',
+  'group',
+  'switch',
+  'note',
+  'shape',
+  'icon',
+  'line',
+];
 
 // The most packings packRanks tries for the aspect ratio.
 const PACKING_STEPS = 400;
@@ -89,7 +99,12 @@ export function snap(value, grid = GRID) {
   return Math.round(value / grid) * grid;
 }
 
-function snapUp(value, grid = GRID) {
+/**
+ * @param {number} value
+ * @param {number} [grid]
+ * @returns {number} the least value on the grid that is not less
+ */
+export function snapUp(value, grid = GRID) {
   return Math.ceil(value / grid) * grid;
 }
 

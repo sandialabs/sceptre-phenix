@@ -86,7 +86,10 @@
     </p>
 
     <!-- The nodes and connections are handed to Vue Flow as they change
-         (see syncNodes), not bound here. -->
+         (see syncNodes), not bound here. A selected node is lifted over the
+         rest by its zIndex (see nodeZIndex in adapters/vueflow.js), not by
+         Vue Flow, which would lift a selected shape or line over the
+         devices it is drawn around. -->
     <VueFlow
       class="builder-canvas__flow"
       :node-types="nodeTypes"
@@ -107,6 +110,7 @@
       :disable-keyboard-a11y="true"
       :nodes-focusable="false"
       :edges-focusable="false"
+      :elevate-nodes-on-select="false"
       @connect="onConnect"
       @connect-start="onConnectStart"
       @connect-end="onConnectEnd"
@@ -226,11 +230,15 @@
   import SwitchNode from './nodes/SwitchNode.vue';
   import NoteNode from './nodes/NoteNode.vue';
   import GroupNode from './nodes/GroupNode.vue';
+  import ShapeNode from './nodes/ShapeNode.vue';
+  import IconNode from './nodes/IconNode.vue';
+  import LineNode from './nodes/LineNode.vue';
   import NetworkEdge from './edges/NetworkEdge.vue';
   import BuilderFixedTooltip from './BuilderFixedTooltip.vue';
   import BuilderIcon from './BuilderIcon.vue';
   import BuilderNodeTooltip from './BuilderNodeTooltip.vue';
   import { useFixedTooltip } from './fixedTooltip.js';
+  import { CANVAS_EDITING } from './nodes/canvasEditing.js';
   import { NODE_TIP } from './nodes/nodeTooltip.js';
 
   import { canvasHints, focusLost, shortcutLabel } from '@/builder/commands.js';
@@ -240,7 +248,7 @@
     canConnect,
     findEdge,
     findNode,
-    groupMinimumSize,
+    keyResizedSize,
     nodeLabel,
     sizeOf,
   } from '@/builder/model.js';
@@ -627,6 +635,9 @@
     builderSwitch: markRaw(SwitchNode),
     builderNote: markRaw(NoteNode),
     builderGroup: markRaw(GroupNode),
+    builderShape: markRaw(ShapeNode),
+    builderIcon: markRaw(IconNode),
+    builderLine: markRaw(LineNode),
   });
 
   const edgeTypes = markRaw({ builderNetwork: markRaw(NetworkEdge) });
@@ -636,6 +647,14 @@
   const labelLayer = shallowRef(null);
 
   provide('builderEdgeLabels', labelLayer);
+
+  // What the nodes edited with the pointer need (see nodes/canvasEditing.js):
+  // the store, Vue Flow's node of an id and the zoom.
+  provide(CANVAS_EDITING, {
+    store,
+    flowNode: (id) => findFlowNode(id),
+    zoom: () => viewport.value.zoom,
+  });
 
   onMounted(() => {
     labelLayer.value =
@@ -797,15 +816,22 @@
   // The minimap is drawn outside the theme's custom properties, so its colors
   // follow the resolved theme here: --bx-net-0 and --bx-warning, which keep
   // 3:1 against the minimap in both themes. Switches are also rounded (see
-  // builder.css), so the two kinds differ by shape as well.
+  // builder.css), so the two kinds differ by shape as well. Shapes, icons
+  // and lines are drawings, in the theme's muted text color, so they do not
+  // read as devices.
   const MINIMAP_COLORS = {
-    light: { device: '#1f5fa9', switch: '#8a5300' },
-    dark: { device: '#7fb2f0', switch: '#e5b567' },
+    light: { device: '#1f5fa9', switch: '#8a5300', drawing: '#5b6575' },
+    dark: { device: '#7fb2f0', switch: '#e5b567', drawing: '#a3adbb' },
   };
+  const DRAWING_TYPES = ['builderShape', 'builderIcon', 'builderLine'];
 
   function minimapColor(node) {
     const colors =
       MINIMAP_COLORS[store.resolvedTheme === 'dark' ? 'dark' : 'light'];
+
+    if (DRAWING_TYPES.includes(node?.type)) {
+      return colors.drawing;
+    }
 
     return node?.type === 'builderSwitch' ? colors.switch : colors.device;
   }
@@ -1396,7 +1422,8 @@
     }
 
     // Alt (Option) and Shift with an arrow key resize the selected group,
-    // from the same places Shift and an arrow key move it.
+    // note, shape or icon, from the same places Shift and an arrow key move
+    // it.
     if (
       arrow &&
       event.altKey &&
@@ -1435,9 +1462,10 @@
     }
   }
 
-  // Resizes the one selected group from its bottom right corner: Right and
-  // Down grow it, Left and Up shrink it, never past what its members need
-  // (groupMinimumSize). The store says the new size.
+  // Resizes the one selected group, note, shape or icon from its bottom
+  // right corner: Right and Down grow it, Left and Up shrink it, never past
+  // its least size or what a group's members need (keyResizedSize). The
+  // store says the new size.
   const RESIZE_STEP = 10;
 
   function resizeFromKeyboard(key) {
@@ -1446,30 +1474,20 @@
       nodes.length === 1 && edges.length === 0
         ? findNode(store.doc, nodes[0])
         : null;
+    const next = group && keyResizedSize(store.doc, group.id, key, RESIZE_STEP);
 
-    if (group?.kind !== 'group') {
-      store.announce('Select one group to resize it.');
+    if (!next) {
+      store.announce('Select one group, note, shape or icon to resize it.');
       return;
     }
 
-    const [dx, dy] = {
-      ArrowRight: [RESIZE_STEP, 0],
-      ArrowLeft: [-RESIZE_STEP, 0],
-      ArrowDown: [0, RESIZE_STEP],
-      ArrowUp: [0, -RESIZE_STEP],
-    }[key] || [0, 0];
     const size = sizeOf(group);
-    const least = groupMinimumSize(store.doc, group.id);
-    const resized = (now, delta, min) =>
-      delta < 0 ? Math.min(now, Math.max(min, now + delta)) : now + delta;
-    const next = {
-      width: resized(size.width, dx, least.width),
-      height: resized(size.height, dy, least.height),
-    };
 
     if (next.width === size.width && next.height === size.height) {
       store.announce(
-        `${nodeLabel(group)} cannot be smaller: its members need the room.`,
+        group.kind === 'group'
+          ? `${nodeLabel(group)} cannot be smaller: its members need the room.`
+          : `${nodeLabel(group)} cannot be smaller.`,
       );
       return;
     }

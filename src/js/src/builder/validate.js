@@ -34,8 +34,12 @@ import {
   LINE_STYLES,
   MAX_DIAGRAM_NOTE_BYTES,
   MAX_DIAGRAM_NOTES,
+  MAX_LINE_POINTS,
+  MIN_LINE_POINTS,
+  NODE_KINDS,
   SCHEMA_REVISION,
   SCHEMA_URI,
+  SHAPE_FIGURES,
   deviceHandles,
   edgeEndpoints,
   metadataOf,
@@ -861,7 +865,8 @@ function validateNetworks(doc, issues, networksById) {
   });
 }
 
-const PAYLOAD_KEYS = ['device', 'switch', 'note', 'group'];
+// A node holds its payload under the name of its kind.
+const PAYLOAD_KEYS = NODE_KINDS;
 
 function validateNodePayload(node, path, issues) {
   if (!PAYLOAD_KEYS.includes(node.kind)) {
@@ -1074,18 +1079,105 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
     }
 
     if (node.kind === 'group' && node.group) {
-      const style = node.group.borderStyle;
-
-      if (!unset(style) && !BORDER_STYLES.includes(style)) {
-        issue(
-          issues,
-          `${path}.group.borderStyle`,
-          `unknown border style ${quoted(style)} (expected one of ${BORDER_STYLES.join(', ')})`,
-        );
-      }
-
+      validateBorderStyle(
+        node.group.borderStyle,
+        `${path}.group.borderStyle`,
+        issues,
+      );
       validateIconKey(node.group.iconKey, `${path}.group.iconKey`, issues);
       validateIconRef(doc, node.group.icon, `${path}.group.icon`, issues);
+    }
+
+    if (node.kind === 'shape' && isObject(node.shape)) {
+      validateShape(node.shape, `${path}.shape`, issues);
+    }
+
+    if (node.kind === 'icon' && isObject(node.icon)) {
+      validateIconNode(doc, node.icon, `${path}.icon`, issues);
+    }
+
+    if (node.kind === 'line' && isObject(node.line)) {
+      validateLine(node.line, `${path}.line`, issues);
+    }
+  });
+}
+
+// The border style of a group or a shape (validateBorderStyle in
+// validate.go): none, or one of BORDER_STYLES.
+function validateBorderStyle(style, path, issues) {
+  if (!unset(style) && !BORDER_STYLES.includes(style)) {
+    issue(
+      issues,
+      path,
+      `unknown border style ${quoted(style)} (expected one of ${BORDER_STYLES.join(', ')})`,
+    );
+  }
+}
+
+// The payload of a shape (validateShape in validate.go): its figure, its
+// colors and its border style.
+function validateShape(shape, path, issues) {
+  if (!SHAPE_FIGURES.includes(shape.shape)) {
+    issue(
+      issues,
+      `${path}.shape`,
+      `unknown shape ${quoted(shape.shape ?? '')} (expected one of ${SHAPE_FIGURES.join(', ')})`,
+    );
+  }
+
+  validateColors(shape, path, issues);
+  validateBorderStyle(shape.borderStyle, `${path}.borderStyle`, issues);
+}
+
+// The payload of an icon node (validateIconNode in validate.go): exactly
+// one of a built-in icon key and a custom icon the document carries.
+function validateIconNode(doc, icon, path, issues) {
+  if (unset(icon.iconKey) === unset(icon.icon)) {
+    issue(
+      issues,
+      path,
+      'an icon node must name exactly one of a built-in icon and a custom icon',
+    );
+  }
+
+  validateIconKey(icon.iconKey, `${path}.iconKey`, issues);
+  validateIconRef(doc, icon.icon, `${path}.icon`, issues);
+}
+
+// The payload of a line (validateLine in validate.go): from MIN_LINE_POINTS
+// to MAX_LINE_POINTS points, each a finite coordinate, its color, its line
+// style, and arrowheads that are true or false.
+function validateLine(line, path, issues) {
+  const points = line.points;
+
+  if (!Array.isArray(points) || points.length < MIN_LINE_POINTS) {
+    issue(
+      issues,
+      `${path}.points`,
+      `a line must have at least ${MIN_LINE_POINTS} points`,
+    );
+  } else if (points.length > MAX_LINE_POINTS) {
+    issue(
+      issues,
+      `${path}.points`,
+      `a line must have at most ${MAX_LINE_POINTS} points`,
+    );
+  } else if (!points.every((point) => finite(point?.x) && finite(point?.y))) {
+    issue(issues, `${path}.points`, 'line points must be finite numbers');
+  }
+
+  const problem = colorProblem(line.color);
+
+  if (problem) {
+    issue(issues, `${path}.color`, problem);
+  }
+
+  validateLineStyle(line.lineStyle, `${path}.lineStyle`, issues);
+
+  // The server decodes nothing else into them.
+  ['startArrow', 'endArrow'].forEach((key) => {
+    if (line[key] != null && typeof line[key] !== 'boolean') {
+      issue(issues, `${path}.${key}`, `${key} must be true or false`);
     }
   });
 }

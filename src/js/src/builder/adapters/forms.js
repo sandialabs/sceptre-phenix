@@ -57,12 +57,14 @@ import {
   findNetwork,
   findNode,
   includedFrom,
+  kindLabel,
   LOOK_KEYS,
   lookOf,
   networkOfSwitch,
   networkRefusal,
   nextInterfaceName,
   setDocumentInfo,
+  sizeOf,
   updateEdge,
   updateNetwork,
   updateNode,
@@ -230,6 +232,10 @@ export function relevantErrors(errors) {
 // The border a group is drawn with when it names none (see builder.css).
 const GROUP_BORDER = 'dashed';
 
+// How far past a line's end the Inspector puts a new point, on a diagram
+// without a grid size.
+const NEW_POINT_STEP = 16;
+
 // What phenix itself puts in a node spec's unset fields as it runs an
 // experiment (setDefaults in src/go/types/version/v1/node.go, and
 // Drive.InjectPartition), keyed like SPEC_BOUNDS in schema.js. A device
@@ -268,8 +274,9 @@ function specEntry(table, path) {
  * all the same, which is not written into the document until the field is
  * changed. A connection's label is its network's name, which the canvas
  * draws for it; a line style is the pattern the canvas picks (a network's
- * by its place in the diagram, a connection's its network's); a group's
- * border is dashed and its icon the group icon; a device's spec field is
+ * by its place in the diagram, a connection's its network's, a line's
+ * solid); a group's border is dashed and its icon the group icon, and a
+ * shape's border solid; a device's spec field is
  * the value phenix gives it (see PHENIX_DEFAULTS), else its schema's
  * `default`.
  *
@@ -300,6 +307,17 @@ export function fieldDefault(target, path, schema) {
 
   if (target?.kind === 'group' && path === 'borderStyle') {
     return { value: GROUP_BORDER, note: 'The default border' };
+  }
+
+  // A shape's border and a line are solid while they name no pattern.
+  if (
+    (target?.kind === 'shape' && path === 'borderStyle') ||
+    (target?.kind === 'line' && path === 'lineStyle')
+  ) {
+    return {
+      value: 'solid',
+      note: path === 'borderStyle' ? 'The default border' : 'The default line',
+    };
   }
 
   if (target?.kind === 'group' && path === 'iconKey') {
@@ -501,7 +519,8 @@ export function inspectorLock(doc, selection) {
 /**
  * The item the Inspector's Add button appends to a list, for a list whose new
  * items need more than their schema's defaults, or undefined for the schema's
- * default item. A device's new interface is named the way a connection drawn
+ * default item. A line's new point goes a grid step past its end. A device's
+ * new interface is named the way a connection drawn
  * on the canvas names one (see nextInterfaceName), counting the interfaces of
  * the working copy as well as the device's, and is an Ethernet interface that
  * comes up with no address (proto manual) until it is given one.
@@ -514,6 +533,15 @@ export function inspectorLock(doc, selection) {
  */
 export function newListItem(doc, selection, path, data) {
   const target = inspectorTarget(doc, selection);
+
+  // A line's new point is its new end, a grid step on from the last one.
+  if (target?.kind === 'line' && path === 'points') {
+    const points = data?.points ?? target.data.points;
+    const last = points[points.length - 1] || target.target.position;
+    const step = doc.grid?.size || NEW_POINT_STEP;
+
+    return { x: Number(last.x) + step, y: Number(last.y) };
+  }
 
   if (target?.kind !== 'device' || path !== 'spec.network.interfaces') {
     return undefined;
@@ -529,6 +557,43 @@ export function newListItem(doc, selection, path, data) {
   return spec?.external === true
     ? { name, proto: 'manual' }
     : { name, type: 'ethernet', proto: 'manual' };
+}
+
+/**
+ * The item the Inspector's "Insert … after" button of a list puts after
+ * item `index`, for a list that takes an item between two others, or
+ * undefined for a list that does not: a line's new point is a bend halfway
+ * along the segment from point `index` to the next one, as a bend added on
+ * the canvas without a place is (see insertLinePoint). The last point has
+ * no segment after it. The list's own most items (the schema's maxItems)
+ * make the button unavailable, as they do Add.
+ *
+ * @param {object} doc
+ * @param {{type: string, id?: string}} selection
+ * @param {string} path the list's JSON Forms data path
+ * @param {number} index the item the new one follows
+ * @param {object} [data] the working copy
+ * @returns {{x: number, y: number}|undefined}
+ */
+export function insertedListItem(doc, selection, path, index, data) {
+  const target = inspectorTarget(doc, selection);
+
+  if (target?.kind !== 'line' || path !== 'points') {
+    return undefined;
+  }
+
+  const points = data?.points ?? target.data.points;
+  const from = points?.[index];
+  const to = points?.[index + 1];
+
+  if (!from || !to) {
+    return undefined;
+  }
+
+  return {
+    x: (Number(from.x) + Number(to.x)) / 2,
+    y: (Number(from.y) + Number(to.y)) / 2,
+  };
 }
 
 function clone(value) {
@@ -699,6 +764,58 @@ export function inspectorTarget(doc, selection) {
           icon: node.group?.icon || '',
         },
       };
+    case 'shape': {
+      const size = sizeOf(node);
+
+      return {
+        kind: 'shape',
+        title: kindLabel(node),
+        target: node,
+        data: {
+          shape: node.shape?.shape || 'rectangle',
+          label: node.shape?.label || '',
+          fillColor: node.shape?.fillColor || '',
+          outlineColor: node.shape?.outlineColor || '',
+          borderStyle: node.shape?.borderStyle || '',
+          width: size.width,
+          height: size.height,
+        },
+      };
+    }
+    case 'icon': {
+      const size = sizeOf(node);
+
+      return {
+        kind: 'icon',
+        title: 'Icon',
+        target: node,
+        data: {
+          iconKey: node.icon?.iconKey || '',
+          icon: node.icon?.icon || '',
+          label: node.icon?.label || '',
+          width: size.width,
+          height: size.height,
+        },
+      };
+    }
+    case 'line':
+      // Its points where they are on the canvas, not relative to the line.
+      return {
+        kind: 'line',
+        title: 'Line',
+        target: node,
+        data: {
+          label: node.line?.label || '',
+          color: node.line?.color || '',
+          lineStyle: node.line?.lineStyle || '',
+          startArrow: node.line?.startArrow === true,
+          endArrow: node.line?.endArrow === true,
+          points: (node.line?.points || []).map((point) => ({
+            x: node.position.x + point.x,
+            y: node.position.y + point.y,
+          })),
+        },
+      };
     default:
       return null;
   }
@@ -729,6 +846,10 @@ export function inspectorName(doc, selection) {
       return named('group', target.data.title);
     case 'note':
       return 'note';
+    case 'shape':
+    case 'icon':
+    case 'line':
+      return named(target.title.toLowerCase(), target.data.label);
     default:
       return 'element';
   }
@@ -1032,9 +1153,65 @@ export function applyFormData(doc, selection, data) {
           icon: data.icon ?? '',
         },
       });
+    case 'shape':
+      return updateNode(doc, target.target.id, {
+        shape: {
+          shape: data.shape,
+          label: data.label ?? '',
+          fillColor: data.fillColor ?? '',
+          outlineColor: data.outlineColor ?? '',
+          borderStyle: data.borderStyle ?? '',
+        },
+        ...formSize(target, data),
+      });
+    case 'icon':
+      // A custom icon is drawn in place of the built-in one, which the node
+      // then no longer names (see drawnIcon in model.js).
+      return updateNode(doc, target.target.id, {
+        icon: {
+          iconKey: data.icon ? '' : data.iconKey || '',
+          icon: data.icon ?? '',
+          label: data.label ?? '',
+        },
+        ...formSize(target, data),
+      });
+    case 'line': {
+      const { position } = target.target;
+
+      // The points back relative to the line, which then moves to their
+      // top left corner (see placedLine in model.js).
+      return updateNode(doc, target.target.id, {
+        line: {
+          label: data.label ?? '',
+          color: data.color ?? '',
+          lineStyle: data.lineStyle ?? '',
+          startArrow: data.startArrow === true,
+          endArrow: data.endArrow === true,
+          points: (data.points || []).map((point) => ({
+            x: Number(point?.x) - position.x,
+            y: Number(point?.y) - position.y,
+          })),
+        },
+      });
+    }
     default:
       return doc;
   }
+}
+
+// The size a form for a shape or an icon sets, when its Width and Height
+// hold one; an emptied field keeps the node's.
+function formSize(target, data) {
+  const size = sizeOf(target.target);
+  const width = Number.isFinite(data.width) && data.width > 0;
+  const height = Number.isFinite(data.height) && data.height > 0;
+
+  return {
+    size: {
+      width: width ? data.width : size.width,
+      height: height ? data.height : size.height,
+    },
+  };
 }
 
 // The name an issue message uses for a document element: "device web-01"
@@ -1093,6 +1270,14 @@ function elementName(doc, collection, index) {
       return node.group?.title ? `group ${node.group.title}` : 'a group';
     case 'note':
       return 'a note';
+    case 'shape':
+    case 'icon':
+    case 'line': {
+      const kind = kindLabel(node).toLowerCase();
+      const label = node[node.kind]?.label;
+
+      return label ? `${kind} ${label}` : `a ${kind}`;
+    }
     default:
       return `node #${index + 1}`;
   }

@@ -12,8 +12,9 @@ Experiment configs and adds a topology to its scenarios, and only the
 ## What you can do with Builder
 
 - Draw a topology: devices, switches (one per network), the connections
-  between them, notes and groups. Lay it out with one of four automatic
-  layouts. See [Building a Diagram](diagrams.md).
+  between them, notes, groups, and drawings (rectangles, circles, icons and
+  lines). Lay it out with one of four automatic layouts. See
+  [Building a Diagram](diagrams.md).
 - Start from a Topology or Experiment config, stored in phenix or in a
   config file, with **Import**, or from a file you have, such as a Builder
   document, with **Upload**. **Download** saves a diagram as a file. See

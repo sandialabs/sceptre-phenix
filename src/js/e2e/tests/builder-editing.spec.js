@@ -1,7 +1,8 @@
 // Builder canvas and editing commands: palette adds (click and drag),
 // node and connection gestures, delete, clipboard, keyboard selection and
-// nudging, groups, the layout menu and Auto-group, the header's counts, and
-// inspector edits of notes and groups.
+// nudging, groups, the layout menu and Auto-group, the header's counts,
+// inspector edits of notes and groups, and the drawings: shapes, icons and
+// lines.
 //
 // Every test starts from its own blank draft; the `tracker` fixture deletes it
 // afterwards. Persisted state is read back through the drafts API so a test
@@ -9,6 +10,8 @@
 // check several variants on one draft run each variant as a test.step; a
 // check that no later step depends on is soft, so one failure does not hide
 // the steps after it.
+
+const fs = require('fs');
 
 const {
   test,
@@ -113,8 +116,37 @@ function newInterface(page, deviceId) {
   );
 }
 
+// A resize handle of a selected node, such as 'bottom.right'. The handles
+// are drawn over every node, outside the node (see NodeResize.vue).
+function resizeHandle(page, nodeId, corner) {
+  return page.locator(
+    `.builder-resizer[data-node-id="${nodeId}"] .vue-flow__resize-control.handle.${corner}`,
+  );
+}
+
+// The canvas node at a point of the page, as the pointer finds it: the id
+// of the topmost node there, or of the node whose resize handles are there.
+function nodeAtPoint(page, point) {
+  return page.evaluate(({ x, y }) => {
+    const element = document.elementFromPoint(x, y);
+    const node = element?.closest('.vue-flow__node, .builder-resizer');
+
+    return node?.dataset.id || node?.dataset.nodeId || '';
+  }, point);
+}
+
 function center(box) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+// The canvas's zoom, from the transform Vue Flow gives its pane: a drag of
+// n canvas pixels moves the pointer n times this many screen pixels.
+function canvasZoom(page) {
+  return page
+    .locator('.vue-flow__transformationpane')
+    .evaluate(
+      (pane) => new DOMMatrixReadOnly(getComputedStyle(pane).transform).a,
+    );
 }
 
 // Presses and releases the mouse between two points in small steps, the way
@@ -2505,4 +2537,334 @@ test.describe('Builder canvas editing', () => {
       expectNoFatal(issues);
     },
   );
+
+  test('draws rectangles, circles, icons and lines, resizes and bends them, and keeps them out of the topology', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    const draft = await blankDraft(builder);
+    const named = (name) =>
+      page.locator(`.vue-flow__node[aria-label="${name}"]`);
+    const nodeOf = (doc, id) => doc.nodes.find((node) => node.id === id);
+    const stroke = (id) => flowNode(page, id).locator('.builder-line__stroke');
+    let rectangle;
+    let line;
+
+    await test.step('Add nodes adds a rectangle, a circle, an icon and a line beside a device', async () => {
+      await builder.palette('device').click();
+
+      for (const item of ['rectangle', 'circle', 'icon', 'line']) {
+        await builder.palette(item).click();
+        await expect.soft(builder).toHaveAnnounced(`Added ${item}`);
+      }
+
+      await expect(builder.nodes('shape')).toHaveCount(2);
+      await expect(builder.nodes('icon')).toHaveCount(1);
+      await expect(builder.nodes('line')).toHaveCount(1);
+      // A drawing is none of the kinds the header counts.
+      await builder.expectCounts({ devices: 1 });
+
+      for (const name of ['Rectangle', 'Circle', 'Icon', 'Line']) {
+        await expect.soft(named(name), `canvas ${name}`).toHaveCount(1);
+        await expect.soft(outlineRow(builder, name)).toBeVisible();
+      }
+
+      await builder.persisted(
+        draft,
+        (doc) => doc.nodes.map((node) => node.kind).sort(),
+        ['device', 'icon', 'line', 'shape', 'shape'],
+      );
+      rectangle = await named('Rectangle').getAttribute('data-id');
+      line = await named('Line').getAttribute('data-id');
+    });
+
+    await test.step('a rectangle resizes from the handle on its corner, as one edit, and with Alt+Shift and an arrow key', async () => {
+      await flowNode(page, rectangle).click();
+      await expect(flowNode(page, rectangle)).toHaveClass(/\bselected\b/);
+
+      const handle = resizeHandle(page, rectangle, 'bottom.right');
+      await expect(handle).toBeVisible();
+
+      const zoom = await canvasZoom(page);
+      const start = center(await handle.boundingBox());
+      await drag(page, start, {
+        x: start.x + 4 * GRID * zoom,
+        y: start.y + 2 * GRID * zoom,
+      });
+
+      const size = { width: 160 + 4 * GRID, height: 96 + 2 * GRID };
+      await builder.persisted(
+        draft,
+        (doc) => nodeOf(doc, rectangle).size,
+        size,
+      );
+      await expect
+        .soft(builder)
+        .toHaveAnnounced(
+          `Resized Rectangle to ${size.width} by ${size.height}`,
+        );
+
+      // The keyboard's resize, from the bottom right corner too, and back.
+      await focusNode(page, rectangle);
+      await page.keyboard.press('Alt+Shift+ArrowRight');
+      await builder.persisted(draft, (doc) => nodeOf(doc, rectangle).size, {
+        width: size.width + 10,
+        height: size.height,
+      });
+      await expect
+        .soft(builder)
+        .toHaveAnnounced(
+          `Resized Rectangle to ${size.width + 10} by ${size.height}`,
+        );
+      await page.keyboard.press('Alt+Shift+ArrowLeft');
+      await builder.persisted(
+        draft,
+        (doc) => nodeOf(doc, rectangle).size,
+        size,
+      );
+    });
+
+    await test.step('a line end drags, and a double-click on the line adds a bend', async () => {
+      // A new line runs across the middle of its box: a click there is on
+      // its stroke, and selects it.
+      const box = await flowNode(page, line).boundingBox();
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await expect(flowNode(page, line)).toHaveClass(/\bselected\b/);
+      await expect(page.getByTestId('line-point-0')).toBeVisible();
+
+      const end = page.getByTestId('line-point-1');
+      await expect(end).toBeVisible();
+
+      const zoom = await canvasZoom(page);
+      const from = center(await end.boundingBox());
+      await drag(page, from, { x: from.x, y: from.y + 4 * GRID * zoom });
+
+      await builder.persisted(draft, (doc) => nodeOf(doc, line).line.points, [
+        { x: 0, y: 0 },
+        { x: 160, y: 4 * GRID },
+      ]);
+      await expect.soft(builder).toHaveAnnounced('Moved the end of Line');
+
+      // The middle of the line, which now runs down its box's diagonal.
+      const drawn = await flowNode(page, line).boundingBox();
+      await page.mouse.dblclick(
+        drawn.x + drawn.width / 2,
+        drawn.y + drawn.height / 2,
+      );
+
+      await builder.persisted(draft, (doc) => nodeOf(doc, line).line.points, [
+        { x: 0, y: 0 },
+        { x: 80, y: 2 * GRID },
+        { x: 160, y: 4 * GRID },
+      ]);
+      await expect.soft(builder).toHaveAnnounced('Added a bend to Line');
+    });
+
+    await test.step('a clicked point moves with the arrow keys and goes with Delete, and the Inspector inserts a bend', async () => {
+      const points = (doc) => nodeOf(doc, line).line.points;
+      const bend = page.getByTestId('line-point-1');
+
+      await expect(page.getByTestId('line-point-2')).toBeVisible();
+      await bend.click();
+      await expect(bend).toBeFocused();
+      await page.keyboard.press('ArrowUp');
+      await builder.persisted(draft, points, [
+        { x: 0, y: 0 },
+        { x: 80, y: GRID },
+        { x: 160, y: 4 * GRID },
+      ]);
+      await expect
+        .soft(builder)
+        .toHaveAnnounced(/^Moved bend 1 of Line to x \d+, y \d+$/);
+
+      await page.keyboard.press('Delete');
+      await builder.persisted(draft, points, [
+        { x: 0, y: 0 },
+        { x: 160, y: 4 * GRID },
+      ]);
+      await expect.soft(builder).toHaveAnnounced('Removed bend 1 of Line');
+
+      // Focus is on the end now, and a line keeps two points.
+      await expect(page.getByTestId('line-point-1')).toBeFocused();
+      await page.keyboard.press('Backspace');
+      await expect
+        .soft(builder)
+        .toHaveAnnounced('Line keeps at least two points.');
+      await page.keyboard.press('Escape');
+      await expect(flowNode(page, line)).toBeFocused();
+
+      // Without a mouse: the Inspector's Points list puts a bend halfway
+      // along a segment.
+      const insert = builder.inspector.getByRole('button', {
+        name: 'Insert point after point 1',
+      });
+      await insert.click();
+      await expect.soft(builder).toHaveAnnounced('Added point 2.');
+      await builder.apply();
+      await builder.persisted(draft, points, [
+        { x: 0, y: 0 },
+        { x: 80, y: 2 * GRID },
+        { x: 160, y: 4 * GRID },
+      ]);
+    });
+
+    await test.step('the Inspector draws an arrowhead at the end', async () => {
+      await builder.selectInOutline('Line');
+      await builder.inspector
+        .getByRole('checkbox', { name: 'Arrowhead at the end' })
+        .check();
+      await builder.apply();
+
+      await builder.persisted(
+        draft,
+        (doc) => nodeOf(doc, line).line.endArrow,
+        true,
+      );
+      await expect(stroke(line)).toHaveAttribute(
+        'marker-end',
+        `url(#builder-line-arrow-${line})`,
+      );
+      await expect
+        .soft(flowNode(page, line))
+        .toHaveAccessibleName('Line, arrowhead at its end');
+    });
+
+    await test.step('the draft opened again shows them as they were saved', async () => {
+      await builder.waitSaved();
+      // The page loaded again, and the draft opened from the drafts page:
+      // what the server stored.
+      await builder.openDraft(draft);
+
+      await expect(builder.nodes('shape')).toHaveCount(2);
+      await expect(builder.nodes('icon')).toHaveCount(1);
+      await expect(builder.nodes('line')).toHaveCount(1);
+      await expect
+        .soft(flowNode(page, rectangle))
+        .toHaveCSS('width', `${160 + 4 * GRID}px`);
+      await expect
+        .soft(stroke(line))
+        .toHaveAttribute('points', `0,0 80,${2 * GRID} 160,${4 * GRID}`);
+      await expect
+        .soft(flowNode(page, line))
+        .toHaveAccessibleName('Line, arrowhead at its end');
+    });
+
+    await test.step('the JSON download has them, and the Topology YAML does not', async () => {
+      const dialog = await builder.openDialog('download');
+      const save = async (format) => {
+        const [file] = await Promise.all([
+          page.waitForEvent('download'),
+          dialog.getByTestId(`download-${format}`).click(),
+        ]);
+
+        return fs.readFileSync(await file.path(), 'utf8');
+      };
+
+      const json = JSON.parse(await save('json'));
+      expect(json.nodes.map((node) => node.kind).sort()).toEqual([
+        'device',
+        'icon',
+        'line',
+        'shape',
+        'shape',
+      ]);
+      expect.soft(nodeOf(json, line).line).toEqual({
+        points: [
+          { x: 0, y: 0 },
+          { x: 80, y: 2 * GRID },
+          { x: 160, y: 4 * GRID },
+        ],
+        endArrow: true,
+      });
+      expect.soft(nodeOf(json, rectangle).shape).toEqual({
+        shape: 'rectangle',
+      });
+
+      // The SVG keeps the line's arrowhead: its stroke points at a marker
+      // the file has.
+      const svg = await save('svg');
+      const marker = svg.match(/<marker\b[^>]*\bid="([^"]+)"/);
+      const drawnLine = svg.match(/<polyline\b[^>]*builder-line__stroke[^>]*>/);
+      expect.soft(marker, 'the SVG has the arrowhead marker').toBeTruthy();
+      expect.soft(drawnLine, 'the SVG has the line').toBeTruthy();
+      if (marker && drawnLine) {
+        expect
+          .soft(drawnLine[0], 'the line ends in the marker')
+          .toContain(`marker-end="url(#${marker[1]})"`);
+      }
+
+      const topology = await save('topology-yaml');
+      expect(topology).toContain('hostname: node');
+      for (const text of [
+        'rectangle',
+        'circle',
+        'points',
+        'endArrow',
+        'kind: shape',
+        'kind: line',
+      ]) {
+        expect.soft(topology, text).not.toContain(text);
+      }
+
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(builder.dialog).toHaveCount(0);
+    });
+
+    expectNoFatal(issues);
+  });
+
+  test('a selected rectangle over a device stays under it, and the device still connects', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    const draft = await blankDraft(builder);
+
+    for (const item of ['device', 'switch', 'rectangle']) {
+      await builder.palette(item).click();
+    }
+
+    const deviceId = await onlyNodeId(builder, 'device');
+    const switchId = await onlyNodeId(builder, 'switch');
+    const rectangle = await onlyNodeId(builder, 'shape');
+    const plus = newInterface(page, deviceId);
+
+    await test.step('the rectangle, dragged over the device, lies under it while selected', async () => {
+      // The rectangle's top left corner goes 56 pixels left of and 48 above
+      // the device's new-interface handle, so the rectangle, 160 by 96,
+      // covers the handle. Vue Flow starts the drag at the first move, so
+      // the rectangle lags the pointer by one step: many small steps keep
+      // that short.
+      const handle = center(await plus.boundingBox());
+      const box = await flowNode(page, rectangle).boundingBox();
+      const grab = { x: box.x + 30, y: box.y + 14 };
+      await drag(page, grab, { x: handle.x - 26, y: handle.y - 34 }, 40);
+
+      await expect(flowNode(page, rectangle)).toHaveClass(/\bselected\b/);
+      const moved = await flowNode(page, rectangle).boundingBox();
+      expect(moved.x, 'the rectangle covers the handle').toBeLessThan(handle.x);
+      expect(moved.y, 'the rectangle covers the handle').toBeLessThan(handle.y);
+      expect(moved.x + moved.width).toBeGreaterThan(handle.x);
+      expect(moved.y + moved.height).toBeGreaterThan(handle.y);
+
+      // The device and its handle are over the selected rectangle...
+      expect(await nodeAtPoint(page, handle)).toBe(deviceId);
+      // ... and the rectangle's resize handles over the device.
+      const corner = resizeHandle(page, rectangle, 'top.left');
+      await expect(corner).toBeVisible();
+      expect(await nodeAtPoint(page, center(await corner.boundingBox()))).toBe(
+        rectangle,
+      );
+    });
+
+    await test.step("the device's handle still connects it to the switch", async () => {
+      await dragBetween(page, plus, canvasNode(page, switchId));
+
+      await builder.expectSummary('1 connection');
+      await builder.persisted(draft, (doc) => doc.edges.length, 1);
+    });
+
+    expectNoFatal(issues);
+  });
 });

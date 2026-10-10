@@ -111,7 +111,11 @@ import {
   findNode,
   groupNodes,
   includedReason,
+  insertLinePoint,
+  kindLabel,
+  linePointName,
   metadataOf,
+  moveLinePoint,
   moveNodes,
   namedSwitches,
   networkRefusal,
@@ -120,17 +124,21 @@ import {
   removalRefusal,
   removeElements,
   removeInterface,
+  removeLinePoint,
   removeNetworks,
   removeTemplate,
   renameInterface,
+  resizedBox,
   resizeNode,
   savedStamp,
   setDiagramNotes,
   setGrid,
+  setLinePoints,
   setParent,
   setDocumentInfo,
   setScenarios,
   setViewport,
+  sizeOf,
   ungroup,
   updateEdge,
   updateNetwork,
@@ -3338,8 +3346,13 @@ export const useBuilderStore = defineStore('builder', {
 
     addNode(options) {
       const result = addNode(this.doc, options);
+      // A shape by its figure: "Added circle".
+      const kind =
+        result.node.kind === 'shape'
+          ? kindLabel(result.node).toLowerCase()
+          : options.kind || 'device';
 
-      this.commit(result.doc, `Added ${options.kind || 'device'}`);
+      this.commit(result.doc, `Added ${kind}`);
       this.selection = { nodes: [result.node.id], edges: [] };
 
       return result.node;
@@ -3444,6 +3457,133 @@ export const useBuilderStore = defineStore('builder', {
         resizeNode(this.doc, id, size),
         `Resized ${nodeLabel(node) || 'node'} to ${size.width} by ${size.height}`,
       );
+    },
+
+    /**
+     * Resizes a node to the box a mouse resize left it in, which a drag of
+     * its top or left side also moves (see resizedBox: never smaller than
+     * the node can be, and a group around its members), as one undo step.
+     *
+     * @param {string} id
+     * @param {{x: number, y: number, width: number, height: number}} box
+     *   absolute
+     * @returns {object|null} the history entry, or null when nothing changed
+     */
+    resizeNodeBox(id, box) {
+      const node = findNode(this.doc, id);
+
+      if (!node) {
+        return null;
+      }
+
+      const { position, size } = resizedBox(this.doc, id, box);
+      const current = sizeOf(node);
+
+      if (
+        position.x === node.position.x &&
+        position.y === node.position.y &&
+        size.width === current.width &&
+        size.height === current.height &&
+        node.size
+      ) {
+        return null;
+      }
+
+      return this.commit(
+        updateNode(this.doc, id, { position, size }),
+        `Resized ${nodeLabel(node) || 'node'} to ${size.width} by ${size.height}`,
+      );
+    },
+
+    /**
+     * Sets the points of a line, relative to its position, as one undo step:
+     * the end of a drag of one of its points.
+     *
+     * @param {string} id line node
+     * @param {{x: number, y: number}[]} points
+     * @param {string} [label] what the history and the announcement say
+     * @returns {object|null} the history entry, or null when nothing changed
+     */
+    setLinePoints(id, points, label) {
+      const node = findNode(this.doc, id);
+      const next = setLinePoints(this.doc, id, points);
+
+      if (next === this.doc) {
+        return null;
+      }
+
+      return this.commit(next, label || `Moved a point of ${nodeLabel(node)}`);
+    },
+
+    /**
+     * Moves one point of a line, as the arrow keys on its handle do.
+     *
+     * @param {string} id line node
+     * @param {number} index
+     * @param {{x: number, y: number}} point relative to the line's position
+     * @returns {object|null} the history entry, or null
+     */
+    moveLinePoint(id, index, point) {
+      const node = findNode(this.doc, id);
+      const next = moveLinePoint(this.doc, id, index, point);
+
+      if (next === this.doc) {
+        return null;
+      }
+
+      return this.commit(
+        next,
+        `Moved ${linePointName(node, index)} to x ${Math.round(point.x)}, y ${Math.round(point.y)}`,
+      );
+    },
+
+    /**
+     * Adds a bend to a line in the segment that ends at point `index`.
+     *
+     * @param {string} id line node
+     * @param {number} index
+     * @param {{x: number, y: number}} [point] relative to the line's
+     *   position; the segment's middle without one
+     * @returns {object|null} the history entry, or null when the line takes
+     *   no more points
+     */
+    insertLinePoint(id, index, point) {
+      const node = findNode(this.doc, id);
+      const next = insertLinePoint(this.doc, id, index, point);
+
+      if (next === this.doc) {
+        if (node?.kind === 'line') {
+          this.announce(
+            `${nodeLabel(node)} has the most points a line can have.`,
+          );
+        }
+
+        return null;
+      }
+
+      return this.commit(next, `Added a bend to ${nodeLabel(node)}`);
+    },
+
+    /**
+     * Removes a point of a line, never leaving it fewer than two.
+     *
+     * @param {string} id line node
+     * @param {number} index
+     * @returns {object|null} the history entry, or null when it has two
+     */
+    removeLinePoint(id, index) {
+      const node = findNode(this.doc, id);
+      const next = removeLinePoint(this.doc, id, index);
+
+      if (next === this.doc) {
+        if (node?.kind === 'line') {
+          this.announce(`${nodeLabel(node)} keeps at least two points.`);
+        }
+
+        return null;
+      }
+
+      return this.commit(next, `Removed ${linePointName(node, index)}`);
     },
 
     /**

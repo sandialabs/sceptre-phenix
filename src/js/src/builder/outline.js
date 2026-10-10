@@ -18,6 +18,7 @@ import {
   findNode,
   includedFrom,
   includedReason,
+  kindLabel,
   nodeComment,
   nodeLabel,
 } from './model.js';
@@ -153,8 +154,13 @@ function compareNodes(a, b) {
   return nodeLabel(a).localeCompare(nodeLabel(b), undefined, { numeric: true });
 }
 
+// Groups first, then the nodes that publish, then what is only drawn.
 function kindRank(kind) {
-  return { group: 0, switch: 1, device: 2, note: 3 }[kind] ?? 4;
+  return (
+    { group: 0, switch: 1, device: 2, note: 3, shape: 4, icon: 5, line: 6 }[
+      kind
+    ] ?? 7
+  );
 }
 
 /**
@@ -327,6 +333,12 @@ export function outlineLabel(doc, node, index = scanIndex(doc)) {
     parts.push(count(links.length, 'connection'));
   }
 
+  const arrows = node.kind === 'line' ? arrowheads(node.line) : '';
+
+  if (arrows) {
+    parts.push(arrows);
+  }
+
   const networks = node.kind === 'device' ? networkNames(index, links) : [];
 
   if (networks.length) {
@@ -354,17 +366,31 @@ function networkNames(index, links) {
   );
 }
 
+// Where a line has arrowheads, which only the canvas shows otherwise.
+function arrowheads(line) {
+  if (line?.startArrow && line?.endArrow) {
+    return 'arrowheads at both ends';
+  }
+
+  if (line?.startArrow) {
+    return 'arrowhead at its start';
+  }
+
+  return line?.endArrow ? 'arrowhead at its end' : '';
+}
+
 // Kind and label, without repeating a label that only names the kind ("Group
-// Group"). A note adds the start of its text: its label stays "Note" unless
-// renamed, so the text is what tells notes apart.
+// Group"). A shape's kind is its figure ("Circle DMZ"). A note adds the start
+// of its text: its label stays "Note" unless renamed, so the text is what
+// tells notes apart.
 function nodeName(node) {
-  const kind = capitalize(node.kind);
+  const kind = node.kind === 'shape' ? kindLabel(node) : capitalize(node.kind);
   const label = nodeLabel(node);
   const text = node.kind === 'note' ? noteSummary(node.note?.text) : '';
   // The whole text: a first line longer than the summary starts it too.
   const redundant =
     !label ||
-    label.toLowerCase() === node.kind ||
+    label.toLowerCase() === kind.toLowerCase() ||
     (text && noteSummary(node.note?.text, Infinity).startsWith(label));
   const name = redundant ? kind : `${kind} ${label}`;
 

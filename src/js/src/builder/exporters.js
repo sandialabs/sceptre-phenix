@@ -110,13 +110,81 @@ export function computeExportViewport(bounds, options = {}) {
 /**
  * Editing affordances that an image of the diagram leaves out: connection
  * handles (a device's "+" new-interface handle is one too), a
- * connection's pointer hit area and keyboard focus band, the marks and
- * text of what the diagram checks found, and the hidden text of a node's
- * info tooltip.
+ * connection's or a line's pointer hit area and keyboard focus band, the
+ * handles of a line's points and of a node's resizer, the marks and text
+ * of what the diagram checks found, and the hidden text of a node's info
+ * tooltip.
  */
 const EXPORT_EXCLUDED_SELECTOR =
   '.vue-flow__handle, .builder-edge__hit, .builder-edge__focus, ' +
+  '.builder-line__hit, .builder-line__focus, .builder-line__point, ' +
+  '.builder-resizer, .vue-flow__resize-control, ' +
   '.builder-node__issue, .builder-node__issue-text, .builder-node__info';
+
+/**
+ * SVG attributes that point at another element of the drawing by
+ * url(#id): the arrowheads of a line (see LineNode.vue).
+ */
+const URL_REFERENCES = ['marker-start', 'marker-mid', 'marker-end'];
+
+// How many copies exportCopy has made, which keeps the IDs of each copy
+// apart from those of the canvas and of any other copy.
+let copiesMade = 0;
+
+// The id a url(#id) value points at, or '' for any other value.
+function urlReference(value) {
+  const match = /^url\(\s*['"]?#([^'")]+)['"]?\s*\)$/.exec(
+    String(value ?? '').trim(),
+  );
+
+  return match ? match[1] : '';
+}
+
+/**
+ * Keeps the IDs of a copy of the canvas from repeating the canvas's own
+ * while the copy is in the document. An element of the copy that an SVG
+ * element of the copy points at by url(#id), such as the marker a line's
+ * arrowhead is drawn with, is given an ID of its own, and the references
+ * point at that ID, so the image still draws it; every other ID is removed.
+ *
+ * @param {Element} copy
+ */
+function settleCopyIds(copy) {
+  copiesMade += 1;
+
+  const references = [];
+  const wanted = new Set();
+
+  for (const item of copy.querySelectorAll('svg *')) {
+    for (const name of URL_REFERENCES) {
+      const id = urlReference(item.getAttribute(name));
+
+      if (id) {
+        wanted.add(id);
+        references.push({ item, name, id });
+      }
+    }
+  }
+
+  const renamed = new Map();
+
+  for (const item of copy.querySelectorAll('[id]')) {
+    const id = item.id;
+
+    if (wanted.has(id) && !renamed.has(id)) {
+      renamed.set(id, `${id}-image-${copiesMade}`);
+      item.id = renamed.get(id);
+    } else {
+      item.removeAttribute('id');
+    }
+  }
+
+  for (const { item, name, id } of references) {
+    if (renamed.has(id)) {
+      item.setAttribute(name, `url(#${renamed.get(id)})`);
+    }
+  }
+}
 
 /**
  * Classes that mark a selected node, connection or connection label: the
@@ -202,10 +270,7 @@ export function exportCopy(element) {
     }
   }
 
-  // Unique IDs stay unique while the copy is in the document.
-  for (const item of copy.querySelectorAll('[id]')) {
-    item.removeAttribute('id');
-  }
+  settleCopyIds(copy);
 
   const holder = element.ownerDocument.createElement('div');
 

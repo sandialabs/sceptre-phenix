@@ -214,7 +214,9 @@ describe('the palette’s device templates', () => {
     expect(plus).toContain('aria-describedby="palette-new-template-why"');
     expect(whyOf(html)).toEqual(['hidden', 'This diagram is read only.']);
     expect(menu).toContain('aria-disabled="true"');
-    expect(entries).toHaveLength(10);
+    // Device, Switch, Note, Group, the four drawings, the diagram's
+    // template and the five built-in ones.
+    expect(entries).toHaveLength(14);
     expect(entries.every((tag) => /\sdisabled(\s|>|=)/.test(tag))).toBe(true);
   });
 

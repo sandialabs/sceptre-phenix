@@ -9,7 +9,10 @@
   or stays on the list instead of falling to the page. A locked list (see
   useInspectorLocked) has no buttons: its items cannot change. A new item is
   the one BuilderInspector provides for the list, if any (a new interface's
-  name and kind), else its schema's default.
+  name and kind), else its schema's default. A list that takes an item
+  between two others (a line's points; see useInspectorInsertItem) has an
+  "Insert … after" button on each item but its last ("Insert point after
+  point 2"), which puts the item BuilderInspector provides there.
 
   The list's description is a tooltip on its legend, shown on hover and
   while Add has keyboard focus, and the group's accessible description, as
@@ -58,6 +61,16 @@
             :disabled="!control.enabled || index === count - 1"
             @click="move(index, 1)">
             <builder-icon name="arrow-down" :size="14" />
+          </button>
+          <button
+            v-if="insertable(index)"
+            type="button"
+            class="array-list-item-insert"
+            :aria-label="`Insert ${noun} after ${itemName(index)}`"
+            :title="`Insert ${noun} after ${itemName(index)}`"
+            :disabled="!control.enabled || atMaximum"
+            @click="insert(index)">
+            <builder-icon name="plus" :size="14" />
           </button>
           <button
             type="button"
@@ -109,8 +122,9 @@
 </template>
 
 <script setup>
-  import { computed, nextTick, ref } from 'vue';
+  import { computed, inject, nextTick, ref } from 'vue';
   import {
+    Actions,
     composePaths,
     createDefaultValue,
     findUISchema,
@@ -129,6 +143,7 @@
     isMultilineList,
     labelWholeValue,
     useInspectorAnnounce,
+    useInspectorInsertItem,
     useInspectorLocked,
     useInspectorNewItem,
     useListControl,
@@ -142,7 +157,10 @@
   const announce = useInspectorAnnounce();
   const locked = useInspectorLocked(control);
   const newItem = useInspectorNewItem();
+  const insertItem = useInspectorInsertItem();
   const jsonforms = useJsonForms(true);
+  // JSON Forms' own dispatch, which the list's Add and Remove use as well.
+  const dispatch = inject('dispatch', null);
   const {
     label,
     noun,
@@ -279,6 +297,38 @@
     )();
     announce(`Added ${itemName(count.value - 1)}.`);
     focusItem(count.value - 1, [
+      '.array-list-item-content :is(input, select, textarea)',
+      '.array-list-item-delete',
+    ]);
+  }
+
+  // The item the list puts after item `index`, for a list that takes one
+  // between two others (see useInspectorInsertItem).
+  function insertedAfter(index) {
+    return insertItem(control.value.path, index, jsonforms?.core?.data);
+  }
+
+  function insertable(index) {
+    return index < count.value - 1 && insertedAfter(index) !== undefined;
+  }
+
+  // Puts the new item after item `index`, as one change of the list.
+  function insert(index) {
+    const item = insertedAfter(index);
+
+    if (item === undefined || !dispatch) {
+      return;
+    }
+
+    dispatch(
+      Actions.update(control.value.path, (list) => [
+        ...(list || []).slice(0, index + 1),
+        item,
+        ...(list || []).slice(index + 1),
+      ]),
+    );
+    announce(`Added ${itemName(index + 1)}.`);
+    focusItem(index + 1, [
       '.array-list-item-content :is(input, select, textarea)',
       '.array-list-item-delete',
     ]);

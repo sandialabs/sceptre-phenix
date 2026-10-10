@@ -3219,6 +3219,672 @@
       "error": "nodes[0].group.iconKey"
     },
     {
+      "name": "a rectangle in a group, with a label, colors and a border style",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "shape",
+            "position": {
+              "x": 0,
+              "y": 200
+            },
+            "size": {
+              "width": 160,
+              "height": 96
+            },
+            "parentId": "c60601dd-6d6b-56c7-97e5-149caf5ed993",
+            "shape": {
+              "shape": "rectangle",
+              "label": "DMZ",
+              "fillColor": "#eef4fb",
+              "outlineColor": "#2F6FBF",
+              "borderStyle": "dashed"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a circle without a size",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "shape",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "shape": {
+              "shape": "circle"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a shape without a figure",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "shape",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "shape": {
+              "label": "DMZ"
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].shape.shape",
+      "message": "unknown shape \"\" (expected one of rectangle, circle)"
+    },
+    {
+      "name": "a shape of an unknown figure",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "shape",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "shape": {
+              "shape": "triangle"
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].shape.shape",
+      "message": "unknown shape \"triangle\" (expected one of rectangle, circle)"
+    },
+    {
+      "name": "shape colors and border style that are not allowed",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "shape",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "shape": {
+              "shape": "rectangle",
+              "fillColor": "red",
+              "outlineColor": "#abc",
+              "borderStyle": "dash-dot"
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].shape.borderStyle",
+      "issues": [
+        {
+          "path": "nodes[4].shape.fillColor",
+          "message": "color \"red\" must be a hex color such as #2f6fbf"
+        },
+        {
+          "path": "nodes[4].shape.outlineColor",
+          "message": "color \"#abc\" must be a hex color such as #2f6fbf"
+        },
+        {
+          "path": "nodes[4].shape.borderStyle",
+          "message": "unknown border style \"dash-dot\" (expected one of solid, dashed, dotted, double)"
+        }
+      ]
+    },
+    {
+      "name": "unknown field of a shape",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "shape",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "shape": {
+              "shape": "rectangle",
+              "text": "DMZ"
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].shape.text"
+    },
+    {
+      "name": "an icon of a built-in icon, with a label",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "icon",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "size": {
+              "width": 64,
+              "height": 64
+            },
+            "icon": {
+              "iconKey": "external",
+              "label": "Internet"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "an icon of a custom icon, in a group",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "name": "plc",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        },
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "icon",
+            "position": {
+              "x": 0,
+              "y": 200
+            },
+            "parentId": "c60601dd-6d6b-56c7-97e5-149caf5ed993",
+            "icon": {
+              "icon": "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "an icon that names no icon",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "icon",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "icon": {
+              "iconKey": "",
+              "label": "Internet"
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].icon",
+      "message": "an icon node must name exactly one of a built-in icon and a custom icon"
+    },
+    {
+      "name": "an icon that names a built-in and a custom icon",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        },
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "icon",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "icon": {
+              "iconKey": "external",
+              "icon": "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].icon",
+      "issues": [
+        {
+          "path": "nodes[4].icon",
+          "message": "an icon node must name exactly one of a built-in icon and a custom icon"
+        }
+      ]
+    },
+    {
+      "name": "an icon of an unknown icon key",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "icon",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "icon": {
+              "iconKey": "cloud"
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].icon.iconKey"
+    },
+    {
+      "name": "an icon of a custom icon the document does not carry",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "icon",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "icon": {
+              "icon": "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].icon.icon"
+    },
+    {
+      "name": "a line with two arrowheads, a label, a color and a line style, in a group",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "line",
+            "position": {
+              "x": 0,
+              "y": 200
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            },
+            "parentId": "c60601dd-6d6b-56c7-97e5-149caf5ed993",
+            "line": {
+              "points": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 0,
+                  "y": 80
+                },
+                {
+                  "x": 160,
+                  "y": 80
+                }
+              ],
+              "label": "uplink",
+              "color": "#c0392b",
+              "lineStyle": "dash-dot",
+              "startArrow": true,
+              "endArrow": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a line with arrowheads that are off and no size",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "line",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "line": {
+              "points": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 160,
+                  "y": 0
+                }
+              ],
+              "startArrow": false,
+              "endArrow": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a line with the most points",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "line",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "line": {
+              "points": [
+                { "x": 0, "y": 0 }, { "x": 10, "y": 8 }, { "x": 20, "y": 0 }, { "x": 30, "y": 8 },
+                { "x": 40, "y": 0 }, { "x": 50, "y": 8 }, { "x": 60, "y": 0 }, { "x": 70, "y": 8 },
+                { "x": 80, "y": 0 }, { "x": 90, "y": 8 }, { "x": 100, "y": 0 }, { "x": 110, "y": 8 },
+                { "x": 120, "y": 0 }, { "x": 130, "y": 8 }, { "x": 140, "y": 0 }, { "x": 150, "y": 8 },
+                { "x": 160, "y": 0 }, { "x": 170, "y": 8 }, { "x": 180, "y": 0 }, { "x": 190, "y": 8 },
+                { "x": 200, "y": 0 }, { "x": 210, "y": 8 }, { "x": 220, "y": 0 }, { "x": 230, "y": 8 },
+                { "x": 240, "y": 0 }, { "x": 250, "y": 8 }, { "x": 260, "y": 0 }, { "x": 270, "y": 8 },
+                { "x": 280, "y": 0 }, { "x": 290, "y": 8 }, { "x": 300, "y": 0 }, { "x": 310, "y": 8 },
+                { "x": 320, "y": 0 }, { "x": 330, "y": 8 }, { "x": 340, "y": 0 }, { "x": 350, "y": 8 },
+                { "x": 360, "y": 0 }, { "x": 370, "y": 8 }, { "x": 380, "y": 0 }, { "x": 390, "y": 8 },
+                { "x": 400, "y": 0 }, { "x": 410, "y": 8 }, { "x": 420, "y": 0 }, { "x": 430, "y": 8 },
+                { "x": 440, "y": 0 }, { "x": 450, "y": 8 }, { "x": 460, "y": 0 }, { "x": 470, "y": 8 },
+                { "x": 480, "y": 0 }, { "x": 490, "y": 8 }, { "x": 500, "y": 0 }, { "x": 510, "y": 8 },
+                { "x": 520, "y": 0 }, { "x": 530, "y": 8 }, { "x": 540, "y": 0 }, { "x": 550, "y": 8 },
+                { "x": 560, "y": 0 }, { "x": 570, "y": 8 }, { "x": 580, "y": 0 }, { "x": 590, "y": 8 },
+                { "x": 600, "y": 0 }, { "x": 610, "y": 8 }, { "x": 620, "y": 0 }, { "x": 630, "y": 8 }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a line with too many points",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "line",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "line": {
+              "points": [
+                { "x": 0, "y": 0 }, { "x": 10, "y": 8 }, { "x": 20, "y": 0 }, { "x": 30, "y": 8 },
+                { "x": 40, "y": 0 }, { "x": 50, "y": 8 }, { "x": 60, "y": 0 }, { "x": 70, "y": 8 },
+                { "x": 80, "y": 0 }, { "x": 90, "y": 8 }, { "x": 100, "y": 0 }, { "x": 110, "y": 8 },
+                { "x": 120, "y": 0 }, { "x": 130, "y": 8 }, { "x": 140, "y": 0 }, { "x": 150, "y": 8 },
+                { "x": 160, "y": 0 }, { "x": 170, "y": 8 }, { "x": 180, "y": 0 }, { "x": 190, "y": 8 },
+                { "x": 200, "y": 0 }, { "x": 210, "y": 8 }, { "x": 220, "y": 0 }, { "x": 230, "y": 8 },
+                { "x": 240, "y": 0 }, { "x": 250, "y": 8 }, { "x": 260, "y": 0 }, { "x": 270, "y": 8 },
+                { "x": 280, "y": 0 }, { "x": 290, "y": 8 }, { "x": 300, "y": 0 }, { "x": 310, "y": 8 },
+                { "x": 320, "y": 0 }, { "x": 330, "y": 8 }, { "x": 340, "y": 0 }, { "x": 350, "y": 8 },
+                { "x": 360, "y": 0 }, { "x": 370, "y": 8 }, { "x": 380, "y": 0 }, { "x": 390, "y": 8 },
+                { "x": 400, "y": 0 }, { "x": 410, "y": 8 }, { "x": 420, "y": 0 }, { "x": 430, "y": 8 },
+                { "x": 440, "y": 0 }, { "x": 450, "y": 8 }, { "x": 460, "y": 0 }, { "x": 470, "y": 8 },
+                { "x": 480, "y": 0 }, { "x": 490, "y": 8 }, { "x": 500, "y": 0 }, { "x": 510, "y": 8 },
+                { "x": 520, "y": 0 }, { "x": 530, "y": 8 }, { "x": 540, "y": 0 }, { "x": 550, "y": 8 },
+                { "x": 560, "y": 0 }, { "x": 570, "y": 8 }, { "x": 580, "y": 0 }, { "x": 590, "y": 8 },
+                { "x": 600, "y": 0 }, { "x": 610, "y": 8 }, { "x": 620, "y": 0 }, { "x": 630, "y": 8 },
+                { "x": 640, "y": 0 }
+              ]
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].line.points",
+      "message": "a line must have at most 64 points"
+    },
+    {
+      "name": "a line with one point",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "line",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "line": {
+              "points": [
+                {
+                  "x": 0,
+                  "y": 0
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].line.points",
+      "message": "a line must have at least 2 points"
+    },
+    {
+      "name": "a line without points",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "line",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "line": {
+              "label": "uplink"
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].line.points",
+      "message": "a line must have at least 2 points"
+    },
+    {
+      "name": "line color and line style that are not allowed",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "line",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "line": {
+              "points": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 160,
+                  "y": 0
+                }
+              ],
+              "color": "blue",
+              "lineStyle": "double"
+            }
+          }
+        }
+      ],
+      "error": "nodes[4].line.color",
+      "issues": [
+        {
+          "path": "nodes[4].line.color",
+          "message": "color \"blue\" must be a hex color such as #2f6fbf"
+        },
+        {
+          "path": "nodes[4].line.lineStyle",
+          "message": "unknown line style \"double\" (expected one of solid, dashed, dotted, dash-dot)"
+        }
+      ]
+    },
+    {
+      "name": "a connection to a shape",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "shape",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "shape": {
+              "shape": "circle"
+            }
+          }
+        },
+        {
+          "path": [
+            "edges",
+            0,
+            "targetNodeId"
+          ],
+          "value": "874e945f-4f75-57c7-9533-0d8ffd6ec32b"
+        }
+      ],
+      "error": "edges[0]",
+      "message": "an edge must connect one device interface to one switch"
+    },
+    {
+      "name": "a device whose parent is a line",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4
+          ],
+          "value": {
+            "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+            "kind": "line",
+            "position": {
+              "x": 700,
+              "y": 40
+            },
+            "line": {
+              "points": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 160,
+                  "y": 0
+                }
+              ]
+            }
+          }
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "parentId"
+          ],
+          "value": "874e945f-4f75-57c7-9533-0d8ffd6ec32b"
+        }
+      ],
+      "error": "nodes[2].parentId",
+      "message": "parent node \"874e945f-4f75-57c7-9533-0d8ffd6ec32b\" is not a group"
+    },
+    {
       "name": "line style solid of a network and of a connection",
       "set": [
         {

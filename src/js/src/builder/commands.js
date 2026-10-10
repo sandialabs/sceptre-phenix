@@ -63,6 +63,7 @@ import {
   typesCharacter,
 } from './keymap.js';
 import {
+  DRAWING_KINDS,
   findNetwork,
   findNode,
   includedFrom,
@@ -1262,10 +1263,10 @@ export const COMMANDS = [
     palette: false,
   },
   {
-    // Right and Down grow the group from its bottom right corner, Left and
-    // Up shrink it (BuilderCanvas.vue).
+    // Right and Down grow the group, note, shape or icon from its bottom
+    // right corner, Left and Up shrink it (BuilderCanvas.vue).
     id: 'selection.resize',
-    title: 'Resize the selected group 10 pixels',
+    title: 'Resize the selected group, note, shape or icon 10 pixels',
     group: 'Selection',
     keys: [
       'Alt+Shift+ArrowLeft',
@@ -1493,18 +1494,20 @@ export const COMMANDS = [
     run: (ctx, choice) =>
       addNode(ctx, paletteNode(ctx.store, 'device', choice?.value)),
   },
-  ...['switch', 'note', 'group'].map((kind) => {
-    const item = PALETTE.find((entry) => entry.kind === kind);
-
-    return {
-      id: `add.${kind}`,
-      title: `Add ${item.label.toLowerCase()}`,
-      group: 'Add',
-      when: editable,
-      detail: () => item.hint,
-      run: (ctx) => addNode(ctx, { kind }),
-    };
-  }),
+  // Every other entry of Add nodes, by its id: add.switch, add.note,
+  // add.group, and the drawings add.rectangle, add.circle, add.icon and
+  // add.line.
+  ...PALETTE.filter((item) => item.kind !== 'device').map((item) => ({
+    id: `add.${item.id}`,
+    title: `Add ${item.label.toLowerCase()}`,
+    group: 'Add',
+    ...(DRAWING_KINDS.includes(item.kind)
+      ? { keywords: ['draw', 'drawing', item.kind] }
+      : {}),
+    when: editable,
+    detail: () => item.hint,
+    run: (ctx) => addNode(ctx, { kind: item.kind, ...item.options }),
+  })),
   {
     // The toolbar's Add connection: a dialog that joins a device, by an
     // interface it has free or a new one, to a switch, its fields filled

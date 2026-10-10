@@ -2,9 +2,11 @@
 // Kept in its own module so both sides agree on the MIME types, and a
 // palette entry dropped on the canvas adds the node a click on it adds.
 
-import { freeSpot, sizeOf } from '@/builder/model.js';
+import { paletteEntry } from '@/builder/catalog.js';
+import { freeSpot, newNodeSize, sizeOf } from '@/builder/model.js';
 import { nodeOptionsFromTemplate, templateIcons } from '@/builder/templates.js';
 
+// A palette entry's id: its kind, or for a shape the figure it draws.
 export const PALETTE_MIME = 'application/x-phenix-builder-kind';
 // A device template's key (see templateKey in templates.js), sent beside
 // the kind 'device'.
@@ -20,7 +22,9 @@ export const PALETTE_TEMPLATE_MIME = 'application/x-phenix-builder-template';
  *
  * @param {object} store the Builder store, which knows the templates and
  *   the diagram the node is for
- * @param {string} kind node kind
+ * @param {string} kind node kind, or the id of a palette entry (see
+ *   PALETTE in catalog.js), which adds the entry's options too: "circle"
+ *   adds a shape that is a circle
  * @param {string} [key] a device template's key; one that names no
  *   template adds a plain device
  * @returns {object}
@@ -29,7 +33,9 @@ export function paletteNode(store, kind, key) {
   const template = key ? store.templateByKey(key) : undefined;
 
   if (!template) {
-    return { kind };
+    const entry = paletteEntry(kind);
+
+    return entry ? { kind: entry.kind, ...entry.options } : { kind };
   }
 
   store.shelveIcons?.(templateIcons(template, store.templates?.icons));
@@ -56,11 +62,15 @@ const COLUMNS = 5;
  * @param {object} doc
  * @param {object} [options]
  * @param {string} [options.kind] the new node's kind, for its size
+ * @param {string} [options.shape] a new shape's figure, for its size
  * @param {{x: number, y: number, width: number, height: number}} [options.area]
  * @returns {{x: number, y: number}}
  */
-export function nextPosition(doc, { kind = 'device', area = null } = {}) {
-  const size = sizeOf({ kind });
+export function nextPosition(
+  doc,
+  { kind = 'device', shape, area = null } = {},
+) {
+  const size = newNodeSize({ kind, shape });
   let origin = ORIGIN;
   let columns = COLUMNS;
 
@@ -101,6 +111,7 @@ export function addInView({ store, view }, options) {
     ...options,
     position: nextPosition(store.doc, {
       kind: options.kind,
+      shape: options.shape,
       area: view?.visibleArea?.() || null,
     }),
   });

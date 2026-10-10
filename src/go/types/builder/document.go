@@ -46,6 +46,11 @@ const (
 	// bound the draft service puts on the names a publication records, so the
 	// scenario an experiment is published with can always be recorded.
 	MaxScenarioNameBytes = 256
+
+	// MinLinePoints and MaxLinePoints bound the points of a line node (see
+	// [Line.Points]): its two ends, and at most 62 bends between them.
+	MinLinePoints = 2
+	MaxLinePoints = 64
 )
 
 // NodeKind enumerates the kinds of nodes a builder document can contain.
@@ -64,6 +69,15 @@ const (
 	// NodeKindGroup is a visual container other nodes may be parented to. Groups
 	// have no phenix semantics.
 	NodeKindGroup NodeKind = "group"
+	// NodeKindShape is a rectangle or a circle drawn on the canvas, with no
+	// phenix semantics.
+	NodeKindShape NodeKind = "shape"
+	// NodeKindIcon is a built-in or custom icon drawn on the canvas, with no
+	// phenix semantics.
+	NodeKindIcon NodeKind = "icon"
+	// NodeKindLine is a free polyline drawn on the canvas, tied to no node or
+	// network, with no phenix semantics.
+	NodeKindLine NodeKind = "line"
 )
 
 // SourceKind describes where a document originated.
@@ -148,13 +162,16 @@ type Node struct {
 	Label    string   `json:"label,omitempty"`
 	Position Position `json:"position"`
 	Size     *Size    `json:"size,omitempty"`
-	// ParentID optionally parents this node to a group node. Notes and groups
-	// may be free (no parent) or nested inside another group.
-	ParentID string  `json:"parentId,omitempty"`
-	Device   *Device `json:"device,omitempty"`
-	Switch   *Switch `json:"switch,omitempty"`
-	Note     *Note   `json:"note,omitempty"`
-	Group    *Group  `json:"group,omitempty"`
+	// ParentID optionally parents this node to a group node. Any node may be
+	// free (no parent) or inside a group, groups included.
+	ParentID string    `json:"parentId,omitempty"`
+	Device   *Device   `json:"device,omitempty"`
+	Switch   *Switch   `json:"switch,omitempty"`
+	Note     *Note     `json:"note,omitempty"`
+	Group    *Group    `json:"group,omitempty"`
+	Shape    *Shape    `json:"shape,omitempty"`
+	Icon     *IconNode `json:"icon,omitempty"`
+	Line     *Line     `json:"line,omitempty"`
 }
 
 // Device carries the complete phenix semantics of a topology node.
@@ -235,6 +252,55 @@ type Group struct {
 	IconKey   string `json:"iconKey,omitempty"`
 	Icon      string `json:"icon,omitempty"`
 	Collapsed bool   `json:"collapsed,omitempty"`
+}
+
+// Shape is the payload of a [NodeKindShape] node: a figure that fills the
+// node's box, a rectangle or a circle (an ellipse when the box is not
+// square), with a label at its center. It is presentation only and never
+// written to a config.
+type Shape struct {
+	// Shape is the figure drawn, one of [ShapeFigures].
+	Shape string `json:"shape"`
+	Label string `json:"label,omitempty"`
+	// FillColor and OutlineColor color the figure's inside and its border,
+	// as "#rrggbb". Empty leaves the editor's own.
+	FillColor    string `json:"fillColor,omitempty"`
+	OutlineColor string `json:"outlineColor,omitempty"`
+	// BorderStyle is the pattern of the figure's border, one of
+	// [BorderStyles]. Empty leaves the editor's own.
+	BorderStyle string `json:"borderStyle,omitempty"`
+}
+
+// IconNode is the payload of a [NodeKindIcon] node: an icon scaled to the
+// node's box, with an optional label below it. It names exactly one icon:
+// IconKey from the icon key registry (see [IsIconKey]), or Icon, a custom
+// icon of [Document.Icons]. It is presentation only and never written to a
+// config.
+type IconNode struct {
+	IconKey string `json:"iconKey,omitempty"`
+	Icon    string `json:"icon,omitempty"`
+	Label   string `json:"label,omitempty"`
+}
+
+// Line is the payload of a [NodeKindLine] node: a polyline tied to no node
+// or network, drawn like a connection. It is presentation only and never
+// written to a config.
+type Line struct {
+	// Points are the line's ends and bends in order, from [MinLinePoints] to
+	// [MaxLinePoints] of them, relative to the node's position. The editor
+	// keeps the node's position at the top left corner of the points' box,
+	// and its size that box.
+	Points []Position `json:"points"`
+	Label  string     `json:"label,omitempty"`
+	// Color is the line's color, as "#rrggbb". Empty leaves the editor's own.
+	Color string `json:"color,omitempty"`
+	// LineStyle is the line's dash pattern, one of [LineStyles]. Empty is
+	// solid.
+	LineStyle string `json:"lineStyle,omitempty"`
+	// StartArrow and EndArrow draw an arrowhead at the first and the last
+	// point.
+	StartArrow bool `json:"startArrow,omitempty"`
+	EndArrow   bool `json:"endArrow,omitempty"`
 }
 
 // Network is a canonical phenix network (VLAN).

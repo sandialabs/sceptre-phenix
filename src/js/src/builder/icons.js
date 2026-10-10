@@ -453,17 +453,26 @@ function isIconName(name) {
   );
 }
 
-// The ids of the icons a payload names: a device's, a group's or a
-// template device's `icon`.
+// The ids of the icons a payload names: a device's, a group's, an icon
+// node's or a template device's `icon`.
 function refOf(payload) {
   const id = payload?.icon;
 
   return id === undefined || id === null || id === '' ? null : id;
 }
 
+// The payload of an icon node, which holds its custom icon as a device does.
+function drawnIconOf(node) {
+  return node?.kind === 'icon' ? node.icon : undefined;
+}
+
+// The built-in icon an icon node shows when its custom icon is left out: it
+// names exactly one icon (validateIconNode in validate.go).
+const FALLBACK_DRAWN_ICON = 'external';
+
 /**
- * The custom icons a document uses: those its devices, its groups and the
- * devices of its templates name.
+ * The custom icons a document uses: those its devices, its groups, its icon
+ * nodes and the devices of its templates name.
  *
  * @param {object} doc
  * @returns {Set<string>} icon ids, in the order they are first named
@@ -481,6 +490,7 @@ export function iconRefs(doc) {
   for (const node of doc?.nodes || []) {
     add(node?.device);
     add(node?.group);
+    add(drawnIconOf(node));
   }
 
   for (const template of doc?.templates || []) {
@@ -625,6 +635,18 @@ export function settleIcons(doc, known) {
 
   if (dropped.size > 0) {
     next.nodes = (doc.nodes || []).map((node) => {
+      const drawn = drawnIconOf(node);
+
+      // An icon node left without its custom icon shows a built-in one.
+      if (drawn && withoutIcon(drawn, dropped) !== drawn) {
+        const { label } = drawn;
+
+        return {
+          ...node,
+          icon: { iconKey: FALLBACK_DRAWN_ICON, ...(label ? { label } : {}) },
+        };
+      }
+
       const device = withoutIcon(node.device, dropped);
       const group = withoutIcon(node.group, dropped);
 

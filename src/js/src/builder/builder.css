@@ -597,6 +597,167 @@
   border-width: 4px;
 }
 
+/* A shape fills its box: a rectangle, or a circle that is an ellipse in a
+   box that is not square, see-through without a fill, its label at its
+   center, and its border in the pattern chosen for it; solid without one. */
+.builder-node--shape {
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  background: transparent;
+  box-shadow: none;
+  text-align: center;
+  cursor: default;
+}
+
+.builder-node--shape[data-shape='circle'] {
+  border-radius: 50%;
+}
+
+.builder-node--shape[data-border='dashed'] {
+  border-style: dashed;
+}
+
+.builder-node--shape[data-border='dotted'] {
+  border-style: dotted;
+}
+
+.builder-node--shape[data-border='double'] {
+  border-style: double;
+  border-width: 4px;
+}
+
+.builder-node--shape .builder-node__label {
+  max-width: 100%;
+}
+
+/* An icon fills its box, but for the line of its label. Without selection
+   it has no frame, so it reads as a picture, not as a device. */
+.builder-node--icon {
+  align-items: center;
+  padding: 2px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.builder-node__figure {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+}
+
+.builder-node__figure > .builder-icon {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.builder-node--icon .builder-node__label {
+  max-width: 100%;
+  font-size: 0.75rem;
+}
+
+/* A line fills the box of its points; only its wide hit stroke and the
+   handles of its points take the pointer (see LineNode.vue). */
+.builder-line {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.builder-line__drawing {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+}
+
+.builder-canvas .builder-line__stroke:not(.builder-edge--custom) {
+  stroke: var(--bx-text);
+}
+
+.builder-line__arrow {
+  fill: var(--bx-line-color);
+}
+
+.builder-line__hit {
+  cursor: grab;
+}
+
+/* A focused line gets the band a focused connection gets. */
+.builder-canvas .builder-line__focus {
+  stroke: none;
+}
+
+.builder-canvas .vue-flow__node-builderLine:focus-visible .builder-line__focus {
+  stroke: var(--bx-focus);
+  stroke-width: 10px;
+}
+
+.builder-line__label {
+  top: 0;
+  left: 0;
+}
+
+/* The handle of a point of a selected line, in the edge label layer over
+   the nodes: a square for a bend, a circle for an end, so the two differ by
+   shape. */
+.builder-line__point {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--bx-accent);
+  border-radius: 2px;
+  background: var(--bx-surface);
+  pointer-events: auto;
+  cursor: move;
+  touch-action: none;
+}
+
+.builder-line__point.is-end {
+  border-radius: 50%;
+}
+
+.builder-line__point:focus {
+  outline: 3px solid var(--bx-focus);
+  outline-offset: 2px;
+}
+
+/* The frame NodeResize.vue draws a selected node's resize handles in, in
+   the edge label layer over the nodes: it covers the node's box, and only
+   its handles and lines take the pointer. */
+.builder-canvas .builder-resizer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.builder-canvas .builder-resizer .vue-flow__resize-control {
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* NodeResizer's handles and lines on a selected note, group, shape or
+   icon, in the accent color the selection is drawn in. */
+.builder-canvas .builder-resizer__handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--bx-surface);
+  border-radius: 2px;
+  background: var(--bx-accent);
+}
+
+.builder-canvas .builder-resizer__line {
+  border-color: var(--bx-accent);
+}
+
 .builder-node__comment {
   font-size: 0.75rem;
   color: var(--bx-text-muted);
@@ -1001,6 +1162,25 @@
 
   .builder-canvas .builder-edge.is-selected {
     stroke: Highlight;
+  }
+
+  .builder-line__arrow {
+    fill: CanvasText;
+  }
+
+  .builder-line.is-selected .builder-line__arrow {
+    fill: Highlight;
+  }
+
+  .builder-line__point,
+  .builder-canvas .builder-resizer__handle {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Canvas;
+  }
+
+  .builder-canvas .builder-resizer__line {
+    border-color: Highlight;
   }
 
   .builder-canvas .builder-edge__casing {

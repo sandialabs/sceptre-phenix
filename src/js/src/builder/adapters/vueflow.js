@@ -16,8 +16,10 @@ import {
   connectionEndLabel,
   deviceHandles,
   deviceTypeLabel,
+  DRAWING_KINDS,
   findNode,
   includedFrom,
+  kindLabel,
   LINE_STYLES,
   nodeComment,
   nodeLabel,
@@ -33,7 +35,63 @@ export const FLOW_NODE_TYPES = {
   switch: 'builderSwitch',
   note: 'builderNote',
   group: 'builderGroup',
+  shape: 'builderShape',
+  icon: 'builderIcon',
+  line: 'builderLine',
 };
+
+// The stacking of each kind on the canvas: groups at the bottom, the shapes
+// and lines drawn over them, then devices, switches, notes and icons, so a
+// drawing never covers a node it is drawn around.
+//
+// Vue Flow draws a node in a group one above the higher of its group's
+// layer and its own, so a node's layer is far enough above a drawing's that
+// a drawing in a group stays under the devices outside it.
+const KIND_LAYERS = { group: 0, shape: 0, line: 0 };
+const NODE_LAYER = 10;
+// A selected node, and every node in a selected group, is lifted over the
+// rest, as Vue Flow's own elevateNodesOnSelect does, which the canvas turns
+// off (see BuilderCanvas.vue). A shape or a line is never lifted: selected,
+// it would cover the devices and switches it is drawn around, and their
+// connection handles. Its resize handles, and the handles of a line's
+// points, are drawn over every node instead (see NodeResize.vue and
+// LineNode.vue).
+const SELECTED_LIFT = 1000;
+const NEVER_LIFTED = ['shape', 'line'];
+
+/**
+ * A canvas node's stacking order (Vue Flow's zIndex): its kind's layer, and
+ * lifted over the rest while it, or a group it is in, is selected, unless it
+ * is a shape or a line.
+ *
+ * @param {string} kind the node's kind
+ * @param {boolean} [selected] the node is selected
+ * @param {boolean} [inSelectedGroup] a group it is in is selected
+ * @returns {number}
+ */
+export function nodeZIndex(kind, selected = false, inSelectedGroup = false) {
+  const layer = KIND_LAYERS[kind] ?? NODE_LAYER;
+
+  return (selected || inSelectedGroup) && !NEVER_LIFTED.includes(kind)
+    ? layer + SELECTED_LIFT
+    : layer;
+}
+
+// Whether a group that holds the node of `parentId` (its group, or a group
+// that group is in) is selected; `parentOf` gives a node's group id.
+function inSelectedGroup(parentId, selected, parentOf) {
+  const seen = new Set();
+
+  for (let id = parentId; id && !seen.has(id); id = parentOf(id)) {
+    if (selected.has(id)) {
+      return true;
+    }
+
+    seen.add(id);
+  }
+
+  return false;
+}
 
 export const SWITCH_HANDLE_ID = 'bus';
 
@@ -51,6 +109,16 @@ const NETWORK_DASH_ARRAYS = {
   'dash-dot': '10 4 2 4',
 };
 const NETWORK_TOKEN_COUNT = 8;
+
+/**
+ * The SVG dash array of a line style, as a connection is drawn in it.
+ *
+ * @param {string} [style] one of LINE_STYLES; solid for any other
+ * @returns {string|undefined} undefined for a solid line
+ */
+export function lineDashArray(style) {
+  return NETWORK_DASH_ARRAYS[style];
+}
 
 // Ids of the canvas's keyboard hints (BuilderCanvas.vue). Every node and
 // connection is described by one of them, in place of Vue Flow's own
@@ -298,9 +366,11 @@ function describedBy(node, issue) {
  * Converts model nodes into Vue Flow nodes. A node the diagram checks flag
  * carries what they found (data.issue), and is described by it as well. A
  * device carries the type it shows (data.typeLabel), and a switch the
- * devices connected to it (data.connected). A device or a group with a
- * custom icon the document carries has the address it is drawn from
- * (data.iconSrc, see iconSrc in icons.js); it is '' otherwise.
+ * devices connected to it (data.connected). A device, a group or an icon
+ * node with a custom icon the document carries has the address it is drawn
+ * from (data.iconSrc, see iconSrc in icons.js); it is '' otherwise. A shape,
+ * an icon and a line carry the name of their kind (data.kindLabel), and a
+ * line the dash array of its line style (data.dashArray).
  *
  * @param {object} doc
  * @param {object} [options] selectedIds; issues: nodeIssueSummaries by
@@ -344,8 +414,22 @@ export function toFlowNodes(doc, options = {}) {
       selected: selected.has(node.id),
       parentNode: node.parentId || undefined,
       expandParent: Boolean(node.parentId),
-      zIndex: node.kind === 'group' ? 0 : 1,
-      style: { width: `${size.width}px`, height: `${size.height}px` },
+      zIndex: nodeZIndex(
+        node.kind,
+        selected.has(node.id),
+        inSelectedGroup(
+          node.parentId,
+          selected,
+          (id) => index.node(id)?.parentId,
+        ),
+      ),
+      // A line takes the pointer only on its stroke (see LineNode.vue), not
+      // across the box of its points, over what lies under it.
+      style: {
+        width: `${size.width}px`,
+        height: `${size.height}px`,
+        ...(node.kind === 'line' ? { pointerEvents: 'none' } : {}),
+      },
       ariaLabel: nodeAriaLabel(doc, node, index),
       // Vue Flow spreads these over its own wrapper attributes. The wrapper
       // is a toggle button pressed while the node is selected, which takes
@@ -376,6 +460,13 @@ export function toFlowNodes(doc, options = {}) {
         connected:
           node.kind === 'switch' ? connectedDevices(node, index) : undefined,
         handles: handlesFor(doc, node, index),
+        kindLabel: DRAWING_KINDS.includes(node.kind)
+          ? kindLabel(node)
+          : undefined,
+        dashArray:
+          node.kind === 'line'
+            ? lineDashArray(node.line?.lineStyle)
+            : undefined,
         issue,
       },
     };
@@ -383,9 +474,10 @@ export function toFlowNodes(doc, options = {}) {
 }
 
 /**
- * Flow nodes or edges with a selection applied. Only those it changes are
- * copied; the rest stay the very objects they were, so Vue Flow redraws
- * only what the selection changed.
+ * Flow nodes or edges with a selection applied, and each node stacked as it
+ * is then (nodeZIndex). Only those it changes are copied; the rest stay the
+ * very objects they were, so Vue Flow redraws only what the selection
+ * changed.
  *
  * @param {object[]} items from toFlowNodes or toFlowEdges
  * @param {string[]} [selectedIds]
@@ -393,15 +485,26 @@ export function toFlowNodes(doc, options = {}) {
  */
 export function withSelection(items, selectedIds = []) {
   const selected = new Set(selectedIds);
+  const parents = new Map(items.map((item) => [item.id, item.parentNode]));
+  const parentOf = (id) => parents.get(id);
 
   return items.map((item) => {
     const pressed = selected.has(item.id);
+    const kind = item.data?.node?.kind;
+    const zIndex = kind
+      ? nodeZIndex(
+          kind,
+          pressed,
+          inSelectedGroup(item.parentNode, selected, parentOf),
+        )
+      : item.zIndex;
 
-    return pressed === item.selected
+    return pressed === item.selected && zIndex === item.zIndex
       ? item
       : {
           ...item,
           selected: pressed,
+          ...(kind ? { zIndex } : {}),
           domAttributes: {
             ...item.domAttributes,
             'aria-pressed': String(pressed),
