@@ -125,7 +125,9 @@ type validator struct {
 //   - a createdAt or updatedAt that is not a time in [TimeLayout],
 //   - more than [MaxDiagramNotes] notes, and a note that is blank, longer
 //     than [MaxDiagramNoteBytes] or holds a control character other than a
-//     newline or a tab,
+//     newline or a tab, in the metadata or on a switch (a device's notes are
+//     its spec's general.notes, which the phenix schema checks when the
+//     document is published, as it checks the rest of the spec),
 //   - missing or null nodes, networks, or edges (the editor requires arrays,
 //     empty when there is nothing in them),
 //   - identifiers that are not RFC 4122 UUIDs, and duplicate
@@ -256,7 +258,7 @@ func (v *validator) validateMetadata() {
 	v.validateTime(metadataPath(keyCreatedAt), meta.CreatedAt)
 	v.validateUser(metadataPath(keyUpdatedBy), meta.UpdatedBy)
 	v.validateTime(metadataPath(keyUpdatedAt), meta.UpdatedAt)
-	v.validateNotes(meta.Notes)
+	v.validateNotes(metadataPath(keyNotes), meta.Notes)
 }
 
 // isControl reports whether r is a control character, which no single line
@@ -272,16 +274,16 @@ func isNoteControl(r rune) bool {
 	return isControl(r) && r != '\n' && r != '\t'
 }
 
-// validateNotes checks the diagram notes: at most [MaxDiagramNotes], each
-// not blank, at most [MaxDiagramNoteBytes], and free of control characters
-// but newlines and tabs.
-func (v *validator) validateNotes(notes []string) {
+// validateNotes checks the notes at path, of the diagram or of a switch: at
+// most [MaxDiagramNotes], each not blank, at most [MaxDiagramNoteBytes], and
+// free of control characters but newlines and tabs.
+func (v *validator) validateNotes(at string, notes []string) {
 	if len(notes) > MaxDiagramNotes {
-		v.addf(metadataPath(keyNotes), "at most %d notes are allowed, not %d", MaxDiagramNotes, len(notes))
+		v.addf(at, "at most %d notes are allowed, not %d", MaxDiagramNotes, len(notes))
 	}
 
 	for i, note := range notes {
-		path := fmt.Sprintf("%s[%d]", metadataPath(keyNotes), i)
+		path := fmt.Sprintf("%s[%d]", at, i)
 
 		switch {
 		case strings.TrimSpace(note) == "":
@@ -460,6 +462,7 @@ func (v *validator) validateNodes() {
 
 			v.validateColor(node.Switch.OutlineColor, path+".switch.outlineColor")
 			v.validateColor(node.Switch.FillColor, path+".switch.fillColor")
+			v.validateNotes(path+".switch."+keyNotes, node.Switch.Notes)
 		case NodeKindGroup:
 			if node.Group == nil {
 				break

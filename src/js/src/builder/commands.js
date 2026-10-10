@@ -109,6 +109,7 @@ export const VIEW_API = [
   // others
   'draftsTab',
   'showMinimap', // boolean
+  'showNodeNotes', // boolean: the canvas shows node notes (a setting)
   // {width, min, max}: the minimap's width and the widths it may take, in
   // pixels, or null without a canvas
   'minimapSize',
@@ -148,6 +149,8 @@ export const VIEW_API = [
   'openTemplateLibrary',
   'showDraftsTab', // (id) mine, shared, published, templates or others
   'toggleMinimap', // ()
+  // () shows or hides node notes, keeps that as the setting, and says which
+  'toggleNodeNotes',
   'resizeMinimap', // (width) in pixels, and says the new size
   'togglePane', // (side) hides or shows a side column: start or end
   'toggleFocusMode', // () turns focus mode on or off, and says which
@@ -1657,6 +1660,17 @@ export const COMMANDS = [
     keywords: ['overview', 'map'],
     label: ({ view }) => (view.showMinimap ? 'Hide minimap' : 'Show minimap'),
     run: ({ view }) => view.toggleMinimap(),
+  },
+  {
+    // The Settings dialog's Show node notes: the notes of devices and
+    // switches, below them on the canvas.
+    id: 'view.nodeNotes',
+    title: 'Show or hide node notes',
+    group: 'View',
+    keywords: ['notes', 'comments', 'annotations', 'remarks'],
+    label: ({ view }) =>
+      view.showNodeNotes ? 'Hide node notes' : 'Show node notes',
+    run: ({ view }) => view.toggleNodeNotes(),
   },
   // What the minimap's handle does by dragging or keys, for a pointer that
   // does not drag (WCAG 2.5.7).

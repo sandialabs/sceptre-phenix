@@ -4109,6 +4109,24 @@
           ],
           "title": "Network ID"
         },
+        "notes": {
+          "description": "Free text notes the canvas shows below the switch, never published: at most 100, each not only white space, at most 4096 bytes in UTF-8 (maxLength counts characters, so the byte limit is the stricter one outside ASCII), and without control characters but newlines and tabs.",
+          "examples": [
+            [
+              "Mirror port 24 feeds the IDS.",
+              "Patch panel B, rack 2"
+            ]
+          ],
+          "items": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f]*[^\\x00-\\x20\\x7f\\x85\\p{Z}][^\\x00-\\x08\\x0b-\\x1f\\x7f]*$",
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Notes",
+          "type": "array"
+        },
         "outlineColor": {
           "$ref": "#/$defs/hexColor",
           "description": "Border color of the switch on the canvas.",

@@ -15,8 +15,8 @@ to the topology like this:
 
 | In the diagram | In the published topology |
 |---|---|
-| A device | A node in `spec.nodes`, with all its settings |
-| A switch | A network. The network's name is the VLAN of every interface on it |
+| A device | A node in `spec.nodes`, with all its settings, its notes in `general.notes` |
+| A switch | A network. The network's name is the VLAN of every interface on it; the switch's notes stay in the diagram |
 | A connection from a device to a switch | An interface of the device, whose `vlan` is the network's name |
 | A device from an included topology | Nothing: `includeTopologies` names that topology |
 | A note or a group | Nothing: notes and groups only help people read the diagram |
@@ -326,6 +326,29 @@ A note is text on the canvas. Publishing ignores it.
 
 The Outline names a note after its first line. A note also has a **Color**
 (see [Colors](#colors)).
+
+### Notes on devices and switches
+
+A device or a switch can carry notes of its own, which the canvas shows in a
+card below the node: one line for each note, each cut off after three lines,
+and at most five notes, then "+N more". The card moves and is selected with
+the node. The node's info tooltip lists the notes, and screen readers read
+them as part of the node's description.
+
+1. Select the device or the switch.
+2. In the Inspector, under **Notes** (for a device, in the **General**
+   section), select **Add note** and type the note. Each note has a box of
+   its own, and **Remove** takes one away.
+3. Select **Apply**.
+
+A device's notes are its node's `general.notes`: publishing writes them to
+the topology, and a new experiment copies them to the VM's notes (see
+[Publishing](publishing.md)). A switch is not part of the topology, so its
+notes stay in the diagram. A device or a switch holds at most 100 notes of at
+most 4096 bytes each. **Show node notes** in the Settings, or **Show or hide
+node notes** in the command palette, hides the cards (see
+[Settings](editor.md#settings)); a layout leaves room for them while they
+show.
 
 ## Groups
 

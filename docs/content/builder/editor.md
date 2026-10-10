@@ -169,7 +169,9 @@ with a warning has a warning mark at its top left corner (see
 [Checks and warnings](#checks-and-warnings)).
 
 Devices and switches can have colors and icons of their own (see
-[Colors](diagrams.md#colors) and [Custom icons](diagrams.md#custom-icons)).
+[Colors](diagrams.md#colors) and [Custom icons](diagrams.md#custom-icons)),
+and notes, which show in a card below the node (see
+[Notes on devices and switches](diagrams.md#notes-on-devices-and-switches)).
 
 ### Info tooltips
 
@@ -181,14 +183,19 @@ focus to it, to see an info tooltip:
 | Device | **Description**, cut to 80 characters. **Interfaces**: each interface with its address, for example "eth0 — 10.10.20.101/24", or "DHCP". **OS type**. |
 | Switch | **Network**: the network's name. **VLAN alias**, or "no alias". **Description**, cut to 80 characters. **Connected devices**, with their number: each device connected to this switch, with the address of the interface it connects on. |
 
-A list shows its first 8 entries, then "+N more". An empty row says "None",
-and a device with no OS type says "Not set".
+A device or a switch with notes has a last row, **Notes**, with their number:
+each note on one line, cut to 80 characters. A list shows its first 8
+entries, then "+N more". An empty row says "None", and a device with no OS
+type says "Not set".
 
 The tooltip stays while the pointer is on the node or on the tooltip, and
 while the node has keyboard focus. <kbd>Esc</kbd> closes it and keeps the
 selection; a second <kbd>Esc</kbd> clears the selection. Notes, groups and
 connections have no tooltip, and PNG and SVG downloads do not show it.
-Screen readers read the same facts as the node's description.
+Screen readers read the same facts as the node's description, with the
+notes the card below the node shows: its first five notes, each in full (a
+note longer than the card's three lines can hold at the node's width is cut
+past that), then how many more there are.
 
 The minimap at the bottom right shows the whole diagram, with the visible
 part outlined. To resize it, drag the **Resize minimap** handle at its top
@@ -354,8 +361,8 @@ Select a node to see its fields. A device has these sections:
   [Custom icons](diagrams.md#custom-icons)).
 - **Node**: **Type**, and **General** (**Description**, **Do not boot**,
   **Node hostname**, **Notes**, **Snapshot**, **VM type**). Each note has a
-  text area of its own; **Add note** adds one. A new experiment copies the
-  notes to its VM's notes.
+  text area of its own; **Add note** adds one. The canvas shows the notes
+  below the device, and a new experiment copies them to its VM's notes.
 - **Hardware**: **CPU**, **Drives** (**Image** and more for each drive),
   **Memory**, **OS type** and **VCPUs**.
 - **Network**: **Interfaces**, **OSPF**, **Routes** and **Rulesets**.
@@ -409,8 +416,11 @@ the Builder instead, which may differ from what this server accepts." See
 
 - A switch is one network. Its Inspector ("Network CORP") has **Name**,
   **VLAN alias**, **Description**, **Edge Color**, **Line style**,
-  **Outline Color**, **Fill Color** and **Position**. See
+  **Outline Color**, **Fill Color**, **Notes** and **Position**. See
   [Adding switches and networks](diagrams.md#adding-switches-and-networks).
+  The switch's notes are edited as a device's are, and stay in the diagram
+  (see
+  [Notes on devices and switches](diagrams.md#notes-on-devices-and-switches)).
 - A note has **Text**, **Color** and **Position** (see
   [Notes](diagrams.md#notes)).
 - A group has **Title**, **Description**, **Color**, **Border pattern**,
@@ -708,6 +718,11 @@ and they stay after you log out.
   does not move anything by itself.
 - **Show the minimap**: on by default. The toolbar's **Minimap** button
   shows or hides it until the next diagram opens.
+- **Show node notes**: on by default. Devices and switches show their notes
+  below them on the canvas and in PNG and SVG downloads, and **Auto layout**
+  leaves room for them (see
+  [Notes on devices and switches](diagrams.md#notes-on-devices-and-switches)).
+  **Show or hide node notes** in the command palette changes it too.
 - **Zoom when a diagram opens**: **100%** (the default), **Fit the whole
   diagram in view**, or **Custom** with a percentage from 20 to 200. A
   percentage is rounded to a multiple of 5, and typing one chooses

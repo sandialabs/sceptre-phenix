@@ -38,11 +38,12 @@ beforeEach(() => {
 });
 
 describe('Builder settings', () => {
-  test('default to ELK layered, the minimap, 100% and the system’s motion', () => {
+  test('default to ELK layered, the minimap, node notes, 100% and the system’s motion', () => {
     expect(SETTINGS_STORAGE_KEY).toBe('phenix.builder.settings');
     expect(SETTING_DEFAULTS).toEqual({
       layoutAlgorithm: 'elk',
       showMinimap: true,
+      showNodeNotes: true,
       openZoom: 'actual',
       openZoomPercent: 100,
       reduceMotion: false,
@@ -70,12 +71,16 @@ describe('Builder settings', () => {
 
     expect(setSetting('layoutAlgorithm', 'dagre', storage)).toBe(true);
     expect(setSetting('showMinimap', false, storage)).toBe(true);
+    expect(setSetting('showNodeNotes', false, storage)).toBe(true);
     expect(setSetting('openZoom', 'fit', storage)).toBe(true);
+    expect(setSetting('showNodeNotes', 'no', storage)).toBe(false);
     expect(builderSettings.layoutAlgorithm).toBe('dagre');
+    expect(builderSettings.showNodeNotes).toBe(false);
     expect(settingsAtDefaults()).toBe(false);
     expect(stored(storage)).toEqual({
       layoutAlgorithm: 'dagre',
       showMinimap: false,
+      showNodeNotes: false,
       openZoom: 'fit',
     });
 
@@ -84,6 +89,7 @@ describe('Builder settings', () => {
     expect(loadSettings(storage)).toMatchObject({
       layoutAlgorithm: 'dagre',
       showMinimap: false,
+      showNodeNotes: false,
       openZoom: 'fit',
       reduceMotion: false,
     });
@@ -91,6 +97,7 @@ describe('Builder settings', () => {
     // A setting back at its default is not kept; none left removes the key.
     setSetting('layoutAlgorithm', 'elk', storage);
     setSetting('openZoom', 'actual', storage);
+    setSetting('showNodeNotes', true, storage);
     expect(stored(storage)).toEqual({ showMinimap: false });
     setSetting('showMinimap', true, storage);
     expect(storage.entries.has(SETTINGS_STORAGE_KEY)).toBe(false);

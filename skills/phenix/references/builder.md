@@ -74,7 +74,21 @@ that draft. Edit on a `builder-xml` topology opens the text editor with
 line stays, and deleting the line removes it. The Inspector also edits a node's labels,
 annotations, and advanced (minimega `vm config`) settings, and its notes
 (`general.notes`), each note in a text area of its own (`isMultilineList` in
-`inspector/control.js`). An interface's kind
+`inspector/control.js`). A switch's form edits the switch's own notes
+(`switch.notes`) the same way, applied with its network's fields in one undo
+step. Device and switch notes (`nodeNotes` in `model.js`; blank ones and
+non-text entries show nothing) show in a card below the node, inside Vue
+Flow's wrapper but outside the node's box (`nodes/NodeNotes.vue`: five notes
+at most, each cut after three lines, then "+N more"), in the info tooltip and
+the node's description (`nodeInfo.js`; the card is `aria-hidden`, so the
+description says the five notes it shows, each whole up to `noteCharacters`,
+then "and N more notes"), and in PNG and SVG downloads (`documentBounds` in
+`exporters.js`). Copy, paste and duplicate keep them (`clipboard.js`). The
+setting `showNodeNotes` ("Show node notes", palette `view.nodeNotes`, which
+announces "Node notes shown." or "Node notes hidden.") hides the cards. Every
+layout places a node by `nodeFootprint` (`nodeNotes.js`): its box plus the
+card's height, estimated from the `.builder-node-notes` measures in
+`builder.css`, wrapping each note at spaces as the card does. An interface's kind
 picker offers Static or OSPF, DHCP or manual, and Serial; the Protocol and Type
 fields under it hold the rest. With nothing
 selected, its Diagram section shows two more parts below Name and
@@ -1062,7 +1076,9 @@ ends stops the run ("Not attempted.").
 
 Optional document fields (schema revision stays 1; none is ever written to
 a Topology, Scenario or Experiment config, `TestToTopologyOmitsPresentationFields`):
-device and switch `outlineColor`, `fillColor` (`#rrggbb`); network and edge
+device and switch `outlineColor`, `fillColor` (`#rrggbb`); switch `notes` (the
+rules of `metadata.notes`; a device's notes are its spec's `general.notes`,
+which are published); network and edge
 `lineStyle` (`solid`, `dashed`, `dotted`, `dash-dot`; empty is Auto); group
 `description`, `borderStyle` (`solid`, `dashed`, `dotted`, `double`),
 `iconKey`, `icon`; device `icon`; root `icons` (`{"sha256:<hex>": {name?,
@@ -1218,7 +1234,7 @@ Read this section before changing any file listed below.
 | Editor page and drafts landing | `src/js/src/views/Builder.vue`, `src/js/src/components/builder/BuilderDrafts.vue`, `BuilderTemplates.vue` (the Node Templates tab), `BuilderBulkBar.vue`, `BuilderBulkSummary.vue`, `BuilderHeaderButtons.vue` (the buttons both headers share) |
 | Configs page links | `src/js/src/components/configs/ConfigsList.vue`, `ConfigsEditor.vue`, `src/js/src/builder/configs.js` |
 | Editor components | `src/js/src/components/builder/` (canvas, Inspector, outline, toolbar, side columns, `BuilderSignIn.vue`, dialogs, nodes, edges) |
-| Editor state and logic | `src/js/src/builder/` (`store.js`, `model.js`, `autosave.js`, `idb.js`, `tabs.js`, `session.js`, `signin.js`, `panes.js`, `commands.js`, `keymap.js`, `layouts/`, `adapters/`, `publish.js`, `templates.js`, `icons.js`, `iconLibrary.js`, `bulk.js`, `listSelection.js`, `nodeInfo.js`, `grouping.js`, `groupingWorker.js`) |
+| Editor state and logic | `src/js/src/builder/` (`store.js`, `model.js`, `autosave.js`, `idb.js`, `tabs.js`, `session.js`, `signin.js`, `panes.js`, `commands.js`, `keymap.js`, `layouts/`, `adapters/`, `publish.js`, `templates.js`, `icons.js`, `iconLibrary.js`, `bulk.js`, `listSelection.js`, `nodeInfo.js`, `nodeNotes.js`, `grouping.js`, `groupingWorker.js`) |
 | Generated schema bundle | `src/js/src/builder/schema/builder-v1.schema.json` |
 
 ### Rules

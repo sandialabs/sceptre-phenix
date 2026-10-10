@@ -50,6 +50,11 @@ const SETTINGS = {
   // Whether the canvas shows the minimap. The toolbar's Minimap button
   // shows or hides it until the next diagram opens.
   showMinimap: { default: true, valid: isBoolean },
+  // Whether devices and switches show their notes below them on the canvas
+  // and in image downloads, and the layouts leave room for them
+  // (nodes/NodeNotes.vue, nodeNotes.js). The palette's view.nodeNotes
+  // turns it on and off.
+  showNodeNotes: { default: true, valid: isBoolean },
   // The zoom a diagram opens with, which Reset view goes back to.
   openZoom: { default: 'actual', valid: (value) => OPEN_ZOOMS.includes(value) },
   // The percentage a diagram opens at while openZoom is custom.

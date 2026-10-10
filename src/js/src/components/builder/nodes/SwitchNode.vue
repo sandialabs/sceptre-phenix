@@ -6,7 +6,9 @@
 
   The swatch is its network's color, which its connections are drawn in. A
   switch may also have an outline color and a fill color of its own, as a
-  device may (see nodeColors in colors.js).
+  device may (see nodeColors in colors.js), and notes of its own
+  (switch.notes), in a card below its box (see NodeNotes.vue), which its
+  description ends with.
 -->
 <template>
   <div
@@ -49,6 +51,12 @@
       aria-hidden="true" />
   </div>
 
+  <node-notes
+    kind="switch"
+    :notes="notes"
+    :selected="selected"
+    :color-style="colorStyle" />
+
   <!-- What the info tooltip shows, as the wrapper's description. It is
        beside the node, not in it, so the node's own text stays what the
        node shows. -->
@@ -61,10 +69,13 @@
 
   import BuilderIcon from '../BuilderIcon.vue';
   import NodeIssueMark from './NodeIssueMark.vue';
+  import NodeNotes from './NodeNotes.vue';
   import { useNodeColors } from './nodeColors.js';
   import { useNodeInfo } from './nodeTooltip.js';
 
   import { drawnNetworkColor } from '@/builder/colors.js';
+  // Not nodeNotes: <node-notes> would resolve to it before NodeNotes.
+  import { nodeNotes as notesOf } from '@/builder/model.js';
   import { switchInfo } from '@/builder/nodeInfo.js';
 
   // Vue Flow passes its node state as attributes as well; none belong on
@@ -81,8 +92,9 @@
     () => props.data.node.switch,
   );
   const { infoId, infoText } = useNodeInfo(() =>
-    switchInfo(props.data.network, props.data.connected),
+    switchInfo(props.data.network, props.data.connected, props.data.node),
   );
+  const notes = computed(() => notesOf(props.data.node));
   // As its connections and the Inspector's Color chip draw it: a color
   // addNetwork picks in its theme token, and no color in the token of the
   // network's place (see networkStyle).

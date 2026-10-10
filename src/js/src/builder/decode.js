@@ -96,7 +96,12 @@ export const DEVICE_KEYS = new Set([
   'includedFrom',
 ]);
 export const HANDLE_KEYS = new Set(['id', 'name', 'index']);
-export const SWITCH_KEYS = new Set(['networkId', 'outlineColor', 'fillColor']);
+export const SWITCH_KEYS = new Set([
+  'networkId',
+  'outlineColor',
+  'fillColor',
+  'notes',
+]);
 export const NOTE_KEYS = new Set(['text', 'color']);
 export const GROUP_KEYS = new Set([
   'title',
@@ -215,6 +220,15 @@ function checkNode(node, index) {
 
   if (node.switch !== undefined) {
     rejectUnknown(node.switch, SWITCH_KEYS, `${path}.switch`);
+
+    // As the server's decoding refuses any other value, null being none.
+    const { notes } = node.switch;
+
+    if (notes !== undefined && notes !== null && !Array.isArray(notes)) {
+      throw new DocumentError(
+        `document: "${path}.switch.notes" must be an array`,
+      );
+    }
   }
 
   if (node.note !== undefined) {

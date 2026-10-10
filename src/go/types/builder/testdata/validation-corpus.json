@@ -6968,6 +6968,344 @@
         }
       ],
       "error": "metadata.notes"
+    },
+    {
+      "name": "switch notes on several lines and with tabs",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes"
+          ],
+          "value": [
+            "Mirror port 24 feeds the IDS.",
+            "Two lines\n\tand a tab"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "no switch notes",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes"
+          ],
+          "value": []
+        }
+      ]
+    },
+    {
+      "name": "null switch notes, which Go decodes as none",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "101 switch notes",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes"
+          ],
+          "value": [
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note",
+            "note"
+          ]
+        }
+      ],
+      "error": "nodes[3].switch.notes",
+      "message": "at most 100 notes are allowed, not 101"
+    },
+    {
+      "name": "a blank switch note",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes"
+          ],
+          "value": [
+            "kept",
+            " \n\t "
+          ]
+        }
+      ],
+      "error": "nodes[3].switch.notes[1]",
+      "message": "note must not be blank"
+    },
+    {
+      "name": "a switch note of only U+0085, white space to strings.TrimSpace though not to String.prototype.trim",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes"
+          ],
+          "value": [
+            "\u0085"
+          ]
+        }
+      ],
+      "error": "nodes[3].switch.notes[0]",
+      "message": "note must not be blank"
+    },
+    {
+      "name": "a switch note of only U+FEFF, white space to String.prototype.trim though not to strings.TrimSpace",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes"
+          ],
+          "value": [
+            "﻿"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a switch note of 4096 bytes in 2048 characters",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes"
+          ],
+          "value": [
+            ""
+          ]
+        },
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes",
+            0
+          ],
+          "join": [
+            [
+              "é",
+              2048
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a switch note of 4097 bytes",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes"
+          ],
+          "value": [
+            ""
+          ]
+        },
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes",
+            0
+          ],
+          "join": [
+            [
+              "é",
+              2048
+            ],
+            "x"
+          ]
+        }
+      ],
+      "error": "nodes[3].switch.notes[0]",
+      "message": "note must be at most 4096 bytes"
+    },
+    {
+      "name": "a switch note with a control character",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "notes"
+          ],
+          "value": [
+            "fine",
+            "one\r\ntwo"
+          ]
+        }
+      ],
+      "error": "nodes[3].switch.notes[1]",
+      "message": "note must not contain control characters other than newline and tab"
+    },
+    {
+      "name": "a device with notes in its spec",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "general",
+            "notes"
+          ],
+          "value": [
+            "Core router.",
+            "Reset its password\nbefore each run."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a device whose spec notes the phenix schema refuses, which publishing checks with the rest of the spec",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "spec",
+            "general",
+            "notes"
+          ],
+          "value": [
+            "",
+            7
+          ]
+        }
+      ]
     }
   ]
 }

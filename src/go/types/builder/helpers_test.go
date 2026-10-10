@@ -313,18 +313,18 @@ func uploadedScenario(content map[string]any) *builder.ScenarioRef {
 
 // decorationKeys are the JSON keys of what decorates a document and is left
 // out when not set: custom icons, colors, line and border styles, templates,
-// and the includes that were not resolved. A document that uses none of them
-// encodes without any of these.
+// the notes of a switch, and the includes that were not resolved. A document
+// that uses none of them encodes without any of these.
 var decorationKeys = []string{ //nolint:gochecknoglobals // test fixture
 	`"templates"`, `"icons"`, `"icon"`, `"outlineColor"`, `"fillColor"`, `"borderStyle"`, `"lineStyle"`,
-	`"unresolvedIncludes"`,
+	`"notes"`, `"unresolvedIncludes"`,
 }
 
 // decoratedDocument loads the document.json fixture and sets each of those
-// fields in it: the custom icon and colors of a device, the colors of a
-// switch, a group's description, border, icon key and custom icon, the line
-// style of a network and of an edge, the includes that were not resolved,
-// a template and the icon they use.
+// fields in it: the custom icon and colors of a device, the colors and notes
+// of a switch, a group's description, border, icon key and custom icon, the
+// line style of a network and of an edge, the includes that were not
+// resolved, a template and the icon they use.
 func decoratedDocument(t *testing.T) *builder.Document {
 	t.Helper()
 
@@ -341,6 +341,7 @@ func decoratedDocument(t *testing.T) *builder.Document {
 	hub := doc.NodeByID(idSwExp).Switch
 	hub.OutlineColor = "#1f7a5a"
 	hub.FillColor = "#E8F5F0"
+	hub.Notes = []string{"Mirror port 24 feeds the IDS.", "Patch panel B\n\track 2"}
 
 	rack := doc.NodeByID(idGrpRack).Group
 	rack.Description = "first rack\nsecond line"

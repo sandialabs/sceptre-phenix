@@ -1145,8 +1145,8 @@ func TestExportTopologyConfigReturnsVLANAliases(t *testing.T) {
 
 // TestToTopologyOmitsPresentationFields publishes a document that uses every
 // presentation field: the topology is the one of the same document without
-// them. Colors, line and border styles, custom icons, templates and the
-// includes that were not resolved are the diagram's alone.
+// them. Colors, line and border styles, custom icons, templates, the notes of
+// a switch and the includes that were not resolved are the diagram's alone.
 func TestToTopologyOmitsPresentationFields(t *testing.T) {
 	decorated := decoratedDocument(t)
 
@@ -1170,7 +1170,9 @@ func TestToTopologyOmitsPresentationFields(t *testing.T) {
 
 	encoded := asJSON(t, got)
 
-	for _, text := range append([]string{iconFixtureID, iconFixtureData, "#2f6fbf", "dotted", "dash-dot", "PLC"}, decorationKeys...) {
+	presentation := []string{iconFixtureID, iconFixtureData, "#2f6fbf", "dotted", "dash-dot", "PLC", "Mirror port"}
+
+	for _, text := range append(presentation, decorationKeys...) {
 		if strings.Contains(encoded, text) {
 			t.Fatalf("the topology holds %s: %s", text, encoded)
 		}
@@ -1179,5 +1181,103 @@ func TestToTopologyOmitsPresentationFields(t *testing.T) {
 	// The includes themselves are written back, all of them.
 	if includes := got.Spec["includeTopologies"]; !reflect.DeepEqual(includes, []string{"shared", "plant"}) {
 		t.Fatalf("includeTopologies = %#v", includes)
+	}
+}
+
+// topologyNode returns the node of a topology spec with the given hostname.
+func topologyNode(t *testing.T, spec map[string]any, hostname string) map[string]any {
+	t.Helper()
+
+	nodes, _ := spec["nodes"].([]any)
+
+	for _, entry := range nodes {
+		node, _ := entry.(map[string]any)
+		general, _ := node["general"].(map[string]any)
+
+		if general["hostname"] == hostname {
+			return node
+		}
+	}
+
+	t.Fatalf("the topology has no node %s: %s", hostname, asJSON(t, spec))
+
+	return nil
+}
+
+// setRouterNotes sets the general.notes of the router's spec.
+func setRouterNotes(t *testing.T, doc *builder.Document, notes any) {
+	t.Helper()
+
+	general, ok := nodeByHostname(t, doc, "router").Device.Spec["general"].(map[string]any)
+	if !ok {
+		t.Fatal("the router's spec has no general section")
+	}
+
+	general["notes"] = notes
+}
+
+// TestTopologyCarriesDeviceNotes: a device's notes are its spec's
+// general.notes, which the topology holds as they are, and phenix's schema
+// checks them when the document is exported or published. The notes of a
+// switch stay in the document.
+func TestTopologyCarriesDeviceNotes(t *testing.T) {
+	notes := []any{"Core router.", "Reset its password\nbefore each run."}
+
+	doc := loadDocumentFixture(t, "strict-document.json")
+	setRouterNotes(t, doc, notes)
+
+	for _, hub := range doc.SwitchNodes() {
+		hub.Switch.Notes = []string{"Mirror port 24 feeds the IDS."}
+	}
+
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("a document with device and switch notes is refused: %v", err)
+	}
+
+	export, err := doc.ExportTopologyConfig("publishable")
+	if err != nil {
+		t.Fatalf("ExportTopologyConfig: %v", err)
+	}
+
+	general, _ := topologyNode(t, export.Config.Spec, "router")["general"].(map[string]any)
+	if !reflect.DeepEqual(general["notes"], notes) {
+		t.Fatalf("general.notes = %#v, want %#v", general["notes"], notes)
+	}
+
+	if encoded := asJSON(t, export.Config); strings.Contains(encoded, "Mirror port") {
+		t.Fatalf("the topology holds a switch's notes: %s", encoded)
+	}
+
+	tooMany := make([]any, builder.MaxDiagramNotes+1)
+	for i := range tooMany {
+		tooMany[i] = "note"
+	}
+
+	for name, bad := range map[string]any{
+		"not a list":             "one note",
+		"an empty note":          []any{"kept", ""},
+		"a note that is no text": []any{7},
+		"101 notes":              tooMany,
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "strict-document.json")
+			setRouterNotes(t, doc, bad)
+
+			// The draft keeps them, as it keeps the rest of a spec phenix
+			// would refuse, and both publishing paths refuse them. The schema
+			// names the node, which is one of two node schemas, not its notes
+			// (see TestNodeNotesSchemaRejects in phenix/types).
+			if err := doc.Validate(); err != nil {
+				t.Fatalf("Validate refused the spec's notes: %v", err)
+			}
+
+			if _, err := doc.ExportTopologyConfig("publishable"); err == nil {
+				t.Fatal("ExportTopologyConfig accepted the spec's notes")
+			}
+
+			if _, _, err := doc.PublishTopologyConfig("publishable"); err == nil {
+				t.Fatal("PublishTopologyConfig accepted the spec's notes")
+			}
+		})
 	}
 }

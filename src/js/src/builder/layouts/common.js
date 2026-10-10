@@ -15,8 +15,13 @@
 // Every connection is drawn out of its source's right side and into its
 // target's left side (a device interface or a switch bus), so a layout that
 // puts each target to the right of its source draws no line backwards.
+//
+// A node takes its footprint (nodeFootprint in nodeNotes.js): its box, and
+// the notes block below it while the canvas shows notes, so no node is laid
+// over another's notes.
 
-import { DEFAULT_GRID_SIZE, nodeLabel, sizeOf } from '../model.js';
+import { DEFAULT_GRID_SIZE, nodeLabel } from '../model.js';
+import { nodeFootprint } from '../nodeNotes.js';
 import { fitRoute, handleOffsetY } from '../routes.js';
 
 // Positions are on the Builder's grid, and every gap a layout leaves is at
@@ -327,13 +332,18 @@ export function packRanks(ranks, spacing) {
  * is kept for a connection between two nodes of the scope, not one to a
  * group, and moved onto the handles of the nodes as snapped (fitRoute).
  *
+ * An item's height is its node's footprint (see nodeFootprint), which holds
+ * the node's notes block while `options.showNotes` is not false.
+ *
  * @param {object} doc builder document
  * @param {function} arrange
+ * @param {{showNotes?: boolean}} [options] whether the canvas shows node
+ *   notes
  * @returns {Promise<{positions: object, sizes: object, routes?: object}>}
  *   each node's top-left corner, and the size of each group with members,
  *   by node id; and each route kept, by edge id, in absolute coordinates
  */
-export async function layoutScopes(doc, arrange) {
+export async function layoutScopes(doc, arrange, options = {}) {
   const nodes = [...(doc.nodes || [])].sort(byId);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const parents = parentsOf(nodes, nodeById);
@@ -411,7 +421,7 @@ export async function layoutScopes(doc, arrange) {
 
   // A scope's node, as `arrange` reads it.
   const itemOf = (node) => {
-    const box = sizes[node.id] || sizeOf(node);
+    const box = sizes[node.id] || nodeFootprint(node, options);
     const roles = new Map();
     const join = (network, role) => {
       if (network) {

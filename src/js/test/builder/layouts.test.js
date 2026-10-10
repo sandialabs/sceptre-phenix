@@ -17,6 +17,7 @@ import {
   setParent,
   sizeOf,
 } from '@/builder/model.js';
+import { nodeFootprint, notesHeight } from '@/builder/nodeNotes.js';
 import { handleOffsetY } from '@/builder/routes.js';
 import { endBuilderSession } from '@/builder/session.js';
 
@@ -154,6 +155,95 @@ function expectTidy(doc, message) {
     }
   }
 }
+
+// The document with notes on the node of `id`: a device's in its spec's
+// general.notes, a switch's its own.
+function withNotes(doc, id, notes) {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((node) => {
+      if (node.id !== id) {
+        return node;
+      }
+
+      if (node.kind === 'switch') {
+        return { ...node, switch: { ...node.switch, notes } };
+      }
+
+      const { spec } = node.device;
+
+      return {
+        ...node,
+        device: {
+          ...node.device,
+          spec: { ...spec, general: { ...spec.general, notes } },
+        },
+      };
+    }),
+  };
+}
+
+// More notes than the block shows, one of them longer than three lines.
+const MANY_NOTES = [
+  'Reset the administrator password before each run, and write the new one in the run book kept in the control room.',
+  'Patched to 22H2.',
+  'Two lines\nof text',
+  'Joined to the CORP domain.',
+  'Backups at 02:00.',
+  'Sixth note',
+  'Seventh note',
+];
+
+// A device's or a switch's notes show below its box: every layout places a
+// node by its footprint (nodeFootprint), so no node is laid over the notes
+// of another, and notes the canvas hides take no room.
+describe.each(LAYOUT_ALGORITHMS.map((algorithm) => algorithm.id))(
+  'the %s layout with node notes',
+  (id) => {
+    function noted() {
+      const { doc, dev, sw } = range();
+      const withMany = withNotes(doc, dev['IT-WS-10'].id, MANY_NOTES);
+      const withOne = withNotes(withMany, dev['PLC-1'].id, ['Ladder v2.']);
+
+      return { doc, noted: withNotes(withOne, sw.OT.id, ['Mirror port 24']) };
+    }
+
+    test('leaves the notes of every node room', async () => {
+      const doc = noted().noted;
+      const laid = withGeometry(
+        doc,
+        await runLayout(id, doc, { showNotes: true }),
+      );
+      const footprint = (node) => ({
+        ...node.position,
+        ...nodeFootprint(node),
+      });
+
+      expect(laid.nodes.filter((node) => notesHeight(node) > 0)).toHaveLength(
+        3,
+      );
+
+      for (const node of laid.nodes) {
+        for (const other of laid.nodes) {
+          if (node !== other) {
+            expect(
+              overlaps(footprint(node), footprint(other)),
+              `${node.label} and ${other.label}`,
+            ).toBe(false);
+          }
+        }
+      }
+    });
+
+    test('lays out boxes only while notes are hidden', async () => {
+      const { doc, noted: withNotesDoc } = noted();
+
+      expect(await runLayout(id, withNotesDoc, { showNotes: false })).toEqual(
+        await runLayout(id, doc),
+      );
+    });
+  },
+);
 
 describe.each(NETWORK_LAYOUTS)('the %s layout', (id) => {
   test('is deterministic, whatever the order of the document', async () => {

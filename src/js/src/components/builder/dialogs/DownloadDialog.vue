@@ -171,6 +171,7 @@
     documentBounds,
     exportFileName,
     exportImage,
+    IMAGE_PADDING,
     saveText,
     saveTopologyYAML,
     toJSONString,
@@ -180,6 +181,7 @@
   import { GEXF_MIME, lastModified, toGEXF } from '@/builder/gexf.js';
   import { unappliedBlock } from '@/builder/leave.js';
   import { storedScenarioName } from '@/builder/model.js';
+  import { builderSettings } from '@/builder/settings.js';
   import { useBuilderStore } from '@/builder/store.js';
 
   const props = defineProps({
@@ -199,7 +201,12 @@
   const status = useMessage();
   const error = useMessage();
 
-  const bounds = computed(() => documentBounds(store.doc));
+  // An image holds the node notes the canvas shows (see NodeNotes.vue).
+  const bounds = computed(() =>
+    documentBounds(store.doc, IMAGE_PADDING, {
+      showNotes: builderSettings.showNodeNotes,
+    }),
+  );
 
   function downloadText(kind) {
     error.clear();
@@ -272,6 +279,7 @@
         toSvg,
         saveAs,
         backgroundColor: store.resolvedTheme === 'dark' ? '#12171f' : '#ffffff',
+        showNotes: builderSettings.showNodeNotes,
       });
 
       status.set(`Saved ${exportFileName(store.doc, format)}.`);

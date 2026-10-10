@@ -116,6 +116,32 @@ export function sizeOf(node) {
 }
 
 /**
+ * The notes a device or a switch shows below it on the canvas, in order. A
+ * device's are its spec's general.notes, which publishing writes to the
+ * topology and phenix copies to the VM's notes; a switch is no topology
+ * node, so its notes are its own (switch.notes) and stay in the document.
+ * An entry that is not text, or is only white space, shows nothing and is
+ * left out here: phenix's schema and the diagram checks say what is wrong
+ * with it. Other nodes have none.
+ *
+ * @param {object} node
+ * @returns {string[]}
+ */
+export function nodeNotes(node) {
+  let notes;
+
+  if (node?.kind === 'device') {
+    notes = node.device?.spec?.general?.notes;
+  } else if (node?.kind === 'switch') {
+    notes = node.switch?.notes;
+  }
+
+  return Array.isArray(notes)
+    ? notes.filter((note) => typeof note === 'string' && !isBlank(note))
+    : [];
+}
+
+/**
  * Creates a new, valid, empty document.
  *
  * @param {object} [init] name, description, id, notes: what its metadata
@@ -606,9 +632,9 @@ function uniqueHostname(doc, wanted) {
  * @param {object} doc
  * @param {object} options kind, position, size, parentId, label, and kind
  *   specific fields: a device's hostname, spec, look (its presentation
- *   fields, see LOOK_KEYS) and interfaces; a switch's networkId, outlineColor
- *   and fillColor; a note's text; a group's title, description, borderStyle,
- *   iconKey and icon. A custom icon (a look's or a group's `icon`) is an
+ *   fields, see LOOK_KEYS) and interfaces; a switch's networkId, outlineColor,
+ *   fillColor and notes; a note's text; a group's title, description,
+ *   borderStyle, iconKey and icon. A custom icon (a look's or a group's `icon`) is an
  *   icon id: the document comes to carry the icon when it is committed (see
  *   settleIcons in icons.js)
  * @returns {{doc: object, node: object, network?: object}}
@@ -693,6 +719,10 @@ export function addNode(doc, options = {}) {
         if (options[key]) {
           node.switch[key] = options[key];
         }
+      }
+
+      if (Array.isArray(options.notes) && options.notes.length > 0) {
+        node.switch.notes = [...options.notes];
       }
 
       // Named after its network (see nameSwitches), whatever label it came
@@ -838,9 +868,11 @@ export function updateNode(doc, id, patch = {}) {
   }
 
   // A patch that names no network keeps the switch on its own, and one that
-  // names no color keeps its colors; an emptied color is no color.
+  // names no color or no notes keeps its colors or its notes; an emptied
+  // color is no color, and an emptied list of notes no notes, so the
+  // document's bytes are those of a switch that never had them.
   if (patch.switch && node.kind === 'switch') {
-    updated.switch = dropEmpty(
+    const next = dropEmpty(
       {
         ...node.switch,
         ...patch.switch,
@@ -848,6 +880,14 @@ export function updateNode(doc, id, patch = {}) {
       },
       NODE_COLOR_KEYS,
     );
+
+    if (Array.isArray(next.notes) && next.notes.length > 0) {
+      next.notes = [...next.notes];
+    } else {
+      delete next.notes;
+    }
+
+    updated.switch = next;
   }
 
   // Named after its network (see nameSwitches), whatever the patch says.

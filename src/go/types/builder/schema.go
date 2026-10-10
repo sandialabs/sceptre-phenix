@@ -585,9 +585,10 @@ func documentedRef(name, title, description string, examples []any) map[string]a
 	return documented(ref(name), title, description, examples)
 }
 
-// metadataDef builds the schema of the document metadata, bounded the way
-// [Document.Validate] bounds it.
-func metadataDef() map[string]any {
+// notesDef builds the schema of a list of notes, of the diagram or of a
+// switch, bounded the way [Document.Validate] bounds them. maxLength counts
+// characters, as it does for the document name.
+func notesDef() map[string]any {
 	note := stringDef()
 	note["minLength"] = 1
 	note["maxLength"] = MaxDiagramNoteBytes
@@ -595,6 +596,14 @@ func metadataDef() map[string]any {
 
 	notes := arrayDef(note)
 	notes["maxItems"] = MaxDiagramNotes
+
+	return notes
+}
+
+// metadataDef builds the schema of the document metadata, bounded the way
+// [Document.Validate] bounds it.
+func metadataDef() map[string]any {
+	notes := notesDef()
 
 	return documented(
 		objectDef([]string{keyID}, map[string]any{
@@ -800,6 +809,16 @@ func switchDef() map[string]any {
 			),
 			keyFillColor: documentedRef(
 				defHexColor, "Fill Color", "Background color of the switch on the canvas.", []any{exampleFillColor},
+			),
+			keyNotes: documented(
+				notesDef(), "Notes",
+				fmt.Sprintf(
+					"Free text notes the canvas shows below the switch, never published: at most %d, each not only white "+
+						"space, at most %d bytes in UTF-8 (maxLength counts characters, so the byte limit is the stricter one "+
+						"outside ASCII), and without control characters but newlines and tabs.",
+					MaxDiagramNotes, MaxDiagramNoteBytes,
+				),
+				[]any{exampleSwitchNotes()},
 			),
 		}),
 		"Switch", "Payload of a switch node: a visual hub bound to exactly one network.",

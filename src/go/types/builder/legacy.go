@@ -955,7 +955,7 @@ func legacySwitch(id string, network *Network) *Node {
 		Kind:     NodeKindSwitch,
 		Label:    network.Name,
 		Position: Position{X: 0, Y: 0},
-		Switch:   &Switch{NetworkID: network.ID}, //nolint:exhaustruct // colors are the editor's to set
+		Switch:   &Switch{NetworkID: network.ID}, //nolint:exhaustruct // colors and notes are the editor's to set
 	}
 }
 

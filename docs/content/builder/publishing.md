@@ -206,6 +206,12 @@ draft: ok
   written.
 - **draft**: the draft records what it published.
 
+The topology holds each device's notes as its node's `general.notes`, and an
+experiment created from it copies them to the VM's notes. The notes of
+switches, like notes on the canvas, are not published (see
+[Notes on devices and switches](diagrams.md#notes-on-devices-and-switches)).
+**Topology YAML** in the Download dialog shows the same.
+
 When a stage fails, the dialog says "Published with failures. Some configs
 were written; the failed stages are listed below.", or "Publish failed. No
 configs were written." **Back** returns to the form, and **Close** closes the

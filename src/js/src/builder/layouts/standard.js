@@ -3,11 +3,13 @@
 //
 // dagre itself is deterministic when nodes and edges are inserted in a stable
 // order, so the layout is applied to a sorted copy of the document. The result
-// is snapped to a grid, which keeps positions integral (and diffs small).
+// is snapped to a grid, which keeps positions integral (and diffs small). A
+// node takes its footprint, its notes block included while notes show (see
+// nodeFootprint), as in the other layouts.
 
 import dagre from '@dagrejs/dagre';
 
-import { sizeOf } from '../model.js';
+import { nodeFootprint } from '../nodeNotes.js';
 import { parentsOf, snap } from './common.js';
 
 export const LAYOUT_DEFAULTS = {
@@ -24,7 +26,8 @@ export const LAYOUT_DEFAULTS = {
  * groups included. A group without members is laid out as a node.
  *
  * @param {object} doc builder document
- * @param {object} [options] direction, nodeSep, rankSep, grid
+ * @param {object} [options] direction, nodeSep, rankSep, grid; showNotes,
+ *   whether the canvas shows node notes (see nodeFootprint)
  * @returns {{positions: object, sizes: object}} each node's top-left
  *   corner, and the size of each group with members, by node id
  */
@@ -52,7 +55,7 @@ export function layout(doc, options = {}) {
   const clusters = new Set(parents.values());
 
   nodes.forEach((node) => {
-    const size = sizeOf(node);
+    const size = nodeFootprint(node, config);
 
     graph.setNode(
       node.id,
@@ -91,7 +94,7 @@ export function layout(doc, options = {}) {
     }
 
     if (!clusters.has(node.id)) {
-      const size = sizeOf(node);
+      const size = nodeFootprint(node, config);
 
       positions[node.id] = {
         x: snap(laid.x - size.width / 2, grid),

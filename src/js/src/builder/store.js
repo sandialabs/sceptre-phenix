@@ -284,7 +284,11 @@ async function layOut(store, doc, id, options, task) {
   store.autoGrouping = task === 'group';
 
   try {
-    laid = await runLayout(id, doc, options);
+    // Nodes leave room for their notes while the canvas shows them.
+    laid = await runLayout(id, doc, {
+      showNotes: builderSettings.showNodeNotes,
+      ...options,
+    });
   } catch (error) {
     // Stopped as the Builder closed or the session ended (see
     // stopLayoutEngine): there is no one to tell.

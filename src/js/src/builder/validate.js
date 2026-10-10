@@ -625,18 +625,18 @@ function validateTime(issues, path, value) {
   }
 }
 
-// The notes of a diagram (validateNotes in validate.go): at most
-// MAX_DIAGRAM_NOTES, each text that is not blank, at most
-// MAX_DIAGRAM_NOTE_BYTES long, and without control characters but the
+// The notes at `at`, of the diagram or of a switch (validateNotes in
+// validate.go): at most MAX_DIAGRAM_NOTES, each text that is not blank, at
+// most MAX_DIAGRAM_NOTE_BYTES long, and without control characters but the
 // newline and the tab.
-function validateNotes(notes, issues) {
+function validateNotes(notes, issues, at = 'metadata.notes') {
   if (notes === undefined || notes === null) {
     return;
   }
 
   // The server refuses any other value when it decodes the document.
   if (!Array.isArray(notes)) {
-    issue(issues, 'metadata.notes', 'notes must be a list of text');
+    issue(issues, at, 'notes must be a list of text');
 
     return;
   }
@@ -644,13 +644,13 @@ function validateNotes(notes, issues) {
   if (notes.length > MAX_DIAGRAM_NOTES) {
     issue(
       issues,
-      'metadata.notes',
+      at,
       `at most ${MAX_DIAGRAM_NOTES} notes are allowed, not ${notes.length}`,
     );
   }
 
   notes.forEach((note, index) => {
-    const path = `metadata.notes[${index}]`;
+    const path = `${at}[${index}]`;
 
     if (typeof note !== 'string') {
       issue(issues, path, 'note must be text');
@@ -1059,6 +1059,7 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
       }
 
       validateColors(node.switch, `${path}.switch`, issues);
+      validateNotes(node.switch.notes, issues, `${path}.switch.notes`);
     }
 
     if (node.kind === 'group' && node.group) {

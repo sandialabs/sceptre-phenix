@@ -15,14 +15,18 @@
 // next message can replace one before an assertion reads the region.
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 
 const {
   test,
   expect,
   blankDocument,
+  contrast,
+  devicesOf,
   expectAccessible,
   expectDetail,
   expectNoFatal,
+  labDocument,
   nextSecond,
   uniqueName,
 } = require('./builder-support');
@@ -2542,4 +2546,195 @@ test.describe('Builder inspector', () => {
 
     expectNoFatal(issues);
   });
+
+  // A device's notes are its spec's general.notes and a switch's its own:
+  // the Inspector edits both as lists of text areas, the canvas shows them in
+  // a card below the node while Show node notes is on, and Topology YAML
+  // carries the device's but never the switch's.
+  test('node notes are edited in the Inspector, shown below their nodes and published for devices', async ({
+    page,
+    builder,
+    issues,
+  }, testInfo) => {
+    const document = labDocument(uniqueName(testInfo, 'node-notes'));
+    const draft = await builder.seedDraft(document);
+    const idOf = (label) =>
+      document.nodes.find((node) => node.label === label).id;
+    const nodeBox = (label) => page.locator(`[data-node-id="${idOf(label)}"]`);
+    // The card is beside the node's box, in Vue Flow's wrapper.
+    const card = (label) =>
+      nodeBox(label).locator('xpath=..').getByTestId('node-notes');
+    const lines = (label) => card(label).getByTestId('node-note');
+    const cards = page.getByTestId('node-notes');
+    const deviceNotes = [
+      'Domain controller for rack 2.',
+      'Reset the password before each run.',
+    ];
+    const switchNote = 'Mirror port 24 feeds the IDS.';
+
+    await builder.openDraft(draft);
+    await expect(builder.nodes()).toHaveCount(3);
+    await expect.soft(cards).toHaveCount(0);
+
+    await test.step('two notes are added to a device under General, and show below it', async () => {
+      await nodeBox('server').click();
+      const general = specGroup(builder, 'General');
+
+      for (const [index, text] of deviceNotes.entries()) {
+        await general.getByRole('button', { name: 'Add note' }).press('Enter');
+        const field = general.getByRole('textbox', {
+          name: `Note ${index + 1}`,
+        });
+        await expect(field).toBeFocused();
+        await fillField(field, text);
+      }
+
+      await applyEdits(builder);
+      await expect(lines('server')).toHaveText(deviceNotes);
+      await builder.persisted(
+        draft,
+        (doc) => devicesOf(doc)[0].device.spec.general.notes,
+        deviceNotes,
+      );
+
+      // Below the box, as wide as it, and not part of it.
+      const box = await nodeBox('server').boundingBox();
+      const below = await card('server').boundingBox();
+      expect.soft(below.y).toBeGreaterThanOrEqual(box.y + box.height);
+      expect.soft(Math.round(below.width)).toBe(Math.round(box.width));
+      await expect.soft(cards).toHaveCount(1);
+    });
+
+    await test.step('a note is added to a switch in its form, and shows below it', async () => {
+      await nodeBox('EXP').click();
+      await builder.inspector
+        .getByRole('button', { name: 'Add note' })
+        .press('Enter');
+      const field = builder.inspector.getByRole('textbox', { name: 'Note 1' });
+      await expect(field).toBeFocused();
+      await fillField(field, switchNote);
+      await applyEdits(builder);
+
+      await expect(lines('EXP')).toHaveText([switchNote]);
+      await builder.persisted(
+        draft,
+        (doc) => doc.nodes.find((node) => node.kind === 'switch').switch.notes,
+        [switchNote],
+      );
+      // The switch's description ends with its notes.
+      await expect
+        .soft(page.locator(`#builder-node-info-${idOf('EXP')}`))
+        .toHaveText(/ 1 note: Mirror port 24 feeds the IDS\.$/);
+    });
+
+    await test.step('Show node notes hides the cards, a reload keeps that, and the palette shows them again', async () => {
+      await page.getByTestId('editor-settings').click();
+      const settings = page.getByTestId('settings-dialog');
+      const toggle = settings.getByTestId('settings-node-notes');
+
+      await expect(toggle).toBeChecked();
+      await toggle.click();
+      await expect(toggle).not.toBeChecked();
+      await expect(cards).toHaveCount(0);
+      await settings.getByTestId('settings-done').click();
+      await expect(settings).toHaveCount(0);
+
+      await page.reload();
+      await builder.openDraft(draft);
+      await expect(builder.nodes()).toHaveCount(3);
+      await expect(cards).toHaveCount(0);
+
+      await builder.canvas.focus();
+      await page.keyboard.press('ControlOrMeta+k');
+      const search = page.getByRole('combobox', { name: /Search commands/ });
+      await expect(search).toBeFocused();
+      await search.fill('Show node notes');
+      await expect(
+        page
+          .getByTestId('commands-dialog')
+          .getByRole('option', { selected: true }),
+      ).toContainText('Show node notes');
+      await page.keyboard.press('Enter');
+      await expect.soft(builder).toHaveAnnounced('Node notes shown.');
+
+      // The notes were kept with the draft.
+      await expect(lines('server')).toHaveText(deviceNotes);
+      await expect(lines('EXP')).toHaveText([switchNote]);
+    });
+
+    await test.step("Topology YAML holds the device's notes, and not the switch's", async () => {
+      await builder.openDialog('download');
+      const [file] = await Promise.all([
+        page.waitForEvent('download'),
+        builder.dialog.getByTestId('download-topology-yaml').click(),
+      ]);
+      const yaml = fs.readFileSync(await file.path(), 'utf8');
+
+      expect.soft(yaml).toContain('notes:');
+      for (const text of deviceNotes) {
+        expect.soft(yaml).toContain(text);
+      }
+      expect.soft(yaml).not.toContain(switchNote);
+      await page.keyboard.press('Escape');
+      await expect(builder.dialog).toHaveCount(0);
+    });
+
+    expectNoFatal(issues);
+  });
+
+  // The cards below nodes read in both themes: axe finds no serious
+  // violation on a canvas of nodes with notes, one of them with more notes
+  // than its card shows, and every line keeps 4.5:1.
+  for (const scheme of ['light', 'dark']) {
+    test(
+      `axe finds no serious violations on nodes with notes in the ${scheme} theme`,
+      { tag: '@axe' },
+      async ({ page, builder, issues }, testInfo) => {
+        await page.emulateMedia({ colorScheme: scheme });
+
+        const document = labDocument(
+          uniqueName(testInfo, `node-notes-${scheme}`),
+        );
+        const [server, second, hub] = document.nodes;
+
+        server.device.spec.general.notes = [
+          'Domain controller for rack 2.',
+          'Reset the password before each run, and write the new one in the run book kept in the control room.',
+        ];
+        second.device.outlineColor = '#b05c17';
+        second.device.spec.general.notes = Array.from(
+          { length: 7 },
+          (_, index) => `Note ${index + 1}`,
+        );
+        hub.switch.notes = ['Mirror port 24 feeds the IDS.'];
+
+        const draft = await builder.seedDraft(document);
+
+        await builder.openDraft(draft);
+        await expect(page.locator('.builder-root')).toHaveAttribute(
+          'data-builder-theme',
+          scheme,
+        );
+        await expect(page.getByTestId('node-notes')).toHaveCount(3);
+        await expect
+          .soft(page.getByTestId('node-notes-more'))
+          .toHaveText('+2 more');
+
+        for (const entry of await contrast(
+          page.locator('.builder-node-notes p'),
+        )) {
+          expect
+            .soft(entry.ratio, `${entry.text} (${scheme})`)
+            .toBeGreaterThanOrEqual(4.5);
+        }
+
+        await expectAccessible(page, {
+          soft: true,
+          label: `axe on nodes with notes (${scheme})`,
+        });
+
+        expectNoFatal(issues);
+      },
+    );
+  }
 });

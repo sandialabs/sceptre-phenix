@@ -118,7 +118,10 @@ describe('automatic layout in the store', () => {
     expect(store.currentLayout).toBe('cards');
     expect(store.layoutToRun).toBe('cards');
     await store.layout();
-    expect(runLayout).toHaveBeenLastCalledWith('cards', expect.anything(), {});
+    // Nodes leave room for the notes the canvas shows.
+    expect(runLayout).toHaveBeenLastCalledWith('cards', expect.anything(), {
+      showNotes: true,
+    });
     expect(store.announcement).toBe('Applied Network cards layout');
 
     // One this Builder does not know is ignored, and the layout that runs
@@ -127,12 +130,17 @@ describe('automatic layout in the store', () => {
     expect(store.currentLayout).toBe('');
     expect(store.layoutToRun).toBe('standard');
     await store.layout();
-    expect(runLayout).toHaveBeenLastCalledWith(
-      'standard',
-      expect.anything(),
-      {},
-    );
+    expect(runLayout).toHaveBeenLastCalledWith('standard', expect.anything(), {
+      showNotes: true,
+    });
     expect(store.doc.layout).toBe('standard');
+
+    // With notes hidden, nodes take only their boxes.
+    setSetting('showNodeNotes', false, null);
+    await store.layout();
+    expect(runLayout).toHaveBeenLastCalledWith('standard', expect.anything(), {
+      showNotes: false,
+    });
   });
 
   test('a chosen layout is kept with the draft in the same commit', async () => {

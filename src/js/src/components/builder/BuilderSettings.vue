@@ -102,6 +102,19 @@
         opens.
       </p>
     </div>
+    <div class="builder-field">
+      <builder-switch
+        :model-value="builderSettings.showNodeNotes"
+        aria-describedby="settings-node-notes-hint"
+        data-testid="settings-node-notes"
+        @update:model-value="setSetting('showNodeNotes', $event)">
+        Show node notes
+      </builder-switch>
+      <p id="settings-node-notes-hint" class="builder-hint">
+        The notes of devices and switches, below each node on the canvas and in
+        PNG and SVG downloads. Auto layout leaves room for them while they show.
+      </p>
+    </div>
     <fieldset class="builder-field builder-settings__choices">
       <legend>Zoom when a diagram opens</legend>
       <div class="builder-settings__options">

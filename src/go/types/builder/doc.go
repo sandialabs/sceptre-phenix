@@ -12,7 +12,8 @@
 //     description, and notes about the diagram as a whole. None of it is
 //     ever written to a config.
 //   - Canvas presentation: node positions/sizes, parent groups, free notes,
-//     viewport, and grid settings; the colors of nodes, the line style of
+//     the notes of switches, viewport, and grid settings; the colors of
+//     nodes, the line style of
 //     networks and edges, and the description, border and icon of groups;
 //     custom icons ([Icon]), which the document carries as PNG data named
 //     by its SHA-256 ([IconID]), so that it needs nothing else to show
@@ -112,7 +113,8 @@
 // structural and semantic correctness only, and the bounds on the document
 // name, which the draft service records as a title, on the users the
 // metadata names, which are bounded like the owner of a draft, on the
-// diagram notes ([MaxDiagramNotes], [MaxDiagramNoteBytes]), on the source
+// notes of the diagram and of switches ([MaxDiagramNotes],
+// [MaxDiagramNoteBytes]), on the source
 // config annotations a document carries only to show them, and on the custom
 // icons and the templates the editor adds ([MaxDocumentIcons],
 // [MaxIconBytes], [MaxIconPixels], [MaxTemplates],

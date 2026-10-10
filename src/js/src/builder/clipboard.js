@@ -203,6 +203,9 @@ export function pasteClipboard(doc, payload, options = {}) {
       init.networkName = network?.name;
       init.outlineColor = node.switch?.outlineColor;
       init.fillColor = node.switch?.fillColor;
+      // A switch's notes are its own, so a copy carries them as a device's
+      // general.notes go with its spec.
+      init.notes = node.switch?.notes;
     }
 
     if (node.kind === 'note') {

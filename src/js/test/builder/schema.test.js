@@ -248,7 +248,7 @@ describe('inspector schemas', () => {
 
   // The network's color is labelled by what it colors, now that the switch
   // has an outline and a fill of its own.
-  test("a switch's fields are its network's, then its own outline and fill", () => {
+  test("a switch's fields are its network's, then its own outline, fill and notes", () => {
     const { properties } = schemaForKind(builderSchemaV1, 'switch');
 
     expect(Object.keys(properties)).toEqual([
@@ -259,7 +259,18 @@ describe('inspector schemas', () => {
       'lineStyle',
       'outlineColor',
       'fillColor',
+      'notes',
     ]);
+    // A list of text held to the bundle's bounds, as the server holds it.
+    expect(properties.notes).toMatchObject({
+      type: 'array',
+      title: 'Notes',
+      maxItems: 100,
+      items: { type: 'string', minLength: 1, maxLength: 4096 },
+    });
+    expect(properties.notes.items.pattern).toBe(
+      builderSchemaV1.$defs.switch.properties.notes.items.pattern,
+    );
     expect(
       ['color', 'lineStyle', 'outlineColor', 'fillColor'].map(
         (key) => properties[key].title,

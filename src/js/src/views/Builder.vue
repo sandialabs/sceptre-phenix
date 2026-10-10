@@ -690,7 +690,10 @@
   import { PUBLISHED_TOKEN } from '@/builder/publish.js';
   // Not builderSettings: <builder-settings> would name it as well as the
   // dialog.
-  import { builderSettings as editorSettings } from '@/builder/settings.js';
+  import {
+    builderSettings as editorSettings,
+    setSetting as setEditorSetting,
+  } from '@/builder/settings.js';
   import {
     accessLabel,
     conflictMessage as describeConflict,
@@ -2813,6 +2816,9 @@
     get showMinimap() {
       return showMinimap.value;
     },
+    get showNodeNotes() {
+      return editorSettings.showNodeNotes;
+    },
     get minimapSize() {
       return canvas.value?.minimapState || null;
     },
@@ -2855,6 +2861,14 @@
     },
     toggleMinimap() {
       showMinimap.value = !showMinimap.value;
+    },
+    // A setting, kept as the Settings dialog keeps it. The notes only show
+    // or go, so the change is said.
+    toggleNodeNotes() {
+      const show = !editorSettings.showNodeNotes;
+
+      setEditorSetting('showNodeNotes', show);
+      store.announce(show ? 'Node notes shown.' : 'Node notes hidden.');
     },
     resizeMinimap(width) {
       canvas.value?.resizeMinimap(width);

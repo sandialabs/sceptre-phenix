@@ -33,10 +33,12 @@ const (
 	TimeLayout = "2006-01-02T15:04:05Z"
 
 	// MaxDiagramNotes is the most notes a document's metadata may carry (see
-	// [Metadata.Notes]).
+	// [Metadata.Notes]). A switch carries at most as many (see
+	// [Switch.Notes]).
 	MaxDiagramNotes = 100
 
-	// MaxDiagramNoteBytes bounds one of those notes.
+	// MaxDiagramNoteBytes bounds one of those notes, and one note of a
+	// switch.
 	MaxDiagramNoteBytes = 4096
 )
 
@@ -206,6 +208,11 @@ type Switch struct {
 	// in (see [Network.Color]).
 	OutlineColor string `json:"outlineColor,omitempty"`
 	FillColor    string `json:"fillColor,omitempty"`
+	// Notes are free text about the switch, which the editor shows below it,
+	// held to the rules of [Metadata.Notes]. A switch is no topology node, so
+	// they stay in the document and are never written to a config; a
+	// device's notes are its spec's general.notes, which are.
+	Notes []string `json:"notes,omitempty"`
 }
 
 // Note is the payload of a [NodeKindNote] node.

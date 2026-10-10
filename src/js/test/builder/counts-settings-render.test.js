@@ -180,6 +180,29 @@ describe('the Settings dialog', () => {
     expect(html).not.toContain('Layout for drafts without one');
   });
 
+  test('offers Show node notes, on until it is turned off, with its hint', async () => {
+    const html = await render(BuilderSettings);
+    const toggle = tagOf(html, 'settings-node-notes');
+
+    expect(attribute(toggle, 'role')).toBe('switch');
+    expect(attribute(toggle, 'aria-checked')).toBe('true');
+    expect(attribute(toggle, 'aria-describedby')).toBe(
+      'settings-node-notes-hint',
+    );
+    expect(textOf(html)).toContain('Show node notes');
+    expect(html).toMatch(
+      /<p id="settings-node-notes-hint"[^>]*>\s*The notes of devices and switches, below each node on the canvas/,
+    );
+
+    setSetting('showNodeNotes', false, null);
+    expect(
+      attribute(
+        tagOf(await render(BuilderSettings), 'settings-node-notes'),
+        'aria-checked',
+      ),
+    ).toBe('false');
+  });
+
   test('offers 100%, a fit, and a custom percentage for the zoom a diagram opens with', async () => {
     const html = await render(BuilderSettings);
     const [, group] = html.match(

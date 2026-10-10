@@ -101,6 +101,7 @@ function fakeView(overrides = {}) {
     editing: true,
     dialog: '',
     showMinimap: true,
+    showNodeNotes: true,
     minimapSize: { width: 200, min: 120, max: 400 },
     panes: { hidden: { start: false, end: false }, stacked: false },
     canZoomIn: true,
@@ -762,6 +763,13 @@ describe('availability', () => {
     expect(
       commandTitle('view.minimap', context({ view: { showMinimap: false } })),
     ).toBe('Show minimap');
+    expect(commandTitle('view.nodeNotes', context())).toBe('Hide node notes');
+    expect(
+      commandTitle(
+        'view.nodeNotes',
+        context({ view: { showNodeNotes: false } }),
+      ),
+    ).toBe('Show node notes');
     expect(commandTitle('view.fit', context())).toBe('Fit diagram to view');
     expect(
       commandTitle('view.fit', context({ view: { fitRestores: true } })),

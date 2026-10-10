@@ -311,8 +311,9 @@ function arrangeCards(scope) {
 
 /**
  * @param {object} doc builder document
+ * @param {object} [options] showNotes, see layoutScopes
  * @returns {Promise<{positions: object, sizes: object}>} see layoutScopes
  */
-export function layout(doc) {
-  return layoutScopes(doc, arrangeCards);
+export function layout(doc, options = {}) {
+  return layoutScopes(doc, arrangeCards, options);
 }

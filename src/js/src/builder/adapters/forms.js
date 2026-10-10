@@ -583,8 +583,8 @@ export function lookChangeLabel(title, before, after, iconName = () => '') {
 /**
  * Describes what the inspector is editing.
  *
- * A selected switch edits its network, and with it the two colors that are
- * the switch node's own: its outline and its fill.
+ * A selected switch edits its network, and with it what is the switch
+ * node's own: its outline and fill colors, and its notes.
  *
  * @param {object} doc
  * @param {{type: 'node'|'edge'|'document', id?: string}} selection
@@ -661,7 +661,9 @@ export function inspectorTarget(doc, selection) {
         target: node,
         network,
         networkStyle: network ? networkStyle(doc, network.id) : undefined,
-        // The network's fields, then the colors of this switch node itself.
+        // The network's fields, then the colors and notes of this switch
+        // node itself. A switch without notes has no `notes` here, so its
+        // form starts with no list; applying an emptied list removes them.
         data: {
           name: network?.name || '',
           ...(Number.isInteger(network?.alias) ? { alias: network.alias } : {}),
@@ -670,6 +672,9 @@ export function inspectorTarget(doc, selection) {
           lineStyle: network?.lineStyle || '',
           outlineColor: node.switch?.outlineColor || '',
           fillColor: node.switch?.fillColor || '',
+          ...(Array.isArray(node.switch?.notes) && node.switch.notes.length
+            ? { notes: [...node.switch.notes] }
+            : {}),
         },
       };
     }
@@ -990,8 +995,9 @@ export function applyFormData(doc, selection, data) {
         return doc;
       }
 
-      // The network's fields, then the switch node's own colors, as one
-      // document and so one Undo step.
+      // The network's fields, then the switch node's own colors and notes,
+      // as one document and so one Undo step. Notes the form emptied are
+      // none.
       return updateNode(
         updateNetwork(doc, network.id, {
           name: data.name,
@@ -1005,6 +1011,7 @@ export function applyFormData(doc, selection, data) {
           switch: {
             outlineColor: data.outlineColor ?? '',
             fillColor: data.fillColor ?? '',
+            notes: Array.isArray(data.notes) ? data.notes : [],
           },
         },
       );

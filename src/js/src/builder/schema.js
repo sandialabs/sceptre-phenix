@@ -978,6 +978,17 @@ function kindSchema(bundle, kind, context = {}) {
             description:
               'Background color of this switch on the canvas. Text and icon turn black or white to stay readable.',
           },
+          // A list of text, each note in a text area of its own, as a
+          // device's general.notes (see isMultilineList).
+          notes: {
+            ...field(defs.switch?.properties?.notes, {
+              type: 'array',
+              items: { type: 'string' },
+            }),
+            title: 'Notes',
+            description:
+              'Shown below this switch on the canvas. They stay in the diagram: a switch is not part of the topology.',
+          },
         },
       };
     case 'note':

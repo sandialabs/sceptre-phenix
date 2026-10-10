@@ -7,7 +7,7 @@
 import YAML from 'js-yaml';
 
 import { sentence } from './api.js';
-import { boundsOf } from './model.js';
+import { footprintBounds } from './nodeNotes.js';
 import { configName } from './publish.js';
 
 export const IMAGE_PADDING = 40;
@@ -47,20 +47,24 @@ export function exportFileName(doc, extension) {
 
 /**
  * Bounding box covering every node in the document, padded, so an image
- * always includes the whole diagram rather than the visible viewport.
+ * always includes the whole diagram rather than the visible viewport. A
+ * device's or a switch's notes, below its box, are in it while the canvas
+ * shows them (see nodeFootprint).
  *
  * @param {object} doc
  * @param {number} [padding]
+ * @param {{showNotes?: boolean}} [options] whether the canvas shows node
+ *   notes, true by default
  * @returns {{x: number, y: number, width: number, height: number}}
  */
-export function documentBounds(doc, padding = IMAGE_PADDING) {
+export function documentBounds(doc, padding = IMAGE_PADDING, options = {}) {
   const nodes = doc?.nodes || [];
 
   if (nodes.length === 0) {
     return { x: 0, y: 0, width: 320, height: 240 };
   }
 
-  const bounds = boundsOf(nodes);
+  const bounds = footprintBounds(nodes, options);
 
   return {
     x: bounds.x - padding,
@@ -246,7 +250,8 @@ export function inlineSvgPaint(element, computedStyle) {
  *
  * @param {object} params element, doc, format ('png'|'svg'), toPng, toSvg,
  *   saveAs, backgroundColor, computedStyle (defaults to the element's
- *   window.getComputedStyle)
+ *   window.getComputedStyle), showNotes (whether the canvas shows node
+ *   notes, which the image then holds; true by default)
  * @returns {Promise<string>} data url
  */
 export async function exportImage(params) {
@@ -259,13 +264,16 @@ export async function exportImage(params) {
     saveAs,
     backgroundColor,
     computedStyle = (el) => el.ownerDocument.defaultView.getComputedStyle(el),
+    showNotes = true,
   } = params;
 
   if (!element) {
     throw new Error('No canvas element to download.');
   }
 
-  const viewport = computeExportViewport(documentBounds(doc));
+  const viewport = computeExportViewport(
+    documentBounds(doc, IMAGE_PADDING, { showNotes }),
+  );
   const render = format === 'svg' ? toSvg : toPng;
   const { copy, holder } = exportCopy(element);
   let dataUrl;

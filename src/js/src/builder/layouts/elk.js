@@ -585,7 +585,7 @@ onBuilderSessionEnd(stopLayoutEngine);
 /**
  * @param {object} doc builder document
  * @param {object} [options] elk: an ELK instance to lay out with, in place
- *   of the worker
+ *   of the worker; showNotes, see layoutScopes
  * @returns {Promise<{positions: object, sizes: object, routes?: object}>}
  *   see layoutScopes
  */
@@ -594,9 +594,13 @@ export async function layout(doc, options = {}) {
   // rather than starting another worker.
   let elk = options.elk;
 
-  return layoutScopes(doc, async (scope) => {
-    elk ||= await elkEngine();
+  return layoutScopes(
+    doc,
+    async (scope) => {
+      elk ||= await elkEngine();
 
-    return arranged(await elk.layout(elkGraph(scope)), scope);
-  });
+      return arranged(await elk.layout(elkGraph(scope)), scope);
+    },
+    options,
+  );
 }

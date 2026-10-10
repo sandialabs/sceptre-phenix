@@ -125,6 +125,11 @@ func exampleSwitch() map[string]any {
 	return map[string]any{keyNetworkID: exampleNetworkID}
 }
 
+// exampleSwitchNotes returns notes about the switch of network EXP.
+func exampleSwitchNotes() []any {
+	return []any{"Mirror port 24 feeds the IDS.", "Patch panel B, rack 2"}
+}
+
 // exampleSwitchNode returns the switch of network EXP.
 func exampleSwitchNode() map[string]any {
 	return map[string]any{

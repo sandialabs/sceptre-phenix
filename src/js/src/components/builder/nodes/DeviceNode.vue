@@ -19,6 +19,9 @@
   nodeColors in colors.js). On a fill, every line of text and the icon are
   black or white, whichever reads on it. A custom icon, when the device has
   one, is drawn in place of the icon of its key, in its own colors.
+
+  The device's notes (its spec's general.notes) show in a card below its
+  box (see NodeNotes.vue), and its description ends with them.
 -->
 <template>
   <div
@@ -98,6 +101,12 @@
       aria-hidden="true" />
   </div>
 
+  <node-notes
+    kind="device"
+    :notes="notes"
+    :selected="selected"
+    :color-style="colorStyle" />
+
   <!-- What the info tooltip shows, as the wrapper's description. It is
        beside the node, not in it, so the node's own text stays what the
        node shows. -->
@@ -110,10 +119,13 @@
 
   import BuilderIcon from '../BuilderIcon.vue';
   import NodeIssueMark from './NodeIssueMark.vue';
+  import NodeNotes from './NodeNotes.vue';
   import { useNodeColors } from './nodeColors.js';
   import { useNodeInfo } from './nodeTooltip.js';
 
   import { NEW_INTERFACE_HANDLE_ID } from '@/builder/adapters/vueflow.js';
+  // Not nodeNotes: <node-notes> would resolve to it before NodeNotes.
+  import { nodeNotes as notesOf } from '@/builder/model.js';
   import { deviceInfo } from '@/builder/nodeInfo.js';
 
   // Vue Flow passes its node state as attributes as well; none belong on
@@ -132,6 +144,7 @@
   );
   const { infoId, infoText } = useNodeInfo(() => deviceInfo(props.data.node));
   const interfaceCount = computed(() => props.data.handles.length);
+  const notes = computed(() => notesOf(props.data.node));
 
   function handleStyle(index) {
     const count = Math.max(1, props.data.handles.length);

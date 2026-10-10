@@ -1,10 +1,15 @@
 // What a device or a switch says about itself on the canvas: the rows of
 // its info tooltip (BuilderNodeTooltip.vue), shown on hover and keyboard
 // focus, and the same facts as one sentence, which describes the node to
-// assistive technology (see useNodeInfo in nodes/nodeTooltip.js). Notes,
-// groups and connections have neither.
+// assistive technology (see useNodeInfo in nodes/nodeTooltip.js). Note
+// nodes, groups and connections have neither. A device or a switch with
+// notes (see nodeNotes in model.js) lists them last, in both: the notes
+// block below the node is hidden from assistive technology, so the
+// sentence says them in its place, as much of them as the block shows.
 
 import { count } from './announce.js';
+import { nodeNotes } from './model.js';
+import { noteCharacters, shownNotes } from './nodeNotes.js';
 
 // A description longer than this many characters is cut.
 const DESCRIPTION_LENGTH = 80;
@@ -94,10 +99,46 @@ function spoken(entries, phrase) {
   );
 }
 
+// The tooltip row of a node's notes, each cut to one line, and the sentence
+// that says them: the notes the block below the node shows (shownNotes),
+// each whole unless it is longer than the block can show at the node's
+// width (noteCharacters), and then how many more there are, as the block's
+// "+N more" line does. The notes are apart by semicolons, as a note may
+// hold commas. Both are empty for a node without notes.
+function notesInfo(node) {
+  const notes = nodeNotes(node);
+
+  if (!notes.length) {
+    return { rows: [], text: [] };
+  }
+
+  const longest = noteCharacters(node);
+  const { shown, more } = shownNotes(notes);
+  const said = [
+    ...shown.map((note) => cut(note, longest)),
+    ...(more ? [`and ${count(more, 'more note')}`] : []),
+  ].join('; ');
+  // A sentence that ends a note ends the list.
+  const end = /[.!?…]$/.test(said) ? '' : '.';
+
+  return {
+    rows: [
+      {
+        label: `Notes (${notes.length})`,
+        lines: lines(
+          notes.map((note) => cut(note)),
+          (note) => note,
+        ),
+      },
+    ],
+    text: [`${count(notes.length, 'note')}: ${said}${end}`],
+  };
+}
+
 /**
  * A device's info: its description, its interfaces with their addresses,
- * and its OS type. The sentence leaves the description out, as the node's
- * accessible name ends with it.
+ * its OS type, and its notes when it has some. The sentence leaves the
+ * description out, as the node's accessible name ends with it.
  *
  * @param {object} node device node
  * @returns {{rows: {label: string, lines: string[]}[], text: string}}
@@ -113,6 +154,7 @@ export function deviceInfo(node) {
   const osType = isSet(spec?.hardware?.os_type)
     ? String(spec.hardware.os_type)
     : '';
+  const notes = notesInfo(node);
 
   return {
     rows: [
@@ -125,12 +167,14 @@ export function deviceInfo(node) {
         lines: lines(interfaces, (entry) => `${entry.name} — ${entry.address}`),
       },
       { label: 'OS type', lines: [osType || 'Not set'] },
+      ...notes.rows,
     ],
     text: [
       interfaces.length
         ? `Interfaces: ${spoken(interfaces, (entry) => `${entry.name} ${entry.address}`)}.`
         : 'No interfaces.',
       `OS type ${osType || 'not set'}.`,
+      ...notes.text,
     ].join(' '),
   };
 }
@@ -143,22 +187,25 @@ function byLabel(a, b) {
 }
 
 /**
- * A switch's info: its network's name, VLAN alias and description, and the
+ * A switch's info: its network's name, VLAN alias and description, the
  * devices connected to this switch, by name, each with the addresses of
- * the interfaces it connects on. The sentence leaves the network and the
- * alias out, as the node's accessible name says both.
+ * the interfaces it connects on, and the switch's notes when it has some.
+ * The sentence leaves the network and the alias out, as the node's
+ * accessible name says both.
  *
  * @param {object} [network] the switch's network
  * @param {{label: string, addresses: string[]}[]} [connected] see
  *   connectedDevices in adapters/vueflow.js
+ * @param {object} [node] the switch node, whose notes are listed
  * @returns {{rows: {label: string, lines: string[]}[], text: string}}
  */
-export function switchInfo(network, connected = []) {
+export function switchInfo(network, connected = [], node = null) {
   const devices = [...connected].sort(byLabel).map((device) => ({
     label: device.label,
     addresses: (device.addresses || []).join(', '),
   }));
   const description = cut(network?.description);
+  const notes = notesInfo(node);
 
   return {
     rows: [
@@ -176,6 +223,7 @@ export function switchInfo(network, connected = []) {
             : device.label,
         ),
       },
+      ...notes.rows,
     ],
     text: [
       ...(description ? [`Description: ${description}.`] : []),
@@ -188,6 +236,7 @@ export function switchInfo(network, connected = []) {
                 : device.label,
           )}.`
         : 'No connected devices.',
+      ...notes.text,
     ].join(' '),
   };
 }
