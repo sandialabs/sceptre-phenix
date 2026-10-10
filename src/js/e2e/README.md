@@ -70,10 +70,10 @@ Tag a test in its declaration: `test('…', { tag: '@cross-browser' }, …)`, or
 `{ tag: ['@cross-browser', '@axe'] }` for more than one tag. Give the Firefox
 subset the tests whose behavior depends on the browser engine: pointer drag,
 drag-and-drop, focus order, file transfer, clipboard, IndexedDB, and CSS
-layout. The `@axe` tag marks the full axe scans of every view and dialog, the
-longest tests, and the scans of a canvas of filled nodes, of custom icons and
-of the template editor in each theme, which CI runs in a job of their own;
-keep it off other tests.
+layout. The `@axe` tag marks the axe scans of every view and dialog, each a
+test of its own in each theme, and the scans of a canvas of filled nodes, of
+custom icons and of the template editor in each theme, which CI runs in a job
+of their own; keep it off other tests.
 
 ### Builder specs
 
@@ -83,6 +83,18 @@ fixture deletes every draft and config a test creates, so runs leave the
 server clean. Builder works over plain HTTP from any host, which one
 `builder-integration.spec.js` test checks by routing a non-local host name to
 the server.
+
+A test checks one state, or one journey whose steps lead from one to the
+next, such as a dialog opened, used and closed by keyboard, and stays under
+about 300 lines. It starts from the state it checks: it seeds a draft through
+the API (`seedDraft()` with `blankDocument()` or `labDocument()`, which takes
+the hostnames of its devices), a published topology (`publishTopology()`), a
+config (`seedConfig()`) or library templates (`seedTemplates()`), rather than
+clicking through the steps of another test. A test of what a draft keeps
+across a new page load goes through `builder.editAndReload(draft, options)`:
+the edit (`options.edit`), the wait until it is saved or kept offline
+(`expectSaved`), the reload, the draft opened again from the landing, and
+what it shows then (`expectAfterReload`).
 
 The editor's live region holds each message for 750 ms, and messages that
 arrive meanwhile are read together after it. A spec that does not test what

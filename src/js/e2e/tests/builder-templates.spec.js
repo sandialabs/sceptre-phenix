@@ -138,6 +138,17 @@ function template(name, init = {}) {
   };
 }
 
+// The template saved from plc-01 in PLANT_LOOK, named PLC and described, its
+// hostname plc and its VLAN PLANT, as the diagram keeps it under `id`.
+function plcTemplate(id) {
+  return {
+    id,
+    name: 'PLC',
+    description: 'Plant controller',
+    device: { iconKey: 'linux', ...PLANT_LOOK, spec: plcSpec('plc', 'PLANT') },
+  };
+}
+
 // The template editor, and the fields of the Inspector's form in it, by
 // their data path.
 function templateEditor(page) {
@@ -201,20 +212,31 @@ const hostnames = (doc) => devicesOf(doc).map((node) => node.device.hostname);
 const byHostname = (doc, hostname) =>
   devicesOf(doc).find((node) => node.device.hostname === hostname);
 
+// The colors of the device of the diagram the template tests start from.
+const PLANT_LOOK = { outlineColor: '#2f6fbf', fillColor: '#ffeecc' };
+
+// Opens a new draft of plantDocument(), its device in PLANT_LOOK, and
+// `extra` added to the document. Returns the draft.
+async function openPlant(builder, testInfo, extra = {}) {
+  const draft = await builder.seedDraft(
+    plantDocument(uniqueName(testInfo, 'templates'), {
+      look: PLANT_LOOK,
+      ...extra,
+    }),
+  );
+  await builder.openDraft(draft);
+
+  return draft;
+}
+
 test(
-  'a device template is saved in the diagram from the selected device, makes devices with its fields, and travels with the diagram',
+  'a diagram with no template of its own lists the library, and "+" opens the template editor on the selected device in a large dialog',
   { tag: '@cross-browser' },
   async ({ page, builder, issues }, testInfo) => {
-    const title = uniqueName(testInfo, 'templates');
-    const draft = await builder.seedDraft(
-      plantDocument(title, {
-        look: { outlineColor: '#2f6fbf', fillColor: '#ffeecc' },
-      }),
-    );
     const palette = templatePalette(page);
     const editor = templateEditor(page);
 
-    await builder.openDraft(draft);
+    await openPlant(builder, testInfo);
 
     await test.step('a diagram with no template of its own lists the user’s library, under no group name', async () => {
       // The library starts with the five built-in templates, in this order;
@@ -291,6 +313,22 @@ test(
       expect.soft(Math.abs(icon.y - hostname.y)).toBeLessThan(4);
       await page.setViewportSize({ width: 1600, height: 900 });
     });
+
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a device template is checked as the Inspector checks a device, and saved in the diagram from the selected device as one edit',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }, testInfo) => {
+    const palette = templatePalette(page);
+    const editor = templateEditor(page);
+    const draft = await openPlant(builder, testInfo);
+
+    await builder.selectInOutline('plc-01');
+    await palette.plus.click();
+    await expect(editor.dialog).toBeVisible();
 
     await test.step('the form is the Inspector’s, with the device’s values and nothing of the canvas', async () => {
       const form = editor.dialog.getByRole('region', { name: 'Node fields' });
@@ -425,8 +463,6 @@ test(
       await editor.description.fill('Plant controller');
     });
 
-    let saved;
-
     await test.step('Save to diagram keeps the template in the diagram, as one edit', async () => {
       // The edits were never said to wait for Apply: the one thing the
       // dialog said is the warning.
@@ -449,19 +485,9 @@ test(
       await builder.persisted(draft, (doc) => doc.templates.length, 1);
       const doc = await builder.serverDocument(draft);
 
-      [saved] = doc.templates;
+      const [saved] = doc.templates;
       expect(saved.id).toMatch(UUID);
-      expect.soft(saved).toEqual({
-        id: saved.id,
-        name: 'PLC',
-        description: 'Plant controller',
-        device: {
-          iconKey: 'linux',
-          outlineColor: '#2f6fbf',
-          fillColor: '#ffeecc',
-          spec: plcSpec('plc', 'PLANT'),
-        },
-      });
+      expect.soft(saved).toEqual(plcTemplate(saved.id));
       // The device it was made from is as it was.
       expect
         .soft(byHostname(doc, 'plc-01').device.spec)
@@ -484,6 +510,20 @@ test(
       await builder.toolbar('redo').click();
       await expect(palette.entry(saved.id)).toBeVisible();
     });
+
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a template of the diagram makes devices with its fields, from Add nodes and the command palette, and travels with the diagram',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }, testInfo) => {
+    const palette = templatePalette(page);
+    // The template made from plc-01 in the test above.
+    const saved = plcTemplate(crypto.randomUUID());
+    const draft = await openPlant(builder, testInfo, { templates: [saved] });
+    await expect(palette.entry(saved.id)).toBeVisible();
 
     await test.step('its entry adds a device with the template’s fields, by a click and by a drag', async () => {
       const entry = palette.entry(saved.id);
@@ -554,12 +594,10 @@ test(
     });
 
     await test.step('the template is there after a reload, in the download, and in a draft made by uploading it', async () => {
-      await builder.waitSaved();
-      await page.reload();
-      await expect(builder.landingHeading).toBeVisible({ timeout: 20000 });
-      await page.getByTestId(`draft-open-${draft.id}`).click();
-      await expect(builder.canvas).toBeVisible();
-      await expect(palette.entry(saved.id)).toBeVisible();
+      await builder.editAndReload(draft, {
+        expectSaved: () => builder.waitSaved(),
+        expectAfterReload: () => expect(palette.entry(saved.id)).toBeVisible(),
+      });
 
       const dialog = await builder.openDialog('download');
       const file = await download(page, () =>
@@ -1149,19 +1187,33 @@ async function listedTemplates(request, ids) {
   return ids.map((id) => templates.find((entry) => entry.id === id) || null);
 }
 
+// Makes a collection of the library through the API, named `name` and
+// holding the templates `templateIds`, and schedules it for deletion.
+// Returns its id.
+async function seedCollection(
+  request,
+  tracker,
+  { name, description = '', templateIds },
+) {
+  const { owner } = await readLibrary(request);
+  const response = await libraryChange(
+    request,
+    'post',
+    `${LIBRARY}/${encodeURIComponent(owner)}/collections`,
+    { data: { name, description, templateIds } },
+  );
+  expect(response.ok(), await response.text()).toBeTruthy();
+  const { id } = await response.json();
+  tracker.collection(owner, id);
+
+  return id;
+}
+
 test(
-  'a template of the library is made, changed and deleted on the Node Templates tab, and makes devices in a diagram',
+  'the Node Templates tab lists the library, which starts with the five built-in templates, in Tab order',
   { tag: '@cross-browser' },
-  async ({ page, builder, request, issues }, testInfo) => {
-    const name = uniqueName(testInfo, 'node');
-    const draft = await builder.seedDraft(
-      blankDocument(uniqueName(testInfo, 'library')),
-    );
+  async ({ page, builder, issues }) => {
     const library = templateLibrary(page);
-    const palette = templatePalette(page);
-    const editor = templateEditor(page);
-    const title = editor.dialog.getByRole('heading', { level: 2 });
-    let id;
 
     await builder.open();
 
@@ -1230,6 +1282,24 @@ test(
         await expect(control).toBeFocused();
       }
     });
+
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a template of the library is made and changed in the large editor, which keeps what is typed when the server refuses it',
+  { tag: '@cross-browser' },
+  async ({ page, builder, request, issues }, testInfo) => {
+    const name = uniqueName(testInfo, 'node');
+    const library = templateLibrary(page);
+    const editor = templateEditor(page);
+    const title = editor.dialog.getByRole('heading', { level: 2 });
+    let id;
+
+    await builder.open();
+    await library.tab.click();
+    await expect(library.list).toBeVisible();
 
     await test.step('New template opens the large editor on a plain device, and Save to library adds it', async () => {
       await library.newTemplate.click();
@@ -1427,6 +1497,42 @@ test(
       await expect.soft(library.card(id)).toContainText('Third words');
     });
 
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a template of the library makes devices in a diagram, the library button goes to it, and Delete takes it out of the library only',
+  { tag: '@cross-browser' },
+  async ({ page, builder, request, tracker, issues }, testInfo) => {
+    const name = uniqueName(testInfo, 'node');
+    // A plain device's template, as New template makes it, named and
+    // described, its hostname node-a.
+    const {
+      ids: [id],
+    } = await seedTemplates(request, tracker, [
+      {
+        name,
+        description: 'Third words',
+        device: {
+          iconKey: 'server',
+          spec: {
+            type: 'VirtualMachine',
+            general: { hostname: 'node-a', description: '', vm_type: 'kvm' },
+            hardware: { os_type: 'linux', drives: [{ image: 'ubuntu.qc2' }] },
+            network: { interfaces: [] },
+          },
+        },
+      },
+    ]);
+    const draft = await builder.seedDraft(
+      blankDocument(uniqueName(testInfo, 'library')),
+    );
+    const library = templateLibrary(page);
+    const palette = templatePalette(page);
+
+    await builder.open();
+
     await test.step('Add nodes lists it under the library, and its entry makes a device with its fields', async () => {
       await page.getByTestId('drafts-tab-mine').click();
       await page.getByTestId(`draft-open-${draft.id}`).click();
@@ -1534,18 +1640,12 @@ test(
   },
 );
 
-test('collections group templates of the library, and several templates are added to one, taken out of it and deleted at once', async ({
-  page,
-  builder,
-  request,
-  tracker,
-  issues,
-}, testInfo) => {
+// Three templates of the library, made through the API and named for the
+// test: alfa, bravo and delta. Returns their names and ids.
+async function seedThreeTemplates(request, tracker, testInfo) {
   const names = ['alfa', 'bravo', 'delta'].map((part) =>
     uniqueName(testInfo, part),
   );
-  const first = uniqueName(testInfo, 'set-one');
-  const second = uniqueName(testInfo, 'set-two');
   const { ids } = await seedTemplates(
     request,
     tracker,
@@ -1555,15 +1655,25 @@ test('collections group templates of the library, and several templates are adde
       device: unitDevice(`unit-${index}`),
     })),
   );
-  const [alfa, bravo, delta] = ids;
+
+  return { names, ids };
+}
+
+test('collections group templates of the library, and selected templates are added to one, or start one', async ({
+  page,
+  builder,
+  request,
+  tracker,
+  issues,
+}, testInfo) => {
+  const first = uniqueName(testInfo, 'set-one');
+  const second = uniqueName(testInfo, 'set-two');
+  const {
+    ids: [alfa, bravo, delta],
+  } = await seedThreeTemplates(request, tracker, testInfo);
   const library = templateLibrary(page);
   const { dialog } = library;
-  const collections = async () =>
-    (await readLibrary(request)).collections.filter((entry) =>
-      [first, second, `${first} two`].includes(entry.name),
-    );
   let one;
-  let two;
 
   await builder.open();
   await library.tab.click();
@@ -1716,7 +1826,6 @@ test('collections group templates of the library, and several templates are adde
       description: '',
       templateIds: [bravo, delta],
     });
-    two = (await answer.json()).id;
     await expect(dialog.root).toHaveCount(0);
     await expect(builder).toHaveAnnounced(
       `Created collection ${second} with 2 templates.`,
@@ -1725,6 +1834,44 @@ test('collections group templates of the library, and several templates are adde
       `In ${first} and ${second}`,
     );
   });
+
+  expectNoFatal(issues);
+});
+
+test('a collection shows what it is and its templates, which are taken out of it, and it is renamed and deleted, and its templates deleted at once', async ({
+  page,
+  builder,
+  request,
+  tracker,
+  issues,
+}, testInfo) => {
+  const first = uniqueName(testInfo, 'set-one');
+  const second = uniqueName(testInfo, 'set-two');
+  const {
+    names,
+    ids: [alfa, bravo, delta],
+  } = await seedThreeTemplates(request, tracker, testInfo);
+  // The two collections the test above makes: alfa and bravo in the first,
+  // bravo and delta in the second.
+  const one = await seedCollection(request, tracker, {
+    name: first,
+    description: 'The first set',
+    templateIds: [alfa, bravo],
+  });
+  const two = await seedCollection(request, tracker, {
+    name: second,
+    templateIds: [bravo, delta],
+  });
+  const library = templateLibrary(page);
+  const { dialog } = library;
+  const collections = async () =>
+    (await readLibrary(request)).collections.filter((entry) =>
+      [first, second, `${first} two`].includes(entry.name),
+    );
+
+  await builder.open();
+  await library.tab.click();
+  await expect(library.card(alfa)).toBeVisible();
 
   await test.step('Show lists one collection: what it is, its templates, and Remove from collection', async () => {
     await library.show.selectOption(one);

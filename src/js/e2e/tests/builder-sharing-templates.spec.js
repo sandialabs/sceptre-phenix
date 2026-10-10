@@ -200,29 +200,59 @@ function templateEditor(page) {
   };
 }
 
+// The users of a test of a shared library, of authorRole: the owner, the
+// recipient and a stranger. The owner's library holds the template Plant
+// PLC, described `description`, and the collection Kit, of Kit RTU.
+async function plantLibrary(userMaker, description = 'Line one') {
+  const role = authorRole(userMaker.nonce);
+
+  await userMaker.role(role);
+
+  const owner = await userMaker.user('owner', role.spec.roleName);
+  const recipient = await userMaker.user('recipient', role.spec.roleName);
+  const stranger = await userMaker.user('stranger', role.spec.roleName);
+  const {
+    ids: [plc],
+  } = await addTemplates(owner, [
+    { name: 'Plant PLC', description, device: unitDevice('plc') },
+  ]);
+  const kit = await addTemplates(
+    owner,
+    [{ name: 'Kit RTU', description: '', device: unitDevice('rtu') }],
+    { name: 'Kit' },
+  );
+
+  return { role, owner, recipient, stranger, plc, kit, rtu: kit.ids[0] };
+}
+
+// Shares templates and collections of `owner`'s library with `recipient`
+// through the API, as the Share dialogs do.
+async function shareWith(owner, recipient, { templates, collections }) {
+  const response = await libraryChange(
+    owner.api,
+    'post',
+    libraryPath(owner, 'share'),
+    {
+      data: {
+        templates,
+        collections,
+        add: [recipient.username],
+        remove: [],
+      },
+    },
+  );
+
+  expect(response.status(), await response.text()).toBe(200);
+  expect(await response.json()).toEqual({ failed: [] });
+}
+
 test(
-  'the owner shares a template and a collection with another user, who uses them read only and copies them',
+  'the owner shares a template from its card by keyboard, and a collection from its block, with another user',
   { tag: '@cross-browser' },
-  async ({ userMaker, playwright, request }, testInfo) => {
+  async ({ userMaker }) => {
     test.setTimeout(180000);
-    const role = authorRole(userMaker.nonce);
-
-    await userMaker.role(role);
-
-    const owner = await userMaker.user('owner', role.spec.roleName);
-    const recipient = await userMaker.user('recipient', role.spec.roleName);
-    const stranger = await userMaker.user('stranger', role.spec.roleName);
-    const {
-      ids: [plc],
-    } = await addTemplates(owner, [
-      { name: 'Plant PLC', description: 'Line one', device: unitDevice('plc') },
-    ]);
-    const kit = await addTemplates(
-      owner,
-      [{ name: 'Kit RTU', description: '', device: unitDevice('rtu') }],
-      { name: 'Kit' },
-    );
-    const [rtu] = kit.ids;
+    const { owner, recipient, stranger, plc, kit } =
+      await plantLibrary(userMaker);
     const { page } = owner;
 
     await test.step('the owner shares a template from its card, by keyboard', async () => {
@@ -305,6 +335,20 @@ test(
         `Shared with ${recipient.username}`,
       );
       expectNoFatal(owner.issues);
+    });
+  },
+);
+
+test(
+  'a template and a collection shared with a user are theirs to use read only, in Add nodes too, with the owner’s later change, and no one else’s',
+  { tag: '@cross-browser' },
+  async ({ userMaker }) => {
+    test.setTimeout(180000);
+    const { owner, recipient, stranger, plc, kit, rtu } =
+      await plantLibrary(userMaker);
+    await shareWith(owner, recipient, {
+      templates: [plc],
+      collections: [kit.collection],
     });
 
     await test.step('the recipient finds both under Shared with me, read only', async () => {
@@ -427,6 +471,29 @@ test(
         'Line two',
       );
     });
+  },
+);
+
+test(
+  'the recipient views a shared template and copies it, and a shared collection, and an account made again under their name sees nothing',
+  { tag: '@cross-browser' },
+  async ({ userMaker, playwright, request }, testInfo) => {
+    test.setTimeout(180000);
+    const { role, owner, recipient, plc, kit } = await plantLibrary(
+      userMaker,
+      'Line two',
+    );
+    await shareWith(owner, recipient, {
+      templates: [plc],
+      collections: [kit.collection],
+    });
+    const { page } = owner;
+    const shared = await openLibrary(recipient);
+
+    await shared.show.selectOption('shared:');
+    await expect(shared.theirCard(owner.username, plc)).toContainText(
+      'Line two',
+    );
 
     await test.step('View shows every field, locked, and copies it into the recipient’s library', async () => {
       const theirs = recipient.page;

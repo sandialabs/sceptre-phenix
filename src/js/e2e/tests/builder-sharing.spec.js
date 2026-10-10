@@ -264,16 +264,13 @@ async function sharedHeader(page, width) {
 }
 
 test(
-  'the owner shares a draft by keyboard; the editor changes it and the viewer only views it',
+  'the owner shares a draft by keyboard from the drafts page, and copies a link that opens it',
   { tag: '@cross-browser' },
   async ({ sharingUsers }, testInfo) => {
-    test.setTimeout(120000);
     const { owner, editor, viewer, stranger } = sharingUsers;
     const name = 'Network lab';
     const draft = await seedDraft(owner, name);
     const { page } = owner;
-    // The time of the editor's save, once it is made.
-    let editedAt;
 
     await test.step('the owner shares it from the drafts page', async () => {
       await landing(owner);
@@ -350,6 +347,45 @@ test(
         page.getByTestId(`draft-shared-with-${draft.id}`),
       ).toContainText(`Shared with ${editor.username} and ${viewer.username}`);
     });
+
+    if (testInfo.project.name === 'chromium') {
+      await test.step('Copy link copies a link that opens the draft', async () => {
+        await owner.context.grantPermissions([
+          'clipboard-read',
+          'clipboard-write',
+        ]);
+        await page.getByTestId(`draft-share-${draft.id}`).click();
+        const dialog = await shareDialog(page);
+        await dialog.getByTestId('share-copy-link').click();
+        await expect(dialog.getByTestId('share-copy-status')).toHaveText(
+          'Link copied.',
+        );
+        const link = await page.evaluate(() => navigator.clipboard.readText());
+        expect(new URL(link).searchParams.get('draft')).toBe(
+          `${owner.username}/${draft.id}`,
+        );
+        await dialog.getByTestId('share-cancel').click();
+        await expect(dialog).toBeHidden();
+      });
+    }
+  },
+);
+
+test(
+  'the editor changes a shared draft, the owner sees who did, the viewer only views it, and only the owner deletes it or changes its access',
+  { tag: '@cross-browser' },
+  async ({ sharingUsers }) => {
+    test.setTimeout(120000);
+    const { owner, editor, viewer, stranger } = sharingUsers;
+    const name = 'Network lab';
+    const draft = await seedDraft(owner, name, [
+      { user: editor.username, access: 'edit' },
+      { user: viewer.username, access: 'view' },
+    ]);
+    const { page } = owner;
+    // The time of the editor's save, once it is made.
+    let editedAt;
+    await landing(owner);
 
     await test.step('the editor finds it under Shared Drafts and changes it', async () => {
       const { page: theirs } = editor;
@@ -595,27 +631,6 @@ test(
         ),
       ).not.toContain(draft.id);
     });
-
-    if (testInfo.project.name === 'chromium') {
-      await test.step('Copy link copies a link that opens the draft', async () => {
-        await owner.context.grantPermissions([
-          'clipboard-read',
-          'clipboard-write',
-        ]);
-        await page.getByTestId(`draft-share-${draft.id}`).click();
-        const dialog = await shareDialog(page);
-        await dialog.getByTestId('share-copy-link').click();
-        await expect(dialog.getByTestId('share-copy-status')).toHaveText(
-          'Link copied.',
-        );
-        const link = await page.evaluate(() => navigator.clipboard.readText());
-        expect(new URL(link).searchParams.get('draft')).toBe(
-          `${owner.username}/${draft.id}`,
-        );
-        await dialog.getByTestId('share-cancel').click();
-        await expect(dialog).toBeHidden();
-      });
-    }
   },
 );
 

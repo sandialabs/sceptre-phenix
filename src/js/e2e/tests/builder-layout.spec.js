@@ -201,9 +201,10 @@ async function toolbarLayout(page) {
 }
 
 // Resizes the window and waits two frames, so resize observers and media
-// query listeners have run before the layout is measured.
+// query listeners have run before the layout is measured. A window that has
+// just left full screen takes a moment before it can be resized.
 async function resize(page, viewport) {
-  await page.setViewportSize(viewport);
+  await expect(() => page.setViewportSize(viewport)).toPass({ timeout: 5000 });
   await page.evaluate(
     () =>
       new Promise((resolve) => {
@@ -236,14 +237,34 @@ async function headerHeight(page) {
   return (await page.locator('.navbar').boundingBox()).height;
 }
 
+// A new draft with a device, a workstation and an external node from their
+// templates, a switch and a note, the device connected to the switch.
+async function sampleDiagram(builder) {
+  await builder.open();
+  const draft = await builder.createBlank();
+  for (const item of [
+    'device',
+    'template-workstation',
+    'template-external',
+    'switch',
+    'note',
+  ]) {
+    await builder.palette(item).click();
+  }
+  await builder.connect();
+  await expect.soft(builder.summary).toContainText('1 connection');
+  await builder.waitSaved();
+
+  return draft;
+}
+
 test(
-  'the editor fills the window at every size, keeps text in its boxes, and leaving restores the page',
+  'the Builder keeps the header’s height, hides the footer and fills the width, and leaving it restores the page',
   {
     tag: '@cross-browser',
   },
   async ({ page, builder, issues }) => {
     const initial = page.viewportSize();
-    let draft;
 
     await visit(page, '/experiments');
     await expect(page.locator('.navbar')).toBeVisible();
@@ -313,26 +334,33 @@ test(
         ]);
     });
 
-    await test.step('build a sample diagram', async () => {
-      draft = await builder.createBlank();
+    await test.step('the editor keeps the header’s height and hides the footer', async () => {
+      await resize(page, initial);
+      await builder.createBlank();
       expect.soft(await headerHeight(page)).toBe(header);
-      for (const item of [
-        'device',
-        'template-workstation',
-        'template-external',
-        'switch',
-        'note',
-      ]) {
-        await builder.palette(item).click();
-      }
-      await builder.connect();
-      await expect.soft(builder.summary).toContainText('1 connection');
-      await builder.waitSaved();
       await expect.soft(page.getByText(FOOTER)).toHaveCount(0);
     });
 
-    for (const viewport of VIEWPORTS) {
-      const size = `${viewport.width}x${viewport.height}`;
+    await test.step('leaving the Builder restores the normal page and header height', async () => {
+      await page.getByRole('link', { name: 'Experiments' }).click();
+      await expect(page).toHaveURL(/\/experiments/);
+      await expect.soft(page.getByText(FOOTER)).toBeVisible();
+      await expect.soft(page.locator('#main')).toHaveClass(/container/);
+      expect.soft(await headerHeight(page)).toBe(header);
+    });
+
+    expectNoFatal(issues);
+  },
+);
+
+for (const viewport of VIEWPORTS) {
+  const size = `${viewport.width}x${viewport.height}`;
+
+  test(
+    `the editor fills a ${size} window without page scrolling`,
+    { tag: '@cross-browser' },
+    async ({ page, builder, issues }) => {
+      await sampleDiagram(builder);
 
       await test.step(`fills a ${size} window without page scrolling`, async () => {
         await resize(page, viewport);
@@ -487,7 +515,17 @@ test(
           .soft(layout.navRight, at('header links'))
           .toBeLessThanOrEqual(layout.width + 1);
       });
-    }
+
+      expectNoFatal(issues);
+    },
+  );
+}
+
+test(
+  'splitters resize the side columns, keep a usable canvas and are remembered',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }) => {
+    const draft = await sampleDiagram(builder);
 
     await test.step('splitters resize the side columns, keep a usable canvas and are remembered', async () => {
       await resize(page, { width: 1440, height: 900 });
@@ -571,6 +609,17 @@ test(
         .soft(start)
         .toHaveAttribute('aria-valuenow', String(palette));
     });
+
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a Widen toggle at each splitter widens its column with a single click, and restores it',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }) => {
+    const draft = await sampleDiagram(builder);
+    await resize(page, { width: 1440, height: 900 });
 
     await test.step('a Widen toggle at each splitter widens its column with a single click, and restores it', async () => {
       // WCAG 2.5.7: a pointer need not drag to resize a column.
@@ -673,6 +722,17 @@ test(
         .soft(splitters.end)
         .toHaveAttribute('aria-valuenow', String(widths.end));
     });
+
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a Hide toggle folds each side column into a strip that shows it again, and a node pressed on the canvas shows the Inspector',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }) => {
+    const draft = await sampleDiagram(builder);
+    await resize(page, { width: 1440, height: 900 });
 
     await test.step('a Hide toggle folds each side column into a strip that shows it again, and a node pressed on the canvas shows the Inspector', async () => {
       const hide = {
@@ -847,6 +907,17 @@ test(
       expect.soft(await canvasWidth(), 'canvas width again').toBe(wide);
     });
 
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'the minimap resizes from its top left corner, by keyboard or drag, and is remembered',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }) => {
+    const draft = await sampleDiagram(builder);
+    await resize(page, { width: 1440, height: 900 });
+
     await test.step('the minimap resizes from its top left corner, by keyboard or drag, and is remembered', async () => {
       const handle = page.getByRole('separator', { name: 'Resize minimap' });
       const minimap = page.locator('.vue-flow__minimap');
@@ -977,6 +1048,16 @@ test(
       await handle.dblclick();
     });
 
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'Reset view puts the view back as the draft opened, in one press',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }) => {
+    const draft = await sampleDiagram(builder);
+
     await test.step('Reset view puts the view back as the draft opened, in one press', async () => {
       const reset = page.getByTestId('editor-reset-view');
       const splitters = {
@@ -1100,6 +1181,16 @@ test(
       await expect.poll(transform, { message: 'zoom and pan' }).toBe(opened);
     });
 
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a short window or enlarged text keeps a usable canvas, and the editor scrolls',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }) => {
+    await sampleDiagram(builder);
+
     await test.step('a short window or enlarged text keeps a usable canvas, and the editor scrolls', async () => {
       // WCAG 1.4.4 and 1.4.10: a window too short for the editor scrolls it
       // rather than squeezing the canvas away.
@@ -1184,7 +1275,15 @@ test(
       await expect.soft(page.locator('#builder-pane-end')).toBeVisible();
     });
 
-    await resize(page, initial);
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'panel, outline and node text stays inside its boxes, Delete in the rename field edits the text, and long names wrap or truncate',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }) => {
+    await sampleDiagram(builder);
 
     await test.step('panel, outline and node text stays inside its boxes', async () => {
       await builder.selectInOutline('workstation');
@@ -1240,6 +1339,16 @@ test(
       await builder.waitSaved();
     });
 
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'Focus mode hides the navigation bar and fills the window, in the editor and on the drafts, until its button, its keys or leaving the Builder end it',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }) => {
+    const draft = await sampleDiagram(builder);
+
     await test.step('Focus mode hides the navigation bar and fills the window, in the editor and on the drafts, until its button, its keys or leaving the Builder end it', async () => {
       const nav = page.locator('.navbar');
       const enter = page.getByRole('button', {
@@ -1276,9 +1385,18 @@ test(
       await expect.soft(builder).toHaveAnnounced('Focus mode on');
       await fills('focus mode');
 
-      // Leaving full screen, as the browser's Escape does, leaves focus
-      // mode on.
-      if (await page.evaluate(() => Boolean(document.fullscreenElement))) {
+      // Full screen, where the browser grants it, comes a moment after the
+      // press. Leaving it, as the browser's Escape does, leaves focus mode
+      // on.
+      const fullScreen = await page
+        .waitForFunction(() => Boolean(document.fullscreenElement), null, {
+          timeout: 2000,
+        })
+        .then(
+          () => true,
+          () => false,
+        );
+      if (fullScreen) {
         await page.evaluate(() => document.exitFullscreen());
         await expect.soft(builder).toHaveAnnounced('Full screen off');
       }
@@ -1330,14 +1448,6 @@ test(
       await inEditor.click();
       await expect.soft(nav).toBeVisible();
       await expect.soft(inEditor).toHaveAccessibleName('Focus mode');
-    });
-
-    await test.step('leaving the Builder restores the normal page and header height', async () => {
-      await page.getByRole('link', { name: 'Experiments' }).click();
-      await expect(page).toHaveURL(/\/experiments/);
-      await expect.soft(page.getByText(FOOTER)).toBeVisible();
-      await expect.soft(page.locator('#main')).toHaveClass(/container/);
-      expect.soft(await headerHeight(page)).toBe(header);
     });
 
     expectNoFatal(issues);

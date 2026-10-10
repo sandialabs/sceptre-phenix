@@ -127,6 +127,21 @@ function recordedToasts(page) {
   return page.evaluate(() => window.__e2eToasts);
 }
 
+// Records every draft-create request the page sends from now on.
+function recordDraftCreates(page) {
+  const creates = [];
+  page.on('request', (sent) => {
+    if (
+      sent.method() === 'POST' &&
+      new URL(sent.url()).pathname === `${API}/builder/drafts`
+    ) {
+      creates.push(sent.url());
+    }
+  });
+
+  return creates;
+}
+
 test.describe('header', () => {
   test('links to the Builder', async ({ page, issues, tracker }) => {
     await visit(page, '/experiments');
@@ -216,38 +231,26 @@ test.describe('header', () => {
 });
 
 test.describe('Configs page', () => {
-  test('tags Builder topologies and routes each edit button to the right editor', async ({
+  test('tags Builder topologies with a link into the Builder, and the viewer shows each kind read only', async ({
     page,
     request,
     tracker,
-    builder,
     issues,
   }, testInfo) => {
     const plain = uniqueName(testInfo, 'plain');
     const legacy = uniqueName(testInfo, 'legacy');
     const built = uniqueName(testInfo, 'built');
-    // Published by a draft that is gone since, as a diagram someone else
-    // published is to this user.
-    const orphan = uniqueName(testInfo, 'orphan');
-    const xml = legacyXml('legacy-cell');
     await seedConfig(request, tracker, topology(plain));
     await seedConfig(
       request,
       tracker,
-      topology(legacy, { 'builder-xml': xml }),
-    );
-    const publisher = await publishTopology(
-      request,
-      tracker,
-      built,
-      deviceDocument(built, 'host-a'),
+      topology(legacy, { 'builder-xml': legacyXml('legacy-cell') }),
     );
     await publishTopology(
       request,
       tracker,
-      orphan,
-      deviceDocument(orphan, 'host-o'),
-      { keepDraft: false },
+      built,
+      deviceDocument(built, 'host-a'),
     );
 
     await openConfigs(page);
@@ -400,6 +403,35 @@ test.describe('Configs page', () => {
       await expect(page.getByRole('dialog')).toHaveCount(0);
     });
 
+    expectNoFatal(issues);
+  });
+
+  test('the YAML editor opens a legacy Builder topology without its diagram and saves the diagram back, and opens an ordinary topology', async ({
+    page,
+    request,
+    tracker,
+    issues,
+  }, testInfo) => {
+    const plain = uniqueName(testInfo, 'plain');
+    const legacy = uniqueName(testInfo, 'legacy');
+    const built = uniqueName(testInfo, 'built');
+    const xml = legacyXml('legacy-cell');
+    await seedConfig(request, tracker, topology(plain));
+    await seedConfig(
+      request,
+      tracker,
+      topology(legacy, { 'builder-xml': xml }),
+    );
+    await publishTopology(
+      request,
+      tracker,
+      built,
+      deviceDocument(built, 'host-a'),
+    );
+
+    await openConfigs(page);
+    await expect(configRow(page, legacy)).toBeVisible();
+
     await test.step('a legacy Builder topology opens in the YAML editor, which leaves its diagram out and saves it back', async () => {
       await editConfig(page, legacy);
       await expect
@@ -497,15 +529,35 @@ test.describe('Configs page', () => {
       await expect(configRow(page, built)).toBeVisible();
     });
 
-    const creates = [];
-    page.on('request', (sent) => {
-      if (
-        sent.method() === 'POST' &&
-        new URL(sent.url()).pathname === `${API}/builder/drafts`
-      ) {
-        creates.push(sent.url());
-      }
-    });
+    expectNoFatal(issues);
+  });
+
+  test('the viewer’s button and the tag of a legacy Builder topology open the Import dialog, which makes nothing until Import', async ({
+    page,
+    request,
+    tracker,
+    builder,
+    issues,
+  }, testInfo) => {
+    const plain = uniqueName(testInfo, 'plain');
+    const legacy = uniqueName(testInfo, 'legacy');
+    const built = uniqueName(testInfo, 'built');
+    await seedConfig(request, tracker, topology(plain));
+    await seedConfig(
+      request,
+      tracker,
+      topology(legacy, { 'builder-xml': legacyXml('legacy-cell') }),
+    );
+    await publishTopology(
+      request,
+      tracker,
+      built,
+      deviceDocument(built, 'host-a'),
+    );
+
+    await openConfigs(page);
+    await expect(configRow(page, plain)).toBeVisible();
+    const creates = recordDraftCreates(page);
 
     await test.step("the viewer's button opens the Import dialog on a plain topology, and makes nothing until Import", async () => {
       const fetched = waitForApi(page, 'GET', `/configs/Topology/${plain}`);
@@ -608,6 +660,35 @@ test.describe('Configs page', () => {
         .toBe(`Topology/${legacy}`);
     });
 
+    expectNoFatal(issues);
+  });
+
+  test('the tag of a Builder topology opens the draft that published it, and the viewer opens one no draft of mine published as a new draft', async ({
+    page,
+    request,
+    tracker,
+    builder,
+    issues,
+  }, testInfo) => {
+    const built = uniqueName(testInfo, 'built');
+    // Published by a draft that is gone since, as a diagram someone else
+    // published is to this user.
+    const orphan = uniqueName(testInfo, 'orphan');
+    const publisher = await publishTopology(
+      request,
+      tracker,
+      built,
+      deviceDocument(built, 'host-a'),
+    );
+    await publishTopology(
+      request,
+      tracker,
+      orphan,
+      deviceDocument(orphan, 'host-o'),
+      { keepDraft: false },
+    );
+    const creates = recordDraftCreates(page);
+
     await test.step('the tag of a Builder topology opens the draft that published it', async () => {
       const before = creates.length;
       await openConfigs(page);
@@ -673,6 +754,27 @@ test.describe('Configs page', () => {
         .soft(document.nodes.map((node) => node.device?.hostname))
         .toEqual(['host-o']);
     });
+
+    expectNoFatal(issues);
+  });
+
+  test('Back to drafts refreshes the Published tab, which opens a diagram read only until edited', async ({
+    page,
+    request,
+    tracker,
+    builder,
+    issues,
+  }, testInfo) => {
+    const built = uniqueName(testInfo, 'built');
+    const publisher = await publishTopology(
+      request,
+      tracker,
+      built,
+      deviceDocument(built, 'host-a'),
+    );
+    // The editor open, after the landing page has loaded its lists.
+    await builder.openDraft(publisher.draft);
+    const creates = recordDraftCreates(page);
 
     await test.step('Back to drafts refreshes the Published tab, which opens read only until edited', async () => {
       // Published while the editor is open, after the landing page loaded its
@@ -748,6 +850,21 @@ test.describe('Configs page', () => {
         .soft((await builder.serverDraft(draft)).sourceToken)
         .toMatch(/^builder-doc\//);
     });
+
+    expectNoFatal(issues);
+  });
+
+  test('a role that may not create drafts gets no import controls, and only views a diagram it has no draft of', async ({
+    page,
+    request,
+    tracker,
+    builder,
+    issues,
+  }, testInfo) => {
+    const plain = uniqueName(testInfo, 'plain');
+    await seedConfig(request, tracker, topology(plain));
+    await openConfigs(page);
+    const creates = recordDraftCreates(page);
 
     await test.step('a role that may not create drafts gets no import controls, and only views a diagram it has no draft of', async () => {
       // No draft of this user published it, or was made from it.

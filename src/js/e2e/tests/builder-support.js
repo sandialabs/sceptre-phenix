@@ -355,10 +355,11 @@ function blankDocument(name, { nodes = [], networks = [], edges = [] } = {}) {
   };
 }
 
-// A diagram that publishes: two Server devices, `server` and `server-2`,
-// each connected by eth0 to the switch of network EXP. Tests whose subject is
-// not drawing the diagram start from this instead of clicking it together.
-function labDocument(name) {
+// A diagram that publishes: two Server devices, `server` and `server-2` (or
+// one device for each of `hostnames`), each connected by eth0 to the switch
+// of network EXP. Tests whose subject is not drawing the diagram start from
+// this instead of clicking it together.
+function labDocument(name, { hostnames = ['server', 'server-2'] } = {}) {
   const id = () => crypto.randomUUID();
   const network = { id: id(), name: 'EXP' };
   const sw = {
@@ -368,7 +369,7 @@ function labDocument(name) {
     position: { x: 0, y: 400 },
     switch: { networkId: network.id },
   };
-  const devices = ['server', 'server-2'].map((hostname, index) => ({
+  const devices = hostnames.map((hostname, index) => ({
     id: id(),
     kind: 'device',
     label: hostname,
@@ -845,6 +846,69 @@ class BuilderPage {
     await this.page.getByTestId(`draft-open-${draft.id}`).click();
     await expect(this.canvas).toBeVisible();
     await this.waitSaved();
+  }
+
+  // The flow of a test of what the open `draft` keeps across a new page
+  // load: `edit` makes a change, `expectSaved` waits until the change is
+  // where the test wants it (on the server, or kept on this device), the
+  // page loads again, the draft opens from the drafts landing, and
+  // `expectAfterReload` looks at what it shows. `offline`, a route of the
+  // test's that fails the draft's saves, is taken away once the landing
+  // shows, where `expectOnLanding` looks first. With `via: 'open'` the
+  // Builder's page is visited again (as openDraft() does) instead of
+  // reloaded. Each callback is optional and given this page object.
+  // Resolves with the types of the dialogs the browser showed before the
+  // page went, each accepted: a change not saved yet asks first.
+  async editAndReload(
+    draft,
+    {
+      edit,
+      expectSaved,
+      offline,
+      expectOnLanding,
+      expectAfterReload,
+      via = 'reload',
+    } = {},
+  ) {
+    if (edit) {
+      await edit(this);
+    }
+    if (expectSaved) {
+      await expectSaved(this);
+    }
+
+    const prompts = [];
+    const accept = (dialog) => {
+      prompts.push(dialog.type());
+      dialog.accept().catch(() => {});
+    };
+
+    this.page.on('dialog', accept);
+    try {
+      if (via === 'open') {
+        await this.open();
+      } else {
+        await this.page.reload();
+        await expect(this.landingHeading).toBeVisible({ timeout: 20000 });
+      }
+    } finally {
+      this.page.off('dialog', accept);
+    }
+
+    if (offline) {
+      await this.page.unroute(offline);
+    }
+    if (expectOnLanding) {
+      await expectOnLanding(this);
+    }
+
+    await this.page.getByTestId(`draft-open-${draft.id}`).click();
+    await expect(this.canvas).toBeVisible();
+    if (expectAfterReload) {
+      await expectAfterReload(this);
+    }
+
+    return prompts;
   }
 }
 

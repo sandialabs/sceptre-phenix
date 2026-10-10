@@ -147,27 +147,26 @@ async function askDeleteSelected(page, tab, title) {
   return confirm;
 }
 
+// labDocument() named `name`, whose server-2 has an interface with no VLAN
+// and no connection, which Publish refuses.
+function blockedDocument(name) {
+  const blocked = labDocument(name);
+  blocked.edges.pop();
+  delete blocked.nodes[1].device.spec.network.interfaces[0].vlan;
+
+  return blocked;
+}
+
 test(
-  "a draft's card says who and when, has buttons of one size, and publishes from the drafts page with the work the server lacks",
+  "a draft's card says who and when, its tab count reads as its name, and its buttons are of one size at any width",
   { tag: '@cross-browser' },
-  async ({ page, builder, tracker, issues }, testInfo) => {
-    test.setTimeout(150000);
-
+  async ({ page, builder, issues }, testInfo) => {
     const topology = uniqueName(testInfo, 'card');
-    const blockedName = uniqueName(testInfo, 'card-blocked');
-    // An interface with no VLAN, which Publish refuses.
-    const blocked = labDocument(blockedName);
-    blocked.edges.pop();
-    delete blocked.nodes[1].device.spec.network.interfaces[0].vlan;
-
     const draft = await builder.seedDraft(labDocument(topology));
-    const stuck = await builder.seedDraft(blocked);
-    tracker.config('Topology', topology);
 
     await builder.open();
     const card = cardOf(page, draft.id);
     const publish = page.getByTestId(`draft-publish-${draft.id}`);
-    const dialog = page.getByRole('dialog');
     await expect(card).toBeVisible();
 
     await test.step('the tab count is text of the tab, the same size and on the same line as its name', async () => {
@@ -251,6 +250,28 @@ test(
       expectOneSize(await cardButtons(card), 'draft card at 320 pixels');
       await page.setViewportSize(wide);
     });
+
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a draft publishes from its card on the drafts page, with the change the server lacks once the server has it',
+  { tag: '@cross-browser' },
+  async ({ page, builder, tracker, issues }, testInfo) => {
+    test.setTimeout(150000);
+
+    const topology = uniqueName(testInfo, 'card');
+    const blockedName = uniqueName(testInfo, 'card-blocked');
+    const draft = await builder.seedDraft(labDocument(topology));
+    const stuck = await builder.seedDraft(blockedDocument(blockedName));
+    tracker.config('Topology', topology);
+
+    await builder.open();
+    const card = cardOf(page, draft.id);
+    const publish = page.getByTestId(`draft-publish-${draft.id}`);
+    const dialog = page.getByRole('dialog');
+    await expect(card).toBeVisible();
 
     await test.step('a change the server has not received is kept on the card when the draft is closed', async () => {
       await page.getByTestId(`draft-open-${draft.id}`).click();
@@ -469,6 +490,21 @@ test(
       expectOneSize(buttons, 'published card');
       await page.getByTestId('drafts-tab-mine').click();
     });
+
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'Publish on the card of a diagram with errors lists them, and Open draft leads to the editor on that draft',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }, testInfo) => {
+    const blockedName = uniqueName(testInfo, 'card-blocked');
+    const stuck = await builder.seedDraft(blockedDocument(blockedName));
+
+    await builder.open();
+    const dialog = page.getByRole('dialog');
+    await expect(cardOf(page, stuck.id)).toBeVisible();
 
     await test.step('a diagram with errors lists them, and Open draft leads to the editor on that draft', async () => {
       const blockedPublish = page.getByTestId(`draft-publish-${stuck.id}`);

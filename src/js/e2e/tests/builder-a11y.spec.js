@@ -5,9 +5,10 @@
 // the Connect form. They also run axe on every surface and dialog in both
 // themes, and check the theme toggle, minimap and zoom controls.
 //
-// Each test walks several related checks on one draft, one test.step per
-// check. Checks that do not gate the next step are soft, so one failure does
-// not hide the others.
+// Each test makes its own draft and walks related checks on it, one
+// test.step per check; each view, dialog and surface is scanned by a test of
+// its own in each theme. Checks that do not gate the next step are soft, so
+// one failure does not hide the others.
 
 const crypto = require('crypto');
 
@@ -20,6 +21,7 @@ const {
   expectAccessible,
   expectNoFatal,
   invisibleText,
+  labDocument,
   openConfigs,
   publishTopology,
   uniqueName,
@@ -83,6 +85,17 @@ async function connectWithKeyboard(builder, device = 'node') {
   await dialog.locator('#connect-switch').selectOption({ index: 1 });
   await dialog.getByTestId('connect-dialog-submit').press('Enter');
   await expect(dialog).toHaveCount(0);
+}
+
+// A new draft with six devices, added with the keyboard, in a row.
+async function sixDevices(builder) {
+  await builder.open();
+  const draft = await builder.createBlank();
+  for (let count = 1; count <= 6; count += 1) {
+    await addWithKeyboard(builder, 'device', count);
+  }
+
+  return draft;
 }
 
 // Lists in the editor with no list item, as the start of their markup. ARIA
@@ -399,8 +412,32 @@ test.afterEach(async ({ builder }) => {
 
 // --- keyboard-only authoring through the outline and the toolbar's dialogs --
 
+// A new draft with a device, a switch and a note, added with the keyboard,
+// and nothing selected: the outline's rows and the device's and switch's
+// test ids.
+async function deviceSwitchAndNote(builder) {
+  await builder.open();
+  const draft = await builder.createBlank();
+  await addWithKeyboard(builder, 'device', 1);
+  await addWithKeyboard(builder, 'switch', 2);
+  await addWithKeyboard(builder, 'note', 3);
+  const deviceTestId = await rowTestId(builder, 'node');
+  const switchTestId = await rowTestId(builder, 'EXP');
+  // A new node is selected; Escape on the canvas selects nothing.
+  await builder.canvas.focus();
+  await builder.page.keyboard.press('Escape');
+
+  return {
+    draft,
+    all: rows(builder),
+    deviceTestId,
+    deviceId: deviceTestId.replace('outline-item-', ''),
+    switchTestId,
+  };
+}
+
 test.describe('keyboard-only authoring', () => {
-  test('Add connection, F2 on a switch and a second switch build a diagram without a pointer', async ({
+  test('Add connection says what is missing, connects a device to a switch and gives focus back, without a pointer', async ({
     page,
     builder,
     issues,
@@ -546,6 +583,23 @@ test.describe('keyboard-only authoring', () => {
         }),
       ]);
     });
+    expectNoFatal(issues);
+  });
+
+  test('outline selection, F2 on a switch, a second switch, Disconnect and Remove network work without a pointer', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    // The device `node`, connected by eth0 to the switch of network EXP.
+    const draft = await builder.seedDraft(
+      labDocument(`keyboard-network-${Date.now()}`, { hostnames: ['node'] }),
+    );
+    await builder.openDraft(draft);
+    const opener = builder.toolbar('connect');
+    const dialog = page.getByTestId('connect-dialog');
+    const deviceId = await rowNodeId(builder, 'node');
+    const switchTestId = await rowTestId(builder, 'EXP');
 
     // The outline once counted nodes only, saying "1 node selected" beside a
     // selected connection that a Delete would still remove.
@@ -697,10 +751,20 @@ test.describe('keyboard-only authoring', () => {
         .toHaveText('No networks yet. Adding a switch creates one.');
       expect.soft(await emptyLists(page), 'empty lists').toEqual([]);
     });
+    expectNoFatal(issues);
+  });
 
-    // This spec keeps the product's hold on each message (announce.js),
-    // which other specs shorten.
-    await test.step('edits made while a message is held are announced together after it', async () => {
+  // This spec keeps the product's hold on each message (announce.js),
+  // which other specs shorten.
+  test('edits made while a message is held are announced together after it', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    await builder.open();
+    await builder.createBlank();
+
+    await test.step('the switch and the note, added during the device’s hold, are read together', async () => {
       // The device is added first. The region shows its message at once, or
       // joined to messages still waiting from the steps before; either way,
       // its hold begins then. The switch is added as soon as the region shows
@@ -742,21 +806,11 @@ test.describe('keyboard-only authoring', () => {
   });
 
   test(
-    'skip link, arrow keys, Enter, Space, F2 and Delete work on outline rows',
+    'the skip link moves focus to the canvas, and arrow keys, Home and End move through outline rows',
     { tag: '@cross-browser' },
     async ({ page, builder, issues }) => {
-      await builder.open();
-      const draft = await builder.createBlank();
-      await addWithKeyboard(builder, 'device', 1);
-      await addWithKeyboard(builder, 'switch', 2);
-      await addWithKeyboard(builder, 'note', 3);
-      const all = rows(builder);
-      const deviceTestId = await rowTestId(builder, 'node');
-      const deviceId = deviceTestId.replace('outline-item-', '');
-      const switchTestId = await rowTestId(builder, 'EXP');
+      const { all } = await deviceSwitchAndNote(builder);
 
-      // Each step focuses its own row, so a failed check in one step does not
-      // stop the next.
       await test.step('skip link moves keyboard focus to the canvas', async () => {
         const skip = page.getByRole('link', { name: 'Skip to diagram canvas' });
         await expect.soft(skip).not.toBeInViewport();
@@ -853,6 +907,15 @@ test.describe('keyboard-only authoring', () => {
         await page.keyboard.press('ArrowUp');
         await expectFocused(1, 'ArrowUp');
       });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'Enter, Space and a click toggle the focused outline row, and Shift+Enter adds it to the selection',
+    { tag: '@cross-browser' },
+    async ({ page, builder, issues }) => {
+      const { deviceTestId, switchTestId } = await deviceSwitchAndNote(builder);
 
       await test.step('Enter, Space and a click toggle the focused row; Shift+Enter adds to the selection', async () => {
         const device = page.getByTestId(deviceTestId);
@@ -921,6 +984,16 @@ test.describe('keyboard-only authoring', () => {
         await expect.soft(sw).toHaveAttribute('aria-pressed', 'false');
         await expect.soft(builder).toHaveAnnounced('Deselected EXP');
       });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'F2 renames the focused outline row, Save now and the palette’s key commit the rename, and Delete removes the row',
+    { tag: '@cross-browser' },
+    async ({ page, builder, issues }) => {
+      const { draft, all, deviceTestId, deviceId, switchTestId } =
+        await deviceSwitchAndNote(builder);
 
       await test.step('F2 then Enter renames the device hostname', async () => {
         await page.getByTestId(deviceTestId).focus();
@@ -1312,22 +1385,81 @@ async function scanDialog(page, builder, opener, surface, title) {
   await expect.soft(opener, `${surface} returns focus`).toBeFocused();
 }
 
-for (const scheme of ['light', 'dark']) {
+// A new draft, made from the drafts landing with the page in `scheme`.
+//
+// The server lists no disk images (it runs no minimega). One that is not
+// the new device's gives a device a drive image warning, so the scans cover
+// the Inspector's checks and the Diagram checks dialog with an issue in
+// each.
+async function newDraftIn(page, builder, scheme) {
+  await openWithScheme(page, builder, scheme);
+  await page.route('**/api/v1/disks', (route) =>
+    route.fulfill({ json: { disks: [{ kind: 'VM', name: 'other.qc2' }] } }),
+  );
+
+  return builder.createBlank();
+}
+
+// The editor the dialog scans start from: a new draft in `scheme` with a
+// device connected to a switch, so the scans cover the Inspector's interface
+// form and its oneOf kind picker; the device selected, with its More
+// settings section open and a row of its names and values.
+async function connectedDraftIn(page, builder, scheme) {
+  const draft = await newDraftIn(page, builder, scheme);
+
+  await addWithKeyboard(builder, 'device', 1);
+  await addWithKeyboard(builder, 'switch', 2);
+  await connectWithKeyboard(builder);
+  await builder.expectSummary('1 connection');
+  await builder.selectInOutline('node');
+  await expect(page.locator('.builder-inspector__subject')).toContainText(
+    'Device node',
+  );
+  await builder.inspector
+    .getByTestId('inspector-section')
+    .locator('summary')
+    .click();
+  await builder.inspector.getByRole('button', { name: 'Add label' }).click();
+  await expect(builder.inspector.getByLabel('Label 1 Name')).toBeFocused();
+
+  return draft;
+}
+
+// The controls of the editor's header.
+function headerControls(page) {
+  const counts = page.getByRole('list', { name: 'Diagram contents' });
+
+  return {
+    back: page.getByRole('button', { name: 'Back to drafts' }),
+    help: page.getByRole('link', { name: 'Help (opens in a new tab)' }),
+    name: page.getByTestId('builder-name'),
+    edit: page.getByRole('button', { name: 'Edit diagram name' }),
+    counts,
+    countsTip: page.getByTestId('counts-tooltip'),
+    reset: page.getByRole('button', { name: 'Reset view' }),
+    commands: page.getByTestId('editor-commands'),
+    theme: page.getByTestId('editor-theme'),
+    shortcuts: page.getByRole('button', { name: 'Shortcuts', exact: true }),
+    checks: page.getByTestId('builder-checks'),
+    settings: page.getByTestId('editor-settings'),
+    focusMode: page.getByRole('button', { name: 'Focus mode', exact: true }),
+    count: (index) => counts.getByRole('listitem').nth(index),
+    countButton: (index) => counts.getByRole('button').nth(index),
+  };
+}
+
+// The axe scans in the theme `scheme`. Each view, dialog and surface is
+// scanned by a test of its own, which makes its own draft. Each is tagged as
+// the scans of every surface are: they run in Firefox too, and in CI's axe
+// job.
+function axeScans(scheme) {
+  const tag = ['@cross-browser', '@axe'];
+
   test(
-    `axe finds no serious violations in the ${scheme} theme`,
-    { tag: ['@cross-browser', '@axe'] },
-    async ({ page, builder, issues }, testInfo) => {
-      // Scans every view and dialog in turn, which takes close to a minute.
-      test.slow();
-      await openWithScheme(page, builder, scheme);
-      // The server lists no disk images (it runs no minimega). One that is
-      // not the new device's gives the device a drive image warning, so the
-      // scans cover the Inspector's checks and the Diagram checks dialog
-      // with an issue in each.
-      await page.route('**/api/v1/disks', (route) =>
-        route.fulfill({ json: { disks: [{ kind: 'VM', name: 'other.qc2' }] } }),
-      );
-      const draft = await builder.createBlank();
+    'a new draft titles the page, its heading takes focus, and the Inspector shows its Details',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await newDraftIn(page, builder, scheme);
 
       await test.step('the editor titles the page and its heading takes focus', async () => {
         const heading = page.getByRole('heading', { level: 1 });
@@ -1370,32 +1502,31 @@ for (const scheme of ['light', 'dark']) {
           .soft(found, `invisible text: ${JSON.stringify(found, null, 2)}`)
           .toEqual([]);
       });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the header goes in Tab order, the save state sits beside Draft History, and the name has a pencil and a field',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await newDraftIn(page, builder, scheme);
+      const {
+        back,
+        help,
+        name,
+        edit,
+        reset,
+        commands,
+        theme,
+        shortcuts,
+        checks,
+        settings,
+        focusMode,
+        countButton,
+      } = headerControls(page);
 
       await test.step('the header has Back to drafts, the name and its pencil, the counts, the checks, Reset view, Commands, the theme, Shortcuts, Settings, the Help link of the landing and Focus mode', async () => {
-        const back = page.getByRole('button', { name: 'Back to drafts' });
-        const help = page.getByRole('link', {
-          name: 'Help (opens in a new tab)',
-        });
-        const name = page.getByTestId('builder-name');
-        const edit = page.getByRole('button', { name: 'Edit diagram name' });
-        const counts = page.getByRole('list', { name: 'Diagram contents' });
-        const countsTip = page.getByTestId('counts-tooltip');
-        const reset = page.getByRole('button', { name: 'Reset view' });
-        const commands = page.getByTestId('editor-commands');
-        const theme = page.getByTestId('editor-theme');
-        const shortcuts = page.getByRole('button', {
-          name: 'Shortcuts',
-          exact: true,
-        });
-        const checks = page.getByTestId('builder-checks');
-        const settings = page.getByTestId('editor-settings');
-        const focusMode = page.getByRole('button', {
-          name: 'Focus mode',
-          exact: true,
-        });
-        const count = (index) => counts.getByRole('listitem').nth(index);
-        const countButton = (index) => counts.getByRole('button').nth(index);
-
         // Left to right, as Tab goes: Back to drafts, the name's pencil, the
         // counts (one stop, at the first count), then the checks, Reset
         // view, Commands, the theme, Shortcuts, Settings, Help and Focus
@@ -1522,7 +1653,19 @@ for (const scheme of ['light', 'dark']) {
         await field.fill(title);
         await field.press('Enter');
         await expect.soft(name).toHaveText(title);
+      });
+      expectNoFatal(issues);
+    },
+  );
 
+  test(
+    'the header’s counts are buttons in one Tab stop, with tooltips, that the arrow keys, Home and End move between',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await newDraftIn(page, builder, scheme);
+      const { counts, countsTip, count, countButton } = headerControls(page);
+
+      await test.step('the counts of a blank diagram', async () => {
         // Each count is a button: an icon and a number, read in words. Its
         // tooltip, on hover and on focus, says what it selects, which for a
         // count of none is the count itself. The arrow keys, Home and End
@@ -1593,7 +1736,29 @@ for (const scheme of ['light', 'dark']) {
         await expect.soft(counts.locator('[tabindex="0"]')).toHaveCount(1);
         await page.keyboard.press('Escape');
         await expect.soft(countsTip).toHaveCount(0);
+      });
+      expectNoFatal(issues);
+    },
+  );
 
+  test(
+    'the header’s Shortcuts, Commands, theme, Settings, Help and Focus mode say what they do, give their keys and are readable',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await newDraftIn(page, builder, scheme);
+      const {
+        back,
+        help,
+        counts,
+        reset,
+        commands,
+        theme,
+        shortcuts,
+        settings,
+        focusMode,
+      } = headerControls(page);
+
+      await test.step('Shortcuts, Commands, the theme, Settings, Help and Focus mode', async () => {
         // Shortcuts shows the key that opens the shortcut sheet, as a
         // picture of it: its name stays Shortcuts, and its description says
         // the key. It opens the sheet, and gets focus back from it.
@@ -1710,27 +1875,15 @@ for (const scheme of ['light', 'dark']) {
         await expectReadable(counts, 'counts');
         await expectReadable(builder.saveState, 'save state');
       });
+      expectNoFatal(issues);
+    },
+  );
 
-      await addWithKeyboard(builder, 'device', 1);
-      await addWithKeyboard(builder, 'switch', 2);
-      // A connected device, so the scans cover the Inspector's interface
-      // form and its oneOf kind picker.
-      await connectWithKeyboard(builder);
-      await builder.expectSummary('1 connection');
-      await builder.selectInOutline('node');
-      await expect(page.locator('.builder-inspector__subject')).toContainText(
-        'Device node',
-      );
-      // And the node's More settings section, open, with a row of its
-      // names and values.
-      await builder.inspector
-        .getByTestId('inspector-section')
-        .locator('summary')
-        .click();
-      await builder.inspector
-        .getByRole('button', { name: 'Add label' })
-        .click();
-      await expect(builder.inspector.getByLabel('Label 1 Name')).toBeFocused();
+  test(
+    'the editor of a connected device has no text colored like its background, and passes axe with the System theme',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
 
       // axe reports text colored like its background as incomplete, not as
       // a violation: Bulma once drew Inspector labels and "Error:" prefixes
@@ -1747,8 +1900,17 @@ for (const scheme of ['light', 'dark']) {
           soft: true,
           label: `axe on editor (${scheme}, system)`,
         }));
+      expectNoFatal(issues);
+    },
+  );
 
-      for (const { action, title } of DIALOGS) {
+  for (const { action, title } of DIALOGS) {
+    test(
+      `the ${title} dialog passes axe and keeps focus inside itself`,
+      { tag },
+      async ({ page, builder, issues }) => {
+        await connectedDraftIn(page, builder, scheme);
+
         await test.step(`${title} dialog`, () =>
           scanDialog(
             page,
@@ -1757,7 +1919,16 @@ for (const scheme of ['light', 'dark']) {
             `${title} dialog (${scheme})`,
             title,
           ));
-      }
+        expectNoFatal(issues);
+      },
+    );
+  }
+
+  test(
+    'the Upload dialog passes axe with its legacy source and with the warnings of a conversion',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
 
       // Upload's legacy source, and the warnings of a conversion, which
       // take the place of the form. Escape there makes no draft, so the
@@ -1803,6 +1974,15 @@ for (const scheme of ['light', 'dark']) {
         await expect(builder.dialog).toHaveCount(0);
         await expect.soft(opener, `${surface} returns focus`).toBeFocused();
       });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the command palette passes axe with an unavailable command, a node search and no results',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
 
       // The command palette's first row is its search field, which takes
       // focus. The scans cover an unavailable command, a node search and no
@@ -1843,6 +2023,15 @@ for (const scheme of ['light', 'dark']) {
         await expect(builder.dialog).toHaveCount(0);
         await expect.soft(opener, `${surface} returns focus`).toBeFocused();
       });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the Diagram checks dialog passes axe with a drive image warning in it',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
 
       await test.step('Diagram checks dialog', async () => {
         await expect
@@ -1856,6 +2045,15 @@ for (const scheme of ['light', 'dark']) {
           'Diagram checks',
         );
       });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the Builder settings dialog passes axe and keeps focus inside itself',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
 
       await test.step('Builder settings dialog', () =>
         scanDialog(
@@ -1865,6 +2063,15 @@ for (const scheme of ['light', 'dark']) {
           `Builder settings dialog (${scheme})`,
           'Builder settings',
         ));
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the Auto-group by name pattern dialog passes axe with its message showing',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
 
       // Opened from the Auto-group menu, with focus in its field, and
       // scanned with its message showing.
@@ -1907,9 +2114,18 @@ for (const scheme of ['light', 'dark']) {
         await expect(builder.dialog).toHaveCount(0);
         await expect.soft(opener, `${surface} returns focus`).toBeFocused();
       });
+      expectNoFatal(issues);
+    },
+  );
 
-      // The same in either theme, so checked in the light one.
-      if (scheme === 'light') {
+  // The same in either theme, so checked in the light one.
+  if (scheme === 'light') {
+    test(
+      'a click outside a dialog closes it; a drag across its edge does not',
+      { tag },
+      async ({ page, builder, issues }) => {
+        await connectedDraftIn(page, builder, scheme);
+
         // Every Builder dialog shares this through BuilderDialog.
         await test.step('a click outside a dialog closes it; a drag across its edge does not', async () => {
           const opener = builder.toolbar('scenario');
@@ -1956,7 +2172,16 @@ for (const scheme of ['light', 'dark']) {
             .soft(opener, 'focus returns to the opener')
             .toBeFocused();
         });
-      }
+        expectNoFatal(issues);
+      },
+    );
+  }
+
+  test(
+    'the editor passes axe with its theme chosen explicitly',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
 
       await test.step(`editor, ${scheme} chosen explicitly`, async () => {
         await chooseTheme(page, scheme, { soft: true });
@@ -1968,9 +2193,18 @@ for (const scheme of ['light', 'dark']) {
           label: `axe on editor (${scheme}, explicit)`,
         });
       });
+      expectNoFatal(issues);
+    },
+  );
 
-      // The same in either theme, so checked in the light one.
-      if (scheme === 'light') {
+  // The same in either theme, so checked in the light one.
+  if (scheme === 'light') {
+    test(
+      'the toolbar is one Tab stop that arrow keys, Home and End move through',
+      { tag },
+      async ({ page, builder, issues }) => {
+        await connectedDraftIn(page, builder, scheme);
+
         await test.step('the toolbar is one Tab stop that arrow keys, Home and End move through', async () => {
           const buttons = page
             .getByRole('toolbar', { name: 'Builder actions' })
@@ -2063,7 +2297,16 @@ for (const scheme of ['light', 'dark']) {
               .toHaveAttribute('aria-haspopup', 'dialog');
           }
         });
-      }
+        expectNoFatal(issues);
+      },
+    );
+  }
+
+  test(
+    'the layout menu passes axe',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
 
       await test.step('axe finds no serious violations in the layout menu', async () => {
         await builder.toolbar('layout').focus();
@@ -2078,6 +2321,15 @@ for (const scheme of ['light', 'dark']) {
         await page.keyboard.press('Escape');
         await expect.soft(builder.toolbar('layout')).toBeFocused();
       });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'toolbar Ungroup and Delete move focus to the outline row that takes their place',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
 
       await test.step('toolbar Ungroup and Delete move focus to the outline row that takes their place', async () => {
         await builder.selectInOutline('node');
@@ -2112,6 +2364,15 @@ for (const scheme of ['light', 'dark']) {
           .soft(builder.canvas, 'after the last Delete')
           .toBeFocused();
       });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'a diagram with shapes, icons and lines passes axe with a line and with a rectangle selected',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await newDraftIn(page, builder, scheme);
 
       await test.step('axe finds no serious violations in a diagram with shapes, icons and lines', async () => {
         for (const item of ['rectangle', 'circle', 'icon', 'line']) {
@@ -2134,6 +2395,17 @@ for (const scheme of ['light', 'dark']) {
           label: `axe on a diagram with a selected rectangle (${scheme})`,
         });
       });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the drafts landing passes axe, names its actions and gives focus to the card of the draft just closed',
+    { tag },
+    async ({ page, builder, issues }) => {
+      const draft = await newDraftIn(page, builder, scheme);
+      // The landing's theme button shows the theme chosen in the editor.
+      await chooseTheme(page, scheme);
 
       await test.step('drafts landing', async () => {
         await builder.backToDrafts();
@@ -2226,9 +2498,18 @@ for (const scheme of ['light', 'dark']) {
           label: `axe on drafts landing (${scheme})`,
         });
       });
+      expectNoFatal(issues);
+    },
+  );
 
-      // The same in either theme, so checked in the light one.
-      if (scheme === 'light') {
+  // The same in either theme, so checked in the light one.
+  if (scheme === 'light') {
+    test(
+      'drafts tabs follow the APG tabs pattern',
+      { tag },
+      async ({ page, builder, issues }) => {
+        await openWithScheme(page, builder, scheme);
+
         await test.step('drafts tabs follow the APG tabs pattern', async () => {
           const tab = (id) => page.getByTestId(`drafts-tab-${id}`);
 
@@ -2296,7 +2577,16 @@ for (const scheme of ['light', 'dark']) {
             );
           expect.soft(unreachable, 'empty tab panels').toEqual([]);
         });
-      }
+        expectNoFatal(issues);
+      },
+    );
+  }
+
+  test(
+    'the Import dialog passes axe and keeps focus inside itself',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await openWithScheme(page, builder, scheme);
 
       await test.step('Import dialog', () =>
         scanDialog(
@@ -2306,6 +2596,15 @@ for (const scheme of ['light', 'dark']) {
           `Import dialog (${scheme})`,
           'Import topology or experiment',
         ));
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the Import dialog passes axe with every option and a refused name',
+    { tag },
+    async ({ page, builder, issues }, testInfo) => {
+      await openWithScheme(page, builder, scheme);
 
       // A topology that includes another shows every option of Import: the
       // "Included topologies" choice, the copy box and, once one of them
@@ -2372,6 +2671,15 @@ for (const scheme of ['light', 'dark']) {
         await expect(builder.dialog).toHaveCount(0);
         await expect.soft(opener, `${surface} returns focus`).toBeFocused();
       });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the Configs page’s Builder tag and the viewer’s Builder button pass axe',
+    { tag },
+    async ({ page, builder, issues }, testInfo) => {
+      await openWithScheme(page, builder, scheme);
 
       // The Builder controls of the Configs page: the tag of a Builder
       // topology, which is a link, and the first button of its viewer.
@@ -2446,6 +2754,10 @@ for (const scheme of ['light', 'dark']) {
       expectNoFatal(issues);
     },
   );
+}
+
+for (const scheme of ['light', 'dark']) {
+  test.describe(`axe scans in the ${scheme} theme`, () => axeScans(scheme));
 }
 
 // A device, a switch and a group whose icons are Medium or Large lay their
@@ -3039,16 +3351,12 @@ test.describe('themes and canvas controls', () => {
     },
   );
 
-  test('minimap toggle and zoom in, zoom out and fit controls', async ({
+  test('minimap toggle, and zoom in, zoom out and fit by the controls and on the canvas', async ({
     page,
     builder,
     issues,
   }) => {
-    await builder.open();
-    const draft = await builder.createBlank();
-    for (let count = 1; count <= 6; count += 1) {
-      await addWithKeyboard(builder, 'device', count);
-    }
+    await sixDevices(builder);
 
     await test.step('Minimap toggle reports its state and shows or hides the minimap', async () => {
       const toggle = page.getByTestId('toolbar-minimap');
@@ -3216,6 +3524,21 @@ test.describe('themes and canvas controls', () => {
         .poll(async () => level(await zoomLevel(page)))
         .toBe(level(fitted * 1.2));
     });
+    expectNoFatal(issues);
+  });
+
+  test('Settings choose the minimap, the zoom a diagram opens with and reduced motion, and keep only those choices', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    const draft = await sixDevices(builder);
+    // Zoomed in, the row of devices runs past the canvas edge.
+    const zoomIn = page.getByRole('button', { name: 'Zoom in' });
+    for (let press = 0; press < 4; press += 1) {
+      await zoomIn.press('Enter');
+    }
+    await expect.poll(() => nodesOutsideCanvas(page)).not.toEqual([]);
 
     await test.step('Settings choose the minimap, the zoom a diagram opens with and reduced motion, and keep only those choices', async () => {
       const opener = page.getByTestId('editor-settings');
@@ -3313,18 +3636,20 @@ test.describe('themes and canvas controls', () => {
       await expect.soft(minimap).toHaveCount(0);
 
       // A new page opens the draft fitted, without the minimap.
-      await builder.waitSaved();
-      await page.reload();
-      await expect(builder.landingHeading).toBeVisible({ timeout: 20000 });
-      await page.getByTestId(`draft-open-${draft.id}`).click();
-      await expect(builder.canvas).toBeVisible();
-      await expect.poll(async () => level(await zoomLevel(page))).toBe(opened);
-      await expect
-        .soft(page.getByTestId('toolbar-minimap'))
-        .toHaveAttribute('aria-pressed', 'false');
-      await expect
-        .soft(root(page))
-        .toHaveAttribute('data-builder-reduced-motion', 'true');
+      await builder.editAndReload(draft, {
+        expectSaved: () => builder.waitSaved(),
+        expectAfterReload: async () => {
+          await expect
+            .poll(async () => level(await zoomLevel(page)))
+            .toBe(opened);
+          await expect
+            .soft(page.getByTestId('toolbar-minimap'))
+            .toHaveAttribute('aria-pressed', 'false');
+          await expect
+            .soft(root(page))
+            .toHaveAttribute('data-builder-reduced-motion', 'true');
+        },
+      });
 
       // The toolbar shows the minimap for this diagram. Another tab storing
       // the same settings, in another order, changes none of them and
@@ -3402,6 +3727,15 @@ test.describe('themes and canvas controls', () => {
       expect(await stored()).toBeNull();
       await page.keyboard.press('Escape');
     });
+    expectNoFatal(issues);
+  });
+
+  test('a custom zoom opens a diagram at a percentage, which Reset view goes back to', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    const draft = await sixDevices(builder);
 
     await test.step('a custom zoom opens a diagram at a percentage, which Reset view goes back to', async () => {
       const opener = page.getByTestId('editor-settings');
@@ -3525,13 +3859,17 @@ test.describe('themes and canvas controls', () => {
       await expect.poll(view).toMatch(/^translate\(0px, 0px\) scale\(0\.75\)$/);
 
       // A new page opens the draft at it.
-      await builder.waitSaved();
-      await page.reload();
-      await expect(builder.landingHeading).toBeVisible({ timeout: 20000 });
-      await page.getByTestId(`draft-open-${draft.id}`).click();
-      await expect(builder.canvas).toBeVisible();
-      await expect.poll(async () => level(await zoomLevel(page))).toBe(0.75);
-      await expect.poll(view).toMatch(/^translate\(0px, 0px\) scale\(0\.75\)$/);
+      await builder.editAndReload(draft, {
+        expectSaved: () => builder.waitSaved(),
+        expectAfterReload: async () => {
+          await expect
+            .poll(async () => level(await zoomLevel(page)))
+            .toBe(0.75);
+          await expect
+            .poll(view)
+            .toMatch(/^translate\(0px, 0px\) scale\(0\.75\)$/);
+        },
+      });
 
       // Reset to defaults puts both back.
       await opener.press('Enter');
@@ -3547,7 +3885,14 @@ test.describe('themes and canvas controls', () => {
       await page.getByTestId('editor-reset-view').click();
       await expect.poll(async () => level(await zoomLevel(page))).toBe(1);
     });
+    expectNoFatal(issues);
+  });
 
+  test('a switch row brings its whole network into view, however far apart its nodes are', async ({
+    page,
+    builder,
+    issues,
+  }) => {
     await test.step('a switch row brings its whole network into view, however far apart its nodes are', async () => {
       const id = () => crypto.randomUUID();
       const network = { id: id(), name: 'tall-net' };
@@ -3605,6 +3950,18 @@ test.describe('themes and canvas controls', () => {
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
       await expect.soft(row).toBeFocused();
     });
+    expectNoFatal(issues);
+  });
+
+  test('a large diagram is shown whole, clear of the minimap and zoom controls, by Fit, the fit opening zoom, Reset view, zooming out and its outline', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    // An editor to measure the canvas in and to choose the opening zoom in.
+    await builder.openDraft(
+      await builder.seedDraft(blankDocument(`fit-${Date.now()}`)),
+    );
 
     // Its corner devices sit where the zoom controls and the minimap float,
     // so each fit must keep them clear of both.

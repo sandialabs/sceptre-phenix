@@ -202,8 +202,26 @@ async function expectSampleDiagram(builder) {
   await expect.soft(builder.outlineItem('a note')).toBeVisible();
 }
 
+// Converts SAMPLE through the API, as Upload does, into a new draft named
+// `title` that came from a legacy file without a topology, and opens it.
+// Returns the draft.
+async function openConvertedSample(builder, title) {
+  const converted = await builder.request.post(`${API}/builder/legacy`, {
+    data: { content: SAMPLE, name: title },
+  });
+  expect(converted.ok(), await converted.text()).toBeTruthy();
+  const { document } = await converted.json();
+  const draft = await builder.seedDraft(document, {
+    title,
+    sourceToken: 'uploaded/legacy-xml',
+  });
+  await builder.openDraft(draft);
+
+  return draft;
+}
+
 test(
-  'Upload converts a legacy diagram file by keyboard, after its warnings, and refuses what is not one',
+  'Upload converts a legacy diagram file by keyboard, after its warnings, into a draft that holds it, and refuses what is not one',
   { tag: '@cross-browser' },
   async ({ page, builder, issues }, testInfo) => {
     const title = uniqueName(testInfo, 'legacy');
@@ -440,6 +458,18 @@ test(
         .soft(router?.device.spec.hardware.drives)
         .toEqual([{ image: 'vyos.qc2' }]);
     });
+
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a converted legacy diagram shows what it held, publishes a new topology, and stays the open draft while Upload converts another',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }, testInfo) => {
+    const title = uniqueName(testInfo, 'legacy');
+    const draft = await openConvertedSample(builder, title);
+    const creates = watchDraftCreates(page);
 
     // A converted node is a node like any other: the canvas shows what the
     // legacy diagram said of it.

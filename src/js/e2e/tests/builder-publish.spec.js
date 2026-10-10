@@ -254,16 +254,14 @@ async function saveScenarios(builder, draft, names) {
 
 // --- topology only -------------------------------------------------------------
 
-test('topology-only publish refuses a legacy topology, writes the diagram and offers an update on reopen', async ({
+test('topology-only publish offers a new topology named after the diagram, and refuses a name the server would refuse and a legacy topology', async ({
   page,
   builder,
-  tracker,
   issues,
 }, testInfo) => {
   const topology = uniqueName(testInfo, 'topo');
   const legacy = uniqueName(testInfo, 'legacy');
   const lateLegacy = uniqueName(testInfo, 'legacy-late');
-  tracker.config('Topology', topology);
   // Seeded before open(): the editor reads the topology list when it mounts.
   await builder.seedConfig(legacyTopology(legacy));
 
@@ -415,6 +413,20 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
       .soft(untouched?.metadata?.annotations, 'annotations')
       .toEqual({ 'builder-xml': '<mxGraphModel />' });
   });
+
+  expectNoFatal(issues);
+});
+
+test('topology-only publish writes the diagram, offers an update on reopen, and publishes again once Published Diagrams deletes the topology', async ({
+  page,
+  builder,
+  tracker,
+  issues,
+}, testInfo) => {
+  const topology = uniqueName(testInfo, 'topo');
+  tracker.config('Topology', topology);
+  const draft = await openLab(builder, topology);
+  await openPublish(builder);
 
   await test.step('a new name publishes hostnames, VLANs and the builder-doc manifest', async () => {
     await fillPublish(page, { topology });

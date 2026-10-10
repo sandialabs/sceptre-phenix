@@ -1295,48 +1295,45 @@ test.describe('Builder persistence', () => {
     await builder.open();
     const draft = await builder.createBlank();
 
-    await page.route(DRAFT_ROUTES, (route) => route.abort());
-    await addDevices(builder, 2);
-    await expect(builder.saveState).toHaveText(
-      /Offline: 2 changes kept on this device/,
-    );
-
-    // Each edit's snapshot is a record of its own, written once; the draft
-    // record keeps the queue and no snapshot.
-    const local = await localDrafts(page);
-    expect(local.drafts).toHaveLength(1);
-    expect(local.drafts[0].queue).toHaveLength(2);
-    expect(
-      local.drafts[0].entries.filter((entry) => 'snapshot' in entry),
-    ).toEqual([]);
-    expect(local.entries).toBe(2);
-
-    // Reload while the draft routes still fail, so nothing reaches the
+    // Reloaded while the draft routes still fail, so nothing reaches the
     // server before the page is gone. The browser asks first.
-    const prompts = [];
-    page.once('dialog', (dialog) => {
-      prompts.push(dialog.type());
-      dialog.accept().catch(() => {});
-    });
-    await page.reload();
-    expect.soft(prompts, 'prompt before the reload').toEqual(['beforeunload']);
-    await expect(
-      page.getByRole('heading', { name: 'Builder', exact: true }),
-    ).toBeVisible({ timeout: 20000 });
-    await page.unroute(DRAFT_ROUTES);
-    await expectServerCounts(builder, draft, { devices: 0 });
-    // With authentication off no one has an account to share with, so
-    // there is no Share, on the cards or in the toolbar.
-    await expect
-      .soft(page.locator('[data-testid^="draft-share-"]'))
-      .toHaveCount(0);
+    const prompts = await builder.editAndReload(draft, {
+      edit: async () => {
+        await page.route(DRAFT_ROUTES, (route) => route.abort());
+        await addDevices(builder, 2);
+      },
+      expectSaved: async () => {
+        await expect(builder.saveState).toHaveText(
+          /Offline: 2 changes kept on this device/,
+        );
 
-    await page.getByTestId(`draft-open-${draft.id}`).click();
-    await expect(builder.canvas).toBeVisible();
-    await expect.soft(page.getByTestId('toolbar-share')).toHaveCount(0);
-    await builder.expectCounts({ devices: 2 });
-    await builder.waitSaved();
-    await expectServerCounts(builder, draft, { devices: 2 });
+        // Each edit's snapshot is a record of its own, written once; the
+        // draft record keeps the queue and no snapshot.
+        const local = await localDrafts(page);
+        expect(local.drafts).toHaveLength(1);
+        expect(local.drafts[0].queue).toHaveLength(2);
+        expect(
+          local.drafts[0].entries.filter((entry) => 'snapshot' in entry),
+        ).toEqual([]);
+        expect(local.entries).toBe(2);
+      },
+      offline: DRAFT_ROUTES,
+      expectOnLanding: async () => {
+        await expectServerCounts(builder, draft, { devices: 0 });
+        // With authentication off no one has an account to share with, so
+        // there is no Share, on the cards or in the toolbar.
+        await expect
+          .soft(page.locator('[data-testid^="draft-share-"]'))
+          .toHaveCount(0);
+      },
+      expectAfterReload: async () => {
+        await expect.soft(page.getByTestId('toolbar-share')).toHaveCount(0);
+        await builder.expectCounts({ devices: 2 });
+        await builder.waitSaved();
+        await expectServerCounts(builder, draft, { devices: 2 });
+      },
+    });
+    expect.soft(prompts, 'prompt before the reload').toEqual(['beforeunload']);
 
     // Once saved, nothing of the draft is left on this device.
     await expect
@@ -1355,25 +1352,29 @@ test.describe('Builder persistence', () => {
         stored.push(route.request().postDataJSON().opId);
         await route.fetch();
       });
-      await addDevices(builder, 1);
-      await expectServerCounts(builder, draft, { devices: 3 });
-      expect((await localDrafts(page)).drafts).toHaveLength(1);
-
-      page.once('dialog', (dialog) => dialog.accept().catch(() => {}));
-      await page.unroute(SNAPSHOTS);
-      await page.reload();
       const appends = [];
-      page.on('request', (request) => {
-        if (
-          request.method() === 'POST' &&
-          request.url().endsWith('/snapshots')
-        ) {
-          appends.push(request.url());
-        }
+      await builder.editAndReload(draft, {
+        edit: () => addDevices(builder, 1),
+        expectSaved: async () => {
+          await expectServerCounts(builder, draft, { devices: 3 });
+          expect((await localDrafts(page)).drafts).toHaveLength(1);
+          await page.unroute(SNAPSHOTS);
+        },
+        expectOnLanding: () => {
+          page.on('request', (request) => {
+            if (
+              request.method() === 'POST' &&
+              request.url().endsWith('/snapshots')
+            ) {
+              appends.push(request.url());
+            }
+          });
+        },
+        expectAfterReload: async () => {
+          await builder.expectCounts({ devices: 3 });
+          await builder.waitSaved();
+        },
       });
-      await page.getByTestId(`draft-open-${draft.id}`).click();
-      await builder.expectCounts({ devices: 3 });
-      await builder.waitSaved();
 
       await expect(page.getByTestId('builder-conflict')).toHaveCount(0);
       expect(appends, 'snapshots sent again').toEqual([]);
@@ -1390,53 +1391,48 @@ test.describe('Builder persistence', () => {
       await expectServerCounts(builder, draft, { devices: 4 });
       await builder.waitSaved();
 
-      await page.route(DRAFT_ROUTES, (route) => route.abort());
-      await builder.toolbar('undo').click();
-      await builder.expectCounts({ devices: 3 });
-      await expect(builder.saveState).toHaveText(
-        /Offline: 1 change kept on this device/,
-      );
-
-      page.once('dialog', (dialog) => dialog.accept().catch(() => {}));
-      await page.reload();
-      await expect(
-        page.getByRole('heading', { name: 'Builder', exact: true }),
-      ).toBeVisible({ timeout: 20000 });
-      await page.unroute(DRAFT_ROUTES);
-      await page.getByTestId(`draft-open-${draft.id}`).click();
-
-      // The screen shows the undo, the server's cursor follows it, and the
-      // undone edit can be redone.
-      await builder.expectCounts({ devices: 3 });
-      await builder.waitSaved();
-      await expectServerCounts(builder, draft, { devices: 3 });
-      await expect.soft(builder.toolbar('redo')).toBeEnabled();
+      await builder.editAndReload(draft, {
+        edit: async () => {
+          await page.route(DRAFT_ROUTES, (route) => route.abort());
+          await builder.toolbar('undo').click();
+        },
+        expectSaved: async () => {
+          await builder.expectCounts({ devices: 3 });
+          await expect(builder.saveState).toHaveText(
+            /Offline: 1 change kept on this device/,
+          );
+        },
+        offline: DRAFT_ROUTES,
+        // The screen shows the undo, the server's cursor follows it, and
+        // the undone edit can be redone.
+        expectAfterReload: async () => {
+          await builder.expectCounts({ devices: 3 });
+          await builder.waitSaved();
+          await expectServerCounts(builder, draft, { devices: 3 });
+          await expect.soft(builder.toolbar('redo')).toBeEnabled();
+        },
+      });
     });
 
     await test.step('Inspector changes typed and not applied are kept by a reload made offline', async () => {
-      await builder.selectInOutline('node');
-      await page.route(DRAFT_ROUTES, (route) => route.abort());
-      // Focus stays in the field, which has not committed its text yet.
-      await memoryField(builder).fill('4096');
-      await expect.soft(memoryField(builder)).toBeFocused();
-
-      const prompts = [];
-      page.once('dialog', (dialog) => {
-        prompts.push(dialog.type());
-        dialog.accept().catch(() => {});
+      const prompts = await builder.editAndReload(draft, {
+        edit: async () => {
+          await builder.selectInOutline('node');
+          await page.route(DRAFT_ROUTES, (route) => route.abort());
+          await memoryField(builder).fill('4096');
+        },
+        // Focus stays in the field, which has not committed its text yet.
+        expectSaved: () => expect.soft(memoryField(builder)).toBeFocused(),
+        offline: DRAFT_ROUTES,
+        expectAfterReload: async () => {
+          await builder.selectInOutline('node');
+          await expect.soft(memoryField(builder)).toHaveValue('4096');
+          await builder.waitSaved();
+        },
       });
-      await page.reload();
       expect
         .soft(prompts, 'prompt before the reload')
         .toEqual(['beforeunload']);
-      await expect(
-        page.getByRole('heading', { name: 'Builder', exact: true }),
-      ).toBeVisible({ timeout: 20000 });
-      await page.unroute(DRAFT_ROUTES);
-      await page.getByTestId(`draft-open-${draft.id}`).click();
-      await builder.selectInOutline('node');
-      await expect.soft(memoryField(builder)).toHaveValue('4096');
-      await builder.waitSaved();
 
       const device = (await builder.serverDocument(draft)).nodes.find(
         (node) => node.label === 'node',
@@ -1645,10 +1641,9 @@ test.describe('Builder persistence', () => {
     },
   );
 
-  test('leaving the editor with unsaved changes asks first, and logging out clears them', async ({
+  test('leaving the editor with a change the server lacks keeps it, another page asks first, and logging out clears it', async ({
     builder,
     page,
-    request,
   }) => {
     // With a blank draft listed, the new one is numbered apart from it.
     await builder.seedDraft(blankDocument('Untitled topology'));
@@ -1906,6 +1901,22 @@ test.describe('Builder persistence', () => {
       await expect
         .soft(page.getByTestId('toolbar-minimap'))
         .toHaveAttribute('aria-pressed', 'false');
+    });
+  });
+
+  test('Back to drafts does not wait for a slow save, saves Inspector changes not applied, and asks only of those it cannot apply', async ({
+    builder,
+    page,
+    request,
+  }) => {
+    // With a blank draft listed, the new one is numbered apart from it.
+    const listed = await builder.seedDraft(blankDocument('Untitled topology'));
+    await builder.open();
+    await expect(page.getByTestId(`draft-open-${listed.id}`)).toBeVisible();
+    const draft = await builder.createBlank();
+    const back = page.getByRole('button', { name: 'Back to drafts' });
+    const confirm = page.getByRole('alertdialog', {
+      name: 'Leave with unsaved changes?',
     });
 
     await test.step('Back to drafts does not wait for a slow save: the card says it goes on, then that it is done', async () => {

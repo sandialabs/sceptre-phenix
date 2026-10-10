@@ -526,26 +526,38 @@ test('a device shows its node type, and a template adds a device with no descrip
   expectNoFatal(issues);
 });
 
+// Opens a new draft of tooltipDocument(), and returns the canvas's info
+// tooltip, web-01 and the switch with their Vue Flow wrappers, and a way to
+// park the pointer away from every node, on the Outline's heading: a node
+// shows its tooltip for a pointer that moves onto it, not for one it is
+// drawn under, so the pointer starts from there.
+async function openTooltipDraft(page, builder, testInfo) {
+  const draft = await builder.seedDraft(
+    tooltipDocument(`presentation-${testInfo.project.name}-${Date.now()}`),
+  );
+  await builder.openDraft(draft);
+
+  const web01 = builder.node('web-01', 'device');
+  const sw = builder.nodes('switch');
+  const idOf = (node) => node.getAttribute('data-node-id');
+
+  return {
+    tooltip: infoTooltip(page),
+    web01,
+    sw,
+    idOf,
+    switchWrapper: flowNode(page, await idOf(sw)),
+    web01Wrapper: flowNode(page, await idOf(web01)),
+    parkPointer: () => page.getByRole('heading', { name: 'Outline' }).hover(),
+  };
+}
+
 test(
-  'a device and a switch show an info tooltip on hover and keyboard focus',
+  'a device shows an info tooltip when the pointer rests on it, which the pointer can reach and Escape hides',
   { tag: '@cross-browser' },
   async ({ page, builder, issues }, testInfo) => {
-    const draft = await builder.seedDraft(
-      tooltipDocument(`presentation-${testInfo.project.name}-${Date.now()}`),
-    );
-    await builder.openDraft(draft);
-
-    const tooltip = infoTooltip(page);
-    const web01 = builder.node('web-01', 'device');
-    const sw = builder.nodes('switch');
-    const idOf = (node) => node.getAttribute('data-node-id');
-    const switchWrapper = flowNode(page, await idOf(sw));
-    const web01Wrapper = flowNode(page, await idOf(web01));
-    // Away from every node, on the Outline's heading. A node shows its
-    // tooltip for a pointer that moves onto it, not for one it is drawn
-    // under, so the pointer starts from here.
-    const parkPointer = () =>
-      page.getByRole('heading', { name: 'Outline' }).hover();
+    const { tooltip, web01, web01Wrapper, parkPointer } =
+      await openTooltipDraft(page, builder, testInfo);
 
     await test.step('each device shows its type: as stored, External, or Device without one', async () => {
       const type = (hostname) =>
@@ -657,6 +669,17 @@ test(
       await parkPointer();
       await expect.soft(tooltip).toHaveCount(0);
     });
+
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a switch shows its info tooltip on keyboard focus, which follows it, comes back after a device’s, and goes with the focus',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }, testInfo) => {
+    const { tooltip, web01, sw, switchWrapper, parkPointer } =
+      await openTooltipDraft(page, builder, testInfo);
 
     await test.step('keyboard focus on the switch shows its network and its connected devices at once', async () => {
       // An arrow key on the canvas itself moves focus to the node nearest
@@ -803,6 +826,17 @@ test(
       await expect.soft(tooltip).toHaveCount(0);
     });
 
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'notes and groups have no info tooltip, and an SVG image of the diagram has no tooltip text',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }, testInfo) => {
+    const { tooltip, sw, idOf, switchWrapper, parkPointer } =
+      await openTooltipDraft(page, builder, testInfo);
+
     await test.step('notes and groups have no tooltip, and an SVG image of the diagram has no tooltip text', async () => {
       await builder.palette('note').click();
       await builder.palette('group').click();
@@ -847,14 +881,13 @@ test(
 );
 
 test(
-  'a device and a switch take an outline and a fill, and the text on a fill stays readable',
+  'a device takes an outline and a fill at once, the text on a fill stays readable, and Undo takes them back',
   { tag: '@cross-browser' },
   async ({ page, builder, issues }, testInfo) => {
     const { draft } = await seedStyled(builder, testInfo);
     await builder.openDraft(draft);
 
     const web01 = builder.node('web-01', 'device');
-    const exp = builder.node('EXP', 'switch');
     const outline = inspectorField(builder, 'outlineColor');
     const fill = inspectorField(builder, 'fillColor');
     const apply = builder.inspector.getByTestId('inspector-apply');
@@ -1091,6 +1124,22 @@ test(
       await page.getByTestId('toolbar-redo').click();
       await expect(web01).toHaveCSS('background-color', 'rgb(47, 111, 191)');
     });
+
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a switch’s network color is Edge Color, and its own outline and fill wait for Apply',
+  { tag: '@cross-browser' },
+  async ({ page, builder, issues }, testInfo) => {
+    const { draft } = await seedStyled(builder, testInfo);
+    await builder.openDraft(draft);
+
+    const exp = builder.node('EXP', 'switch');
+    const outline = inspectorField(builder, 'outlineColor');
+    const fill = inspectorField(builder, 'fillColor');
+    const apply = builder.inspector.getByTestId('inspector-apply');
 
     await test.step('a switch’s network color is Edge Color, and its own outline and fill wait for Apply', async () => {
       const edge = inspectorField(builder, 'color');
@@ -1530,15 +1579,14 @@ async function expectLaidOut(node, message) {
   return { box, icon, lines };
 }
 
-test('node icons are drawn Small, Medium or Large, as the diagram or the node says, and keep their node boxes', async ({
-  page,
-  builder,
-  issues,
-}, testInfo) => {
+// Opens a new draft of styledDocument(), drawn at `iconSize` when given,
+// with a second group, Edge, at the least size a group can be resized to.
+// Returns it with web-01, the switch EXP, the group Zone and Edge, by kind,
+// and the diagram's Icon size in the Inspector.
+async function openIconSizeDraft(builder, testInfo, iconSize) {
   const { edgeIds: _, ...document } = styledDocument(
     `icon-size-${testInfo.project.name}-${Date.now()}`,
   );
-  // A second group at the least size a group can be resized to.
   document.nodes.push({
     id: crypto.randomUUID(),
     kind: 'group',
@@ -1547,28 +1595,44 @@ test('node icons are drawn Small, Medium or Large, as the diagram or the node sa
     size: { width: 120, height: 80 },
     group: { title: 'Edge' },
   });
+  if (iconSize) {
+    document.iconSize = iconSize;
+  }
   const draft = await builder.seedDraft(document);
   await builder.openDraft(draft);
 
-  const nodes = {
-    device: builder.node('web-01', 'device'),
-    switch: builder.node('EXP', 'switch'),
-    group: builder.node('Zone', 'group'),
-    'least group': builder.node('Edge', 'group'),
+  return {
+    draft,
+    nodes: {
+      device: builder.node('web-01', 'device'),
+      switch: builder.node('EXP', 'switch'),
+      group: builder.node('Zone', 'group'),
+      'least group': builder.node('Edge', 'group'),
+    },
+    diagramSize: builder.inspector.getByTestId('inspector-icon-size-select'),
   };
-  const PIXELS = { Small: 16, Medium: 24, Large: 32 };
-  const diagramSize = builder.inspector.getByTestId(
-    'inspector-icon-size-select',
-  );
-  const boxes = {};
-  // A picture of each kind at each size, kept in the test's output and
-  // attached to its report.
-  const keepScreenshot = async (locator, name) => {
-    const path = testInfo.outputPath(name);
+}
 
-    await locator.screenshot({ path });
-    await testInfo.attach(name, { path, contentType: 'image/png' });
-  };
+// A picture of a node, kept in the test's output and attached to its
+// report.
+async function keepScreenshot(testInfo, locator, name) {
+  const path = testInfo.outputPath(name);
+
+  await locator.screenshot({ path });
+  await testInfo.attach(name, { path, contentType: 'image/png' });
+}
+
+test('node icons are drawn Small until the diagram says Medium or Large, keep their node boxes, and download Large', async ({
+  page,
+  builder,
+  issues,
+}, testInfo) => {
+  const { draft, nodes, diagramSize } = await openIconSizeDraft(
+    builder,
+    testInfo,
+  );
+  const PIXELS = { Small: 16, Medium: 24, Large: 32 };
+  const boxes = {};
 
   // Each node draws its icon at `size`, in the layout of that size, with
   // its box as it was at Small; a screenshot of it goes with the report.
@@ -1606,6 +1670,7 @@ test('node icons are drawn Small, Medium or Large, as the diagram or the node sa
         .toBeLessThan(0.5);
 
       await keepScreenshot(
+        testInfo,
         node,
         `icon-size-${kind.replace(' ', '-')}-${size.toLowerCase()}.png`,
       );
@@ -1759,6 +1824,20 @@ test('node icons are drawn Small, Medium or Large, as the diagram or the node sa
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   });
 
+  expectNoFatal(issues);
+});
+
+test('a device or a switch draws its icon at a size of its own, kept for the next page load', async ({
+  page,
+  builder,
+  issues,
+}, testInfo) => {
+  const { draft, nodes, diagramSize } = await openIconSizeDraft(
+    builder,
+    testInfo,
+    'large',
+  );
+
   await test.step('a device of its own size draws it at once, and Diagram default gives the diagram’s back', async () => {
     const own = inspectorField(builder, 'iconSize');
 
@@ -1805,23 +1884,29 @@ test('node icons are drawn Small, Medium or Large, as the diagram or the node sa
   });
 
   await test.step('opened again in a new page load, the draft draws each size as it was left', async () => {
-    await builder.waitSaved();
     // Loads the Builder page again and reads the draft from the server.
-    await builder.openDraft(draft);
-
-    await expect(nodeIcon(nodes.device)).toHaveAttribute('width', '16');
-    await expect
-      .soft(nodeIcon(builder.node('web-02', 'device')))
-      .toHaveAttribute('width', '32');
-    await expect.soft(nodeIcon(nodes.switch)).toHaveAttribute('width', '24');
-    await expect
-      .soft(nodeIcon(builder.node('MGMT', 'switch')))
-      .toHaveAttribute('width', '32');
-    await expect.soft(nodeIcon(nodes.group)).toHaveAttribute('width', '32');
-    await expect
-      .soft(nodeIcon(nodes['least group']))
-      .toHaveAttribute('width', '32');
-    await expect.soft(diagramSize).toHaveValue('large');
+    await builder.editAndReload(draft, {
+      expectSaved: () => builder.waitSaved(),
+      via: 'open',
+      expectAfterReload: async () => {
+        await builder.waitSaved();
+        await expect(nodeIcon(nodes.device)).toHaveAttribute('width', '16');
+        await expect
+          .soft(nodeIcon(builder.node('web-02', 'device')))
+          .toHaveAttribute('width', '32');
+        await expect
+          .soft(nodeIcon(nodes.switch))
+          .toHaveAttribute('width', '24');
+        await expect
+          .soft(nodeIcon(builder.node('MGMT', 'switch')))
+          .toHaveAttribute('width', '32');
+        await expect.soft(nodeIcon(nodes.group)).toHaveAttribute('width', '32');
+        await expect
+          .soft(nodeIcon(nodes['least group']))
+          .toHaveAttribute('width', '32');
+        await expect.soft(diagramSize).toHaveValue('large');
+      },
+    });
   });
 
   await test.step('in the dark theme, a selected Large device keeps its ring and check mark', async () => {
@@ -1832,7 +1917,11 @@ test('node icons are drawn Small, Medium or Large, as the diagram or the node sa
 
     await expect(web02).toHaveClass(/is-selected/);
     await expectLaidOut(web02, 'selected web-02 in the dark theme');
-    await keepScreenshot(web02, 'icon-size-device-large-selected-dark.png');
+    await keepScreenshot(
+      testInfo,
+      web02,
+      'icon-size-device-large-selected-dark.png',
+    );
   });
 
   expectNoFatal(issues);
@@ -1916,38 +2005,34 @@ function customIcon(scope) {
   return scope.locator('img.builder-icon--custom');
 }
 
+// Records what the page is asked, and what it fetches, that a picture must
+// never cause: the dialogs it opens, and its requests for icon-probe.
+function watchPictureEffects(page) {
+  const prompts = [];
+  const probes = [];
+
+  page.on('dialog', (prompt) => {
+    prompts.push(`${prompt.type()}: ${prompt.message()}`);
+    prompt.accept().catch(() => {});
+  });
+  page.on('request', (sent) => {
+    if (sent.url().includes('icon-probe')) {
+      probes.push(sent.url());
+    }
+  });
+
+  return { prompts, probes };
+}
+
 test(
-  'a custom icon is uploaded under a name as a PNG whatever the file holds, shows on a device and a group by its name, and is renamed and deleted on the server',
+  'the Custom icon field says None and opens the Custom icons dialog, and one click lands on its button while the Hostname above is refused',
   { tag: '@cross-browser' },
-  async ({ page, builder, request, issues, tracker }, testInfo) => {
+  async ({ page, builder, issues }, testInfo) => {
     const { draft } = await seedStyled(builder, testInfo);
-    const names = {
-      plc: iconName('plc'),
-      pump: iconName('pump'),
-      renamed: iconName('pump'),
-    };
     const icons = iconField(page, builder);
     const web01 = builder.node('web-01', 'device');
-    const zone = builder.node('Zone', 'group');
-    // What the page was asked, and what it fetched, that a picture must
-    // never cause.
-    const prompts = [];
-    const probes = [];
-
-    page.on('dialog', (prompt) => {
-      prompts.push(`${prompt.type()}: ${prompt.message()}`);
-      prompt.accept().catch(() => {});
-    });
-    page.on('request', (sent) => {
-      if (sent.url().includes('icon-probe')) {
-        probes.push(sent.url());
-      }
-    });
 
     await builder.openDraft(draft);
-
-    let plc;
-    let pump;
 
     await test.step('the Custom icon field says None, and its button opens the Custom icons dialog', async () => {
       await builder.selectInOutline('web-01');
@@ -2062,6 +2147,24 @@ test(
       await cancel.click();
       await expect(hostname).toHaveValue('web-01');
     });
+
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a custom icon is uploaded under a name as a PNG whatever the file holds, and nothing in an SVG file runs or is fetched',
+  { tag: '@cross-browser' },
+  async ({ page, builder, request, issues, tracker }, testInfo) => {
+    const { draft } = await seedStyled(builder, testInfo);
+    const names = { plc: iconName('plc'), pump: iconName('pump') };
+    const icons = iconField(page, builder);
+    const { prompts, probes } = watchPictureEffects(page);
+
+    await builder.openDraft(draft);
+    await builder.selectInOutline('web-01');
+
+    let plc;
 
     await test.step('a PNG file is drawn by the browser, named, and sent as a PNG of at most 96 pixels a side', async () => {
       await icons.choose.click();
@@ -2195,7 +2298,7 @@ test(
       const sent = response.request().postDataJSON();
 
       expect(response.status()).toBe(201);
-      pump = await response.json();
+      const pump = await response.json();
       expect.soft(sent.name).toBe(names.pump);
       expect.soft(isPNG(sent.data), 'what is sent is a PNG').toBe(true);
       expect.soft(isPNG(pump.data), 'what is stored is a PNG').toBe(true);
@@ -2245,6 +2348,43 @@ test(
         .soft([...tracker.icons].sort())
         .toEqual([names.plc, names.pump].sort());
     });
+
+    expect.soft(prompts, 'dialogs opened during the test').toEqual([]);
+    expect.soft(probes, 'requests a picture made').toEqual([]);
+    expectNoFatal(issues);
+  },
+);
+
+test(
+  'a custom icon shows on a device at once and on a group with Apply, by its name, which keeps working when the icon is renamed; deleted, the group shows its built-in icon',
+  { tag: '@cross-browser' },
+  async ({ page, builder, request, issues, tracker }, testInfo) => {
+    const { draft } = await seedStyled(builder, testInfo);
+    const names = {
+      plc: iconName('plc'),
+      pump: iconName('pump'),
+      renamed: iconName('pump'),
+    };
+    // Two icons of the server's library, PNGs of 96 by 48 pixels.
+    const plc = await seedIcon(
+      request,
+      tracker,
+      iconOf(pngOf(96, 48, ownColor()), names.plc),
+    );
+    const pump = await seedIcon(
+      request,
+      tracker,
+      iconOf(pngOf(96, 48, ownColor()), names.pump),
+    );
+    const icons = iconField(page, builder);
+    const web01 = builder.node('web-01', 'device');
+    const zone = builder.node('Zone', 'group');
+    const { prompts, probes } = watchPictureEffects(page);
+
+    await builder.openDraft(draft);
+    await builder.selectInOutline('web-01');
+    await icons.choose.click();
+    await expect(icons.heading).toHaveText(/Server icons \(/);
 
     const src = () => `data:image/png;base64,${pump.data}`;
 

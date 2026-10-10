@@ -66,6 +66,21 @@ function interfaceRows(builder) {
   );
 }
 
+// The device `node` on the canvas, its interface handles (without the
+// new-interface handle every device has) and its Connection points rows.
+async function connectionPoints(page, builder) {
+  const node = builder.node('node', 'device');
+  const id = await node.getAttribute('data-node-id');
+
+  return {
+    node,
+    handles: page.locator(
+      `.vue-flow__handle[data-nodeid="${id}"]:not([data-handleid="new-interface"])`,
+    ),
+    rows: interfaceRows(builder),
+  };
+}
+
 // The labels of the fields in the inspector form, in order.
 function fieldLabels(builder) {
   return builder.inspector.locator('form label.label');
@@ -260,28 +275,123 @@ async function isInViewport(element) {
   }
 }
 
+// The selected device's form: its fields and its Apply and Cancel.
+function deviceFields(builder) {
+  const general = specGroup(builder, 'General');
+  const hardware = specGroup(builder, 'Hardware');
+
+  return {
+    hostname: deviceHostname(builder),
+    apply: builder.inspector.getByTestId('inspector-apply'),
+    cancel: builder.inspector.getByTestId('inspector-cancel'),
+    errors: builder.inspector.getByTestId('inspector-errors'),
+    hardware,
+    osType: hardware.getByLabel(/^OS type/),
+    image: hardware.getByLabel(/^Image/),
+    specHostname: general.getByLabel('Node hostname'),
+    snapshot: general.getByLabel('Snapshot'),
+  };
+}
+
+// The device web01 as the device form test applies it: a Router running
+// Windows, with a description, Snapshot off, 4096 MB of memory, 2 VCPUs and
+// a second drive, data.qc2, an image the server does not have. It has no
+// interfaces, and no network.
+function appliedDeviceDocument(name) {
+  return blankDocument(name, {
+    nodes: [
+      {
+        id: crypto.randomUUID(),
+        kind: 'device',
+        label: 'web01',
+        position: { x: 0, y: 0 },
+        device: {
+          hostname: 'web01',
+          spec: {
+            type: 'Router',
+            general: {
+              hostname: 'web01',
+              description: 'Front end web server',
+              vm_type: 'kvm',
+              snapshot: false,
+            },
+            hardware: {
+              os_type: 'windows',
+              memory: 4096,
+              vcpus: 2,
+              drives: [{ image: 'win10.qc2' }, { image: 'data.qc2' }],
+            },
+            network: { interfaces: [] },
+          },
+          interfaces: [],
+        },
+      },
+    ],
+  });
+}
+
+// The device `node`, its interface eth0 (Ethernet, managed by hand)
+// connected to the switch of network EXP, as Add connection point and Add
+// connection leave a new device.
+function wiredDocument(name) {
+  const id = () => crypto.randomUUID();
+  const network = { id: id(), name: 'EXP' };
+  const handle = { id: id(), name: 'eth0', index: 0 };
+  const device = {
+    id: id(),
+    kind: 'device',
+    label: 'node',
+    position: { x: 0, y: 0 },
+    device: {
+      hostname: 'node',
+      spec: {
+        type: 'VirtualMachine',
+        general: { hostname: 'node', description: '', vm_type: 'kvm' },
+        hardware: { os_type: 'linux', drives: [{ image: 'ubuntu.qc2' }] },
+        network: {
+          interfaces: [
+            { name: 'eth0', type: 'ethernet', proto: 'manual', vlan: 'EXP' },
+          ],
+        },
+      },
+      interfaces: [handle],
+    },
+  };
+  const sw = {
+    id: id(),
+    kind: 'switch',
+    label: 'EXP',
+    position: { x: 0, y: 320 },
+    switch: { networkId: network.id },
+  };
+
+  return blankDocument(name, {
+    nodes: [device, sw],
+    networks: [network],
+    edges: [
+      {
+        id: id(),
+        sourceNodeId: device.id,
+        sourceHandleId: handle.id,
+        targetNodeId: sw.id,
+        networkId: network.id,
+      },
+    ],
+  });
+}
+
 test.describe('Builder inspector', () => {
   // Each step checks one behavior. Checks that no later step acts on are
   // soft, so a failure in one step does not hide the steps after it.
   test(
-    'device edits validate, cancel, apply and show a description tooltip',
+    'device fields are named and marked required, describe themselves in tooltips, and Cancel discards unapplied edits',
     { tag: '@cross-browser' },
     async ({ page, builder, issues }) => {
       await mockDisks(page, ['ubuntu.qc2', 'win10.qc2']);
       const draft = await newDraft(builder, 'device');
       await builder.selectInOutline('node');
-
-      const hostname = deviceHostname(builder);
-      const apply = builder.inspector.getByTestId('inspector-apply');
-      const cancel = builder.inspector.getByTestId('inspector-cancel');
-      const errors = builder.inspector.getByTestId('inspector-errors');
-      const hardware = specGroup(builder, 'Hardware');
-      const osType = hardware.getByLabel(/^OS type/);
-      const image = hardware.getByLabel(/^Image/);
-      const specHostname = specGroup(builder, 'General').getByLabel(
-        'Node hostname',
-      );
-      const snapshot = specGroup(builder, 'General').getByLabel('Snapshot');
+      const { hostname, apply, cancel, osType, specHostname, snapshot } =
+        deviceFields(builder);
 
       await test.step('fields are named without their asterisk and marked required', async () => {
         await expect
@@ -455,6 +565,29 @@ test.describe('Builder inspector', () => {
         expect.soft(device.device.hostname).toBe('node');
         expect.soft(device.device.spec.hardware.os_type).toBe('linux');
       });
+
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'invalid device fields are flagged and block Apply, and fixed and edited fields apply',
+    { tag: '@cross-browser' },
+    async ({ page, builder, issues }) => {
+      await mockDisks(page, ['ubuntu.qc2', 'win10.qc2']);
+      const draft = await newDraft(builder, 'device');
+      await builder.selectInOutline('node');
+      const {
+        hostname,
+        apply,
+        cancel,
+        errors,
+        hardware,
+        osType,
+        image,
+        specHostname,
+        snapshot,
+      } = deviceFields(builder);
 
       await test.step('invalid fields are flagged, described and listed, and block Apply', async () => {
         await fillField(hostname, 'bad host');
@@ -679,6 +812,22 @@ test.describe('Builder inspector', () => {
         await cancel.press('Enter');
         await expect.soft(vcpus).toHaveValue('2');
       });
+
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'an applied device shows its type and description, warns of a missing drive image, and its checks lead to it',
+    { tag: '@cross-browser' },
+    async ({ page, builder, issues }, testInfo) => {
+      await mockDisks(page, ['ubuntu.qc2', 'win10.qc2']);
+      const draft = await builder.seedDraft(
+        appliedDeviceDocument(uniqueName(testInfo, 'applied')),
+      );
+      await builder.openDraft(draft);
+      await builder.selectInOutline('web01');
+      const { hostname, cancel } = deviceFields(builder);
 
       await test.step('the node shows its type, and its description in its info tooltip on hover and keyboard focus', async () => {
         const node = builder.node('web01', 'device');
@@ -941,36 +1090,18 @@ test.describe('Builder inspector', () => {
     },
   );
 
-  // One draft with every selection kind. Each step selects one kind, checks
-  // the fields the inspector shows for it, edits and applies them, and polls
-  // the server for the result. The diagram step runs before any item is
-  // added, and the step that needs a rendered connection comes last, so a
-  // problem with items or canvas edges does not hide the other kinds.
+  // A test for each selection kind, on a draft of its own. Each step selects
+  // one kind, checks the fields the inspector shows for it, edits and applies
+  // them, and polls the server for the result.
   test(
-    'shows and applies the fields of every selection kind',
+    'shows and applies the diagram’s fields, and takes a rename from the header',
     { tag: '@cross-browser' },
     async ({ page, builder, issues }, testInfo) => {
-      // The server's disk images are held back until the device step has
-      // typed in a field, as a slow server's answer would be.
-      let answerDisks;
-      const disksAsked = new Promise((resolve) => {
-        answerDisks = resolve;
-      });
-      await page.route('**/api/v1/disks', async (route) => {
-        await disksAsked;
-        await route.fulfill({
-          json: { disks: [{ kind: 'VM', name: 'kali.qc2' }] },
-        });
-      });
-
       await builder.open();
       const draft = await builder.createBlank();
       const fields = fieldLabels(builder);
       const nameField = builder.inspector.getByLabel('Name');
       const apply = builder.inspector.getByTestId('inspector-apply');
-      const addInterface = builder.inspector.getByTestId(
-        'inspector-add-interface',
-      );
       const name = uniqueName(testInfo, 'diagram');
       const renamed = `${name}-renamed`;
 
@@ -1025,7 +1156,45 @@ test.describe('Builder inspector', () => {
           .toBe(renamed);
       });
 
-      await addItems(builder, draft, 'device', 'switch', 'note', 'group');
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'shows and applies a device’s fields, keeps text typed while disk images arrive, and changes its icon at once',
+    { tag: '@cross-browser' },
+    async ({ page, builder, issues }) => {
+      // The server's disk images are held back until the device step has
+      // typed in a field, as a slow server's answer would be.
+      let answerDisks;
+      const disksAsked = new Promise((resolve) => {
+        answerDisks = resolve;
+      });
+      await page.route('**/api/v1/disks', async (route) => {
+        await disksAsked;
+        await route.fulfill({
+          json: { disks: [{ kind: 'VM', name: 'kali.qc2' }] },
+        });
+      });
+
+      // A new node is selected, and a click on the one selected node
+      // deselects it: the device is not added last, so the click below
+      // selects it.
+      const draft = await newDraft(
+        builder,
+        'device',
+        'switch',
+        'note',
+        'group',
+      );
+      const apply = builder.inspector.getByTestId('inspector-apply');
+      const addInterface = builder.inspector.getByTestId(
+        'inspector-add-interface',
+      );
+
+      async function persisted(read) {
+        return read(await builder.serverDocument(draft));
+      }
 
       await test.step('device', async () => {
         await builder.node('node', 'device').click();
@@ -1144,6 +1313,22 @@ test.describe('Builder inspector', () => {
           .toBe('server');
       });
 
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'shows and applies the fields of a note and of a group',
+    { tag: '@cross-browser' },
+    async ({ builder, issues }) => {
+      const draft = await newDraft(builder, 'note', 'group');
+      const fields = fieldLabels(builder);
+      const apply = builder.inspector.getByTestId('inspector-apply');
+
+      async function persisted(read) {
+        return read(await builder.serverDocument(draft));
+      }
+
       await test.step('note', async () => {
         await builder.selectInOutline('Note');
         await expect.soft(subject(builder)).toHaveText(/^\s*Note\b/);
@@ -1244,8 +1429,28 @@ test.describe('Builder inspector', () => {
           .toBe('Enclave');
       });
 
-      // The switch and connection steps need the device on the switch.
-      await connectFirst(builder, draft);
+      expectNoFatal(issues);
+    },
+  );
+
+  // The switch and connection steps need the device on the switch.
+  test(
+    'shows and applies the fields of a switch and its network, a suggested color, and a connection',
+    { tag: '@cross-browser' },
+    async ({ page, builder, issues }, testInfo) => {
+      const name = uniqueName(testInfo, 'wired');
+      const draft = await builder.seedDraft(wiredDocument(name));
+      await builder.openDraft(draft);
+      const fields = fieldLabels(builder);
+      const nameField = builder.inspector.getByLabel('Name');
+      const apply = builder.inspector.getByTestId('inspector-apply');
+      const addInterface = builder.inspector.getByTestId(
+        'inspector-add-interface',
+      );
+
+      async function persisted(read) {
+        return read(await builder.serverDocument(draft));
+      }
 
       await test.step('switch Name and VLAN alias apply to its network', async () => {
         await builder.selectInOutline('EXP');
@@ -1381,7 +1586,7 @@ test.describe('Builder inspector', () => {
           .click({ position: { x: 400, y: 600 } });
         await expect.soft(subject(builder)).toHaveText(/^\s*Diagram\b/);
         await expect.soft(fields).toHaveText([/^Name/, /^Description/]);
-        await expect.soft(nameField).toHaveValue(renamed);
+        await expect.soft(nameField).toHaveValue(name);
       });
 
       // Relabelling a clicked connection, and clearing its label back to the
@@ -1488,21 +1693,14 @@ test.describe('Builder inspector', () => {
 
   // Checks that no later step acts on are soft. The interface names are
   // hard: the next step selects or removes interfaces by name.
-  test('Add and Remove connection point update handles and interface rows', async ({
+  test('Add connection point adds a handle and an interface row, which takes edits and connects', async ({
     page,
     builder,
     issues,
   }) => {
     const draft = await newDraft(builder, 'device', 'switch');
     await builder.selectInOutline('node');
-
-    const node = builder.node('node', 'device');
-    const id = await node.getAttribute('data-node-id');
-    // Interface handles only; every device also has a new-interface handle.
-    const handles = page.locator(
-      `.vue-flow__handle[data-nodeid="${id}"]:not([data-handleid="new-interface"])`,
-    );
-    const rows = interfaceRows(builder);
+    const { node, handles, rows } = await connectionPoints(page, builder);
 
     await test.step('Add connection point', async () => {
       await expect.soft(handles).toHaveCount(0);
@@ -1710,6 +1908,22 @@ test.describe('Builder inspector', () => {
       await expect.soft(kind).toHaveValue('1');
     });
 
+    expectNoFatal(issues);
+  });
+
+  test('a connected interface’s fields wait for Apply, and an applied VLAN sets its connection', async ({
+    page,
+    builder,
+    issues,
+  }, testInfo) => {
+    const draft = await builder.seedDraft(
+      wiredDocument(uniqueName(testInfo, 'wired')),
+    );
+    await builder.openDraft(draft);
+    await builder.selectInOutline('node');
+    const { handles, rows } = await connectionPoints(page, builder);
+    await expect(rows).toHaveText(['eth0 — network EXP']);
+
     // Edits in the node's Interfaces list wait for Apply, and are cancelled
     // here: the next steps add and remove interfaces as connection points.
     await test.step("the node's Interfaces list: yes-or-no fields, MTU bounds and Add interface", async () => {
@@ -1898,6 +2112,22 @@ test.describe('Builder inspector', () => {
       await builder.selectInOutline('node');
     });
 
+    expectNoFatal(issues);
+  });
+
+  test('Disconnect drops a connection point’s connection, a second one keeps the inspector responsive, and Remove connection point removes them', async ({
+    page,
+    builder,
+    issues,
+  }, testInfo) => {
+    const draft = await builder.seedDraft(
+      wiredDocument(uniqueName(testInfo, 'wired')),
+    );
+    await builder.openDraft(draft);
+    await builder.selectInOutline('node');
+    const { node, handles, rows } = await connectionPoints(page, builder);
+    await expect(rows).toHaveText(['eth0 — network EXP']);
+
     // Each connected connection point has a Disconnect button, as the
     // Outline's rows once did: the connection goes, the interface stays.
     await test.step("Disconnect removes a connection point's connection", async () => {
@@ -2040,6 +2270,16 @@ test.describe('Builder inspector', () => {
         .toBeFocused();
       await builder.selectInOutline('node');
     });
+
+    expectNoFatal(issues);
+  });
+
+  test('a selection change or Save now settles unapplied edits, and an edit that makes a diagram error announces it', async ({
+    builder,
+    issues,
+  }) => {
+    const draft = await newDraft(builder, 'device', 'switch');
+    await builder.selectInOutline('node');
 
     // A selection change never drops unapplied edits silently. Valid
     // edits are applied to the element they were made on; invalid ones are

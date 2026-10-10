@@ -22,6 +22,7 @@ const {
   iconOf,
   isPublishResponse,
   knownDefect,
+  labDocument,
   ownColor,
   pngOf,
   publishTopology,
@@ -176,6 +177,53 @@ async function setExperimentAliases(request, name, aliases) {
   expect(updated.ok(), await updated.text()).toBeTruthy();
 }
 
+// Stores an experiment, with the VLAN aliases EXP 101 and MGMT 102, of a
+// topology that includes `child`, which includes `nested`: phenix merges
+// both into the experiment when it creates it. A scenario of the topology
+// runs user apps this server does not have, which phenix skips when it
+// creates the experiment: one on host-a and host-b, one on none. Returns
+// the names of the topology, the experiment, the two included topologies
+// and the scenario.
+async function storedExperiment(request, tracker, testInfo) {
+  const topology = uniqueName(testInfo, 'gen-exp-topo');
+  const experiment = uniqueName(testInfo, 'gen-exp');
+  const child = uniqueName(testInfo, 'gen-exp-inc');
+  const nested = uniqueName(testInfo, 'gen-exp-nest');
+  await seedConfig(
+    request,
+    tracker,
+    topologyConfig(nested, [topologyNode('deep-host', [['eth0', 'MGMT']])]),
+  );
+  const childConfig = topologyConfig(child, [
+    topologyNode('inc-host', [['eth0', 'EXP']]),
+  ]);
+  childConfig.spec.includeTopologies = [nested];
+  await seedConfig(request, tracker, childConfig);
+  const rootConfig = topologyConfig(topology, sharedVlanNodes());
+  rootConfig.spec.includeTopologies = [child];
+  await seedConfig(request, tracker, rootConfig);
+  // phenix uses a scenario only with the topology it names.
+  const scenario = uniqueName(testInfo, 'gen-exp-scn');
+  await seedConfig(request, tracker, {
+    apiVersion: 'phenix.sandia.gov/v2',
+    kind: 'Scenario',
+    metadata: { name: scenario, annotations: { topology } },
+    spec: {
+      apps: [
+        {
+          name: 'e2e-traffic',
+          hosts: [{ hostname: 'host-a' }, { hostname: 'host-b' }],
+        },
+        { name: 'e2e-monitor' },
+      ],
+    },
+  });
+  await createExperiment(request, tracker, experiment, topology, scenario);
+  await setExperimentAliases(request, experiment, { EXP: 101, MGMT: 102 });
+
+  return { topology, experiment, child, nested, scenario };
+}
+
 // Vue Flow's wrapper around the one canvas node of `kind`: its Tab stop.
 function flowNode(builder, kind) {
   return builder.page
@@ -183,48 +231,45 @@ function flowNode(builder, kind) {
     .filter({ has: builder.nodes(kind) });
 }
 
-// Builds `EXP` switch + `node` + one connection in a fresh blank draft. The
-// device sits below and to the right of the switch, so the line leaves the
-// device's right side and runs round, left of the switch, the leftmost node,
-// into the switch's left side.
-async function buildConnectedDiagram(builder, title) {
-  const draft = await builder.createBlank();
-  await builder.rename(title);
-  await builder.palette('switch').click();
-  await builder.palette('device').click();
-  // A new node is selected, and Shift with an arrow key moves it 10px.
-  const device = flowNode(builder, 'device');
-  await expect(device).toBeVisible();
-  await device.focus();
-  for (let step = 0; step < 16; step += 1) {
-    await builder.page.keyboard.press('Shift+ArrowDown');
-  }
-  await builder.connect();
-  await builder.expectSummary('1 device, 1 switch, 1 network, 1 connection');
-  await expect(builder.page.getByTestId('builder-name')).toHaveText(title);
-  // An edit is written to IndexedDB before the upload starts, so for a
-  // moment after an edit the save state still reads "All changes saved"
-  // from the previous save: the server copy is waited for first.
-  await builder.persisted(
-    draft,
-    (doc) => {
-      const [sw, node] = ['switch', 'device'].map((kind) =>
-        doc.nodes.find((item) => item.kind === kind),
-      );
+// The switch of network EXP and the device `node`, connected by eth0, as one
+// document named `title`, which a test seeds rather than draws with some
+// twenty edits that each wait for the one before to be saved. The device
+// sits one palette slot (220 pixels) right of the switch and 160 pixels
+// below it, so the line leaves the device's right side and runs round, left
+// of the switch, the leftmost node, into the switch's left side.
+function connectedDiagram(title) {
+  const doc = labDocument(title, { hostnames: ['node'] });
+  const at = (kind) => doc.nodes.find((node) => node.kind === kind);
 
-      return (
-        doc.metadata.name === title &&
-        doc.nodes.length === 2 &&
-        doc.edges.length === 1 &&
-        node.position.y - sw.position.y === 160
-      );
-    },
-    true,
-    { timeout: 5000, message: 'the latest edit reaches the server' },
-  );
-  await builder.waitSaved();
+  at('switch').position = { x: 80, y: 80 };
+  at('device').position = { x: 300, y: 240 };
+
+  return doc;
+}
+
+// Seeds a draft of connectedDiagram(title), and opens it. Returns the
+// draft.
+async function openConnectedDraft(builder, title) {
+  const draft = await builder.seedDraft(connectedDiagram(title));
+  await builder.openDraft(draft);
 
   return draft;
+}
+
+// Checks a download from the Download dialog of the diagram `title`: its
+// file name, the status line it leaves and the absence of an error.
+function savedChecker(dialog, title) {
+  const status = dialog.getByRole('status');
+  const downloadError = dialog.getByTestId('download-error');
+
+  return async (file, extension) => {
+    const fileName = downloadFileName(title, extension);
+    expect.soft(file.name, `${extension} file name`).toBe(fileName);
+    await expect.soft(status).toHaveText(`Saved ${fileName}.`);
+    await expect
+      .soft(downloadError, `${extension} download error`)
+      .toHaveCount(0);
+  };
 }
 
 // Width and height from a PNG's IHDR chunk.
@@ -232,7 +277,7 @@ function pngSize(buffer) {
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
 }
 
-// The diagram of buildConnectedDiagram() as the canvas draws it: the
+// The diagram of connectedDiagram() as the canvas draws it: the
 // connection's stroke and width, points on the line in flow coordinates, and
 // the device's fill with a point inside the device clear of its text. The
 // points on the line are 3px outside the device's right border and the
@@ -491,53 +536,16 @@ function errorBanner(page) {
 
 test.describe('download and upload', () => {
   test(
-    'downloads JSON, YAML, Topology YAML, GEXF, PNG and SVG, and uploads the Builder files as new drafts',
+    'the Download dialog shows its formats in two rows, links to Gephi, and goes in Tab order',
     {
       tag: '@cross-browser',
     },
-    async ({ page, request, builder, issues }, testInfo) => {
-      await builder.open();
-      const title = uniqueName(testInfo, 'download');
-      const original = await buildConnectedDiagram(builder, title);
-      const summary = await builder.summary.textContent();
-      const saved = await builder.serverDocument(original);
-      const labels = saved.nodes.map((node) => node.label);
-      expect(labels).toHaveLength(2);
-
-      // What the images must show: the diagram with nothing selected, in
-      // each theme.
-      const selected = page.locator('.builder-canvas .is-selected');
-      await flowNode(builder, 'device').focus();
-      await page.keyboard.press('Escape');
-      await expect(selected).toHaveCount(0);
-      const light = await diagramOnCanvas(page);
-      expect(light.leftOfNodes, 'the line runs left of both nodes').toBe(true);
-      await useColorScheme(page, 'dark');
-      const dark = await diagramOnCanvas(page);
-      await useColorScheme(page, 'light');
-      expect.soft(dark.stroke, 'the dark line colour').not.toBe(light.stroke);
-
-      // An image shows the diagram, not the editor's view of it: while the
-      // images are made, the canvas is zoomed in, which pans it too, and has
-      // everything selected.
-      await flowNode(builder, 'device').focus();
-      await page.keyboard.press('ControlOrMeta+a');
-      // Both nodes, the connection and its label.
-      await expect(selected).toHaveCount(4);
-      const zoomIn = page.getByRole('button', { name: 'Zoom in' });
-      for (let step = 0; step < 3; step += 1) {
-        await zoomIn.click();
-      }
-      await expect(
-        page.locator('.vue-flow__transformationpane'),
-      ).not.toHaveAttribute('style', /translate\(0px, 0px\) scale\(1\)/);
-
+    async ({ page, builder, issues }, testInfo) => {
+      await openConnectedDraft(builder, uniqueName(testInfo, 'download'));
       const dialog = await builder.openDialog('download');
-      const status = dialog.getByRole('status');
-      const downloadError = dialog.getByTestId('download-error');
       // The status region is there, empty, before the first download, so
       // screen readers announce the first message too.
-      await expect.soft(status).toHaveText('');
+      await expect.soft(dialog.getByRole('status')).toHaveText('');
 
       await test.step('the formats are in two rows, and Gephi links to its project', async () => {
         const boxes = {};
@@ -612,67 +620,70 @@ test.describe('download and upload', () => {
           .soft(dialog.getByRole('button', { name: 'Close', exact: true }))
           .toBeFocused();
       });
+      expectNoFatal(issues);
+    },
+  );
 
-      // The file name, the status line and the absence of an error, after
-      // each download.
-      async function expectSaved(file, extension) {
-        const fileName = downloadFileName(title, extension);
-        expect.soft(file.name, `${extension} file name`).toBe(fileName);
-        await expect.soft(status).toHaveText(`Saved ${fileName}.`);
-        await expect
-          .soft(downloadError, `${extension} download error`)
-          .toHaveCount(0);
-      }
+  test(
+    'downloads JSON, YAML, Topology YAML and GEXF, and uploads the Builder files as new drafts',
+    {
+      tag: '@cross-browser',
+    },
+    async ({ page, request, builder, issues }, testInfo) => {
+      const title = uniqueName(testInfo, 'download');
+      const original = await openConnectedDraft(builder, title);
+      const saved = await builder.serverDocument(original);
+      const labels = saved.nodes.map((node) => node.label);
+      expect(labels).toHaveLength(2);
 
-      const json =
-        await test.step('the JSON download is the saved document', async () => {
-          const file = await download(page, () =>
-            dialog.getByTestId('download-json').click(),
+      const dialog = await builder.openDialog('download');
+      const status = dialog.getByRole('status');
+      const downloadError = dialog.getByTestId('download-error');
+      const expectSaved = savedChecker(dialog, title);
+
+      await test.step('the JSON download is the saved document', async () => {
+        const file = await download(page, () =>
+          dialog.getByTestId('download-json').click(),
+        );
+        await expectSaved(file, 'json');
+
+        const downloaded = JSON.parse(file.buffer.toString('utf8'));
+        expect.soft(downloaded.$schema).toBe(SCHEMA_URI);
+        expect.soft(downloaded.revision).toBe(1);
+        expect.soft(downloaded.metadata.name).toBe(title);
+        expect
+          .soft(downloaded.nodes.map((node) => node.kind).sort())
+          .toEqual(['device', 'switch']);
+        expect
+          .soft(downloaded.networks.map((network) => network.name))
+          .toEqual(['EXP']);
+        expect.soft(downloaded.edges).toHaveLength(1);
+        expect.soft(downloaded.metadata.id).toBe(saved.metadata.id);
+        expect.soft(downloaded.nodes).toEqual(saved.nodes);
+        expect.soft(downloaded.edges).toEqual(saved.edges);
+      });
+
+      await test.step('the YAML download has the document keys', async () => {
+        const file = await download(page, () =>
+          dialog.getByTestId('download-yaml').click(),
+        );
+        await expectSaved(file, 'yaml');
+
+        // The e2e package has no YAML parser; check the top-level keys by line
+        // and let the product's strict importer prove the document parses.
+        const text = file.buffer.toString('utf8');
+        expect
+          .soft(text)
+          .toMatch(
+            /^\$schema: https:\/\/phenix\.sandia\.gov\/schemas\/builder\/v1$/m,
           );
-          await expectSaved(file, 'json');
-
-          const downloaded = JSON.parse(file.buffer.toString('utf8'));
-          expect.soft(downloaded.$schema).toBe(SCHEMA_URI);
-          expect.soft(downloaded.revision).toBe(1);
-          expect.soft(downloaded.metadata.name).toBe(title);
-          expect
-            .soft(downloaded.nodes.map((node) => node.kind).sort())
-            .toEqual(['device', 'switch']);
-          expect
-            .soft(downloaded.networks.map((network) => network.name))
-            .toEqual(['EXP']);
-          expect.soft(downloaded.edges).toHaveLength(1);
-          expect.soft(downloaded.metadata.id).toBe(saved.metadata.id);
-          expect.soft(downloaded.nodes).toEqual(saved.nodes);
-          expect.soft(downloaded.edges).toEqual(saved.edges);
-
-          return { file, downloaded };
-        });
-
-      const yaml =
-        await test.step('the YAML download has the document keys', async () => {
-          const file = await download(page, () =>
-            dialog.getByTestId('download-yaml').click(),
-          );
-          await expectSaved(file, 'yaml');
-
-          // The e2e package has no YAML parser; check the top-level keys by line
-          // and let the product's strict importer prove the document parses.
-          const text = file.buffer.toString('utf8');
-          expect
-            .soft(text)
-            .toMatch(
-              /^\$schema: https:\/\/phenix\.sandia\.gov\/schemas\/builder\/v1$/m,
-            );
-          expect.soft(text).toMatch(/^revision: 1$/m);
-          expect.soft(text).toMatch(/^metadata:$/m);
-          expect.soft(text).toContain(`\n  name: ${title}\n`);
-          expect.soft(text).toMatch(/^nodes:$/m);
-          expect.soft(text.match(/^ {4}kind: device$/gm)).toHaveLength(1);
-          expect.soft(text.match(/^ {4}kind: switch$/gm)).toHaveLength(1);
-
-          return file;
-        });
+        expect.soft(text).toMatch(/^revision: 1$/m);
+        expect.soft(text).toMatch(/^metadata:$/m);
+        expect.soft(text).toContain(`\n  name: ${title}\n`);
+        expect.soft(text).toMatch(/^nodes:$/m);
+        expect.soft(text.match(/^ {4}kind: device$/gm)).toHaveLength(1);
+        expect.soft(text.match(/^ {4}kind: switch$/gm)).toHaveLength(1);
+      });
 
       await test.step('the Topology YAML download is the topology Publish would write', async () => {
         const file = await download(page, () =>
@@ -750,6 +761,52 @@ test.describe('download and upload', () => {
           edges: saved.edges.length,
         });
       });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'downloads PNG and SVG images of the whole diagram, with nothing selected, in each theme',
+    {
+      tag: '@cross-browser',
+    },
+    async ({ page, builder, issues }, testInfo) => {
+      const title = uniqueName(testInfo, 'download');
+      const original = await openConnectedDraft(builder, title);
+      const saved = await builder.serverDocument(original);
+      const labels = saved.nodes.map((node) => node.label);
+      expect(labels).toHaveLength(2);
+
+      // What the images must show: the diagram with nothing selected, in
+      // each theme.
+      const selected = page.locator('.builder-canvas .is-selected');
+      await flowNode(builder, 'device').focus();
+      await page.keyboard.press('Escape');
+      await expect(selected).toHaveCount(0);
+      const light = await diagramOnCanvas(page);
+      expect(light.leftOfNodes, 'the line runs left of both nodes').toBe(true);
+      await useColorScheme(page, 'dark');
+      const dark = await diagramOnCanvas(page);
+      await useColorScheme(page, 'light');
+      expect.soft(dark.stroke, 'the dark line colour').not.toBe(light.stroke);
+
+      // An image shows the diagram, not the editor's view of it: while the
+      // images are made, the canvas is zoomed in, which pans it too, and has
+      // everything selected.
+      await flowNode(builder, 'device').focus();
+      await page.keyboard.press('ControlOrMeta+a');
+      // Both nodes, the connection and its label.
+      await expect(selected).toHaveCount(4);
+      const zoomIn = page.getByRole('button', { name: 'Zoom in' });
+      for (let step = 0; step < 3; step += 1) {
+        await zoomIn.click();
+      }
+      await expect(
+        page.locator('.vue-flow__transformationpane'),
+      ).not.toHaveAttribute('style', /translate\(0px, 0px\) scale\(1\)/);
+
+      const dialog = await builder.openDialog('download');
+      const expectSaved = savedChecker(dialog, title);
 
       const boundsText = dialog.getByText(/Diagram bounds: \d+ × \d+ px/);
       await expect(boundsText).toBeVisible();
@@ -831,6 +888,35 @@ test.describe('download and upload', () => {
         await useColorScheme(page, 'light');
       });
 
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(builder.dialog).toBeHidden();
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'uploads the downloaded Builder files, JSON in the editor and YAML on the drafts landing, as new drafts',
+    {
+      tag: '@cross-browser',
+    },
+    async ({ page, builder, issues }, testInfo) => {
+      const title = uniqueName(testInfo, 'upload');
+      const original = await openConnectedDraft(builder, title);
+      const summary = await builder.summary.textContent();
+      const saved = await builder.serverDocument(original);
+
+      // The Builder files, as the Download dialog saves them.
+      const dialog = await builder.openDialog('download');
+      const jsonFile = await download(page, () =>
+        dialog.getByTestId('download-json').click(),
+      );
+      const json = {
+        file: jsonFile,
+        downloaded: JSON.parse(jsonFile.buffer.toString('utf8')),
+      };
+      const yaml = await download(page, () =>
+        dialog.getByTestId('download-yaml').click(),
+      );
       await dialog.getByRole('button', { name: 'Close', exact: true }).click();
       await expect(builder.dialog).toBeHidden();
 
@@ -1642,45 +1728,8 @@ test.describe('import', () => {
     tracker,
     issues,
   }, testInfo) => {
-    const topology = uniqueName(testInfo, 'gen-exp-topo');
-    const experiment = uniqueName(testInfo, 'gen-exp');
-    // The topology includes `child`, which includes `nested`: phenix merges
-    // both into the experiment when it creates it.
-    const child = uniqueName(testInfo, 'gen-exp-inc');
-    const nested = uniqueName(testInfo, 'gen-exp-nest');
-    await seedConfig(
-      request,
-      tracker,
-      topologyConfig(nested, [topologyNode('deep-host', [['eth0', 'MGMT']])]),
-    );
-    const childConfig = topologyConfig(child, [
-      topologyNode('inc-host', [['eth0', 'EXP']]),
-    ]);
-    childConfig.spec.includeTopologies = [nested];
-    await seedConfig(request, tracker, childConfig);
-    const rootConfig = topologyConfig(topology, sharedVlanNodes());
-    rootConfig.spec.includeTopologies = [child];
-    await seedConfig(request, tracker, rootConfig);
-    // User apps this server does not have, which phenix skips when it
-    // creates the experiment: one on two hosts, one on none. phenix uses a
-    // scenario only with the topology it names.
-    const scenario = uniqueName(testInfo, 'gen-exp-scn');
-    await seedConfig(request, tracker, {
-      apiVersion: 'phenix.sandia.gov/v2',
-      kind: 'Scenario',
-      metadata: { name: scenario, annotations: { topology } },
-      spec: {
-        apps: [
-          {
-            name: 'e2e-traffic',
-            hosts: [{ hostname: 'host-a' }, { hostname: 'host-b' }],
-          },
-          { name: 'e2e-monitor' },
-        ],
-      },
-    });
-    await createExperiment(request, tracker, experiment, topology, scenario);
-    await setExperimentAliases(request, experiment, { EXP: 101, MGMT: 102 });
+    const { topology, experiment, child, nested, scenario } =
+      await storedExperiment(request, tracker, testInfo);
     await builder.open();
 
     const dialog = await openImport(page);

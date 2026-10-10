@@ -4,21 +4,25 @@
 // inspector edits of notes and groups, and the drawings: shapes, icons and
 // lines.
 //
-// Every test starts from its own blank draft; the `tracker` fixture deletes it
-// afterwards. Persisted state is read back through the drafts API so a test
-// proves what autosave stored, not only what the canvas shows. Tests that
-// check several variants on one draft run each variant as a test.step; a
-// check that no later step depends on is soft, so one failure does not hide
-// the steps after it.
+// Every test starts from its own draft, blank or seeded through the API with
+// the diagram it needs; the `tracker` fixture deletes it afterwards.
+// Persisted state is read back through the drafts API so a test proves what
+// autosave stored, not only what the canvas shows. Tests that check several
+// variants on one draft run each variant as a test.step; a check that no
+// later step depends on is soft, so one failure does not hide the steps
+// after it.
 
+const crypto = require('crypto');
 const fs = require('fs');
 
 const {
   test,
+  blankDocument,
   devicesOf,
   expect,
   expectAccessible,
   expectNoFatal,
+  labDocument,
   summaryText,
 } = require('./builder-support');
 
@@ -38,6 +42,82 @@ async function blankDraft(builder) {
   await builder.open();
 
   return builder.createBlank();
+}
+
+// A new draft seeded with labDocument's diagram for the devices node and
+// node-2: each connected by eth0 to the switch of network EXP. Opens it.
+async function twoConnectedDevices(builder) {
+  const draft = await builder.seedDraft(
+    labDocument(`two-connected-${Date.now()}`, {
+      hostnames: ['node', 'node-2'],
+    }),
+  );
+  await builder.openDraft(draft);
+
+  return draft;
+}
+
+// The devices node and node-2 in the group Group, and the switch of network
+// EXP, which node alone is connected to by eth0: the diagram Group makes of
+// two devices, one of them on a switch.
+function groupedDocument(name) {
+  const id = () => crypto.randomUUID();
+  const network = { id: id(), name: 'EXP' };
+  const group = {
+    id: id(),
+    kind: 'group',
+    label: 'Group',
+    position: { x: 0, y: 0 },
+    size: { width: 400, height: 176 },
+    group: { title: 'Group' },
+  };
+  const device = (hostname, x, names) => ({
+    id: id(),
+    kind: 'device',
+    label: hostname,
+    parentId: group.id,
+    position: { x, y: 48 },
+    device: {
+      hostname,
+      spec: {
+        type: 'VirtualMachine',
+        general: { hostname, description: '', vm_type: 'kvm' },
+        hardware: { os_type: 'linux', drives: [{ image: 'ubuntu.qc2' }] },
+        network: {
+          interfaces: names.map((name) => ({
+            name,
+            type: 'ethernet',
+            proto: 'manual',
+            vlan: 'EXP',
+          })),
+        },
+      },
+      interfaces: names.map((name, index) => ({ id: id(), name, index })),
+    },
+  });
+  const first = device('node', 32, ['eth0']);
+  const second = device('node-2', 208, []);
+  const sw = {
+    id: id(),
+    kind: 'switch',
+    label: 'EXP',
+    position: { x: 0, y: 320 },
+    switch: { networkId: network.id },
+  };
+
+  return blankDocument(name, {
+    nodes: [group, first, second, sw],
+    networks: [network],
+    edges: [
+      {
+        id: id(),
+        sourceNodeId: first.id,
+        sourceHandleId: first.device.interfaces[0].id,
+        targetNodeId: sw.id,
+        networkId: network.id,
+      },
+    ],
+  });
 }
 
 function byHostname(doc, hostname) {
@@ -1251,7 +1331,7 @@ test.describe('Builder canvas editing', () => {
     expectNoFatal(issues);
   });
 
-  test('groups a selection, then moves, duplicates, deletes and ungroups groups', async ({
+  test('groups a selection, moves the group with its members, moves a member out and back, and resizes the group', async ({
     page,
     builder,
     issues,
@@ -1263,11 +1343,9 @@ test.describe('Builder canvas editing', () => {
     await builder.connect({ label: 'node' }, { index: 1 });
     await builder.expectSummary('1 connection');
     const [first, second] = await nodeIds(builder, 'device', 2);
-    const members = [first, second];
     const wired = { devices: 2, switches: 1, networks: 1, links: 1 };
     let groupId;
     let grouped;
-    let copyGroupId;
 
     await test.step('Shift+click and Group wrap two devices in a group', async () => {
       await canvasNode(page, first).click();
@@ -1502,6 +1580,28 @@ test.describe('Builder canvas editing', () => {
       expect.soft(sizeOf(grouped).height).toBeLessThan(before.height);
       expect.soft(membership(grouped).inside).toBe(true);
     });
+
+    expectNoFatal(issues);
+  });
+
+  test('Duplicate copies a group with its members, deleting a group removes them, and Ungroup and its keys free them', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    const draft = await builder.seedDraft(
+      groupedDocument(`grouped-${Date.now()}`),
+    );
+    await builder.openDraft(draft);
+    const members = await nodeIds(builder, 'device', 2);
+    const [first, second] = members;
+    const wired = { devices: 2, switches: 1, networks: 1, links: 1 };
+    const groupId = await onlyNodeId(builder, 'group');
+    let copyGroupId;
+    // The group selected, and the keyboard's focus on it.
+    await canvasNode(page, groupId).click({ position: { x: 8, y: 8 } });
+    await expect(flowNode(page, groupId)).toHaveClass(/\bselected\b/);
+    await focusNode(page, groupId);
 
     await test.step('Duplicate copies a group with its members', async () => {
       await page.keyboard.press('ControlOrMeta+d');
@@ -1936,17 +2036,11 @@ test.describe('Builder canvas editing', () => {
   });
 
   test(
-    'the layout menu lays out, keeps the choice with the draft, undoes in one step and can put it back; Auto-group groups',
+    'the layout menu lays out, keeps the choice with the draft, undoes in one step and can put it back',
     { tag: '@cross-browser' },
     async ({ page, builder, issues }) => {
-      const draft = await blankDraft(builder);
-      await builder.palette('device').click();
-      await builder.palette('device').click();
-      await builder.palette('switch').click();
-      await builder.connect({ label: 'node' }, { index: 1 });
-      await builder.connect({ label: 'node-2' }, { index: 1 });
+      const draft = await twoConnectedDevices(builder);
       await expect(builder.summary).toContainText('2 connections');
-      await builder.persisted(draft, (doc) => doc.edges.length, 2);
       const initial = positions(await builder.serverDocument(draft));
 
       // ELK's worker: one for every layout, until the Builder closes.
@@ -2058,8 +2152,6 @@ test.describe('Builder canvas editing', () => {
       const devices = await nodeIds(builder, 'device', 2);
       const rightOf = (placed) =>
         devices.every((id) => placed[switchId].x >= placed[id].x + 160);
-      const below = (placed) =>
-        devices.every((id) => placed[switchId].y >= placed[id].y + 96);
       expect(rightOf(laidOut), 'ELK puts the switch right').toBe(true);
       // ELK routes the connections too, and the canvas draws them so.
       const routed = page.locator('path.builder-edge[data-routed="true"]');
@@ -2175,6 +2267,47 @@ test.describe('Builder canvas editing', () => {
         closed: 0,
       });
 
+      // Leaving the Builder ends ELK's worker.
+      await builder.waitSaved();
+      await page.getByRole('link', { name: 'Experiments' }).click();
+      await expect(page).toHaveURL(/\/experiments/);
+      await expect
+        .poll(() => elkWorkers, { message: 'the ELK worker ends' })
+        .toEqual({ started: 1, closed: 1 });
+
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'a layout chosen by its letter or in the command palette is kept with the draft before the Settings default, and an undo in the open menu keeps focus in it',
+    { tag: '@cross-browser' },
+    async ({ page, builder, issues }) => {
+      const draft = await twoConnectedDevices(builder);
+      const layoutButton = builder.toolbar('layout');
+      const item = (name) =>
+        page.getByRole('menuitemradio', { name, exact: true });
+      const restore = page.getByRole('menuitem', {
+        name: 'Restore previous layout',
+      });
+      const [switchId] = await nodeIds(builder, 'switch', 1);
+      const devices = await nodeIds(builder, 'device', 2);
+      const rightOf = (placed) =>
+        devices.every((id) => placed[switchId].x >= placed[id].x + 160);
+      const below = (placed) =>
+        devices.every((id) => placed[switchId].y >= placed[id].y + 96);
+
+      // Laid out by ELK, the default, the switch is right of the devices.
+      await layoutButton.press('ArrowDown');
+      await expect(item('ELK layered')).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(builder).toHaveAnnounced('Applied ELK layered layout');
+      await builder.persisted(
+        draft,
+        (doc) => doc.layout === 'elk' && rightOf(positions(doc)),
+        true,
+      );
+
       // Another layout, by its letter: Standard, the original, puts the
       // switch below the devices. The draft keeps it, and it comes before
       // the Settings default.
@@ -2221,6 +2354,17 @@ test.describe('Builder canvas editing', () => {
       await expect.soft(item('Standard')).toBeChecked();
       await page.keyboard.press('Escape');
       await expect(layoutButton).toBeFocused();
+
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'Auto-group groups by network, by name or by a name pattern, each in one undoable step',
+    { tag: '@cross-browser' },
+    async ({ page, builder, issues }) => {
+      const draft = await twoConnectedDevices(builder);
+      const [deviceId] = await nodeIds(builder, 'device', 2);
 
       await test.step('Auto-group groups by network, by name or by a name pattern, each in one undoable step', async () => {
         const autoGroup = builder.toolbar('auto-group');
@@ -2446,6 +2590,16 @@ test.describe('Builder canvas editing', () => {
         await builder.persisted(draft, groups, []);
       });
 
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'a name pattern that takes too long is ended, and each count in the header selects every item of its kind',
+    { tag: '@cross-browser' },
+    async ({ page, builder, issues }) => {
+      await twoConnectedDevices(builder);
+
       await test.step('a pattern that takes too long is ended, and the page goes on answering', async () => {
         const dialog = page.getByRole('dialog', {
           name: 'Auto-group by name pattern',
@@ -2585,14 +2739,6 @@ test.describe('Builder canvas editing', () => {
           .soft(builder.summary.locator('[tabindex="0"]'))
           .toHaveCount(1);
       });
-
-      // Leaving the Builder ends ELK's worker.
-      await builder.waitSaved();
-      await page.getByRole('link', { name: 'Experiments' }).click();
-      await expect(page).toHaveURL(/\/experiments/);
-      await expect
-        .poll(() => elkWorkers, { message: 'the ELK worker ends' })
-        .toEqual({ started: 1, closed: 1 });
 
       expectNoFatal(issues);
     },
