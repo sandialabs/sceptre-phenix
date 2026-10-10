@@ -70,8 +70,19 @@ generate: generate-mocks generate-protobuf go-generate generate-builder-schema
 # and v2 config schemas, is committed, and so are its copy of the Builder
 # error codes and the docs' table of them. CI regenerates them and fails
 # when the result differs from what is committed.
+BUILDER_SCHEMA_TESTS := TestFrontendSchemaBundleMatchesSchemaJSON|TestFrontendCodesMatchRegistry
+
+# The docs' table of error codes is written and checked only where the
+# repository's docs directory exists: the Docker and Podman images build
+# phenix from a copy of src/go and src/js without it. A full checkout, as
+# CI's Go job has, always has it, so the table is still regenerated and
+# checked there.
+ifneq ($(wildcard $(THISDIR)/../../docs/.),)
+BUILDER_SCHEMA_TESTS := $(BUILDER_SCHEMA_TESTS)|TestDocsCodeTableMatchesRegistry
+endif
+
 generate-builder-schema:
-	go test ./types/builder -run '^(TestFrontendSchemaBundleMatchesSchemaJSON|TestFrontendCodesMatchRegistry|TestDocsCodeTableMatchesRegistry)$$' -count=1 -update-frontend-schema
+	go test ./types/builder -run '^($(BUILDER_SCHEMA_TESTS))$$' -count=1 -update-frontend-schema
 
 test:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))

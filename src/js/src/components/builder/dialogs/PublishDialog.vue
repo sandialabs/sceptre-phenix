@@ -33,7 +33,9 @@
   saved snapshot without writing anything (a dry run, previewPublish in
   store.js): the Topology and Experiment configs, included topologies,
   scenario annotations, disk images and VLAN aliases, with what publishing
-  would warn of, or the refusal. It is read as the dialog opens, after a
+  would warn of, or the refusal. It lists no problem the dialog's checks
+  list already (see issuesNotInChecks), and while their errors block
+  publishing it says so instead. It is read as the dialog opens, after a
   pause whenever the form changes, and whenever the saved draft does; from
   the change on, the list shown is marked busy. It never stops Publish.
 
@@ -278,6 +280,14 @@
           {{ preview.error }}
         </p>
         <template v-else>
+          <!-- The errors under Checks are not listed again here, though
+               the server finds them too. -->
+          <p
+            v-if="failed"
+            class="builder-hint"
+            data-testid="publish-preview-checks">
+            Publishing is blocked by the errors listed under Checks.
+          </p>
           <template v-if="preview.changes">
             <div
               v-for="group in previewGroups"
@@ -299,7 +309,8 @@
             </p>
           </template>
           <!-- Why the server would refuse to publish, or what publishing
-               would warn of, such as a legacy diagram it replaces. -->
+               would warn of, such as a legacy diagram it replaces: only
+               what Checks does not list already. -->
           <builder-issue-list
             v-if="previewIssues.length"
             :groups="previewIssueGroups"
@@ -437,6 +448,7 @@
   import {
     bySeverity,
     issueEntries,
+    issuesNotInChecks,
     responseIssues,
   } from '@/builder/issues.js';
   import { unappliedBlock } from '@/builder/leave.js';
@@ -554,10 +566,6 @@
   });
 
   const previewGroups = computed(() => publishChangeGroups(preview.changes));
-  const previewIssues = computed(() => issueEntries(store.doc, preview.issues));
-  const previewIssueGroups = computed(() =>
-    bySeverity(previewIssues.value, store.doc),
-  );
 
   // The targets, and the lists that say whether each is created or updated.
   watch(
@@ -668,6 +676,18 @@
   const issueGroups = computed(() => bySeverity(issues.value, store.doc));
   const failed = computed(() =>
     issues.value.some((issue) => issue.severity === 'error'),
+  );
+
+  // What the dry run would warn of or refuse that Checks does not list
+  // already: a problem both find is listed once, under Checks.
+  const previewIssues = computed(() =>
+    issueEntries(
+      store.doc,
+      issuesNotInChecks(store.doc, preview.issues, issues.value),
+    ),
+  );
+  const previewIssueGroups = computed(() =>
+    bySeverity(previewIssues.value, store.doc),
   );
 
   // What the server listed with a refusal, and with a result.

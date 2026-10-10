@@ -13,6 +13,10 @@ names the subject (`node.hostname.duplicate`, `publish.topology.exists`,
 severity and a description); `make generate-builder-schema` writes it to
 `src/js/src/builder/schema/codes.json` and the table of
 `docs/content/builder/error-codes.md` (Go tests fail when either is stale).
+It writes and checks the docs table only where the repository's `docs/`
+directory exists (`BUILDER_SCHEMA_TESTS` in `src/go/Makefile`): the Docker
+and Podman builds run `make bin/phenix`, and so `make generate`, on a copy
+of `src/go` and `src/js` without it.
 A code never changes meaning once released: a new rule gets a new code, in
 Go and in `validate.js` and `decode.js`, which report the same codes for the
 same rules (the shared corpus pins `code` for every case with an `error`,

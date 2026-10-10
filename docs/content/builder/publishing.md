@@ -144,7 +144,12 @@ such as "1 warning", each with the server's code, for example "The legacy
 Builder diagram of topology riverside-water was replaced by this diagram."
 (`publish.legacy.replaced`). When the server would refuse the publish, it
 lists why instead, under a heading such as "1 error blocks publishing",
-before any warnings. A name that breaks the naming
+before any warnings. It does not repeat a problem that **Checks** already
+lists, such as an interface with no VLAN: while the errors under **Checks**
+block publishing, it says "Publishing is blocked by the errors listed under
+Checks." and lists only the problems the server finds besides them, such as
+a hostname an included topology also uses or a scenario that does not
+exist. A name that breaks the naming
 rule shows why under the heading, and nothing is asked of the server. When
 the server cannot be asked, the part says so and that you can still publish.
 

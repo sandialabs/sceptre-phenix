@@ -467,5 +467,42 @@ describe('what publishing changes', () => {
     expect(html).toContain('data-testid="publish-preview-issues-warning"');
     expect(text(html)).toContain('1 error blocks publishing');
     expect(html).not.toContain('publish-preview-configs');
+    expect(html).not.toContain('publish-preview-checks');
+  });
+
+  test('a refusal leaves out what the checks list, and says their errors block publishing', async () => {
+    const clash = {
+      code: 'publish.include.clash',
+      severity: 'error',
+      message: 'hostname "bravo" is also a device of included topology plant',
+    };
+    const preview = { loading: false, changes: null, issues: [] };
+    // The server refuses bravo's eth0, which has no VLAN, as the checks do.
+    const setup = (store) => {
+      const bravo = store.doc.nodes.find(
+        (node) => node.device?.hostname === 'bravo',
+      );
+
+      preview.issues = [
+        {
+          code: 'interface.vlan.missing',
+          severity: 'error',
+          message:
+            'interface "eth0" of device "bravo" has no VLAN: connect it to a network, or type a VLAN for it',
+          nodeId: bravo.id,
+        },
+        clash,
+      ];
+    };
+    const html = section(
+      await render({}, { publishable: false, setup, preview }),
+    );
+
+    expect(text(html)).toContain(
+      'Publishing is blocked by the errors listed under Checks.',
+    );
+    expect(text(html)).toContain('1 error blocks publishing');
+    expect(text(html)).toContain(clash.message);
+    expect(text(html)).not.toContain('has no VLAN');
   });
 });

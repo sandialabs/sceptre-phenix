@@ -11,6 +11,7 @@ import {
   issueNodeId,
   issueTarget,
   issuesAbout,
+  issuesNotInChecks,
   nodeIssueSummaries,
   publishingText,
   responseIssues,
@@ -672,5 +673,97 @@ describe('the lists of checks', () => {
 
     expect(blocking).toBeGreaterThan(0);
     expect(errors.issues.length).toBe(before + blocking);
+  });
+});
+
+describe('what a dry run of a publication adds to the checks', () => {
+  // The sample's bravo is not connected, so its eth0 has no VLAN: the
+  // checks list it, as the Publish dialog does, and the server refuses it.
+  function sample() {
+    const { doc, alpha, bravo } = sampleDocument();
+    const checks = issueEntries(doc, validateDocument(doc), {
+      publishing: true,
+    });
+    const index = doc.nodes.findIndex((node) => node.id === bravo.id);
+    const missing = {
+      code: 'interface.vlan.missing',
+      severity: 'error',
+      message:
+        'interface "eth0" of device "bravo" has no VLAN: connect it to a network, or type a VLAN for it',
+      path: `nodes[${index}].device.spec.network.interfaces[0]`,
+      nodeId: bravo.id,
+      field: 'spec.network.interfaces.0.vlan',
+    };
+
+    return { doc, alpha, bravo, checks, missing };
+  }
+
+  test('leaves out a problem the checks list, by its code and element, whatever its words and severity', () => {
+    const { doc, checks, missing } = sample();
+
+    expect(checks.map((check) => check.code)).toContain(missing.code);
+    expect(issuesNotInChecks(doc, [missing], checks)).toEqual([]);
+    // Located by its path alone, it is about the same device.
+    expect(
+      issuesNotInChecks(doc, [{ ...missing, nodeId: undefined }], checks),
+    ).toEqual([]);
+    // A warning of the dry run the checks list is left out too.
+    expect(
+      issuesNotInChecks(doc, [{ ...missing, severity: 'warning' }], checks),
+    ).toEqual([]);
+  });
+
+  test('keeps a problem of another element, one only the server finds, and one with no code', () => {
+    const { doc, alpha, checks, missing } = sample();
+    const issues = [
+      { ...missing, nodeId: alpha.id, path: '' },
+      {
+        code: 'publish.include.clash',
+        severity: 'error',
+        message: 'hostname "alpha" is also a device of included topology plant',
+      },
+      {
+        code: 'publish.scenario.missing',
+        severity: 'error',
+        message: 'scenario water-ops does not exist',
+      },
+      {
+        code: '',
+        severity: 'warning',
+        message: 'the Builder file of the topology is not changed',
+      },
+    ];
+
+    expect(issuesNotInChecks(doc, issues, checks)).toEqual(issues);
+    expect(issuesNotInChecks(doc, issues)).toEqual(issues);
+    expect(issuesNotInChecks(doc, [], checks)).toEqual([]);
+  });
+
+  test('a problem about the whole diagram matches a check about the whole diagram', () => {
+    const { doc, bravo } = sample();
+    const checks = [
+      { code: 'publish.file.unchanged', severity: 'warning', message: 'a' },
+      {
+        code: 'node.hostname.phenix',
+        severity: 'warning',
+        message: 'b',
+        nodeId: bravo.id,
+      },
+    ];
+    const diagram = {
+      code: 'publish.file.unchanged',
+      severity: 'warning',
+      message: 'in other words',
+    };
+    const unlocated = {
+      code: 'node.hostname.phenix',
+      severity: 'warning',
+      message: 'c',
+    };
+    const located = { ...unlocated, nodeId: bravo.id };
+
+    expect(
+      issuesNotInChecks(doc, [diagram, unlocated, located], checks),
+    ).toEqual([unlocated]);
   });
 });

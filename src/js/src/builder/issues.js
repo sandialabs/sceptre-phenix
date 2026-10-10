@@ -480,6 +480,41 @@ function issueIds(doc, issue) {
   return typeof id === 'string' && id.trim() ? { [ID_KEYS[match[1]]]: id } : {};
 }
 
+// The element an issue is about, as one key: its node, connection or
+// network (see issueIds), or none for an issue about the whole diagram.
+function elementKey(doc, issue) {
+  const { nodeId = '', edgeId = '', networkId = '' } = issueIds(doc, issue);
+
+  return JSON.stringify([nodeId, edgeId, networkId]);
+}
+
+/**
+ * The issues of the server's dry run of a publication that the Publish
+ * dialog's checks do not already list, so What publishing changes does not
+ * repeat a problem listed under Checks. An issue is left out when a check
+ * has its code and is about the same node, connection or network, or like
+ * it about none: the same rule broken in the same place. The server words a
+ * problem its own way, and a warning the checks list is an error the server
+ * refuses, so neither the words nor the severity are compared. An issue
+ * with no code, or one only the server finds, such as a clash with an
+ * included topology or a scenario that does not exist, is kept.
+ *
+ * @param {object} doc
+ * @param {object[]} issues the dry run's errors and warnings (see
+ *   readPublishPreview in api.js)
+ * @param {object[]} checks the issues the dialog lists under Checks (see
+ *   validateDocument and issueEntries)
+ * @returns {object[]} the issues the checks do not list, in their order
+ */
+export function issuesNotInChecks(doc, issues = [], checks = []) {
+  const key = (issue) => JSON.stringify([issue.code, elementKey(doc, issue)]);
+  const checked = new Set(
+    checks.filter((check) => check?.code).map((check) => key(check)),
+  );
+
+  return issues.filter((issue) => !issue?.code || !checked.has(key(issue)));
+}
+
 /**
  * Where Go to takes an issue: the node or connection it is about, or for
  * an issue about a network, the network's first switch, where the canvas

@@ -235,6 +235,14 @@ answer, keeps the last answer meanwhile, and says it was read again through
 a polite live line (no second `status` role) that counts the warnings. The
 answer's `errors`, then `warnings`, are listed below the changes in
 `BuilderIssueList` (`publish-preview-issues`, `-error`, `-warning`, with
-codes). It is hidden for a read-only draft and never disables Publish. e2e helpers that wait for a
+codes), less those the dialog's checks list already
+(`issuesNotInChecks` in `builder/issues.js`: same code and same node,
+connection or network, or both about none, whatever the words or severity),
+so a check the server also refuses (`interface.vlan.missing`,
+`interface.ip.shared`, a refused hostname) is listed once, under Checks;
+server-only refusals (`publish.include.clash`, `publish.scenario.missing`)
+still show. While the checks have errors, the section says "Publishing is
+blocked by the errors listed under Checks." (`publish-preview-checks`). It
+is hidden for a read-only draft and never disables Publish. e2e helpers that wait for a
 publish use `isPublishRequest`/`isPublishResponse` in `builder-support.js`,
 which leave out dry runs (`isPublishPreview`).

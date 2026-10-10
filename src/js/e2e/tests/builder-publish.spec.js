@@ -1575,6 +1575,20 @@ test('an interface with no VLAN or a used address is refused at publish, and its
       .soft(builder.dialog)
       .toContainText('are ready to publish once the errors below are fixed.');
 
+    // The dry run the dialog asks for is refused for the same interface,
+    // which What publishing changes does not list again: it says the errors
+    // under Checks block publishing.
+    const preview = builder.dialog.getByTestId('publish-preview');
+    await expect(preview.getByTestId('publish-preview-status')).toHaveText(
+      'What publishing changes: the server would refuse to publish.',
+    );
+    await expect(preview).toHaveAttribute('aria-busy', 'false');
+    await expect(preview.getByTestId('publish-preview-checks')).toHaveText(
+      'Publishing is blocked by the errors listed under Checks.',
+    );
+    await expect(preview.getByTestId('issue')).toHaveCount(0);
+    await expect(errors).toHaveCount(1);
+
     // The server refuses it too, before writing anything.
     const current = await builder.request.get(draftPath(draft));
     const refused = await builder.request.post(`${draftPath(draft)}/publish`, {
