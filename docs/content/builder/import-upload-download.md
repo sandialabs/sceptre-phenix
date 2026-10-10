@@ -198,7 +198,12 @@ already. The name follows the config name rule (see
 named riverside-water already exists. Enter another name."
 
 A copy, or a combined draft, is named after the new topology and is linked
-to no config. **Publish** proposes the new name and creates a new topology
+to no config. It gets a diagram note that names the config it was copied
+from, for example "Copied from riverside-water". For a config file, the
+note gives the name in the file's `metadata`. The Inspector shows the note
+under **Notes** when nothing is selected (see
+[With nothing selected](editor.md#with-nothing-selected)). You can change or
+delete it as any other note. **Publish** proposes the new name and creates a new topology
 ("A new topology will be created."). It cannot update the topology it came
 from, and later changes to that topology, or to the topologies combined
 into it, do not reach the draft.

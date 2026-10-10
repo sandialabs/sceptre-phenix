@@ -838,25 +838,37 @@ func TestBuilderGenerateChoices(t *testing.T) {
 	long := strings.Repeat("n", 512)
 	file := `apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: plant\nspec:\n  nodes: []\n`
 
-	for body, want := range map[string]string{
-		`{"source":"Topology/root"}`:                                   "root",
-		`{"source":"Topology/root","includes":""}`:                     "root",
-		`{"source":"Topology/root","includes":"keep","copy":false}`:    "root",
-		`{"source":"Topology/root","copy":true,"name":"` + long + `"}`: long,
-		`{"content":"` + file + `","copy":true,"name":"plant"}`:        "plant",
-		`{"content":"` + file + `","includes":"combine"}`:              "plant-combined",
-		`{"content":"` + file + `","includes":"keep","copy":true}`:     "plant-copy",
+	// A copy also gets a note that names the config it was made from: for
+	// a file, the name in the file's metadata.
+	for body, want := range map[string]struct{ name, note string }{
+		`{"source":"Topology/root"}`:                                   {"root", ""},
+		`{"source":"Topology/root","includes":""}`:                     {"root", ""},
+		`{"source":"Topology/root","includes":"keep","copy":false}`:    {"root", ""},
+		`{"source":"Topology/root","copy":true,"name":"` + long + `"}`: {long, "Copied from root"},
+		`{"content":"` + file + `","copy":true,"name":"plant"}`:        {"plant", "Copied from plant"},
+		`{"content":"` + file + `","includes":"combine"}`:              {"plant-combined", "Copied from plant"},
+		`{"content":"` + file + `","includes":"keep","copy":true}`:     {"plant-copy", "Copied from plant"},
 	} {
-		if _, document := builderGenerate(t, harness, nil, body); document.Metadata.Name != want {
-			t.Errorf("%.80s: document name = %q, want %q", body, document.Metadata.Name, want)
+		_, document := builderGenerate(t, harness, nil, body)
+		if document.Metadata.Name != want.name {
+			t.Errorf("%.80s: document name = %q, want %q", body, document.Metadata.Name, want.name)
+		}
+
+		var notes []string
+		if want.note != "" {
+			notes = []string{want.note}
+		}
+
+		if !reflect.DeepEqual(document.Metadata.Notes, notes) {
+			t.Errorf("%.80s: notes = %q, want %q", body, document.Metadata.Notes, notes)
 		}
 	}
 }
 
 // TestBuilderGenerateCopy asserts a copy is the document a plain import
 // generates, under a new name and linked to no config: its included nodes
-// stay read only, and the response still describes the topology that was
-// read.
+// stay read only, a diagram note names the topology it was copied from, and
+// the response still describes the topology that was read.
 func TestBuilderGenerateCopy(t *testing.T) {
 	configs, _ := includeSourceFixture(t)
 	harness := newBuilderHarness(t, configs...)
@@ -866,6 +878,10 @@ func TestBuilderGenerateCopy(t *testing.T) {
 	if plain.Source.Kind != bdoc.SourceKindTopology || plain.Source.Name != "root" || plain.Source.Digest == "" ||
 		!reflect.DeepEqual(plain.Source.UnresolvedIncludes, []string{"../outside.yml"}) {
 		t.Fatalf("a plain import's source = %+v, want the topology and the include it could not read", plain.Source)
+	}
+
+	if plain.Metadata.Notes != nil {
+		t.Errorf("a plain import's notes = %q, want none", plain.Metadata.Notes)
 	}
 
 	for body, name := range map[string]string{
@@ -896,6 +912,10 @@ func TestBuilderGenerateCopy(t *testing.T) {
 
 		if !reflect.DeepEqual(response.Warnings, plain.Source.Warnings) {
 			t.Errorf("%s: warnings = %q, want those of a plain import %q", body, response.Warnings, plain.Source.Warnings)
+		}
+
+		if want := []string{"Copied from root"}; !reflect.DeepEqual(document.Metadata.Notes, want) {
+			t.Errorf("%s: notes = %q, want %q", body, document.Metadata.Notes, want)
 		}
 
 		if !reflect.DeepEqual(document.Nodes, plain.Nodes) || !reflect.DeepEqual(document.Edges, plain.Edges) ||
@@ -945,6 +965,10 @@ func TestBuilderGenerateCombine(t *testing.T) {
 		t.Errorf("source = %s, want %s", builderJSON(t, document.Source), builderJSON(t, want))
 	}
 
+	if notes := []string{"Copied from root"}; !reflect.DeepEqual(document.Metadata.Notes, notes) {
+		t.Errorf("notes = %q, want %q", document.Metadata.Notes, notes)
+	}
+
 	wantWarnings := []string{
 		`included topology "secret" could not be read and its nodes are not shown: you are not allowed to read it`,
 		`included topology "../outside.yml" could not be read and its nodes are not shown: ` +
@@ -979,9 +1003,10 @@ func TestBuilderGenerateCombine(t *testing.T) {
 		`{"source":"Topology/root","includes":"combine","copy":true,"name":"site_all"}`)
 
 	if document.Metadata.Name != "site_all" || document.FindDevice("secret-host") == nil ||
-		!reflect.DeepEqual(document.Source.IncludeTopologies, []string{"../outside.yml"}) {
-		t.Errorf("name = %q, source = %s, want site_all with secret-host and only the file still included",
-			document.Metadata.Name, builderJSON(t, document.Source))
+		!reflect.DeepEqual(document.Source.IncludeTopologies, []string{"../outside.yml"}) ||
+		!reflect.DeepEqual(document.Metadata.Notes, []string{"Copied from root"}) {
+		t.Errorf("name = %q, source = %s, notes = %q, want site_all with secret-host, only the file still included "+
+			"and the note", document.Metadata.Name, builderJSON(t, document.Source), document.Metadata.Notes)
 	}
 
 	// A config file is combined the same way, from the store.
@@ -993,8 +1018,10 @@ func TestBuilderGenerateCombine(t *testing.T) {
 	response, document = builderGenerate(t, harness, nil,
 		builderJSON(t, map[string]string{"content": string(content), "includes": "combine"}))
 
-	if document.Metadata.Name != "root-combined" || document.FindDevice("visible-host") == nil || response.Source.Stored {
-		t.Errorf("name = %q, source = %+v, want root-combined made from the file", document.Metadata.Name, response.Source)
+	if document.Metadata.Name != "root-combined" || document.FindDevice("visible-host") == nil || response.Source.Stored ||
+		!reflect.DeepEqual(document.Metadata.Notes, []string{"Copied from root"}) {
+		t.Errorf("name = %q, source = %+v, notes = %q, want root-combined made from the file", document.Metadata.Name,
+			response.Source, document.Metadata.Notes)
 	}
 
 	if harness.configWrites != 0 {
@@ -1022,9 +1049,10 @@ func TestBuilderGenerateLegacyTopologyChoices(t *testing.T) {
 	response, copied := builderGenerate(t, harness, nil, `{"source":"Topology/sample","copy":true}`)
 
 	if response.Source.Builder != bdoc.LegacyXMLAnnotation || copied.Metadata.Name != "sample-copy" ||
-		copied.Source.Kind != bdoc.SourceKindManual || copied.Source.Name != "" || copied.Source.Digest != "" {
-		t.Errorf("copy: response source = %+v, document source = %+v, want a legacy conversion linked to nothing",
-			response.Source, copied.Source)
+		copied.Source.Kind != bdoc.SourceKindManual || copied.Source.Name != "" || copied.Source.Digest != "" ||
+		!reflect.DeepEqual(copied.Metadata.Notes, []string{"Copied from sample"}) {
+		t.Errorf("copy: response source = %+v, document source = %+v, notes = %q, want a legacy conversion "+
+			"linked to nothing that names its source in a note", response.Source, copied.Source, copied.Metadata.Notes)
 	}
 
 	if got := legacyPosition(t, copied, "server-device-5"); got != (bdoc.Position{X: 1280, Y: 512}) {
@@ -1044,9 +1072,9 @@ func TestBuilderGenerateLegacyTopologyChoices(t *testing.T) {
 
 	if host := combined.FindDevice("inc-host"); combined.Metadata.Name != "sample-combined" || host == nil ||
 		host.Device.IncludedFrom != "" || !reflect.DeepEqual(combined.Source.IncludeTopologies, []string{"gone"}) ||
-		combined.Source.Kind != bdoc.SourceKindManual {
-		t.Errorf("combined: name = %q, source = %+v, want inc-host as its own node and only the missing include kept",
-			combined.Metadata.Name, combined.Source)
+		combined.Source.Kind != bdoc.SourceKindManual || !reflect.DeepEqual(combined.Metadata.Notes, []string{"Copied from sample"}) {
+		t.Errorf("combined: name = %q, source = %+v, notes = %q, want inc-host as its own node, only the missing "+
+			"include kept and the note", combined.Metadata.Name, combined.Source, combined.Metadata.Notes)
 	}
 
 	for _, want := range []string{

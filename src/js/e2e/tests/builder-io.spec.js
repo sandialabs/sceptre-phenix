@@ -2424,6 +2424,7 @@ test.describe('import', () => {
       expect.soft(stored.sourceToken || '').toBe('');
       const doc = await builder.serverDocument(draft);
       expect.soft(doc.metadata.name).toBe(combined);
+      expect.soft(doc.metadata.notes).toEqual([`Copied from ${root}`]);
       expect.soft(doc.source.kind).toBe('manual');
       for (const key of [
         'name',
@@ -2601,7 +2602,7 @@ test.describe('import', () => {
         `Imported a copy of topology ${root} as ${copyName}, with ${warnings.length} warnings. Draft created.`,
       );
 
-    await test.step('the copy keeps its included nodes read only, and names no config', async () => {
+    await test.step('the copy keeps its included nodes read only, names no config, and has a note that names its source', async () => {
       await expect.soft(page.getByTestId('builder-name')).toHaveText(copyName);
       await builder.waitSaved();
       expect
@@ -2609,6 +2610,15 @@ test.describe('import', () => {
         .toBe('');
       const doc = await builder.serverDocument(draft);
       expect.soft(doc.metadata.name).toBe(copyName);
+      expect.soft(doc.metadata.notes).toEqual([`Copied from ${root}`]);
+      // With nothing selected, the Inspector lists the note.
+      await expect
+        .soft(
+          builder.inspector
+            .getByTestId('inspector-notes')
+            .getByRole('textbox', { name: 'Note 1', exact: true }),
+        )
+        .toHaveValue(`Copied from ${root}`);
       expect.soft(doc.source).toMatchObject({
         kind: 'manual',
         includeTopologies: [child, missing],

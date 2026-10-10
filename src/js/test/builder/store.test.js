@@ -3248,6 +3248,42 @@ describe('server data', () => {
     expect(store.canUndo).toBe(false);
   });
 
+  // The server adds the note that names the config a copy was made from.
+  // The editor opens the copy with its notes as the server sent them.
+  test('a copy opens with the note the server added, once', async () => {
+    const { doc } = sampleDocument();
+    const copied = {
+      ...doc,
+      metadata: {
+        ...doc.metadata,
+        name: 'core-copy',
+        notes: ['Owned by the lab.', 'Copied from core'],
+      },
+    };
+
+    api.generate.mockResolvedValueOnce({
+      document: copied,
+      warnings: [],
+      source: { fullName: 'Topology/core', stored: true },
+    });
+
+    const result = await store.generate({
+      kind: 'topology',
+      name: 'core',
+      copy: true,
+    });
+
+    expect(result.detached).toBe(true);
+    expect(store.openImported(result)?.metadata.notes).toEqual([
+      'Owned by the lab.',
+      'Copied from core',
+    ]);
+    expect(store.doc.metadata.notes).toEqual([
+      'Owned by the lab.',
+      'Copied from core',
+    ]);
+  });
+
   // store.generate serves Import. The user may still cancel on its
   // warnings, so nothing says it imported anything, not even once it is
   // opened: ImportDialog has the import announced once the draft exists.

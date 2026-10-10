@@ -1,7 +1,10 @@
 package builder_test
 
 import (
+	"fmt"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"phenix/store"
@@ -183,6 +186,50 @@ func TestDetachCombined(t *testing.T) {
 
 	if err := doc.Validate(); err != nil {
 		t.Fatalf("detached document is invalid: %v", err)
+	}
+}
+
+// TestNoteCopiedFrom asserts the note that names the config of a copy comes
+// after the other diagram notes, once, and only when it is a valid note.
+func TestNoteCopiedFrom(t *testing.T) {
+	doc := builder.NewDocument("drawn")
+	doc.Metadata.Notes = []string{"Owned by the water team."}
+
+	if !doc.NoteCopiedFrom("riverside-water") {
+		t.Fatal("NoteCopiedFrom(riverside-water) = false, want the note added")
+	}
+
+	if doc.NoteCopiedFrom("riverside-water") {
+		t.Error("NoteCopiedFrom added the same note twice")
+	}
+
+	want := []string{"Owned by the water team.", "Copied from riverside-water"}
+	if !reflect.DeepEqual(doc.Metadata.Notes, want) {
+		t.Errorf("notes = %q, want %q", doc.Metadata.Notes, want)
+	}
+
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("document with the note is invalid: %v", err)
+	}
+
+	full := builder.NewDocument("full")
+	for i := range builder.MaxDiagramNotes {
+		full.Metadata.Notes = append(full.Metadata.Notes, fmt.Sprintf("note %d", i))
+	}
+
+	for name, doc := range map[string]*builder.Document{
+		"":            builder.NewDocument("blank"),
+		" ":           builder.NewDocument("space"),
+		"bad\x00name": builder.NewDocument("control"),
+		strings.Repeat("n", builder.MaxDiagramNoteBytes): builder.NewDocument("long"),
+		"site": full,
+	} {
+		before := slices.Clone(doc.Metadata.Notes)
+
+		if doc.NoteCopiedFrom(name) || !reflect.DeepEqual(doc.Metadata.Notes, before) {
+			t.Errorf("%s: NoteCopiedFrom(%.20q) changed the notes to %d notes, want them unchanged",
+				doc.Metadata.Name, name, len(doc.Metadata.Notes))
+		}
 	}
 }
 

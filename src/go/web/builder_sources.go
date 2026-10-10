@@ -122,7 +122,8 @@ type builderGenerateRequest struct {
 	Includes string `json:"includes"`
 	// Copy asks for a document that is not linked to the topology it is
 	// generated from, so that publishing it creates a new topology.
-	// Combining implies it.
+	// Combining implies it. A copy gets the diagram note
+	// "Copied from <topology name>".
 	Copy bool `json:"copy"`
 	// Name is the name of the new topology, and so of the document, of a
 	// copy or a combined document. Empty means the name of the source with
@@ -298,6 +299,8 @@ func (b *builderAPI) sourcesOfKind(
 // (copy). Either way the document is detached from the topology (see
 // [bdoc.Document.Detach]) and takes the new topology's name, so that
 // publishing a draft of it creates that topology and leaves the source alone.
+// The document also gets the diagram note "Copied from <name>", where name is
+// the name in the source's metadata (see [bdoc.Document.NoteCopiedFrom]).
 func (b *builderAPI) generateDocument(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderGenerate")
 
@@ -359,6 +362,9 @@ func (b *builderAPI) generateDocument(w http.ResponseWriter, r *http.Request) er
 	}
 
 	if request.detach() {
+		// Detach removes the source's name, so the note names the config
+		// that was read, stored or uploaded.
+		document.NoteCopiedFrom(config.Metadata.Name)
 		document.Detach(newName)
 
 		if err := document.Validate(); err != nil {

@@ -2588,7 +2588,9 @@ paths:
         document and a copy name no config: `source.kind` is `manual`, the
         document's name is the new topology's name, and a draft made from it
         publishes a new topology and never updates the one it was imported
-        from. The new name is `name`, or else the source's name with
+        from. Their `metadata.notes` end with the note `Copied from <name>`,
+        where `<name>` is the name in the source config's metadata. The new
+        name is `name`, or else the source's name with
         `-combined` or `-copy` added; the server does not look for a name no
         topology has. The response's `source` is still the config that was
         read. An Experiment's scenario (its `scenario` annotation) becomes
@@ -5364,7 +5366,9 @@ components:
         copy:
           description: >
             make the document a copy that is not linked to the Topology it
-            is generated from; `includes` `combine` implies it. Not allowed
+            is generated from; `includes` `combine` implies it. The copy gets
+            the diagram note `Copied from <name>` in `metadata.notes`, where
+            `<name>` is the name in the source config's metadata. Not allowed
             for an Experiment.
           type: boolean
           default: false

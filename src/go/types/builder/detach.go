@@ -1,5 +1,14 @@
 package builder
 
+import (
+	"slices"
+	"strings"
+)
+
+// CopiedFromPrefix is the start of the diagram note that names the config a
+// copy was made from (see [Document.NoteCopiedFrom]).
+const CopiedFromPrefix = "Copied from "
+
 // CombineIncludes makes every included device the document's own and
 // replaces [Source.IncludeTopologies] with [Source.UnresolvedIncludes]: the
 // document then includes only the topologies whose devices it does not hold,
@@ -31,7 +40,9 @@ func (d *Document) CombineIncludes() {
 // [Source.UnresolvedIncludes] and [Source.Warnings]; its name, apiVersion,
 // topology, digest, updatedAt and annotations are removed. Publishing a
 // detached document therefore never updates the config it came from. A
-// document without a source is only renamed.
+// document without a source is only renamed. Detach does not change
+// [Metadata.Notes]: a caller that wants a note to name the config calls
+// [Document.NoteCopiedFrom].
 func (d *Document) Detach(name string) {
 	d.Metadata.Name = name
 	d.Metadata.ID = DocumentID(name)
@@ -47,4 +58,28 @@ func (d *Document) Detach(name string) {
 		UnresolvedIncludes: d.Source.UnresolvedIncludes,
 		Warnings:           d.Source.Warnings,
 	}
+}
+
+// NoteCopiedFrom adds the diagram note "Copied from <name>" after the
+// other notes in [Metadata.Notes]. The note names the config that a
+// detached document was made from, because [Document.Detach] removes that
+// name from the source. It adds no note when name is blank, when the
+// document already holds the same note or [MaxDiagramNotes] notes, or when
+// the note breaks a rule of [Metadata.Notes]. It reports whether it added
+// the note.
+func (d *Document) NoteCopiedFrom(name string) bool {
+	note := CopiedFromPrefix + name
+
+	switch {
+	case strings.TrimSpace(name) == "",
+		len(d.Metadata.Notes) >= MaxDiagramNotes,
+		len(note) > MaxDiagramNoteBytes,
+		strings.ContainsFunc(note, isNoteControl),
+		slices.Contains(d.Metadata.Notes, note):
+		return false
+	}
+
+	d.Metadata.Notes = append(d.Metadata.Notes, note)
+
+	return true
 }
