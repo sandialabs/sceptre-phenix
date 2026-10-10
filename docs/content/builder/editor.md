@@ -485,16 +485,25 @@ To see and fix the warnings of the Riverside Water expansion draft:
 
 1. Open the Riverside Water expansion draft. The checks button says
    **1 warning**.
-2. Select **1 warning**. The **Diagram checks** dialog lists the warnings
-   under **Nodes**, by device.
-3. Select the warning "Warning: interface "eth0" of "historian-01-2" is not
-   connected to a network and has no VLAN, so it cannot be published:
-   connect it, or type a VLAN for it". The dialog closes and the canvas
-   selects historian-01-2.
+2. Select **1 warning**. The **Diagram checks** dialog lists the errors
+   first, then the warnings, each group under a heading that counts it,
+   such as "1 warning". In each group the issues follow the order of the
+   nodes and connections they are about. Each issue names its device,
+   switch or connection, and has a **Go to** button.
+3. Select **Go to** beside the warning "interface "eth0" of
+   "historian-01-2" is not connected to a network and has no VLAN, so it
+   cannot be published: connect it, or type a VLAN for it". The dialog
+   closes, the canvas selects historian-01-2, and the Inspector opens on it.
 4. The Inspector lists the device's own warnings under "Checks: 1 warning".
-   Fix them there (see
-   [What blocks publishing](publishing.md#what-blocks-publishing) for this
-   example).
+   **Go to** beside a warning there moves focus to its field. Fix them there
+   (see [What blocks publishing](publishing.md#what-blocks-publishing) for
+   this example).
+
+**Go to** shows the Inspector if it is hidden, and brings the node into
+view. An issue about a network goes to the network's switch. An issue that
+names no field moves focus to its node or connection on the canvas. An issue
+about the diagram as a whole, or about a network with no switch, has no
+**Go to**.
 
 There are two levels:
 

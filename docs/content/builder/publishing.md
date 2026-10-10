@@ -376,8 +376,24 @@ experiment would fail or misbehave when it starts.
   checked. Other casings of `all`, such as `All`, and `phenix` on a device
   that is not Windows, give plain warnings that do not block publishing.
 
-Errors block publishing too, for example a hostname used twice: "duplicate
-hostname "dns-01" (also nodes[10])".
+Errors block publishing too, for example a hostname two devices use. The
+lists name the other device rather than its place in the document.
+
+Under **Checks**, the Publish dialog lists the errors first, under a heading
+such as "2 errors block publishing", then the warnings, under a heading such
+as "1 warning". Each issue names the device, switch or connection it is
+about, and has a **Go to** button. **Go to** closes the dialog, selects that
+node or connection, and moves focus to the Inspector field the issue names
+(see [Checks and warnings](editor.md#checks-and-warnings)). From a draft's
+**Publish** button on the drafts page, **Go to** opens the draft in the
+editor first.
+
+When the server refuses a publish, the dialog shows its reason, and lists
+the errors and warnings the server names in the same way, each with the
+server's code for it when it gives one, until the dialog closes or the
+diagram changes. A refusal about the topology, experiment or scenario name
+still marks that field. The result of a publish with failures lists its
+errors and warnings the same way too.
 
 !!! tip
     **Download** > **Topology YAML** saves the topology Publish would write, and
@@ -389,11 +405,14 @@ hostname "dns-01" (also nodes[10])".
 The Riverside Water expansion draft has a copy of `historian-01`, made with
 **Duplicate** (see [Duplicating a device](diagrams.md#duplicating-a-device)).
 The copy, `historian-01-2`, keeps the address 10.10.30.20, and its eth0 is not
-connected. Select **Publish**. Under **Checks**, the dialog lists an error,
+connected. Select **Publish**. Under **Checks**, the dialog lists one error
+under "1 error blocks publishing", with the device it is about and **Go to**,
 and **Create topology** is unavailable:
 
 ```text
+1 error blocks publishing
 Error: interface "eth0" of "historian-01-2" is not connected to a network and has no VLAN, so it cannot be published: connect it, or type a VLAN for it
+  Device historian-01-2
 ```
 
 The address is not an error yet, because historian-01-2 is on no network.
@@ -404,9 +423,9 @@ Once its eth0 is on OT, the network of historian-01, the two would share
 
 To fix it, and give the copy its own hostname and address:
 
-1. Select **Cancel**.
-2. Select historian-01-2 on the canvas or in the Outline. The Inspector
-   says "Checks: 1 warning".
+1. Select **Go to** beside the error. The dialog closes, the canvas selects
+   historian-01-2, and the Inspector opens on it.
+2. The Inspector says "Checks: 1 warning".
 3. Set **Hostname** to `historian-02`.
 4. Under **Network**, in the eth0 interface, set **VLAN** to `OT` and
    **Address** to `10.10.30.21`.

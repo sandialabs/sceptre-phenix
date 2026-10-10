@@ -61,7 +61,9 @@
       </p>
 
       <!-- The errors and warnings of what the Inspector shows, as applied;
-           the checks button in the header lists the whole diagram's. -->
+           the checks button in the header lists the whole diagram's. An
+           issue about one of the form's fields has Go to, which focuses
+           that field. -->
       <div
         v-if="!template && ownIssues.length"
         class="builder-inspector__issues"
@@ -76,12 +78,21 @@
             <builder-icon
               :name="issue.level === 'error' ? 'close' : 'warning'"
               :size="12" />
-            <span>
+            <span class="builder-inspector__issue-text">
               <strong>
                 {{ issue.level === 'error' ? 'Error' : 'Warning' }}:
               </strong>
               {{ issue.text }}
             </span>
+            <button
+              v-if="issue.field"
+              type="button"
+              class="builder-button builder-inspector__issue-go"
+              :aria-label="`Go to ${issue.fieldName}: ${issue.text}`"
+              data-testid="inspector-check-go-to"
+              @click="goToField(issue.field)">
+              Go to
+            </button>
           </li>
         </ul>
       </div>
@@ -354,6 +365,7 @@
     computed,
     nextTick,
     onBeforeUnmount,
+    onMounted,
     provide,
     readonly,
     ref,
@@ -413,7 +425,12 @@
   import { SAVED_UNAPPLIED } from '@/builder/history.js';
   import { iconLibrary } from '@/builder/iconLibrary.js';
   import { resolveIcon } from '@/builder/icons.js';
-  import { countsText, issueCounts, issuesAbout } from '@/builder/issues.js';
+  import {
+    countsText,
+    issueCounts,
+    issueField,
+    issuesAbout,
+  } from '@/builder/issues.js';
   import {
     connectionChanges,
     findNetwork,
@@ -439,7 +456,9 @@
     // the Inspector uses. Those are doc, inspectorSelection, schema,
     // schemaError, readOnly, disks, issues, canRedo and canCreateDrafts,
     // and the actions commit(doc, label), announce(message), addInterface,
-    // removeInterface, remove and moveNodes. A commit that is not the
+    // removeInterface, remove and moveNodes; Go to from a list of checks
+    // also reads focusRequest and calls takeFocusRequest, which a host
+    // without Go to leaves out. A commit that is not the
     // store's drops the copies of icons the document need not carry, as
     // the store's does (see settleIcons in icons.js), and returns whether
     // it took the document.
@@ -1598,8 +1617,8 @@
   // control for its data path (a oneOf value rather than its kind picker).
   // A list with too few items has no input yet, so its Add button takes
   // focus; a field the form does not show falls back to the nearest field
-  // that contains it. A closed section with the field opens. Returns
-  // whether a control took focus.
+  // that contains it. A closed section with the field opens. Returns the
+  // control that took focus, or null.
   function focusField(path) {
     const fields = [...(form.value?.querySelectorAll('[data-path]') || [])];
     const segments = String(path).split('.');
@@ -1625,12 +1644,79 @@
 
         control.focus();
 
-        return true;
+        return control;
       }
     }
 
-    return false;
+    return null;
   }
+
+  /**
+   * Go to, from a check about one of the form's fields: focus moves to the
+   * field, or for one that holds others (an interface), to the first field
+   * in it, and the field is announced with the element, as "VLAN
+   * (Interface 1) in device web-01". A field the form does not show falls
+   * back as in focusField; with none, focus moves to the Inspector's
+   * heading, and the element is announced.
+   *
+   * @param {string} path the field's data path (see issueField)
+   * @returns {boolean} whether a field took focus
+   */
+  function goToField(path) {
+    const fields = [...(form.value?.querySelectorAll('[data-path]') || [])];
+    const exact = fields.some((element) => element.dataset.path === path);
+    const inside = exact
+      ? null
+      : fields.find((element) => element.dataset.path.startsWith(`${path}.`));
+    const control = focusField(inside ? inside.dataset.path : path);
+    const title = target.value?.title || '';
+    const where = title && `${title[0].toLowerCase()}${title.slice(1)}`;
+
+    if (!control) {
+      heading.value?.focus();
+      host.announce(`Selected ${where}`);
+
+      return false;
+    }
+
+    const focused = control.closest('[data-path]')?.dataset.path ?? path;
+
+    host.announce(`${fieldName(target.value, focused)} in ${where}`);
+
+    return true;
+  }
+
+  // Go to, from a list of checks elsewhere (see goToIssue in store.js),
+  // with a field to focus: the field takes focus once the form shows the
+  // element selected for it. A request is taken when it is made, after the
+  // form is drawn, and as the Inspector mounts, for a request made before
+  // it was there (Go to on the drafts page opens the editor and goes at
+  // once); each is taken once (see takeFocusRequest). The editor shows a
+  // hidden Inspector for it (see Builder.vue), which is drawn by the next
+  // tick.
+  async function takeFocusRequest() {
+    const token = template ? 0 : host.focusRequest?.token || 0;
+
+    if (!token || !host.focusRequest?.field) {
+      return;
+    }
+
+    await nextTick();
+
+    const request = host.takeFocusRequest?.(token);
+
+    if (request && selection.value.id === request.id) {
+      goToField(request.field);
+    }
+  }
+
+  watch(
+    () => (template ? 0 : host.focusRequest?.token || 0),
+    takeFocusRequest,
+    { flush: 'post' },
+  );
+
+  onMounted(takeFocusRequest);
 
   const positionHint = computed(
     () =>
@@ -1792,8 +1878,18 @@
   }
 
   const issues = computed(() => host.issues);
+  // Each with the form's field it is about, if any, and the field's name.
   const ownIssues = computed(() =>
-    issuesAbout(host.doc, issues.value, selection.value),
+    issuesAbout(host.doc, issues.value, selection.value).map((issue) => {
+      const field =
+        selection.value.type === 'document' ? '' : issueField(host.doc, issue);
+
+      return {
+        ...issue,
+        field,
+        fieldName: field ? fieldName(target.value, field) : '',
+      };
+    }),
   );
   const ownCounts = computed(() => issueCounts(ownIssues.value));
 
@@ -1998,6 +2094,16 @@
   }
 
   .builder-inspector__issues .builder-icon {
+    align-self: center;
+  }
+
+  .builder-inspector__issue-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .builder-inspector__issue-go {
+    flex: none;
     align-self: center;
   }
 

@@ -775,6 +775,9 @@ test.describe('Builder inspector', () => {
         const node = builder.node('web01', 'device');
         const id = await node.getAttribute('data-node-id');
         const wrapper = page.locator(`.vue-flow__node[data-id="${id}"]`);
+        const driveImage = builder.inspector
+          .locator('[data-path="spec.hardware.drives.1.image"]')
+          .getByRole('combobox');
 
         await expect
           .soft(button)
@@ -790,25 +793,28 @@ test.describe('Builder inspector', () => {
         await button.click();
         const dialog = page.getByRole('dialog', { name: 'Diagram checks' });
         await expect(dialog).toBeVisible();
+        // Each issue names the device it is about, and so does its Go to.
         await expect
-          .soft(dialog.getByRole('heading', { name: 'Device web01' }))
-          .toBeVisible();
+          .soft(dialog.getByTestId('issue-element'))
+          .toHaveText(['Device web01', 'Device web01']);
         const issue = dialog.getByRole('button', {
-          name: /^Warning: drive image "data\.qc2"/,
+          name: /^Go to device web01: drive image "data\.qc2"/,
         });
-        await expect.soft(issue).toHaveAccessibleDescription('Device web01');
         await issue.click();
 
-        // The dialog closes, the device is selected, and focus moves to it
-        // on the canvas, which pans it into view.
+        // The dialog closes, the device is selected and brought into view,
+        // and focus moves to the drive's image in the Inspector, the field
+        // the issue is about.
         await expect(dialog).toHaveCount(0);
-        await expect.soft(wrapper).toBeFocused();
+        await expect.soft(driveImage).toBeFocused();
         await expect.soft(wrapper).toBeInViewport();
         await expect
           .soft(builder.outlineItem('web01'))
           .toHaveAttribute('aria-pressed', 'true');
         await expect.soft(subject(builder)).toHaveText(/^\s*Device web01\b/);
-        await expect.soft(builder).toHaveAnnounced('Selected web01');
+        await expect
+          .soft(builder)
+          .toHaveAnnounced(/\(Drive 2\) in device web01$/);
 
         // Closed without a choice, it returns focus to the button.
         await button.press('Enter');
@@ -819,7 +825,8 @@ test.describe('Builder inspector', () => {
       });
 
       // Stacked under the Outline and the Inspector, the canvas starts below
-      // the fold, and focus moved there does not scroll the page.
+      // the fold, and focus moved there does not scroll the page. Go to on
+      // an issue that names no field moves focus to the device itself.
       await test.step('in the narrow stacked layout, the dialog scrolls the canvas to the device', async () => {
         const viewport = page.viewportSize();
         const button = page.getByTestId('builder-checks');
@@ -835,10 +842,13 @@ test.describe('Builder inspector', () => {
         await button.click();
         await page
           .getByRole('dialog', { name: 'Diagram checks' })
-          .getByRole('button', { name: /^Warning: drive image "data\.qc2"/ })
+          .getByRole('button', {
+            name: /^Go to device web01: device "web01" has no interfaces/,
+          })
           .click();
         await expect.soft(wrapper).toBeFocused();
         await expect.soft(wrapper).toBeInViewport();
+        await expect.soft(builder).toHaveAnnounced('Selected web01');
         await page.setViewportSize(viewport);
       });
 

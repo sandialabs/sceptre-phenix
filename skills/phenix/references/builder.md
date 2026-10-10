@@ -241,6 +241,61 @@ restore the zoom and position from before it, and the button is named Restore
 previous view. Any other change to the view, including Reset view, drops the
 saved view.
 
+## Lists of checks and Go to
+
+The Publish dialog (its checks before publishing, the issues a 409 or 422
+refusal lists, and the `errors` and `warnings` of a result) and the Diagram
+checks dialog list issues through `BuilderIssueList.vue`: grouped by
+severity, errors first (`bySeverity` in `issues.js`; with the document,
+each group in node, then connection, then diagram order), under headings
+that count them ("2 errors block publishing" in the Publish dialog's checks
+and refusal, else "2 errors"; "1 warning"; `severityHeading`). Each item
+says "Error:" or "Warning:", the message with index references named
+(`issueText`), the element (`Device web-01`), the server's `code` in a
+monospace badge, and Go to (testid `issue-go-to`, named "Go to <element>:
+<message>", `goToName`) when the diagram has the element. Testids: list
+`publish-checks`, `publish-refusal`, `publish-result-issues`,
+`checks-issues`; groups `<list>-error`, `<list>-warning`; items `issue`,
+`issue-message`, `issue-element`, `issue-code`.
+
+Every issue goes through `toIssue(entry, defaultSeverity, {publishing})`
+into `{code?, severity, message, path?, nodeId?, edgeId?, networkId?,
+field?, blocksPublish?}`: a string, a `validateDocument()` issue (`level`;
+with `publishing`, a `blocksPublish` warning is an error, as
+`publishChecks` does) or a server issue object; `responseIssues(data)` reads
+a body's `errors` then `warnings` (strings or objects), then `issues`
+(objects, an error unless they state a severity), listing an issue given
+twice once (a message alone that says what an issue object says, as
+`path: message`, gives way to the object), which `store.publish` keeps as
+`store.publishIssues` for a 409 or 422. The Publish dialog's
+`useRefusalIssues` (`dialogs/message.js`) clears them as it opens and
+closes and once `store.doc` changes other than its stamp (`sameButStamp`).
+`issueTarget(doc, issue)` resolves `nodeId`, `edgeId`, `networkId` (the
+network's first switch), else the element the `path` starts at (as
+`locate()` in `validate.js`; JSON pointers and dotted indexes are read
+too), with `issueField`: the issue's `field`, else the path below the
+element, as a JSON Forms data path (`nodes[2].device.spec.network.
+interfaces[0].vlan` is `spec.network.interfaces.0.vlan`; a switch's
+network issue `networks[0].name` is `name`). No element, no Go to.
+
+`store.goToIssue(issue)` selects the target and sets `store.focusRequest =
+{kind, id, field, token}`. `Builder.vue` shows a hidden Inspector and
+reveals the node (a connection's two ends); without a field it announces
+"Selected <name>" and focuses the canvas element as keyboard focus. With a
+field, `BuilderInspector.vue` (`goToField`) focuses the control whose data
+path is the field (or the first field inside it, opening closed sections,
+falling back as the error summary does) and announces "<field label> in
+<element>", e.g. "Hostname in device web-01"; with no control, the
+Inspector heading takes focus. A dialog closes before the request, so focus
+returns to its opener first. The Inspector takes a request with a field
+once (`store.takeFocusRequest(token)` marks it `taken`): when the token
+changes (a `post` watcher) and as it mounts, so a request made before it
+mounted is acted on. In landing mode the Publish dialog's Go to emits
+`open-draft` with the issue, and `openPublished` opens the editor and calls
+`goToIssue` at once; `Builder.vue`'s watcher runs `post`, once the editor
+is drawn. The Inspector's own Checks list gives an issue about one of its
+fields a Go to (`inspector-check-go-to`, "Go to <field>: <message>").
+
 ## Access, sharing and RBAC
 
 Draft owners can manage their own drafts. An owner can share a draft with

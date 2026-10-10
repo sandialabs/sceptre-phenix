@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { computed } from 'vue';
+import { computed, effectScope, nextTick } from 'vue';
 
 vi.mock('@/utils/axios.js', () => ({ default: {} }));
 
@@ -152,6 +152,7 @@ import {
 } from '@/builder/model.js';
 import { builderSchemaV1 } from '@/builder/schema.js';
 import { draftForPublished, useBuilderStore } from '@/builder/store.js';
+import { useRefusalIssues } from '@/components/builder/dialogs/message.js';
 
 import { sampleDocument } from './fixtures.js';
 import { base64Of, ICON_DATA, png } from './png.js';
@@ -2054,6 +2055,141 @@ describe('server data', () => {
     expect(store.error).toBe(
       `Could not publish the diagram. Topology lab cannot be published: ${vlan}.`,
     );
+  });
+
+  test('the issues a refusal lists show until the dialog closes or the diagram changes', async () => {
+    await withDraft();
+
+    const intent = {
+      mode: 'topology',
+      topology: { name: 'lab', action: 'create' },
+    };
+    const refuse = () =>
+      api.publish.mockRejectedValueOnce(
+        Object.assign(new Error('unprocessable'), {
+          response: {
+            status: 422,
+            data: {
+              code: 'invalid-document',
+              message: 'invalid builder document',
+              issues: [
+                {
+                  path: 'nodes[1].device.hostname',
+                  message: 'hostname is required',
+                },
+              ],
+            },
+          },
+        }),
+      );
+    const refused = [
+      {
+        severity: 'error',
+        message: 'hostname is required',
+        path: 'nodes[1].device.hostname',
+      },
+    ];
+
+    // The Publish dialog opens, and the server refuses its publish.
+    let dialog = effectScope();
+
+    store.publishIssues = [{ severity: 'error', message: 'from before' }];
+    dialog.run(() => useRefusalIssues(store));
+    expect(store.publishIssues).toEqual([]);
+
+    refuse();
+    await expect(store.publish(intent)).resolves.toBeNull();
+    expect(store.publishIssues).toEqual(refused);
+
+    // A save's answer changes only who saved the diagram and when.
+    store.doc = withStamp(store.doc, { updatedBy: 'alice' });
+    await nextTick();
+    expect(store.publishIssues).toEqual(refused);
+
+    // An edit changes the diagram the issues were about.
+    store.commit(
+      setDocumentInfo(store.doc, { name: 'Renamed' }),
+      'Renamed the diagram',
+    );
+    await nextTick();
+    expect(store.publishIssues).toEqual([]);
+
+    // Refused again, then the dialog closes.
+    refuse();
+    await store.publish(intent);
+    expect(store.publishIssues).toEqual(refused);
+    dialog.stop();
+    expect(store.publishIssues).toEqual([]);
+
+    // A diagram changed with the dialog closed shows nothing when it opens.
+    store.publishIssues = refused;
+    dialog = effectScope();
+    dialog.run(() => useRefusalIssues(store));
+    expect(store.publishIssues).toEqual([]);
+    dialog.stop();
+  });
+
+  test('Go to selects what an issue is about and asks for focus on its field once', () => {
+    const { doc, alpha, edge } = sampleDocument();
+
+    store.doc = doc;
+
+    // The sample's nodes are the switch, alpha and bravo, in that order.
+    expect(
+      store.goToIssue({
+        path: 'nodes[1].device.hostname',
+        message: 'hostname is required',
+      }),
+    ).toBe(true);
+    expect(store.selection).toEqual({ nodes: [alpha.id], edges: [] });
+    expect(store.focusRequest).toEqual({
+      kind: 'nodes',
+      id: alpha.id,
+      field: 'hostname',
+      token: 1,
+    });
+
+    expect(store.goToIssue({ edgeId: edge.id, message: 'label' })).toBe(true);
+    expect(store.selection).toEqual({ nodes: [], edges: [edge.id] });
+    expect(store.focusRequest).toEqual({
+      kind: 'edges',
+      id: edge.id,
+      field: '',
+      token: 2,
+    });
+
+    // An issue the diagram has nothing for selects nothing and asks nothing.
+    for (const issue of [
+      'experiment publication failed',
+      { nodeId: 'gone', message: 'hostname is required' },
+      { path: 'nodes[9].device.hostname', message: 'hostname is required' },
+    ]) {
+      expect(store.goToIssue(issue), JSON.stringify(issue)).toBe(false);
+    }
+    expect(store.selection).toEqual({ nodes: [], edges: [edge.id] });
+    expect(store.focusRequest.token).toBe(2);
+
+    // The Inspector takes a request with a field once, and only the latest.
+    store.goToIssue({ nodeId: alpha.id, field: 'hostname', message: '' });
+    expect(store.takeFocusRequest(2)).toBeNull();
+    expect(store.takeFocusRequest(3)).toEqual({
+      kind: 'nodes',
+      id: alpha.id,
+      field: 'hostname',
+      token: 3,
+    });
+    expect(store.takeFocusRequest(3)).toBeNull();
+    expect(store.focusRequest).toMatchObject({ token: 3, taken: true });
+
+    // A request without a field is not the Inspector's to take.
+    store.goToIssue({ edgeId: edge.id, message: 'label' });
+    expect(store.focusRequest).toEqual({
+      kind: 'edges',
+      id: edge.id,
+      field: '',
+      token: 4,
+    });
+    expect(store.takeFocusRequest(4)).toBeNull();
   });
 
   test('publishing waits for the queue to be confirmed by the server', async () => {

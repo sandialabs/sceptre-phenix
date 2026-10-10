@@ -37,6 +37,13 @@
   draft, and Open draft leaves for the editor, which is where the diagram's
   errors, a conflict or a save that failed are put right; the dialog says so
   where one of them stops the publish.
+
+  The diagram's checks, what the server lists when it refuses a publish and
+  the errors and warnings of a result are listed by severity, the errors
+  first (see BuilderIssueList.vue). Go to on an issue closes the dialog and
+  selects the element it is about, with focus on the Inspector field it
+  names (see goToIssue in store.js); on the drafts page it opens the draft
+  first.
 -->
 <template>
   <builder-dialog
@@ -201,17 +208,14 @@
           {{ unappliedBlock(unapplied, 'published') }}
         </p>
         <p>{{ summaryText }}</p>
-        <ul v-if="issues.length" class="builder-issues">
-          <li
-            v-for="(issue, index) in issues"
-            :key="`${issue.path}-${index}`"
-            :data-level="issue.level">
-            <strong>
-              {{ issue.level === 'error' ? 'Error' : 'Warning' }}:
-            </strong>
-            {{ issue.message }}
-          </li>
-        </ul>
+        <builder-issue-list
+          v-if="issues.length"
+          :groups="issueGroups"
+          blocking
+          :heading-level="4"
+          id-prefix="publish-checks"
+          testid="publish-checks"
+          @go="goTo" />
         <p
           v-if="landing && failed"
           class="builder-hint"
@@ -231,6 +235,16 @@
           error.text
         }}</span>
       </p>
+
+      <!-- What the server listed when it refused the publish. -->
+      <builder-issue-list
+        v-if="refusalIssues.length"
+        :groups="refusalGroups"
+        blocking
+        :heading-level="3"
+        id-prefix="publish-refusal"
+        testid="publish-refusal"
+        @go="goTo" />
 
       <div class="builder-dialog__actions">
         <button
@@ -272,18 +286,17 @@
           {{ stage.status }}
           <template v-if="stage.message">— {{ stage.message }}</template>
         </li>
-        <li v-for="(warning, index) in result.warnings" :key="`w-${index}`">
-          <strong>Warning:</strong>
-          {{ warning }}
-        </li>
-        <li
-          v-for="(problem, index) in result.errors"
-          :key="`e-${index}`"
-          data-level="error">
-          <strong>Error:</strong>
-          {{ problem }}
-        </li>
       </ul>
+
+      <!-- The errors and warnings the server reported with the result. -->
+      <builder-issue-list
+        v-if="resultIssues.length"
+        class="builder-publish-result__issues"
+        :groups="resultGroups"
+        :heading-level="3"
+        id-prefix="publish-result"
+        testid="publish-result-issues"
+        @go="goTo" />
 
       <div class="builder-dialog__actions">
         <button
@@ -334,9 +347,15 @@
   import BuilderConfirm from '../BuilderConfirm.vue';
   import BuilderDialog from '../BuilderDialog.vue';
   import BuilderIcon from '../BuilderIcon.vue';
-  import { useFieldError, useMessage } from './message.js';
+  import BuilderIssueList from '../BuilderIssueList.vue';
+  import { useFieldError, useMessage, useRefusalIssues } from './message.js';
 
   import { count, listOf } from '@/builder/announce.js';
+  import {
+    bySeverity,
+    issueEntries,
+    responseIssues,
+  } from '@/builder/issues.js';
   import { unappliedBlock } from '@/builder/leave.js';
   import { documentScenarios } from '@/builder/model.js';
   import {
@@ -347,7 +366,6 @@
     keptIncludesText,
     legacyDiagramUpdate,
     overwriteConfirmation,
-    publishChecks,
     publishLabel,
     scenarioNames as readScenarioNames,
     scenarioStageHint,
@@ -418,6 +436,10 @@
   onBeforeUnmount(() => {
     closed = true;
   });
+
+  // What the server listed when it refused a publish shows while the dialog
+  // is open and the diagram is the one refused.
+  useRefusalIssues(store);
 
   onMounted(() => {
     // A failed save is reported when Publish is pressed (store.publish).
@@ -513,11 +535,29 @@
     return [hintId, rule].filter(Boolean).join(' ');
   }
 
-  // An interface with no VLAN, and an address two interfaces use, is an
-  // error here, though not in the draft.
-  const issues = computed(() => publishChecks(store.issues));
+  // What publishing refuses, an interface with no VLAN, an address two
+  // interfaces use and a hostname phenix refuses, is an error here, though
+  // not in the draft (see toIssue). Errors are listed first, then warnings.
+  const issues = computed(() =>
+    issueEntries(store.doc, store.issues, { publishing: true }),
+  );
+  const issueGroups = computed(() => bySeverity(issues.value, store.doc));
   const failed = computed(() =>
-    issues.value.some((issue) => issue.level === 'error'),
+    issues.value.some((issue) => issue.severity === 'error'),
+  );
+
+  // What the server listed with a refusal, and with a result.
+  const refusalIssues = computed(() =>
+    issueEntries(store.doc, store.publishIssues),
+  );
+  const refusalGroups = computed(() =>
+    bySeverity(refusalIssues.value, store.doc),
+  );
+  const resultIssues = computed(() =>
+    issueEntries(store.doc, responseIssues(result.value)),
+  );
+  const resultGroups = computed(() =>
+    bySeverity(resultIssues.value, store.doc),
   );
   const blocked = computed(
     () => failed.value || store.readOnly || Boolean(props.unapplied),
@@ -606,6 +646,7 @@
 
     busy.value = true;
     error.clear();
+    store.publishIssues = [];
 
     // Create or update is chosen from the list read when the dialog opened.
     await sourcesLoaded;
@@ -691,6 +732,21 @@
     submitButton.value?.focus();
   }
 
+  // Go to on an issue. The dialog closes, which gives focus back to what
+  // opened it, before Go to moves it on (see goToIssue). On the drafts page
+  // the editor opens on the draft first, where Go to then goes.
+  async function goTo(issue) {
+    if (props.landing) {
+      emit('open-draft', issue);
+
+      return;
+    }
+
+    emit('close');
+    await nextTick();
+    store.goToIssue(issue);
+  }
+
   defineExpose({ buildIntent, form, result });
 </script>
 
@@ -698,5 +754,9 @@
   fieldset {
     border: 0;
     padding: 0;
+  }
+
+  .builder-publish-result__issues {
+    margin-top: 0.75rem;
   }
 </style>

@@ -691,6 +691,7 @@
   import { stopLayoutEngine } from '@/builder/layouts/index.js';
   import { documentIconSize } from '@/builder/model.js';
   import { PUBLISHED_TOKEN } from '@/builder/publish.js';
+  import { selectionItemName } from '@/builder/selection.js';
   // Not builderSettings: <builder-settings> would name it as well as the
   // dialog.
   import {
@@ -1490,11 +1491,19 @@
 
   // The dialog's Open draft: the draft stays loaded, and the editor shows
   // it, where its errors, a conflict or a save that failed are put right.
-  // The editor's heading takes focus (see the watch on editing).
-  function openPublished() {
+  // The editor's heading takes focus (see the watch on editing). Go to on
+  // one of the dialog's issues opens the editor the same way and asks for
+  // the issue at once (see goToIssue): the editor acts on the request once
+  // it is drawn (see the watch on store.focusRequest), and the Inspector as
+  // it mounts.
+  function openPublished(issue) {
     publishedCard.value = null;
     dialog.value = '';
     editing.value = true;
+
+    if (issue && typeof issue === 'object') {
+      store.goToIssue(issue);
+    }
   }
 
   // Exp, in the toolbar and on a published diagram's card: opens the
@@ -2788,6 +2797,62 @@
 
     (first || document.getElementById('inspector-title'))?.focus();
   }
+
+  // Go to, from a list of checks (see goToIssue in store.js), which has
+  // selected the node or connection: the Inspector shows, and the element
+  // comes into view. The Inspector moves focus to the field the issue names
+  // (see BuilderInspector.vue); with no field, focus moves to the element on
+  // the canvas. Focus there is shown as keyboard focus, whatever pressed Go
+  // to: the canvas pans only such focus into view, and it marks where focus
+  // went. The page does not scroll to the focused element, which would
+  // scroll the canvas's own clipped layers; in the narrow stacked layout the
+  // canvas can be below the fold, so the page scrolls the canvas into view
+  // first. Should the element not be drawn, focus stays where the dialog
+  // gave it back. It runs once the view is drawn, so a request made as the
+  // editor opens finds its columns and its canvas.
+  watch(
+    () => store.focusRequest?.token,
+    async (token) => {
+      const request = store.focusRequest;
+
+      if (!token || !request || !editing.value) {
+        return;
+      }
+
+      panes.value?.show('end');
+
+      if (request.field) {
+        const edge =
+          request.kind === 'edges'
+            ? (store.doc.edges || []).find((entry) => entry.id === request.id)
+            : null;
+
+        canvas.value?.revealNode?.(
+          edge ? [edge.sourceNodeId, edge.targetNodeId] : request.id,
+        );
+
+        return;
+      }
+
+      store.announce(
+        `Selected ${selectionItemName(store.doc, { kind: request.kind, id: request.id })}`,
+      );
+      await nextTick();
+
+      const wrapper =
+        request.kind === 'nodes' ? 'vue-flow__node' : 'vue-flow__edge';
+      const area = document.getElementById('builder-canvas');
+      const element = area?.querySelector(
+        `.${wrapper}[data-id="${CSS.escape(request.id)}"]`,
+      );
+
+      if (element && store.focusRequest?.token === token) {
+        area.scrollIntoView({ block: 'nearest' });
+        element.focus({ preventScroll: true, focusVisible: true });
+      }
+    },
+    { flush: 'post' },
+  );
 
   // The focused field commits what it holds, as its change event would (the
   // Diagram name commits only on change). Returns whether it was sent one.

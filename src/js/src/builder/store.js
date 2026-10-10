@@ -64,6 +64,7 @@ import {
 import { settleIcons } from './icons.js';
 import { createDraftStore } from './idb.js';
 import { uniqueName } from './ids.js';
+import { issueTarget, responseIssues, toIssue } from './issues.js';
 import {
   layoutChanges,
   restoreLayoutChanges,
@@ -703,6 +704,14 @@ export const useBuilderStore = defineStore('builder', {
     templates: emptyLibrary(),
     publishing: false,
     publishResult: null,
+    // The issues the server listed when it refused the last publish (see
+    // responseIssues in issues.js), which the Publish dialog lists.
+    publishIssues: [],
+    // Go to, from a list of checks (see goToIssue): the node or connection
+    // selected for it, the Inspector field to focus ('' for none), a
+    // number that changes with every request, and `taken` once the
+    // Inspector has acted on it (see takeFocusRequest).
+    focusRequest: null,
     // Whether resolveConflict is under way (see refuseWhileResolving).
     resolvingConflict: false,
     // The configs ("<kind>/<name>") the server refused to let this draft
@@ -2921,6 +2930,7 @@ export const useBuilderStore = defineStore('builder', {
      */
     async publish(intent) {
       this.publishResult = null;
+      this.publishIssues = [];
       this.clearError();
 
       if (this.readOnly) {
@@ -3027,6 +3037,12 @@ export const useBuilderStore = defineStore('builder', {
 
         return result;
       } catch (error) {
+        // A refusal may list what it refuses, each issue with the element
+        // it is about, for the dialog's list of checks.
+        if ([409, 422].includes(error?.response?.status)) {
+          this.publishIssues = responseIssues(error.response.data);
+        }
+
         if (error?.response?.status === 409) {
           // A 409 is about a config the publish would write, not the draft,
           // and the server says which and why. A create or update refused
@@ -4724,6 +4740,61 @@ export const useBuilderStore = defineStore('builder', {
         nodes: selection?.nodes || [],
         edges: selection?.edges || [],
       };
+    },
+
+    /**
+     * Go to, from a list of checks: selects the node or connection the issue
+     * is about (a network's first switch for a network, see issueTarget) and
+     * asks for focus on the Inspector field it names, or on the element
+     * itself. The editor brings the element into view and shows the
+     * Inspector (see Builder.vue), and the Inspector focuses the field.
+     *
+     * @param {string|object} issue see toIssue in issues.js
+     * @returns {boolean} whether the diagram has what the issue names
+     */
+    goToIssue(issue) {
+      const target = issueTarget(this.doc, toIssue(issue));
+
+      if (!target) {
+        return false;
+      }
+
+      this.select({ [target.kind]: [target.id] });
+      this.focusRequest = {
+        ...target,
+        token: (this.focusRequest?.token || 0) + 1,
+      };
+
+      return true;
+    },
+
+    /**
+     * The Go to request with that token, for the Inspector to focus the
+     * field it names (see goToIssue), once: taking it marks it taken. So an
+     * Inspector that mounts after the request, as when Go to on the drafts
+     * page opens the editor, still acts on it, and no Inspector acts on a
+     * request twice.
+     *
+     * @param {number} token
+     * @returns {{kind: string, id: string, field: string, token: number}|null}
+     *   the request, or null when it names no field, has been taken, or a
+     *   later request replaced it
+     */
+    takeFocusRequest(token) {
+      const request = this.focusRequest;
+
+      if (
+        !token ||
+        request?.token !== token ||
+        !request.field ||
+        request.taken
+      ) {
+        return null;
+      }
+
+      this.focusRequest = { ...request, taken: true };
+
+      return request;
     },
 
     selectAll() {

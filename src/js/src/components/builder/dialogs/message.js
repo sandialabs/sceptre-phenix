@@ -1,14 +1,16 @@
-// Messages for the Builder dialogs' status and error regions, and the file
-// a dialog's file field chooses.
+// Messages for the Builder dialogs' status and error regions, what the
+// server listed when it refused a publish, and the file a dialog's file
+// field chooses.
 //
 // A dialog renders each region, empty, from the start, and each message as a
 // child keyed by `key`. Setting a message always changes the key, so the
 // region gets a new node and announces the text again even when it is the
 // same, as when a user submits the same mistake twice.
 
-import { nextTick, reactive } from 'vue';
+import { nextTick, onScopeDispose, reactive, watch } from 'vue';
 
 import { MAX_DOCUMENT_BYTES, tooLargeText } from '@/builder/decode.js';
+import { sameButStamp } from '@/builder/model.js';
 
 /**
  * A message for one live region. `field` names the form control the message
@@ -72,6 +74,33 @@ export function useFieldError(errorId, fieldIds = {}) {
       }
     },
   };
+}
+
+/**
+ * What the server listed when it refused a publish (`publishIssues`, see
+ * publish in store.js), for the Publish dialog, which calls this in its
+ * setup. The list is cleared as the dialog opens, as it closes (its setup's
+ * scope ends), and once the diagram changes after the refusal, so it never
+ * shows against a diagram other than the one refused. A change of who saved
+ * the diagram and when (see sameButStamp) leaves the diagram as it was.
+ *
+ * @param {{doc: object, publishIssues: object[]}} store the Builder store
+ */
+export function useRefusalIssues(store) {
+  store.publishIssues = [];
+
+  watch(
+    () => store.doc,
+    (next, previous) => {
+      if (store.publishIssues.length > 0 && !sameButStamp(next, previous)) {
+        store.publishIssues = [];
+      }
+    },
+  );
+
+  onScopeDispose(() => {
+    store.publishIssues = [];
+  });
 }
 
 // The read under way in each file field.

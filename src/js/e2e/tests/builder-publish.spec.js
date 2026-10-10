@@ -1542,7 +1542,11 @@ test('an interface with no VLAN or a used address is refused at publish, and its
   tracker.config('Topology', topology);
 
   const draft = await openLab(builder, topology);
-  const errors = builder.dialog.locator('li[data-level="error"]');
+  // The message of each error, which its item shows with the element it is
+  // about and Go to.
+  const errors = builder.dialog
+    .locator('li[data-level="error"]')
+    .getByTestId('issue-message');
   const vlan = builder.inspector
     .locator('[data-path="spec.network.interfaces.0.vlan"]')
     .getByRole('textbox');
@@ -1890,6 +1894,13 @@ test('a partial publication lists the failed stage and lets the user go back', a
   await expect(
     result.locator('li[data-level="error"]:not([data-status])'),
   ).toHaveText('Error: experiment publication failed');
+  // Under a heading that counts the errors; it names no element of the
+  // diagram, so it has no Go to.
+  const reported = result.getByTestId('publish-result-issues');
+  await expect
+    .soft(reported.getByRole('heading', { level: 3 }))
+    .toHaveText(['1 error']);
+  await expect.soft(reported.getByTestId('issue-go-to')).toHaveCount(0);
   // The dialog reports the failure; the page's own alert, behind the modal,
   // would only repeat it.
   await expect.soft(page.getByTestId('builder-error')).toBeHidden();
@@ -1911,3 +1922,286 @@ test('a partial publication lists the failed stage and lets the user go back', a
   await expect.soft(page.getByTestId('publish-submit')).toBeFocused();
   expectNoFatal(issues);
 });
+
+// --- lists of checks and Go to ----------------------------------------------------
+
+// labDocument with two hostnames the checks flag: server-2 is "all", which
+// phenix refuses in an experiment, so Publish lists it as an error (the
+// draft keeps it as a warning), and server is "phenix", a plain warning on a
+// node that is not Windows. Device "all" is the second node.
+function flaggedLab(name) {
+  const document = labDocument(name);
+  const [server, server2] = devicesOf(document);
+
+  for (const [device, hostname] of [
+    [server, 'phenix'],
+    [server2, 'all'],
+  ]) {
+    device.label = hostname;
+    device.device.hostname = hostname;
+    device.device.spec.general.hostname = hostname;
+  }
+
+  return document;
+}
+
+// The server's disk images include the devices' drive image, so no drive
+// raises a warning of its own.
+async function listDriveImages(page) {
+  await page.route('**/api/v1/disks', (route) =>
+    route.fulfill({ json: { disks: [{ kind: 'VM', name: 'ubuntu.qc2' }] } }),
+  );
+}
+
+test('the Publish and Checks dialogs list errors before warnings, and Go to focuses the field an issue names', async ({
+  page,
+  builder,
+  issues,
+}, testInfo) => {
+  await listDriveImages(page);
+  const draft = await builder.seedDraft(
+    flaggedLab(uniqueName(testInfo, 'go-to')),
+  );
+  await builder.openDraft(draft);
+  const hostname = builder.inspector
+    .locator('[data-path="hostname"]')
+    .getByRole('textbox');
+
+  await test.step('Publish lists the error that blocks publishing, then the warning', async () => {
+    const dialog = await openPublish(builder);
+    const checks = dialog.getByTestId('publish-checks');
+    const errors = checks.getByTestId('publish-checks-error');
+    const warnings = checks.getByTestId('publish-checks-warning');
+
+    await expect(errors.getByRole('heading', { level: 4 })).toHaveText(
+      '1 error blocks publishing',
+    );
+    await expect(warnings.getByRole('heading', { level: 4 })).toHaveText(
+      '1 warning',
+    );
+    expect(
+      await checks
+        .locator('section[data-severity]')
+        .evaluateAll((groups) => groups.map((group) => group.dataset.severity)),
+    ).toEqual(['error', 'warning']);
+    await expect(errors.getByTestId('issue-message')).toHaveText([
+      /^Error: hostname "all" is reserved, so the device cannot be published: /,
+    ]);
+    await expect(errors.getByTestId('issue-element')).toHaveText([
+      'Device all',
+    ]);
+    await expect(warnings.getByTestId('issue-message')).toHaveText([
+      /^Warning: hostname "phenix" matches "phenix"/,
+    ]);
+    await expect(warnings.getByTestId('issue-element')).toHaveText([
+      'Device phenix',
+    ]);
+    await expect.soft(page.getByTestId('publish-submit')).toBeDisabled();
+
+    // Named by the element and the message; a button, so Tab reaches it.
+    const goTo = errors.getByTestId('issue-go-to');
+    await expect(goTo).toHaveAccessibleName(
+      /^Go to device all: hostname "all" is reserved/,
+    );
+    await expect.soft(goTo).toHaveJSProperty('tabIndex', 0);
+    await goTo.press('Enter');
+    await expect(builder.dialog).toHaveCount(0);
+    await expect(builder.outlineItem('all')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(hostname).toBeFocused();
+    await expect(hostname).toHaveValue('all');
+    await expect(builder).toHaveAnnounced('Hostname in device all');
+  });
+
+  await test.step('the Checks dialog lists both as warnings, in diagram order, and Go to focuses the field', async () => {
+    await page.getByTestId('builder-checks').click();
+    const checks = page.getByTestId('checks-dialog');
+    const list = checks.getByTestId('checks-issues');
+
+    await expect(list.getByTestId('checks-issues-error')).toHaveCount(0);
+    const warnings = list.getByTestId('checks-issues-warning');
+    await expect(warnings.getByRole('heading', { level: 3 })).toHaveText(
+      '2 warnings',
+    );
+    await expect(warnings.getByTestId('issue-element')).toHaveText([
+      'Device phenix',
+      'Device all',
+    ]);
+    await expect
+      .soft(checks.getByTestId('checks-summary'))
+      .toContainText('Go to selects the node or connection an issue is about.');
+
+    await warnings
+      .getByRole('button', { name: /^Go to device phenix: / })
+      .click();
+    await expect(checks).toHaveCount(0);
+    await expect(builder.outlineItem('phenix')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(hostname).toBeFocused();
+    await expect(hostname).toHaveValue('phenix');
+    await expect(builder).toHaveAnnounced('Hostname in device phenix');
+  });
+
+  await test.step('the Inspector’s checks of the selection go to the field too', async () => {
+    await builder.selectInOutline('all');
+    const goTo = builder.inspector
+      .getByTestId('inspector-checks')
+      .getByTestId('inspector-check-go-to');
+
+    await expect(goTo).toHaveCount(1);
+    await expect(goTo).toHaveAccessibleName(
+      /^Go to Hostname: hostname "all" is reserved/,
+    );
+    await goTo.click();
+    await expect(hostname).toBeFocused();
+    await expect(builder).toHaveAnnounced('Hostname in device all');
+  });
+
+  expectNoFatal(issues);
+});
+
+// A refusal that lists issues, as a server with issue codes answers, is
+// listed as the checks are, with Go to for the node an issue names. The
+// answer is served without touching the server, so nothing is written.
+test('a refused publish lists the issues the server names, with Go to their node', async ({
+  page,
+  builder,
+  issues,
+}, testInfo) => {
+  const topology = uniqueName(testInfo, 'refused');
+  const document = labDocument(topology);
+  const [, server2] = devicesOf(document);
+  const reason = 'hostname "server-2" is not allowed on this server';
+
+  await listDriveImages(page);
+  await builder.openDraft(await builder.seedDraft(document));
+  await builder.expectSummary('2 connections');
+  await page.route('**/builder/drafts/*/*/publish', (route) =>
+    route.fulfill({
+      status: 422,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        message: `topology ${topology} cannot be published: ${reason}`,
+        errors: [
+          {
+            code: 'hostname-not-allowed',
+            severity: 'error',
+            message: reason,
+            nodeId: server2.id,
+            field: 'hostname',
+          },
+        ],
+        warnings: [
+          {
+            code: 'builder-file-kept',
+            severity: 'warning',
+            message: 'the Builder file of the topology is not changed',
+          },
+        ],
+      }),
+    }),
+  );
+
+  const dialog = await openPublish(builder);
+  await fillPublish(page, { topology });
+  await expectPublish(page, 422);
+
+  // The reason names the topology, so the dialog marks the topology name
+  // field as well as listing the issues.
+  await expect(page.getByTestId('publish-error')).toContainText(reason);
+  await expect
+    .soft(page.getByTestId('publish-name'))
+    .toHaveAttribute('aria-invalid', 'true');
+
+  const refusal = dialog.getByTestId('publish-refusal');
+  await expect(
+    refusal.getByTestId('publish-refusal-error').getByRole('heading'),
+  ).toHaveText('1 error blocks publishing');
+  await expect(
+    refusal.getByTestId('publish-refusal-warning').getByRole('heading'),
+  ).toHaveText('1 warning');
+  await expect(refusal.getByTestId('issue-code')).toHaveText([
+    'hostname-not-allowed',
+    'builder-file-kept',
+  ]);
+  await expect(refusal.getByTestId('issue-element')).toHaveText([
+    'Device server-2',
+  ]);
+  // The warning names no element of the diagram: it has no Go to.
+  await expect(
+    refusal.getByTestId('publish-refusal-warning').getByTestId('issue-go-to'),
+  ).toHaveCount(0);
+  await expectAccessible(page, {
+    include: '[data-testid="builder-dialog"]',
+    soft: true,
+    label: 'Publish dialog listing a refusal',
+  });
+
+  await refusal
+    .getByRole('button', { name: `Go to device server-2: ${reason}` })
+    .click();
+  await expect(builder.dialog).toHaveCount(0);
+  await expect(builder.outlineItem('server-2')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  const hostname = builder.inspector
+    .locator('[data-path="hostname"]')
+    .getByRole('textbox');
+  await expect(hostname).toBeFocused();
+  await expect(hostname).toHaveValue('server-2');
+  expect(await builder.config('Topology', topology)).toBeNull();
+  expectNoFatal(issues);
+});
+
+test(
+  'axe finds no serious violations in the Publish and Checks dialogs listing errors and warnings',
+  { tag: ['@axe'] },
+  async ({ page, builder, issues }, testInfo) => {
+    await listDriveImages(page);
+    const draft = await builder.seedDraft(
+      flaggedLab(uniqueName(testInfo, 'axe-checks')),
+    );
+
+    for (const scheme of ['light', 'dark']) {
+      await test.step(`the ${scheme} theme`, async () => {
+        await page.emulateMedia({ colorScheme: scheme });
+        await builder.openDraft(draft);
+
+        await openPublish(builder);
+        await expect(
+          builder.dialog.getByTestId('publish-checks-error'),
+        ).toBeVisible();
+        await expect(
+          builder.dialog.getByTestId('publish-checks-warning'),
+        ).toBeVisible();
+        await expectAccessible(page, {
+          include: '[data-testid="builder-dialog"]',
+          soft: true,
+          label: `axe on the Publish dialog's checks (${scheme})`,
+        });
+        await page.keyboard.press('Escape');
+        await expect(builder.dialog).toHaveCount(0);
+
+        await page.getByTestId('builder-checks').click();
+        await expect(
+          builder.dialog.getByTestId('checks-issues-warning'),
+        ).toBeVisible();
+        // The Checks dialog's test id replaces the shared builder-dialog.
+        await expectAccessible(page, {
+          include: '[data-testid="checks-dialog"]',
+          soft: true,
+          label: `axe on the Checks dialog (${scheme})`,
+        });
+        await page.keyboard.press('Escape');
+        await expect(builder.dialog).toHaveCount(0);
+      });
+    }
+
+    expectNoFatal(issues);
+  },
+);

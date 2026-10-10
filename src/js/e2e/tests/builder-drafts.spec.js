@@ -11,6 +11,7 @@
 const {
   API,
   blankDocument,
+  devicesOf,
   draftPath,
   test,
   expect,
@@ -515,6 +516,55 @@ test(
     expectNoFatal(issues);
   },
 );
+
+// Go to on an issue of the Publish dialog a draft's card opens: the editor
+// opens on that draft with the device selected, and the Inspector field the
+// issue names takes focus.
+test('Go to in the Publish dialog of a draft’s card opens the editor with the field focused', async ({
+  page,
+  builder,
+  issues,
+}, testInfo) => {
+  const name = uniqueName(testInfo, 'card-go-to');
+  // The second device's hostname is "all", which phenix refuses in an
+  // experiment, so Publish lists it as an error.
+  const document = labDocument(name);
+  const [, refused] = devicesOf(document);
+  refused.label = 'all';
+  refused.device.hostname = 'all';
+  refused.device.spec.general.hostname = 'all';
+  const draft = await builder.seedDraft(document);
+
+  await builder.open();
+  await page.getByTestId(`draft-publish-${draft.id}`).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId('publish-submit')).toBeDisabled();
+
+  const errors = dialog
+    .getByTestId('publish-checks')
+    .getByTestId('publish-checks-error');
+  await expect(errors.getByTestId('issue-element')).toHaveText(['Device all']);
+  await errors
+    .getByRole('button', { name: /^Go to device all: hostname "all"/ })
+    .click();
+
+  await expect(builder.canvas).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await expect.soft(page.getByTestId('builder-name')).toHaveText(name);
+  await expect(builder.outlineItem('all')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  const hostname = builder.inspector
+    .locator('[data-path="hostname"]')
+    .getByRole('textbox');
+  await expect(hostname).toBeFocused();
+  await expect(hostname).toHaveValue('all');
+  await expect(builder).toHaveAnnounced('Hostname in device all');
+  await builder.waitSaved();
+  expectNoFatal(issues);
+});
 
 test('Exp opens the experiment a diagram was published with, from its card and from the toolbar', async ({
   page,
