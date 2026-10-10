@@ -258,9 +258,12 @@ let engine = null;
 
 // Graphviz in a Web Worker, from its own file. A worker that cannot start,
 // or a layout that takes too long, fails the layout instead of leaving it
-// waiting. `dropped` is called when the worker ends.
+// waiting. `dropped` is called when the worker ends. The worker is a module
+// worker because its source uses import. The dev server serves it unbundled.
 async function workerEngine(dropped) {
-  const worker = new Worker(new URL('./graphvizWorker.js', import.meta.url));
+  const worker = new Worker(new URL('./graphvizWorker.js', import.meta.url), {
+    type: 'module',
+  });
   const pending = new Map();
   let next = 0;
 

@@ -980,8 +980,9 @@ describe('the Graphviz layouts in a Web Worker', () => {
   let answer = 'layout';
 
   class FakeWorker {
-    constructor(url) {
+    constructor(url, options) {
       this.url = String(url);
+      this.options = options;
       this.listeners = { message: [], error: [] };
       this.layouts = 0;
       this.terminated = false;
@@ -1058,6 +1059,8 @@ describe('the Graphviz layouts in a Web Worker', () => {
     expect(await settled(runLayout('radial', doc))).toBe('laid out');
     expect(workers).toHaveLength(1);
     expect(workers[0].url).toMatch(/graphvizWorker\.js$/);
+    // The worker source uses import, so it must start as a module worker.
+    expect(workers[0].options).toEqual({ type: 'module' });
     expectTidy(await laidOut('sfdp', doc), 'sfdp');
 
     // The session's end stops it, and the layout under way.

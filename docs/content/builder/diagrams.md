@@ -812,7 +812,7 @@ its devices in rows on a grid, with the switches below them.
 | **Dagre** | Networks in layers, left to right | Each network's devices in a column beside their switch, and the networks in layers along the connections between them. |
 | **Standard** | Devices above switches, top to bottom | Every device in a row above the switches, from top to bottom. |
 | **Yifan Hu** | Spring model, fast on large diagrams | Graphviz sfdp, the spring model of Yifan Hu. A connection keeps its nodes near each other, and each node keeps a distance from the others. Busy parts of the diagram become clusters. |
-| **Force** | Spring model, for small diagrams | A spring model like Yifan Hu, from d3-force. |
+| **Force** | Spring model, for small diagrams | A spring model like Yifan Hu. |
 | **Radial** | Rings around one node | Graphviz twopi. One node is at the center, and the other nodes are in rings by how many connections away they are. |
 
 **ELK layered** suits most diagrams. The **Default layout** setting
@@ -829,10 +829,10 @@ do not put connections in a direction, such as left to right:
   than one, the center is a router or firewall, by its icon or its node
   type. Without one, the center is the switch with the most devices.
 
-The same diagram always gets the same layout. **Yifan Hu** and **Radial**
-load when you first use one of them. If they cannot load, the page shows
-"Auto layout failed. The layout engine could not be loaded. Reload the page
-to try again."
+The same diagram and the same selection always get the same layout.
+**Yifan Hu** and **Radial** load when you first use one of them. If they
+cannot load, the page shows "Auto layout failed. The layout engine could not
+be loaded. Reload the page to try again."
 
 Layouts keep groups together: a group's members stay inside it, and no other
 node goes in.
