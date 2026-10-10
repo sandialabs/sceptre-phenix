@@ -3,39 +3,45 @@
   InspectorIconControl).
 
   It lists the server's icons, which every user shares, and the copies of
-  icons the diagram carries, and gives the field the name of the one chosen
-  with Use (the `use` event, with the icon's name). Upload icon… takes a PNG,
-  JPEG, GIF, WebP or SVG file: the browser draws it and the PNG that results
-  is what is sent (see rasterizeIcon in icons.js), under a name the user
-  types (proposed from the file's name). A copy the diagram carries can be
-  added to the server under its name. A server icon is renamed or deleted
-  only by the user who uploaded it, or with the builder-icons permissions:
-  Rename and Delete show only when the server says the user may. An icon the
-  server added from its template files has no owner, is listed as from
-  "Server", and needs those permissions to be changed. A renamed
-  icon keeps its old name as another name, so diagrams that use it keep
-  showing it; a deleted one leaves them showing their built-in icon.
+  icons that the diagram carries. Use gives the field the name of the chosen
+  icon (the `use` event, with the icon's name). Upload icon… takes a PNG,
+  JPEG, GIF, WebP or SVG file. The browser draws it, and the dialog sends
+  the resulting PNG (see rasterizeIcon in icons.js) under a name that the
+  user types (proposed from the file's name). A copy that the diagram
+  carries can be added to the server under its name.
+
+  Only the user who uploaded a server icon, or a user with the
+  builder-icons permissions, can rename or delete it. Rename and Delete
+  show only when the server says the user may. An icon that the server
+  added from its template files has no owner, is listed as from "Server",
+  and needs those permissions to be changed. A renamed icon keeps its old
+  name as another name, so diagrams that use it still show it. After a
+  delete, those diagrams show their built-in icon.
 
   Every icon is drawn through BuilderIcon, as an <img> with a PNG data URL.
   The thumbnails are decoration: each row names its icon in text, and every
   button names the icon it acts on.
 
-  Several icons can be acted on at once. A copy the server lacks, and a
-  server icon the user may delete, has a checkbox, and each list a row
-  above it (BuilderBulkBar.vue) with Select all, how many are selected, and
+  Several icons can be acted on at once. A copy that the server lacks, and
+  a server icon that the user may delete, have a checkbox. Above each list
+  is a row (BuilderBulkBar.vue) with Select all, how many are selected, and
   Add selected to server (the copies) or Delete selected (the server icons,
-  after one question). The rows of a list are one Tab stop, and the keys of
-  listSelection.js move through them and select (onListKeydown); Escape
-  with icons selected unselects them and leaves the dialog open. Every
-  change of a selection is said in the status region, as the page's live
+  after one question). The rows of a list are one Tab stop. The keys of
+  listSelection.js move through them and select (onListKeydown). Escape
+  with icons selected clears the selection and leaves the dialog open. The
+  status region says every change of a selection, because the page's live
   region waits while the dialog is open. What a batch left undone is listed
   under its row (BuilderBulkSummary.vue), in a summary that takes focus.
 
   The status and error regions are rendered, empty, from the start. Focus
-  moves to the new icon's Use after an upload, to the renamed icon's Rename
-  after a rename, to Upload icon… after a delete, and back to the button
-  that opened a form when the form closes, so it is never left on a control
-  that went.
+  moves:
+
+  - to the new icon's Use after an upload
+  - to the renamed icon's Rename after a rename
+  - to Upload icon… after a delete
+  - back to the button that opened a form when the form closes.
+
+  Thus focus is never left on a control that is gone.
 -->
 <template>
   <builder-dialog
@@ -554,13 +560,13 @@
   const renameText = ref('');
   let renameOpener = null;
   const filterText = ref('');
-  // What is under way: 'convert', 'upload', 'add', 'rename' or 'delete', or
-  // ''. A busy button keeps focus, so it can still be pressed, and is then
+  // What is in progress: 'convert', 'upload', 'add', 'rename' or 'delete',
+  // or ''. A busy button keeps focus, so it can still be pressed, and is then
   // ignored.
   const busy = ref('');
   // The server icon Delete asks about, or null.
   const deleting = ref(null);
-  // Set once the dialog has gone: an answer that comes later changes
+  // Set when the dialog closes. An answer that comes later changes
   // nothing.
   let closed = false;
 
@@ -735,7 +741,7 @@
       await focusRow('icon-library-list', icon.name, 'icon-use');
     } catch (caught) {
       if (!closed) {
-        // A taken name asks for another; the form stays.
+        // A taken name asks for another. The form stays.
         uploadNameError.value = true;
         error.set(library.failure(caught));
         uploadName.value?.focus();
@@ -766,7 +772,7 @@
           ? `Added ${answer.icon.name} to the server. The diagram drops its copy with its next edit.`
           : `The server already has this icon as ${answer.icon.name}.`,
       );
-      // Add to server went with the upload.
+      // Add to server is gone after the upload, so focus moves to Use.
       await focusRow('icon-diagram-list', icon.name, 'icon-use');
     } catch (caught) {
       if (!closed) {
@@ -897,8 +903,8 @@
 
   // --- selecting several icons ---------------------------------------------
 
-  // Whether the library has been read once: a read under way afterwards
-  // (after each change) keeps what the last one listed.
+  // Whether the library was read once. A later read in progress (after
+  // each change) keeps what the last read listed.
   const libraryRead = ref(library.state.status === 'ready');
 
   watch(
@@ -910,10 +916,10 @@
     },
   );
 
-  // The diagram's copies, of which those the server lacks can be added to
-  // it, and the server icons shown, of which those the user may delete can
-  // be deleted: each list keeps its own selection, by name, and its own
-  // Tab stop.
+  // Two lists: the diagram's copies (those the server lacks can be added
+  // to it), and the server icons shown (those the user may delete can be
+  // deleted). Each list keeps its own selection, by name, and its own Tab
+  // stop.
   const copies = reactive(
     useListSelection(diagram, (icon) => icon.name, {
       selectable: (icon) => rowSelectable('diagram', icon),
@@ -929,9 +935,9 @@
     library: { selection: served, items: shown, testid: 'icon-library-list' },
   };
 
-  // The batch under way, { list, label, done, total }, which its row shows,
-  // and what the last batch left undone, { list, heading, items }, under
-  // that row.
+  // The batch in progress, { list, label, done, total }, which its row
+  // shows. Also what the last batch left undone, { list, heading, items },
+  // under that row.
   const running = ref(null);
   const outcome = ref(null);
   let summary = null;
@@ -943,8 +949,8 @@
     copies.selected.filter((icon) => !onServer(icon)),
   );
 
-  // Every change of a selection is said, in the dialog's status: the page's
-  // live region waits while a dialog is open.
+  // The dialog's status says every change of a selection, because the
+  // page's live region waits while a dialog is open.
   function announceSelection(selection) {
     status.set(`${selection.count} of ${selection.total} selected.`);
   }
@@ -952,8 +958,8 @@
   // Whether Shift was held as a row's checkbox was pressed.
   const shift = shiftPress();
 
-  // A row's checkbox: with Shift, the range from the row last pressed
-  // becomes as the box now is.
+  // A row's checkbox. With Shift, every row in the range from the row last
+  // pressed takes the box's new state.
   function select(selection, icon, event) {
     selection.press(icon, {
       checked: event.target.checked,
@@ -977,8 +983,8 @@
       : Boolean(icon?.canDelete);
   }
 
-  // A row's name: its icon's, and for a row that can be selected whether it
-  // is.
+  // A row's name: its icon's name and, for a row that can be selected,
+  // whether it is selected.
   function rowLabelledBy(list, icon, index) {
     const name = `icon-name-${list}-${index}`;
 
@@ -1005,8 +1011,8 @@
   const SELECTING = ['extend', 'toggle', 'range', 'all', 'clear'];
 
   // The keys of a list of icons (see onListKeydown in listSelection.js):
-  // Escape with icons selected unselects them, and leaves the dialog open.
-  // While a change is under way the selection stays as it is.
+  // Escape with icons selected clears the selection and leaves the dialog
+  // open. While a change is in progress, the selection stays as it is.
   function onRowKeydown(event, list, index) {
     const { selection, items } = lists[list];
     const action = onListKeydown(event, {
@@ -1027,8 +1033,8 @@
     }
   }
 
-  // After a batch, focus that was on a control that went moves to Upload
-  // icon…, as after a delete.
+  // After a batch, focus on a control that is gone moves to Upload icon…,
+  // as after a delete.
   async function keepFocus() {
     await nextTick();
 
@@ -1044,9 +1050,9 @@
   // drafts page's endsBulk), and the icons not tried are listed as not
   // attempted.
   // What the run left undone is listed under the list's row, in a summary
-  // that takes focus; otherwise the status says what it came to
-  // (message(results), as runBulk gives them). `note(results)`, when there
-  // is one, is said in the status beside a summary too.
+  // that takes focus. Otherwise, the status says the result
+  // (message(results), as runBulk gives them). The status says
+  // `note(results)`, when there is one, also beside a summary.
   async function runOnIcons(
     list,
     icons,
@@ -1164,8 +1170,8 @@
     });
   }
 
-  // Delete selected asks once for the batch (WCAG 3.3.4); one icon alone is
-  // asked about as its own Delete asks.
+  // Delete selected asks once for the batch (WCAG 3.3.4). For one icon
+  // alone, it asks as that icon's own Delete asks.
   function askDeleteSelected() {
     const icons = served.selected;
 
@@ -1235,7 +1241,7 @@
   }
 
   /* A selected row has a bar in the accent color along its start. The
-     checked box is what says so; the bar only makes it easy to find. */
+     checked box is what says so. The bar only makes it easy to find. */
   .builder-icons__row.is-selected {
     box-shadow: inset 3px 0 0 var(--bx-accent);
   }

@@ -31,9 +31,9 @@ const (
 var ErrInvalidTemplateFile = errors.New("invalid template file")
 
 // TemplateFile is a collection of device templates as a file holds it, YAML
-// or JSON. The Builder writes one when it exports templates, imports one
-// into a user's library, and phenix reads every one in its template
-// directory at start as a read-only collection of the server's.
+// or JSON. The Builder writes one when it exports templates, and imports one
+// into the library of a user. At start, phenix reads every template file in
+// its template directory as a read-only collection of the server.
 type TemplateFile struct {
 	// Schema is [TemplateFileSchemaURI].
 	Schema string `json:"$schema"`
@@ -44,9 +44,9 @@ type TemplateFile struct {
 	// Templates are the collection's templates, in order.
 	Templates []TemplateFileTemplate `json:"templates"`
 	// Icons are copies of the custom icons the templates name, by icon name,
-	// as a downloaded Builder document carries them. A template may also
-	// name an icon the file does not carry, which the server's icon library
-	// is expected to hold.
+	// as a downloaded Builder document carries them. A template can also
+	// name an icon that the file does not carry. The icon library of the
+	// server is expected to hold that icon.
 	Icons map[string]Icon `json:"icons,omitempty"`
 }
 
@@ -83,8 +83,8 @@ func (e *TemplateFileError) Unwrap() error {
 // aliases, merge keys and a second document are refused. The content
 // decides, never the name of the file. Text that is empty or longer than
 // [MaxTemplateFileBytes], that does not decode strictly into a
-// [TemplateFile], or that [TemplateFile.Validate] refuses is an error
-// matching [ErrInvalidTemplateFile], which says why; a file that decodes but
+// [TemplateFile], or that [TemplateFile.Validate] refuses is an error that
+// matches [ErrInvalidTemplateFile] and tells why. A file that decodes but
 // does not validate gives a [TemplateFileError].
 func ParseTemplateFile(text []byte) (*TemplateFile, error) {
 	switch {
@@ -113,9 +113,9 @@ func ParseTemplateFile(text []byte) (*TemplateFile, error) {
 	return file, nil
 }
 
-// DecodeTemplateFile strictly decodes a template file from JSON: unknown
-// fields and trailing content are refused. The specs of its templates are
-// canonicalized as a document's are. It does not validate the file: see
+// DecodeTemplateFile strictly decodes a template file from JSON. It refuses
+// unknown fields and trailing content. It makes the specs of its templates
+// canonical, as for a document. It does not validate the file: see
 // [ParseTemplateFile].
 func DecodeTemplateFile(data []byte) (*TemplateFile, error) {
 	var file TemplateFile
@@ -156,8 +156,9 @@ func (t *TemplateFileTemplate) Template(id string) Template {
 //   - two templates whose names differ only in case,
 //   - custom icons [ValidateIcons] refuses, as a document's are refused.
 //
-// A template's custom icon may name an icon the file carries or one it does
-// not, which the server's icon library is expected to hold.
+// The custom icon of a template can name an icon that the file carries, or
+// an icon that the file does not carry. The icon library of the server is
+// expected to hold the second kind.
 func (f *TemplateFile) Validate() error {
 	if issues := f.Issues(); len(issues) > 0 {
 		return &TemplateFileError{Issues: issues}

@@ -1,22 +1,22 @@
-// Keyboard shortcuts: key specs, the platform's labels for them, matching
-// them against key presses, and the shortcuts each browser keeps for itself.
+// Keyboard shortcuts: key specs, the platform's labels for them, how they
+// match key presses, and the shortcuts that each browser keeps for itself.
 //
 // A key spec is a string of modifiers and one key joined by '+', such as
 // 'Mod+K', 'Mod+Shift+G', '?', '+', 'Shift+1' or 'Delete'. Modifiers are
 // Mod, Ctrl, Meta, Alt and Shift, in any order and case. Mod is the
-// platform's command key: ⌘ on macOS, Ctrl on Windows and Linux, and a Mod
-// shortcut does not also answer to the other one. The key is a letter, a
+// platform's command key: ⌘ on macOS, Ctrl on Windows and Linux. A Mod
+// shortcut does not also answer to the other key. The key is a letter, a
 // digit, one printable character, or a named key (Enter, Escape, Backspace,
 // Delete, Tab, Space, the arrows, Home, End, PageUp, PageDown, F1 to F12).
 //
-// Letters match on KeyboardEvent.key, so a shortcut follows the layout the
-// user types with. Digits, and any key pressed with Alt (Option changes the
-// character on macOS), match on KeyboardEvent.code, the physical key, so
-// Shift+1 is the same key on a QWERTY and an AZERTY keyboard. A character
-// such as '?' or '=' matches the character typed, whatever Shift or AltGr it
-// took to type it.
+// Letters match on KeyboardEvent.key, so a shortcut follows the layout that
+// the user types with. Digits, and any key pressed with Alt (Option changes
+// the character on macOS), match on KeyboardEvent.code, the physical key.
+// Thus Shift+1 is the same key on a QWERTY and an AZERTY keyboard. A
+// character such as '?' or '=' matches the typed character, whatever Shift
+// or AltGr it needed.
 //
-// Users can change the shortcuts, per browser: see "Customization" below.
+// Users can change the shortcuts, per browser. See "Customization" below.
 
 import { reactive, ref } from 'vue';
 
@@ -27,10 +27,11 @@ import { followStorageKey, pageStorage } from './storage.js';
  * The platform the keys are for: 'mac' (macOS and iPadOS, whose keyboards
  * have ⌘) or 'other' (Windows, Linux, ChromeOS).
  *
- * navigator.platform is read first: it names the machine the keys come from
- * even where the user agent is emulated (Playwright's device profiles report
- * Windows in the user agent and userAgentData on any host), so the labels and
- * the keys agree. userAgentData and the user agent are the fallbacks.
+ * The function reads navigator.platform first. It names the machine that
+ * the keys come from, even where the user agent is emulated. (Playwright's
+ * device profiles report Windows in the user agent and userAgentData on any
+ * host.) Thus the labels and the keys agree. userAgentData and the user agent
+ * are the fallbacks.
  *
  * @param {Navigator} [nav]
  * @returns {'mac'|'other'}
@@ -59,7 +60,7 @@ export function currentPlatform() {
 }
 
 /**
- * Overrides the detected platform (tests); null detects it again.
+ * Overrides the detected platform (tests). null detects it again.
  *
  * @param {'mac'|'other'|null} platform
  */
@@ -151,9 +152,10 @@ const NAMED_BY_LOWER = Object.fromEntries(
   Object.keys(NAMED).map((name) => [name.toLowerCase(), name]),
 );
 
-// The physical key of each unshifted US character, for matching one pressed
-// with Alt, and the unshifted key a shifted US character is typed with, for
-// aria-keyshortcuts (which names the keys pressed, not the character typed).
+// The physical key of each unshifted US character, to match a character
+// pressed with Alt. Also the unshifted key with which a shifted US character
+// is typed, for aria-keyshortcuts (which names the keys pressed, not the
+// typed character).
 const CHAR_CODES = {
   '-': 'Minus',
   '=': 'Equal',
@@ -201,8 +203,8 @@ const parsed = new Map();
  * @returns {{spec: string, key: string, kind: 'letter'|'digit'|'char'|'named',
  *   mod: boolean, ctrl: boolean, meta: boolean, alt: boolean,
  *   shift: boolean}|null} the parts, and the spec written the canonical way
- *   (modifiers in the order Mod, Ctrl, Meta, Alt, Shift); null when the spec
- *   is not one key with modifiers
+ *   (modifiers in the order Mod, Ctrl, Meta, Alt, Shift). null when the spec
+ *   is not one key with modifiers.
  */
 export function parseKey(spec) {
   if (typeof spec !== 'string' || !spec) {
@@ -247,13 +249,13 @@ function parseUncached(spec) {
     return null;
   }
 
-  // ⌘ and Ctrl are one key on each platform, so Mod with either is two
-  // names for one key on one platform and a different chord on the other.
+  // ⌘ and Ctrl are one key on each platform. Thus Mod with either is two
+  // names for one key on one platform, and a different chord on the other.
   if (flags.mod && (flags.ctrl || flags.meta)) {
     return null;
   }
 
-  // A character is what Shift typed; 'Shift+?' is '?'.
+  // A character is what Shift typed. 'Shift+?' is '?'.
   if (key.kind === 'char') {
     flags.shift = false;
   }
@@ -379,12 +381,12 @@ export function isCharacterKey(spec) {
 }
 
 /**
- * Whether a key types a character in a text field, which then keeps it: a
- * character key (isCharacterKey), and on macOS a letter, digit or character
- * pressed with Option, with or without Shift, but without ⌘ or ⌃ (⌥E is the
- * acute accent's dead key, ⌥/ types ÷). Alt types nothing on Windows and
- * Linux; AltGr, which they report as Ctrl+Alt, is refused as a shortcut
- * (keyRefusal).
+ * Whether a key types a character in a text field, which then keeps the key.
+ * This is a character key (isCharacterKey). On macOS, it is also a letter,
+ * digit or character pressed with Option, with or without Shift, but without
+ * ⌘ or ⌃ (⌥E is the dead key for the acute accent, ⌥/ types ÷). Alt types
+ * nothing on Windows and Linux. AltGr, which they report as Ctrl+Alt, is
+ * refused as a shortcut (keyRefusal).
  *
  * @param {string} spec
  * @param {'mac'|'other'} [platform]
@@ -456,8 +458,8 @@ export function matchesKey(event, spec, platform = currentPlatform()) {
 
   switch (parts.kind) {
     case 'letter':
-      // A layout without Latin letters, or Option, types something else;
-      // the physical key then decides.
+      // A layout without Latin letters, or Option, types something else.
+      // The physical key then decides.
       return !want.alt && asciiLetter(event.key)
         ? event.key.toUpperCase() === parts.key
         : event.code === `Key${parts.key}`;
@@ -480,7 +482,7 @@ export function matchesKey(event, spec, platform = currentPlatform()) {
 
 // --- labels ------------------------------------------------------------------
 
-// macOS writes modifiers as symbols in the order ⌃⌥⇧⌘; Windows and Linux
+// macOS writes modifiers as symbols in the order ⌃⌥⇧⌘. Windows and Linux
 // write them as words in the order Ctrl, Alt, Shift.
 const MAC_MODIFIERS = [
   ['ctrl', '⌃', 'Control'],
@@ -549,7 +551,8 @@ export function keyLabel(spec, platform = currentPlatform()) {
 
 /**
  * The label for running text: keyLabel, with named keys as words ('⌘A',
- * 'Return', 'Forward Delete'; 'Ctrl+A', 'Enter', 'Delete').
+ * 'Return', 'Forward Delete' on macOS, 'Ctrl+A', 'Enter', 'Delete'
+ * elsewhere).
  *
  * @param {string} spec
  * @param {'mac'|'other'} [platform]
@@ -588,11 +591,11 @@ const ARIA_MODIFIERS = [
  * percent sign "%" can be input by pressing Shift+5. The correct way to
  * specify this shortcut is "Shift+5". It is incorrect to specify "%" or
  * "Shift+%"." (WAI-ARIA 1.2, aria-keyshortcuts,
- * https://www.w3.org/TR/wai-aria-1.2/#aria-keyshortcuts; MDN's
- * aria-keyshortcuts page gives "Shift+2" for "@" the same way). So a
+ * https://www.w3.org/TR/wai-aria-1.2/#aria-keyshortcuts. MDN's
+ * aria-keyshortcuts page gives "Shift+2" for "@" in the same way.) Thus a
  * character typed with Shift is written as its US keys: '?' is 'Shift+/'
- * and '+' is 'Shift+='. Modifiers are UI Events key names and come first,
- * and the space bar is 'Space', as the definition asks.
+ * and '+' is 'Shift+='. Modifiers are UI Events key names and come first.
+ * The space bar is 'Space', as the definition requires.
  *
  * @param {string} spec
  * @param {'mac'|'other'} [platform]
@@ -729,10 +732,10 @@ const RESERVED_KEYS = [
   },
 ];
 
-// Keys that already move around and operate the Builder's controls. The
-// controls take them with modifiers too (⌘⌫ deletes on the canvas, ⇧↑ moves
-// nodes, ⌘Return selects an outline row), and before the view's shortcuts
-// see them, so none of them is a shortcut with any modifiers.
+// Keys that already move through and operate the Builder's controls. The
+// controls also take them with modifiers (⌘⌫ deletes on the canvas, ⇧↑ moves
+// nodes, ⌘Return selects an outline row), before the view's shortcuts get
+// them. Thus none of them is a shortcut with any modifiers.
 const OPERATING_KEYS = new Set([
   'Tab',
   'Enter',
@@ -752,8 +755,8 @@ const OPERATING_KEYS = new Set([
 ]);
 
 /**
- * Why the browser or the OS keeps a key from the page, if it does: the keys
- * no default shortcut may use and no user may choose.
+ * Why the browser or the OS keeps a key from the page, if it does. These are
+ * the keys that no default shortcut can use and no user can choose.
  *
  * @param {string} spec
  * @param {'mac'|'other'} [platform]
@@ -784,20 +787,21 @@ export function reservedReason(spec, platform = currentPlatform()) {
 }
 
 /**
- * Why a key cannot be chosen as a shortcut, if it cannot: a reserved key
- * (reservedReason), Ctrl+Alt on Windows and Linux (AltGr types characters
- * with it), a letter without Ctrl, ⌘ or Alt (typing, and screen reader
- * navigation keys), or a key the Builder's controls use, with any
- * modifiers. A command whose keys work only on the canvas may take a
- * letter (letters): the canvas takes the keys a screen reader's focus mode
- * passes it, as it takes the arrow keys, and the single-key switch turns
- * such a key off.
+ * Why a key cannot be chosen as a shortcut, if it cannot:
+ *   - a reserved key (reservedReason)
+ *   - Ctrl+Alt on Windows and Linux (AltGr types characters with it)
+ *   - a letter without Ctrl, ⌘ or Alt (typing, and screen reader navigation
+ *     keys)
+ *   - a key that the Builder's controls use, with any modifiers.
+ * A command whose keys work only on the canvas can take a letter (letters).
+ * The canvas takes the keys that a screen reader's focus mode passes to it,
+ * as it takes the arrow keys, and the single-key switch turns such a key off.
  *
  * @param {string} spec
  * @param {'mac'|'other'} [platform]
  * @param {object} [options]
- * @param {boolean} [options.letters] a letter alone may be chosen
- * @returns {string} the reason, or '' when the key may be chosen
+ * @param {boolean} [options.letters] a letter alone can be chosen
+ * @returns {string} the reason, or '' when the key can be chosen
  */
 export function keyRefusal(
   spec,
@@ -837,7 +841,7 @@ export function keyRefusal(
   if (parts.kind === 'named' && OPERATING_KEYS.has(parts.key)) {
     const alone = keyText(parts.key, platform);
 
-    // The key alone is named once; with modifiers, the key too.
+    // The key alone is named once. With modifiers, the key is also named.
     return label === keyLabel(parts.key, platform)
       ? `${label} already moves around or operates the Builder's controls.`
       : `${label} already moves around or operates the Builder's controls, which take ${alone} with any modifiers.`;
@@ -866,10 +870,9 @@ const CODE_CHARS = Object.fromEntries(
 );
 
 /**
- * The spec for a key press, for recording a new shortcut: the platform's
- * command key becomes Mod, and a key pressed with Alt is named by its
- * physical key. '' while only modifiers are down, or for a key no spec can
- * name.
+ * The spec for a key press, to record a new shortcut. The platform's command
+ * key becomes Mod, and a key pressed with Alt is named by its physical key.
+ * '' while only modifiers are down, or for a key that no spec can name.
  *
  * @param {KeyboardEvent} event
  * @param {'mac'|'other'} [platform]
@@ -924,10 +927,10 @@ export function eventToKey(event, platform = currentPlatform()) {
 // Shortcuts are customized per browser, under this key in localStorage:
 //   { "keys": { "<command id>": ["Mod+Shift+L"], "<command id>": [] },
 //     "singleKeys": false }
-// A command listed under "keys" uses those keys instead of its defaults; an
+// A command listed under "keys" uses those keys instead of its defaults. An
 // empty list leaves it without a shortcut. "singleKeys": false turns off every
 // shortcut that is one character (isCharacterKey). Storage that is blocked or
-// full is not an error: the settings then last as long as the page.
+// full is not an error. The settings then last as long as the page.
 export const SHORTCUTS_STORAGE_KEY = 'phenix.builder.shortcuts';
 
 /**
@@ -943,7 +946,7 @@ function cleanKeys(keys) {
 }
 
 /**
- * Reads the customization; anything unreadable is left at the defaults.
+ * Reads the customization. Anything unreadable stays at the defaults.
  *
  * @param {Storage|null} [storage] localStorage by default
  */
@@ -985,20 +988,20 @@ function saveShortcutSettings(storage) {
 }
 
 /**
- * The keys a command was given in place of its defaults.
+ * The keys that a command got in place of its defaults.
  *
  * @param {string} id command id
- * @returns {string[]|undefined} undefined when it keeps its defaults; [] when
- *   it was left without a shortcut
+ * @returns {string[]|undefined} undefined when it keeps its defaults. []
+ *   when it has no shortcut.
  */
 export function shortcutOverride(id) {
   return keymapState.overrides[id];
 }
 
 /**
- * Gives a command these keys in place of its defaults; [] leaves it without
+ * Gives a command these keys in place of its defaults. [] leaves it without
  * a shortcut. Invalid specs are dropped. Check keyRefusal and conflicts
- * first: this stores what it is given.
+ * first, because this function stores what it gets.
  *
  * @param {string} id command id
  * @param {string[]} keys

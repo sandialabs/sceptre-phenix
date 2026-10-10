@@ -7,23 +7,24 @@
   closes the dialog and selects its node or connection (see goToIssue in
   store.js): focus moves to the Inspector field the issue names, or else to
   the element on the canvas, which pans it into view. The button is always
-  there, so the header does not shift as the first issue comes or the last
-  one goes. Its text changes with every edit and is not a live region: the
-  Inspector announces the errors an edit makes, and the counts are read
-  when the button is.
+  there, so the header does not shift when the first issue comes or the
+  last one goes. Its text changes with every edit and is not a live region:
+  the Inspector announces the errors an edit makes, and screen readers read
+  the counts with the button.
 
-  Drive images are checked against the disk images the server has, so the
-  editor reads them here as it opens, and again when the page comes back into
-  view after a while, since images are added elsewhere.
+  The checks compare drive images with the disk images on the server. So
+  the editor reads the server's images here when it opens, and again when
+  the page shows again after a while, because users add images elsewhere.
 
   Below the issues, Preflight asks the server to check the saved draft
-  against the cluster and the server (see preflight.js): the checks ticked,
-  none at first, then the last ones ticked in this browser. The report is
-  kept here, outside the dialog, so it is still there when the dialog opens
-  again or after Go to on one of its issues, until the diagram changes.
-  What the checks came to is said in the dialog's own status region, since
-  the page behind a modal dialog is inert, or through the editor's live
-  region when the dialog was closed before they were done.
+  against the cluster and the server (see preflight.js). It runs the ticked
+  checks: none at first, then the last ones ticked in this browser. This
+  component keeps the report outside the dialog, so the report is still
+  there when the dialog opens again or after Go to on one of its issues,
+  until the diagram changes. The dialog's own status region announces the
+  result of the checks, because the page behind a modal dialog is inert.
+  When the dialog closed before the checks finished, the editor's live
+  region announces the result.
 -->
 <template>
   <button
@@ -144,8 +145,8 @@
         }}</span>
       </p>
 
-      <!-- The page behind the dialog is inert, so what the checks came to
-           is said here, in a region the dialog holds from the start. -->
+      <!-- The page behind the dialog is inert, so this region announces the
+           result of the checks. The dialog holds it from the start. -->
       <p
         class="builder-dialog__message"
         role="status"
@@ -222,7 +223,7 @@
 
   const store = useBuilderStore();
 
-  // Told apart by shape as well as color.
+  // The severities differ by shape as well as color.
   const ICONS = { error: 'close', warning: 'warning' };
   // Each status of a preflight check, by shape as well as by its words.
   const STATUS_ICONS = {
@@ -309,7 +310,7 @@
   );
 
   // The experiments the server listed as sources, which the name field
-  // suggests; any other name may be typed.
+  // suggests. The user can also type any other name.
   const experiments = computed(() => [
     ...new Set(
       (store.sources?.experiments || [])
@@ -333,9 +334,9 @@
     })),
   );
 
-  // Changes to the diagram, but its stamp, which a save writes back. A
-  // report on an earlier diagram is dropped, and one still on its way is
-  // not shown.
+  // Changes to the diagram, except its stamp, which a save writes back.
+  // This drops a report on an earlier diagram, and does not show a report
+  // still on its way.
   let edits = 0;
 
   watch(
@@ -400,9 +401,9 @@
 
   // --- disk images -----------------------------------------------------------
 
-  // The images are read as the editor opens, and again when the page comes
-  // back into view once they are a while old. Reading them asks minimega
-  // about every image file, so not every time.
+  // The editor reads the images when it opens, and again when the page
+  // shows again after they are a while old. Each read asks minimega about
+  // every image file, so it does not happen every time.
   const DISKS_STALE_MS = 30000;
   let disksReadAt = 0;
 

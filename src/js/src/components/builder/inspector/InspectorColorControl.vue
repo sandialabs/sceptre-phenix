@@ -9,7 +9,7 @@
   through (WAI-ARIA APG toolbar), each named by its color's name and value
   and pressed while it is the field's color. A native color input takes any
   other color, and No color empties the field. A choice goes into the text
-  field as a hex color ("#2f6fbf"), as typing it would, and commits; the
+  field as a hex color ("#2f6fbf"), as typing it would, and commits. The
   picker then closes and focus returns to the swatch button. Escape closes
   it too, and so do a click outside it and Tab out of it.
 
@@ -25,8 +25,8 @@
   "Fill Color picker"), so the pickers of a form with several colors are
   told apart.
 
-  The picker is scrolled into view as it opens, so at phone width it does
-  not open below the window.
+  The picker scrolls into view as it opens, so at phone width it does not
+  open below the window.
 -->
 <template>
   <inspector-field

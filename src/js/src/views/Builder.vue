@@ -100,7 +100,7 @@
 
     <template v-else>
       <div ref="editorHeader" class="builder-header">
-        <!-- The name below shows the diagram name; the heading gives the
+        <!-- The name below shows the diagram name. The heading gives the
              view a title and takes focus when the editor opens. -->
         <h1 ref="editorHeading" class="builder-visually-hidden" tabindex="-1">
           {{ diagramName
@@ -108,12 +108,12 @@
           – Builder
         </h1>
         <!-- Back to drafts, the name, and who shared the draft, at the
-             start; the counts in the middle; the actions at the end. -->
+             start. The counts in the middle. The actions at the end. -->
         <div class="builder-header__start">
           <!-- While it waits for the saves, then for the lists: a turning
                ring in place of the arrow (reduced motion stops it turning)
-               and what it waits for. The labels hold the button's width;
-               the hidden ones are not named. -->
+               and what it waits for. The labels hold the button's width.
+               The hidden ones do not name the button. -->
           <button
             type="button"
             class="builder-button"
@@ -198,7 +198,7 @@
              tooltip says what it resets, with the command's keys, if it has
              any, as the toolbar's do. Reset view keeps its label as long as
              Commands does, and in a narrow header shows only its icon (see
-             .builder-header__label in builder.css); its label stays as its
+             .builder-header__label in builder.css). Its label stays as its
              name. The save state is in the toolbar. -->
         <div class="builder-header__actions">
           <builder-checks />
@@ -270,7 +270,7 @@
               : 'This draft changed on the server'
           }}
         </h2>
-        <!-- The alert stays unchanged while the panel is open; the count
+        <!-- The alert stays unchanged while the panel is open. The count
              below changes with every edit and must not be re-announced. -->
         <p role="alert">{{ conflictMessage }}</p>
         <p>
@@ -301,7 +301,7 @@
             @click="resolving || (dialog = 'merge')">
             Review and merge
           </button>
-          <!-- Saving a new draft needs a role that may create one; without
+          <!-- Saving a new draft needs a role that may create one. Without
                it, Download keeps a copy. -->
           <button
             v-if="store.canCreateDrafts"
@@ -477,7 +477,7 @@
     </template>
 
     <!-- The headers' tooltips, in the editor and on the drafts. Their text
-         reaches screen readers as the buttons' names and descriptions; the
+         reaches screen readers as the buttons' names and descriptions. The
          tooltips themselves are aria-hidden. -->
     <span
       v-for="(entry, key) in headerTips"
@@ -512,7 +512,7 @@
       :left-out="bulkShare.leftOut"
       @shared="deselectShared"
       @close="dialog = ''" />
-    <!-- Upload, on the landing and in the toolbar; Import, on the landing
+    <!-- Upload, on the landing and in the toolbar. Import, on the landing
          only. -->
     <upload-dialog
       v-if="dialog === 'upload'"
@@ -536,11 +536,11 @@
       v-if="dialog === 'group-pattern'"
       @close="dialog = ''" />
     <!-- Add a connection and Move to a group, from the toolbar's buttons
-         and the palette's commands; each opens on the selection. -->
+         and the palette's commands. Each opens on the selection. -->
     <connect-dialog v-if="dialog === 'connect'" @close="dialog = ''" />
     <regroup-dialog v-if="dialog === 'regroup'" @close="dialog = ''" />
     <!-- The template editor, from the palette's "+" and the menu of a
-         template of the diagram, and from the command palette; and, for a
+         template of the diagram, and from the command palette. For a
          template of the user's library, from the Node Templates tab. -->
     <template-dialog
       v-if="dialog === 'template' && templateRequest"
@@ -583,7 +583,7 @@
       @close="dialog = ''" />
 
     <!-- Leaving a draft whose edits the server does not have yet, or the
-         Inspector cannot apply, asks first (see leave.js); so does leaving
+         Inspector cannot apply, asks first (see leave.js). So does leaving
          the Builder while drafts closed before are still being saved. -->
     <builder-confirm
       v-if="leaving"
@@ -785,7 +785,7 @@
   // What the command palette shows first: a query ('@' for Go to node) or
   // the choices of one command (its id), as commandView.openPalette asked.
   const paletteRequest = ref({ query: '', command: '' });
-  // The minimap as the settings have it; the toolbar's toggle changes it
+  // The minimap as the settings have it. The toolbar's toggle changes it
   // until the next diagram opens.
   const showMinimap = ref(editorSettings.showMinimap);
   // Motion is reduced as the system asks, or always if the settings say so.
@@ -850,8 +850,8 @@
   // The header shows the diagram name as text. Edit diagram name puts a
   // field in its place, holding the name selected, which keeps what the
   // user types however the diagram changes meanwhile. Enter, or leaving the
-  // field, renames the diagram (see rename); Escape keeps the name. Enter
-  // and Escape give focus back to the pencil and say what happened; leaving
+  // field, renames the diagram (see rename). Escape keeps the name. Enter
+  // and Escape give focus back to the pencil and say what happened. Leaving
   // the field leaves focus where it went, as the outline's rename does.
   const editingName = ref(false);
   const nameField = ref('');
@@ -925,14 +925,14 @@
     finishNameEdit(false);
   }
 
-  // Another diagram, or the drafts, take the field away unsaved.
+  // Another diagram, or the drafts, remove the field without a save.
   watch([editing, () => store.openedSeq], () => {
     editingName.value = false;
   });
 
   // Dismissing the page alert, or clearing it any other way, removes the
-  // focused Dismiss button with it; focus moves on to what follows it
-  // rather than falling to <body> (WCAG 2.4.3).
+  // focused Dismiss button with it. Focus moves to what follows it and
+  // does not fall to <body> (WCAG 2.4.3).
   watch(
     () => store.error,
     (now) => {
@@ -1093,7 +1093,7 @@
   const sharedCard = ref(null);
 
   // The draft Share is for: in the editor the open one, which only its
-  // owner may share; on the landing the card's.
+  // owner may share. On the landing, the card's.
   const shareTarget = computed(() => {
     const draft = editing.value
       ? store.canShare && store.draftId
@@ -1170,8 +1170,8 @@
   }
 
   // The listing in flight, when the last one finished, and the page alert a
-  // failed listing raised. The lists show "Loading…" until they are first
-  // read; later reads keep them on screen, and announce nothing.
+  // failed listing raised. The lists show "Loading…" until the first read.
+  // Later reads keep them on screen, and announce nothing.
   let listing = null;
   let listedAt = 0;
   let listingErrorSeq = 0;
@@ -1216,13 +1216,13 @@
     }
   }
 
-  // The lists are read again whenever they come back into view, since drafts
-  // are created, shared and published elsewhere meanwhile: when the landing
-  // replaces the editor, and when the browser tab or window comes back to
-  // the front. focus and visibilitychange often arrive together, so the read
-  // waits a moment. A read asked for while another is under way waits for it
-  // to end and is then made once: the one under way may have started before
-  // whatever changed. None is made while a dialog is open, or while the page
+  // The lists are read again whenever they show again, because users create,
+  // share and publish drafts elsewhere meanwhile: when the landing replaces
+  // the editor, and when the browser tab or window is in front again. focus
+  // and visibilitychange often arrive together, so the read waits a moment.
+  // A read asked for while another is in progress waits for it to end and
+  // is then made once: the one in progress may have started before whatever
+  // changed. None is made while a dialog is open, or while the page
   // alert shows something other than a failed listing: a listing clears the
   // alert, which the user has not dismissed yet. While the editor is open,
   // only the template library is read again, for its palette: templates are
@@ -1277,7 +1277,7 @@
     }
   });
 
-  // Runs one of the ways to make or open a draft, unless one is under way:
+  // Runs one of the ways to make or open a draft, unless one is in progress:
   // a double click must not make two drafts.
   async function whileBusy(work) {
     if (busy.value) {
@@ -1332,8 +1332,8 @@
 
   /**
    * Resolves once the browser has painted what changed so far, so a busy
-   * button shows its spinner before a large diagram's long first render; at
-   * once in a hidden tab, which paints nothing.
+   * button shows its spinner before a large diagram's long first render.
+   * Resolves at once in a hidden tab, which paints nothing.
    *
    * @returns {Promise<void>}
    */
@@ -1369,7 +1369,7 @@
 
   // Opens a listed draft or diagram with `open`, while its Open says so, as
   // the live region does if it takes a while. The editor's heading takes
-  // focus once it shows (see the watch on editing); a failure leaves the
+  // focus once it shows (see the watch on editing). A failure leaves the
   // landing, and focus, as they were, and the page alert says why.
   function openListed(item, name, open) {
     return whileBusy(async () => {
@@ -1400,8 +1400,8 @@
 
     return openListed(item, name, async () => {
       if (item.owner && item.id) {
-        // Its saves in the background end, and the draft's own queue takes
-        // over what is left (see createBackgroundSaves).
+        // Its saves in the background end, and the draft's own queue sends
+        // what is left (see createBackgroundSaves).
         await background.release(item.owner, item.id);
 
         return store.loadDraft(item.owner, item.id);
@@ -1412,8 +1412,8 @@
   }
 
   // Edits the published diagram shown read only, in the user's draft of it
-  // or a new one. The panel and its button go, so focus moves on to the
-  // editor's heading; a failure leaves both, and the page alert says why.
+  // or a new one. The panel and its button disappear, so focus moves to the
+  // editor's heading. A failure leaves both, and the page alert says why.
   function editPublished() {
     return whileBusy(async () => {
       if (await store.editPublished()) {
@@ -1427,7 +1427,7 @@
   // editor, and opens the Publish dialog on the drafts, which reads the
   // draft from the store. The card's button says it is loading, as the live
   // region does if it takes a while. The draft's saves in the background
-  // end first, and its own queue takes over what is left, as when it is
+  // end first, and its own queue sends what is left, as when it is
   // opened. A draft that cannot be loaded, or that the user may no longer
   // change, opens nothing, and the page alert says why.
   function publishListed(item, label = '') {
@@ -1480,17 +1480,17 @@
     });
   }
 
-  // Hands back the draft a card's Publish loaded, or began to load: what
-  // its queue has not sent goes on being sent in the background, as after
-  // Back to drafts (see sendInBackground), and the store is left with no
-  // draft, as the drafts have it.
+  // Releases the draft a card's Publish loaded, or began to load: its queue
+  // continues to send what is left in the background, as after Back to
+  // drafts (see sendInBackground). The store is left with no draft, as the
+  // drafts have it.
   function releaseListed() {
     publishedCard.value = null;
     sendInBackground();
     store.newDocument({ name: 'Untitled topology' });
   }
 
-  // Resolves once no publish is under way.
+  // Resolves once no publish is in progress.
   function publishSettled() {
     if (!store.publishing) {
       return Promise.resolve();
@@ -1511,9 +1511,9 @@
 
   // The dialog a card's Publish opened has closed: the draft is handed
   // back (see releaseListed), and the lists are read again, for the card's
-  // time, the published diagram and its Exp. A publish still under way
+  // time, the published diagram and its Exp. A publish still in progress
   // ends first, as its answer is the loaded draft's, and nothing else is
-  // made or opened meanwhile; a failure it ends with after the dialog
+  // made or opened meanwhile. A failure it ends with after the dialog
   // closed stays in the page alert. The dialog gives focus back to the
   // card's Publish.
   let unloading = false;
@@ -1561,7 +1561,7 @@
   });
 
   // The dialog's Open draft: the draft stays loaded, and the editor shows
-  // it, where its errors, a conflict or a save that failed are put right.
+  // it, where the user can fix its errors, a conflict or a save that failed.
   // The editor's heading takes focus (see the watch on editing). Go to on
   // one of the dialog's issues opens the editor the same way and asks for
   // the issue at once (see goToIssue): the editor acts on the request once
@@ -1582,7 +1582,7 @@
   // is read first, as its page would read it, and the page is told the
   // answer: one deleted since the Builder read its name leaves the Builder
   // as it is, and the page alert says so. Leaving the editor saves and asks
-  // as following any link does (see onBeforeRouteLeave); Stay keeps the
+  // as following any link does (see onBeforeRouteLeave). Stay keeps the
   // editor, and gives focus back to the button.
   let openingExperiment = false;
 
@@ -1610,8 +1610,8 @@
   }
 
   // BuilderDrafts has asked for confirmation already, naming the draft as
-  // its card does (label); the announcement uses the same name. The store
-  // refreshes the list after a delete; refreshing here too would clear the
+  // its card does (label). The announcement uses the same name. The store
+  // refreshes the list after a delete. A refresh here too would clear the
   // error of a delete that failed.
   async function deleteDraft(item, label) {
     await background.release(item.owner, item.id);
@@ -1629,7 +1629,7 @@
   // user's library holds. Its panel is BuilderTemplates.vue.
   const templatesTab = computed(() => ({ count: store.ownTemplates.length }));
 
-  // The batch under way on the selection of a tab of the drafts page, which
+  // The batch in progress on the selection of a tab of the drafts page, which
   // its row shows: { tab, label, done, total }. And what the last batch
   // left undone, listed on its tab until it is dismissed or the next batch
   // starts: { tab, heading, items }, each item { key, name, reason }.
@@ -1642,13 +1642,13 @@
 
   // Runs a batch on the selected items with `run`, which is told how far it
   // is. BuilderDrafts has asked once for a batch that deletes. Nothing else
-  // is made, opened or deleted meanwhile; the row of the tab says how far
-  // the batch is (label: "Deleting 2 of 5…"), as the live region says what
-  // it is doing if it takes a while. When every item is done the live
-  // region says so ("Deleted 5 drafts."). When some are not, they are
-  // listed with why in a summary on the tab, which takes focus (see
-  // BuilderDrafts.vue), and stay selected, for the batch to try them again;
-  // the page alert is not used.
+  // is made, opened or deleted meanwhile. The row of the tab shows the
+  // progress of the batch (label: "Deleting 2 of 5…"), as the live region
+  // says what it is doing if it takes a while. When every item is done, the
+  // live region says so ("Deleted 5 drafts."). When some are not, a summary
+  // on the tab lists them with why, and takes focus (see BuilderDrafts.vue).
+  // They stay selected, for the batch to try them again. The page alert is
+  // not used.
   function runSelected({ tab, items, names, noun, plural, label, done, run }) {
     return whileBusy(async () => {
       const total = items.length;
@@ -1748,8 +1748,8 @@
     });
   }
 
-  // Share selected: the dialog shares the drafts, and says what came of it.
-  // A summary of an earlier batch goes: its drafts may be among these.
+  // Share selected: the dialog shares the drafts, and says the result. A
+  // summary of an earlier batch disappears: its drafts may be among these.
   function shareSelected(items, names = {}, leftOut = 0) {
     if (busy.value || !items.length) {
       return;
@@ -1760,7 +1760,7 @@
     dialog.value = 'bulk-share';
   }
 
-  // The drafts the dialog shared are no longer selected; those it could not
+  // The drafts the dialog shared are no longer selected. Those it could not
   // share stay selected, for Share selected to try them again.
   function deselectShared(items) {
     drafts.value?.deselect('mine', items.map(cardKey));
@@ -1783,7 +1783,7 @@
     focusAfterConflict();
   }
 
-  // The panel and its buttons are gone once a conflict is resolved; focus
+  // The panel and its buttons are gone once a conflict is resolved. Focus
   // goes to the editor heading instead of falling to <body>. A failed
   // attempt keeps the panel, and focus returns to its heading.
   function focusAfterConflict() {
@@ -1827,7 +1827,7 @@
       // A token the dialog gives is the draft's: a legacy diagram converted
       // without a topology names no config for one to be made from. A copy
       // of a stored topology, or one combined with its included topologies,
-      // is linked to no config, so its draft has no token; one made from a
+      // is linked to no config, so its draft has no token. One made from a
       // config file is still an upload's.
       const sourceToken =
         result.sourceToken ||
@@ -1841,7 +1841,7 @@
 
       // An Import, and an Upload that converted a legacy diagram, say what
       // they made once the draft exists (see ImportDialog and
-      // UploadDialog); any other Upload has said so already. Each names
+      // UploadDialog). Any other Upload has said so already. Each names
       // the file it read, when it read one, which the draft records.
       ready = Boolean(
         await store.createDraft({
@@ -1860,9 +1860,9 @@
   // Combine included nodes into a new draft: leaves the open draft, as
   // Upload does, for a copy of it in which the nodes of its included
   // topologies can be changed (see combineIncluded in the store). The
-  // Inspector's button goes with the node it was shown for, so focus moves
-  // on to the editor's heading. A draft that cannot be made leaves the
-  // drafts page, where the page alert says why; the draft that was open is
+  // Inspector's button disappears with the node it was shown for, so focus
+  // moves to the editor's heading. A draft that cannot be made leaves the
+  // drafts page, where the page alert says why. The draft that was open is
   // still listed.
   async function combineIncluded() {
     if (!(await mayLeave())) {
@@ -1890,7 +1890,7 @@
     return true;
   }
 
-  // The saves of drafts closed for the drafts, which go on in the
+  // The saves of drafts closed for the drafts, which continue in the
   // background, and what each card says of them (see
   // createBackgroundSaves). Once a draft's are done, the lists are read
   // again, for the time it changed.
@@ -1924,8 +1924,8 @@
   const leavingScope = ref('');
 
   // Leaving saves what the Inspector holds unapplied and waits for the save
-  // (see leave.js); the question is asked only when some of it is not
-  // saved yet. Back to drafts does not wait: the save goes on in the
+  // (see leave.js). The question is asked only when some of it is not
+  // saved yet. Back to drafts does not wait: the save continues in the
   // background.
   const leaveGuard = createLeaveGuard({
     store,
@@ -1992,7 +1992,7 @@
   }
 
   // A save that lands while the question is asked leaves nothing to lose:
-  // leaving goes ahead, rather than asking about no changes. Edits the
+  // leaving continues, and does not ask about no changes. Edits the
   // Inspector cannot apply stay unsaved.
   watch(
     () =>
@@ -2013,8 +2013,8 @@
   }
 
   // So does following a link out of the Builder. A logout has ended the
-  // Builder session already (see endBuilderSession) and is not held up;
-  // with an expired token, the router shows the logout's warning instead.
+  // Builder session already (see endBuilderSession) and is not stopped.
+  // With an expired token, the router shows the logout's warning instead.
   onBeforeRouteLeave(() => leaveGuard.mayFollowLink());
 
   // Upload makes a new draft, which leaves this one.
@@ -2025,12 +2025,12 @@
   }
 
   // Publish and Download read the whole diagram, so what the Inspector holds
-  // unapplied is saved first; edits it cannot apply, the dialog names in
-  // place of leaving them out.
+  // unapplied is saved first. The dialog names the edits the Inspector
+  // cannot apply, and does not leave them out.
   const READS_DIAGRAM = ['publish', 'download'];
   const unappliedBefore = ref(null);
   // The format the Download dialog downloads as it opens, for the palette's
-  // commands that name one ('png'); '' when it opens to offer them all.
+  // commands that name one ('png'). '' when it opens to offer them all.
   const downloadStart = ref('');
 
   // What the template editor opens on: its mode, the template it starts
@@ -2067,7 +2067,7 @@
   // template of the diagram that `id` names. 'diagram-new' starts a new
   // one from the selected device, when exactly one device is selected,
   // named after it and without its VLANs, which say what it is connected
-  // to here; else from a plain device, with no name. The device is read
+  // to here. Otherwise from a plain device, with no name. The device is read
   // as the diagram has it, so what the Inspector holds unapplied for it is
   // saved first, as before the diagram is read whole. Returns whether
   // there is a template to open the editor on.
@@ -2180,13 +2180,13 @@
   }
 
   // Back to drafts. What the Inspector holds unapplied is saved, and what
-  // is not sent yet goes on being sent in the background (see mayClose and
+  // is not sent yet continues to be sent in the background (see mayClose and
   // sendInBackground), the draft's card saying how it goes. Only when this
   // device cannot keep it is it sent first, which the button says, as the
   // live region does if it takes a while. The landing then replaces the
   // editor, and focus moves from the button straight to the closed draft's
   // card, or the published diagram's: at once when the lists hold it,
-  // while they are read again behind the landing; otherwise once they are
+  // while they are read again behind the landing. Otherwise once they are
   // read, which the button says too. Staying gives the button back. Asked
   // twice at once, it closes once.
   let closeRun = null;
@@ -2248,7 +2248,7 @@
     }
   }
 
-  // The closed draft's queue goes on sending what is left, in the
+  // The closed draft's queue continues to send what is left, in the
   // background (see createBackgroundSaves). One with nothing left stops,
   // and the other tabs hear that the draft is no longer open here.
   function sendInBackground() {
@@ -2298,7 +2298,7 @@
     }
   }
 
-  // The theme button of both headers shows the theme in use; its name and
+  // The theme button of both headers shows the theme in use. Its name and
   // tooltip say what a press changes it to (see nextTheme).
   const THEMES = {
     system: { icon: 'system', label: 'System' },
@@ -2337,7 +2337,7 @@
       formatTimestamp(value, { seconds: true }),
     ),
   );
-  // The choice is being carried out.
+  // Whether the dialog is applying the choice now.
   const choosing = ref(false);
 
   // Another tab opening the draft, or the draft opening while another tab
@@ -2429,7 +2429,7 @@
     },
   );
 
-  // Saves the version the user chose; the others are kept as new drafts, or
+  // Saves the version the user chose. The others are kept as new drafts, or
   // deleted from this browser for a role that cannot make drafts, which the
   // dialog says first (see applyChoice). The dialog stays open, busy, until
   // it is done. Focus then goes back where it was, or to the editor's
@@ -2517,8 +2517,8 @@
   // Per button: the tooltip's text, the description screen readers get in
   // its place, and aria-keyshortcuts. Reset view's says what it resets, with
   // its keys if the user gave it some, and names the button too while it
-  // shows only its icon (iconText); Shortcuts' and Settings' name what they
-  // open and describe the buttons with their keys; Help's repeats its name;
+  // shows only its icon (iconText). Shortcuts' and Settings' name what they
+  // open and describe the buttons with their keys. Help's repeats its name.
   // Focus mode's, always an icon, names the button and says what a press
   // does.
   const RESET_TIP = 'Reset column widths, zoom, minimap and scrolling';
@@ -2573,7 +2573,7 @@
         description: focus,
         aria: ariaShortcuts('view.focusMode'),
       },
-      // Commands' names the palette; the theme's says what a press does,
+      // Commands' names the palette. The theme's says what a press does,
       // and names the button too while it shows only its icon.
       commands: {
         text: withShortcut('Command palette', 'palette.open'),
@@ -2627,7 +2627,8 @@
   // The header button whose tooltip is shown, and the text it showed.
   let shown = null;
 
-  // Read when shown, so a tooltip follows the keys and the header's width.
+  // Read when the tooltip shows, so it follows the keys and the header's
+  // width.
   // The pointer leaving a button hides only that button's tooltip: when
   // focus mode's full screen moves the header's buttons, one can leave the
   // pointer while another, which has focus, shows its tooltip.
@@ -2644,10 +2645,11 @@
     });
   }
 
-  // A press from the keyboard leaves a tooltip up, and a press of the theme
+  // A press from the keyboard keeps a tooltip open, and a press of the theme
   // or Focus mode changes what the button does next, so the tooltip changes
-  // with it; only while it is still that button's, and the button still has
-  // focus or the pointer, so a pending hide is not cancelled.
+  // with it. This happens only while the tooltip is still that button's, and
+  // the button still has focus or the pointer, so a pending hide is not
+  // cancelled.
   watch(headerTips, () => {
     const target = shown?.target;
 
@@ -2712,10 +2714,10 @@
   /**
    * Reset view: the editor's view as a new session shows it. The side
    * columns show, at their default widths, and the widths stored for them
-   * are forgotten; the minimap shows or hides as the settings have it, at
-   * its default size; the panels scroll to the top; the sections that open
-   * (the Inspector's More settings) close; and the canvas has the zoom and
-   * pan it opens with. The diagram, its undo history and the settings are
+   * are forgotten. The minimap shows or hides as the settings have it, at
+   * its default size. The panels scroll to the top. The sections that open
+   * (the Inspector's More settings) close. The canvas has the zoom and pan
+   * it opens with. The diagram, its undo history and the settings are
    * left as they are. Focus stays where it is, unless a section that closes
    * held it: it moves to that section's summary rather than to <body>.
    */
@@ -2766,8 +2768,8 @@
    * Configs page leads.
    *
    * A topology with a published diagram opens in the draft that published
-   * it, when that draft is the user's or shared with them for editing;
-   * else in their draft made from the diagram, or a new one (see
+   * it, when that draft is the user's or shared with them for editing.
+   * Otherwise in their draft made from the diagram, or a new one (see
    * openPublishedDocument). A role that may not create drafts, and has
    * none of these, views the diagram read only.
    *
@@ -2860,8 +2862,8 @@
 
   // Where the address names a diagram, it follows the draft that is open,
   // so a reload reopens that draft, edits and all, rather than making
-  // another from the published diagram. Leaving the editor drops it;
-  // a published diagram shown read only keeps the link that opened it.
+  // another from the published diagram. Leaving the editor drops it. A
+  // published diagram shown read only keeps the link that opened it.
   watch(
     () => {
       if (!editing.value) {
@@ -2918,13 +2920,13 @@
   // Go to, from a list of checks (see goToIssue in store.js), which has
   // selected the node or connection: the Inspector shows, and the element
   // comes into view. The Inspector moves focus to the field the issue names
-  // (see BuilderInspector.vue); with no field, focus moves to the element on
+  // (see BuilderInspector.vue). With no field, focus moves to the element on
   // the canvas. Focus there is shown as keyboard focus, whatever pressed Go
   // to: the canvas pans only such focus into view, and it marks where focus
   // went. The page does not scroll to the focused element, which would
-  // scroll the canvas's own clipped layers; in the narrow stacked layout the
+  // scroll the canvas's own clipped layers. In the narrow stacked layout the
   // canvas can be below the fold, so the page scrolls the canvas into view
-  // first. Should the element not be drawn, focus stays where the dialog
+  // first. If the element is not drawn, focus stays where the dialog
   // gave it back. It runs once the view is drawn, so a request made as the
   // editor opens finds its columns and its canvas.
   watch(
@@ -3072,7 +3074,7 @@
       showMinimap.value = !showMinimap.value;
     },
     // A setting, kept as the Settings dialog keeps it. The notes only show
-    // or go, so the change is said.
+    // or hide, so the change is announced.
     toggleNodeNotes() {
       const show = !editorSettings.showNodeNotes;
 
@@ -3122,7 +3124,7 @@
   provide('builderCommands', commandContext);
 
   // Every shortcut of the view, on the landing and in the editor, goes
-  // through the one dispatcher; see SCOPES in commands.js for where each
+  // through the one dispatcher. See SCOPES in commands.js for where each
   // works. Controls with keys of their own (canvas items, outline rows, the
   // toolbar's arrows, dialogs) handle those first.
   function onGlobalKeydown(event) {
@@ -3219,9 +3221,9 @@
       gap: 0.75rem;
     }
 
-    /* The start gives way down to Back to drafts whole, an 8rem name and
-       who shared the draft on one line, as the header's own items do in a
-       narrower header; then the header wraps. */
+    /* The start shrinks to Back to drafts whole, an 8rem name and who
+       shared the draft on one line, as the header's own items do in a
+       narrower header. Then the header wraps. */
     .builder-header__start > .builder-button,
     .builder-header__shared {
       white-space: nowrap;

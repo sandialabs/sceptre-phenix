@@ -14,8 +14,8 @@ import axiosInstance from '@/utils/axios.js';
 import { createLogoutFlow } from '@/utils/logout.js';
 
 /**
- * Whether the token says it has expired; a token that is no JWT (without
- * authentication) never does.
+ * Whether the token says it has expired. A token that is not a JWT (without
+ * authentication) never expires.
  *
  * @param {string|null} token
  * @returns {boolean}
@@ -24,9 +24,9 @@ export function tokenExpired(token) {
   return Date.now() >= (tokenExpiry(token) ?? Infinity);
 }
 
-// Logging out warns first while Builder holds changes the server does
-// not have (see utils/logout.js). On the Builder's page, the warning of a
-// session that expired offers to sign in again there (see
+// When Builder holds changes the server does not have, a logout shows a
+// warning first (see utils/logout.js). On the Builder page, the warning for
+// an expired session lets the user sign in again on that page (see
 // builder/signin.js).
 const logoutFlow = createLogoutFlow({
   findUnsent: ({ send }) =>
@@ -34,8 +34,8 @@ const logoutFlow = createLogoutFlow({
   canSignIn: signInAvailable,
   signIn: requestSignIn,
   async finish(reason) {
-    // The server forgets the token first; it no longer knows an expired
-    // one, and says so (401) when asked.
+    // The server forgets the token first. The server no longer knows an
+    // expired token, and it replies 401 to the request.
     if (reason !== 'expired') {
       const status = await axiosInstance.get('logout').then(
         (response) => response.status,
@@ -75,16 +75,16 @@ export const usePhenixStore = defineStore('phenix', {
       sessionStorage.getItem('phenix.auth') === 'true',
     next: null,
     features: [],
-    // The warning shown before a logout would delete Builder changes
-    // the server does not have, and whether a logout is under way.
+    // The warning to show before a logout that would delete Builder
+    // changes the server does not have, and whether a logout is in progress.
     logoutWarning: null,
     loggingOut: false,
   }),
   actions: {
     login(loginResponse, remember, navigate = true) {
-      // Builder data another user left on this device, by closing the
-      // browser without logging out, goes before this user's session
-      // starts; its preferences stay, as at logout.
+      // Another user can leave Builder data on this device when they close
+      // the browser without a logout. That data goes before this user's
+      // session starts. Its preferences stay, as at logout.
       startBuilderSession(loginResponse.user.username);
 
       this.username = loginResponse.user.username;
@@ -120,13 +120,13 @@ export const usePhenixStore = defineStore('phenix', {
       }
     },
     /**
-     * Takes the new token of the user signing in again without leaving the
-     * page (see builder/signin.js), kept where their sign-in kept the last
-     * one. Nothing else changes: the user is the same, so Builder's
-     * data in this browser stays, and so does the page.
+     * Takes the new token of a user who signs in again without leaving the
+     * page (see builder/signin.js). Keeps it in the storage where the last
+     * sign-in kept the old token. Nothing else changes: the user is the
+     * same, so Builder's data in this browser stays, and so does the page.
      *
      * @param {object} loginResponse as the sign-in page's
-     * @returns {boolean} false for another user's, which is not taken
+     * @returns {boolean} false for another user's token, which it does not take
      */
     renewLogin(loginResponse) {
       if (loginResponse?.user?.username !== this.username) {
@@ -152,7 +152,7 @@ export const usePhenixStore = defineStore('phenix', {
     },
 
     /**
-     * Logs out: the header's Logout, the idle timeout, and an expired or
+     * Logs out after the header's Logout, the idle timeout, or an expired or
      * refused token. When Builder holds changes the server does not
      * have, a warning comes first (see utils/logout.js).
      *
@@ -160,9 +160,9 @@ export const usePhenixStore = defineStore('phenix', {
      * @returns {Promise<'logged-out'|'stayed'|'failed'>}
      */
     requestLogout(reason = 'manual') {
-      // A session whose token has expired cannot stay signed in, or send
-      // anything, whatever ends it. A logout the user asked for still
-      // waits for an answer.
+      // A session with an expired token cannot stay signed in or send
+      // anything, whatever the cause of the logout. A logout that the user
+      // asked for still waits for an answer.
       return logoutFlow.request(tokenExpired(this.token) ? 'expired' : reason, {
         countdown: reason !== 'manual',
       });
@@ -173,7 +173,8 @@ export const usePhenixStore = defineStore('phenix', {
       logoutFlow.answer(choice);
     },
 
-    // Ends the session at once; requestLogout comes here once it may.
+    // Ends the session immediately. requestLogout calls this when the
+    // logout can continue.
     logout() {
       this.username = null;
       this.token = null;
@@ -190,10 +191,10 @@ export const usePhenixStore = defineStore('phenix', {
       sessionStorage.removeItem('phenix.role');
       sessionStorage.removeItem('phenix.auth');
 
-      // Builder's drafts, lists and recent commands on this device go
-      // too, before the sign-in page shows; its preferences stay (every
-      // logout, including the idle timeout's and an expired token's, comes
-      // through here, after requestLogout).
+      // Builder's drafts, lists and recent commands on this device go too,
+      // before the sign-in page shows. Its preferences stay. Every logout,
+      // including the idle timeout and an expired token, comes here after
+      // requestLogout.
       endBuilderSession();
 
       router.replace('/signin');

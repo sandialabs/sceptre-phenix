@@ -1,27 +1,31 @@
 // Logging out while Builder holds changes the server does not have.
 //
-// Logout deletes what the Builder keeps in this browser (see
-// builder/session.js), including edits still queued for the server: made
-// offline, refused, in conflict, or after the session ended. So every
-// logout first looks for them. A logout the user asks for sends them first,
-// and asks when some remain; that question waits for an answer. A logout
-// the app starts (the idle timeout, an expired or invalid token) shows the
-// same warning for a minute, then logs out; the tab's title counts down
-// too, so a hidden tab shows it. Without such changes, logging out goes
-// ahead at once, as before. On the Builder's page, the warning of a
-// session that expired also offers to sign in again there, which keeps the
-// changes and sends them (see builder/signin.js); a logout the user asked
-// for does not.
+// A logout deletes the data that Builder keeps in this browser (see
+// builder/session.js). This data includes edits that still wait for the
+// server: edits made offline, refused, in conflict, or made after the
+// session ended. So every logout first looks for these edits:
+//
+// - A logout that the user asks for sends them first. When some remain, it
+//   asks the user and waits for an answer.
+// - A logout that the app starts (the idle timeout, an expired or invalid
+//   token) shows the same warning for a minute, then logs out. The tab's
+//   title also counts down, so a hidden tab shows the countdown.
+// - Without such edits, the logout continues immediately, as before.
+//
+// On the Builder page, the warning for an expired session also lets the
+// user sign in again on that page. This keeps the changes and sends them
+// (see builder/signin.js). A logout that the user asked for does not offer
+// this.
 
-// How long an automatic logout waits, in seconds, and how many are left
-// when that is announced again.
+// How long an automatic logout waits, in seconds, and the seconds left when
+// the warning announces the countdown again.
 export const LOGOUT_COUNTDOWN_S = 60;
 export const LOGOUT_NOTICE_S = 10;
 
 // Why the app logs out: the user asked ('manual'), the idle timeout
 // ('idle'), or the token expired or was refused ('expired'). A later reason
-// outranks an earlier one: an idle logout makes a question the user left
-// open end by itself, and an expired token leaves no way to stay.
+// in this list outranks an earlier one. An idle logout ends a question that
+// the user left open. An expired token leaves no way to stay.
 const REASONS = ['manual', 'idle', 'expired'];
 
 function seconds(n) {
@@ -41,8 +45,8 @@ export function countdownText(secondsLeft) {
 const TITLE_COUNTDOWN = /^Logging out in \d+ seconds? – /;
 
 /**
- * The page title while an automatic logout counts down, which a hidden tab
- * shows too: the countdown before the title, or the title alone.
+ * The page title while an automatic logout counts down. A hidden tab shows
+ * this title too. It is the countdown before the title, or the title alone.
  *
  * @param {string} title the current title, with or without the countdown
  * @param {number|null} secondsLeft null when nothing counts down
@@ -117,7 +121,7 @@ export function logoutWarningText({
   };
 }
 
-// Whether the page is hidden, and a way to hear when that changes.
+// Whether the page is hidden, and a way to watch for changes to it.
 const pageVisibility = {
   hidden: () => globalThis.document?.visibilityState === 'hidden',
   watch(callback) {
@@ -132,19 +136,21 @@ const pageVisibility = {
  * @param {(options: {send: boolean}) => Promise<{changes: number,
  *   unapplied: string}>} options.findUnsent what the server does not have,
  *   after sending it when `send`
- * @param {(reason: string) => Promise<boolean>} options.finish logs out;
- *   resolves whether it did
+ * @param {(reason: string) => Promise<boolean>} options.finish logs out.
+ *   Resolves to whether it did
  * @param {(warning: object|null) => void} options.show shows the warning, a
  *   new object on every change, or null to close it
- * @param {(busy: boolean) => void} [options.busy] a logout is under way
+ * @param {(busy: boolean) => void} [options.busy] whether a logout is in
+ *   progress
  * @param {() => boolean} [options.canSignIn] whether the user can sign in
  *   again without leaving the page (see builder/signin.js)
- * @param {() => void} [options.signIn] asks for the password again there
+ * @param {() => void} [options.signIn] asks for the password again on the
+ *   page
  * @param {() => number} [options.now]
  * @param {object} [options.timers] setTimeout, clearTimeout, setInterval,
  *   clearInterval
  * @param {{hidden: () => boolean, watch: (callback: () => void) => void}}
- *   [options.visibility] the page's
+ *   [options.visibility] the page's visibility
  * @returns {{request: Function, answer: Function}}
  */
 export function createLogoutFlow({
@@ -173,15 +179,16 @@ export function createLogoutFlow({
     }
   }
 
-  // An expired session's minute waits while the page is hidden, so the
-  // warning is seen for its minute; the server refuses the token meanwhile
-  // anyway. The idle timeout's does not: a session left alone ends on time.
+  // For an expired session, the countdown stops while the page is hidden,
+  // so the user sees the warning for the full minute. The server refuses
+  // the token during that time anyway. The idle timeout's countdown does
+  // not stop: a session that the user leaves alone ends on time.
   function held() {
     return current.reason === 'expired' && visibility.hidden();
   }
 
-  // Counts down the `ms` left. The seconds left are read from the clock,
-  // not counted: a hidden tab runs its timers late.
+  // Counts down the `ms` left. It reads the seconds left from the clock
+  // instead of counting them, because a hidden tab runs its timers late.
   function runCountdown(ms) {
     const deadline = now() + ms;
     const warning = current.warning;
@@ -203,7 +210,7 @@ export function createLogoutFlow({
 
       warning.secondsLeft = left;
 
-      // Said once more near the end, not every second.
+      // Announces the countdown once more near the end, not every second.
       if (left <= LOGOUT_NOTICE_S && !warning.notice) {
         warning.notice = countdownText(left);
       }
@@ -212,8 +219,8 @@ export function createLogoutFlow({
     }, 1000);
   }
 
-  // Holds the countdown, or runs it on, as the page is hidden or shown
-  // (see held).
+  // Stops or continues the countdown when the page hides or shows (see
+  // held).
   function followVisibility() {
     if (typeof current?.warning?.secondsLeft !== 'number') {
       return;
@@ -237,8 +244,8 @@ export function createLogoutFlow({
     followVisibility();
   }
 
-  // An automatic logout of a session that expired offers to sign in again
-  // where the page can (see the header).
+  // An automatic logout of an expired session offers to sign in again when
+  // the page can do that (see the header).
   function offersSignIn() {
     return current.reason === 'expired' && !current.manual && canSignIn();
   }
@@ -294,7 +301,8 @@ export function createLogoutFlow({
     }
   }
 
-  // A later, stronger reason while a logout is under way (see REASONS).
+  // Applies a later, stronger reason while a logout is in progress (see
+  // REASONS).
   function escalate(reason, countdown) {
     if (REASONS.indexOf(reason) <= REASONS.indexOf(current.reason)) {
       return;
@@ -325,8 +333,8 @@ export function createLogoutFlow({
   /**
    * Answers the warning.
    *
-   * @param {'stay'|'signin'|'logout'} choice stay is refused when the
-   *   session cannot go on, and signin when the warning does not offer it
+   * @param {'stay'|'signin'|'logout'} choice ignores stay when the session
+   *   cannot continue, and signin when the warning does not offer it
    */
   function answer(choice) {
     if (
@@ -348,14 +356,15 @@ export function createLogoutFlow({
 
   return {
     /**
-     * Logs out, or warns first (see the header). Asked again while a logout
-     * is under way, it joins that one.
+     * Logs out, or warns first (see the header). A request during a logout
+     * in progress joins that logout.
      *
      * @param {'manual'|'idle'|'expired'} [reason]
      * @param {object} [options] countdown: whether the warning ends by
-     *   itself after a minute; by default, unless the user asked
-     * @returns {Promise<'logged-out'|'stayed'|'failed'>} stayed too when
-     *   the user chose to sign in again, which then opens
+     *   itself after a minute. The default is true unless the reason is
+     *   'manual'
+     * @returns {Promise<'logged-out'|'stayed'|'failed'>} also 'stayed' when
+     *   the user chose to sign in again. The sign-in then opens
      */
     request(reason = 'manual', { countdown = reason !== 'manual' } = {}) {
       if (current) {
@@ -364,7 +373,8 @@ export function createLogoutFlow({
         return current.promise;
       }
 
-      // The user asked for it: a manual logout stays one.
+      // A logout that the user asked for stays manual after a stronger
+      // reason.
       const flow = { reason, countdown, manual: !countdown, signIn: false };
 
       current = flow;

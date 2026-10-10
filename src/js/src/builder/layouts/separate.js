@@ -6,9 +6,9 @@
 // root. The Builder's nodes are boxes, wider than tall, with notes below
 // some of them, so each of these layouts ends with separateBoxes.
 
-// The room separateBoxes leaves between two boxes. Positions are then
-// snapped to the grid (see layoutScopes), which moves each box at most half
-// a grid step, so this must be at least a grid step.
+// The space separateBoxes keeps between two boxes. Positions then snap to
+// the grid (see layoutScopes), which moves each box at most half a grid
+// step. So this must be at least a grid step.
 export const BOX_GAP = 32;
 
 // The most rounds of pushing pairs apart before the boxes are placed one at
@@ -64,8 +64,8 @@ export function seededRandom(seed) {
   };
 }
 
-// How far two boxes overlap across and down, gap included; both above
-// EPSILON means they overlap.
+// How far two boxes overlap across and down, gap included. When both are
+// above EPSILON, the boxes overlap.
 function overlapOf(a, b) {
   return {
     x: (a.width + b.width) / 2 - Math.abs(a.x - b.x),
@@ -79,9 +79,9 @@ const overlapping = (a, b) => {
   return over.x > EPSILON && over.y > EPSILON;
 };
 
-// Pushes each overlapping pair apart, the shorter way, half each, in
-// rounds until no pair overlaps or the rounds run out. Pairs are found by a
-// sweep from left to right.
+// Pushes each overlapping pair apart, the shorter way, half each. It runs
+// in rounds until no pair overlaps or no rounds remain. A sweep from left to
+// right finds the pairs.
 function pushApart(boxes) {
   for (let round = 0; round < PUSH_ROUNDS; round += 1) {
     const sorted = [...boxes].sort(
@@ -130,10 +130,9 @@ function pushApart(boxes) {
   }
 }
 
-// Places the boxes one at a time, nearest the centre first: a box that
-// overlaps one placed before moves straight out from the centre until it
-// overlaps none. Out past every placed box there is room, so this always
-// ends.
+// Places the boxes one at a time, nearest the centre first. A box that
+// overlaps a box placed before moves straight out from the centre until it
+// overlaps none. There is space past every placed box, so this always ends.
 function placeInTurn(boxes) {
   const centre = {
     x: boxes.reduce((sum, box) => sum + box.x, 0) / boxes.length,
@@ -170,7 +169,7 @@ function placeInTurn(boxes) {
 
 /**
  * Moves boxes apart until none overlaps another, with `gap` between any
- * two, and each moved as little as the pass finds. The result is the same
+ * two. Each box moves as little as the pass finds. The result is the same
  * for the same boxes in the same order.
  *
  * @param {Array<{id: string, width: number, height: number}>} items

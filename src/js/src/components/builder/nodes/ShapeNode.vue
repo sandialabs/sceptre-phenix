@@ -1,15 +1,15 @@
 <!--
   Shape node: a rectangle or a circle drawn on the canvas, with no phenix
   semantics and never published. The figure fills the node's box (a circle
-  in a box that is not square is an ellipse), in the fill, outline and
-  border pattern chosen for it, solid without one, and its label is at its
-  center. Vue Flow's wrapper is the focusable, named element (see
-  DeviceNode.vue); the name says the figure, which only the canvas shows
-  otherwise.
+  in a box that is not square is an ellipse). It has the fill, outline and
+  border pattern chosen for it, and a solid border without a pattern. Its
+  label is at its center. Vue Flow's wrapper is the focusable, named
+  element (see DeviceNode.vue). The name says the figure, which otherwise
+  only the canvas shows.
 
-  On a fill the label is black or white, whichever reads on it (see
-  nodeColors in colors.js). Without a fill the shape is see-through, so it
-  frames what it is drawn around: groups lie under it, and devices and
+  On a fill, the label is black or white, whichever reads on it (see
+  nodeColors in colors.js). Without a fill, the shape is see-through, so it
+  frames what it is drawn around. Groups lie under it, and devices and
   switches over it, also while it is selected (see nodeZIndex in
   adapters/vueflow.js). Its resize handles are drawn over every node (see
   NodeResize.vue).
@@ -47,8 +47,8 @@
 
   import { BORDER_STYLES } from '@/builder/model.js';
 
-  // Vue Flow passes its node state as attributes as well; none belong on
-  // the node's element.
+  // Vue Flow also passes its node state as attributes. None of them belong
+  // on the node's element.
   defineOptions({ inheritAttrs: false });
 
   const props = defineProps({

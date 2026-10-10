@@ -122,9 +122,9 @@ const router = createRouter({
       component: () => import('@/views/Tunneler.vue'),
     },
     {
-      // The Builder. The server finds the files only this view loads by its
-      // path in the build manifest, and serves them compressed
-      // (src/go/web/builder_assets.go).
+      // The Builder. The build finds the files that only this view loads
+      // from the view's path (src/js/plugins/builder-assets.js). The server
+      // sends them compressed (src/go/web/builder_assets.go).
       path: '/builder',
       name: 'builder',
       component: () => import('@/views/Builder.vue'),
@@ -236,8 +236,9 @@ router.beforeEach(async (to, from, next) => {
       // No need to go to the signin route if already authorized.
       router.replace('/');
     } else if (signIn.open || tokenExpired(store.token)) {
-      // Builder asks for the password again in place, and nothing
-      // logs out or leaves the page meanwhile (see builder/signin.js).
+      // Builder asks for the password again on the same page. Until the
+      // user answers, nothing logs out or leaves the page (see
+      // builder/signin.js).
       const builder = expiredNavigation(to, from);
 
       if (builder === 'go') {
@@ -251,9 +252,9 @@ router.beforeEach(async (to, from, next) => {
       }
 
       // handle expired JWT by logging user out: https://stackoverflow.com/a/69058154
-      // The page stays while a warning about Builder changes the
-      // server does not have is shown (see utils/logout.js); the logout
-      // then goes to the sign-in page.
+      // The page stays while it shows a warning about Builder changes
+      // the server does not have (see utils/logout.js). Then the logout
+      // goes to the sign-in page.
       if (!store.loggingOut) {
         new Toast().open({
           message: `Token is expired. Log in again`,

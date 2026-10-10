@@ -330,8 +330,8 @@ func newConfigCreateCmd() *cobra.Command {
 
 				for _, path := range configs {
 					if kind := builderFileKind(path); kind != "" {
-						// The file named on the command line, and not one
-						// found in a directory it names.
+						// Refuse only the file named on the command line, not
+						// a file found in a directory it names.
 						if path == f {
 							return builderFileRefusal(kind, path)
 						}
@@ -415,11 +415,11 @@ const (
 	builderFilePackage      = "Builder package"
 )
 
-// builderFileKind returns what the file at path is when it is a
-// Builder-owned file, by its content: a Builder document, a template file or
-// a package, each of which the Builder exports as plain .json or .yaml. It is
-// "" for any other file, and for one that cannot be read, which is left to
-// report why.
+// builderFileKind returns what the file at path is, by its content, when it is
+// a Builder-owned file: a Builder document, a template file or a package. The
+// Builder exports each of these as plain .json or .yaml. It returns "" for any
+// other file. It also returns "" for a file that cannot be read, and leaves it
+// to the normal read to report why.
 func builderFileKind(path string) string {
 	text, err := os.ReadFile(path) //nolint:gosec // a config file the caller named
 	if err != nil {
@@ -452,8 +452,8 @@ func skipBuilderFile(kind, path string) {
 	plog.Debug(plog.TypeSystem, "skipped Builder file, which is not a configuration", "kind", kind, "path", path)
 }
 
-// builderFileRefusal is the error of config create for the Builder-owned
-// file at path, of kind, named on the command line: it says what to do with
+// builderFileRefusal is the error of config create for the Builder-owned file
+// at path, of kind, named on the command line. The error says what to do with
 // the file instead.
 func builderFileRefusal(kind, path string) error {
 	switch kind {

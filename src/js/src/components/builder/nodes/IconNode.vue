@@ -1,11 +1,12 @@
 <!--
   Icon node: a built-in or custom icon drawn on the canvas, with no phenix
-  semantics and never published. The icon scales to fit the node's box, but
-  for a line under it that holds the label, when the node has one. Vue
-  Flow's wrapper is the focusable, named element (see DeviceNode.vue). A
-  custom icon is drawn as BuilderIcon draws one, from the document's copy
-  of it or the icon library's icon of that name (data.iconSrc, see
-  toFlowNodes); one neither resolves shows the built-in icon of the kind.
+  semantics and never published. The icon scales to fit the node's box,
+  less a line under it for the label when the node has one. Vue Flow's
+  wrapper is the focusable, named element (see DeviceNode.vue). A custom
+  icon is drawn as BuilderIcon draws one: from the document's copy of it,
+  or from the icon library's icon of that name (data.iconSrc, see
+  toFlowNodes). When neither source resolves it, the node shows the
+  built-in icon of the kind.
 -->
 <template>
   <div
@@ -31,8 +32,8 @@
   import { useResizeFrame } from './canvasEditing.js';
   import NodeResize from './NodeResize.vue';
 
-  // Vue Flow passes its node state as attributes as well; none belong on
-  // the node's element.
+  // Vue Flow also passes its node state as attributes. None of them belong
+  // on the node's element.
   defineOptions({ inheritAttrs: false });
 
   const props = defineProps({

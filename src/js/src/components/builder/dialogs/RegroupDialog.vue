@@ -1,16 +1,15 @@
 <!--
   Move to a group, opened by the toolbar's Move to group and the palette's
-  command: group membership without a drag. The node moves into the
-  group's box, which grows to hold it, or out of the one it leaves.
+  command. It changes group membership without a drag. The node moves into
+  the group's box, which grows to hold it, or out of the group it leaves.
+  The rules are in structureForms.js.
 
   Node starts as the first selected node, and Group as the group that node
-  is in now, so Move takes it elsewhere. A group is offered only when the
-  node can go into it: not the node itself, nor a group inside it. Move with
-  no node chosen says so and focuses Node; a move that would change nothing
-  says why, and focus stays on Move. Once moved, the dialog closes, focus
-  goes back to what opened it, and the live region, which waits while a
-  dialog is open, says where the node went. The rules are in
-  structureForms.js.
+  is in now. Group offers only groups that the node can go into. Move with
+  no node chosen says so and focuses Node. A move that would change nothing
+  says why, and focus stays on Move. After a move, the dialog closes and
+  focus goes back to what opened it. The live region waits while a dialog
+  is open, and then says where the node went.
 -->
 <template>
   <builder-dialog
@@ -48,8 +47,8 @@
         </select>
       </div>
 
-      <!-- Rendered empty from the start; a new key replaces the message, so
-           a repeated one is announced again. -->
+      <!-- Rendered empty from the start. A new key replaces the message, so
+           a repeated message is announced again. -->
       <p
         :id="ERROR_ID"
         class="builder-dialog__message builder-dialog__error"

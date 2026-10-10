@@ -3,16 +3,23 @@
   server does not have (see utils/logout.js).
 
   An alert dialog (APG Alert and Message Dialogs pattern) on a native
-  <dialog> opened with showModal(), so the page behind it is inert. Its
-  message is the dialog's description, and focus starts on the choice that
-  keeps the changes. An automatic logout counts down a minute on screen
-  and in the tab's title: the countdown is read with the description when
-  the dialog opens, and once more near the end, not every second. Download
-  saves one draft per click, as a browser may block a second download
-  from one click. On the Builder's page, a session that expired can sign
-  in again there, which stops the countdown and opens the Builder's
-  sign-in (see builder/signin.js). It takes the Builder's theme, which
-  follows the system's unless the viewer chose one.
+  <dialog> that showModal() opens, so the page behind it is inert. The
+  message is the dialog's description. Focus starts on the choice that
+  keeps the changes.
+
+  An automatic logout counts down a minute on screen and in the tab's
+  title. Screen readers read the countdown with the description when the
+  dialog opens, and once more near the end, not every second.
+
+  Download saves one draft per click, because a browser may block a second
+  download from one click.
+
+  On the Builder page, an expired session can sign in again on that page.
+  This stops the countdown and opens the Builder's sign-in (see
+  builder/signin.js).
+
+  The dialog uses the Builder's theme, which follows the system theme
+  unless the viewer chose one.
 -->
 <template>
   <dialog
@@ -37,8 +44,8 @@
       data-testid="logout-warning-countdown">
       {{ countdownText(warning.secondsLeft) }}
     </p>
-    <!-- Rendered, empty, from the start, so screen readers know them before
-         their first message. -->
+    <!-- These regions render empty from the start, so screen readers know
+         them before their first message. -->
     <p class="logout-warning__status" role="status">{{ status }}</p>
     <p
       class="is-sr-only"
@@ -136,8 +143,8 @@
     phenix.answerLogoutWarning('stay');
   }
 
-  // The Builder's sign-in opens once the warning has gone, and gives focus
-  // back where it was when it closes.
+  // The Builder's sign-in opens after the warning closes. When the sign-in
+  // closes, it gives focus back where it was.
   function signInAgain() {
     staying = Boolean(warning.value?.canSignIn);
     phenix.answerLogoutWarning('signin');
@@ -147,8 +154,8 @@
     phenix.answerLogoutWarning('logout');
   }
 
-  // The browser may close a modal dialog on its own after Escape; the
-  // warning stays until it is answered.
+  // The browser may close a modal dialog by itself after Escape. The
+  // warning stays until the user answers it.
   function keepOpen() {
     if (warning.value && panel.value && !panel.value.open) {
       panel.value.showModal();
@@ -187,8 +194,8 @@
       : 'This browser no longer holds these changes.';
   }
 
-  // Where focus starts, and goes when Stay signed in is taken away: the
-  // choice that keeps the changes, or else the only one left.
+  // Where focus starts, and where it goes when the dialog removes Stay
+  // signed in: the choice that keeps the changes, or else the only one left.
   function firstChoice() {
     return (
       stayButton.value ||
@@ -198,9 +205,9 @@
     );
   }
 
-  // Escape keeps the session where it can, as Stay signed in does; Tab and
-  // Shift+Tab wrap inside the dialog rather than leave for the browser's
-  // own controls.
+  // Escape keeps the session where it can, as Stay signed in does. Tab and
+  // Shift+Tab wrap inside the dialog and do not go to the browser's own
+  // controls.
   function onKeydown(event) {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -227,10 +234,11 @@
     }
   }
 
-  // Staying, focus goes back where it was. Logging out, what had it goes
-  // with the session, so it waits in the page's main region, which the
-  // sign-in page fills; so it does when what had it is gone or hidden, or
-  // nothing had it.
+  // When the user stays, focus goes back where it was. When the user logs
+  // out, the element that had focus goes with the session. So focus goes to
+  // the page's main region, which the sign-in page fills. Focus also goes
+  // there when the element that had it is gone or hidden, or when no
+  // element had it.
   function restoreFocus() {
     let target = staying ? previous : null;
 
@@ -270,7 +278,8 @@
     { flush: 'post' },
   );
 
-  // An expired session takes Stay signed in away; focus on it moves on.
+  // An expired session removes Stay signed in. Focus on that button moves
+  // to the first choice.
   watch(
     () => warning.value?.canStay,
     (canStay, before) => {
@@ -285,7 +294,7 @@
     { flush: 'post' },
   );
 
-  // The countdown shows in the tab's title too, which a hidden tab shows.
+  // The tab's title also shows the countdown, so a hidden tab shows it too.
   watch(
     () => warning.value?.secondsLeft ?? null,
     (secondsLeft) => {

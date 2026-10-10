@@ -13,10 +13,10 @@ import (
 	"phenix/util/plog"
 )
 
-// Builder's front-end files, the ones only its page loads, are served
-// compressed to clients that accept it and cached for good, since Vite names
-// each file after a hash of its content. Every other file under /assets/ is
-// served as [http.FileServer] serves it.
+// The server sends the Builder front-end files (the files that only its page
+// loads) compressed to clients that accept it. Clients may cache these files
+// for good, because Vite names each file after a hash of its content.
+// Every other file under /assets/ is served as [http.FileServer] serves it.
 //
 // The UI build lists the files in builder-assets.json, beside index.html,
 // and writes each one's Brotli and gzip copies next to it, as <file>.br and
@@ -137,11 +137,11 @@ func builderAssetHandler(assets http.FileSystem) http.Handler {
 	})
 }
 
-// encodedLengthWriter gives a whole compressed file its Content-Length,
-// which [http.ServeContent] leaves out once Content-Encoding is set, so the
-// file is not sent chunked. Only a 200 carries the whole file: ServeContent
-// sets a 206's length itself, and a 304, 412 or 416 has no content, so no
-// Content-Encoding either.
+// encodedLengthWriter gives a whole compressed file its Content-Length, so
+// the file is not sent chunked. [http.ServeContent] leaves the length out
+// when Content-Encoding is set. Only a 200 carries the whole file.
+// ServeContent sets the length of a 206 itself. A 304, 412 or 416 has no
+// content, so it has no Content-Encoding either.
 type encodedLengthWriter struct {
 	http.ResponseWriter
 
@@ -197,11 +197,11 @@ func isFile(assets http.FileSystem, name string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// preferredEncoding returns the coding of offered, which is in the server's
-// order of preference, that an Accept-Encoding header weighs highest, the
-// server's preference between codings of equal weight, or "" when the header
-// accepts none of them. A coding the header does not name has the weight of
-// "*", or none.
+// preferredEncoding returns the coding of offered that an Accept-Encoding
+// header weighs highest. offered is in the order of preference of the
+// server, and that order decides between codings of equal weight. It returns
+// "" when the header accepts none of them. A coding that the header does not
+// name has the weight of "*", or none.
 func preferredEncoding(header string, offered []string) string {
 	weights := acceptEncodingWeights(header)
 

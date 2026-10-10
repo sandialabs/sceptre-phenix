@@ -1,11 +1,11 @@
 // Force: a spring model from d3-force, over each scope (see common.js).
 // Nodes push each other away (many-body, with the Barnes-Hut
-// approximation), connections pull their ends together, and boxes that
-// touch push apart (boxCollide: d3's own collide force is for circles). It
-// runs a fixed number of steps at once, without animation, from start
-// positions and with a random source seeded by the scope's node ids, so
-// the same document gives the same layout. A last pass removes any overlap
-// that is left (separateBoxes).
+// approximation). Connections pull their ends together. Boxes that touch
+// push apart (boxCollide: d3's own collide force is for circles). The
+// simulation runs a fixed number of steps at once, without animation. It
+// starts from fixed positions and uses a random source seeded by the
+// scope's node ids, so the same document gives the same layout. A last pass
+// removes any overlap that remains (separateBoxes).
 
 import { forceLink, forceManyBody, forceSimulation, forceX, forceY } from 'd3';
 
@@ -31,9 +31,9 @@ const GRAVITY = 0.02;
 const COLLIDE_STRENGTH = 0.7;
 
 /**
- * A d3 force that pushes overlapping boxes apart, the shorter way: d3's
+ * A d3 force that pushes overlapping boxes apart, the shorter way. d3's
  * forceCollide takes each node as a circle. Nodes carry `width` and
- * `height`, and `gap` is the room to leave between two.
+ * `height`, and `gap` is the space to keep between two nodes.
  *
  * @param {number} gap
  * @returns {function} a d3 force

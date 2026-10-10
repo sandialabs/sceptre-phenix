@@ -6,7 +6,7 @@
 
 /**
  * Whether two values are equal in depth. Arrays and plain objects are
- * compared by their contents; anything else only to itself.
+ * compared by their contents. Any other value is equal only to itself.
  *
  * @param {*} a
  * @param {*} b
@@ -49,8 +49,8 @@ function isPlain(value) {
 }
 
 /**
- * The next items, each one equal to the previous item of its id replaced
- * by that item, or the previous list itself when that leaves nothing new.
+ * The next items, where each item equal to the previous item of its id is
+ * that previous item. Returns the previous list itself when no item changed.
  *
  * @param {object[]} next items with an `id`
  * @param {object[]} [previous] the list these replace

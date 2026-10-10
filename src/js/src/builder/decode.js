@@ -1,9 +1,9 @@
-// Strict document decoding, mirroring phenix/types/builder decode.go.
+// Strict document decoding, which mirrors phenix/types/builder decode.go.
 //
-// Unknown fields, a wrong schema URI or revision, and structurally invalid
-// documents are rejected outright: the builder never silently drops data it
-// does not understand, because doing so would publish a topology the user never
-// authored.
+// The decoder rejects unknown fields, a wrong schema URI or revision, and
+// structurally invalid documents. The builder never drops data that it does
+// not understand, because then it would publish a topology that the user did
+// not make.
 
 import YAML from 'js-yaml';
 
@@ -183,9 +183,9 @@ export const TEMPLATE_KEYS = new Set(['id', 'name', 'description', 'device']);
 // name, its connection points, and where it was included from.
 const OWN_DEVICE_KEYS = ['hostname', 'interfaces', 'includedFrom'];
 
-// A template fills in a device, so its device has every other key a device
-// has: a key added to devices reaches templates without a second edit
-// (TemplateDevice in template.go follows Device the same way).
+// A template fills in a device, so its device has every other key that a
+// device has. Thus a key added to devices gets to templates without a second
+// edit. TemplateDevice in template.go follows Device in the same way.
 export const TEMPLATE_DEVICE_KEYS = new Set(
   [...DEVICE_KEYS].filter((key) => !OWN_DEVICE_KEYS.includes(key)),
 );
@@ -193,9 +193,9 @@ export const TEMPLATE_DEVICE_KEYS = new Set(
 // customicons.go).
 export const ICON_ENTRY_KEYS = new Set(['data']);
 
-// A refusal that the server's decoder lists as an issue too (decodeIssues
-// in decode.go): message says what is refused, and the issue names its
-// rule with the server's code, path and words.
+// A refusal that the server's decoder also lists as an issue (decodeIssues
+// in decode.go). message tells what is refused. The issue names its rule with
+// the server's code, path and words.
 function refusal(message, code, path, issueMessage) {
   return new DocumentError(message, {
     issues: [
@@ -527,11 +527,11 @@ export function withArticle(kind) {
  */
 export class AliasError extends Error {}
 
-// Stops a YAML parse at its first alias (*name). js-yaml resolves an alias to
-// its anchor's value itself, which every copy of the document then expands
-// once per alias, so a few nested aliases in a file of a few hundred bytes
-// expand to gigabytes. js-yaml reports each node as it closes, and only an
-// alias closes with a value but no kind and no tag.
+// Stops a YAML parse at its first alias (*name). js-yaml itself resolves an
+// alias to the value of its anchor. Every copy of the document then expands
+// that value once per alias. Thus a few nested aliases in a file of a few
+// hundred bytes expand to gigabytes. js-yaml reports each node as it closes,
+// and only an alias closes with a value but no kind and no tag.
 function refuseAliases(event, state) {
   if (
     event === 'close' &&
@@ -544,9 +544,9 @@ function refuseAliases(event, state) {
 }
 
 /**
- * The value of text a file holds: JSON, or else YAML read with js-yaml's
+ * The value of the text in a file: JSON, or else YAML read with js-yaml's
  * JSON schema, as the server reads it (JSONFromText in yaml.go). The content
- * decides, never the file's name.
+ * decides the format, never the file's name.
  *
  * @param {string} text
  * @returns {*}
@@ -567,7 +567,7 @@ export function parseText(text) {
 /**
  * Parses uploaded text (JSON or YAML) into a validated builder document.
  * Anything that is not a builder document of this schema is rejected with a
- * message that names the reason, never silently coerced.
+ * message that names the reason. It is never coerced.
  *
  * @param {string} text
  * @param {{as?: string, expectedKind?: string, maxBytes?: number}} [options]

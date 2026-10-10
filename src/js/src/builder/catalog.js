@@ -1,9 +1,9 @@
 // Palette catalog and the bounded icon key registry.
 //
-// Icon keys mirror the server registry (phenix/types/builder icons.go) exactly:
-// a document carrying any other key is rejected by the server, so the palette
-// may only ever produce keys from this list. Shape + text label mean node
-// identity is never communicated by color alone.
+// Icon keys mirror the server registry (phenix/types/builder icons.go)
+// exactly. The server rejects a document that carries any other key, so the
+// palette can only produce keys from this list. Each node shows a shape and a
+// text label, so color is never the only cue to node identity.
 
 import { isIconName } from './icons.js';
 
@@ -27,8 +27,8 @@ const ICON_KEYS = [
 const DEFAULT_ICON_KEY = 'server';
 
 /**
- * Icon keys kept in the registry so saved documents still load, but no longer
- * offered for new choices. Printer nodes were removed from phenix.
+ * Icon keys kept in the registry so that saved documents still load. New
+ * choices do not offer them. phenix does not have printer nodes any more.
  */
 export const RETIRED_ICON_KEYS = ['printer'];
 
@@ -40,24 +40,24 @@ export function isIconKey(key) {
   return ICON_KEYS.includes(key);
 }
 
-// The built-in device templates, in the shape of a template of a diagram or
-// a library: {id, name, description, device: {iconKey, spec}}. They equal
-// the templates every template library starts with on the server
-// (BuiltinTemplates in types/builder/template.go; one fixture,
-// testdata/builtin-templates.json, is checked against both).
+// The built-in device templates, in the shape of a diagram or library
+// template: {id, name, description, device: {iconKey, spec}}. They are equal
+// to the templates that every template library on the server starts with
+// (BuiltinTemplates in types/builder/template.go). One fixture,
+// testdata/builtin-templates.json, is checked against both.
 //
 // Every spec is a complete, valid phenix node spec. `description` is the
-// palette entry's tooltip, never the node's description, so each spec's own
-// description is empty. `type` is the node type phenix acts on: its vrouter
-// app configures routing and rulesets only on nodes of type Router or
-// Firewall, and there through their router OS types (minirouter, vyatta or
-// vyos; for the deprecated linux it writes a Vyatta config into the image).
-// The Router template runs minirouter and the Firewall template VyOS, each
-// on the image named after its OS type.
+// tooltip of the palette entry, never the node's description, so each spec's
+// own description is empty. `type` is the node type that phenix acts on. Its
+// vrouter app configures routing and rulesets only on nodes of type Router or
+// Firewall, through their router OS types (minirouter, vyatta or vyos). For
+// the deprecated linux OS type, it writes a Vyatta config into the image.
+// The Router template runs minirouter and the Firewall template runs VyOS,
+// each on the image named after its OS type.
 //
-// The ids are names, not the UUIDs a diagram's templates have: a copy kept
-// in a diagram gets an id of its own (see addTemplate in model.js). They
-// are frozen, as every device made from one is a copy (see
+// The ids are names, not the UUIDs of a diagram's templates. A copy kept in a
+// diagram gets its own id (see addTemplate in model.js). The templates are
+// frozen, because every device made from one is a copy (see
 // nodeOptionsFromTemplate in templates.js).
 function virtualMachine(type, hostname, osType, image) {
   return {
@@ -168,9 +168,9 @@ export const PALETTE = [
     shape: 'container',
     hint: 'A container that visually groups member nodes',
   },
-  // Drawings: shapes, icons and lines with no phenix semantics. The two
-  // figures of a shape are entries of their own, so each is one click
-  // away; `options` are the store.addNode options an entry adds besides
+  // Drawings: shapes, icons and lines with no phenix semantics. Each of the
+  // two figures of a shape is a separate entry, so each is one click away.
+  // `options` are the store.addNode options that an entry adds in addition to
   // its kind.
   {
     kind: 'shape',
@@ -238,9 +238,8 @@ export function kindMeta(kind) {
 }
 
 /**
- * Icon key for a node: a device carries its own key, a group may carry one
- * in place of the key of its kind, and other kinds use the key of their
- * kind.
+ * Icon key for a node. A device carries its own key. A group can carry a key
+ * in place of the key of its kind. Other kinds use the key of their kind.
  *
  * @param {object} node builder document node
  * @returns {string}
@@ -267,14 +266,14 @@ export function nodeIconKey(node) {
 }
 
 /**
- * The custom icon a node names: a device's, a group's or an icon node's,
- * which is drawn in place of the icon of its key when the document's copy
- * of it or the icon library resolves it (see iconSrc in icons.js). Other
- * kinds of nodes have none.
+ * The custom icon that a node names: a device's, a group's or an icon node's.
+ * The canvas draws it in place of the icon of the node's key when the
+ * document's copy of it or the icon library resolves it (see iconSrc in
+ * icons.js). Other kinds of nodes have none.
  *
  * @param {object} node builder document node
- * @returns {string} an icon name, or '' for none and for a value that is no
- *   icon name
+ * @returns {string} an icon name, or '' for none and for a value that is not
+ *   an icon name
  */
 export function nodeIcon(node) {
   const name =
@@ -286,8 +285,8 @@ export function nodeIcon(node) {
 }
 
 /**
- * Icon key implied by a device spec's node type or operating system, used
- * when importing or generating documents that carry no explicit key.
+ * Icon key implied by a device spec's node type or operating system. Imports
+ * and generated documents that carry no explicit key use it.
  *
  * @param {object} spec phenix node spec
  * @returns {string}
@@ -297,9 +296,9 @@ export function iconKeyForSpec(spec) {
     return 'external';
   }
 
-  // A node type phenix names by what the node is (Router, Firewall, …) says
-  // so before its OS type does, as iconKeyForSpec in the server's
-  // generate.go decides it.
+  // A node type that tells what the node is (Router, Firewall, …) has
+  // priority over its OS type, as in iconKeyForSpec in the server's
+  // generate.go.
   const nodeType = String(spec?.type || '')
     .trim()
     .toLowerCase();

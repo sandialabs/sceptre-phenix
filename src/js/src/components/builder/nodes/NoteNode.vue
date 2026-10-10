@@ -36,8 +36,8 @@
 
   import { drawnColor } from '@/builder/colors.js';
 
-  // Vue Flow passes its node state as attributes as well; none belong on
-  // the node's element.
+  // Vue Flow also passes its node state as attributes. None of them belong
+  // on the node's element.
   defineOptions({ inheritAttrs: false });
 
   const props = defineProps({
@@ -52,8 +52,8 @@
       'Select the note and use the inspector to add text.',
   );
   // A note is named after its first line (model.nodeLabel), which the text
-  // below shows already: the header names the kind, or the label it was
-  // given.
+  // below already shows. The header thus names the kind, or the label the
+  // note was given.
   const title = computed(() => {
     const label = props.data.node.label;
 

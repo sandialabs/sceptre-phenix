@@ -24,25 +24,26 @@ import (
 )
 
 // Builder is the HTTP API of the Vue Flow builder. Draft autosave lives in
-// the generic record store (see [phenix/api/builder]); configs are created or
-// updated only by an explicit publish, and deleted only by
-// DELETE /builder/documents/{document}.
+// the generic record store (see [phenix/api/builder]). Only an explicit
+// publish creates or updates configs. Only
+// DELETE /builder/documents/{document} deletes them.
 //
 // Authorization has two layers:
 //
-//   - every request needs the base config permission of the operation it
-//     performs, so builder access can never exceed a user's config access, and
-//   - a request touching a draft needs access to that draft, from one of three
-//     sources: owning it; a share from its owner naming the caller, which
-//     grants view (list and get) or edit (also update), never delete or
-//     changing who it is shared with; or the "builder-drafts" permission of
-//     the same verb for the "{owner}/{draftID}" resource name. The strongest
-//     source wins.
+//   - Every request needs the base config permission of its operation, so
+//     builder access can never exceed the config access of a user.
+//   - A request that touches a draft also needs access to that draft. The
+//     access comes from one of three sources, and the strongest source wins:
+//     owning the draft, a share from its owner that names the caller, or the
+//     "builder-drafts" permission of the same verb for the
+//     "{owner}/{draftID}" resource name. A share grants view (list and get)
+//     or edit (also update). It never grants delete or a change to who the
+//     draft is shared with.
 //
-// A caller who cannot see a draft, because no source grants it any access, is
-// answered with 404, exactly as for a draft that does not exist, so draft
-// existence is never disclosed. A caller who can see a draft but may not
-// perform the operation is answered with 403.
+// When no source grants a caller access to a draft, the caller gets 404,
+// the same as for a draft that does not exist. Thus the API never discloses
+// that a draft exists. A caller who can see a draft but may not do the
+// operation gets 403.
 const (
 	// builderDraftsResource is the RBAC resource authorizing operations on
 	// drafts owned by another user. Resource names are "{owner}/{draftID}".
@@ -52,14 +53,13 @@ const (
 	// whichever snapshot the draft cursor currently points at.
 	builderCurrentSnapshot = "current"
 
-	// builderEnvelopeBytes is the room a Builder request body is
-	// allowed on top of the document it carries: titles, summaries, and JSON
-	// string escaping.
+	// builderEnvelopeBytes is the space a Builder request body may use in
+	// addition to the document it carries: titles, summaries, and JSON string
+	// escaping.
 	builderEnvelopeBytes = 1 << 20
 
 	// builderMaxRequestBytes bounds every Builder request body.
-	// Payloads within the envelope are additionally bound by
-	// [bapi.MaxDocumentBytes].
+	// [bapi.MaxDocumentBytes] also bounds the payloads within the envelope.
 	builderMaxRequestBytes = bapi.MaxDocumentBytes + builderEnvelopeBytes
 )
 
@@ -75,7 +75,7 @@ const (
 	builderVerbUpdate builderVerb = "update"
 	builderVerbDelete builderVerb = "delete"
 	// builderVerbShare changes who a draft is shared with. Its base
-	// permission is config update; only the draft owner may do it.
+	// permission is config update. Only the draft owner may do it.
 	builderVerbShare builderVerb = "share"
 )
 
@@ -97,7 +97,7 @@ const (
 )
 
 // builderAccessOwner is how responses report a caller's access to its own
-// draft; access through a share is reported as the share's access.
+// draft. Responses report access through a share as the access of the share.
 const builderAccessOwner = "owner"
 
 // builderRoleGrants is what the "builder-drafts" permission of a role
@@ -107,10 +107,10 @@ type builderRoleGrants struct {
 }
 
 // builderAccess is a caller's access to one draft (see [builderAPI]).
-// Level is the strongest of what its ownership, a share and its role grant;
-// via is where access to another user's draft comes from; stale is set when a
-// share names the caller but no longer matches its account, and so grants
-// nothing.
+// Level is the strongest of what its ownership, a share and its role grant.
+// Via is where access to the draft of another user comes from. Stale is true
+// when a share names the caller but no longer matches its account. Such a
+// share grants nothing.
 type builderAccess struct {
 	level builderLevel
 	via   string
@@ -118,26 +118,26 @@ type builderAccess struct {
 	stale bool
 }
 
-// builderAPI serves the Builder routes. Config access, publication
-// effects and where Builder files are read from are injected so handlers can
-// be exercised without a real store or the server's directories.
+// builderAPI serves the Builder routes. Config access, publication effects
+// and the Builder file directories are injected, so tests can run the
+// handlers without a real store or the directories of the server.
 type builderAPI struct {
 	drafts      *bapi.Service
 	listConfigs func(kind string) (store.Configs, error)
 	getConfig   func(name string) (*store.Config, error)
 	publish     builderPublishOps
-	// documentFiles returns the directory the Builder files that document
-	// references name are read from, and the directories below it they are
-	// never read from (see [bapi.ReadDocumentFile]).
+	// documentFiles returns the directory that holds the Builder files that
+	// document references name. It also returns the directories below it that
+	// the server never reads these files from (see [bapi.ReadDocumentFile]).
 	documentFiles func() (string, []string)
-	// templateFiles is the directory whose template files are read once, at
-	// start, as the server's collections of templates (see
-	// [bapi.Service.LoadServerTemplates]); "" reads none.
+	// templateFiles is the directory whose template files the server reads
+	// once, at start, as its template collections (see
+	// [bapi.Service.LoadServerTemplates]). "" reads none.
 	templateFiles string
-	// disks lists this server's disk images, as GET /disks lists them, for
-	// the routes that compare a document with them: package resolve (see
-	// [builderAPI.resolvePackage]), the dry run of a publication and the
-	// preflight disks check. It reuses a listing for a short time.
+	// disks lists the disk images of this server, as GET /disks lists them.
+	// Routes that compare a document with the disk images use it: package
+	// resolve (see [builderAPI.resolvePackage]), the dry run of a publication
+	// and the preflight disks check. It reuses a listing for a short time.
 	disks *builderDiskLister
 	// appNames lists the apps this server runs, which a package's diagram
 	// may need.
@@ -182,8 +182,8 @@ func newBuilderAPI(opts ...builderOption) (*builderAPI, error) {
 
 	api.cleanupStorage()
 
-	// The server's template collections are read here, once: the directory
-	// is where they are kept, and a change to it shows at the next start.
+	// Read the template collections of the server here, one time. A change to
+	// the directory shows at the next start.
 	api.drafts.LoadServerTemplates(context.Background(), api.templateFiles)
 
 	return api, nil
@@ -191,10 +191,11 @@ func newBuilderAPI(opts ...builderOption) (*builderAPI, error) {
 
 // cleanupStorage removes interrupted chunk writes, published documents no
 // topology references, and icon records of the per-user layout of earlier
-// builds. Document cleanup only runs after a complete topology listing with
-// entirely decodable references; otherwise deleting an apparently orphaned
-// document could break a topology omitted from the reference set. A
-// reference that names only a file names no stored document, and keeps none.
+// builds. Document cleanup runs only after a complete topology listing in
+// which all references decode. Otherwise, the deletion of an apparently
+// orphaned document could break a topology that is not in the reference
+// set. A reference that names only a file names no stored document, and
+// keeps none.
 func (b *builderAPI) cleanupStorage() {
 	topologies, err := b.listConfigs(builderKindTopology)
 	if err != nil {
@@ -274,32 +275,33 @@ func withBuilderPublishOps(ops builderPublishOps) builderOption {
 }
 
 // builderDocumentFiles is where this server reads Builder files from: the
-// phenix base directory (--base-dir.phenix), except the directory VM file
-// systems are mounted in, which holds guest files and can hang a read. The
-// store and the settings file, with its signing key, are kept outside the
-// base directory. Both are read when a file is, so they are the directories
-// the server was started with.
+// phenix base directory (--base-dir.phenix). It excludes the directory that
+// holds the mounted VM file systems, because that directory holds guest
+// files and can hang a read. The store and the settings file (with its
+// signing key) are outside the base directory. The function reads both
+// directories when the server reads a file, so they are the directories the
+// server started with.
 func builderDocumentFiles() (string, []string) {
 	return common.PhenixBase, []string{common.MountDir()}
 }
 
-// withBuilderTemplateFiles sets the directory whose template files are read
-// at start as the server's template collections; "" reads none.
+// withBuilderTemplateFiles sets the directory whose template files the
+// server reads at start as its template collections. "" reads none.
 func withBuilderTemplateFiles(directory string) builderOption {
 	return func(api *builderAPI) { api.templateFiles = directory }
 }
 
-// withBuilderDocumentFiles sets the directory Builder files are read from,
-// and the directories below it they are never read from.
+// withBuilderDocumentFiles sets the directory that the server reads Builder
+// files from, and the directories below it that it never reads them from.
 func withBuilderDocumentFiles(root string, excluded ...string) builderOption {
 	return func(api *builderAPI) {
 		api.documentFiles = func() (string, []string) { return root, excluded }
 	}
 }
 
-// registerBuilderRoutes adds the Builder routes to the given API
-// router, whose NotFoundHandler is set already: the Builder's response
-// headers are added to it (see [builderResponseHeaders]).
+// registerBuilderRoutes adds the Builder routes to the given API router.
+// The router must already have a NotFoundHandler. This function adds the
+// Builder response headers to that handler (see [builderResponseHeaders]).
 func registerBuilderRoutes(router *mux.Router, opts ...builderOption) error {
 	api, err := newBuilderAPI(opts...)
 	if err != nil {
@@ -341,9 +343,9 @@ func builderAuthorize(r *http.Request, verb builderVerb, action string) (builder
 }
 
 // builderBaseAllowed reports whether the role holds the base config
-// permission every Builder operation of this kind requires. The checks are
-// written as literal calls so the RBAC policy generator (see
-// web/rbac/known_policy_gen.go) records them.
+// permission every Builder operation of this kind requires. Each check is a
+// literal call so the RBAC policy generator (see
+// web/rbac/known_policy_gen.go) records it.
 func builderBaseAllowed(role rbac.Role, verb builderVerb, names ...string) bool {
 	switch verb {
 	case builderVerbList:
@@ -383,9 +385,9 @@ func builderIconsDeleteAllowed(role rbac.Role) bool {
 }
 
 // builderCrossUserAllowed reports whether the role may operate on a draft
-// owned by another user. Creation is missing on purpose: a draft is always
-// created for the authenticated user, never on somebody else's behalf. So is
-// sharing: only the owner changes who a draft is shared with.
+// owned by another user. Create and share are missing on purpose. A user
+// always creates a draft for itself, never for another user. Only the owner
+// changes who a draft is shared with.
 func builderCrossUserAllowed(role rbac.Role, verb builderVerb, names ...string) bool {
 	switch verb {
 	case builderVerbList:
@@ -465,16 +467,16 @@ func (a builderAccess) owner() bool {
 	return a.level == builderLevelOwner
 }
 
-// visible reports whether the caller may know the draft exists when asking to
-// perform the verb: it owns the draft, a share names it, or its role grants
-// list, get or the verb itself.
+// visible reports whether the caller may know that the draft exists when it
+// asks to do the verb. This is true when the caller owns the draft, when a
+// share names the caller, or when its role grants list, get or the verb.
 func (a builderAccess) visible(verb builderVerb) bool {
 	return a.owner() || a.via == builderViaShare || a.rbac.visible(verb)
 }
 
-// allows reports whether the caller may perform the verb. A share grants list
-// and get, and update when it is an edit share; it never grants delete or
-// sharing.
+// allows reports whether the caller may do the verb. A share grants list
+// and get. An edit share also grants update. A share never grants delete or
+// share.
 func (a builderAccess) allows(verb builderVerb) bool {
 	if a.owner() {
 		return true
@@ -525,11 +527,11 @@ func (a builderAccess) name() string {
 	return ""
 }
 
-// builderDraftAccess returns the caller's access to a draft, given what
-// its role grants on it. The caller's account is read, through account, only
-// when a share names the caller: a share applies only while the account it
-// was granted to still exists, so it never passes to a new account created
-// under the same name.
+// builderDraftAccess returns the access of the caller to a draft, given
+// what its role grants on it. It reads the account of the caller, through
+// account, only when a share names the caller. A share applies only while
+// the account it names still exists. Thus a share never passes to a new
+// account with the same name.
 func builderDraftAccess(
 	actor builderActor,
 	meta *bapi.DraftMetadata,
@@ -604,8 +606,8 @@ func (b *builderAPI) accountCreated(name string) (string, bool, error) {
 	return account.Metadata.Created, true, nil
 }
 
-// accountOnce returns [builderAPI.accountCreated] for the named user,
-// read at most once however often it is called.
+// accountOnce returns [builderAPI.accountCreated] for the named user. It
+// reads the account at most once, however often it is called.
 func (b *builderAPI) accountOnce(name string) func() (string, bool, error) {
 	var (
 		read    bool
@@ -625,8 +627,9 @@ func (b *builderAPI) accountOnce(name string) func() (string, bool, error) {
 }
 
 // canShare reports whether the caller, the owner of a draft, may change who
-// it is shared with: that takes config update, and a user account, which the
-// caller has no other reason to hold when authentication is off.
+// the draft is shared with. This needs config update and a user account.
+// When authentication is off, the caller has no other reason to hold an
+// account.
 func (b *builderAPI) canShare(actor builderActor, account func() (string, bool, error)) (bool, error) {
 	if !builderBaseAllowed(actor.role, builderVerbShare) {
 		return false, nil
@@ -642,9 +645,9 @@ func builderDraftName(owner, draftID string) string {
 	return owner + "/" + draftID
 }
 
-// builderForbidden returns the 403 every failed permission check answers
-// with. The action is a short description of the attempted operation; request
-// bodies are never included.
+// builderForbidden returns the 403 of every failed permission check. The
+// action is a short description of the attempted operation. The 403 never
+// includes request bodies.
 func builderForbidden(actor builderActor, action string) *weberror.WebError {
 	plog.Warn(
 		plog.TypeSecurity,
@@ -665,10 +668,13 @@ func builderNotAllowed(actor builderActor, action string) *weberror.WebError {
 		SetStatus(http.StatusForbidden)
 }
 
-// builderWarnDenied logs a refused request for another user's draft. The
-// reason tells refusals apart: "no-access" or "stale-share" for a draft the
-// caller may not see, answered with 404, and "view-only", "not-owner" or
-// "rbac" for one it may see but not change this way, answered with 403.
+// builderWarnDenied logs a refused request for the draft of another user.
+// The reason identifies the refusal:
+//
+//   - "no-access" or "stale-share": the caller may not see the draft. The
+//     answer is 404.
+//   - "view-only", "not-owner" or "rbac": the caller may see the draft but
+//     may not change it this way. The answer is 403.
 func builderWarnDenied(actor builderActor, owner, action, reason string) {
 	plog.Warn(
 		plog.TypeSecurity,
@@ -684,9 +690,9 @@ func builderWarnDenied(actor builderActor, owner, action, reason string) {
 	)
 }
 
-// builderNotFound returns the 404 answering both a missing resource and a
-// cross-user request the caller is not allowed to make, so the two are
-// indistinguishable to the client.
+// builderNotFound returns the 404 for a missing resource and for a
+// cross-user request that the caller may not make. Thus the client cannot
+// tell the two apart.
 func builderNotFound(kind, name string) *weberror.WebError {
 	return weberror.NewWebError(nil, "%s %s not found", kind, name).
 		SetStatus(http.StatusNotFound)
@@ -702,12 +708,12 @@ func builderHandler(handler func(http.ResponseWriter, *http.Request) error) webe
 }
 
 // builderCodedError gives the error of a Builder route the code of its
-// failure (see [bdoc.Code]), unless the route gave it one, and the issues it
-// is made of: those of a package or a document that does not validate, or of
-// what only publishing refuses (see [bdoc.ErrorIssues]). A write refused for lack of
-// space is answered with 507 and its code, whatever error carries it. Any
-// other error that is not a [weberror.WebError] is left as it is: it is
-// answered with 500 and no body.
+// failure (see [bdoc.Code]), unless the route gave it one. It also attaches
+// the issues of the error: those of a package or a document that does not
+// validate, or of what only publishing refuses (see [bdoc.ErrorIssues]).
+// A write refused for lack of space gets 507 and its code, whatever error
+// carries it. It does not change any other error that is not a
+// [weberror.WebError]. Such an error gets 500 and no body.
 func builderCodedError(err error) error {
 	if err == nil {
 		return nil
@@ -737,11 +743,15 @@ func builderCodedError(err error) error {
 	return err
 }
 
-// builderErrorCode is the code of the failure of a Builder route that names
-// none itself: a write refused for lack of space, a package that does not
-// decode or validate, a document that does not validate, a template file
-// that does not, what only publishing refuses (any other error holding
-// issues), or else the kind of failure its status says.
+// builderErrorCode is the failure code for a Builder route that names no
+// code itself. It picks the first that applies:
+//
+//   - a write refused for lack of space
+//   - a package that does not decode or validate
+//   - a document that does not validate
+//   - a template file that does not validate
+//   - what only publishing refuses (any other error that holds issues)
+//   - the kind of failure that the status gives
 func builderErrorCode(err error, status int, issues []bdoc.Issue) bdoc.Code {
 	var templateFile *bdoc.TemplateFileError
 
@@ -784,10 +794,10 @@ func builderErrorCode(err error, status int, issues []bdoc.Issue) bdoc.Code {
 	return bdoc.CodeRequestInvalid
 }
 
-// builderWebError maps a [phenix/api/builder] error to the HTTP status it
-// corresponds to. Cleanup failures must be handled by the caller before this is
-// reached: they follow a durable, successful mutation. A write refused because
-// etcd is out of space is answered with 507 by [weberror.ErrorHandler].
+// builderWebError maps a [phenix/api/builder] error to its HTTP status. The
+// caller must handle cleanup failures before it calls this function,
+// because they follow a durable, successful mutation. For a write refused
+// because etcd is out of space, [weberror.ErrorHandler] sends 507.
 func builderWebError(err error, format string, args ...any) *weberror.WebError {
 	webErr := weberror.NewWebError(err, format, args...)
 
@@ -814,12 +824,12 @@ func builderWebError(err error, format string, args ...any) *weberror.WebError {
 
 // builderMutation resolves the pair a draft mutation returns.
 //
-// A mutation whose durable write succeeded but which could not remove the
-// content it superseded returns its updated metadata together with an error
-// matching [bapi.ErrCleanup]. The draft is already at its new revision, so
-// failing such a request would only push the client into retrying with an
-// entity tag that is stale: the caller is given the updated metadata, and the
-// cleanup failure is warned about instead.
+// A mutation can complete its durable write but fail to remove the content
+// it replaced. It then returns its updated metadata and an error that
+// matches [bapi.ErrCleanup]. The draft is already at its new revision. A
+// failed request would only make the client retry with a stale entity tag.
+// Thus the caller gets the updated metadata, and a warning reports the
+// cleanup failure.
 //
 // A mutation that returns no result, or any error that is not a cleanup
 // failure, is mapped normally. Nothing else is caught.
@@ -844,10 +854,10 @@ func builderMutation[T any](
 }
 
 // builderWarnCleanup reports a cleanup failure that followed a durable,
-// successful mutation. The request still succeeded, so it is not failed, but
-// the failure is never dropped silently: it is logged with its cause and
-// announced on the response with a warning that names the operation only, so
-// nothing about the store is disclosed to the client.
+// successful mutation. The request still succeeded, so it does not fail.
+// But the failure is never dropped silently. The function logs it with its
+// cause, and adds a warning to the response. The warning names only the
+// operation, so the client learns nothing about the store.
 func builderWarnCleanup(w http.ResponseWriter, err error, operation, user string) {
 	plog.Error(
 		plog.TypeSystem,
@@ -867,9 +877,9 @@ func builderWarnCleanup(w http.ResponseWriter, err error, operation, user string
 }
 
 // builderIfMatch returns the entity tag a mutation must match. Every
-// mutation after creation requires exactly one strong, quoted tag: wildcards
-// and weak tags are rejected so a stale client can never overwrite a draft it
-// has not seen.
+// mutation after creation requires exactly one strong, quoted tag. It
+// rejects wildcards and weak tags, so a stale client can never overwrite a
+// draft it has not seen.
 func builderIfMatch(r *http.Request) (string, error) {
 	value := strings.TrimSpace(r.Header.Get("If-Match"))
 
@@ -902,9 +912,9 @@ func builderCheckIfMatch(ifMatch string, meta *bapi.DraftMetadata) error {
 		SetStatus(http.StatusPreconditionFailed).WithCode(string(bdoc.CodeDraftStale))
 }
 
-// builderDecode strictly decodes a JSON request body into target. Unknown
-// fields, trailing content, and bodies beyond [builderMaxRequestBytes] are
-// rejected. The body itself is never logged.
+// builderDecode strictly decodes a JSON request body into target. It
+// rejects unknown fields, trailing content, and bodies larger than
+// [builderMaxRequestBytes]. It never logs the body.
 func builderDecode(w http.ResponseWriter, r *http.Request, target any) error {
 	return builderDecodeLimit(w, r, target, builderMaxRequestBytes)
 }
@@ -932,10 +942,9 @@ func builderDecodeLimit(w http.ResponseWriter, r *http.Request, target any, limi
 	}
 }
 
-// builderDocumentBytes returns the document bytes of a request. The
-// document itself is decoded, validated, and canonicalized by
-// [phenix/api/builder], which is the only component that decides what may be
-// stored, so this only rejects a missing document.
+// builderDocumentBytes returns the document bytes of a request. It rejects
+// only a missing document. [phenix/api/builder] decodes, validates, and
+// canonicalizes the document, and it alone decides what the store may hold.
 func builderDocumentBytes(raw json.RawMessage) ([]byte, error) {
 	if len(raw) == 0 {
 		return nil, weberror.NewWebError(nil, "a builder document is required").
@@ -996,18 +1005,19 @@ const (
 )
 
 // builderResponseHeaders sets the security headers of the responses to
-// requests under the Builder's paths: every path below /api/v1/builder/, and
-// the schema routes of the document, template file and package formats. It goes by the request's path, not by the route it
-// matched, and leaves every other path alone. [builderAPI.routes] makes it a
-// middleware of the API router, so it also covers what the middleware after
-// it answers, and wraps the router's handlers of a request that matches no
-// route, or no method of one, which no middleware runs for.
+// requests under the Builder paths. These are every path below
+// /api/v1/builder/, and the schema routes of the document, template file and
+// package formats. It uses the request path, not the route that matched,
+// and does not change other paths. [builderAPI.routes] makes it a middleware
+// of the API router, so it also covers the answers of the middleware after
+// it. It also wraps the router handlers for a request that matches no route,
+// or no method of a route. No middleware runs for such a request.
 //
-// Every response under the Builder's paths, whatever its status, tells the
-// browser not to guess a content type: each is JSON and says so. The
-// responses of the icon library carry images people uploaded, as base64
-// inside that JSON, so they also carry a Content-Security-Policy that lets a
-// browser load, run and frame nothing, should it ever show one as a page.
+// Every response under the Builder paths, whatever its status, tells the
+// browser not to guess a content type. Each response is JSON and says so.
+// The icon library responses carry images that people uploaded, as base64
+// inside that JSON. Thus they also carry a Content-Security-Policy that lets
+// a browser load, run and frame nothing, if it ever shows one as a page.
 func builderResponseHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if builderPath(r.URL.Path) {
@@ -1023,9 +1033,9 @@ func builderResponseHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// builderPath reports whether path, a request's, is under the Builder's
-// paths: below /api/v1/builder/, or one of the schema routes of the
-// document, template file and package formats.
+// builderPath reports whether the request path is under the Builder paths:
+// below /api/v1/builder/, or one of the schema routes of the document,
+// template file and package formats.
 func builderPath(path string) bool {
 	rest, ok := strings.CutPrefix(path, builderAPIPrefix)
 
@@ -1033,12 +1043,12 @@ func builderPath(path string) bool {
 		rest == builderTemplateSchemaPath || rest == builderPackageSchemaPath)
 }
 
-// builderMethodNotAllowed returns the handler of a request that matches a
-// route's path but none of its methods, for a router that has none of its
-// own. Under the Builder's paths it answers 405 with the methods router takes
-// for the path in Allow and a body with the code of the refusal, as every
-// Builder error has; any other path, with the status alone, as the router
-// does.
+// builderMethodNotAllowed returns the handler for a request that matches
+// the path of a route but none of its methods. It is for a router that has
+// no such handler. Under the Builder paths, it answers 405. Allow lists the
+// methods that router takes for the path, and the body has the refusal
+// code, as every Builder error has. For other paths, it answers with the
+// status alone, as the router does.
 func builderMethodNotAllowed(router *mux.Router) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !builderPath(r.URL.Path) {
@@ -1081,9 +1091,8 @@ func builderAllowedMethods(router *mux.Router, r *http.Request) []string {
 	return allowed
 }
 
-// builderDraftPath is the path of one draft, and the start of the paths of
-// what belongs to it: its snapshots, cursor, shares, publication and
-// preflight checks.
+// builderDraftPath is the path of one draft. It is also the start of the
+// paths of its snapshots, cursor, shares, publication and preflight checks.
 const builderDraftPath = "/builder/drafts/{owner}/{draft}"
 
 // routes registers every Builder route on the given router, one family of
@@ -1147,15 +1156,15 @@ func (b *builderAPI) draftRoutes(router *mux.Router) {
 		Methods("GET", "OPTIONS")
 	router.Handle(snapshotsPath+"/{snapshot}", builderHandler(b.deleteSnapshot)).
 		Methods("DELETE", "OPTIONS")
-	// PUT is accepted alongside PATCH so a client that models the cursor as a
-	// replaceable sub-resource reaches the same handler.
+	// Accept PUT and PATCH, so a client that models the cursor as a
+	// replaceable sub-resource gets the same handler.
 	router.Handle(builderDraftPath+"/cursor", builderHandler(b.updateCursor)).
 		Methods("PATCH", "PUT", "OPTIONS")
 }
 
-// publishingRoutes registers the routes that publish a draft, or preview
-// what publishing it changes (the same route, with dryRun), and that run the
-// preflight checks of a draft.
+// publishingRoutes registers the routes that publish a draft, show what a
+// publish changes (the same route, with dryRun), and run the preflight
+// checks of a draft.
 func (b *builderAPI) publishingRoutes(router *mux.Router) {
 	router.Handle(builderDraftPath+"/publish", builderHandler(b.publishDraft)).
 		Methods("POST", "OPTIONS")
@@ -1173,9 +1182,9 @@ func (b *builderAPI) shareRoutes(router *mux.Router) {
 		Methods("GET", "OPTIONS")
 }
 
-// sourceRoutes registers the routes that list the configs a document can be
-// generated from, generate one, convert a legacy diagram, export a topology,
-// and build or resolve a package.
+// sourceRoutes registers the routes that list the source configs of a
+// document, generate a document, convert a legacy diagram, export a
+// topology, and build or resolve a package.
 func (b *builderAPI) sourceRoutes(router *mux.Router) {
 	router.Handle("/builder/sources", builderHandler(b.listSources)).
 		Methods("GET", "OPTIONS")
@@ -1312,11 +1321,11 @@ func (b *builderAPI) readDraft(
 	return actor, meta, access, err
 }
 
-// draftFor loads the draft named by the request path, enforcing both
-// authorization layers. A caller that may not see the draft, a draft that
-// does not exist, and a draft whose owner does not match the path all produce
-// the same 404; a caller that may see the draft but not perform the verb gets
-// 403.
+// draftFor loads the draft named by the request path, and applies both
+// authorization layers. These cases all give the same 404: a caller that
+// may not see the draft, a draft that does not exist, and a draft whose
+// owner does not match the path. A caller that may see the draft but may
+// not do the verb gets 403.
 func (b *builderAPI) draftFor(
 	r *http.Request,
 	actor builderActor,
@@ -1357,11 +1366,11 @@ func (b *builderAPI) namedDraft(
 // namedDraftAccess is [builderAPI.draftAccessFor] for a draft named by its
 // owner and ID rather than by the request path.
 //
-// Who a draft is shared with is part of its record, so the record is read
-// before a caller other than the owner is authorized. The reply never tells a
-// caller who may not see the draft that it exists: a missing draft, a draft
-// of someone else, and a draft whose record this server cannot read all
-// produce the same 404 for such a caller.
+// The shares of a draft are part of its record, so the function reads the
+// record before it authorizes a caller other than the owner. The reply never
+// tells a caller who may not see the draft that it exists. For such a
+// caller, these cases all give the same 404: a missing draft, the draft of
+// another user, and a draft whose record this server cannot read.
 func (b *builderAPI) namedDraftAccess(
 	r *http.Request,
 	actor builderActor,
@@ -1387,11 +1396,11 @@ func (b *builderAPI) namedDraftAccess(
 
 	meta, err := b.drafts.GetDraft(r.Context(), draftID)
 
-	// A draft whose metadata no longer validates can only be deleted; reading
-	// just its owner is enough to authorize that. Who it is shared with is
-	// never read from such a record, so shares grant nothing on it. The stored
-	// owner is checked against the path first, so a caller naming itself or an
-	// owner its role covers learns nothing about another user's damaged draft.
+	// A draft whose metadata no longer validates can only be deleted. Its owner
+	// is enough to authorize that. The function never reads the shares of such
+	// a record, so shares grant nothing on it. It first compares the stored
+	// owner with the path. Thus a caller that names itself, or an owner its role
+	// covers, learns nothing about the damaged draft of another user.
 	if errors.Is(err, bapi.ErrCorrupt) {
 		stored, ownerErr := b.drafts.GetDraftOwner(r.Context(), draftID)
 
@@ -1413,9 +1422,9 @@ func (b *builderAPI) namedDraftAccess(
 		return nil, none, builderWebError(err, "unable to get draft %s", name)
 	}
 
-	// Drafts are keyed by ID alone, so the owner in the path is authoritative:
-	// a mismatch means the caller was authorized against an owner that does not
-	// hold the draft.
+	// The draft key is the ID alone, so the owner in the path is authoritative.
+	// A mismatch means that the authorization used an owner that does not hold
+	// the draft.
 	if meta.Owner != owner {
 		return nil, none, builderNotFound("draft", name)
 	}

@@ -7,15 +7,17 @@ import (
 	"phenix/types/builder"
 )
 
-// ReplaceLegacyDiagram removes from a topology that is about to be written
-// with a Builder document reference the diagram the legacy Builder kept on
-// it (see [builder.LegacyXMLAnnotation]): the topology is a Builder topology
-// from then on. It reports whether there was one, with the warning that says
-// what became of it: this diagram replaces it
-// ([builder.CodePublishLegacyReplaced]), or, when it cannot be read (see
-// [builder.DecodeLegacy]), so that an import converted nothing of it, it was
-// removed ([builder.CodePublishLegacyRemoved]). Every other annotation is
-// left as it is.
+// ReplaceLegacyDiagram removes the diagram that the legacy Builder kept on a
+// topology (see [builder.LegacyXMLAnnotation]). The topology is about to be
+// written with a Builder document reference, so it is a Builder topology from
+// then on. ReplaceLegacyDiagram reports whether there was a diagram, with a
+// warning that says what became of it:
+//   - [builder.CodePublishLegacyReplaced]: this diagram replaces it.
+//   - [builder.CodePublishLegacyRemoved]: it was removed, because it cannot be
+//     read (see [builder.DecodeLegacy]) and so an import converted nothing of
+//     it.
+//
+// It does not change any other annotation.
 func ReplaceLegacyDiagram(topology *store.Config) (builder.Issue, bool) {
 	diagram, legacy := topology.Metadata.Annotations[builder.LegacyXMLAnnotation]
 	if !legacy {
@@ -35,11 +37,12 @@ func ReplaceLegacyDiagram(topology *store.Config) (builder.Issue, bool) {
 	)), true
 }
 
-// TopologyHoldsDocument reports whether a stored topology's spec is exactly
-// what the Builder document data publishes as that topology: nothing else
-// has written the topology since the document was published to it, or, for a
-// document read from a file, the topology is the file's. A document that can
-// no longer be decoded, projected or digested vouches for nothing.
+// TopologyHoldsDocument reports whether the spec of a stored topology is
+// exactly what the Builder document data publishes as that topology. Then
+// nothing else wrote the topology after the document was published to it. For
+// a document read from a file, the topology is the topology of the file. A
+// document that can no longer be decoded, projected or digested vouches for
+// nothing.
 func TopologyHoldsDocument(data []byte, topology *store.Config) (bool, error) {
 	name := topology.Metadata.Name
 

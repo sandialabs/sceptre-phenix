@@ -21,8 +21,8 @@ var (
 )
 
 // canonicalDocument decodes untrusted document bytes strictly, validates the
-// document semantically, and re-encodes it canonically. Everything this package
-// hashes, chunks, or stores is the canonical encoding, so two callers sending
+// document semantically, and re-encodes it canonically. This package hashes,
+// chunks, and stores only the canonical encoding. Thus two callers that send
 // the same document with different formatting or key order produce the same
 // digest, and no invalid document ever reaches the store.
 func canonicalDocument(data []byte) ([]byte, *builder.Document, error) {
@@ -39,10 +39,10 @@ func canonicalDocument(data []byte) ([]byte, *builder.Document, error) {
 	return canonical, doc, nil
 }
 
-// parseDocument is the first half of [canonicalDocument]: it bounds, decodes
-// and validates untrusted document bytes. A draft's document is stamped
-// between the two halves (see [Service.CreateDraft]), so what the caller sent
-// is validated whole before any of it is replaced.
+// parseDocument is the first half of [canonicalDocument]. It bounds, decodes
+// and validates untrusted document bytes. The document of a draft is stamped
+// between the two halves (see [Service.CreateDraft]). Thus what the caller
+// sent is validated whole before any of it is replaced.
 func parseDocument(data []byte) (*builder.Document, error) {
 	if len(data) == 0 {
 		return nil, newValidationError("document", "must not be empty")
@@ -76,8 +76,9 @@ func encodeDocument(doc *builder.Document) ([]byte, error) {
 }
 
 // parseStored validates document bytes that were read back from the store.
-// Integrity (digests, sizes, chunk order) is checked first; this catches
-// content that is intact but no longer a document this package can serve.
+// Integrity (digests, sizes, chunk order) is checked first. parseStored
+// catches content that is intact but no longer a document this package can
+// serve.
 func parseStored(kind, id string, data []byte) (*builder.Document, error) {
 	doc, err := builder.Parse(data)
 	if err != nil {
@@ -87,10 +88,10 @@ func parseStored(kind, id string, data []byte) (*builder.Document, error) {
 	return doc, nil
 }
 
-// documentTitle returns the title to record for a document, preferring the
-// document's own name so a rename in the builder updates draft metadata. The
-// title is validated, never truncated: a caller is told its document name is
-// unusable instead of silently storing a different title than it sent.
+// documentTitle returns the title to record for a document. It prefers the
+// name of the document, so a rename in the builder updates draft metadata. It
+// validates the title and never truncates it. Thus a caller learns that its
+// document name is unusable, and no different title is silently stored.
 func documentTitle(doc *builder.Document, fallback string) (string, error) {
 	title := fallback
 	if doc != nil && doc.Metadata.Name != "" {
@@ -127,8 +128,9 @@ func validateOptionalID(field, id string) error {
 	return validateID(field, id)
 }
 
-// validateText bounds an untrusted string. Text is rejected rather than
-// silently truncated so a caller never believes it stored something it did not.
+// validateText bounds an untrusted string. It rejects text and never silently
+// truncates it, so a caller never believes that it stored something it did
+// not.
 func validateText(field, value string, maxLength int, required bool) error {
 	switch {
 	case value == "" && required:
@@ -151,9 +153,10 @@ func validateText(field, value string, maxLength int, required bool) error {
 }
 
 // ValidateSourceFile checks the name of the uploaded file a draft was made
-// from (see [DraftMetadata.SourceFile]): a base name, so no "/", no "\" and
-// neither "." nor "..", of at most [MaxSourceFileLength] bytes and no control
-// characters. An empty name is valid: the draft has none.
+// from (see [DraftMetadata.SourceFile]). The name must be a base name, so no
+// "/", no "\" and neither "." nor "..". It must be at most
+// [MaxSourceFileLength] bytes, with no control characters. An empty name is
+// valid: the draft has none.
 func ValidateSourceFile(name string) error {
 	const field = "sourceFile"
 
@@ -171,9 +174,9 @@ func ValidateSourceFile(name string) error {
 	return nil
 }
 
-// decodeMetadata strictly decodes a metadata record: unknown fields and
-// trailing content are treated as corruption rather than ignored, so a
-// tampered or foreign record is never silently accepted.
+// decodeMetadata strictly decodes a metadata record. Unknown fields and
+// trailing content are corruption and are not ignored, so a tampered or
+// foreign record is never silently accepted.
 func decodeMetadata(kind string, record []byte, out any) error {
 	err := util.DecodeJSONStrict(bytes.NewReader(record), out)
 
@@ -188,8 +191,8 @@ func decodeMetadata(kind string, record []byte, out any) error {
 }
 
 // validateDraftMetadata fully validates a decoded draft record. The record key
-// must match the embedded ID, so a record cannot claim to be another draft, and
-// every manifest must be well formed and within the limits this package
+// must match the embedded ID, so a record cannot claim to be another draft.
+// Every manifest must be well formed and within the limits this package
 // enforces on write.
 func validateDraftMetadata(key string, meta *DraftMetadata) error {
 	switch {
@@ -248,13 +251,13 @@ func validateDraftMetadata(key string, meta *DraftMetadata) error {
 }
 
 // validatePublicationState validates recorded publication state against the
-// history it refers to. A publication naming a snapshot the draft still holds
-// must record that snapshot's digest, so tampered metadata can never make a
-// draft look clean at content it does not have. One naming a snapshot deleted
-// or pruned from the history (see [Service.DeleteSnapshot] and [pruneHistory])
-// leaves the draft dirty, since the cursor always points at a snapshot the
-// history holds. The targets it records must match the operation its mode
-// describes.
+// history it refers to. A publication that names a snapshot the draft still
+// holds must record the digest of that snapshot. Thus tampered metadata can
+// never make a draft look clean at content it does not have. A publication
+// that names a snapshot deleted or pruned from the history (see
+// [Service.DeleteSnapshot] and [pruneHistory]) leaves the draft dirty, because
+// the cursor always points at a snapshot the history holds. The targets it
+// records must match the operation its mode describes.
 func validatePublicationState(key string, meta *DraftMetadata) error {
 	state := meta.Publication
 	if state == nil {
@@ -297,8 +300,8 @@ func validatePublicationState(key string, meta *DraftMetadata) error {
 }
 
 // validateSharingState validates who a stored draft is shared with. A record
-// that fails is damaged, like any other: shares are never read leniently, so
-// a tampered list grants nobody anything.
+// that fails is damaged, like any other. Shares are never read leniently, so a
+// tampered list grants nobody anything.
 func validateSharingState(key string, meta *DraftMetadata) error {
 	state := meta.Sharing
 	if state == nil {
@@ -340,9 +343,9 @@ func validateSharingState(key string, meta *DraftMetadata) error {
 }
 
 // validatePublishedMetadata fully validates a decoded published document
-// record, including that its key is the content addressed ID its own target and
-// digest derive. A record stored before it held the document's schema has
-// none, and its content still says which schema it has when it is read.
+// record. Its key must be the content addressed ID that its own target and
+// digest derive. A record stored before records held the document schema has
+// no schema. Its content still says which schema it has when it is read.
 func validatePublishedMetadata(key string, doc *PublishedDocument) error {
 	switch {
 	case doc.ID != key:
@@ -369,8 +372,8 @@ func validatePublishedMetadata(key string, doc *PublishedDocument) error {
 }
 
 // validateReference validates an untrusted document reference read back from a
-// config annotation: it names at least one of a digest, an ID and a path,
-// and each one it names has the right shape.
+// config annotation. The reference must name at least one of a digest, an ID
+// and a path, and each one it names must have the right shape.
 func validateReference(ref DocumentReference) error {
 	switch {
 	case ref == DocumentReference{Digest: "", ID: "", Path: ""}:
@@ -390,14 +393,16 @@ func validateReference(ref DocumentReference) error {
 // document reference may name.
 var documentPathExtensions = []string{".json", ".yaml", ".yml"} //nolint:gochecknoglobals // fixed set
 
-// ValidateDocumentPath checks the syntax of the path of a Builder file a
-// document reference names, without touching the file: an absolute path that
-// is already clean (no "." or ".." element, no doubled or trailing slash), of
-// at most [MaxDocumentPathLength] bytes and no control characters, ending in
-// .json, .yaml or .yml. The extension rule keeps a reference from naming the
-// store file, a key file or a device. Whether the path is one the phenix
-// server reads files from is checked when the file is read, by the process
-// that reads it.
+// ValidateDocumentPath checks the syntax of the path of a Builder file that a
+// document reference names. It does not touch the file. The path must be:
+//   - absolute and already clean (no "." or ".." element, no doubled or
+//     trailing slash)
+//   - at most [MaxDocumentPathLength] bytes, with no control characters
+//   - ending in .json, .yaml or .yml
+//
+// The extension rule stops a reference from naming the store file, a key file
+// or a device. The process that reads the file checks, when it reads the file,
+// whether the path is one the phenix server reads files from.
 func ValidateDocumentPath(value string) error {
 	field := DocumentAnnotation + "." + referencePath
 

@@ -5,13 +5,13 @@
 //   away each node is (radialRoots chooses the root).
 // Graphviz places points, so both end with separateBoxes. Graphviz's own
 // overlap removal (prism) needs a triangulation library that this
-// WebAssembly build leaves out, and falls back to one that spreads the
-// diagram far wider.
+// WebAssembly build does not include. Without it, Graphviz uses a
+// different removal that spreads the diagram far wider.
 //
-// Graphviz is large (about 630 KB with Brotli), so it is loaded only when
-// one of these layouts first runs, and it runs in a Web Worker, off the
-// main thread. As with ELK (elk.js), the worker stays for the next layout
-// until the Builder closes or the session ends (stopGraphvizEngine).
+// Graphviz is large (about 630 KB with Brotli), so it loads only when one
+// of these layouts first runs. It runs in a Web Worker, off the main
+// thread. As with ELK (elk.js), the worker stays for the next layout until
+// the Builder closes or the session ends (stopGraphvizEngine).
 
 import { onBuilderSessionEnd } from '../session.js';
 
@@ -23,14 +23,14 @@ import { BOX_GAP, seedOf, separateBoxes } from './separate.js';
 const INCH = 72;
 
 // sfdp without its overlap removal gives a drawing far smaller than the
-// boxes: it is scaled up so that the median connection is this long, in
-// points, before separateBoxes.
+// boxes. So the drawing is scaled up until the median connection is this
+// long, in points, before separateBoxes.
 const SFDP_LENGTH = 260;
 
-// The least room between two of twopi's rings, in points.
+// The least space between two of twopi's rings, in points.
 const RING_GAP = 96;
 
-// A layout that takes longer than this is given up, as with ELK.
+// A layout that takes longer than this fails, as with ELK.
 const TIMEOUT_MS = 60000;
 
 const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -110,10 +110,12 @@ function isGateway(item) {
 
 /**
  * The Radial layout's root in each part of a scope that no connection
- * joins to another: the selected node, or the group of the scope that
- * holds it; else the router or firewall with the most connections; else
- * the switch with the most devices; else the item with the most
- * connections. A tie goes to the first by name, then by id.
+ * joins to another. The root is the first of these that exists:
+ * 1. the selected node, or the group of the scope that holds it
+ * 2. the router or firewall with the most connections
+ * 3. the switch with the most devices
+ * 4. the item with the most connections
+ * A tie goes to the first by name, then by id.
  *
  * @param {object[]} items scope items (see layoutScopes)
  * @param {object[]} edges scope edges
@@ -168,9 +170,9 @@ function depthsOf(items, edges, roots) {
   return depths;
 }
 
-// twopi's ranksep, in inches: the radius of the first ring, then the room
-// from each ring to the next. A ring is large enough for its boxes side by
-// side, and each ring at least RING_GAP clear of the one inside it.
+// twopi's ranksep, in inches: the radius of the first ring, then the
+// distance from each ring to the next. A ring is large enough for its boxes
+// side by side, and each ring is at least RING_GAP from the ring inside it.
 function ringsOf(items, depths) {
   const along = new Map();
   const across = new Map();
@@ -257,9 +259,9 @@ const LOAD_FAILED =
 let engine = null;
 
 // Graphviz in a Web Worker, from its own file. A worker that cannot start,
-// or a layout that takes too long, fails the layout instead of leaving it
-// waiting. `dropped` is called when the worker ends. The worker is a module
-// worker because its source uses import. The dev server serves it unbundled.
+// or a layout that takes too long, makes the layout fail instead of wait.
+// `dropped` is called when the worker ends. The worker is a module worker
+// because its source uses import. The dev server serves it unbundled.
 async function workerEngine(dropped) {
   const worker = new Worker(new URL('./graphvizWorker.js', import.meta.url), {
     type: 'module',
@@ -333,7 +335,7 @@ async function workerEngine(dropped) {
       }
     },
 
-    // Ends the worker, and fails the layouts under way.
+    // Ends the worker, and fails the layouts in progress.
     stop(reason) {
       drop(reason);
     },
@@ -341,7 +343,8 @@ async function workerEngine(dropped) {
 }
 
 // Node, where the unit tests run, has no Worker: Graphviz runs in-thread
-// there. A browser build leaves that path out, so it ships Graphviz once.
+// there. A browser build does not include that path, so it ships Graphviz
+// once.
 async function testEngine() {
   const { loadGraphviz, renderLayout } = await import('./graphvizRender.js');
   const graphviz = await loadGraphviz();
@@ -374,8 +377,8 @@ function graphvizEngine() {
 
 /**
  * Stops the Graphviz worker, when the Builder closes or the session ends.
- * A layout under way fails with an AbortError, which is no failure to
- * report; the next layout starts a new worker.
+ * A layout in progress fails with an AbortError, which is not a failure to
+ * report. The next layout starts a new worker.
  */
 export function stopGraphvizEngine() {
   const stopping = engine;
@@ -447,7 +450,7 @@ async function arrangeWith(
  * Yifan Hu: Graphviz sfdp over each scope.
  *
  * @param {object} doc builder document
- * @param {object} [options] showNotes, see layoutScopes; graphviz: an
+ * @param {object} [options] showNotes: see layoutScopes. graphviz: an
  *   engine to lay out with ({render(request)}), in place of the worker
  * @returns {Promise<{positions: object, sizes: object}>} see layoutScopes
  */
@@ -480,13 +483,13 @@ export function layoutSfdp(doc, options = {}) {
  * chooses.
  *
  * @param {object} doc builder document
- * @param {object} [options] root: the id of the selected node; showNotes,
- *   see layoutScopes; graphviz, see layoutSfdp
+ * @param {object} [options] root: the id of the selected node. showNotes:
+ *   see layoutScopes. graphviz: see layoutSfdp
  * @returns {Promise<{positions: object, sizes: object}>} see layoutScopes
  */
 export function layoutRadial(doc, options = {}) {
-  // The selected node and the groups that hold it: in a scope, the one of
-  // them that is an item stands for it.
+  // The selected node and the groups that hold it. In a scope, the one of
+  // them that is an item of the scope represents the selected node.
   const nodes = doc?.nodes || [];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const parents = parentsOf(nodes, nodeById);

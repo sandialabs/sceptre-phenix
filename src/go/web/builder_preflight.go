@@ -36,7 +36,7 @@ type builderPreflightRequest struct {
 	// least one, each one of capacity, network, disks and apps, none twice.
 	Checks []string `json:"checks"`
 	// Experiment names the experiment whose VLAN range and default bridge
-	// the network check goes by; empty for none.
+	// the network check uses. It is empty for none.
 	Experiment string `json:"experiment"`
 }
 
@@ -48,8 +48,8 @@ type builderPreflightRequest struct {
 type builderPreflightSources struct {
 	clusterHosts func() (mm.Hosts, error)
 	bridges      func(hosts ...string) (map[string][]string, error)
-	// defaultApps are the apps every experiment runs; apps are the others
-	// the server can run, built in or on its PATH.
+	// defaultApps are the apps that every experiment runs. apps are the
+	// others that the server can run, built in or on its PATH.
 	defaultApps func() []string
 	apps        func() []string
 	// timeout bounds each check.
@@ -76,12 +76,12 @@ func withBuilderPreflightSources(sources builderPreflightSources) builderOption 
 
 // preflightDraft - POST /builder/drafts/{owner}/{draft}/preflight.
 //
-// Puts the draft's current document through the preflight checks the request
-// names (see [bapi.RunPreflight]), for whoever may open the draft. Each check
-// reads only what the caller's role allows, as the routes that list the same
-// things allow it, and reports as unavailable, with the reason, what the role
-// does not allow or what cannot be reached. Nothing is written and nothing is
-// started.
+// Puts the current document of the draft through the preflight checks that
+// the request names (see [bapi.RunPreflight]), for any caller who may open
+// the draft. Each check reads only what the role of the caller allows, as
+// the routes that list the same things allow it. A check reports as
+// unavailable, with the reason, what the role does not allow or what cannot
+// be reached. The route writes nothing and starts nothing.
 func (b *builderAPI) preflightDraft(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderPreflightDraft")
 
@@ -209,9 +209,9 @@ func (e *builderPreflightEnvironment) Bridges(context.Context) (map[string][]str
 	return e.api.preflight.bridges(names...)
 }
 
-// schedulableHosts returns the hosts VMs can be scheduled on that the caller
-// may list, as GET /hosts lists hosts: with the hosts list permission, and
-// that permission for each host by name.
+// schedulableHosts returns the hosts that VMs can be scheduled on and that
+// the caller may list, as GET /hosts lists hosts. This needs the hosts list
+// permission, and that permission for each host by name.
 func (e *builderPreflightEnvironment) schedulableHosts() (mm.Hosts, error) {
 	if !e.actor.role.Allowed("hosts", "list") {
 		return nil, bapi.NewPreflightUnavailable("your role may not list the cluster hosts")
@@ -233,9 +233,9 @@ func (e *builderPreflightEnvironment) schedulableHosts() (mm.Hosts, error) {
 	return visible, nil
 }
 
-// DiskImages returns the disk images the caller may list, as GET /disks
-// lists them: with the disks list permission, and that permission for each
-// image by name.
+// DiskImages returns the disk images that the caller may list, as GET
+// /disks lists them. This needs the disks list permission, and that
+// permission for each image by name.
 func (e *builderPreflightEnvironment) DiskImages(context.Context) ([]bapi.PreflightImage, error) {
 	if !e.actor.role.Allowed("disks", "list") {
 		return nil, bapi.NewPreflightUnavailable("your role may not list the disk images")
@@ -258,8 +258,9 @@ func (e *builderPreflightEnvironment) DiskImages(context.Context) ([]bapi.Prefli
 }
 
 // Apps returns the default apps, which every experiment runs, and the other
-// apps the caller may list, as GET /applications lists them: with the
-// applications list permission, and that permission for each app by name.
+// apps that the caller may list, as GET /applications lists them. This needs
+// the applications list permission, and that permission for each app by
+// name.
 func (e *builderPreflightEnvironment) Apps(context.Context) ([]string, error) {
 	if !e.actor.role.Allowed("applications", "list") {
 		return nil, bapi.NewPreflightUnavailable("your role may not list the apps")
@@ -276,10 +277,11 @@ func (e *builderPreflightEnvironment) Apps(context.Context) ([]string, error) {
 	return available, nil
 }
 
-// ScenarioApps returns the apps a Scenario config runs, read as publishing
-// reads the scenarios a document lists: with the configs get and the
-// scenarios list permissions. A scenario the caller may not read is reported
-// as such without being looked up, so whether it exists is not disclosed.
+// ScenarioApps returns the apps that a Scenario config runs. It reads the
+// config as a publish reads the scenarios that a document lists, with the
+// configs get and the scenarios list permissions. It reports a scenario that
+// the caller may not read as such, without a lookup, so whether it exists is
+// not disclosed.
 func (e *builderPreflightEnvironment) ScenarioApps(_ context.Context, scenario string) ([]string, error) {
 	full := store.ConfigFullName(builderKindScenario, scenario)
 	if full == "" {
@@ -355,14 +357,15 @@ func (e *builderPreflightEnvironment) Experiment(_ context.Context, name string)
 	}, nil
 }
 
-// VLANsInUse returns the VLANs the running experiments the caller may list
-// (the configs list and experiments list permissions on each one's name)
-// hold, but the one named except, as their status records them. Reading
-// them takes the experiments list permission. A running experiment the
-// caller may not list is left out with its VLANs, whose IDs would tell the
-// caller it exists; the result only says that one was left out. The
-// experiment named except counts as left out when the caller may not list
-// it, so naming an experiment never tells whether it is running.
+// VLANsInUse returns the VLANs that the running experiments hold, as their
+// status records them. It includes only the experiments that the caller may
+// list (the configs list and experiments list permissions on the name of
+// each), and not the one named except. The read needs the experiments list
+// permission. It leaves out a running experiment that the caller may not
+// list, with its VLANs, because their IDs would tell the caller that it
+// exists. The result only says that one was left out. The experiment named
+// except counts as left out when the caller may not list it. Thus a request
+// that names an experiment never tells whether it is running.
 func (e *builderPreflightEnvironment) VLANsInUse(_ context.Context, except string) (bapi.PreflightVLANs, error) {
 	var used bapi.PreflightVLANs
 

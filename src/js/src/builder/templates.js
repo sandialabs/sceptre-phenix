@@ -1,21 +1,21 @@
 // Device templates: named sets of prefilled fields for a device node.
 //
-// A template is {id, name, description?, device}, where `device` is what a
-// device node's payload holds, less its hostname, its interface handles and
+// A template is {id, name, description?, device}. `device` is what a device
+// node's payload holds, without its hostname, its interface handles and
 // the topology it is included from: the icon, the custom icon, the colors
 // and a complete phenix node spec. The spec's general.hostname is the base
-// hostname: a device made from the template is named after it. `description`
-// is the template's own text, the palette entry's tooltip; it is never
-// written into a node.
+// hostname: a device made from the template is named after it.
+// `description` is the template's own text, the palette entry's tooltip. It
+// is never written into a node.
 //
 // A diagram keeps its templates in its document (`templates`, see
-// addTemplate in model.js), so they travel with it. A user also has a
-// library of templates on the server, with collections that group them
-// (the store's `templates`, see fetchTemplates in store.js): it starts with
-// the built-in ones, which are BUILTIN_TEMPLATES in catalog.js here, for
-// when the library cannot be read. A device made from a template is an
-// ordinary device: it keeps no link to the template, so changing or deleting
-// a template changes no diagram.
+// addTemplate in model.js), so they go with it. A user also has a library
+// of templates on the server, with collections that group them (the
+// store's `templates`, see fetchTemplates in store.js). The library starts
+// with the built-in templates. They are also here, as BUILTIN_TEMPLATES in
+// catalog.js, for when the library cannot be read. A device made from a
+// template is an ordinary device. It keeps no link to the template, so a
+// change to a template, or its deletion, changes no diagram.
 //
 // Nothing here knows about Vue. The template editor
 // (components/builder/dialogs/TemplateDialog.vue) edits a template as the
@@ -62,9 +62,9 @@ function specInterfaces(spec) {
  * device is named after the template's hostname, which addNode makes
  * unique.
  *
- * An interface's VLAN follows the rule of a paste (see pasteClipboard): one
- * that names a network of `doc` is emptied, since the new device is
- * connected to nothing; any other text is kept.
+ * An interface's VLAN follows the rule of a paste (see pasteClipboard). A
+ * VLAN that names a network of `doc` is emptied, because the new device is
+ * connected to nothing. Any other text is kept.
  *
  * A template's custom icon is an icon name, which the icon library resolves
  * (see iconSrc in icons.js): the device names it as the template does.
@@ -107,19 +107,19 @@ export function nodeOptionsFromTemplate(template, doc) {
 }
 
 /**
- * A template of a device node: the node's payload less what belongs to the
- * node alone (see templateDevice), its spec copied. The node's hostname
- * stays in the spec, as the template's base hostname.
+ * A template of a device node: the node's payload without what belongs to
+ * the node alone (see templateDevice), with a copy of its spec. The node's
+ * hostname stays in the spec, as the template's base hostname.
  *
  * @param {object} node a device node
  * @param {object} [options]
  * @param {string} [options.name] the template's name
  * @param {string} [options.description] its description
- * @param {boolean} [options.clearVLANs] empties every interface's VLAN: the
+ * @param {boolean} [options.clearVLANs] empties every interface's VLAN. The
  *   VLANs of a device on the canvas say what it is connected to in that
- *   diagram. Left as typed for a device of the template editor
+ *   diagram. For a device of the template editor, the VLANs stay as typed
  * @returns {{name: string, description?: string, device: object}} without
- *   an id, which the place that keeps the template gives it
+ *   an id. The place that stores the template gives it one
  */
 export function templateFromNode(
   node,
@@ -155,24 +155,25 @@ export function blankTemplate() {
 }
 
 /**
- * The document the template editor edits a template in: one that holds
- * exactly one device, made from the template as a diagram makes one, and a
- * copy of the custom icon the template names when the diagram the template
- * is in carries one, so the editor shows it. It has no networks, so no VLAN
- * is emptied. Its name and description are the template's.
+ * The document the template editor edits a template in. It holds exactly
+ * one device, made from the template as a diagram makes one. It also holds
+ * a copy of the custom icon the template names, when the diagram the
+ * template is in carries one, so the editor shows it. It has no networks,
+ * so no VLAN is emptied. Its name and description are the template's.
  *
  * A device draws its icon at the icon size of the diagram it is in while it
- * names none of its own. The document of a template of a diagram has that
- * diagram's icon size, so the Inspector names the size its devices draw at
- * there; that of a template of a library has none, as its devices draw at
- * the size of whichever diagram they are added to (see inspectorTarget).
+ * names no size of its own. The document of a template of a diagram has
+ * that diagram's icon size, so the Inspector names the size its devices
+ * draw at there. The document of a template of a library has none, because
+ * its devices draw at the size of the diagram they are added to (see
+ * inspectorTarget).
  *
  * @param {object} template
  * @param {object|null} [icons] the copies of icons the template's diagram
  *   carries (its `icons`), by name
  * @param {object} [options]
  * @param {string} [options.iconSize] the icon size of the template's
- *   diagram (see documentIconSize); empty for a template of a library
+ *   diagram (see documentIconSize). Empty for a template of a library
  * @returns {object} document
  */
 export function templateDocument(
@@ -223,19 +224,19 @@ export function templateFromDocument(doc) {
  * What the Inspector edits in the template editor, in place of the Builder
  * store (see the `host` prop of BuilderInspector.vue): a document of the
  * template's one device, which is always the selection. A commit replaces
- * the document, dropping copies of icons it need not carry, as a commit of
- * the store does (see settleIcons). The schema and the disk images are the
- * Builder store's; the actions of a canvas do nothing. The Purdue layer
- * changes the document at once, as on the canvas.
+ * the document and drops copies of icons that it does not need, as a
+ * commit of the store does (see settleIcons). The schema and the disk
+ * images are the Builder store's. The actions of a canvas do nothing. The
+ * Purdue layer changes the document at once, as on the canvas.
  *
  * The template editor makes it reactive.
  *
  * @param {object} options
  * @param {object} options.doc the document, from templateDocument
  * @param {object} options.source the Builder store
- * @param {(message: string) => void} options.announce what the Inspector
- *   says goes here: the editor is a modal dialog, which the page's live
- *   region cannot speak through
+ * @param {(message: string) => void} options.announce receives what the
+ *   Inspector says. The editor is a modal dialog, and the page's live
+ *   region cannot speak through it
  * @param {boolean} [options.readOnly]
  * @param {{lookup: Function}|null} [options.library] the icon library
  * @returns {object}
@@ -296,11 +297,13 @@ const OTHERS = ['shared', 'server'];
 
 /**
  * How a palette entry names its template, for a drag and for
- * store.templateByKey: "diagram:<id>" for one of the diagram, "own:<id>"
- * for one of the user's library, "shared:<owner>/<id>" and
- * "server:<owner>/<id>" for one of another user's library that is shared
- * with the user or published server-wide, "preloaded:<id>" for one the
- * server read from a template file, and "builtin:<id>" for a built-in one.
+ * store.templateByKey:
+ * - "diagram:<id>": a template of the diagram
+ * - "own:<id>": a template of the user's library
+ * - "shared:<owner>/<id>" and "server:<owner>/<id>": a template of another
+ *   user's library that is shared with the user or published server-wide
+ * - "preloaded:<id>": a template the server read from a template file
+ * - "builtin:<id>": a built-in template
  *
  * @param {string} source 'diagram', 'own', 'shared', 'server', 'preloaded'
  *   or 'builtin'
@@ -375,8 +378,9 @@ export const PRELOADED_GROUP_LABEL = 'Server';
 
 /**
  * The palette group of a server collection: "Server: <collection>", or
- * "Server" alone for a collection with no name to show, so it reads as the
- * server's, as the Node Templates tab lists it, and not as the user's.
+ * "Server" alone for a collection with no name to show. So it reads as the
+ * server's collection, as the Node Templates tab lists it, and not as the
+ * user's.
  *
  * @param {string} [name] the collection's name
  * @returns {string}
@@ -392,9 +396,9 @@ function templateImage(template) {
   return typeof image === 'string' ? image : '';
 }
 
-// What a palette entry's tooltip says: the template's description, and for
-// another user's template, whose it is; for one of the server's
-// collections, which one.
+// What a palette entry's tooltip says: the template's description. For
+// another user's template, it also says whose it is. For a template of one
+// of the server's collections, it says which collection.
 function entryDescription(source, template, collection = '') {
   const whose = {
     shared: `Shared by ${template.owner}.`,
@@ -408,9 +412,9 @@ function entryDescription(source, template, collection = '') {
 }
 
 // The test id of a palette entry. The user's own templates and the
-// built-in ones share theirs: a library starts with the built-in templates,
-// under their ids, so "palette-template-router" is the Router entry
-// whether the library was read or not.
+// built-in templates share their test ids. A library starts with the
+// built-in templates, under their ids. So "palette-template-router" is the
+// Router entry whether the library was read or not.
 function entryTestId(source, template) {
   switch (source) {
     case 'diagram':
@@ -441,12 +445,13 @@ function paletteEntry(source, template, collection = '') {
 }
 
 /**
- * What the palette can take from the user's library: 'ready' once it was
- * read, 'pending' while its first read is under way, and 'missing' when
- * there is none to show: none was asked for, it could not be read, or the
- * server cannot read what it stored (damaged). A read tried again after
- * one that failed leaves it missing until it answers, so what stands in
- * for the library stays in view meanwhile.
+ * What the palette can take from the user's library:
+ * - 'ready': the library was read
+ * - 'pending': its first read is in progress
+ * - 'missing': there is no library to show. No library was requested, it
+ *   could not be read, or the server cannot read what it stored (damaged).
+ * A new read after a failed read keeps 'missing' until the server answers.
+ * So the replacement for the library stays in view in the meantime.
  *
  * @param {object|null} library the user's library, as the store keeps it
  * @returns {'ready'|'pending'|'missing'}
@@ -462,17 +467,19 @@ export function libraryUse(library) {
 }
 
 /**
- * The device templates the palette offers, in groups: those saved in the
- * diagram, then those of the user's library (their own, those shared with
- * them, and those published server-wide), then each collection the server
- * read from a template file, in a group of its own ("preloaded:<id>") whose
- * label says it is the server's (see preloadedGroupLabel).
+ * The device templates the palette offers, in groups:
+ * 1. the templates saved in the diagram
+ * 2. the templates of the user's library (their own, those shared with
+ *    them, and those published server-wide)
+ * 3. each collection the server read from a template file, in a group of
+ *    its own ("preloaded:<id>") whose label says it is the server's (see
+ *    preloadedGroupLabel)
  * While there is no library to show (see libraryUse), the built-in
- * templates stand in for it, so a diagram can still be built; while its
- * first read is under way, nothing does. A library the server cannot read
- * (damaged) lists none of the user's own, but still other users' templates
- * and the server's. A group with no template is left out, and a template of
- * the library is listed once.
+ * templates replace it, so a diagram can still be built. While its first
+ * read is in progress, no templates replace it. A library that the server
+ * cannot read (damaged) lists none of the user's own templates, but still
+ * lists other users' templates and the server's. A group with no template
+ * is left out, and a template of the library is listed once.
  *
  * @param {object} doc
  * @param {object} [library] the user's library, as the store keeps it
@@ -556,9 +563,9 @@ export function templatesFull(doc) {
 const CONTROL_RUN = /[\u0000-\u001f\u007f]+/g;
 
 /**
- * A name or a description as it is saved: on one line, since neither may
- * hold control characters, with each run of them (a pasted tab or line
- * break) turned into a space, and without spaces around it.
+ * A name or a description as it is saved: on one line, because neither may
+ * hold control characters. Each run of control characters (a pasted tab or
+ * line break) becomes a space, and the text has no spaces around it.
  *
  * @param {string} text
  * @returns {string}
@@ -582,8 +589,8 @@ function problemText(at, message) {
     case '.device':
       return `This template is too large to save (${MAX_TEMPLATE_DEVICE_BYTES / 1024} KiB at most). Remove some of its settings.`;
     default:
-      // A value of the device, which the form checks before this is
-      // asked: said as the check words it.
+      // A value of the device, which the form checks before this call. The
+      // message uses the words of the check.
       return `This template cannot be saved: ${message}.`;
   }
 }
@@ -595,7 +602,7 @@ function problemText(at, message) {
  *
  * @param {object} template
  * @returns {{field: 'name'|'description'|'device', message: string}|null}
- *   the first problem, and the part of the editor it is about; null for a
+ *   the first problem, and the part of the editor it is about. null for a
  *   template that can be saved
  */
 export function templateProblem(template) {
@@ -633,8 +640,8 @@ export function diagramTemplateActions(rights) {
 
 /**
  * What a template of a diagram or of a library is saved as elsewhere: its
- * name, its description and a copy of its device, without the id and what
- * else the place it came from keeps of it.
+ * name, its description and a copy of its device. It does not include the
+ * id, or other data that the place it came from keeps of it.
  *
  * @param {object} template
  * @returns {{name: string, description?: string, device: object}}
@@ -688,10 +695,10 @@ export function sharedWith(item) {
 }
 
 /**
- * What deleting templates of the library does, for the one confirmation
- * the delete gets: one template is named, several are counted. The people
- * a template is shared with lose it too, which is said when there are
- * some.
+ * What the deletion of templates of the library does, for the one
+ * confirmation the delete gets. One template is named, several are
+ * counted. The people a template is shared with also lose it. The message
+ * says so when there are such people.
  *
  * @param {object[]} templates the templates to delete, as listed
  * @returns {{title: string, message: string, confirmLabel: string}}
@@ -751,10 +758,10 @@ export function templatesDeletedMessage(templates) {
 
 /**
  * The built-in templates the user's library does not hold, in the order
- * of BUILTIN_TEMPLATES: the ones a restore can add back. It is empty
- * until the library was read, and while the server cannot read it
- * (see libraryUse). A built-in template the user changed keeps its id,
- * so it is never missing.
+ * of BUILTIN_TEMPLATES: the ones a restore can add again. It is empty
+ * until the library is read, and while the server cannot read it (see
+ * libraryUse). A built-in template that the user changed keeps its id, so
+ * it is never missing.
  *
  * @param {object|null} library the user's library, as the store keeps it
  * @returns {object[]} built-in templates
@@ -778,7 +785,7 @@ export function missingBuiltinTemplates(library) {
  *
  * @param {object[]} templates the restored templates
  * @returns {string} "Restored template Router.", "Restored 3 templates.",
- *   or what it means when there was none to restore
+ *   or a message for when there was no template to restore
  */
 export function templatesRestoredMessage(templates) {
   if (!templates.length) {
@@ -812,19 +819,23 @@ export function membersMessage(change, templates, collection) {
 
 // --- what the Node Templates tab lists -------------------------------------
 
-// The Show field's values for the templates other users share with the user
-// and for those published server-wide. An id of a library holds no ':', so
-// none of these names a collection of the user's own, whose value is its id.
+// The Show field's values for the templates other users share with the
+// user, and for those published server-wide. An id of a library holds no
+// ':'. So none of these values names a collection of the user's own, whose
+// value is its id.
 export const SHOW_SHARED = 'shared:';
 export const SHOW_SERVER = 'server:';
 
 /**
  * What the Node Templates tab's Show field offers beside "My templates":
- * the user's collections; then, when other users share some with the user,
- * "Shared with me" and the collections shared; when some are published
- * server-wide, "Server-wide" and those collections; and the collections the
- * server read from its template files, under Server. Another user's
- * collection is named with its owner, and one of the server's by its name.
+ * 1. the user's collections
+ * 2. when other users share templates with the user, "Shared with me" and
+ *    the collections shared
+ * 3. when some are published server-wide, "Server-wide" and those
+ *    collections
+ * 4. the collections the server read from its template files, under Server
+ * Another user's collection is named with its owner. A collection of the
+ * server is named by its name.
  *
  * @param {object|null} library the library, as the store keeps it
  * @returns {{own: object[], shared: boolean, sharedCollections: object[],
@@ -869,10 +880,11 @@ export function showChoices(library) {
 }
 
 /**
- * The list a value of the Show field names: whose templates it holds (own:
- * the user's; shared or server: other users'), the collection it is, if
- * any, and its templates, in the order the library lists them, or the
- * collection holds them.
+ * The list that a value of the Show field names:
+ * - whose templates it holds (own: the user's. shared or server: other
+ *   users')
+ * - the collection it is, if any
+ * - its templates, in the order of the library, or of the collection
  *
  * @param {object|null} library the library, as the store keeps it
  * @param {string} value '' for every template of the user's, the id of
@@ -927,9 +939,9 @@ export function shownList(library, value) {
     return null;
   }
 
-  // The templates of the collection's library: another user's are listed
-  // as shared or server-wide, as each one is reached; the server's are its
-  // own.
+  // The templates of the collection's library. Another user's templates are
+  // listed as shared or server-wide, by how the user gets access to each
+  // one. The server's templates are listed as the server's own.
   const ofLibrary = (template) => {
     switch (collection.source) {
       case 'own':
@@ -1012,8 +1024,8 @@ function itemsNoun(items) {
 }
 
 /**
- * What the Share dialog, and what it comes to, call the items it shares:
- * one by its name, several counted.
+ * What the Share dialog, and its result messages, call the items it
+ * shares: one item by its name, several items counted.
  *
  * @param {{kind?: string, name: string}[]} targets templates (kind
  *   'template' or none) and collections (kind 'collection')
@@ -1035,7 +1047,7 @@ function ownedText(targets) {
 }
 
 /**
- * The people one item is shared with, as the Share dialog lists them: a
+ * The people one item is shared with, as the Share dialog lists them. A
  * share whose account was removed (stale) starts marked for removal.
  *
  * @param {object} item a template or a collection, as listed
@@ -1053,22 +1065,22 @@ export function shareRows(item) {
 
 /**
  * Checks a person before the Share dialog adds them to the people to add.
- * Someone one item has, marked for removal, is kept rather than added; a
- * share whose account was removed is replaced by one for the account the
- * name has now.
+ * A person whom the one item has, marked for removal, is kept, not added.
+ * A share whose account was removed is replaced by a share for the account
+ * that has the name now.
  *
  * @param {string} name as typed
  * @param {object} options
  * @param {object[]} options.targets the items shared
  * @param {string[]} [options.people] the people to add, so far
- * @param {object[]} [options.rows] the one item's people (see shareRows);
- *   none for several items
+ * @param {object[]} [options.rows] the one item's people (see shareRows).
+ *   None for several items
  * @param {string} options.owner the items' owner, who shares them
  * @param {string[]|null} options.knownUsers the usernames the items may be
  *   shared with, or null while they are not known
  * @param {number} [options.max] the most people an item is shared with
  * @returns {{user: string, error: string, row?: object}} error is '' when
- *   the person can be added; row is their row, to keep
+ *   the person can be added. row is their row, to keep
  */
 export function validateTemplateShareAdd(
   name,
@@ -1127,17 +1139,17 @@ export function validateTemplateShareAdd(
  * @param {string[]} state.people the people to add
  * @param {object[]} state.rows the one item's people (see shareRows)
  * @param {boolean|null} state.serverWide whether the items are to be
- *   server-wide; null to leave them as they are
+ *   server-wide. null to keep them as they are
  * @returns {{add: string[], remove: string[], publish: boolean|null,
  *   count: number, asked: number}} publish is null when server-wide does
- *   not change; count counts every change, and asked those the user made,
- *   which leaves out the shares marked for removal because their account
+ *   not change. count counts every change. asked counts the changes the
+ *   user made, without the shares marked for removal because their account
  *   was removed
  */
 export function templateShareChange({ targets, people, rows, serverWide }) {
   const add = [...people];
-  // Someone added again is not removed: a share whose account was removed
-  // is replaced by one for the account the name has now.
+  // A person added again is not removed. A share whose account was removed
+  // is replaced by a share for the account that has the name now.
   const removing = rows.filter((row) => row.removed && !add.includes(row.user));
   const unchanged =
     serverWide === null ||
@@ -1156,8 +1168,9 @@ export function templateShareChange({ targets, people, rows, serverWide }) {
 }
 
 /**
- * Whether other people reach a template of the user's through one of the
- * collections that hold it: one shared with someone, or server-wide.
+ * Whether other people get access to a template of the user's through one
+ * of the collections that hold it: a collection shared with someone, or
+ * server-wide.
  *
  * @param {object|null} library the library, as the store keeps it
  * @param {object} item a template or a collection, as listed
@@ -1177,9 +1190,9 @@ export function reachedThroughCollection(library, item) {
 }
 
 /**
- * What the page says once the Share dialog saved: whom the items were
- * shared with, whether they are server-wide now, and, for one item, when
- * only its owner can use it now.
+ * What the page says after the Share dialog saved: whom the items were
+ * shared with, whether they are server-wide now, and, for one item,
+ * whether only its owner can use it now.
  *
  * @param {object[]} targets the items shared
  * @param {{add: string[], remove: string[], publish: boolean|null}} change
@@ -1187,8 +1200,8 @@ export function reachedThroughCollection(library, item) {
  * @param {object} [options]
  * @param {object[]} [options.rows] the one item's people, as the dialog
  *   left them
- * @param {boolean} [options.reached] other people still reach the one item
- *   through a collection (see reachedThroughCollection)
+ * @param {boolean} [options.reached] other people still get access to the
+ *   one item through a collection (see reachedThroughCollection)
  * @returns {string}
  */
 export function templateSharedMessage(
@@ -1234,7 +1247,7 @@ export function templateSharedMessage(
 }
 
 /**
- * Why the server left items as they were, a sentence each.
+ * Why the server did not change items, a sentence for each item.
  *
  * @param {object[]} targets the items shared
  * @param {{kind: string, id: string, reason: string}[]} failed see
@@ -1292,7 +1305,7 @@ const MAX_LIBRARY_TEMPLATES = 200;
 
 /**
  * Why templates cannot be copied into the user's library, or '' when they
- * can: a library holds so many templates at most.
+ * can. A library holds a maximum number of templates.
  *
  * @param {object|null} library the library, as the store keeps it
  * @param {number} adding how many templates the copy adds
@@ -1328,7 +1341,7 @@ export function copiedMessage(templates, collection = null) {
 }
 
 /**
- * What taking other users' items back from server-wide does, for its
+ * What the removal of other users' items from server-wide does, for its
  * confirmation.
  *
  * @param {object[]} items templates or collections, as listed (kind

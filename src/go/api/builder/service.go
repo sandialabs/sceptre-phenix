@@ -27,11 +27,11 @@ const (
 // draft.
 const KindDraft = kindDraft
 
-// Clock returns the current time. It is injected so tests can control the
-// timestamps written to metadata.
+// Clock returns the current time. Tests inject it to control the timestamps
+// written to metadata.
 type Clock func() time.Time
 
-// IDSource returns a new unique identifier. It is injected so tests can produce
+// IDSource returns a new unique identifier. Tests inject it to produce
 // deterministic draft and snapshot IDs.
 type IDSource func() (string, error)
 
@@ -47,7 +47,7 @@ type Options struct {
 type Option func(*Options)
 
 // Service persists builder drafts and published documents. It is safe for
-// concurrent use: all mutations are optimistic, compare-and-swap operations
+// concurrent use. All mutations are optimistic compare-and-swap operations
 // against the injected record store.
 type Service struct {
 	store     store.RecordStore
@@ -60,18 +60,18 @@ type Service struct {
 	serverTemplates atomic.Pointer[[]ServerCollection]
 }
 
-// DocumentOrigin is a document the caller read itself, from the store or from
-// a Builder file, that a new draft is opened from. It is a trusted input, as
-// Owner and Actor are: a caller must never take it from a request.
+// DocumentOrigin is a document that the caller read itself, from the store or
+// from a Builder file, and opens a new draft from. It is a trusted input, as
+// Owner and Actor are. A caller must never take it from a request.
 type DocumentOrigin struct {
-	// Digest is the digest of the origin's canonical JSON. A request whose
-	// document has this digest is that document, byte for byte, so nothing
-	// else of the origin needs to be given.
+	// Digest is the digest of the canonical JSON of the origin. A request
+	// whose document has this digest is that document, byte for byte. Thus the
+	// caller does not need to give anything else of the origin.
 	Digest string
 }
 
 // CreateDraftRequest describes a new draft. Owner and Actor are trusted inputs
-// supplied by the caller, which is responsible for authorization.
+// from the caller, which does the authorization.
 type CreateDraftRequest struct {
 	Owner string
 	Actor string
@@ -135,8 +135,8 @@ type DeleteSnapshotRequest struct {
 	SnapshotID       string
 }
 
-// MarkPublishedRequest records the publication operation a caller performed for
-// a draft snapshot. This package never creates configs or experiments; it only
+// MarkPublishedRequest records the publication operation a caller did for a
+// draft snapshot. This package never creates configs or experiments. It only
 // records what the caller reports.
 type MarkPublishedRequest struct {
 	DraftID          string
@@ -175,8 +175,8 @@ func WithIDSource(ids IDSource) Option {
 	return func(o *Options) { o.IDs = ids }
 }
 
-// WithChunkSize overrides the content chunk size. It exists for tests; the
-// default is [ChunkBytes].
+// WithChunkSize overrides the content chunk size. It is for tests. The default
+// is [ChunkBytes].
 func WithChunkSize(size int) Option {
 	return func(o *Options) { o.ChunkSize = size }
 }
@@ -226,10 +226,10 @@ func uuidSource() (string, error) {
 }
 
 // DamagedDraft is what can still be read of a draft whose metadata no longer
-// decodes or validates, for example one written by a newer phenix. Its ID
-// and revision always; its owner, title and last update when the record
-// still holds them in a usable form. Such a draft can only be deleted, and
-// only when its owner can be read (see [Service.GetDraftOwner]).
+// decodes or validates, for example a draft that a newer phenix wrote. It
+// always has the ID and revision. It has the owner, title and last update when
+// the record still holds them in a usable form. Such a draft can only be
+// deleted, and only when its owner can be read (see [Service.GetDraftOwner]).
 type DamagedDraft struct {
 	ID       string
 	Owner    string
@@ -244,11 +244,11 @@ func (d *DamagedDraft) ETag() string {
 	return RevisionETag(d.Revision)
 }
 
-// ListDraftsWithDamaged returns the metadata of every draft and, apart, what
-// can still be read of every draft whose metadata does not decode or
-// validate, both ordered by draft ID. Each such draft is logged, so one
-// damaged record, or one written by a newer version, never hides every other
-// draft, and its owner can still delete it.
+// ListDraftsWithDamaged returns the metadata of every draft. Separately, it
+// returns what can still be read of every draft whose metadata does not decode
+// or validate. Both lists are ordered by draft ID. It logs each such draft.
+// Thus one damaged record, or one that a newer version wrote, never hides all
+// other drafts, and its owner can still delete it.
 func (s *Service) ListDraftsWithDamaged(ctx context.Context) ([]DraftMetadata, []DamagedDraft, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, fmt.Errorf("listing drafts: %w", err)
@@ -288,7 +288,7 @@ func (s *Service) ListDraftsWithDamaged(ctx context.Context) ([]DraftMetadata, [
 
 // listDrafts lists every draft whose metadata decodes and validates, and the
 // IDs of the drafts whose metadata does not. A caller that removes content no
-// listed draft references must not mistake such a draft's content for
+// listed draft references must not mistake the content of such a draft for
 // orphaned content.
 func (s *Service) listDrafts(ctx context.Context) ([]DraftMetadata, []string, error) {
 	drafts, damaged, err := s.ListDraftsWithDamaged(ctx)
@@ -306,9 +306,9 @@ func (s *Service) listDrafts(ctx context.Context) ([]DraftMetadata, []string, er
 }
 
 // readDamagedDraft reads what it can of a draft record whose metadata does not
-// decode or validate. Each field is read on its own, so one of the wrong type
-// does not hide the others, and a field that would not pass validation is
-// left empty.
+// decode or validate. It reads each field separately, so a field of the wrong
+// type does not hide the others. It leaves empty a field that would not pass
+// validation.
 func readDamagedDraft(record store.Record) DamagedDraft {
 	damaged := DamagedDraft{ //nolint:exhaustruct // the rest is read below, if it can be
 		ID:       record.Key,
@@ -363,10 +363,10 @@ func (s *Service) GetDraft(ctx context.Context, draftID string) (*DraftMetadata,
 }
 
 // GetDraftOwner returns the ID, owner, and record revision of a draft, and no
-// other metadata. Unlike [Service.GetDraft] it reads the record leniently, so
-// it also succeeds for a draft whose metadata fails validation, as long as the
-// record still names a usable owner. It exists so that the owner of such a
-// draft can be authorized to delete it.
+// other metadata. Unlike [Service.GetDraft], it reads the record leniently.
+// Thus it also succeeds for a draft whose metadata fails validation, if the
+// record still names a usable owner. It lets the caller authorize the owner of
+// such a draft to delete it.
 func (s *Service) GetDraftOwner(ctx context.Context, draftID string) (*DraftMetadata, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("getting draft %s: %w", draftID, err)
@@ -381,8 +381,8 @@ func (s *Service) GetDraftOwner(ctx context.Context, draftID string) (*DraftMeta
 		return nil, storeError(kindDraft, draftID, store.AnyRevision, err)
 	}
 
-	// Read as a damaged draft is listed, so every one listed with an owner
-	// can be deleted.
+	// Read the record as a listing reads a damaged draft, so every damaged
+	// draft listed with an owner can be deleted.
 	damaged := readDamagedDraft(record)
 
 	if damaged.Owner == "" {
@@ -429,19 +429,20 @@ func (s *Service) GetSnapshot(ctx context.Context, draftID, snapshotID string) (
 }
 
 // CreateDraft stores a new draft with a single snapshot and returns its
-// metadata. The document is decoded, semantically validated, and canonicalized
-// before it is hashed or stored; invalid documents are rejected with an error
-// matching [ErrInvalid].
+// metadata. It decodes, semantically validates, and canonicalizes the document
+// before it hashes or stores it. It rejects an invalid document with an error
+// that matches [ErrInvalid].
 //
-// The document is validated as it was sent, then stamped: its createdBy and
-// createdAt are kept when it has them, and are otherwise the actor and now,
-// and its updatedBy and updatedAt are always the actor and now. The createdBy
-// and createdAt it is stored with are recorded in the draft, and every later
-// snapshot carries them (see [Service.AppendSnapshot]). One document is not
-// stamped: the unchanged copy of req.Origin, the document the draft is opened
-// from. It is stored as it is, so the draft holds exactly the content that
-// was opened, under the same digest. The returned metadata's Stamp holds the
-// four values the stored document has.
+// It validates the document as it was sent, then stamps it. It keeps the
+// createdBy and createdAt of the document when the document has them, and
+// otherwise sets them to the actor and now. It always sets updatedBy and
+// updatedAt to the actor and now. The draft records the stored createdBy and
+// createdAt, and every later snapshot carries them (see
+// [Service.AppendSnapshot]). One document is not stamped: the unchanged copy
+// of req.Origin, the document the draft is opened from. CreateDraft stores it
+// as it is, so the draft holds exactly the content that was opened, under the
+// same digest. The Stamp of the returned metadata holds the four values of the
+// stored document.
 func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*DraftMetadata, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("creating draft: %w", err)
@@ -512,8 +513,8 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 		meta.Forked = &forked
 	}
 
-	// Metadata is encoded (and size checked) before anything durable is
-	// written, so an encoding failure can never leave chunks behind.
+	// Encode (and size check) the metadata before anything durable is written,
+	// so an encoding failure can never leave chunks behind.
 	value, err := encodeDraft(meta)
 	if err != nil {
 		return nil, err
@@ -544,16 +545,16 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 	return meta, nil
 }
 
-// firstDocument returns the canonical encoding of the document a new draft
-// is stored with, and leaves doc as that document.
+// firstDocument returns the canonical encoding of the document that a new
+// draft is stored with, and leaves doc as that document.
 //
-// The unchanged copy of the request's origin is returned as it is: its digest
-// says it is the origin, byte for byte, and the origin was not this caller's
-// edit. Any other document is stamped. It keeps the creator and the creation
-// time it names, since a document made elsewhere was not made by the actor
-// now, and takes the actor and now for whichever it lacks. Its last editor
-// and last edit time are always the actor and now: nothing a request says of
-// them is kept.
+// It returns the unchanged copy of the origin of the request as it is. Its
+// digest says that it is the origin, byte for byte, and the origin was not an
+// edit of this caller. firstDocument stamps any other document. The document
+// keeps the creator and the creation time it names, because the actor did not
+// make a document that was made elsewhere. It takes the actor and now for
+// whichever it does not have. Its last editor and last edit time are always
+// the actor and now. Nothing a request says of them is kept.
 func firstDocument(doc *builder.Document, req CreateDraftRequest, now time.Time) ([]byte, error) {
 	if req.Origin != nil {
 		// A copy too large to store is refused below, as any document is.
@@ -582,30 +583,30 @@ func firstDocument(doc *builder.Document, req CreateDraftRequest, now time.Time)
 
 // AppendSnapshot appends a new snapshot to a draft.
 //
-// The redo branch (every snapshot after the cursor) is discarded, the oldest
-// snapshots are pruned until at most [MaxSnapshots] snapshots of at most
-// [MaxDraftHistoryBytes] in total remain, and the cursor is moved to the new
-// snapshot. All limits are checked before anything durable is written.
+// It discards the redo branch (every snapshot after the cursor). It prunes the
+// oldest snapshots until at most [MaxSnapshots] snapshots of at most
+// [MaxDraftHistoryBytes] in total remain. It moves the cursor to the new
+// snapshot. It checks all limits before it writes anything durable.
 //
-// Content chunks are written to a scope private to the new snapshot before the
-// metadata compare-and-swap; if the swap fails, exactly the chunks this attempt
-// wrote are removed (never a concurrent winner's) and any failure to remove them
-// is reported alongside the conflict. A store error that does not prove the
-// swap failed is settled by reading the draft back (see
+// It writes content chunks to a scope private to the new snapshot before the
+// metadata compare-and-swap. If the swap fails, it removes exactly the chunks
+// this attempt wrote (never the chunks of a concurrent winner). It reports any
+// failure to remove them with the conflict. It settles a store error that does
+// not prove the swap failed by reading the draft back (see
 // [Service.settleAmbiguousWrite]).
 //
-// When the metadata write succeeded but removing chunks of discarded snapshots
-// failed, the updated metadata is returned together with an error matching
+// When the metadata write succeeded but removing the chunks of discarded
+// snapshots failed, it returns the updated metadata with an error that matches
 // [ErrCleanup].
 //
-// The document is validated as it was sent, then stamped: its createdBy and
-// createdAt become the ones the draft records (see
+// It validates the document as it was sent, then stamps it. createdBy and
+// createdAt become the values the draft records (see
 // [DraftMetadata.DocumentCreatedBy]), or are removed when the draft records
-// none, and its updatedBy and updatedAt become the actor and now. Nothing a
-// request says of the four is kept, so every snapshot names the user who
-// really saved it. The same time is the snapshot's and the draft's, cut to
-// whole seconds in the document. The returned metadata's Stamp holds the four
-// values written.
+// none. updatedBy and updatedAt become the actor and now. Nothing a request
+// says of the four is kept, so every snapshot names the user who really saved
+// it. The snapshot and the draft get the same time, cut to whole seconds in
+// the document. The Stamp of the returned metadata holds the four values
+// written.
 func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest) (*DraftMetadata, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("appending snapshot: %w", err)
@@ -629,8 +630,8 @@ func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest)
 		return nil, err
 	}
 
-	// A rename is rejected here, before anything durable is written, rather
-	// than stored under a silently shortened title.
+	// Reject a rename here, before anything durable is written. Do not store
+	// it under a silently shortened title.
 	title, err := documentTitle(doc, meta.Title)
 	if err != nil {
 		return nil, err
@@ -697,7 +698,7 @@ func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest)
 		return nil, errors.Join(err, newCleanupError("appending snapshot", cleanupErrs))
 	}
 
-	// Chunks of discarded snapshots are only removed after the metadata is
+	// Remove the chunks of discarded snapshots only after the metadata is
 	// durable. Every snapshot owns a private scope, so removing them can never
 	// affect a retained or concurrently written snapshot.
 	cleanupErrs := s.deleteSnapshotScopes(req.DraftID, dropped)
@@ -705,8 +706,8 @@ func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest)
 	return updated, newCleanupError("appending snapshot", cleanupErrs)
 }
 
-// MoveCursor moves a draft's cursor to another snapshot in its history without
-// discarding any snapshot. The move is recorded as an edit by the actor.
+// MoveCursor moves the cursor of a draft to another snapshot in its history,
+// and discards no snapshot. It records the move as an edit by the actor.
 func (s *Service) MoveCursor(ctx context.Context, req MoveCursorRequest) (*DraftMetadata, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("moving cursor: %w", err)
@@ -741,16 +742,17 @@ func (s *Service) MoveCursor(ctx context.Context, req MoveCursorRequest) (*Draft
 	return updated, nil
 }
 
-// DeleteSnapshot removes a snapshot from a draft's history, then its chunks.
-// The snapshot the cursor points at cannot be removed, and the cursor keeps
-// pointing at the same snapshot. A publication naming the removed snapshot is
-// kept: the draft stays dirty, since the cursor can never point at that
-// snapshot again. The removal is recorded as an edit by the actor.
+// DeleteSnapshot removes a snapshot from the history of a draft, then its
+// chunks. It cannot remove the snapshot the cursor points at, and the cursor
+// continues to point at the same snapshot. It keeps a publication that names
+// the removed snapshot. The draft stays dirty, because the cursor can never
+// point at that snapshot again. It records the removal as an edit by the
+// actor.
 //
 // Every snapshot owns a private chunk scope, so removing its chunks never
 // affects another snapshot or a published document. When the metadata write
-// succeeded but removing the chunks failed, the updated metadata is returned
-// together with an error matching [ErrCleanup].
+// succeeded but removing the chunks failed, it returns the updated metadata
+// with an error that matches [ErrCleanup].
 func (s *Service) DeleteSnapshot(ctx context.Context, req DeleteSnapshotRequest) (*DraftMetadata, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("deleting snapshot: %w", err)
@@ -790,9 +792,8 @@ func (s *Service) DeleteSnapshot(ctx context.Context, req DeleteSnapshotRequest)
 	removed := removeSnapshot(updated, index)
 	stampDraft(updated, req.Actor, s.clock().UTC())
 
-	// A write that failed may still be applied later, and until it is the
-	// draft references the chunks, so they are left to
-	// [Service.CleanupOrphanedChunks].
+	// A failed write may still be applied later. Until then, the draft
+	// references the chunks, so leave them to [Service.CleanupOrphanedChunks].
 	if err := s.writeDraft(updated, meta.Revision); err != nil {
 		return nil, err
 	}
@@ -803,13 +804,14 @@ func (s *Service) DeleteSnapshot(ctx context.Context, req DeleteSnapshotRequest)
 }
 
 // MarkPublished records that the named snapshot of a draft was published with
-// the requested operation. The snapshot must be the one the cursor points at,
-// so a draft can never be marked clean against content the user is no longer
-// editing, and the draft is clean only for exactly that operation and snapshot.
+// the requested operation. The snapshot must be the one the cursor points at.
+// Thus a draft can never be marked clean against content the user does not
+// edit now, and the draft is clean only for exactly that operation and
+// snapshot.
 //
-// Repeating an identical request is idempotent: when the recorded publication
-// already matches the request, the draft is returned unchanged even if the
-// caller still holds the revision it observed before the first attempt.
+// Repeating an identical request is idempotent. When the recorded publication
+// already matches the request, MarkPublished returns the draft unchanged, even
+// if the caller still holds the revision it observed before the first attempt.
 func (s *Service) MarkPublished(ctx context.Context, req MarkPublishedRequest) (*DraftMetadata, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("marking draft published: %w", err)
@@ -870,10 +872,10 @@ func (s *Service) MarkPublished(ctx context.Context, req MarkPublishedRequest) (
 	return updated, nil
 }
 
-// DeleteDraft removes a draft and every content chunk it owns. The metadata
-// record is deleted with a compare-and-swap against the expected revision, so a
-// concurrently modified draft is never deleted by accident. A failure to remove
-// chunks after the metadata is gone is reported as an error matching
+// DeleteDraft removes a draft and every content chunk it owns. It deletes the
+// metadata record with a compare-and-swap against the expected revision, so it
+// never deletes a concurrently modified draft by accident. It reports a
+// failure to remove chunks after the metadata is gone as an error that matches
 // [ErrCleanup].
 func (s *Service) DeleteDraft(ctx context.Context, draftID, actor string, expectedRevision int64) error {
 	if err := ctx.Err(); err != nil {
@@ -936,9 +938,9 @@ func (s *Service) snapshot(draftID string, manifest SnapshotManifest) (*Snapshot
 	return &Snapshot{Manifest: manifest, Data: data, parsed: parsed}, nil
 }
 
-// stampedSnapshot writes stamp into doc and returns the payload of the
-// stamped document and the manifest of the snapshot that stores it, by the
-// user and at the time the stamp names as its last edit: now. The stamp
+// stampedSnapshot writes stamp into doc. It returns the payload of the stamped
+// document and the manifest of the snapshot that stores it. The manifest names
+// the user and the time that the stamp names as its last edit: now. The stamp
 // counts towards [MaxDocumentBytes], like the rest of the document.
 func (s *Service) stampedSnapshot(
 	doc *builder.Document,
@@ -984,13 +986,13 @@ func (s *Service) manifest(load *payload, actor, summary string, now time.Time) 
 		CreatedAt:      now,
 		CreatedBy:      actor,
 		Summary:        summary,
-		// Set by the caller: only an appended snapshot records one.
+		// The caller sets it. Only an appended snapshot records one.
 		OpID: "",
 	}, nil
 }
 
-// stampDraft records updated as changed at now, by actor. It is the draft
-// record that is stamped, on every mutation: only a save stamps a document.
+// stampDraft records updated as changed at now, by actor. Every mutation
+// stamps the draft record. Only a save stamps a document.
 func stampDraft(updated *DraftMetadata, actor string, now time.Time) {
 	updated.Updated = now
 	updated.LastModifiedBy = actor
@@ -1019,24 +1021,28 @@ func (s *Service) saveDraft(meta *DraftMetadata, value []byte, expectedRevision 
 	return nil
 }
 
-// writeRejected reports whether a draft metadata write error proves the write
-// was not applied: the store refused it as a conflict, because the record was
-// missing or already existed, or because the key was invalid.
+// writeRejected reports whether a draft metadata write error proves that the
+// write was not applied. It does when the store refused the write as a
+// conflict, because the record was missing or already existed, or because the
+// key was invalid.
 func writeRejected(err error) bool {
 	return errors.Is(err, ErrConflict) || errors.Is(err, ErrNotFound) || errors.Is(err, ErrInvalid)
 }
 
 // settleAmbiguousWrite settles a draft metadata write that failed with err, an
-// error that does not prove the write was not applied (an etcd request can time
-// out after its proposal was applied). The draft is read back. When its cursor
-// points at snapshotID, the snapshot the write stored, the write was applied
-// and the stored metadata is returned. When the draft holds the snapshot but
-// has moved on since, a conflict is returned. Otherwise err is returned.
+// error that does not prove the write was not applied. An etcd request can
+// time out after its proposal was applied. settleAmbiguousWrite reads the
+// draft back:
+//   - When its cursor points at snapshotID, the snapshot the write stored, the
+//     write was applied. It returns the stored metadata.
+//   - When the draft holds the snapshot but changed after the write, it
+//     returns a conflict.
+//   - Otherwise it returns err.
 //
-// The chunks of snapshotID are never removed here: a write that has not been
-// applied yet may still be, so chunks that end up unreferenced are left to
-// [Service.CleanupOrphanedChunks]. The stored metadata is returned with
-// stamp, what the write put in the document of snapshotID.
+// It never removes the chunks of snapshotID. A write that is not applied yet
+// may still be applied, so it leaves chunks that become unreferenced to
+// [Service.CleanupOrphanedChunks]. It returns the stored metadata with stamp,
+// which is what the write put in the document of snapshotID.
 func (s *Service) settleAmbiguousWrite(
 	draftID, snapshotID string,
 	expected int64,
@@ -1087,13 +1093,14 @@ func (s *Service) deleteSnapshotScopes(draftID string, dropped []SnapshotManifes
 }
 
 // pruneHistory drops the oldest snapshots until the history holds at most
-// [MaxSnapshots] snapshots of at most [MaxDraftHistoryBytes] in total, never
-// dropping the snapshot the cursor points at. It returns the dropped manifests
-// and adjusts the cursor.
+// [MaxSnapshots] snapshots of at most [MaxDraftHistoryBytes] in total. It
+// never drops the snapshot the cursor points at. It returns the dropped
+// manifests and adjusts the cursor.
 //
-// A publication naming a dropped snapshot is kept, as [Service.DeleteSnapshot]
-// keeps it, so the draft can still update what it published. The draft stays
-// dirty, since the cursor can never point at that snapshot again.
+// It keeps a publication that names a dropped snapshot, as
+// [Service.DeleteSnapshot] does, so the draft can still update what it
+// published. The draft stays dirty, because the cursor can never point at that
+// snapshot again.
 func pruneHistory(meta *DraftMetadata) []SnapshotManifest {
 	var dropped []SnapshotManifest
 
@@ -1108,9 +1115,9 @@ func pruneHistory(meta *DraftMetadata) []SnapshotManifest {
 	return dropped
 }
 
-// removeSnapshot removes the snapshot at index, which is never the one the
-// cursor points at, from the history, keeping the cursor on the snapshot it
-// points at, and returns the removed manifest.
+// removeSnapshot removes the snapshot at index from the history and returns
+// the removed manifest. That snapshot is never the one the cursor points at.
+// The cursor stays on the snapshot it points at.
 func removeSnapshot(meta *DraftMetadata, index int) SnapshotManifest {
 	removed := meta.History[index]
 	meta.History = slices.Delete(meta.History, index, index+1)
@@ -1150,11 +1157,11 @@ func checkRevision(draftID string, expected, actual int64) error {
 	return &ConflictError{Kind: kindDraft, ID: draftID, Expected: expected, Actual: actual, Reason: ""}
 }
 
-// isPublishRetry reports whether the recorded publication already is exactly
-// what the request asks to record, which makes repeating the request a no-op
-// rather than a conflict. A caller retrying after a lost response still holds
-// the revision it observed before the first attempt, so that revision is
-// accepted too.
+// isPublishRetry reports whether the recorded publication is already exactly
+// what the request asks to record. Then repeating the request is a no-op, not
+// a conflict. A caller that retries after a lost response still holds the
+// revision it observed before the first attempt, so that revision is accepted
+// too.
 func isPublishRetry(meta *DraftMetadata, req MarkPublishedRequest) bool {
 	state := meta.Publication
 	if state == nil {

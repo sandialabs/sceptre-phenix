@@ -1,8 +1,8 @@
 <!--
   Confirmation before an action that cannot be undone.
 
-  An alert dialog (APG Alert and Message Dialogs pattern): the message names
-  what will be lost and is the dialog's description, and focus starts on the
+  An alert dialog (APG Alert and Message Dialogs pattern). The message names
+  what will be lost and is the dialog's description. Focus starts on the
   button that keeps everything, so Enter or Escape never destroys work by
   accident. Escape and a click outside the dialog (see BuilderDialog) cancel.
 -->
@@ -53,15 +53,15 @@
 
   const cancelButton = ref(null);
 
-  // BuilderDialog focuses its panel when it opens; this runs after it.
+  // BuilderDialog focuses its panel when it opens. This runs after that.
   onMounted(() => {
     cancelButton.value?.focus();
   });
 </script>
 
 <style scoped>
-  /* The message can name drafts and topologies; a long, unbroken name wraps
-     anywhere rather than run off a narrow dialog. */
+  /* The message can name drafts and topologies. A long, unbroken name wraps
+     anywhere and does not run off a narrow dialog. */
   .builder-confirm__message {
     overflow-wrap: anywhere;
   }

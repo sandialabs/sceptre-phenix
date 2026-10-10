@@ -5,7 +5,7 @@
   surface: select, rename and delete work here without a single drag
   gesture, and the toolbar's Add connection and Move to group dialogs
   connect nodes and move them between groups the same way. It lists nodes
-  only; a connection is removed with Delete on the canvas, Disconnect in the
+  only. To remove a connection, use Delete on the canvas, Disconnect in the
   Inspector's Connection points, or Disconnect in the command palette. It
   stays in sync with the canvas because both render the same document.
 -->
@@ -29,7 +29,7 @@
     </h2>
     <!-- Describes the list once, not every row on every arrow press. Written
          from the command registry, with this platform's keys. Not shown,
-         as the shortcut sheet lists these keys; screen readers still get
+         as the shortcut sheet lists these keys. Screen readers still get
          it, since a list of buttons does not say that arrow keys move
          between them, F2 renames or Delete removes. Visually hidden rather
          than hidden, so reading the page reaches it too. -->
@@ -73,8 +73,8 @@
           v-for="network in networks"
           :key="network.id"
           class="builder-outline__row">
-          <!-- The name has the row's width, and wraps rather than being
-               cut short; the alias and device count go below it. -->
+          <!-- The name has the row's width, and wraps instead of being
+               cut short. The alias and device count go below it. -->
           <div
             class="builder-outline__item builder-outline__item--static builder-outline__network">
             <builder-icon name="vlan" :size="14" />
@@ -182,8 +182,8 @@
     return flat;
   });
 
-  // Falls back to the first row when the active row is gone, deleted here, on
-  // the canvas or from the toolbar, so Tab always reaches the outline.
+  // Uses the first row when the active row is gone (deleted here, on the
+  // canvas or from the toolbar), so Tab always reaches the outline.
   const rovingId = computed(() => {
     const items = flatItems.value;
 
@@ -271,8 +271,8 @@
   }
 
   // A plain press selects the row alone, or deselects it when it is already
-  // the only thing selected, so the pressed state always toggles; with
-  // `additive` it adds the row to the selection or takes it out, so several
+  // the only thing selected, so the pressed state always toggles. With
+  // `additive`, it adds the row to the selection or takes it out, so several
   // nodes can be grouped or deleted together. The canvas presses its nodes
   // the same way, and says the same.
   function pressRow(item, additive) {
@@ -297,11 +297,11 @@
     activeId.value = item.id;
   }
 
-  // A plain click, Enter or Space selects or deselects the row; with Shift,
-  // Ctrl or Cmd it toggles the row in the selection. The row takes focus, so
+  // A plain click, Enter or Space selects or deselects the row. With Shift,
+  // Ctrl or Cmd, it toggles the row in the selection. The row takes focus, so
   // a row activated from screen reader browse mode is the one that F2 and
   // Delete then act on. The canvas shows the row's nodes, a group's members
-  // and a switch's network with them, when any is out of view; focus stays
+  // and a switch's network with them, when any is out of view. Focus stays
   // on the row.
   function onRowClick(item, event) {
     const row = document.getElementById(rowId(item.id));
@@ -332,8 +332,8 @@
       return;
     }
 
-    // Handled here rather than left to the button's click, which in Firefox
-    // does not carry the Shift key; preventDefault stops that click.
+    // Handled here, not in the button's click, which in Firefox does not
+    // carry the Shift key. preventDefault stops that click.
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       onRowClick(item, event);
@@ -433,7 +433,7 @@
 
   // The rename field keeps its keys to itself, Enter and Escape above all,
   // but for the Builder's keys that work in text fields (Command palette,
-  // Save now), which go on to its key dispatcher as they do from any field.
+  // Save now). These go to its key dispatcher as they do from any field.
   function onRenameKeydown(event) {
     if (!textFieldCommand(event)) {
       event.stopPropagation();
@@ -448,12 +448,12 @@
     commitRename(item, document.activeElement === event.target);
   }
 
-  // Renaming a node means different things per kind: a device is renamed by its
-  // hostname, a switch by the name of the network it publishes, a group by
-  // its title, and a drawing by its payload's label (see renamePatch), which
-  // the canvas and the Inspector show. Enter returns
-  // focus to the row, which may have moved as rows sort by label; leaving the
-  // field (blur) commits without taking focus back.
+  // A rename changes a different value for each kind: a device's hostname,
+  // the name of the network a switch publishes, a group's title, and a
+  // drawing's payload label (see renamePatch), which the canvas and the
+  // Inspector show. Enter returns focus to the row, which may have moved
+  // because rows sort by label. Leaving the field (blur) commits without
+  // taking focus back.
   function commitRename(item, refocus) {
     if (renamingId.value !== item.id) {
       return;

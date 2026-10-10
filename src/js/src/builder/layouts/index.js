@@ -1,11 +1,13 @@
 // The auto-layout algorithms. A draft keeps the one that laid it out last as
-// the document's layout. One without it (imported, uploaded, blank, or placed
-// by hand) has the Default layout, and a layout run on it uses the viewer's
-// default, which the Builder's settings choose (settings.js keeps it as
-// layoutAlgorithm). Each is {id, label, summary, description}: the id is
-// what is stored, the label names it, the summary says in a few words what
-// it does (the toolbar's layout menu), and the description says it in full
-// (the Settings dialog).
+// the document's layout. A draft without one (imported, uploaded, blank, or
+// placed by hand) has the Default layout. A layout run on it uses the
+// viewer's default, which the Builder's settings choose (settings.js keeps
+// it as layoutAlgorithm). Each algorithm is {id, label, summary,
+// description}:
+// - id: the value that is stored
+// - label: its name
+// - summary: what it does, in a few words (the toolbar's layout menu)
+// - description: what it does, in full (the Settings dialog)
 //
 // Each algorithm is a module here with one interface: a document in, and
 // each node's position, each group's size and, for some, each connection's
@@ -26,8 +28,8 @@ export { LayoutError } from './common.js';
 
 /**
  * Stops the layout engines' workers (ELK's and Graphviz's), when the
- * Builder closes or the session ends. A layout under way fails with an
- * AbortError; the next layout starts a new worker.
+ * Builder closes or the session ends. A layout in progress fails with an
+ * AbortError. The next layout starts a new worker.
  */
 export function stopLayoutEngine() {
   stopElk();
@@ -121,7 +123,7 @@ export function ownLayout(doc) {
  *
  * @param {object} doc builder document
  * @param {string} [fallback] the viewer's default (the layoutAlgorithm
- *   setting); an unknown one is DEFAULT_LAYOUT_ALGORITHM
+ *   setting). An unknown one is DEFAULT_LAYOUT_ALGORITHM
  * @returns {string} a LAYOUT_ALGORITHMS id
  */
 export function documentLayout(doc, fallback = DEFAULT_LAYOUT_ALGORITHM) {
@@ -145,22 +147,23 @@ const LAYOUTS = {
 
 /**
  * Lays a document out with one of the algorithms. Positions are absolute,
- * as the document keeps them; ELK's arrive later, from a Web Worker.
+ * as the document keeps them. ELK's positions arrive later, from a Web
+ * Worker.
  *
- * Shapes, icons and lines are drawn where the user put them, so no
- * algorithm sees them: one in no group stays where it is, and one in a
- * group moves as far as its group does, keeping its place in it. A group
- * the algorithm sized around its other members then grows, to the right
- * and down, to hold its drawings with the room it leaves around members
+ * Shapes, icons and lines stay where the user drew them, so no algorithm
+ * sees them. One in no group stays where it is. One in a group moves as far
+ * as its group does, and keeps its place in it. A group that the algorithm
+ * sized around its other members then grows, to the right and down. It
+ * holds its drawings with the same space that it keeps around members
  * (growAroundDrawings).
  *
- * @param {string} id a LAYOUT_ALGORITHMS id; an unknown one runs the default
+ * @param {string} id a LAYOUT_ALGORITHMS id. An unknown one runs the default
  * @param {object} doc builder document
  * @param {object} [options] the algorithm's own
  * @returns {Promise<{positions: object, sizes: object, routes?: object}>}
  *   each node's top-left corner, and the size of each group sized around
- *   its members, by node id; and from some, each connection's route, by
- *   edge id (see withGeometry in layout.js)
+ *   its members, by node id. Some algorithms also give each connection's
+ *   route, by edge id (see withGeometry in layout.js)
  */
 export async function runLayout(id, doc, options = {}) {
   const run = LAYOUTS[layoutAlgorithm(id) ? id : DEFAULT_LAYOUT_ALGORITHM];
@@ -217,17 +220,17 @@ function groupDepth(node, byId) {
 
 /**
  * Grows each group that holds a shape, an icon or a line, to the right and
- * down, so the drawing is inside it with GROUP_PADDING to spare, as a
- * layout leaves around a group's members; innermost groups first, so a
- * group that holds a grown group grows around it too. A drawing keeps its
- * place in its group, so the group's top left corner never needs to move.
- * A group's new size is on the grid.
+ * down. The drawing is then inside the group with GROUP_PADDING around it,
+ * as a layout keeps around a group's members. Innermost groups grow first,
+ * so a group that holds a grown group grows around it too. A drawing keeps
+ * its place in its group, so the group's top left corner never needs to
+ * move. A group's new size is on the grid.
  *
  * @param {object[]} nodes the document's
  * @param {Map<string, object>} byId the document's nodes by id
  * @param {object} positions the layout's, by node id: positions of the
  *   drawings in groups included
- * @param {object} sizes the layout's group sizes, by node id; changed in
+ * @param {object} sizes the layout's group sizes, by node id. Changed in
  *   place
  */
 function growAroundDrawings(nodes, byId, positions, sizes) {

@@ -1,30 +1,34 @@
 // What Builder keeps in this browser, and what logout clears of it.
 //
-// The Builder keeps drafts that are not saved yet in IndexedDB, and in
-// localStorage under phenix.builder.* the viewer's preferences (theme, pane
-// widths, minimap size, shortcuts, settings), the recent commands, which
-// name drafts, their owners and nodes by id, and the unload copies of the
-// drafts whose edits IndexedDB had not stored when a page was left (see
-// idb.js); once loaded, its modules also hold the drafts listed for the
-// user and the open diagram in memory. What belongs to the user may not outlive the
-// session on a shared workstation, so logout clears it, whether or not the
-// Builder is open, and so does the next sign-in of another user when the
-// browser was closed without logging out. The preferences say nothing about
-// the user or their work, and stay for this browser.
+// The Builder keeps these in the browser:
+// - In IndexedDB: the drafts that are not saved yet.
+// - In localStorage under phenix.builder.*: the viewer's preferences
+//   (theme, pane widths, minimap size, shortcuts, settings), the recent
+//   commands (which name drafts, their owners and nodes by id), and the
+//   unload copies of the drafts whose edits IndexedDB had not stored when a
+//   page was left (see idb.js).
+// - In memory, after its modules load: the drafts listed for the user and
+//   the open diagram.
+// What belongs to the user must not stay after the session on a shared
+// workstation. So logout clears it, whether or not the Builder is open. The
+// next sign-in of another user also clears it, when the browser was closed
+// without logout. The preferences say nothing about the user or their
+// work, and stay for this browser.
 //
-// This module is loaded with the app, so it stays small: the Builder's
-// modules register what they hold in memory when they are first loaded, and
-// a Builder that never opened has nothing in memory to clear.
+// The app loads this module, so the module stays small. The Builder's
+// modules register what they hold in memory when they first load. A
+// Builder that never opened has nothing in memory to clear.
 //
-// Clearing also deletes edits the server never received, so logout first
-// asks this module for them (see utils/logout.js): the open draft's, which
-// the Builder view registers, those of drafts closed for the drafts whose
-// queues still send them (see createBackgroundSaves in leave.js), and
-// those queued in IndexedDB, or in an unload copy, for any other draft,
-// which are there whether or not the Builder is open.
+// Clearing also deletes edits the server never received. So logout first
+// asks this module for these edits (see utils/logout.js):
+// - the open draft's edits, which the Builder view registers
+// - the edits of drafts closed for the drafts page whose queues still send
+//   them (see createBackgroundSaves in leave.js)
+// - the edits queued in IndexedDB, or in an unload copy, for any other
+//   draft, which are there whether or not the Builder is open
 //
-// Signing in again without leaving the Builder (see signin.js) clears
-// nothing: the queues send what the server refused meanwhile (see
+// A new sign-in without leaving the Builder (see signin.js) clears nothing.
+// The queues send what the server refused in the meantime (see
 // resumeBuilderSaves).
 
 import { clearBuilderDatabase, createDraftStore } from './idb.js';
@@ -39,11 +43,11 @@ const BUILDER_STORAGE_PREFIX = 'phenix.builder.';
 export const BUILDER_USER_KEY = 'phenix.builder.user';
 
 /**
- * The phenix.builder.* keys logout leaves in place: preferences of this
- * browser, which hold no names, ids or content. They are listed here rather
- * than registered by the modules that own them, so a Builder that never
- * opened keeps them too. Any other key under the prefix is cleared, so a
- * new one stays private until it is added here as a preference.
+ * The phenix.builder.* keys logout keeps: preferences of this browser,
+ * which hold no names, ids or content. This list names them, and the
+ * modules that own them do not register them, so a Builder that never
+ * opened keeps them too. Logout clears any other key under the prefix. So
+ * a new key stays private until it is added here as a preference.
  */
 export const BUILDER_PREFERENCE_KEYS = Object.freeze([
   'phenix.builder.minimap', // panes.js, the minimap's size
@@ -95,11 +99,13 @@ function removeBuilderKeys(storage) {
 }
 
 /**
- * Ends the Builder session: removes its keys but the preferences from
- * localStorage and sessionStorage, resets what its modules hold in memory
- * for the user, and deletes every local draft record in IndexedDB. The
- * first two happen before it returns, so a navigation that follows cannot
- * show the previous user's data.
+ * Ends the Builder session:
+ * 1. Removes its keys, except the preferences, from localStorage and
+ *    sessionStorage.
+ * 2. Resets what its modules hold in memory for the user.
+ * 3. Deletes every local draft record in IndexedDB.
+ * Steps 1 and 2 finish before it returns, so a navigation that follows
+ * cannot show the previous user's data.
  *
  * @param {object} [options] localStorage, sessionStorage and clearDatabase,
  *   for tests
@@ -125,11 +131,11 @@ export function endBuilderSession({
 }
 
 /**
- * Starts the Builder session of the user signing in. What another user left
- * in this browser, by closing it without logging out, is cleared first, as
- * logout would have (see endBuilderSession): the preferences stay. Data no
- * user is named for is cleared too. The local drafts database waits for the
- * clearing (see idb.js), so the Builder cannot read the previous user's
+ * Starts the Builder session of the user signing in. First it clears what
+ * another user left in this browser when they closed it without logout, as
+ * logout would have (see endBuilderSession). The preferences stay. It also
+ * clears data that names no user. The local drafts database waits for the
+ * clearing (see idb.js). So the Builder cannot read the previous user's
  * drafts, however soon it loads.
  *
  * @param {string} username the user signing in
@@ -169,13 +175,13 @@ export const LOGOUT_SEND_WAIT_MS = 3000;
 let openDraft = null;
 
 /**
- * Registers the draft open in the Builder view, so logout can save what the
- * Inspector holds unapplied, as leaving does (see leave.js), and count and
- * send what the server does not have yet.
+ * Registers the draft open in the Builder view. Then logout can save the
+ * Inspector's unapplied edits, as leaving does (see leave.js), and count
+ * and send what the server does not have yet.
  *
- * @param {object} draft store: the Builder store; editing: () => whether a
- *   draft is open; saveUnapplied: () => the Inspector edits it cannot apply,
- *   or null; describe: (unapplied) => a sentence naming them
+ * @param {object} draft store: the Builder store. editing: () => whether a
+ *   draft is open. saveUnapplied: () => the Inspector edits it cannot
+ *   apply, or null. describe: (unapplied) => a sentence naming them
  * @returns {() => void} unregisters it
  */
 export function registerOpenDraft(draft) {
@@ -193,14 +199,15 @@ function editedDraft() {
   return openDraft?.editing() && !openDraft.store.readOnly ? openDraft : null;
 }
 
-// The save queues of drafts closed for the drafts, still sending (see
-// registerQueue).
+// The save queues of drafts closed for the drafts page, which still send
+// (see registerQueue).
 const backgroundQueues = new Set();
 
 /**
- * Registers the save queue of a draft closed for the drafts, which goes on
- * sending (see createBackgroundSaves in leave.js), so logout counts and
- * sends its changes with it rather than by a queue of its own.
+ * Registers the save queue of a draft closed for the drafts page, which
+ * continues to send (see createBackgroundSaves in leave.js). So logout
+ * counts and sends its changes with that queue, not with a queue of its
+ * own.
  *
  * @param {object} queue
  * @returns {() => void} unregisters it
@@ -218,13 +225,13 @@ function openQueue(draft) {
   return { key: record?.key, pending: record?.queue?.length || 0 };
 }
 
-// The queues of drafts closed for the drafts, with their records.
+// The queues of drafts closed for the drafts page, with their records.
 function closedQueues() {
   return [...backgroundQueues].filter((queue) => queue.record);
 }
 
-// The records in IndexedDB holding changes of `username`'s not sent yet,
-// but those the Builder holds the queues of (`skip`, their keys).
+// The records in IndexedDB that hold unsent changes of `username`, except
+// the records whose queues the Builder holds (`skip`, their keys).
 async function queuedRecords(draftStore, username, skip) {
   const records = await draftStore.all().catch(() => []);
 
@@ -236,14 +243,14 @@ async function queuedRecords(draftStore, username, skip) {
   );
 }
 
-// The keys of the records the Builder holds the queues of.
+// The keys of the records whose queues the Builder holds.
 function heldKeys(open, closed) {
   return [open.key, ...closed.map((queue) => queue.record.key)].filter(Boolean);
 }
 
-// Sends each record's queue, in order, by a queue of its own bound to the
-// record; a conflict or a refusal leaves it queued, as it would in the
-// Builder. The modules that send are loaded only now: offline they may not
+// Sends each record's queue, in order, with a queue of its own bound to the
+// record. A conflict or a refusal keeps it queued, as it would in the
+// Builder. The modules that send load only now. Offline, they may not
 // load, and nothing is sent.
 async function sendRecords(records, username, draftStore) {
   const [{ createAutosave }, { builderApi }] = await Promise.all([
@@ -274,10 +281,10 @@ async function sendRecords(records, username, draftStore) {
 }
 
 // The ids of this browser's other open tabs, which send their own queues
-// once the user chooses which changes to save: those holding a Web Lock,
-// or where there are no Web Locks, those that answer over a
-// BroadcastChannel (see others in tabs.js). Loaded only now, as the
-// modules that send are.
+// after the user chooses which changes to save. These are the tabs that
+// hold a Web Lock. Where there are no Web Locks, they are the tabs that
+// answer over a BroadcastChannel (see others in tabs.js). tabs.js loads
+// only now, as the modules that send do.
 async function otherOpenTabs() {
   const { builderTabs } = await import('./tabs.js');
 
@@ -296,7 +303,7 @@ async function sendOwnRecords(records, username, draftStore, send, openTabs) {
   }
 }
 
-// Settles once `work` does, or after `ms`; never rejects.
+// Settles when `work` settles, or after `ms`. It never rejects.
 function within(work, ms) {
   let timer;
 
@@ -310,17 +317,17 @@ function within(work, ms) {
 
 /**
  * What the server does not have of `username`'s Builder work: the changes
- * queued in this browser, the open draft's and every other draft's, and
+ * queued in this browser (the open draft's and every other draft's), and
  * the Inspector edits that cannot be applied. The Inspector edits that can
- * be are saved first, as leaving saves them. With `send`, the queued
- * changes are sent first, waiting for them at most `wait`, but those
- * another open tab holds: that tab sends them.
+ * be applied are saved first, as leaving saves them. With `send`, the
+ * queued changes are sent first, with a wait of at most `wait`. Changes
+ * that another open tab holds are not sent here: that tab sends them.
  *
- * @param {object} options username, send, wait; draftStore, sendQueued and
- *   openTabs, for tests
+ * @param {object} options username, send, wait. draftStore, sendQueued and
+ *   openTabs: for tests
  * @returns {Promise<{changes: number, unapplied: string, drafts: object[]}>}
- *   unapplied: a sentence naming the Inspector edits, or ''; drafts: those
- *   Download can save, as {key, name} (see draftExport)
+ *   unapplied: a sentence naming the Inspector edits, or ''. drafts: the
+ *   drafts Download can save, as {key, name} (see draftExport)
  */
 export async function unsentBuilderWork({
   username,
@@ -378,10 +385,10 @@ export async function unsentBuilderWork({
 }
 
 /**
- * Sends again, once the user has signed in again without leaving the
- * Builder (see signin.js), what the server refused while the session was
- * over: the open draft's changes, and those of drafts closed for the
- * drafts. Nothing is cleared.
+ * Sends again what the server refused while the session was over, after
+ * the user signs in again without leaving the Builder (see signin.js). It
+ * sends the open draft's changes, and those of drafts closed for the drafts
+ * page. Nothing is cleared.
  *
  * @returns {{changes: number, sent: Promise<void>}} how many changes wait
  *   to be sent, and the sends
@@ -405,8 +412,8 @@ export function resumeBuilderSaves() {
 }
 
 /**
- * The diagram a queued record leaves: the one its last change this browser
- * holds made current.
+ * The diagram that a queued record gives: the diagram that the record's
+ * last change in this browser made current.
  *
  * @param {object} record a draft record, its entries with their snapshots
  * @returns {object|null}
@@ -428,10 +435,10 @@ export function queuedDiagram(record) {
   return diagram;
 }
 
-// The drafts holding `username`'s changes the server does not have, with
-// the diagram each leaves: the open draft's as it is shown, and every other
-// draft's as its queued changes leave it. The Inspector's edits that cannot
-// be applied are in none of them.
+// The drafts that hold changes of `username` that the server does not
+// have, each with its diagram. The open draft's diagram is as it is shown.
+// Every other draft's diagram is as its queued changes make it. None of
+// them includes the Inspector's edits that cannot be applied.
 async function unsentDrafts(draftStore, username, draft) {
   const open = openQueue(draft);
   const closed = closedQueues();
@@ -461,8 +468,8 @@ async function unsentDrafts(draftStore, username, draft) {
   return drafts;
 }
 
-// Download's file name for each draft; one that two drafts would share gets a
-// number, so each can be told apart and kept.
+// Download's file name for each draft. A name that two drafts would share
+// gets a number, so each file is different and none is overwritten.
 function fileNames(drafts) {
   const taken = new Set();
 
@@ -485,8 +492,8 @@ function fileNames(drafts) {
  * diagram as this browser has it now, as Download saves JSON, with a copy of
  * every custom icon it uses (see downloadedDiagram).
  *
- * @param {object} options username; key and name, as unsentBuilderWork
- *   names the draft; draftStore and iconLibrary, for tests
+ * @param {object} options username. key and name: as unsentBuilderWork
+ *   names the draft. draftStore and iconLibrary: for tests
  * @returns {Promise<{name: string, text: string}|null>} null when this
  *   browser no longer holds the draft
  */
@@ -522,12 +529,13 @@ export async function draftExport({
 
 /**
  * A diagram as Download saves it as JSON or YAML: a copy that carries every
- * custom icon its nodes and templates name, from its own copies, else the
- * server's icon library, which is read first unless it was read already
- * (see embedIcons in icons.js and downloadDocument in exporters.js). An icon
- * neither has is left out, and the nodes that name it show their built-in
- * icon. The modules that do this are loaded only for a diagram that names a
- * custom icon, as this module is loaded with the app.
+ * custom icon its nodes and templates name. Each icon comes from the
+ * diagram's own copies, else from the server's icon library. The library
+ * is read first, unless it was read already (see embedIcons in icons.js
+ * and downloadDocument in exporters.js). An icon that neither has is left
+ * out, and the nodes that name it show their built-in icon. The app loads
+ * this module, so the modules that do this load only for a diagram that
+ * names a custom icon.
  *
  * @param {object} doc Builder document
  * @param {{iconLibrary?: object}} [options] the icon library (see
@@ -551,7 +559,7 @@ export async function downloadedDiagram(doc, { iconLibrary = null } = {}) {
 /**
  * A diagram as Download saves it as JSON (see exporters.js, which this module
  * does not load): its file name and text. The diagram is written as it is
- * given: downloadedDiagram makes the copy that carries its custom icons.
+ * given. downloadedDiagram makes the copy that carries its custom icons.
  *
  * @param {object} doc Builder document
  * @returns {{name: string, text: string}}

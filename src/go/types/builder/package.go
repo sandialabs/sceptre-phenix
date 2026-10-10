@@ -80,8 +80,8 @@ var packageAPIVersion = regexp.MustCompile(`^phenix\.sandia\.gov/v[0-9]+$`)
 // Package is a Builder document as one file holds it to move to another
 // phenix server, as JSON or YAML: the document, the Scenario and Topology
 // configs it names that the user chose to put in, and the list of what the
-// diagram needs. It never holds the content of a file, a script or an app:
-// those are only named in its requirements.
+// diagram needs. It never holds the content of a file, a script or an app.
+// Its requirements only name them.
 type Package struct {
 	// Schema is [PackageSchemaURI].
 	Schema string `json:"$schema"`
@@ -100,7 +100,7 @@ type Package struct {
 
 // PackageConfig is a phenix config a package carries: what it is and its
 // spec, without the times and the Builder annotations a server stores with
-// it. It is data only: creating it on a server takes the server's own config
+// it. It is data only. A server that creates it applies its own config
 // checks.
 type PackageConfig struct {
 	// APIVersion is the config's apiVersion, such as phenix.sandia.gov/v1.
@@ -117,8 +117,8 @@ type PackageConfig struct {
 type PackageConfigMetadata struct {
 	// Name is the config's name, which is also its key in the package.
 	Name string `json:"name"`
-	// Annotations are the config's annotations, but the Builder's own (see
-	// [IsBuilderAnnotation]), which [Package.Validate] refuses.
+	// Annotations are the config's annotations, other than the Builder's own
+	// (see [IsBuilderAnnotation]), which [Package.Validate] refuses.
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
@@ -152,8 +152,8 @@ type PackageImage struct {
 	UsedBy []string `json:"usedBy"`
 }
 
-// PackageContents is what [NewPackage] makes a package of beside its
-// document.
+// PackageContents is the content, other than the document, from which
+// [NewPackage] makes a package.
 type PackageContents struct {
 	// Scenarios are the Scenario configs the document names that could be
 	// read, by name. Their apps are listed in the requirements.
@@ -277,11 +277,11 @@ type packageText struct {
 	Requirements PackageRequirements      `json:"requirements"`
 }
 
-// DecodePackage strictly decodes a package from JSON: unknown fields and
-// trailing content are refused, in the package and in its document, which
-// is decoded as [Decode] decodes one. A document [Decode] refuses is a
-// *[PackageError]: the issues of its *[ValidationError] at their paths
-// below "document", or one issue with the decoder's error. It does not
+// DecodePackage strictly decodes a package from JSON. It refuses unknown
+// fields and trailing content, in the package and in its document. It
+// decodes the document as [Decode] does. A document that [Decode] refuses
+// gives a *[PackageError]: the issues of its *[ValidationError] at their
+// paths below "document", or one issue with the decoder's error. It does not
 // validate the package: see [ParsePackage] and [Package.Validate].
 func DecodePackage(data []byte) (*Package, error) {
 	var text packageText
@@ -342,12 +342,14 @@ func packageDocumentIssues(err error) []Issue {
 //   - a "$schema" other than [PackageSchemaURI],
 //   - no document, or one [Document.Validate] refuses,
 //   - more than [MaxScenarios] Scenario configs or [MaxPackageTopologies]
-//     Topology configs, a config whose key is not a config name, whose kind
-//     is not the one of its list, whose metadata.name is not its key, whose
-//     apiVersion is not phenix.sandia.gov/v<number>, that has no spec, that
-//     the requirements do not name, or that has a Builder annotation (see
-//     [IsBuilderAnnotation]; one issue for each), which names a record of
-//     the server that wrote it, so that a config created from a package
+//     Topology configs,
+//   - a config whose key is not a config name, whose kind is not the one of
+//     its list, whose metadata.name is not its key, whose apiVersion is not
+//     phenix.sandia.gov/v<number>, that has no spec, or that the
+//     requirements do not name,
+//   - a Builder annotation on a config (see [IsBuilderAnnotation]), one
+//     issue for each. Such an annotation names a record of the server that
+//     wrote it. This rule makes sure that a config created from a package
 //     never claims a Builder document or diagram,
 //   - a list of the requirements that is missing or holds more than
 //     [MaxPackageRequirements] entries, and an entry that is blank, longer
@@ -532,19 +534,21 @@ func requirementProblem(value string) (Code, string) {
 	return "", ""
 }
 
-// requirementNamesShown is how many of the entries a warning of
-// [Package.TrimRequirements] leaves out it names before it counts the rest.
+// requirementNamesShown is the number of left-out entries that a warning of
+// [Package.TrimRequirements] names. The warning counts the rest.
 const requirementNamesShown = 3
 
-// TrimRequirements makes the requirements fit [Package.Validate], and
-// returns a warning naming each entry it leaves out, at the path of its
-// list: first every entry that is blank, longer than [MaxRequirementBytes]
-// or holds control characters ([CodePackageRequirementLeftOut]), then the
-// entries of a list past its first [MaxPackageRequirements]
-// ([CodePackageRequirementsTruncated]). [NewPackage] lists what the
-// document and the configs name as they are, and a stored config may name
-// anything, so whoever builds a package trims it before handing it on;
-// nothing is left out without a warning.
+// TrimRequirements makes the requirements fit [Package.Validate]. It returns
+// warnings, at the path of each list, that name each entry it leaves out:
+//
+//   - first every entry that is blank, longer than [MaxRequirementBytes] or
+//     holds control characters ([CodePackageRequirementLeftOut]),
+//   - then the entries of a list after its first [MaxPackageRequirements]
+//     ([CodePackageRequirementsTruncated]).
+//
+// [NewPackage] lists what the document and the configs name as they are, and
+// a stored config can name anything. Thus whoever builds a package trims it
+// before passing it on. Nothing is left out without a warning.
 func (p *Package) TrimRequirements() []Issue {
 	r := &p.Requirements
 	warnings := []Issue{}

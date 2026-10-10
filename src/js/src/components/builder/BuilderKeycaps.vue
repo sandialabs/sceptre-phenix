@@ -24,7 +24,8 @@
   });
 
   const caps = computed(() => keyCaps(props.spec));
-  // macOS sets its key symbols side by side; elsewhere they are joined by +.
+  // macOS shows its key symbols side by side. Other platforms join them
+  // with +.
   const joined = computed(() => currentPlatform() !== 'mac');
 </script>
 

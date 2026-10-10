@@ -33,8 +33,9 @@ const (
 	defaultMaxLogBackups = 3
 	defaultMaxLogAge     = 90
 
-	// builderTemplatesSubdir is where below base-dir.phenix the Builder's
-	// template files are, unless base-dir.builder-templates says otherwise.
+	// builderTemplatesSubdir is the directory below base-dir.phenix that holds
+	// the template files of the Builder, unless base-dir.builder-templates
+	// sets another directory.
 	builderTemplatesSubdir = "builder/templates"
 )
 

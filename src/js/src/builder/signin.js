@@ -1,20 +1,20 @@
 // Signing in again without leaving Builder.
 //
 // A session can end while the Builder is open: its token expires, or the
-// server no longer knows it (a request answered 401). Logging out would
-// delete what the Builder keeps in this browser, the edits the server does
-// not have among them (see session.js), and the sign-in page cannot be
-// reached without logging out. So the Builder asks for the password again
-// in place, as the same user (see BuilderSignIn.vue): the save queues wait
-// meanwhile, keeping their edits, and send them once the user has signed
-// in. Nothing here clears anything.
+// server no longer knows it (a request answered 401). Logout would delete
+// what the Builder keeps in this browser, including the edits the server
+// does not have (see session.js). The sign-in page is not available without
+// logout. So the Builder asks for the password again in place, as the same
+// user (see BuilderSignIn.vue). The save queues wait and keep their edits.
+// They send the edits after the user signs in. Nothing here clears
+// anything.
 //
-// The Builder view hosts the dialog while it is open. Without a host, where
-// signing in takes no password (proxy authentication), or while a logout
-// is under way, the session ends as before (see utils/logout.js).
+// The Builder view hosts the dialog while it is open. The session ends as
+// before (see utils/logout.js) in these cases: there is no host, sign-in
+// takes no password (proxy authentication), or a logout is in progress.
 //
-// This module is loaded with the app (the router and the app store read
-// it), so it stays small and imports neither.
+// The app loads this module (the router and the app store read it), so the
+// module stays small and imports neither.
 
 import axios from 'axios';
 import { reactive } from 'vue';
@@ -25,8 +25,8 @@ export const signIn = reactive({
   // Whether the session has ended and the user has not signed in again:
   // a request was refused (401), or the token expired.
   needed: false,
-  // Whether the user closed the dialog without signing in. A request
-  // refused since, or the token expiring, does not open it again; the
+  // Whether the user closed the dialog without signing in. After that, a
+  // refused request or an expired token does not open it again. The
   // Builder offers Sign in again instead.
   declined: false,
 });
@@ -44,7 +44,7 @@ function reset() {
  * Hosts the dialog: the Builder view, while it is open.
  *
  * @param {object} options available: () => whether this session can sign
- *   in again with a password; busy: () => whether a logout is under way
+ *   in again with a password. busy: () => whether a logout is in progress
  * @returns {() => void} ends it, closing the dialog
  */
 export function hostSignIn(options) {
@@ -66,7 +66,7 @@ export function signInAvailable() {
 /**
  * The session has ended while the Builder is open: a request was refused
  * (401) or the token expired. The dialog opens, unless the user declined
- * it or a logout is under way.
+ * it or a logout is in progress.
  *
  * @returns {boolean} whether it is open
  */
@@ -113,7 +113,7 @@ export function signedIn() {
   reset();
 }
 
-// Signs in with the plain client: the app's own sends the ended
+// Signs in with the plain client. The app's own client sends the ended
 // session's token, which the server refuses before it reads the password.
 function postLogin(credentials) {
   return axios.post(`${import.meta.env.BASE_URL}api/v1/login`, credentials);
@@ -123,9 +123,9 @@ function postLogin(credentials) {
  * Signs in again as `username`: takes the new token (renew) and sends
  * what the server refused while the session was over (resume).
  *
- * @param {object} options username, password; renew: (loginResponse) =>
- *   whether the token was taken; resume: () => what signing in sends;
- *   post, for tests
+ * @param {object} options username, password. renew: (loginResponse) =>
+ *   whether the token was taken. resume: () => what signing in sends.
+ *   post: for tests
  * @returns {Promise<*>} resume's result
  */
 export async function signInAgain({
@@ -197,12 +197,13 @@ export function tokenExpiry(token) {
 
 /**
  * What the router does with a navigation made while the dialog is open,
- * or once the token has expired (see router.js): while the dialog is open,
- * the page stays for it, and nothing logs out; a navigation within the
- * Builder, which only changes its address, goes ahead, and the session
- * ending opens the dialog. Any other navigation with an expired token logs
- * out, through the warning when the Builder holds changes the server does
- * not have (see utils/logout.js).
+ * or after the token expired (see router.js):
+ * - While the dialog is open, the page stays for it, and nothing logs out.
+ * - A navigation within the Builder, which only changes its address,
+ *   continues, and the session end opens the dialog.
+ * - Any other navigation with an expired token logs out. It shows the
+ *   warning first when the Builder holds changes the server does not have
+ *   (see utils/logout.js).
  *
  * @param {object} to the route navigated to
  * @param {object} from the route navigated from

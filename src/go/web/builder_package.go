@@ -41,9 +41,9 @@ const (
 	builderDependencyFile     = "file"
 )
 
-// Whether this server has what a package's diagram needs: present, missing,
-// different (a config or an icon of that name whose content is not the
-// package's), or unknown (it cannot be checked).
+// Whether this server has what the diagram of a package needs: present,
+// missing, different (a config or an icon of that name whose content is not
+// that of the package), or unknown (it cannot be checked).
 const (
 	builderDependencyPresent   = "present"
 	builderDependencyMissing   = "missing"
@@ -149,32 +149,40 @@ func (b *builderAPI) getPackageSchema(w http.ResponseWriter, r *http.Request) er
 
 // buildPackage - POST /builder/package.
 //
-// The package of a document (see [bdoc.Package]): the document, which comes
-// with the request and so holds the edits not saved yet, the sections the
-// request includes, and the requirements read from them. Each Scenario
-// config the document names, and with the topologies section each topology
-// it includes, is read from the config store under the caller's
-// permissions, as generating a document reads them: configs get on it and
-// the list permission of its kind. One that does not exist, or that the
-// caller may not read, is named in the requirements but not carried, and a
-// warning, in the same words for both, says so. An include that is a file
-// path is never read. With the icons section, the document gets a copy of
-// each custom icon it names and does not carry, from the icon library.
-// Nothing is written, and no file is read.
+// The package of a document (see [bdoc.Package]) holds:
 //
-// The package answered is always one the resolve route takes. The document
-// and the stored configs may name things a package cannot list: an
-// injection source with a newline, a name longer than
-// [bdoc.MaxRequirementBytes], or more files than
-// [bdoc.MaxPackageRequirements]. Each such entry is left out of the
-// requirements, and a warning names it ([bdoc.Package.TrimRequirements]),
-// so the Download dialog shows it before the file is saved; nothing is left
-// out silently, and the user can still move the diagram. The package is
-// then checked as the resolve route checks one, and anything else it would
-// refuse, such as a stored config without a spec, is answered 422 with the
-// code package.invalid and the issues, which name each. A package larger
-// than [bdoc.MaxPackageBytes] is answered 413 with the code
-// package.too-large. Each warning has its code (see [bdoc.Code]).
+//   - the document, which comes with the request and so holds the edits not
+//     saved yet
+//   - the sections that the request includes
+//   - the requirements read from them
+//
+// The route reads from the config store each Scenario config that the
+// document names, and, with the topologies section, each topology that it
+// includes. It reads them under the permissions of the caller, as a document
+// generate reads them: configs get on it and the list permission of its
+// kind. The requirements name a config that does not exist, or that the
+// caller may not read, but the package does not carry it. A warning says so,
+// in the same words for both cases. The route never reads an include that is
+// a file path. With the icons section, the document gets a copy of each
+// custom icon that it names and does not carry, from the icon library. The
+// route writes nothing and reads no file.
+//
+// The resolve route always accepts the package in the answer. The document
+// and the stored configs may name things that a package cannot list:
+//
+//   - an injection source with a newline
+//   - a name longer than [bdoc.MaxRequirementBytes]
+//   - more files than [bdoc.MaxPackageRequirements]
+//
+// The route leaves each such entry out of the requirements, and a warning
+// names it ([bdoc.Package.TrimRequirements]). Thus the Download dialog shows
+// it before the file is saved. Nothing is left out silently, and the user can
+// still move the diagram. The route then checks the package as the resolve
+// route checks one. Anything else that it would refuse, such as a stored
+// config without a spec, gets 422 with the code package.invalid and the
+// issues, which name each problem. A package larger than
+// [bdoc.MaxPackageBytes] gets 413 with the code package.too-large. Each
+// warning has its code (see [bdoc.Code]).
 func (b *builderAPI) buildPackage(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderBuildPackage")
 
@@ -264,11 +272,13 @@ func builderPackageSections(include []string) (map[string]bool, error) {
 	return sections, nil
 }
 
-// packageContents reads the configs a document's package needs: each
-// Scenario config the document names, whose apps the requirements list and
-// which the package carries with the scenarios section, and, with the
-// topologies section, each topology the document includes. It returns a
-// warning for each it cannot read.
+// packageContents reads the configs that the package of a document needs:
+//
+//   - each Scenario config that the document names. The requirements list
+//     its apps, and the package carries it with the scenarios section.
+//   - with the topologies section, each topology that the document includes
+//
+// It returns a warning for each config that it cannot read.
 func (b *builderAPI) packageContents(
 	actor builderActor,
 	document *bdoc.Document,
@@ -397,9 +407,10 @@ func builderPackageConfig(config *store.Config) bdoc.PackageConfig {
 	}
 }
 
-// packageIcons gives the document a copy of each custom icon it names and
-// does not carry, from the server's icon library, at most as many as a
-// document carries. It returns a warning for each icon it gives no copy of.
+// packageIcons gives the document a copy of each custom icon that it names
+// and does not carry, from the icon library of the server. It gives at most
+// as many as a document carries. It returns a warning for each icon that it
+// gives no copy of.
 func (b *builderAPI) packageIcons(ctx context.Context, document *bdoc.Document) ([]bdoc.Issue, error) {
 	warnings := []bdoc.Issue{}
 	icons := map[string]bdoc.Icon{}
@@ -443,27 +454,34 @@ func (b *builderAPI) packageIcons(ctx context.Context, document *bdoc.Document) 
 
 // resolvePackage - POST /builder/package/resolve.
 //
-// What a package's diagram needs, and whether this server has each, for the
-// caller to choose what to create before the diagram is opened. The package
-// is the request's body, at most [bdoc.MaxPackageBytes] (413 beyond, before
-// anything is decoded), decoded strictly and checked as [bdoc.Package]
-// checks one. A Scenario or Topology config is present when the server has
-// one of that name with the package's spec (or the package carries none),
-// different when its spec is another, and missing when there is none; one
-// the caller may not read (configs get on it, and the list permission of
-// its kind) is unknown, so its existence is not disclosed. An icon is
-// compared by its bytes the same way. Disk images are looked for among
-// those GET /disks lists the caller (disks list, then by name), so one the
-// caller may not see reads missing, as an absent one does; without disks
-// list, or when the disk images cannot be listed or the server lists none
-// (as it does when minimega cannot be reached), they are unknown. Apps
-// are looked for the same way among those GET /applications lists the
-// caller (applications list, then by name), and are unknown only without
-// applications list. Templates travel in the document and
-// are present. Files are never checked. Nothing is written. A body larger
-// than the bound is answered 413 with the code package.too-large, and a
-// package that does not decode or validate 422 with the code
-// package.invalid and, for one that does not validate, its issues.
+// What the diagram of a package needs, and whether this server has each.
+// The caller uses it to choose what to create before the diagram opens. The
+// package is the request body, at most [bdoc.MaxPackageBytes]. A larger body
+// gets 413 before any decode. The route decodes the package strictly and
+// checks it as [bdoc.Package] checks one.
+//
+//   - Scenario or Topology config: present when the server has one of that
+//     name with the spec of the package (or the package carries none),
+//     different when its spec is another, and missing when there is none. A
+//     config that the caller may not read (configs get on it, and the list
+//     permission of its kind) is unknown, so its existence is not disclosed.
+//   - Icon: compared by its bytes the same way.
+//   - Disk image: looked for among the images that GET /disks lists the
+//     caller (disks list, then by name). Thus an image that the caller may
+//     not see reads missing, as an absent image does. Disk images are
+//     unknown without disks list, or when the disk images cannot be listed,
+//     or when the server lists none (as it does when minimega cannot be
+//     reached).
+//   - App: looked for the same way among the apps that GET /applications
+//     lists the caller (applications list, then by name). Apps are unknown
+//     only without applications list.
+//   - Template: travels in the document, so it is present.
+//   - File: never checked.
+//
+// The route writes nothing. A body larger than the bound gets 413 with the
+// code package.too-large. A package that does not decode or validate gets
+// 422 with the code package.invalid. For a package that does not validate,
+// the answer also has its issues.
 func (b *builderAPI) resolvePackage(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderResolvePackage")
 
@@ -564,8 +582,9 @@ func carriedConfig(configs map[string]bdoc.PackageConfig, name string) *bdoc.Pac
 }
 
 // configDependency reports whether this server has a Scenario or Topology
-// config a package's diagram needs (kind is builderSourceScenario or
-// builderSourceTopology), and the package's copy of it, if it carries one.
+// config that the diagram of a package needs (kind is builderSourceScenario
+// or builderSourceTopology). carried is the copy in the package, if the
+// package carries one.
 func (b *builderAPI) configDependency(
 	actor builderActor,
 	kind, name string,
@@ -614,9 +633,9 @@ func sameBuilderSpec(left, right map[string]any) bool {
 	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
 }
 
-// iconDependencies reports whether the server's icon library has each custom
-// icon a package's diagram names, with the bytes of the document's copy, if
-// it carries one.
+// iconDependencies reports whether the icon library of the server has each
+// custom icon that the diagram of a package names. It compares the bytes of
+// the copy in the document, if the document carries one.
 func (b *builderAPI) iconDependencies(
 	ctx context.Context,
 	actor builderActor,
@@ -662,11 +681,11 @@ func (b *builderAPI) iconDependencies(
 	return dependencies, nil
 }
 
-// imageDependencies reports whether this server has each disk image a
-// package's diagram needs, among the images GET /disks lists the caller:
-// with disks list, those whose own name the role allows. One the caller
-// may not see reads missing, as one this server lacks does, so its
-// existence is not disclosed.
+// imageDependencies reports whether this server has each disk image that
+// the diagram of a package needs. It looks among the images that GET /disks
+// lists the caller: with disks list, those whose own name the role allows.
+// An image that the caller may not see reads missing, as an image this
+// server does not have does. Thus its existence is not disclosed.
 func (b *builderAPI) imageDependencies(actor builderActor, images []bdoc.PackageImage) []builderPackageDependency {
 	dependencies := make([]builderPackageDependency, 0, len(images))
 	if len(images) == 0 {
@@ -704,12 +723,12 @@ func (b *builderAPI) imageDependencies(actor builderActor, images []bdoc.Package
 	return dependencies
 }
 
-// listedDiskImages returns the disk images of this server GET /disks lists
-// the caller: with disks list, each whose name the role allows; or why
-// they cannot be listed for the caller. A listing of no images at all is
-// what the server gives when it cannot reach minimega, so it is reported as
-// one that could not be made, as the publish dry run and the preflight
-// disks check report it, rather than as every image missing.
+// listedDiskImages returns the disk images of this server that GET /disks
+// lists the caller: with disks list, each whose name the role allows. Or it
+// returns why they cannot be listed for the caller. The server gives a
+// listing of no images when it cannot reach minimega. Thus such a listing is
+// reported as one that could not be made, not as every image missing. The
+// publish dry run and the preflight disks check report it the same way.
 func (b *builderAPI) listedDiskImages(actor builderActor) ([]disk.Details, string) {
 	if !actor.role.Allowed("disks", "list") {
 		return nil, "Your role cannot list disk images."
@@ -737,9 +756,9 @@ func (b *builderAPI) listedDiskImages(actor builderActor) ([]disk.Details, strin
 	return allowed, ""
 }
 
-// builderFindDisk returns the disk image a drive names: by its name or its
-// full path, or else by its file name, as the Builder's diagram checks find
-// a drive's image.
+// builderFindDisk returns the disk image that a drive names. It finds the
+// image by its name or its full path, or else by its file name, as the
+// Builder diagram checks find the image of a drive.
 func builderFindDisk(images []disk.Details, name string) (disk.Details, bool) {
 	for _, image := range images {
 		if image.Name == name || image.FullPath == name {
@@ -756,10 +775,10 @@ func builderFindDisk(images []disk.Details, name string) (disk.Details, bool) {
 	return disk.Details{}, false
 }
 
-// builderDiskMatch says so when a drive's image was found by its file name
-// alone, and which image of this server it is: the drive names a path that
-// is not that image's. It is "" for an image found by its name or its full
-// path.
+// builderDiskMatch tells when the image of a drive was found only by its
+// file name, and which image of this server it is. In that case, the drive
+// names a path that is not the path of that image. It is "" for an image
+// found by its name or its full path.
 func builderDiskMatch(name string, found disk.Details) string {
 	if name == found.Name || name == found.FullPath {
 		return ""
@@ -772,12 +791,12 @@ func builderDiskMatch(name string, found disk.Details) string {
 	return fmt.Sprintf("Matched by file name %s; this server's image is %s.", found.Name, found.FullPath)
 }
 
-// appDependencies reports whether this server runs each app a package's
-// diagram needs, among the apps GET /applications lists the caller: with
-// applications list, those whose own name the role allows. One the caller
-// may not see reads missing, as one this server lacks does, so its
-// existence is not disclosed. Without applications list at all, apps are
-// unknown.
+// appDependencies reports whether this server runs each app that the
+// diagram of a package needs. It looks among the apps that GET /applications
+// lists the caller: with applications list, those whose own name the role
+// allows. An app that the caller may not see reads missing, as an app this
+// server does not have does. Thus its existence is not disclosed. Without
+// applications list, apps are unknown.
 func (b *builderAPI) appDependencies(actor builderActor, names []string) []builderPackageDependency {
 	dependencies := make([]builderPackageDependency, 0, len(names))
 	listable := actor.role.Allowed("applications", "list")

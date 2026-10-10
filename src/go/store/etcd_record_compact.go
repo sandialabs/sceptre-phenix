@@ -13,22 +13,23 @@ import (
 	"phenix/util/plog"
 )
 
-// etcd keeps every revision of every key until the history is compacted, and
-// etcd's own automatic compaction is off unless the operator enables it. Record
+// etcd keeps every revision of every key until the history is compacted. The
+// etcd automatic compaction is off unless the operator enables it. Record
 // writes are far more frequent than config writes: every builder edit writes
-// new content chunks and rewrites its draft's metadata record. Without
-// compaction that history grows until the backend reaches its quota (2 GiB by
-// default) and etcd refuses every write, config writes included. The Etcd store
-// therefore compacts its cluster periodically.
+// new content chunks and rewrites the metadata record of its draft. Without
+// compaction, that history grows until the backend reaches its quota (2 GiB by
+// default). Then etcd refuses every write, config writes included. Thus the
+// Etcd store compacts its cluster periodically.
 //
-// Compaction is cluster wide: it discards the past revisions of every key in the
-// cluster, not only phenix's. The store keeps at least a retention window of
-// history, like etcd's periodic auto-compaction mode, so other clients of a
-// shared cluster that read or watch recent revisions keep working. The store
-// itself never reads past revisions, and a record's revision is the ModRevision
-// of its current value, which compaction never changes. Several phenix processes
-// sharing one cluster each compact; etcd rejects a compaction to a revision it
-// already compacted, and that rejection is ignored.
+// Compaction is cluster wide. It discards the past revisions of every key in
+// the cluster, not only the keys of phenix. The store keeps at least a
+// retention window of history, like the periodic auto-compaction mode of etcd.
+// Thus other clients of a shared cluster that read or watch recent revisions
+// continue to work. The store itself never reads past revisions. The revision
+// of a record is the ModRevision of its current value, which compaction never
+// changes. Several phenix processes that share one cluster each compact. etcd
+// rejects a compaction to a revision it already compacted, and the store
+// ignores that rejection.
 const (
 	// DefaultEtcdCompactionRetention is the history the Etcd store keeps when its
 	// endpoint does not set a retention.
@@ -40,9 +41,9 @@ const (
 	// disables compaction, for clusters the operator compacts.
 	EtcdCompactionRetentionParam = "compaction-retention"
 
-	// etcdCompactionSamples is how many times per retention window the current
-	// revision is sampled, which bounds how much more history than the retention
-	// is kept.
+	// etcdCompactionSamples is how many times per retention window the
+	// compactor samples the current revision. This bounds how much more
+	// history than the retention is kept.
 	etcdCompactionSamples = 10
 
 	// etcdMinCompactionInterval bounds how often a very short retention samples.
@@ -65,8 +66,9 @@ type etcdCompactor struct {
 	retention time.Duration
 	now       func() time.Time
 
-	// samples are ordered oldest first; compacted is the revision this compactor
-	// last compacted to. Both are only used by the goroutine running compact.
+	// samples are ordered oldest first. compacted is the revision this
+	// compactor last compacted to. Only the goroutine that runs compact uses
+	// them.
 	samples   []etcdRevisionSample
 	compacted int64
 
@@ -156,9 +158,9 @@ func (c *etcdCompactor) stop() {
 	<-c.done
 }
 
-// compact samples the cluster's current revision, then compacts to the newest
-// sampled revision that is at least one retention window old. Samples at or
-// before that revision are no longer needed and are dropped.
+// compact samples the current revision of the cluster, then compacts to the
+// newest sampled revision that is at least one retention window old. It drops
+// the samples at or before that revision, because they are no longer needed.
 func (c *etcdCompactor) compact(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, etcdCompactionTimeout)
 	defer cancel()

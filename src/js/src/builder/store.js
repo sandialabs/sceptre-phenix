@@ -1,8 +1,8 @@
 // Pinia store orchestrating the Builder editor.
 //
-// The store is a thin shell: all document logic lives in the pure modules under
-// src/builder, which keeps this file about wiring (selection, history, the
-// autosave queue, API calls, announcements) rather than behaviour.
+// The store is a thin shell. All document logic is in the pure modules
+// under src/builder, so this file is only about wiring (selection, history,
+// the autosave queue, API calls, announcements), not behaviour.
 
 import { defineStore } from 'pinia';
 import { markRaw, toRaw } from 'vue';
@@ -193,7 +193,7 @@ function emptySelection() {
   return { nodes: [], edges: [] };
 }
 
-// What the Inspector says when it falls back to the bundled schema.
+// What the Inspector says when it uses the bundled schema.
 const BUNDLED_FIELDS =
   'The Inspector shows the fields built into the Builder instead, which may differ from what this server accepts.';
 
@@ -201,12 +201,12 @@ const BUNDLED_FIELDS =
 // a combined import (see generate).
 const NEW_NAME_CODES = new Set(['import.name.invalid', 'import.name.source']);
 
-// The disk listing under way (see fetchDisks).
+// The disk listing in progress (see fetchDisks).
 let disksRequest = null;
 
 // Removes what this device keeps for a deleted draft, for every user who
-// edited it here. A record that cannot be removed stays behind unread: it is
-// read back only for the same draft.
+// edited it here. A record that cannot be removed stays, unread. It is read
+// again only for the same draft.
 async function forgetLocalDraft(owner, id) {
   try {
     const local = createDraftStore();
@@ -225,9 +225,10 @@ async function forgetLocalDraft(owner, id) {
 const CHANGED_WHILE_DELETING =
   'It changed on the server while it was being deleted. Try again.';
 
-// Why a bulk action left out a listed draft the server no longer finds.
-// One of the user's own is gone. For another user's the server answers the
-// same when the user may no longer see it, so the reason names both.
+// Why a bulk action left out a listed draft that the server no longer
+// finds. A draft of the user's own is gone. For another user's draft, the
+// server gives the same answer when the user may no longer see it, so the
+// reason names both.
 const DRAFT_DELETED = 'It was deleted since the list was read.';
 const DRAFT_GONE =
   'It was deleted since the list was read, or you can no longer see it.';
@@ -237,11 +238,11 @@ function draftMissingReason(item) {
 }
 
 // Deletes a draft, and what this device kept for it. A draft that changed
-// since `etag` was read (412) is deleted with its current ETag, once: the
-// one the refusal carries, which a damaged draft has no other way to give,
-// or else the draft's, read again. Resolves with null once it is deleted,
-// or with why it was not: the failure, and whether it is that the draft
-// changed again meanwhile.
+// after `etag` was read (412) is deleted once more with its current ETag.
+// That ETag is the one the refusal carries (a damaged draft has no other
+// way to give it), or else the draft's ETag, read again. Resolves with null
+// when the draft is deleted. Otherwise resolves with why it was not: the
+// failure, and whether the draft changed again in the meantime.
 async function removeDraft(owner, id, etag) {
   let retried = false;
 
@@ -281,9 +282,9 @@ function bulkReason(error) {
 const UNREADABLE_DOWNLOAD =
   'Its diagram cannot be read, so it was not downloaded. A newer version of phenix may have saved it.';
 
-// Whether a failed download ends the run: as for the other batches, but a
-// diagram this version cannot read (a DocumentError, which carries no
-// response) is about that item alone, as the server did answer.
+// Whether a failed download ends the run, as for the other batches. But a
+// diagram that this version cannot read (a DocumentError, which carries no
+// response) is about that item alone, because the server did answer.
 function endsDownloads(error) {
   return !(error instanceof DocumentError) && endsBulk(error);
 }
@@ -296,8 +297,9 @@ function endsDownloads(error) {
  *
  * @param {object[]} items
  * @param {(item: object) => Promise<object>} read the item's document
- * @param {object} options save(file): saves {name, text}; onProgress(done,
- *   total); missing: why an item the server no longer finds was not saved
+ * @param {object} options save(file): saves {name, text}. onProgress(done,
+ *   total). missing: why an item that the server no longer finds was not
+ *   saved
  * @returns {Promise<{done: object[], failures: Array<{item: object,
  *   reason: string}>}>}
  */
@@ -323,8 +325,8 @@ async function downloadEach(items, read, { save, onProgress, missing }) {
   });
 }
 
-// What a layout run is for, as the viewer knows it, and what is dropped
-// when the diagram changes before it ends.
+// What a layout run is for, in the viewer's terms, and what is dropped
+// when the diagram changes before the run ends.
 const LAYOUT_TASKS = {
   layout: { name: 'Auto layout', dropped: 'the layout was not applied' },
   group: { name: 'Auto-group', dropped: 'no groups were made' },
@@ -337,12 +339,12 @@ const RESOLVING_REFUSAL =
   'Not changed: the conflict is being resolved. Edit again once it is.';
 
 // Lays `doc` out for layout or autoGroup (`task`, a LAYOUT_TASKS key). A
-// layout can finish later (ELK runs in a Web Worker): until it does,
-// layoutRunning is set and another request is turned away. Resolves to the
-// geometry, or to null, with the reason told, when the draft is read only,
-// another layout runs, the layout fails, or the diagram changes meanwhile:
-// that diagram keeps the change, and the layout, made for what it was, is
-// dropped.
+// layout can finish later (ELK runs in a Web Worker). Until it finishes,
+// layoutRunning is set and another request is refused. Resolves to the
+// geometry. Resolves to null, and tells the reason, in these cases: the
+// draft is read only, another layout runs, the layout fails, or the
+// diagram changes in the meantime. In the last case, the diagram keeps the
+// change, and the layout, made for the earlier diagram, is dropped.
 async function layOut(store, doc, id, options, task) {
   const { name, dropped } = LAYOUT_TASKS[task];
 
@@ -369,7 +371,7 @@ async function layOut(store, doc, id, options, task) {
   store.autoGrouping = task === 'group';
 
   try {
-    // Nodes leave room for their notes while the canvas shows them. The
+    // Nodes keep space for their notes while the canvas shows them. The
     // selected nodes are where Layered by tier starts (see layouts/tiers.js).
     laid = await runLayout(id, doc, {
       ...notesShown(),
@@ -385,8 +387,8 @@ async function layOut(store, doc, id, options, task) {
       return null;
     }
 
-    // A layout library's own words mean nothing to the viewer: they go to
-    // the console.
+    // A layout library's own words mean nothing to the viewer, so they go
+    // to the console.
     const known = error instanceof LayoutError;
 
     if (!known) {
@@ -403,8 +405,8 @@ async function layOut(store, doc, id, options, task) {
     store.autoGrouping = false;
   }
 
-  // Another edit, an undo or another document since: panning and zooming
-  // change no entry.
+  // Another edit, an undo or another document since the layout started.
+  // Pan and zoom change no entry.
   if (store.history !== history || history.currentEntry().id !== entryId) {
     store.announce(`The diagram changed during ${name}, so ${dropped}.`);
 
@@ -415,18 +417,20 @@ async function layOut(store, doc, id, options, task) {
 }
 
 // Whether the canvas shows node notes, as the layouts and the model's group
-// sizes take it (see nodeFootprint): nodes leave room for their notes, and
-// a group holds its members' notes, while they are shown.
+// sizes use it (see nodeFootprint). While notes are shown, nodes keep space
+// for their notes, and a group holds its members' notes.
 function notesShown() {
   return { showNotes: builderSettings.showNodeNotes };
 }
 
-// Makes the planned groups (see applyGroups) for autoGroup and
-// autoGroupByPattern, lays the diagram out with its layout, or the Settings
-// default, so the groups do not overlap, and commits both as one edit that
-// keeps that layout as the draft's, as layout does. `phrase` says how they
-// were grouped ("by network"). Resolves to the groups made, or to null when
-// the layout was not applied (see layOut).
+// For autoGroup and autoGroupByPattern:
+// 1. Makes the planned groups (see applyGroups).
+// 2. Lays the diagram out with its layout, or the Settings default, so the
+//    groups do not overlap.
+// 3. Commits both as one edit that keeps that layout as the draft's, as
+//    layout does.
+// `phrase` says how they were grouped ("by network"). Resolves to the
+// groups made, or to null when the layout was not applied (see layOut).
 async function makeGroups(store, planned, phrase, options) {
   const grouped = applyGroups(store.doc, planned, notesShown());
   const id = store.layoutToRun;
@@ -445,20 +449,20 @@ async function makeGroups(store, planned, phrase, options) {
 }
 
 // Bumped when the session ends (see endSession), so a listing that answers
-// after the user logged out is dropped rather than shown to the next user.
+// after the user logged out is dropped and not shown to the next user.
 let sessionEpoch = 0;
 
-// Bumped on every read of a draft's snapshots, so only the last one asked
-// for fills the History dialog (see fetchHistory).
+// Bumped on every read of a draft's snapshots, so only the last requested
+// read populates the History dialog (see fetchHistory).
 let historyRequest = 0;
 
-// Bumped on every preview of a publication, so only the last one asked for
-// is answered (see previewPublish).
+// Bumped on every preview of a publication, so only the last requested
+// preview is answered (see previewPublish).
 let previewRequest = 0;
 
 // Bumped by every merge of a conflict (see mergeConflict), so only the last
-// one lets edits through again: a save of a merged diagram can meet another
-// conflict, whose merge starts before the first one has ended.
+// merge allows edits again. A save of a merged diagram can meet another
+// conflict, whose merge starts before the first merge ends.
 let mergeRuns = 0;
 
 // Empties the store of what the user had here, after stopping the queue.
@@ -475,7 +479,7 @@ function forgetUser(store) {
 
 // Whether the signed-in role may `verb` configs, as the server's Builder
 // routes require (builderBaseAllowed in web/builder.go). The server
-// decides; this only keeps controls it would refuse out of the way.
+// decides. This only hides controls that the server would refuse.
 function configsAllowed(verb) {
   return Boolean(usePhenixStore().role) && roleAllowed('configs', verb);
 }
@@ -484,9 +488,9 @@ function configsAllowed(verb) {
 const PUBLISHED_GONE =
   'It was deleted or published again since the list was read.';
 
-// What opening another user's draft says when the server cannot find it:
-// the same whether it is missing or not shared with the user, as the server
-// answers the same.
+// What the Builder says when the server cannot find another user's draft
+// that the user opens. The message is the same whether the draft is missing
+// or not shared with the user, because the server gives the same answer.
 const NOT_SHARED = 'This draft does not exist, or it is not shared with you.';
 
 // The lists as they are before they are read.
@@ -521,16 +525,16 @@ function emptyLibrary() {
   };
 }
 
-// The reads of the template library asked for, and the last one whose
-// answer was kept: an answer older than the one kept is dropped (see
+// The requested reads of the template library, and the last read whose
+// answer was kept. An answer older than the kept answer is dropped (see
 // fetchTemplates).
 let libraryReads = 0;
 let libraryReadKept = 0;
 
 // The server changes a library with one compare-and-swap of its record,
-// which it tries a few times. When the record keeps changing under it (the
-// user's other tabs, say) it answers 503: the change is sent again, a
-// moment later, this many times.
+// which it tries a few times. When the record continues to change during
+// these tries (for example, from the user's other tabs), it answers 503.
+// The change is then sent again, a moment later, this many times.
 const LIBRARY_RETRIES = 2;
 export const LIBRARY_RETRY_MS = 1000;
 
@@ -564,10 +568,10 @@ export class LibraryError extends Error {
   }
 }
 
-// Checks a diagram the server sent (see parseDocument). Whatever the check
-// throws leaves as a DocumentError: the server answered, so the failure is
-// about the diagram, and is never taken for a request that did not arrive
-// (see describeError).
+// Checks a diagram the server sent (see parseDocument). Any error that the
+// check throws becomes a DocumentError. The server answered, so the failure
+// is about the diagram, and is never mistaken for a request that did not
+// arrive (see describeError).
 function serverDocument(value) {
   try {
     return parseDocument(value);
@@ -580,13 +584,13 @@ function serverDocument(value) {
   }
 }
 
-// The document setDocument opens from a payload: decoded strictly, an
-// unsupported or invalid one refused rather than silently repaired. Gives
+// The document that setDocument opens from a payload, decoded strictly. An
+// unsupported or invalid payload is refused, not silently repaired. Gives
 // {document}, or {error}, the reason it cannot be opened.
 function openableDocument(payload) {
   try {
-    // A switch is named after its network, whatever label a document
-    // saved or imported with another name still carries.
+    // A switch is named after its network, even when a document saved or
+    // imported with another name still carries another label.
     return { document: namedSwitches(parseDocument(payload)) };
   } catch (error) {
     return {
@@ -656,15 +660,15 @@ export const MERGING_TEXT = 'Merging your changes with the server version…';
 
 // How long a merge waits for the server to send the version the unsaved
 // changes started from (see mergeBase). The conflict panel stays hidden
-// while it waits, so the wait is bounded: after it, merging is not
-// available and the panel offers the other ways out.
+// while it waits, so the wait has a limit. After it, merging is not
+// available, and the panel offers the other choices.
 export const MERGE_BASE_TIMEOUT_MS = 15000;
 
 // What withTimeout resolves to when the time ran out first.
 const TIMED_OUT = Symbol('timed out');
 
-// Settles as `promise` does, or resolves to TIMED_OUT once `ms` have passed
-// without it settling.
+// Settles when `promise` settles, or resolves to TIMED_OUT when `ms` pass
+// first.
 function withTimeout(promise, ms) {
   let timer;
   const expired = new Promise((resolve) => {
@@ -675,15 +679,15 @@ function withTimeout(promise, ms) {
 }
 
 // Why a merge that threw is not available, in words. The message is the
-// error's own: nothing of the diagram or the request is added to it, and
+// error's own. Nothing of the diagram or the request is added to it, and
 // nothing is logged.
 function mergeFailure(error) {
   return `Merging failed: ${failureMessage(error)}`;
 }
 
 // Why the merge the user reviewed was not saved, in words, for the merge
-// dialog's alert (see saveMergeChoices). As mergeFailure, the message is the
-// error's own.
+// dialog's alert (see saveMergeChoices). As in mergeFailure, the message is
+// the error's own.
 export function mergeSaveFailure(error) {
   return `The merged diagram could not be saved: ${failureMessage(error).replace(/\.$/, '')}.`;
 }
@@ -707,8 +711,8 @@ function publishedToken(read) {
   return read.digest ? `${FILE_TOKEN}${read.target}/${read.digest}` : '';
 }
 
-// The drafts of mine made from a published diagram, by their source token,
-// the one changed last first. A Builder file's token names what the file
+// The user's drafts made from a published diagram, by their source token,
+// the draft changed last first. A Builder file's token names what the file
 // held, so a draft made before the file changed is not one of them.
 function draftsFrom(drafts, token) {
   return newestFirst(
@@ -717,22 +721,23 @@ function draftsFrom(drafts, token) {
 }
 
 /**
- * The draft a published diagram is edited in, or null. In this order: the
- * draft of mine that published it ('publisher'), a draft someone shared
- * with me for editing that published it ('shared'), then the draft of mine
- * made from it before ('opened'). A draft that published the diagram is
- * found by the document its last publication stored, so it is still found
- * after it publishes again, which gives the diagram a new id. Among
- * several, the draft the diagram itself names comes first, then the one
- * changed last.
+ * The draft a published diagram is edited in, or null. In this order:
+ * 1. the user's draft that published it ('publisher')
+ * 2. a draft that someone shared with the user for editing and that
+ *    published it ('shared')
+ * 3. the user's draft made from it before ('opened')
+ * A draft that published the diagram is found by the document that its
+ * last publication stored. So it is still found after it publishes again,
+ * which gives the diagram a new id. Among several, the draft that the
+ * diagram itself names comes first, then the draft changed last.
  *
- * A draft shared for viewing only, or seen through a role, is not one:
- * the diagram is opened to be edited.
+ * A draft shared for viewing only, or seen through a role, is not one,
+ * because the diagram is opened to be edited.
  *
  * @param {{mine: object[], shared: object[]}} drafts as listed
  * @param {{id: string, draftId?: string}} published the diagram's id, and
- *   the id of the draft that published it when the listing says; the handle
- *   of a topology's Builder file, or '', has no publishing draft
+ *   the id of the draft that published it when the listing says. The
+ *   handle of a topology's Builder file, or '', has no publishing draft
  * @param {string} token the source token of a draft made from the diagram
  *   (see publishedToken), or '' to leave such drafts out
  * @returns {{draft: object, how: 'publisher'|'shared'|'opened'}|null}
@@ -774,7 +779,7 @@ export function draftForPublished(drafts, published, token) {
 
 // The title of a draft saved from local history: the diagram's name with
 // " (local copy)". A name near the server's limit on names is cut first,
-// without splitting a character, so the title still fits it.
+// without a split character, so the title still fits the limit.
 const FORK_SUFFIX = ' (local copy)';
 
 export function forkTitle(name) {
@@ -799,9 +804,9 @@ export const useBuilderStore = defineStore('builder', {
   state: () => ({
     doc: createDocument(),
     history: markRaw(new History(createDocument(), DEFAULT_HISTORY_LIMIT)),
-    // The History object is markRaw (its snapshots are not made reactive), so
-    // nothing observes its index. Every action that moves it bumps this, and
-    // the canUndo/canRedo getters read it.
+    // The History object is markRaw (its snapshots are not made reactive),
+    // so nothing observes its index. Every action that moves the index bumps
+    // this, and the canUndo/canRedo getters read it.
     historyVersion: 0,
     autosave: null,
     saveState: initialState(),
@@ -812,12 +817,12 @@ export const useBuilderStore = defineStore('builder', {
     clipboard: null,
     // What the last automatic layout changed (layoutChanges: where it moved
     // nodes from, the routes and layout choice it replaced), and the history
-    // entry that layout made. It can be put back only while that entry is
-    // current: any other edit, an undo or redo, or another document drops
+    // entry that layout made. It can be restored only while that entry is
+    // current. Any other edit, an undo or redo, or another document drops
     // it, so a restore never moves nodes to stale positions.
     layoutRestore: null,
-    // Whether an automatic layout is under way (see layout), and whether it
-    // is Auto-group's (see autoGroup).
+    // Whether an automatic layout is in progress (see layout), and whether
+    // it is Auto-group's (see autoGroup).
     layoutRunning: false,
     autoGrouping: false,
     schema: builderSchemaV1,
@@ -829,11 +834,12 @@ export const useBuilderStore = defineStore('builder', {
     // draft), so the canvas starts fresh for each diagram.
     openedSeq: 0,
     etag: null,
-    // What Publish needs to know about the draft record: its id, the config
-    // it was loaded from, the saved snapshot's digest and its last
-    // publication (see draftCanUpdate in publish.js); when the server last
-    // changed it, for Download; and the name of the uploaded file it was made
-    // from, if it was, for the Inspector.
+    // What Publish needs to know about the draft record:
+    // - its id, the config it was loaded from, the saved snapshot's digest
+    //   and its last publication (see draftCanUpdate in publish.js)
+    // - when the server last changed it, for Download
+    // - the name of the uploaded file it was made from, if any, for the
+    //   Inspector
     draftRecord: {
       id: '',
       sourceToken: '',
@@ -843,13 +849,15 @@ export const useBuilderStore = defineStore('builder', {
       forked: null,
       updated: '',
     },
-    // The experiment a publication of the open draft made, by name, while
-    // it still exists and the user may get it, as the server last said:
-    // when the draft was read or made, and when it published. '' for none.
+    // The experiment that a publication of the open draft made, by name,
+    // while it still exists and the user may get it. This is as the server
+    // last said: when the draft was read or made, and when it published. ''
+    // for none.
     experiment: '',
     readOnly: false,
-    // How the user reaches the open draft (see rememberAccess): 'owner',
-    // 'edit' or 'view', and for another user's draft, 'share' or 'role'.
+    // How the user gets access to the open draft (see rememberAccess):
+    // 'owner', 'edit' or 'view', and for another user's draft, 'share' or
+    // 'role'.
     access: '',
     via: '',
     // Whether the user may change who the open draft is shared with, and who
@@ -861,21 +869,22 @@ export const useBuilderStore = defineStore('builder', {
     // response has said.
     shareCapable: null,
     // Why a draft someone shared can no longer be saved (see accessLost in
-    // autosave.js): 'view-only', 'role' or 'gone'; '' otherwise.
+    // autosave.js): 'view-only', 'role' or 'gone'. '' otherwise.
     accessLost: '',
     // The published diagram shown read only, with no draft of its own yet
-    // (see viewPublishedDocument), or null: its id, name and target, and
-    // source, 'store' for a published document or 'file' for the diagram of
-    // the Builder file a topology names. A file's also has its path, the
-    // digest of what it held, and topologyDiffers: whether the stored
-    // topology is not what the file publishes. `read` is the diagram as the
-    // server sent it, which editing it sends back unchanged.
+    // (see viewPublishedDocument), or null. It has its id, name and target,
+    // and source: 'store' for a published document, or 'file' for the
+    // diagram of the Builder file a topology names. A file's diagram also
+    // has its path, the digest of what it held, and topologyDiffers: whether
+    // the stored topology is not what the file publishes. `read` is the
+    // diagram as the server sent it, which an edit sends back unchanged.
     published: null,
     announcement: '',
-    // Messages in the same slot supersede each other while they wait to be
+    // Messages in the same slot replace each other while they wait to be
     // spoken ('save' for the save state, '' for everything else).
     announcementSlot: '',
-    // Bumped on every announcement so a repeated message is re-announced.
+    // Bumped on every announcement, so a repeated message is announced
+    // again.
     announcementSeq: 0,
     // Bumped on every save-state announcement, so Save now and Retry saving
     // know whether their outcome was spoken already.
@@ -885,15 +894,17 @@ export const useBuilderStore = defineStore('builder', {
     theme: DEFAULT_THEME,
     resolvedTheme: 'light',
     drafts: emptyLists(),
-    // The user's template library (see fetchTemplates): status is 'idle'
-    // before it is asked for, then 'loading', and 'ready' or 'failed' as
-    // the last read went, with why it failed (error). loaded says whether
-    // the rest is what the server answered: the library's owner, its
-    // templates (items) and collections, and those of other users shared
-    // with the user or published server-wide (each with its source and
-    // owner), what the user may do (canShare, canPublish), whether the
-    // stored library cannot be read (damaged), and its limits. A read that
-    // fails keeps what an earlier one answered.
+    // The user's template library (see fetchTemplates). status is 'idle'
+    // before it is requested, then 'loading', then 'ready' or 'failed' by
+    // the result of the last read, with why it failed (error). loaded says
+    // whether the rest is what the server answered:
+    // - the library's owner, its templates (items) and collections
+    // - those of other users shared with the user or published server-wide
+    //   (each with its source and owner)
+    // - what the user may do (canShare, canPublish)
+    // - whether the stored library cannot be read (damaged)
+    // - its limits
+    // A read that fails keeps what an earlier read answered.
     templates: emptyLibrary(),
     publishing: false,
     publishResult: null,
@@ -902,24 +913,25 @@ export const useBuilderStore = defineStore('builder', {
     publishIssues: [],
     // Go to, from a list of checks (see goToIssue): the node or connection
     // selected for it, the Inspector field to focus ('' for none), a
-    // number that changes with every request, and `taken` once the
-    // Inspector has acted on it (see takeFocusRequest).
+    // number that changes with every request, and `taken` after the
+    // Inspector acted on it (see takeFocusRequest).
     focusRequest: null,
-    // Whether resolveConflict or a merge is under way (see
+    // Whether resolveConflict or a merge is in progress (see
     // refuseWhileResolving).
     resolvingConflict: false,
     // The merge of a conflict's server version with the unsaved changes
-    // (see mergeConflict), or null when none is under way: status is
-    // 'merging' while it runs, 'review' when the user chooses (some fields
-    // clash, or the merged diagram is refused), and 'unavailable' with why
-    // (reason) when the version the changes started from cannot be read in
-    // time, or the merge failed.
-    // from names who saved the server's version (see changesFrom), clashes
-    // says how many fields clash; base and server (the server copy, its
+    // (see mergeConflict), or null when no merge is in progress. status is:
+    // - 'merging' while it runs
+    // - 'review' when the user chooses (some fields clash, or the merged
+    //   diagram is refused)
+    // - 'unavailable', with why (reason), when the version the changes
+    //   started from cannot be read in time, or the merge failed
+    // from names who saved the server's version (see changesFrom). clashes
+    // says how many fields clash. base and server (the server copy, its
     // document checked) are what a review merges.
     merge: null,
     // The configs ("<kind>/<name>") the server refused to let this draft
-    // update because someone else changed them since it published them (see
+    // update because someone else changed them after it published them (see
     // updateBlocker in publish.js).
     publishChanged: { draftId: '', targets: [] },
     queueWork: null,
@@ -941,16 +953,17 @@ export const useBuilderStore = defineStore('builder', {
     historyLoading: false,
     historyError: '',
     // The ETag of the history the History dialog shows, when it is newer
-    // than the queue's: read again after a delete met a change made
-    // elsewhere (see deleteSnapshot). null otherwise.
+    // than the queue's ETag. It is read again after a delete met a change
+    // made elsewhere (see deleteSnapshot). null otherwise.
     historyEtag: null,
     loading: false,
     error: '',
     // The form field the error is about, when the request that failed came
-    // from a dialog form: a publish target's field (see publishRefusal), or
-    // 'content' or 'name' for an import source the server refused, or
-    // 'newName' for the name of the new topology an import makes. The
-    // dialog marks that control. '' when the error is about no field.
+    // from a dialog form:
+    // - a publish target's field (see publishRefusal)
+    // - 'content' or 'name' for an import source the server refused
+    // - 'newName' for the name of the new topology an import makes
+    // The dialog marks that control. '' when the error is about no field.
     errorField: '',
     // Bumped whenever an error is set, so the same failure twice is shown
     // (and announced) twice.
@@ -967,7 +980,7 @@ export const useBuilderStore = defineStore('builder', {
     // default (see documentLayout).
     layoutToRun: (state) =>
       documentLayout(state.doc, builderSettings.layoutAlgorithm),
-    // Whether the layout menu offers to put the previous layout back.
+    // Whether the layout menu offers to restore the previous layout.
     canRestoreLayout: (state) =>
       state.historyVersion >= 0 &&
       !state.readOnly &&
@@ -978,14 +991,15 @@ export const useBuilderStore = defineStore('builder', {
     errors: (state) =>
       validateDocument(state.doc).filter((issue) => issue.level === 'error'),
     hasConflict: (state) => state.saveState.status === 'conflict',
-    // Whether a conflict's merge, which may end it without asking, is under
-    // way (see mergeConflict): edits are refused, the conflict panel waits,
-    // and the save state says the changes are being merged.
+    // Whether a conflict's merge, which may end the conflict without a
+    // question to the user, is in progress (see mergeConflict). Edits are
+    // then refused, the conflict panel waits, and the save state says the
+    // changes are being merged.
     mergingConflict: (state) =>
       state.saveState.status === 'conflict' &&
       state.merge?.status === 'merging',
     // Whether the conflict panel shows: a conflict, unless a merge that may
-    // end it without asking is under way (see mergeConflict).
+    // end it without a question is in progress (see mergeConflict).
     conflictShown: (state) =>
       state.saveState.status === 'conflict' &&
       state.merge?.status !== 'merging',
@@ -1012,8 +1026,8 @@ export const useBuilderStore = defineStore('builder', {
       state.access
         ? state.access === 'owner'
         : !state.owner || state.owner === usePhenixStore().username,
-    // The owner of the open draft, when someone shared it with the user and
-    // still does: once the share, or the draft, is gone, no one is named.
+    // The owner of the open draft, while someone shares it with the user.
+    // When the share, or the draft, is gone, no one is named.
     sharedBy: (state) =>
       state.via === 'share' && state.accessLost !== 'gone' ? state.owner : '',
     // The experiment the open diagram's publication made: a draft's own, or
@@ -1069,7 +1083,7 @@ export const useBuilderStore = defineStore('builder', {
     },
     // The device templates the palette offers, in groups: those saved in
     // the open diagram, then those of the user's library, or the built-in
-    // ones while there is no library to show (see templates.js).
+    // templates while there is no library to show (see templates.js).
     paletteTemplateGroups: (state) =>
       paletteTemplateGroups(state.doc, state.templates),
     // The template a palette entry's key names ("diagram:<id>", "own:<id>",
@@ -1085,8 +1099,8 @@ export const useBuilderStore = defineStore('builder', {
       state.templates.collections.filter(
         (collection) => collection.source === 'own',
       ),
-    // The built-in templates the user's library does not hold, once it was
-    // read: the ones restoreBuiltinTemplates can add back.
+    // The built-in templates that the user's library does not hold, after
+    // it is read: the ones that restoreBuiltinTemplates can add again.
     missingBuiltinTemplates: (state) =>
       missingBuiltinTemplates(state.templates),
     // What the signed-in role may do to its library (see configsAllowed):
@@ -1164,8 +1178,8 @@ export const useBuilderStore = defineStore('builder', {
       }
     },
 
-    // The access of a draft the user just made: their own, which they may
-    // share when the server has said they may share any.
+    // The access of a draft the user just made: their own. They may share
+    // it when the server said that they may share any draft.
     ownDraft() {
       this.access = 'owner';
       this.via = '';
@@ -1175,7 +1189,7 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     // A draft someone shared can no longer be saved (see accessLost in
-    // autosave.js): it is read only from now on, and the view says why.
+    // autosave.js). It is read only from now on, and the view says why.
     loseAccess(why) {
       this.accessLost = why;
       this.readOnly = true;
@@ -1199,16 +1213,17 @@ export const useBuilderStore = defineStore('builder', {
      * Records one semantic edit: local history, then the autosave queue. Every
      * call becomes exactly one server snapshot.
      *
-     * The document recorded carries copies only of custom icons its nodes
-     * name that the icon library lacks or holds otherwise (see settleIcons):
-     * this is the one place that drops the others for every edit.
+     * The document recorded carries copies only of the custom icons that
+     * its nodes name and that the icon library does not have or holds in
+     * another form (see settleIcons). This is the one place that drops the
+     * other copies for every edit.
      *
      * @param {object} doc next document
      * @param {string} label short description
      */
     commit(doc, label) {
       if (this.readOnly) {
-        // The page alert reads it; announcing it too would say it twice.
+        // The page alert reads it. An announcement too would say it twice.
         this.setError(READ_ONLY_REFUSAL);
 
         return null;
@@ -1237,9 +1252,10 @@ export const useBuilderStore = defineStore('builder', {
       return entry;
     },
 
-    // While a conflict is being resolved, an edit or an undo would be lost:
-    // saving the history as a new draft saves it as it was when that started,
-    // and discarding loads the server's version. It is refused and announced.
+    // While a conflict is being resolved, an edit or an undo would be lost.
+    // A save of the history as a new draft saves it as it was when the
+    // resolution started, and a discard loads the server's version. So the
+    // edit is refused and announced.
     refuseWhileResolving() {
       if (!this.resolvingConflict) {
         return false;
@@ -1250,8 +1266,8 @@ export const useBuilderStore = defineStore('builder', {
       return true;
     },
 
-    // While the queue is blocked, an edit is kept only here; its
-    // announcement says so instead of sounding saved.
+    // While the queue is blocked, an edit is kept only here. Its
+    // announcement says so, and does not sound saved.
     unsavedNote() {
       switch (this.saveState.status) {
         case 'conflict':
@@ -1265,8 +1281,8 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Keeps a queue call from becoming fire and forget. The queue reports
-     * failures through its own state, so nothing is thrown here, but the
-     * promise is always handled and the last one is awaited by saveNow.
+     * failures through its own state, so nothing is thrown here. But the
+     * promise is always handled, and saveNow awaits the last one.
      *
      * @param {Promise<object>} promise
      */
@@ -1294,9 +1310,9 @@ export const useBuilderStore = defineStore('builder', {
 
       this.autosave?.dispose();
       // What the queue before this one was still sending, and the problem
-      // last announced for it, are that draft's. A draft closed while it
-      // was being saved goes on in the background (see
-      // createBackgroundSaves in leave.js): this draft's saves do not wait
+      // last announced for it, belong to that draft. A draft closed while it
+      // was being saved continues in the background (see
+      // createBackgroundSaves in leave.js). This draft's saves do not wait
       // for it (see saveNow), and its first save is not the end of that
       // draft's problem (see announceSaveState).
       this.queueWork = null;
@@ -1336,8 +1352,8 @@ export const useBuilderStore = defineStore('builder', {
               this.etag = envelope.etag;
             }
 
-            // A save answers with the draft alone: the history it leaves
-            // unknown is kept until History reads it again.
+            // A save answers with only the draft. The history stays as it
+            // is until History reads it again.
             if (Array.isArray(envelope.history)) {
               this.serverHistory = envelope.history;
             }
@@ -1356,9 +1372,9 @@ export const useBuilderStore = defineStore('builder', {
               this.stampEntry(entry, stampOf(envelope));
 
               // The server keeps fewer snapshots than this history when they
-              // are large (MaxDraftHistoryBytes), the one just saved being
-              // its newest. Undo stops at the oldest it keeps: a move to one
-              // it dropped would be refused.
+              // are large (MaxDraftHistoryBytes). The snapshot just saved is
+              // its newest. Undo stops at the oldest snapshot it keeps,
+              // because a move to a dropped snapshot would be refused.
               const kept = envelope.draft?.snapshots;
 
               if (
@@ -1376,9 +1392,9 @@ export const useBuilderStore = defineStore('builder', {
 
       this.autosave.listen();
 
-      // Entries and the queue are deliberately left out unless the caller has
-      // them: attach then keeps whatever ordered log this device already holds
-      // for the draft, which is what recoverLocalHistory reads back.
+      // Entries and the queue are left out on purpose unless the caller has
+      // them. attach then keeps the ordered log that this device already
+      // holds for the draft, which recoverLocalHistory reads again.
       return this.autosave.attach({
         owner,
         draftId,
@@ -1392,10 +1408,11 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Copies the stamp a save answered with (who made the document and who
-     * saved it last, and when; see withStamp in model.js) into the history
-     * entry the save stored, so undo back to it shows what the server holds
-     * of it. While that entry is the one shown, the diagram takes the stamp
-     * too: it is the entry's snapshot, or a copy of it with another viewport.
+     * saved it last, and when, see withStamp in model.js) into the history
+     * entry the save stored. So an undo to that entry shows what the server
+     * holds of it. While that entry is the one shown, the diagram also takes
+     * the stamp, because it is the entry's snapshot, or a copy of it with
+     * another viewport.
      *
      * @param {object} [entry] history entry
      * @param {object|null} stamp stampOf() the save's answer
@@ -1425,8 +1442,8 @@ export const useBuilderStore = defineStore('builder', {
     announceSaveState(state) {
       const message = saveAnnouncement(this.saveAnnounced, state);
 
-      // A conflict is announced by its panel, and resolving it by the
-      // action chosen: the save that follows is no recovery to announce.
+      // The panel announces a conflict, and the chosen action announces its
+      // resolution. The save that follows is not a recovery to announce.
       if (['saved', 'conflict'].includes(state.status) || message) {
         this.saveAnnounced = {
           status: state.status,
@@ -1456,8 +1473,8 @@ export const useBuilderStore = defineStore('builder', {
      * @param {object} state queue state after the save
      * @param {number} before saveAnnouncementSeq when the save started
      * @param {string} [note] what the save left out, said with the outcome
-     *   (edits the Inspector could not apply); a save then says "Saved."
-     *   rather than "All changes saved."
+     *   (edits the Inspector could not apply). A save then says "Saved."
+     *   and not "All changes saved."
      */
     announceSaveOutcome(state, before, note = '') {
       if (this.saveAnnouncementSeq !== before) {
@@ -1514,13 +1531,13 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Replaces the document. The payload is decoded strictly: an unsupported or
-     * invalid document is rejected with a message instead of being silently
+     * Replaces the document. The payload is decoded strictly. An unsupported
+     * or invalid document is rejected with a message, and is not silently
      * repaired.
      *
      * @param {object} payload
      * @param {object} [options] label, resetHistory, and announce: false to
-     *   load it with a reset history unannounced (see openImported)
+     *   load it with a reset history and no announcement (see openImported)
      * @returns {object|null} document, or null when rejected
      */
     setDocument(
@@ -1559,9 +1576,9 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * @param {object} [options] document, title, sourceToken; sourceFile:
-     *   the name of the uploaded file the document was read from;
-     *   announcement: what to say once the draft exists ('' for nothing)
+     * @param {object} [options] document, title, sourceToken. sourceFile:
+     *   the name of the uploaded file the document was read from.
+     *   announcement: what to say after the draft exists ('' for nothing)
      */
     async createDraft({
       document,
@@ -1580,8 +1597,8 @@ export const useBuilderStore = defineStore('builder', {
         const envelope = await builderApi.createDraft({
           title: title || metadataOf(doc).name || 'Untitled diagram',
           sourceToken,
-          // Left out of the request when there is none, or none the server
-          // would record.
+          // Left out of the request when there is no file name, or no name
+          // that the server would record.
           sourceFile: sourceFileName(sourceFile) || undefined,
           document: doc,
         });
@@ -1600,9 +1617,9 @@ export const useBuilderStore = defineStore('builder', {
         this.experiment = envelope.draft?.experiment || '';
         this.ownDraft();
         // The server stored the document with the stamp it answers with,
-        // which the editor's copy takes. Its switches are named after their
-        // networks, as those of a draft read from the server are (see
-        // setDocument): the document sent may be a published one, sent as
+        // and the editor's copy takes that stamp. Its switches are named
+        // after their networks, as for a draft read from the server (see
+        // setDocument). The document sent may be a published one, sent as
         // it was read.
         const stored = envelope.document
           ? serverDocument(envelope.document)
@@ -1652,9 +1669,9 @@ export const useBuilderStore = defineStore('builder', {
      *
      * @param {string} owner
      * @param {string} id
-     * @param {object} [options] quiet: says nothing of the draft having
-     *   opened, for a draft loaded while the drafts stay on screen (a card's
-     *   Publish); changes recovered from this device are still announced
+     * @param {object} [options] quiet: says nothing about the open of the
+     *   draft, for a draft loaded while the drafts stay on screen (a card's
+     *   Publish). Changes recovered from this device are still announced
      * @returns {Promise<object|null>} the draft's document, or null
      */
     async loadDraft(owner, id, { quiet = false } = {}) {
@@ -1721,7 +1738,7 @@ export const useBuilderStore = defineStore('builder', {
         }
 
         // Another user's draft says whose it is, and whether it can be
-        // edited: others may be editing it at the same time.
+        // edited, because others may edit it at the same time.
         if (!quiet && phenix.username && this.owner !== phenix.username) {
           const name =
             metadataOf(this.doc).name || envelope.draft?.title || 'Untitled';
@@ -1745,8 +1762,9 @@ export const useBuilderStore = defineStore('builder', {
               : this.describeError(error, 'load the draft'),
           );
 
-          // Someone else's draft that is gone, or no longer shared, leaves
-          // the lists, so its card does not offer the same failure again.
+          // Another user's draft that is gone, or no longer shared, is
+          // removed from the lists, so its card does not offer the same
+          // failure again.
           if (theirs && (kind === 'missing' || kind === 'forbidden')) {
             await this.fetchDrafts({ keepError: true });
           }
@@ -1766,7 +1784,7 @@ export const useBuilderStore = defineStore('builder', {
      * @param {string} [serverETag] the ETag the draft was read with, whose
      *   history is serverHistory
      * @param {object} [serverHead] headOf() the draft as read
-     * @param {object} [server] the draft as read (see serverCopyOf): a
+     * @param {object} [server] the draft as read (see serverCopyOf). A
      *   queue based on an older ETag is merged with it (see mergeConflict)
      * @returns {Promise<boolean>} whether unsaved work was recovered
      */
@@ -1803,9 +1821,9 @@ export const useBuilderStore = defineStore('builder', {
         return false;
       }
 
-      // An entry the server holds is the snapshot it lists: it takes that
-      // snapshot's id, and the stamp the save, whose answer never arrived,
-      // wrote into it (see savedStamp).
+      // An entry that the server holds is the snapshot it lists. The entry
+      // takes that snapshot's id, and the stamp that the save wrote into it
+      // (see savedStamp). The answer of that save never arrived.
       const listed = new Map(
         this.serverHistory.map((snapshot) => [snapshot.id, snapshot]),
       );
@@ -1836,9 +1854,10 @@ export const useBuilderStore = defineStore('builder', {
       this.doc = this.history.current();
 
       // The queue is based on the ETag it was stored with. When the server
-      // holds its first operations, the rest goes on from the snapshot the
-      // last of them stored: still the draft's newest and current one, the
-      // server's version is exactly what the queue left.
+      // holds its first operations, the rest continues from the snapshot
+      // that the last of them stored. When that snapshot is still the
+      // draft's newest and current one, the server's version is exactly
+      // what the queue left.
       const lastApplied = applied.snapshotIds.get(
         queue[applied.count - 1]?.commitId,
       );
@@ -1852,7 +1871,7 @@ export const useBuilderStore = defineStore('builder', {
         owner: this.owner,
         draftId: this.draftId,
         etag,
-        // The head of the ETag the queue goes on from.
+        // The head of the ETag that the queue continues from.
         serverHead: etag === serverETag ? serverHead : local.serverHead,
         entries,
         cursor: local.cursor,
@@ -1885,8 +1904,8 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Tells the server which snapshot in the draft's own undo history is
-     * current. This is the draft history cursor; the editor has no presence or
-     * live collaboration signal.
+     * current. This is the draft history cursor. The editor has no presence
+     * or live collaboration signal.
      */
     moveHistoryCursor() {
       if (!this.autosave || this.readOnly) {
@@ -1905,9 +1924,8 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * @param {object} [options] announce: say how the save ended (Save
-     *   now's key), even when nothing was waiting to be saved;
-     *   note: what the save left out, said with the outcome (see
-     *   announceSaveOutcome)
+     *   now's key), even when nothing was waiting to be saved. note: what
+     *   the save left out, said with the outcome (see announceSaveOutcome)
      */
     async saveNow({ announce = false, note = '' } = {}) {
       if (!this.autosave) {
@@ -1931,8 +1949,8 @@ export const useBuilderStore = defineStore('builder', {
 
       const before = this.saveAnnouncementSeq;
 
-      // Anything already queued is awaited first so callers (publish) see the
-      // real end state rather than racing an in-flight commit.
+      // Anything already queued is awaited first, so callers (publish) see
+      // the real end state and do not race a commit in progress.
       await this.queueWork;
 
       const state = await this.autosave.flush();
@@ -1945,9 +1963,9 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Sends the queue again. While the session is over, the same token
-     * would be refused again: the sign-in opens instead, where it can (see
-     * signin.js), and signing in sends the queue.
+     * Sends the queue again. While the session is over, the server would
+     * refuse the same token again. So the sign-in opens instead, where it
+     * can (see signin.js), and the sign-in sends the queue.
      *
      * @param {object} [options] announce: say how the retry ended (the
      *   toolbar's Retry saving), even when it failed the same way again
@@ -1973,8 +1991,8 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Resolves an ETag conflict. Local work is never written over the server
-     * copy: either the server copy is reloaded, or the local history is saved
-     * as a new draft.
+     * copy. Either the server copy is loaded again, or the local history is
+     * saved as a new draft.
      *
      * @param {'reload'|'fork'} choice
      * @param {object} [options] title
@@ -1996,9 +2014,9 @@ export const useBuilderStore = defineStore('builder', {
     async settleConflict(choice, options) {
       if (choice === 'fork') {
         const title = options.title || forkTitle(metadataOf(this.doc).name);
-        // The server titles a draft after its document's name, so every
-        // saved snapshot carries the new name, or the fork would look like
-        // the draft it leaves.
+        // The server gives a draft the title of its document's name. So
+        // every saved snapshot carries the new name, or else the fork would
+        // look like the draft it leaves.
         const entries = this.history.entries.map((entry) => ({
           ...entry,
           snapshot: setDocumentInfo(entry.snapshot, { name: title }),
@@ -2024,8 +2042,8 @@ export const useBuilderStore = defineStore('builder', {
           this.history.entries = entries;
 
           // Each entry now names its snapshot in the new draft, so undo and
-          // redo move that draft's cursor, never the old draft's, and holds
-          // the stamp the new draft stored it with.
+          // redo move that draft's cursor, never the old draft's. Each entry
+          // also holds the stamp that the new draft stored it with.
           this.history.entries.forEach((entry) => {
             const stamp = envelope.stamps?.get(entry.id);
 
@@ -2070,18 +2088,18 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Merges the server's version of the open draft, which a save found
-     * someone else saved first (see onConflict in autosave.js), with the
-     * changes not saved yet (see merge.js). The base is the server snapshot
-     * those changes started from (the head the queue last confirmed): an
-     * entry of the undo history holds it, or the server is asked for it.
-     * When no field clashes and the strict check takes the merged diagram,
-     * it is saved on top of the server's version (see saveMerged).
-     * Otherwise the conflict panel offers Review and merge (status
-     * 'review'), or says why merging is not available (status
-     * 'unavailable'); saving the history as a new draft and discarding it
-     * stay offered. Edits are refused while the merge runs, as they are
-     * while a conflict is resolved, since the queue is replaced.
+     * Merges the server's version of the open draft with the changes not
+     * saved yet (see merge.js). A save found that someone else saved this
+     * version first (see onConflict in autosave.js). The base is the server
+     * snapshot those changes started from (the head the queue last
+     * confirmed). An entry of the undo history holds it, or the server is
+     * asked for it. When no field clashes and the strict check accepts the
+     * merged diagram, it is saved on top of the server's version (see
+     * saveMerged). Otherwise the conflict panel offers Review and merge
+     * (status 'review'), or says why merging is not available (status
+     * 'unavailable'). The panel still offers to save the history as a new
+     * draft and to discard it. Edits are refused while the merge runs, as
+     * they are while a conflict is resolved, because the queue is replaced.
      *
      * @param {object} server the draft as the server holds it now (see
      *   serverCopyOf in autosave.js)
@@ -2115,8 +2133,8 @@ export const useBuilderStore = defineStore('builder', {
         });
       };
 
-      // A merge redone as a newer version arrives is announced once, by
-      // the first.
+      // A merge made again when a newer version arrives is announced once,
+      // by the first merge.
       const announced = this.merge?.status === 'merging';
 
       blocked('merging');
@@ -2168,9 +2186,9 @@ export const useBuilderStore = defineStore('builder', {
 
         return null;
       } catch (error) {
-        // Whatever failed, the merge ends: the conflict panel shows again,
-        // with why, and saving the history as a new draft and discarding it
-        // stay offered. A later merge has the panel to itself.
+        // For any failure, the merge ends. The conflict panel shows again,
+        // with why, and still offers to save the history as a new draft and
+        // to discard it. A later merge has the panel to itself.
         if (run === mergeRuns && current()) {
           blocked('unavailable', mergeFailure(error));
         }
@@ -2185,13 +2203,13 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * The document the unsaved changes started from: the server snapshot
-     * the queue last confirmed, from the undo history or the queue's
-     * entries when one holds it, else read from the server, which has
-     * MERGE_BASE_TIMEOUT_MS to send it.
+     * the queue last confirmed. It comes from the undo history or the
+     * queue's entries when one holds it. Else it is read from the server,
+     * which has MERGE_BASE_TIMEOUT_MS to send it.
      *
      * @param {object} autosave the queue
      * @returns {Promise<{doc: object|null, reason: string}>} doc is null,
-     *   with why merging is not available, when it cannot be read: the
+     *   with why merging is not available, when it cannot be read. The
      *   server no longer keeps it, cannot be reached, or took too long
      */
     async mergeBase(autosave) {
@@ -2230,24 +2248,24 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Saves a merged document on top of the server's version: the queue
-     * goes on from that version's ETag and holds one snapshot of the merged
-     * document, named "Merged changes from <user>" (see rebase in
-     * autosave.js), and the merge is announced.
+     * Saves a merged document on top of the server's version. The queue
+     * continues from that version's ETag and holds one snapshot of the
+     * merged document, named "Merged changes from <user>" (see rebase in
+     * autosave.js). The merge is announced.
      *
      * The undo history becomes the server's version, then the merged
      * document, one step apart. The entries of the edits that were not
-     * saved are dropped rather than rebased: each holds the diagram as it
-     * was before the other editor's changes, so undoing to one would take
-     * those changes out again, and the server holds none of them, so a
-     * move of the draft's cursor to one could not be saved. The merged
-     * document holds every one of those edits.
+     * saved are dropped, not rebased. Each holds the diagram as it was
+     * before the other editor's changes, so an undo to one would remove
+     * those changes again. Also, the server holds none of them, so a move
+     * of the draft's cursor to one could not be saved. The merged document
+     * holds every one of those edits.
      *
      * When the queue cannot take the merge (rebase throws), the editor
-     * gets back the diagram, history, selection and ETag it held before,
-     * the merge stays as it was, and the error is thrown: the review can
-     * be saved again, and saving the history as a new draft or discarding
-     * it still act on the user's own history.
+     * gets back the diagram, history, selection and ETag it held before.
+     * The merge stays as it was, and the error is thrown. The review can be
+     * saved again, and a save of the history as a new draft, or a discard,
+     * still acts on the user's own history.
      *
      * @param {object} merged the merged document, checked
      * @param {object} server the server copy, its document checked
@@ -2309,7 +2327,7 @@ export const useBuilderStore = defineStore('builder', {
         throw error;
       }
 
-      // The queue holds the merge now and the conflict has ended, so the
+      // The queue holds the merge now and the conflict has ended. So the
       // merge dialog closes with the conflict panel already gone (see
       // mergeReview in Builder.vue), and an edit goes after the merge.
       this.merge = null;
@@ -2369,13 +2387,15 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Saves the merge the user reviewed, with the version they chose for
-     * each clashing field (see saveMerged). A merged diagram the strict
-     * check refuses is not saved: the issues say why. Nothing is saved
-     * either while another merge runs (another change arrived, and the
-     * merge is made again with it): busy says so. A save that fails
-     * leaves the review as it was, so the same choices can be saved
-     * again, and saving the history as a new draft or discarding it stay
-     * offered: error says why it failed (see mergeSaveFailure).
+     * each clashing field (see saveMerged).
+     * - A merged diagram that the strict check refuses is not saved. The
+     *   issues say why.
+     * - Nothing is saved while another merge runs (another change arrived,
+     *   and the merge is made again with it). busy says so.
+     * - A save that fails keeps the review as it was, so the same choices
+     *   can be saved again. A save of the history as a new draft, and a
+     *   discard, are still offered. error says why the save failed (see
+     *   mergeSaveFailure).
      *
      * @param {Object<string, 'mine'|'theirs'>} choices by clash key
      * @returns {Promise<{saved: boolean, issues: string[], busy?: boolean,
@@ -2428,8 +2448,8 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Deletes a draft. A card's ETag can be older than the server's, as it
-     * is right after Back to drafts until the list is read again: the
-     * draft is then deleted with its current ETag, once (see removeDraft).
+     * is right after Back to drafts until the list is read again. The draft
+     * is then deleted with its current ETag, once (see removeDraft).
      *
      * @param {string} owner
      * @param {string} id
@@ -2460,15 +2480,15 @@ export const useBuilderStore = defineStore('builder', {
     /**
      * Deletes several listed drafts, a few at a time, each as deleteDraft
      * deletes one. Every draft is tried, unless the session ends or the
-     * server cannot be reached; what failed is returned with why, not put
-     * in the page alert, and nothing is announced: the caller says what the
-     * run came to. A draft of the user's own that the server no longer
-     * finds counts as deleted. The lists are read again once, at the end.
+     * server cannot be reached. What failed is returned with why, not put in
+     * the page alert, and nothing is announced. The caller says the result
+     * of the run. A draft of the user's own that the server no longer finds
+     * counts as deleted. The lists are read again once, at the end.
      *
      * @param {{owner: string, id: string, etag?: string}[]} items
      * @param {object} [options] before(item): awaited before a draft is
-     *   deleted (the view ends its saves in the background); onProgress(done,
-     *   total): called as each draft ends
+     *   deleted (the view ends its saves in the background).
+     *   onProgress(done, total): called as each draft ends
      * @returns {Promise<{done: object[], failures: Array<{item: object,
      *   reason: string}>}>}
      */
@@ -2492,10 +2512,10 @@ export const useBuilderStore = defineStore('builder', {
             throw failure.error;
           }
 
-          // The server no longer finds it. One of the user's own was
-          // deleted elsewhere since the list was read, which is what was
-          // asked for: it counts as deleted, and what this device kept for
-          // it goes too.
+          // The server no longer finds it. A draft of the user's own was
+          // deleted elsewhere after the list was read, which is what the
+          // user asked for. It counts as deleted, and what this device kept
+          // for it is also removed.
           if (item.owner !== usePhenixStore().username) {
             throw new BulkError(DRAFT_GONE);
           }
@@ -2512,9 +2532,9 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Deletes the topology a published diagram is current for, and its
-     * published diagrams with it. Drafts and experiments made from it stay:
-     * publishing a draft again creates the topology again. A diagram the
-     * server no longer lists as current (published again or deleted
+     * published diagrams with it. Drafts and experiments made from it stay.
+     * A new publish of a draft creates the topology again. A diagram that
+     * the server no longer lists as current (published again or deleted
      * elsewhere) is refused, and the list is read again.
      *
      * @param {{id: string, target?: string}} item a listed published diagram
@@ -2551,8 +2571,8 @@ export const useBuilderStore = defineStore('builder', {
       }
     },
 
-    // Deletes a published topology, its card saying so meanwhile, and takes
-    // it off the lists. It rejects with the server's failure.
+    // Deletes a published topology, and removes it from the lists. Its card
+    // says so in the meantime. It rejects with the server's failure.
     async removePublished(item) {
       const name = item.target || item.id;
 
@@ -2579,9 +2599,9 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Deletes the topologies of several listed published diagrams, each as
-     * deletePublished deletes one, one at a time: the server takes them one
+     * deletePublished deletes one, one at a time. The server takes them one
      * at a time anyway. Every topology is tried, unless the session ends or
-     * the server cannot be reached; what failed is returned with why, not
+     * the server cannot be reached. What failed is returned with why, not
      * put in the page alert, and nothing is announced. The list is read
      * again once, at the end.
      *
@@ -2614,7 +2634,7 @@ export const useBuilderStore = defineStore('builder', {
      *
      * @param {{owner: string, id: string}[]} items listed drafts
      * @param {object} options save(file): saves {name, text} (file-saver in
-     *   the app); onProgress(done, total)
+     *   the app). onProgress(done, total)
      * @returns {Promise<{done: object[], failures: Array<{item: object,
      *   reason: string}>}>}
      */
@@ -2631,10 +2651,11 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Saves several listed published diagrams as Builder JSON files, one
-     * after another, each read as readPublished reads it, likewise.
+     * after another, in the same way. Each is read as readPublished reads
+     * it.
      *
      * @param {{id: string}[]} items listed published diagrams
-     * @param {object} options save(file); onProgress(done, total)
+     * @param {object} options save(file). onProgress(done, total)
      * @returns {Promise<{done: object[], failures: Array<{item: object,
      *   reason: string}>}>}
      */
@@ -2647,9 +2668,10 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Loads the server schema. A failure is reported: the editor keeps working
-     * with the bundled copy, but the user is told the server copy is not in
-     * use, because form fields may differ from what the server will accept.
+     * Loads the server schema. A failure is reported. The editor continues
+     * to work with the bundled copy, but the user is told that the server
+     * copy is not in use, because form fields may differ from what the
+     * server will accept.
      */
     async fetchSchema() {
       try {
@@ -2671,10 +2693,11 @@ export const useBuilderStore = defineStore('builder', {
       return this.schema;
     },
 
-    // A listing that answers after the session ended is dropped: it is the
-    // previous user's (see endSession). One the role may not read empties
-    // the lists; any other failure keeps what they showed. With keepError,
-    // the page alert keeps saying what failed before the lists were read.
+    // A listing that answers after the session ended is dropped, because it
+    // is the previous user's (see endSession). A listing that the role may
+    // not read empties the lists. Any other failure keeps what they showed.
+    // With keepError, the page alert continues to say what failed before
+    // the lists were read.
     async fetchDrafts({ keepError = false } = {}) {
       const epoch = sessionEpoch;
 
@@ -2709,7 +2732,7 @@ export const useBuilderStore = defineStore('builder', {
       return this.drafts;
     },
 
-    // Whether the user may share: any draft of theirs listed says.
+    // Whether the user may share. Any listed draft of theirs says this.
     learnFromList(drafts) {
       const [own] = drafts?.mine || [];
 
@@ -2718,10 +2741,10 @@ export const useBuilderStore = defineStore('builder', {
       }
     },
 
-    // A draft just made is shareable when the user may share any draft,
-    // which the lists say once they hold one of the user's own. While the
-    // user has none, the lists are read again, now that they have one, and
-    // the open draft takes what they say.
+    // A draft just made is shareable when the user may share any draft.
+    // The lists say this when they hold one of the user's own drafts. If
+    // the lists held none, they are read again now that the user has one,
+    // and the open draft takes what they say.
     async learnShareCapable() {
       const { owner, draftId } = this;
       const mine = await this.listMine();
@@ -2746,10 +2769,10 @@ export const useBuilderStore = defineStore('builder', {
     /**
      * Saves who a draft is shared with, for the Share dialog, which reports
      * a failure itself. The change gives the draft a new ETag. For the open
-     * draft, nothing is sent meanwhile, and the queue takes the new ETag
-     * only while the draft's content is as it last confirmed (see
-     * adoptIfSameHead in autosave.js). A listed draft takes the draft the
-     * server answered with, so its Delete carries the new ETag.
+     * draft, nothing is sent in the meantime, and the queue takes the new
+     * ETag only while the draft's content is as it last confirmed (see
+     * adoptIfSameHead in autosave.js). A listed draft takes the draft that
+     * the server answered with, so its Delete carries the new ETag.
      *
      * @param {{owner: string, id: string}} target
      * @param {{user: string, access: string}[]} shares the whole new list
@@ -2795,15 +2818,17 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Shares several of the user's listed drafts with `people`, at
-     * `access`, a few drafts at a time. For each draft the share list is
-     * read, the people are added to it (see mergeShareList: no one is
-     * removed, and someone listed already gets the access chosen) and the
-     * whole list is saved; a list that changed meanwhile (412) is read and
-     * merged again, once. A draft that would be shared with more people
-     * than the server allows is not sent. Every draft is tried, unless the
-     * session ends or the server cannot be reached; what failed is returned
-     * with why, and nothing is announced. Each draft shared takes its place
-     * on the lists, as after saveShares.
+     * `access`, a few drafts at a time. For each draft:
+     * 1. The share list is read.
+     * 2. The people are added to it (see mergeShareList: no one is removed,
+     *    and a person already listed gets the access chosen).
+     * 3. The whole list is saved. A list that changed in the meantime (412)
+     *    is read and merged again, once.
+     * A draft that would be shared with more people than the server allows
+     * is not sent. Every draft is tried, unless the session ends or the
+     * server cannot be reached. What failed is returned with why, and
+     * nothing is announced. Each shared draft takes its place on the lists,
+     * as after saveShares.
      *
      * @param {{owner: string, id: string}[]} items listed drafts
      * @param {string[]} people the users to add
@@ -2868,7 +2893,8 @@ export const useBuilderStore = defineStore('builder', {
       );
     },
 
-    // Replaces a draft of mine on the lists with the one the server sent.
+    // Replaces a draft of the user's on the lists with the one the server
+    // sent.
     patchListedDraft(draft) {
       const index = this.drafts.mine.findIndex(
         (item) => item.id === draft?.id && item.owner === draft?.owner,
@@ -2923,7 +2949,7 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Which of what a package's diagram needs this server has, for the
+     * Which of the needs of a package's diagram this server has, for the
      * Upload dialog, which reports a failure itself.
      *
      * @param {object} pkg the package, decoded
@@ -2934,11 +2960,11 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Stores a config a package carries as a new config (POST /configs),
-     * for the Upload dialog: the server checks the caller's `configs`
-     * `create` permission and the config, and its refusal is thrown. The
-     * content read before of a scenario of that name is dropped, so the
-     * Inspector reads it again.
+     * Stores a config that a package carries as a new config (POST
+     * /configs), for the Upload dialog. The server checks the caller's
+     * `configs` `create` permission and the config, and its refusal is
+     * thrown. The content read before of a scenario of that name is
+     * dropped, so the Inspector reads it again.
      *
      * @param {object} config apiVersion, kind, metadata, spec
      * @returns {Promise<void>}
@@ -2973,16 +2999,17 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Reads a published diagram: the published document of that id, or,
-     * for the handle of a topology whose diagram is read from the Builder
-     * file it names (see fileHandle in api.js), the document that topology
-     * references now. That is the file's, unless the topology was published
-     * since the list was read: then it is a published document, with an id.
+     * Reads a published diagram: the published document of that id. For
+     * the handle of a topology whose diagram is read from the Builder file
+     * it names (see fileHandle in api.js), it is the document that the
+     * topology references now. That is the file's document, unless the
+     * topology was published after the list was read. Then it is a
+     * published document, with an id.
      *
      * @param {string} id a listed published diagram's id
      * @returns {Promise<object>} id, source ('store' or 'file') and
-     *   document: the diagram as the server sent it, decoded; for a
-     *   topology's, also target, path, digest and topologyDiffers
+     *   document: the diagram as the server sent it, decoded. For a
+     *   topology's diagram, also target, path, digest and topologyDiffers
      */
     async readPublished(id) {
       const topology = fileTopology(id);
@@ -3010,9 +3037,9 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Shows a published diagram read only. No draft is made: the diagram is
-     * only looked at until the user chooses to edit it (editPublished), which
-     * a role without the configs create permission cannot.
+     * Shows a published diagram read only. No draft is made. The diagram is
+     * only shown until the user chooses to edit it (editPublished). A role
+     * without the configs create permission cannot edit it.
      *
      * @param {string} id a listed published diagram's id: a published
      *   document's, or the handle of a topology's Builder file
@@ -3075,9 +3102,9 @@ export const useBuilderStore = defineStore('builder', {
     /**
      * Edits the published diagram shown read only (see openPublishedDocument).
      * The draft is made from the diagram as the server sent it, not as the
-     * editor shows it (a switch renamed after its network, say): the server
-     * stores a diagram sent back unchanged as it is, so opening one is not
-     * an edit of it.
+     * editor shows it (for example, a switch renamed after its network).
+     * The server stores a diagram sent back unchanged as it is, so to open
+     * a diagram is not to edit it.
      *
      * @returns {Promise<object|null>} the draft's document, or null
      */
@@ -3093,22 +3120,28 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Opens a published diagram for editing in a draft: the draft that
-     * published it, when it is mine or shared with me for editing, or else
-     * the draft of mine made from it before (see draftForPublished), so
-     * opening the same diagram again never piles up copies; otherwise a new
-     * draft made from it. A draft made from a topology's Builder file is
-     * one made from what the file holds now: once the file changes, a new
-     * draft is made from it. The custom icons the file carries are added to
-     * the server's icon library first, as an upload's are (see ingestIcons).
+     * Opens a published diagram for editing in a draft. The draft is the
+     * first of these that exists (see draftForPublished):
+     * 1. the draft that published it, when it is the user's or shared with
+     *    the user for editing
+     * 2. the user's draft made from it before, so a new open of the same
+     *    diagram never makes more copies
+     * 3. a new draft made from it
+     * A draft made from a topology's Builder file is made from what the
+     * file holds now. When the file changes, a new draft is made from it.
+     * The custom icons the file carries are added to the server's icon
+     * library first, as an upload's icons are (see ingestIcons).
      *
      * @param {string} id a listed published diagram's id: a published
      *   document's, or the handle of a topology's Builder file
-     * @param {object} [options] announcement: what to say when a new draft
-     *   is made, publisher: when the draft of mine that published the
-     *   diagram is opened, and resumed: when the draft of mine made from it
-     *   is (defaults name the diagram); document: the diagram, when it was
-     *   read already, and digest: the digest a Builder file's was read with
+     * @param {object} [options]
+     *   - announcement: what to say when a new draft is made
+     *   - publisher: what to say when the user's draft that published the
+     *     diagram opens
+     *   - resumed: what to say when the user's draft made from it opens
+     *     (the defaults name the diagram)
+     *   - document: the diagram, when it was read already
+     *   - digest: the digest that a Builder file's diagram was read with
      * @returns {Promise<object|null>} the draft's document, or null
      */
     async openPublishedDocument(
@@ -3132,8 +3165,8 @@ export const useBuilderStore = defineStore('builder', {
             }
           : null;
 
-        // A file's draft is found by what the file holds, so it is read
-        // first.
+        // A file's draft is found by what the file holds, so the file is
+        // read first.
         if (topology && !read) {
           read = await this.readPublished(id);
 
@@ -3143,7 +3176,7 @@ export const useBuilderStore = defineStore('builder', {
         }
 
         const token = publishedToken(read || { id, source: 'store' });
-        // The lists as they are now: the drafts shared with me too.
+        // The lists as they are now, with the drafts shared with the user.
         const mine = await this.listMine();
 
         if (this.sessionEndedSince(epoch)) {
@@ -3187,8 +3220,8 @@ export const useBuilderStore = defineStore('builder', {
 
         // A Builder file carries copies of the custom icons it uses, as a
         // downloaded diagram does. They go to the server's icon library
-        // first, as those of an uploaded file do (see ingestIcons), so the
-        // draft keeps only the copies the library refused or holds with
+        // first, as those of an uploaded file do (see ingestIcons). So the
+        // draft keeps only the copies that the library refused or holds with
         // other bytes, each with a warning.
         const ingested =
           read.source === 'file'
@@ -3233,8 +3266,8 @@ export const useBuilderStore = defineStore('builder', {
       }
     },
 
-    // My drafts as the server lists them now (they may have been made in
-    // another tab), or as last listed when it cannot say.
+    // The user's drafts as the server lists them now (another tab may have
+    // made some), or as last listed when the server cannot say.
     async listMine() {
       const epoch = sessionEpoch;
 
@@ -3272,12 +3305,13 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Reads the disk images the server has, for the drive image checks and
-     * suggestions. Both are advisory, so a listing the server refuses (a
-     * role without it), fails (minimega not answering) or never answers
-     * leaves the images unknown, with no page alert. So does an empty one:
-     * the server lists no images when minimega is not running either, and
-     * every drive would then be reported missing. A read asked for while
-     * another is under way waits for that one.
+     * suggestions. Both are advisory. So when the server refuses the
+     * listing (a role without it), fails (minimega not answering) or never
+     * answers, the images stay unknown, with no page alert. An empty
+     * listing has the same result. The server also lists no images when
+     * minimega is not running, and every drive would then be reported
+     * missing. A read requested while another read is in progress waits for
+     * that read.
      *
      * @returns {Promise<string[]|null>} the images, or null when unknown
      */
@@ -3309,14 +3343,14 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Asks the server to put the open draft through the preflight checks
-     * named (see preflight.js). The server checks the draft's current
-     * snapshot, so the changes still queued are saved first, as Publish
-     * saves them; a view-only draft has none. Nothing is written.
+     * Asks the server to run the named preflight checks on the open draft
+     * (see preflight.js). The server checks the draft's current snapshot,
+     * so the changes still queued are saved first, as Publish saves them. A
+     * view-only draft has no queued changes. Nothing is written.
      *
      * @param {{checks: string[], experiment?: string}} request checks: ids
-     *   of the checks, in order; experiment: the experiment whose VLAN range
-     *   and default bridge the network check goes by
+     *   of the checks, in order. experiment: the experiment whose VLAN range
+     *   and default bridge the network check uses
      * @returns {Promise<{report?: object, error?: string}>} the report (see
      *   readPreflightReport in api.js), or why there is none
      */
@@ -3354,10 +3388,10 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Reads a stored scenario's content, whose apps the Inspector lists: a
-     * document names its scenarios and holds none. The content read before
-     * stays until this read answers. A read that answers after a later one,
-     * or after the session ended, is dropped.
+     * Reads a stored scenario's content, whose apps the Inspector lists. A
+     * document names its scenarios but holds none. The content read before
+     * stays until this read answers. A read that answers after a later
+     * read, or after the session ended, is dropped.
      *
      * @param {string} name
      * @returns {Promise<void>}
@@ -3389,7 +3423,7 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Reads a stored scenario's content again, for Download (see
-     * fetchScenario; the Inspector shows this reading too).
+     * fetchScenario). The Inspector also shows this content.
      *
      * @param {string} name
      * @returns {Promise<{content: object|null, problem: string}>} the
@@ -3405,11 +3439,11 @@ export const useBuilderStore = defineStore('builder', {
         : { content: null, problem: read?.problem || 'error' };
     },
 
-    // Reads the open draft's snapshots for the History dialog, which opens
-    // at once and shows historyLoading until they arrive, or historyError if
-    // they do not: the page alert behind the dialog is left alone. A list
-    // that answers after another read started, another draft opened or the
-    // session ended is dropped.
+    // Reads the open draft's snapshots for the History dialog. The dialog
+    // opens at once and shows historyLoading until they arrive, or
+    // historyError if they do not. The page alert behind the dialog does not
+    // change. A list that answers after another read started, another draft
+    // opened or the session ended is dropped.
     async fetchHistory() {
       const { owner, draftId } = this;
       if (!owner || !draftId) {
@@ -3506,16 +3540,16 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Deletes a snapshot from the open draft's history, for the History
-     * dialog, which says how it went; the current snapshot (the cursor's)
+     * dialog, which says the result. The current snapshot (the cursor's)
      * cannot be deleted. As for a restore, the queue saves first, and sends
-     * nothing meanwhile. The queue takes the new ETag when the delete was
-     * sent with its own (see adoptAfter in autosave.js), and undo and redo
-     * skip the snapshot from then on.
+     * nothing in the meantime. The queue takes the new ETag when the delete
+     * was sent with its own ETag (see adoptAfter in autosave.js). Undo and
+     * redo skip the snapshot from then on.
      *
      * A delete refused because the draft changed elsewhere (412), or
-     * because the list was out of date (409, 404), reads the draft again,
-     * so the dialog lists its history as it is now; the next try is sent
-     * with that read's ETag.
+     * because the list was out of date (409, 404), reads the draft again.
+     * So the dialog lists its history as it is now. The next try is sent
+     * with the ETag of that read.
      *
      * @param {string} snapshotId
      * @returns {Promise<{deleted: boolean, message: string}>} message says
@@ -3617,9 +3651,9 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     // Reads the open draft again for the History dialog, while `autosave`
-    // is held: its history, and the ETag the next change to it is sent
-    // with. The queue takes that ETag only when the draft's content is as
-    // it last confirmed (see adoptIfSameHead in autosave.js).
+    // is held: its history, and the ETag that the next change to it is
+    // sent with. The queue takes that ETag only when the draft's content is
+    // as it last confirmed (see adoptIfSameHead in autosave.js).
     async rereadHistory(autosave) {
       const fresh = await builderApi.getDraft(this.owner, this.draftId);
 
@@ -3633,9 +3667,9 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Publishes the draft. Publish never carries document bytes: the server
-     * reads the snapshot the cursor points at, so the ordered queue has to be
-     * confirmed by the server first. A draft with unsent work, a blocked queue
+     * Publishes the draft. Publish never carries document bytes. The server
+     * reads the snapshot the cursor points at, so the server must first
+     * confirm the ordered queue. A draft with unsent work, a blocked queue
      * or local validation errors is not published.
      *
      * @param {object} intent mode, topology, scenario, experiment
@@ -3664,15 +3698,16 @@ export const useBuilderStore = defineStore('builder', {
         return null;
       }
 
-      // The queue of the draft being published, whatever opens meanwhile.
+      // The queue of the draft being published, even if another draft opens
+      // in the meantime.
       const autosave = this.autosave;
       const { owner, draftId } = this;
-      // Whether that draft is still the open one: its answer says nothing
-      // of a draft opened since.
+      // Whether that draft is still the open one. Its answer says nothing
+      // about a draft opened since.
       const stillOpen = () => this.owner === owner && this.draftId === draftId;
 
-      // Under way from here on, the save it starts with included, for
-      // whoever waits for the draft to be free again.
+      // In progress from here, including the save it starts with, for any
+      // caller that waits for the draft to be free again.
       this.publishing = true;
 
       const state = await this.saveNow().catch((error) => {
@@ -3693,9 +3728,10 @@ export const useBuilderStore = defineStore('builder', {
         return null;
       }
 
-      // Edits made while publishing stay queued until it ends, so no save
-      // lands between the publish and the ETag it answers with, which would
-      // then be stale and raise a conflict with the user's own publish.
+      // Edits made during the publish stay queued until it ends. So no save
+      // occurs between the publish and the ETag it answers with. Such a save
+      // would make that ETag stale and cause a conflict with the user's own
+      // publish.
       const release = autosave.hold();
 
       try {
@@ -3729,8 +3765,8 @@ export const useBuilderStore = defineStore('builder', {
           }
         }
 
-        // The configs just written now exist, so the next publish of the same
-        // names has to update them, and the topology now points at the
+        // The configs just written now exist, so the next publish of the
+        // same names must update them. The topology now points at the
         // diagram just published.
         if (result.ok || result.partial) {
           await Promise.all([this.fetchSources(), this.fetchDocuments()]);
@@ -3757,11 +3793,12 @@ export const useBuilderStore = defineStore('builder', {
         }
 
         if (error?.response?.status === 409) {
-          // A 409 is about a config the publish would write, not the draft,
-          // and the server's code says which and why. A create or update
-          // refused because the config does or does not exist means the list
-          // of existing configs is out of date, so it is read again first,
-          // with the published diagrams that say which this draft may update.
+          // A 409 is about a config that the publish would write, not the
+          // draft. The server's code says which config and why. A create or
+          // update refused because the config does or does not exist means
+          // that the list of existing configs is out of date. So it is read
+          // again first, with the published diagrams that say which configs
+          // this draft may update.
           await Promise.all([this.fetchSources(), this.fetchDocuments()]);
 
           const refusal = publishRefusal(serverRefusal(error), intent, {
@@ -3770,7 +3807,7 @@ export const useBuilderStore = defineStore('builder', {
             draft: this.publishDraft,
           });
 
-          // A config someone else changed since this draft published it
+          // A config that someone else changed after this draft published it
           // stays refused, so the dialog offers only another name for it.
           if (refusal.changed) {
             this.publishChanged = {
@@ -3784,9 +3821,8 @@ export const useBuilderStore = defineStore('builder', {
             refusal.field,
           );
         } else if (error?.response?.status === 422) {
-          // A target the server refuses, such as an experiment name it
-          // reserves, is named by the refusal's code: the dialog marks its
-          // field.
+          // The refusal's code names a target that the server refuses, such
+          // as an experiment name it reserves. The dialog marks its field.
           this.setError(
             this.describeError(error, 'publish the diagram'),
             publishRefusal(serverRefusal(error), intent).field,
@@ -3808,14 +3844,14 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Asks the server what publishing the open draft with this intent would
-     * change, as a dry run of the publish route that writes nothing: the
-     * server reads the draft's last saved snapshot and makes every check of
-     * a publication. Each preview makes the ones asked for before it stale,
-     * so an answer that arrives after a later preview was asked for, or
-     * after another draft was opened, is dropped. A failure is returned, not
-     * thrown and not set as the store's error: the preview never stands in
-     * the way of publishing.
+     * Asks the server what a publish of the open draft with this intent
+     * would change, as a dry run of the publish route that writes nothing.
+     * The server reads the draft's last saved snapshot and makes every check
+     * of a publication. Each preview makes the earlier previews stale. So
+     * an answer that arrives after a later preview was requested, or after
+     * another draft was opened, is dropped. A failure is returned, not
+     * thrown and not set as the store's error. The preview never blocks
+     * publishing.
      *
      * @param {object} intent as buildPublishIntent() in publish.js builds it
      * @returns {Promise<{changes: object|null, warningIssues: object[],
@@ -3860,22 +3896,22 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Asks the server to build a diagram from a topology or experiment
-     * config, for Import. The diagram is checked here, and opened by
-     * openImported once the user accepts it: until then the open draft,
-     * its autosave, owner and ETag stay as they are, so an answer nobody
-     * waits for any more changes nothing.
+     * config, for Import. The diagram is checked here, and openImported
+     * opens it after the user accepts it. Until then the open draft, its
+     * autosave, owner and ETag stay as they are. So an answer that no
+     * caller waits for any more changes nothing.
      *
      * @param {{kind?: string, name?: string, content?: string,
      *   includes?: 'keep'|'combine', copy?: boolean, newName?: string}} request
-     *   kind and name of a stored config, or the text of a config file;
+     *   kind and name of a stored config, or the text of a config file.
      *   includes 'combine' makes a topology's included nodes the diagram's
-     *   own, copy makes the diagram a copy, and either gives it newName
+     *   own. copy makes the diagram a copy. Either one gives it newName
      * @returns {Promise<{document: object, warnings: string[],
-     *   source: object|null, detached?: true}|null>} source is the config
-     *   that was read; detached: the diagram is a copy or combined, so it is
-     *   linked to no config and its draft takes no source token of a stored
-     *   one. null when the import failed, which `error` then says, with
-     *   `errorField` 'name' or 'content' for a source the server refused
+     *   source: object|null, detached?: true}|null>} source: the config that
+     *   was read. detached: the diagram is a copy or combined, so it is
+     *   linked to no config, and its draft takes no source token of a stored
+     *   config. null when the import failed, which `error` then says, with
+     *   `errorField` 'name' or 'content' for a source the server refused,
      *   and 'newName' for a new name it refused
      */
     async generate(request) {
@@ -3885,7 +3921,8 @@ export const useBuilderStore = defineStore('builder', {
         const result = await builderApi.generate(request);
         const document = serverDocument(result.document);
 
-        // The server's answer does not tell a copy from a plain import.
+        // The server's answer does not show whether it is a copy or a plain
+        // import.
         const detached =
           Boolean(request?.copy) || request?.includes === 'combine';
 
@@ -3899,8 +3936,9 @@ export const useBuilderStore = defineStore('builder', {
         const kind = classifyError(error);
         const uploaded = typeof request?.content === 'string';
 
-        // A new name the server refuses is about the field it was typed in:
-        // one that is no config name, or the imported topology's own.
+        // A new name that the server refuses is about the field it was typed
+        // in: a name that is not a config name, or the imported topology's
+        // own name.
         if (NEW_NAME_CODES.has(serverCode(error))) {
           this.setError(
             this.describeError(error, 'import the diagram'),
@@ -3910,8 +3948,9 @@ export const useBuilderStore = defineStore('builder', {
           return null;
         }
 
-        // A stored config removed since the list was read. The list is read
-        // again, so it is no longer offered, and the user picks another.
+        // A stored config removed after the list was read. The list is read
+        // again, so the config is no longer offered, and the user picks
+        // another.
         if (kind === 'missing' && !uploaded) {
           await this.fetchSources();
 
@@ -3953,17 +3992,17 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Opens a diagram generate() made, once the user has accepted it. An
-     * import always starts a new draft: the open draft is detached first,
+     * Opens a diagram that generate() made, after the user accepted it. An
+     * import always starts a new draft. The open draft is detached first,
      * with its autosave queue, so a later edit never overwrites it. The
-     * diagram is checked before that, as setDocument checks it, so one
-     * that cannot be opened leaves the open draft, its autosave, owner and
-     * ETag as they are. Nothing is announced: the import is, once its
-     * draft exists (see ImportDialog).
+     * diagram is checked before that, as setDocument checks it. So a
+     * diagram that cannot be opened keeps the open draft, its autosave,
+     * owner and ETag as they are. Nothing is announced here. The import is
+     * announced after its draft exists (see ImportDialog).
      *
      * @param {{document: object}} result what generate() returned
      * @returns {object|null} the document as opened, or null when it could
-     *   not be, which `error` then says
+     *   not be opened, which `error` then says
      */
     openImported(result) {
       const { document, error } = openableDocument(result.document);
@@ -3985,16 +4024,16 @@ export const useBuilderStore = defineStore('builder', {
     /**
      * Asks the server to convert a diagram of the legacy Builder, for
      * Upload: the diagram's XML, or a Topology config that holds one. The
-     * document is checked here and loaded by the dialog, once the user has
-     * seen the warnings: until then the open draft stays as it is.
+     * document is checked here. The dialog loads it after the user sees the
+     * warnings. Until then the open draft stays as it is.
      *
      * @param {{content: string, name?: string}} request the text of the
      *   chosen file, and the name of the document of a diagram that comes
      *   without a topology
      * @returns {Promise<{document: object, warnings: string[],
-     *   source: object|null, sourceToken?: string}|null>} source as
-     *   generate() gives it, null for a diagram without a topology, whose
-     *   draft takes sourceToken; null when the conversion failed, which
+     *   source: object|null, sourceToken?: string}|null>} source: as
+     *   generate() gives it, or null for a diagram without a topology, whose
+     *   draft takes sourceToken. null when the conversion failed, which
      *   `error` then says, with `errorField` 'content' when the file was
      *   refused
      */
@@ -4028,11 +4067,12 @@ export const useBuilderStore = defineStore('builder', {
     /**
      * Makes a new draft of the open diagram in which the nodes of its
      * included topologies are its own (see combineIncluded in model.js),
-     * and opens it. The draft that was open is left as it is, and stays
-     * listed. The new draft is linked to no config, so publishing it makes
-     * a new topology; it is named after the diagram, with a name that no
-     * stored topology has and no draft of the user's, read anew, is titled:
-     * combining the same diagram again makes a draft of another name.
+     * and opens it. The draft that was open stays as it is, and stays
+     * listed. The new draft is linked to no config, so a publish of it
+     * makes a new topology. It is named after the diagram, with a name that
+     * no stored topology has, and that is not the title of any draft of the
+     * user's (read again). So a new combine of the same diagram makes a
+     * draft with another name.
      *
      * @returns {Promise<object|null>} the new draft, or null when it could
      *   not be made, which `error` then says
@@ -4078,8 +4118,8 @@ export const useBuilderStore = defineStore('builder', {
     describeError(error, action) {
       // The server answered, but the diagram it sent did not pass the
       // editor's check (see serverDocument). That is not a connection
-      // problem, and only the decoder's reason, when it gave one, says what
-      // is wrong.
+      // problem. Only the decoder's reason, when it gave one, says what is
+      // wrong.
       if (error instanceof DocumentError) {
         const reason = error.message.trim().replace(/\.$/, '');
 
@@ -4096,8 +4136,8 @@ export const useBuilderStore = defineStore('builder', {
      * Why a request about a topology's Builder file failed. The server says
      * what is wrong with the file in a sentence written to be shown (it is
      * outside the directory phenix reads, it does not exist, it changed
-     * since it was opened), which is shown as it is. Any other failure is
-     * described as usual.
+     * after it was opened). That sentence is shown as it is. Any other
+     * failure is described as usual.
      *
      * @param {object} error
      * @param {string} action what could not be done
@@ -4143,7 +4183,8 @@ export const useBuilderStore = defineStore('builder', {
     updateNode(id, patch, label = 'Updated node') {
       const reason = includedReason(findNode(this.doc, id));
 
-      // Where an included device sits is the diagram's own; the rest is not.
+      // The position of an included device belongs to the diagram. Its
+      // other fields do not.
       if (reason && (patch.device || patch.label !== undefined)) {
         this.refuse(reason);
 
@@ -4154,11 +4195,11 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Moves one or more nodes as a single history commit, so a multi-node drag
-     * or keyboard nudge is one undo step and one server snapshot. A move that
-     * leaves a node where it is, such as a click that wobbled less than a grid
-     * step, is not an edit: it is dropped rather than announced as a move and
-     * kept as an empty undo step.
+     * Moves one or more nodes as a single history commit, so a multi-node
+     * drag or keyboard nudge is one undo step and one server snapshot. A
+     * move that keeps a node where it is, such as a click that moved less
+     * than a grid step, is not an edit. It is dropped, not announced as a
+     * move and kept as an empty undo step.
      *
      * @param {{id: string, position: {x: number, y: number}}[]} moves
      * @returns {boolean} whether any node moved
@@ -4242,9 +4283,9 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Resizes a node to the box a mouse resize left it in, which a drag of
-     * its top or left side also moves (see resizedBox: never smaller than
-     * the node can be, and a group around its members), as one undo step.
+     * Resizes a node to the box that a mouse resize left it in, as one undo
+     * step. A drag of its top or left side also moves it (see resizedBox:
+     * never smaller than the node can be, and a group around its members).
      *
      * @param {string} id
      * @param {{x: number, y: number, width: number, height: number}} box
@@ -4325,7 +4366,7 @@ export const useBuilderStore = defineStore('builder', {
      * @param {string} id line node
      * @param {number} index
      * @param {{x: number, y: number}} [point] relative to the line's
-     *   position; the segment's middle without one
+     *   position. Without a point, the segment's middle
      * @returns {object|null} the history entry, or null when the line takes
      *   no more points
      */
@@ -4347,7 +4388,7 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Removes a point of a line, never leaving it fewer than two.
+     * Removes a point of a line. A line always keeps at least two points.
      *
      * @param {string} id line node
      * @param {number} index
@@ -4373,8 +4414,8 @@ export const useBuilderStore = defineStore('builder', {
      * @param {string|null} parentId
      * @param {object} [options] announce: false when the caller shows a
      *   refusal itself (editRefusal), so the store does not say it too
-     * @returns {object|null} the history entry, or null when nothing moved:
-     *   the node is there already or cannot go there, or the edit was
+     * @returns {object|null} the history entry, or null when nothing moved.
+     *   The node is there already or cannot go there, or the edit was
      *   refused
      */
     setParent(id, parentId, { announce = true } = {}) {
@@ -4433,8 +4474,8 @@ export const useBuilderStore = defineStore('builder', {
       );
     },
 
-    // Refuses a change to the interfaces of an included device; returns
-    // whether it did.
+    // Refuses a change to the interfaces of an included device. Returns
+    // whether it refused.
     refuseIncluded(nodeId) {
       const reason = includedReason(findNode(this.doc, nodeId));
 
@@ -4492,13 +4533,13 @@ export const useBuilderStore = defineStore('builder', {
      * @param {object} connection
      * @param {object} [options] announce: false when the caller shows the
      *   refusal itself (in its own alert), so it is not read twice
-     * @returns {object} {edge} once connected, else {error}: why the
+     * @returns {object} {edge} when connected, else {error}: why the
      *   connection, or the edit (editRefusal), was refused
      */
     connect(connection, { announce = true } = {}) {
       const result = connect(this.doc, connection);
-      // An edit commit would refuse is found first when the caller says
-      // why itself, as commit would say it too.
+      // When the caller says why itself, an edit that commit would refuse
+      // is found first, because commit would also say it.
       const error = result.error || (announce ? '' : this.editRefusal);
 
       if (error) {
@@ -4549,12 +4590,12 @@ export const useBuilderStore = defineStore('builder', {
       this.remove(this.selection);
     },
 
-    // Items outside `selection` that were selected stay selected, so
-    // deleting one row or connection does not silently drop the rest. So do
-    // items that would change an included device (see removalRefusal): a
-    // removal of only those is refused, and one that also removes other
-    // items says how many it kept, counting those in a deleted group.
-    // Returns whether anything was removed.
+    // Items outside `selection` that were selected stay selected, so the
+    // deletion of one row or connection does not silently drop the other
+    // items. Items that would change an included device (see removalRefusal)
+    // also stay. A removal of only such items is refused. A removal that
+    // also removes other items says how many items it kept, including those
+    // in a deleted group. Returns whether anything was removed.
     remove(selection) {
       const next = removeElements(this.doc, selection);
       const nodes = new Set(next.nodes.map((node) => node.id));
@@ -4609,7 +4650,8 @@ export const useBuilderStore = defineStore('builder', {
       const id = groupId || this.selection.nodes[0];
       const next = id ? ungroup(this.doc, id) : this.doc;
 
-      // Only a group ungroups; anything else is no edit, and says so.
+      // Only a group ungroups. For anything else, there is no edit, and the
+      // store says so.
       if (next === this.doc) {
         this.announce('Select a group to ungroup.');
 
@@ -4621,20 +4663,20 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Lays the diagram out, as one commit, which the layout menu can then put
-     * back (see restoreLayout). With an algorithm, the layout menu's choice,
-     * that one runs; without one, the draft's layout, or the Settings
-     * default for a draft with none (layoutToRun). The draft keeps the
-     * layout that ran as its own in the same commit, so the layout menu
-     * names what made the positions. A layout that changes nothing is not
-     * an edit, as in moveNodes: no undo step, no snapshot, and no restore;
-     * one not chosen then keeps no layout either, so an empty diagram stays
-     * at Default. See layOut for a layout that finishes later. The Radial
-     * layout puts the selected node at its center, when one node is
-     * selected.
+     * Lays the diagram out, as one commit, which the layout menu can then
+     * reverse (see restoreLayout). With an algorithm (the layout menu's
+     * choice), that algorithm runs. Without one, the draft's layout runs, or
+     * the Settings default for a draft with none (layoutToRun). The draft
+     * keeps the layout that ran as its own in the same commit, so the
+     * layout menu names what made the positions. A layout that changes
+     * nothing is not an edit, as in moveNodes: no undo step, no snapshot,
+     * and no restore. If the user did not choose that layout, the draft
+     * also keeps no layout, so an empty diagram stays at Default. See layOut
+     * for a layout that finishes later. The Radial layout puts the selected
+     * node at its center, when one node is selected.
      *
-     * @param {object} [options] algorithm: a LAYOUT_ALGORITHMS id to run;
-     *   the rest go to the algorithm
+     * @param {object} [options] algorithm: a LAYOUT_ALGORITHMS id to run.
+     *   The other options go to the algorithm
      * @returns {Promise<object|null>} the history entry, or null when
      *   nothing changed or the layout was not applied
      */
@@ -4690,12 +4732,12 @@ export const useBuilderStore = defineStore('builder', {
     /**
      * Auto-group: puts the ungrouped devices and switches (the selected
      * ones, when nodes are selected) into new groups, by network or by name
-     * (see grouping.js), then lays the diagram out with its layout, or the
-     * Settings default (layoutToRun), so the groups do not overlap, all as
-     * one commit that keeps that layout as the draft's, as layout does. The
-     * selection stays as it was. Nothing to group is no edit, and says so.
-     * The rule that needs a pattern is autoGroupByPattern's: asked for
-     * here, it does nothing.
+     * (see grouping.js). Then it lays the diagram out with its layout, or
+     * the Settings default (layoutToRun), so the groups do not overlap. All
+     * this is one commit that keeps that layout as the draft's, as layout
+     * does. The selection stays as it was. When there is nothing to group,
+     * there is no edit, and the store says so. The rule that needs a
+     * pattern belongs to autoGroupByPattern. Here it does nothing.
      *
      * @param {string} [strategy] a GROUPING_STRATEGIES id
      * @param {object} [options] for the layout
@@ -4721,21 +4763,24 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Auto-group by name pattern: as autoGroup, with the nodes whose names
-     * the pattern matches the same text of in each group (see
+     * Auto-group by name pattern: as autoGroup, but each group holds the
+     * nodes whose names the pattern matches with the same text (see
      * planPatternGroups). The pattern runs in a Web Worker, so this ends
-     * later, and its dialog is open meanwhile: what keeps it from grouping
-     * is returned as `problem` for the dialog to show, and nothing is
-     * announced or changed then. A pattern that compiles is kept for the
-     * next time the dialog opens, whatever it then matches.
+     * later, and its dialog is open in the meantime. When something stops
+     * the grouping, it is returned as `problem` for the dialog to show, and
+     * nothing is announced or changed. A pattern that compiles is kept for
+     * the next time the dialog opens, whatever it then matches.
      *
      * @param {string} pattern a regular expression, as typed
-     * @param {object} [options] match and signal, for planPatternGroups; the
-     *   rest go to the layout
+     * @param {object} [options] match and signal, for planPatternGroups. The
+     *   other options go to the layout
      * @returns {Promise<{groups: object[]|null, problem: string,
-     *   invalid: boolean}>} the groups made; or null with the problem, which
-     *   is about the pattern when `invalid` is set; or null with no problem
-     *   when the layout was not applied (see layOut) or `signal` aborted
+     *   invalid: boolean}>} one of these:
+     *   - the groups made
+     *   - null with the problem, which is about the pattern when `invalid`
+     *     is set
+     *   - null with no problem, when the layout was not applied (see layOut)
+     *     or `signal` aborted
      */
     async autoGroupByPattern(pattern, { match, signal, ...options } = {}) {
       const refused = (problem, invalid = false) => ({
@@ -4773,7 +4818,7 @@ export const useBuilderStore = defineStore('builder', {
           signal,
         });
       } catch (error) {
-        // The dialog closed meanwhile: there is no one to tell.
+        // The dialog closed in the meantime, so there is no one to tell.
         if (error?.name === 'AbortError') {
           return refused('');
         }
@@ -4791,8 +4836,8 @@ export const useBuilderStore = defineStore('builder', {
         return refused('');
       }
 
-      // An edit, an undo or another document while the pattern ran: the
-      // plan is for what the diagram was.
+      // An edit, an undo or another document while the pattern ran. The
+      // plan is for the earlier diagram.
       if (this.history !== history || history.currentEntry().id !== entryId) {
         this.announce(
           'The diagram changed during Auto-group, so no groups were made.',
@@ -4821,10 +4866,10 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Puts back what the last automatic layout changed, its layout choice
-     * included, as one commit that undo reverses like any other. Only
-     * offered while the diagram is still exactly what that layout left (see
-     * canRestoreLayout).
+     * Restores what the last automatic layout changed, including its layout
+     * choice, as one commit that undo reverses like any other. It is
+     * offered only while the diagram is still exactly what that layout left
+     * (see canRestoreLayout).
      *
      * @returns {object|null} the history entry, or null when there is none
      */
@@ -4835,7 +4880,7 @@ export const useBuilderStore = defineStore('builder', {
         return null;
       }
 
-      // commit() drops the saved layout, so it is put back only once.
+      // commit() drops the saved layout, so it is restored only once.
       return this.commit(
         restoreLayoutChanges(this.doc, this.layoutRestore),
         'Restored previous layout',
@@ -4850,7 +4895,7 @@ export const useBuilderStore = defineStore('builder', {
      *
      * @param {{name: string, description?: string, device: object}} template
      * @returns {object|null} the template as the diagram holds it, with its
-     *   id; null when the diagram did not take it
+     *   id. null when the diagram did not take it
      */
     addTemplate(template) {
       const full = templatesFull(this.doc);
@@ -4874,7 +4919,7 @@ export const useBuilderStore = defineStore('builder', {
      *
      * @param {string} id
      * @param {{name?: string, description?: string, device?: object}} patch
-     * @returns {object|null} the template as the diagram holds it now; null
+     * @returns {object|null} the template as the diagram holds it now. null
      *   when the diagram has no such template, or did not take the change
      */
     updateTemplate(id, patch) {
@@ -4894,7 +4939,7 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Deletes a template from the open diagram, as one edit, which Undo
-     * brings back.
+     * restores.
      *
      * @param {string} id
      * @returns {boolean} whether it was deleted
@@ -4922,10 +4967,10 @@ export const useBuilderStore = defineStore('builder', {
      * Reads the user's template library. It is read when the Builder
      * opens, with the drafts' lists, when a draft opens, and after every
      * change of it. A read that fails says why in `templates.error`, never
-     * in the page alert, and keeps what an earlier read answered: the tab
+     * in the page alert, and keeps what an earlier read answered. The tab
      * and the palette say so where they show the library. A role that may
-     * not read it is left with none. An answer that arrives after a later
-     * read's, or after the session ended, is dropped.
+     * not read it gets no library. An answer that arrives after a later
+     * read's answer, or after the session ended, is dropped.
      *
      * @returns {Promise<object>} the library, as the store keeps it
      */
@@ -4941,7 +4986,7 @@ export const useBuilderStore = defineStore('builder', {
         if (epoch === sessionEpoch && read > libraryReadKept) {
           libraryReadKept = read;
           this.templates = {
-            // A later read is still under way.
+            // A later read is still in progress.
             status: read === libraryReads ? 'ready' : 'loading',
             error: '',
             loaded: true,
@@ -4970,7 +5015,7 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     // The user the library belongs to, which every change of it names. The
-    // library says who that is, so one that was not read yet is read first.
+    // library says who that is, so a library not read yet is read first.
     async libraryOwner() {
       if (!this.templates.owner) {
         await this.fetchTemplates();
@@ -5029,12 +5074,13 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Saves a copy of a template of the diagram to the user's library (see
-     * createLibraryTemplates); the template stays in the diagram. A template
-     * of a library carries no icon, so the copy of the custom icon it names
-     * that the diagram carries goes to the icon library first, under its
-     * name, by the rules of an upload (see ingestSavedTemplateIcons): the
-     * saved template then shows it. It rejects with the failure to save,
-     * which the caller reports (see describeLibraryError).
+     * createLibraryTemplates). The template stays in the diagram. A
+     * template of a library carries no icon. So the diagram's copy of the
+     * custom icon that the template names goes to the icon library first,
+     * under its name, by the rules of an upload (see
+     * ingestSavedTemplateIcons). The saved template then shows it. It
+     * rejects with the failure to save, which the caller reports (see
+     * describeLibraryError).
      *
      * @param {object} template a template of the diagram
      * @param {object} [options]
@@ -5055,12 +5101,13 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Imports a template file (see parseTemplateFile in templateFile.js)
-     * into the user's library: its templates, each a copy under an id the
-     * server gives it, as a new collection named as the file names it, or
-     * with " (2)" and so on when one of the user's collections has that
-     * name. The custom icons the file carries go to the icon library first,
-     * by the rules of an upload (see ingestTemplateIcons). It rejects with
-     * the failure, which the caller reports (see describeLibraryError).
+     * into the user's library. Its templates, each a copy under an id the
+     * server gives it, become a new collection with the name that the file
+     * gives. When one of the user's collections has that name, " (2)" and
+     * so on is added. The custom icons the file carries go to the icon
+     * library first, by the rules of an upload (see ingestTemplateIcons). It
+     * rejects with the failure, which the caller reports (see
+     * describeLibraryError).
      *
      * @param {object} file the file, as parseTemplateFile reads it
      * @param {object} [options]
@@ -5094,8 +5141,8 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Replaces a template of the user's library, and reads the library
-     * again. It rejects with the failure: a template that changed since
-     * `etag` was read is refused (412), and the caller decides what then.
+     * again. It rejects with the failure. A template that changed after
+     * `etag` was read is refused (412), and the caller decides what to do.
      *
      * @param {string} id
      * @param {{name: string, description?: string, device: object}} content
@@ -5143,8 +5190,8 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Replaces a collection of the user's library: its name, its
-     * description and the templates it holds. It rejects with the failure;
-     * one that changed since `etag` was read is refused (412).
+     * description and the templates it holds. It rejects with the failure.
+     * A collection that changed after `etag` was read is refused (412).
      *
      * @param {string} id
      * @param {{name: string, description?: string, templateIds: string[]}}
@@ -5169,16 +5216,16 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Adds templates to a collection of the user's library, or takes some
-     * out of it. The collection is sent whole, as it is listed, with the
-     * change made. One that changed meanwhile (412: another tab, or a
-     * template of it deleted) is read again, and the change made to what it
-     * holds now, once. It rejects with the failure.
+     * Adds templates to a collection of the user's library, or removes some
+     * from it. The collection is sent whole, as it is listed, with the
+     * change made. A collection that changed in the meantime (412: another
+     * tab, or a template of it deleted) is read again, and the change is
+     * made once to what it holds now. It rejects with the failure.
      *
      * @param {string} id the collection's id
      * @param {{add?: string[], remove?: string[]}} change template ids
-     * @returns {Promise<boolean>} whether the collection changed; false
-     *   when it already was as asked
+     * @returns {Promise<boolean>} whether the collection changed. false
+     *   when it already was as requested
      */
     async changeCollectionMembers(id, { add = [], remove = [] }) {
       const send = async (retried) => {
@@ -5231,8 +5278,8 @@ export const useBuilderStore = defineStore('builder', {
     /**
      * Deletes templates and collections of the user's library in one
      * request, and reads the library again. A deleted template leaves its
-     * collections; a deleted collection leaves its templates. It rejects
-     * with the failure.
+     * collections. A deleted collection does not delete its templates. It
+     * rejects with the failure.
      *
      * @param {{templates?: string[], collections?: string[]}} selection ids
      * @returns {Promise<{templates: number, collections: number}>} how many
@@ -5271,7 +5318,7 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * The users the templates and collections of the user's library may be
-     * shared with. It rejects with the failure: a user without an account
+     * shared with. It rejects with the failure. A user without an account
      * of their own may share nothing (403).
      *
      * @returns {Promise<{username: string, name: string}[]>}
@@ -5282,10 +5329,10 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Adds people to templates and collections of the user's library, and
-     * takes people off them, every item at once, then reads the library
-     * again. Sharing a collection shares its templates. It rejects with the
-     * failure: a person the server refuses (422, see shareErrors) changes
-     * nothing.
+     * removes people from them, every item at once. Then it reads the
+     * library again. A shared collection also shares its templates. It
+     * rejects with the failure. A person that the server refuses (422, see
+     * shareErrors) changes nothing.
      *
      * @param {{templates?: string[], collections?: string[]}} items ids
      * @param {{add?: string[], remove?: string[]}} people usernames
@@ -5313,15 +5360,15 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Publishes templates and collections server-wide, for everyone who
-     * can use the Builder, or takes them back, then reads the library
-     * again. Publishing a collection publishes its templates. It rejects
-     * with the failure.
+     * can use the Builder, or removes them from server-wide. Then it reads
+     * the library again. A published collection also publishes its
+     * templates. It rejects with the failure.
      *
      * @param {{templates?: string[], collections?: string[]}} items ids
      * @param {boolean} serverWide
      * @param {string} [owner] whose library the items are: the user's own
-     *   when not given. A role that may publish takes back another user's
-     *   items too.
+     *   when not given. A role that may publish can also remove another
+     *   user's items from server-wide.
      * @returns {Promise<{failed: object[]}>} the items left as they were
      */
     async publishLibraryItems(
@@ -5349,11 +5396,11 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Replaces the notes of the diagram, in its metadata, in one undo step
-     * (see setDiagramNotes in model.js): a blank note is dropped, so a note
-     * cleared and left is removed. Notes that are those already take no
-     * step, and neither do notes of which one cannot be written (too long,
-     * or holding a control character; see diagramNoteProblem): the diagram
-     * keeps the notes it had.
+     * (see setDiagramNotes in model.js). A blank note is dropped, so a note
+     * that the user clears and leaves is removed. Notes that are the same
+     * as before take no step. Notes of which one cannot be written (too
+     * long, or with a control character, see diagramNoteProblem) also take
+     * no step. The diagram then keeps the notes it had.
      *
      * @param {string[]} notes
      * @returns {object|null} the history entry, or null when nothing changed,
@@ -5371,9 +5418,9 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Draws the icons of the diagram's devices, switches and groups at a
-     * size, in one undo step (see setIconSize in model.js); a node with a
-     * size of its own keeps it. The size the diagram has already takes no
-     * step.
+     * size, in one undo step (see setIconSize in model.js). A node with a
+     * size of its own keeps it. The size that the diagram already has takes
+     * no step.
      *
      * @param {string} size one of ICON_SIZES
      * @returns {object|null} the history entry, or null when nothing changed
@@ -5395,7 +5442,7 @@ export const useBuilderStore = defineStore('builder', {
     /**
      * Puts a device or a switch at a level of the Purdue model, or at none,
      * in one undo step (see setPurdueLevel in model.js). A device included
-     * from another topology is refused. The level the node has already
+     * from another topology is refused. The level that the node already has
      * takes no step.
      *
      * @param {string} nodeId
@@ -5436,8 +5483,8 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Replaces the Scenario configs the diagram lists, in one undo step (see
-     * setScenarios in model.js). The list the diagram has already takes no
-     * step.
+     * setScenarios in model.js). The list that the diagram already has
+     * takes no step.
      *
      * @param {string[]} names
      * @returns {object|null} the history entry, or null when nothing changed
@@ -5461,18 +5508,21 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Stores a Scenario config on the server for the Scenario dialog: a new
-     * one (POST /configs), or with `replace` in place of the one of its name
-     * (PUT /configs/Scenario/<name>). A replacement takes the config's spec
-     * and keeps the stored config's annotations, which it reads first (GET
-     * /configs/Scenario/<name>), with the config's own over them and no
-     * topology of the stored topology annotation lost
-     * (replacedScenarioConfig): a PUT replaces the annotations too, and
-     * phenix creates an experiment from a scenario only while that
-     * annotation names the experiment's topology. The server checks the
-     * caller's `configs` permission and the config, and its refusal is
-     * thrown. The scenarios offered are then read again, and the content
-     * read before of a scenario of that name is dropped, so the Inspector
-     * reads it again.
+     * one (POST /configs), or with `replace`, in place of the config of its
+     * name (PUT /configs/Scenario/<name>).
+     *
+     * A replacement takes the config's spec. It keeps the stored config's
+     * annotations, which it reads first (GET /configs/Scenario/<name>), with
+     * the config's own annotations over them. No topology of the stored
+     * topology annotation is lost (replacedScenarioConfig). This is
+     * necessary because a PUT also replaces the annotations, and phenix
+     * creates an experiment from a scenario only while that annotation
+     * names the experiment's topology.
+     *
+     * The server checks the caller's `configs` permission and the config,
+     * and its refusal is thrown. The scenarios offered are then read again.
+     * The content read before of a scenario of that name is dropped, so the
+     * Inspector reads it again.
      *
      * @param {object} config apiVersion, kind Scenario, metadata, spec
      * @param {{replace?: boolean}} [options]
@@ -5537,9 +5587,10 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Pastes a copy of the selected nodes beside them, as Copy and Paste
-     * would, from a copy made of the selection now: the clipboard is
-     * neither read nor changed. A connection goes with its two nodes, so a
-     * selection of connections alone has nothing to duplicate, and says so.
+     * would, from a copy made of the selection now. The clipboard is
+     * neither read nor changed. A connection goes with its two nodes. So a
+     * selection of only connections has nothing to duplicate, and the store
+     * says so.
      *
      * @returns {string[]} the ids of the copies, which become the selection
      */
@@ -5581,11 +5632,11 @@ export const useBuilderStore = defineStore('builder', {
       const label = this.history.undoLabel();
 
       this.doc = this.history.undo();
-      // Dropped here, a redo back to the layout cannot offer it again either.
+      // Dropped here, so a redo to the layout also cannot offer it again.
       this.layoutRestore = null;
       this.historyChanged();
       this.selection = emptySelection();
-      // A blocked queue keeps the move on this device only; say so.
+      // A blocked queue keeps the move on this device only, so say so.
       this.announce(`Undid ${label}${this.unsavedNote() || '.'}`);
       this.moveHistoryCursor();
     },
@@ -5645,15 +5696,15 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * The Go to request with that token, for the Inspector to focus the
-     * field it names (see goToIssue), once: taking it marks it taken. So an
-     * Inspector that mounts after the request, as when Go to on the drafts
-     * page opens the editor, still acts on it, and no Inspector acts on a
-     * request twice.
+     * field it names (see goToIssue), once. This call marks the request as
+     * taken. So an Inspector that mounts after the request, as when Go to on
+     * the drafts page opens the editor, still acts on it, and no Inspector
+     * acts on a request twice.
      *
      * @param {number} token
      * @returns {{kind: string, id: string, field: string, token: number}|null}
-     *   the request, or null when it names no field, has been taken, or a
-     *   later request replaced it
+     *   the request, or null when it names no field, was taken, or a later
+     *   request replaced it
      */
     takeFocusRequest(token) {
       const request = this.focusRequest;
@@ -5696,8 +5747,8 @@ export const useBuilderStore = defineStore('builder', {
       return this.resolvedTheme;
     },
 
-    // The Settings dialog says nothing: its radio buttons speak for
-    // themselves, and the live region would say it once the dialog closes.
+    // The Settings dialog says nothing. Its radio buttons speak for
+    // themselves, and the live region would say it after the dialog closes.
     setTheme(theme, element, { announce = true } = {}) {
       const storage = pageStorage();
       const mm = pageMatchMedia();
@@ -5713,7 +5764,7 @@ export const useBuilderStore = defineStore('builder', {
       return this.resolvedTheme;
     },
 
-    // The toolbar's toggle, which goes by what System shows now (see
+    // The toolbar's toggle, which uses what System shows now (see
     // nextTheme).
     cycleTheme(element) {
       const mm = pageMatchMedia();
@@ -5728,16 +5779,16 @@ export const useBuilderStore = defineStore('builder', {
 
     // Forgets everything the signed-in user had here, on logout (see
     // session.js): the open draft, its queue and history, and the lists. A
-    // request still under way for them is dropped when it answers.
+    // request still in progress for them is dropped when it answers.
     endSession() {
       sessionEpoch += 1;
       disksRequest = null;
       forgetUser(this);
     },
 
-    // Whether the session ended since `epoch` was read (see endSession). A
-    // draft opened or made for the previous user that answers afterwards is
-    // dropped, with any queue it started, and the store left empty.
+    // Whether the session ended after `epoch` was read (see endSession). A
+    // draft opened or made for the previous user that answers after that is
+    // dropped, with any queue it started, and the store is left empty.
     sessionEndedSince(epoch) {
       if (epoch === sessionEpoch) {
         return false;

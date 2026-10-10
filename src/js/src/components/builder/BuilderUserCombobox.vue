@@ -6,9 +6,9 @@
 
   The field holds what was typed, or the label of the user chosen from the
   list ("Name (username)", see combobox.js), as modelValue. Choosing a user
-  emits choose with their username; Enter with no suggestion in view emits
-  submit, for the form to take the name. How many users match what was
-  typed is said in a status region of its own, once typing rests.
+  emits choose with their username. Enter with no suggestion in view emits
+  submit, for the form to take the name. A status region of its own says
+  how many users match the typed text, after typing pauses.
 
   The label, the hints and the error message are the form's: describedby
   names them, and invalid marks the field. Its elements are named for id:
@@ -118,8 +118,8 @@
   const listEl = ref(null);
   const listOpen = ref(false);
   const active = ref(-1);
-  // The user last chosen from the list, until the field is typed in: the
-  // field then shows their label, which names them.
+  // The user last chosen from the list, until the user types in the field.
+  // Until then, the field shows their label, which names them.
   const chosen = ref(null);
   const matches = useMessage();
   let matchTimer = null;

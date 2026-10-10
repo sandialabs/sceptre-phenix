@@ -3,17 +3,17 @@
 
   Vue Flow's wrapper around this component takes focus (the canvas's roving
   Tab stop, see BuilderCanvas.vue) and carries its accessible name (see
-  adapters/vueflow.js), so nothing in here is focusable. Under its name the
-  device shows its phenix node type as stored (VirtualMachine, Router, ...),
-  or External. The comment (spec.general.description) ends the accessible
-  name and is the device's last line. Hover and keyboard focus show the
-  device's info tooltip (see nodeTooltip.js), and the hidden text beside
-  the node says the same to assistive technology, as the wrapper's
-  description.
+  adapters/vueflow.js). For this reason, nothing in this component is
+  focusable. Under its name, the device shows its phenix node type as stored
+  (VirtualMachine, Router, ...) or External. The comment
+  (spec.general.description) ends the accessible name and is the device's
+  last line. Hover and keyboard focus show the device's info tooltip (see
+  nodeTooltip.js). The hidden text beside the node gives the same facts to
+  assistive technology, as the wrapper's description.
 
-  A device from an included topology is read only: it says where it comes
-  from in place of its type, has a dashed border, and offers no handle for a
-  new interface. Its accessible name says the same.
+  A device from an included topology is read only. In place of its type, it
+  says where it comes from. It has a dashed border and no handle for a new
+  interface. Its accessible name says the same.
 
   A device may have an outline color and a fill color of its own (see
   nodeColors in colors.js). On a fill, every line of text and the icon are
@@ -24,10 +24,10 @@
   box (see NodeNotes.vue), and its description ends with them.
 
   Its icon is drawn at the device's icon size, or the diagram's (see
-  nodeIconSize in model.js). A Small icon sits before the hostname; a Medium
-  or a Large one stands left of all its lines, which make a column beside it
-  (see iconSizeClass in nodeIconSize.js and builder.css). The box keeps its
-  size either way.
+  nodeIconSize in model.js). A Small icon sits before the hostname. A Medium
+  or a Large icon stands left of all the device's lines, which make a column
+  beside it (see iconSizeClass in nodeIconSize.js and builder.css). The box
+  keeps its size either way.
 -->
 <template>
   <div
@@ -71,9 +71,9 @@
     <span v-if="comment" class="builder-node__comment">{{ comment }}</span>
     <node-issue-mark v-if="data.issue" :node-id="id" :issue="data.issue" />
 
-    <!-- Handles are pointer-only: the toolbar's Add connection dialog, also
-         reached from the command palette, is the keyboard path, so they are
-         hidden from assistive technology. -->
+    <!-- Handles are for the pointer only. The keyboard path is the toolbar's
+         Add connection dialog, which the command palette also opens. For
+         this reason, the handles are hidden from assistive technology. -->
     <Handle
       v-for="(handle, index) in data.handles"
       :id="handle.id"
@@ -144,8 +144,8 @@
   } from '@/builder/model.js';
   import { deviceInfo } from '@/builder/nodeInfo.js';
 
-  // Vue Flow passes its node state as attributes as well; none belong on
-  // the node's element.
+  // Vue Flow also passes its node state as attributes. None of them belong
+  // on the node's element.
   defineOptions({ inheritAttrs: false });
 
   const props = defineProps({

@@ -24,16 +24,17 @@ const publishedIDSeparator = "\x1f"
 // OrphanGracePeriod is how old unreferenced content must be before
 // [Service.CleanupOrphanedChunks], [Service.CleanupOrphanedDocuments] and
 // [Service.DeleteSupersededDocuments] remove it. Every write stores its chunks
-// before the metadata that references them, and a published document is stored
-// before the config that references it, so younger content may belong to a
-// write still in flight, in this process or in another one sharing the store.
+// before the metadata that references them. A published document is stored
+// before the config that references it. Thus younger content may belong to a
+// write that is still in progress, in this process or in another process that
+// shares the store.
 const OrphanGracePeriod = time.Hour
 
 // EncodeDocument returns the canonical JSON encoding of a validated builder
-// document, checked against [MaxDocumentBytes]. The document is validated
-// semantically first, so an invalid document can never be encoded and handed to
-// this package. It is the encoding every draft snapshot and published document
-// is stored with.
+// document, checked against [MaxDocumentBytes]. It validates the document
+// semantically first, so an invalid document can never be encoded and given to
+// this package. Every draft snapshot and published document is stored with
+// this encoding.
 func EncodeDocument(doc *builder.Document) ([]byte, error) {
 	if doc == nil {
 		return nil, newValidationError("document", "must not be nil")
@@ -55,9 +56,9 @@ func EncodeDocument(doc *builder.Document) ([]byte, error) {
 	return data, nil
 }
 
-// ParseDocument decodes and validates untrusted document bytes as saving a
-// draft snapshot does, within the same [MaxDocumentBytes], for a caller that
-// uses the document without storing it.
+// ParseDocument decodes and validates untrusted document bytes, within
+// [MaxDocumentBytes], as saving a draft snapshot does. It is for a caller that
+// uses the document and does not store it.
 func ParseDocument(data []byte) (*builder.Document, error) {
 	_, doc, err := canonicalDocument(data)
 
@@ -65,10 +66,10 @@ func ParseDocument(data []byte) (*builder.Document, error) {
 }
 
 // PublishedDocumentID returns the deterministic, content addressed ID of a
-// document published to a target. The same content published to the same target
-// always yields the same ID, which makes publishing idempotent; the same
-// content published to different targets is stored independently, so removing
-// one target's documents never affects another's.
+// document published to a target. The same content published to the same
+// target always gives the same ID, which makes publishing idempotent. The same
+// content published to different targets is stored separately, so removing the
+// documents of one target never affects another target.
 func PublishedDocumentID(target, digest string) string {
 	sum := sha256.Sum256([]byte(target + publishedIDSeparator + digest))
 
@@ -94,13 +95,16 @@ const (
 	referencePath   = "path"
 )
 
-// DecodeReference decodes the value of a config's [DocumentAnnotation]
-// annotation, as [DocumentReference.EncodeReference] writes it. Decoding is
-// strict: the value must be a single JSON object with no trailing content,
-// holding at least one of the sub-keys digest, id and path and no other, and
-// each sub-key it holds must be text of the right shape (a sha256 digest, a
-// document identifier, see [ValidateDocumentPath]). Nothing is read through
-// a reference that does not decode.
+// DecodeReference decodes the value of the [DocumentAnnotation] annotation of
+// a config, as [DocumentReference.EncodeReference] writes it. Decoding is
+// strict:
+//   - The value must be a single JSON object with no trailing content.
+//   - It must hold at least one of the sub-keys digest, id and path, and no
+//     other sub-key.
+//   - Each sub-key it holds must be text of the right shape (a sha256 digest,
+//     a document identifier, see [ValidateDocumentPath]).
+//
+// Nothing is read through a reference that does not decode.
 func DecodeReference(value string) (DocumentReference, error) {
 	var fields map[string]*string
 
@@ -165,12 +169,12 @@ func (r DocumentReference) StoredID(topology string) string {
 	return ""
 }
 
-// Names reports whether the reference, read from the topology doc was
-// published to, names the stored document doc: doc is the document
-// [DocumentReference.StoredID] finds for that topology, and it has the
-// reference's digest when the reference has one. A reference that names
-// another topology's document by its ID therefore names nothing, since that
-// document is never doc.
+// Names reports whether the reference names the stored document doc. The
+// reference was read from the topology that doc was published to. It names doc
+// when doc is the document [DocumentReference.StoredID] finds for that
+// topology, and doc has the digest of the reference, if the reference has one.
+// Thus a reference that names the document of another topology by its ID names
+// nothing, because that document is never doc.
 func (r DocumentReference) Names(doc *PublishedDocument) bool {
 	if doc == nil {
 		return false
@@ -179,10 +183,10 @@ func (r DocumentReference) Names(doc *PublishedDocument) bool {
 	return r.StoredID(doc.Target) == doc.ID && (r.Digest == "" || r.Digest == doc.Digest)
 }
 
-// Publishes reports whether the reference, read from the topology named
-// topology, names the stored document a publication of the content with
-// this digest stores for that topology, whichever of the digest and the ID
-// it holds. No record is read.
+// Publishes reports whether the reference names the document that a
+// publication of the content with this digest stores for the topology named
+// topology. The reference was read from that topology. Publishes uses
+// whichever of the digest and the ID the reference holds. It reads no record.
 func (r DocumentReference) Publishes(topology, digest string) bool {
 	return r.StoredID(topology) == PublishedDocumentID(topology, digest) && (r.Digest == "" || r.Digest == digest)
 }
@@ -193,8 +197,8 @@ type PutPublishedDocumentRequest struct {
 	Target string
 	Kind   string
 	Actor  string
-	// Document holds the canonical JSON encoding of the document, as produced by
-	// [EncodeDocument].
+	// Document holds the canonical JSON encoding of the document, as
+	// [EncodeDocument] returns it.
 	Document []byte
 	// DraftID and SnapshotID optionally record where the document came from.
 	DraftID    string
@@ -203,20 +207,20 @@ type PutPublishedDocumentRequest struct {
 
 // PutPublishedDocument stores an immutable copy of a published document and
 // returns it. The caller stores its reference (see
-// [PublishedDocument.Reference]) in the config's [DocumentAnnotation]
-// annotation. Published documents are content
-// addressed and never mutated: publishing identical content to the same target
-// twice returns the existing document, once its stored content has been
-// verified. An existing document whose content is corrupt or missing is
-// replaced by a fresh copy, so publishing again repairs it.
+// [PublishedDocument.Reference]) in the [DocumentAnnotation] annotation of the
+// config. Published documents are content addressed and never mutated. When
+// identical content is published to the same target twice,
+// PutPublishedDocument verifies the stored content and returns the existing
+// document. A fresh copy replaces an existing document whose content is
+// corrupt or missing, so publishing again repairs it.
 //
 // Every attempt writes its content to a private chunk scope named by a
-// generated payload ID, so concurrent attempts at the same document never
-// share chunks: the attempt that loses the race removes only the scope it
-// wrote and the winner's content is always intact. An attempt that stored
-// chunks but could not remove them after losing returns the winning document
-// together with an error matching [ErrCleanup]; the returned document is still
-// usable.
+// generated payload ID. Thus concurrent attempts at the same document never
+// share chunks. The attempt that loses the race removes only the scope it
+// wrote, and the content of the winner is always intact. An attempt that
+// stored chunks but could not remove them after it lost returns the winning
+// document with an error that matches [ErrCleanup]. The returned document is
+// still usable.
 func (s *Service) PutPublishedDocument(ctx context.Context, req PutPublishedDocumentRequest) (*PublishedDocument, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("putting published document: %w", err)
@@ -253,7 +257,7 @@ func (s *Service) PutPublishedDocument(ctx context.Context, req PutPublishedDocu
 				return touched, err
 			}
 
-			// Removed since it was read: it is stored afresh.
+			// The document was removed after it was read, so store it again.
 			existing = nil
 		}
 	case errors.Is(err, ErrNotFound):
@@ -286,7 +290,7 @@ func (s *Service) PutPublishedDocument(ctx context.Context, req PutPublishedDocu
 		published:      time.Time{},
 	}
 
-	// Metadata is encoded before any chunk is written, so an encoding failure
+	// Encode the metadata before any chunk is written, so an encoding failure
 	// can never leave content behind.
 	value, err := encodePublished(doc)
 	if err != nil {
@@ -308,14 +312,15 @@ func (s *Service) PutPublishedDocument(ctx context.Context, req PutPublishedDocu
 	return doc, s.dropReplaced(existing)
 }
 
-// touchPublished stores an intact document's metadata again, unchanged, when
-// the same content is published again, so its store record says it was just
-// published: [Service.CleanupOrphanedDocuments] leaves a document published
-// within the [OrphanGracePeriod] alone, and an old one no config references
-// any more may be published again before the config that will reference it
-// is written. A cleanup that listed the document before it is stored again
-// fails its revision-checked delete instead. A document stored again since
-// it was read is returned as it is now; one removed since is not found.
+// touchPublished stores the metadata of an intact document again, unchanged,
+// when the same content is published again. Then its store record says that it
+// was just published. [Service.CleanupOrphanedDocuments] does not remove a
+// document published within the [OrphanGracePeriod]. This keeps an old
+// document that no config references now, which may be published again before
+// the config that will reference it is written. A cleanup that listed the
+// document before it was stored again fails its revision-checked delete
+// instead. touchPublished returns a document stored again after it was read as
+// it is now. A document removed after it was read is not found.
 func (s *Service) touchPublished(ctx context.Context, doc *PublishedDocument) (*PublishedDocument, error) {
 	value, err := encodePublished(doc)
 	if err != nil {
@@ -354,8 +359,9 @@ func (s *Service) publishedContentIntact(doc *PublishedDocument) (bool, error) {
 	return false, err
 }
 
-// storePublished creates the metadata of a new published document, or replaces
-// the metadata of the corrupt document replaced at the revision it was read at.
+// storePublished creates the metadata of a new published document. Or it
+// replaces the metadata of the corrupt document that the put replaces, at the
+// revision that document was read at.
 func (s *Service) storePublished(doc *PublishedDocument, value []byte, replaced *PublishedDocument) (store.Record, error) {
 	if replaced == nil {
 		return s.store.CreateRecord(NamespacePublished, doc.ID, value)
@@ -364,9 +370,10 @@ func (s *Service) storePublished(doc *PublishedDocument, value []byte, replaced 
 	return s.store.UpdateRecord(NamespacePublished, doc.ID, value, replaced.Revision)
 }
 
-// dropReplaced removes the content of the corrupt document a put replaced. A
-// failure is reported as an error matching [ErrCleanup]; the content belongs to
-// no document any more, so [Service.CleanupOrphanedChunks] removes it later.
+// dropReplaced removes the content of the corrupt document that a put
+// replaced. It reports a failure as an error that matches [ErrCleanup]. The
+// content belongs to no document now, so [Service.CleanupOrphanedChunks]
+// removes it later.
 func (s *Service) dropReplaced(replaced *PublishedDocument) error {
 	if replaced == nil {
 		return nil
@@ -377,20 +384,23 @@ func (s *Service) dropReplaced(replaced *PublishedDocument) error {
 	return newCleanupError("replacing a corrupt published document", cleanupErrors(err))
 }
 
-// putFailed resolves a failed published document write by reading back what is
-// stored, because a store error does not always mean nothing was written: an
-// etcd request can time out after its proposal was applied.
+// putFailed resolves a failed published document write. It reads back what is
+// stored, because a store error does not always mean that nothing was written.
+// An etcd request can time out after its proposal was applied.
 //
-//   - When the stored document names this attempt's payload, the write was
-//     applied and that document is returned with its content intact.
-//   - When a concurrent attempt stored the same document, the winner is
-//     returned. This attempt removes its own chunk scope, which no other writer
-//     ever reads or writes, so the winner's content is never touched.
-//   - When a different document is stored under the ID, a conflict is returned.
-//   - Otherwise the write error is returned. The attempt's chunks are removed
-//     only when the store proved the write was not applied (see
-//     writeRejected): a write still pending may yet be applied, so they are
-//     otherwise left to [Service.CleanupOrphanedChunks].
+//   - When the stored document names the payload of this attempt, the write
+//     was applied. putFailed returns that document with its content intact.
+//   - When a concurrent attempt stored the same document, putFailed returns
+//     the winner. This attempt removes its own chunk scope, which no other
+//     writer ever reads or writes, so the content of the winner is never
+//     touched.
+//   - When a different document is stored under the ID, putFailed returns a
+//     conflict.
+//   - Otherwise putFailed returns the write error. It removes the chunks of
+//     the attempt only when the store proved that the write was not applied
+//     (see writeRejected). A write that is still pending may yet be applied,
+//     so in all other cases it leaves the chunks to
+//     [Service.CleanupOrphanedChunks].
 func (s *Service) putFailed(
 	ctx context.Context, doc, replaced *PublishedDocument, cause error,
 ) (*PublishedDocument, error) {
@@ -557,9 +567,10 @@ func (s *Service) deletePublished(doc *PublishedDocument) error {
 	return nil
 }
 
-// deleteListed removes a document a listing returned and reports whether its
-// metadata was removed. A document removed or stored again since the listing
-// is skipped without an error: it is no longer the document the listing saw.
+// deleteListed removes a document that a listing returned, and reports whether
+// its metadata was removed. It skips, without an error, a document that was
+// removed or stored again after the listing. That document is no longer the
+// document the listing saw.
 func (s *Service) deleteListed(doc *PublishedDocument) (bool, error) {
 	err := s.deletePublished(doc)
 
@@ -575,14 +586,14 @@ func (s *Service) deleteListed(doc *PublishedDocument) (bool, error) {
 	return false, err
 }
 
-// DeleteSupersededDocuments removes every published document of a target except
-// the one named by keepID, which is normally the document the config currently
-// references. A document stored within the [OrphanGracePeriod] is kept too: it
-// may belong to a publication still in flight, in this process or in another
-// one sharing the store, whose config is not written yet. It returns the
-// number of documents removed; a cleanup failure is reported as an error
-// matching [ErrCleanup] alongside the count of documents whose metadata was
-// removed.
+// DeleteSupersededDocuments removes every published document of a target
+// except the one that keepID names. That is normally the document the config
+// references now. It also keeps a document stored within the
+// [OrphanGracePeriod]. Such a document may belong to a publication that is
+// still in progress, in this process or in another process that shares the
+// store, whose config is not written yet. It returns the number of documents
+// removed. It reports a cleanup failure as an error that matches [ErrCleanup],
+// with the count of documents whose metadata was removed.
 func (s *Service) DeleteSupersededDocuments(ctx context.Context, target, keepID string) (int, error) {
 	if err := validateText("target", target, MaxTargetLength, true); err != nil {
 		return 0, err
@@ -601,11 +612,11 @@ func (s *Service) DeleteSupersededDocuments(ctx context.Context, target, keepID 
 
 // DeleteTargetDocuments removes every published document of a target, however
 // recently it was stored, as deleting the config they were published to does.
-// Unlike [Service.DeleteSupersededDocuments] it keeps nothing for a
-// publication in flight, so the caller must make sure there is none. It
-// returns the number of documents removed; a cleanup failure is reported as
-// an error matching [ErrCleanup] alongside the count of documents whose
-// metadata was removed.
+// Unlike [Service.DeleteSupersededDocuments], it keeps nothing for a
+// publication in progress, so the caller must make sure there is none. It
+// returns the number of documents removed. It reports a cleanup failure as an
+// error that matches [ErrCleanup], with the count of documents whose metadata
+// was removed.
 func (s *Service) DeleteTargetDocuments(ctx context.Context, target string) (int, error) {
 	if err := validateText("target", target, MaxTargetLength, true); err != nil {
 		return 0, err
@@ -625,35 +636,40 @@ type DeletedConfig struct {
 	// [DocumentAnnotation] annotation (see [DocumentReference.StoredID]), or
 	// empty when it named none.
 	DocumentID string
-	// Updated is the config's metadata.updated time, which the store keeps to
-	// the second: the start of the second the config was last written in. It
-	// is zero when the time is not known.
+	// Updated is the metadata.updated time of the config. The store keeps it
+	// to the second, so it is the start of the second the config was last
+	// written in. It is zero when the time is not known.
 	Updated time.Time
 }
 
 // DeleteConfigDocuments removes the published documents of a deleted config
-// that were stored before the config was last written, and every one older
-// than the [OrphanGracePeriod]. A publication stores its document before the
-// config that references it, so a younger document stored since that write may
-// belong to a publication still in flight, in this process or in another one
-// sharing the store, which is about to write the config again. It is kept, and
-// a later publication or [Service.CleanupOrphanedDocuments] removes it once it
-// is past the grace period.
+// that were stored before the config was last written, and every document
+// older than the [OrphanGracePeriod]. A publication stores its document before
+// the config that references it. Thus a younger document stored after that
+// write may belong to a publication that is still in progress, in this process
+// or in another process that shares the store, and that is about to write the
+// config again. DeleteConfigDocuments keeps such a document. A later
+// publication or [Service.CleanupOrphanedDocuments] removes it when it is past
+// the grace period.
 //
-// A config's time of writing is only known to the second, so the documents
-// stored before the write are: those stored before that second; the document
-// the config named, unless it was stored again in a later second (the same
-// content is being published again); and those stored no later than that
-// document, which a publication stored before the config that named it. A
-// document stored in that second, after the document the config named, is
-// kept: it may have been stored after the delete. The same content published
-// again within that second cannot be told from the config's own publication,
-// so that document is removed; the caller keeps it by holding off
-// publications, as the REST API does in its own process. Without an Updated
-// time every document within the grace period is kept.
+// The time a config was written is known only to the second. Thus the
+// documents stored before the write are:
+//   - the documents stored before that second
+//   - the document the config named, unless it was stored again in a later
+//     second (the same content is being published again)
+//   - the documents stored no later than that document, which a publication
+//     stored before the config that named it
 //
-// It returns the number of documents removed; a cleanup failure is reported
-// as an error matching [ErrCleanup] alongside the count of documents whose
+// DeleteConfigDocuments keeps a document stored in that second after the
+// document the config named, because it may have been stored after the delete.
+// The same content published again within that second cannot be told apart
+// from the publication of the config itself, so that document is removed. The
+// caller keeps it by blocking publications, as the REST API does in its own
+// process. Without an Updated time, every document within the grace period is
+// kept.
+//
+// It returns the number of documents removed. It reports a cleanup failure as
+// an error that matches [ErrCleanup], with the count of documents whose
 // metadata was removed.
 func (s *Service) DeleteConfigDocuments(ctx context.Context, deleted DeletedConfig) (int, error) {
 	if err := validateText("name", deleted.Name, MaxTargetLength, true); err != nil {
@@ -677,8 +693,8 @@ func (s *Service) DeleteConfigDocuments(ctx context.Context, deleted DeletedConf
 	var (
 		now     = s.clock()
 		written = deleted.Updated.Truncate(time.Second)
-		// named is when the document the config named was stored, when that
-		// was no later than the second the config was last written in.
+		// named is when the document the config named was stored, if that was
+		// no later than the second the config was last written in.
 		named time.Time
 	)
 
@@ -708,9 +724,9 @@ func (s *Service) DeleteConfigDocuments(ctx context.Context, deleted DeletedConf
 	})
 }
 
-// LiveDocument names the stored published document a topology's reference
-// names (see [DocumentReference.StoredID]) to
-// [Service.CleanupOrphanedDocuments].
+// LiveDocument names, to [Service.CleanupOrphanedDocuments], the stored
+// published document that the reference of a topology names (see
+// [DocumentReference.StoredID]).
 type LiveDocument struct {
 	// Target is the name of the topology the reference was read from.
 	Target string
@@ -718,13 +734,13 @@ type LiveDocument struct {
 	ID string
 }
 
-// CleanupOrphanedDocuments removes every published document that is not in
-// the given set of live documents, which the caller collects from the
-// topologies it owns. A document is live only when the topology it was
-// published to names it: a reference on another topology keeps nothing.
-// Callers must pass a complete set: any document missing from it is treated
-// as an orphan and removed, unless it was stored within the
-// [OrphanGracePeriod] and so may be about to be referenced.
+// CleanupOrphanedDocuments removes every published document that is not in the
+// given set of live documents. The caller collects the set from the topologies
+// it owns. A document is live only when the topology it was published to names
+// it. A reference on another topology keeps nothing. Callers must pass a
+// complete set. The cleanup removes any document missing from the set as an
+// orphan, unless the document was stored within the [OrphanGracePeriod] and so
+// may be about to be referenced.
 func (s *Service) CleanupOrphanedDocuments(ctx context.Context, referenced []LiveDocument) (int, error) {
 	live := make(map[LiveDocument]bool, len(referenced))
 	for _, document := range referenced {
@@ -739,9 +755,9 @@ func (s *Service) CleanupOrphanedDocuments(ctx context.Context, referenced []Liv
 }
 
 // deleteDocumentsWhere removes every published document that remove selects.
-// It returns the number of documents removed; a failure is reported as an
-// error matching [ErrCleanup] for the operation, alongside the count of
-// documents whose metadata was removed.
+// It returns the number of documents removed. It reports a failure as an error
+// that matches [ErrCleanup] for the operation, with the count of documents
+// whose metadata was removed.
 func (s *Service) deleteDocumentsWhere(
 	ctx context.Context,
 	operation string,
@@ -786,13 +802,13 @@ func (s *Service) deleteDocuments(
 	return removed, newCleanupError(operation, errs)
 }
 
-// CleanupOrphanedChunks removes content chunks that belong to no existing draft
-// or published document. It is a repair helper for content left behind by a
-// crash between writing chunks and writing metadata. A payload whose newest
-// chunk was written within the [OrphanGracePeriod] is kept, because the
-// metadata that references it may not have been written yet. So is all of the
-// content of a draft whose metadata cannot be read, which may reference any of
-// it; the rest is cleaned up regardless.
+// CleanupOrphanedChunks removes content chunks that belong to no existing
+// draft or published document. It repairs content that a crash left between
+// writing chunks and writing metadata. It keeps a payload whose newest chunk
+// was written within the [OrphanGracePeriod], because the metadata that
+// references it may not be written yet. It also keeps all of the content of a
+// draft whose metadata cannot be read, because that metadata may reference any
+// of it. It removes the rest regardless.
 func (s *Service) CleanupOrphanedChunks(ctx context.Context) (int, error) {
 	drafts, unreadable, err := s.listDrafts(ctx)
 	if err != nil {
@@ -804,9 +820,9 @@ func (s *Service) CleanupOrphanedChunks(ctx context.Context) (int, error) {
 		return 0, err
 	}
 
-	// Live scopes are per snapshot and per payload, not per draft or document:
-	// a chunk scope of a snapshot that no longer exists is an orphan even when
-	// its draft is still alive.
+	// Live scopes are per snapshot and per payload, not per draft or document.
+	// A chunk scope of a snapshot that no longer exists is an orphan even when
+	// its draft still exists.
 	live := make(map[string]bool, len(drafts)+len(docs))
 
 	for i := range drafts {
@@ -857,9 +873,9 @@ func (s *Service) CleanupOrphanedChunks(ctx context.Context) (int, error) {
 	return len(orphans), newCleanupError("cleaning up orphaned chunks", errs)
 }
 
-// unreferencedChunks groups the chunk keys of every payload scope that is not
-// live by scope, returning the scopes in key order. A key that is not shaped
-// like a chunk key is reported as corruption.
+// unreferencedChunks groups by scope the chunk keys of every payload scope
+// that is not live, and returns the scopes in key order. It reports a key that
+// is not shaped like a chunk key as corruption.
 func unreferencedChunks(keys []string, live map[string]bool) ([]string, map[string][]string, []error) {
 	var (
 		scopes  []string
@@ -891,8 +907,9 @@ func unreferencedChunks(keys []string, live map[string]bool) ([]string, map[stri
 
 // chunkSettled reports whether an unreferenced chunk was written longer than
 // the [OrphanGracePeriod] before now. Chunks are written in key order, so the
-// last key of a payload scope tells whether its write may still be in flight. A
-// chunk that is already gone is not settled: there is nothing left to remove.
+// last key of a payload scope tells whether its write may still be in
+// progress. A chunk that is already gone is not settled, because there is
+// nothing left to remove.
 func (s *Service) chunkSettled(key string, now time.Time) (bool, error) {
 	record, err := s.store.GetRecord(NamespaceChunks, key)
 

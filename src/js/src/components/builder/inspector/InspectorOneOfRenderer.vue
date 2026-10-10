@@ -3,16 +3,21 @@
   JSON Forms renderer. A number phenix also takes as text (Memory, VCPUs) is
   a number field instead (see InspectorInputControl).
 
-  Options are named by the branch titles schema.js adds, as option text; the
-  value field of a primitive branch is labelled with the field and the kind
-  ("Memory (megabytes)"). Switching kinds clears the value, so a filled field
-  asks first, in the Builder's confirmation dialog (BuilderConfirm): its
-  first focus is the choice that keeps the value, Escape or a click outside
-  it keeps the value too, its buttons cannot submit the Inspector form, and
-  focus returns to the picker. A kind stepped to with keys, which change a
-  closed select at every step on Windows and Linux, is held until the
-  choice is made (see heldCommit): focus leaves the picker, or a key that
-  is no step, such as Enter. One chosen with the pointer asks at once. A
+  The branch titles that schema.js adds name the options, as option text.
+  The value field of a primitive branch has the field and the kind as its
+  label ("Memory (megabytes)"). A switch of kinds clears the value, so a
+  filled field asks first, in the Builder's confirmation dialog
+  (BuilderConfirm). In that dialog:
+
+  - First focus is on the choice that keeps the value.
+  - Escape or a click outside the dialog also keeps the value.
+  - Its buttons cannot submit the Inspector form.
+  - Focus returns to the picker.
+
+  On Windows and Linux, keys change a closed select at every step. So the
+  picker holds a kind that the user steps to with keys until the choice is
+  made (see heldCommit): focus leaves the picker, or a key that is not a
+  step, such as Enter. A kind chosen with the pointer asks immediately. A
   locked field (see useInspectorLocked) names its kind in a read-only text
   input instead.
 -->
@@ -133,7 +138,7 @@
 
   // The kind the data has. Data no branch accepts yet (a new interface
   // without a VLAN) shows the branch it comes closest to, so its missing
-  // fields can be filled in; the vanilla renderer showed no fields at all.
+  // fields can be filled in. The vanilla renderer showed no fields at all.
   function kindOfData() {
     return (
       control.value.indexOfFittingSchema ??

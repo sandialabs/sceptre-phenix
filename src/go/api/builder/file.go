@@ -16,9 +16,9 @@ import (
 
 // DocumentFile is a Builder document read from the text of a file.
 type DocumentFile struct {
-	// Data is the canonical JSON encoding of the document, and Digest its
-	// digest: the one a document reference pins a file with. It is not the
-	// digest of the file's own bytes.
+	// Data is the canonical JSON encoding of the document. Digest is the
+	// digest of the document, which a document reference uses to pin a file.
+	// It is not the digest of the bytes of the file.
 	Data   []byte
 	Digest string
 	// Document is the decoded, validated document.
@@ -26,7 +26,7 @@ type DocumentFile struct {
 }
 
 // DocumentFileReason says why a Builder file cannot be used. The reasons are
-// a closed set: a [DocumentFileError] never says more than its reason and the
+// a closed set. A [DocumentFileError] never says more than its reason and the
 // path it was asked for.
 type DocumentFileReason string
 
@@ -34,13 +34,13 @@ const (
 	// DocumentFileOutside is a path that is not below the directory Builder
 	// files are read from, or is below a directory excluded from it.
 	DocumentFileOutside DocumentFileReason = "outside"
-	// DocumentFileMissing is a path nothing exists at, one that goes on
-	// through a regular file included.
+	// DocumentFileMissing is a path where nothing exists. This includes a
+	// path that continues through a regular file.
 	DocumentFileMissing DocumentFileReason = "missing"
-	// DocumentFileUnreadable is a file that cannot be opened or read:
-	// permissions, a symbolic link that leaves the directory or has an
-	// absolute target, an I/O error, or a path a document reference may not
-	// hold.
+	// DocumentFileUnreadable is a file that cannot be opened or read. The
+	// cause is permissions, a symbolic link that leaves the directory or has
+	// an absolute target, an I/O error, or a path a document reference may
+	// not hold.
 	DocumentFileUnreadable DocumentFileReason = "unreadable"
 	// DocumentFileNotRegular is a directory, a named pipe, a device or any
 	// other path that is not a regular file.
@@ -52,18 +52,18 @@ const (
 	// document.
 	DocumentFileInvalid DocumentFileReason = "invalid"
 	// DocumentFileDigest is a file whose document does not have the digest
-	// the reference naming the file pins it with. [ReadDocumentFile] never
-	// returns it: the caller that holds the reference does.
+	// that the reference to the file pins. [ReadDocumentFile] never returns
+	// it. The caller that holds the reference returns it.
 	DocumentFileDigest DocumentFileReason = "digest"
 )
 
-// DocumentFileError is why a Builder file named by a document reference
+// DocumentFileError says why a Builder file that a document reference names
 // cannot be used. Its message is a fixed sentence for its reason, with the
-// path the reference names and, where they apply, the directory files are
-// read from and the topology that names the file. It holds nothing of the
-// file's content and wraps no cause: what a file fails to decode or validate
-// with quotes the file, and the caller asking for the document did not
-// supply it.
+// path the reference names. Where they apply, the message also names the
+// directory Builder files are read from and the topology that names the
+// file. It holds nothing of the file content and wraps no cause. A decode or
+// validation error quotes the file, and the caller that asks for the
+// document did not supply the file.
 type DocumentFileError struct {
 	Reason DocumentFileReason
 	// Path is the path the reference names.
@@ -115,22 +115,23 @@ func (e *DocumentFileError) Unwrap() error {
 	return ErrInvalid
 }
 
-// documentFileParsing admits the text of one Builder file at a time to the
-// parser. Parsed YAML takes many times the memory of its text, about 400 MiB
-// for 5 MiB of short list items, and a file is read again on every request
-// for its document, so requests made at once would otherwise multiply that.
-// Only parsing waits here, never the read of a file, which can hang.
+// documentFileParsing gives the parser the text of only one Builder file at a
+// time. Parsed YAML takes many times the memory of its text: about 400 MiB
+// for 5 MiB of short list items. Every request for a document reads its file
+// again, so concurrent requests would otherwise multiply that memory. Only
+// parsing waits here, never the read of a file, which can hang.
 var documentFileParsing sync.Mutex //nolint:gochecknoglobals // bounds the memory of this process
 
 // parseDocumentText is how [ReadDocumentFile] parses the text of a file.
 // Tests replace it.
 var parseDocumentText = ParseDocumentText //nolint:gochecknoglobals // a seam for tests
 
-// ParseDocumentText decodes and validates the text of a Builder file, which
-// holds a document as JSON or as YAML (see [builder.JSONFromText]), within
-// [MaxDocumentBytes]. The text is used as it is: a "${NAME}" in it is not
-// expanded, as it is in a config file. The error says what is wrong with the
-// text, quoting it, so it is for a caller that supplied the text.
+// ParseDocumentText decodes and validates the text of a Builder file, within
+// [MaxDocumentBytes]. The file holds a document as JSON or as YAML (see
+// [builder.JSONFromText]). ParseDocumentText uses the text as it is. Unlike
+// in a config file, it does not expand a "${NAME}" in the text. The error
+// quotes the text to say what is wrong with it. Thus the error is only for a
+// caller that supplied the text.
 func ParseDocumentText(text []byte) (*DocumentFile, error) {
 	if len(text) == 0 {
 		return nil, newValidationError("document", "must not be empty")
@@ -153,23 +154,24 @@ func ParseDocumentText(text []byte) (*DocumentFile, error) {
 	return &DocumentFile{Data: canonical, Digest: digestOf(canonical), Document: doc}, nil
 }
 
-// notRegular is why a file this package reads is refused when it is a
-// directory, a named pipe, a device or anything else but a regular file.
+// notRegular is the reason this package gives when it refuses a file that is
+// a directory, a named pipe, a device or anything else but a regular file.
 const notRegular = "is not a regular file"
 
 // ReadDocumentFile reads the Builder document in the file at path, which a
-// document reference names (see [ValidateDocumentPath]), for a caller that
-// did not choose the path and so must learn nothing else about the file.
+// document reference names (see [ValidateDocumentPath]). The caller did not
+// choose the path, so it must learn nothing else about the file.
 //
 // The file must be below root, the directory Builder files are read from, and
-// below none of the excluded directories. It is opened through [os.Root], so
-// a symbolic link is followed only when its target is a relative path that
-// stays below root, with no window between that check and the open. A link
-// with an absolute target is refused, also when it points below root; one
-// that resolves below an excluded directory is refused too, as far as the
-// links in place before the open tell. The file must be a regular file of
-// at most [MaxDocumentBytes], and its text a valid document (see
-// [ParseDocumentText]). Nothing is cached: every call reads the file.
+// below none of the excluded directories. ReadDocumentFile opens it through
+// [os.Root]. Thus it follows a symbolic link only when the target is a
+// relative path that stays below root, with no window between that check and
+// the open. It refuses a link with an absolute target, also when the link
+// points below root. It also refuses a link that resolves below an excluded
+// directory, as far as the links in place before the open tell. The file must
+// be a regular file of at most [MaxDocumentBytes], and its text must be a
+// valid document (see [ParseDocumentText]). Nothing is cached. Every call
+// reads the file.
 //
 // Every failure is a [DocumentFileError].
 func ReadDocumentFile(root string, excluded []string, path string) (*DocumentFile, error) {
@@ -177,10 +179,10 @@ func ReadDocumentFile(root string, excluded []string, path string) (*DocumentFil
 		return &DocumentFileError{Reason: reason, Path: path, Root: root, Topology: ""}
 	}
 
-	// A reference is validated when it is decoded, so this refuses only a
-	// path that reached here some other way: one that is not clean could name
-	// a file above root after all, and one without a document's extension
-	// the store file.
+	// Decoding a reference validates it, so this refuses only a path that
+	// came here some other way. A path that is not clean could name a file
+	// above root, and a path without a document extension could name the
+	// store file.
 	if ValidateDocumentPath(path) != nil {
 		return nil, fail(DocumentFileUnreadable)
 	}
@@ -195,8 +197,8 @@ func ReadDocumentFile(root string, excluded []string, path string) (*DocumentFil
 		return nil, fail(reason)
 	}
 
-	// Unlocked by a defer, so that a parser that panics does not leave every
-	// later file waiting.
+	// A defer unlocks it, so a parser that panics does not make every later
+	// file wait.
 	file, err := func() (*DocumentFile, error) {
 		documentFileParsing.Lock()
 		defer documentFileParsing.Unlock()
@@ -216,9 +218,9 @@ func ReadDocumentFile(root string, excluded []string, path string) (*DocumentFil
 }
 
 // servedDocumentPath returns the directory [ReadDocumentFile] opens for
-// path and the path relative to it, and false for a path that is not below
-// root or is below an excluded directory. The directories are those of this
-// process: a relative one is below its working directory.
+// path and the path relative to it. It returns false for a path that is not
+// below root or is below an excluded directory. The directories are those of
+// this process: a relative one is below its working directory.
 func servedDocumentPath(root string, excluded []string, path string) (string, string, bool) {
 	if root == "" {
 		return "", "", false
@@ -250,8 +252,8 @@ func servedDocumentPath(root string, excluded []string, path string) (string, st
 }
 
 // pathBelow reports whether path names something below the directory, and
-// returns the path relative to it. The directory itself is not below it. No
-// link is resolved: both are compared as they are written.
+// returns the path relative to it. The directory itself is not below it. It
+// resolves no link: it compares both as they are written.
 func pathBelow(directory, path string) (string, bool) {
 	if directory == "" {
 		return "", false
@@ -278,9 +280,9 @@ func belowAny(directories []string, path string) bool {
 }
 
 // linksIntoExcluded reports whether path resolves, through the symbolic
-// links in place now, to a file below an excluded directory, itself named
-// through links or not. A path that cannot be resolved resolves nowhere:
-// opening it reports why.
+// links in place now, to a file below an excluded directory. The excluded
+// directory can itself be named through links. A path that cannot be
+// resolved resolves nowhere. Opening it reports why.
 func linksIntoExcluded(excluded []string, path string) bool {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -324,8 +326,9 @@ func readRegularFile(root, relative string) ([]byte, DocumentFileReason) {
 	file, err := directory.OpenFile(relative, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 
 	switch {
-	// A path through a regular file is missing as one through a name nothing
-	// has is, so the answer does not say which names below root are files.
+	// A path through a regular file is missing, the same as a path through a
+	// name that does not exist. Thus the answer does not say which names below
+	// root are files.
 	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
 		return nil, DocumentFileMissing
 	case err != nil:

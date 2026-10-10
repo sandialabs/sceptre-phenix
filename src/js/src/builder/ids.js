@@ -1,8 +1,8 @@
 // Identifier helpers.
 //
-// Editor entities (documents, nodes, networks, edges, interface handles) are
-// identified by random UUIDs, matching the server contract: identifiers are
-// opaque, stable, and never derived from labels.
+// Editor entities (documents, nodes, networks, edges, interface handles) have
+// random UUIDs as identifiers, as the server contract requires. Identifiers
+// are opaque and stable, and never come from labels.
 
 function hexOf(bytes) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
@@ -11,10 +11,10 @@ function hexOf(bytes) {
 }
 
 /**
- * A new random identifier. Browsers offer crypto.randomUUID only in a secure
- * context (HTTPS or localhost), and phenix is often served over plain HTTP,
- * so the UUID is built from crypto.getRandomValues, which works everywhere,
- * when randomUUID is missing.
+ * A new random identifier. Browsers supply crypto.randomUUID only in a secure
+ * context (HTTPS or localhost), and phenix often runs over plain HTTP. When
+ * randomUUID is missing, the UUID is made from crypto.getRandomValues, which
+ * works everywhere.
  *
  * @returns {string} a new RFC 4122 v4 UUID
  * @throws {Error} when the browser has no cryptographic random source

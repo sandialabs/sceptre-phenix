@@ -2,10 +2,10 @@ package builder
 
 import "phenix/types/builder"
 
-// Storage limits enforced by this package. They are intentionally hard limits:
-// they protect the store (and the memory of the process reassembling a
-// document) from unbounded growth, and are checked before any durable metadata
-// update.
+// Storage limits that this package enforces. They are intentionally hard
+// limits. They protect the store (and the memory of the process that
+// reassembles a document) from unbounded growth. The package checks them
+// before any durable metadata update.
 const (
 	// MaxDocumentBytes is the largest canonical JSON encoding of a single
 	// builder document that may be stored (5 MiB).
@@ -23,16 +23,16 @@ const (
 
 	// maxStoredSnapshots is the largest history a stored draft may hold. It is
 	// above [MaxSnapshots] because drafts written before that limit was lowered
-	// hold up to 100 snapshots: such a draft stays readable and is pruned to
-	// [MaxSnapshots] by its next append.
+	// hold up to 100 snapshots. Such a draft stays readable, and its next
+	// append prunes it to [MaxSnapshots].
 	maxStoredSnapshots = 100
 
 	// MaxShares is the largest number of users one draft may be shared with.
 	MaxShares = 25
 
 	// maxStoredShares is the largest share list a stored draft may hold. It
-	// follows [maxStoredSnapshots]: were [MaxShares] ever lowered, it would
-	// stay at the old limit, so drafts shared before stay readable.
+	// follows [maxStoredSnapshots]. If [MaxShares] is lowered, maxStoredShares
+	// stays at the old limit, so drafts shared before stay readable.
 	maxStoredShares = 25
 
 	// ChunkBytes is the size of the immutable content chunks a compressed
@@ -42,7 +42,7 @@ const (
 	// MaxCompressedBytes bounds the compressed size of a stored payload. gzip
 	// adds a small amount of overhead for incompressible input, so the bound is
 	// the document limit plus slack. It also bounds how much data reassembly
-	// will read before giving up.
+	// reads before it stops.
 	MaxCompressedBytes = MaxDocumentBytes + compressionSlackBytes
 
 	// compressionSlackBytes is the gzip overhead allowance included in
@@ -55,9 +55,9 @@ const (
 )
 
 // Bounds on the untrusted strings a caller may attach to a draft or published
-// document. They are exported because handlers need to reject oversized input
-// before it reaches this package, and because they are what keeps a metadata
-// record comfortably below [MaxMetadataBytes].
+// document. They are exported because handlers must reject oversized input
+// before it reaches this package. They also keep a metadata record well below
+// [MaxMetadataBytes].
 const (
 	// MaxIDLength bounds draft, snapshot, and document identifiers.
 	MaxIDLength = 128
@@ -130,8 +130,8 @@ const (
 
 	// NamespaceChunks holds immutable content chunks. Draft chunks are keyed by
 	// "drafts/<draft-id>/<snapshot-id>/<index>" and published document chunks by
-	// "published/<document-id>/<payload-id>/<index>", so every snapshot and
-	// every attempt at storing a published document owns a private, immutable
+	// "published/<document-id>/<payload-id>/<index>". Thus every snapshot, and
+	// every attempt to store a published document, owns a private, immutable
 	// chunk scope that no other writer reads or removes.
 	NamespaceChunks = "builder.chunks"
 
@@ -141,8 +141,8 @@ const (
 
 	// NamespaceIcons holds the server-wide icon library: one record per icon
 	// name and per alias, keyed by "name/" and the name in lower case (see
-	// [LibraryIcon]). An icon's record holds the icon; an alias's record
-	// points at the record of the name its icon was renamed to.
+	// [LibraryIcon]). The record of an icon holds the icon. The record of an
+	// alias points at the record of the name its icon was renamed to.
 	NamespaceIcons = "builder.icons"
 
 	// NamespaceTemplates holds one record per user's template library,

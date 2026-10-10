@@ -7,10 +7,10 @@
   filters a listbox of suggestions under the field, Down and Up Arrow move
   through them (Alt+Down Arrow opens the list without moving), Enter or a
   click takes one, and Escape closes the list. Focus stays in the field, which
-  names the suggestion in view with aria-activedescendant. Any other text can
-  still be typed, and commits on change like any text field. With nothing to
-  suggest (the images are unknown, or the field is locked) it is a plain text
-  field.
+  names the suggestion in view with aria-activedescendant. The user can
+  still type any other text, which commits on change like any text field.
+  With nothing to suggest (the images are unknown, or the field is locked)
+  it is a plain text field.
 -->
 <template>
   <inspector-field
@@ -95,7 +95,7 @@
 
   const field = ref();
   const listbox = ref();
-  // The text in the field, as typed (see useFieldText); the list filters on
+  // The text in the field, as typed (see useFieldText). The list filters on
   // it. Opening the list re-renders the field.
   const { text, onInput: typed } = useFieldText(control);
   const open = ref(false);

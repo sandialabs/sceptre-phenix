@@ -1,48 +1,50 @@
-// The Builder's commands: one registry of everything it can do by name or
-// by key, in the editor and on the drafts landing. The key dispatcher below,
-// the command palette, the shortcut sheet, the toolbar's tooltips and
-// aria-keyshortcuts, and the canvas's and the outline's hints all read it,
-// so none of them can promise a key another does not handle.
+// The Builder's commands: one registry of everything that the Builder can do
+// by name or by key, in the editor and on the drafts landing. The key
+// dispatcher below, the command palette, the shortcut sheet, the toolbar's
+// tooltips and aria-keyshortcuts, and the hints of the canvas and the
+// outline all read it. Thus none of them can promise a key that another does
+// not handle.
 //
-// A command is
-//   id        stable, 'area.action'; customized keys are stored under it
-//   title     its name in the palette and the shortcut sheet; one that ends
-//             in '…' asks for more in a dialog before it acts
+// A command has these fields:
+//   id        stable, 'area.action'. Customized keys are stored under it.
+//   title     its name in the palette and the shortcut sheet. A title that
+//             ends in '…' asks for more in a dialog before the command acts.
 //   group     its heading in the palette and the sheet (GROUPS is the order)
 //   aliases   lower-case single words that stand for its name ('export' for
-//             Download): the palette and the sheet's filter match them as
-//             words of the title, without highlighting them
-//   keywords  more words the palette matches, without highlighting them
+//             Download). The palette and the sheet's filter match them as
+//             words of the title, without highlighting them.
+//   keywords  more words that the palette matches, without highlighting them
 //   keys      default key specs (keymap.js), a list or {mac: [], other: []}
 //   scope     where its keys work (SCOPES), one or a list
 //   page      its keys also work on the rest of the Builder's page (the app
 //             header), outside text fields and the app's dialogs
 //   views     where it exists: ['editor'] when left out, ['landing'], or both
 //   local     the focused control handles its keys itself (canvas items,
-//             outline rows): listed for reference, never dispatched
-//   fixed     its keys cannot be customized (local ones never can)
+//             outline rows). Listed for reference, never dispatched.
+//   fixed     its keys cannot be customized (local keys never can)
 //   palette   false keeps it out of the command palette
 //   offered(ctx)  false keeps it out of the palette for now (Share on a
-//             draft the user can neither share nor was shared)
+//             draft that the user cannot share and that was not shared with
+//             the user)
 //   when(ctx) true, or the reason it cannot run now, in words
 //   run(ctx, choice, picked)
 //   choices(ctx, picked)  for a command that asks for more first: the
-//             options of the next step, as choices (below); `steps` names
-//             each step, and run gets the last choice and every choice in
-//             order
-//   keyChoice(ctx)  the choice its keys run it with, without asking (Add
-//             device's plain Device)
-//   prefix    the palette query that searches what the command goes to
-//   label(ctx)  the title as things are now ('Hide minimap')
+//             options of the next step, as choices (below). `steps` names
+//             each step. run gets the last choice and every choice in order.
+//   keyChoice(ctx)  the choice that its keys run it with, without asking
+//             (the plain Device of Add device)
+//   prefix    the palette query that searches the targets of the command
+//   label(ctx)  the title in the current state ('Hide minimap')
 //   detail(ctx) a second line for the palette
 //
-// A choice is {id, title, detail?, keywords?, icon?, disabled?, value?}:
-// `disabled` is the reason it cannot be chosen, and `value` what run needs.
+// A choice is {id, title, detail?, keywords?, icon?, disabled?, value?}.
+// `disabled` is the reason it cannot be chosen, and `value` is what run
+// needs.
 //
 // The context (createCommandContext) is {store, view}: the Builder store and
-// the adapter Builder.vue implements (VIEW_API). A run may add `source`
+// the adapter that Builder.vue implements (VIEW_API). A run can add `source`
 // ('key' from the dispatcher, 'palette' from the palette) and `additive`
-// (Shift+Enter on a Go to node choice); a key press also adds `event`,
+// (Shift+Enter on a Go to node choice). A key press also adds `event`,
 // `focus` (focusScope) and `item` (the focused node, connection or row).
 
 import { nextTick, toRaw } from 'vue';
@@ -93,10 +95,12 @@ export const GROUPS = [
   'Drafts',
 ];
 
-// Where a scope's keys work, by focusScope's answer: 'fields' everywhere in
-// the view, text fields included (for keys that mean nothing to a field);
-// 'editor' everywhere but text fields; 'canvas' on the canvas itself, a node
-// or a connection; 'outline' on an outline row.
+// Where the keys of a scope work, by the result of focusScope:
+//   - 'fields': everywhere in the view, text fields included (for keys that
+//     mean nothing to a field)
+//   - 'editor': everywhere except text fields
+//   - 'canvas': on the canvas itself, a node or a connection
+//   - 'outline': on an outline row.
 export const SCOPES = {
   fields: ['field', 'editor', 'canvas', 'outline', 'landing'],
   editor: ['editor', 'canvas', 'outline', 'landing'],
@@ -125,16 +129,17 @@ export const VIEW_API = [
   // boolean: after Fit, fitView goes back to the view from before it
   'fitRestores',
   'focusMode', // boolean: focus mode is on (see focusMode.js)
-  // (name, options) publish, download, upload, scenario, share; download
+  // (name, options) publish, download, upload, scenario, share. download
   // takes {start}, the format to download at once: json, yaml, topology,
-  // png, svg or gexf
+  // png, svg or gexf.
   // Also group-pattern, the Auto-group by name pattern dialog, connect, the
   // Add a connection dialog, and regroup, the Move to a group dialog.
   // Also template, the template editor: {mode: 'diagram-new'} for a new
-  // template of the diagram, {mode: 'diagram-edit', id} for one it has,
-  // {mode: 'library-new'} for a new one of the user's library and {mode:
-  // 'library-edit', id} for one of it. And collection, a collection of the
-  // library: {id} to edit one, {templateIds} for a new one that holds them.
+  // template of the diagram, {mode: 'diagram-edit', id} for a template that
+  // it has, {mode: 'library-new'} for a new template of the user's library
+  // and {mode: 'library-edit', id} for a template of that library. Also
+  // collection, a collection of the library: {id} to edit one, {templateIds}
+  // for a new one that holds them.
   'openDialog',
   'openPalette', // ({query, command}) the command palette: dialog 'commands'
   'openShortcuts', // () the shortcut sheet: dialog 'shortcuts'
@@ -174,8 +179,8 @@ export const VIEW_API = [
   'visibleArea',
   'revealNode', // (id or ids) brings nodes into view, leaving focus as it is
   // () before a save: commits the focused text field, as its change event
-  // would, and settles the Inspector's unapplied edits; resolves to why
-  // some stay unapplied ('1 field needs attention'), or ''
+  // would, and settles the Inspector's unapplied edits. Resolves to the
+  // reason that some stay unapplied ('1 field needs attention'), or ''.
   'settleEdits',
 ];
 
@@ -269,7 +274,7 @@ function renameTarget(ctx) {
 
 // --- actions shared with the toolbar -------------------------------------------
 
-// Delete and Ungroup remove what the user was working on, so focus moves on
+// Delete and Ungroup remove what the user was working on. Thus focus moves
 // to the outline row that takes its place, or to the canvas when no row is
 // left (WCAG 2.4.3). Outline rows carry their node id in their test id.
 function outlineRows() {
@@ -314,9 +319,9 @@ function canvasItem(kind, id) {
   );
 }
 
-// The part of the view an element is in, for a place to put focus when the
-// element is gone: 'canvas' (the canvas, its nodes and connections, not its
-// zoom buttons), 'outline', 'inspector', or '' elsewhere.
+// The part of the view that holds an element, to find a place for focus when
+// the element is gone: 'canvas' (the canvas, its nodes and connections, not
+// its zoom buttons), 'outline', 'inspector', or '' elsewhere.
 function regionOf(element) {
   if (element?.closest?.(CANVAS)) {
     return element.matches(CANVAS) || element.matches(CANVAS_ITEM)
@@ -330,8 +335,8 @@ function regionOf(element) {
   return element?.closest?.('.builder-inspector') ? 'inspector' : '';
 }
 
-// The heading of each region takes focus in its place; the canvas section
-// is its own. On the landing, the shown tab does.
+// The heading of each region takes focus in its place. The canvas section
+// is its own heading. On the landing, the shown tab takes focus.
 const REGION_FOCUS = {
   canvas: '#builder-canvas',
   outline: '#outline-title',
@@ -339,10 +344,10 @@ const REGION_FOCUS = {
 };
 
 /**
- * Notes what has focus before a command runs, so that focus can go back to
- * the same thing if the command re-renders or removes it (see keepFocus):
- * an outline row or a canvas node or connection, by its id, else an element
- * by its id or test id. Only focus inside the Builder is noted.
+ * Records what has focus before a command runs, so that focus can go back to
+ * the same thing if the command re-renders or removes it (see keepFocus).
+ * This is an outline row or a canvas node or connection, by its id, or else
+ * an element by its id or test id. Only focus inside the Builder is recorded.
  *
  * @returns {{element: Element, find: () => (Element|null), region: string,
  *   editing: boolean}|null}
@@ -399,9 +404,9 @@ function nextFrame() {
 
 /**
  * Focuses an element as soon as it can take focus. Vue Flow shows a node
- * it has just rendered only once it has measured it, a frame or two later,
- * and a hidden node cannot take focus, so this tries again on the next
- * frames. It gives up, as done, once focus has gone anywhere else.
+ * that it just rendered only after it measures it, a frame or two later. A
+ * hidden node cannot take focus, so this function tries again on the next
+ * frames. It stops, as done, when focus goes to any other element.
  *
  * @param {Element} element
  * @returns {Promise<boolean>} false when the element never took focus and
@@ -431,10 +436,11 @@ async function focusSoon(element) {
 
 /**
  * Puts focus back after a command, when the command left it on <body> or on
- * an element it removed (WCAG 2.4.3): on the same item, re-rendered (a row
- * that moved into a group, a node an undo put back), or else on the heading
- * of the region it was in, the canvas, or on the landing its shown tab.
- * Vue Flow renders a tick after the store, so this waits two.
+ * an element that it removed (WCAG 2.4.3). Focus goes to the same item,
+ * re-rendered (a row that moved into a group, a node that an undo put back).
+ * If not, it goes to the heading of its region, the canvas, or on the
+ * landing to the shown tab. Vue Flow renders a tick after the store, so this
+ * function waits two ticks.
  *
  * @param {object|null} note noteFocus's
  */
@@ -480,7 +486,7 @@ export async function deleteSelection(store) {
 /**
  * Ungroups the selected group, then focuses one of its members: its outline
  * row, or with `canvas` (the key came from the canvas) its node there, so
- * the arrow keys go on moving between nodes.
+ * the arrow keys continue to move between nodes.
  *
  * @param {object} store
  * @param {object} [options]
@@ -519,8 +525,8 @@ export async function ungroupSelection(store, { canvas = false } = {}) {
 /**
  * Groups the selected nodes, then focuses the new group: its outline row,
  * or with `canvas` (the key came from the canvas) its node there. Grouping
- * moves the members' rows and nodes into the group, which re-renders the
- * one that had focus.
+ * moves the rows and nodes of the members into the group, which re-renders
+ * the one that had focus.
  *
  * @param {object} store
  * @param {object} [options]
@@ -558,21 +564,21 @@ function nothingToSave({ autosave, saveState }) {
 }
 
 /**
- * Saves now, as Save now's key and the palette do, what the user sees: the
- * focused text field is committed first, as its change event would commit
- * it (the Diagram name commits only on change), and the Inspector's
- * unapplied edits are settled (view.settleEdits): valid edits are merged
- * into their element as it is now and applied, as Apply would, even while a
- * redo is pending. Edits it cannot apply stay in the Inspector, and the
- * outcome says so. When that leaves nothing to save, nothing is sent and no
- * snapshot is made, and the outcome says that instead.
+ * Saves what the user sees now, as the Save now key and the palette do.
+ * First, it commits the focused text field, as its change event would (the
+ * Diagram name commits only on change). Then it settles the Inspector's
+ * unapplied edits (view.settleEdits). Valid edits are merged into the
+ * current state of their element and applied, as Apply would, even while a
+ * redo is pending. Edits that it cannot apply stay in the Inspector, and the
+ * outcome says so. When nothing is left to save, nothing is sent and no
+ * snapshot is made, and the outcome says that.
  *
  * @param {object} ctx createCommandContext's
  * @returns {Promise<object>} the save state
  */
 export async function saveDraft({ store, view }) {
-  // The queue's work when the key was pressed, and whether it had ended by
-  // the time the edits are settled: until then, an edit may still be on its
+  // The queue's work when the key was pressed, and whether that work ended
+  // before the edits are settled. Until then, an edit can still be on its
   // way to the queue, and the save state would not count it yet.
   const work = store.queueWork;
   let idle = !work;
@@ -611,7 +617,7 @@ function imageOf(node) {
   return (Array.isArray(drives) && drives[0]?.image) || '';
 }
 
-// Items by id; the first wins, as find() would have it.
+// Items by id. The first item wins, as with find().
 function byId(items) {
   const map = new Map();
 
@@ -693,14 +699,14 @@ function nodeFields(node, networks, interfaces, image) {
 }
 
 /**
- * Every node, as a choice for Go to node. Beside the name, a node is found
- * by its hostname, label, image, networks and VLAN aliases, and the IP and
- * MAC addresses of its interfaces: its `fields`, each {label, value}, and as
- * plain words its keywords.
+ * Every node, as a choice for Go to node. In addition to the name, these
+ * find a node: its hostname, label, image, networks and VLAN aliases, and
+ * the IP and MAC addresses of its interfaces. They are its `fields`, each
+ * {label, value}, and also its keywords as plain words.
  *
  * The document is read in one pass, whatever its size. It is read as the
- * plain object: the store replaces its document on every edit rather than
- * changing it, so Vue need not track every field of every node.
+ * plain object. The store replaces its document on every edit and does not
+ * change it, so Vue does not need to track every field of every node.
  *
  * @param {object} doc
  * @param {string[]} [ids] only these nodes, in the document's order
@@ -794,11 +800,11 @@ function networkChoices(doc) {
   });
 }
 
-// Selects a node alone, or with `additive` adds it to the selection or takes
-// it out, as Shift+Enter does on the canvas; the plain choice then shows it.
-// The palette, which stays open for Shift+Enter, says the change on its own
-// status line: the live region waits for the palette to close, and by then
-// the message may no longer hold.
+// Selects only a node, or with `additive` adds it to the selection or removes
+// it, as Shift+Enter does on the canvas. The plain choice then shows it. The
+// palette stays open for Shift+Enter, and says the change on its own status
+// line. The live region waits for the palette to close, and by then the
+// message can be out of date.
 function goToNode(ctx, id) {
   const { store } = ctx;
 
@@ -824,8 +830,8 @@ function goToNode(ctx, id) {
   ctx.view.showNode(id);
 }
 
-// A topology read from the Builder file it names is listed with the
-// published diagrams, by the handle its row has for an id, and says so.
+// A topology read from the Builder file that it names is listed with the
+// published diagrams, by the handle of its row as an id, and says so.
 function draftChoices(store) {
   const name = (item) => item.name || item.title || item.target || item.id;
   const from = (items, where) =>
@@ -909,9 +915,9 @@ function theme(value, title) {
   };
 }
 
-// Lays the diagram out with one layout, which the draft then keeps (the
-// toolbar's layout menu has the same choices). The draft's own is marked;
-// at Default none is.
+// Lays out the diagram with one layout, which the draft then keeps (the
+// toolbar's layout menu has the same choices). The draft's own layout is
+// marked. At Default, no layout is marked.
 function layoutChoice({ id, label, summary }) {
   return {
     id: `structure.layout.${id}`,
@@ -974,10 +980,10 @@ function landingTab(id, title, empty = () => '') {
 // The word the Download commands also answer to in the palette.
 const DOWNLOAD_ALIASES = ['export'];
 
-// Downloads the diagram in one format: the Download dialog opens and starts
-// that download at once, so its result, its errors and what keeps a topology
-// from being published show where the dialog's own buttons show them. It
-// works in a read-only draft, as Download… does.
+// Downloads the diagram in one format. The Download dialog opens and starts
+// that download at once. Thus its result, its errors and what stops a
+// topology from being published show where the dialog's own buttons show
+// them. It works in a read-only draft, as Download… does.
 function downloadAs(format, name, detail, keywords) {
   return {
     id: `draft.download.${format}`,
@@ -990,8 +996,9 @@ function downloadAs(format, name, detail, keywords) {
   };
 }
 
-// Share: the owner's, who may share; a draft shared with the user says who
-// may. Anyone else's draft, and a diagram with no draft, are not offered it.
+// Share: offered to the owner, who can share. A draft shared with the user
+// says who can share. It is not offered for the draft of any other user, or
+// for a diagram with no draft.
 function shareable({ store }) {
   if (store.canShare) {
     return true;
@@ -1148,9 +1155,9 @@ export const COMMANDS = [
     run: ({ store }) => deleteSelection(store),
   },
   {
-    // An outline row renames in place (BuilderOutline handles F2 there); on
-    // the canvas and from the palette, the Inspector's first field, the
-    // name or the connection's label, takes focus.
+    // An outline row renames in place (BuilderOutline handles F2 there). On
+    // the canvas and from the palette, the Inspector's first field (the name
+    // or the connection's label) takes focus.
     id: 'edit.rename',
     title: 'Rename',
     group: 'Edit',
@@ -1239,7 +1246,7 @@ export const COMMANDS = [
     palette: false,
   },
   {
-    // The canvas is one Tab stop; these move focus inside it
+    // The canvas is one Tab stop. These commands move focus inside it
     // (BuilderCanvas.vue).
     id: 'canvas.move',
     title: 'Move to the nearest node that way',
@@ -1342,8 +1349,8 @@ export const COMMANDS = [
   },
   ...GROUPING_STRATEGIES.map(autoGroupChoice),
   {
-    // Runs the draft's layout again, or for a draft with none the Settings
-    // default; each layout has a command of its own.
+    // Runs the draft's layout again, or for a draft with no layout, the
+    // Settings default. Each layout has its own command.
     id: 'structure.layout',
     title: 'Auto layout',
     group: 'Structure',
@@ -1423,8 +1430,8 @@ export const COMMANDS = [
       }),
   },
   {
-    // The outline lists nodes only, so this is where a connection is found
-    // by name and removed without a pointer; Delete on a canvas connection
+    // The outline lists only nodes, so here the user can find a connection
+    // by name and remove it without a pointer. Delete on a canvas connection
     // does the same. The interface stays, free to connect again.
     id: 'structure.disconnect',
     title: 'Disconnect',
@@ -1515,8 +1522,8 @@ export const COMMANDS = [
         paletteNode(ctx.store, 'device', choice?.value),
       );
 
-      // From the canvas key, focus moves to the new device, so the keys
-      // that follow act on it; the palette leaves focus where it is.
+      // From the canvas key, focus moves to the new device, so the next keys
+      // act on it. The palette leaves focus where it is.
       return node && ctx.source === 'key'
         ? ctx.view.showNode?.(node.id)
         : undefined;
@@ -1537,10 +1544,10 @@ export const COMMANDS = [
     run: (ctx) => addNode(ctx, { kind: item.kind, ...item.options }),
   })),
   {
-    // The toolbar's Add connection: a dialog that joins a device, by an
-    // interface it has free or a new one, to a switch, its fields filled
-    // from the selection. After the node commands, so a search for "add"
-    // that matches them alike lists them first.
+    // The toolbar's Add connection: a dialog that connects a device to a
+    // switch, through a free interface or a new one. The selection fills its
+    // fields. It comes after the node commands, so a search for "add" that
+    // matches all of them equally lists the node commands first.
     id: 'dialog.connect',
     title: 'Add a connection…',
     group: 'Add',
@@ -1725,10 +1732,10 @@ export const COMMANDS = [
     run: ({ view }) => view.resetView(),
   },
   {
-    // The headers' Focus mode button, which becomes Exit focus mode, in the
-    // editor and on the drafts. The same keys leave it; the browser's
-    // Escape leaves only full screen (see focusMode.js). They work in text
-    // fields too, as they type nothing.
+    // The Focus mode button of the headers, which becomes Exit focus mode, in
+    // the editor and on the drafts. The same keys leave focus mode. The
+    // browser's Escape leaves only full screen (see focusMode.js). The keys
+    // also work in text fields, because they type nothing.
     id: 'view.focusMode',
     title: 'Focus mode',
     group: 'View',
@@ -1823,7 +1830,7 @@ export const COMMANDS = [
     ['graph', 'analyze'],
   ),
   {
-    // The toolbar's Upload; the landing's is drafts.upload. It also
+    // The toolbar's Upload. The landing's Upload is drafts.upload. It also
     // converts a legacy Builder diagram, so "legacy" finds it.
     id: 'draft.upload',
     title: 'Upload…',
@@ -2050,8 +2057,9 @@ export function commandTitle(idOrCommand, ctx) {
 /**
  * Runs a command, or says why it cannot run (through store.announce). A
  * command that asks for choices, run without them, opens the palette on it
- * instead: at its prefix ('@') or at its first step. Focus that the command
- * re-renders or removes goes back to the same item, or near it (keepFocus).
+ * instead: at its prefix ('@') or at its first step. When the command
+ * re-renders or removes the focused element, focus goes back to the same
+ * item, or near it (keepFocus).
  *
  * @param {string|object} idOrCommand
  * @param {object} ctx createCommandContext's, with `source` and so on
@@ -2130,8 +2138,9 @@ export function isCustomizable(idOrCommand) {
 }
 
 /**
- * The keys a command answers to now: the user's keys or the defaults, less
- * the one-character keys while the single-key switch is off. Reactive.
+ * The keys that a command answers to now: the user's keys or the defaults,
+ * without the one-character keys while the single-key switch is off.
+ * Reactive.
  *
  * @param {string|object} idOrCommand
  * @param {object} [options]
@@ -2235,8 +2244,8 @@ function reachOf(command) {
 }
 
 /**
- * Whether a command's keys work in text fields, where a key that types a
- * character must be left to the field (see dispatchKeydown).
+ * Whether a command's keys work in text fields, where the field must get a
+ * key that types a character (see dispatchKeydown).
  *
  * @param {string|object} idOrCommand
  * @returns {boolean}
@@ -2246,8 +2255,8 @@ export function worksInTextFields(idOrCommand) {
 }
 
 /**
- * Whether a command may take a letter alone as a key (see keyRefusal):
- * one whose keys work only on the canvas.
+ * Whether a command can take a letter alone as a key (see keyRefusal): a
+ * command whose keys work only on the canvas.
  *
  * @param {string|object} idOrCommand
  * @returns {boolean}
@@ -2260,9 +2269,9 @@ export function takesLetters(idOrCommand) {
 
 /**
  * The command whose keys work in text fields (Command palette, Save now)
- * that a key press in one is for, if any, as dispatchKeydown finds it there.
- * A field that keeps its other keys to itself (the outline's rename field)
- * lets these go on to the dispatcher.
+ * for a key press in a text field, if any, as dispatchKeydown finds it. A
+ * field that keeps its other keys (the outline's rename field) lets these
+ * keys go to the dispatcher.
  *
  * @param {KeyboardEvent} event
  * @returns {object|null}
@@ -2281,8 +2290,8 @@ export function textFieldCommand(event) {
 }
 
 /**
- * The other commands a key would clash with if a command took it: those
- * that answer to it where the command would too.
+ * The other commands that a key would clash with if a command took it: the
+ * commands that answer to it where the command would also answer.
  *
  * @param {string|object} idOrCommand
  * @param {string} spec
@@ -2351,15 +2360,19 @@ const APP_DIALOG =
   'dialog, [role="dialog"], [role="alertdialog"], [aria-modal="true"]';
 
 /**
- * Where a key press is, for the scopes: 'dialog' (an open dialog keeps its
- * own keys), 'field', 'landing' (the drafts landing, the checkboxes that
- * select its cards too), 'canvas' (the canvas itself, a node or a
- * connection; not the zoom buttons), 'outline' (an outline row), 'editor'
- * (anywhere else in the editor, and the page itself
- * when the focused control was just removed), 'page' (outside the Builder,
- * on the rest of its page, such as the app header link that brought the
- * user here), or 'outside' (a text field or a dialog of the app's, outside
- * the Builder).
+ * Where a key press is, for the scopes:
+ *   - 'dialog': an open dialog keeps its own keys
+ *   - 'field'
+ *   - 'landing': the drafts landing, including the checkboxes that select
+ *     its cards
+ *   - 'canvas': the canvas itself, a node or a connection, but not the zoom
+ *     buttons
+ *   - 'outline': an outline row
+ *   - 'editor': anywhere else in the editor, and the page itself when the
+ *     focused control was just removed
+ *   - 'page': outside the Builder, on the rest of its page, such as the app
+ *     header link that brought the user here
+ *   - 'outside': a text field or a dialog of the app, outside the Builder.
  *
  * @param {Element} target the event's target
  * @param {object} options
@@ -2386,9 +2399,9 @@ export function focusScope(target, { root, editing }) {
     return 'dialog';
   }
 
-  // In the editor a checkbox is a field of the Inspector's form, whose
-  // edits wait for Apply, so the editing keys stay away from it as from the
-  // form's other fields. On the drafts landing it only selects a card.
+  // In the editor, a checkbox is a field of the Inspector's form, whose
+  // edits wait for Apply. Thus the editing keys ignore it, as they ignore the
+  // other fields of the form. On the drafts landing, it only selects a card.
   if (target.matches?.(TYPING) && (editing || !target.matches(CHECKBOX))) {
     return 'field';
   }
@@ -2432,15 +2445,17 @@ function itemOf(target, focus) {
 }
 
 /**
- * Runs the command a key press is for, if any: the one key handler for the
- * whole Builder view. Bound once, to the window, so it sees presses on the
- * page itself as well; outside the Builder, only the commands marked `page`
- * answer (the palette's and the shortcut sheet's keys). A control that
- * handled the press itself (it called preventDefault) keeps it, as does IME
- * composition, and a text field keeps every key that types a character
- * (typesCharacter: on macOS, ⌥ keys too), whatever command the user gave it
- * to. A matched key is always taken from the browser, even when its command
- * cannot run: the reason is announced instead. Copy leaves selected text to
+ * Runs the command for a key press, if any. This is the one key handler for
+ * the whole Builder view. It is bound once, to the window, so it also gets
+ * presses on the page itself. Outside the Builder, only the commands marked
+ * `page` answer (the keys of the palette and the shortcut sheet). These
+ * presses go to the control, not to a command:
+ *   - a press that a control handled itself (it called preventDefault)
+ *   - a press during IME composition
+ *   - in a text field, every key that types a character (typesCharacter:
+ *     on macOS, ⌥ keys too), whatever command the user gave it to.
+ * A matched key is always taken from the browser, even when its command
+ * cannot run. The reason is announced instead. Copy leaves selected text to
  * the browser.
  *
  * @param {KeyboardEvent} event
@@ -2503,7 +2518,7 @@ export function dispatchKeydown(event, ctx, { root }) {
 
 /**
  * What the keys do on a focused node or connection, and a summary for the
- * canvas itself: their accessible descriptions.
+ * canvas itself, as their accessible descriptions.
  *
  * @param {object} options
  * @param {boolean} options.readOnly
@@ -2523,9 +2538,9 @@ export function canvasHints({ readOnly, platform = currentPlatform() }) {
   const next = first('canvas.connections');
   const node = `Arrow keys move between nodes, ${next} through this node’s connections. ${select}`;
   const edge = `Arrow keys move to the nodes, ${next} to the next connection. ${select}`;
-  // The advice for screen readers is said here, where the canvas's own keys
-  // are: in browse mode the arrow keys move the virtual cursor, not the
-  // focus (see BuilderCanvas.vue).
+  // The advice for screen readers is here, with the canvas's own keys. In
+  // browse mode, the arrow keys move the virtual cursor, not the focus (see
+  // BuilderCanvas.vue).
   const sheet = shortcutLabel('shortcuts.open', { platform, text: true });
   const canvas =
     `Arrow keys move to the nodes, and ${first('selection.press')} ` +

@@ -1,29 +1,32 @@
 // Tab coordination: the tabs of this browser with the same draft open.
 //
 // Each tab keeps its own local queue of a draft (see tabRecordKey in
-// idb.js), so two tabs editing one draft never replace each other's
-// changes. A tab's id is kept in sessionStorage, so a reload finds the queue
-// the page left. A tab holds a Web Lock named after its id while it is
-// open: a duplicated tab, which copies sessionStorage, finds the lock taken
-// and takes an id of its own, and a queue whose tab holds no lock was left
-// by a tab that has closed. The other tabs ask for that lock too, which
-// they get once the page has gone, however it went: closed, crashed or
-// discarded. Without Web Locks, each page takes a new id, and a queue no
-// open tab answers for is taken as a closed tab's: the tabs answer over a
-// channel of their own who is open (see presentTabs).
+// idb.js), so two tabs that edit one draft never replace each other's
+// changes. A tab's id is kept in sessionStorage, so a reload finds the
+// queue the page left. A tab holds a Web Lock named after its id while it
+// is open:
+// - A duplicated tab, which copies sessionStorage, finds the lock taken and
+//   takes an id of its own.
+// - A queue whose tab holds no lock was left by a tab that has closed.
+// - The other tabs also ask for that lock. They get it after the page is
+//   gone, for any cause: closed, crashed or discarded.
+// Without Web Locks, each page takes a new id. A queue that no open tab
+// answers for is then a closed tab's queue. The tabs say who is open over
+// a channel of their own (see presentTabs).
 //
 // The tabs with one draft open, for one user, tell each other over a
-// BroadcastChannel (where there is none, localStorage events) whether it is
-// open in their editor, how many of their changes the server does not have
-// yet and when they made the last one. The editor warns while another tab
-// has the draft open.
+// BroadcastChannel (where there is none, localStorage events):
+// - whether the draft is open in their editor
+// - how many of their changes the server does not have yet
+// - when they made the last change
+// The editor warns while another tab has the draft open.
 //
 // Only one version of a draft's unsaved changes can be saved to it. While
 // another tab, or a queue a closed tab left, holds changes the server does
-// not have, a queue with changes of its own does not send them: the user
-// chooses which version to save (see BuilderTabsDialog.vue). Every tab
-// hears the choice. The versions not chosen are saved as new drafts, as a
-// conflict's Save my history as a new draft does (see applyChoice); a role
+// not have, a queue with changes of its own does not send them. The user
+// chooses which version to save (see BuilderTabsDialog.vue). Every tab gets
+// the choice. The versions not chosen are saved as new drafts, as a
+// conflict's Save my history as a new draft does (see applyChoice). A role
 // that cannot make drafts is offered Download first.
 
 import { count } from './announce.js';
@@ -42,9 +45,9 @@ const CHANNEL_PREFIX = 'phenix.builder.channel.';
 
 const LOCK_PREFIX = 'phenix-builder-tab:';
 
-// How long a page waits for the lock of the id sessionStorage kept. A
-// reloaded page's previous page lets go of it at once; the tab a duplicated
-// tab copied it from never does.
+// How long a page waits for the lock of the id sessionStorage kept. The
+// previous page of a reloaded page releases it at once. The tab that a
+// duplicated tab copied it from never releases it.
 export const CLAIM_WAIT_MS = 1500;
 
 // How long, without Web Locks, a tab waits for the others to answer before
@@ -80,8 +83,8 @@ function writeId(storage, id) {
 }
 
 // Takes the lock named after `tab` and holds it while the page is open.
-// Resolves whether it was taken within `waitMs`; with none, only if it was
-// free.
+// Resolves whether it was taken within `waitMs`. Without `waitMs`, it takes
+// the lock only if the lock was free.
 function holdLock(locks, tab, waitMs) {
   return new Promise((resolve) => {
     const controller =
@@ -231,8 +234,9 @@ export function openChannel(name, { Channel, storage, target } = {}) {
 }
 
 // A queue holds changes it is not sending: offline, failed or waiting for
-// the user's choice. One sending them, or that can no longer send them to
-// the draft (a conflict, or no access), does not stand in another's way.
+// the user's choice. A queue that is sending them, or that can no longer
+// send them to the draft (a conflict, or no access), does not block
+// another queue.
 function stuck(state) {
   return (
     state.pending > 0 &&
@@ -253,14 +257,20 @@ function stateOf(value = {}) {
  * What a queue knows of the other tabs with its draft open, and of the
  * queues closed tabs left of it (see the header).
  *
- * @param {object} options actor, owner, draftId; tab: this tab's id;
- *   state: this tab's queue state as it opens the draft (its changes the
- *   server does not have), which its first message says; channel
- *   (openChannel); locks (Web Locks), if any; records: () => the user's
- *   local records of the draft but this tab's; onChange: called when the
- *   other tabs, the closed tabs' queues or the user's choice change;
- *   target: the window, for pagehide and pageshow; waitMs; now, setTimeout
- *   and clearTimeout, for tests
+ * @param {object} options
+ *   - actor, owner, draftId
+ *   - tab: this tab's id
+ *   - state: this tab's queue state as it opens the draft (its changes the
+ *     server does not have), which its first message says
+ *   - channel (openChannel)
+ *   - locks (Web Locks), if any
+ *   - records: () => the user's local records of the draft, except this
+ *     tab's
+ *   - onChange: called when the other tabs, the closed tabs' queues or the
+ *     user's choice change
+ *   - target: the window, for pagehide and pageshow
+ *   - waitMs
+ *   - now, setTimeout and clearTimeout: for tests
  * @returns {object} coordinator
  */
 export function createTabCoordinator({
@@ -280,8 +290,8 @@ export function createTabCoordinator({
   clearTimeout: clearTimer = (handle) => clearTimeout(handle),
 }) {
   const self = `tab:${tab}`;
-  // The other tabs, by id, with their states, and those that left the
-  // draft: a tab closing says so before it lets go of its lock.
+  // The other tabs, by id, with their states, and the tabs that left the
+  // draft. A tab that closes says so before it releases its lock.
   const peers = new Map();
   const gone = new Set();
   // The queues closed tabs left, with changes, as versions.
@@ -308,8 +318,8 @@ export function createTabCoordinator({
     post({ type: 'here', state: mine });
   }
 
-  // Tells the other tabs this tab's state once the current task ends, so a
-  // state that lasts no longer than it is never heard.
+  // Tells the other tabs this tab's state after the current task ends. So
+  // the other tabs never get a state that ends within that task.
   function schedule() {
     if (posting !== null || ended) {
       return;
@@ -352,8 +362,8 @@ export function createTabCoordinator({
     waiting.delete(id);
   }
 
-  // A tab heard from is open: its queue is no closed tab's (a reload says
-  // bye, then hello again).
+  // A tab that sent a message is open, so its queue is not a closed tab's
+  // queue (a reload says bye, then hello again).
   function heard(id) {
     gone.delete(id);
     answered(id);
@@ -363,8 +373,8 @@ export function createTabCoordinator({
     }
   }
 
-  // Resolves once the tab with this id has been heard from, or after `ms`:
-  // whether it was.
+  // Resolves when the tab with this id sends a message, or after `ms`. The
+  // result says whether it sent one.
   function hear(id, ms) {
     if (peers.has(id) || ms <= 0) {
       return Promise.resolve(peers.has(id));
@@ -383,9 +393,9 @@ export function createTabCoordinator({
     });
   }
 
-  // The tab with this id has gone. Its changes are a closed tab's now:
-  // until the records are read again, what it last said of them stands for
-  // them, so there is never a moment with nothing to choose between.
+  // The tab with this id is gone. Its changes are a closed tab's changes
+  // now. Until the records are read again, its last message about them
+  // represents them. So there is always something to choose between.
   function left(id) {
     const peer = peers.get(id);
 
@@ -417,9 +427,10 @@ export function createTabCoordinator({
     scan();
   }
 
-  // Asks for the lock of a tab just heard from, which is free only once
-  // that page has gone, however it went: one that crashes or is discarded
-  // says no bye. A tab that holds no lock is left to its bye.
+  // Asks for the lock of a tab that just sent a message. The lock is free
+  // only after that page is gone, for any cause. A page that crashes or is
+  // discarded says no bye. For a tab that holds no lock, only its bye says
+  // that it is gone.
   async function watch(id) {
     if (
       !locks?.request ||
@@ -445,13 +456,13 @@ export function createTabCoordinator({
       }
 
       await locks.request(lockName(id), { signal: controller.signal }, () => {
-        // Let go at once: a reloaded page takes it next.
+        // Release it at once: a reloaded page takes it next.
         if (watches.get(id) === controller && !ended) {
           left(id);
         }
       });
     } catch {
-      // Given up, or no lock to wait for.
+      // Stopped, or no lock to wait for.
     } finally {
       if (watches.get(id) === controller) {
         watches.delete(id);
@@ -497,7 +508,7 @@ export function createTabCoordinator({
     }
   });
 
-  // A page put in the back-forward cache is gone until it comes back.
+  // A page put in the back-forward cache is gone until it is shown again.
   const hide = () => post({ type: 'bye' });
   const show = (event) => {
     if (event?.persisted) {
@@ -511,9 +522,9 @@ export function createTabCoordinator({
   post({ type: 'hello', state: mine });
 
   /**
-   * Whether the tab with this id is open. Its lock says so, where there
-   * are Web Locks, even for a tab this tab has heard from: one that went
-   * without a word is not.
+   * Whether the tab with this id is open. Where there are Web Locks, its
+   * lock says so, even for a tab that sent a message to this tab. A tab
+   * that closed without a bye is not open.
    *
    * @param {string} id
    * @returns {Promise<boolean>}
@@ -563,8 +574,8 @@ export function createTabCoordinator({
         continue;
       }
 
-      // An open tab's changes are its own; what it says of them comes in
-      // answer to this tab's hello, before this tab sends anything.
+      // An open tab's changes are its own. Its message about them comes as
+      // the answer to this tab's hello, before this tab sends anything.
       if (await live(record.tab)) {
         if (channel.connected) {
           await hear(record.tab, waitMs - (now() - startedAt));
@@ -694,12 +705,12 @@ export function answerPresence(channel, tab) {
 
 /**
  * The ids of the other open tabs that answer over `channel` within
- * `waitMs` (see answerPresence): which tabs are open, where there are no
- * Web Locks to say. The channel is closed afterwards. Where no channel
- * works, none answers.
+ * `waitMs` (see answerPresence). This tells which tabs are open where there
+ * are no Web Locks. The channel closes after that. Where no channel works,
+ * no tab answers.
  *
  * @param {object} options channel (openChannel), self (this tab's id, if
- *   it has one), waitMs; setTimeout, for tests
+ *   it has one), waitMs. setTimeout: for tests
  * @returns {Promise<Set<string>>}
  */
 export function presentTabs({
@@ -790,8 +801,8 @@ export const builderTabs = {
 
   /**
    * @returns {Promise<Set<string>>} the ids of this browser's other open
-   *   tabs: those that hold a lock (see claimTab), or where there are no
-   *   Web Locks, those that answer over the presence channel
+   *   tabs: the tabs that hold a lock (see claimTab). Where there are no Web
+   *   Locks, the tabs that answer over the presence channel
    */
   async others() {
     const { locks } = page();
@@ -894,8 +905,9 @@ export function tabsNotice(state) {
 
 /**
  * Whether the user has to choose which version of the draft's unsaved
- * changes to save: a send waits for it, or closed tabs left more than one
- * queue and this tab has no changes of its own.
+ * changes to save. This is true when a send waits for the choice, or when
+ * closed tabs left more than one queue and this tab has no changes of its
+ * own.
  *
  * @param {object} state queue state
  * @returns {boolean}
@@ -916,8 +928,8 @@ export function needsChoice(state) {
 
 /**
  * The versions the choice lists: this tab's first, then the other tabs',
- * then the closed tabs'. Each is named by where it is, numbered when there
- * are several of a kind.
+ * then the closed tabs'. Each is named by where it is, with a number when
+ * there are several of a kind.
  *
  * @param {object} state queue state
  * @param {Function} [time] formats a change's time
@@ -965,11 +977,11 @@ export function choiceRows(state, time = (value) => value || '') {
  * it from this browser. Its history is the diagrams its operations made,
  * in order (see replayHistory), each named `title`.
  *
- * @param {object} options api, store, actor; key: the queue's record;
+ * @param {object} options api, store, actor. key: the queue's record.
  *   title: (name) => the new draft's title, from the diagram's name
- * @returns {Promise<object|null>} the new draft, or null when the queue
- *   holds no diagram of its own (undo and redo to snapshots the server
- *   keeps), which is removed
+ * @returns {Promise<object|null>} the new draft. null when the queue holds
+ *   no diagram of its own (undo and redo to snapshots the server keeps).
+ *   Such a queue is removed
  */
 export async function forkClosedQueue({ api, store, actor, key, title }) {
   const found = await store.get(key);
@@ -1011,14 +1023,17 @@ export async function forkClosedQueue({ api, store, actor, key, title }) {
 }
 
 /**
- * Carries out the user's choice of which version of a draft's unsaved
- * changes to save (see the header). Every tab hears it: a tab whose
- * changes were not chosen keeps them as a new draft. Each queue a closed
- * tab left that was not chosen is kept so (keepClosed), and so are this
- * tab's own changes when not chosen (keepMine), which leaves the draft. A
- * closed tab's queue that was chosen is then taken, as the draft opens
- * again (reopen). Another tab's that has gone since it was listed is not
- * carried out: its changes are a closed tab's now, and the list changes.
+ * Applies the user's choice of which version of a draft's unsaved changes
+ * to save (see the header). Every tab gets the choice. A tab whose changes
+ * were not chosen keeps them as a new draft:
+ * - Each queue that a closed tab left and that was not chosen becomes a
+ *   new draft (keepClosed).
+ * - This tab's own changes, when not chosen, become a new draft
+ *   (keepMine), and this tab leaves the draft.
+ * When the user chose a closed tab's queue, the draft opens again and
+ * takes that queue (reopen). When the chosen tab closed after the list was
+ * made, nothing is applied. Its changes are a closed tab's changes now,
+ * and the list changes.
  *
  * @param {object} options
  * @param {string} options.choice the chosen version's id
@@ -1028,8 +1043,8 @@ export async function forkClosedQueue({ api, store, actor, key, title }) {
  * @param {(version: object) => Promise<*>} options.keepClosed
  * @param {() => Promise<*>} options.reopen
  * @returns {Promise<{kept: object[], failed: object[], gone?: boolean}>}
- *   the closed tabs' queues kept, and those that could not be; gone: the
- *   chosen tab had gone, and nothing was done
+ *   kept: the closed tabs' queues kept. failed: the queues that could not
+ *   be kept. gone: the chosen tab closed, and nothing was done
  */
 export async function applyChoice({
   choice,
@@ -1050,7 +1065,7 @@ export async function applyChoice({
     return { kept, failed, gone: true };
   }
 
-  // This tab's queue no longer sends, once told.
+  // After this call, this tab's queue no longer sends.
   queue.chooseVersion(choice);
 
   for (const version of rows) {

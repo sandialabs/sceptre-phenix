@@ -1,7 +1,7 @@
-// Package memrecord is an in-memory [store.RecordStore] for tests, with the
-// revision and compare-and-swap rules of the real stores and hooks that inject
-// failures or land another writer between two steps. It is imported only by
-// tests. It is not part of package recordtest because it imports phenix/store,
+// Package memrecord is an in-memory [store.RecordStore] for tests. It has the
+// revision and compare-and-swap rules of the real stores, and hooks that
+// inject failures or put another writer between two steps. Only tests import
+// it. It is not part of package recordtest because it imports phenix/store,
 // whose own tests import recordtest.
 package memrecord
 
@@ -23,15 +23,15 @@ type Store struct {
 
 	// BeforeCreate, when set, runs before CreateRecord takes the store lock. It
 	// may call back into the store, which is how tests interleave a concurrent
-	// writer deterministically; a non-nil error fails the create.
+	// writer deterministically. A non-nil error fails the create.
 	BeforeCreate func(namespace, key string) error
 	// BeforeUpdate is BeforeCreate for UpdateRecord.
 	BeforeUpdate func(namespace, key string) error
-	// AfterWrite, when set and returning a non-nil error, makes CreateRecord
-	// and UpdateRecord commit their write and then return that error, the way
-	// an etcd transaction can time out after its proposal was applied. It runs
-	// under the store lock, so it must not call back into the store, except
-	// through [Store.RewriteLocked].
+	// AfterWrite, when set and when it returns a non-nil error, makes
+	// CreateRecord and UpdateRecord commit their write and then return that
+	// error. An etcd transaction does the same when it times out after its
+	// proposal was applied. It runs under the store lock, so it must not call
+	// back into the store, except through [Store.RewriteLocked].
 	AfterWrite func(namespace, key string) error
 	// FailDelete, when set and returning a non-nil error, makes DeleteRecord
 	// fail for the namespace and key, and DeleteRecordPrefix for the namespace
@@ -39,9 +39,9 @@ type Store struct {
 	FailDelete func(namespace, keyOrPrefix string) error
 	// FailPrefixDelete is FailDelete for DeleteRecordPrefix alone.
 	FailPrefixDelete func(namespace, prefix string) error
-	// Stamp, when set, returns the time written records are stamped with, the
-	// way a real store stamps them with its wall clock. When nil, a record is
-	// stamped with [Time] of its revision.
+	// Stamp, when set, returns the time to stamp on written records, as a real
+	// store stamps them with its wall clock. When it is nil, a record gets the
+	// [Time] of its revision.
 	Stamp func() time.Time
 }
 
@@ -60,7 +60,7 @@ func New() *Store {
 	}
 }
 
-// compile-time check that the fake keeps up with the interface it stands in for.
+// Compile-time check that the fake implements the interface it stands in for.
 var _ store.RecordStore = (*Store)(nil)
 
 // Time is the deterministic time a record written at revision n is stamped

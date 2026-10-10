@@ -1,21 +1,22 @@
-// The colors people give networks, notes and groups, as the canvas draws
+// The colors that people give networks, notes and groups, as the canvas draws
 // them.
 //
-// A network's connections are drawn in its color, with its dash pattern and
-// label beside it, so color is never the only cue. The colors addNetwork
-// picks, which the color picker suggests, are drawn with the theme's network
-// token of the same place (--bx-net-N for the Nth), which keeps 3:1 against
-// the canvas in both themes. Any other color the user chose is drawn as
-// chosen; where it would not keep 3:1 against a theme's canvas, the line is
-// cased in that theme's text color there, so it never fades into the canvas
-// (WCAG 1.4.11). Notes and groups show theirs as an accent bar, and
-// switches as a swatch, both decorative: their names say what they are.
+// The canvas draws a network's connections in its color, with its dash
+// pattern and label beside them, so color is never the only cue. The colors
+// that addNetwork picks (the color picker suggests them) are drawn with the
+// theme's network token at the same position (--bx-net-N for the Nth). These
+// tokens keep 3:1 against the canvas in both themes. Any other color that the
+// user chose is drawn as chosen. Where that color does not keep 3:1 against a
+// theme's canvas, the line gets a casing in that theme's text color, so it
+// never fades into the canvas (WCAG 1.4.11). Notes and groups show their
+// color as an accent bar, and switches as a swatch. Both are decorative,
+// because their names tell what they are.
 //
-// A device or a switch may also have a fill and an outline of its own, each
-// an opaque #rrggbb. Its text and icon on a fill are black or white,
-// whichever reads better on it (WCAG 1.4.3), and an outline that would not
-// keep 3:1 against a theme's canvas gets a ring in that theme's text color
-// there, as a low-contrast line gets a casing.
+// A device or a switch can also have its own fill and outline, each an opaque
+// #rrggbb. Its text and icon on a fill are black or white, whichever is easier
+// to read on it (WCAG 1.4.3). An outline that does not keep 3:1 against a
+// theme's canvas gets a ring in that theme's text color, as a low-contrast
+// line gets a casing.
 
 import { DEFAULT_NETWORK_COLORS, HEX_COLOR } from './model.js';
 
@@ -44,8 +45,8 @@ function drawable(value) {
 }
 
 /**
- * A color as drawn: the value, trimmed, when it is one the browser can draw;
- * '' when there is none or it is not a color.
+ * A color as drawn: the trimmed value when the browser can draw it. '' when
+ * there is no value or it is not a color.
  *
  * @param {string} value
  * @returns {string}
@@ -57,8 +58,8 @@ export function drawnColor(value) {
 }
 
 /**
- * The theme token a network color is drawn with: N of --bx-net-N for the
- * Nth color addNetwork picks, -1 for any other color or none.
+ * The theme token that draws a network color: N of --bx-net-N for the Nth
+ * color that addNetwork picks. -1 for any other color or for none.
  *
  * @param {string} value
  * @returns {number}
@@ -68,8 +69,9 @@ export function networkColorToken(value) {
 }
 
 /**
- * A network color the user chose, or '' for none, one addNetwork picks
- * (drawn with the theme's token) or one that is not a color.
+ * A network color that the user chose. '' for none, for a color that
+ * addNetwork picks (drawn with the theme's token) or for a value that is not
+ * a color.
  *
  * @param {string} value
  * @returns {string}
@@ -79,9 +81,9 @@ export function customNetworkColor(value) {
 }
 
 /**
- * A network color as the canvas draws it, for a swatch of it: the theme's
- * token for one addNetwork picks, else the color as chosen; '' for none or
- * one that is not a color.
+ * A network color as the canvas draws it, for a swatch: the theme's token for
+ * a color that addNetwork picks, or else the color as chosen. '' for none or
+ * for a value that is not a color.
  *
  * @param {string} value
  * @returns {string}
@@ -94,7 +96,7 @@ export function drawnNetworkColor(value) {
 
 /**
  * The channels of a hex (#rgb, #rgba, #rrggbb or #rrggbbaa) or rgb() color.
- * r, g and b are as written, decimals and all; a is from 0 to 1.
+ * r, g and b are as written, decimals included. a is from 0 to 1.
  *
  * @param {string} value
  * @returns {number[]|null} [r, g, b, a], or null for any other color
@@ -130,8 +132,8 @@ export function colorChannels(value) {
 }
 
 /**
- * A hex or rgb() color as the #rrggbb a native color input takes: its
- * channels rounded, and its alpha left out.
+ * A hex or rgb() color as the #rrggbb that a native color input takes: its
+ * channels rounded and its alpha removed.
  *
  * @param {string} value
  * @returns {string|null} null for any other color, or one with a channel
@@ -149,8 +151,8 @@ export function opaqueHex(value) {
     .join('')}`;
 }
 
-// [r, g, b] from 0 to 255 for an opaque hex or rgb() color; null for any
-// other, a translucent one included.
+// [r, g, b] from 0 to 255 for an opaque hex or rgb() color. null for any
+// other color, translucent colors included.
 function channels(color) {
   const found = colorChannels(color);
 
@@ -190,9 +192,9 @@ export function contrastRatio(a, b) {
 }
 
 /**
- * The themes in which a line of this color needs a casing: those whose
- * canvas or grid it keeps less than 3:1 against, and both when its contrast
- * cannot be read (a named or translucent color).
+ * The themes in which a line of this color needs a casing. These are the
+ * themes whose canvas or grid it keeps less than 3:1 against. Both themes
+ * when its contrast cannot be read (a named or translucent color).
  *
  * @param {string} color a drawn color
  * @returns {{light: boolean, dark: boolean}}
@@ -210,12 +212,12 @@ export function needsCasing(color) {
 
 /**
  * The color of text and icons on an opaque fill: black or white, whichever
- * contrasts more with it. The better of the two keeps at least 4.58:1 on any
- * fill, so text on it meets WCAG 1.4.3 and an icon 1.4.11.
+ * has more contrast with it. The better of the two keeps at least 4.58:1 on
+ * any fill. Thus text on it meets WCAG 1.4.3 and an icon meets WCAG 1.4.11.
  *
  * @param {string} fill a hex or rgb() color
- * @returns {string} '#000000' or '#ffffff'; '' when the fill is not an
- *   opaque color this can read
+ * @returns {string} '#000000' or '#ffffff'. '' when the fill is not an
+ *   opaque color that this function can read.
  */
 export function inkOn(fill) {
   const onBlack = contrastRatio(fill, '#000000');
@@ -229,15 +231,15 @@ export function inkOn(fill) {
 }
 
 /**
- * The colors a device or a switch is drawn in, from its payload. A value
- * that is not #rrggbb, which only an edited file can hold, is not drawn.
+ * The colors of a device or a switch, from its payload. A value that is not
+ * #rrggbb is not drawn. Only an edited file can hold such a value.
  *
  * @param {object} [payload] node.device or node.switch
  * @returns {{fill: string, outline: string, ink: string,
- *   low: {light: boolean, dark: boolean}|null}} fill and outline are ''
- *   for none; ink is the text color on the fill, or ''; low says in which
+ *   low: {light: boolean, dark: boolean}|null}} fill and outline are '' for
+ *   none. ink is the text color on the fill, or ''. low tells in which
  *   themes the outline needs a ring to show (see needsCasing), or null
- *   without an outline
+ *   without an outline.
  */
 export function nodeColors(payload) {
   const hex = (value) =>

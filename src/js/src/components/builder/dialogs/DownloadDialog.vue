@@ -4,21 +4,21 @@
 
   A Builder JSON or YAML file carries a copy of every custom icon the
   diagram uses, taken from the server's icon library, so the file stands on
-  its own; an icon the library no longer has is left out, and the status
-  says which.
+  its own. An icon that the library no longer has is left out, and the
+  status says which.
 
-  Topology YAML comes from the server, which owns that conversion, so the file
-  is the config Publish would write; a client rendering could disagree with
-  it. What keeps the topology from being published yet is said after the
-  download.
+  Topology YAML comes from the server, which owns that conversion. Thus the
+  file is the config that Publish would write. A client rendering could
+  disagree with it. After the download, the dialog says what keeps the
+  topology from being published yet.
 
-  Images always cover the whole diagram (all node bounds), not just the part
-  currently visible on screen.
+  Images always cover the whole diagram (all node bounds), not only the part
+  visible on screen.
 
   Gephi (GEXF) is the network as a graph for analysis in Gephi, built here
   from the diagram (see gexf.js). It is not a format the Builder imports. The
   scenarios the diagram lists are read from the server first, for the apps
-  each device runs; when one cannot be read, the file leaves the apps out
+  each device runs. When one cannot be read, the file leaves the apps out
   and the status says why.
 
   The buttons are in two rows: the documents and the config (Builder JSON,
@@ -26,19 +26,20 @@
   Gephi (GEXF)). Each row wraps on its own in a narrow dialog.
 
   Builder package, below them, comes from the server (POST /builder/package,
-  see package.js): one JSON or YAML file with the diagram and the lists of
-  what it needs, carrying also the sections the user ticks, none by
+  see package.js). It is one JSON or YAML file with the diagram and the lists
+  of what it needs. It also carries the sections the user ticks, none by
   default. What the package names but does not carry (a scenario the user's
   role cannot read, an icon the server lacks) is listed before the file is
-  saved, and the user saves it anyway or does not.
+  saved. The user then saves it anyway or does not.
 
   A palette command that names a format (Download PNG) opens the dialog with
-  `start`: that format's button takes focus and its download starts at once,
-  so its result and its errors show here as they do after a press.
+  `start`. That format's button takes focus and its download starts
+  immediately. Thus its result and its errors show here as they do after a
+  press.
 
   The Inspector's unapplied edits are saved before the dialog opens (see
-  leave.js). Edits it cannot apply keep every download from being made,
-  rather than being left out, and the dialog says so as it opens.
+  leave.js). Edits that the Inspector cannot apply stop every download, so
+  that no file leaves them out. The dialog says so when it opens.
 -->
 <template>
   <builder-dialog
@@ -78,8 +79,8 @@
         <builder-icon name="download" :size="14" />
         Builder YAML
       </button>
-      <!-- While the server makes the file, a turning ring in place of the
-           icon; reduced motion stops it turning (see builder.css). -->
+      <!-- While the server makes the file, a turning ring replaces the
+           icon. Reduced motion stops the turning (see builder.css). -->
       <button
         :ref="formatButtons.topology"
         type="button"
@@ -300,7 +301,7 @@
     // The Inspector's edits that could not be applied (see leave.js).
     unapplied: { type: Object, default: null },
     // The format to download as the dialog opens: json, yaml, topology,
-    // png, svg or gexf; '' to wait for a press.
+    // png, svg or gexf. '' waits for a press.
     start: { type: String, default: '' },
   });
 
@@ -341,9 +342,8 @@
     }),
   );
 
-  // A Builder JSON or YAML file carries every custom icon the diagram uses
-  // (see downloadDocument), from the server's icon library, which is read
-  // first unless it was read already.
+  // Reads the server's icon library first, unless it was read already, for
+  // the custom icons that the file carries (see downloadDocument).
   async function downloadText(kind) {
     error.clear();
 
@@ -444,8 +444,8 @@
 
       if (built.warnings.length) {
         status.clear();
-        // Each warning is an issue with its code; one the server sends as
-        // plain text is shown as it is.
+        // Each warning is an issue with its code. A warning that the server
+        // sends as plain text shows as it is.
         packageHeld.value = {
           pkg: built.package,
           format,
@@ -532,9 +532,8 @@
   }
 
   // The network as a GEXF graph (see gexf.js), dated by the diagram's last
-  // change (see lastModified). The scenarios the diagram lists are read
-  // again first, for the apps each device runs; when one of them cannot be
-  // read, the file lists no apps rather than some of them.
+  // change (see lastModified). The scenarios are read again first. When one
+  // of them cannot be read, the file lists no apps, not some of them.
   async function downloadGEXF() {
     // A busy button keeps focus, so it can still be pressed.
     if (busy.value) {
@@ -619,9 +618,10 @@
     ]),
   );
 
-  // A command's format starts once the dialog is drawn, from its button,
-  // which takes focus as if it had been pressed. With edits the Inspector
-  // cannot apply nothing starts: the dialog says why, as for a press.
+  // A command's format starts after the dialog is drawn, from its button,
+  // which takes focus as if the user pressed it. When the Inspector has
+  // edits that it cannot apply, nothing starts. The dialog says why, as
+  // for a press.
   onMounted(async () => {
     const download = Object.hasOwn(FORMATS, props.start)
       ? FORMATS[props.start]

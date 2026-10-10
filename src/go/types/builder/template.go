@@ -6,10 +6,11 @@ import (
 	"strings"
 )
 
-// Bounds on device templates. Unlike a diagram's other counts and sizes,
-// which the API layer bounds, these are checked by [Document.Validate], as
-// the editor checks them: a template is made in the editor, which must say
-// which one is too large rather than have the server refuse the save.
+// Bounds on device templates. The API layer bounds the other counts and
+// sizes of a diagram. [Document.Validate] checks these bounds, as the editor
+// does. A template is made in the editor, so the editor must tell which
+// template is too large. The server must not be the first to refuse the
+// save.
 const (
 	// MaxTemplates is the most templates a document may carry (see
 	// [Document.Templates]).
@@ -48,8 +49,8 @@ type Template struct {
 }
 
 // TemplateDevice is what a template fills in: every field of a [Device]
-// but its hostname, its interface handles and where it was included from,
-// with the same names. The device's hostname comes from the spec.
+// other than its hostname, its interface handles and where it was included
+// from, with the same names. The device's hostname comes from the spec.
 type TemplateDevice struct {
 	IconKey      string `json:"iconKey,omitempty"`
 	Icon         string `json:"icon,omitempty"`
@@ -167,8 +168,8 @@ func (t *Template) Issues(path string) []Issue {
 	return issues
 }
 
-// normalize canonicalizes the template's device spec as a device node's is
-// (see normalizeDocument).
+// normalize makes the device spec of the template canonical, as for a device
+// node (see normalizeDocument).
 func (t *Template) normalize() error {
 	if t.Device.Spec == nil {
 		return nil
@@ -189,9 +190,10 @@ func (t *Template) normalize() error {
 // they are a library's, never a document's.
 //
 // The spec of each is what the editor writes for a new device of that kind,
-// named after the template's id. phenix's vrouter app configures routing and
-// rulesets only on nodes of type Router or Firewall, and there through their
-// router OS types (minirouter, vyatta or vyos), so those two say both.
+// named after the template's id. The vrouter app of phenix configures
+// routing and rulesets only on nodes of type Router or Firewall, and only
+// through their router OS types (minirouter, vyatta or vyos). Thus the
+// Router and Firewall templates give both the type and the OS type.
 func BuiltinTemplates() []Template {
 	return []Template{
 		builtinTemplate("server", "Server", "Generic Linux server", IconServer,

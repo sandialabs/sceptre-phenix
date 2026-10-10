@@ -5,15 +5,15 @@
 // as one JSON object that holds the settings changed from their defaults:
 //   { "layoutAlgorithm": "dagre", "showMinimap": false }
 // Every value is one of the choices listed below, or a number from a fixed
-// range, so nothing about the user or their work (names, drafts, tokens)
+// range. So nothing about the user or their work (names, drafts, tokens)
 // can be stored there, and logout keeps the key (see session.js). The theme
-// and the keyboard shortcuts keep keys of their own (theme.js, keymap.js);
-// the dialog shows them with these.
+// and the keyboard shortcuts have keys of their own (theme.js, keymap.js).
+// The dialog shows them with these settings.
 //
 // Storage that is blocked or full is not an error: the settings then last
-// as long as the page. A stored setting this Builder does not know, from
-// another version of it, or a value it no longer offers, is dropped, and
-// the setting's default applies.
+// as long as the page. The Builder drops a stored setting that it does not
+// know (from another version of the Builder), or a value that it no longer
+// offers. The setting's default then applies.
 
 import { reactive } from 'vue';
 
@@ -51,9 +51,9 @@ const SETTINGS = {
   // shows or hides it until the next diagram opens.
   showMinimap: { default: true, valid: isBoolean },
   // Whether devices and switches show their notes below them on the canvas
-  // and in image downloads, and the layouts leave room for them
+  // and in image downloads, and the layouts keep space for them
   // (nodes/NodeNotes.vue, nodeNotes.js). The palette's view.nodeNotes
-  // turns it on and off.
+  // toggles it.
   showNodeNotes: { default: true, valid: isBoolean },
   // The zoom a diagram opens with, which Reset view goes back to.
   openZoom: { default: 'actual', valid: (value) => OPEN_ZOOMS.includes(value) },
@@ -107,7 +107,8 @@ function readStored(storage) {
   );
 }
 
-// Keeps the settings changed from their defaults; none removes the key.
+// Stores the settings changed from their defaults. When there are none, it
+// removes the key.
 function writeStored(settings, storage) {
   const changed = Object.fromEntries(
     Object.entries(settings).filter(
@@ -127,10 +128,10 @@ function writeStored(settings, storage) {
 }
 
 /**
- * Reads the stored settings; any not stored, or unreadable, takes its
- * default. Only the settings whose value changes are written, so what
- * follows one setting (the view's minimap) hears nothing when another tab
- * changes another.
+ * Reads the stored settings. A setting that is not stored, or that cannot
+ * be read, takes its default. Only the settings whose value changes are
+ * written. So code that follows one setting (the view's minimap) gets no
+ * signal when another tab changes a different setting.
  *
  * @param {Storage|null} [storage] localStorage by default
  * @returns {object} builderSettings
@@ -178,7 +179,7 @@ export function settingsAtDefaults() {
 }
 
 /**
- * Gives every setting its default back, and forgets the stored ones.
+ * Sets every setting to its default, and forgets the stored settings.
  *
  * @param {Storage|null} [storage] localStorage by default
  */

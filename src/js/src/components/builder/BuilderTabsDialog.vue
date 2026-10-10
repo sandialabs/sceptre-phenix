@@ -3,13 +3,14 @@
   tab of this browser holds some (see builder/tabs.js).
 
   A modal dialog (see BuilderDialog) with one radio button per version:
-  this tab's, the other tabs', and those closed tabs left, each with how
-  many changes it holds and when the last was made. Save this version
-  saves the one chosen to the draft; the others are saved as new drafts,
-  or, for a role that cannot make drafts, deleted from this browser, which
-  the dialog says first. Download keeps a copy of each version this tab can
-  read. Decide later, Escape or a click outside close it: nothing is sent
-  meanwhile, and the editor's notice opens it again.
+  this tab's, the other tabs', and the versions that closed tabs left. Each
+  shows how many changes it holds and the time of the last change. Save
+  this version saves the chosen version to the draft. The others become new
+  drafts. For a role that cannot make drafts, the dialog deletes them from
+  this browser, and says so first. Download keeps a copy of each version
+  this tab can read. Decide later, Escape or a click outside closes the
+  dialog. Nothing is sent meanwhile, and the editor's notice opens the
+  dialog again.
 -->
 <template>
   <builder-dialog
@@ -89,7 +90,7 @@
     rows: { type: Array, required: true },
     // Whether the role may make drafts, which keep the versions not chosen.
     canCreate: { type: Boolean, default: true },
-    // The choice is being carried out.
+    // Whether the dialog is applying the choice now.
     busy: { type: Boolean, default: false },
     // (row) => Promise<{name, text}|null>: the file Download saves for a
     // version this tab can read.
@@ -117,8 +118,9 @@
 
   const picked = ref(preferred());
 
-  // A version that goes (its tab sent it, or closed) is no longer offered.
-  // Focus on its radio button moves to the one picked in its place.
+  // The dialog stops offering a version that is gone (its tab sent it, or
+  // closed). Focus on its radio button moves to the version picked in its
+  // place.
   watch(
     () => props.rows.map((row) => row.id),
     async (ids) => {
@@ -187,7 +189,7 @@
     }
   }
 
-  // BuilderDialog focuses its panel when it opens; this runs after it, so
+  // BuilderDialog focuses its panel when it opens. This runs after that, so
   // focus starts on the version picked.
   onMounted(async () => {
     await nextTick();

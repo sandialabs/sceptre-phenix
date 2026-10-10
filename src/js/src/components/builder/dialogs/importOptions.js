@@ -3,9 +3,9 @@
 // is linked to no config and has a new name, so publishing it creates a new
 // topology (see builderGenerateChoices in web/builder_sources.go).
 //
-// The dialog knows what to offer before the server reads anything: a stored
-// topology's entry in the sources says how many topologies it includes, and
-// a config file is parsed here for the same count.
+// The dialog knows what to offer before the server reads anything. A stored
+// topology's entry in the sources says how many topologies it includes. For
+// a config file, this module parses the file to get the same count.
 
 import { computed, reactive, watch } from 'vue';
 
@@ -24,7 +24,8 @@ function nameOf(entry) {
  * What the dialog says of the topologies a topology includes.
  *
  * @param {number} includes how many it includes
- * @param {string} [name] the stored topology's name; none for a config file
+ * @param {string} [name] the stored topology's name, or none for a config
+ *   file
  * @returns {string} "site includes 1 other topology.", or "This topology
  *   includes 3 other topologies."
  */
@@ -102,16 +103,22 @@ export function notAvailable(name) {
  *   name and content
  * @param {() => Array} topologies the stored topologies, as the sources
  *   list them
- * @returns {object} reactive. includes ('keep' or 'combine') and copy are
- *   the choices as the form's controls hold them. Read only: includeCount
- *   and includesText, for the "Included topologies" group, shown while
- *   showIncludes; showCopy and copyOf (the topology the copy leaves as it
- *   is); showNewName and newName; mode ('import', 'copy' or 'combine');
- *   legacy: the chosen stored topology has a legacy Builder diagram.
- *   typeName(text) takes what the user types as the new name, which stops
- *   it following the proposal; problem() says why the new name cannot be
- *   used ('' when it can, or when none is asked for); request() is what
- *   store.generate() takes.
+ * @returns {object} a reactive object with these members:
+ *   - includes ('keep' or 'combine') and copy: the choices, as the form's
+ *     controls hold them.
+ *   - includeCount and includesText (read only): for the "Included
+ *     topologies" group, which shows while showIncludes is true.
+ *   - showCopy and copyOf (read only): copyOf is the topology that the copy
+ *     leaves as it is.
+ *   - showNewName and newName (read only).
+ *   - mode (read only): 'import', 'copy' or 'combine'.
+ *   - legacy (read only): the chosen stored topology has a legacy Builder
+ *     diagram.
+ *   - typeName(text): takes what the user types as the new name. The name
+ *     then stops following the proposal.
+ *   - problem(): why the new name cannot be used. '' when it can, or when
+ *     the dialog asks for no new name.
+ *   - request(): the argument that store.generate() takes.
  */
 export function useImportOptions(form, topologies) {
   const state = reactive({
@@ -168,8 +175,8 @@ export function useImportOptions(form, topologies) {
   );
   const newName = computed(() => state.typed ?? proposal.value);
 
-  // The choices are about one source: another starts from the defaults,
-  // and from the name proposed for it.
+  // The choices apply to one source. Another source starts from the
+  // defaults and from the name proposed for it.
   watch(
     () => [form.source, form.kind, form.name, form.content],
     () => {

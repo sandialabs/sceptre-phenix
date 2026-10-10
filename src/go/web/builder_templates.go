@@ -49,12 +49,12 @@ const (
 	builderKindCollection = "collection"
 )
 
-// builderTemplateLibraryResponse is everything of the template libraries the
-// caller can use: the caller's own templates and collections first. A
+// builderTemplateLibraryResponse is all of the template libraries the caller
+// can use, with the templates and collections of the caller first. A
 // template names its custom icon, which the icon library resolves. Damaged
-// is set when the caller's own library record cannot be read: the lists
-// then hold nothing of it. Preloaded are the collections the server read from
-// its template files at start, read only for everyone.
+// is true when the library record of the caller cannot be read. The lists
+// then hold nothing from it. Preloaded are the collections the server read
+// from its template files at start. They are read only for everyone.
 type builderTemplateLibraryResponse struct {
 	Owner       string                              `json:"owner"`
 	Templates   []builderTemplateResponse           `json:"templates"`
@@ -67,8 +67,8 @@ type builderTemplateLibraryResponse struct {
 }
 
 // builderPreloadedCollection is one collection the server read from a
-// template file, with its templates, each as the listing gives any other:
-// source "preloaded", no owner, version 1.
+// template file, with its templates. The listing gives each as it gives any
+// other item, with source "preloaded", no owner, and version 1.
 type builderPreloadedCollection struct {
 	Collection builderTemplateCollectionResponse `json:"collection"`
 	Templates  []builderTemplateResponse         `json:"templates"`
@@ -85,8 +85,8 @@ type builderTemplateLimits struct {
 }
 
 // builderTemplateResponse is one template of a library. Collections names
-// the collections of the same owner that hold it. Shares is sent to the
-// owner only; the account a share is bound to never is.
+// the collections of the same owner that hold it. Only the owner gets
+// Shares. No response contains the account that a share is bound to.
 type builderTemplateResponse struct {
 	ID          string                         `json:"id"`
 	Owner       string                         `json:"owner"`
@@ -124,8 +124,8 @@ type builderTemplateCollectionResponse struct {
 }
 
 // builderTemplateShareResponse is one user a template or a collection is
-// shared with. Stale is set when the account it was shared with no longer
-// exists, so the share grants nothing.
+// shared with. Stale is true when the account of the share no longer exists.
+// Such a share grants nothing.
 type builderTemplateShareResponse struct {
 	User      string    `json:"user"`
 	GrantedAt time.Time `json:"grantedAt"`
@@ -245,10 +245,13 @@ func (e *builderTemplateStaleError) Error() string {
 }
 
 // builderTemplateError maps a failed change of a template library to its
-// answer. A refusal is answered in the service's own words, which name the
-// template by its index in the request and repeat nothing of its content; a
-// stale If-Match with the current entity tag; a record this server cannot
-// read with 409; and a library that kept changing under the write with 503.
+// answer:
+//
+//   - A refusal gets the words of the service, which name the template by
+//     its index in the request and repeat nothing of its content.
+//   - A stale If-Match gets the current entity tag.
+//   - A record this server cannot read gets 409.
+//   - A library that kept changing during the write gets 503.
 func builderTemplateError(w http.ResponseWriter, err error, format string, args ...any) *weberror.WebError {
 	var (
 		stale   *builderTemplateStaleError
@@ -287,10 +290,10 @@ func builderTemplateLibraryLimits() builderTemplateLimits {
 	}
 }
 
-// templateOwner returns the request's actor once it holds the base config
-// permission of verb and is the owner the path names. A library is changed
-// by its owner only: anyone else is answered 404, as for a draft it may not
-// see, whatever its role.
+// templateOwner returns the actor of the request when it holds the base
+// config permission of verb and is the owner that the path names. Only its
+// owner changes a library. Any other caller gets 404, as for a draft that it
+// may not see, whatever its role.
 func (b *builderAPI) templateOwner(r *http.Request, verb builderVerb, action string) (builderActor, error) {
 	actor, err := builderAuthorize(r, verb, action)
 	if err != nil {
@@ -355,8 +358,8 @@ func (b *builderAPI) templateShares(
 
 // templateItem returns one template of a library as responses carry it, to
 // a caller that sees it as source. visible names the collections of the
-// library the caller sees, all of them when nil; the template names only
-// those that hold it. Who it is shared with is not set.
+// library that the caller sees, or all of them when nil. The template names
+// only those that hold it. Who it is shared with is not set.
 func templateItem(
 	library *bapi.TemplateLibrary,
 	template *bapi.LibraryTemplate,
@@ -469,8 +472,8 @@ func (b *builderAPI) ownCollection(
 
 // preloadedCollections returns the collections the server read from its
 // template files at start (see [bapi.Service.LoadServerTemplates]), as the
-// listing gives them: each with its templates, of source "preloaded", with no
-// owner and at version 1.
+// listing gives them. Each has its templates, source "preloaded", no owner,
+// and version 1.
 func (b *builderAPI) preloadedCollections() []builderPreloadedCollection {
 	collections := b.drafts.ServerCollections()
 	listed := make([]builderPreloadedCollection, 0, len(collections))
@@ -529,9 +532,10 @@ func (b *builderAPI) preloadedCollections() []builderPreloadedCollection {
 }
 
 // refusePreloaded fails a change of a library that names a template or a
-// collection the server read from one of its template files: those are read
-// only for everyone, and are changed by changing the file. The refusal is a
-// 409 that names the item and says how to get a copy that can be changed.
+// collection that the server read from one of its template files. Those
+// items are read only for everyone. A change to the file is the only way to
+// change them. The refusal is a 409 that names the item and tells how to get
+// a copy that can be changed.
 func (b *builderAPI) refusePreloaded(templateIDs, collectionIDs []string) error {
 	collections := b.drafts.ServerCollections()
 
@@ -566,13 +570,14 @@ func (b *builderAPI) refusePreloaded(templateIDs, collectionIDs []string) error 
 
 // listTemplates - GET /builder/templates.
 //
-// The answer holds the caller's own library first, which is the built-in
-// templates until the caller changes it, then the items of other users'
-// libraries the caller sees, by owner: those shared with it and those
-// published to every user, read only. A library is read only when a hint
-// record names it (see [bapi.Service.LibrarySources]): no listing reads every
-// user's library. A record of the caller's this server cannot read is
-// reported as damaged, with none of its items. The collections the server
+// The answer holds the library of the caller first. Until the caller changes
+// it, this library is the built-in templates. Then come the items of the
+// libraries of other users that the caller sees, by owner. These are the
+// items shared with the caller and the items published to every user, read
+// only. The server reads a library only when a hint record names it (see
+// [bapi.Service.LibrarySources]). No listing reads the library of every
+// user. When this server cannot read a record of the caller, it reports the
+// record as damaged, with none of its items. The collections that the server
 // read from its template files are in "preloaded", for every caller.
 func (b *builderAPI) listTemplates(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderListTemplates")
@@ -648,10 +653,11 @@ func (b *builderAPI) listOwnTemplates(response *builderTemplateLibraryResponse, 
 	return nil
 }
 
-// listOtherTemplates adds to the listing the items of other users' libraries
-// the caller sees (see [bapi.TemplateLibrary.VisibleTo]), by owner name, in
-// each library's order. Only the libraries a hint record names are read; one
-// that is gone or that this server cannot read is left out.
+// listOtherTemplates adds to the listing the items of the libraries of other
+// users that the caller sees (see [bapi.TemplateLibrary.VisibleTo]), by owner
+// name, in the order of each library. It reads only the libraries that a
+// hint record names. It leaves out a library that is gone or that this
+// server cannot read.
 func (b *builderAPI) listOtherTemplates(
 	ctx context.Context,
 	actor builderActor,
@@ -973,10 +979,10 @@ func (b *builderAPI) writeCollection(w http.ResponseWriter, status int, library 
 
 // deleteTemplates - POST /builder/templates/{owner}/delete.
 //
-// Deletes the named templates and collections in one write. An ID the
-// library does not hold is ignored, so a repeat is harmless. A deleted
-// template leaves every collection that held it; a deleted collection
-// leaves its templates.
+// Deletes the named templates and collections in one write. It ignores an ID
+// that the library does not hold, so a repeat is harmless. A deleted
+// template leaves every collection that held it. A deleted collection leaves
+// its templates.
 func (b *builderAPI) deleteTemplates(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderDeleteTemplates")
 
@@ -1112,8 +1118,8 @@ func builderDistinct(values []string) []string {
 }
 
 // mayShareTemplates fails the request unless actor may share items of its
-// library: that takes a user account, which a caller has no other reason to
-// hold when authentication is off, on top of config update.
+// library. This needs config update and a user account. When authentication
+// is off, a caller has no other reason to hold an account.
 func (b *builderAPI) mayShareTemplates(actor builderActor, action string) error {
 	canShare, err := b.canShare(actor, b.accountOnce(actor.user))
 	if err != nil {
@@ -1159,10 +1165,14 @@ func (b *builderAPI) getTemplateShareCandidates(w http.ResponseWriter, r *http.R
 	return builderWriteJSON(w, http.StatusOK, "", builderShareCandidatesResponse{Users: users})
 }
 
-// builderTemplateShareErrors returns what is wrong with the users a share
-// request of owner adds and removes, before any account is read: a name that
-// cannot name a user, the owner, a user both added and removed, and more
-// users added than an item may be shared with.
+// builderTemplateShareErrors returns what is wrong with the users that a
+// share request of owner adds and removes. It runs before any account is
+// read. It finds:
+//
+//   - a name that cannot name a user
+//   - the owner
+//   - a user that is both added and removed
+//   - more added users than an item may be shared with
 func builderTemplateShareErrors(owner string, add, remove []string) []builderShareError {
 	var problems []builderShareError
 
@@ -1237,14 +1247,14 @@ func (b *builderAPI) resolveTemplateGrants(
 
 // shareTemplates - POST /builder/templates/{owner}/share.
 //
-// Adds users to, and removes users from, who the named templates and
-// collections of the caller's library are shared with, read only. Only the
-// owner shares, with config update and a user account. The request is a
-// change of each list, not a new list, so it needs no entity tag. Every user
-// added must have an account, which the share is bound to; when one is
-// refused nothing changes. An item that would be shared with more than
-// [bapi.MaxShares] users, and an ID the library does not hold, are answered
-// in "failed"; the other items are changed.
+// Adds users to, and removes users from, the read-only shares of the named
+// templates and collections of the library of the caller. Only the owner
+// shares, with config update and a user account. The request is a change of
+// each list, not a new list, so it needs no entity tag. Every added user
+// must have an account, and the share is bound to that account. When one
+// user is refused, nothing changes. The answer lists in "failed" an item
+// that would be shared with more than [bapi.MaxShares] users, and an ID that
+// the library does not hold. The other items change.
 func (b *builderAPI) shareTemplates(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderShareTemplates")
 
@@ -1335,11 +1345,14 @@ func (b *builderAPI) shareTemplates(w http.ResponseWriter, r *http.Request) erro
 //
 // Publishes the named templates and collections of a library to every user,
 // or with "serverWide" false takes them back. Both need config update.
-// Publishing is for the owner holding builder-templates publish: the owner
-// without it is answered 403, anyone else 404. Taking an item back is for
-// the owner, or for anyone holding builder-templates publish, of any
-// owner's library; anyone else is answered 403, since a published item is
-// seen by everyone. An ID the library does not hold is answered in "failed".
+//
+//   - Publish: only the owner who holds builder-templates publish may do it.
+//     The owner without it gets 403. Any other caller gets 404.
+//   - Take back: the owner may do it. Any caller who holds builder-templates
+//     publish may do it for the library of any owner. Any other caller gets
+//     403, because everyone sees a published item.
+//
+// The answer lists in "failed" an ID that the library does not hold.
 func (b *builderAPI) publishTemplates(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderPublishTemplates")
 

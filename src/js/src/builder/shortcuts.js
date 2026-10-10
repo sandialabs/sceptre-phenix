@@ -1,12 +1,12 @@
 // The shortcut sheet and its customization (BuilderShortcuts.vue): the rows
 // the sheet lists, where each command's keys work, the sheet's filter, and
 // what the key recorder makes of a key press. The keys, their labels and the
-// per-browser storage are keymap.js's; the commands are commands.js's.
+// per-browser storage are in keymap.js. The commands are in commands.js.
 //
-// A key the recorder is given is judged once (judgeShortcut) and then kept
-// (assignShortcut), which takes it from the commands that had it when the
-// user chose to. A command left with its default keys is reset rather than
-// stored, so it follows the defaults if they change.
+// The recorder judges a key once (judgeShortcut) and then keeps it
+// (assignShortcut). If the user chose to, assignShortcut takes the key from
+// the commands that had it. A command left with its default keys is reset,
+// not stored, so it follows the defaults if they change.
 
 import { listOf } from './announce.js';
 import {
@@ -125,7 +125,8 @@ function sameKeys(a, b, platform) {
 
 /**
  * One command as a row of the sheet. `changed` is true when the user gave
- * it keys other than its defaults; `defaults` are those, as entries.
+ * it keys other than its defaults. `defaults` are the default keys, as
+ * entries.
  *
  * @param {string|object} idOrCommand
  * @param {'mac'|'other'} [platform]
@@ -184,7 +185,7 @@ export function shortcutRow(idOrCommand, platform = currentPlatform()) {
 }
 
 // A word of one character is a key ('g' finds ⌘G and ⇧⌘G, '?' the sheet's
-// own key); a longer one may appear anywhere in the row.
+// own key). A longer word may appear anywhere in the row.
 function rowMatches(row, word) {
   if ([...word].length === 1) {
     return row.caps.has(word === '-' ? '−' : word);
@@ -196,9 +197,10 @@ function rowMatches(row, word) {
 /**
  * The sheet's rows by group, in the registry's group order: every command
  * with keys, or with `customize` every command whose keys can change, with
- * or without keys. Each word of `query` must match: a one-character word a
- * key cap ('g', '?', '⌘'), a longer one the row's title, group, aliases,
- * keywords, where it works or its keys in words ('undo', 'cmd', 'shift').
+ * or without keys. Each word of `query` must match. A one-character word
+ * matches a key cap ('g', '?', '⌘'). A longer word matches the row's title,
+ * group, aliases, keywords, where it works or its keys in words ('undo',
+ * 'cmd', 'shift').
  *
  * @param {object} [options]
  * @param {string} [options.query]
@@ -232,8 +234,8 @@ export function shortcutGroups({
 }
 
 /**
- * The one-character shortcuts the single-key switch turns on and off, as
- * the platform labels them: ['?', 'N', '=', '+', '−', '⇧1'].
+ * The one-character shortcuts that the single-key switch enables and
+ * disables, as the platform labels them: ['?', 'N', '=', '+', '−', '⇧1'].
  *
  * @param {'mac'|'other'} [platform]
  * @returns {string[]}
@@ -249,8 +251,8 @@ export function characterKeyLabels(platform = currentPlatform()) {
 }
 
 /**
- * What the single-key switch turns on and off, for the hint beside it in
- * the shortcut sheet and the Settings dialog.
+ * What the single-key switch enables and disables, for the hint beside it
+ * in the shortcut sheet and the Settings dialog.
  *
  * @param {'mac'|'other'} [platform]
  * @returns {string}
@@ -266,9 +268,9 @@ export function singleKeyHint(platform = currentPlatform()) {
 
 // --- recording -------------------------------------------------------------------
 
-// On Windows and Linux the Windows (Super) key is the system's: Windows
-// keeps nearly every shortcut with it, and Linux desktops most, so the page
-// seldom sees them.
+// On Windows and Linux the Windows (Super) key belongs to the system.
+// Windows keeps almost every shortcut with it, and Linux desktops keep
+// most. So the page seldom gets them.
 function systemKeyReason(spec, platform) {
   const parts = parseKey(spec);
 
@@ -278,10 +280,10 @@ function systemKeyReason(spec, platform) {
 }
 
 // A command that works in text fields (the palette, Save now) cannot take a
-// key that types a character there (typesCharacter: on macOS one pressed
-// with ⌥ too): the field keeps such keys (see dispatchKeydown), so the
-// shortcut would not work where the command promises to, and would block
-// typing that character where it did.
+// key that types a character there (typesCharacter: on macOS, also a key
+// pressed with ⌥). The field keeps such keys (see dispatchKeydown). So the
+// shortcut would not work where the command promises to work, and it would
+// block that character where it did work.
 function typedKeyReason(command, spec, platform) {
   if (
     !command ||
@@ -304,12 +306,13 @@ function typedKeyReason(command, spec, platform) {
  *               and Linux
  *   'fixed'     a command whose keys cannot change has it (`fixed`)
  *   'conflict'  other commands have it where this one would work
- *               (`conflicts`); assignShortcut takes it only when told to
+ *               (`conflicts`). assignShortcut takes it only when told to
  *   'same'      the command has it already
- *   'free'      nothing else answers to it there
+ *   'free'      no other command uses it there
  * `inactive` is true for a one-character key while the single-key switch is
- * off: it is kept, but works only once they are on again. `others` counts
- * the command's other keys, which keeping this one replaces.
+ * off. The key is kept, but works only after the switch is on again.
+ * `others` counts the command's other keys, which this key replaces if it
+ * is kept.
  *
  * @param {string|object} idOrCommand
  * @param {string} spec
@@ -374,8 +377,8 @@ function storeKeys(command, keys, platform, storage) {
 }
 
 /**
- * Makes a key a command's only shortcut. A key other commands have is
- * taken from them only with `take`; they keep their other keys.
+ * Makes a key a command's only shortcut. A key that other commands have is
+ * taken from them only with `take`. They keep their other keys.
  *
  * @param {string|object} idOrCommand
  * @param {string} spec
@@ -458,8 +461,8 @@ export function spokenKeys(keys, platform = currentPlatform()) {
     : `${words.slice(0, -1).join(', ')} or ${words.at(-1)}`;
 }
 
-// Where a reason names a key: the first time its label stands as a word of
-// its own, so the key L is not found in "Letters".
+// Where a reason names a key: the first time its label is a separate word,
+// so the key L is not found in "Letters".
 function labelAt(reason, label) {
   for (
     let at = reason.indexOf(label);
@@ -496,7 +499,7 @@ export function recorderMessage(verdict, name, platform = currentPlatform()) {
   switch (verdict.status) {
     case 'refused': {
       // A reason that names the key names it by its label, which becomes
-      // the key part; one that does not is said after the key.
+      // the key part. A reason that does not name the key comes after it.
       const label = verdict.spec ? keyLabel(verdict.spec, platform) : '';
       const at = label ? labelAt(verdict.reason, label) : -1;
       const pieces =

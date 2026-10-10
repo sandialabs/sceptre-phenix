@@ -2,13 +2,14 @@
   The custom icon of a device or a group: an image of the server's icon
   library, drawn in place of the built-in icon. The field holds the icon's
   name, which the document's copy of the icon or the icon library resolves
-  (see iconSrc in icons.js); with neither, the node draws its built-in icon.
+  (see iconSrc in icons.js). With neither, the node draws its built-in icon.
 
-  With no icon the field says None and offers Choose…; with one it shows the
-  icon, its name, Change… and Remove. Choose… and Change… open the Custom
-  icons dialog (IconDialog), where an icon is uploaded or picked from the
-  server's or from the diagram's copies. The control mounts the dialog
-  itself, so it works in any form the Inspector's renderers are used in.
+  With no icon, the field says None and offers Choose…. With an icon, it
+  shows the icon, its name, Change… and Remove. Choose… and Change… open the
+  Custom icons dialog (IconDialog), where the user uploads an icon or picks
+  one from the server's or from the diagram's copies. The control mounts
+  the dialog itself, so it works in any form the Inspector's renderers are
+  used in.
 
   The icons come from what the form's host provides (see INSPECTOR_ICONS in
   control.js).

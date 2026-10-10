@@ -3,22 +3,22 @@
 // drew, and ranks of networks packed into columns (packRanks).
 //
 // A layout arranges one scope at a time: the diagram's top level, or the
-// members of one group. Groups are laid out innermost first, and each is
-// then one box in the scope around it, sized after its members; so members
-// stay inside their group and nothing else goes in, nested groups too.
+// members of one group. Groups are laid out innermost first. Each group is
+// then one box in the scope around it, sized after its members. So members
+// stay inside their group and nothing else goes in, for nested groups too.
 //
 // The grouping preference: a network's devices together, then devices with
 // similar names (the prefix of a hostname: "IT" of "IT-WS-01"), then
 // natural name order (IT-WS-2 before IT-WS-10). A device on several
 // networks goes with the smallest one: the network it is the gateway of.
 //
-// Every connection is drawn out of its source's right side and into its
-// target's left side (a device interface or a switch bus), so a layout that
+// Every connection goes out of its source's right side and into its
+// target's left side (a device interface or a switch bus). So a layout that
 // puts each target to the right of its source draws no line backwards.
 //
 // A node takes its footprint (nodeFootprint in nodeNotes.js): its box, and
-// the notes block below it while the canvas shows notes, so no node is laid
-// over another's notes.
+// the notes block below it while the canvas shows notes. So no node is put
+// on another node's notes.
 
 import { DEFAULT_GRID_SIZE, nodeLabel } from '../model.js';
 import { nodeFootprint } from '../nodeNotes.js';
@@ -28,7 +28,7 @@ import { fitRoute, handleOffsetY } from '../routes.js';
 // least a grid step, so snapping puts no node on another.
 export const GRID = DEFAULT_GRID_SIZE;
 
-// Room between a group's border and its members: groupNodes' 40, on the
+// Space between a group's border and its members: groupNodes' 40, on the
 // grid.
 export const GROUP_PADDING = 48;
 
@@ -37,8 +37,8 @@ const ORIGIN = { x: 32, y: 32 };
 
 // Nodes that join no network (notes, unconnected devices, groups with no
 // connection out of them) go in rows below the rest. Shapes, icons and
-// lines are left where they are drawn (see runLayout in index.js); given
-// one, a layout puts it with the notes.
+// lines stay where they are drawn (see runLayout in index.js). If a layout
+// gets one, it puts it with the notes.
 const LOOSE_GAP = 32;
 const LOOSE_BELOW = 64;
 const LOOSE_MIN_WIDTH = 960;
@@ -57,7 +57,7 @@ const PACKING_STEPS = 400;
 
 /**
  * A layout failure the viewer can act on, such as a layout engine that
- * could not load: its message is shown as it is. Any other error is a fault
+ * could not load. Its message is shown as it is. Any other error is a fault
  * in a layout, and its text means nothing to the viewer.
  */
 export class LayoutError extends Error {
@@ -133,7 +133,7 @@ export function orderMembers(items) {
 
 /**
  * Each node's group, for the nodes in a group the document has. A parent
- * that is missing, is not a group or would close a loop is left out. The
+ * that is missing, is not a group or would make a loop is left out. The
  * standard layout reads groups this way too.
  *
  * @param {object[]} nodes
@@ -292,8 +292,8 @@ function placeColumns(ranks, limit, { gapX, gapY }) {
 
 /**
  * Places ranks of boxes left to right, each rank top to bottom in its
- * order. A rank taller than a limit wraps into more columns, and the limit
- * is the one that brings the whole closest to `aspect`, width over height.
+ * order. A rank taller than a limit wraps into more columns. The limit is
+ * the one that makes the whole closest to `aspect`, width over height.
  *
  * @param {Array<Array<{id: string, width: number, height: number}>>} ranks
  * @param {{gapX: number, gapY: number, aspect: number}} spacing gapX
@@ -324,28 +324,30 @@ export function packRanks(ranks, spacing) {
 
 /**
  * Lays a document out one scope at a time with `arrange`, which places the
- * nodes of one scope that join a network; the rest go in rows below them.
+ * nodes of one scope that join a network. The other nodes go in rows below
+ * them.
  *
  * `arrange({items, edges, networks})` gets, for one scope:
  * - items: the nodes in the scope that join a network, each {id, kind,
  *   node, width, height, name, prefix, networks (ids, the network's own for
  *   a switch), primary (the network it goes with), multi (on several
  *   networks), roles (network id -> Set of 'source' and 'target': the ends
- *   of its connections it is on)}. A group in the scope is one item, the
- *   size its members need, joining the networks of the connections that
- *   leave it.
+ *   of its connections it is on)}. A group in the scope is one item, with
+ *   the size its members need. It joins the networks of the connections
+ *   that leave it.
  * - edges: the connections between those items, {id, source, target,
- *   network, sourcePort, targetPort}, a port being {id, y}: where the line
+ *   network, sourcePort, targetPort}. A port is {id, y}: where the line
  *   meets the item's right (source) or left (target) side. A connection to
- *   a node in a group is one to the group.
+ *   a node in a group is a connection to the group.
  * - networks: network id -> {id, name, index}.
  * It returns each item's top-left corner (a Map, or a Promise of one), in
- * any coordinates: the result is moved to the scope's corner and snapped.
- * A layout that routes the connections too returns {positions, routes}
- * instead: the corners, and each connection's points (a Map by edge id) in
- * the same coordinates, from its source port to its target port. A route
- * is kept for a connection between two nodes of the scope, not one to a
- * group, and moved onto the handles of the nodes as snapped (fitRoute).
+ * any coordinates. The result moves to the scope's corner and snaps to the
+ * grid. A layout that also routes the connections returns {positions,
+ * routes} instead: the corners, and each connection's points (a Map by
+ * edge id) in the same coordinates, from its source port to its target
+ * port. The route of a connection between two nodes of the scope is kept,
+ * but not the route of a connection to a group. A kept route moves onto
+ * the handles of the snapped nodes (fitRoute).
  *
  * An item's height is its node's footprint (see nodeFootprint), which holds
  * the node's notes block while `options.showNotes` is not false.
@@ -356,7 +358,7 @@ export function packRanks(ranks, spacing) {
  *   notes
  * @returns {Promise<{positions: object, sizes: object, routes?: object}>}
  *   each node's top-left corner, and the size of each group with members,
- *   by node id; and each route kept, by edge id, in absolute coordinates
+ *   by node id. Also each kept route, by edge id, in absolute coordinates
  */
 export async function layoutScopes(doc, arrange, options = {}) {
   const nodes = [...(doc.nodes || [])].sort(byId);
@@ -396,8 +398,8 @@ export async function layoutScopes(doc, arrange, options = {}) {
 
     return chains.get(id);
   };
-  // The node standing for `id` in a scope: itself, or the group of the
-  // scope's that holds it; undefined when it is outside the scope.
+  // The node that represents `id` in a scope: itself, or the group of the
+  // scope that holds it. Undefined when it is outside the scope.
   const inScope = (id, scope) => {
     const chain = chainOf(id);
 
@@ -487,7 +489,7 @@ export async function layoutScopes(doc, arrange, options = {}) {
     };
   };
 
-  // Where a connection meets the item standing for its end in a scope.
+  // Where a connection meets the item that represents its end in a scope.
   const portOf = (item, edge, role) => {
     const end = role === 'source' ? edge.source : edge.target;
     const handle = role === 'source' ? edge.sourceHandle : edge.targetHandle;

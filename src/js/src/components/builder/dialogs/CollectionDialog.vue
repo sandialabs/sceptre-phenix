@@ -1,16 +1,18 @@
 <!--
   A collection of the user's template library: a named group of its
   templates. Opened on the drafts page's Node Templates tab by New
-  collection, by "New collection…" in the Add to collection menu (the
-  selected templates are then its first members), and by Edit collection.
+  collection, by "New collection…" in the Add to collection menu, and by
+  Edit collection. From the menu, the selected templates are its first
+  members.
 
-  It edits the collection's name and description; which templates it holds
-  is changed on the tab (Add to collection, Remove from collection). What
-  keeps it from being saved shows in the dialog, which stays open with what
-  was typed. A collection that changed since the dialog opened (another tab)
-  is not replaced unasked: the dialog says so, and the next Save replaces
-  its name and description, and leaves the templates it holds now. Saving is
-  announced by the page, once the dialog has closed.
+  It edits the collection's name and description. The tab changes which
+  templates it holds (Add to collection, Remove from collection). When
+  something keeps the collection from being saved, the reason shows in the
+  dialog, which stays open with what was typed. The dialog does not replace
+  a collection that changed since the dialog opened (another tab) without
+  asking. It says so, and the next Save replaces the collection's name and
+  description but leaves the templates it holds now. The page announces the
+  save after the dialog closes.
 -->
 <template>
   <builder-dialog
@@ -112,7 +114,7 @@
     'This collection was changed in another tab or window. Save again to replace that version, or Cancel to keep it.';
 
   const props = defineProps({
-    // The collection to edit, as the library lists it; null for a new one.
+    // The collection to edit, as the library lists it. Null for a new one.
     collection: { type: Object, default: null },
     // The templates a new collection starts with, by id.
     templateIds: { type: Array, default: () => [] },
@@ -225,8 +227,8 @@
       await send(content);
       emit('close');
     } catch (failure) {
-      // Changed since it was read: the refusal carries the tag it has now,
-      // and the library, read again, the templates it holds now.
+      // Changed since it was read. The refusal carries the tag it has now.
+      // The library, read again, carries the templates it holds now.
       if (failure?.response?.status === 412) {
         await store.fetchTemplates();
         etag = preconditionETag(failure) || listed.value.etag || etag;

@@ -1,18 +1,18 @@
 // Network cards: no library, two deterministic passes over each scope (see
 // common.js).
 //
-// 1. A card per network: its devices in a column, grouped by name prefix
-//    with a wider gap between prefix groups, devices on several networks
-//    first, and its switch at the card's head, right of the column and
-//    centred on it, where every connection enters it. A device whose line
-//    leaves the switch instead goes in a column right of the switch. More
-//    devices than fit one column make staggered columns, so a line from a
-//    far column runs through the gaps of the near one.
+// 1. A card per network. Its devices are in a column, grouped by name
+//    prefix with a wider gap between prefix groups, devices on several
+//    networks first. Its switch is at the card's head, right of the column
+//    and centred on it, where every connection enters it. A device whose
+//    line leaves the switch goes in a column right of the switch instead.
+//    More devices than fit one column make staggered columns, so a line
+//    from a far column runs through the gaps of the near one.
 // 2. The cards on a grid. A device on several networks goes with the
 //    smallest, so a card's outside connections point at "parent" networks.
-//    Cards are ranked along those connections (children left of parents),
-//    ranks become grid columns, a rank taller than the target height wraps
-//    into more columns, and the height is chosen for a 16:10 diagram.
+//    Cards get ranks along those connections (children left of parents).
+//    Ranks become grid columns, and a rank taller than the target height
+//    wraps into more columns. The height gives a 16:10 diagram.
 
 import { collator, layoutScopes, orderMembers, packRanks } from './common.js';
 
@@ -29,10 +29,10 @@ const CARD_GAP_X = 96;
 const CARD_GAP_Y = 64;
 const ASPECT = 1.6;
 
-// Members in columns. On the left of the switch the nearest column is the
-// last, and members line up on their right sides; on the right the nearest
-// is the first, and they line up on their left sides. `span` is how far
-// the farthest column is from the nearest.
+// Members in columns. On the left of the switch, the nearest column is the
+// last, and members align on their right sides. On the right, the nearest
+// column is the first, and members align on their left sides. `span` is the
+// distance from the nearest column to the farthest.
 function columns(members, side) {
   const at = new Map();
 
@@ -66,8 +66,8 @@ function columns(members, side) {
     };
   }
 
-  // Column c counts from the switch outwards; every other one is offset by
-  // half a row, so lines from farther columns pass between boxes.
+  // Column c counts from the switch outwards. Every other column moves down
+  // by half a row, so lines from farther columns pass between boxes.
   const perColumn = Math.ceil(members.length / count);
   const pitch =
     Math.max(...members.map((item) => item.height)) + 2 * GAP_IN_GROUP;
@@ -189,7 +189,7 @@ function rankCards(scope, cards) {
     }
   }
 
-  // Cycles are broken by a walk in name order, dropping back edges.
+  // A walk in name order breaks cycles: it drops back edges.
   const state = new Map();
   const finished = [];
   const walk = (id) => {
@@ -211,8 +211,8 @@ function rankCards(scope, cards) {
     tos.forEach((to) => into.get(to).add(from));
   }
 
-  // The longest path from the sources, then each source pulled up next to
-  // its nearest target, so a stub network sits beside the one it joins.
+  // The longest path from the sources. Then each source moves next to its
+  // nearest target, so a stub network sits beside the network it joins.
   const rank = new Map();
 
   for (const id of [...finished].reverse()) {

@@ -3,31 +3,40 @@
   with no phenix semantics and never published. The node's box is the box
   of its points (see placedLine in model.js), which are relative to it.
 
-  The line is drawn as a connection is: in the color chosen for it (the
-  text color without one), cased where that color would fade into the
-  canvas (see colors.js), in its line style's dash pattern (see
-  NETWORK_PATTERNS in adapters/vueflow.js), with its label at its middle
-  segment and an arrowhead at either end it has one. A wide, invisible
-  stroke under it takes the pointer (WCAG 2.5.8), and only that stroke:
-  the rest of the box lets the pointer through to what is under it (the
-  node's style sets pointer-events, see toFlowNodes). The line lies under
-  the devices and switches, also while it is selected (see nodeZIndex in
-  adapters/vueflow.js).
+  The line is drawn as a connection is:
 
-  Vue Flow's wrapper is the focusable, named element (see DeviceNode.vue);
-  its name says the arrowheads, which only the canvas shows otherwise. A
+  - in the color chosen for it, or the text color without one
+  - cased where that color would fade into the canvas (see colors.js)
+  - in its line style's dash pattern (see NETWORK_PATTERNS in
+    adapters/vueflow.js)
+  - with its label at its middle segment, and an arrowhead at each end that
+    has one.
+
+  A wide, invisible stroke under the line takes the pointer (WCAG 2.5.8).
+  Only that stroke takes it. The rest of the box lets the pointer through
+  to what is under it (the node's style sets pointer-events, see
+  toFlowNodes). The line lies under the devices and switches, also while it
+  is selected (see nodeZIndex in adapters/vueflow.js).
+
+  Vue Flow's wrapper is the focusable, named element (see DeviceNode.vue).
+  Its name says the arrowheads, which otherwise only the canvas shows. A
   focused line gets a band under it, as a focused connection does.
 
   While the line is selected and the draft can be changed, each point has a
-  handle, drawn in Vue Flow's edge label layer: over the nodes, and outside
-  the node's wrapper, a button that must hold nothing focusable. Dragging a
-  handle moves its point, as one edit when it is dropped; double-clicking
-  the line adds a bend there. A handle a click focused moves its point with
-  the arrow keys (by a grid step, or a pixel with Shift) and removes it with
-  Delete or Backspace, never leaving fewer than two points. The handles are
-  for the pointer: the Inspector's Points list edits every point from the
-  keyboard, so they stay out of the Tab order and are hidden from
-  assistive technology.
+  handle. The handles are drawn in Vue Flow's edge label layer: over the
+  nodes, and outside the node's wrapper, which is a button and must hold
+  nothing focusable.
+
+  - Dragging a handle moves its point, as one edit when it is dropped.
+  - Double-clicking the line adds a bend there.
+  - A handle that a click focused moves its point with the arrow keys (by a
+    grid step, or a pixel with Shift).
+  - Delete or Backspace removes that point, but never leaves fewer than two
+    points.
+
+  The handles are for the pointer. The Inspector's Points list edits every
+  point from the keyboard. For this reason, the handles stay out of the Tab
+  order and are hidden from assistive technology.
 -->
 <template>
   <div
@@ -149,8 +158,8 @@
   } from '@/builder/model.js';
   import { capitalize } from '@/builder/text.js';
 
-  // Vue Flow passes its node state as attributes as well; none belong on
-  // the node's element.
+  // Vue Flow also passes its node state as attributes. None of them belong
+  // on the node's element.
   defineOptions({ inheritAttrs: false });
 
   const props = defineProps({
@@ -159,7 +168,7 @@
     selected: { type: Boolean, default: false },
   });
 
-  // The canvas's store, Vue Flow's nodes and its zoom; none outside the
+  // The canvas's store, Vue Flow's nodes and its zoom. Null outside the
   // canvas, where the line is only drawn.
   const canvas = useCanvasEditing();
   const root = ref(null);
@@ -212,8 +221,8 @@
     return { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
   });
 
-  // A point relative to the line on the grid, while the diagram snaps to
-  // it.
+  // A point relative to the line, put on the grid when the diagram snaps to
+  // the grid.
   function snapped(point) {
     return snappedLinePoint(props.data.node, point, canvas?.store.doc.grid);
   }
@@ -331,7 +340,7 @@
     });
   }
 
-  // What each key does is linePointKey's (see model.js).
+  // linePointKey (see model.js) decides what each key does.
   function onPointKey(index, event) {
     if (!editing.value || drag) {
       return;

@@ -18,8 +18,8 @@ import (
 // mxGraph diagram in, as plain XML.
 const LegacyXMLAnnotation = "builder-xml"
 
-// How a legacy diagram is laid onto the canvas. A legacy icon is 80 by 80 and
-// a device card twice as wide, so positions are doubled: what did not
+// How a legacy diagram goes onto the canvas. A legacy icon is 80 by 80 and a
+// device card is twice as wide, so positions are doubled. Thus what did not
 // overlap in the diagram does not overlap in the document.
 const (
 	legacyScale = 2.0
@@ -80,15 +80,16 @@ func HasLegacyDiagram(config store.Config) bool {
 //     and labels kept as lists of key and value become maps,
 //   - a $NAME placeholder is replaced by the diagram's experiment variable
 //     of that name, or else by the legacy default of the four names that
-//     had one; values stay text, and nothing is read from the environment,
+//     had one. Values stay text, and nothing is read from the environment,
 //   - white space in a hostname or a VLAN name becomes "-", since a document
 //     holds neither,
 //   - interfaces that are not a list of objects are left out, which a
 //     warning says: the editor reads nothing else.
 //
-// The diagram is then laid over the document [FromConfig] generates from
-// those nodes, as [FromLegacyTopology] describes. The document's source is
-// manual: it names no config, so publishing it never updates one.
+// The diagram is then applied to the document that [FromConfig] generates
+// from those nodes, as [FromLegacyTopology] describes. The source of the
+// document is manual. It names no config, so a publish of it never changes
+// one.
 //
 // The returned warnings are a closed set of sentences, and are also stored
 // on the document's [Source].
@@ -132,23 +133,23 @@ func FromLegacy(diagram *LegacyDiagram, name string) (*Document, []string, error
 // carries a diagram of the legacy Builder (see [HasLegacyDiagram]). The
 // topology's spec is the truth for every node: the document is the one
 // [FromConfig] generates, with the same options, source and digest. The
-// diagram is laid over it:
+// diagram is applied to it:
 //
 //   - a device takes the position and icon of the diagram's cell of the same
 //     hostname (compared without case). A device the diagram does not hold
 //     is placed below it, and a cell the topology does not hold is left out,
 //   - a switch cell becomes the switch of its VLAN, with its position and
-//     name; further switch cells of one VLAN become further switches, and
+//     name. Further switch cells of one VLAN become further switches, and
 //     lines to them move the connections. A VLAN without a switch cell,
 //     such as one that only joined two devices directly, keeps the switch
 //     [FromConfig] gave it, placed between its devices,
 //   - a VLAN ID of a switch cell or a line becomes the network's alias,
-//   - a container becomes a group and other text a note; their formatting,
-//     and every other shape and line, is dropped.
+//   - a container becomes a group and other text becomes a note. Their
+//     formatting, and every other shape and line, is dropped.
 //
 // A diagram that cannot be read, or that holds nothing, leaves the document
-// as [FromConfig] generated it; the first is a warning. The returned
-// warnings are also stored on the document's [Source].
+// as [FromConfig] generated it. An unreadable diagram also gives a warning.
+// The returned warnings are also stored on the document's [Source].
 func FromLegacyTopology(config store.Config, options ...GenerateOption) (*Document, []string, error) {
 	doc, warnings, err := FromConfig(config, options...)
 	if err != nil || !HasLegacyDiagram(config) {
@@ -199,7 +200,7 @@ func (d *LegacyDiagram) blank() bool {
 }
 
 // isDevice reports a vertex whose settings are those of a device: any
-// readable settings but a switch's.
+// readable settings other than those of a switch.
 func (c *legacyCell) isDevice() bool {
 	return c.isVertex() && c.settings != nil && !c.isSwitch()
 }
@@ -348,10 +349,10 @@ func legacyInterfaces(spec map[string]any) bool {
 	return len(kept) != len(entries)
 }
 
-// legacyPairs turns the annotations or labels of a legacy device into the
-// map a topology holds: the legacy Builder kept them as a list of key and
-// value, where a later key wins. A map is kept as it is. It returns nil for
-// anything else.
+// legacyPairs changes the annotations or labels of a legacy device into the
+// map that a topology holds. The legacy Builder kept them as a list of key
+// and value, where a later key wins. A map is kept as it is. It returns nil
+// for anything else.
 func legacyPairs(value any) map[string]any {
 	switch typed := value.(type) {
 	case map[string]any:
@@ -590,7 +591,7 @@ type legacyVLAN struct {
 	id      any
 }
 
-// legacyOverlay lays a legacy diagram over the document generated from its
+// legacyOverlay applies a legacy diagram to the document generated from its
 // topology.
 type legacyOverlay struct {
 	doc     *Document
@@ -625,7 +626,8 @@ type legacyOverlay struct {
 	// networks finds a network of the document by name.
 	networks map[string]int
 	// edgesOf lists the edges of a device on a network, by "<node>/<network>"
-	// and in interface order; taken marks those a line of the diagram used.
+	// and in interface order. taken marks those that a line of the diagram
+	// used.
 	edgesOf map[string][]int
 	taken   map[int]bool
 	// ids are the VLAN IDs the diagram gives, in the order they count.
@@ -825,7 +827,7 @@ func (o *legacyOverlay) placeDevices() {
 			o.notes.absent = append(o.notes.absent, cutBytes(strings.TrimSpace(name), maxLegacyShown))
 		case node == nil || o.claimed[node.ID]:
 			// In a diagram of its own, the generation has said why a node
-			// was skipped. A later cell of a hostname is passed over.
+			// was skipped. A later cell of a hostname is ignored.
 		default:
 			o.roles[i] = legacyDeviceCell
 			o.claim(i, node)
@@ -901,7 +903,7 @@ func legacySnap(x, y float64) Position {
 	return Position{X: snap(x), Y: snap(y)}
 }
 
-// placeSwitches turns each switch cell into a switch of its VLAN: the one
+// placeSwitches makes each switch cell a switch of its VLAN: the one
 // generation made for the network, or a further one. The VLAN is the one
 // the cell's settings name, or else its label.
 func (o *legacyOverlay) placeSwitches() {
@@ -976,8 +978,8 @@ func (o *legacyOverlay) network(name string) *Network {
 
 // readLines reads the diagram's lines. A line holds no interface: the
 // connections are those generation made from the interfaces. A line between
-// a device and a switch says which switch of the VLAN a connection goes to,
-// a line between two devices names a VLAN they share, and both may give the
+// a device and a switch tells which switch of the VLAN a connection goes to.
+// A line between two devices names a VLAN that they share. Both can give the
 // VLAN its ID. Any other line is left out.
 func (o *legacyOverlay) readLines() {
 	for _, cell := range o.diagram.cells {
@@ -1189,10 +1191,10 @@ func legacyShownValue(value any) string {
 	return cutBytes(text, maxLegacyShown)
 }
 
-// decorate turns the vertices without settings into groups and notes. A
+// decorate makes groups and notes from the vertices without settings. A
 // vertex that is the parent of another, and a plain rectangle around the
-// center of a placed device or switch, is a group; any other vertex with
-// text is a note; the rest is left out. A label on a line goes with its
+// center of a placed device or switch, is a group. Any other vertex with
+// text is a note. The rest is left out. A label on a line goes with its
 // line.
 func (o *legacyOverlay) decorate() {
 	cells := o.diagram.cells
@@ -1273,11 +1275,11 @@ func legacyHolds(box legacyBox, placed []legacyBox) bool {
 	return false
 }
 
-// joinGroups parents the nodes to the groups. A cell whose parent cell
-// became a group joins it. Any other cell joins the smallest plain rectangle
-// that became a group and holds its center (of equal ones, the earlier
-// cell); a group only joins a larger one, or an equal one before it, and
-// never one that is inside it.
+// joinGroups puts the nodes in the groups. A cell whose parent cell became a
+// group joins it. Any other cell joins the smallest plain rectangle that
+// became a group and holds its center (of equal ones, the earlier cell). A
+// group only joins a larger one, or an equal one before it, and never one
+// that is inside it.
 func (o *legacyOverlay) joinGroups() {
 	var holders []int
 
@@ -1328,10 +1330,10 @@ func (o *legacyOverlay) joinGroups() {
 	}
 }
 
-// limitGroupDepth keeps groups from nesting more than maxLegacyDepth levels,
-// the bound on the XML itself: a cell that would be deeper is left at the
-// top level. No diagram drawn by hand comes near it; it bounds the work a
-// made-up one can cause wherever the chain of groups is walked.
+// limitGroupDepth stops groups from nesting more than maxLegacyDepth levels,
+// the bound on the XML itself. A cell that would be deeper stays at the top
+// level. No diagram drawn by hand comes near this bound. It bounds the work
+// that a made-up diagram can cause wherever the chain of groups is walked.
 func (o *legacyOverlay) limitGroupDepth() {
 	const unknown = -1
 
@@ -1384,12 +1386,12 @@ func (o *legacyOverlay) mayJoin(cell, group int) bool {
 	return true
 }
 
-// placeHubs places the switches that no switch cell stands for: the legacy
+// placeHubs places the switches that no switch cell stands for. The legacy
 // Builder also joined two devices directly, and a topology may have gained a
-// VLAN since. Such a switch sits between its placed devices, moved down
-// until its card covers no device and no other switch, and joins the group
-// of its devices when they share one. Without a placed device, and when no
-// free place is found near them, it is left to [legacyOverlay.placeRest].
+// VLAN since. Such a switch sits between its placed devices. It moves down
+// until its card covers no device and no other switch, and it joins the
+// group of its devices when they share one. When it has no placed device, or
+// no free place near them, [legacyOverlay.placeRest] places it.
 func (o *legacyOverlay) placeHubs() {
 	devices := map[string]*Node{}
 	for _, node := range o.devices {
@@ -1414,8 +1416,8 @@ func (o *legacyOverlay) placeHubs() {
 		}
 	}
 
-	// resume is where the last switch that started at a position ended up:
-	// the next one goes on from there.
+	// resume is the end position of the last switch that started at a
+	// position. The next switch continues from there.
 	resume := map[Position]Position{}
 	placed := 0
 
@@ -1559,8 +1561,8 @@ func (c *legacyCards) covered(box legacyBox) bool {
 	return covered
 }
 
-// placeRest lays the nodes the diagram did not place out in a grid below
-// everything it did: the devices, then the switches.
+// placeRest puts the nodes that the diagram did not place in a grid below
+// everything that it placed: the devices, then the switches.
 func (o *legacyOverlay) placeRest() {
 	var (
 		rest         []*Node

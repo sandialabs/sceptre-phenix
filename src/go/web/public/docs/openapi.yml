@@ -31,28 +31,34 @@ tags:
   - name: Builder
     description: >
       Builder drafts, snapshots, generation and publication. Each operation
-      needs the `configs` permission its description names, so Builder access
-      never exceeds config access.
-      An operation on a draft also needs access to that draft, from one of
-      three sources: owning it; a share from its owner naming the caller,
-      which gives view (list and get) or edit (also update: save, undo, redo
-      and publish), and never delete or changing who it is shared with; or
-      the `builder-drafts` permission of the same verb for the resource name
-      `{owner}/{draft}`. The strongest source wins. A share is bound to the
-      recipient's account: it grants nothing once that account is deleted,
-      or replaced by a new one under the same name. A caller who cannot see a
-      draft gets 404, exactly as for a draft that does not exist, so draft
-      existence is never disclosed; a caller who can see it but may not
-      perform the operation gets 403.
-      The icon library is the server's: every caller with `configs` `list`
-      sees every icon, each under a name unique ignoring case; an icon is
-      renamed or deleted by the user who uploaded it, or with
-      `builder-icons` `update` or `delete`. A template library belongs to
-      one user: its operations act on the caller's own, and no role reaches
-      another user's, except that its owner may share templates and
-      collections, read only, with other users, and publish them to every
-      user with `builder-templates` `publish`; anyone with that permission
-      may take any user's published item back.
+      needs the `configs` permission that its description names. Thus Builder
+      access never exceeds config access.
+
+      An operation on a draft also needs access to that draft. The access
+      comes from one of three sources, and the strongest source wins:
+      ownership of the draft, a share from its owner that names the caller,
+      or the `builder-drafts` permission of the same verb for the resource
+      name `{owner}/{draft}`. A share gives view (list and get) or edit (also
+      update: save, undo, redo and publish). A share never gives delete, or a
+      change to who the draft is shared with. A share is bound to the account
+      of the recipient. It grants nothing after that account is deleted, or
+      replaced by a new account with the same name. A caller who cannot see a
+      draft gets 404, the same as for a draft that does not exist. Thus the
+      API never discloses that a draft exists. A caller who can see a draft
+      but may not do the operation gets 403.
+
+      The icon library belongs to the server. Every caller with `configs`
+      `list` sees every icon. Each icon has a name that is unique, ignoring
+      case. The user who uploaded an icon may rename or delete it. A caller
+      with `builder-icons` `update` or `delete` may also do this.
+
+      A template library belongs to one user. Its operations act on the
+      library of the caller. No role gets access to the library of another
+      user, with these exceptions. The owner may share templates and
+      collections, read only, with other users. With `builder-templates`
+      `publish`, the owner may publish them to every user. A caller with that
+      permission may take back the published item of any user.
+
       Every response of a Builder operation carries
       `X-Content-Type-Options: nosniff`.
 paths:
@@ -1678,9 +1684,9 @@ paths:
       responses:
         "200":
           description: >
-            the complete JSON Schema (draft 2020-12) of a Builder document,
-            the document the `BuilderDocument` component outlines, with a
-            title, a description and examples for each of its properties
+            The complete JSON Schema (draft 2020-12) of a Builder document
+            (the `BuilderDocument` component shows its outline). Each property
+            has a title, a description and examples.
           content:
             application/json:
               schema:
@@ -1699,18 +1705,19 @@ paths:
       description: >
         Requires the `schemas` `get` permission for `builder`, as the
         document schema does. A template file holds one collection of device
-        templates, YAML or JSON: what the Node Templates tab exports and
-        imports, and what phenix reads at start from its template directory
-        (`--base-dir.builder-templates`) as read-only server collections.
+        templates, in YAML or JSON. The Node Templates tab exports and imports
+        this file. At start, phenix reads the template files in its template
+        directory (`--base-dir.builder-templates`) as read-only server
+        collections.
       operationId: getBuilderTemplateFileSchema
       responses:
         "200":
           description: >
-            the complete JSON Schema (draft 2020-12) of a template file
-            (`$id` `https://phenix.sandia.gov/schemas/builder/templates/v1`),
-            with a title, a description and examples for each of its
-            properties; that template names differ even ignoring case, and
-            that icons are accepted PNGs, phenix checks beside it
+            The complete JSON Schema (draft 2020-12) of a template file
+            (`$id` `https://phenix.sandia.gov/schemas/builder/templates/v1`).
+            Each property has a title, a description and examples. phenix also
+            checks two rules outside the schema: template names are different,
+            ignoring case, and icons are PNG images that phenix accepts.
           content:
             application/json:
               schema:
@@ -1727,20 +1734,20 @@ paths:
       description: >
         Requires the `schemas` `get` permission for `builder`, as the
         document schema does. A Builder package is one JSON or YAML file
-        holding a Builder document, the Scenario and Topology configs and the
-        custom icons it names that were chosen to go with it, and the list of
-        what the diagram needs on a phenix server (`POST /builder/package`
-        makes one).
+        (`POST /builder/package` makes one). It holds a Builder document, and
+        the list of what the diagram needs on a phenix server. It also holds
+        the Scenario and Topology configs and custom icons that the document
+        names and that were selected to go with it.
       operationId: getBuilderPackageSchema
       responses:
         "200":
           description: >
-            the complete JSON Schema (draft 2020-12) of a package (`$id`
-            `https://phenix.sandia.gov/schemas/builder/package/v1`), which
-            holds the document schema's definitions, with a title, a
-            description and examples for each of its properties; that a
-            carried config is named by the requirements, and what the
-            document schema cannot express, phenix checks beside it
+            The complete JSON Schema (draft 2020-12) of a package (`$id`
+            `https://phenix.sandia.gov/schemas/builder/package/v1`). It holds
+            the definitions of the document schema. Each property has a title,
+            a description and examples. phenix also checks, outside the
+            schema, that the requirements name each carried config. It also
+            checks what the document schema cannot express.
           content:
             application/json:
               schema:
@@ -1754,16 +1761,17 @@ paths:
         - Builder
       summary: List Builder drafts
       description: >
-        Requires `configs` `list`. Returns the caller's own drafts, and
-        separately the drafts of other users shared with the caller (`via`
-        `share`) or the caller holds `builder-drafts` `list` for (`via`
-        `role`). Drafts whose metadata this server can no longer read (for
-        example, written by a newer phenix) are listed apart, as damaged:
-        the caller's own, and those of other users the caller holds
-        `builder-drafts` `list` for, never because of a share. They cannot be
-        opened, only deleted. Drafts the caller may not see are never counted
-        or described. `canDelete` says of each draft whether the caller may
-        delete it. No row has `experiment`.
+        Requires `configs` `list`. Returns the drafts of the caller. Also
+        returns, separately, the drafts of other users that are shared with
+        the caller (`via` `share`), or for which the caller holds
+        `builder-drafts` `list` (`via` `role`). Also lists separately, as
+        damaged, the drafts whose metadata this server can no longer read (for
+        example, drafts that a newer phenix wrote). These are the drafts of
+        the caller, and the drafts of other users for which the caller holds
+        `builder-drafts` `list`. A share never adds a damaged draft. A damaged
+        draft cannot be opened, only deleted. The response never counts or
+        describes drafts that the caller may not see. `canDelete` tells for
+        each draft whether the caller may delete it. No row has `experiment`.
       operationId: getBuilderDrafts
       responses:
         "200":
@@ -1781,31 +1789,36 @@ paths:
         - Builder
       summary: Create a Builder draft
       description: >
-        Requires `configs` `create`. The draft is owned by the caller and holds
-        the document as its first snapshot. Nothing is published. With
-        `forkOf`, the caller must be able to read that draft: own it, have it
-        shared with them, or hold `builder-drafts` `get` for it. With a
-        `sourceToken` naming a published document, the caller must hold
-        `configs` `get` for the config it was published to. With a
-        `sourceToken` naming the Builder file of a topology, the file is read
-        as GET /builder/topologies/{topology}/document reads it, with the
-        same permission and the same answers when it cannot be used, and the
-        draft is refused with 409 when the file no longer holds the document
-        the token names, or the topology is no longer read from its file.
-        The server stamps the document's `metadata` before it stores it:
-        `createdBy` and `createdAt` are kept when the document has them, and
-        are otherwise the caller and the current time; `updatedBy` and
-        `updatedAt` are always the caller and the current time, and values
-        sent are replaced. One
-        document is stored as it is: the document a `sourceToken` of the
-        `builder-doc/` or `builder-file/` form names, sent back unchanged, so
-        the draft holds exactly what was opened, under the same digest. A
-        value that is not valid in any of the four fields refuses the request
-        (422). The response has no document; its `stamp` holds the four
-        values the stored document has. A draft opened from a published
-        document, or one that forks a draft, has `experiment` when that
-        publication made an experiment that still exists and the caller
-        holds `experiments` `get` for it.
+        Requires `configs` `create`. The caller owns the draft. The draft
+        holds the document as its first snapshot. Nothing is published.
+
+        With `forkOf`, the caller must be able to read that draft: own it,
+        have a share of it, or hold `builder-drafts` `get` for it. With a
+        `sourceToken` that names a published document, the caller must hold
+        `configs` `get` for the config that the document was published to.
+        With a `sourceToken` that names the Builder file of a topology, the
+        server reads the file as GET /builder/topologies/{topology}/document
+        reads it, with the same permission. The answers are the same when the
+        file cannot be used. The server refuses the draft with 409 when the
+        file no longer holds the document that the token names, or when the
+        topology is no longer read from its file.
+
+        The server stamps the `metadata` of the document before it stores it.
+        `createdBy` and `createdAt` stay as they are when the document has
+        them. Otherwise they are the caller and the current time. `updatedBy`
+        and `updatedAt` are always the caller and the current time. The server
+        replaces the values sent in these two fields. The server stores one
+        document as it is: the document that a `sourceToken` of the
+        `builder-doc/` or `builder-file/` form names, sent back unchanged.
+        Thus the draft holds exactly what was opened, with the same digest. A
+        value that is not valid in one of the four fields refuses the request
+        (422). The response has no document. Its `stamp` holds the four values
+        of the stored document.
+
+        A draft opened from a published document, or a draft that forks a
+        draft, has `experiment` when that publication made an experiment. The
+        experiment must still exist, and the caller must hold `experiments`
+        `get` for it.
       operationId: postBuilderDrafts
       requestBody:
         required: true
@@ -1839,8 +1852,8 @@ paths:
         "409":
           description: >
             The `sourceToken` names the Builder file of a topology, and the
-            file's document changed since it was opened, or the topology is no
-            longer read from its file.
+            document of the file changed after it was opened. Or the topology
+            is no longer read from its file.
           content:
             application/json:
               schema:
@@ -1860,12 +1873,13 @@ paths:
         - Builder
       summary: Get a Builder draft with its current document
       description: >
-        Requires `configs` `get`, and for another user's draft a share, or
-        `builder-drafts` `get`. `access`, `via`, `canShare`, `canDelete` and
-        `shares` say what the caller may do with it; `readOnly` is also set
-        when the caller's role cannot update configs. `experiment` names an
-        experiment the draft published, or the published diagram it was
-        opened from did, while one still exists and the caller holds
+        Requires `configs` `get`. For the draft of another user, also requires
+        a share or `builder-drafts` `get`. `access`, `via`, `canShare`,
+        `canDelete` and `shares` tell what the caller may do with the draft.
+        `readOnly` is also true when the role of the caller cannot update
+        configs. `experiment` names an experiment that the draft published, or
+        that the published diagram that the draft was opened from published.
+        It is present while that experiment exists and the caller holds
         `experiments` `get` for it.
       operationId: getBuilderDraft
       responses:
@@ -1909,11 +1923,11 @@ paths:
           $ref: "#/components/responses/BuilderConflict"
         "412":
           description: >
-            The If-Match header does not name the draft's current revision
-            (`draft.stale`). The caller may delete the draft, so the response
-            carries its current ETag, as the listing does for a draft whose
-            metadata this server can no longer read, which cannot be read on
-            its own.
+            The If-Match header does not name the current revision of the
+            draft (`draft.stale`). The caller may delete the draft, so the
+            response carries its current ETag. The listing does the same for a
+            draft whose metadata this server can no longer read, because such a
+            draft cannot be read alone.
           headers:
             ETag:
               $ref: "#/components/headers/BuilderETag"
@@ -1932,9 +1946,9 @@ paths:
         - Builder
       summary: List the snapshots of a Builder draft
       description: >
-        Requires `configs` `get`, and for another user's draft a share, or
-        `builder-drafts` `get`. Snapshots are listed oldest first; `cursor` is
-        the index of the current one.
+        Requires `configs` `get`. For the draft of another user, also requires
+        a share or `builder-drafts` `get`. The list starts with the oldest
+        snapshot. `cursor` is the index of the current snapshot.
       operationId: getBuilderDraftSnapshots
       responses:
         "200":
@@ -1955,19 +1969,19 @@ paths:
         - Builder
       summary: Save a Builder draft
       description: >
-        Requires `configs` `update`, and for another user's draft an edit
-        share, or `builder-drafts` `update`. Appends the document as a new
-        snapshot, discards any
-        snapshots after the cursor (the redo branch), and moves the cursor to
-        the new snapshot. A draft keeps at most 50 snapshots of at most 50 MiB
-        in total; the oldest are dropped to make room for the new one.
-        The server stamps the document's `metadata` before it stores it:
-        `createdBy` and `createdAt` are the ones the draft was created with,
-        and `updatedBy` and `updatedAt` are the caller and the current time.
-        Values sent in
-        any of the four fields are replaced, and one that is not valid refuses
-        the request (422). The response has no document; its `stamp` holds
-        the four values written.
+        Requires `configs` `update`. For the draft of another user, also
+        requires an edit share or `builder-drafts` `update`. Appends the
+        document as a new snapshot, discards all snapshots after the cursor
+        (the redo branch), and moves the cursor to the new snapshot. A draft
+        keeps at most 50 snapshots, of at most 50 MiB in total. The server
+        removes the oldest snapshots to make room for the new snapshot.
+
+        The server stamps the `metadata` of the document before it stores it.
+        `createdBy` and `createdAt` are the values from the draft create.
+        `updatedBy` and `updatedAt` are the caller and the current time. The
+        server replaces the values sent in the four fields. A value that is
+        not valid refuses the request (422). The response has no document. Its
+        `stamp` holds the four values written.
       operationId: postBuilderDraftSnapshots
       parameters:
         - $ref: "#/components/parameters/BuilderIfMatch"
@@ -1979,7 +1993,7 @@ paths:
               $ref: "#/components/schemas/BuilderSnapshotCreate"
       responses:
         "201":
-          description: snapshot appended; the draft without its document
+          description: Snapshot appended. The response is the draft without its document.
           headers:
             ETag:
               $ref: "#/components/headers/BuilderETag"
@@ -2042,18 +2056,19 @@ paths:
         - Builder
       summary: Delete one snapshot of a Builder draft
       description: >
-        Requires `configs` `update`, and for another user's draft an edit
-        share, or `builder-drafts` `update`. Removes the snapshot from the
-        history and deletes its content. The snapshot the cursor points at
-        (the current version) cannot be deleted; the cursor keeps pointing at
-        it. A last publication naming the deleted snapshot is kept; the draft
-        is then `dirty`.
+        Requires `configs` `update`. For the draft of another user, also
+        requires an edit share or `builder-drafts` `update`. Removes the
+        snapshot from the history and deletes its content. The snapshot that
+        the cursor points at (the current version) cannot be deleted. The
+        cursor stays on it. When the last publication names the deleted
+        snapshot, the publication record stays, and the draft is then
+        `dirty`.
       operationId: deleteBuilderDraftSnapshot
       parameters:
         - $ref: "#/components/parameters/BuilderIfMatch"
       responses:
         "200":
-          description: snapshot deleted; the draft without its document
+          description: Snapshot deleted. The response is the draft without its document.
           headers:
             ETag:
               $ref: "#/components/headers/BuilderETag"
@@ -2071,9 +2086,8 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
         "409":
           description: >
-            The snapshot is the current version (`draft.snapshot.current`),
-            or the draft changed while the request was handled
-            (`draft.conflict`).
+            The snapshot is the current version (`draft.snapshot.current`), or
+            the draft changed during the request (`draft.conflict`).
           content:
             application/json:
               schema:
@@ -2091,9 +2105,9 @@ paths:
         - Builder
       summary: Move the cursor of a Builder draft (undo and redo)
       description: >
-        Requires `configs` `update`, and for another user's draft an edit
-        share, or `builder-drafts` `update`. No snapshot is discarded. PUT is
-        accepted as well.
+        Requires `configs` `update`. For the draft of another user, also
+        requires an edit share or `builder-drafts` `update`. No snapshot is
+        discarded. The server also accepts PUT.
       operationId: patchBuilderDraftCursor
       parameters:
         - $ref: "#/components/parameters/BuilderIfMatch"
@@ -2105,7 +2119,7 @@ paths:
               $ref: "#/components/schemas/BuilderCursorMove"
       responses:
         "200":
-          description: cursor moved; the draft without its document
+          description: Cursor moved. The response is the draft without its document.
           headers:
             ETag:
               $ref: "#/components/headers/BuilderETag"
@@ -2145,7 +2159,7 @@ paths:
               $ref: "#/components/schemas/BuilderCursorMove"
       responses:
         "200":
-          description: cursor moved; the draft without its document
+          description: Cursor moved. The response is the draft without its document.
           headers:
             ETag:
               $ref: "#/components/headers/BuilderETag"
@@ -2178,75 +2192,89 @@ paths:
         - Builder
       summary: Publish a Builder draft to phenix configs
       description: >
-        The only Builder operation that creates or updates configs
-        (DELETE /builder/documents/{document} deletes a published topology).
-        It publishes the draft's current snapshot; the request carries intent
-        only. Requires `configs` `update` (and for another user's draft an
-        edit share, or `builder-drafts` `update`), and the caller's own
-        `configs` `create` or `update` on each target config according to its
-        action, and `experiments` `create` or `update` for an experiment
-        target. A draft imported from a stored Topology or Experiment also
-        needs `configs` `get` on it and `topologies` `get` (or `experiments`
-        `get`) on its name, to check it has not changed since.
-        In either mode, a draft whose document lists `scenarios` has a
-        `scenario` stage before the experiment's: each listed Scenario config
-        must exist and be readable (`configs` `get` and `scenarios` `list`),
-        else 422 naming it, and the topology is added to the `topology`
-        annotation of each that does not name it yet, which needs `configs`
-        `update` on it (else 403). A scenario that names it already is not
-        written. The stage's message says which scenarios it changed.
-        Publishing never creates or replaces a scenario's spec.
-        Repeating a publication that already completed, with the If-Match it
-        was sent with, answers 200 with every stage
-        skipped. A draft updates an existing topology or experiment only when
-        it was imported from it, or when it published it (or was opened from
-        the published diagram that did) and nothing else changed it since;
-        any other update is refused with 409. A topology that has a legacy
-        Builder diagram (`builder-xml`) is updated by the draft imported from
-        that topology only, not by one imported from an experiment built from
-        it, and only while that diagram is the one the import read: a
-        diagram changed, added or removed since is refused with 409, as a
-        changed spec is. The update removes `builder-xml`, writes
-        `builder-doc`, and adds a warning to the result, which says that the
-        diagram was replaced or, for one the import could not read, that it
-        was removed. A topology read from the Builder
-        file its `builder-doc` annotation names is updated by a draft opened
-        from that file, while the file still holds what the draft was opened
-        from and the topology is still what the file publishes, and such a
-        draft updates it in no other way: not as a draft imported from the
-        topology either, when the file's document was. Publishing
-        never writes the file: the topology keeps its `path`, and the result
-        carries a warning that the file is now behind. A published experiment records
-        which draft and published document published it, and its digest once
-        its apps' configure stage ran, in its `builder-experiment`
-        annotation; an experiment update runs that stage, as an update
-        through `/configs` does. When a stage fails after earlier stages were
-        written, the response is 409, 500 or 507 with a result whose status is
-        `partial`. When the published document was stored but content it
-        replaces could not be removed, the publication goes on and answers
-        with a `Warning` header and a warning in the result.
+        The only Builder operation that creates or updates configs.
+        (DELETE /builder/documents/{document} deletes a published topology.)
+        It publishes the current snapshot of the draft. The request carries
+        only the intent.
 
-        With `"dryRun": true` the request is a dry run: it needs the same
-        permissions, makes every check of the publication on the draft's
-        current snapshot, writes nothing (no published document, config,
-        scenario annotation, experiment or draft record), needs no If-Match,
-        and answers 200 with a `BuilderPublishPreview`: what the
-        publication would change, the warnings it would give, and, in
-        `errors`, the refusal a publication would answer with 400, 409 or
-        422. A 403, a 404, a body that is not a publish request (400) and a
-        server failure keep their status. It takes no lock, so what it
-        reports may change before the publication is sent. The Publish
-        dialog shows it as What publishing changes.
+        Requires `configs` `update`. For the draft of another user, also
+        requires an edit share or `builder-drafts` `update`. The caller must
+        also have its own `configs` `create` or `update` on each target
+        config, as the action of the target requires. An experiment target
+        also requires `experiments` `create` or `update`. A draft imported
+        from a stored Topology or Experiment also needs `configs` `get` on it,
+        and `topologies` `get` (or `experiments` `get`) on its name. The
+        server uses them to check that the source did not change since the
+        import.
+
+        In both modes, a draft whose document lists `scenarios` has a
+        `scenario` stage before the experiment stage. Each listed Scenario
+        config must exist and be readable (`configs` `get` and `scenarios`
+        `list`). Otherwise the answer is 422 and names the scenario. The stage
+        adds the topology to the `topology` annotation of each scenario that
+        does not name it yet. This needs `configs` `update` on that scenario
+        (otherwise 403). The stage does not write a scenario that already
+        names the topology. The stage message tells which scenarios it
+        changed. A publish never creates or replaces the spec of a scenario.
+
+        A repeat of a publication that completed, with the same If-Match,
+        gets 200 with every stage skipped.
+
+        A draft updates an existing topology or experiment only in these
+        cases: the draft was imported from it, or the draft published it (or
+        was opened from the published diagram that did) and nothing else
+        changed it since. The server refuses all other updates with 409.
+
+        Only the draft imported from a topology updates a topology that has a
+        legacy Builder diagram (`builder-xml`). A draft imported from an
+        experiment built from that topology does not. Also, the diagram must
+        be the one that the import read. The server refuses with 409 a
+        diagram that was changed, added or removed since, as for a changed
+        spec. The update removes `builder-xml`, writes `builder-doc`, and adds
+        a warning to the result. The warning says that the diagram was
+        replaced or, if the import could not read it, removed.
+
+        Some topologies are read from the Builder file that their
+        `builder-doc` annotation names. Only a draft opened from that file
+        updates such a topology. The file must still hold what the draft was
+        opened from, and the topology must still be what the file publishes.
+        Such a draft updates the topology in no other way. It does not update
+        it as a draft imported from the topology, even when the document of
+        the file was imported from the topology. A publish never writes the
+        file. The topology keeps its `path`, and the result has a warning that
+        the file is now behind.
+
+        A published experiment records in its `builder-experiment` annotation
+        which draft and published document published it. After the configure
+        stage of its apps ran, it also records its digest there. An experiment
+        update runs that stage, as an update through `/configs` does. When a
+        stage fails after earlier stages were written, the response is 409,
+        500 or 507, with a result whose status is `partial`. When the
+        published document was stored but the content that it replaces could
+        not be removed, the publication continues. The answer then has a
+        `Warning` header and a warning in the result.
+
+        With `"dryRun": true`, the request is a dry run. A dry run needs the
+        same permissions, and makes every check of the publication on the
+        current snapshot of the draft. It writes nothing (no published
+        document, config, scenario annotation, experiment or draft record),
+        and needs no If-Match. It answers 200 with a `BuilderPublishPreview`.
+        This holds what the publication would change, the warnings it would
+        give, and, in `errors`, the refusal that a publication would answer
+        with 400, 409 or 422. A 403, a 404, a body that is not a publish
+        request (400) and a server failure keep their status. The dry run
+        takes no lock, so what it reports may change before the publication is
+        sent. The Publish dialog shows it as What publishing changes.
       operationId: postBuilderDraftPublish
       parameters:
         - name: If-Match
           in: header
           description: >
-            The ETag of the draft revision the publication is based on, as
-            for every Builder mutation (`BuilderIfMatch`): required, except
-            for a dry run, which writes nothing and ignores it. A missing or
-            malformed one is answered with 400 before the body is decoded,
-            unless the body asks for a dry run.
+            The ETag of the draft revision that the publication is based on,
+            as for every Builder mutation (`BuilderIfMatch`). It is required,
+            except for a dry run, which writes nothing and ignores it. A
+            missing or malformed ETag gets 400 before the server decodes the
+            body, unless the body asks for a dry run.
           required: false
           schema:
             type: string
@@ -2280,9 +2308,9 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
         "409":
           description: >
-            A target config or the draft changed since the publication was
-            prepared, an included topology now defines a hostname the
-            published topology also defines, or a stage failed on such a
+            A target config or the draft changed after the publication was
+            prepared. Or an included topology now defines a hostname that the
+            published topology also defines. Or a stage failed on such a
             conflict after earlier stages were written (a `partial` result).
           content:
             application/json:
@@ -2294,14 +2322,14 @@ paths:
           $ref: "#/components/responses/BuilderPreconditionFailed"
         "422":
           description: >
-            The document fails validation, or publishes something phenix
-            refuses, such as an interface of a device that is not external
-            with no VLAN, interfaces that share an IP or MAC address, or a
-            hostname phenix refuses (one character long, `all`, all digits, or
-            `phenix` on a Windows node). The message names them. Also a
-            scenario the document lists that does not exist or that the caller
-            may not read, and an experiment scenario the document does not
-            list.
+            The document fails validation, or publishes something that phenix
+            refuses. Examples are an interface with no VLAN on a device that is
+            not external, interfaces that share an IP or MAC address, or a
+            hostname that phenix refuses (one character long, `all`, all
+            digits, or `phenix` on a Windows node). The message names them.
+            This status also applies to a scenario that the document lists and
+            that does not exist or that the caller may not read. It also applies
+            to an experiment scenario that the document does not list.
           content:
             application/json:
               schema:
@@ -2336,41 +2364,62 @@ paths:
         - Builder
       summary: Run preflight checks on a Builder draft
       description: >
-        Puts the draft's current document through the checks the request
-        names, in its order and all at once, and reports each as `passed`,
-        `failed` or `unavailable`, with a summary and its issues. `capacity`
-        compares the CPUs and memory of the devices phenix starts (every
-        device but an external one; `hardware.vcpus` and `hardware.memory`,
-        1 and 512 MB when unset) with what the schedulable cluster hosts have
-        free, and checks that each device fits on one host, with its vCPUs
-        and memory both within that host's CPUs and memory; `network` compares the
-        VLANs the devices use and the networks' VLAN aliases with the VLAN
-        range of the `experiment` named (none applies without one, or when
-        the experiment sets no range), the aliases with the VLANs running
-        experiments hold, and the bridges the interfaces name (and the
-        experiment's default bridge, `phenix` without one) with the Open
-        vSwitch bridges of the schedulable hosts, listed with `ovs-vsctl
-        list-br` through minimega's `shell` command, which changes nothing;
-        `disks` looks up each drive image by file
-        name among the server's disk images and checks its kind (a VM or ISO
-        image for a kvm device, a container image for a container); `apps`
-        reads each Scenario config the document lists and looks up each app
-        it does not disable among the default, built-in and user apps (a
-        listed scenario that does not exist is the error
-        `preflight.app.scenario-missing`). A
-        check fails when one of its issues is an error. It is `unavailable`
-        when it, or a part of it, could not be made and nothing failed: the
-        caller's role lacks `hosts` `list` (capacity and bridges), `disks`
-        `list`, `applications` `list`, `experiments` `list` (VLANs in use),
-        read access to the experiment (`configs` `get` and `experiments`
-        `get`) or to a scenario (`configs` `get` and `scenarios` `list`);
-        minimega cannot be reached; the server lists no disk images; or the
-        check took longer than 20 seconds. An issue says why (code
-        `preflight.unavailable`, or `preflight.app.scenario-unreadable` as a
-        warning for a scenario), and one check never keeps the others from
-        being made. Needs what reading the draft needs (`configs` `get`, and
-        for another user's draft a share or `builder-drafts` `get`). Nothing
-        is written, and no VM or experiment is started.
+        Puts the current document of the draft through the checks that the
+        request names, in the request order and all at the same time. Reports
+        each check as `passed`, `failed` or `unavailable`, with a summary and
+        its issues.
+
+        - `capacity` compares the CPUs and memory of the devices that phenix
+        starts with the free CPUs and memory of the schedulable cluster hosts.
+        These devices are all devices except external devices. A device uses
+        `hardware.vcpus` and `hardware.memory`, or 1 and 512 MB when they are
+        not set. The check also makes sure that each device fits on one host,
+        with its vCPUs and memory both within the CPUs and memory of that
+        host.
+
+        - `network` compares the VLANs that the devices use, and the VLAN
+        aliases of the networks, with the VLAN range of the named
+        `experiment`. No range applies without an experiment, or when the
+        experiment sets no range. The check compares the aliases with the
+        VLANs that running experiments hold. It compares the bridges that the
+        interfaces name (and the default bridge of the experiment, or `phenix`
+        without one) with the Open vSwitch bridges of the schedulable hosts.
+        It lists these bridges with `ovs-vsctl list-br` through the minimega
+        `shell` command, which changes nothing.
+
+        - `disks` looks up each drive image by file name among the disk
+        images of the server. It checks the image kind: a VM or ISO image for
+        a kvm device, and a container image for a container.
+
+        - `apps` reads each Scenario config that the document lists. It looks
+        up each app that the scenario does not disable among the default,
+        built-in and user apps. A listed scenario that does not exist is the
+        error `preflight.app.scenario-missing`.
+
+        A check fails when one of its issues is an error. A check is
+        `unavailable` when nothing failed, but the check, or a part of it,
+        could not be made. The causes are:
+
+        - The role of the caller does not have `hosts` `list` (capacity and
+        bridges), `disks` `list`, `applications` `list`, or `experiments`
+        `list` (VLANs in use).
+
+        - The role does not have read access to the experiment (`configs`
+        `get` and `experiments` `get`) or to a scenario (`configs` `get` and
+        `scenarios` `list`).
+
+        - minimega cannot be reached.
+
+        - The server lists no disk images.
+
+        - The check took more than 20 seconds.
+
+        An issue tells why (code `preflight.unavailable`, or
+        `preflight.app.scenario-unreadable` as a warning for a scenario). One
+        check never stops the other checks. Needs the same permissions as a
+        read of the draft: `configs` `get`, and for the draft of another user,
+        a share or `builder-drafts` `get`. The route writes nothing, and starts
+        no VM or experiment.
       operationId: postBuilderDraftPreflight
       requestBody:
         required: true
@@ -2400,12 +2449,13 @@ paths:
         - Builder
       summary: List who a Builder draft is shared with
       description: >
-        Requires `configs` `get`, and owning the draft: only the owner learns
-        who else has access (403 for anyone else who can see it). Each entry
-        is checked against the account it was shared with; `stale` marks one
-        whose account was deleted or replaced by a new one under the same
-        name, which grants nothing. The list has its own entity tag,
-        `"shares-N"`, for the next PUT.
+        Requires `configs` `get` and ownership of the draft. Only the owner
+        learns who else has access (403 for any other caller who can see the
+        draft). The server checks each entry against the account that it was
+        shared with. `stale` marks an entry whose account was deleted, or
+        replaced by a new account with the same name. Such an entry grants
+        nothing. The list has its own entity tag, `"shares-N"`, for the next
+        PUT.
       operationId: getBuilderDraftShares
       responses:
         "200":
@@ -2426,24 +2476,25 @@ paths:
         - Builder
       summary: Replace who a Builder draft is shared with
       description: >
-        Requires `configs` `update`, owning the draft, and a user account of
-        the caller's own (so not when authentication is off). The request
-        replaces the whole list, of at most 25 users, each of whom must have
-        an account; a share is bound to that account. A user whose account
-        was replaced must be removed, saved, and added again. Changing the
-        list also changes the draft's ETag, which the response carries in
-        `draft.etag`; there is no top-level `etag`. A request that changes
-        nothing answers 200 with both entity tags unchanged. Content saves
-        never conflict with it: they use the draft's ETag, not the list's.
+        Requires `configs` `update`, ownership of the draft, and a user
+        account of the caller (thus not when authentication is off). The
+        request replaces the whole list, of at most 25 users. Each user must
+        have an account, and the share is bound to that account. A user whose
+        account was replaced must be removed, saved, and added again. A change
+        to the list also changes the ETag of the draft, which the response
+        carries in `draft.etag`. There is no top-level `etag`. A request that
+        changes nothing gets 200, with both entity tags unchanged. Content
+        saves never conflict with this request, because they use the ETag of
+        the draft, not the ETag of the list.
       operationId: putBuilderDraftShares
       parameters:
         - name: If-Match
           in: header
           description: >
-            The list's entity tag, `"shares-N"` from GET or the last PUT
-            (`"shares-0"` for a draft never shared). A missing header, a
-            wildcard or a weak tag is rejected with 400; any other tag,
-            including a draft ETag, with 412.
+            The entity tag of the list: `"shares-N"` from GET or the last PUT
+            (`"shares-0"` for a draft that was never shared). A missing
+            header, a wildcard or a weak tag gets 400. Any other tag, including
+            a draft ETag, gets 412.
           required: true
           schema:
             type: string
@@ -2471,9 +2522,9 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
         "412":
           description: >
-            The If-Match header does not name the list's current entity tag,
-            or the list changed while the request was handled
-            (`draft.shares.stale`). The response carries the current one.
+            The If-Match header does not name the current entity tag of the
+            list, or the list changed during the request
+            (`draft.shares.stale`). The response carries the current tag.
           headers:
             ETag:
               $ref: "#/components/headers/BuilderSharesETag"
@@ -2488,7 +2539,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/WebError"
         "422":
-          description: Some entries were refused; `errors` says which and why.
+          description: Some entries were refused. `errors` tells which entries and why.
           content:
             application/json:
               schema:
@@ -2516,13 +2567,14 @@ paths:
         - Builder
       summary: List who a Builder draft can be shared with
       description: >
-        The same callers as PUT of the share list may ask (403 for anyone
-        else who can see the draft). Lists, sorted by username, every account
-        that can receive a share, whatever the caller's `users` permissions:
-        every user with an account other than the owner whom a PUT of the
-        share list would accept, so not a user the draft is shared with
-        through an account since removed. Users the draft is already shared
-        with are listed too.
+        The same callers as for PUT of the share list may ask (403 for any
+        other caller who can see the draft). Lists, sorted by username, every
+        account that can receive a share, whatever the `users` permissions of
+        the caller. These are all users with an account, other than the
+        owner, that a PUT of the share list would accept. Thus the list does
+        not include a user that the draft is shared with through an account
+        that was removed since. The list also includes users that the draft
+        is already shared with.
       operationId: getBuilderDraftShareCandidates
       responses:
         "200":
@@ -2541,11 +2593,11 @@ paths:
         - Builder
       summary: List the configs Builder can use as sources
       description: >
-        Requires `configs` `list`. Topologies and experiments can be imported
-        with POST /builder/generate; scenarios and images are offered for
-        selection only. Each config is filtered by `configs` `list` for its
-        name and, for topologies, experiments and scenarios, by the `list`
-        permission of that resource. A topology also reports how many
+        Requires `configs` `list`. POST /builder/generate can import
+        topologies and experiments. Scenarios and images are for selection
+        only. The server filters each config by `configs` `list` for its name.
+        For topologies, experiments and scenarios, it also filters by the
+        `list` permission of that resource. A topology also reports how many
         topologies it includes (`includeCount`), to a caller who holds
         `configs` `get` for its name.
       operationId: getBuilderSources
@@ -2566,48 +2618,61 @@ paths:
         - Builder
       summary: Import a Builder document from a Topology or Experiment config
       description: >
-        Converts a stored config (`source`) or an uploaded one (`content`)
-        into a document and returns it; nothing is written. Requires `configs`
-        `get`. A stored source also needs `configs` `get` for its name and the
-        `topologies` or `experiments` `list` permission for it. Uploaded
-        content needs `configs` `create`, because it is parsed as POST
-        /configs parses a config, including the substitution of `${NAME}` from
-        the server's environment (sandialabs/sceptre-phenix#436 describes
-        this). A Topology that has the `builder-xml` annotation and no
-        `builder-doc` is converted from its legacy Builder diagram, as POST
-        /builder/legacy converts one: its `source` then has `builder`
-        `builder-xml`. The topologies a Topology includes
-        (`includeTopologies`) are read from the config store with the caller's
-        permissions, never from a file. With `includes` `keep`, the default,
-        their nodes are in the document marked `includedFrom` and read only,
-        and the includes that could not be read are listed in the document's
+        Converts a stored config (`source`) or an uploaded config (`content`)
+        into a document and returns it. Nothing is written. Requires `configs`
+        `get`. A stored source also needs `configs` `get` for its name, and
+        the `topologies` or `experiments` `list` permission for it. Uploaded
+        content needs `configs` `create`, because the server parses it as
+        POST /configs parses a config. This includes the substitution of
+        `${NAME}` from the environment of the server
+        (sandialabs/sceptre-phenix#436 describes this).
+
+        A Topology that has the `builder-xml` annotation and no `builder-doc`
+        is converted from its legacy Builder diagram, as POST /builder/legacy
+        converts one. Its `source` then has `builder` `builder-xml`.
+
+        The server reads the topologies that a Topology includes
+        (`includeTopologies`) from the config store with the permissions of
+        the caller, never from a file. With `includes` `keep` (the default),
+        their nodes are in the document, marked `includedFrom` and read only.
+        The document lists the includes that could not be read in its
         `source.unresolvedIncludes`. With `includes` `combine`, their nodes
-        are the document's own, and only the includes that could not be read
-        stay in its `source.includeTopologies`. `copy` asks for the same
-        document as a plain import, not linked to the topology. A combined
-        document and a copy name no config: `source.kind` is `manual`, the
-        document's name is the new topology's name, and a draft made from it
-        publishes a new topology and never updates the one it was imported
-        from. Their `metadata.notes` end with the note `Copied from <name>`,
-        where `<name>` is the name in the source config's metadata. The new
-        name is `name`, or else the source's name with
-        `-combined` or `-copy` added; the server does not look for a name no
-        topology has. The response's `source` is still the config that was
-        read. An Experiment's scenario (its `scenario` annotation) becomes
-        the document's `scenarios` when this server stores a Scenario config
-        of that name that the caller may list (`configs` `list` and
-        `scenarios` `list` for it); otherwise no scenario is listed and a
-        warning says so. The scenario an Experiment holds is never taken
-        into the document. For uploaded content, a listed scenario also adds
-        a warning that it is this server's Scenario config of that name, not
-        the copy the file holds. Answered with 400 when `includes` has
-        another value, or when `name` is given without `copy` or `includes`
-        `combine`. Answered with 422 when `copy` or `includes` `combine` is
-        asked of an Experiment, when the new name is not a config name of 1
-        to 512 bytes (`import.name.invalid`), and when it is the name of the
-        stored topology being imported (`import.name.source`). Answered with
-        500 when the config store cannot be read,
-        such as for the Scenario config an Experiment names.
+        are nodes of the document. Only the includes that could not be read
+        stay in its `source.includeTopologies`.
+
+        `copy` asks for the same document as a plain import, not linked to
+        the topology. A combined document and a copy name no config. Their
+        `source.kind` is `manual`, and the document name is the name of the
+        new topology. A draft made from such a document publishes a new
+        topology, and never updates the topology it was imported from. Their
+        `metadata.notes` end with the note `Copied from <name>`, where
+        `<name>` is the name in the metadata of the source config. The new
+        name is `name`, or else the source name with `-combined` or `-copy`
+        added. The server does not look for a name that no topology has. The
+        `source` of the response is still the config that was read.
+
+        The scenario of an Experiment (its `scenario` annotation) becomes the
+        `scenarios` of the document when this server stores a Scenario config
+        of that name and the caller may list it (`configs` `list` and
+        `scenarios` `list` for it). Otherwise, the document lists no
+        scenario, and a warning says so. The scenario that an Experiment
+        holds never goes into the document. For uploaded content, a listed
+        scenario also adds a warning. The warning says that the scenario is
+        the Scenario config of that name on this server, not the copy in the
+        file.
+
+        Errors:
+
+        - 400 when `includes` has a different value, or when `name` is given
+        without `copy` or `includes` `combine`.
+
+        - 422 when `copy` or `includes` `combine` is asked of an Experiment,
+        when the new name is not a config name of 1 to 512 bytes
+        (`import.name.invalid`), and when it is the name of the stored
+        topology of the import (`import.name.source`).
+
+        - 500 when the config store cannot be read, for example for the
+        Scenario config that an Experiment names.
       operationId: postBuilderGenerate
       requestBody:
         required: true
@@ -2646,26 +2711,30 @@ paths:
         - Builder
       summary: Convert a legacy Builder diagram into a Builder document
       description: >
-        Converts a diagram of the legacy Builder (the editor phenix had
-        before the Builder) and returns the document; nothing is written, and
-        nothing is read from the store but the topologies a topology
-        includes. `content` is the text of a file: the diagram's mxGraph XML,
-        whose root element is `mxGraphModel` or `root`, or a Topology config,
-        as YAML or JSON, that has the `builder-xml` annotation. No encoded or
-        compressed form of the XML is read. For a diagram alone, the node
-        settings the diagram holds are the nodes, its `$NAME` placeholders
-        are replaced from its own variables and the legacy defaults, and the
-        document's source is `manual`, so a draft made from it publishes a
-        new topology. For a Topology, its spec is the truth for every node
-        and the diagram only places them, matched by hostname; the response
-        has its `source`, with `stored` false. Requires `configs` `get` and
-        `configs` `create`: a Topology config is parsed as POST /configs
-        parses one, including the substitution of `${NAME}` from the
-        server's environment. `content` holds at most 5242880 bytes, its XML
-        nests at most 32 elements deep and holds at most 10000 cells, and a
-        DOCTYPE or any other declaration is refused. A refusal repeats
-        nothing of the content but the name and kind of a config, or the
-        name of the XML's root element.
+        Converts a diagram of the legacy Builder (the editor that phenix had
+        before the Builder) and returns the document. Nothing is written. The
+        server reads from the store only the topologies that a topology
+        includes. `content` is the text of a file. The file is the mxGraph
+        XML of the diagram, whose root element is `mxGraphModel` or `root`.
+        Or the file is a Topology config, in YAML or JSON, that has the
+        `builder-xml` annotation. The server reads no encoded or compressed
+        form of the XML.
+
+        For a diagram alone, the node settings in the diagram are the nodes.
+        Its `$NAME` placeholders get values from its own variables and the
+        legacy defaults. The source of the document is `manual`, so a draft
+        made from it publishes a new topology. For a Topology, its spec is the
+        truth for every node, and the diagram only places the nodes, matched
+        by hostname. The response has its `source`, with `stored` false.
+
+        Requires `configs` `get` and `configs` `create`, because a Topology
+        config is parsed as POST /configs parses one. This includes the
+        substitution of `${NAME}` from the environment of the server.
+        `content` holds at most 5242880 bytes. Its XML nests at most 32
+        elements deep and holds at most 10000 cells. The server refuses a
+        DOCTYPE or any other declaration. A refusal repeats nothing of the
+        content but the name and kind of a config, or the name of the root
+        element of the XML.
       operationId: postBuilderLegacy
       requestBody:
         required: true
@@ -2694,23 +2763,25 @@ paths:
         - Builder
       summary: Export a Builder document as the Topology config Publish writes
       description: >
-        Projects the document onto the phenix Topology config a publish of it
-        would write, and returns it as YAML; nothing is read or written.
-        Requires `configs` `get`, as opening a draft does. The document is
-        checked as saving a draft checks it, within the same size limits. The
-        config has no `builder-doc` annotation and names the document's
-        included topologies in `includeTopologies` rather than merging them.
-        A document phenix's config validation refuses is refused with 422, as
-        a publish refuses it. A publish names interfaces without a VLAN, then
-        addresses interfaces share, then hostnames phenix refuses, before any
-        other reason; an export names interfaces without a VLAN only when a
-        `vlan` is missing or null, and hostnames only when one is a single
-        character, which the validation refuses too, and otherwise gives the
-        validation's own reason. What only publishing refuses, such as an
+        Projects the document onto the phenix Topology config that a publish
+        of it would write, and returns that config as YAML. Nothing is read
+        or written. Requires `configs` `get`, as the open of a draft does. The
+        server checks the document as a draft save checks it, within the same
+        size limits. The config has no `builder-doc` annotation. It names the
+        included topologies of the document in `includeTopologies`, and does
+        not merge them.
+
+        When the phenix config validation refuses the document, the answer
+        is 422, as for a publish. A publish names interfaces without a VLAN
+        first, then addresses that interfaces share, then hostnames that
+        phenix refuses, before any other reason. An export names interfaces
+        without a VLAN only when a `vlan` is missing or null. It names
+        hostnames only when one is a single character, which the validation
+        also refuses. Otherwise it gives the reason of the validation.
+        `publishBlockers` reports what only a publish refuses, such as an
         interface with a blank VLAN, interfaces that share an IP or MAC
-        address, or a hostname phenix refuses only when it creates an
-        experiment (`all`, all digits, or `phenix` on a Windows node), is
-        reported in `publishBlockers` instead.
+        address, or a hostname that phenix refuses only when it creates an
+        experiment (`all`, all digits, or `phenix` on a Windows node).
       operationId: postBuilderExportTopology
       requestBody:
         required: true
@@ -2741,35 +2812,40 @@ paths:
         - Builder
       summary: Make a Builder package of a document
       description: >
-        Returns the package of the document the request carries, edits not
-        saved yet included: the document, the sections `include` names, and
-        the requirements, which list the document's scenarios, included
-        topologies, templates, custom icons, the apps of the scenarios that
-        could be read, and the files the document's devices and the packaged
-        configs name (injection sources, app asset directories), whatever the
-        package carries. Requires `configs` `get`. Each Scenario config the
-        document names, and with `topologies` each included topology, is read
-        from the config store under the caller's permissions (`configs`
-        `get` on it and `scenarios` or `topologies` `list`); one that does
-        not exist and one the caller may not read are named in the
-        requirements but not carried, and a warning says so, in the same
-        words for both. An include that is a file path is never read. The
-        `icons` section gives the document a copy of each custom icon it
-        names from the icon library. Configs are carried without their times
-        and the Builder's annotations (`builder-*`). The package never holds
-        the content of a file, a script or an app. Nothing is written. The
-        package answered is always one `POST /builder/package/resolve` takes:
-        a requirements entry the package format refuses (blank, longer than
-        4096 bytes, holding control characters such as a newline in an
-        injection source, or past the first 1000 entries of its list) is left
-        out of the requirements, and a warning names it. Each warning is an
-        issue with its code (`package.config.unreadable`,
-        `package.include.file-path`, `package.icon.missing`,
-        `package.icons.too-many`, `package.requirement.left-out`,
-        `package.requirements.truncated`). Anything else the package would
-        be refused for, such as a stored config without a spec, is answered
-        422 with the code `package.invalid` and the issues. A package larger
-        than 5242880 bytes is refused with 413 and the code
+        Returns the package of the document in the request, with the edits
+        not saved yet. The package holds the document, the sections that
+        `include` names, and the requirements. The requirements list these
+        items, whatever the package carries: the scenarios of the document,
+        its included topologies, its templates, its custom icons, the apps of
+        the scenarios that could be read, and the files that the devices of
+        the document and the packaged configs name (injection sources, app
+        asset directories).
+
+        Requires `configs` `get`. The server reads from the config store each
+        Scenario config that the document names, and, with `topologies`, each
+        included topology. It reads them with the permissions of the caller
+        (`configs` `get` on it, and `scenarios` or `topologies` `list`). The
+        requirements name a config that does not exist, or that the caller
+        may not read, but the package does not carry it. A warning says so,
+        in the same words for both cases. The server never reads an include
+        that is a file path. The `icons` section gives the document a copy of
+        each custom icon that it names, from the icon library. Configs go in
+        the package without their times and Builder annotations
+        (`builder-*`). The package never holds the content of a file, a
+        script or an app. Nothing is written.
+
+        `POST /builder/package/resolve` always accepts the package in the
+        answer. The server leaves out of the requirements an entry that the
+        package format refuses, and a warning names it. Such an entry is
+        blank, longer than 4096 bytes, holds control characters (such as a
+        newline in an injection source), or comes after the first 1000
+        entries of its list. Each warning is an issue with its code
+        (`package.config.unreadable`, `package.include.file-path`,
+        `package.icon.missing`, `package.icons.too-many`,
+        `package.requirement.left-out`, `package.requirements.truncated`).
+        Anything else that would refuse the package, such as a stored config
+        without a spec, gets 422 with the code `package.invalid` and the
+        issues. A package larger than 5242880 bytes gets 413 with the code
         `package.too-large`.
       operationId: postBuilderPackage
       requestBody:
@@ -2799,32 +2875,44 @@ paths:
         - Builder
       summary: Check what a Builder package's diagram needs on this server
       description: >
-        Reports, for each entry of the package's requirements, whether this
-        server has it. Requires `configs` `get`. The package is the request
-        body, at most 5242880 bytes (413 beyond, with the code
-        `package.too-large`), decoded strictly (unknown fields are refused)
-        and checked as the package schema describes, else 422 with the code
-        `package.invalid` and, for a package that does not validate, each
-        problem in `issues`; a carried config with a Builder annotation
-        (`builder-*`) is refused too. A Scenario or Topology config
-        is `present` when the server has one of that name with the package's
-        spec, or the package carries none; `different` when its spec is
-        another; `missing` when there is none; and `unknown` when the caller
-        may not read it (`configs` `get` on it and `scenarios` or
-        `topologies` `list`), so its existence is not disclosed. A custom
-        icon is compared by its bytes the same way, under `configs` `list`.
-        Disk images are looked for among those `GET /disks` lists the caller
-        (`disks` `list`, then by name), so one the caller may not see is
-        `missing`, as an absent one is; a drive is matched by the image's
-        name or full path, else by its file name, which the `detail` then
-        says (`Matched by file name pkg.qc2; this server's image is
-        /phenix/images/pkg.qc2.`). Apps need `applications` `list`, for the
-        name too. Without `disks` `list` or `applications` `list`, or when
-        the disk images cannot be listed, they are `unknown`. Templates
-        travel in the document and are
-        `present`. Files are never checked and are `unknown`. Nothing is
-        written: the Builder creates a missing config the user ticks through
-        `POST /configs`.
+        Reports, for each entry of the requirements of the package, whether
+        this server has it. Requires `configs` `get`. The package is the
+        request body, at most 5242880 bytes. A larger body gets 413 with the
+        code `package.too-large`. The server decodes the package strictly (it
+        refuses unknown fields) and checks it as the package schema
+        describes. Otherwise the answer is 422 with the code
+        `package.invalid`. For a package that does not validate, `issues` has
+        each problem. The server also refuses a carried config with a Builder
+        annotation (`builder-*`).
+
+        - A Scenario or Topology config is `present` when the server has one
+        of that name with the spec of the package, or the package carries no
+        spec. It is `different` when its spec is not the same, and `missing`
+        when there is none. It is `unknown` when the caller may not read it
+        (`configs` `get` on it, and `scenarios` or `topologies` `list`), so
+        its existence is not disclosed.
+
+        - A custom icon is compared by its bytes the same way, under
+        `configs` `list`.
+
+        - Disk images are looked for among the images that `GET /disks`
+        lists the caller (`disks` `list`, then by name). Thus an image that
+        the caller may not see is `missing`, as an absent image is. A drive
+        matches by the name or full path of the image, else by its file name.
+        The `detail` then tells this (`Matched by file name pkg.qc2; this
+        server's image is /phenix/images/pkg.qc2.`).
+
+        - Apps need `applications` `list`, also for the name.
+
+        - Without `disks` `list` or `applications` `list`, or when the disk
+        images cannot be listed, they are `unknown`.
+
+        - Templates travel in the document, so they are `present`.
+
+        - Files are never checked, so they are `unknown`.
+
+        Nothing is written. The Builder creates a missing config that the
+        user selects through `POST /configs`.
       operationId: postBuilderPackageResolve
       requestBody:
         required: true
@@ -2857,15 +2945,15 @@ paths:
         - Builder
       summary: List published Builder documents
       description: >
-        Requires `configs` `list`. Lists the documents that configs currently
-        reference in their `builder-doc` annotation, filtered by `configs`
-        `list` for the config each one was published to. A topology whose
-        annotation names a Builder file (`path`), and no stored document that
-        is current, is listed with `source` `file` and the path only: the
+        Requires `configs` `list`. Lists the documents that configs reference
+        now in their `builder-doc` annotation, filtered by `configs` `list`
+        for the config that each document was published to. A topology whose
+        annotation names a Builder file (`path`), and no current stored
+        document, is listed with `source` `file` and the path only. The
         listing reads no file, so such a row is listed whether or not the
         file can be used. A row with `source` `store` has `experiment` when
-        the publication behind the document made an experiment that still
-        exists, is built from the row's topology, and the caller holds
+        the publication of the document made an experiment that still exists,
+        is built from the topology of the row, and the caller holds
         `experiments` `get` for it.
       operationId: getBuilderDocuments
       responses:
@@ -2885,9 +2973,9 @@ paths:
         - Builder
       summary: Get a published Builder document
       description: >
-        Requires `configs` `get` for the config the document was published
-        to. A document the caller may not read, or that no config references
-        any more, is answered with 404.
+        Requires `configs` `get` for the config that the document was
+        published to. A document that the caller may not read, or that no
+        config references any more, gets 404.
       operationId: getBuilderDocument
       parameters:
         - name: document
@@ -2912,14 +3000,15 @@ paths:
         - Builder
       summary: Delete a published Builder topology
       description: >
-        Deletes the Topology config the document is current for, as
-        `DELETE /configs/Topology/{name}` does, then every published document
-        of that topology. Drafts and experiments made from it are not
-        changed. Requires `configs` `delete` for the topology; a document the
-        caller may not get, or that is no longer current (the topology was
-        changed to reference another document, published again or deleted),
-        is answered with 404. A published experiment is refused with 422:
-        experiments are deleted from the Experiments page.
+        Deletes the Topology config that the document is current for, as
+        `DELETE /configs/Topology/{name}` does. Then deletes every published
+        document of that topology. Drafts and experiments made from it do not
+        change. Requires `configs` `delete` for the topology. A document that
+        the caller may not get, or that is no longer current, gets 404. A
+        document is no longer current when the topology changed to reference
+        another document, was published again, or was deleted. A published
+        experiment gets 422, because experiments are deleted from the
+        Experiments page.
       operationId: deleteBuilderDocument
       parameters:
         - name: document
@@ -2931,9 +3020,9 @@ paths:
       responses:
         "204":
           description: >
-            The topology is deleted. A Warning header says its published
-            documents could not all be removed; they are never listed again,
-            and a later server start removes them.
+            The topology is deleted. A Warning header says that not all of
+            its published documents could be removed. They are never listed
+            again, and a later server start removes them.
           headers:
             Warning:
               $ref: "#/components/headers/BuilderWarning"
@@ -2949,24 +3038,31 @@ paths:
         - Builder
       summary: Get the Builder document a topology references
       description: >
-        Returns the document the topology's `builder-doc` annotation names,
-        wherever it is kept. The stored published document wins: the one the
-        annotation's `id` or `digest` names for this topology. Without one,
-        the Builder file at the annotation's `path` is read from the phenix
-        server, on every request. The file must be below the phenix base
-        directory (`--base-dir.phenix`) and outside the directory VM file
-        systems are mounted in, be a regular file of at most 5 MiB reached
-        through no symbolic link that leaves the base directory or has an
-        absolute target, and hold a valid Builder document as JSON or
-        YAML. A `digest` beside `path` pins the file: a file whose document
-        has another digest is refused. Requires `configs` `get` for the
-        topology, which says nothing of the file: a caller who may create
+        Returns the document that the `builder-doc` annotation of the
+        topology names, wherever it is kept. The stored published document
+        wins: the document that the `id` or `digest` of the annotation names
+        for this topology. Without one, the server reads the Builder file at
+        the `path` of the annotation, on every request. The file must:
+
+        - be below the phenix base directory (`--base-dir.phenix`), and
+        outside the directory that holds the mounted VM file systems
+
+        - be a regular file of at most 5 MiB
+
+        - be reached through no symbolic link that leaves the base directory
+        or has an absolute target
+
+        - hold a valid Builder document as JSON or YAML
+
+        A `digest` beside `path` pins the file. The server refuses a file
+        whose document has another digest. Requires `configs` `get` for the
+        topology, which says nothing about the file. A caller who may create
         or update any one topology can name any Builder file below the base
-        directory in it, and read that file here. A topology the caller may
-        not get, one that does not exist, and one that references no document
-        are all answered with the same 404. A file that cannot be used is
-        answered with a fixed sentence naming the path, never with anything
-        the file holds.
+        directory in it, and read that file here. These all get the same 404:
+        a topology that the caller may not get, a topology that does not
+        exist, and a topology that references no document. A file that cannot
+        be used gets a fixed sentence that names the path, never anything
+        that the file holds.
       operationId: getBuilderTopologyDocument
       parameters:
         - name: topology
@@ -2990,7 +3086,7 @@ paths:
         "404":
           description: >
             The topology does not exist, the caller may not get it, or it
-            references no Builder document; or the Builder file it names
+            references no Builder document. Or the Builder file that it names
             does not exist on this phenix server.
           content:
             application/json:
@@ -3018,13 +3114,14 @@ paths:
         - Builder
       summary: List the icons of the Builder icon library
       description: >
-        Requires `configs` `list`. Returns every icon of the server's icon
-        library, sorted by name ignoring case, each with its PNG as base64,
-        who uploaded it, its aliases (the names it had before its renames,
-        which still name it), and whether the caller may rename or delete
-        it; and how many icons and PNG bytes each user may upload and the
-        caller has. The image is only ever sent as base64 inside JSON, never
-        as an image. Every response of the icon operations also carries
+        Requires `configs` `list`. Returns every icon of the icon library of
+        the server, sorted by name, ignoring case. Each icon has its PNG as
+        base64, its uploader, its aliases (the earlier names from its renames,
+        which still name it), and whether the caller may rename or delete it.
+        The response also tells how many icons and PNG bytes each user may
+        upload, and how many the caller has. The server sends the image only
+        as base64 inside JSON, never as an image. Every response of the icon
+        operations also carries
         `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`.
       operationId: listBuilderIcons
       responses:
@@ -3041,23 +3138,26 @@ paths:
         - Builder
       summary: Add an icon to the Builder icon library
       description: >
-        Requires `configs` `create`. Adds a PNG under a name the caller
-        chooses: 1 to 64 letters, digits, `_`, `@`, `.` and `-`, not `.` or
-        `..`, which no icon and no alias has, ignoring case. Takes a PNG of
-        at most 96 by 96 pixels and 65536 bytes, as base64. Only the bytes
-        say what the image is: no file name, extension or declared type is
-        read, and anything that is not a PNG (SVG, JPEG, GIF, WebP) is
-        refused. A PNG that holds only the chunks `IHDR`, `PLTE`, `tRNS`,
-        `IDAT` and `IEND`, a `PLTE` or `tRNS` only where its color type uses
-        one, nothing after its pixels, and is at most 40960 bytes is stored
-        as it is. Any other is encoded again, which keeps its pixels and
-        drops everything else (text, metadata, color profiles, further
-        frames, an unused palette, data after the pixels), so use the `data`
-        the response returns. A name that already names an icon with the
-        same bytes answers 200 with that icon; one that names another icon,
-        or is another icon's alias, answers 409. Each user may upload at most
-        64 icons and 1 MiB of PNG bytes; the library holds at most 2000
-        icons.
+        Requires `configs` `create`. Adds a PNG under a name that the caller
+        selects. The name has 1 to 64 letters, digits, `_`, `@`, `.` and `-`.
+        It is not `.` or `..`, and no icon or alias has it, ignoring case.
+        Takes a PNG of at most 96 by 96 pixels and 65536 bytes, as base64.
+        Only the bytes tell what the image is. The server reads no file name,
+        extension or declared type, and refuses all images that are not PNG
+        (SVG, JPEG, GIF, WebP).
+
+        The server stores a PNG as it is when all these are true: it holds
+        only the chunks `IHDR`, `PLTE`, `tRNS`, `IDAT` and `IEND`, it has a
+        `PLTE` or `tRNS` only where its color type uses one, it has nothing
+        after its pixels, and it is at most 40960 bytes. The server encodes
+        all other PNGs again. This keeps the pixels and removes all else
+        (text, metadata, color profiles, more frames, an unused palette, data
+        after the pixels). Thus use the `data` that the response returns.
+
+        A name that already names an icon with the same bytes gets 200 with
+        that icon. A name of another icon, or an alias of another icon, gets
+        409. Each user may upload at most 64 icons and 1 MiB of PNG bytes. The
+        library holds at most 2000 icons.
       operationId: createBuilderIcon
       requestBody:
         required: true
@@ -3080,9 +3180,9 @@ paths:
                 $ref: "#/components/schemas/BuilderIcon"
         "400":
           description: >
-            The request is malformed: its body is not a single JSON value of
-            the expected shape (unknown fields are rejected), or `data` is
-            missing or not base64.
+            The request is malformed. Its body is not a single JSON value of
+            the expected shape (the server refuses unknown fields), or `data`
+            is missing or not base64.
           content:
             application/json:
               schema:
@@ -3109,9 +3209,9 @@ paths:
                 $ref: "#/components/schemas/WebError"
         "422":
           description: >
-            The name is not an icon name, the image is not a PNG or is more
-            than 96 pixels wide or high, or the caller's share of the library,
-            or the library, is full.
+            The name is not an icon name, or the image is not a PNG or is more
+            than 96 pixels wide or high. Or the share of the caller in the
+            library, or the library, is full.
           content:
             application/json:
               schema:
@@ -3123,8 +3223,8 @@ paths:
       - name: icon
         in: path
         description: >
-          the icon's name, or one of its aliases, in any case. A path that
-          names no icon is answered with 404, whatever its form.
+          the name of the icon, or one of its aliases, in any case. A path
+          that names no icon gets 404, whatever its form.
         required: true
         schema:
           type: string
@@ -3133,8 +3233,8 @@ paths:
         - Builder
       summary: Read an icon of the Builder icon library
       description: >
-        Requires `configs` `get`. Returns the icon the path names; `name` is
-        the name it has now.
+        Requires `configs` `get`. Returns the icon that the path names. `name`
+        is the current name of the icon.
       operationId: getBuilderIcon
       responses:
         "200":
@@ -3152,13 +3252,13 @@ paths:
         - Builder
       summary: Rename an icon of the Builder icon library
       description: >
-        Requires `configs` `update`, and being the user who uploaded the icon
-        or holding `builder-icons` `update` (403 otherwise). Gives the icon
-        the path names a new name, which no other icon and no other icon's
-        alias may have, ignoring case. The old name becomes an alias, so
-        diagrams and templates that name it keep showing the icon. A change
-        of case renames the icon in place; renaming it back to one of its
-        aliases takes that name back.
+        Requires `configs` `update`. The caller must also be the user who
+        uploaded the icon, or hold `builder-icons` `update` (otherwise 403).
+        Gives the icon that the path names a new name. No other icon, and no
+        alias of another icon, may have that name, ignoring case. The old
+        name becomes an alias, so diagrams and templates that name it
+        continue to show the icon. A change of case renames the icon in
+        place. A rename back to one of its aliases takes that name back.
       operationId: renameBuilderIcon
       requestBody:
         required: true
@@ -3175,8 +3275,8 @@ paths:
                 $ref: "#/components/schemas/BuilderIcon"
         "400":
           description: >
-            The request is malformed: its body is not a single JSON value of
-            the expected shape (unknown fields are rejected).
+            The request is malformed. Its body is not a single JSON value of
+            the expected shape (the server refuses unknown fields).
           content:
             application/json:
               schema:
@@ -3187,8 +3287,8 @@ paths:
           $ref: "#/components/responses/BuilderIconNotFound"
         "409":
           description: >
-            The new name is taken by another icon or its alias, or the icon
-            changed while it was renamed; nothing was renamed.
+            Another icon or its alias has the new name, or the icon changed
+            during the rename. Nothing was renamed.
           content:
             application/json:
               schema:
@@ -3212,14 +3312,14 @@ paths:
         - Builder
       summary: Delete an icon from the Builder icon library
       description: >
-        Requires `configs` `delete`, and being the user who uploaded the
-        icon or holding `builder-icons` `delete` (403 otherwise). Deletes the
-        icon the path names, by its name or an alias, with all its aliases.
-        Diagrams and templates that name it show their built-in icon; a
-        downloaded document keeps its own copy. With `builder-icons`
-        `delete`, a record of that name this server cannot read is removed.
-        When an alias could not be removed, the answer is still 204, with a
-        `Warning: 199` header.
+        Requires `configs` `delete`. The caller must also be the user who
+        uploaded the icon, or hold `builder-icons` `delete` (otherwise 403).
+        Deletes the icon that the path names, by its name or an alias, with
+        all its aliases. Diagrams and templates that name it show their
+        built-in icon. A downloaded document keeps its own copy. With
+        `builder-icons` `delete`, the server removes a record of that name
+        that it cannot read. When an alias could not be removed, the answer
+        is still 204, with a `Warning: 199` header.
       operationId: deleteBuilderIcon
       responses:
         "204":
@@ -3230,8 +3330,8 @@ paths:
           $ref: "#/components/responses/BuilderIconNotFound"
         "409":
           description: >
-            The icon changed while it was deleted (it was renamed, say);
-            nothing was deleted.
+            The icon changed during the delete (for example, it was renamed).
+            Nothing was deleted.
           content:
             application/json:
               schema:
@@ -3244,28 +3344,34 @@ paths:
         - Builder
       summary: List the device templates you can use
       description: >
-        Requires `configs` `list`. Returns the templates and collections the
-        caller can use; a template names its custom icon, which the icon
-        library resolves. First the
-        caller's own library (`source` `own`), in the order its items were
-        added; then, sorted by owner, the items of other users' libraries
-        shared with the caller (`shared`) or published to every user
-        (`server`), read only, as they are now. A template in a collection
-        shared with the caller, or published, is listed as well; an item
-        seen both ways is `shared`. A share applies only to the account it
-        was made for. A user who never changed the library has the five
-        built-in templates (`server`, `workstation`, `router`, `firewall`,
-        `external`), at version 1 and without times; the first change stores
-        them, and a built-in template that is deleted is never added again.
-        A library record of the caller's that this server cannot read is
-        reported with `damaged` true and none of its items; every change of
-        it is then refused with 409. Another user's library that cannot be
-        read is left out. `preloaded` lists, for every caller, the
-        collections the server read at start from the template files of its
-        template directory (`--base-dir.builder-templates`), one collection
-        per file, with its templates (`source` `preloaded`, no owner,
-        version 1). They are read only: a write route that names one answers
-        409, and a copy in the caller's library can be changed.
+        Requires `configs` `list`. Returns the templates and collections that
+        the caller can use. A template names its custom icon, which the icon
+        library resolves.
+
+        First comes the library of the caller (`source` `own`), in the order
+        that its items were added. Then come, sorted by owner, the items of
+        the libraries of other users that are shared with the caller
+        (`shared`) or published to every user (`server`). These items are
+        read only, and show their current state. A template in a collection
+        that is shared with the caller, or published, is also listed. An item
+        that the caller sees both ways is `shared`. A share applies only to
+        the account that it was made for.
+
+        A user who never changed the library has the five built-in templates
+        (`server`, `workstation`, `router`, `firewall`, `external`), at
+        version 1 and without times. The first change stores them. A deleted
+        built-in template is never added again. When this server cannot read
+        a library record of the caller, the response has `damaged` true and
+        none of its items. The server then refuses every change of it with
+        409. The response leaves out the library of another user that cannot
+        be read.
+
+        `preloaded` lists, for every caller, the collections that the server
+        read at start from the template files of its template directory
+        (`--base-dir.builder-templates`). There is one collection per file,
+        with its templates (`source` `preloaded`, no owner, version 1). They
+        are read only. A write route that names one gets 409. A copy in the
+        library of the caller can be changed.
       operationId: getBuilderTemplates
       responses:
         "200":
@@ -3282,11 +3388,11 @@ paths:
         - Builder
       summary: List who your Builder templates can be shared with
       description: >
-        Requires `configs` `update` and a user account of the caller's own,
-        as sharing does (403 otherwise; so not with authentication off).
-        Lists, sorted by username, every account a share request would
-        accept, whatever the caller's `users` permissions: every user with
-        an account other than the caller.
+        Requires `configs` `update` and a user account of the caller, as a
+        share does (otherwise 403, so not when authentication is off). Lists,
+        sorted by username, every account that a share request would accept,
+        whatever the `users` permissions of the caller. These are all users
+        with an account, other than the caller.
       operationId: getBuilderTemplateShareCandidates
       responses:
         "200":
@@ -3305,13 +3411,13 @@ paths:
         - Builder
       summary: Add device templates to your template library
       description: >
-        Requires `configs` `create`, and being `{owner}`. Adds 1 to 200
-        templates in one write, each under a new ID. With `collection`, a new
-        collection holding exactly those templates is made in the same write.
-        A template's custom icon (`device.icon`) is an icon name, which the
-        icon library resolves whether or not it holds that icon now. The
-        first change of a library also stores the built-in templates it
-        started with.
+        Requires `configs` `create`. The caller must be `{owner}`. Adds 1 to
+        200 templates in one write, each with a new ID. With `collection`, the
+        same write also makes a new collection that holds exactly those
+        templates. The custom icon of a template (`device.icon`) is an icon
+        name. The icon library resolves it, whether or not it holds that icon
+        now. The first change of a library also stores the built-in templates
+        that it started with.
       operationId: createBuilderTemplates
       requestBody:
         required: true
@@ -3328,9 +3434,9 @@ paths:
                 $ref: "#/components/schemas/BuilderTemplateCreateResult"
         "400":
           description: >
-            The request is malformed: its body is not a single JSON value of
-            the expected shape (unknown fields are rejected), or it names no
-            template.
+            The request is malformed. Its body is not a single JSON value of
+            the expected shape (the server refuses unknown fields), or it names
+            no template.
           content:
             application/json:
               schema:
@@ -3358,10 +3464,11 @@ paths:
         - Builder
       summary: Replace a device template of your template library
       description: >
-        Requires `configs` `update`, and being `{owner}`. Replaces the name,
-        the description and the device of one template, which keeps its ID.
-        Content equal to what is stored changes nothing and keeps the entity
-        tag. Devices already made from the template are not changed.
+        Requires `configs` `update`. The caller must be `{owner}`. Replaces
+        the name, the description and the device of one template. The
+        template keeps its ID. Content that is equal to the stored content
+        changes nothing and keeps the entity tag. Devices already made from
+        the template do not change.
       operationId: putBuilderTemplate
       parameters:
         - $ref: "#/components/parameters/BuilderTemplateIfMatch"
@@ -3407,10 +3514,10 @@ paths:
         - Builder
       summary: Add a collection to your template library
       description: >
-        Requires `configs` `create`, and being `{owner}`. A collection is a
-        named group of templates of the same library; a template may be in
-        several. Every ID in `templateIds` must name a template of the
-        library, once.
+        Requires `configs` `create`. The caller must be `{owner}`. A
+        collection is a named group of templates of the same library. A
+        template can be in more than one collection. Every ID in
+        `templateIds` must name a template of the library, one time.
       operationId: createBuilderTemplateCollection
       requestBody:
         required: true
@@ -3453,11 +3560,12 @@ paths:
         - Builder
       summary: Replace a collection of your template library
       description: >
-        Requires `configs` `update`, and being `{owner}`. Replaces the name,
-        the description and the templates of one collection, which keeps its
-        ID. Adding a template to a collection, and removing one from it, is
-        this request with the changed list. Content equal to what is stored
-        changes nothing and keeps the entity tag.
+        Requires `configs` `update`. The caller must be `{owner}`. Replaces
+        the name, the description and the templates of one collection. The
+        collection keeps its ID. To add a template to a collection, or to
+        remove one from it, send this request with the changed list. Content
+        that is equal to the stored content changes nothing and keeps the
+        entity tag.
       operationId: putBuilderTemplateCollection
       parameters:
         - $ref: "#/components/parameters/BuilderTemplateIfMatch"
@@ -3503,14 +3611,14 @@ paths:
         - Builder
       summary: Delete templates and collections of your template library
       description: >
-        Requires `configs` `delete`, and being `{owner}`. Deletes the named
-        templates and collections in one write. An ID the library does not
-        hold is ignored, so repeating the request is harmless. A deleted
-        template leaves every collection that held it; a deleted collection
-        leaves its templates. A built-in template is deleted like any
-        other. It stays deleted until you restore it (see
-        `POST /builder/templates/{owner}/restore`). Diagrams are not
-        changed: a device made from a template keeps no link to it.
+        Requires `configs` `delete`. The caller must be `{owner}`. Deletes
+        the named templates and collections in one write. The server ignores
+        an ID that the library does not hold, so a repeat of the request is
+        harmless. A deleted template leaves every collection that held it. A
+        deleted collection leaves its templates. A built-in template is
+        deleted as any other template. It stays deleted until you restore it
+        (see `POST /builder/templates/{owner}/restore`). Diagrams do not
+        change, because a device made from a template keeps no link to it.
       operationId: deleteBuilderTemplates
       requestBody:
         required: true
@@ -3527,9 +3635,9 @@ paths:
                 $ref: "#/components/schemas/BuilderTemplateDeleteResult"
         "400":
           description: >
-            The request is malformed: its body is not a single JSON value of
-            the expected shape (unknown fields are rejected), or it names
-            neither a template nor a collection.
+            The request is malformed. Its body is not a single JSON value of
+            the expected shape (the server refuses unknown fields), or it names
+            no template and no collection.
           content:
             application/json:
               schema:
@@ -3558,16 +3666,17 @@ paths:
         - Builder
       summary: Restore deleted built-in templates to your template library
       description: >
-        Requires `configs` `create`, and being `{owner}`. Adds back the
-        built-in templates (`server`, `workstation`, `router`, `firewall`,
+        Requires `configs` `create`. The caller must be `{owner}`. Adds back
+        the built-in templates (`server`, `workstation`, `router`, `firewall`,
         `external`) that the library does not hold, in one write. Each one
         gets its original ID and content at version 1, and goes last. It is
         in no collection, and it is not shared or published. With
-        `templates`, only the built-in templates it names are restored.
-        Without `templates`, or with an empty list, every missing built-in
-        template is restored. An ID that is not a built-in ID is ignored. A
-        built-in template that the library holds is ignored, also when it
-        was changed. So repeating the request is harmless.
+        `templates`, the server restores only the built-in templates that it
+        names. Without `templates`, or with an empty list, the server restores
+        every missing built-in template. The server ignores an ID that is not
+        a built-in ID. It also ignores a built-in template that the library
+        holds, also when that template was changed. Thus a repeat of the
+        request is harmless.
       operationId: restoreBuilderTemplates
       requestBody:
         required: true
@@ -3584,8 +3693,8 @@ paths:
                 $ref: "#/components/schemas/BuilderTemplateRestoreResult"
         "400":
           description: >
-            The request is malformed: its body is not a single JSON value of
-            the expected shape (unknown fields are rejected).
+            The request is malformed. Its body is not a single JSON value of
+            the expected shape (the server refuses unknown fields).
           content:
             application/json:
               schema:
@@ -3610,22 +3719,26 @@ paths:
         - Builder
       summary: Share templates and collections of your template library
       description: >
-        Requires `configs` `update`, being `{owner}`, and a user account of
-        the caller's own (403 without it, so not with authentication off).
-        Adds the users in `add` to, and removes the users in `remove` from,
-        who each named template and collection is shared with. A recipient
-        sees the item read only, as it is now, and can copy it into its own
-        library; sharing a collection shares its templates. The request is
-        a change of each list, not a new list: adding a user an item is
-        already shared with, or removing one it is not, changes nothing, so
-        no entity tag is needed. Every user added must have an account, and
-        the share is bound to it: it grants nothing once that account is
-        deleted, or replaced by a new one under the same name, until the
-        user is added again. When a user in `add` is refused, nothing is
-        changed (422). An item that would be shared with more than 25 users
-        keeps its list, and an ID the library does not hold is ignored; both
-        are named in `failed`, and the other items are changed. Changes are
-        logged to the security log.
+        Requires `configs` `update` and a user account of the caller (403
+        without it, so not when authentication is off). The caller must be
+        `{owner}`. Adds the users in `add` to the shares of each named
+        template and collection, and removes the users in `remove`. A
+        recipient sees the item read only, in its current state, and can copy
+        it into its own library. A share of a collection also shares its
+        templates.
+
+        The request is a change of each list, not a new list. To add a user
+        that already has a share of an item, or to remove a user that does
+        not, changes nothing. Thus no entity tag is necessary. Every added
+        user must have an account, and the share is bound to that account.
+        The share grants nothing after that account is deleted, or replaced
+        by a new account with the same name, until the user is added again.
+
+        When the server refuses a user in `add`, nothing changes (422). An
+        item that would be shared with more than 25 users keeps its list. The
+        server ignores an ID that the library does not hold. `failed` names
+        both of these, and the other items change. The server writes the
+        changes to the security log.
       operationId: shareBuilderTemplates
       requestBody:
         required: true
@@ -3642,9 +3755,9 @@ paths:
                 $ref: "#/components/schemas/BuilderTemplateResult"
         "400":
           description: >
-            The request is malformed: its body is not a single JSON value of
-            the expected shape (unknown fields are rejected), or it names no
-            template or collection, or no user to add or remove.
+            The request is malformed. Its body is not a single JSON value of
+            the expected shape (the server refuses unknown fields). Or it names
+            no template or collection, or no user to add or remove.
           content:
             application/json:
               schema:
@@ -3663,10 +3776,10 @@ paths:
                 $ref: "#/components/schemas/WebError"
         "422":
           description: >
-            A user in `add` or `remove` was refused: `owner` (the caller),
-            `invalid-user`, `unknown-user` (no such account), `duplicate`
-            (both added and removed), or `too-many` (more than 25 users
-            added). Nothing was changed.
+            The server refused a user in `add` or `remove`. The reason is
+            `owner` (the caller), `invalid-user`, `unknown-user` (no such
+            account), `duplicate` (both added and removed), or `too-many` (more
+            than 25 users added). Nothing changed.
           content:
             application/json:
               schema:
@@ -3691,16 +3804,19 @@ paths:
       summary: Publish templates and collections to every user, or take them back
       description: >
         Requires `configs` `update`. With `serverWide` true, publishes the
-        named templates and collections of the caller's own library to every
-        user, read only; this also requires `builder-templates` `publish`
-        (403 without it), and for a library of another user the answer is
-        404. Publishing a collection publishes its templates. Publishing an
-        item already published keeps who published it and when. With
-        `serverWide` false, takes the items back: the owner may, and so may
-        anyone with `builder-templates` `publish`, for any user's library
-        (403 for anyone else). An ID the library does not hold is named in
-        `failed`, and the other items are changed. Publishing does not need
-        a user account. Changes are logged to the security log.
+        named templates and collections of the library of the caller to every
+        user, read only. This also requires `builder-templates` `publish`
+        (403 without it). For the library of another user, the answer is 404.
+        A publish of a collection also publishes its templates. A publish of
+        an item that is already published keeps who published it and when.
+
+        With `serverWide` false, takes the items back. The owner may do this.
+        Any caller with `builder-templates` `publish` may do this for the
+        library of any user (403 for all other callers).
+
+        `failed` names an ID that the library does not hold, and the other
+        items change. A publish does not need a user account. The server
+        writes the changes to the security log.
       operationId: publishBuilderTemplates
       requestBody:
         required: true
@@ -3717,9 +3833,9 @@ paths:
                 $ref: "#/components/schemas/BuilderTemplateResult"
         "400":
           description: >
-            The request is malformed: its body is not a single JSON value of
-            the expected shape (unknown fields are rejected), it has no
-            `serverWide`, or it names no template or collection.
+            The request is malformed. Its body is not a single JSON value of
+            the expected shape (the server refuses unknown fields). Or it has
+            no `serverWide`, or it names no template or collection.
           content:
             application/json:
               schema:
@@ -3728,8 +3844,8 @@ paths:
           $ref: "#/components/responses/BuilderForbidden"
         "404":
           description: >
-            `serverWide` is true and `{owner}` is not the caller: an item is
-            published by its owner only.
+            `serverWide` is true and `{owner}` is not the caller. Only its owner
+            publishes an item.
           content:
             application/json:
               schema:
@@ -3794,13 +3910,14 @@ components:
         - spec
     BuilderDocumentReference:
       description: >
-        The Builder document a topology references, in its `builder-doc`
-        annotation. It holds at least one sub-key. Publish writes `digest`
-        and `id`, and keeps a `path` the topology already has. A config whose
-        reference is not valid is refused. When a topology is created or
-        updated with an `id` that is not the one its `digest` gives for the
-        topology's name, as a renamed or copied topology has, the `id` is
-        dropped, and the `digest` too unless `path` is set.
+        The Builder document that a topology references, in its `builder-doc`
+        annotation. It holds at least one sub-key. Publish writes `digest` and
+        `id`, and keeps a `path` that the topology already has. The server
+        refuses a config whose reference is not valid. A renamed or copied
+        topology can have an `id` that is not the one that its `digest` gives
+        for the name of the topology. When a topology is created or updated
+        with such an `id`, the server removes the `id`. It also removes the
+        `digest`, unless `path` is set.
       type: object
       minProperties: 1
       additionalProperties: false
@@ -4070,16 +4187,16 @@ components:
             type: string
         code:
           description: >
-            The stable, machine-readable code of the failure. Every Builder
-            route's error has one, such as `document.invalid`,
+            The stable, machine-readable code of the failure. The error of every
+            Builder route has one, such as `document.invalid`,
             `publish.blocked`, `publish.topology.exists`, `request.not-found`
-            or `request.stale`; other routes leave it out. The answers about
-            a draft a client tells apart have codes of their own:
-            `draft.stale` and `draft.shares.stale` (412), `draft.conflict`
-            and `draft.snapshot.current` (409). A method a Builder route does
-            not take is answered with 405, `request.method-not-allowed`, and
-            the methods it takes in `Allow`. A refusal about one of the
-            scenarios a draft lists (`publish.scenario.*`) names that
+            or `request.stale`. Other routes leave it out. The answers about a
+            draft that a client must tell apart have their own codes:
+            `draft.stale` and `draft.shares.stale` (412), `draft.conflict` and
+            `draft.snapshot.current` (409). A method that a Builder route does
+            not take gets 405, `request.method-not-allowed`, and the methods
+            that the route takes in `Allow`. A refusal about one of the
+            scenarios that a draft lists (`publish.scenario.*`) names that
             scenario in `metadata.scenario`. The docs list every code at
             https://phenix.sceptre.dev/latest/builder/error-codes/.
           type: string
@@ -4087,21 +4204,22 @@ components:
           example: publish.blocked
         issues:
           description: >
-            Each problem a Builder error is made of, when it names them one
-            by one: the issues of a document that does not validate
+            Each problem of a Builder error, when the error names them one by
+            one. These are the issues of a document that does not validate
             (`document.invalid`), or the interfaces, addresses and hostnames
-            only publishing refuses (`publish.blocked`).
+            that only a publish refuses (`publish.blocked`).
           type: array
           items:
             $ref: "#/components/schemas/BuilderIssue"
     BuilderIssue:
       title: Builder Issue
       description: >
-        One problem the Builder found in a document, a publication or a
-        request: the code of the rule it breaks, its severity, what it says,
-        and where it is, by the parts that are known. The web UI's validator
-        reports the same codes for the same rules. A code never changes
-        meaning once published; a new rule gets a new code.
+        One problem that the Builder found in a document, a publication or a
+        request. It has the code of the rule that it breaks, its severity,
+        what it says, and its location, by the parts that are known. The
+        validator of the web UI reports the same codes for the same rules. A
+        code never changes meaning after it is published. A new rule gets a
+        new code.
       type: object
       required:
         - code
@@ -4163,15 +4281,16 @@ components:
       title: Builder Document
       description: >
         A Builder document: the diagram of a topology, with its nodes,
-        networks and connections, how the canvas shows them, and under
-        `metadata` what the document says of itself. This component lists
-        every property of the document and outlines the nested ones; GET
-        /schemas/builder/v1 serves the complete JSON Schema every document
-        is checked against, with a title, a description and examples for
-        each property. A document holds no other property: one that does,
-        such as a metadata field at the root, is refused. `layout`,
-        `iconSize`, `templates` and `icons` are presentation only and are
-        never written to a config.
+        networks and connections, and how the canvas shows them. Under
+        `metadata`, it has what the document says about itself. This
+        component lists every property of the document, and gives the
+        outline of the nested properties. GET /schemas/builder/v1 serves the
+        complete JSON Schema that the server checks every document against.
+        Each property in it has a title, a description and examples. A
+        document holds no other property. The server refuses a document with
+        another property, such as a metadata field at the root. `layout`,
+        `iconSize`, `templates` and `icons` are for presentation only. The
+        server never writes them to a config.
       type: object
       additionalProperties: false
       required:
@@ -4259,8 +4378,8 @@ components:
                 additionalProperties: true
               size:
                 description: >
-                  explicit `width` and `height` of the node in pixels; without
-                  one the editor sizes the node itself
+                  explicit `width` and `height` of the node in pixels. Without
+                  them, the editor sets the size of the node
                 type: object
                 additionalProperties: true
               parentId:
@@ -4268,23 +4387,23 @@ components:
                 type: string
               device:
                 description: >
-                  payload of a device node: its hostname, its complete phenix
-                  node spec (whose `general.notes` the canvas shows under the
-                  node), its interface handles, its icon and the `iconSize`
-                  it is drawn at in place of the diagram's, its colors, and
-                  its `purdueLevel`, the level of the Purdue model it is at
-                  ("5", "4", "3.5", "3", "2", "1" or "0"), which is never
-                  published
+                  payload of a device node. It has the hostname, the complete
+                  phenix node spec (the canvas shows its `general.notes` under
+                  the node), the interface handles, the icon, and the
+                  `iconSize` of the icon in place of the size of the diagram.
+                  It also has the colors, and the `purdueLevel`: the level of
+                  the Purdue model that the node is at ("5", "4", "3.5", "3",
+                  "2", "1" or "0"). The `purdueLevel` is never published
                 type: object
                 additionalProperties: true
               switch:
                 description: >
-                  payload of a switch node: the network it stands for, its
-                  colors, the `iconSize` its icon is drawn at in place of the
-                  diagram's, its `purdueLevel` (as a device's), and its
-                  `notes`, at most 100 lines of text the canvas shows under
-                  the node. The `purdueLevel` and the `notes` are never
-                  published.
+                  payload of a switch node. It has the network that it stands
+                  for, the colors, the `iconSize` of its icon in place of the
+                  size of the diagram, and the `purdueLevel` (as for a
+                  device). It also has the `notes`: at most 100 lines of text
+                  that the canvas shows under the node. The `purdueLevel` and
+                  the `notes` are never published.
                 type: object
                 additionalProperties: true
               note:
@@ -4294,27 +4413,27 @@ components:
               group:
                 description: >
                   payload of a group node: its title, description, color,
-                  border style, icon and the `iconSize` it is drawn at in
-                  place of the diagram's, and whether it is collapsed
+                  border style, icon, the `iconSize` of the icon in place of
+                  the size of the diagram, and whether the group is collapsed
                 type: object
                 additionalProperties: true
               shape:
                 description: >
                   payload of a shape node: `rectangle` or `circle`, its label,
-                  fill and outline colors and border style; never published
+                  fill and outline colors and border style. Never published
                 type: object
                 additionalProperties: true
               icon:
                 description: >
                   payload of an icon node: exactly one of a built-in `iconKey`
-                  and a custom `icon`, and its label; never published
+                  and a custom `icon`, and its label. Never published
                 type: object
                 additionalProperties: true
               line:
                 description: >
-                  payload of a line node: its 2 to 64 `points`, relative to the
-                  node's position, its label, color and line style, and its
-                  `startArrow` and `endArrow`; never published
+                  payload of a line node: its 2 to 64 `points` (relative to the
+                  position of the node), its label, color and line style, and
+                  its `startArrow` and `endArrow`. Never published
                 type: object
                 additionalProperties: true
           example:
@@ -4449,8 +4568,8 @@ components:
                 type: string
               route:
                 description: >
-                  the path an automatic layout drew, as canvas positions from
-                  the source handle to the target handle; never published
+                  the path that an automatic layout drew, as canvas positions
+                  from the source handle to the target handle. Never published
                 type: array
                 items:
                   type: object
@@ -4486,12 +4605,12 @@ components:
         scenarios:
           title: Scenarios
           description: >
-            the names of the Scenario configs on the server the diagram is
-            used with, at most 20, each a config name of at most 256 bytes and
-            none twice ignoring case; the document holds no scenario content.
-            Publishing adds the topology to the `topology` annotation of each,
-            and an experiment published with the topology uses the one the
-            publish request names.
+            the names of the Scenario configs on the server that the diagram
+            is used with. At most 20. Each is a config name of at most 256
+            bytes, and no name occurs twice, ignoring case. The document holds
+            no scenario content. A publish adds the topology to the `topology`
+            annotation of each scenario. An experiment published with the
+            topology uses the scenario that the publish request names.
           type: array
           maxItems: 20
           uniqueItems: true
@@ -4520,17 +4639,18 @@ components:
         layout:
           title: Layout
           description: >
-            the automatic layout that last laid the document out, which the
-            editor names in its layout menu; empty, or an id the editor does
-            not know, means a layout did not make the positions
+            the automatic layout that last set the positions of the document.
+            The editor names it in its layout menu. An empty value, or an id
+            that the editor does not know, means that no layout set the
+            positions
           type: string
           example: elk
         iconSize:
           title: Icon Size
           description: >
-            the size the canvas draws the icons of devices, switches and
-            groups at, unless a node names its own: small (16 pixels), medium
-            (24) or large (32); empty is small
+            the size of the icons of devices, switches and groups on the
+            canvas, unless a node names its own size: small (16 pixels), medium
+            (24) or large (32). Empty is small
           type: string
           enum:
             - ""
@@ -4561,10 +4681,10 @@ components:
         icons:
           title: Custom Icons
           description: >
-            copies of the custom icons the nodes and templates name, at most
-            50, each its base64 PNG data under its icon name. A draft on a
-            server carries none (names resolve through the icon library); a
-            downloaded document carries every icon it uses.
+            copies of the custom icons that the nodes and templates name, at
+            most 50. Each is its base64 PNG data under its icon name. A draft
+            on a server carries none (names resolve through the icon library).
+            A downloaded document carries every icon that it uses.
           type: object
           maxProperties: 50
           additionalProperties:
@@ -4610,9 +4730,9 @@ components:
         createdBy:
           title: Created By
           description: >
-            user who first made the document. Kept from the document a draft
-            is created with, or else the user who created the draft; every
-            later save writes the same value.
+            user who first made the document. The server keeps this value
+            from the document of the draft create, or else uses the user who
+            created the draft. Every later save writes the same value.
           type: string
           maxLength: 256
           example: alice
@@ -4628,18 +4748,18 @@ components:
         updatedBy:
           title: Updated By
           description: >
-            user whose save stored this content. Set by the server on every
-            save; a value sent is replaced.
+            user whose save stored this content. The server sets it on every
+            save, and replaces a value that the client sends.
           type: string
           maxLength: 256
           example: bob
         updatedAt:
           title: Updated At
           description: >
-            when that save was, in the form of `createdAt`. Set by the server
-            on every save; a value sent is replaced. It is not
-            `source.updatedAt`, which is a time of the config the document
-            was imported from.
+            the time of that save, in the form of `createdAt`. The server sets
+            it on every save, and replaces a value that the client sends. It is
+            not `source.updatedAt`, which is a time of the config that the
+            document was imported from.
           type: string
           format: date-time
           pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
@@ -4647,11 +4767,11 @@ components:
         notes:
           title: Notes
           description: >
-            free text notes about the diagram as a whole, in the order the
-            editor lists them: at most 100, each not only white space, at
-            most 4096 bytes in UTF-8 (maxLength counts characters, so the
-            byte limit is the stricter one outside ASCII), and without
-            control characters but newline and tab
+            free text notes about the full diagram, in the order that the
+            editor lists them. At most 100 notes. Each note is not only white
+            space, and has at most 4096 bytes in UTF-8 (maxLength counts
+            characters, so the byte limit is stricter outside ASCII). Notes
+            have no control characters except newline and tab
           type: array
           maxItems: 100
           items:
@@ -4664,9 +4784,10 @@ components:
     BuilderDocumentStamp:
       description: >
         The `createdBy`, `createdAt`, `updatedBy` and `updatedAt` of the
-        `metadata` of the document a request stored. A field the stored
-        document does not have is left out, so a draft opened unchanged from
-        a document that names nobody has an empty stamp.
+        `metadata` of the document that a request stored. The stamp leaves
+        out a field that the stored document does not have. Thus a draft
+        opened unchanged from a document that names nobody has an empty
+        stamp.
       type: object
       properties:
         createdBy:
@@ -4690,39 +4811,45 @@ components:
           type: string
         sourceToken:
           description: >
-            the config the draft was imported from, as `<kind>/<name>`; an
-            uploaded config, as `uploaded/<kind>/<name>`, or an uploaded
-            legacy Builder diagram that came without a Topology, as
-            `uploaded/legacy-xml`, either of which names no stored
-            config, so it does not let the draft update a stored Topology or
-            Experiment; the published document it was opened from, as
-            `builder-doc/<document id>`, which the caller must be able to read
-            (404 otherwise); or the Builder file of a topology it was opened
-            from, as `builder-file/<topology name>/<digest>`, with the
-            `digest` GET /builder/topologies/{topology}/document returned,
-            which the caller must be able to read and which the file must
-            still have (409 otherwise)
+            where the draft comes from. One of:
+
+            - `<kind>/<name>`: the config that the draft was imported from.
+
+            - `uploaded/<kind>/<name>`: an uploaded config. Or
+            `uploaded/legacy-xml`: an uploaded legacy Builder diagram that
+            came without a Topology. These two name no stored config, so they
+            do not let the draft update a stored Topology or Experiment.
+
+            - `builder-doc/<document id>`: the published document that the
+            draft was opened from. The caller must be able to read it (404
+            otherwise).
+
+            - `builder-file/<topology name>/<digest>`: the Builder file of a
+            topology that the draft was opened from, with the `digest` that
+            GET /builder/topologies/{topology}/document returned. The caller
+            must be able to read the file, and the file must still have that
+            digest (409 otherwise)
           type: string
         sourceFile:
           description: >
-            the name of the uploaded file the document came from, kept only
-            to show it: a file name of at most 255 bytes without `/` or `\`,
-            not `.` or `..`, with no control characters (422 otherwise). The
-            server never opens anything by it.
+            the name of the uploaded file that the document came from, kept
+            only for display. It is a file name of at most 255 bytes without
+            `/` or `\`, not `.` or `..`, with no control characters (422
+            otherwise). The server never opens anything by it.
           type: string
           maxLength: 255
         forkOf:
           description: >
-            a draft the new one forks, as `<owner>/<draft id>`, which the caller
-            must be able to read (404 otherwise). The new draft takes its
-            source token in place of `sourceToken`, and records its last
-            publication as `forked`, so publishing the new draft can update
-            what that draft published or was opened from. It records no
-            source file: neither that draft's, nor a `sourceFile` sent with
-            it.
+            a draft that the new draft forks, as `<owner>/<draft id>`. The
+            caller must be able to read it (404 otherwise). The new draft takes
+            its source token in place of `sourceToken`. It records the last
+            publication of that draft as `forked`, so a publish of the new
+            draft can update what that draft published or was opened from. It
+            records no source file: not the file of that draft, and not a
+            `sourceFile` sent with it.
           type: string
         owner:
-          description: optional; when set, it must be the caller
+          description: optional. When set, it must be the caller
           type: string
         document:
           $ref: "#/components/schemas/BuilderDocument"
@@ -4806,9 +4933,10 @@ components:
           type: boolean
         readOnly:
           description: >
-            whether the caller may not update the draft: its access does not
-            allow it, or its role cannot update configs (so `access` `edit`
-            with `readOnly` means an edit share the caller's role cannot use)
+            whether the caller may not update the draft. This is true when its
+            access does not allow it, or when its role cannot update configs.
+            Thus `access` `edit` with `readOnly` means an edit share that the
+            role of the caller cannot use
           type: boolean
         etag:
           description: the value of the ETag header for this revision
@@ -4863,15 +4991,15 @@ components:
         canShare:
           description: >
             present and true when the caller owns the draft, may update
-            configs, and has a user account, and so may change who it is
-            shared with (listing, GET of one draft, and the `draft` of a PUT of
-            its shares only)
+            configs, and has a user account. The caller may then change who the
+            draft is shared with. Only the listing, GET of one draft, and the
+            `draft` of a PUT of its shares report it
           type: boolean
         shares:
           description: >
             who the draft is shared with, sorted by user, for its owner only,
-            and only when it is shared with anyone. Entries whose account is
-            gone are included; GET of the draft's shares marks them.
+            and only when it is shared with anyone. The list includes entries
+            whose account is gone. GET of the shares of the draft marks them.
           type: array
           items:
             type: object
@@ -4892,13 +5020,14 @@ components:
           type: boolean
         experiment:
           description: >
-            name of an experiment this draft, or the published diagram it was
-            opened from, published, when it still exists and the caller holds
-            `experiments` `get` for it. It is worked out for each response,
-            so it follows an experiment that was renamed and is left out
-            once it is deleted. Reported by GET of one draft, POST
-            /builder/drafts and the `draft` of a publish answer; never by
-            the listing.
+            name of an experiment that this draft published, or that the
+            published diagram that the draft was opened from published. It is
+            present while the experiment exists and the caller holds
+            `experiments` `get` for it. The server calculates it for each
+            response. Thus it follows a renamed experiment, and is left out
+            after the experiment is deleted. GET of one draft, POST
+            /builder/drafts and the `draft` of a publish answer report it. The
+            listing never reports it.
           type: string
     BuilderDrafts:
       type: object
@@ -5041,12 +5170,12 @@ components:
         - name
     BuilderPublishRequest:
       description: >
-        `topology` mode publishes the topology only. `topology-experiment`
-        mode also requires an experiment target and may name the
-        experiment's scenario, which must be one of the scenarios the
-        document lists; without one, the experiment has no scenario. In
-        both modes the topology is added to the `topology` annotation of
-        every scenario the document lists.
+        `topology` mode publishes only the topology. `topology-experiment`
+        mode also requires an experiment target. It may name the scenario of
+        the experiment, which must be one of the scenarios that the document
+        lists. Without one, the experiment has no scenario. In both modes, the
+        publish adds the topology to the `topology` annotation of every
+        scenario that the document lists.
       type: object
       additionalProperties: false
       properties:
@@ -5074,8 +5203,8 @@ components:
     BuilderPublishPreview:
       description: >
         the answer of a dry run of a publication: what it would change, the
-        warnings it would give, and the refusal it would be answered with.
-        Nothing is written.
+        warnings it would give, and the refusal that it would get. Nothing is
+        written.
       type: object
       properties:
         status:
@@ -5084,8 +5213,8 @@ components:
             - preview
         changes:
           description: >
-            what publishing would change, compared with what is stored now;
-            null when the publication would be refused
+            what a publish would change, compared with what is stored now. Null
+            when the publication would be refused
           nullable: true
           allOf:
             - $ref: "#/components/schemas/BuilderPublishChanges"
@@ -5096,11 +5225,12 @@ components:
             $ref: "#/components/schemas/BuilderIssue"
         errors:
           description: >
-            why the publication would be refused, each an error with its code:
-            what a publish answers with 400 (a target name), 409 or 422, such
-            as `publish.topology.exists`, `publish.scenario.missing`, or the
-            issues of `publish.blocked`. Refusals of who may do what (403, and
-            404 for a draft the caller may not see) keep their status.
+            why the publication would be refused, each an error with its code.
+            These are the refusals that a publish answers with 400 (a target
+            name), 409 or 422, such as `publish.topology.exists`,
+            `publish.scenario.missing`, or the issues of `publish.blocked`.
+            Refusals about who may do what (403, and 404 for a draft that the
+            caller may not see) keep their status.
           type: array
           items:
             $ref: "#/components/schemas/BuilderIssue"
@@ -5138,9 +5268,9 @@ components:
             - $ref: "#/components/schemas/BuilderConfigChange"
         vlanAliases:
           description: >
-            the experiment's VLAN aliases (`spec.vlans.aliases`), each added
-            when the experiment is created; for a `topology-experiment`
-            publication only, and left out when there is none
+            the VLAN aliases of the experiment (`spec.vlans.aliases`), each
+            added when the experiment is created. For a `topology-experiment`
+            publication only. Left out when there is none
           type: array
           items:
             $ref: "#/components/schemas/BuilderVLANAliasChange"
@@ -5178,8 +5308,8 @@ components:
           type: string
         change:
           description: >
-            `annotate` adds the topology to the scenario's `topology`
-            annotation; `unchanged` names a scenario that names it already
+            `annotate` adds the topology to the `topology` annotation of the
+            scenario. `unchanged` names a scenario that already names it
           type: string
           enum:
             - annotate
@@ -5205,11 +5335,10 @@ components:
             type: string
         onServer:
           description: >
-            whether the server has a disk image of that file name, as
-            GET /disks lists them; null when unknown (the caller may not list
-            disks or may not list that file name, whether the server has it
-            or not, or the listing failed or is empty, as it is without
-            minimega)
+            whether the server has a disk image of that file name, as GET
+            /disks lists them. Null when unknown: the caller may not list disks
+            or that file name (whether or not the server has it), or the
+            listing failed or is empty (as it is without minimega)
           type: boolean
           nullable: true
     BuilderVLANAliasChange:
@@ -5303,10 +5432,11 @@ components:
           type: string
         digest:
           description: >
-            for a Topology or an Experiment, the digest a document imported
-            from it records as its `source.digest`: of the config's
-            apiVersion, kind, name and spec, and of the `builder-xml` diagram
-            of a Topology that has one. Left out for a Scenario or an Image
+            for a Topology or an Experiment, the digest that a document
+            imported from it records as its `source.digest`. The digest covers
+            the apiVersion, kind, name and spec of the config, and the
+            `builder-xml` diagram of a Topology that has one. Left out for a
+            Scenario or an Image
           type: string
         stored:
           description: false for a config generated from uploaded content
@@ -5360,9 +5490,9 @@ components:
           type: string
         includes:
           description: >
-            what becomes of the nodes of the topologies a Topology includes:
-            `keep` (the default, also when left out or empty) shows them
-            read only, and `combine` copies them into the document and makes
+            what happens to the nodes of the topologies that a Topology
+            includes. `keep` (the default, also when left out or empty) shows
+            them read only. `combine` copies them into the document and makes
             it a new topology. `combine` is not allowed for an Experiment.
           type: string
           enum:
@@ -5370,11 +5500,11 @@ components:
             - combine
         copy:
           description: >
-            make the document a copy that is not linked to the Topology it
-            is generated from; `includes` `combine` implies it. The copy gets
+            make the document a copy that is not linked to the Topology that
+            it is generated from. `includes` `combine` implies it. The copy gets
             the diagram note `Copied from <name>` in `metadata.notes`, where
-            `<name>` is the name in the source config's metadata. Not allowed
-            for an Experiment.
+            `<name>` is the name in the metadata of the source config. Not
+            allowed for an Experiment.
           type: boolean
           default: false
         name:
@@ -5412,14 +5542,14 @@ components:
           description: >
             the text of a legacy Builder diagram file: mxGraph XML, or a
             Topology config as YAML or JSON that has the `builder-xml`
-            annotation; at most 5242880 bytes
+            annotation. At most 5242880 bytes
           type: string
         name:
           description: >
             the name of the document of a diagram that comes without a
-            Topology (`legacy-diagram` when left out or blank); at most 512
-            bytes, without control characters. Ignored for a Topology, whose
-            own name is used.
+            Topology (`legacy-diagram` when left out or blank). At most 512
+            bytes, without control characters. Ignored for a Topology, which
+            uses its own name.
           type: string
     BuilderTopologyExportRequest:
       type: object
@@ -5429,9 +5559,10 @@ components:
           $ref: "#/components/schemas/BuilderDocument"
         name:
           description: >
-            the topology's name; when empty, the document's name with each run
-            of characters a config name may not hold replaced by `-` (as the
-            Publish dialog proposes it), or `topology` when that leaves none
+            the name of the topology. When empty, the server uses the document
+            name, with `-` in place of each run of characters that a config
+            name may not hold (as the Publish dialog proposes it). If that
+            leaves no characters, the name is `topology`
           type: string
       required:
         - document
@@ -5443,9 +5574,9 @@ components:
           type: string
         yaml:
           description: >
-            the Topology config, as YAML that loads back as the config; a
-            string YAML's block style would change, such as one starting with
-            a line break, is double quoted
+            the Topology config, as YAML that loads back as the config. A
+            string that the YAML block style would change, such as one that
+            starts with a line break, is double quoted
           type: string
         warnings:
           description: what the projection left out or changed, each with its code
@@ -5454,13 +5585,14 @@ components:
             $ref: "#/components/schemas/BuilderIssue"
         publishBlockers:
           description: >
-            why a publish of the topology would be refused although phenix's
-            config validation accepts it, one issue per check in the order a
-            publish makes them: interfaces without a VLAN, then addresses
-            interfaces share, then hostnames phenix refuses when it creates an
-            experiment. A publish's 422 message names the first. Each says
-            what that message says of its check, has the code of the check's
-            first problem, and is located when the check has one problem.
+            why a publish of the topology would be refused, although the
+            phenix config validation accepts it. There is one issue per check,
+            in the order that a publish makes them: interfaces without a VLAN,
+            then addresses that interfaces share, then hostnames that phenix
+            refuses when it creates an experiment. The 422 message of a publish
+            names the first. Each issue says what that message says about its
+            check, and has the code of the first problem of the check. When the
+            check has one problem, the issue also has its location.
           type: array
           items:
             $ref: "#/components/schemas/BuilderIssue"
@@ -5472,11 +5604,12 @@ components:
           $ref: "#/components/schemas/BuilderDocument"
         include:
           description: >
-            the sections the package carries, each at most once: `scenarios`
-            (the Scenario configs the document names), `topologies` (the
-            topologies it includes), `icons` (a copy of each custom icon it
-            names) and `images` (the disk images the devices use, listed in
-            the requirements with the hosts that use each)
+            the sections that the package carries, each at most once:
+            `scenarios` (the Scenario configs that the document names),
+            `topologies` (the topologies that it includes), `icons` (a copy of
+            each custom icon that it names) and `images` (the disk images that
+            the devices use, listed in the requirements with the hosts that use
+            each image)
           type: array
           items:
             type: string
@@ -5555,7 +5688,7 @@ components:
       additionalProperties: false
       properties:
         checks:
-          description: the checks to make, in the order they are reported; each at most once
+          description: the checks to make, in the order of the report. Each at most once
           type: array
           minItems: 1
           items:
@@ -5566,7 +5699,7 @@ components:
         experiment:
           description: >
             the experiment whose VLAN range and default bridge the network
-            check goes by; empty or left out for none
+            check uses. Empty or left out for none
           type: string
           example: lab-exp
       required:
@@ -5578,9 +5711,9 @@ components:
           $ref: "#/components/schemas/BuilderPreflightCheckName"
         status:
           description: >
-            `failed` when an issue is an error; `unavailable` when the check, or
-            a part of it, could not be made and nothing failed; otherwise
-            `passed`, with any warnings among the issues
+            `failed` when an issue is an error. `unavailable` when nothing
+            failed, but the check, or a part of it, could not be made.
+            Otherwise `passed`, with any warnings among the issues
           type: string
           enum:
             - passed
@@ -5655,31 +5788,31 @@ components:
           description: the config that references the document, as `<Kind>/<name>`
           type: string
         path:
-          description: files only; the path of the Builder file on the phenix server
+          description: files only. The path of the Builder file on the phenix server
           type: string
         draftId:
           description: >
-            stored documents only; the draft that first published the
+            stored documents only. The draft that first published the
             document.
           type: string
         snapshotId:
           description: >
-            stored documents only; the snapshot of that draft. Absent with
+            stored documents only. The snapshot of that draft. Absent with
             `draftId`.
           type: string
         createdAt:
-          description: stored documents only; when the document was first published
+          description: stored documents only. The time of the first publish of the document
           type: string
           format: date-time
         createdBy:
           description: >
-            stored documents only; the user who first published the document.
+            stored documents only. The user who first published the document.
           type: string
         topologyDiffers:
           description: >
-            files only, in GET /builder/topologies/{topology}/document;
-            true when the stored topology is not what the document publishes,
-            so a draft opened from the file cannot update the topology
+            files only, in GET /builder/topologies/{topology}/document. True
+            when the stored topology is not what the document publishes. Then
+            a draft opened from the file cannot update the topology
           type: boolean
         experiment:
           description: >
@@ -5798,13 +5931,12 @@ components:
                 type: string
               reason:
                 description: >
-                  `owner` (the owner is listed), `duplicate` (a user is listed
-                  twice), `invalid-access` (not `view` or `edit`),
+                  `owner` (the list has the owner), `duplicate` (the list has
+                  a user twice), `invalid-access` (not `view` or `edit`),
                   `invalid-user` (empty, over 256 bytes, control characters or
                   `/`), `too-many` (over 25 users), `unknown-user` (no such
-                  account), or `account-removed` (the account the user was
-                  shared with is gone: remove the user, save, and add them
-                  again)
+                  account), or `account-removed` (the account of the share is
+                  gone. Remove the user, save, and add the user again)
                 type: string
                 enum:
                   - owner
@@ -5841,8 +5973,8 @@ components:
       properties:
         name:
           description: >
-            the icon's new name, by the rules of a name an icon is added
-            under; the old name becomes an alias
+            the new name of the icon, by the rules for the name of a new icon.
+            The old name becomes an alias
           type: string
           pattern: "^[A-Za-z0-9_@.-]{1,64}$"
     BuilderIcon:
@@ -5862,9 +5994,10 @@ components:
           pattern: "^sha256:[0-9a-f]{64}$"
         owner:
           description: >
-            the user who uploaded the icon, or empty for an icon phenix added
-            from a template file of its template directory, which no user
-            owns: only holders of `builder-icons` rename or delete it
+            the user who uploaded the icon. Empty for an icon that phenix
+            added from a template file of its template directory, which no
+            user owns. Only holders of `builder-icons` can rename or delete
+            such an icon
           type: string
         width:
           description: width in pixels, 1 to 96
@@ -5946,9 +6079,9 @@ components:
           pattern: "^[A-Za-z0-9_@.-]{1,64}$"
         iconSize:
           description: >
-            the size the canvas draws the icon of a device made from the
-            template at: small (16 pixels), medium (24) or large (32); empty
-            draws it at the diagram's `iconSize`
+            the size of the icon of a device made from the template, on the
+            canvas: small (16 pixels), medium (24) or large (32). Empty uses
+            the `iconSize` of the diagram
           type: string
           enum:
             - ""
@@ -5977,10 +6110,10 @@ components:
             - "0"
         spec:
           description: >
-            a complete phenix node spec, as a device node holds it; at most
+            a complete phenix node spec, as a device node holds it. At most
             16384 bytes as JSON together with the other fields. Its
-            `general.hostname` is required and holds no white space. It is
-            not checked against the phenix node schema.
+            `general.hostname` is required and holds no white space. The
+            server does not check it against the phenix node schema.
           type: object
           additionalProperties: true
     BuilderTemplateShare:
@@ -6002,24 +6135,24 @@ components:
       properties:
         id:
           description: >
-            unique in the owner's library only: the built-in templates keep
-            their short names in every library, any other is a UUID. A
-            template the server read from a template file has an ID that
-            starts with `server-`, made from the file's name and the
-            template's name, the same at every start.
+            unique only in the library of the owner. The built-in templates
+            keep their short names in every library. All other IDs are UUIDs.
+            A template that the server read from a template file has an ID
+            that starts with `server-`. The ID comes from the file name and
+            the template name, and is the same at every start.
           type: string
           pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
         owner:
           description: >
-            the user whose library holds the template; empty for one the
-            server read from a template file
+            the user whose library holds the template. Empty for a template
+            that the server read from a template file
           type: string
         source:
           description: >
-            `own` for a template of the caller's library, `shared` for one
-            another user shared with the caller, `server` for one published
-            to every user, `preloaded` for one the server read from a template
-            file
+            `own` for a template of the library of the caller. `shared` for a
+            template that another user shared with the caller. `server` for a
+            template published to every user. `preloaded` for a template that
+            the server read from a template file
           type: string
           enum:
             - own
@@ -6030,7 +6163,7 @@ components:
           type: string
         description:
           description: >
-            the template's own text, shown where templates are listed; never
+            the text of the template, shown where templates are listed. Never
             written into a node
           type: string
         device:
@@ -6049,7 +6182,7 @@ components:
           format: date-time
         updated:
           description: >
-            when the content last changed; left out for a built-in template
+            when the content last changed. Left out for a built-in template
             that was never changed
           type: string
           format: date-time
@@ -6072,8 +6205,8 @@ components:
             type: string
         shares:
           description: >
-            who the template is shared with, sorted by user; sent to its
-            owner only, and left out of the items of other owners
+            who the template is shared with, sorted by user. Sent to its owner
+            only, and left out of the items of other owners
           type: array
           items:
             $ref: "#/components/schemas/BuilderTemplateShare"
@@ -6082,22 +6215,22 @@ components:
       properties:
         id:
           description: >
-            unique among the collections of the owner's library; for a
-            collection the server read from a template file, `server-` and a
-            digest of the file's name
+            unique among the collections of the library of the owner. For a
+            collection that the server read from a template file, `server-`
+            and a digest of the file name
           type: string
           pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
         owner:
           description: >
-            the user whose library holds the collection; empty for one the
-            server read from a template file
+            the user whose library holds the collection. Empty for a
+            collection that the server read from a template file
           type: string
         source:
           description: >
-            `own` for a collection of the caller's library, `shared` for one
-            another user shared with the caller, `server` for one published
-            to every user, `preloaded` for one the server read from a template
-            file
+            `own` for a collection of the library of the caller. `shared` for
+            a collection that another user shared with the caller. `server`
+            for a collection published to every user. `preloaded` for a
+            collection that the server read from a template file
           type: string
           enum:
             - own
@@ -6115,7 +6248,7 @@ components:
             type: string
         version:
           description: >
-            starts at 1 and grows by one with every change of the name, the
+            starts at 1. Increases by one with every change of the name, the
             description or the templates, also when a template of the
             collection is deleted
           type: integer
@@ -6141,7 +6274,7 @@ components:
           type: string
         shares:
           description: >
-            who the collection is shared with, sorted by user; sent to its
+            who the collection is shared with, sorted by user. Sent to its
             owner only, and left out of the items of other owners
           type: array
           items:
@@ -6171,9 +6304,9 @@ components:
             $ref: "#/components/schemas/BuilderTemplateCollection"
         preloaded:
           description: >
-            the collections the server read from its template files at start,
-            in the order of the files' names, each with its templates; read
-            only, and the same for every caller
+            the collections that the server read from its template files at
+            start, in the order of the file names, each with its templates.
+            Read only, and the same for every caller
           type: array
           items:
             type: object
@@ -6197,8 +6330,8 @@ components:
           type: boolean
         damaged:
           description: >
-            the caller's library record cannot be read by this server, so
-            none of its items are listed
+            this server cannot read the library record of the caller, so the
+            response lists none of its items
           type: boolean
         limits:
           type: object
@@ -6335,12 +6468,12 @@ components:
             collections:
               type: integer
     BuilderTemplateRestore:
-      description: the built-in templates to restore; none names every missing one
+      description: the built-in templates to restore. No list, or an empty list, means every missing one
       type: object
       additionalProperties: false
       properties:
         templates:
-          description: built-in template IDs; other IDs are ignored
+          description: built-in template IDs. The server ignores other IDs
           type: array
           items:
             type: string
@@ -6348,7 +6481,7 @@ components:
       type: object
       properties:
         restored:
-          description: the IDs of the restored templates, in built-in order; empty when none was missing
+          description: the IDs of the restored templates, in built-in order. Empty when none was missing
           type: array
           items:
             type: string
@@ -6366,7 +6499,7 @@ components:
           items:
             type: string
         add:
-          description: users to share the items with; at most 25
+          description: users to share the items with. At most 25
           type: array
           items:
             type: string
@@ -6397,7 +6530,7 @@ components:
       type: object
       properties:
         failed:
-          description: the items that were not changed; empty when every one was
+          description: the items that did not change. Empty when every item changed
           type: array
           items:
             type: object
@@ -6681,10 +6814,10 @@ components:
       name: If-Match
       in: header
       description: >
-        The ETag of the draft revision the change is based on: exactly one
-        strong, quoted entity tag, such as `"3"`. A missing header, a wildcard
-        or a weak tag is rejected with 400; a tag naming any other revision is
-        rejected with 412.
+        The ETag of the draft revision that the change is based on: exactly
+        one strong, quoted entity tag, such as `"3"`. A missing header, a
+        wildcard or a weak tag gets 400. A tag that names any other revision
+        gets 412.
       required: true
       schema:
         type: string
@@ -6717,10 +6850,10 @@ components:
       name: If-Match
       in: header
       description: >
-        The `etag` of the template or collection the change is based on:
-        exactly one strong, quoted entity tag, such as `"3"`. A missing
-        header, a wildcard or a weak tag is rejected with 400; a tag that
-        does not name the current content is rejected with 412.
+        The `etag` of the template or collection that the change is based
+        on: exactly one strong, quoted entity tag, such as `"3"`. A missing
+        header, a wildcard or a weak tag gets 400. A tag that does not name
+        the current content gets 412.
       required: true
       schema:
         type: string
@@ -6743,44 +6876,45 @@ components:
         type: string
     BuilderWarning:
       description: >
-        Set when the change succeeded but removing the content it superseded
-        failed. The cause is logged on the server only.
+        Set when the change succeeded, but the removal of the content that it
+        replaced failed. Only the server log has the cause.
       schema:
         type: string
   responses:
     BuilderBadRequest:
       description: >
-        The request is malformed: its body is not a single JSON value of the
-        expected shape (unknown fields are rejected), or its If-Match header is
-        missing or not a single strong entity tag.
+        The request is malformed. Its body is not a single JSON value of the
+        expected shape (the server refuses unknown fields). Or its If-Match
+        header is missing or not a single strong entity tag.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/WebError"
     BuilderForbidden:
       description: >
-        The caller's role lacks a permission the operation requires, or the
-        caller can see the draft but may not do this to it: for example,
-        saving it with a view share, deleting it with any share, or sharing
-        it without owning it.
+        The role of the caller does not have a permission that the operation
+        requires. Or the caller can see the draft but may not do this
+        operation on it. Examples: a save with a view share, a delete with
+        any share, or a share change by a caller who does not own the draft.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/WebError"
     BuilderNotFound:
       description: >
-        The resource does not exist; or it is another user's draft the caller
-        may not see (not shared with the caller, and no `builder-drafts`
-        permission), answered exactly as if it did not exist.
+        The resource does not exist. Or it is the draft of another user that
+        the caller may not see (not shared with the caller, and no
+        `builder-drafts` permission). The answer is the same as for a
+        resource that does not exist.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/WebError"
     BuilderConflict:
       description: >
-        The draft or a target config changed while the request was handled.
-        A draft that changed has the code `draft.conflict`: read it again and
-        retry.
+        The draft or a target config changed during the request. A draft that
+        changed has the code `draft.conflict`. Read the draft again and try
+        again.
       content:
         application/json:
           schema:
@@ -6795,9 +6929,9 @@ components:
             $ref: "#/components/schemas/WebError"
     BuilderTooLarge:
       description: >
-        The request body or the document exceeds the server's size limits.
-        The snapshot history never does: its oldest snapshots are dropped
-        instead.
+        The request body or the document is larger than the size limits of
+        the server. The snapshot history never is. The server removes its
+        oldest snapshots instead.
       content:
         application/json:
           schema:
@@ -6820,8 +6954,8 @@ components:
             $ref: "#/components/schemas/WebError"
     BuilderTemplateNotFound:
       description: >
-        `{owner}` is not the caller: a library is changed by its owner only,
-        whatever the caller's role. Or the library holds no template or
+        `{owner}` is not the caller. Only its owner changes a library,
+        whatever the role of the caller. Or the library holds no template or
         collection with the ID in the path.
       content:
         application/json:
@@ -6829,11 +6963,11 @@ components:
             $ref: "#/components/schemas/WebError"
     BuilderTemplateDamaged:
       description: >
-        The library record cannot be read by this version of phenix, so it
-        cannot be changed. Or the request names a template or a collection
-        the server read from one of its template files (`source`
-        `preloaded`), which no one can change: `message` names it and says
-        to copy it to the library instead.
+        This version of phenix cannot read the library record, so it cannot
+        change it. Or the request names a template or a collection that the
+        server read from one of its template files (`source` `preloaded`).
+        Nobody can change such an item. `message` names it and says to copy
+        it to the library instead.
       content:
         application/json:
           schema:
@@ -6852,29 +6986,29 @@ components:
     BuilderTemplateTooLarge:
       description: >
         The request body is larger than the route allows (6 MiB to add
-        templates, 1 MiB to replace one, 64 KiB otherwise); or the library
+        templates, 1 MiB to replace one, 64 KiB otherwise). Or the library
         would hold more than 200 templates, 50 collections or 200 templates
-        in one collection, or take more than 512 KiB.
+        in one collection, or use more than 512 KiB.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/WebError"
     BuilderTemplateUnprocessable:
       description: >
-        The request is well formed but cannot be applied; `message` says
-        why. A template that is not valid is named by its place in the
-        request and the field, such as `templates[0].name: template name is
+        The request is well formed but cannot be applied. `message` says why.
+        It names a template that is not valid by its place in the request
+        and the field, such as `templates[0].name: template name is
         required` or `templates[0].device.icon: icon name "a b" must be 1 to
         64 letters, digits, "_", "@", "." or "-"`. A collection is refused
-        for its name, its description, or a template the library does not
-        hold or that is named twice.
+        for its name, its description, or a template that the library does
+        not hold or that the collection names twice.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/WebError"
     BuilderTemplateBusy:
       description: >
-        The library kept changing while the request was handled. Try again.
+        The library kept changing during the request. Try again.
       headers:
         Retry-After:
           description: seconds to wait before trying again
@@ -6887,7 +7021,8 @@ components:
     InsufficientStorage:
       description: >
         etcd is out of space, so nothing was saved. `message` says what an
-        administrator must do. The same request succeeds once space is freed.
+        administrator must do. The same request succeeds after space is
+        freed.
       content:
         application/json:
           schema:

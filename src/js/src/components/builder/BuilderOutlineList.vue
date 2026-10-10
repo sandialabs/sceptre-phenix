@@ -6,8 +6,8 @@
   readers announce the nesting level. Connections have no rows: a node's name
   counts them, and the canvas, the Inspector's Connection points and the
   command palette's Disconnect list them.
-  Each row is its own component (BuilderOutlineRow.vue); the state and the
-  handlers live in BuilderOutline, which provides them.
+  Each row is its own component (BuilderOutlineRow.vue). BuilderOutline
+  holds the state and the handlers, and provides them.
 
   Every list has role="list": WebKit, and so VoiceOver, drops the list role
   from a list styled with list-style: none, and with it the nesting level.

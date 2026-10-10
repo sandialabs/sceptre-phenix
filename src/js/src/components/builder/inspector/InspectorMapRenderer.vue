@@ -4,15 +4,15 @@
   JSON Forms has no renderer for them, and drew an empty group.
 
   Each entry is a row of two fields, its name and its value, named after the
-  entry ("Label 2 name"), and a Remove button; "Add label" follows the rows
+  entry ("Label 2 name"), and a Remove button. "Add label" follows the rows
   and may suggest names. Add and remove are announced, and focus goes to the
-  new row's name or stays in the list rather than falling to the page. A
+  new row's name or stays in the list instead of falling to the page. A
   row reaches the working copy when one of its fields commits (on change),
-  as other fields do. One with no name, or the name of a row above it, does
-  not until that is fixed, and says so under its name; the Inspector lists
-  it with its errors and refuses Apply meanwhile (see
-  useInspectorLocalProblems). A value is text, or,
-  for annotations, read the way a topology's YAML reads it: true, false,
+  as other fields do. A row with no name, or with the name of a row above
+  it, does not reach the working copy until the user fixes the name. The row
+  says so under its name. The Inspector lists it with its errors and
+  refuses Apply meanwhile (see useInspectorLocalProblems). A value is text,
+  or, for annotations, read the way a topology's YAML reads it: true, false,
   null, numbers and JSON as such. A row whose entry the working copy added
   or changed is marked, as other fields are, until the change is applied or
   cancelled (see useEntryChanged).
@@ -303,7 +303,7 @@
   }
 
   // Data replaced from outside the map (Cancel, undo, Apply) shows as it
-  // is; the rows' own commits leave the rows, and any row not committed,
+  // is. The rows' own commits leave the rows, and any row not committed,
   // as they are.
   watch(resets, () => {
     rows.value = toRows(control.value.data, rows.value);

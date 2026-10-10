@@ -1,33 +1,34 @@
-// What the command palette lists for what was typed.
+// What the command palette lists for the typed text.
 //
-// With nothing typed: the commands for the selection, the recent commands,
-// then every command that can run now, by group. With a query: every
-// command of the open view that matches, those that cannot run too (with
-// the reason), grouped and ranked by fuzzy.js, and a few nodes (in the
-// editor) or drafts (on the landing) whose names match. A prefix searches
-// something else: @ the nodes by name, hostname, image, VLAN and addresses,
-// # the networks by name or VLAN alias, and ? lists the prefixes. During a
-// command that asks for choices (Add device, Connect), the choices of its
-// next step.
+// With no text, it lists the commands for the selection, the recent commands,
+// then every command that can run now, by group. With a query, it lists:
+//   - every command of the open view that matches, including those that
+//     cannot run (with the reason), grouped and ranked by fuzzy.js
+//   - a few nodes (in the editor) or drafts (on the landing) whose names
+//     match.
+// A prefix searches something else: @ the nodes by name, hostname, image,
+// VLAN and addresses, # the networks by name or VLAN alias. ? lists the
+// prefixes. During a command that asks for choices (Add device, Connect), the
+// palette lists the choices of its next step.
 //
-// A result is
+// A result has these fields:
 //   key       stable and unique in the list
 //   kind      'command', 'choice' (of a step, a node or a draft), 'recent'
 //             (a command run before, with its choices) or 'prefix' (typing
 //             it: `query`)
-//   command   the command it runs; choice, picked: the choice and every
+//   command   the command it runs. choice, picked: the choice and every
 //             choice before it, for a step's choices and recent commands
 //   title, ranges  its name and the matched parts of it
 //   field     {label, value, ranges}: the node field that matched, if not
 //             the name
-//   detail    a second line; disabled: why it cannot run, or ''
+//   detail    a second line. disabled: why it cannot run, or ''
 //   icon, keys (the command's shortcuts), next ('step' when it asks for a
 //             choice next), hint (the prefix that finds it)
 //
 // Typing must stay quick in a diagram of thousands of nodes. The palette
-// keeps Go to node's choices for the document it was built from
-// (createChoiceCache), and a command search matches node names only, making
-// choices of just the few it shows.
+// keeps the Go to node choices for the document it built them from
+// (createChoiceCache). A command search matches only node names, and makes
+// choices only for the few nodes it shows.
 
 import { toRaw } from 'vue';
 
@@ -120,8 +121,8 @@ export const NODE_SEARCH =
 const NETWORK_SEARCH = 'Networks are found by name or VLAN alias.';
 
 /**
- * Splits off the prefix. '>' is accepted and ignored, for VS Code habits:
- * the palette starts in commands anyway.
+ * Splits off the prefix. '>' is accepted and ignored, for VS Code habits,
+ * because the palette starts in commands.
  *
  * @param {string} query as typed
  * @returns {{prefix: ''|'@'|'#'|'?', text: string}}
@@ -155,9 +156,8 @@ export function stepCount(command) {
 
 /**
  * Go to node's choices, kept for one document. The store replaces its
- * document on every edit and never changes one in place, so the document
- * is its own revision: a new one lists the nodes again, and typing does
- * not.
+ * document on every edit and never changes it in place, so the document is
+ * its own revision. A new document lists the nodes again. Typing does not.
  *
  * @returns {{nodes: function(object): object[]}} nodes(doc), commands.js
  *   nodeChoices
@@ -400,9 +400,9 @@ function selectionName(store) {
 }
 
 /**
- * What is selected, in a sentence: what the palette says as it closes when
- * Shift+Enter changed the selection. Each change was said on the palette's
- * own status line, while the live region waited for it to close.
+ * What is selected, in a sentence. The palette says it as it closes when
+ * Shift+Enter changed the selection. The palette's own status line said each
+ * change, while the live region waited for the palette to close.
  *
  * @param {object} store
  * @returns {string} "Selected plc-sub-3 and plc-sub-4.", "Selected 5 nodes
@@ -466,8 +466,9 @@ function selectionItems(ctx, listed) {
     .filter(Boolean);
 }
 
-// A recent command as it can run now, or null when it cannot: it is not a
-// command of this view, cannot run, or one of its choices is gone.
+// A recent command as it can run now, or null when it cannot. It cannot run
+// when it is not a command of this view, when the command cannot run now, or
+// when one of its choices is gone.
 function recentItem(entry, ctx, listed, index) {
   const command = getCommand(entry.id);
 
@@ -623,9 +624,9 @@ function namedResults(ctx, text) {
     : null;
 }
 
-// Better matches first. Of two that differ only in where their words are,
-// one that can run comes first, so Enter runs it rather than saying why the
-// other cannot.
+// Better matches first. Of two matches that differ only in the position of
+// their words, the one that can run comes first. Thus Enter runs it, and does
+// not say why the other cannot run.
 function byMatch(a, b) {
   return (
     (b.match.grade ?? b.match.score) - (a.match.grade ?? a.match.score) ||
@@ -737,11 +738,12 @@ function searchResults(ctx, text, recent) {
 }
 
 /**
- * A result's second line, in runs for display (highlightParts). When a
- * field matched rather than the name, the line shows it with the match
- * marked: in place, when the line already holds it (a node's image or
- * network), otherwise first and named ("IP address 10.0.1.5 · Device ·
- * …"). A field whose value names itself ("VLAN 101") is not named twice.
+ * A result's second line, in runs for display (highlightParts). When a field
+ * matched and the name did not, the line shows the field with the match
+ * marked. If the line already holds the field (a node's image or network),
+ * the match is marked in place. If not, the field comes first, with its name
+ * ("IP address 10.0.1.5 · Device · …"). A field whose value names itself
+ * ("VLAN 101") is not named twice.
  *
  * @param {object} item a result
  * @returns {{text: string, match: boolean}[]}
@@ -786,8 +788,8 @@ export function detailParts(item) {
  * @returns {{mode: string, groups: {id: string, label: string, items:
  *   object[]}[], total: number, more: number, empty: ({title: string, tip:
  *   string}|null), noun: string}} `total` counts every match (suggestions
- *   are not matches), `more` those left out of a long list, and `noun`
- *   names them
+ *   are not matches). `more` counts the matches left out of a long list, and
+ *   `noun` names them.
  */
 export function paletteResults(
   ctx,

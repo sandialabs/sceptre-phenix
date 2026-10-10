@@ -1,19 +1,20 @@
 // Dagre, tuned for how the Builder draws connections, over each scope (see
-// common.js). Layers run left to right, so a line leaves a device's right
-// side straight into its switch's left side, instead of doubling back as it
-// does top to bottom (standard.js).
+// common.js). Layers run left to right. Thus a line goes from a device's
+// right side straight into its switch's left side. Top to bottom
+// (standard.js), the line doubles back.
 //
 // Dagre's own clusters do not keep a network together once layers run
 // left to right: it orders the device layer and the switch layer apart. So
-// it runs twice:
+// dagre runs twice:
 // 1. Each network alone: its switches, and the devices that go with it (a
 //    device on several networks goes with the smallest), in the preferred
-//    order. Dagre's crossing sweeps would shuffle devices that share a
-//    switch, which cannot cross, so they are off here and the order stays.
+//    order. Lines from devices that share a switch cannot cross, so dagre's
+//    crossing sweeps would only shuffle them. The sweeps are off here, and
+//    the order stays.
 // 2. The networks as boxes, joined by the connections between them, so a
 //    network comes before the networks its gateways lead to. Dagre ranks
-//    them and orders each rank; the ranks are then columns, and a rank
-//    taller than a 16:10 diagram wraps into more (packRanks).
+//    the networks and orders each rank. The ranks become columns, and a
+//    rank taller than a 16:10 diagram wraps into more columns (packRanks).
 
 import dagre from '@dagrejs/dagre';
 
@@ -122,11 +123,12 @@ function arrangeDagre({ items, edges, networks }) {
     }
   }
 
-  // One edge per pair of networks, weighing as many connections as join
-  // them. Dagre can fail on parallel edges ("Not possible to find
-  // intersection inside of the rectangle"), and it makes parallel edges of
-  // a link both ways by turning one way around. The edge runs the way most
-  // of the connections do; on a tie, from the network first in name order.
+  // One edge per pair of networks, with a weight equal to the number of
+  // connections that join them. Dagre can fail on parallel edges ("Not
+  // possible to find intersection inside of the rectangle"). It makes
+  // parallel edges of a link in both directions when it reverses one of
+  // them. The edge runs the way most of the connections do. On a tie, it
+  // runs from the network first in name order.
   const index = new Map(order.map((network, at) => [network, at]));
 
   for (const [from, targets] of links) {

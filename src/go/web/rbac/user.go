@@ -65,7 +65,7 @@ var passwordCost = bcrypt.DefaultCost //nolint:gochecknoglobals // lowered only 
 
 // SetPasswordCostForTesting sets the bcrypt cost of the password hashes made
 // from now on. Tests call it once, before any test runs (in TestMain), to
-// hash with [bcrypt.MinCost]; production code never calls it.
+// hash with [bcrypt.MinCost]. Production code never calls it.
 func SetPasswordCostForTesting(cost int) {
 	passwordCost = cost
 }
@@ -317,10 +317,11 @@ func (u *User) SetRole(role *Role) error {
 	return nil
 }
 
-// update applies change to the user's record as it is stored now, rather than
-// to the copy this User was read with, and saves it, holding the user's lock
-// (see [userLocks]) throughout, so parallel sign-ins, sign-outs and profile
-// changes keep each other's changes. The User then holds the saved record.
+// update applies change to the record of the user as it is stored now, not
+// to the copy that this User was read with, and saves it. It holds the lock
+// of the user (see [userLocks]) the whole time. Thus parallel sign-ins,
+// sign-outs and profile changes keep the changes of each other. The User
+// then holds the saved record.
 func (u User) update(change func(spec *v1.UserSpec)) error {
 	name := u.config.Metadata.Name
 

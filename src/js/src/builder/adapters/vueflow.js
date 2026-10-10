@@ -1,12 +1,12 @@
 // Vue Flow adapter.
 //
-// The document model is library independent; this module is the only place that
-// knows Vue Flow's node/edge shape. Positions in the model are absolute, Vue
-// Flow expects child positions relative to their parent.
+// The document model is library independent. This module is the only place
+// that knows Vue Flow's node/edge shape. Positions in the model are
+// absolute. Vue Flow expects child positions relative to their parent.
 //
-// Networks (not edges) own identity here: an edge's appearance is derived from
-// the network it belongs to, and every network gets a stroke pattern as well as
-// a color so network membership is never communicated by color alone.
+// Networks (not edges) own identity here. An edge's appearance comes from
+// the network it belongs to. Every network gets a stroke pattern and a
+// color, so color alone never shows network membership.
 
 import { kindMeta, nodeIcon, nodeIconKey } from '../catalog.js';
 import { networkColorToken } from '../colors.js';
@@ -46,25 +46,26 @@ export const FLOW_NODE_TYPES = {
 // and lines drawn over them, then devices, switches, notes and icons, so a
 // drawing never covers a node it is drawn around.
 //
-// Vue Flow draws a node in a group one above the higher of its group's
-// layer and its own, so a node's layer is far enough above a drawing's that
-// a drawing in a group stays under the devices outside it.
+// Vue Flow draws a node in a group one layer above the higher of its
+// group's layer and its own. So a node's layer is far enough above a
+// drawing's layer that a drawing in a group stays under the devices outside
+// it.
 const KIND_LAYERS = { group: 0, shape: 0, line: 0 };
 const NODE_LAYER = 10;
-// A selected node, and every node in a selected group, is lifted over the
-// rest, as Vue Flow's own elevateNodesOnSelect does, which the canvas turns
-// off (see BuilderCanvas.vue). A shape or a line is never lifted: selected,
-// it would cover the devices and switches it is drawn around, and their
-// connection handles. Its resize handles, and the handles of a line's
-// points, are drawn over every node instead (see NodeResize.vue and
-// LineNode.vue).
+// A selected node, and every node in a selected group, goes above the
+// other nodes, as with Vue Flow's own elevateNodesOnSelect. The canvas
+// disables that option (see BuilderCanvas.vue). A shape or a line never
+// goes above: when selected, it would cover the devices and switches it is
+// drawn around, and their connection handles. Its resize handles, and the
+// handles of a line's points, are drawn over every node instead (see
+// NodeResize.vue and LineNode.vue).
 const SELECTED_LIFT = 1000;
 const NEVER_LIFTED = ['shape', 'line'];
 
 /**
- * A canvas node's stacking order (Vue Flow's zIndex): its kind's layer, and
- * lifted over the rest while it, or a group it is in, is selected, unless it
- * is a shape or a line.
+ * A canvas node's stacking order (Vue Flow's zIndex): its kind's layer. The
+ * node goes above the other nodes while it, or a group it is in, is
+ * selected, unless it is a shape or a line.
  *
  * @param {string} kind the node's kind
  * @param {boolean} [selected] the node is selected
@@ -80,7 +81,7 @@ export function nodeZIndex(kind, selected = false, inSelectedGroup = false) {
 }
 
 // Whether a group that holds the node of `parentId` (its group, or a group
-// that group is in) is selected; `parentOf` gives a node's group id.
+// that group is in) is selected. `parentOf` gives a node's group id.
 function inSelectedGroup(parentId, selected, parentOf) {
   const seen = new Set();
 
@@ -153,11 +154,11 @@ export function nodeInfoId(nodeId) {
 
 /**
  * Deterministic visual treatment for a network. Documents with the same
- * networks always render identically. A network whose color is one
- * addNetwork picks is drawn with that color's token (see colors.js), which
- * for a network given its color in turn is the token of its place. Its
- * pattern is the line style it was given, else the one of its place, which
- * `autoPattern` is either way.
+ * networks always render identically. A network whose color is one that
+ * addNetwork picks is drawn with that color's token (see colors.js). For a
+ * network that got its color in turn, that is the token of its place. Its
+ * pattern is the line style it was given, else the pattern of its place.
+ * `autoPattern` is always the pattern of its place.
  *
  * @param {object} doc
  * @param {string} networkId
@@ -173,7 +174,7 @@ export function networkStyle(doc, networkId) {
   return styleAt(doc?.networks?.[index], networkId, index);
 }
 
-// Each network's style by id, worked out once, for a whole document.
+// Each network's style by id, calculated once, for a whole document.
 function networkStyles(doc) {
   const places = new Map();
   const styles = new Map();
@@ -365,23 +366,25 @@ function describedBy(node, issue) {
 }
 
 /**
- * Converts model nodes into Vue Flow nodes. A node the diagram checks flag
- * carries what they found (data.issue), and is described by it as well. A
- * device carries the type it shows (data.typeLabel), and a switch the
- * devices connected to it (data.connected). A device, a group or an icon
- * node whose custom icon resolves, to the document's copy or to the icon
- * library's icon of that name, has the address it is drawn from
- * (data.iconSrc, see iconSrc in icons.js); it is '' otherwise, and the node
- * draws its built-in icon. A device, a switch and a group carry the size
- * their icon is drawn at (data.iconSize, see nodeIconSize in model.js). A
- * shape, an icon and a line carry the name of their kind (data.kindLabel),
- * and a line the dash array of its line style (data.dashArray).
+ * Converts model nodes into Vue Flow nodes. The data of each node carries:
+ * - issue: for a node that the diagram checks flag, what they found. It
+ *   also describes the node.
+ * - typeLabel: for a device, the type it shows.
+ * - connected: for a switch, the devices connected to it.
+ * - iconSrc: for a device, a group or an icon node whose custom icon
+ *   resolves (to the document's copy or to the icon library's icon of that
+ *   name), the address the icon is drawn from (see iconSrc in icons.js).
+ *   It is '' otherwise, and the node draws its built-in icon.
+ * - iconSize: for a device, a switch and a group, the size their icon is
+ *   drawn at (see nodeIconSize in model.js).
+ * - kindLabel: for a shape, an icon and a line, the name of their kind.
+ * - dashArray: for a line, the dash array of its line style.
  *
  * @param {object} doc
- * @param {object} [options] selectedIds; issues: nodeIssueSummaries by
- *   node id; library: the icon library (see iconLibrary.js), whose reactive
- *   state makes nodes follow its changes; without one, only the document's
- *   copies resolve
+ * @param {object} [options] selectedIds. issues: nodeIssueSummaries by
+ *   node id. library: the icon library (see iconLibrary.js), whose reactive
+ *   state makes nodes follow its changes. Without a library, only the
+ *   document's copies resolve
  * @returns {object[]}
  */
 export function toFlowNodes(doc, options = {}) {
@@ -431,8 +434,9 @@ export function toFlowNodes(doc, options = {}) {
           (id) => index.node(id)?.parentId,
         ),
       ),
-      // A line takes the pointer only on its stroke (see LineNode.vue), not
-      // across the box of its points, over what lies under it.
+      // A line takes the pointer only on its stroke (see LineNode.vue). It
+      // does not take the pointer across the box of its points, over what
+      // is under it.
       style: {
         width: `${size.width}px`,
         height: `${size.height}px`,
@@ -440,9 +444,9 @@ export function toFlowNodes(doc, options = {}) {
       },
       ariaLabel: nodeAriaLabel(doc, node, index),
       // Vue Flow spreads these over its own wrapper attributes. The wrapper
-      // is a toggle button pressed while the node is selected, which takes
+      // is a toggle button, pressed while the node is selected. It takes
       // focus but is out of the Tab order unless it is the canvas's one Tab
-      // stop (withTabStop); undefined removes Vue Flow's role description.
+      // stop (withTabStop). undefined removes Vue Flow's role description.
       domAttributes: {
         tabindex: -1,
         role: 'button',
@@ -485,10 +489,10 @@ export function toFlowNodes(doc, options = {}) {
 }
 
 /**
- * Flow nodes or edges with a selection applied, and each node stacked as it
- * is then (nodeZIndex). Only those it changes are copied; the rest stay the
- * very objects they were, so Vue Flow redraws only what the selection
- * changed.
+ * Flow nodes or edges with a selection applied, and each node stacked for
+ * that selection (nodeZIndex). Only the items that the selection changes
+ * are copied. The other items stay the same objects, so Vue Flow redraws
+ * only what the selection changed.
  *
  * @param {object[]} items from toFlowNodes or toFlowEdges
  * @param {string[]} [selectedIds]
@@ -552,8 +556,8 @@ export function withTabStop(items, id) {
  * withSelection and keepUnchanged), so the work is the size of the change.
  * `reordered` is set when the next list is not the kept items in their
  * old order followed by the added ones. `rebuild` asks for the whole list
- * instead: ids repeat, or a kept item changed one of the `fixed` keys,
- * which Vue Flow works out only for a whole list.
+ * instead. This occurs when ids repeat, or when a kept item changed one of
+ * the `fixed` keys, which Vue Flow calculates only for a whole list.
  *
  * @param {object[]} previous
  * @param {object[]} next
@@ -612,12 +616,13 @@ function anchorY(node, handleId) {
 }
 
 /**
- * The bend of each connection that shares its end at a switch with others,
- * as {index, count}: a connection drawn without a route bends in a column of
- * its own (see NetworkEdge.vue), so the lines into one switch do not run
- * down one column. Into a switch, the connection whose other end is nearest
- * the switch's handle, up or down, bends first (leftmost), so no line
- * crosses another on its way; out of one, it bends last.
+ * The bend of each connection that shares its end at a switch with other
+ * connections, as {index, count}. A connection drawn without a route bends
+ * in a column of its own (see NetworkEdge.vue), so the lines into one
+ * switch do not run down one column. Into a switch, the connection whose
+ * other end is nearest the switch's handle, up or down, bends first
+ * (leftmost), so no line crosses another on its way. Out of a switch, it
+ * bends last.
  *
  * @param {object} doc
  * @param {Map} [nodeById]
@@ -733,16 +738,16 @@ export function toFlowEdges(doc, options = {}) {
       targetHandle: edge.targetHandleId || SWITCH_HANDLE_ID,
       selected: selected.has(edge.id),
       label: edge.label || network?.name || '',
-      // Each device end names its interface: two connections between the
-      // same nodes differ only there.
+      // Each device end names its interface, because two connections
+      // between the same nodes differ only there.
       ariaLabel:
         `Network ${network ? network.name : 'unassigned'} from ` +
         `${source ? connectionEndLabel(source, edge.sourceHandleId) : edge.sourceNodeId} to ` +
         `${target ? connectionEndLabel(target, edge.targetHandleId) : edge.targetNodeId}${labelled}`,
-      // Vue Flow writes tabIndex in camel case, which an SVG element ignores,
-      // so connections could never take focus. Like nodes, a connection is a
-      // toggle button pressed while it is selected, out of the Tab order
-      // unless it is the canvas's Tab stop.
+      // Vue Flow writes tabIndex in camel case, which an SVG element
+      // ignores, so connections could never take focus. Like a node, a
+      // connection is a toggle button, pressed while it is selected. It is
+      // out of the Tab order unless it is the canvas's Tab stop.
       domAttributes: {
         tabindex: -1,
         role: 'button',
@@ -795,7 +800,7 @@ function overlapArea(a, b) {
  * @param {object} box
  * @param {object} pane
  * @param {object[]} overlays
- * @returns {number} square pixels; 0 when the box is fully in view
+ * @returns {number} square pixels. 0 when the box is fully in view
  */
 export function hiddenArea(box, pane, overlays = []) {
   return (
@@ -809,10 +814,11 @@ export function hiddenArea(box, pane, overlays = []) {
 const REVEAL_STEPS = 8;
 
 /**
- * Where to put the centre of an item of the given size so it can be seen:
- * of the points on a grid over the pane, the one nearest the pane's centre
- * where the item is inside the pane and clear of the overlays, or else the
- * one where the least of it is hidden.
+ * Where to put the centre of an item of the given size so it can be seen.
+ * Of the points on a grid over the pane, it is the point nearest the pane's
+ * centre where the item is inside the pane and clear of the overlays. If
+ * there is no such point, it is the point where the least of the item is
+ * hidden.
  *
  * @param {object} pane box with width and height
  * @param {number} width
@@ -873,8 +879,8 @@ export function nodePoint(node) {
 }
 
 /**
- * Where a node or connection is, for the arrow keys: see nodePoint; a
- * connection is halfway between the centres of its ends.
+ * Where a node or connection is, for the arrow keys. For a node, see
+ * nodePoint. A connection is halfway between the centres of its ends.
  *
  * @param {object} doc
  * @param {{kind: 'nodes'|'edges', id: string}} item
@@ -918,10 +924,10 @@ const ACROSS_WEIGHT = 2;
 
 /**
  * The node an arrow key moves focus to: of the nodes whose point
- * (nodePoint) lies that way from `from`, the nearest, with distance across
- * the direction counted twice. A node at the very same point as the focused
- * one comes first: the next in the document for Right and Down, the
- * previous for Left and Up, so every node can be reached.
+ * (nodePoint) is in that direction from `from`, the nearest, with distance
+ * across the direction counted twice. A node at the same point as the
+ * focused node comes first: the next in the document for Right and Down,
+ * the previous for Left and Up. So the keys can reach every node.
  *
  * @param {object} doc
  * @param {{x: number, y: number}} from
@@ -997,10 +1003,10 @@ export function nearestNode(doc, point) {
 }
 
 /**
- * The connection Page Down (step 1) or Page Up (-1) moves focus to among a
- * node's connections, in the document's order and round from the last to
- * the first: from `edgeId`, or from the node itself when that is not one
- * of them.
+ * The connection that Page Down (step 1) or Page Up (-1) moves focus to
+ * among a node's connections. The order is the document's, and it wraps
+ * from the last to the first. The step starts from `edgeId`, or from the
+ * node itself when `edgeId` is not one of them.
  *
  * @param {object} doc
  * @param {string} nodeId
@@ -1030,20 +1036,21 @@ export function connectionStep(doc, nodeId, edgeId, step) {
 
 // --- fitting nodes into view ------------------------------------------------
 
-// Room Vue Flow's fit view leaves around a diagram, as a share of its size.
+// The space that Vue Flow's fit view keeps around a diagram, as a share of
+// its size.
 const FIT_PADDING = 0.1;
 
 /**
  * The zoom at which Vue Flow's fit view shows a box whole in a pane, with
- * the room it leaves around it.
+ * the space it keeps around it.
  *
  * @param {{width: number, height: number}} bounds in flow coordinates
  * @param {{width: number, height: number}} pane in screen pixels
  * @param {number|{top: number, right: number, bottom: number, left: number}}
  *   [padding] as Vue Flow takes it: a share of the pane, or pixels on each
  *   side (see fitPadding)
- * @returns {number} Infinity when either has no size, 0 when the room
- *   leaves nothing to show the box in
+ * @returns {number} Infinity when either has no size. 0 when the padding
+ *   leaves no space to show the box in
  */
 export function fitZoom(bounds, pane, padding = FIT_PADDING) {
   if (!bounds?.width || !bounds?.height || !pane?.width || !pane?.height) {
@@ -1059,7 +1066,8 @@ export function fitZoom(bounds, pane, padding = FIT_PADDING) {
       : 0;
   }
 
-  // Vue Flow's own sum, which rounds the room down to whole pixels.
+  // Vue Flow's own calculation, which rounds the padding down to whole
+  // pixels.
   const room = (length) =>
     length - 2 * Math.floor((length - length / (1 + padding)) * 0.5);
 
@@ -1070,18 +1078,18 @@ export function fitZoom(bounds, pane, padding = FIT_PADDING) {
 }
 
 /**
- * The room, in whole pixels on each side, to fit nodes into a pane with:
- * Vue Flow's own (a share of the pane, as fitZoom has it), and more on a
- * side for each box that floats over the pane (the minimap, the zoom
- * controls), so no node ends up under one. Each box is kept clear on one
- * of the two sides it sits against, whichever lets the nodes be larger.
- * Vue Flow's fit view takes the result as its padding, in pixels.
+ * The padding, in whole pixels on each side, to fit nodes into a pane
+ * with. It is Vue Flow's own padding (a share of the pane, as in fitZoom),
+ * and more on a side for each box that floats over the pane (the minimap,
+ * the zoom controls). So no node goes under a box. Each box is kept clear
+ * on one of the two sides it is against, the one that lets the nodes be
+ * larger. Vue Flow's fit view takes the result as its padding, in pixels.
  *
  * @param {{width: number, height: number}} bounds the nodes', in flow
  *   coordinates
  * @param {object} pane box, in screen pixels
  * @param {object[]} [overlays] boxes, in screen pixels
- * @param {number} [padding] Vue Flow's room, as a share
+ * @param {number} [padding] Vue Flow's padding, as a share
  * @returns {{top: number, right: number, bottom: number, left: number}}
  */
 export function fitPadding(bounds, pane, overlays = [], padding = FIT_PADDING) {
@@ -1132,15 +1140,15 @@ export function fitPadding(bounds, pane, overlays = [], padding = FIT_PADDING) {
 
 /**
  * The least zoom the canvas allows: `least`, or half the zoom that fits
- * the diagram clear of the boxes that float over the pane when that is
- * less, so that Fit, and zooming out by hand, can always show a large
- * diagram whole.
+ * the diagram clear of the boxes that float over the pane, when that is
+ * less. So Fit, and zoom out by hand, can always show a large diagram
+ * whole.
  *
  * @param {{width: number, height: number}} bounds the diagram's
  * @param {{width: number, height: number}} pane
  * @param {number} least
  * @param {object[]} [overlays] boxes over the pane (the minimap), in the
- *   pane's own pixels: its top left corner is 0, 0
+ *   pane's own pixels. Its top left corner is 0, 0
  * @returns {number}
  */
 export function zoomFloor(bounds, pane, least, overlays = []) {
@@ -1149,17 +1157,18 @@ export function zoomFloor(bounds, pane, least, overlays = []) {
     overlays.length > 0 &&
     fitZoom(bounds, pane, fitPadding(bounds, { ...pane, ...box }, overlays));
 
-  // Room that leaves nothing to show the diagram in is no floor at all.
+  // Padding that leaves no space to show the diagram in sets no floor.
   return Math.min(least, (clear || fitZoom(bounds, pane)) / 2);
 }
 
 // --- Fit, and back to the view before it ------------------------------------
 //
 // After Fit, the zoom controls' Fit button (and the view.fit command)
-// restores the view from just before it, until the view changes some other
-// way: a pan or a zoom, the minimap, Reset view, or bringing a node into
-// view. What Fit keeps is null, or {before, fitted}: the view to restore
-// and the view Fit made. Views are {x, y, zoom}, as Vue Flow's viewport.
+// restores the view from just before Fit. This works until the view
+// changes in some other way: a pan or a zoom, the minimap, Reset view, or
+// a node brought into view. What Fit keeps is null, or {before, fitted}:
+// the view to restore and the view Fit made. Views are {x, y, zoom}, as
+// Vue Flow's viewport.
 
 // Less than half a pixel of pan, and a thousandth of zoom, is no change.
 function sameView(a, b) {
@@ -1171,8 +1180,9 @@ function sameView(a, b) {
 }
 
 /**
- * What Fit keeps after it changed the view from `before` to `fitted`:
- * nothing when it did not change it, as there is nothing to go back to.
+ * What Fit keeps after it changed the view from `before` to `fitted`.
+ * Nothing when it did not change the view, because there is no view to go
+ * back to.
  *
  * @param {{x: number, y: number, zoom: number}} before
  * @param {{x: number, y: number, zoom: number}} fitted
@@ -1189,8 +1199,8 @@ export function keepFit(before, fitted) {
 }
 
 /**
- * What Fit keeps once the view is `view`: the same while it is still the
- * view Fit made, and nothing once anything else has moved it.
+ * What Fit keeps when the view is `view`: the same while it is still the
+ * view Fit made, and nothing after any other change moved it.
  *
  * @param {{before: object, fitted: object}|null} kept
  * @param {{x: number, y: number, zoom: number}} view

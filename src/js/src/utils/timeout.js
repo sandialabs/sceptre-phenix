@@ -83,8 +83,8 @@ export class TimeoutTool {
     );
   }
   // Logs out, or first warns for a minute when Builder holds changes
-  // the server does not have (see utils/logout.js). Activity meanwhile does
-  // not restart the timer; Stay signed in in the warning does.
+  // the server does not have (see utils/logout.js). Activity during the
+  // warning does not restart the timer. The warning's Stay signed in does.
   logoutUser() {
     if (this.warnToast) {
       this.warnToast.close();
@@ -105,7 +105,7 @@ export class TimeoutTool {
         this.loggingOut = false;
 
         // Still signed in: the user stayed, or the server did not answer
-        // the logout, which the next timeout tries again.
+        // the logout. The next timeout tries the logout again.
         if (outcome === 'stayed' || outcome === 'failed') {
           this.resetTimer();
         }

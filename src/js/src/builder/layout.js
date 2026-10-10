@@ -2,8 +2,8 @@
 // (layouts/index.js runs the draft's own choice or the viewer's default),
 // and putting it back.
 
-// A route as a layout gave it, copied as plain points; undefined for one the
-// document could not keep (validateRoute in validate.js): fewer than two
+// A route from a layout, copied as plain points. undefined for a route that
+// the document cannot keep (validateRoute in validate.js): fewer than two
 // points, or a point off the canvas.
 function cleanRoute(points) {
   if (!Array.isArray(points) || points.length < 2) {
@@ -35,11 +35,11 @@ function withRoute(edge, route) {
 }
 
 /**
- * Returns a new document with laid-out geometry applied: each node's
- * position, the size of each group the layout sized around its members, and
- * each connection's route. Nodes the layout did not place keep theirs; a
- * connection it drew no route for loses the one it had, which the new
- * positions would leave behind.
+ * Returns a new document with the laid-out geometry applied: each node's
+ * position, the size of each group that the layout sized around its members,
+ * and each connection's route. Nodes that the layout did not place keep their
+ * position. A connection for which the layout drew no route loses its old
+ * route, because the new positions would leave it behind.
  *
  * @param {object} doc
  * @param {{positions: object, sizes?: object, routes?: object}} geometry
@@ -68,7 +68,7 @@ export function withGeometry(doc, { positions, sizes = {}, routes = {} }) {
 }
 
 /**
- * Returns a new document that keeps a layout of its own, or none (the
+ * Returns a new document that keeps its own layout, or no layout (the
  * viewer's default) for an empty id.
  *
  * @param {object} doc
@@ -101,13 +101,14 @@ function sameGeometry(a, b) {
 }
 
 /**
- * The position and size each node had in `before`, for the nodes that
- * `after` moved or resized: all restoreGeometry needs to undo a layout.
+ * The position and size that each node had in `before`, for the nodes that
+ * `after` moved or resized. This is all that restoreGeometry needs to undo a
+ * layout.
  *
  * @param {object} before document
  * @param {object} after the same document, laid out
- * @returns {Record<string, {position: object, size?: object}>} by node id;
- *   empty when nothing moved
+ * @returns {Record<string, {position: object, size?: object}>} by node id.
+ *   Empty when nothing moved.
  */
 function changedGeometry(before, after) {
   const laid = new Map((after.nodes || []).map((node) => [node.id, node]));
@@ -128,8 +129,8 @@ function changedGeometry(before, after) {
 
 /**
  * Returns a new document with saved positions and sizes put back. A node
- * saved without a size goes back to its kind's default; nodes the record
- * does not list are left alone.
+ * saved without a size goes back to the default size of its kind. Nodes that
+ * the record does not list do not change.
  *
  * @param {object} doc
  * @param {Record<string, {position: object, size?: object}>} geometry from
@@ -164,15 +165,16 @@ function sameRoute(a, b) {
 }
 
 /**
- * What a layout changed, as `before` had it: each moved or resized node's
- * geometry (changedGeometry), each connection's route, and the draft's
- * layout choice. All restoreLayoutChanges needs to undo the layout.
+ * What a layout changed, as `before` had it: the geometry of each moved or
+ * resized node (changedGeometry), each connection's route, and the draft's
+ * layout choice. This is all that restoreLayoutChanges needs to undo the
+ * layout.
  *
  * @param {object} before document
  * @param {object} after the same document, laid out
  * @returns {{geometry: object, routes: object, layout?: {id: string|null}}
- *   |null} routes by edge id, null for an edge that had none; layout only
- *   when the choice changed; null when nothing changed
+ *   |null} routes by edge id, null for an edge that had no route. layout
+ *   only when the choice changed. null when nothing changed.
  */
 export function layoutChanges(before, after) {
   const geometry = changedGeometry(before, after);
@@ -204,8 +206,8 @@ export function layoutChanges(before, after) {
 }
 
 /**
- * Returns a new document with what a layout changed put back: positions and
- * sizes (restoreGeometry), routes, and the layout choice.
+ * Returns a new document with the changes of a layout put back: positions
+ * and sizes (restoreGeometry), routes, and the layout choice.
  *
  * @param {object} doc
  * @param {{geometry: object, routes?: object, layout?: {id: string|null}}}

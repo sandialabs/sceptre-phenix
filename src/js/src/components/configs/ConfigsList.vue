@@ -57,9 +57,9 @@
     :aria-label="viewer.title"
     close-button-aria-label="Close"
     :destroy-on-hide="false">
-    <!-- Kept in the page once closed: a viewer opened while the one before
-         it was still being removed stayed open but invisible, over the
-         page, and Exit did not close it. -->
+    <!-- The page keeps the viewer after it closes. Before this, a viewer
+         that opened during the removal of the previous one stayed open but
+         invisible over the page, and Exit did not close it. -->
     <div class="modal-card" style="width: 50em">
       <header class="modal-card-head x-modal-dark">
         <p class="modal-card-title x-config-text">{{ viewer.title }}</p>
@@ -510,7 +510,7 @@
             this.configs = state.configs === null ? [] : state.configs;
             this.isWaiting = false;
 
-            // The list has several root elements, so it is searched from
+            // The list has several root elements, so the search starts at
             // the document.
             if (this.focusConfig) {
               await this.$nextTick();
@@ -764,7 +764,7 @@
   };
 </script>
 <style scoped>
-  /* The name looks as the text it was, and shows its focus. */
+  /* The name button looks like the text it replaces, and shows its focus. */
   .config-name {
     padding: 0;
     border: 0;

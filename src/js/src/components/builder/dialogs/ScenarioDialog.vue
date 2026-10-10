@@ -2,27 +2,32 @@
   Scenarios of the diagram.
 
   A document names the Scenario configs of the server it is used with
-  (`scenarios`) and holds none of their content: Publish adds the topology
+  (`scenarios`) and holds none of their content. Publish adds the topology
   to the topology annotation of each, and an experiment published with the
-  topology uses one of them. This dialog edits that list: Remove takes a
-  name off it, Add a stored scenario adds one the server lists (GET
-  /builder/sources), and Upload a scenario file stores a Scenario config on
-  the server and adds its name. Save writes the list into the diagram as
-  one undo step (the store's setScenarios); Cancel and Escape leave it as
-  it was, but a scenario stored meanwhile stays on the server.
+  topology uses one of them. This dialog edits that list:
+
+  - Remove removes a name from it.
+  - Add a stored scenario adds one that the server lists (GET
+    /builder/sources).
+  - Upload a scenario file stores a Scenario config on the server and adds
+    its name.
+
+  Save writes the list into the diagram as one undo step (the store's
+  setScenarios). Cancel and Escape leave it as it was, but a scenario
+  stored meanwhile stays on the server.
 
   An upload is a phenix.sandia.gov/v2 Scenario file (JSON or YAML). Its
-  name is the file's metadata.name, or the file name made a config name,
-  and can be changed before it is stored. It is created with POST /configs;
-  a name the server already lists is replaced with PUT
-  /configs/Scenario/<name>, only after the user confirms, as nothing undoes
-  it. A replacement takes the file's spec and keeps the stored scenario's
-  annotations, the file's added to them, so its topology annotation still
-  names every topology it named (the store's saveScenarioConfig). The
-  server checks the caller's configs permission and the config, and its
-  refusal shows in the dialog's alert. A name the list already has, in any
-  letter case, is not listed twice: the list takes the stored config's
-  spelling.
+  name is the file's metadata.name, or the file name made into a config
+  name. The user can change the name before it is stored. POST /configs
+  creates it. A name that the server already lists is replaced with PUT
+  /configs/Scenario/<name>, but only after the user confirms, because
+  nothing undoes it. A replacement takes the file's spec and keeps the
+  stored scenario's annotations, with the file's annotations added to them.
+  Thus its topology annotation still names every topology that it named
+  (the store's saveScenarioConfig). The server checks the caller's configs
+  permission and the config, and its refusal shows in the dialog's alert. A
+  name that the list already has, in any letter case, is not listed twice.
+  The list takes the stored config's spelling.
 
   A read-only draft shows the list only.
 -->
@@ -293,8 +298,8 @@
     error.clear();
     status.set(`Removed scenario ${name} from the list.`);
 
-    // Focus moves to the Remove button now in that place, else the last
-    // one, else the scenario picker, so it never falls to the page.
+    // Focus moves to the Remove button now in that place, or else the last
+    // one, or else the scenario picker. Thus focus never falls to the page.
     await nextTick();
 
     const next = names.value[Math.min(index, names.value.length - 1)];
@@ -490,7 +495,7 @@
   // Lists a scenario just stored as `name`, and returns the end of the
   // status that says what the list did. A name the list has in another
   // letter case takes the stored config's spelling, which is the config the
-  // diagram names from then on; the list never has it twice.
+  // diagram names from then on. The list never has it twice.
   function listStored(name) {
     const keep = 'Save scenarios to keep the list in this diagram.';
     const index = names.value.findIndex((item) => key(item) === key(name));
@@ -591,8 +596,8 @@
     margin-top: 0.25rem;
   }
 
-  /* A config name is one word; a long one wraps rather than widen the
-     dialog. */
+  /* A config name is one word. A long one wraps, so that it does not
+     widen the dialog. */
   .scenario-list__name {
     overflow-wrap: anywhere;
   }

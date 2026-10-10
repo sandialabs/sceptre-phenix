@@ -1,7 +1,7 @@
 // Preflight checks as the Checks dialog offers them: which checks there are
 // and what each looks at, the choice of checks the browser remembers, and
 // how a report reads (see POST /builder/drafts/{owner}/{draft}/preflight).
-// The server makes the checks on the draft's saved document; nothing here
+// The server runs the checks on the draft's saved document. Nothing here
 // reads the cluster.
 
 /**
@@ -43,7 +43,7 @@ const STATUS_TEXT = {
 export const PREFLIGHT_STORAGE_KEY = 'phenix.builder.preflight';
 
 /**
- * The checks of a choice, each once and in the dialog's order; anything
+ * The checks of a choice, each once and in the dialog's order. Anything
  * that is not a check is left out.
  *
  * @param {unknown} choice ids of checks
@@ -58,8 +58,8 @@ export function orderedChecks(choice) {
 }
 
 /**
- * The checks the browser remembers were last chosen, or none: none is ticked
- * until the user ticks one, and storage that cannot be read remembers
+ * The checks that the browser remembers as last chosen, or none. No check
+ * is ticked until the user ticks one. Storage that cannot be read remembers
  * nothing.
  *
  * @param {Storage|null} [storage] localStorage
@@ -110,9 +110,9 @@ export function statusText(status) {
 }
 
 /**
- * What a report comes to, which the dialog shows and announces when the
+ * The summary of a report, which the dialog shows and announces when the
  * checks are done: "Preflight: 2 passed, 1 failed, 1 unavailable". A status
- * no check has is left out.
+ * that no check has is left out.
  *
  * @param {{checks: {status: string}[]}} report
  * @returns {string}

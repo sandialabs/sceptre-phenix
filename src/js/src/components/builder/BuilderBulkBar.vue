@@ -9,11 +9,11 @@
   selects every item, and with all selected none (see useListSelection in
   builder/listSelection.js, which gives count, total and state).
 
-  The count has the id bulk-count-<id>, for the buttons to be described by:
-  a button that cannot act with nothing selected then says how many are.
-  While an action runs (running), Select all is disabled and the row says
-  how far the action is; the progress is not a live region, as the page
-  says what the run came to.
+  The count has the id bulk-count-<id>, so the buttons can use it as their
+  description: a button that cannot act with nothing selected then says how
+  many are. While an action runs (running), Select all is disabled and the
+  row shows the progress of the action. The progress is not a live region,
+  because the page announces the result of the run.
 
   The row is not sticky: a sticky row could cover the card focus is on
   (WCAG 2.4.11).
@@ -65,10 +65,11 @@
     total: { type: Number, required: true },
     // 'none', 'some' or 'all' of them.
     state: { type: String, default: 'none' },
-    // The action under way on the selection, if one is: { label, done,
-    // total }, shown as "Deleting 2 of 5…".
+    // The action in progress on the selection, if there is one: { label,
+    // done, total }, shown as "Deleting 2 of 5…".
     running: { type: Object, default: null },
-    // Nothing can be selected now, as while an action runs on another list.
+    // Nothing can be selected now, for example while an action runs on
+    // another list.
     disabled: { type: Boolean, default: false },
   });
 
@@ -78,7 +79,7 @@
 
   // indeterminate is a property of the element, with no attribute. The
   // browser checks or unchecks the checkbox when it is pressed, whatever
-  // the selection then is, so its checked state is set again too.
+  // the selection then is, so this also sets its checked state again.
   function show() {
     if (all.value) {
       all.value.indeterminate = props.state === 'some';

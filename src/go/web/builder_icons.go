@@ -25,8 +25,8 @@ const (
 )
 
 // builderIconUpload adds an image to the icon library under a name the
-// caller chose. Data is a PNG in standard base64 with padding; no file name,
-// extension or declared type is ever read.
+// caller chose. Data is a PNG in standard base64 with padding. The server
+// never reads a file name, extension or declared type.
 type builderIconUpload struct {
 	Name string `json:"name"`
 	Data string `json:"data"`
@@ -39,13 +39,13 @@ type builderIconRename struct {
 }
 
 // builderIconResponse is one icon of the icon library. Data is the stored
-// PNG as base64: the image is only ever sent as text inside JSON, never as
-// an image a browser could be pointed at. Owner is empty for an icon the
+// PNG as base64. The server sends the image only as text inside JSON, never
+// as an image that a browser could open. Owner is empty for an icon that the
 // server added from its template files (see [bapi.ServerIconOwner]).
-// CanRename and CanDelete say whether the caller may rename or delete it:
-// its uploader, or a holder of the builder-icons permission of that verb,
-// with the configs permission of the same verb; only the latter for an icon
-// the server added.
+// CanRename and CanDelete say whether the caller may rename or delete it.
+// The uploader may, and so may a holder of the builder-icons permission of
+// that verb, with the configs permission of the same verb. For an icon that
+// the server added, only the holder may.
 type builderIconResponse struct {
 	Name      string    `json:"name"`
 	ID        string    `json:"id"`
@@ -61,8 +61,8 @@ type builderIconResponse struct {
 	CanDelete bool      `json:"canDelete"`
 }
 
-// builderIconListResponse is the icon library and the limits of the caller's
-// uploads: how many icons and bytes each user may upload, and how many the
+// builderIconListResponse is the icon library and the upload limits of the
+// caller: how many icons and bytes each user may upload, and how many the
 // caller uploaded.
 type builderIconListResponse struct {
 	Icons     []builderIconResponse `json:"icons"`
@@ -102,10 +102,10 @@ func builderIconNotFound() *weberror.WebError {
 	return weberror.NewWebError(nil, "icon not found").SetStatus(http.StatusNotFound)
 }
 
-// builderIconError maps a refusal of the icon library to its answer: what is
-// wrong with the upload, the name or the library in the service's own words,
-// which name no stored record and repeat nothing of the image. Any other
-// failure is answered with message.
+// builderIconError maps a refusal of the icon library to its answer. The
+// answer tells, in the words of the service, what is wrong with the upload,
+// the name or the library. These words name no stored record and repeat
+// nothing of the image. Any other failure gets message.
 func builderIconError(err error, message string) *weberror.WebError {
 	var (
 		tooLarge *bapi.TooLargeError
@@ -131,8 +131,8 @@ func builderIconError(err error, message string) *weberror.WebError {
 
 // listIcons - GET /builder/icons.
 //
-// The icon library is the server's: every caller with configs list sees
-// every icon, with who uploaded it and whether the caller may rename or
+// The icon library belongs to the server. Every caller with configs list
+// sees every icon, with its uploader, and whether the caller may rename or
 // delete it.
 func (b *builderAPI) listIcons(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderListIcons")
@@ -166,7 +166,7 @@ func (b *builderAPI) listIcons(w http.ResponseWriter, r *http.Request) error {
 // getIcon - GET /builder/icons/{icon}.
 //
 // The path names the icon by its name or by one of its aliases, ignoring
-// case; the answer carries the name it has now.
+// case. The answer carries the current name of the icon.
 func (b *builderAPI) getIcon(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderGetIcon")
 
@@ -186,9 +186,9 @@ func (b *builderAPI) getIcon(w http.ResponseWriter, r *http.Request) error {
 // createIcon - POST /builder/icons.
 //
 // The answer is 201 for a new icon, 200 when the name already names an icon
-// with the same bytes, and 409 when it names another. Either way the caller
-// must use the data of the answer: an image that is not already one a
-// document accepts is stored encoded again.
+// with the same bytes, and 409 when it names another icon. In all cases,
+// the caller must use the data of the answer. The server encodes again, and
+// stores, an image that a document does not already accept.
 func (b *builderAPI) createIcon(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderCreateIcon")
 
@@ -231,10 +231,10 @@ func (b *builderAPI) createIcon(w http.ResponseWriter, r *http.Request) error {
 
 // renameIcon - PUT /builder/icons/{icon}.
 //
-// Gives the icon the path names a new name; the old one keeps naming it, as
-// an alias. Its uploader may rename it, and so may a holder of
-// builder-icons update. Anyone else, who sees the icon in the listing, is
-// answered 403.
+// Gives the icon that the path names a new name. The old name stays as an
+// alias of the icon. Its uploader may rename it, and so may a holder of
+// builder-icons update. Any other caller, who sees the icon in the listing,
+// gets 403.
 func (b *builderAPI) renameIcon(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderRenameIcon")
 
@@ -272,9 +272,10 @@ func (b *builderAPI) renameIcon(w http.ResponseWriter, r *http.Request) error {
 
 // deleteIcon - DELETE /builder/icons/{icon}.
 //
-// Deletes the icon the path names, by its name or an alias, with all its
-// aliases. Its uploader may delete it, and so may a holder of builder-icons
-// delete. Anyone else is answered 403; a name that names no icon is 404.
+// Deletes the icon that the path names, by its name or an alias, with all
+// its aliases. Its uploader may delete it, and so may a holder of
+// builder-icons delete. Any other caller gets 403. A name that names no icon
+// gets 404.
 func (b *builderAPI) deleteIcon(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderDeleteIcon")
 

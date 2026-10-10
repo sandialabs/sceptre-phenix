@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	// AnyRevision is used with record updates and deletes to indicate that no
-	// revision precondition should be enforced.
+	// AnyRevision, passed to record updates and deletes, means that no
+	// revision precondition applies.
 	AnyRevision int64 = 0
 
 	maxRecordNamespaceLen = 128
@@ -42,10 +42,10 @@ var (
 )
 
 type (
-	// Record is a generic, non-config value persisted in the store. Records are
-	// opaque to the store: callers are responsible for encoding and decoding the
-	// value. Revision is a store assigned, monotonically increasing value used
-	// for optimistic concurrency control.
+	// Record is a generic, non-config value persisted in the store. Records
+	// are opaque to the store. Callers encode and decode the value. Revision
+	// is a store-assigned, monotonically increasing value for optimistic
+	// concurrency control.
 	Record struct {
 		Namespace string    `json:"namespace" yaml:"namespace"`
 		Key       string    `json:"key"       yaml:"key"`

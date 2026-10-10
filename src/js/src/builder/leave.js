@@ -1,20 +1,21 @@
-// Leaving a draft, or reading it whole, with work the server does not have.
+// Leaving a draft, or reading it whole, with work that the server does not
+// have.
 //
-// Leaving (Back to drafts, another page, Upload replacing the diagram, a
-// reload or closing the tab) and reading the whole diagram (Publish,
-// Download) first save what the user typed in the Inspector and did not
-// apply: the view's saveUnapplied applies it as one edit named
-// SAVED_UNAPPLIED (see history.js), which the save queue then sends like
-// any other. Edits that fail their checks cannot be applied: leaving then
-// asks, naming their fields, and Publish and Download say what blocks them.
-// A reload or a closed tab cannot wait for the local store's write either:
-// what it may not hold yet is copied at once (see keepForUnload in
-// autosave.js).
+// Before the user leaves (Back to drafts, another page, Upload that replaces
+// the diagram, a reload or a closed tab) or reads the whole diagram (Publish,
+// Download), the Builder saves what the user typed in the Inspector and did
+// not apply. The view's saveUnapplied applies it as one edit named
+// SAVED_UNAPPLIED (see history.js), which the save queue then sends like any
+// other edit. Edits that fail their checks cannot be applied. Leaving then
+// asks, and names their fields. Publish and Download tell what blocks them.
+// A reload or a closed tab also cannot wait for the write to the local
+// store. Thus the part of the queue that the store may not hold yet is
+// copied at once (see keepForUnload in autosave.js).
 //
-// Back to drafts does not wait for the save queue: the queue goes on
-// sending in the background, and the draft's card on the landing says how
-// it goes (see createBackgroundSaves). Leaving the Builder, or the tab,
-// still waits for those saves, and asks when the server lacks some.
+// Back to drafts does not wait for the save queue. The queue continues to
+// send in the background, and the draft's card on the landing shows its
+// progress (see createBackgroundSaves). Leaving the Builder, or the tab,
+// still waits for those saves, and asks when the server does not have some.
 
 import { count, listOf } from './announce.js';
 import { describeState } from './autosave.js';
@@ -24,7 +25,7 @@ import { onBuilderSessionEnd, registerQueue } from './session.js';
 export const LEAVE_SAVE_WAIT_MS = 2000;
 
 /**
- * What keeps the Inspector's unapplied edits from being saved, published or
+ * What stops the Inspector's unapplied edits from being saved, published or
  * downloaded.
  *
  * @param {{title: string, fields: string[]}} unapplied the element the
@@ -38,8 +39,8 @@ export function unappliedText({ title, fields }, done = 'saved') {
 }
 
 /**
- * What Publish or Download says while the Inspector holds edits it cannot
- * apply, in place of leaving them out.
+ * What Publish or Download says while the Inspector holds edits that it
+ * cannot apply, in place of leaving them out.
  *
  * @param {{title: string, fields: string[]}} unapplied
  * @param {string} done 'published' or 'downloaded'
@@ -57,11 +58,11 @@ export function unappliedBlock(unapplied, done) {
  *   historyVersion, saveNow, and autosave, the save queue, if any
  * @param {() => boolean} options.editing whether a draft is open
  * @param {() => ({title: string, fields: string[]}|null)} options.saveUnapplied
- *   applies the unapplied edits at once; returns what cannot be applied
+ *   applies the unapplied edits at once. Returns what cannot be applied.
  * @param {(unapplied: object|null, scope?: string) => Promise<boolean>}
- *   options.ask asks whether to leave; resolves true to leave. The scope
- *   is 'close' for Back to drafts, and 'all' when the saves of drafts
- *   closed before (background) are left too.
+ *   options.ask asks whether to leave. Resolves true to leave. The scope
+ *   is 'close' for Back to drafts, and 'all' when the user also leaves the
+ *   background saves of drafts closed earlier.
  * @param {() => boolean} [options.sessionOver] whether the session has
  *   ended or its token has expired
  * @param {object} [options.background] createBackgroundSaves()
@@ -93,7 +94,7 @@ export function createLeaveGuard({
     return (background?.pending() || 0) > 0;
   }
 
-  // Applies the unapplied edits; says whether that made an edit.
+  // Applies the unapplied edits. Tells whether that made an edit.
   function save() {
     const before = store.historyVersion;
     const unapplied = saveUnapplied() || null;
@@ -101,7 +102,7 @@ export function createLeaveGuard({
     return { unapplied, applied: store.historyVersion !== before };
   }
 
-  // A save that fails says so in the save state; leaving still asks.
+  // A save that fails shows this in the save state. Leaving still asks.
   async function waitForSave(all) {
     let timer;
 
@@ -153,10 +154,10 @@ export function createLeaveGuard({
   }
 
   /**
-   * Whether the draft may be left for another one (Upload). The unapplied
-   * edits are saved and what is not saved yet is sent first; if the
-   * server still lacks some of it, or edits cannot be applied, the user is
-   * asked.
+   * Whether the user can leave the draft for another one (Upload). First,
+   * the unapplied edits are saved and the unsaved work is sent. If the
+   * server still does not have some of it, or edits cannot be applied, the
+   * user is asked.
    *
    * @param {object} [options] saving: called once it waits for a save
    * @returns {Promise<boolean>}
@@ -171,11 +172,12 @@ export function createLeaveGuard({
     mayLeave,
 
     /**
-     * Whether the draft may be closed for the drafts: the unapplied edits
-     * are saved, and the queue goes on sending in the background (see
-     * createBackgroundSaves). Edits that cannot be applied ask. A queue
-     * this device cannot keep (storage failed) would be lost with the
-     * page, so it is waited for, as mayLeave does.
+     * Whether the user can close the draft for the drafts page. The
+     * unapplied edits are saved, and the queue continues to send in the
+     * background (see createBackgroundSaves). Edits that cannot be applied
+     * cause a question. A queue that this device cannot keep (storage
+     * failed) would be lost with the page, so this waits for it, as
+     * mayLeave does.
      *
      * @param {object} [options] saving: called once it waits for a save
      * @returns {Promise<boolean>}
@@ -187,10 +189,11 @@ export function createLeaveGuard({
     },
 
     /**
-     * Whether a link out of the Builder may be followed: as mayLeave, with
-     * the saves of drafts closed before too, but without asking once the
-     * session is over. The logout, or its warning, which saves and counts
-     * the same work, comes instead (see utils/logout.js).
+     * Whether a link out of the Builder can be followed. This is as
+     * mayLeave, and also includes the saves of drafts closed earlier. But it
+     * does not ask after the session is over. Instead the logout, or its
+     * warning, which saves and counts the same work, comes next (see
+     * utils/logout.js).
      *
      * @returns {boolean|Promise<boolean>}
      */
@@ -199,13 +202,15 @@ export function createLeaveGuard({
     },
 
     /**
-     * Closing or reloading the tab cannot wait: the unapplied edits are
-     * applied at once, into the history and the local queue; what of the
-     * queue the local store may not hold yet is copied at once (see
-     * keepForUnload in autosave.js); and the browser asks in its own words
-     * while the server cannot have the edits yet. It asks too when the copy
-     * does not fit, so the user can stay until the local store holds the
-     * edits: leaving then can lose them.
+     * Closing or reloading the tab cannot wait. Thus:
+     *   - the unapplied edits are applied at once, into the history and the
+     *     local queue.
+     *   - the part of the queue that the local store may not hold yet is
+     *     copied at once (see keepForUnload in autosave.js).
+     *   - the browser asks in its own words while the server cannot have the
+     *     edits yet. It also asks when the copy does not fit, so the user can
+     *     stay until the local store holds the edits. Leaving then can lose
+     *     them.
      *
      * @param {Event} event beforeunload
      * @returns {boolean} whether the browser asks
@@ -235,8 +240,8 @@ export function createLeaveGuard({
   };
 }
 
-// The changes a queue holds. Its state says so once the local store has
-// the last one; its record at once, as an edit is queued.
+// The changes that a queue holds. Its state shows them after the local store
+// has the last one. Its record shows them at once, as an edit is queued.
 function pendingOf(queue) {
   return queue.record ? queue.record.queue.length : queue.state.pending;
 }
@@ -253,15 +258,16 @@ export function queueBusy(queue) {
 }
 
 /**
- * What a draft's card says of the saves that go on once it was closed, and
- * whether its queue stops: it has sent everything, or can send nothing
- * more without the user (a conflict, no access, a refused change).
+ * What a draft's card says about the saves that continue after it closed,
+ * and whether its queue stops. A queue stops when it sent everything, or
+ * when it can send nothing more without the user (a conflict, no access, a
+ * refused change).
  *
  * @param {object} state queue state
  * @returns {{kind: string, text: string, stop: boolean}} kind: 'saving',
  *   'saved', 'retrying' (offline or failed, sent again automatically),
  *   'waiting' (for the choice of which tab's changes to save), 'signin'
- *   (the session ended; sent again once the user signs in again) or
+ *   (the session ended, sent again after the user signs in again) or
  *   'stopped'
  */
 export function backgroundSaveCard(state) {
@@ -321,8 +327,8 @@ export function backgroundSaveCard(state) {
 }
 
 /**
- * What the live region says when a draft's saves in the background change
- * course: once saved, or on a new problem.
+ * What the live region says when the background saves of a draft change
+ * state: after they finish, or on a new problem.
  *
  * @param {string} kind backgroundSaveCard()'s
  * @param {string} name the draft's name
@@ -346,19 +352,19 @@ export function backgroundSaveAnnouncement(kind, name) {
 }
 
 /**
- * The saves of drafts closed for the drafts (Back to drafts), which go on
- * in the background: the draft's save queue keeps sending, and its card
- * says how it goes (see backgroundSaveCard). A queue stops once it has
- * sent everything, or can send nothing more without the user; opening the
- * draft again takes its changes over (see release), as the queue keeps
- * them on this device. Logout counts and sends them too (see
- * registerQueue in session.js), and ends them.
+ * The saves of drafts closed for the drafts page (Back to drafts), which
+ * continue in the background. The draft's save queue continues to send, and
+ * its card shows the progress (see backgroundSaveCard). A queue stops when it
+ * sent everything, or when it can send nothing more without the user. When
+ * the draft opens again, it takes over its changes (see release), because
+ * the queue keeps them on this device. Logout also counts and sends them
+ * (see registerQueue in session.js), and ends them.
  *
  * @param {object} [options] onChange: (cards) => void, with each card's
  *   kind, text and pending changes by `${owner}/${id}` (see cardKey in
- *   BuilderDrafts.vue);
- *   announce: (message) => void; saved: () => void, once a queue has sent
- *   everything
+ *   BuilderDrafts.vue).
+ *   announce: (message) => void. saved: () => void, after a queue sent
+ *   everything.
  * @returns {object}
  */
 export function createBackgroundSaves({
@@ -438,7 +444,7 @@ export function createBackgroundSaves({
 
   return {
     /**
-     * Takes the save queue of a draft being closed, which goes on sending.
+     * Takes the save queue of a draft that closes. The queue continues to send.
      *
      * @param {object} queue the draft's save queue
      * @param {object} draft owner, id, and name: as its card names it
@@ -461,9 +467,9 @@ export function createBackgroundSaves({
     },
 
     /**
-     * Ends the saves of a draft about to open again, or to be deleted, once
-     * the send under way settles: what is left is on this device, and the
-     * draft's own queue takes it over.
+     * Ends the saves of a draft that is about to open again, or about to be
+     * deleted, after the send in progress settles. The remaining work is on
+     * this device, and the draft's own queue takes it over.
      *
      * @param {string} owner
      * @param {string} id
@@ -485,7 +491,7 @@ export function createBackgroundSaves({
       save.queue = null;
       save.unregister?.();
 
-      // Nothing more is sent; the send under way settles, and is recorded.
+      // Nothing more is sent. The send in progress settles and is recorded.
       if (queue) {
         queue.dispose();
         await queue.idle();
@@ -503,7 +509,7 @@ export function createBackgroundSaves({
     },
 
     /**
-     * As the page is left: what the local store may not hold yet is
+     * As the page closes, the work that the local store may not hold yet is
      * copied at once (see keepForUnload in autosave.js).
      *
      * @returns {boolean} false when some queued work may not be kept

@@ -9,8 +9,8 @@
   cannot run stays listed and reachable, aria-disabled, with the reason.
   builder/commandSearch.js decides what is listed.
 
-  Up and Down Arrow move the highlight and wrap; Page Up and Page Down move
-  to the previous or next group; Home and End stay the field's. Enter runs
+  Up and Down Arrow move the highlight and wrap. Page Up and Page Down move
+  to the previous or next group. Home and End stay the field's. Enter runs
   the highlighted option. A command that asks for a choice (Add device,
   Connect) continues here: a chip names it, the field searches the choices,
   and Backspace in the empty field goes back a step. On a node, Shift+Enter
@@ -173,8 +173,8 @@
       narrow them.
     </p>
 
-    <!-- Rendered, empty, from the start, so screen readers know it before
-         its first message; keyed, so a repeated message is spoken again. -->
+    <!-- Rendered empty from the start, so screen readers know it before its
+         first message. Keyed, so a repeated message is spoken again. -->
     <p
       class="builder-command-palette__message"
       role="status"
@@ -253,7 +253,7 @@
   const field = ref(null);
   const scroller = ref(null);
   const query = ref('');
-  // A command whose choices are being made, and those made so far.
+  // A command whose choices the user is making, and the choices so far.
   const step = ref(null);
   // The queries typed before each step, for Backspace to put back.
   const trail = [];
@@ -290,8 +290,8 @@
       null,
   );
 
-  // Option ids are handed out once per key, so aria-activedescendant names
-  // an option, not a position that another option may take.
+  // Each option key gets its id once, so aria-activedescendant names an
+  // option, not a position that another option may take.
   const ids = new Map();
 
   function optionId(item) {
@@ -532,8 +532,8 @@
   // Shift+Enter on a node: the selection changes and the palette stays, so
   // the next node can be added. Its own status line says what changed, and
   // Go to node leaves the live region alone (it waits behind the dialog,
-  // and would speak every change late); the palette sums the selection up
-  // once it has closed.
+  // and would speak every change late). The palette summarizes the
+  // selection after it closes.
   function toggleNode(item) {
     toggled = true;
     const { store } = props.context;
@@ -673,9 +673,9 @@
 
   onBeforeUnmount(() => clearTimeout(countTimer));
 
-  // BuilderDialog has put focus back where it was. Should that control be
-  // gone (or focus was on the page itself), it goes to the canvas or the
-  // landing's tab rather than staying on <body> (WCAG 2.4.3).
+  // BuilderDialog has put focus back where it was. If that control is gone
+  // (or focus was on the page itself), focus goes to the canvas or the
+  // landing's tab and does not stay on <body> (WCAG 2.4.3).
   onUnmounted(() => {
     if (!focusLost()) {
       return;
@@ -723,7 +723,7 @@
     color: var(--bx-text-muted);
   }
 
-  /* The field has no border of its own; the whole row shows its focus. */
+  /* The field has no border of its own. The whole row shows its focus. */
   .builder-command-palette__search:focus-within {
     outline: 3px solid var(--bx-focus);
     outline-offset: -3px;

@@ -1,10 +1,10 @@
 <!--
   The diagram's counts, in the editor header: an icon and a number for each
   kind of element, each a button that selects every item of its kind on the
-  canvas (the networks count selects the networks' switches; see
-  kindSelection). Screen readers read each count in words ("2 devices"), and
-  each count says what pressing it selects as a tooltip on hover and on
-  focus (WCAG 1.4.13), which is also its description. A count of none is
+  canvas (the networks count selects the networks' switches, see
+  kindSelection). Screen readers read each count in words ("2 devices").
+  Each count shows what a press selects as a tooltip on hover and on focus
+  (WCAG 1.4.13), which is also its description. A count of none is
   aria-disabled: it keeps focus, and pressing it says there is nothing to
   select. The list is one Tab stop: the arrow keys, Home and End move
   between the counts, as in a toolbar, and the count last focused keeps the
@@ -104,8 +104,8 @@
   }
 
   // Selects every item of the count's kind, in place of the selection, and
-  // says so. With nothing to select the selection stays, and the reason is
-  // said. Focus stays on the count.
+  // says so. With nothing to select, the selection stays, and the count
+  // says why. Focus stays on the count.
   function press(entry) {
     const { selection, message } = kindSelection(store.doc, entry.key);
 
@@ -184,7 +184,7 @@
     align-items: center;
   }
 
-  /* A button that looks like the count it was: no border or background of
+  /* A button that looks like the plain count: no border or background of
      its own, and at least 24px each way (WCAG 2.5.8). */
   .builder-counts__button {
     display: inline-flex;

@@ -6,13 +6,13 @@
   inherit currentColor for both themes, and nodes are identified by shape as
   well as color.
 
-  A custom icon (`src`) is drawn in place of the built-in one, as an <img>:
-  an image runs no script and, from a data URL, loads nothing. Only an
-  address that is a PNG data URL in base64 is drawn (see isIconSrc in
-  icons.js); with any other, the built-in icon of `name` is. A custom icon
-  is a bitmap in its own colors, the same in both themes. The markup below
-  (v-html) is only ever one of the constant PATHS: nothing of a document or
-  a file reaches it.
+  A custom icon (`src`) replaces the built-in one, as an <img>: an image
+  runs no script and, from a data URL, loads nothing. The component draws
+  only an address that is a PNG data URL in base64 (see isIconSrc in
+  icons.js). For any other address, it draws the built-in icon of `name`.
+  A custom icon is a bitmap in its own colors, the same in both themes. The
+  markup below (v-html) is only ever one of the constant PATHS: nothing
+  from a document or a file reaches it.
 -->
 <template>
   <img
@@ -73,7 +73,7 @@
   });
 
   // Keys of the bounded server icon registry (phenix/types/builder icons.go)
-  // come first; the remaining entries are UI chrome icons.
+  // come first. The remaining entries are UI chrome icons.
   const PATHS = {
     centos:
       '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3L6.3 17.7"/>',

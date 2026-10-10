@@ -1,20 +1,21 @@
-// Custom icons, mirroring phenix/types/builder customicons.go.
+// Custom icons, which mirror phenix/types/builder customicons.go.
 //
-// A custom icon is a small PNG with a name. The server keeps one icon
-// library that every user shares (see iconLibrary.js), and a node names its
-// icon there. A document carries copies of icons, by name, only to stand on
-// its own, as a downloaded file does (see embedIcons): a copy is drawn in
-// place of the library's icon of that name, and a draft drops the copies the
-// library holds as they are (see settleIcons). The checks here are the
-// server's, but for those that need a decoder: the checksum of each chunk,
-// that the pixels inflate, and that nothing follows them in their chunks.
-// The server makes those when it stores the document.
+// A custom icon is a small PNG with a name. The server keeps one icon library
+// that all users share (see iconLibrary.js), and a node names its icon
+// there. A document carries copies of icons, by name, only to be complete,
+// as a downloaded file is (see embedIcons). A copy is drawn in place of the
+// library's icon of that name. A draft drops the copies that are identical
+// in the library (see settleIcons). The checks here are the server's checks,
+// except for those that need a decoder: the checksum of each chunk, that the
+// pixels inflate, and that nothing follows them in their chunks. The server
+// does those checks when it stores the document.
 //
-// An icon is only ever drawn by an <img> whose address is a data URL of a
-// PNG, built here from the base64 text of a PNG that passes those checks
-// (see iconSrc). An image file of another format, SVG included, is drawn by
-// the browser into a canvas and leaves it as a PNG (see rasterizeIcon):
-// nothing of the file itself is stored, sent or put into the page.
+// Only an <img> draws an icon, and its address is always a data URL of a
+// PNG. This module makes the URL from the base64 text of a PNG that passes
+// those checks (see iconSrc). The browser draws an image file of another
+// format, SVG included, into a canvas, and the result is a PNG (see
+// rasterizeIcon). Nothing of the file itself is stored, sent or put into the
+// page.
 
 import { sha256Hex } from './digest.js';
 
@@ -27,10 +28,10 @@ export const ICON_NAME = /^[A-Za-z0-9_@.-]{1,64}$/;
 export const ICON_NAME_HINT =
   'Use 1 to 64 letters, digits, _, @, . or -, and not . or .. alone.';
 
-// Bounds on an icon and on the icons of one document (MaxIconPixels,
+// Limits on an icon and on the icons of one document (MaxIconPixels,
 // MaxIconBytes, MaxIconNameBytes and MaxDocumentIcons in customicons.go):
-// its pixels on a side, the bytes of its PNG, the bytes of its name, and how
-// many a document may carry.
+// the pixels on each side, the bytes of the PNG, the bytes of the name, and
+// how many icons a document can carry.
 export const MAX_ICON_PIXELS = 96;
 export const MAX_ICON_BYTES = 40960;
 export const MAX_ICON_NAME_BYTES = 64;
@@ -39,9 +40,9 @@ export const MAX_DOCUMENT_ICONS = 50;
 // The length of the base64 text of the largest icon.
 export const MAX_ICON_DATA_LENGTH = Math.ceil(MAX_ICON_BYTES / 3) * 4;
 
-// The largest image file the editor reads to make an icon of, and the
-// largest PNG the server takes for one (MaxIconUploadBytes in api/builder
-// icons.go), which it then stores within MAX_ICON_BYTES.
+// The largest image file from which the editor reads to make an icon, and
+// the largest PNG that the server accepts for one (MaxIconUploadBytes in
+// api/builder icons.go). The server then stores it within MAX_ICON_BYTES.
 export const MAX_ICON_FILE_BYTES = 5 * 1024 * 1024;
 export const MAX_ICON_UPLOAD_BYTES = 65536;
 
@@ -61,7 +62,7 @@ const BASE64_VALUES = new Uint8Array(128);
 });
 
 /**
- * The id of an icon's image (IconID in customicons.go): two icons hold the
+ * The id of an icon's image (IconID in customicons.go). Two icons hold the
  * same image exactly when their ids are equal.
  *
  * @param {Uint8Array} bytes the PNG
@@ -157,23 +158,25 @@ const END = 'IEND';
 const OTHER_CHUNKS = ['PLTE', 'tRNS', 'IDAT'];
 
 // The color types whose pixels use a palette, and those that use a
-// transparency chunk (colorTypeUses in customicons.go): a palette only
-// where the pixels are palette indexes (3), and transparency there and
-// where they are grayscale (0) or color (2) without alpha. The color type
-// is the tenth byte of the header's data.
+// transparency chunk (colorTypeUses in customicons.go). A palette applies
+// only where the pixels are palette indexes (3). Transparency applies there,
+// and where they are grayscale (0) or color (2) without alpha. The color
+// type is the tenth byte of the header's data.
 const COLOR_TYPE_AT = 9;
 const COLOR_TYPES_USING = { PLTE: [3], tRNS: [0, 2, 3] };
 
 const CUT_SHORT = 'the PNG is cut short';
 
 /**
- * Why bytes are not a PNG the Builder accepts as an icon, in the server's
- * words (ValidateIconPNG in customicons.go), or '' when they are one as far
- * as the editor checks: at most MAX_ICON_BYTES long, 1 to MAX_ICON_PIXELS
- * pixels on each side, only the chunks IHDR, PLTE, tRNS, IDAT and IEND, a
- * PLTE or a tRNS only where its color type uses one, and nothing after the
- * IEND chunk. Nothing is decoded: the size and the color type are read from
- * the header.
+ * Why bytes are not a PNG that the Builder accepts as an icon, in the
+ * server's words (ValidateIconPNG in customicons.go). '' when they are one,
+ * as far as the editor checks. The rules are:
+ *   - at most MAX_ICON_BYTES long
+ *   - 1 to MAX_ICON_PIXELS pixels on each side
+ *   - only the chunks IHDR, PLTE, tRNS, IDAT and IEND
+ *   - a PLTE or a tRNS only where its color type uses one
+ *   - nothing after the IEND chunk.
+ * Nothing is decoded. The size and the color type come from the header.
  *
  * @param {Uint8Array} bytes
  * @returns {string}
@@ -292,9 +295,9 @@ function isIconData(text) {
 }
 
 /**
- * Whether an address is one a custom icon is drawn from: a data URL of a
- * PNG in base64, as iconSrc builds it, and nothing else. BuilderIcon gives
- * an <img> no other address, so no document, file or server response can
+ * Whether an address is one that a custom icon is drawn from: a data URL of
+ * a PNG in base64, as iconSrc makes it, and nothing else. BuilderIcon gives
+ * an <img> no other address. Thus no document, file or server response can
  * make it load a URL of another scheme or type.
  *
  * @param {*} src
@@ -308,17 +311,18 @@ export function isIconSrc(src) {
   );
 }
 
-// The addresses built last, by icon name, each with the data it was built
-// from ('' for data no address is built from). An address is tens of
-// kilobytes of text, and every node that shows the icon is given it on
-// every edit: the same icon gets the same string, which is compared, and
-// neither checked nor built, again.
+// The addresses made last, by icon name, each with the data that it was made
+// from ('' for data that gives no address). An address is tens of kilobytes
+// of text, and every node that shows the icon gets it on every edit. Thus
+// the same icon gets the same string, which is compared, and not checked or
+// made again.
 const sources = new Map();
 const MAX_SOURCES = 256;
 
-// Whether data is base64 of a PNG the Builder accepts as an icon, as far as
-// the editor checks (see iconPNGProblem): the browser is given nothing else
-// to decode, so no image larger than an icon, and none of another format.
+// Whether data is base64 of a PNG that the Builder accepts as an icon, as
+// far as the editor checks (see iconPNGProblem). The browser gets nothing
+// else to decode, so no image larger than an icon, and no image of another
+// format.
 function isIconImage(data) {
   if (!isIconData(data)) {
     return false;
@@ -334,14 +338,15 @@ function isPlainObject(value) {
 }
 
 /**
- * The icon a name names: a document's copy of it, else the icon library's.
+ * The icon that a name names: a document's copy of it, or else the icon
+ * library's icon.
  *
  * @param {string} name icon name, as a node names it
  * @param {object|null|undefined} icons a document's `icons`: copies by name,
  *   {data}
  * @param {{lookup: Function}|null} [library] the icon library (see
  *   iconLibrary.js), whose lookup(name) finds an icon by its name or an
- *   alias, ignoring case
+ *   alias, case-insensitive
  * @returns {{data: string}|null} null when neither has it
  */
 export function resolveIcon(name, icons, library = null) {
@@ -357,15 +362,16 @@ export function resolveIcon(name, icons, library = null) {
 }
 
 /**
- * The address an <img> draws a custom icon from: "data:image/png;base64,"
- * and the icon's data, when a name resolves (see resolveIcon) to base64 of
- * a PNG the Builder accepts. With none, the node draws its built-in icon.
+ * The address from which an <img> draws a custom icon:
+ * "data:image/png;base64," and the icon's data, when a name resolves (see
+ * resolveIcon) to base64 of a PNG that the Builder accepts. Without it, the
+ * node draws its built-in icon.
  *
  * @param {string} name icon name
  * @param {object|null|undefined} icons a document's `icons`
  * @param {{lookup: Function}|null} [library] the icon library
- * @returns {string} '' for no icon, one nothing resolves, or data that is
- *   not such a PNG
+ * @returns {string} '' for no icon, a name that nothing resolves, or data
+ *   that is not such a PNG
  */
 export function iconSrc(name, icons, library = null) {
   const data = resolveIcon(name, icons, library)?.data;
@@ -471,15 +477,16 @@ export function sortIcons(icons) {
   });
 }
 
-// What the icon library lists an icon the server added from its template
-// files as from: no user owns one, and the library lists it with no owner
-// (ServerIconOwner in api/builder/templatefiles.go).
+// The source that the icon library shows for an icon that the server added
+// from its template files. No user owns such an icon, and the library lists
+// it with no owner (ServerIconOwner in api/builder/templatefiles.go).
 export const SERVER_ICON_OWNER = 'Server';
 
 /**
- * Who a list says an icon of the icon library is from: "Uploaded by
- * <user>", or SERVER_ICON_OWNER for one the server added, which only the
- * holders of the builder-icons permissions rename or delete.
+ * The source of an icon of the icon library, as a list shows it: "Uploaded
+ * by <user>", or SERVER_ICON_OWNER for an icon that the server added. Only
+ * the holders of the builder-icons permissions can rename or delete such an
+ * icon.
  *
  * @param {{owner?: string}} icon as the library lists it
  * @returns {string}
@@ -489,8 +496,8 @@ export function iconOwnerText(icon) {
 }
 
 /**
- * What a list says of an icon's size: "96 × 64 pixels, 5.0 KiB". A
- * library's icon says its size itself; a document's has it in its data.
+ * What a list says about an icon's size: "96 × 64 pixels, 5.0 KiB". A
+ * library icon states its size. A document's icon has it in its data.
  *
  * @param {{width?: number, height?: number, bytes?: number, data?: string}} icon
  * @returns {string} '' for an icon whose size cannot be read
@@ -507,12 +514,12 @@ export function iconSizeText(icon) {
 }
 
 /**
- * What the icon library says of the caller's uploads: how many icons and
- * bytes they take of what each user may upload.
+ * What the icon library says about the caller's uploads: how many icons and
+ * bytes they use of what each user can upload.
  *
  * @param {{maxIcons: number, maxBytes: number, usedIcons: number,
- *   usedBytes: number}|null} usage as listIcons answers; null while it is
- *   not read
+ *   usedBytes: number}|null} usage as listIcons gives it. null while it is
+ *   not read.
  * @returns {string} "You uploaded 3 of 64 icons, 20.0 KiB of 1 MiB." or ''
  */
 export function usageText(usage) {
@@ -543,8 +550,8 @@ function drawnIconOf(node) {
 }
 
 /**
- * The custom icons a document uses: those its devices, its groups, its icon
- * nodes and the devices of its templates name.
+ * The custom icons that a document uses: the icons that its devices, its
+ * groups, its icon nodes and the devices of its templates name.
  *
  * @param {object} doc
  * @returns {Set<string>} icon names, in the order they are first named
@@ -573,13 +580,13 @@ export function iconRefs(doc) {
 }
 
 /**
- * Drops the copies of icons a document need not carry: those nothing names,
- * and those the icon library holds under the same name with the same bytes,
- * which nodes draw from there. Every commit of the store does this (see
- * commit in store.js), so a draft carries a copy only of an icon the server
- * lacks or holds otherwise. Nothing is ever added: a node names an icon, and
- * the icon library resolves it. A document left with no copy has no
- * `icons`.
+ * Drops the copies of icons that a document does not need to carry: copies
+ * that nothing names, and copies that are identical (same name and bytes)
+ * in the icon library, from which nodes draw them. Every commit of the store
+ * does this (see commit in store.js). Thus a draft carries a copy only of an
+ * icon that the server does not have, or has with different bytes. Nothing
+ * is ever added: a node names an icon, and the icon library resolves it. A
+ * document left with no copy has no `icons`.
  *
  * @param {object} doc
  * @param {{lookup: Function}|null} [library] the icon library (see
@@ -592,8 +599,8 @@ export function settleIcons(doc, library = null) {
   }
 
   if (!isPlainObject(doc.icons)) {
-    // null is none, as the server decodes it; any other value is the
-    // validator's to report.
+    // null is none, as the server decodes it. The validator reports any
+    // other value.
     if (doc.icons !== null) {
       return doc;
     }
@@ -635,16 +642,17 @@ export function settleIcons(doc, library = null) {
 }
 
 /**
- * A copy of a document that carries every custom icon it uses, so that it
- * stands on its own, as a downloaded file must: a copy it carries already,
- * else the icon library's icon of that name, at most MAX_DOCUMENT_ICONS.
+ * A copy of a document that carries every custom icon that it uses, so that
+ * it is complete, as a downloaded file must be. For each icon, it uses a
+ * copy that it already carries, or else the icon library's icon of that
+ * name, at most MAX_DOCUMENT_ICONS.
  *
  * @param {object} doc
  * @param {{lookup: Function}|null} [library] the icon library
- * @returns {{doc: object, missing: string[], left: string[]}} the copy;
- *   the names nothing resolves, which the copy does not carry (their nodes
- *   show their built-in icon); and those left out past the most a document
- *   carries
+ * @returns {{doc: object, missing: string[], left: string[]}} doc: the copy.
+ *   missing: the names that nothing resolves, which the copy does not carry
+ *   (their nodes show their built-in icon). left: the names left out past
+ *   the maximum that a document carries.
  */
 export function embedIcons(doc, library = null) {
   const icons = {};
@@ -695,9 +703,10 @@ export class IconFileError extends Error {
 const SVG_TYPE = 'image/svg+xml';
 
 /**
- * The name an upload proposes for an icon made from a file: the file's name
- * without its extension, each run of characters an icon name may not hold
- * made one "-", without "-" around it, cut to MAX_ICON_NAME_BYTES.
+ * The name that an upload proposes for an icon made from a file: the file's
+ * name without its extension. Each run of characters that an icon name
+ * cannot hold becomes one "-". The name has no "-" at the start or end, and
+ * is cut to MAX_ICON_NAME_BYTES.
  *
  * @param {string} fileName
  * @returns {string} an icon name, or '' when nothing of the file's name is
@@ -714,10 +723,10 @@ export function iconNameFromFile(fileName) {
 }
 
 /**
- * The size an image is drawn at to make an icon of it: inside
- * MAX_ICON_PIXELS a side, in its own proportions, each side at least one
- * pixel. A bitmap is never enlarged; a vector image, which has no pixels
- * of its own, is drawn as large as an icon may be. An image that states no
+ * The size at which an image is drawn to make an icon of it: inside
+ * MAX_ICON_PIXELS on each side, in its own proportions, each side at least
+ * one pixel. A bitmap is never enlarged. A vector image, which has no pixels
+ * of its own, is drawn as large as an icon can be. An image that states no
  * size (an SVG without one) counts as square.
  *
  * @param {number} width the image's own width, 0 for none
@@ -775,23 +784,24 @@ function canvasBlob(canvas) {
 }
 
 /**
- * Makes an icon of an image file: a PNG of at most MAX_ICON_PIXELS a side,
- * as the browser draws the image.
+ * Makes an icon of an image file: a PNG of at most MAX_ICON_PIXELS on each
+ * side, as the browser draws the image.
  *
- * The file is given to the browser as an image and to nothing else: it is
- * loaded into an <img> that is never in the page, where a script or an
- * outside reference in an SVG does nothing, drawn into a canvas, and read
- * back as PNG. Whatever the file held besides its picture stays behind.
- * What makes the file an image is that the browser can draw it; its name
- * says only whether it is an SVG, which has no other mark.
+ * The file goes to the browser as an image and to nothing else. It loads
+ * into an <img> that is never in the page, where a script or an outside
+ * reference in an SVG does nothing. The image is then drawn into a canvas,
+ * and read back as PNG. Everything that the file held in addition to its
+ * picture stays behind. The file is an image when the browser can draw it.
+ * Its name tells only whether it is an SVG, which has no other mark.
  *
  * @param {File|Blob} file with a `name` when it is a file
  * @param {object} [deps] createObjectURL, revokeObjectURL, loadImage,
  *   createCanvas and BlobCtor, in place of the browser's
  * @returns {Promise<{name: string, data: string}>} the icon's name, from
- *   the file's, and its PNG in base64, to send to the icon library
- * @throws {IconFileError} for a file too large to read, one the browser
- *   cannot read as an image, and an image it cannot turn into a PNG
+ *   the file's name, and its PNG in base64, to send to the icon library
+ * @throws {IconFileError} for a file too large to read, a file that the
+ *   browser cannot read as an image, and an image that it cannot turn into a
+ *   PNG
  */
 export async function rasterizeIcon(file, deps = {}) {
   const {
@@ -812,8 +822,8 @@ export async function rasterizeIcon(file, deps = {}) {
 
   const vector =
     file.type === SVG_TYPE || (!file.type && /\.svg$/i.test(file.name || ''));
-  // A file with no type is still an image to the browser by its content,
-  // but for an SVG, which it knows by its type alone.
+  // The browser reads a file with no type as an image by its content, except
+  // an SVG, which it identifies only by its type.
   const source =
     vector && file.type !== SVG_TYPE
       ? new BlobCtor([file], { type: SVG_TYPE })

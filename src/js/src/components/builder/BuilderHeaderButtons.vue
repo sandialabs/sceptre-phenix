@@ -1,20 +1,23 @@
 <!--
-  The buttons the editor header and the drafts landing's header share, in
-  one order on both: Commands, the theme, Shortcuts (the editor's only),
-  Settings, Help and Focus mode. The view (Builder.vue) puts them in
-  both headers, gives them their tooltips and descriptions, which it shows
-  on both views, and does what they ask.
+  The buttons that the editor header and the drafts landing's header share,
+  in the same order on both: Commands, the theme, Shortcuts (the editor's
+  only), Settings, Help and Focus mode. The view (Builder.vue) puts them in
+  both headers and gives them their tooltips and descriptions, which it
+  shows on both views. The view also does what the buttons ask.
 
-  Commands shows the palette's key as key caps, and Shortcuts the key that
-  opens the sheet. The theme button shows the theme in use; its name and
-  tooltip say what a press changes it to. In a narrower header the theme,
-  Shortcuts, Settings and Help show only their icons, as Focus mode always
-  does, and Commands its name without its keys; in a narrow one Commands
-  shows only its icon too (see .builder-header__label in builder.css).
-  Shortcuts keeps its key beside its icon at every width, so the button
-  itself says what opens the sheet. The labels stay as their names.
-  Focus mode is named Exit focus mode while it is on, and stays one element,
-  so focus stays on it.
+  Commands shows the palette's key as key caps, and Shortcuts shows the key
+  that opens the sheet. The theme button shows the theme in use. Its name
+  and tooltip say what a press changes it to.
+
+  In a narrower header, the theme, Shortcuts, Settings and Help show only
+  their icons, as Focus mode always does. Commands shows its name without
+  its keys. In a narrow header, Commands also shows only its icon (see
+  .builder-header__label in builder.css). Shortcuts keeps its key beside its
+  icon at every width, so the button itself says what opens the sheet. The
+  labels stay as their names.
+
+  Focus mode has the name Exit focus mode while it is on. It stays one
+  element, so focus stays on it.
 -->
 <template>
   <!-- The key caps are only a picture of the keys: the description and

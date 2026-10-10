@@ -1,13 +1,13 @@
-// The server's icon library, which every user shares (web/builder_icons.go),
-// as the Builder keeps it: a list read when the Builder opens and read again
-// after every upload, rename and delete made here, and an index of it by
-// every name and alias, in lower case, which draws the icons nodes name (see
-// iconSrc in icons.js).
+// The server's icon library, which all users share (web/builder_icons.go),
+// as the Builder keeps it. It is a list, read when the Builder opens and read
+// again after each upload, rename and delete made here. It also has an index
+// of the list by every name and alias, in lower case, which draws the icons
+// that nodes name (see iconSrc in icons.js).
 //
-// The Custom icons dialog is given the library through the Inspector
-// (INSPECTOR_ICON_LIBRARY in components/builder/inspector/control.js) and
-// never imports the API client itself: the Inspector's renderers stay free
-// of it, as the form adapter that lists them is.
+// The Custom icons dialog gets the library through the Inspector
+// (INSPECTOR_ICON_LIBRARY in components/builder/inspector/control.js). It
+// never imports the API client itself. Thus the Inspector's renderers stay
+// free of the client, as is the form adapter that lists them.
 
 import { shallowReactive } from 'vue';
 
@@ -21,11 +21,11 @@ import {
 import { indexIcons, sortIcons } from './icons.js';
 
 /**
- * What a failed library request says. The server's refusals of an icon are
- * written to be shown ("icon name "plc" is taken by an icon alice uploaded;
- * choose another name"), so its message is used word for word, as a
- * sentence. A session that ended and a server that cannot be reached say
- * what they say everywhere else.
+ * The message for a failed library request. The server writes its refusals
+ * of an icon to be shown ("icon name "plc" is taken by an icon alice
+ * uploaded; choose another name"). Thus this function uses the message word
+ * for word, as a sentence. For a session that ended and a server that cannot
+ * be reached, it gives the same message as everywhere else.
  *
  * @param {object} error axios-like error
  * @returns {string}
@@ -50,19 +50,22 @@ export function nameTaken(error) {
 
 /**
  * @param {object} [api] the Builder API client (see createBuilderApi)
- * @returns {object} the library: `state` (reactive: status 'idle',
- *   'loading', 'ready' or 'failed', error, icons as the server lists them,
- *   index, and the caller's usage maxIcons, maxBytes, usedIcons and
- *   usedBytes); load() reads it; ensure() reads it unless it was read or is
- *   being read; lookup(name) finds an icon by its name or an alias,
- *   ignoring case; upload({name, data}, {refresh}) adds a PNG, as
- *   uploadIcon answers; rename(name, newName) and remove(name, {refresh})
- *   rename and delete an icon; failure(error) says why one of them failed,
- *   and ends(error) whether that failure ends a batch of them (the session
- *   ended, the server cannot be reached: endsBulk, as for the drafts'
- *   batches). Each change reads the library again, but an upload or a
- *   delete told refresh: false (one of a batch, which reads it once at the
- *   end).
+ * @returns {object} the library:
+ *   - `state` (reactive): status 'idle', 'loading', 'ready' or 'failed',
+ *     error, icons as the server lists them, index, and the caller's usage
+ *     maxIcons, maxBytes, usedIcons and usedBytes.
+ *   - load() reads the library.
+ *   - ensure() reads it unless it was read or a read is in progress.
+ *   - lookup(name) finds an icon by its name or an alias, case-insensitive.
+ *   - upload({name, data}, {refresh}) adds a PNG, with the uploadIcon
+ *     response.
+ *   - rename(name, newName) and remove(name, {refresh}) rename and delete an
+ *     icon.
+ *   - failure(error) tells why one of these failed. ends(error) tells
+ *     whether that failure ends a batch of them (the session ended, or the
+ *     server cannot be reached: endsBulk, as for the drafts' batches).
+ *   Each change reads the library again, except an upload or a delete with
+ *   refresh: false (one of a batch, which reads the library once at the end).
  */
 export function createIconLibrary(api = builderApi) {
   const state = shallowReactive({
@@ -168,10 +171,11 @@ export function createIconLibrary(api = builderApi) {
 
 export const iconLibrary = createIconLibrary();
 
-// What ingestIcons and ingestTemplateIcons share: each copy whose name the
-// library lacks is uploaded, and words say what became of the others.
-// Returns the copies to keep, the warnings, and whether the library could
-// not be read at all (then nothing was uploaded, and every copy is kept).
+// The shared part of ingestIcons and ingestTemplateIcons. Each copy whose
+// name the library does not have is uploaded, and the warnings tell what
+// happened to the others. Returns the copies to keep, the warnings, and
+// whether the library could not be read at all. In that case nothing was
+// uploaded, and every copy is kept.
 async function ingestCopies(carried, library, words) {
   try {
     await library.load();
@@ -226,14 +230,17 @@ async function ingestCopies(carried, library, words) {
 }
 
 /**
- * Puts the custom icons an uploaded document carries into the icon library,
- * so the draft made from it carries none it need not: for each copy, a
- * library icon of that name (or alias) with the same bytes means the copy
- * goes; no icon of that name means the copy is uploaded under it, as the
- * user, and goes; a refused upload (no permission, the library full) keeps
- * the copy, with a warning; and a library icon of that name with other
- * bytes keeps the copy, which then wins in the draft, with a warning that
- * names it.
+ * Puts the custom icons that an uploaded document carries into the icon
+ * library, so the draft made from it carries only the copies it needs. For
+ * each copy:
+ *   - A library icon of that name (or alias) with the same bytes: the copy
+ *     goes.
+ *   - No icon of that name: the copy is uploaded under that name, as the
+ *     user, and goes.
+ *   - A refused upload (no permission, the library is full): the copy stays,
+ *     with a warning.
+ *   - A library icon of that name with different bytes: the copy stays and
+ *     wins in the draft, with a warning that names it.
  *
  * @param {object} doc the uploaded document
  * @param {object} [library] the icon library (see createIconLibrary)
@@ -275,13 +282,13 @@ export async function ingestIcons(doc, library = iconLibrary) {
 }
 
 /**
- * Puts the custom icons a template file carries into the icon library, by
- * the rules of an upload (see ingestIcons): a library icon of that name with
- * the same bytes is the icon; no icon of that name means the copy is
- * uploaded under it, as the user. A library icon of that name with other
- * bytes, and a refused upload, each give a warning: templates of a library
- * carry no icons, so the imported templates show the server's icon, or their
- * built-in one.
+ * Puts the custom icons that a template file carries into the icon library,
+ * by the rules of an upload (see ingestIcons). A library icon of that name
+ * with the same bytes is the icon. If no icon has that name, the copy is
+ * uploaded under that name, as the user. A library icon of that name with
+ * different bytes, and a refused upload, each give a warning. Templates of a
+ * library carry no icons, so the imported templates then show the server's
+ * icon, or their built-in icon.
  *
  * @param {object|null|undefined} icons the file's copies, by icon name
  * @param {object} [library] the icon library (see createIconLibrary)
@@ -310,9 +317,9 @@ export async function ingestTemplateIcons(icons, library = iconLibrary) {
 }
 
 /**
- * The copy of the custom icon a template of the diagram names, when the
- * diagram carries one (its `icons`), by name: what saving the template to
- * the user's library puts into the icon library first (see
+ * The diagram's copy (in its `icons`) of the custom icon that a template of
+ * the diagram names, by name, when the diagram has one. Saving the template
+ * to the user's library first puts this copy into the icon library (see
  * ingestSavedTemplateIcons). A template of a library carries no icon.
  *
  * @param {object} template
@@ -332,14 +339,14 @@ export function savedTemplateIcons(template, icons) {
 }
 
 /**
- * Puts the copies of custom icons a template of the diagram names into the
- * icon library before the template is saved to the user's library, by the
- * rules of an upload (see ingestIcons): a library icon of that name with the
- * same bytes is the icon; no icon of that name means the copy is uploaded
- * under it, as the user. A library icon of that name with other bytes, and a
- * refused upload, each give a warning: the saved template carries no icon,
- * so it shows the server's icon, or its built-in one. The diagram keeps its
- * copies.
+ * Puts the copies of custom icons that a template of the diagram names into
+ * the icon library before the template is saved to the user's library. It
+ * uses the rules of an upload (see ingestIcons). A library icon of that name
+ * with the same bytes is the icon. If no icon has that name, the copy is
+ * uploaded under that name, as the user. A library icon of that name with
+ * different bytes, and a refused upload, each give a warning. The saved
+ * template carries no icon, so it then shows the server's icon, or its
+ * built-in icon. The diagram keeps its copies.
  *
  * @param {object} icons the copies, by icon name (see savedTemplateIcons)
  * @param {object} [library] the icon library (see createIconLibrary)

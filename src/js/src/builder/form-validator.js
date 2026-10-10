@@ -1,10 +1,10 @@
-// Inspector validation: the ajv instance JSON Forms validates with, which
-// errors keep an edit from being applied (see workingCopyErrors), and the
-// plain-language messages the Inspector shows for them.
+// Inspector validation: the ajv instance that JSON Forms validates with, the
+// errors that stop an edit from being applied (see workingCopyErrors), and
+// the plain-language messages that the Inspector shows for them.
 //
 // Raw ajv messages ("must match pattern "^\S+$"", "is a required property")
-// name no field and describe the schema rather than the fix, so every message
-// here starts with the field's label and says what a valid value looks like.
+// name no field and describe the schema, not the fix. Thus every message here
+// starts with the field's label and tells what a valid value looks like.
 
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
@@ -12,10 +12,10 @@ import addFormats from 'ajv-formats';
 import { capitalize, lowerFirst } from './text.js';
 import { ipv4Octets } from './validate.js';
 
-// time.ParseDuration's syntax, which phenix reads a delay timer with: an
-// optional sign, then 0 or numbers each with a unit, such as 250ms, 1.5h or
-// 1h30m. Microseconds are us, or µs written with either mu (U+00B5 or
-// U+03BC).
+// The syntax of time.ParseDuration, which phenix uses to read a delay timer:
+// an optional sign, then 0 or numbers that each have a unit, such as 250ms,
+// 1.5h or 1h30m. Microseconds are us, or µs written with either mu (U+00B5
+// or U+03BC).
 const GO_DURATION =
   /^[-+]?(?:0|(?:(?:\d+\.?\d*|\.\d+)(?:ns|[u\u00b5\u03bc]s|ms|s|m|h))+)$/;
 const GO_DURATION_PART = /(\d+\.?\d*|\.\d+)(ns|[u\u00b5\u03bc]s|ms|s|m|h)/g;
@@ -23,8 +23,8 @@ const NANOSECONDS = { ns: 1, us: 1e3, ms: 1e6, s: 1e9, m: 6e10, h: 3.6e12 };
 
 /**
  * Whether time.ParseDuration reads text as a duration: in its syntax, and
- * within the roughly 292 years a Go duration holds. phenix starts a node
- * whose delay timer it cannot read with no delay at all.
+ * within the approximately 292 years that a Go duration holds. When phenix
+ * cannot read a node's delay timer, it starts the node with no delay.
  *
  * @param {string} text
  * @returns {boolean}
@@ -47,11 +47,11 @@ export function isGoDuration(text) {
 const IPV4_PREFIX = /^([^/]*)\/(3[0-2]|[12]?\d)$/;
 
 /**
- * Whether text is an IPv4 network in CIDR notation, such as 10.0.0.0/24:
- * an address without leading zeros, as Go's net.ParseIP reads one, a prefix
- * length from 0 to 32, and no host bits set. The routers phenix configures
- * refuse a static route or an OSPF network with host bits (10.0.0.1/24), as
- * does ip route.
+ * Whether text is an IPv4 network in CIDR notation, such as 10.0.0.0/24. It
+ * must have an address without leading zeros (as Go's net.ParseIP reads it),
+ * a prefix length from 0 to 32, and no host bits set. The routers that phenix
+ * configures refuse a static route or an OSPF network with host bits
+ * (10.0.0.1/24), as ip route does.
  *
  * @param {string} text
  * @returns {boolean}
@@ -246,11 +246,11 @@ export function errorPath(error) {
 
 export const COMBINATORS = ['oneOf', 'anyOf'];
 
-// The keywords of the errors a field can have at once, most relevant first:
-// what a valid value looks like, which values there are, its bounds, its
-// length, its type, and last that it is missing. "Address must be an IPv4
-// address, such as 10.0.0.1" says more than "Address must be at least 7
-// characters", which the same value breaks.
+// The keywords of the errors that a field can have at the same time, most
+// relevant first: what a valid value looks like, which values are allowed,
+// its bounds, its length, its type, and last that it is missing. "Address
+// must be an IPv4 address, such as 10.0.0.1" gives more help than "Address
+// must be at least 7 characters" for the same value.
 const RELEVANCE = [
   ['format', 'pattern'],
   ['enum', 'const'],
@@ -261,9 +261,9 @@ const RELEVANCE = [
 ];
 
 /**
- * How relevant an ajv error is to fixing its field, as its place in
- * RELEVANCE: lower is more relevant. A value that is only empty is said to
- * be empty ("cannot be empty", a minLength of 1) before anything else.
+ * How relevant an ajv error is to the fix of its field, as its position in
+ * RELEVANCE. Lower is more relevant. For a value that is only empty, the
+ * message says it is empty ("cannot be empty", a minLength of 1) first.
  *
  * @param {object} error ajv error
  * @returns {number}
@@ -368,9 +368,9 @@ function closer(a, b) {
 }
 
 /**
- * The oneOf branch that data comes closest to matching, for data no branch
- * accepts yet (a new interface with no VLAN). The Inspector shows that
- * branch's fields so the missing values can be filled in.
+ * The oneOf branch that data is closest to matching, for data that no branch
+ * accepts yet (a new interface with no VLAN). The Inspector shows the fields
+ * of that branch so that the user can fill in the missing values.
  *
  * @param {object} ajv
  * @param {object[]} schemas the oneOf branches
@@ -447,9 +447,10 @@ function closestBranches(errors) {
 
 /**
  * Groups ajv errors by field, one entry per field, for the Inspector's error
- * summary. A field's message is that of the most relevant error about it
- * (see errorRelevance), which the field shows too: of every oneOf
- * alternative's errors, `ranked`, as JSON Forms gives a field those of each.
+ * summary. A field's message is the message of the most relevant error about
+ * it (see errorRelevance), which the field also shows. It is chosen from
+ * `ranked`, the errors of every oneOf alternative, because JSON Forms gives a
+ * field the errors of each alternative.
  *
  * @param {object[]} errors ajv errors from JSON Forms
  * @param {object} schema the form's root schema, for field titles
@@ -503,10 +504,10 @@ function valueAt(data, keys) {
   );
 }
 
-// What makes an error the same one again: where in the schema it comes
-// from, what it says and the value it is about, but not where in the data,
-// so an error a list item had still counts once the item moves up. A oneOf
-// is about its whole item, which any edit of it changes.
+// What makes an error the same error again: where in the schema it comes
+// from, what it says and the value it is about, but not its position in the
+// data. Thus an error that a list item had still counts after the item moves
+// up. A oneOf error is about its whole item, which any edit of it changes.
 function signature(error, data) {
   return JSON.stringify([
     error.schemaPath,
@@ -544,14 +545,15 @@ function errorsBefore(validate, base) {
 }
 
 /**
- * The errors of an Inspector working copy that keep it from being applied:
- * those on the fields it changed, those of items it added, and any it
- * brought about elsewhere (a static interface's missing address once its
- * proto is static). An error
- * the element had already, on a field left as it was, does not count: an
- * element imported from a phenix experiment carries values phenix accepts
- * and the form's schema does not (advanced null, mac "", gateway ""), and
- * they would keep every edit of it from being applied.
+ * The errors of an Inspector working copy that stop it from being applied:
+ *   - errors on the fields it changed
+ *   - errors of items it added
+ *   - errors it caused elsewhere (a static interface's missing address after
+ *     its proto is static).
+ * An error that the element already had, on a field that did not change, does
+ * not count. An element imported from a phenix experiment carries values that
+ * phenix accepts and the form's schema does not (advanced null, mac "",
+ * gateway ""). These values would stop every edit of it from being applied.
  *
  * @param {object} ajv createFormValidator's
  * @param {object} schema the form's schema
@@ -559,8 +561,8 @@ function errorsBefore(validate, base) {
  * @param {object} base the element's data as the form loaded it
  * @returns {{errors: object[], fields: {path: string, label: string, message: string}[]}}
  *   `errors`: the ajv errors that count, for JSON Forms to show on their
- *   fields; `fields`: the Inspector's error summary of them, as
- *   fieldErrors gives it
+ *   fields. `fields`: the Inspector's error summary of them, as fieldErrors
+ *   gives it.
  */
 export function workingCopyErrors(ajv, schema, data, base) {
   const validate = ajv.compile(schema);
@@ -582,7 +584,8 @@ export function workingCopyErrors(ajv, schema, data, base) {
       }
 
       // The loaded data has nothing where the error is, such as a list item
-      // the edit added: the error is the edit's, like another item's before.
+      // that the edit added. The error belongs to the edit, even when another
+      // item had the same error before.
       const at = errorKeys({ instancePath: error.instancePath });
 
       if (valueAt(base, at) === undefined) {
@@ -598,9 +601,10 @@ export function workingCopyErrors(ajv, schema, data, base) {
     }),
   );
 
-  // JSON Forms shows a field only the errors of the oneOf alternative it
-  // renders while the oneOf's own error is listed (see errorsAt in
-  // @jsonforms/core), so that stays for the errors under it that count.
+  // While the oneOf's own error is listed, JSON Forms shows a field only the
+  // errors of the oneOf alternative that it renders (see errorsAt in
+  // @jsonforms/core). Thus that error stays for the errors under it that
+  // count.
   const errors = all.filter(
     (error) =>
       counts.has(error) ||

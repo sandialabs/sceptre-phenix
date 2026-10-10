@@ -25,18 +25,19 @@ var (
 	ErrInvalidDocument = errors.New("invalid builder document")
 )
 
-// Decode strictly decodes a builder document from JSON. Unknown fields, trailing
-// content, and documents carrying an unexpected schema or revision are rejected.
-// Decode does not perform semantic validation; use [Parse] for decode plus
-// validation.
+// Decode strictly decodes a builder document from JSON. It rejects unknown
+// fields, trailing content, and documents with an unexpected schema or
+// revision. Decode does not do semantic validation. Use [Parse] to decode
+// and validate.
 //
-// When what the decoder refuses is keys their objects do not have and values
-// of the wrong type where the editor checks the type too (the metadata, its
-// users, times and notes, the lists of nodes, networks and edges, a switch's
-// notes, a line's arrows, the layout, the templates, the custom icons, and
-// the source's included topologies and annotations), the error is a
-// *[ValidationError] with an issue for each, in the editor's words and with
-// its codes. Otherwise it is the decoder's own.
+// The decoder refuses keys that their objects do not have, and values of the
+// wrong type. When the editor also checks the type of each refused value,
+// the error is a *[ValidationError]. It has an issue for each problem, in
+// the words of the editor and with its codes. The editor checks the type of
+// the metadata, its users, times and notes, the lists of nodes, networks and
+// edges, the notes of a switch, the arrows of a line, the layout, the
+// templates, the custom icons, and the included topologies and annotations
+// of the source. For all other refusals, the error is the decoder error.
 func Decode(data []byte) (*Document, error) {
 	doc, err := DecodeReader(bytes.NewReader(data))
 	if err == nil {
@@ -80,9 +81,10 @@ func DecodeReader(reader io.Reader) (*Document, error) {
 	return &doc, nil
 }
 
-// normalizeDocument canonicalizes free-form content (the specs of devices and
-// templates) so decoded documents compare equal to generated ones. JSON
-// decodes every number as a float; integral values are restored to int.
+// normalizeDocument makes free-form content (the specs of devices and
+// templates) canonical, so decoded documents compare equal to generated
+// ones. JSON decodes every number as a float. This function changes integral
+// values back to int.
 func normalizeDocument(doc *Document) error {
 	for i := range doc.Nodes {
 		device := doc.Nodes[i].Device

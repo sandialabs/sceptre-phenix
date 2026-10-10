@@ -34,13 +34,13 @@ var ErrNoSpace = errors.New(
 		"(compact and defragment etcd, then clear its NOSPACE alarm)",
 )
 
-// etcdNoSpaceLogged is set once a write refused for lack of space is logged,
-// and cleared by the next write etcd accepts, so an outage is logged once and
+// etcdNoSpaceLogged is set when a write refused for lack of space is logged.
+// The next write that etcd accepts clears it. Thus an outage is logged once,
 // not once per refused write.
 var etcdNoSpaceLogged atomic.Bool //nolint:gochecknoglobals // shared by every Etcd store in the process
 
 // etcdRecordEnvelope is the encoded representation of a record value. The
-// revision of a record is not stored in the envelope; etcd's ModRevision is
+// envelope does not store the revision of a record. The etcd ModRevision is
 // used instead.
 type etcdRecordEnvelope struct {
 	Value   []byte    `json:"value"`
@@ -81,8 +81,8 @@ func EtcdRecordKeyName(namespace, etcdKey string) (string, error) {
 
 // etcdCreateRecordOps returns the comparison and operations used to create a
 // record only if it does not already exist. The comparison relies on a version
-// of zero, which etcd reports for keys that have never been written or that
-// have been deleted.
+// of zero, which etcd reports for keys that were never written or that were
+// deleted.
 func etcdCreateRecordOps(etcdKey string, value []byte) (clientv3.Cmp, clientv3.Op, clientv3.Op) {
 	return clientv3.Compare(clientv3.Version(etcdKey), "=", 0),
 		clientv3.OpPut(etcdKey, string(value)),
@@ -397,10 +397,10 @@ func (e Etcd) DeleteRecordPrefix(namespace, prefix string) (int, error) {
 }
 
 // etcdWriteError wraps a failed config or record write in [ErrNoSpace] when
-// etcd refused it for lack of space, since etcd's own message does not say what
-// to do, and logs the first such failure since etcd last accepted a write. Any
-// other error is returned as it is. etcd checks its quota only for puts and
-// transactions, so a plain delete is never refused for lack of space.
+// etcd refused it for lack of space, because the etcd message does not say
+// what to do. It logs the first such failure after etcd last accepted a write.
+// It returns any other error as it is. etcd checks its quota only for puts and
+// transactions, so etcd never refuses a plain delete for lack of space.
 func etcdWriteError(err error) error {
 	if !errors.Is(err, rpctypes.ErrNoSpace) {
 		return err

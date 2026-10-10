@@ -6,13 +6,13 @@
 
   The swatch is its network's color, which its connections are drawn in. A
   switch may also have an outline color and a fill color of its own, as a
-  device may (see nodeColors in colors.js), and notes of its own
-  (switch.notes), in a card below its box (see NodeNotes.vue), which its
-  description ends with.
+  device may (see nodeColors in colors.js). It may also have notes of its
+  own (switch.notes), in a card below its box (see NodeNotes.vue). Its
+  description ends with these notes.
 
-  Its icon is drawn at the switch's icon size, or the diagram's, before its
-  name when Small and left of both its lines when larger, as a device's is
-  (see DeviceNode.vue).
+  Its icon is drawn at the switch's icon size, or the diagram's. As on a
+  device (see DeviceNode.vue), a Small icon is before the name, and a larger
+  icon is left of both lines of the switch.
 -->
 <template>
   <div
@@ -29,7 +29,7 @@
     </div>
     <div class="builder-node__line">
       <span class="builder-node__kind">Switch</span>
-      <!-- The color its connections are drawn in; the name says the rest. -->
+      <!-- The color its connections are drawn in. The name says the rest. -->
       <span
         v-if="swatch"
         class="builder-node__swatch"
@@ -88,8 +88,8 @@
   } from '@/builder/model.js';
   import { switchInfo } from '@/builder/nodeInfo.js';
 
-  // Vue Flow passes its node state as attributes as well; none belong on
-  // the node's element.
+  // Vue Flow also passes its node state as attributes. None of them belong
+  // on the node's element.
   defineOptions({ inheritAttrs: false });
 
   const props = defineProps({
@@ -107,9 +107,9 @@
   const notes = computed(() => notesOf(props.data.node));
   const iconSize = computed(() => props.data.iconSize || DEFAULT_ICON_SIZE);
   const iconClass = computed(() => iconSizeClass(iconSize.value));
-  // As its connections and the Inspector's Color chip draw it: a color
-  // addNetwork picks in its theme token, and no color in the token of the
-  // network's place (see networkStyle).
+  // Drawn as its connections and the Inspector's Color chip draw it. A color
+  // that addNetwork picks shows in its theme token. A network with no color
+  // shows in the token of its place (see networkStyle).
   const swatch = computed(() => {
     const network = props.data.network;
     const token = props.data.networkStyle?.token;

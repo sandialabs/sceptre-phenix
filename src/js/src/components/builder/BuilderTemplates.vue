@@ -9,14 +9,14 @@
   that cannot add templates has neither New button, and one that cannot
   change or delete them has no Edit or Delete.
 
-  Several templates can be acted on at once: each card has a checkbox, and
+  The user can act on several templates at once: each card has a checkbox, and
   the row above the list (BuilderBulkBar.vue) has Select all, how many are
   selected, Add to collection (a menu of the collections, then "New
   collection…", which starts one with the selected templates), Remove from
   collection while a collection is shown, and Delete selected, each for a
-  role that may do it. The selection
-  is that of the list shown: showing another list drops it. Every change of
-  it is announced. The cards are one Tab stop, and the keys of
+  role that may do it. The selection is that of the list shown: another
+  list drops it. Every change of it is announced. The cards are one Tab
+  stop, and the keys of
   listSelection.js move through them and select (onListKeydown): arrow
   keys, Home and End move, Space selects, Shift with Space or an arrow key
   selects a range (a checkbox pressed with Shift makes the range as the
@@ -24,11 +24,11 @@
   macOS) asks Delete selected's question.
 
   Deleting cannot be undone, so it asks first, once for the whole selection,
-  and is one request. A deleted template leaves its collections; a deleted
-  collection leaves its templates. Devices made from a template are not
-  changed. While the library takes a change, nothing else can be changed.
-  What the change came to is said by the page's live region, and why it
-  failed by the page's alert.
+  and is one request. A deleted template leaves its collections. A deleted
+  collection leaves its templates. Devices made from a template do not
+  change. While the library takes a change, nothing else can change. The
+  page's live region announces the result of the change, and the page's
+  alert says why it failed.
 
   Share, on a card, on the selection and on a collection shown, opens the
   Share dialog (the view's, which this asks for: share), for a user who may
@@ -38,9 +38,9 @@
   there is none for drafts.
   Templates and collections other users share with the user, and those
   published server-wide, are listed too when Show names them ("Shared with
-  me", "Server-wide", or one of their collections). They are read only: a
+  me", "Server-wide", or one of their collections). They are read only. A
   card has View, which opens the template editor on it without a way to
-  change it, and Copy to my library, which adds a copy the user owns; a
+  change it, and Copy to my library, which adds a copy the user owns. A
   collection is copied whole. A role that may publish can take another
   user's items back from server-wide, which asks first.
 
@@ -61,7 +61,7 @@
 
   Export, on a card, on the selection and on a collection shown, saves a
   YAML template file (see templateFile.js) that carries the custom icons
-  its templates name; templates of every source export. Import templates
+  its templates name. Templates of every source export. Import templates
   opens a dialog that reads such a file into the user's library as a new
   collection (dialogs/TemplateImportDialog.vue), for a role that may add
   templates.
@@ -128,8 +128,8 @@
       <p role="alert" data-testid="templates-error">
         Could not load your templates. {{ library.error }}
       </p>
-      <!-- While the read it asked for is under way it keeps focus, and a
-           second press does nothing. -->
+      <!-- While the read it asked for runs, it keeps focus, and a second
+           press does nothing. -->
       <button
         type="button"
         class="builder-button"
@@ -437,8 +437,8 @@
           @focusin="selection.focused(template)"
           @keydown="onCardKeydown($event, index)">
           <div class="builder-card__head">
-            <!-- The icon devices made from it are drawn with; the name
-                 says what the template is. -->
+            <!-- The icon of devices made from it. The name says what the
+                 template is. -->
             <h2 :id="`template-name-${index}`">
               <builder-icon
                 :name="template.device?.iconKey || 'server'"
@@ -693,7 +693,7 @@
   const rights = computed(() => store.templateRights);
   const collections = computed(() => store.ownCollections);
   const loading = computed(() => library.value.status === 'loading');
-  // The library is taking a change: nothing else is changed meanwhile.
+  // The library is taking a change. Nothing else changes meanwhile.
   const busy = ref(false);
   // The Import templates dialog is open.
   const importing = ref(false);
@@ -715,8 +715,8 @@
     () => shownList(library.value, shown.value) || shownList(library.value, ''),
   );
   const collection = computed(() => list.value.collection);
-  // The list holds the user's own templates; which the server could not
-  // read, for a damaged library.
+  // The list holds the user's own templates. For a damaged library, these
+  // are the templates the server could not read.
   const mine = computed(() => list.value.source === 'own');
   // The list is a collection the server read from a template file.
   const preloaded = computed(() => list.value.source === 'preloaded');
@@ -821,8 +821,8 @@
       : rights.value.create || mayUnpublish.value,
   );
   // Every card is in it, for the keys to move to, and the card that is the
-  // list's Tab stop; they can be selected while something can be done to
-  // several at once.
+  // list's Tab stop. The cards can be selected while something can be done
+  // to several at once.
   const selection = reactive(
     useListSelection(items, (template) => `${template.owner}/${template.id}`, {
       selectable: () => selectable.value,
@@ -898,8 +898,8 @@
 
   // --- changes -----------------------------------------------------------
 
-  // Runs one change of the library, unless one is under way. A failure is
-  // said by the page's alert, as `action` names what could not be done.
+  // Runs one change of the library, unless one is in progress. The page's
+  // alert reports a failure, as `action` names what could not be done.
   async function change(action, work) {
     if (busy.value) {
       return false;
@@ -1113,8 +1113,8 @@
 
   // Saves templates as a template file of a collection named `name`, which
   // carries the custom icons they name from the icon library, read first
-  // when it was not. What was saved is said by the page's live region, and
-  // why it could not be by the page's alert.
+  // when it was not. The page's live region announces what was saved, and
+  // the page's alert says why a save failed.
   async function exportTemplates(name, templates, description = '') {
     if (!templates.length || busy.value) {
       return;
@@ -1237,7 +1237,7 @@
   // --- deleting ----------------------------------------------------------
 
   // What Delete asks about: { id, title, message, confirmLabel }, with the
-  // templates to delete, or the collection; or what Remove from server-wide
+  // templates to delete, or the collection. Or what Remove from server-wide
   // takes back (unpublish).
   const question = ref(null);
 
@@ -1306,8 +1306,8 @@
     }
   }
 
-  // Retry goes once the library is read: focus then moves to the tab
-  // rather than fall to the page.
+  // Retry disappears after a successful read of the library. Focus then
+  // moves to the tab and does not fall to the page.
   async function retry() {
     if (loading.value) {
       return;

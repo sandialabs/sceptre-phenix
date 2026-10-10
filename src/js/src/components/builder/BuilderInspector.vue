@@ -3,9 +3,9 @@
 
   Entirely schema driven: the form is generated from the builder schema served
   by GET /api/v1/schemas/builder/v1 (with a bundled fallback), so fields the
-  server adds show up without touching this component. The Builder's own
+  server adds appear without a change to this component. The Builder's own
   JSON Forms renderers (components/builder/inspector/) label, describe and
-  flag every field; see adapters/forms.js.
+  flag every field. See adapters/forms.js.
 
   The form edits a *working copy*. Nothing reaches the document until Apply is
   pressed, and Apply refuses while a field the edits changed has an error, so
@@ -16,7 +16,7 @@
   mergeFormData), so a change made elsewhere meanwhile, such as an interface
   added and connected, stays. Apply and Cancel are shown only while there
   are unapplied edits, or while focus is on one of them, in a bar that says
-  so and sticks to the bottom of the scrolling panel; each field an edit
+  so and sticks to the bottom of the scrolling panel. Each field an edit
   changed is marked until it is applied or cancelled. Changing the
   selection applies valid unapplied edits, or discards them, and says which.
 
@@ -60,8 +60,8 @@
         {{ target.title }}
       </p>
 
-      <!-- The errors and warnings of what the Inspector shows, as applied;
-           the checks button in the header lists the whole diagram's. An
+      <!-- The errors and warnings of what the Inspector shows, as applied.
+           The checks button in the header lists the whole diagram's. An
            issue about one of the form's fields has Go to, which focuses
            that field. -->
       <div
@@ -193,7 +193,7 @@
         <!-- Shown only while there are changes to apply or cancel, or
              focus is on one of these. It sticks to the bottom of the
              scrolling panel, so Apply is in view from any field of a long
-             form; the panel's scroll padding, and uncover, keep a focused
+             form. The panel's scroll padding, and uncover, keep a focused
              field clear of it (see builder.css). -->
         <div
           v-if="pending"
@@ -290,7 +290,7 @@
       <!-- Named apart from the node's own "Interfaces" list above: these
            act at once, while that list is part of the working copy. Its
            hint is a tooltip on its heading, shown on hover and on keyboard
-           focus of its buttons; screen readers read it after the heading,
+           focus of its buttons. Screen readers read it after the heading,
            and as Add connection point's description. -->
       <div
         v-if="!template && target.kind === 'device'"
@@ -351,7 +351,7 @@
         <inspector-tooltip ref="ifacesTip" :text="ifacesHint" />
       </div>
 
-      <!-- Below the fields and the connection points, which are looked
+      <!-- Below the fields and the connection points, which users look
            for more often. Its hint is a tooltip on its heading, shown on
            hover and on keyboard focus of its fields, and the fields'
            description. -->
@@ -501,8 +501,8 @@
   import { useBuilderStore } from '@/builder/store.js';
   import { deviceFieldWarnings } from '@/builder/validate.js';
 
-  // Edit scenarios, in the Diagram section, asks for the Scenario dialog;
-  // Combine into a new draft, under an included device's note, for the
+  // Edit scenarios, in the Diagram section, asks for the Scenario dialog.
+  // Combine into a new draft, under an included device's note, asks for the
   // draft the view makes (see combineIncluded in Builder.vue).
   defineEmits(['scenario', 'combine']);
 
@@ -512,9 +512,9 @@
     // the Inspector uses. Those are doc, inspectorSelection, schema,
     // schemaError, readOnly, disks, issues, canRedo and canCreateDrafts,
     // and the actions commit(doc, label), announce(message), addInterface,
-    // removeInterface, remove, moveNodes and setPurdueLevel; Go to from a list of checks
-    // also reads focusRequest and calls takeFocusRequest, which a host
-    // without Go to leaves out. A commit that is not the
+    // removeInterface, remove, moveNodes and setPurdueLevel. Go to from a
+    // list of checks also reads focusRequest and calls takeFocusRequest,
+    // which a host without Go to leaves out. A commit that is not the
     // store's drops the copies of icons the document need not carry, as
     // the store's does (see settleIcons in icons.js), and returns whether
     // it took the document.
@@ -581,8 +581,8 @@
   const committedText = new WeakMap();
   // Focus is on Apply or Cancel, which then stay until used or left.
   const held = ref(false);
-  // A press in the Inspector is under way, from pointerdown until its click
-  // is over (see onPress).
+  // A press in the Inspector is in progress, from pointerdown until its
+  // click is over (see onPress).
   const pressing = ref(false);
   const heading = ref();
   const panel = ref();
@@ -715,7 +715,7 @@
   );
 
   // A switch's Edge Color is its network's, which the canvas draws in the
-  // theme's token when it is a color addNetwork picks; the picker's chip and
+  // theme's token when it is a color addNetwork picks. The picker's chip and
   // swatches show it the same way (see drawnNetworkColor). Its outline and
   // its fill, like every other color, are drawn as chosen.
   provide(
@@ -795,7 +795,7 @@
   // Apply and Cancel appear with the first keystroke of an edit rather than
   // when the field commits it on change, which the press of a click
   // elsewhere does: the Inspector would then shift under that click. They
-  // go again when the text is typed back, but not while focus or a click is
+  // disappear when the text is typed back, but not while focus or a click is
   // on its way to them (see onFieldBlur). Apply commits the field before it
   // checks for errors. A template's edits have neither: they wait for the
   // template editor's Save.
@@ -852,7 +852,7 @@
   // made on.
   let editing = null;
   // The field edited last, and its data path in case a re-render replaces
-  // it, for focus to return to when Apply or Cancel goes.
+  // it, for focus to return to when Apply or Cancel disappears.
   let lastEdited = null;
 
   // A device's look (its icon, its custom icon, its icon size, its outline
@@ -873,7 +873,7 @@
   const look = heldCommit(commitLook);
   // The look fields that are selects, whose keys step through the choices.
   const HELD_LOOK_PATHS = ['iconKey', 'iconSize'];
-  // A look was committed in the task under way: Enter in a color's text
+  // A look was committed in the current task: Enter in a color's text
   // field commits the color and, where the browser submits the form for it
   // (Firefox does, before the field's change), asks to apply what is left.
   let lookJustCommitted = false;
@@ -922,7 +922,7 @@
 
   // Unapplied edits never vanish silently when the selection changes. Valid
   // edits are applied to the element they were made on, merged into it as it
-  // is now; edits with errors are discarded, and the announcement says which
+  // is now. Edits with errors are discarded, and the announcement says which
   // happened. Nothing is applied while a redo is pending, so an undo is not
   // undone by it. A held look goes first, to the device it was chosen for.
   function settleUnapplied() {
@@ -1026,7 +1026,7 @@
    * drafts, another page, Upload, a reload, Publish and Download (see
    * leave.js). Valid edits, and a position typed and not moved to, are
    * applied as one edit named SAVED_UNAPPLIED, which the History dialog
-   * marks; like a save, this applies them while a redo is pending too. It
+   * marks. Like a save, this applies them while a redo is pending too. It
    * works at once, as a reload cannot wait: a field's change JSON Forms has
    * not sent yet is taken first (see catchUp). Edits that cannot be applied
    * stay in the form.
@@ -1258,7 +1258,7 @@
   // the look fields this change set count, told from the data the form had
   // before it: the form keeps its data while it has unapplied edits, and a
   // look the device was given elsewhere meanwhile is not put back by an
-  // edit of another field. A color that is no #rrggbb is left out: its
+  // edit of another field. A color that is not #rrggbb is left out: its
   // field shows the error, and the device keeps the color it has.
   function holdLook(data, before) {
     const current = target.value;
@@ -1543,8 +1543,8 @@
     }
 
     // Tab from the last field, or a click, onto Apply or Cancel: they stay
-    // for it, even when the change left nothing to apply, rather than go
-    // from under focus and drop it on <body>.
+    // for it, even when the change left nothing to apply. They do not
+    // disappear from under focus and drop it on <body>.
     if (next && actions.value?.contains(next)) {
       held.value = true;
     } else if (actions.value?.contains(field)) {
@@ -1582,7 +1582,7 @@
   }
 
   /**
-   * Apply and Cancel go once the changes they act on are gone. If one of
+   * Apply and Cancel disappear once the changes they act on are gone. If one of
    * them had focus (or nothing had, as after a click in Safari), focus moves
    * to the field edited last, or to the Inspector heading when that field is
    * gone, rather than falling to <body> (WCAG 2.4.3).
@@ -1609,10 +1609,10 @@
   }
 
   // A text field commits on change. Firefox submits the form on Enter before
-  // that change fires, so commit the focused field first and let JSON Forms
-  // report back before deciding whether there is anything to apply. Selects
-  // and checkboxes have committed already, and a change sent to a select
-  // would read a "Not set" picker as a choice.
+  // that change fires. So this commits the focused field first, and lets
+  // JSON Forms report the change, before it decides whether there is
+  // anything to apply. Selects and checkboxes have committed already, and a
+  // change sent to a select would read a "Not set" picker as a choice.
   async function commitFocusedField() {
     const field = document.activeElement;
 
@@ -1623,7 +1623,7 @@
   }
 
   async function apply(event) {
-    // Buttons inside JSON Forms renderers are type="button"; anything else
+    // Buttons inside JSON Forms renderers are type="button". Anything else
     // that submits is not a request to apply.
     if (event?.submitter && event.submitter !== applyButton.value) {
       return;
@@ -1675,7 +1675,7 @@
     // field the edit committed shows the value the document took: a VLAN
     // typed as "exp" shows as network EXP, which it names. Every field has
     // committed its text by now (see commitFocusedField), so no text being
-    // typed is lost; a document change keeps only text still being typed
+    // typed is lost. A document change keeps only text still being typed
     // (see onDocumentChange).
     if (took) {
       reset();
@@ -1728,8 +1728,8 @@
   // Moves focus to the field an error summary entry names: the innermost
   // control for its data path (a oneOf value rather than its kind picker).
   // A list with too few items has no input yet, so its Add button takes
-  // focus; a field the form does not show falls back to the nearest field
-  // that contains it. A closed section with the field opens. Returns the
+  // focus. For a field the form does not show, the nearest field that
+  // contains it takes focus. A closed section with the field opens. Returns the
   // control that took focus, or null.
   function focusField(path) {
     const fields = [...(form.value?.querySelectorAll('[data-path]') || [])];
@@ -1767,9 +1767,9 @@
    * Go to, from a check about one of the form's fields: focus moves to the
    * field, or for one that holds others (an interface), to the first field
    * in it, and the field is announced with the element, as "VLAN
-   * (Interface 1) in device web-01". A field the form does not show falls
-   * back as in focusField; with none, focus moves to the Inspector's
-   * heading, and the element is announced.
+   * (Interface 1) in device web-01". A field the form does not show is
+   * handled as in focusField. With no field, focus moves to the
+   * Inspector's heading, and the element is announced.
    *
    * @param {string} path the field's data path (see issueField)
    * @returns {boolean} whether a field took focus
@@ -1803,7 +1803,7 @@
   // element selected for it. A request is taken when it is made, after the
   // form is drawn, and as the Inspector mounts, for a request made before
   // it was there (Go to on the drafts page opens the editor and goes at
-  // once); each is taken once (see takeFocusRequest). The editor shows a
+  // once). Each is taken once (see takeFocusRequest). The editor shows a
   // hidden Inspector for it (see Builder.vue), which is drawn by the next
   // tick.
   async function takeFocusRequest() {
@@ -1887,8 +1887,8 @@
     { immediate: true },
   );
 
-  // The numbers typed, spaces around them left out; undefined for text
-  // that is no number.
+  // The numbers typed, without the spaces around them. Undefined for text
+  // that is not a number.
   const typedPosition = computed(() => ({
     x: readNumberText(position.value.x, false),
     y: readNumberText(position.value.y, false),

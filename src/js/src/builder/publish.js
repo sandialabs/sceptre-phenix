@@ -1,8 +1,8 @@
 // Publish intent helpers.
 //
-// Publish never uploads document bytes: the server loads the snapshot the
-// draft cursor points at and re-runs its own validation. The editor only
-// describes *what* to write, which is what these helpers build.
+// Publish never uploads document bytes. The server loads the snapshot that
+// the draft cursor points at and runs its own validation again. The editor
+// only describes *what* to write, and these helpers build that description.
 
 import { count, listOf } from './announce.js';
 import { sentence } from './api.js';
@@ -33,8 +33,8 @@ export function configName(name) {
     .replace(/^-+|-+$/g, '');
 }
 
-// How many of the characters a name may not use a reason names; it ends
-// in "…" when the name has more.
+// How many of the refused characters of a name a reason names. The reason
+// ends in "…" when the name has more.
 const NAMED_CHARACTERS = 5;
 
 // A character the naming rule allows.
@@ -51,8 +51,8 @@ function isRefused(character) {
 
 // A character that shows nothing of its own: a control or format character
 // (U+200B, U+200E), a private-use, unassigned or surrogate code point, a
-// mark that only changes the character before it, or one Unicode says to
-// leave unseen (U+3164).
+// mark that only changes the character before it, or a character that
+// Unicode says not to show (U+3164).
 const UNSEEN_CHARACTER =
   /^[\p{C}\p{Mn}\p{Me}\p{Default_Ignorable_Code_Point}]$/u;
 
@@ -71,9 +71,9 @@ function named(character) {
 /**
  * Why a name breaks the naming rule: "it contains a space", "it contains
  * characters that are not allowed: "/", "#"", or both. Each character is
- * named once, in the order the name has them, and only the first five,
- * then "…": quoted, or by its code point (U+200B) when it shows nothing
- * of its own. '' for a name that keeps the rule, and for none.
+ * named once, in the order of the name, and only the first five, then "…".
+ * A character is quoted, or named by its code point (U+200B) when it shows
+ * nothing of its own. '' for a name that keeps the rule, and for no name.
  *
  * @param {string} name
  * @returns {string} "it contains a space and characters that are not
@@ -111,7 +111,7 @@ export function configNameReason(name) {
 /**
  * What a name field says under it while the name it holds breaks the
  * naming rule: why, then the rule. '' for a name that keeps the rule, and
- * for none, so a valid name shows no rule.
+ * for no name, so a valid name shows no rule.
  *
  * @param {string} name the field's value
  * @returns {string}
@@ -138,8 +138,8 @@ export function configNameProblem(kind, name) {
     return `Enter a name for the ${kind}.`;
   }
 
-  // phenix refuses to create an experiment of this name, in any case: it
-  // means every experiment.
+  // phenix refuses to create an experiment of this name, in any letter
+  // case, because it means every experiment.
   if (kind === 'experiment' && name.toLowerCase() === 'all') {
     return `The experiment name "${name}" is reserved: phenix uses it to mean every experiment. Enter another name.`;
   }
@@ -204,34 +204,39 @@ function importedFromTopology(name, draft = {}) {
  * decides (topologyUpdateRefusal and preflightExperiment in
  * web/builder_publish.go).
  *
- * A draft may update a topology that holds one of its own published
- * diagrams: one it published, whatever it was loaded from, the one it was
- * opened from, or one of exactly its saved snapshot. That is how it publishes
- * again after further edits. It may also update a topology whose diagram is
- * read from the Builder file it names, when the draft was opened from that
- * file. Otherwise it may update the topology it was generated from, unless
- * that was an upload, or the one its source experiment was built from (see
- * updateBlocker for a topology that has a legacy Builder diagram). The
- * server also refuses a topology changed by anyone else since the draft
- * published it, and one whose Builder file, or whose own spec, is no longer
- * what the draft was opened from. The client cannot see either: the server
- * says so when it refuses (see publishRefusal).
+ * A draft may update a topology in these cases:
+ * - The topology holds one of the draft's own published diagrams: a diagram
+ *   it published (whatever it was loaded from), the diagram it was opened
+ *   from, or a diagram of exactly its saved snapshot. That is how a draft
+ *   publishes again after more edits.
+ * - The topology's diagram is read from the Builder file it names, and the
+ *   draft was opened from that file.
+ * - The draft was generated from the topology, unless that was an upload.
+ * - The draft's source experiment was built from the topology (see
+ *   updateBlocker for a topology that has a legacy Builder diagram).
+ * The server also refuses a topology that anyone else changed after the
+ * draft published it. It also refuses a topology whose Builder file, or
+ * whose own spec, is no longer what the draft was opened from. The client
+ * cannot see either case. The server says so when it refuses (see
+ * publishRefusal).
  *
- * An experiment is updated from its own source, unless that was an upload,
- * or when the draft last published it, with a topology that still holds that
- * publication. A draft saved as a new draft from another (forked) may also
- * update what that draft had published when it was forked, as though it
- * had published it. The server also refuses an experiment changed by anyone else
- * since the draft published it. It accepts an unchanged republish of an
- * experiment only when the stored spec still equals the draft's projection,
- * and creating an experiment fills in defaults, so the client cannot predict
- * that case and never promises it.
+ * A draft may update an experiment in these cases:
+ * - The experiment is the draft's own source, unless that was an upload.
+ * - The draft last published it, with a topology that still holds that
+ *   publication.
+ * A draft saved as a new draft from another draft (forked) may also update
+ * what that draft had published when it was forked, as though it had
+ * published it. The server also refuses an experiment that anyone else
+ * changed after the draft published it. The server accepts an unchanged
+ * republish of an experiment only when the stored spec still equals the
+ * draft's projection. The creation of an experiment adds defaults. So the
+ * client cannot predict that case, and never promises it.
  *
  * @param {string} kind 'topology' or 'experiment'
  * @param {string} name existing config name
- * @param {object} draft source: the document's source; id, sourceToken,
+ * @param {object} draft source: the document's source. id, sourceToken,
  *   digest (of the saved snapshot), publication (the last one) and forked
- *   (the forked draft's), from the draft record; documents: the current
+ *   (the forked draft's): from the draft record. documents: the current
  *   published diagrams
  * @returns {boolean}
  */
@@ -284,14 +289,15 @@ export function draftCanUpdate(kind, name, draft = {}) {
 }
 
 /**
- * Why this draft may not update the existing config `name`: 'changed' for
- * one the server refused because someone else has changed it since this
- * draft published it, 'source' when draftCanUpdate() says no, or '' when it
- * may.
+ * Why this draft may not update the existing config `name`:
+ * - 'changed': the server refused it because someone else changed it after
+ *   this draft published it
+ * - 'source': draftCanUpdate() says no
+ * - '': the draft may update it
  *
  * A topology that still has a diagram of the legacy Builder (a builder-xml
  * annotation) is updated only by the draft imported from that topology
- * itself: that import converted the diagram, which the update replaces. A
+ * itself. That import converted the diagram, which the update replaces. A
  * draft imported from an experiment built from the topology never held it
  * (topologyUpdateMatchesSource in web/builder_publish.go).
  *
@@ -300,8 +306,8 @@ export function draftCanUpdate(kind, name, draft = {}) {
  * @param {Array} entries the server's configs of that kind, as names or
  *   source entries
  * @param {object} draft as draftCanUpdate() takes it, and changedTargets:
- *   the "<kind>/<name>" of each config the server refused so (see
- *   publishRefusal)
+ *   the "<kind>/<name>" of each config the server refused for that reason
+ *   (see publishRefusal)
  * @returns {''|'changed'|'source'}
  */
 export function updateBlocker(kind, name, entries = [], draft = {}) {
@@ -336,16 +342,18 @@ export function hasLegacyDiagram(name, entries = []) {
 }
 
 // The warning of an import that could not read the legacy Builder diagram
-// of its topology (FromLegacyTopology in types/builder/legacy.go), which the
-// document's source keeps: nothing of that diagram is in the document.
+// of its topology (FromLegacyTopology in types/builder/legacy.go). The
+// document's source keeps this warning. Nothing of that diagram is in the
+// document.
 const LEGACY_UNREAD = /^The legacy diagram of topology .+ could not be read \(/;
 
 /**
- * What updating the server's topology `name` from this diagram does with
- * the topology's legacy Builder diagram: '' when it has none, 'replaced'
- * when the diagram was converted into this one, and 'removed' when the
- * import could not read it, so that nothing of it is kept (see
- * ReplaceLegacyDiagram in api/builder/publish.go).
+ * What an update of the server's topology `name` from this diagram does
+ * with the topology's legacy Builder diagram (see ReplaceLegacyDiagram in
+ * api/builder/publish.go):
+ * - '': the topology has none
+ * - 'replaced': the diagram was converted into this one
+ * - 'removed': the import could not read it, so nothing of it is kept
  *
  * @param {string} name topology name
  * @param {Array} entries the server's topologies, as names or source
@@ -421,8 +429,8 @@ export function targetHint(kind, exists, blocker = '', legacy = false) {
 }
 
 /**
- * The name of the button that publishes, which says what it does, so
- * overwriting an existing config is stated on the control that does it:
+ * The name of the button that publishes. The name says what the button
+ * does, so the control that overwrites an existing config says so:
  * "Update topology", "Create topology and update experiment".
  *
  * @param {'create'|'update'} topology what happens to the topology
@@ -451,8 +459,8 @@ const NAMED_INCLUDES = 8;
 
 /**
  * What the Publish dialog's summary adds for a diagram that includes
- * topologies and shows none of their nodes: one combined on import whose
- * includes could not all be read, or one whose includes were never
+ * topologies and shows none of their nodes. Such a diagram was combined on
+ * import but not all its includes could be read, or its includes were never
  * resolved. Publishing writes them to the topology's includeTopologies.
  *
  * @param {string[]} [includes] the diagram's source.includeTopologies
@@ -476,10 +484,10 @@ export function keptIncludesText(includes = []) {
 /**
  * The confirmation Publish asks for before it replaces configs on the
  * server, which no one can undo: phenix keeps no earlier version of a
- * config. It names each config replaced; an intent that only creates needs
- * none. The scenarios the diagram lists are never replaced: publishing only
- * adds the topology to their topology annotation. Its button repeats the
- * publish label.
+ * config. It names each config replaced. An intent that only creates
+ * configs needs no confirmation. The scenarios the diagram lists are never
+ * replaced: publishing only adds the topology to their topology
+ * annotation. Its button repeats the publish label.
  *
  * @param {object} intent as buildPublishIntent() builds it
  * @returns {{title: string, message: string, confirmLabel: string}|null}
@@ -634,11 +642,12 @@ export function replacedScenarioConfig(stored, uploaded) {
 /**
  * Builds the publish intent for a form.
  *
- * An existing topology or experiment is updated, which the server allows only
- * when updateBlocker() finds nothing in the way; any other existing name is
- * refused here, before anything is sent. With an experiment, the scenario it
- * is published with is one of the scenarios the document lists, by name, or
- * none; the server adds the topology to every listed scenario either way.
+ * An existing topology or experiment is updated. The server allows this
+ * only when updateBlocker() finds no block. Any other existing name is
+ * refused here, before anything is sent. With an experiment, the scenario
+ * it is published with is one of the scenarios the document lists, by
+ * name, or none. The server adds the topology to every listed scenario in
+ * both cases.
  *
  * @param {object} form mode, topologyName, experimentName, scenarioName (''
  *   for no scenario)
@@ -729,19 +738,21 @@ export function buildPublishIntent(form = {}, context = {}) {
 }
 
 // What the codes of the server's publish refusals (codes.go) say: the kind
-// of config a refusal is about, and for some, the rule the dialog explains
-// in its own words. `stale` is a create or update that does not match the
-// configs the server has (the list the dialog chose the action from has
-// changed since), with whether the config exists; `source` an update
-// draftCanUpdate() expected the server to accept, for example because the
-// config was republished from another diagram since the list of published
-// diagrams was read; `changed` an update of a config this draft published,
-// which someone else has changed since, so publishing would overwrite that.
-// A code of another refusal of a publish names its kind by its second word
-// (publish.experiment.running), and the refusals of the topology as a whole
-// (what only publishing refuses, and a hostname an included topology
-// defines too) and of an included topology's hostnames are about the
-// topology and the experiment.
+// of config a refusal is about, and for some codes, the rule that the
+// dialog explains in its own words:
+// - `stale`: a create or update that does not match the configs the server
+//   has (the list the dialog chose the action from changed after it was
+//   read), with whether the config exists.
+// - `source`: an update that draftCanUpdate() expected the server to
+//   accept. For example, the config was republished from another diagram
+//   after the list of published diagrams was read.
+// - `changed`: an update of a config this draft published, which someone
+//   else changed after that. Publishing would overwrite that change.
+// The code of any other publish refusal names its kind by its second word
+// (publish.experiment.running). The refusals of the topology as a whole
+// (what only publishing refuses, and a hostname that an included topology
+// also defines) are about the topology. The refusal of an included
+// topology's hostnames is about the experiment.
 const REFUSAL_RULES = {
   'publish.topology.exists': { kind: 'topology', stale: true, exists: true },
   'publish.topology.missing': { kind: 'topology', stale: true, exists: false },
@@ -781,9 +792,9 @@ function refusalRule(code) {
   };
 }
 
-// The form field a refusal of a config of kind named name is about, in
-// buildPublishIntent's terms: a scenario has one only when it is the
-// experiment's scenario, which the form picks.
+// The form field that a refusal of the config of kind `kind` and name
+// `name` is about, in buildPublishIntent's terms. A scenario has a field
+// only when it is the experiment's scenario, which the form picks.
 function targetField(kind, intent = {}, name = '') {
   if (kind === 'topology') {
     return 'topologyName';
@@ -826,13 +837,14 @@ function staleActionRefusal(kind, intent, exists, context) {
 
 /**
  * A publish the server refused (409 or 422), as a message for the dialog and
- * the form field it is about, both chosen by the refusal's code. When the
+ * the form field it is about. The refusal's code selects both. When the
  * server refuses a create or update because the config does or does not
- * exist, the dialog chose the action from a list that is out of date, and
- * the message says what publishing again will do. When it refuses an update
- * this draft may not make, the message says so and asks for another name.
- * Any other refusal keeps the server's reason, on the field of the config
- * its code is about: a scenario's only when it is the experiment's.
+ * exist, the dialog chose the action from an out-of-date list. The message
+ * then says what publishing again will do. When the server refuses an
+ * update that this draft may not make, the message says so and asks for
+ * another name. Any other refusal keeps the server's reason, on the field
+ * of the config its code is about. A scenario gets the refusal on its
+ * field only when it is the experiment's scenario.
  *
  * @param {{code?: string, reason?: string, scenario?: string}} refusal as
  *   serverRefusal() reads it: the server's code, its reason, and the
@@ -840,9 +852,9 @@ function staleActionRefusal(kind, intent, exists, context) {
  * @param {object} intent the refused intent
  * @param {object} [context] topologies, experiments and draft, as
  *   buildPublishIntent takes them, read again after the refusal
- * @returns {{message: string, field: string, changed?: string}} `field` as
- *   in buildPublishIntent, or '' for none; `changed`, the "<kind>/<name>" of
- *   a config refused because someone else changed it since this draft
+ * @returns {{message: string, field: string, changed?: string}} `field`: as
+ *   in buildPublishIntent, or '' for none. `changed`: the "<kind>/<name>"
+ *   of a config refused because someone else changed it after this draft
  *   published it
  */
 export function publishRefusal(refusal = {}, intent = {}, context = {}) {
@@ -887,17 +899,18 @@ export function publishRefusal(refusal = {}, intent = {}, context = {}) {
 }
 
 /**
- * The diagram's checks as the Publish dialog lists them: a warning about
- * what publishing refuses, an interface with no VLAN, an address two
- * interfaces use or a hostname phenix refuses (see collectWarnings in
- * validate.js), is an error there. The draft still saves with it, as the
- * checks elsewhere say, but it is not published: phenix would refuse the
- * hostname, or store the topology, and minimega refuse the interface, or the
- * addresses clash, when the experiment starts.
+ * The diagram's checks as the Publish dialog lists them. There, a warning
+ * about what publishing refuses is an error: an interface with no VLAN, an
+ * address that two interfaces use, or a hostname that phenix refuses (see
+ * collectWarnings in validate.js). The draft still saves with it, as the
+ * checks elsewhere say, but it is not published. Otherwise phenix would
+ * refuse the hostname, or store the topology. Then, when the experiment
+ * starts, minimega would refuse the interface, or the addresses would
+ * clash.
  *
  * @param {object[]} issues validateDocument() issues
- * @returns {object[]} the issues, each one that blocks publishing an error,
- *   in `level` and `severity` alike, with its code
+ * @returns {object[]} the issues. Each issue that blocks publishing is an
+ *   error, in both `level` and `severity`, with its code
  */
 export function publishChecks(issues = []) {
   return issues.map((issue) =>
@@ -938,9 +951,9 @@ export function stageFailed(stage) {
 // --- What publishing changes --------------------------------------------------
 //
 // The Publish dialog asks the server what publishing would change (a dry
-// run; see DescribePublishChanges in api/builder/changes.go) and says it in
-// these words. Text carries the meaning: what is added, removed or kept is
-// in the words, not in a color.
+// run, see DescribePublishChanges in api/builder/changes.go) and says it in
+// these words. Text carries the meaning: the words say what is added,
+// removed or kept, not a color.
 
 // How many devices a disk image's line names before it counts the rest.
 const NAMED_DEVICES = 5;

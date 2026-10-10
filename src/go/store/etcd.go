@@ -17,8 +17,8 @@ type Etcd struct {
 
 	cli *clientv3.Client
 
-	// compactor keeps the cluster's history bounded; nil when compaction is
-	// disabled. See [DefaultEtcdCompactionRetention].
+	// compactor keeps the history of the cluster bounded. It is nil when
+	// compaction is disabled. See [DefaultEtcdCompactionRetention].
 	compactor *etcdCompactor
 }
 

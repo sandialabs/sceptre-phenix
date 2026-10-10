@@ -1547,7 +1547,7 @@ describe('colors, styles, custom icons and templates', () => {
       properties.description.maxLength,
     );
     expect(bundle.$defs.templateDevice.description).toBe(
-      `Fields a template fills in, at most ${MAX_TEMPLATE_DEVICE_BYTES} bytes as JSON.`,
+      `Fields that a template fills in, at most ${MAX_TEMPLATE_DEVICE_BYTES} bytes as JSON.`,
     );
   });
 

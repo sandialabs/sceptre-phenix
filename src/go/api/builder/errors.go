@@ -41,7 +41,7 @@ var (
 	ErrBusy = errors.New("builder: busy, try again")
 
 	// ErrForbidden is returned when the caller may see what it asked to
-	// change but may not change it, as another user's icon.
+	// change but may not change it, for example another user's icon.
 	ErrForbidden = errors.New("builder: not allowed")
 )
 
@@ -79,10 +79,10 @@ type (
 		Reason string
 	}
 
-	// ValidationError describes a malformed request. It unwraps to [ErrInvalid]
-	// and, when the request was rejected because of an underlying failure (for
-	// example a document that does not decode or validate), to that cause as
-	// well.
+	// ValidationError describes a malformed request. It unwraps to
+	// [ErrInvalid]. When an underlying failure caused the rejection (for
+	// example a document that does not decode or validate), it also unwraps to
+	// that cause.
 	ValidationError struct {
 		Field  string
 		Reason string
@@ -180,10 +180,10 @@ func (e *IconNameTakenError) Error() string {
 	return fmt.Sprintf("%v: %s", ErrConflict, e.Sentence())
 }
 
-// Sentence says which icon has the name, in words a person is shown. It
-// names the icon and the user who uploaded it, or the server for one it
-// added from its template files, which every user who may list the icon
-// library sees anyway.
+// Sentence says, in words for a person, which icon has the name. It names the
+// icon and the user who uploaded it. For an icon the server added from its
+// template files, it names the server. Every user who may list the icon
+// library sees that anyway.
 func (e *IconNameTakenError) Sentence() string {
 	uploaded := e.Owner + " uploaded"
 	if e.Owner == ServerIconOwner {

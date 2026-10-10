@@ -170,10 +170,10 @@ type exactYAMLMetadata struct {
 	Annotations any    `yaml:"annotations,omitempty"`
 }
 
-// MarshalYAML implements [yaml.Marshaler]. The config is written as its
-// fields are, except that its annotations, spec and status are as
-// [ExactYAML] makes them, so that the YAML loads as the config. A structured
-// annotation is written as a map (see [Annotations.MarshalYAML]).
+// MarshalYAML implements [yaml.Marshaler]. It writes the config as its fields
+// are, except that it writes the annotations, spec and status as [ExactYAML]
+// makes them, so that the YAML loads as the config. It writes a structured
+// annotation as a map (see [Annotations.MarshalYAML]).
 func (c Config) MarshalYAML() (any, error) {
 	return exactYAMLConfig{
 		Version: c.Version,
@@ -271,12 +271,13 @@ func (s yamlQuoted) MarshalYAML() (any, error) {
 	return &yaml.Node{Kind: yaml.ScalarNode, Style: yaml.DoubleQuotedStyle, Tag: "!!str", Value: string(s)}, nil
 }
 
-// ExactYAML is value with each string yaml.v3 would not read back as it
-// writes it (see [yamlKeeps]) double quoted, in maps and slices at any depth
-// and in map keys, so that the YAML of the value loads as the value. The
-// maps and slices are copies: a map with string keys becomes a map[any]any,
-// whose keys yaml.v3 sorts as it sorts the map's, and a slice an []any, so
-// that the YAML is otherwise what yaml.Marshal writes for value.
+// ExactYAML is value with double quotes on each string that yaml.v3 would not
+// read back as it writes it (see [yamlKeeps]). This applies in maps and
+// slices at any depth, and in map keys, so that the YAML of the value loads
+// as the value. The maps and slices are copies. A map with string keys
+// becomes a map[any]any, whose keys yaml.v3 sorts as it sorts the keys of the
+// original map. A slice becomes an []any. Thus the YAML is otherwise what
+// yaml.Marshal writes for value.
 func ExactYAML(value any) any {
 	if text, ok := value.(string); ok {
 		if yamlKeeps(text) {
@@ -317,12 +318,12 @@ func ExactYAML(value any) any {
 	}
 }
 
-// yamlKeeps reports whether yaml.v3 reads text back as it writes it. It
+// yamlKeeps reports whether yaml.v3 reads text back as it writes it. yaml.v3
 // writes a string without a line break as a plain or quoted scalar, which it
-// reads back. It writes one with a line break as a literal block scalar,
-// which it may not: it drops a leading line break, so "\n" reads back as ""
-// and "\n a" as " a", and indents a first line that starts with a tab so
-// that the document does not load.
+// reads back. It writes a string with a line break as a literal block scalar,
+// which it may not read back. It drops a leading line break, so "\n" reads
+// back as "" and "\n a" as " a". It also indents a first line that starts
+// with a tab, so that the document does not load.
 func yamlKeeps(text string) bool {
 	if !strings.Contains(text, "\n") {
 		return true
@@ -352,9 +353,9 @@ func StructuredAnnotation(key string) bool {
 	return ok
 }
 
-// structuredValue is the sub-keys a structured annotation's string holds. It
-// reports false for a string that is not one JSON object of text values, such
-// as one written by hand, which is then shown as the string it is.
+// structuredValue is the sub-keys that the string of a structured annotation
+// holds. It reports false for a string that is not one JSON object of text
+// values, such as a string written by hand. Such a string is shown as it is.
 func structuredValue(value string) (map[string]string, bool) {
 	var fields map[string]*string
 
@@ -389,9 +390,9 @@ func structuredString(sub map[string]string) string {
 	return string(text)
 }
 
-// wire is the annotations as a config's JSON and YAML show them: each
-// structured annotation whose string holds sub-keys is a map[string]string,
-// and everything else the string it is.
+// wire is the annotations as the JSON and YAML of a config show them. Each
+// structured annotation whose string holds sub-keys is a map[string]string.
+// Everything else is the string it is.
 func (a Annotations) wire() map[string]any {
 	if a == nil {
 		return nil
@@ -429,7 +430,7 @@ func (a Annotations) MarshalYAML() (any, error) {
 // UnmarshalJSON implements [json.Unmarshaler]. A structured annotation may be
 // an object of text sub-keys, which is kept as one string (see
 // [structuredString]), or a string, which is kept as it is. Every other
-// annotation must be a string. As decoding into a plain map does, the keys
+// annotation must be a string. As with decoding into a plain map, the keys
 // read are set in the annotations already there, and null leaves none.
 func (a *Annotations) UnmarshalJSON(data []byte) error {
 	var raw map[string]json.RawMessage
@@ -529,9 +530,9 @@ func (a *Annotations) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-// storedConfig is a Config as the store keeps it: every annotation one
-// string, a structured one included, which is what a phenix binary that
-// knows no structured annotations reads.
+// storedConfig is a Config as the store keeps it. Every annotation is one
+// string, a structured one included. A phenix binary that knows no structured
+// annotations reads this form.
 type storedConfig struct {
 	Version  string         `json:"apiVersion"`
 	Kind     string         `json:"kind"`

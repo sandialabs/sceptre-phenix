@@ -1,22 +1,23 @@
-// Focus mode: the Builder on its own, without the phenix navigation bar,
-// filling the window, and the screen where the browser allows it. App.vue
-// hides its header while focus mode is on; the Builder's view
-// (Builder.vue) turns it on and off, with the Focus mode button of the
-// editor's and the drafts' headers and the view.focusMode command, and off
-// when the user leaves the Builder. It stays on as the editor and the
+// Focus mode: the Builder alone, without the phenix navigation bar. It fills
+// the window, and the screen where the browser allows it. App.vue hides its
+// header while focus mode is on. The Builder's view (Builder.vue) turns focus
+// mode on and off through the Focus mode button in the editor and drafts
+// headers and the view.focusMode command. It also turns focus mode off when
+// the user leaves the Builder. Focus mode stays on when the editor and the
 // drafts replace each other.
 //
-// Full screen is asked for with the Fullscreen API, from the press that
-// turns focus mode on, and may be refused (a frame without permission, a
-// browser setting): focus mode then fills the window only. Leaving full
-// screen from the browser (Escape, the browser's own controls) leaves focus
-// mode on, in the window: browsers keep the first Escape for themselves, so
-// an Escape meant to close a dialog or clear the selection would otherwise
-// end focus mode as well. Focus mode ends only by its button, its keys or
-// leaving the Builder, and those leave full screen too.
+// The press that turns focus mode on also requests full screen through the
+// Fullscreen API. The browser can refuse it (a frame without permission, a
+// browser setting). Focus mode then fills the window only. When the user
+// leaves full screen from the browser (Escape, the browser's own controls),
+// focus mode stays on, in the window. Browsers keep the first Escape for
+// themselves. Without this rule, an Escape meant to close a dialog or clear
+// the selection would also end focus mode. Focus mode ends only through its
+// button, its keys or leaving the Builder, and each of these also leaves full
+// screen.
 //
-// This module is loaded with the app (App.vue reads the state), so it stays
-// small and imports nothing else of the Builder's.
+// The app loads this module (App.vue reads the state), so the module stays
+// small and imports nothing else from the Builder.
 
 import { reactive } from 'vue';
 
@@ -50,8 +51,9 @@ function leaveFullScreen(doc, ours = asked) {
 }
 
 /**
- * Turns focus mode on and asks for full screen. Called from the press that
- * turns it on: browsers grant full screen only in answer to one.
+ * Turns focus mode on and requests full screen. The press that turns focus
+ * mode on calls it, because browsers grant full screen only in answer to a
+ * press.
  *
  * @param {Document} [doc]
  * @returns {Promise<boolean>} whether the page went full screen
@@ -111,7 +113,7 @@ export function exitFocusMode(doc = globalThis.document) {
 /**
  * Keeps focusMode.fullScreen in step with the browser.
  *
- * @param {() => void} onLeft runs when the browser leaves full screen while
+ * @param {() => void} onLeft runs when the browser leaves full screen and
  *   focus mode stays on (Escape, the browser's controls)
  * @param {Document} [doc]
  * @returns {() => void} stops following

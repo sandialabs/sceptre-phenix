@@ -79,9 +79,9 @@ func ConfigureUsers(users []string) error {
 		creds := strings.Split(u, ":")
 
 		if len(creds) <= roleField {
-			// Without a role. The entry is named by its position, and by
-			// the name before its colon if it has one: without a colon,
-			// it may be a password.
+			// Without a role. The log and the error name the entry by its
+			// position, and by the name before its colon if it has one. Without
+			// a colon, the entry may be a password.
 			var name string
 			if len(creds) > passwordField {
 				name = creds[0]
@@ -237,10 +237,10 @@ func Start(opts ...ServerOption) error {
 
 	api := router.PathPrefix("/api/v1").Subrouter()
 
-	// Unmatched API requests must not fall through to the router's
-	// NotFoundHandler, which serves the SPA index: an API client would receive
-	// 200 HTML instead of a 404, and a route behind a disabled feature flag
-	// would look enabled while it is not.
+	// API requests that match no route must not go to the NotFoundHandler of
+	// the router, which serves the SPA index. An API client would then get 200
+	// HTML instead of a 404. Also, a route behind a disabled feature flag would
+	// look enabled.
 	api.NotFoundHandler = apiNotFoundHandler()
 
 	// The Builder routes are registered before the generic schema routes
@@ -562,8 +562,8 @@ func addRoutesToRouter(router *mux.Router, routes ...route) {
 }
 
 // apiNotFoundHandler answers a request that reached the API router but matched
-// no route. It never serves the SPA index, so an unregistered route (including
-// one gated behind a disabled feature flag) is reported as the 404 it is.
+// no route. It never serves the SPA index. Thus an unregistered route
+// (including one behind a disabled feature flag) gets a 404.
 //
 // Router middleware, including authentication, does not run for a router's
 // NotFoundHandler, so this must not disclose anything a caller could not learn

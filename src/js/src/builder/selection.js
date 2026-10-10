@@ -55,9 +55,10 @@ export function selectionItemName(doc, { kind, id }) {
  * The selection after a press on `item`, and what to announce.
  *
  * A plain press selects the item alone, or deselects it when it already is
- * the only selected item. "only" says the press also dropped other selected
- * items, which the pressed item's own state does not reveal. An additive
- * press (Shift, Ctrl or Cmd) adds the item to the selection or takes it out.
+ * the only selected item. "only" says the press also removed other items
+ * from the selection, which the pressed item's own state does not show. An
+ * additive press (Shift, Ctrl or Cmd) adds the item to the selection or
+ * removes it.
  *
  * @param {object} doc
  * @param {{nodes: string[], edges: string[]}} before the selection the press
@@ -124,7 +125,7 @@ const COUNTED_NODES = {
  *   links, groups or notes
  * @returns {{selection: {nodes: string[], edges: string[]}|null,
  *   message: string}} selection is null when there is nothing to select,
- *   which leaves the selection as it is; the message then says why
+ *   which keeps the selection as it is. The message then says why
  */
 export function kindSelection(doc, key) {
   const nodes = doc?.nodes || [];

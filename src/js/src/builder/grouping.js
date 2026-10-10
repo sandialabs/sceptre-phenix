@@ -1,26 +1,29 @@
-// Auto-group: puts ungrouped nodes into groups of their own, by network, by
-// name, or by a pattern the user types. The store then lays the diagram
-// out, so the new groups do not overlap (see autoGroup and
-// autoGroupByPattern in store.js).
+// Auto-group: puts ungrouped nodes into new groups, by network, by name, or
+// by a pattern that the user types. The store then lays out the diagram, so
+// the new groups do not overlap (see autoGroup and autoGroupByPattern in
+// store.js).
 //
-// By network, each network's switch goes with the devices on that network,
-// and a device on several networks with its smallest one: the rule the
-// network layouts cluster by (see common.js), so the layout draws each new
-// group where it drew that cluster. By name, devices whose hostnames share
-// a family (web-01, web-02) go together; switches stay out. Community
-// detection on the connection graph was tried and left out: a network most
-// devices join, such as a management network, pulls unrelated networks into
-// one group with no name that fits.
+// By network: each network's switch goes with the devices on that network.
+// A device on several networks goes with its smallest network. The network
+// layouts use the same rule for their clusters (see common.js), so the layout
+// draws each new group where it drew that cluster.
 //
-// By name pattern, the user's regular expression is run on each name, a
-// device's hostname or a switch's label, and the nodes it matches the same
-// text of, ignoring case, go together (see groupingPattern.js). The pattern
-// runs in a Web Worker that is ended when it takes too long, and only when
-// the user asks: it is kept in this browser, never in the document.
+// By name: devices whose hostnames share a family (web-01, web-02) go
+// together. Switches stay out. Auto-group does not use community detection
+// on the connection graph. A network that most devices join, such as a
+// management network, pulls unrelated networks into one group, and no name
+// fits that group.
 //
-// Only ungrouped devices and switches are grouped (only the selected ones,
-// when a selection is given), existing groups are left alone, and a group
-// would need two members.
+// By name pattern: the user's regular expression runs on each name (a
+// device's hostname or a switch's label). The nodes for which it matches the
+// same text, case-insensitive, go together (see groupingPattern.js). The
+// pattern runs in a Web Worker, which stops when it takes too long, and only
+// when the user asks. The pattern is kept in this browser, never in the
+// document.
+//
+// Only ungrouped devices and switches are grouped (only the selected ones
+// when a selection is given). Existing groups do not change. A group needs at
+// least two members.
 
 import { count } from './announce.js';
 import { drawnColor } from './colors.js';
@@ -35,9 +38,9 @@ import { DEFAULT_NETWORK_COLORS, addNode, nodeLabel } from './model.js';
 import { footprintBounds } from './nodeNotes.js';
 import { pageStorage } from './storage.js';
 
-// Each rule: `phrase` ends what its commit says ("Created 2 groups by
-// network"), and `asks` marks a rule that needs something from the user
-// first (the pattern), so choosing it opens a dialog.
+// Each rule: `phrase` ends its commit message ("Created 2 groups by
+// network"). `asks` marks a rule that needs something from the user first
+// (the pattern), so choosing it opens a dialog.
 export const GROUPING_STRATEGIES = Object.freeze([
   {
     id: 'network',
@@ -86,7 +89,7 @@ function groupingStrategy(id) {
 }
 
 /**
- * @param {string} id a GROUPING_STRATEGIES id; an unknown one is the default
+ * @param {string} id a GROUPING_STRATEGIES id. An unknown id gives the default.
  * @returns {string} how the rule grouped, for its commit: "by network"
  */
 export function groupingPhrase(id) {
@@ -144,7 +147,7 @@ function byNetwork(doc, candidates) {
     ]),
   );
   const { joined, size } = networksOfDevices(doc);
-  // The smallest network; ties by name, then document order.
+  // The smallest network. Ties go by name, then document order.
   const primaryOf = (ids) =>
     [...ids]
       .filter((id) => networks.has(id))
@@ -244,16 +247,16 @@ function inNameOrder(doc, families) {
 const STRATEGIES = { network: byNetwork, name: byName };
 
 /**
- * The groups Auto-group would make, in the diagram's order of networks or
- * in name order: each {title, color, members}, members being node ids.
- * Groups of one are left out. A rule that asks for something first plans
- * none here (see planPatternGroups).
+ * The groups that Auto-group would make, in the diagram's order of networks
+ * or in name order. Each is {title, color, members}, where members are node
+ * ids. Groups of one are left out. A rule that asks for something first
+ * plans no groups here (see planPatternGroups).
  *
  * @param {object} doc builder document
- * @param {string} strategy a GROUPING_STRATEGIES id; an unknown one is the
- *   default
- * @param {object} [options] selection: node ids to group; empty or left out
- *   for every ungrouped node
+ * @param {string} strategy a GROUPING_STRATEGIES id. An unknown id gives the
+ *   default.
+ * @param {object} [options] selection: node ids to group. Empty or left out
+ *   for every ungrouped node.
  * @returns {{title: string, color: string, members: string[]}[]}
  */
 export function planGroups(doc, strategy, { selection = [] } = {}) {
@@ -270,10 +273,10 @@ export function planGroups(doc, strategy, { selection = [] } = {}) {
 }
 
 /**
- * Makes the planned groups: a group node for each, around its members and
- * their notes while the canvas shows them (see footprintBounds), named after
- * it (numbered past a group of the same name), and its members put in it.
- * Where the groups go is left to a layout.
+ * Makes the planned groups. For each, it adds a group node around its
+ * members and their notes while the canvas shows them (see footprintBounds).
+ * The group gets the planned title, numbered past a group of the same name,
+ * and its members go into it. A layout decides the position of the groups.
  *
  * @param {object} doc
  * @param {{title: string, color: string, members: string[]}[]} planned
@@ -459,21 +462,21 @@ async function matchWithin(match, pattern, names, signal) {
 }
 
 /**
- * The groups Auto-group by name pattern would make: the candidates (as for
- * the other rules) whose names the pattern matches the same text of,
- * ignoring case, in name order. A group is named after the text as its
- * first member in name order has it, and groups of one are left out.
+ * The groups that Auto-group by name pattern would make. These are the
+ * candidates (as for the other rules) for which the pattern matches the same
+ * text, case-insensitive, in name order. A group gets the text as its first
+ * member in name order has it. Groups of one are left out.
  *
  * @param {object} doc builder document
  * @param {string} pattern a regular expression, as typed
  * @param {object} [options] selection: node ids to group, empty or left out
- *   for every ungrouped node; match(pattern, names, {signal}): what runs the
- *   pattern (see matchTexts), a Web Worker by default; signal: an
- *   AbortSignal that ends the matching
+ *   for every ungrouped node. match(pattern, names, {signal}): what runs the
+ *   pattern (see matchTexts), a Web Worker by default. signal: an
+ *   AbortSignal that stops the matching.
  * @returns {Promise<{groups: {title: string, color: string,
  *   members: string[]}[], matched: number}>} the plan, for applyGroups, and
- *   how many candidates the pattern matched; rejects with a PatternError,
- *   or with an AbortError when `signal` aborts
+ *   how many candidates the pattern matched. It rejects with a PatternError,
+ *   or with an AbortError when `signal` aborts.
  */
 export async function planPatternGroups(
   doc,
@@ -540,7 +543,8 @@ export function nothingToGroupByPattern(matched, { selected = false } = {}) {
  * The pattern used last in this browser, for the dialog to offer again.
  *
  * @param {Storage|null} [storage] localStorage by default
- * @returns {string} '' when none is kept, or what is kept is no pattern
+ * @returns {string} '' when no pattern is kept, or when the kept value is not
+ *   a pattern
  */
 export function readGroupPattern(storage = pageStorage()) {
   let stored = null;

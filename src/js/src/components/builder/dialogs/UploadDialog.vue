@@ -3,45 +3,52 @@
   toolbar.
 
   Accepts a builder document (JSON or YAML), a published diagram from the
-  server, or a diagram of the legacy Builder. Topology and Experiment configs
-  are refused with an explanation: the server converts those through Import
-  on the drafts landing (see ImportDialog), so nothing is quietly dropped.
+  server, or a diagram of the legacy Builder. Topology and Experiment
+  configs are refused with an explanation. The server converts those
+  through Import on the drafts landing (see ImportDialog), so nothing is
+  silently dropped.
 
-  A diagram of the legacy Builder is a file: the XML that editor saved, or a
-  Topology config that holds it in its builder-xml annotation. POST
-  /builder/legacy converts it on the server. A conversion with warnings
-  keeps the dialog open on them, as Import does: the draft is made only when
-  the user continues, so Cancel leaves the open draft as it is. So does
-  closing the dialog, or choosing another source or file, while a conversion
-  is still under way: its answer is then dropped.
+  A diagram of the legacy Builder is a file: the XML that the legacy editor
+  saved, or a Topology config that holds the XML in its builder-xml
+  annotation. POST /builder/legacy converts it on the server. A conversion
+  with warnings keeps the dialog open on them, as Import does. The draft is
+  made only when the user continues, so Cancel leaves the open draft as it
+  is. Closing the dialog, or choosing another source or file, while a
+  conversion is still in progress does the same. Its answer is then
+  dropped.
 
-  A draft made from a chosen file records the file's name (sourceFile), which
-  the Inspector then shows. Pasted text has none. The published diagrams
-  offered include those of topologies read from the Builder file they name,
-  marked (File).
+  A draft made from a chosen file records the file's name (sourceFile),
+  which the Inspector then shows. Pasted text has no file name. The
+  published diagrams offered include those of topologies read from the
+  Builder file they name, marked (File).
 
   A document that carries copies of custom icons (a downloaded file does)
-  puts them into the server's icon library first (see ingestIcons): a copy
-  the server has as it is, or takes under its name, is dropped; one the
-  server refuses, or has with other bytes under that name, stays in the
-  draft, and the dialog shows a warning for it, as it shows the warnings of
-  a conversion, before the draft is made.
+  first puts them into the server's icon library (see ingestIcons). A copy
+  that the server has as it is, or takes under its name, is dropped. A copy
+  that the server refuses, or has with other bytes under that name, stays
+  in the draft. The dialog shows a warning for it before the draft is made,
+  as it shows the warnings of a conversion.
 
   A Builder package (see package.js), recognized by its $schema, is decoded
-  as strictly as a document, and the server says which of what its diagram
-  needs it has (POST /builder/package/resolve). That list replaces the form
-  (see PackageImport). Continue to editor creates the configs the user
-  ticked, one at a time through POST /configs, puts the custom icons the
-  diagram carries into the icon library, and opens the diagram as a new
-  draft, as any upload does; the diagram's references are never rewritten.
-  A config that could not be created, and an icon warning, are shown first,
-  as an upload's warnings are, after the configs that were created, which
-  stay on the server whatever the user does next: Cancel, or closing the
-  dialog, then says so again. Cancel, or closing the dialog, leaves the
-  open draft as it is. While Continue creates the configs and adds the
-  icons, the dialog stays open: Cancel is unavailable and says what the
-  dialog is doing, and Close, Escape and a click outside do nothing, so
-  that no config is created out of sight.
+  as strictly as a document. The server says which of its diagram's needs
+  the server has (POST /builder/package/resolve). That list replaces the
+  form (see PackageImport). Continue to editor does these steps:
+
+  1. It creates the configs that the user ticked, one at a time through
+     POST /configs.
+  2. It puts the custom icons that the diagram carries into the icon
+     library.
+  3. It opens the diagram as a new draft, as any upload does. The diagram's
+     references are never rewritten.
+
+  A config that could not be created, and an icon warning, show first, as
+  an upload's warnings do, after the configs that were created. Those
+  configs stay on the server whatever the user does next. Cancel, or
+  closing the dialog, then says so again. Cancel, or closing the dialog,
+  leaves the open draft as it is. While Continue creates the configs and
+  adds the icons, the dialog stays open. Cancel is unavailable and says
+  what the dialog is doing. Close, Escape and a click outside do nothing,
+  so that no config is created out of sight.
 -->
 <template>
   <builder-dialog
@@ -257,7 +264,7 @@
   const packageView = ref(null);
   const packageImportView = ref(null);
   // A conversion, or an uploaded document whose custom icons gave warnings
-  // (see ingestIcons), held until the user continues; pendingKind says
+  // (see ingestIcons), held until the user continues. pendingKind says
   // which: 'legacy' or 'upload'.
   let pending = null;
   const pendingKind = ref('');
@@ -269,14 +276,14 @@
     closed = true;
   });
 
-  // Whether Continue is creating a package's configs and adding its icons:
-  // writes to the server that closing could not stop, so the dialog stays
+  // Whether Continue is creating a package's configs and adding its icons.
+  // Closing could not stop these writes to the server, so the dialog stays
   // open until they are done and says what came of them.
   const creating = ref(false);
 
   // The configs a package's upload created before its warnings were shown,
   // as the dialog names them ("Scenario config a"): they stay on the server
-  // whether the user goes on or not.
+  // whether the user continues or not.
   const createdConfigs = ref([]);
 
   // What a package's upload created, as a sentence, or ''.
@@ -300,8 +307,8 @@
     emit('close');
   }
 
-  // `file` is the chosen file's state: '' (none), 'read' or 'too-large',
-  // and `fileName` the name of the file read.
+  // `file` is the chosen file's state: '' (none), 'read' or 'too-large'.
+  // `fileName` is the name of the file read.
   const form = reactive({
     source: 'file',
     file: '',
@@ -331,8 +338,8 @@
     return 'Upload';
   });
 
-  // Before the user continues, nothing has been made into a draft; the
-  // configs a package's upload created are named first.
+  // Before the user continues, nothing is made into a draft. The configs
+  // that a package's upload created are named first.
   const warningSummary = computed(() =>
     [
       createdText.value,
@@ -346,7 +353,7 @@
   let pendingRead = Promise.resolve();
 
   // An error about one source says nothing about another. The legacy file
-  // field is drawn anew, empty, each time its source is chosen.
+  // field is drawn again, empty, each time its source is chosen.
   watch(
     () => form.source,
     () => {
@@ -539,8 +546,8 @@
     emit('close');
   }
 
-  // Reads an uploaded package and asks the server which of what its
-  // diagram needs it has; that list then replaces the form.
+  // Reads an uploaded package and asks the server which of its diagram's
+  // needs the server has. That list then replaces the form.
   async function openPackage(value) {
     let pkg;
 
@@ -589,7 +596,7 @@
   // Creates the configs of the package the user ticked, puts the custom
   // icons its diagram carries into the icon library, then opens the
   // diagram as a new draft. What could not be created or added is shown
-  // first; the configs created stay whatever the user does next.
+  // first. The configs created stay whatever the user does next.
   async function continuePackage(ticked) {
     if (busy.value || !packageView.value) {
       return;
@@ -705,7 +712,7 @@
       return;
     }
 
-    // A Builder package names its own schema; anything else is read as a
+    // A Builder package names its own schema. Anything else is read as a
     // Builder document.
     const raw = parseImport(form.text, { as: 'raw' });
 
@@ -718,7 +725,7 @@
     const result = parseImport(form.text);
 
     if (!result.ok) {
-      // XML is no Builder document; the legacy source converts it.
+      // XML is not a Builder document. The legacy source converts it.
       fail(
         (result.code !== 'too-large' && legacyDiagramHint(form.text)) ||
           parseErrorText(result.error),

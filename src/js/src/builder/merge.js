@@ -1,55 +1,57 @@
 // Three-way merge of Builder documents.
 //
 // When a save finds that someone else saved the draft first, the editor
-// holds three versions of the document: the base (the server snapshot its
-// unsaved changes started from), mine (the document on screen) and theirs
-// (the server's current document). mergeDocuments combines them field by
-// field: a change made on one side only is taken, and only a field both
-// sides changed to different values is a clash, which the user settles
-// (applyChoices, and MergeDialog.vue).
+// holds three versions of the document:
+//   - base: the server snapshot that its unsaved changes started from
+//   - mine: the document on screen
+//   - theirs: the server's current document.
+// mergeDocuments combines them field by field. It takes a change made on
+// one side only. Only a field that both sides changed to different values is
+// a clash, which the user settles (applyChoices, and MergeDialog.vue).
 //
 // The rules:
 //
-// - Nodes, networks, edges and templates are matched by id, custom icons by
-//   name. An element one side added is added; one side deleted and the
-//   other left as it was is deleted; one side deleted and the other changed
-//   is a clash.
-// - A node one side deleted is a clash too when the other side connected
-//   it: added a connection to it, or changed one that ends at it. So is a
-//   device's interface one side deleted and the other connected. Keeping
-//   the deletion drops those connections, and keeping the other side keeps
-//   the node or interface with them.
+// - Nodes, networks, edges and templates match by id, custom icons by name.
+//   An element that one side added is added. An element that one side
+//   deleted and the other did not change is deleted. An element that one
+//   side deleted and the other changed is a clash.
+// - A node that one side deleted is also a clash when the other side
+//   connected it: it added a connection to the node, or changed a connection
+//   that ends at it. A device's interface that one side deleted and the other
+//   connected is also a clash. Keeping the deletion drops those connections.
+//   Keeping the other side keeps the node or interface with them.
 // - Within an element, objects merge key by key. Lists whose items all carry
-//   a unique id, or else a unique name, merge item by item the same way: a
-//   device's interface handles by id, and its spec's interfaces by the id
-//   of the handle of the same name (by name where no handle has it), so an
-//   interface renamed is still the same interface. Any other list (a
-//   line's points, an edge's route, the diagram's notes), a node's position
-//   and its size, and every scalar are one value each: they clash when both
-//   sides changed them to different values.
-// - The diagram's scenarios merge as a set of names: what either side added
-//   is added and what either side removed is removed.
-// - The viewport is mine and never clashes. What the server stamps on every
-//   save ($schema, revision, metadata.id and the creator, creation time,
-//   last editor and last edit time) is theirs.
-// - A merged list holds theirs order, then the items only mine holds, in
-//   mine's order.
-// - A device's label, hostname and spec hostname change together when it is
-//   renamed, so they are one choice: when any of them clashes, the clash
-//   covers all three, and all three come from the side chosen. A switch's
+//   a unique id, or else a unique name, merge item by item in the same way.
+//   A device's interface handles match by id. Its spec's interfaces match by
+//   the id of the handle of the same name (by name where no handle has it),
+//   so a renamed interface is still the same interface. Each of these is one
+//   value: any other list (a line's points, an edge's route, the diagram's
+//   notes), a node's position and its size, and every scalar. They clash
+//   when both sides changed them to different values.
+// - The diagram's scenarios merge as a set of names. What either side added
+//   is added, and what either side removed is removed.
+// - The viewport is mine and never clashes. The fields that the server
+//   stamps on every save ($schema, revision, metadata.id and the creator,
+//   creation time, last editor and last edit time) are theirs.
+// - A merged list holds the items in theirs order, then the items that only
+//   mine holds, in mine's order.
+// - A rename of a device changes its label, hostname and spec hostname
+//   together, so they are one choice. When any of them clashes, the clash
+//   covers all three, and all three come from the chosen side. A switch's
 //   label is its network's name (namedSwitches in model.js names it again),
-//   so it never clashes. An interface's name is its handle's and its spec
-//   entry's (see renameInterface in model.js), so it is one choice too.
+//   so it never clashes. An interface's name is the name of its handle and
+//   its spec entry (see renameInterface in model.js), so it is also one
+//   choice.
 // - A connection whose node or device interface is not in the merged
-//   document, which the user chose to delete, is dropped, and the merge
+//   document, because the user chose to delete it, is dropped. The merge
 //   names it (dropped, see droppedText).
 //
-// The functions are pure: they never change their arguments.
+// The functions are pure. They never change their arguments.
 
 import { count, listOf } from './announce.js';
 import { nodeLabel } from './model.js';
 
-// Set by the server on every save; they come from theirs.
+// The server sets these on every save. They come from theirs.
 const STAMPED = ['id', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt'];
 
 // The element lists of a document, matched by id.
@@ -90,9 +92,9 @@ const DEVICE_NAME_PATHS = [...DEVICE_NAME_FIELDS].map((field) =>
 const HANDLES_PATH = ['device', 'interfaces'];
 const SPEC_INTERFACES_PATH = ['device', 'spec', 'network', 'interfaces'];
 
-// What the spec interfaces of a device being merged are matched by: the id
-// of the handle of the same name, or "name:" and the name where no handle
-// has it. A symbol, so sameValue and a merged object leave it out, and the
+// What the spec interfaces of a device in a merge match by: the id of the
+// handle of the same name, or "name:" and the name where no handle has it.
+// It is a symbol, so sameValue and a merged object leave it out, and the
 // merged device loses it (see untagSpecInterfaces).
 const HANDLE = Symbol('handle');
 
@@ -180,9 +182,9 @@ function uniqueBy(list, field) {
   });
 }
 
-// The field the items of the lists are matched by: the first of `fields`
-// every item has a unique value of, or '' when the lists are one value
-// each.
+// The field by which the items of the lists match: the first of `fields`
+// for which every item has a unique value, or '' when each list is one
+// value.
 function matchField(lists, fields = ['id', 'name']) {
   return (
     fields.find((field) => lists.every((list) => uniqueBy(list, field))) || ''
@@ -196,8 +198,8 @@ function words(segment) {
     .toLowerCase();
 }
 
-// What a path segment that is an item of a list ({item, label}) is called:
-// the item's name where it has one, else the id or name it is matched by.
+// The name of a path segment that is an item of a list ({item, label}): the
+// item's name where it has one, or else the id or name it matches by.
 function itemLabel(segment) {
   return segment.label ?? segment.item;
 }
@@ -250,10 +252,11 @@ function rounded(value) {
 }
 
 /**
- * A value as a choice of the merge dialog shows it: a text as it is (cut
- * after 80 characters), a position as "x 120, y 40", a size as "160 wide,
- * 80 high", a list of texts joined by commas and a longer list by how many
- * items it has.
+ * A value as a choice of the merge dialog shows it:
+ *   - a text as it is (cut after 80 characters)
+ *   - a position as "x 120, y 40"
+ *   - a size as "160 wide, 80 high"
+ *   - a list of texts joined by commas, and a longer list by its item count.
  *
  * @param {*} value
  * @returns {string}
@@ -347,8 +350,8 @@ function endKey(nodeId, handleId) {
   return JSON.stringify(handleId ? [nodeId, handleId] : [nodeId]);
 }
 
-// What the connections `doc` added or changed since `base` use: how many of
-// them end at each node, and at each handle of a node (see endKey).
+// What the connections that `doc` added or changed since `base` use: how
+// many of them end at each node, and at each handle of a node (see endKey).
 function connectionsOf(doc, base) {
   const before = new Map(
     (Array.isArray(base?.edges) ? base.edges : [])
@@ -385,10 +388,10 @@ function connectionsOf(doc, base) {
 // The match key of a spec interface no handle has the name of.
 const NAME_KEY = 'name:';
 
-// What a connection may use at `at`: a node element's node, or a device's
+// What a connection can use at `at`: a node element's node, or a device's
 // interface, as its handle or as its spec entry matched by the handle's id.
-// key is its endKey, and at the position of the clash about it: a spec
-// entry's clash is its handle's, so the interface is one choice.
+// key is its endKey. at is the position of the clash about it. A spec
+// entry's clash is the clash of its handle, so the interface is one choice.
 function connectionTarget(at) {
   if (at.nodeId === undefined) {
     return null;
@@ -459,7 +462,7 @@ function createRun(choices, docs) {
 
     // The position of the clash about the node or interface at `at` when
     // `side` added or changed connections that use it (see
-    // connectionTarget), with how many; null when it did not.
+    // connectionTarget), with how many. null when it did not.
     connected(side, at) {
       const target = connectionTarget(at);
       const uses = target ? this.connections[side].get(target.key) : 0;
@@ -484,8 +487,8 @@ function createRun(choices, docs) {
 function describeClash(key, base, mine, theirs, at) {
   const field = fieldLabel(at.path);
   const label = nameOf(at);
-  // An element is deleted, a field removed; what is kept of the other side
-  // is the element with that side's changes, or the field's value.
+  // An element is deleted, or a field is removed. What is kept of the other
+  // side is the element with that side's changes, or the field's value.
   const [done, undo] = at.isElement
     ? ['deleted', 'delete']
     : ['removed', 'remove'];
@@ -584,9 +587,10 @@ function elementName(list, item, run) {
   }
 }
 
-// The position of the item `id` of a list at `at`, whose items are matched
-// by `field`: an element of its own in a document list, else a part of the
-// element the list is in, named by the item's name where it has one.
+// The position of the item `id` of a list at `at`, whose items match by
+// `field`. In a document list, it is a separate element. Otherwise it is a
+// part of the element that holds the list, named by the item's name where it
+// has one.
 function itemAt(at, id, item, run, field) {
   const key = `${at.key}[${JSON.stringify(id)}]`;
 
@@ -636,10 +640,10 @@ function onInterfacePath(path) {
 }
 
 // Whether the merge at `at` goes into the three versions, even where one
-// side left them as they were, rather than take the other side's whole:
-// on the way to a device's interface lists when one side deleted an
-// interface the other connected (see dropsConnectedInterface), so that
-// mergeItem asks about it.
+// side did not change them, and does not take the other side's whole value.
+// This occurs on the path to a device's interface lists when one side
+// deleted an interface that the other side connected (see
+// dropsConnectedInterface), so that mergeItem asks about it.
 function itemwise(base, mine, theirs, at) {
   if (!at.forceItems || !onInterfacePath(at.path)) {
     return false;
@@ -758,11 +762,11 @@ function withValueAt(value, [key, ...rest], field) {
   return { ...value, [key]: withValueAt(value[key], rest, field) };
 }
 
-// The three versions of a device, with its name settled: when any field of
+// The three versions of a device, with its name settled. When any field of
 // the name (DEVICE_NAME_FIELDS) clashes, that is one clash, described by the
-// first field that clashes, and every version is given all three fields as
-// the side the choice keeps (theirs until one is made) has them, so the rest
-// of the merge takes the name whole from that side.
+// first field that clashes. Every version gets all three fields as the side
+// that the choice keeps has them (theirs until the user makes a choice).
+// Thus the rest of the merge takes the whole name from that side.
 function settleDeviceName(base, mine, theirs, at, run) {
   const versions = [base, mine, theirs];
   const clashing = DEVICE_NAME_PATHS.find((path) => {
@@ -800,8 +804,8 @@ function objectsAt(value, path) {
 }
 
 // A copy of the device `version` with its interface `handleId` named
-// `name`: the handle, and the spec entries of the handle's old name (see
-// renameInterface in model.js).
+// `name`: the handle, and the spec entries of the old name of the handle
+// (see renameInterface in model.js).
 function withInterfaceName(version, handleId, name) {
   const handles = valueAt(version, HANDLES_PATH);
   const old = objectsAt(version, HANDLES_PATH).find(
@@ -832,11 +836,12 @@ function withInterfaceName(version, handleId, name) {
     : renamed;
 }
 
-// The three versions of a device, with its interfaces' names settled: an
-// interface (a handle all three have) whose name all three differ in is one
-// clash, its name, and every version is given the name the side the choice
-// keeps (theirs until one is made) has, on the handle and its spec entry,
-// so the rest of the merge keeps one interface of that name.
+// The three versions of a device, with the names of its interfaces settled.
+// An interface (a handle that all three have) whose name is different in all
+// three is one clash: its name. Every version gets the name that the side
+// the choice keeps has (theirs until the user makes a choice), on the handle
+// and its spec entry. Thus the rest of the merge keeps one interface of that
+// name.
 function settleInterfaceNames(versions, at, run) {
   const [base, mine, theirs] = versions;
   const byId = (version) =>
@@ -897,8 +902,8 @@ function dropsConnectedInterface([base, mine, theirs], at, run) {
 }
 
 // A copy of the device `version` whose spec interfaces each carry what they
-// are matched by (HANDLE): the id of the handle of the same name, or
-// NAME_KEY and the name where no handle has it.
+// match by (HANDLE): the id of the handle of the same name, or NAME_KEY and
+// the name where no handle has it.
 function tagSpecInterfaces(version) {
   const specs = valueAt(version, SPEC_INTERFACES_PATH);
 
@@ -1161,9 +1166,9 @@ function mergeRoot(key, base, mine, theirs, run) {
   );
 }
 
-// The merged document's connections without those whose node, or whose
-// device interface, it does not have, which a choice to delete them left;
-// each one dropped is named ({key, label}) in `dropped`.
+// The merged document's connections, without those whose node or device
+// interface the document does not have because a choice deleted it. Each
+// dropped connection is named ({key, label}) in `dropped`.
 function dropDangling(doc, run, dropped) {
   if (!Array.isArray(doc.edges) || !Array.isArray(doc.nodes)) {
     return;
@@ -1209,9 +1214,9 @@ function dropDangling(doc, run, dropped) {
 }
 
 /**
- * What a merge says of the connections it dropped (see mergeDocuments):
- * "Dropped the connection from bravo to EXP: the device or interface it
- * connects was deleted."
+ * What a merge says about the connections that it dropped (see
+ * mergeDocuments): "Dropped the connection from bravo to EXP: the device or
+ * interface it connects was deleted."
  *
  * @param {{label: string}[]} [dropped]
  * @returns {string} '' when it dropped none
@@ -1229,23 +1234,27 @@ export function droppedText(dropped = []) {
 }
 
 /**
- * Merges the changes two versions made to a document since the version they
- * both started from (see the rules at the top of this file).
+ * Merges the changes that two versions made to a document since the version
+ * that they both started from (see the rules at the top of this file).
  *
  * @param {object} base the version both started from
  * @param {object} mine the version on screen
  * @param {object} theirs the server's version
- * @param {Object<string, 'mine'|'theirs'>} [choices] the version kept of
- *   each clash, by its key; a clash without one keeps theirs
+ * @param {Object<string, 'mine'|'theirs'>} [choices] the version kept for
+ *   each clash, by its key. A clash without a choice keeps theirs.
  * @returns {{doc: object, clashes: object[], mineChanges: object[],
  *   theirChanges: object[], dropped: object[], base: object, mine: object,
- *   theirs: object}} the merged document; each clash, with a stable key,
- *   its element and field, a label (element and field), the base, mine and
- *   theirs values, how each choice shows its value (mineText, theirsText)
- *   and a summary; the changes taken from each side ({key, label}); the
- *   connections dropped because the choices deleted what they connect
- *   ({key, label}, see droppedText); and the three versions, which
- *   applyChoices merges again
+ *   theirs: object}}
+ *   - doc: the merged document.
+ *   - clashes: each clash, with a stable key, its element and field, a label
+ *     (element and field), the base, mine and theirs values, how each choice
+ *     shows its value (mineText, theirsText) and a summary.
+ *   - mineChanges, theirChanges: the changes taken from each side
+ *     ({key, label}).
+ *   - dropped: the connections dropped because the choices deleted what they
+ *     connect ({key, label}, see droppedText).
+ *   - base, mine, theirs: the three versions, which applyChoices merges
+ *     again.
  */
 export function mergeDocuments(base, mine, theirs, choices = {}) {
   const [b, m, t] = [base, mine, theirs].map((doc) =>
@@ -1286,8 +1295,8 @@ export function mergeDocuments(base, mine, theirs, choices = {}) {
  * The merged document with the version chosen for each clash.
  *
  * @param {object} result mergeDocuments() result
- * @param {Object<string, 'mine'|'theirs'>} choices by clash key; a clash
- *   without one keeps theirs
+ * @param {Object<string, 'mine'|'theirs'>} choices by clash key. A clash
+ *   without a choice keeps theirs.
  * @returns {object} document
  */
 export function applyChoices(result, choices = {}) {
@@ -1296,8 +1305,8 @@ export function applyChoices(result, choices = {}) {
 
 /**
  * Who a merge takes changes from, as the editor names them: the user who
- * saved the server's version, "another tab" when that is the user, or
- * "another editor" when the server did not say who.
+ * saved the server's version, "another tab" when that user is the signed-in
+ * user, or "another editor" when the server did not say who.
  *
  * @param {string} by who saved the server's version
  * @param {string} me the signed-in user

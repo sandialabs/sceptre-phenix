@@ -1,22 +1,23 @@
-// ELK layered with network clusters, over each scope (see common.js): one
-// cluster per network, holding its switches and the devices that go with
-// it in the preferred order, and the clusters laid out left to right along
-// the connections between them. Ports sit where the Builder draws handles:
-// a connection leaves its source's right side and enters its target's left
-// side, so ELK runs every line left to right.
+// ELK layered with network clusters, over each scope (see common.js). Each
+// network is one cluster that holds its switches and the devices that go
+// with it, in the preferred order. The clusters are laid out left to right
+// along the connections between them. Ports sit where the Builder draws
+// handles: a connection leaves its source's right side and enters its
+// target's left side. So ELK runs every line left to right.
 //
-// ELK routes the connections inside a cluster around its nodes, and those
-// routes are kept (see layoutScopes). One between clusters it does not
-// route, laid out as they are one at a time: the canvas draws it itself.
-// Nor does ELK place the clusters by those connections, so each is also a
-// link between the two clusters, which ELK lays out in layers, one column
-// each (placeClusters takes it from there).
+// ELK routes the connections inside a cluster around its nodes, and the
+// layout keeps those routes (see layoutScopes). ELK lays the clusters out
+// one at a time, so it does not route a connection between clusters. The
+// canvas draws that connection itself. ELK also does not place the
+// clusters by those connections. So each such connection is also a link
+// between the two clusters, which ELK lays out in layers, one column each
+// (placeClusters continues from there).
 //
-// elkjs is large (about 440 KB gzipped), so it is loaded only when this
-// layout first runs, and it runs in a Web Worker, off the main thread. The
-// worker stays for the next layout until the Builder closes or the session
-// ends (stopLayoutEngine): phenix serves the UI's files without caching
-// headers, so a new worker downloads its 1.6 MB again.
+// elkjs is large (about 440 KB gzipped), so it loads only when this layout
+// first runs. It runs in a Web Worker, off the main thread. The worker
+// stays for the next layout until the Builder closes or the session ends
+// (stopLayoutEngine). phenix serves the UI's files without caching headers,
+// so a new worker downloads its 1.6 MB again.
 
 import { onBuilderSessionEnd } from '../session.js';
 
@@ -31,24 +32,24 @@ import {
 const CLUSTER = 'cluster:';
 const LINK = 'link:';
 
-// Room between clusters: ELK's between layers, and within one.
+// Space between clusters: ELK's between layers, and within one layer.
 const GAP_X = 80;
 const GAP_Y = 40;
 const ASPECT = 1.6;
 
-// Slicing the layers of clusters keeps lines short, but leaves room empty:
-// a slicing may take up to this much more room than the most compact one.
+// Slices of the layers of clusters keep lines short, but leave empty space.
+// A slicing may take up to this much more space than the most compact one.
 const ROOM = 1.4;
 // And may be a quarter wider or narrower than the one nearest ASPECT.
 const FIT = Math.log(1.25);
 const MAX_SLICES = 16;
 
-// A layout that takes longer than this is given up, so Auto layout never
-// stays busy.
+// A layout that takes longer than this fails, so Auto layout never stays
+// busy.
 const TIMEOUT_MS = 60000;
 
-// Laid out on its own (SEPARATE_CHILDREN), a cluster takes no options from
-// the root: the preferred order is forced here.
+// A cluster laid out on its own (SEPARATE_CHILDREN) takes no options from
+// the root. So these options set the preferred order.
 const CLUSTER_OPTIONS = {
   'elk.algorithm': 'layered',
   'elk.direction': 'RIGHT',
@@ -212,18 +213,20 @@ function routesOf(graph) {
 // --- placing the clusters ----------------------------------------------------
 //
 // ELK lays the clusters out in layers, one column each, as tall as the
-// largest layer: far taller than wide for a large diagram. So the columns
-// are cut across into slices, each slice's layers wrap into more columns
-// where they are tall (packRanks), and the slices go left to right. A
-// cluster that a link from a later slice leads to moves to that slice, so
-// every line still runs left to right, except a link ELK turned around to
-// break a cycle. More slices keep lines short but leave room empty: of the
-// slicings about as near the aspect ratio as the nearest, the one with the
-// shortest lines between clusters among those taking at most ROOM times
-// the room of the most compact.
+// largest layer. For a large diagram, that is far taller than wide. So the
+// pass cuts the columns across into slices. Each slice's layers wrap into
+// more columns where they are tall (packRanks), and the slices go left to
+// right. A cluster that a link from a later slice leads to moves to that
+// slice. So every line still runs left to right, except a link that ELK
+// reversed to break a cycle. More slices keep lines short but leave empty
+// space. The pass chooses a slicing in three steps:
+// 1. Keep the slicings about as near the aspect ratio as the nearest one.
+// 2. Of those, keep the ones that take at most ROOM times the space of the
+//    most compact one.
+// 3. Of those, take the one with the shortest lines between clusters.
 
-// Each cluster's layer, from where ELK put it: the clusters of one layer
-// share a stretch left to right, and two layers never do.
+// Each cluster's layer, from where ELK put it. The clusters of one layer
+// share a horizontal range, and two layers never do.
 function layersOf(clusters) {
   const layers = new Map();
   let layer = -1;
@@ -298,7 +301,7 @@ function placeClusters(graph, scope, corners) {
   );
   const byHeight = [...clusters].sort((a, b) => a.y - b.y);
 
-  // The clusters in `count` slices, each near as tall as the others, cut
+  // The clusters in `count` slices, each almost as tall as the others, cut
   // where the fewest links cross.
   const slicing = (count) => {
     const cuts = [];
@@ -356,7 +359,7 @@ function placeClusters(graph, scope, corners) {
     }
   }
 
-  // A node's corner, its cluster's at `at`.
+  // A node's corner, with its cluster's corner at `at`.
   const cornerAt = (id, at) => {
     const cluster = home.get(id);
     const corner = corners.get(id);
@@ -367,7 +370,7 @@ function placeClusters(graph, scope, corners) {
     };
   };
   const itemById = new Map(scope.items.map((item) => [item.id, item]));
-  // How long the lines between clusters are, the clusters at `at`.
+  // How long the lines between clusters are, with the clusters at `at`.
   const lengthOf = (at) => {
     let length = 0;
 
@@ -410,7 +413,8 @@ function placeClusters(graph, scope, corners) {
       length: lengthOf(at),
     });
 
-    // More slices take more room: two too large in a row end the search.
+    // More slices take more space. Two slicings in a row that are too large
+    // end the search.
     const least = Math.min(...plans.map((plan) => plan.room));
 
     if (plans.slice(-2).every((plan) => plan.room > least * ROOM)) {
@@ -430,7 +434,8 @@ function placeClusters(graph, scope, corners) {
   return best.at;
 }
 
-// Each node's corner, and the routes inside a cluster, the clusters placed.
+// Each node's corner, and the routes inside a cluster, after the clusters
+// are placed.
 function arranged(graph, scope) {
   const corners = cornersOf(graph);
   const routes = routesOf(graph);
@@ -475,7 +480,7 @@ let engine = null;
 
 // ELK in a Web Worker: elk-api.js here (2 KB), the layout code in the
 // worker, from its own file. A worker that cannot start, or a layout that
-// takes too long, fails the layout instead of leaving it waiting.
+// takes too long, makes the layout fail instead of wait.
 async function workerEngine() {
   const [{ default: ELK }, { default: workerUrl }] = await Promise.all([
     import('elkjs/lib/elk-api.js'),
@@ -530,7 +535,7 @@ async function workerEngine() {
       }
     },
 
-    // Ends the worker, and fails the layouts under way.
+    // Ends the worker, and fails the layouts in progress.
     stop(reason) {
       failed(reason);
       drop();
@@ -539,7 +544,7 @@ async function workerEngine() {
 }
 
 // Node, where the unit tests run, has no Worker: ELK runs in-thread there.
-// A browser build leaves that path out, so it ships ELK once.
+// A browser build does not include that path, so it ships ELK once.
 async function testEngine() {
   const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
 
@@ -567,8 +572,8 @@ export function elkEngine() {
 
 /**
  * Stops ELK's worker, when the Builder closes or the session ends. A layout
- * under way fails with an AbortError, which is no failure to report; the
- * next layout starts a new worker.
+ * in progress fails with an AbortError, which is not a failure to report.
+ * The next layout starts a new worker.
  */
 export function stopLayoutEngine() {
   const stopping = engine;
@@ -586,13 +591,13 @@ onBuilderSessionEnd(stopLayoutEngine);
 /**
  * @param {object} doc builder document
  * @param {object} [options] elk: an ELK instance to lay out with, in place
- *   of the worker; showNotes, see layoutScopes
+ *   of the worker. showNotes: see layoutScopes
  * @returns {Promise<{positions: object, sizes: object, routes?: object}>}
  *   see layoutScopes
  */
 export async function layout(doc, options = {}) {
-  // One engine for every scope: one stopped meanwhile fails the rest,
-  // rather than starting another worker.
+  // One engine for every scope. If it stops during the layout, the other
+  // scopes fail, and no other worker starts.
   let elk = options.elk;
 
   return layoutScopes(

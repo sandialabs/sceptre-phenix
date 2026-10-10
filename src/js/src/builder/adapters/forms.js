@@ -1,10 +1,11 @@
 // JSON Forms adapter.
 //
-// The inspector never hard codes fields: the UI schema is generated from the
-// (server or bundled) JSON Schema, so fields the server adds appear
-// automatically. The adapter also owns the mapping between an element and the
-// *working copy* the inspector edits, which is what makes Apply/Cancel possible
-// without touching the document on every keystroke.
+// The Inspector never hard codes fields. The UI schema is generated from the
+// (server or bundled) JSON Schema, so fields that the server adds appear
+// automatically. The adapter also owns the mapping between an element and
+// the *working copy* that the Inspector edits. This mapping makes
+// Apply/Cancel possible without a change to the document on every
+// keystroke.
 
 import {
   and,
@@ -95,8 +96,9 @@ const isPlainInputControl = or(
   isBooleanControl,
 );
 
-// Components are marked raw: JSON Forms keeps its renderer list in reactive
-// state, and Vue warns about (and pays for) components made reactive.
+// Components are marked raw. JSON Forms keeps its renderer list in reactive
+// state, and Vue warns about components made reactive (and they cost
+// performance).
 export const inspectorRenderers = Object.freeze(
   [
     ...vanillaRenderers,
@@ -196,11 +198,12 @@ export function inspectorI18n(schema) {
 }
 
 /**
- * The errors a field shows, one per field: of the errors one value breaks
- * in one schema, only the most relevant (see errorRelevance). The errors of
- * a oneOf or anyOf, which say which alternatives failed, are kept, as are
- * those of each alternative: JSON Forms shows a field those of the
- * alternative it renders.
+ * The errors a field shows, one per field. Of the errors that one value
+ * causes in one schema, only the most relevant is kept (see
+ * errorRelevance). The errors of a oneOf or anyOf, which say which
+ * alternatives failed, are kept. The errors of each alternative are also
+ * kept, because JSON Forms shows a field the errors of the alternative that
+ * it renders.
  *
  * @param {object[]} errors ajv errors
  * @returns {object[]} the errors kept, in their order
@@ -238,12 +241,12 @@ const GROUP_BORDER = 'dashed';
 // without a grid size.
 const NEW_POINT_STEP = 16;
 
-// What phenix itself puts in a node spec's unset fields as it runs an
+// What phenix itself puts in a node spec's unset fields when it runs an
 // experiment (setDefaults in src/go/types/version/v1/node.go, and
 // Drive.InjectPartition), keyed like SPEC_BOUNDS in schema.js. A device
-// phenix does not deploy (external) gets none. They are what an unset
-// field comes to, so they win over the schema's `default`, and say that
-// phenix uses them.
+// that phenix does not deploy (external) gets none. These are the values
+// that an unset field gets, so they win over the schema's `default`. The
+// field says that phenix uses them.
 export const PHENIX_DEFAULTS = {
   'general.vm_type': 'kvm',
   'general.snapshot': true,
@@ -272,22 +275,24 @@ function specEntry(table, path) {
 }
 
 /**
- * What an Inspector field shows while it is not set: the value it comes to
- * all the same, which is not written into the document until the field is
- * changed. A connection's label is its network's name, which the canvas
- * draws for it; a line style is the pattern the canvas picks (a network's
- * by its place in the diagram, a connection's its network's, a line's
- * solid); a group's border is dashed and its icon the group icon, and a
- * shape's border solid; the icon size of a device, a switch or a group is
- * the diagram's; a device's spec field is
- * the value phenix gives it (see PHENIX_DEFAULTS), else its schema's
- * `default`.
+ * What an Inspector field shows while it is not set: the value that it gets
+ * all the same. This value is not written into the document until the
+ * field is changed.
+ * - A connection's label is its network's name, which the canvas draws for
+ *   it.
+ * - A line style is the pattern the canvas picks: a network's by its place
+ *   in the diagram, a connection's from its network, a line's solid.
+ * - A group's border is dashed and its icon is the group icon. A shape's
+ *   border is solid.
+ * - The icon size of a device, a switch or a group is the diagram's.
+ * - A device's spec field is the value phenix gives it (see
+ *   PHENIX_DEFAULTS), else its schema's `default`.
  *
  * @param {object|null} target the Inspector's target (see inspectorTarget)
  * @param {string} path the field's data path
  * @param {object} [schema] the field's schema
  * @returns {{value: unknown, note: string}|undefined} note says where the
- *   value comes from; undefined for a field with no such value
+ *   value comes from. undefined for a field with no such value
  */
 export function fieldDefault(target, path, schema) {
   if (target?.kind === 'edge' && path === 'label') {
@@ -381,9 +386,10 @@ function decorate(element, readonly = []) {
   return element;
 }
 
-// A node spec's fields in the order they are looked for, the rest after
-// them in the schema's order, and those rarely set in a section of their
-// own that starts closed (see InspectorSectionRenderer).
+// A node spec's fields in the order users look for them. The other fields
+// come after them in the schema's order. The fields that users seldom set
+// go in a section of their own that starts closed (see
+// InspectorSectionRenderer).
 const SPEC_FIRST = ['type', 'external', 'general', 'hardware', 'network'];
 const SPEC_MORE = [
   'commands',
@@ -432,8 +438,8 @@ function specLayout(spec, root) {
 }
 
 // UI schemas by Inspector schema (the same object for the same element
-// kind, see schemaForKind), then by the fields they lock: the same object
-// each time, which JSON Forms does not render again.
+// kind, see schemaForKind), then by the fields they lock. Each call gives
+// the same object, so JSON Forms does not render it again.
 const uiSchemas = new WeakMap();
 
 /**
@@ -441,9 +447,9 @@ const uiSchemas = new WeakMap();
  *
  * @param {object} bundle schema bundle
  * @param {string} kind device|switch|network|note|group|edge|document
- * @param {object} [context] element context: spec picks the phenix spec
- *   variant, readonly lists top-level fields that cannot be changed
- * @returns {object} UI schema, shared: do not change it
+ * @param {object} [context] element context. spec: selects the phenix spec
+ *   variant. readonly: lists top-level fields that cannot be changed
+ * @returns {object} UI schema, shared. Do not change it
  */
 export function uiSchemaForKind(bundle, kind, context = {}) {
   const schema = schemaForKind(normalizeSchemaBundle(bundle), kind, context);
@@ -490,12 +496,12 @@ export function uiSchemaForKind(bundle, kind, context = {}) {
 /**
  * What the Inspector must not change about an element because a device from
  * an included topology depends on it (see model.js): all of such a device,
- * and the name of a network one is on.
+ * and the name of a network that such a device is on.
  *
  * @param {object} doc
  * @param {{type: string, id?: string}} selection
- * @returns {{all: boolean, fields: string[], note: string}} note says why,
- *   and is '' when nothing is locked
+ * @returns {{all: boolean, fields: string[], note: string}} note says why.
+ *   It is '' when nothing is locked
  */
 export function inspectorLock(doc, selection) {
   const target = inspectorTarget(doc, selection);
@@ -527,13 +533,13 @@ export function inspectorLock(doc, selection) {
 }
 
 /**
- * The item the Inspector's Add button appends to a list, for a list whose new
- * items need more than their schema's defaults, or undefined for the schema's
- * default item. A line's new point goes a grid step past its end. A device's
- * new interface is named the way a connection drawn
- * on the canvas names one (see nextInterfaceName), counting the interfaces of
- * the working copy as well as the device's, and is an Ethernet interface that
- * comes up with no address (proto manual) until it is given one.
+ * The item that the Inspector's Add button appends to a list, for a list
+ * whose new items need more than their schema's defaults. undefined for
+ * the schema's default item. A line's new point goes a grid step past its
+ * end. A device's new interface gets its name as a connection drawn on the
+ * canvas names one (see nextInterfaceName). The count includes the
+ * interfaces of the working copy and of the device. The new interface is an
+ * Ethernet interface with no address (proto manual) until it gets one.
  *
  * @param {object} doc
  * @param {{type: string, id?: string}} selection
@@ -570,13 +576,13 @@ export function newListItem(doc, selection, path, data) {
 }
 
 /**
- * The item the Inspector's "Insert … after" button of a list puts after
- * item `index`, for a list that takes an item between two others, or
- * undefined for a list that does not: a line's new point is a bend halfway
- * along the segment from point `index` to the next one, as a bend added on
- * the canvas without a place is (see insertLinePoint). The last point has
- * no segment after it. The list's own most items (the schema's maxItems)
- * make the button unavailable, as they do Add.
+ * The item that the Inspector's "Insert … after" button of a list puts
+ * after item `index`, for a list that takes an item between two others.
+ * undefined for a list that does not. A line's new point is a bend halfway
+ * along the segment from point `index` to the next one, as for a bend added
+ * on the canvas without a place (see insertLinePoint). The last point has
+ * no segment after it. When the list has its most items (the schema's
+ * maxItems), the button is unavailable, as Add is.
  *
  * @param {object} doc
  * @param {{type: string, id?: string}} selection
@@ -621,13 +627,16 @@ const LOOK_NAMES = {
 };
 
 /**
- * What a change of a device's presentation fields says, and undoes as: the
- * first of the fields that differs names it, as "Changed the fill color of
- * Device web-01 to #2f6fbf", "Removed the fill color of Device web-01",
- * "Changed the icon of Device web-01 to the default", "Changed the icon
- * size of Device web-01 to Large", "Changed the icon size of Device web-01
- * to the diagram default" or "Changed the custom icon of Device web-01 to
- * plc". A custom icon is said by its name, which is what the field holds.
+ * The label of a change of a device's presentation fields, which also
+ * names its Undo. The first field that differs names the change, for
+ * example:
+ * - "Changed the fill color of Device web-01 to #2f6fbf"
+ * - "Removed the fill color of Device web-01"
+ * - "Changed the icon of Device web-01 to the default"
+ * - "Changed the icon size of Device web-01 to Large"
+ * - "Changed the icon size of Device web-01 to the diagram default"
+ * - "Changed the custom icon of Device web-01 to plc"
+ * A custom icon is named by its name, which is what the field holds.
  *
  * @param {string} title the device's title, from inspectorTarget
  * @param {object} before its look (see lookOf)
@@ -657,16 +666,16 @@ export function lookChangeLabel(title, before, after) {
 }
 
 /**
- * Describes what the inspector is editing.
+ * Describes what the Inspector is editing.
  *
- * A selected switch edits its network, and with it what is the switch
- * node's own: its outline and fill colors, and its notes.
+ * A selected switch edits its network, and with it the switch node's own
+ * fields: its outline and fill colors, and its notes.
  *
  * A device, a switch or a group names the diagram's icon size, which its
- * Icon size comes to while it has none (see fieldDefault). In the template
- * editor the document names one only for a template of a diagram (see
- * templateDocument): a device made from a template of a library draws at
- * the size of whichever diagram it is added to, so none is named.
+ * Icon size gets while it has none (see fieldDefault). In the template
+ * editor, the document names one only for a template of a diagram (see
+ * templateDocument). A device made from a template of a library draws at
+ * the size of the diagram it is added to, so no size is named.
  *
  * @param {object} doc
  * @param {{type: 'node'|'edge'|'document', id?: string}} selection
@@ -710,7 +719,7 @@ export function inspectorTarget(doc, selection, { template = false } = {}) {
       title: `Connection from ${end(edge.sourceNodeId, edge.sourceHandleId)} to ${end(edge.targetNodeId, edge.targetHandleId)}`,
       target: edge,
       network: findNetwork(doc, edge.networkId),
-      // What its Line style comes to while it has none (see fieldDefault).
+      // The value its Line style gets while it has none (see fieldDefault).
       networkStyle: networkStyle(doc, edge.networkId),
       data: {
         label: edge.label || '',
@@ -738,7 +747,7 @@ export function inspectorTarget(doc, selection, { template = false } = {}) {
           spec: clone(node.device.spec),
         },
         interfaces: deviceHandles(node),
-        // What its Icon size comes to while it has none (see fieldDefault).
+        // The value its Icon size gets while it has none (see fieldDefault).
         diagramIconSize,
       };
     case 'switch': {
@@ -753,8 +762,8 @@ export function inspectorTarget(doc, selection, { template = false } = {}) {
         diagramIconSize,
         // The network's fields, then the colors, icon size and notes of
         // this switch node itself. A switch without notes has no `notes`
-        // here, so its form starts with no list; applying an emptied list
-        // removes them.
+        // here, so its form starts with no list. When an emptied list is
+        // applied, the notes are removed.
         data: {
           name: network?.name || '',
           ...(Number.isInteger(network?.alias) ? { alias: network.alias } : {}),
@@ -904,11 +913,11 @@ function comparable(value) {
 }
 
 /**
- * Whether an inspector working copy differs from the element's data, so that
- * Apply has something to change. inspectorTarget shows an unset text field
- * as '', while a field emptied in the form loses its key, so the two count
- * as the same. Key order does not count either: a field emptied and filled
- * again comes back as the last key.
+ * Whether an Inspector working copy differs from the element's data, so
+ * that Apply has something to change. inspectorTarget shows an unset text
+ * field as '', but a field emptied in the form loses its key. So the two
+ * count as the same. Key order does not count either: a field emptied and
+ * filled again comes back as the last key.
  *
  * @param {object} data working copy
  * @param {object} base the element's data, from inspectorTarget
@@ -921,8 +930,8 @@ export function formDataChanged(data, base) {
   );
 }
 
-// Whether two values are the same edit: as formDataChanged compares them,
-// an unset text field the same as an empty one.
+// Whether two values are the same edit. As in formDataChanged, an unset
+// text field is the same as an empty one.
 function same(a, b) {
   return !formDataChanged({ value: a }, { value: b });
 }
@@ -944,8 +953,8 @@ function valueAt(data, path) {
 
 /**
  * Whether a working copy changed a field from the element's data, for the
- * mark on the field. Lists and groups are not marked, the fields in them
- * are, and an unset field is the same as an empty one. With a key, the
+ * mark on the field. Lists and groups are not marked, but the fields in
+ * them are. An unset field is the same as an empty one. With a key, the
  * field is a map (advanced settings, labels, annotations), and its entry
  * of that key is marked: added, removed or given another value.
  *
@@ -975,8 +984,8 @@ export function fieldChanged(data, base, path, key) {
   return !container(edited) && !container(was) && !same(edited, was);
 }
 
-// A list whose items each have a name no other item has: interfaces,
-// rulesets. Such items are told apart by name.
+// A list whose items each have a name that no other item has: interfaces,
+// rulesets. The name identifies each such item.
 function isNamedList(list) {
   const names = list.map((item) => (isRecord(item) ? item.name : undefined));
 
@@ -986,18 +995,23 @@ function isNamedList(list) {
   );
 }
 
-// Merges a named list: the working copy's edits of each item go to the
-// item of that name now, an item it renamed keeps its place, one it added
-// is appended, and one it removed goes. Items added since it was taken
-// stay, and items removed since stay removed. While the element's list
-// still has the items it had, the working copy's order wins.
+// Merges a named list:
+// - The working copy's edits of each item go to the current item of that
+//   name.
+// - An item that it renamed keeps its place.
+// - An item that it added is appended.
+// - An item that it removed is removed.
+// Items added after the working copy was taken stay, and items removed
+// after it stay removed. While the element's list still has the items it
+// had, the working copy's order wins.
 function mergeNamedLists(base, edited, current) {
   const baseNames = base.map((item) => item.name);
   const editedNames = edited.map((item) => item.name);
   const currentNames = current.map((item) => item.name);
   const now = new Map(current.map((item) => [item.name, item]));
-  // The item of `base` each edited item was, by name, or at its place
-  // when its name is new and that item's name is gone: a rename.
+  // The item of `base` that each edited item was, by name. When its name
+  // is new and the name of the item at its place is gone, it is that item
+  // (a rename).
   const origin = edited.map((item, index) => {
     if (baseNames.includes(item.name)) {
       return base[baseNames.indexOf(item.name)];
@@ -1019,7 +1033,8 @@ function mergeNamedLists(base, edited, current) {
     return edited.map((_, index) => merge(index));
   }
 
-  // Each edited item is merged once, with the first item now it matches.
+  // Each edited item is merged once, with the first current item that it
+  // matches.
   const used = new Set();
   const mergeOnce = (index, item) => {
     if (index === -1 || used.has(index)) {
@@ -1049,11 +1064,11 @@ function mergeNamedLists(base, edited, current) {
 
 /**
  * The Inspector's edits merged into the element as it is now: what the
- * working copy changed from the data it was taken from, each field on its
- * own, over the element's current data. So an edit made elsewhere while
- * the form had unapplied edits (an interface added and connected on the
- * canvas, a rename in the outline) stays when they are applied, rather
- * than the working copy replacing it. Where both changed a field, the
+ * working copy changed from the data it was taken from, each field
+ * separately, over the element's current data. Thus an edit made elsewhere
+ * while the form had unapplied edits (an interface added and connected on
+ * the canvas, a rename in the outline) stays when they are applied. The
+ * working copy does not replace it. Where both changed a field, the
  * working copy's value wins. Named list items (interfaces) are matched by
  * name, and other list items by place while no list changed length.
  *
@@ -1102,9 +1117,9 @@ export function mergeFormData(base, edited, current) {
 
 /**
  * Whether the Inspector keeps its working copy when the document changes
- * underneath it (a layout, an outline edit, an undo), rather than loading
- * the element's data into the form again: it does while the form holds
- * something of the user's that a reload would drop or cut short.
+ * below it (a layout, an outline edit, an undo), instead of a new load of
+ * the element's data into the form. It keeps the copy while the form holds
+ * user input that a reload would lose or cut short.
  *
  * @param {object} state
  * @param {boolean} [state.dirty] the working copy has edits not applied
@@ -1135,8 +1150,8 @@ function copyOf(value) {
 }
 
 // `next`, with each part that is the same as in `kept` taken from `kept`,
-// and the others copied. A form's field whose data is the same object it
-// was keeps what it holds, rather than showing its data again.
+// and the other parts copied. A form's field whose data is the same object
+// as before keeps what it holds, and does not show its data again.
 function keptWhereSame(kept, next) {
   if (same(kept, next)) {
     return kept;
@@ -1165,18 +1180,18 @@ function keptWhereSame(kept, next) {
 /**
  * The working copy moved onto the element as it is now, for a document
  * that changed while the Inspector keeps its working copy (see
- * keepsWorkingCopy): a change made elsewhere to a field the working copy
- * did not change shows in the form, and Apply does not put the old value
- * back, while the working copy's own edits stay (see mergeFormData). The
- * parts of the working copy that stay as they were are the same objects,
- * so the fields that show them keep what they hold; the parts that come
- * from the element are copies, which share nothing with the document.
+ * keepsWorkingCopy). A change made elsewhere to a field that the working
+ * copy did not change shows in the form, and Apply does not restore the
+ * old value. The working copy's own edits stay (see mergeFormData). The
+ * parts of the working copy that do not change are the same objects, so
+ * the fields that show them keep what they hold. The parts that come from
+ * the element are copies, which share nothing with the document.
  *
  * @param {object} loaded the element's data the working copy was taken from
  * @param {object} draft the working copy
  * @param {object|undefined} current the element's data now
  * @returns {{loaded: object, draft: object}|null} the data to load and the
- *   working copy; null when the element's data is as it was, or the
+ *   working copy. null when the element's data is as it was, or the
  *   element is gone
  */
 export function rebasedWorkingCopy(loaded, draft, current) {
@@ -1191,7 +1206,7 @@ export function rebasedWorkingCopy(loaded, draft, current) {
 }
 
 /**
- * Applies an inspector working copy back onto the document.
+ * Applies an Inspector working copy to the document.
  *
  * @param {object} doc
  * @param {{type: string, id?: string}} selection
@@ -1236,8 +1251,9 @@ export function applyFormData(doc, selection, data) {
       }
 
       // The network's fields, then the switch node's own colors, icon size
-      // and notes, as one document and so one Undo step. Notes the form
-      // emptied are none, and an icon size it emptied the diagram's.
+      // and notes, as one document and so one Undo step. Notes that the
+      // form emptied are removed. An icon size that the form emptied is the
+      // diagram's.
       return updateNode(
         updateNetwork(doc, network.id, {
           name: data.name,
@@ -1320,8 +1336,8 @@ export function applyFormData(doc, selection, data) {
   }
 }
 
-// The size a form for a shape or an icon sets, when its Width and Height
-// hold one; an emptied field keeps the node's.
+// The size that a form for a shape or an icon sets, when its Width and
+// Height hold one. An emptied field keeps the node's value.
 function formSize(target, data) {
   const size = sizeOf(target.target);
   const width = Number.isFinite(data.width) && data.width > 0;
@@ -1335,8 +1351,8 @@ function formSize(target, data) {
   };
 }
 
-// The name an issue message uses for a document element: "device web-01"
-// rather than the validator's nodes[3].
+// The name that an issue message uses for a document element: "device
+// web-01", not the validator's nodes[3].
 function elementName(doc, collection, index) {
   if (collection === 'networks') {
     const network = doc.networks?.[index];
@@ -1366,8 +1382,8 @@ function elementName(doc, collection, index) {
 
   switch (node?.kind) {
     case 'device': {
-      // Devices are numbered among devices; the number is shown when the
-      // hostname alone does not tell them apart.
+      // Devices are numbered among devices. The number shows when the
+      // hostname alone does not identify the device.
       const devices = nodes.filter((entry) => entry.kind === 'device');
       const number = `#${devices.indexOf(node) + 1}`;
       const hostname = String(node.device?.hostname || '').trim();
@@ -1405,8 +1421,8 @@ function elementName(doc, collection, index) {
 }
 
 /**
- * The text the Inspector shows for a document issue: validate.js reports
- * elements by index, in the server's path form, so name them instead.
+ * The text the Inspector shows for a document issue. validate.js reports
+ * elements by index, in the server's path form, so this names them.
  *
  * @param {object} doc
  * @param {{path: string, message: string}} issue

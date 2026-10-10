@@ -1,24 +1,27 @@
 <!--
-  Review and merge, from the conflict panel, when a save found someone else
-  saved the draft first and their changes and the user's could not be merged
-  without asking (see mergeConflict in the store and builder/merge.js).
+  Review and merge, opened from the conflict panel. It is for a save that
+  found someone else saved the draft first, when their changes and the
+  user's could not be merged without asking (see mergeConflict in the store
+  and builder/merge.js).
 
-  A modal dialog (see BuilderDialog) that lists each field both versions
-  changed differently as a group of two radio buttons, Keep mine and Keep
-  theirs, with neither chosen at first. Keep all mine and Keep all theirs
+  A modal dialog (see BuilderDialog). It lists each field that both versions
+  changed differently, as a group of two radio buttons, Keep mine and Keep
+  theirs. Neither is chosen at first. Keep all mine and Keep all theirs
   choose for every field at once. Save merged stays unavailable until each
   field has a choice, and the count says how many have one. Every change
-  that does not clash is merged as it is. The merged diagram is saved on
-  top of the server's version; when the strict check refuses it, the
-  dialog stays open and lists why, so the user can choose otherwise, or
-  cancel to save their history as a new draft or discard it from the
-  conflict panel. When the save itself fails, the dialog stays open with
-  the choices made and says why, so the user can try again or cancel.
+  that does not clash is merged as it is.
+
+  The merged diagram is saved on top of the server's version. When the
+  strict check refuses it, the dialog stays open and lists why. The user can
+  then choose otherwise, or cancel and, from the conflict panel, save their
+  history as a new draft or discard it. When the save itself fails, the
+  dialog stays open with the choices made and says why. The user can then
+  try again or cancel.
 
   With no field that clashes, the dialog opens only because the strict
-  check refuses the merged diagram: there is nothing to choose, so it lists
-  the problems, says that Cancel leads back to saving the history as a new
-  draft or discarding it, and Save merged is unavailable.
+  check refuses the merged diagram. There is nothing to choose. The dialog
+  lists the problems and says that Cancel leads back to saving the history
+  as a new draft or discarding it. Save merged is unavailable.
 -->
 <template>
   <builder-dialog
@@ -180,8 +183,8 @@
     form.value?.querySelector(`input[name="merge-clash-${index}"]`)?.focus();
   }
 
-  // Why the merged diagram was refused: with clashes, another choice may
-  // change that; with none, only Cancel is left.
+  // Why the merged diagram was refused. With clashes, another choice may
+  // change that. With none, only Cancel is left.
   function refused(found) {
     issues.value = found;
     error.set(
@@ -241,8 +244,8 @@
       return;
     }
 
-    // Another merge is under way (a newer version arrived while the user
-    // chose): nothing is saved, and the dialog closes once the review it
+    // Another merge is in progress (a newer version arrived while the user
+    // chose). Nothing is saved, and the dialog closes when the review it
     // shows is no longer offered (see mergeReview in Builder.vue).
     if (result.busy) {
       error.set('Another change arrived; the merge is being redone.');
@@ -263,9 +266,9 @@
     refused(result.issues);
   }
 
-  // BuilderDialog focuses its panel when it opens; this runs after it, so
+  // BuilderDialog focuses its panel when it opens. This runs after that, so
   // focus starts on the first field to choose for. With nothing to choose,
-  // the dialog says at once why the merged diagram cannot be saved.
+  // the dialog says immediately why the merged diagram cannot be saved.
   onMounted(async () => {
     await nextTick();
 

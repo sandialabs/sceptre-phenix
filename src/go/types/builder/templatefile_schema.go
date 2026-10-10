@@ -16,12 +16,13 @@ const exampleCollectionName = "Plant floor"
 
 // TemplateFileSchema returns the JSON Schema of a template file (see
 // [TemplateFile]) as a freshly built map. Like [Schema], it is self
-// contained: the phenix v1 component schemas a template's spec is checked
-// against are embedded under $defs, with every Builder definition the file's
-// parts refer to, directly or through another definition, and every part the
-// Builder owns has a title, a description and examples. What JSON Schema
-// cannot express (names that differ only in case, that the bytes of an icon
-// are an accepted PNG) [TemplateFile.Validate] checks.
+// contained. It holds under $defs the phenix v1 component schemas that the
+// spec of a template is checked against. It also holds every Builder
+// definition that the parts of the file refer to, directly or through a
+// different definition. Every part that the Builder owns has a title, a
+// description and examples. [TemplateFile.Validate] checks what JSON Schema
+// cannot express: names that differ only in case, and that the bytes of an
+// icon are an accepted PNG.
 func TemplateFileSchema() (map[string]any, error) {
 	defs, err := PhenixDefs()
 	if err != nil {
@@ -40,19 +41,19 @@ func TemplateFileSchema() (map[string]any, error) {
 	root[schemaKey] = SchemaDialect
 	root["$id"] = TemplateFileSchemaURI
 	root[keyTitle] = "phenix Builder template file"
-	root[keyDescription] = "One collection of Builder device templates, which the Builder exports and imports " +
-		"and phenix reads from its template directory at start."
+	root[keyDescription] = "One collection of Builder device templates. The Builder exports and imports it, and " +
+		"phenix reads it from its template directory at start."
 	root["$defs"] = defs
 
 	return root, nil
 }
 
 // addReferencedDefs copies into defs each definition of pool that a local
-// reference ("#/$defs/<name>") in value names, and each one those
-// definitions name in turn, so a schema built from parts of the document
-// schema holds every definition it refers to whatever fields the parts gain.
-// A name defs already holds is kept as it is. A reference that names a
-// definition neither holds is an error.
+// reference ("#/$defs/<name>") in value names, and each definition that
+// those definitions name in turn. Thus a schema built from parts of the
+// document schema holds every definition it refers to, whatever fields the
+// parts gain. A name that defs already holds stays as it is. A reference
+// that names a definition that neither map holds is an error.
 func addReferencedDefs(defs, pool map[string]any, value any) error {
 	pending := localRefs(value, nil)
 
@@ -141,14 +142,14 @@ func templateFileProperties() map[string]any {
 	return map[string]any{
 		schemaKey: documented(
 			constDef(TemplateFileSchemaURI), "Schema URI",
-			"Identifies the template file format, which a template file must name exactly.",
+			"Identifies the template file format. A template file must name it exactly.",
 			[]any{TemplateFileSchemaURI},
 		),
 		keyName: documented(
 			name, "Collection Name",
 			fmt.Sprintf(
-				"Name of the collection the file holds, 1 to %d bytes on one line; importing the file makes a "+
-					"collection of this name, and phenix lists a file it reads at start under it.",
+				"Name of the collection that the file holds, 1 to %d bytes on one line. An import of the file makes "+
+					"a collection of this name. phenix lists a file that it reads at start under this name.",
 				MaxTemplateNameBytes,
 			),
 			[]any{exampleCollectionName},
@@ -161,7 +162,7 @@ func templateFileProperties() map[string]any {
 		keyTemplates: documented(
 			templates, "Templates",
 			fmt.Sprintf(
-				"Templates of the collection, 1 to %d, in order, whose names differ even ignoring case.",
+				"Templates of the collection, 1 to %d, in order. Their names are different, even when case is ignored.",
 				MaxTemplateFileTemplates,
 			),
 			[]any{[]any{exampleTemplateFileTemplate()}},
@@ -169,8 +170,8 @@ func templateFileProperties() map[string]any {
 		keyIcons: documented(
 			icons, "Custom Icons",
 			fmt.Sprintf(
-				"Copies of the custom icons the templates name, at most %d, each by its icon name; a template may "+
-					"also name an icon the server's icon library holds and the file does not carry.",
+				"Copies of the custom icons that the templates name, at most %d, each by its icon name. A template "+
+					"can also name an icon that the icon library of the server holds and the file does not hold.",
 				MaxDocumentIcons,
 			),
 			[]any{map[string]any{exampleIconName: exampleIcon()}},
@@ -198,8 +199,8 @@ func templateFileTemplateDef() map[string]any {
 				keyName: documented(
 					name, "Template Name",
 					fmt.Sprintf(
-						"Name the template is offered under, 1 to %d bytes on one line, which no other template of the "+
-							"file has, ignoring case.",
+						"Name under which the editor offers the template, 1 to %d bytes on one line. No other template "+
+							"of the file has this name, ignoring case.",
 						MaxTemplateNameBytes,
 					),
 					[]any{"Edge router"},
@@ -207,19 +208,19 @@ func templateFileTemplateDef() map[string]any {
 				keyDescription: documented(
 					description, "Template Description",
 					fmt.Sprintf(
-						"Text shown with the template, at most %d bytes on one line, which is never written into a node.",
+						"Text shown with the template, at most %d bytes on one line. It is never written into a node.",
 						MaxTemplateDescriptionBytes,
 					),
 					[]any{"VyOS router with one static interface"},
 				),
 				"device": documentedRef(
-					"templateDevice", "Template Device", "Fields the template fills in on a device made from it.",
+					"templateDevice", "Template Device", "Fields that the template fills in on a device made from it.",
 					[]any{exampleTemplateDevice()},
 				),
 			},
 		),
 		"Template File Template",
-		"Named set of prefilled fields for a device node, without an identifier: where it is kept gives it one.",
+		"Named set of prefilled fields for a device node, without an identifier. The place that keeps it gives it one.",
 		[]any{exampleTemplateFileTemplate()},
 	)
 }

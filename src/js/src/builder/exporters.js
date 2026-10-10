@@ -1,8 +1,9 @@
-// The files Download saves: JSON, YAML, the Topology config and images.
+// The files that Download saves: JSON, YAML, the Topology config and images.
 //
-// The geometry math is pure and unit tested; the DOM/rasterization side takes
-// injected dependencies (html-to-image, file-saver, getComputedStyle) so tests
-// never touch a real canvas, and the Topology config the API call.
+// The geometry math is pure and unit tested. The DOM and rasterization code
+// takes injected dependencies (html-to-image, file-saver, getComputedStyle),
+// and the Topology config takes the API call. Thus tests never touch a real
+// canvas.
 
 import YAML from 'js-yaml';
 
@@ -15,10 +16,10 @@ import { configName } from './publish.js';
 export const IMAGE_PADDING = 40;
 
 /**
- * The document a Builder JSON or YAML download saves: a copy that carries
- * every custom icon its nodes and templates name, from its own copies or
- * the server's icon library (see embedIcons), so the file stands on its own
- * and an upload elsewhere brings its icons along.
+ * The document that a Builder JSON or YAML download saves. It is a copy that
+ * carries every custom icon that its nodes and templates name, from its own
+ * copies or the server's icon library (see embedIcons). Thus the file is
+ * complete, and an upload elsewhere brings its icons.
  *
  * @param {object} doc
  * @param {{lookup: Function}|null} [library] the icon library
@@ -80,9 +81,9 @@ export function exportFileName(doc, extension) {
 }
 
 /**
- * Bounding box covering every node in the document, padded, so an image
- * always includes the whole diagram rather than the visible viewport. A
- * device's or a switch's notes, below its box, are in it while the canvas
+ * Bounding box of every node in the document, with padding, so an image
+ * always includes the whole diagram and not only the visible viewport. It
+ * includes the notes of a device or switch (below its box) while the canvas
  * shows them (see nodeFootprint).
  *
  * @param {object} doc
@@ -122,8 +123,9 @@ function fittable(side) {
 /**
  * Viewport transform that fits `bounds` into an image of the returned size.
  * The image is never wider than maxWidth or higher than maxHeight, however
- * large the bounds: a large diagram is scaled down to fit whole, with its
- * aspect kept, below the canvas's least zoom (0.2) when it must.
+ * large the bounds. A large diagram is scaled down to fit whole, with its
+ * aspect ratio kept, and below the canvas's minimum zoom (0.2) when
+ * necessary.
  *
  * @param {{x: number, y: number, width: number, height: number}} bounds
  * @param {object} [options] maxWidth and maxHeight (MAX_IMAGE_SIZE by
@@ -163,17 +165,17 @@ export function computeExportViewport(bounds, options = {}) {
 }
 
 /**
- * The pixel ratio a PNG of `viewport` is drawn at. html-to-image multiplies
- * the image's width and height by it, and takes the screen's
- * devicePixelRatio without one, which would make a 4096-pixel image 8192
- * pixels wide on a 2x screen. The ratio is the screen's while the PNG stays
- * within maxSize pixels each way, so a small image is as sharp as the
- * screen, and smaller otherwise.
+ * The pixel ratio at which a PNG of `viewport` is drawn. html-to-image
+ * multiplies the image's width and height by it. Without a ratio, it uses the
+ * screen's devicePixelRatio, which would make a 4096-pixel image 8192 pixels
+ * wide on a 2x screen. The ratio is the screen's while the PNG stays within
+ * maxSize pixels in each direction, so a small image is as sharp as the
+ * screen. Otherwise the ratio is smaller.
  *
  * @param {{width: number, height: number}} viewport the image's size in CSS
  *   pixels (see computeExportViewport)
- * @param {number} [devicePixelRatio] the screen's; 1 when it is not a
- *   number above zero
+ * @param {number} [devicePixelRatio] the screen's ratio. 1 when it is not a
+ *   number above zero.
  * @param {number} [maxSize] the largest width and height of the PNG
  * @returns {number}
  */
@@ -195,12 +197,12 @@ export function imagePixelRatio(
 }
 
 /**
- * Editing affordances that an image of the diagram leaves out: connection
- * handles (a device's "+" new-interface handle is one too), a
- * connection's or a line's pointer hit area and keyboard focus band, the
- * handles of a line's points and of a node's resizer, the marks and text
- * of what the diagram checks found, and the hidden text of a node's info
- * tooltip.
+ * Editing affordances that an image of the diagram leaves out:
+ *   - connection handles (a device's "+" new-interface handle is one too)
+ *   - the pointer hit area and keyboard focus band of a connection or a line
+ *   - the handles of a line's points and of a node's resizer
+ *   - the marks and text of the diagram check results
+ *   - the hidden text of a node's info tooltip.
  */
 const EXPORT_EXCLUDED_SELECTOR =
   '.vue-flow__handle, .builder-edge__hit, .builder-edge__focus, ' +
@@ -228,11 +230,12 @@ function urlReference(value) {
 }
 
 /**
- * Keeps the IDs of a copy of the canvas from repeating the canvas's own
- * while the copy is in the document. An element of the copy that an SVG
- * element of the copy points at by url(#id), such as the marker a line's
- * arrowhead is drawn with, is given an ID of its own, and the references
- * point at that ID, so the image still draws it; every other ID is removed.
+ * Prevents the IDs of a copy of the canvas from repeating the canvas's own
+ * IDs while the copy is in the document. Some elements of the copy are the
+ * target of a url(#id) reference from an SVG element of the copy, such as
+ * the marker that draws a line's arrowhead. Each such element gets its own
+ * ID, and the references point at that ID, so the image still draws it. All
+ * other IDs are removed.
  *
  * @param {Element} copy
  */
@@ -300,8 +303,8 @@ const SVG_PAINT_PROPERTIES = [
 ];
 
 /**
- * Inline style of the element that holds an image's copy: it covers the
- * canvas's pane, as the pane does, but is transparent and lets the pointer
+ * Inline style of the element that holds an image's copy. It covers the
+ * canvas's pane, as the pane does, but it is transparent and lets the pointer
  * through.
  */
 const EXPORT_HOLDER_STYLE = {
@@ -314,15 +317,15 @@ const EXPORT_HOLDER_STYLE = {
 /**
  * Adds a copy of `element` beside it, to render in its place: the diagram
  * without the editing affordances and with nothing selected. The copy's
- * position among the canvas's elements gives it the same styles, and it
- * leaves the live canvas as it is.
+ * position among the canvas's elements gives it the same styles. The live
+ * canvas does not change.
  *
- * The copy sits in a holder that is transparent, inert and hidden from
+ * The copy is in a holder that is transparent, inert and hidden from
  * assistive technology, so nothing on screen or in the accessibility tree
- * changes while the image renders. The holder carries those, not the copy:
- * the image keeps the attributes of the element it is rendered from, and an
- * SVG file marked aria-hidden or inert exposes none of its text. Remove the
- * holder afterwards.
+ * changes while the image renders. The holder carries these attributes, not
+ * the copy. The image keeps the attributes of the element it is rendered
+ * from, and an SVG file marked aria-hidden or inert exposes none of its text.
+ * Remove the holder after the render.
  *
  * @param {Element} element
  * @returns {{copy: Element, holder: Element}} the copy, to render, and its
@@ -377,8 +380,8 @@ export function exportCopy(element) {
  * into its inline style.
  *
  * html-to-image copies an <svg> whole (cloneNode(true)) and inlines computed
- * styles on the <svg> itself only, so a connection line, whose stroke and
- * width come from builder.css classes, was drawn with no stroke at all.
+ * styles only on the <svg> itself. Without this function, a connection line,
+ * whose stroke and width come from builder.css classes, has no stroke.
  *
  * @param {Element} element
  * @param {(el: Element) => CSSStyleDeclaration} computedStyle
@@ -396,15 +399,15 @@ export function inlineSvgPaint(element, computedStyle) {
 /**
  * Renders the canvas's diagram to an image and saves it.
  *
- * `element` is the Vue Flow pane that carries the live pan and zoom. What is
- * rendered is a copy of it (see exportCopy) whose transform is the image's
- * own, so the image is the same however the canvas is panned or zoomed.
+ * `element` is the Vue Flow pane that carries the live pan and zoom. The
+ * render uses a copy of it (see exportCopy) with the image's own transform,
+ * so the image is the same however the canvas is panned or zoomed.
  *
  * @param {object} params element, doc, format ('png'|'svg'), toPng, toSvg,
  *   saveAs, backgroundColor, computedStyle (defaults to the element's
  *   window.getComputedStyle), showNotes (whether the canvas shows node
- *   notes, which the image then holds; true by default), devicePixelRatio
- *   (defaults to the element's window's; see imagePixelRatio)
+ *   notes, which the image then holds. True by default.), devicePixelRatio
+ *   (defaults to the ratio of the element's window. See imagePixelRatio.)
  * @returns {Promise<string>} data url
  */
 export async function exportImage(params) {
@@ -438,7 +441,7 @@ export async function exportImage(params) {
       backgroundColor,
       width: viewport.width,
       height: viewport.height,
-      // A PNG's pixels are its size times this ratio; an SVG ignores it.
+      // A PNG's pixels are its size times this ratio. An SVG ignores it.
       pixelRatio: imagePixelRatio(viewport, devicePixelRatio),
       style: {
         width: `${viewport.width}px`,
@@ -497,9 +500,9 @@ export async function saveTopologyYAML(params) {
 }
 
 /**
- * What the Download dialog says once Topology YAML is saved: the file, what
+ * What the Download dialog says after Topology YAML is saved: the file, what
  * the projection left out or changed, and why publishing the topology would
- * be refused, which the file does not show.
+ * be refused. The file does not show the last item.
  *
  * @param {{fileName: string, warnings?: string[], publishBlockers?: string[]}} saved
  * @returns {string}

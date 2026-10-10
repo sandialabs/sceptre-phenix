@@ -1,11 +1,11 @@
-// Helpers shared with the Configs view so builder-authored topologies are
-// distinguishable: a topology the Builder published carries a `builder-doc`
-// annotation, and one that still has a diagram of the removed legacy Builder
-// carries `builder-xml`. The Builder converts such a diagram when the
-// topology is imported, or uploaded as a file, and publishing the draft to
-// the topology replaces `builder-xml` with `builder-doc`.
+// Helpers shared with the Configs view, which identify topologies made in
+// the Builder. A topology that the Builder published carries a `builder-doc`
+// annotation. A topology that still has a diagram of the removed legacy
+// Builder carries `builder-xml`. The Builder converts such a diagram when the
+// topology is imported or uploaded as a file. Publishing the draft to the
+// topology replaces `builder-xml` with `builder-doc`.
 //
-// The Configs page loads this file, so it imports nothing of the editor.
+// The Configs page loads this file, so it imports nothing from the editor.
 
 import YAML from 'js-yaml';
 
@@ -73,9 +73,9 @@ export function builderTagLabel(config) {
 }
 
 /**
- * What the Builder does with a config from the Configs page: it opens the
- * diagram of a topology that has one, and imports any other topology (one
- * with a legacy Builder diagram is converted by that import).
+ * What the Builder does with a config from the Configs page. It opens the
+ * diagram of a topology that has one, and imports any other topology. That
+ * import converts a legacy Builder diagram.
  *
  * @param {object} config phenix config
  * @returns {'open'|'import'|''} '' for a config that is not a Topology
@@ -108,15 +108,15 @@ function validInclude(entry) {
 }
 
 /**
- * What the Import dialog needs to know of a config file before the server
- * reads it: its kind, its name and how many topologies it includes. The
- * text is only parsed, as JSON or else as YAML with plain scalars; the
- * server still parses and checks the file itself.
+ * What the Import dialog needs to know about a config file before the server
+ * reads it: its kind, its name and how many topologies it includes. This
+ * function only parses the text, as JSON or else as YAML with plain scalars.
+ * The server still parses and checks the file itself.
  *
  * @param {string} text the file's text
  * @returns {{kind: 'topology'|'experiment', name: string,
  *   includes: number}|null} null for text that is not a Topology or
- *   Experiment config; includes is 0 for an experiment
+ *   Experiment config. includes is 0 for an experiment.
  */
 export function uploadedConfigInfo(text) {
   let parsed;

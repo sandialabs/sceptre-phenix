@@ -18,11 +18,11 @@ type WebError struct {
 	UserMetadata   map[string]string `json:"metadata,omitempty"`     // logged and returned to user
 
 	// Code is a stable, machine-readable name of the failure. The Builder
-	// routes give every error one; other routes leave it out.
+	// routes give every error one. Other routes leave it out.
 	Code string `json:"code,omitempty"`
-	// Issues lists the problems the failure is made of, one by one, where a
-	// route names them (the Builder routes, as issue objects); otherwise it
-	// is left out.
+	// Issues lists the problems of the failure, one by one, where a route
+	// names them (the Builder routes, as issue objects). Otherwise it is left
+	// out.
 	Issues any `json:"issues,omitempty"`
 
 	// wrapped is the error the WebError was made from, if any.
@@ -108,10 +108,11 @@ func (err ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ok := errors.As(err, &web)
 		logged := web.Error()
 
-		// A write etcd refused for lack of space is answered alike on every
-		// route: 507 with the store's own message, which says what is wrong
-		// and who can fix it, in place of one that only names the operation.
-		// The error it replaces is logged, which holds that message once.
+		// A write that etcd refused for lack of space gets the same answer on
+		// every route: 507 with the message of the store, which says what is
+		// wrong and who can fix it. That message replaces one that only names
+		// the operation. The replaced error is logged, and it holds the store
+		// message once.
 		if errors.Is(err, store.ErrNoSpace) {
 			web = &WebError{
 				Cause:          "",

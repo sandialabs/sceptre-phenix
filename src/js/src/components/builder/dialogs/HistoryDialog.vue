@@ -3,33 +3,34 @@
   a table of their number (1 for the oldest), name, date and who saved
   them, with a Restore and a Delete button in each row.
 
-  The dialog opens at once and reads the list while it shows (see
-  fetchHistory in store.js). Until the list arrives the dialog is described
-  by a status line saying so, beside a spinner, and the list's place is
-  marked busy; the status then says how many snapshots there are. A failed
-  read is reported here, with a button to read again, rather than by the
-  page alert behind the dialog.
+  The dialog opens immediately and reads the list while it shows (see
+  fetchHistory in store.js). Until the list arrives, a status line beside a
+  spinner says so and describes the dialog, and the list's place is marked
+  busy. The status then says how many snapshots there are. A failed read is
+  reported here, with a button to read again, not by the page alert behind
+  the dialog.
 
-  Restore and Delete are icon buttons named for their row, with tooltips;
+  Restore and Delete are icon buttons named for their row, with tooltips.
   Escape hides a tooltip before it closes the dialog. Clicking a snapshot's
-  name restores it too; that button, described as doing so, is out of the
-  tab order, as its row's Restore does the same. The current snapshot (the
-  draft's cursor) is marked, and can be neither restored, as it is the
-  diagram already, nor deleted: its buttons stay focusable, aria-disabled,
-  look unavailable and say why. Delete asks first, then says how it went in
-  the dialog's own status and alert (the page's live region waits until the
-  dialog closes), and focus moves to the Delete of the row that takes its
-  place, the next older snapshot. A user who may only view the draft gets
-  neither action.
+  name also restores it. That button, described as doing so, is out of the
+  tab order, because its row's Restore does the same. The current snapshot
+  (the draft's cursor) is marked. It cannot be restored, because it is the
+  diagram already, and it cannot be deleted. Its buttons stay focusable and
+  aria-disabled, look unavailable and say why. Delete asks first. It then
+  says how it went in the dialog's own status and alert, because the page's
+  live region waits until the dialog closes. Focus then moves to the Delete
+  of the row that takes its place, the next older snapshot. A user who may
+  only view the draft gets neither action.
 
-  A diagram shown read only has no draft. The dialog then says only that,
-  of a published diagram or of one read from a Builder file.
+  A diagram shown read only has no draft. For a published diagram, or one
+  read from a Builder file, the dialog then says only that.
 
-  A snapshot of edits the Builder applied for the user (the Inspector's
-  unapplied edits, saved before the diagram was left, published or
-  downloaded; see leave.js) is marked Automatic, and a line under the table
-  says what that means. On a narrow screen the table scrolls sideways in
-  its own box, which then takes focus, with the actions kept in view.
+  A snapshot of edits that the Builder applied for the user is marked
+  Automatic. These are the Inspector's unapplied edits, saved before the
+  diagram was left, published or downloaded (see leave.js). A line under
+  the table says what Automatic means. On a narrow screen, the table
+  scrolls sideways in its own box, which then takes focus, with the actions
+  kept in view.
 -->
 <template>
   <builder-dialog
@@ -186,8 +187,8 @@
         </p>
       </div>
 
-      <!-- Shown while something is under way, or when there is nothing to
-           list; otherwise only screen readers get the count. -->
+      <!-- Shown while something is in progress, or when there is nothing to
+           list. Otherwise, only screen readers get the count. -->
       <p
         id="history-status"
         class="builder-dialog__message builder-history__status"
@@ -266,7 +267,7 @@
   const store = useBuilderStore();
   const restoring = ref(false);
   const deleting = ref(false);
-  // What the last delete did, for the status line; '' for nothing yet.
+  // What the last delete did, for the status line. '' for nothing yet.
   const deleted = ref('');
   // Why the last delete did not happen.
   const problem = useMessage();
@@ -345,9 +346,9 @@
     return savedAutomatically(entry.summary);
   }
 
-  // Try again goes while the list is read, so focus moves to the dialog
-  // first rather than falling to <body> (WCAG 2.4.3); the dialog's
-  // description then says it is loading.
+  // Try again disappears while the list is read. So focus moves to the
+  // dialog first, not to <body> (WCAG 2.4.3). The dialog's description
+  // then says it is loading.
   function retry(event) {
     event.currentTarget.closest('dialog')?.focus();
     store.fetchHistory();
@@ -390,8 +391,8 @@
   });
   const { tip, hideTip, tipEvents } = tooltip;
 
-  // Escape with a tooltip up hides the tooltip only (WCAG 1.4.13), rather
-  // than the dialog too. This listener is added before the tooltip's own,
+  // Escape with a tooltip shown hides the tooltip only (WCAG 1.4.13), not
+  // the dialog too. This listener is added before the tooltip's own,
   // which then hides it.
   function keepOpenForTip(event) {
     if (event.key === 'Escape' && tip.value) {
@@ -504,7 +505,7 @@
     margin: 0;
   }
 
-  /* Reduced motion stops it turning (see builder.css); the text beside it
+  /* Reduced motion stops it turning (see builder.css). The text beside it
      says the same. */
   .builder-history__spinner {
     flex: none;
@@ -575,8 +576,8 @@
     overflow-wrap: anywhere;
   }
 
-  /* A name restores its snapshot on a click; it reads as the name, and its
-     row's Restore button is the keyboard's way to the same. */
+  /* A name restores its snapshot on a click. It reads as the name, and its
+     row's Restore button is the keyboard's way to the same action. */
   .builder-history__name-button {
     min-height: 24px;
     padding: 0;
@@ -624,9 +625,9 @@
   }
 
   /* An action that does not apply (the current snapshot's, or any while
-     one is under way) has the Builder's aria-disabled fill, and a dashed
-     frame and a fainter icon besides, which keeps 3:1 against the fill
-     (WCAG 1.4.11), so it cannot pass for the one beside it. */
+     one is in progress) has the Builder's aria-disabled fill. It also has a
+     dashed frame and a fainter icon, which keep 3:1 against the fill
+     (WCAG 1.4.11). Thus it cannot pass for the one beside it. */
   .builder-history__action[aria-disabled='true'] {
     border-style: dashed;
     color: var(--bx-border-strong);
@@ -662,7 +663,7 @@
   }
 
   /* Forced colors draw every border in one color, which would hide the
-     turn; the track takes the dialog's background instead. */
+     turn. The track takes the dialog's background instead. */
   @media (forced-colors: active) {
     .builder-history__spinner {
       border-color: Canvas;

@@ -153,8 +153,8 @@
       selected.value,
   );
 
-  // A select with no selection, which no value should leave now, must not
-  // clear the value on a change event then (a synthetic one).
+  // A synthetic change event on a select with no selection must not clear
+  // the value. No value should leave the select with no selection now.
   function onSelect(event) {
     if (event.target.selectedIndex >= 0) {
       onChange(event);

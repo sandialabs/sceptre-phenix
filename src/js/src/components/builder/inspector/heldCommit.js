@@ -67,12 +67,12 @@ export function keyEffect(event) {
  *   changed anything
  * @returns {{key: () => void, point: () => void, change: (value: T) => boolean,
  *   flush: () => boolean, readonly held: T|null}}
- *   `key` says a key that steps the field went down, and `point` that the
- *   pointer was pressed on it; `change` puts a value in place of the one
+ *   `key` says a key that steps the field went down, and `point` says the
+ *   pointer was pressed on it. `change` puts a value in place of the one
  *   held, and commits it at once unless a key went down since the last
- *   commit or pointer press, returning what `commit` returned, or false
- *   while it holds the value; `flush` commits the value held at once, and
- *   returns what `commit` returned, or false with nothing held; `held` is
+ *   commit or pointer press. It returns what `commit` returned, or false
+ *   while it holds the value. `flush` commits the value held at once, and
+ *   returns what `commit` returned, or false with nothing held. `held` is
  *   the value waiting, or null
  */
 export function heldCommit(commit) {

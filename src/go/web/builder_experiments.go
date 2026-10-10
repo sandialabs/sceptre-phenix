@@ -50,10 +50,10 @@ func (c *builderExperimentChoice) offer(name string, rank int) {
 }
 
 // builderExperimentLinks returns what the Experiment configs among configs
-// say of the Builder publications that made them: one link for each whose
-// [builderExperimentAnnotation] decodes and names a draft or a published
-// document. Nothing of this is stored, so a renamed experiment is found under
-// its new name and a deleted one is not found.
+// say about the Builder publications that made them. It returns one link for
+// each config whose [builderExperimentAnnotation] decodes and names a draft
+// or a published document. None of this is stored. Thus a renamed experiment
+// is found under its new name, and a deleted one is not found.
 func builderExperimentLinks(configs store.Configs) []builderExperimentLink {
 	links := make([]builderExperimentLink, 0, len(configs))
 
@@ -87,9 +87,9 @@ func builderExperimentLinks(configs store.Configs) []builderExperimentLink {
 
 // builderListExperimentLinks lists the Experiment configs with list, once,
 // and returns their links (see [builderExperimentLinks]). The experiment is
-// only an addition to a response: a listing that fails is logged and yields
-// no links, so the experiment is left out of the response, which is never
-// refused for it.
+// only an addition to a response. A listing that fails is logged and gives
+// no links. The response then does not include the experiment, but the
+// response is never refused for it.
 func builderListExperimentLinks(list func(kind string) (store.Configs, error)) []builderExperimentLink {
 	configs, err := list(kindExperiment)
 	if err != nil {
@@ -104,12 +104,12 @@ func builderListExperimentLinks(list func(kind string) (store.Configs, error)) [
 // builderDocumentExperiment names the experiment made by the publication
 // behind a published document, or "" when there is none the role may get.
 //
-// An experiment answers when it is built from the topology the document was
-// published to, and either records this very document, or records the draft
-// that published it. The second case keeps the link when that draft later
-// publishes the topology again without the experiment: the document is a new
-// one then, and the experiment still names the old one. Of several, one that
-// records the document is preferred.
+// An experiment answers when it is built from the topology that the document
+// was published to, and records this document or the draft that published
+// it. The second case keeps the link when that draft later publishes the
+// topology again without the experiment. The document is then a new one, and
+// the experiment still names the old one. When there are several, the
+// function prefers one that records the document.
 func builderDocumentExperiment(
 	role rbac.Role,
 	links []builderExperimentLink,
@@ -192,10 +192,10 @@ func builderDraftExperiment(role rbac.Role, links []builderExperimentLink, meta 
 	return choice.name
 }
 
-// draftExperiment names the experiment the draft's publication made, for a
-// response that describes one draft. The experiments are listed only for a
-// draft that could have one: it published, it forks a draft that had, or it
-// was opened from a published document.
+// draftExperiment names the experiment that the publication of the draft
+// made, for a response that describes one draft. It lists the experiments
+// only for a draft that could have one: a draft that published, that forks
+// a draft that published, or that was opened from a published document.
 func (b *builderAPI) draftExperiment(actor builderActor, meta *bapi.DraftMetadata) string {
 	if meta.Publication == nil && meta.Forked == nil && openedDocumentID(meta) == "" {
 		return ""

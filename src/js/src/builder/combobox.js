@@ -17,8 +17,9 @@ export function userLabel(user) {
 }
 
 /**
- * The user the field's text names: by their username, or by the label the
- * list gives them (see userLabel), as choosing them from it leaves.
+ * The user that the field's text names, by username or by the label that the
+ * list gives them (see userLabel). Choosing a user from the list puts that
+ * label in the field.
  *
  * @param {{username: string, name?: string}[]} users
  * @param {string} text
@@ -35,9 +36,9 @@ export function findUser(users, text) {
 }
 
 /**
- * The users to list for what was typed, best match first: by username, then
- * by name; with nothing typed, all of them, by username. Users in `exclude`
- * (the owner and anyone listed already) are left out.
+ * The users to list for the typed text, best match first: by username, then
+ * by name. With no text, all users, by username. Users in `exclude` (the
+ * owner and anyone already listed) are left out.
  *
  * @param {{username: string, name?: string}[]} users
  * @param {string} query
@@ -85,11 +86,12 @@ export function userOptions(
  * values (InspectorComboboxControl.vue).
  *
  * @param {{key: string, altKey?: boolean, ctrlKey?: boolean, metaKey?: boolean}} event
- * @param {{expanded: boolean, active: number, count: number}} state the list
- *   shown, the suggestion in view (-1 for none), and how many there are
+ * @param {{expanded: boolean, active: number, count: number}} state whether
+ *   the list shows, the active suggestion (-1 for none), and how many there
+ *   are
  * @returns {{action: 'open'|'move'|'choose'|'close'|'add', index?: number,
- *   prevent: boolean}|null} null leaves the key to the browser; prevent says
- *   to cancel its default
+ *   prevent: boolean}|null} null leaves the key to the browser. prevent tells
+ *   whether to cancel its default action.
  */
 export function comboboxKey(event, { expanded, active, count }) {
   if (event.ctrlKey || event.metaKey) {

@@ -1,36 +1,42 @@
 // The notes block of a device or a switch: the node's notes (nodeNotes in
-// model.js), drawn below its box on the canvas (nodes/NodeNotes.vue), and
-// the room the block takes there, which the layouts leave free below the
-// node (layouts/common.js and standard.js), groups hold (fitGroups and
-// groupNodes in model.js, applyGroups in grouping.js), Fit keeps in view
-// (BuilderCanvas.vue) and image downloads take in (documentBounds in
-// exporters.js).
+// model.js), drawn below its box on the canvas (nodes/NodeNotes.vue). This
+// module also gives the space the block takes there. These use that space:
+// - the layouts keep it free below the node (layouts/common.js and
+//   standard.js)
+// - groups hold it (fitGroups and groupNodes in model.js, applyGroups in
+//   grouping.js)
+// - Fit keeps it in view (BuilderCanvas.vue)
+// - image downloads include it (documentBounds in exporters.js)
 //
-// The block is part of the node but not of its box: the document's size of
-// the node, which its handles sit on, leaves it out. Its height here is an
-// estimate made from the measures builder.css draws the block with (the
-// .builder-node-notes rules), at the default text size: change both
+// The block is part of the node but not of its box. The document's size of
+// the node, which its handles sit on, does not include it. Its height here
+// is an estimate made from the measures builder.css draws the block with
+// (the .builder-node-notes rules), at the default text size. Change both
 // together.
 
 import { nodeNotes, sizeOf } from './model.js';
 
-/** The most notes the block shows; a last line says how many more. */
+/** The most notes the block shows. A last line says how many more. */
 export const NOTES_SHOWN = 5;
 
-/** The most lines of one note the block shows; an ellipsis ends the rest. */
+/** The most lines of one note the block shows. An ellipsis ends the rest. */
 export const NOTE_LINES = 3;
 
-// The space between a node's box and its block, in CSS pixels: below a
-// device it clears the device's new-interface handle on the box's bottom
-// edge (half the handle and its hit area), below a switch the focus ring.
+// The space between a node's box and its block, in CSS pixels. Below a
+// device, it clears the device's new-interface handle on the box's bottom
+// edge (half the handle and its hit area). Below a switch, it clears the
+// focus ring.
 export const NOTES_GAP = { device: 16, switch: 8 };
 
-// The block's measures in CSS pixels: a line of its text, the space between
-// two notes, its padding and borders across (6 + 6 padding, a 3 pixel accent
-// on the left and a 1 pixel border on the right) and down (4 + 4 padding
-// and two 1 pixel borders), the width of an average character of its text,
-// a little wide so the estimate errs on the side of room, and the least
-// width any character of its text that takes room is drawn with.
+// The block's measures in CSS pixels:
+// - a line of its text
+// - the space between two notes
+// - its padding and borders across (6 + 6 padding, a 3 pixel accent on the
+//   left and a 1 pixel border on the right)
+// - its padding and borders down (4 + 4 padding and two 1 pixel borders)
+// - the width of an average character of its text, a little wide so that
+//   the estimate gives too much space, not too little
+// - the least width of any character of its text that is not zero width
 const LINE_HEIGHT = 15;
 const NOTE_SPACING = 2;
 const ACROSS = 16;
@@ -58,11 +64,11 @@ export function shownNotes(notes) {
 
 // The lines one line of a note takes where `perLine` characters fit across,
 // wrapped the way the block wraps it (white-space: pre-wrap and
-// overflow-wrap: anywhere in builder.css): at spaces first, each word that
-// does not fit after the space before it starting the next line, and a
-// word longer than a whole line broken across as many lines as it fills.
-// A line of words can wrap to more lines than its characters fill, so
-// counting by words keeps the estimate from falling short.
+// overflow-wrap: anywhere in builder.css). It wraps at spaces first. Each
+// word that does not fit after the space before it starts the next line. A
+// word longer than a whole line breaks across as many lines as it fills. A
+// line of words can wrap to more lines than its characters fill, so a count
+// by words keeps the estimate from being too small.
 function wrappedLines(line, perLine) {
   let lines = 1;
   let used = 0;
@@ -112,8 +118,8 @@ function noteLines(note, width) {
  * The most characters of one note the block below a node can show: its
  * NOTE_LINES lines across the node's width, each filled with the narrowest
  * characters and ended by a space or a line break. The node's description
- * says each note the block shows up to this many characters (see
- * nodeInfo.js), so it never says less of a note than the block shows.
+ * says up to this many characters of each note that the block shows (see
+ * nodeInfo.js). So it never says less of a note than the block shows.
  *
  * @param {object} node
  * @returns {number}
@@ -160,9 +166,9 @@ export function notesHeight(node) {
 }
 
 /**
- * The room a node takes on the canvas: its box, and the notes block below it
- * while notes are shown. Every layout places nodes by their footprint, so a
- * laid-out node leaves its notes room.
+ * The space a node takes on the canvas: its box, and the notes block below
+ * it while notes are shown. Every layout places nodes by their footprint,
+ * so a laid-out node keeps space for its notes.
  *
  * @param {object} node
  * @param {{showNotes?: boolean}} [options] showNotes: whether the canvas
@@ -178,15 +184,15 @@ export function nodeFootprint(node, { showNotes = true } = {}) {
 }
 
 /**
- * The box around nodes' footprints (see nodeFootprint), with `padding` to
- * spare on every side. Fit, the canvas's least zoom, bringing nodes into
- * view, the sizes groups take around their members (see fitGroups and
- * groupNodes in model.js) and image downloads go by it, so the notes below
- * a node stay in view and inside its group.
+ * The box around nodes' footprints (see nodeFootprint), with `padding` on
+ * every side. These use it, so the notes below a node stay in view and
+ * inside its group: Fit, the canvas's least zoom, bringing nodes into view,
+ * the sizes groups take around their members (see fitGroups and groupNodes
+ * in model.js), and image downloads.
  *
  * @param {object[]} nodes
- * @param {{showNotes?: boolean, padding?: number}} [options] showNotes, see
- *   nodeFootprint; padding in CSS pixels, 0 by default
+ * @param {{showNotes?: boolean, padding?: number}} [options] showNotes: see
+ *   nodeFootprint. padding: in CSS pixels, 0 by default
  * @returns {{x: number, y: number, width: number, height: number}} all 0
  *   for no nodes
  */

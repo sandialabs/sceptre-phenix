@@ -1,13 +1,15 @@
 // Info tooltip of a device or a switch on the canvas (WCAG 1.4.13).
 //
 // The canvas has one tooltip for all its nodes (BuilderCanvas.vue provides
-// it under NODE_TIP; see fixedTooltip.js). It shows what the node says about
-// itself (see nodeInfo.js) once the pointer has rested on the node, and at
-// once when the node takes keyboard focus. The pointer can move onto it, and
-// Escape closes it without moving focus or changing the selection. It stays
-// while the node has keyboard focus, whatever the pointer does: resting on
-// another node shows that node's tooltip, and this one's is back once the
-// pointer has left that node and its tooltip.
+// it under NODE_TIP, see fixedTooltip.js). It shows what the node says about
+// itself (see nodeInfo.js) after the pointer rests on the node. It shows
+// immediately when the node takes keyboard focus. The pointer can move onto
+// it. Escape closes it without moving focus or changing the selection.
+//
+// The tooltip stays while the node has keyboard focus, whatever the pointer
+// does. When the pointer rests on another node, that node's tooltip shows.
+// This node's tooltip shows again when the pointer leaves that node and its
+// tooltip.
 //
 // The tooltip is hidden from assistive technology. The same facts describe
 // the node as one sentence, in a hidden element the node component renders
@@ -51,9 +53,9 @@ export function useNodeInfo(info) {
     }
   }
 
-  // A click focuses the node too, and must not bring the tooltip up: only
-  // focus the browser shows, which is focus from the keyboard, does. The
-  // tooltip is then the node's to keep until it loses focus.
+  // A click also focuses the node, but must not show the tooltip. Only focus
+  // that the browser shows (focus from the keyboard) shows the tooltip. The
+  // node then keeps the tooltip until it loses focus.
   function onFocus(event) {
     if (event.currentTarget.matches(':focus-visible')) {
       tooltip?.keep(event.currentTarget, () => content.value);
@@ -61,8 +63,8 @@ export function useNodeInfo(info) {
     }
   }
 
-  // The node's tooltip goes, and so does its claim on it. Another node's
-  // tooltip stays.
+  // Hide the node's tooltip and release the node's claim on it. Another
+  // node's tooltip stays.
   function hide(element) {
     if (!element) {
       return;

@@ -1,9 +1,10 @@
-// Diagram checks as the editor shows them: counted, sorted out by the node or
-// connection each one is about, and worded with element names rather than the
-// validator's index paths (see issueText). The lists of the Publish and
-// Checks dialogs take every issue in one shape (see toIssue), whether the
-// editor's own checks or the server reported it, group them by severity
-// (see bySeverity) and go to the element each is about (see issueTarget).
+// Diagram checks as the editor shows them. They are counted, sorted by the
+// node or connection that each one is about, and worded with element names
+// in place of the validator's index paths (see issueText). The lists of the
+// Publish and Checks dialogs take every issue in one shape (see toIssue),
+// from the editor's own checks or from the server. The lists group issues by
+// severity (see bySeverity) and go to the element that each is about (see
+// issueTarget).
 
 import { issueText } from './adapters/forms.js';
 import { count } from './announce.js';
@@ -12,9 +13,9 @@ import { findNode } from './model.js';
 /**
  * @param {object[]} issues
  * @returns {{errors: number, warnings: number, blocking: number}} blocking:
- *   the warnings about what publishing refuses, an interface with no VLAN,
- *   an address two interfaces use and a hostname phenix refuses, which the
- *   Publish dialog lists as errors (see publishChecks)
+ *   the warnings about what publishing refuses (an interface with no VLAN,
+ *   an address that two interfaces use, and a hostname that phenix
+ *   refuses). The Publish dialog lists them as errors (see publishChecks).
  */
 export function issueCounts(issues = []) {
   const errors = issues.filter((entry) => entry.level === 'error').length;
@@ -70,8 +71,8 @@ export function countsText({ errors, warnings }) {
 }
 
 /**
- * The node an issue is about: its own, or for an issue about a network, the
- * network's first switch, which is where the canvas shows the network.
+ * The node that an issue is about: its own node, or for an issue about a
+ * network, the network's first switch, where the canvas shows the network.
  *
  * @param {object} doc
  * @param {object} issue
@@ -92,7 +93,7 @@ export function issueNodeId(doc, issue) {
   return hub?.id || '';
 }
 
-// Errors first; otherwise in the validator's order, which is by path.
+// Errors first. Otherwise in the validator's order, which is by path.
 function byLevel(entries) {
   return [
     ...entries.filter((entry) => entry.level === 'error'),
@@ -116,14 +117,14 @@ function elementTitle(doc, collection, index) {
 
 /**
  * What the diagram checks say about each node, for the canvas: whether any
- * is an error, and the node's description of them, as "1 error: hostname
- * is required." An issue about a network is about its first switch, as in
- * issueNodeId.
+ * issue is an error, and the node's description of the issues, as "1 error:
+ * hostname is required." An issue about a network is about its first
+ * switch, as in issueNodeId.
  *
  * @param {object} doc
  * @param {object[]} issues
  * @returns {Map<string, {level: 'error'|'warning', text: string}>} by node
- *   id, for the nodes with any
+ *   id, for the nodes that have issues
  */
 export function nodeIssueSummaries(doc, issues = []) {
   const summaries = new Map();
@@ -182,9 +183,9 @@ export function nodeIssueSummaries(doc, issues = []) {
 }
 
 /**
- * The issues about what the Inspector shows, each with its text: a node's
- * (a switch's include its network's), a connection's, or for the diagram,
- * those about no node or connection. Errors come first.
+ * The issues about the element that the Inspector shows, each with its text:
+ * a node's issues (a switch's include its network's), a connection's, or for
+ * the diagram, the issues about no node or connection. Errors come first.
  *
  * @param {object} doc
  * @param {object[]} issues
@@ -218,9 +219,9 @@ export function issuesAbout(doc, issues, selection) {
 
 /**
  * The checks dialog's lists: the issues about each node and each connection,
- * in diagram order, and the issues about neither. Each issue has its text;
- * in a node's or connection's list that leaves out the name its list is
- * headed by. Errors come first in every list.
+ * in diagram order, and the issues about neither. Each issue has its text.
+ * In the list of a node or connection, the text leaves out the name that
+ * heads the list. Errors come first in every list.
  *
  * @param {object} doc
  * @param {object[]} issues
@@ -291,10 +292,12 @@ const PATH_START = /^(nodes|edges|networks)\[(\d+)\]/;
 const ID_KEYS = { nodes: 'nodeId', edges: 'edgeId', networks: 'networkId' };
 
 /**
- * A check in the one shape the lists of checks take, whoever reported it:
- * a message alone, an issue of validateDocument() (`level`, and
- * `blocksPublish` for a warning about what publishing refuses), or an issue
- * the server reports (`severity`, and a `code`).
+ * A check in the one shape that the lists of checks take, whoever reported
+ * it:
+ *   - a message alone
+ *   - an issue of validateDocument() (`level`, and `blocksPublish` for a
+ *     warning about what publishing refuses)
+ *   - an issue that the server reports (`severity`, and a `code`).
  *
  * @param {string|object} entry
  * @param {'error'|'warning'} [defaultSeverity] the severity of a message
@@ -368,12 +371,12 @@ function sameIssue(a, b) {
 }
 
 /**
- * The issues a server answer lists, in the one shape: its `errors`, then
- * its `warnings`, each a message or an issue object, then its `issues`,
- * issue objects each of the severity it states (an error when it states
- * none). An issue listed twice, as the same object or as a message alone
- * that says the same as an issue object, is listed once, where it came
- * first, as the issue object.
+ * The issues that a server response lists, in the one shape: first its
+ * `errors`, then its `warnings`, each a message or an issue object, then its
+ * `issues`. Each of those issue objects has the severity it states (an error
+ * when it states none). An issue listed twice is listed once, where it came
+ * first, as the issue object. This includes the same object twice, and a
+ * message alone that says the same as an issue object.
  *
  * @param {object} [data] a publish result, or the body of a refusal
  * @returns {object[]} see toIssue
@@ -419,10 +422,10 @@ function dataPath(path) {
     .replace(/^\.+/, '');
 }
 
-// The Inspector field a document path is in: the part of the path below
-// the element, which a node holds under its kind's key ("nodes[2].device.
-// hostname" is a device's "hostname"; "networks[0].name" is its switch's
-// "name"). '' when the path names no field below the element.
+// The Inspector field that holds a document path: the part of the path below
+// the element, which a node holds under the key of its kind. For example,
+// "nodes[2].device.hostname" is a device's "hostname", and "networks[0].name"
+// is its switch's "name". '' when the path names no field below the element.
 function pathField(doc, path) {
   const match = /^(nodes|edges|networks)\[(\d+)\]\.(.+)$/.exec(
     bracketPath(path),
@@ -446,10 +449,10 @@ function pathField(doc, path) {
 }
 
 /**
- * The Inspector field an issue is about, as a data path of the form the
- * Inspector shows its element in ("hostname", "spec.network.interfaces.0.
- * vlan"): the issue's own `field`, else the part of its path below the
- * element.
+ * The Inspector field that an issue is about, as a data path of the form in
+ * which the Inspector shows its element ("hostname",
+ * "spec.network.interfaces.0.vlan"). This is the issue's own `field`, or
+ * else the part of its path below the element.
  *
  * @param {object} doc
  * @param {object} issue
@@ -490,14 +493,15 @@ function elementKey(doc, issue) {
 
 /**
  * The issues of the server's dry run of a publication that the Publish
- * dialog's checks do not already list, so What publishing changes does not
+ * dialog's checks do not already list. Thus What publishing changes does not
  * repeat a problem listed under Checks. An issue is left out when a check
- * has its code and is about the same node, connection or network, or like
- * it about none: the same rule broken in the same place. The server words a
- * problem its own way, and a warning the checks list is an error the server
- * refuses, so neither the words nor the severity are compared. An issue
- * with no code, or one only the server finds, such as a clash with an
- * included topology or a scenario that does not exist, is kept.
+ * has its code and is about the same node, connection or network (or, like
+ * the issue, about none): the same rule broken in the same place. The server
+ * uses its own words for a problem, and a warning that the checks list is an
+ * error that the server refuses. Thus the comparison ignores the words and
+ * the severity. An issue with no code is kept. An issue that only the server
+ * finds is also kept, such as a clash with an included topology or a
+ * scenario that does not exist.
  *
  * @param {object} doc
  * @param {object[]} issues the dry run's errors and warnings (see
@@ -516,9 +520,10 @@ export function issuesNotInChecks(doc, issues = [], checks = []) {
 }
 
 /**
- * Where Go to takes an issue: the node or connection it is about, or for
- * an issue about a network, the network's first switch, where the canvas
- * shows the network (see issueNodeId); with the Inspector field it names.
+ * Where Go to takes an issue: the node or connection that it is about, or
+ * for an issue about a network, the network's first switch, where the canvas
+ * shows the network (see issueNodeId). It includes the Inspector field that
+ * the issue names.
  *
  * @param {object} doc
  * @param {object} issue
@@ -542,8 +547,9 @@ export function issueTarget(doc, issue) {
   return hub ? { kind: 'nodes', id: hub, field } : null;
 }
 
-// The name of what an issue is about, as its list shows it: the element
-// its path starts at ("Network EXP"), else the one Go to takes it to.
+// The name of what an issue is about, as its list shows it: the element at
+// the start of its path ("Network EXP"), or else the element that Go to
+// takes it to.
 function issueElement(doc, issue, target) {
   const match = PATH_START.exec(bracketPath(issue.path));
 
@@ -558,7 +564,7 @@ function issueElement(doc, issue, target) {
   return index >= 0 ? elementTitle(doc, target.kind, index) : '';
 }
 
-// Where an issue comes in the lists: by its node, in diagram order, then
+// The position of an issue in the lists: by its node, in diagram order, then
 // by its connection, then the issues about neither, as issueGroups orders
 // them.
 function diagramRank(doc, entry) {
@@ -576,16 +582,16 @@ function diagramRank(doc, entry) {
 
 /**
  * The issues as the lists of checks show them, in the one shape (see
- * toIssue), each with its text, the name of the element it is about and
+ * toIssue). Each has its text, the name of the element it is about, and
  * where Go to takes it.
  *
  * @param {object} doc
  * @param {Array<string|object>} issues
  * @param {{publishing?: boolean, defaultSeverity?: 'error'|'warning'}}
  *   [options] see toIssue
- * @returns {object[]} each issue with `text` (its message, with the
- *   elements it names by index named), `element` ("Device web-01", or '')
- *   and `target` (see issueTarget)
+ * @returns {object[]} each issue with `text` (its message, with names in
+ *   place of the element indexes), `element` ("Device web-01", or '') and
+ *   `target` (see issueTarget)
  */
 export function issueEntries(
   doc,
@@ -607,9 +613,9 @@ export function issueEntries(
 
 /**
  * The issues by severity: the errors, then the warnings. With the diagram,
- * each list is in the order the checks dialog listed them by element: the
- * nodes' issues in diagram order, then the connections', then those about
- * neither; otherwise in the order given.
+ * each list is in the order in which the checks dialog lists them by
+ * element: the nodes' issues in diagram order, then the connections' issues,
+ * then the issues about neither. Without the diagram, in the given order.
  *
  * @param {object[]} issues see toIssue (an issue with `level` alone counts
  *   by it)
@@ -650,7 +656,7 @@ export function bySeverity(issues = [], doc = null) {
 
 /**
  * The heading of a group of issues: "2 errors block publishing" where they
- * stop the diagram from being published, else "2 errors"; "1 warning".
+ * stop the diagram from being published, or else "2 errors". "1 warning".
  *
  * @param {{severity: string, issues: object[]}} group see bySeverity
  * @param {{blocking?: boolean}} [options]

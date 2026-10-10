@@ -14,9 +14,10 @@ import { newId } from './ids.js';
 
 export const DEFAULT_HISTORY_LIMIT = 50;
 
-// What an edit is named when the Builder applied it for the user: the
-// Inspector's unapplied edits, saved before the diagram is left or read
-// whole (see leave.js). The History dialog marks its snapshots.
+// The name of an edit that the Builder applied for the user: the Inspector's
+// unapplied edits, saved before the user leaves the diagram or before the
+// diagram is read whole (see leave.js). The History dialog marks its
+// snapshots.
 export const SAVED_UNAPPLIED = 'Saved unapplied changes';
 
 /**
@@ -141,8 +142,8 @@ export class History {
   }
 
   /**
-   * Restores a previously recorded list of entries, e.g. after recovering the
-   * local operation log from IndexedDB.
+   * Restores a list of entries recorded earlier, for example after recovery
+   * of the local operation log from IndexedDB.
    *
    * @param {{id: string, label: string, snapshot: *}[]} entries
    * @param {number} [index] cursor position, defaults to the newest entry
@@ -162,9 +163,9 @@ export class History {
   }
 
   /**
-   * Drops the `count` oldest entries, for example those the server no longer
-   * keeps, so undo stops at the oldest one it does. The current entry is
-   * always kept.
+   * Drops the `count` oldest entries, for example the entries that the server
+   * does not keep, so undo stops at the oldest entry that the server keeps.
+   * The current entry is always kept.
    *
    * @param {number} count
    * @returns {number} the number of entries dropped

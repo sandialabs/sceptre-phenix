@@ -1,5 +1,5 @@
-// Package plogtest records what phenix/util/plog logs while a test runs. It
-// is imported only by tests.
+// Package plogtest records what phenix/util/plog logs while a test runs. Only
+// tests import it.
 package plogtest
 
 import (

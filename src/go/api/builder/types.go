@@ -68,7 +68,7 @@ func (a TopologyAction) Valid() bool {
 
 // SnapshotManifest describes one immutable snapshot of a draft document. It
 // records everything needed to reassemble and verify the document bytes, but
-// never the bytes themselves: those live in content chunks.
+// never the bytes. The bytes are in content chunks.
 type SnapshotManifest struct {
 	ID string `json:"id"`
 	// Digest is the "sha256:<hex>" digest of the canonical JSON document bytes.
@@ -78,25 +78,26 @@ type SnapshotManifest struct {
 	// CompressedSize is the length of the gzip compressed payload the chunks
 	// hold.
 	CompressedSize int64 `json:"compressedSize"`
-	// ChunkDigests holds the "sha256:<hex>" digest of every chunk, in order. The
-	// order is authoritative: reassembly reads exactly this many chunks and
-	// verifies each one against its digest.
+	// ChunkDigests holds the "sha256:<hex>" digest of every chunk, in order.
+	// The order is authoritative. Reassembly reads exactly this many chunks
+	// and verifies each one against its digest.
 	ChunkDigests []string `json:"chunkDigests"`
 	// ChunkSize is the chunk size used when the snapshot was written.
 	ChunkSize int       `json:"chunkSize"`
 	CreatedAt time.Time `json:"createdAt"`
 	// CreatedBy is the actor that created the snapshot. It may differ from the
-	// draft owner; cross-user edits are recorded, not rejected.
+	// draft owner. Cross-user edits are recorded, not rejected.
 	CreatedBy string `json:"createdBy"`
 	Summary   string `json:"summary,omitempty"`
-	// OpID is the client's id for the save that stored the snapshot, so a
-	// client that never saw the response can tell the snapshot was stored.
+	// OpID is the client id for the save that stored the snapshot. Thus a
+	// client that never saw the response can tell that the snapshot was
+	// stored.
 	OpID string `json:"opId,omitempty"`
 }
 
-// PublicationState records the last publication of a draft. It is set by
-// [Service.MarkPublished] after the caller has published a config, and is used
-// to derive whether a draft has unpublished changes.
+// PublicationState records the last publication of a draft.
+// [Service.MarkPublished] sets it after the caller published a config. It
+// tells whether a draft has unpublished changes.
 type PublicationState struct {
 	// Mode is the publication operation that was performed.
 	Mode PublishMode `json:"mode"`
@@ -116,8 +117,8 @@ type PublicationState struct {
 	SnapshotID string `json:"snapshotId"`
 	// Digest is the document digest of the published snapshot.
 	Digest string `json:"digest"`
-	// Revision is the draft record revision observed when publishing. It is
-	// audit information: cleanliness is derived from the snapshot, which is
+	// Revision is the draft record revision observed at publication. It is
+	// audit information. Cleanliness comes from the snapshot, which is
 	// immutable, not from the revision.
 	Revision int64 `json:"revision"`
 	// DocumentID optionally links the publication to an immutable published
@@ -143,16 +144,18 @@ type DraftMetadata struct {
 	ID    string `json:"id"`
 	Owner string `json:"owner"`
 	Title string `json:"title"`
-	// SourceToken optionally records where a draft came from: the config it
-	// was imported from as "<kind>/<name>", an uploaded config as
-	// "uploaded/<kind>/<name>", an uploaded diagram of the legacy Builder
-	// that came without a topology as "uploaded/legacy-xml", or the published
-	// document it was opened from as "builder-doc/<document id>". It is an
-	// opaque token to this package.
+	// SourceToken optionally records where a draft came from. It is an opaque
+	// token to this package:
+	//   - "<kind>/<name>": the config it was imported from
+	//   - "uploaded/<kind>/<name>": an uploaded config
+	//   - "uploaded/legacy-xml": an uploaded diagram of the legacy Builder
+	//     that came without a topology
+	//   - "builder-doc/<document id>": the published document it was opened
+	//     from
 	SourceToken string `json:"sourceToken,omitempty"`
 	// SourceFile optionally records the name of the uploaded file the draft
-	// was made from: a base name, kept only to show it. Nothing is ever
-	// opened by it.
+	// was made from. It is a base name, kept only to show it. Nothing ever
+	// opens a file by it.
 	SourceFile string    `json:"sourceFile,omitempty"`
 	Created    time.Time `json:"created"`
 	Updated    time.Time `json:"updated"`
@@ -170,29 +173,30 @@ type DraftMetadata struct {
 	// Forked is what the draft this one forks had published when it was
 	// forked, if anything. It is an opaque record to this package.
 	Forked *ForkedPublication `json:"forked,omitempty"`
-	// Sharing is who the owner shared the draft with, once it has ever been
-	// shared (see [Service.UpdateShares]). It lives in the draft record, so
-	// changing it changes the draft's revision: a save authorized by a share
-	// that has since been removed can never land.
+	// Sharing is who the owner shared the draft with, after it was first
+	// shared (see [Service.UpdateShares]). It is in the draft record, so a
+	// change to it changes the revision of the draft. Thus a save authorized
+	// by a share that was removed after that can never be written.
 	Sharing *SharingState `json:"sharing,omitempty"`
 	// DocumentCreatedBy and DocumentCreatedAt are the metadata.createdBy and
-	// metadata.createdAt the document of every snapshot of this draft
+	// metadata.createdAt that the document of every snapshot of this draft
 	// carries. They are fixed when the draft is created (see
 	// [Service.CreateDraft]), so a save never has to read the previous
 	// snapshot to keep them. Either is empty for a draft whose document has
-	// none, and both for a draft stored before the fields existed.
+	// none. Both are empty for a draft stored before the fields existed.
 	DocumentCreatedBy string `json:"documentCreatedBy,omitempty"`
 	DocumentCreatedAt string `json:"documentCreatedAt,omitempty"`
 
 	// Revision is the store record revision this metadata was read at. It is
-	// never serialized: it is filled in from the record on read and is what
-	// callers pass back as the expected revision of a mutation.
+	// never serialized. A read sets it from the record, and callers pass it
+	// back as the expected revision of a mutation.
 	Revision int64 `json:"-"`
 	// Stamp is the creator, creation time, last editor and last edit time of
-	// the document the call that returned this metadata stored: what
-	// [Service.CreateDraft] and [Service.AppendSnapshot] wrote into it, or,
-	// for a draft created as an unchanged copy, what it already held. It is
-	// never serialized, and nil in metadata any other call returns.
+	// the document that the call that returned this metadata stored. It is
+	// what [Service.CreateDraft] and [Service.AppendSnapshot] wrote into the
+	// document. For a draft created as an unchanged copy, it is what the
+	// document already held. It is never serialized, and is nil in metadata
+	// that any other call returns.
 	Stamp *builder.Provenance `json:"-"`
 }
 
@@ -202,14 +206,14 @@ type Snapshot struct {
 	Manifest SnapshotManifest
 	Data     []byte
 
-	// parsed is Data as the service read and validated it, which the first
-	// Decode hands over instead of decoding Data again.
+	// parsed is Data as the service read and validated it. The first Decode
+	// gives it to the caller and does not decode Data again.
 	parsed *builder.Document
 }
 
 // PublishedDocument is the immutable record of a document a config was
 // published from. It is content addressed: the same document published to the
-// same target always yields the same ID.
+// same target always gives the same ID.
 type PublishedDocument struct {
 	ID     string `json:"id"`
 	Digest string `json:"digest"`
@@ -219,10 +223,10 @@ type PublishedDocument struct {
 	CompressedSize int64    `json:"compressedSize"`
 	ChunkDigests   []string `json:"chunkDigests"`
 	ChunkSize      int      `json:"chunkSize"`
-	// PayloadID names the private, immutable chunk scope holding this
-	// document's content. It is generated by the attempt that stored the
-	// document, so concurrent attempts at the same content addressed ID never
-	// share chunks and can never delete each other's.
+	// PayloadID names the private, immutable chunk scope that holds the
+	// content of this document. The attempt that stored the document generated
+	// it. Thus concurrent attempts at the same content addressed ID never
+	// share chunks and can never delete the chunks of each other.
 	PayloadID string `json:"payloadId"`
 	// Target and Kind identify the config this document was published to.
 	Target string `json:"target"`
@@ -246,21 +250,22 @@ type PublishedDocument struct {
 	published time.Time
 }
 
-// DocumentReference is what a topology config's [DocumentAnnotation]
-// annotation holds: the Builder document the topology was made from. Each
-// field is optional, and a reference names at least one. A config's JSON and
-// YAML show it as a map of these sub-keys (see phenix/store.Annotations).
+// DocumentReference is what the [DocumentAnnotation] annotation of a topology
+// config holds: the Builder document the topology was made from. Each field is
+// optional, and a reference names at least one. The JSON and YAML of a config
+// show it as a map of these sub-keys (see phenix/store.Annotations).
 type DocumentReference struct {
-	// Digest is the digest of the document's canonical JSON, "sha256:" and 64
-	// hex digits. It pins the content wherever the content is read from, and
-	// finds the stored document when ID is empty (see
+	// Digest is the digest of the canonical JSON of the document: "sha256:"
+	// and 64 hex digits. It pins the content wherever the content is read
+	// from. It finds the stored document when ID is empty (see
 	// [DocumentReference.StoredID]).
 	Digest string `json:"digest,omitempty"`
-	// ID names a stored published document. It is this topology's only when
-	// that document was published to this topology.
+	// ID names a stored published document. It belongs to this topology only
+	// when that document was published to this topology.
 	ID string `json:"id,omitempty"`
-	// Path names a Builder file on the phenix server, used when no stored
-	// document is found (see [ValidateDocumentPath] and [ReadDocumentFile]).
+	// Path names a Builder file on the phenix server. It is used when no
+	// stored document is found (see [ValidateDocumentPath] and
+	// [ReadDocumentFile]).
 	Path string `json:"path,omitempty"`
 }
 
@@ -318,10 +323,10 @@ func (d *DraftMetadata) HistoryBytes() int64 {
 	return total
 }
 
-// Dirty reports whether the draft has changes that have not been published. A
-// draft is clean only when its last publication named exactly the snapshot the
-// cursor currently points at, with a matching document digest; any edit, undo,
-// or redo makes it dirty again.
+// Dirty reports whether the draft has unpublished changes. A draft is clean
+// only when its last publication named exactly the snapshot the cursor points
+// at now, with a matching document digest. Any edit, undo, or redo makes it
+// dirty again.
 func (d *DraftMetadata) Dirty() bool {
 	current := d.Current()
 	if current == nil {
@@ -381,7 +386,8 @@ func (d *DraftMetadata) Clone() *DraftMetadata {
 // Decode strictly decodes the snapshot's document bytes.
 func (s *Snapshot) Decode() (*builder.Document, error) {
 	if parsed := s.parsed; parsed != nil {
-		// Handed over once, so each caller still gets a document of its own.
+		// Give it to the caller only once, so each caller gets its own
+		// document.
 		s.parsed = nil
 
 		return parsed, nil

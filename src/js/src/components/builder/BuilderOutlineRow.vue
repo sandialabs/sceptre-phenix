@@ -5,7 +5,7 @@
   renamed), so a click redraws the rows it changes rather than every row.
   A device or a group with a custom icon shows it in place of the icon of
   its key.
-  The state and the handlers live in BuilderOutline, which provides them;
+  BuilderOutline holds the state and the handlers, and provides them.
   BuilderOutlineList describes the lists.
 -->
 <template>
@@ -51,7 +51,7 @@
       <span class="builder-outline__label" :title="item.label">{{
         item.label
       }}</span>
-      <!-- A device from an included topology says so; its name adds
+      <!-- A device from an included topology says so. Its name adds
            which topology, and that it is read only. -->
       <span class="builder-outline__kind">{{
         item.includedFrom ? 'included' : item.kind

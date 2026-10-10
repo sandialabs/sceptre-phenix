@@ -1,17 +1,17 @@
 <!--
-  The notes of a device or a switch (see nodeNotes in model.js), below the
-  node's box: a small card with one line per note, each cut off with an
-  ellipsis after three lines, at most five notes and then how many more
-  there are (see nodeNotes.js, which also estimates the card's height for
-  the layouts). Its left border is the node's outline color, or the
-  theme's border without one; its text is the theme's, on the theme's
-  surface, so it reads in both themes.
+  The notes of a device or a switch (see nodeNotes in model.js), in a small
+  card below the node's box. The card has one line per note, and cuts each
+  note off with an ellipsis after three lines. It shows at most five notes,
+  and then how many more there are (see nodeNotes.js, which also estimates
+  the card's height for the layouts). Its left border is the node's outline
+  color, or the theme's border without one. Its text has the theme's color
+  on the theme's surface, so it reads in both themes.
 
-  The card is inside Vue Flow's wrapper, beside the node's box, so it moves
-  and is selected with the node, but it is not part of the box the document
-  sizes and the handles sit on. The Show node notes setting hides it. The
-  node's description says the notes (see nodeInfo.js), so the card itself
-  is hidden from assistive technology.
+  The card is inside Vue Flow's wrapper, beside the node's box. For this
+  reason, it moves and is selected with the node. But it is not part of the
+  box that the document sizes and that the handles sit on. The Show node
+  notes setting hides the card. The node's description says the notes (see
+  nodeInfo.js), so the card itself is hidden from assistive technology.
 -->
 <template>
   <div

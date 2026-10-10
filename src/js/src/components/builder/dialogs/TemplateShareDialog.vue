@@ -1,32 +1,32 @@
 <!--
-  Share templates and collections of the user's library: with named people,
-  who then find them under Shared with me and can use and copy them but not
-  change them, and, for a role that may publish, server-wide, for everyone
-  who can use the Builder.
+  Share templates and collections of the user's library. The user can share
+  them with named people, who then find them under Shared with me and can
+  use and copy them but not change them. A role that may publish can also
+  share them server-wide, for everyone who can use the Builder.
 
-  Opened from a card's Share and Share selected on the Node Templates tab,
-  and from Share on a collection shown there. A share is a change, not a
-  list: the people added are added to every item, those removed are taken
-  off it, and everyone else keeps what they have, so two dialogs never
-  overwrite each other. For one item the dialog lists who has access, each
-  with Remove that turns into Keep in place, so focus never jumps; a share
-  whose account was removed starts marked for removal. For several it only
-  adds.
+  Opened from a card's Share and from Share selected on the Node Templates
+  tab, and from Share on a collection shown there. A share is a change, not
+  a list. The people added are added to every item, those removed are
+  removed from it, and everyone else keeps what they have. Thus two dialogs
+  never overwrite each other. For one item, the dialog lists who has
+  access, each with a Remove that changes to Keep in place, so focus never
+  jumps. A share whose account was removed starts marked for removal. For
+  several items, the dialog only adds.
 
-  People are named through the user field the draft Share dialog has
-  (BuilderUserCombobox.vue). The dialog is opened only for a user who may
-  share with people (canShare), which needs an account of their own. With
-  sign-in off there is none, so the Node Templates tab offers no Share, as
+  People are named through the same user field as in the draft Share dialog
+  (BuilderUserCombobox.vue). The dialog opens only for a user who may share
+  with people (canShare), which needs an account of their own. With sign-in
+  off there is no account, so the Node Templates tab offers no Share, as
   the drafts page offers none.
 
-  Nothing changes until Save, which sends who was added and removed, then
-  whether the items are server-wide. A person the server refuses is listed
-  in an error summary, and nothing is shared; an item that would pass the
-  most people allowed is listed after the others took the change. Nothing
-  typed is lost either way. Cancel or Escape with changes asks first, in
-  the footer. The page behind the dialog is inert, so its status and alert
-  regions are its own; what a save came to is said by the page once the
-  dialog has closed.
+  Nothing changes until Save, which sends who was added and removed, and
+  then whether the items are server-wide. When the server refuses a person,
+  an error summary lists the person, and nothing is shared. An item that
+  would have more people than allowed is listed after the others took the
+  change. Nothing typed is lost either way. Cancel or Escape with changes
+  asks first, in the footer. The page behind the dialog is inert, so the
+  dialog has its own status and alert regions. The page says the result of
+  a save after the dialog closes.
 -->
 <template>
   <builder-dialog
@@ -382,8 +382,8 @@
   // ready, or saving.
   const phase = ref('ready');
 
-  // The people to add, in the order they were added; the one item's people
-  // (see shareRows); whether the one item is to be server-wide, or what to
+  // The people to add, in the order they were added. The one item's people
+  // (see shareRows). Whether the one item is to be server-wide, or what to
   // do with several (SERVER_CHOICES).
   const people = ref([]);
   const rows = ref(one.value ? shareRows(items.value[0]) : []);
@@ -438,13 +438,13 @@
 
   // --- the people ------------------------------------------------------
 
-  // The users the items may be shared with, once read; loading, failed or
-  // ready.
+  // The users the items may be shared with, once read. usersPhase is
+  // loading, failed or ready.
   const users = ref(null);
   const usersPhase = ref('loading');
 
   // The owner, the user and anyone listed with access or to add are not
-  // offered. Someone marked removed is: adding them keeps them.
+  // offered. Someone marked removed is offered. Adding them keeps them.
   const listed = computed(() => [
     owner.value,
     usePhenixStore().username,
@@ -478,7 +478,8 @@
     }
   }
 
-  // Retry goes while the users are read, so focus moves to the field first.
+  // Retry disappears while the users are read, so focus moves to the field
+  // first.
   function retryUsers() {
     userField.value?.focus();
     loadUsers();
@@ -525,7 +526,7 @@
     userField.value?.focus();
   }
 
-  // The row goes, and its button with it, so focus moves to the field.
+  // The row and its button disappear, so focus moves to the field.
   async function unadd(user) {
     if (phase.value !== 'ready') {
       return;
@@ -585,7 +586,7 @@
         .filter((item) => item.kind === 'collection')
         .map((item) => item.id),
     };
-    // What the page says once everything took the change, from the items
+    // What the page says after every item took the change, from the items
     // as they were before it.
     const message = templateSharedMessage(items.value, change.value, {
       rows: rows.value,
@@ -610,8 +611,8 @@
 
         failed.push(...result.failed);
 
-        // Taken by every item: the people part starts again from what the
-        // items have now. An item that refused keeps what was typed.
+        // Every item took the change, so the people part starts again from what
+        // the items have now. An item that refused keeps what was typed.
         if (!result.failed.length) {
           rows.value = [
             ...rows.value.filter(

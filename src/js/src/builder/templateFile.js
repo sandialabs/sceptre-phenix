@@ -1,14 +1,15 @@
 // Template files: one collection of node templates as a file holds it, YAML
-// or JSON (TemplateFile in types/builder/templatefile.go). The Node Templates
-// tab exports templates as one, and imports one into the user's library as a
-// new collection; phenix reads every one in its template directory at start
-// as a read-only collection of the server's (source 'preloaded').
+// or JSON (TemplateFile in types/builder/templatefile.go). The Node
+// Templates tab exports templates as a template file. It imports a template
+// file into the user's library as a new collection. At start, phenix reads
+// each template file in its template directory as a read-only collection of
+// the server (source 'preloaded').
 //
 // A file is {$schema, name, description?, templates: [{name, description?,
 // device}], icons?}: the collection's name and description, its templates
 // without ids, and copies of the custom icons they name, by icon name, as a
 // downloaded diagram carries them. Export writes exactly what the server
-// reads, so an exported file can be put in the template directory as it is.
+// reads, so an exported file can go in the template directory as it is.
 
 import YAML from 'js-yaml';
 
@@ -44,8 +45,8 @@ export const TEMPLATE_FILE_SCHEMA_URI =
 export const MAX_TEMPLATE_FILE_BYTES = 8 * 1024 * 1024;
 export const MAX_TEMPLATE_FILE_TEMPLATES = 200;
 
-// The keys of a template file, and of one of its templates, which has no id:
-// where it is kept gives it one.
+// The keys of a template file, and of one of its templates. A template in a
+// file has no id. The place that stores it gives it one.
 export const TEMPLATE_FILE_KEYS = new Set([
   '$schema',
   'name',
@@ -79,9 +80,9 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-// The key two template names of a file are compared by, as
+// The key used to compare two template names of a file, as
 // templateFileIssues and the server compare them: without the white space
-// the server trims around it (see trimSpace), and ignoring case.
+// the server removes around it (see trimSpace), and without case.
 function templateNameKey(name) {
   return trimSpace(name).toLowerCase();
 }
@@ -104,10 +105,10 @@ function numberedName(name, n) {
 /**
  * The templates with names a template file may hold. A library may hold two
  * templates whose names differ only in case, of different sources or
- * collections; a file may not. A template whose name one before it has,
- * ignoring case, takes the first of " (2)", " (3)" and so on that no
+ * collections. A file may not. A template whose name an earlier template
+ * has, ignoring case, takes the first of " (2)", " (3)" and so on that no
  * template of the file has, shortened to stay within
- * MAX_TEMPLATE_NAME_BYTES. The others keep theirs.
+ * MAX_TEMPLATE_NAME_BYTES. The other templates keep their names.
  *
  * @param {object[]} templates each {name, ...}
  * @returns {{templates: object[], renamed: {from: string, to: string}[]}}
@@ -155,9 +156,9 @@ export function uniqueTemplateNames(templates) {
  * The template file of templates, as a collection: its name and
  * description, each template's name, description and device, and a copy of
  * every custom icon they name, from the icon library (see embedIcons), at
- * most MAX_DOCUMENT_ICONS. Templates of any source export alike; names that
- * differ only in case are numbered apart (see uniqueTemplateNames), so the
- * file imports and loads.
+ * most MAX_DOCUMENT_ICONS. Templates of any source export the same way.
+ * Names that differ only in case get different numbers (see
+ * uniqueTemplateNames), so the file imports and loads.
  *
  * @param {object} collection
  * @param {string} collection.name the name the file gives the collection
@@ -165,9 +166,10 @@ export function uniqueTemplateNames(templates) {
  * @param {object[]} collection.templates as the library lists them
  * @param {{lookup: Function}|null} [library] the icon library
  * @returns {{file: object, missing: string[], left: string[], renamed:
- *   {from: string, to: string}[]}} the file; the icon names nothing
- *   resolves, which it does not carry; those left out past the most it
- *   carries; and the templates it holds under another name
+ *   {from: string, to: string}[]}} file: the file. missing: the icon names
+ *   that nothing resolves, which the file does not carry. left: the icons
+ *   left out past the most it carries. renamed: the templates it holds
+ *   under another name
  */
 export function templateFileOf(
   { name, description = '', templates },
@@ -212,8 +214,8 @@ export function templateFileName(name) {
 
 /**
  * The YAML text of a template file, as Export saves it. Long values, such
- * as an icon's base64, stay on one line rather than folded, so the file
- * reads plainly where an administrator puts it.
+ * as an icon's base64, stay on one line and are not folded. So the file is
+ * easy to read where an administrator puts it.
  *
  * @param {object} file see templateFileOf
  * @returns {string}
@@ -317,11 +319,12 @@ function rejectNonText(value, path) {
 }
 
 /**
- * Decodes a template file's value as the server does (DecodeTemplateFile):
- * unknown keys and values of the wrong kind are refused. Nulls are none.
+ * Decodes a template file's value as the server does (DecodeTemplateFile).
+ * It refuses unknown keys and values of the wrong kind. A null is the same
+ * as no value.
  *
  * @param {*} value
- * @returns {object} the file, with what is none left out
+ * @returns {object} the file, without the keys that have no value
  * @throws {TemplateFileError}
  */
 export function decodeTemplateFile(value) {
@@ -381,12 +384,14 @@ export function decodeTemplateFile(value) {
 
 /**
  * What makes a decoded template file unusable (TemplateFile.Issues in
- * templatefile.go), in its order, each with the code the server gives it:
- * another schema; a collection name or description a collection may not
- * have; no template, or more than MAX_TEMPLATE_FILE_TEMPLATES; a template a
- * library refuses (see templateIssues); two templates whose names differ
- * only in case; and custom icons a document may not carry (see
- * validateIcons). A template may name an icon the file does not carry.
+ * templatefile.go), in this order, each with the code the server gives it:
+ * - another schema
+ * - a collection name or description a collection may not have
+ * - no template, or more than MAX_TEMPLATE_FILE_TEMPLATES
+ * - a template a library refuses (see templateIssues)
+ * - two templates whose names differ only in case
+ * - custom icons a document may not carry (see validateIcons)
+ * A template may name an icon the file does not carry.
  *
  * @param {object} file as decodeTemplateFile returns it
  * @returns {{code: string, path: string, message: string, level: 'error',
@@ -490,8 +495,8 @@ export function templateFileIssues(file) {
 
 /**
  * Reads the text of a template file, JSON or YAML by its content, as the
- * server does (ParseTemplateFile): YAML aliases are refused, and so is a
- * file that does not decode or is not valid.
+ * server does (ParseTemplateFile). It refuses YAML aliases, and a file that
+ * does not decode or is not valid.
  *
  * @param {string} text
  * @returns {{ok: true, file: object} | {ok: false, error: string, issues:
@@ -571,7 +576,8 @@ export function uniqueCollectionName(name, taken) {
 
 /**
  * Why a template file cannot be imported into the user's library, or ''
- * when it can: a library holds so many templates and collections at most.
+ * when it can. A library holds a maximum number of templates and
+ * collections.
  *
  * @param {object|null} library the library, as the store keeps it
  * @param {number} adding how many templates the file holds

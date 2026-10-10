@@ -1,15 +1,15 @@
 <!--
   Group node: a labelled container that other nodes can be parented to. Vue
   Flow's wrapper is the focusable, named element (see DeviceNode.vue). A
-  group's color is an accent bar across its top, its description a line
-  under its title, and its border the pattern chosen for it (dashed without
-  one). A custom icon, when the group has one, is drawn in place of the icon
-  of its key. A selected group has handles to resize it with the mouse,
-  never smaller than its members need (see NodeResize.vue).
+  group's color is an accent bar across its top. Its description is a line
+  under its title. Its border has the pattern chosen for it, or dashed
+  without one. A custom icon, when the group has one, is drawn in place of
+  the icon of its key. A selected group has handles to resize it with the
+  mouse, never smaller than its members need (see NodeResize.vue).
 
-  Its icon is drawn at the group's icon size, or the diagram's: before the
-  title when Small, and when larger at the top left, with the title and the
-  description in a column beside it (see nodeIconSize.js).
+  Its icon is drawn at the group's icon size, or the diagram's. A Small icon
+  is before the title. A larger icon is at the top left, with the title and
+  the description in a column beside it (see nodeIconSize.js).
 -->
 <template>
   <div
@@ -63,8 +63,8 @@
     iconPixels,
   } from '@/builder/model.js';
 
-  // Vue Flow passes its node state as attributes as well; none belong on
-  // the node's element.
+  // Vue Flow also passes its node state as attributes. None of them belong
+  // on the node's element.
   defineOptions({ inheritAttrs: false });
 
   const props = defineProps({

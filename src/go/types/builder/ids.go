@@ -72,8 +72,8 @@ func EdgeID(sourceNodeID, sourceHandleID, targetNodeID, targetHandleID string) s
 }
 
 // ContentDigest returns a stable "sha256:<hex>" digest of arbitrary JSON
-// encodable content. Map keys are sorted by encoding/json, so the digest is
-// independent of map iteration order.
+// encodable content. encoding/json sorts map keys, so the digest does not
+// depend on map iteration order.
 func ContentDigest(content any) (string, error) {
 	if content == nil {
 		return "", nil

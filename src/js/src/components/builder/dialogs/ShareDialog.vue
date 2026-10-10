@@ -1,24 +1,24 @@
 <!--
   Share a draft: who else may open it, and whether they can view or edit it.
 
-  Only the owner opens this dialog. It reads the share list when it opens
-  (showing the one the draft was listed with meanwhile), edits a copy of it
-  as rows (see share.js), and saves the whole list at once. Nothing changes
-  until Save: a change of access or a Remove only marks its row, and Remove
-  turns into Keep in place, so focus never jumps. A share whose account was
-  removed starts marked for removal.
+  Only the owner opens this dialog. It reads the share list when it opens,
+  and meanwhile shows the list that the draft was listed with. It edits a
+  copy of the list as rows (see share.js) and saves the whole list at once.
+  Nothing changes until Save. A change of access or a Remove only marks its
+  row, and Remove changes to Keep in place, so focus never jumps. A share
+  whose account was removed starts marked for removal.
 
-  People are added from the users the owner may share the draft with (see
-  loadShareCandidates in store.js), less those listed already, through the
-  user field (BuilderUserCombobox.vue). Until the users are read, or when
-  they cannot be, a username can still be typed; the server checks it on
-  save.
+  People are added through the user field (BuilderUserCombobox.vue), from
+  the users the owner may share the draft with (see loadShareCandidates in
+  store.js), less those already listed. Until the users are read, or when
+  they cannot be read, the user can still type a username. The server
+  checks it on save.
 
-  The page behind the dialog is inert, so its status and alert regions are
-  its own. A save that meets a list changed elsewhere (412) reads the list
-  again and puts the user's changes on it; a refused name (422) is listed in
-  an error summary; nothing typed is lost either way. Cancel or Escape with
-  changes asks first, in the footer.
+  The page behind the dialog is inert, so the dialog has its own status and
+  alert regions. A save that meets a list changed elsewhere (412) reads the
+  list again and puts the user's changes on it. A refused name (422) is
+  listed in an error summary. Nothing typed is lost either way. Cancel or
+  Escape with changes asks first, in the footer.
 -->
 <template>
   <builder-dialog
@@ -112,8 +112,8 @@
       </button>
     </form>
 
-    <!-- A refused save lists each problem; each one's button goes to its
-         row. -->
+    <!-- A refused save lists each problem. Each problem's button goes to
+         its row. -->
     <div
       v-if="refusals.length"
       ref="summaryEl"
@@ -420,8 +420,8 @@
   }
 
   const changes = computed(() => changeCount(base.value, rows.value));
-  // Stale shares start marked removed; leaving without saving that is
-  // nothing to ask about.
+  // Stale shares start marked removed. Leaving without saving that change
+  // needs no question.
   const userChanges = computed(
     () => changes.value - rows.value.filter((row) => row.stale).length,
   );
@@ -483,8 +483,8 @@
 
   // --- the users -------------------------------------------------------
 
-  // The users the draft may be shared with, once read; loading, failed or
-  // ready.
+  // The users the draft may be shared with, once read. usersPhase is
+  // loading, failed or ready.
   const users = ref(null);
   const usersPhase = ref('loading');
   const usersError = useMessage();
@@ -547,7 +547,8 @@
     }
   }
 
-  // Retry goes while the users are read, so focus moves to the field first.
+  // Retry disappears while the users are read, so focus moves to the field
+  // first.
   function retryUsers() {
     userField.value?.focus();
     loadUsers();
@@ -556,7 +557,7 @@
   // --- adding ----------------------------------------------------------
 
   async function add() {
-    // Adding checks against the list, so it waits for one; the field's
+    // Adding checks against the list, so it waits for a list. The field's
     // alert says why nothing was added, and the name stays for later.
     if (phase.value === 'loading' || phase.value === 'failed') {
       const why =
@@ -626,7 +627,7 @@
     fieldError.clear();
     addName.value = '';
     status.set(addedMessage(check.user, addAccess.value));
-    // Each person starts at the least access; edit is chosen every time.
+    // Each person starts at the least access. Edit is chosen each time.
     addAccess.value = 'view';
     userField.value?.focus();
   }
@@ -810,7 +811,7 @@
         phase.value = 'ready';
         alert.set(errorMessage('unauthenticated', error), 'session');
       } else {
-        // A refused request says why; a server or connection failure can
+        // A refused request says why. A server or connection failure can
         // be tried again.
         phase.value = 'ready';
         alert.set(
@@ -820,9 +821,9 @@
     }
   }
 
-  // A 401 opens Sign in again over this dialog. Once the user has signed in,
-  // the alert that the session ended no longer holds, and the page's
-  // "Signed in again" waits behind this dialog, so its own status says it.
+  // A 401 opens Sign in again over this dialog. After the user signs in,
+  // the alert that the session ended no longer holds. The page's "Signed
+  // in again" waits behind this dialog, so this dialog's status says it.
   // Post flush: Sign in again has closed, and this dialog can be read.
   watch(
     () => signIn.needed,
@@ -1086,7 +1087,7 @@
   }
 
   /* At 40rem and narrower the dialog fills the viewport, scrolls inside,
-     and keeps its footer in view; rows stack. */
+     and keeps its footer in view. Rows stack. */
   @media (max-width: 40rem) {
     .builder-share {
       box-sizing: border-box;

@@ -3,8 +3,8 @@
 
   Each entry is a button first (click or Enter adds the node in a free spot of
   the canvas in view) and draggable second, so pointer-free operation is never a
-  second-class path. An entry shows only its name; its description appears as
-  a tooltip on hover and keyboard focus and is its accessible description.
+  second-class path. An entry shows only its name. Its description shows as
+  a tooltip on hover and keyboard focus, and is its accessible description.
 
   The device templates come in groups (see paletteTemplateGroups in
   templates.js): those saved in the diagram, under "This diagram", then
@@ -15,11 +15,11 @@
   the diagram has a menu beside its entry, to edit it, copy it into the
   library, or delete it.
 
-  While the library is read for the first time the list says so. When it
-  cannot be read, the built-in templates stand in for it, under "Built-in",
-  with a note and Retry, so a diagram can still be built. They also stand
-  in for a library the server cannot read, with a note alone: reading it
-  again would change nothing.
+  While the first read of the library runs, the list says so. When the
+  library cannot be read, the built-in templates replace it, under
+  "Built-in", with a note and Retry, so the user can still build a diagram.
+  They also replace a library that the server cannot read, with a note
+  only: another read would change nothing.
 -->
 <template>
   <section
@@ -39,7 +39,7 @@
       </button>
     </div>
     <!-- Screen readers get the tooltips' text from these hidden
-         descriptions; sighted users see it in the tooltip. -->
+         descriptions. Sighted users see it in the tooltip. -->
     <p id="palette-help" hidden>{{ PALETTE_HELP }}</p>
 
     <ul class="builder-palette__list">
@@ -64,8 +64,8 @@
 
     <div class="builder-palette__header builder-palette__header--templates">
       <h3 class="builder-palette__subtitle">Device templates</h3>
-      <!-- aria-disabled rather than disabled: it keeps focus, and its
-           tooltip, which then says why it does nothing. -->
+      <!-- aria-disabled, not disabled: it keeps focus and its tooltip,
+           which then says why it does nothing. -->
       <button
         ref="newButton"
         type="button"
@@ -135,7 +135,8 @@
       </ul>
     </template>
 
-    <!-- Rendered from the start, so what it comes to say is read. -->
+    <!-- Rendered from the start, so screen readers read what it says
+         later. -->
     <p
       id="palette-library-note"
       class="builder-palette__note"
@@ -143,8 +144,8 @@
       data-testid="palette-library-note">
       {{ libraryNote }}
     </p>
-    <!-- While the read it asked for is under way it keeps focus, and a
-         second press does nothing. -->
+    <!-- While the read it asked for runs, it keeps focus, and a second
+         press does nothing. -->
     <button
       v-if="store.templates.error"
       type="button"
@@ -211,7 +212,7 @@
     return entry.source === 'diagram' ? store.doc.icons : null;
   }
 
-  // The library's first read is under way, or the last read failed: Retry
+  // The library's first read is in progress, or the last read failed. Retry
   // then stays until a read answers.
   const libraryLoading = computed(() => store.templates.status === 'loading');
   const libraryNote = computed(() => {
@@ -240,8 +241,8 @@
   }
 
   // The id of an entry's description. An entry's test id names the owner of
-  // another user's template, and a user name may hold a space, which an id
-  // may not: it is encoded.
+  // another user's template. A user name may hold a space, which an id may
+  // not, so this encodes the name.
   function hintId(entry) {
     return `${encodeURIComponent(entry.testid)}-hint`;
   }
@@ -292,8 +293,8 @@
     }
   }
 
-  // Retry goes once the library is read: focus then moves to the library
-  // button rather than fall to the page.
+  // Retry disappears after a successful read of the library. Focus then
+  // moves to the library button and does not fall to the page.
   async function retryLibrary() {
     if (libraryLoading.value) {
       return;
@@ -308,7 +309,7 @@
   }
 
   // A copy of a template of the diagram, naming the custom icon it names,
-  // goes to the user's library; the diagram's copy of that icon goes to the
+  // goes to the user's library. The diagram's copy of that icon goes to the
   // icon library first (see saveTemplateToLibrary). The template stays in
   // the diagram. A warning that the icon could not be added is announced
   // with the save, and stays on the canvas until it is dismissed.

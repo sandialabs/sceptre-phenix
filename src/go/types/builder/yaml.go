@@ -53,10 +53,9 @@ var (
 
 // JSONFromText returns the JSON of the text of a Builder file, which holds a
 // document as JSON or as YAML. The content decides, never the name of the
-// file, as when a file is uploaded in the Builder: text that is JSON is
-// returned as it is, and anything else is converted by [JSONFromYAML]. The
-// result is not checked to be a Builder document: [Decode] and [Parse] do
-// that.
+// file, as for a file upload in the Builder. JSONFromText returns JSON text
+// as it is, and [JSONFromYAML] converts anything else. JSONFromText does not
+// check that the result is a Builder document. [Decode] and [Parse] do that.
 func JSONFromText(data []byte) ([]byte, error) {
 	if json.Valid(data) {
 		return data, nil
@@ -160,10 +159,10 @@ func textHead(text []byte) (string, bool, bool) {
 // a decimal fraction with an optional exponent. A key is the text of its
 // scalar: the key 1 is "1".
 //
-// Text using YAML a JSON document has no place for is refused, with an error
-// matching [ErrUnsupportedYAML] that says where: see that error for the
-// list. The Builder refuses aliases too; anchors and merge keys are refused
-// because they have no use without one.
+// Text that uses YAML for which a JSON document has no place is refused, with
+// an error that matches [ErrUnsupportedYAML] and tells where. See that error
+// for the list. The Builder also refuses aliases. Anchors and merge keys are
+// refused because they have no use without an alias.
 func JSONFromYAML(data []byte) ([]byte, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 
@@ -320,9 +319,9 @@ func yamlKey(node *yaml.Node) (string, error) {
 }
 
 // yamlScalar returns the JSON value of a scalar: nil, a bool, a float64 or a
-// string. Its text, with how it is written, decides (see [JSONFromYAML]);
-// the tag yaml.v3 resolved for a plain scalar does not, since it takes a date
-// for a time and 012 for an octal number.
+// string. Its text, and how it is written, decide (see [JSONFromYAML]). The
+// tag that yaml.v3 resolved for a plain scalar does not decide, because
+// yaml.v3 takes a date for a time and 012 for an octal number.
 func yamlScalar(node *yaml.Node) (any, error) {
 	text := node.Value
 	plain := node.Style&yamlQuoted == 0
@@ -419,8 +418,8 @@ func yamlInt(text string) (float64, bool) {
 		hexadecimal = 16
 
 		// maxDigits is the most digits, after any leading zeros, an integer
-		// a float64 holds can have: one of more digits is at least 2^1024
-		// in every base, which no finite float64 is.
+		// a float64 holds can have. An integer with more digits is at least
+		// 2^1024 in every base, which no finite float64 is.
 		maxDigits = 1024
 	)
 
@@ -448,8 +447,8 @@ func yamlInt(text string) (float64, bool) {
 		return 0, false
 	}
 
-	// Told by their number, not by parsing them: that takes time that grows
-	// with the square of the number of digits, and a scalar may be as long
+	// Count the digits and do not parse them. Parsing takes time that grows
+	// with the square of the number of digits, and a scalar can be as long
 	// as a file.
 	if len(strings.TrimLeft(digits, "0")) > maxDigits {
 		return 0, false

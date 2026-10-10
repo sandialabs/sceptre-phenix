@@ -36,10 +36,10 @@ var NameRegex = regexp.MustCompile(`^[a-zA-Z0-9_@.-]*$`)
 // necessary, and an error can be returned if the lifecycle stage should be
 // halted.
 //
-// The stages are "startup", "create", "update" and "delete", and "rename",
-// which follows an update that changed the config's name: it is called with
-// the config as it was under its old name, once the store holds it under the
-// new name only. No "delete" stage runs for the old name.
+// The stages are "startup", "create", "update", "delete" and "rename". The
+// "rename" stage follows an update that changed the name of the config. Its
+// hook gets the config as it was under its old name, after the store holds it
+// under the new name only. No "delete" stage runs for the old name.
 type ConfigHook func(string, *store.Config) error
 
 var hooks = make(map[string][]ConfigHook) //nolint:gochecknoglobals // global hooks
@@ -96,9 +96,9 @@ func walkDefaults(fn func(path string, content []byte, c store.Config) error) er
 
 // CreateDefault stores the built-in, default config of the given kind and
 // name, as [Init] does for a new store, and returns it. It is for a default
-// config added after a store was initialized: phenix runs [Init] only for a
-// store that was never initialized. A kind and name no default config has is
-// an error.
+// config added after a store was initialized, because phenix runs [Init] only
+// for a store that was never initialized. A kind and name that no default
+// config has is an error.
 func CreateDefault(kind, name string) (*store.Config, error) {
 	var found []byte
 
@@ -551,10 +551,10 @@ func Update(name string, c *store.Config) error {
 	return nil
 }
 
-// renamed runs the "rename" stage of the config hooks for old, the config an
-// update just stored under a new name, as it was under its old one. Like the
-// "delete" stage, it runs once the store has changed, so an error it returns
-// does not undo the rename.
+// renamed runs the "rename" stage of the config hooks for old: the config an
+// update just stored under a new name, as it was under its old name. Like the
+// "delete" stage, it runs after the store changed, so an error it returns does
+// not undo the rename.
 func renamed(name string, old *store.Config) error {
 	var errs error
 

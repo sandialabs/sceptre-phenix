@@ -438,10 +438,10 @@ func (g *General) SetDoNotBoot(b bool) {
 	g.DoNotBootF = &b
 }
 
-// Notes returns the node's notes, in order, or nil when it has none. A new
-// experiment copies them into the node's labels as VM notes. The field is left
-// out of every encoding while it is empty, so a node without notes encodes as
-// it did before the field existed.
+// Notes returns the notes of the node, in order, or nil when it has none. A
+// new experiment copies them into the labels of the node as VM notes. Every
+// encoding leaves out the field while it is empty, so a node without notes
+// encodes as it did before the field existed.
 func (g *General) Notes() []string {
 	if g == nil {
 		return nil

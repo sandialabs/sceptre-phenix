@@ -33,8 +33,8 @@ var topologyNameInvalid = regexp.MustCompile(`[^A-Za-z0-9_@.-]+`)
 // TopologyName is the name proposed for the topology of a document named
 // name, in the Builder's Publish dialog (configName in
 // src/js/src/builder/publish.js) and wherever a document is published
-// without one: each run of characters a config name may not hold becomes one
-// hyphen, and hyphens at either end are dropped.
+// without one. Each run of characters that a config name cannot hold becomes
+// one hyphen, and hyphens at either end are dropped.
 func TopologyName(name string) string {
 	proposed := strings.Trim(topologyNameInvalid.ReplaceAllString(name, "-"), "-")
 	if proposed == "" {
@@ -68,10 +68,10 @@ type TopologyExport struct {
 	VLANAliases map[string]int
 	// Warnings collects non-fatal issues found while mapping the document.
 	Warnings []Issue
-	// PublishBlockers are why publishing refuses Config although phenix's
-	// config validation accepts it, one error per check in the order
-	// publishing makes them (see [Document.PublishTopologyConfig]), or none.
-	// Each lists its problems as issues (see [ErrorIssues]).
+	// PublishBlockers are the reasons why a publish refuses Config, although
+	// the phenix config validation accepts it. There is one error per check,
+	// in the order of the publish checks (see [Document.PublishTopologyConfig]),
+	// or none. Each error lists its problems as issues (see [ErrorIssues]).
 	PublishBlockers []error
 }
 
@@ -143,9 +143,10 @@ func (e *NodeHostnameError) Issues() []Issue {
 	return problemIssues(CodeNodeHostnameShort, e.Problems, e.issues)
 }
 
-// problemIssues returns the issues of a publish blocker: located, when it
-// holds one for each problem, or else an issue of code for each problem,
-// located nowhere, as a blocker made outside this package has.
+// problemIssues returns the issues of a publish blocker. When the blocker
+// holds a located issue for each problem, it returns these. Otherwise it
+// returns an issue of code for each problem, with no location, as for a
+// blocker made outside this package.
 func problemIssues(code Code, problems []string, located []Issue) []Issue {
 	if len(located) == len(problems) {
 		return slices.Clone(located)
@@ -192,9 +193,10 @@ func projectedDevice(node *Node) bool {
 	return node.Kind == NodeKindDevice && node.Device != nil && node.Device.IncludedFrom == ""
 }
 
-// locate gives an issue about the spec node at index the path below the
-// document node it was made from (nodes[3].<below>) and that node's ID. An
-// index past the nodes leaves the issue where it is.
+// locate gives an issue about the spec node at index two values: the path
+// below the document node that the spec node was made from (nodes[3].<below>),
+// and the ID of that document node. An index past the nodes leaves the issue
+// as it is.
 func locate(issue Issue, nodes []specNode, index int, below string) Issue {
 	if index < 0 || index >= len(nodes) {
 		return issue
@@ -211,8 +213,8 @@ func locate(issue Issue, nodes []specNode, index int, below string) Issue {
 //
 // Mapping rules:
 //
-//   - switch, note, and group nodes are omitted; they carry no phenix
-//     semantics,
+//   - switch, note, and group nodes are omitted, because they carry no
+//     phenix semantics,
 //   - devices from included topologies ([Device.IncludedFrom]) are omitted,
 //     and the document's includeTopologies are written instead, so phenix
 //     merges those devices back in and a publish never duplicates them,
@@ -225,7 +227,7 @@ func locate(issue Issue, nodes []specNode, index int, below string) Issue {
 //     refuses),
 //   - every network carrying an integer alias contributes a VLAN alias.
 //
-// The document is validated first; an invalid document is never mapped.
+// The document is validated first. An invalid document is never mapped.
 func (d *Document) ToTopology() (*Topology, error) {
 	if err := d.Validate(); err != nil {
 		return nil, err
@@ -304,26 +306,30 @@ func topologyConfig(name string, topology *Topology) (*store.Config, error) {
 }
 
 // PublishTopologyConfig projects the document onto a topology config and runs
-// the checks publishing makes, so a caller about to publish a topology can
-// authoritatively verify complete node specs: every interface of a device
-// phenix starts has a VLAN (see [checkInterfaceVLANs]), no two interfaces on
-// one network use one IP or MAC address (see
-// [Document.checkInterfaceAddresses]), phenix
-// accepts every hostname (see [checkHostnames]), and the spec passes the
-// existing phenix topology schema validation (types.ValidateConfigSpec, which
-// does not resolve included topologies from the store).
+// the publish checks. Thus a caller that is about to publish a topology can
+// authoritatively verify complete node specs:
 //
-// This is deliberately separate from [Document.Validate], which validates the
-// draft working copy: a working copy may legitimately contain interfaces that
-// are not yet connected to a network and have no VLAN, or that share an
-// address, or a hostname imported from a topology older phenix stored, which
-// a published topology may not.
+//   - every interface of a device that phenix starts has a VLAN (see
+//     [checkInterfaceVLANs]),
+//   - no two interfaces on one network use one IP or MAC address (see
+//     [Document.checkInterfaceAddresses]),
+//   - phenix accepts every hostname (see [checkHostnames]),
+//   - the spec passes the phenix topology schema validation
+//     (types.ValidateConfigSpec, which does not resolve included topologies
+//     from the store).
 //
-// It is the entry point for callers that intend to store the result. What
-// only publishing refuses (see [Document.projectTopology]) is reported first,
-// whatever else phenix's config validation finds, as its errors name what to
-// fix: the first check that fails, so interfaces without a VLAN before
-// addresses interfaces share, and those before hostnames phenix refuses.
+// This is separate from [Document.Validate] on purpose. [Document.Validate]
+// validates the draft working copy. A working copy can correctly contain
+// interfaces that do not connect to a network yet and have no VLAN,
+// interfaces that share an address, or a hostname imported from a topology
+// that an older phenix stored. A published topology cannot contain these.
+//
+// It is the entry point for callers that intend to store the result. It
+// first reports what only a publish refuses (see [Document.projectTopology]),
+// whatever else the phenix config validation finds, because these errors
+// name what to fix. It reports the first check that fails: interfaces
+// without a VLAN before shared addresses, and shared addresses before
+// hostnames that phenix refuses.
 func (d *Document) PublishTopologyConfig(name string) (*store.Config, []Issue, error) {
 	config, _, warnings, err := d.PublishTopology(name)
 
@@ -332,9 +338,9 @@ func (d *Document) PublishTopologyConfig(name string) (*store.Config, []Issue, e
 
 // PublishTopology is [Document.PublishTopologyConfig] that also returns the
 // projection the config holds, for a publisher that needs more of it (its
-// VLAN aliases, say) without projecting the document again. The config's
-// spec is the projection's, so neither may be changed while the other is
-// in use.
+// VLAN aliases, for example) without a second projection of the document.
+// The spec of the config is the spec of the projection, so a caller must not
+// change either while the other is in use.
 func (d *Document) PublishTopology(name string) (*store.Config, *Topology, []Issue, error) {
 	projection, err := d.projectTopology(name)
 	if err != nil {
@@ -353,20 +359,20 @@ func (d *Document) PublishTopology(name string) (*store.Config, *Topology, []Iss
 }
 
 // ExportTopologyConfig projects the document onto a topology config and runs
-// the checks of [Document.PublishTopologyConfig], for a caller that hands the
-// config out rather than stores it. One that only publishing refuses, as an
-// interface has a blank VLAN, interfaces share an address, or phenix would
-// refuse a hostname when it creates an experiment, is returned with every
-// such error, the one PublishTopologyConfig returns first, as its
-// PublishBlockers.
+// the checks of [Document.PublishTopologyConfig], for a caller that gives the
+// config out and does not store it. It returns a config that only a publish
+// refuses with every such error as its PublishBlockers, first the error that
+// PublishTopologyConfig returns. Examples are an interface with a blank VLAN,
+// interfaces that share an address, or a hostname that phenix would refuse
+// when it creates an experiment.
 //
-// A projection that fails phenix's config validation is refused. When an
-// interface's vlan key is missing or null, or a hostname is a single
-// character, which the schema refuses too, the error is the one publishing
-// makes of it, naming the interfaces or the hostnames. Otherwise it is the
-// schema's own error: blank VLANs, shared addresses and the hostnames phenix
-// refuses only when it creates an experiment, which the schema accepts, are
-// not why the config cannot be exported.
+// It refuses a projection that fails the phenix config validation. The
+// schema also refuses a missing or null vlan key of an interface, and a
+// hostname that is a single character. For these, the error is the publish
+// error, which names the interfaces or the hostnames. Otherwise the error is
+// the schema error. The schema accepts blank VLANs, shared addresses and the
+// hostnames that phenix refuses only when it creates an experiment. Thus
+// these are not why the config cannot be exported.
 func (d *Document) ExportTopologyConfig(name string) (*TopologyExport, error) {
 	projection, err := d.projectTopology(name)
 	if err != nil {
@@ -392,13 +398,13 @@ func (d *Document) ExportTopologyConfig(name string) (*TopologyExport, error) {
 	}, nil
 }
 
-// PublishBlockers returns every check only publishing makes that the
-// document's projection onto the topology config named name fails, in the
-// order publishing makes them (see [Document.projectTopology]), whether or
-// not phenix's config validation accepts the projection. It is for a caller
-// that names everything that blocks a publication:
-// [Document.ExportTopologyConfig] returns alone a blocker the schema refuses
-// too.
+// PublishBlockers returns every check that only a publish makes and that the
+// projection of the document onto the topology config named name fails. The
+// order is the order of the publish checks (see [Document.projectTopology]).
+// The result does not depend on whether the phenix config validation accepts
+// the projection. It is for a caller that names everything that blocks a
+// publication. [Document.ExportTopologyConfig] returns a blocker that the
+// schema also refuses as its only error.
 func (d *Document) PublishBlockers(name string) ([]error, error) {
 	projection, err := d.projectTopology(name)
 	if err != nil {
@@ -412,8 +418,8 @@ func (d *Document) PublishBlockers(name string) ([]error, error) {
 // what the checks of publishing found.
 type topologyProjection struct {
 	config *store.Config
-	// topology is the projection config was made from; config.Spec is its
-	// Spec.
+	// topology is the projection that config was made from. config.Spec is
+	// its Spec.
 	topology *Topology
 	warnings []Issue
 	// blockers are the checks only publishing makes that config fails, in the
@@ -432,14 +438,18 @@ type topologyProjection struct {
 }
 
 // projectTopology projects the document onto a topology config named name
-// and runs every check of publishing on it. It is the one place that decides
-// what publishing refuses although phenix's config validation may accept it,
-// which [Document.PublishTopologyConfig] refuses and
-// [Document.ExportTopologyConfig] reports, in this order: interfaces without
-// a VLAN (see [checkInterfaceVLANs]), then addresses interfaces share (see
-// [Document.checkInterfaceAddresses]), then hostnames phenix refuses (see
-// [checkHostnames]), whose warnings it adds to the projection's. Then it runs
-// the phenix topology schema.
+// and runs every publish check on it. It is the one place that decides what
+// a publish refuses even when the phenix config validation accepts it.
+// [Document.PublishTopologyConfig] refuses these problems and
+// [Document.ExportTopologyConfig] reports them, in this order:
+//
+//  1. interfaces without a VLAN (see [checkInterfaceVLANs]),
+//  2. addresses that interfaces share (see
+//     [Document.checkInterfaceAddresses]),
+//  3. hostnames that phenix refuses (see [checkHostnames]). It adds their
+//     warnings to the warnings of the projection.
+//
+// Then it runs the phenix topology schema.
 func (d *Document) projectTopology(name string) (*topologyProjection, error) {
 	topology, err := d.ToTopology()
 	if err != nil {
@@ -491,17 +501,18 @@ func (d *Document) projectTopology(name string) (*topologyProjection, error) {
 }
 
 // checkInterfaceVLANs refuses a topology spec in which an interface of a node
-// phenix starts has no VLAN: none at all, or an empty one. The phenix topology
-// schema requires only the vlan key, so phenix stores such a topology, but
-// minimega refuses the interface when the experiment starts ("VLAN must be
-// non-empty string"). A VLAN that names no network of the document is kept:
-// phenix allocates VLANs by name. External nodes are not started, and need
-// none. The error names each device and interface to fix: an interface by
-// its position when it has no name, or shares it with another. It also
+// that phenix starts has no VLAN: no VLAN at all, or an empty one. The phenix
+// topology schema requires only the vlan key, so phenix stores such a
+// topology. But minimega refuses the interface when the experiment starts
+// ("VLAN must be non-empty string"). A VLAN that names no network of the
+// document stays, because phenix allocates VLANs by name. phenix does not
+// start external nodes, so they need no VLAN. The error names each device and
+// interface to fix. It names an interface by its position when the interface
+// has no name, or shares its name with another. checkInterfaceVLANs also
 // reports whether one of those interfaces has no vlan key or a null one,
-// which phenix's schema refuses as well, rather than a blank VLAN, which it
-// accepts. nodes are the document nodes the spec's nodes were made from (see
-// [Document.projectedNodes]), which locate the issue of each problem.
+// which the phenix schema also refuses, not a blank VLAN, which the schema
+// accepts. nodes are the document nodes that the spec nodes were made from
+// (see [Document.projectedNodes]). They locate the issue of each problem.
 func checkInterfaceVLANs(spec map[string]any, nodes []specNode) (*InterfaceVLANError, bool) {
 	entries, _ := spec[keyNodes].([]any)
 
@@ -552,9 +563,9 @@ func checkInterfaceVLANs(spec map[string]any, nodes []specNode) (*InterfaceVLANE
 // checkHostnames refuses a topology spec with a hostname phenix refuses (see
 // [checkHostname]). The error names each hostname and why, in phenix's words.
 // It also reports whether one of them is a single character, and returns the
-// warnings phenix logs then about the hostnames it accepts. External nodes are
-// not started, and phenix checks none of their hostnames. nodes are the
-// document nodes the spec's nodes were made from, which locate the issues.
+// warnings phenix logs then about the hostnames it accepts. phenix does not
+// start external nodes, and checks none of their hostnames. nodes are the
+// document nodes that the spec nodes were made from. They locate the issues.
 func checkHostnames(spec map[string]any, nodes []specNode) (*NodeHostnameError, bool, []Issue) {
 	var (
 		problems         []string
@@ -592,11 +603,11 @@ func checkHostnames(spec map[string]any, nodes []specNode) (*NodeHostnameError, 
 // refuses as a hostname (see [v1.CheckHostname]).
 const minimegaWildcardVM = "all"
 
-// hostnameCode is the code of what phenix makes of a hostname it refuses
-// (refused) or warns about (see [checkHostname]), in the order phenix checks
-// them: one character, "all", all digits, and else "phenix" on a Windows
-// node; for a warning, another casing of "all", and else "phenix" on another
-// node.
+// hostnameCode is the code for what phenix does with a hostname that it
+// refuses (refused) or gives a warning about (see [checkHostname]). The order
+// is the order of the phenix checks. For a refusal: one character, "all", all
+// digits, and else "phenix" on a Windows node. For a warning: a different
+// casing of "all", and else "phenix" on a different node.
 func hostnameCode(hostname string, refused bool) Code {
 	switch {
 	case refused && isShortHostname(hostname):
@@ -614,12 +625,16 @@ func hostnameCode(hostname string, refused bool) Code {
 	}
 }
 
-// checkHostname reports what phenix makes of the hostname of a node it
-// starts, whose os_type is osType: an error for a hostname phenix refuses, a
-// single character, which phenix's schema refuses, or one phenix stores but
-// refuses when it creates an experiment from the node (see
-// [v1.CheckHostname]): "all", all digits, or "phenix" on a Windows node. It
-// returns the warning phenix logs about a hostname it accepts.
+// checkHostname reports what phenix does with the hostname of a node that it
+// starts, whose os_type is osType. It returns an error for a hostname that
+// phenix refuses:
+//
+//   - a single character, which the phenix schema refuses,
+//   - a hostname that phenix stores but refuses when it creates an experiment
+//     from the node (see [v1.CheckHostname]): "all", all digits, or "phenix"
+//     on a Windows node.
+//
+// It returns the warning that phenix logs about a hostname that it accepts.
 func checkHostname(hostname, osType string) (string, error) {
 	if isShortHostname(hostname) {
 		return "", fmt.Errorf(
@@ -734,20 +749,22 @@ type addressKey struct {
 }
 
 // checkInterfaceAddresses refuses a document in which two interfaces on the
-// same network use the same IP address or the same MAC address: phenix stores
-// such a topology, but the addresses clash once the experiment runs. Each
-// interface is on the network publishing puts it on (see
-// [interfaceNetwork]): interfaces on different VLANs, or on VLANs of one name
-// on different bridges, are on networks of their own, which may use the same
-// addresses, as isolated networks often do and as minimega allows (it compares
-// VLANs before it reports a MAC address twice). Every device counts, including
-// an external device's IP addresses and the devices of included topologies,
-// which phenix merges into the experiment; an address only included devices
-// use is their topology's to fix. An external device's MAC addresses do not
-// count: phenix does not start it, and its schema has no MAC. IP addresses are
-// compared parsed (see [interfaceIP]), and MAC addresses in any case and with
-// any separators (see [interfaceMAC]). The error names each address, its
-// network and the interfaces that use it, in document order.
+// same network use the same IP address or the same MAC address. phenix stores
+// such a topology, but the addresses clash when the experiment runs. Each
+// interface is on the network where a publish puts it (see
+// [interfaceNetwork]). Interfaces on different VLANs, or on VLANs of one name
+// on different bridges, are on separate networks. Separate networks can use
+// the same addresses, as isolated networks often do and as minimega allows.
+// (minimega compares VLANs before it reports a MAC address twice.)
+//
+// Every device counts, including the IP addresses of an external device and
+// the devices of included topologies, which phenix merges into the
+// experiment. An address that only included devices use is for their
+// topology to fix. The MAC addresses of an external device do not count:
+// phenix does not start it, and its schema has no MAC. IP addresses are
+// compared after parsing (see [interfaceIP]). MAC addresses are compared in
+// any case and with any separators (see [interfaceMAC]). The error names each
+// address, its network and the interfaces that use it, in document order.
 func (d *Document) checkInterfaceAddresses() error {
 	var (
 		shared []*addressUsers
@@ -878,16 +895,17 @@ func (d *Document) eachAddressUse(use func(addressUse)) {
 // interfaceIP reads the IP address a spec interface entry uses, as Go parses
 // it, without a zone, and with an IPv4 address mapped into IPv6 as the IPv4
 // address. A prefix length typed after it is ignored. It reports none for an
-// interface that asks DHCP for its address, for one phenix brings up with no
-// address (proto manual), and for an address that is blank or does not parse,
-// which is the schema's to report.
+// interface that asks DHCP for its address, for an interface that phenix
+// starts with no address (proto manual), and for an address that is blank or
+// does not parse, which the schema reports.
 //
-// A manual interface's address is left out although the vrouter app's Vyatta
-// and VyOS configuration assigns it: phenix's schema describes manual as no
-// address, its Linux and Windows startup scripts and minirouter assign none,
-// and the Builder's Inspector does not show it. An interface with qinq set
-// counts: minirouter, which the Builder's Router and Firewall templates use,
-// assigns its address, and so does Vyatta.
+// interfaceIP leaves out the address of a manual interface, although the
+// Vyatta and VyOS configuration of the vrouter app assigns it. The reasons:
+// the phenix schema describes manual as no address, the Linux and Windows
+// startup scripts of phenix and minirouter assign no address, and the
+// Inspector of the Builder does not show it. An interface with qinq set
+// counts. minirouter, which the Router and Firewall templates of the Builder
+// use, assigns its address, and Vyatta does too.
 func interfaceIP(iface map[string]any) (netip.Addr, bool) {
 	proto, _ := iface["proto"].(string)
 
@@ -930,14 +948,15 @@ func interfaceMAC(iface map[string]any) (net.HardwareAddr, bool) {
 // with that bridge (see v1.Network.SetDefaults).
 const defaultBridgeName = "phenix"
 
-// interfaceNetwork names the network a spec interface entry is on, once
-// connecting it on the canvas has set its VLAN (see [connectInterfaces]): the
-// bridge, "" for the experiment's default one, and the VLAN, without the
-// white space around it, "" for none. A bridge is compared as it is written,
-// so one that names the experiment's default bridge counts as another bridge;
-// a VLAN as it is written too, as phenix matches VLAN names exactly.
-// Interfaces without a VLAN, which publishing refuses unless their device is
-// external, are all on one network of their own.
+// interfaceNetwork names the network of a spec interface entry, after its
+// connection on the canvas has set its VLAN (see [connectInterfaces]). It
+// returns the bridge, "" for the default bridge of the experiment, and the
+// VLAN without the white space around it, "" for none. A bridge is compared
+// as written, so a bridge that names the default bridge of the experiment
+// counts as a different bridge. A VLAN is compared as written too, because
+// phenix matches VLAN names exactly. Interfaces without a VLAN, which a
+// publish refuses unless their device is external, are all on one separate
+// network.
 func interfaceNetwork(iface map[string]any) (string, string) {
 	bridge, _ := iface["bridge"].(string)
 	if bridge == defaultBridgeName {
@@ -1088,11 +1107,11 @@ func deviceIssue(code Code, node *Node, index int, path, message string) Issue {
 	return issue
 }
 
-// connectInterfaces sets the VLAN of each interface of spec, the node spec of
-// the device node at index among the document's nodes, whose connection point
-// is connected to a network to that network's name, as publishing writes it.
-// It returns a warning for each connection whose interface the spec does not
-// have, which publishing drops.
+// connectInterfaces sets the VLAN of each interface of spec whose connection
+// point connects to a network. It sets the VLAN to the name of that network,
+// as a publish writes it. spec is the node spec of the device node at index
+// among the document's nodes. It returns a warning for each connection whose
+// interface the spec does not have. A publish drops such connections.
 func connectInterfaces(node *Node, index int, spec map[string]any, handleNetworks map[string]*Network) []Issue {
 	var (
 		ifaces   = specNodeInterfaces(spec)
@@ -1124,8 +1143,8 @@ func connectInterfaces(node *Node, index int, spec map[string]any, handleNetwork
 	return warnings
 }
 
-// findInterface locates a spec interface by name, preferring an exact match and
-// falling back to a case-insensitive one.
+// findInterface locates a spec interface by name. It prefers an exact match,
+// else a case-insensitive one.
 func findInterface(ifaces []any, name string) map[string]any {
 	var fallback map[string]any
 

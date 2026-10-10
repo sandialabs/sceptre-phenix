@@ -1,20 +1,24 @@
 <!--
   What the diagram of an uploaded Builder package needs, shown in place of
-  the Upload dialog's form once the server has said which of it this server
+  the Upload dialog's form after the server says which of these needs it
   has (POST /builder/package/resolve, see package.js and UploadDialog).
 
-  Each need is listed under its kind with its status in words (Present,
-  Missing, Different, Not checked), never by color alone, whether the
-  package carries it, and why, when that needs saying. A Scenario or
-  Topology config the package carries and the server does not have gets an
-  unticked "Create on this server" checkbox. Nothing else gets one: a
-  config the server has is never replaced, and disk images, apps and files
-  are only listed.
+  Each need is listed under its kind, with:
 
-  Continue to editor hands the ticked configs to the dialog, which creates
-  them and opens the diagram; Cancel makes nothing. While the dialog
-  creates them (busy), Cancel is unavailable and says why (progress), so no
-  work goes on unseen.
+  - its status in words (Present, Missing, Different, Not checked), never by
+    color alone
+  - whether the package carries it
+  - why, when that needs saying.
+
+  A Scenario or Topology config that the package carries and the server
+  does not have gets an unticked "Create on this server" checkbox. Nothing
+  else gets one. A config the server has is never replaced, and disk
+  images, apps and files are only listed.
+
+  Continue to editor gives the ticked configs to the dialog, which creates
+  them and opens the diagram. Cancel makes nothing. While the dialog
+  creates the configs (busy), Cancel is unavailable and says why
+  (progress). Thus no work continues out of sight.
 -->
 <template>
   <div ref="root" data-testid="upload-package">
@@ -70,7 +74,7 @@
 
     <p v-if="!groups.length">The package lists nothing the diagram needs.</p>
 
-    <!-- What the dialog is doing, in sight; the dialog's own status
+    <!-- What the dialog is doing, on screen. The dialog's own status
          announces it. -->
     <p
       v-if="busy && progress"
@@ -133,7 +137,7 @@
 
   const root = ref(null);
   const continueButton = ref(null);
-  // The keys (see dependencyKey) of the configs ticked for creation; none
+  // The keys (see dependencyKey) of the configs ticked for creation. None
   // is ticked at first.
   const ticked = ref([]);
 
@@ -179,8 +183,8 @@
     emit('continue', tickedDependencies(props.dependencies, ticked.value));
   }
 
-  // While the configs are created, Cancel would leave that work going on
-  // out of sight, so it does nothing until the work is done.
+  // While the configs are created, Cancel would leave that work running out
+  // of sight. So Cancel does nothing until the work is done.
   function cancel() {
     if (props.busy) {
       return;

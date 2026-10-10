@@ -64,7 +64,7 @@ export function useFieldError(errorId, fieldIds = {}) {
       );
     },
 
-    // Shows `message`; when it is about a field, focus moves to its control.
+    // Shows `message`. When it is about a field, focus moves to its control.
     async fail(message, field = '') {
       error.set(message, field);
 
@@ -79,10 +79,11 @@ export function useFieldError(errorId, fieldIds = {}) {
 /**
  * What the server listed when it refused a publish (`publishIssues`, see
  * publish in store.js), for the Publish dialog, which calls this in its
- * setup. The list is cleared as the dialog opens, as it closes (its setup's
- * scope ends), and once the diagram changes after the refusal, so it never
- * shows against a diagram other than the one refused. A change of who saved
- * the diagram and when (see sameButStamp) leaves the diagram as it was.
+ * setup. This function clears the list when the dialog opens, when it
+ * closes (its setup's scope ends), and when the diagram changes after the
+ * refusal. Thus the list never shows against a diagram other than the one
+ * refused. A change of who saved the diagram and when (see sameButStamp)
+ * does not count as a change of the diagram.
  *
  * @param {{doc: object, publishIssues: object[]}} store the Builder store
  */
@@ -108,14 +109,14 @@ const reads = new WeakMap();
 
 /**
  * Reads the file a file field chose, for its change event. A file chosen
- * while another was read replaces it: the older read gives null.
+ * while another is read replaces it. The older read then gives null.
  *
  * @param {Event} event
  * @param {string} noun what the file holds, for the message when it is too
  *   large: "file", "config", "scenario"
  * @returns {Promise<{text?: string, name?: string, error?: string}|null>}
- *   the file's text and its name, or why it was not read; null when no file
- *   is chosen, or when another replaced it
+ *   the file's text and its name, or why it was not read. Null when no file
+ *   is chosen, or when another replaced it.
  */
 export async function readChosenFile(event, noun) {
   const field = event.target;
@@ -155,9 +156,9 @@ export function parseErrorText(message) {
 export const LEGACY_SOURCE = 'Legacy Builder diagram or Topology';
 
 /**
- * What Upload says of text that is XML when it is given as a Builder
- * document: no Builder document is XML, and a diagram of the legacy Builder
- * is, which another source of the dialog converts.
+ * What Upload says when text given as a Builder document is XML. No Builder
+ * document is XML. A diagram of the legacy Builder is XML, and another
+ * source of the dialog converts it.
  *
  * @param {string} text the text of the file, or the pasted text
  * @returns {string} the message, or '' for text that is not XML

@@ -3,11 +3,11 @@
 
   Tabbed lists (my drafts, drafts shared with me, published diagrams, and
   other users' drafts the role may see, a tab shown only when it lists
-  something) plus the three ways to start: a blank diagram, Import (the server converts
-  a topology or experiment config) and Upload (a Builder document). The
-  view (Builder.vue) puts the buttons the editor header has too after
-  them, in the buttons slot: Commands, the theme, Settings, Help and Focus
-  mode. The view reads the lists again whenever they come back into view,
+  something) plus the three ways to start: a blank diagram, Import (the
+  server converts a topology or experiment config) and Upload (a Builder
+  document). The view (Builder.vue) puts the buttons the editor header has
+  too after them, in the buttons slot: Commands, the theme, Settings, Help
+  and Focus mode. The view reads the lists again whenever they show again,
   so there is no Refresh button.
 
   The ways to start make a draft, so a role that cannot create drafts does
@@ -23,7 +23,7 @@
   the next, and its buttons are all one size (see .builder-card__actions in
   builder.css). The user's own drafts say who they are shared with, and have
   Share when the server says the user may share them (canShare). Other
-  users' drafts say what the user may do with them; one the server says the
+  users' drafts say what the user may do with them. One the server says the
   user may delete (canDelete) has Delete. A draft the user may change has
   Publish, which opens the Publish dialog here, on the drafts, once the view
   has loaded the draft (publishing). A published topology has Delete when
@@ -33,29 +33,30 @@
   A topology whose diagram is read from the Builder file it names is listed
   with the published diagrams, tagged File in words, with the file's path
   where a published diagram has its time. It has no Delete: nothing was
-  published, and the topology is deleted on the Configs page.
+  published, and the user deletes the topology on the Configs page.
 
-  A draft closed while its changes were being saved says how the saves go
-  on (saves, see createBackgroundSaves in builder/leave.js): being saved,
-  saved, or why not, which its Open button is described by. Opening it
-  again is the way back to changes that could not be saved.
+  A draft that closed while its changes were still saving shows the state
+  of those saves (saves, see createBackgroundSaves in builder/leave.js):
+  saving, saved, or why not. This text is the description of its Open
+  button. To get back changes that could not be saved, open the draft
+  again.
 
-  Several cards can be acted on at once. A card a batch can act on has a
-  checkbox, and its list a row above it (BuilderBulkBar.vue) with Select
+  The user can act on several cards at once. A card a batch can act on has
+  a checkbox, and its list a row above it (BuilderBulkBar.vue) with Select
   all, how many are selected, and the batch actions: Share selected (My
   Drafts), Download selected (My Drafts, Shared Drafts and Published
   Diagrams, but not a topology read from its Builder file) and Delete
   selected (where the user may delete). A list with no such card has
   neither. Each list keeps its own selection, by cardKey, through a change
-  of tab and a new read of the lists; every change of it is announced
+  of tab and a new read of the lists. Every change of it is announced
   (announce). Delete selected asks once for the batch, naming what goes and
-  how many, and the view deletes them (bulk-delete, bulk-delete-published);
+  how many, and the view deletes them (bulk-delete, bulk-delete-published).
   Share selected has the view open the dialog that shares them
-  (bulk-share); Download selected has the view save each as a Builder file
+  (bulk-share). Download selected has the view save each as a Builder file
   of its own (bulk-download). While the view runs a batch (bulk), the row
-  says how far it is, and nothing can be selected or deleted. What a batch
-  left undone is listed under the row (bulkResult, BuilderBulkSummary.vue),
-  in a summary that takes focus.
+  shows its progress, and nothing can be selected or deleted. A summary
+  under the row lists what a batch left undone (bulkResult,
+  BuilderBulkSummary.vue), and takes focus.
 
   The cards of a list are one Tab stop, and the keys of listSelection.js
   move through them and select (onListKeydown): the arrow keys move focus
@@ -269,7 +270,7 @@
             </label>
           </div>
           <!-- One line each: the owner, with what the user may do with
-               another user's draft; then when it changed. -->
+               another user's draft. Then when it changed. -->
           <p v-if="item.owner" class="builder-card__meta">
             Owner: {{ item.owner }}
             <span
@@ -303,7 +304,7 @@
           <p v-if="item.description" class="builder-card__meta">
             {{ item.description }}
           </p>
-          <!-- The ring turns while the changes are sent; reduced motion
+          <!-- The ring turns while the changes are sent. Reduced motion
                stops it (see builder.css). The warning sign is decorative. -->
           <p
             v-if="saveOf(item)"
@@ -332,9 +333,9 @@
 
           <div class="builder-card__actions">
             <!-- While it opens: a turning ring and Opening… (see
-                 builder.css; reduced motion stops the ring turning). Both
-                 labels hold the button's width; the hidden one is not
-                 named. -->
+                 builder.css, reduced motion stops the ring). Both labels
+                 hold the button's width. The hidden one does not name the
+                 button. -->
             <button
               v-if="!item.damaged"
               type="button"
@@ -397,8 +398,8 @@
               @click="busy || bulk || (confirming = item)">
               Delete
             </button>
-            <!-- A published topology's: while it is deleted, a turning ring
-                 and Deleting…, as Open shows while it opens. -->
+            <!-- A published topology's: while the delete runs, a turning
+                 ring and Deleting…, as Open shows while it opens. -->
             <button
               v-if="mayDeletePublished(tab, item)"
               type="button"
@@ -473,8 +474,8 @@
       confirm-label="Delete topology"
       @cancel="confirmingPublished = null"
       @confirm="confirmDeletePublished" />
-    <!-- Delete selected: one question for the batch. One card alone is
-         asked about as its own Delete asks. -->
+    <!-- Delete selected: one question for the batch. For one card alone,
+         the question is the one its own Delete asks. -->
     <builder-confirm
       v-if="confirmingSelected"
       :id="selectedQuestion.id"
@@ -557,8 +558,8 @@
       type: Object,
       default: () => ({ mine: [], others: [] }),
     },
-    // How the saves of drafts closed while being saved go on, by cardKey:
-    // kind ('saving', 'saved', 'retrying', 'waiting', 'signin' or
+    // The state of the saves of drafts that closed while saving, by
+    // cardKey: kind ('saving', 'saved', 'retrying', 'waiting', 'signin' or
     // 'stopped') and text.
     saves: { type: Object, default: () => ({}) },
     // The batch the view is running on the selection of a tab, if one is:
@@ -632,7 +633,7 @@
     );
   }
 
-  // How the saves of a draft closed while being saved go on, if they do.
+  // The state of the saves of a draft that closed while saving, if any.
   function saveOf(item) {
     return (item.owner && props.saves[cardKey(item)]) || null;
   }
@@ -659,8 +660,8 @@
   }
 
   // Delete is on a published topology's card when the role may delete
-  // configs; a published experiment is deleted from the Experiments page,
-  // and a topology read from its Builder file on the Configs page.
+  // configs. The user deletes a published experiment on the Experiments
+  // page, and a topology read from its Builder file on the Configs page.
   function mayDeletePublished(tab, item) {
     return (
       tab.id === 'published' &&
@@ -687,8 +688,8 @@
     return published ? { verb: 'Published', time: published } : null;
   }
 
-  // Who changed a draft last, when it was not its owner (someone it is
-  // shared with, say).
+  // Who changed a draft last, when it was not its owner (for example,
+  // someone it is shared with).
   function changedBy(item) {
     return item.owner && item.lastModifiedBy !== item.owner
       ? item.lastModifiedBy || ''
@@ -700,8 +701,9 @@
     () => new Set([...props.mine, ...(props.damaged.mine || [])]),
   );
 
-  // Card buttons name the time too, so drafts that share a title can be told
-  // apart, and the owner of anyone else's draft (WCAG 2.4.6).
+  // Card buttons name the time too, so drafts that share a title have
+  // different names. They also name the owner of anyone else's draft (WCAG
+  // 2.4.6).
   function cardName(item) {
     const when = stamp(item);
     const whose = item.owner && !own.value.has(item) ? ` by ${item.owner}` : '';
@@ -763,7 +765,7 @@
 
   // The selection of each tab of cards, by cardKey, which also keeps the
   // card that is the list's Tab stop. Every card is in it, for the keys to
-  // move to; only those a batch can act on can be selected.
+  // move to. Only cards a batch can act on can be selected.
   const selections = Object.fromEntries(
     ['mine', 'shared', 'published', 'others'].map((id) => [
       id,
@@ -827,8 +829,8 @@
   const tooltip = useFixedTooltip({ side: 'below' });
   const { tipEvents } = tooltip;
 
-  // The tab shown goes when it has nothing left to list (the last of
-  // other users' drafts deleted, say): My Drafts takes its place.
+  // When the shown tab has nothing left to list (for example, after a
+  // delete of the last of other users' drafts), My Drafts replaces it.
   watch(tabs, (list) => {
     if (!list.some((tab) => tab.id === active.value)) {
       active.value = 'mine';
@@ -903,9 +905,9 @@
   }
 
   // Deleting a card removes the focused Delete button, and a card with focus
-  // on it can leave its list when the lists are read again (deleted
-  // elsewhere, say). Once its tab no longer holds the draft, focus moves to
-  // the card that took its place, or to the tab when none is left (WCAG
+  // on it can leave its list when the lists are read again (for example,
+  // deleted elsewhere). Once its tab no longer holds the draft, focus moves
+  // to the card that took its place, or to the tab when none is left (WCAG
   // 2.4.3). A card that stays can lose the button focus was on instead
   // (Publish, once the draft is shared with the user for viewing only):
   // focus then moves to the card's first button. A delete that failed
@@ -942,8 +944,8 @@
     emit('delete-published', item, itemLabel(item));
   }
 
-  // The card focus is on, as requestDelete records one. Read before the
-  // lists re-render.
+  // The card focus is on, as requestDelete records it. This reads it
+  // before the lists re-render.
   function focusedCard() {
     const card = document.activeElement?.closest?.('.builder-card');
     const button = card?.querySelector(
@@ -980,8 +982,8 @@
       const stays = items.some((item) => item.id === pending.id);
 
       await nextTick();
-      // Focus is where it was, or the user has moved on while the delete
-      // was in flight.
+      // Focus is where it was, or the user moved focus elsewhere while the
+      // delete ran.
       if (!focusLost()) {
         return;
       }
@@ -1089,8 +1091,8 @@
   }
 
   // The selected cards Delete selected deletes: on My Drafts a selected
-  // draft may be one the user can only share. A topology being deleted from
-  // its own card is left to that.
+  // draft may be one the user can only share. This leaves out a topology
+  // that its own card is deleting now.
   function deletable(tab) {
     return tab.selection.selected.filter((item) =>
       tab.id === 'published'
@@ -1131,8 +1133,8 @@
     );
   }
 
-  // What the cards call the items, by cardKey: the view names them so in
-  // what it says of the batch.
+  // What the cards call the items, by cardKey: the view uses these names
+  // when it announces the batch.
   function namesOf(items) {
     return Object.fromEntries(
       items.map((item) => [cardKey(item), cardName(item)]),
@@ -1167,8 +1169,8 @@
     }
   }
 
-  // The question: what goes, by name, and how many. One card alone is
-  // asked about as its own Delete asks.
+  // The question: what goes, by name, and how many. For one card alone,
+  // the question is the one its own Delete asks.
   const selectedQuestion = computed(() => {
     const { tab, items } = confirmingSelected.value || { items: [] };
     const [first] = items;
@@ -1362,7 +1364,7 @@
     margin: 0;
   }
 
-  /* Says in words where the diagram is read from; the frame only sets the
+  /* Says in words where the diagram is read from. The frame only sets the
      word apart from the name. */
   .builder-drafts__tag {
     display: inline-block;

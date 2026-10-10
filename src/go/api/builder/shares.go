@@ -22,7 +22,7 @@ const (
 )
 
 // maxShareAttempts bounds how often [Service.UpdateShares] builds and writes
-// the share list again after a save landed first.
+// the share list again after a save wrote first.
 const maxShareAttempts = 5
 
 // Valid reports whether the access is one this package understands.
@@ -39,9 +39,9 @@ func (a ShareAccess) Valid() bool {
 type ShareEntry struct {
 	User   string      `json:"user"`
 	Access ShareAccess `json:"access"`
-	// UserCreated is metadata.created of the recipient's User config when
-	// granted. The share applies only while it still matches, so it never
-	// passes to a new account created under the same name.
+	// UserCreated is the metadata.created of the User config of the recipient
+	// at grant time. The share applies only while it still matches, so it
+	// never passes to a new account created under the same name.
 	UserCreated string    `json:"userCreated"`
 	GrantedAt   time.Time `json:"grantedAt"`
 	GrantedBy   string    `json:"grantedBy"`
@@ -49,8 +49,8 @@ type ShareEntry struct {
 
 // SharingState is who a draft is shared with.
 type SharingState struct {
-	// Version is incremented by every change and never reset, so a list that
-	// was emptied still differs from one that was never set.
+	// Version increases with every change, and nothing resets it. Thus a list
+	// that was emptied still differs from a list that was never set.
 	Version int64 `json:"version"`
 	// Entries are sorted by user.
 	Entries   []ShareEntry `json:"entries"`
@@ -89,8 +89,8 @@ func (d *DraftMetadata) SharingVersion() int64 {
 	return d.Sharing.Version
 }
 
-// ShareFor returns the entry sharing the draft with user, or nil. It does not
-// check the entry against the user's account: that is the caller's job.
+// ShareFor returns the entry that shares the draft with user, or nil. It does
+// not check the entry against the account of the user. The caller does that.
 func (d *DraftMetadata) ShareFor(user string) *ShareEntry {
 	if d.Sharing == nil {
 		return nil
@@ -105,18 +105,18 @@ func (d *DraftMetadata) ShareFor(user string) *ShareEntry {
 	return nil
 }
 
-// SharesETag returns the entity tag of the draft's share list,
-// `"shares-<version>"`. It is separate from [DraftMetadata.ETag], so a change
-// of who has access is never refused because the content was saved, nor the
+// SharesETag returns the entity tag of the share list of the draft,
+// `"shares-<version>"`. It is separate from [DraftMetadata.ETag]. Thus a
+// content save never causes the refusal of a change of who has access, and the
 // reverse.
 func (d *DraftMetadata) SharesETag() string {
 	return `"shares-` + strconv.FormatInt(d.SharingVersion(), 10) + `"`
 }
 
 // ValidateShareUser reports whether user can name a share recipient: a
-// bounded, printable user name that is also a usable config name. Invisible
-// characters, such as bidirectional overrides and C1 controls, are refused
-// too, so a recipient never reorders or hides text where it is shown or
+// bounded, printable user name that is also a usable config name. It also
+// refuses invisible characters, such as bidirectional overrides and C1
+// controls. Thus a recipient never reorders or hides text where it is shown or
 // logged.
 func ValidateShareUser(user string) error {
 	if err := validateText("user", user, MaxOwnerLength, true); err != nil {
@@ -138,16 +138,16 @@ func ValidateShareUser(user string) error {
 
 // UpdateShares replaces who a draft is shared with, and returns the draft.
 //
-// The share list lives in the draft record, so it is written with the same
-// compare-and-swap as the content: every save authorized by a share that is
-// removed here fails once this returns. A save that lands first makes the
-// write fail; the new list depends only on the old list and the request,
-// never on the content, so it is built and written again, up to
-// [maxShareAttempts] times before [ErrBusy] is returned. A share list that
-// changed since ExpectedVersion is a conflict.
+// The share list is in the draft record, so UpdateShares writes it with the
+// same compare-and-swap as the content. Thus every save that a share removed
+// here authorized fails after UpdateShares returns. A save that writes first
+// makes the write fail. The new list depends only on the old list and the
+// request, never on the content. Thus UpdateShares builds and writes it again,
+// up to [maxShareAttempts] times, and then returns [ErrBusy]. A share list
+// that changed after ExpectedVersion is a conflict.
 //
-// An entry that names the same user, access and account as before keeps
-// when and by whom it was granted. When nothing changes, nothing is written.
+// An entry that names the same user, access and account as before keeps when
+// and by whom it was granted. When nothing changes, nothing is written.
 // Content timestamps (Updated, LastModifiedBy) never change here.
 func (s *Service) UpdateShares(ctx context.Context, req UpdateSharesRequest) (*DraftMetadata, error) {
 	if err := ctx.Err(); err != nil {
@@ -237,10 +237,10 @@ func (s *Service) shareEntries(meta *DraftMetadata, req UpdateSharesRequest) []S
 }
 
 // settleSharesWrite settles a share list write that failed with err, an error
-// that does not prove the write was not applied, by reading the draft back.
-// When it holds exactly the list the write stored, the write was applied.
+// that does not prove the write was not applied. It reads the draft back. When
+// the draft holds exactly the list the write stored, the write was applied.
 // When it holds another list at the same version, another change of the list
-// won, which is a conflict. Otherwise err is returned.
+// won, which is a conflict. Otherwise it returns err.
 func (s *Service) settleSharesWrite(
 	ctx context.Context,
 	draftID string,

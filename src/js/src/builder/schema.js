@@ -1,10 +1,11 @@
 // Builder document schema access.
 //
-// The inspector is entirely schema driven: whatever the server returns from
-// GET /api/v1/schemas/builder/v1 wins. The bundle checked in beside this module
-// is generated from the same Go source that serves that endpoint and is used
-// only as a fallback; when the server copy cannot be fetched the editor keeps
-// working but the failure is reported to the user rather than swallowed.
+// The Inspector is entirely schema driven. The schema that the server
+// returns from GET /api/v1/schemas/builder/v1 wins. The bundle checked in
+// beside this module is generated from the same Go source that serves that
+// endpoint. The editor uses the bundle only when it cannot get the server's
+// copy. The editor then continues to work, and it reports the failure to
+// the user.
 
 import bundledSchema from './schema/builder-v1.schema.json';
 
@@ -111,9 +112,9 @@ function omit(value, keys) {
 /**
  * The `$defs` name of the phenix spec variant a device spec belongs to.
  *
- * External devices are described by `external_node`, everything else by
- * `minimega_node`; picking the concrete variant (rather than handing JSON Forms
- * the `oneOf`) keeps the complete applicable phenix schema on screen.
+ * `external_node` describes external devices, and `minimega_node` describes
+ * all other devices. JSON Forms gets the concrete variant, not the `oneOf`,
+ * so the complete applicable phenix schema stays on screen.
  *
  * @param {object} spec phenix node spec
  * @returns {string} def name
@@ -172,16 +173,16 @@ export function offeredIconKeys(def, current) {
  *
  * JSON Forms compiles each `oneOf` branch (for example the static, DHCP and
  * serial interface variants) with ajv on its own, outside the root schema. A
- * branch that still points at `#/$defs/...` cannot be compiled, and JSON Forms
- * then re-evaluates it on every render; with two or more interfaces that
- * never settles and freezes the page. A self-contained schema compiles.
- * References that would recurse forever are left in place, with the `$defs`
+ * branch that still points at `#/$defs/...` cannot be compiled. JSON Forms
+ * then evaluates it again on every render. With two or more interfaces,
+ * that never stops and freezes the page. A self-contained schema compiles.
+ * References that would recurse forever stay in place, with the `$defs`
  * they need.
  *
  * It also merges `allOf` compositions of plain object parts (the static,
  * DHCP and serial interface variants are built that way) into one object
- * schema: the JSON Forms vanilla renderers have no allOf renderer, and an
- * untyped `allOf` sends the object renderer into endless recursion.
+ * schema. The JSON Forms vanilla renderers have no allOf renderer, and an
+ * untyped `allOf` makes the object renderer recurse without end.
  *
  * @param {object} schema schema with a `$defs` table
  * @returns {object} equivalent schema without resolvable local references
@@ -231,8 +232,8 @@ function selfContained(schema) {
   return result;
 }
 
-// Keywords that make an allOf part conditional or alternative; such parts are
-// left as they are.
+// Keywords that make an allOf part conditional or alternative. Parts with
+// these keywords stay as they are.
 const NON_MERGEABLE = ['if', 'then', 'else', 'not', 'oneOf', 'anyOf', '$ref'];
 
 function flattenAllOf(value) {
@@ -294,17 +295,16 @@ function mergeParts(parts) {
   return merged;
 }
 
-// Inspector schemas by bundle, then by what picks one (see schemaKey). The
-// Inspector asks again on every document change, and a new object each time
-// had JSON Forms compile it again, and ajv, which keeps every schema it
-// compiles, grow with each edit.
+// Inspector schemas by bundle, then by the key that selects one (see
+// schemaKey). The Inspector asks for a schema on every document change. A
+// new object each time made JSON Forms compile it again. It also made ajv,
+// which keeps every schema it compiles, grow with each edit.
 const kindSchemas = new WeakMap();
 
 // What an Inspector schema depends on besides its bundle: the variant of a
-// device's spec, the retired icon key a device, a group or an icon still
-// uses (see
-// offeredIconKeys), and whether the device is a template's (see
-// DEVICE_HELP).
+// device's spec, the retired icon key that a device, a group or an icon
+// still uses (see offeredIconKeys), and whether the device is a template's
+// (see DEVICE_HELP).
 function schemaKey(kind, context) {
   const icon = RETIRED_ICON_KEYS.includes(context.iconKey)
     ? context.iconKey
@@ -325,17 +325,17 @@ function schemaKey(kind, context) {
  * Inspector schema for an element.
  *
  * The returned schema always describes the *editable working copy* of the
- * element, not its wire form: identifiers, geometry and interface handles are
- * owned by the canvas and are therefore not offered as form fields.
+ * element, not its wire form. The canvas owns identifiers, geometry and
+ * interface handles, so the form does not offer them as fields.
  *
- * The same object comes back for the same bundle, kind and variant, so it
- * is compiled once. It is shared: do not change it.
+ * The same bundle, kind and variant give the same object, so it is
+ * compiled once. It is shared: do not change it.
  *
  * @param {object} bundle schema bundle
  * @param {'device'|'switch'|'note'|'group'|'edge'|'network'|'document'} kind
  * @param {object} [context] element being edited (used to pick a spec
- *   variant); template: the device is a template's, edited in the template
- *   editor, whose fields say what they are to a template
+ *   variant). template: the device is a template's, edited in the template
+ *   editor, whose fields describe themselves for a template
  * @returns {object} JSON Schema
  */
 export function schemaForKind(bundle, kind, context = {}) {
@@ -372,21 +372,22 @@ function buildSchema(bundle, kind, context) {
 
 // Objects of free-form keys (`advanced`, labels, annotations), which the
 // Inspector edits as a list of keys and values (see InspectorMapRenderer).
-// The keyword says what a value is: 'text' is kept as typed, and 'value'
-// reads true, false, null, a number and JSON as such, as a topology's YAML
-// would (an annotation need not be text: phenix/default-apps is false).
-// MAP_KEYS_KEYWORD lists keys to suggest. Validation ignores both.
+// The keyword says what a value is. 'text' keeps the value as typed.
+// 'value' reads true, false, null, a number and JSON as such, as a
+// topology's YAML would. (An annotation need not be text:
+// phenix/default-apps is false.) MAP_KEYS_KEYWORD lists keys to suggest.
+// Validation ignores both.
 export const MAP_KEYWORD = 'x-builder-map';
 export const MAP_KEYS_KEYWORD = 'x-builder-keys';
 
-// The word a list of choices uses for the choice that stands for no value,
-// in place of "Default" and "Not set" (see InspectorEnumControl): a line
-// style left to the canvas is "Auto". Validation ignores it.
+// The word that a list of choices uses for the choice of no value, in place
+// of "Default" and "Not set" (see InspectorEnumControl). For example, a
+// line style left to the canvas is "Auto". Validation ignores it.
 export const UNSET_KEYWORD = 'x-builder-unset';
 
-// Node fields phenix reads from a topology that its schema leaves out. A
-// served schema that has them wins. null is how phenix stores an unset
-// one, in experiments and the topologies generated from them.
+// Node fields that phenix reads from a topology but that its schema does
+// not include. A served schema that has them wins. phenix stores an unset
+// field as null, in experiments and the topologies generated from them.
 const NODE_MAPS = {
   labels: {
     type: ['object', 'null'],
@@ -442,11 +443,11 @@ function withNodeMaps(spec) {
 /**
  * The spec schema with each interface's VLAN optional. A VLAN is the
  * network its interface is on (see connectByVLAN in model.js), so an
- * interface not connected yet has none, and emptying one disconnects its
- * interface. The phenix schema requires one: with it, no edit of a device
- * with an unconnected interface could be applied. The diagram checks flag
- * such an interface, and publishing refuses it (see validate.js); documents
- * and the server's checks keep the schema as it is.
+ * interface not connected yet has none, and an empty VLAN disconnects its
+ * interface. The phenix schema requires a VLAN. With that rule, no edit of
+ * a device with an unconnected interface could be applied. The diagram
+ * checks flag such an interface, and publishing refuses it (see
+ * validate.js). Documents and the server's checks keep the schema as it is.
  *
  * @param {object} spec self-contained spec schema
  * @returns {object}
@@ -503,7 +504,7 @@ function optionalVLANs(spec) {
 
 // Labels for phenix spec fields whose key makes a poor label: JSON Forms
 // start-cases untitled keys into "Vm Type", "C 2" or "Qinq". A key matches
-// anywhere in the spec; a title the served schema sets itself wins.
+// anywhere in the spec. A title that the served schema sets itself wins.
 const SPEC_TITLES = {
   advanced: 'Advanced settings',
   area_id: 'Area ID',
@@ -540,13 +541,14 @@ const SPEC_TITLES = {
   vm_type: 'VM type',
 };
 
-// Bounds for numeric spec fields, which only the Inspector's form checks:
+// Bounds for numeric spec fields, which only the Inspector's form checks.
 // JSON Forms marks a value outside them invalid, Apply refuses it, and the
-// number input gets them as its min and max. Documents are validated against
-// the served schema as it is, so a config imported with another value still
-// opens. A key is a field's name, or the names of its parent fields and its
-// own joined with dots, and matches anywhere in the spec; a bound the served
-// schema sets itself wins. Each is the range phenix and minimega act on.
+// number input gets them as its min and max. Documents are validated
+// against the served schema as it is, so a config imported with another
+// value still opens. A key is a field's name, or the names of its parent
+// fields and its own name joined with dots. A key matches anywhere in the
+// spec. A bound that the served schema sets itself wins. Each bound is the
+// range that phenix and minimega act on.
 export const SPEC_BOUNDS = {
   // Vyatta and VyOS routers apply 68 to 16000. 0 is how phenix stores no
   // MTU, in experiments and the topologies generated from them.
@@ -563,19 +565,20 @@ export const SPEC_BOUNDS = {
   dead_interval: { minimum: 1, maximum: 65535 },
   hello_interval: { minimum: 1, maximum: 65535 },
   retransmission_interval: { minimum: 1, maximum: 65535 },
-  // A VyOS firewall rule number; phenix numbers rules it adds from 1.
+  // A VyOS firewall rule number. phenix numbers the rules it adds from 1.
   'rules.id': { minimum: 1, maximum: 999999 },
   // 0 matches any port.
   'source.port': { minimum: 0, maximum: 65535 },
   'destination.port': { minimum: 0, maximum: 65535 },
 };
 
-// Formats of free-text spec fields, keyed like SPEC_BOUNDS and, like those,
-// checked only by the Inspector's form; go-duration and ipv4-network are the
-// builder's own (see createFormValidator). A format the served schema sets
-// itself wins. Each is what phenix reads there: a delay timer with Go's
-// time.ParseDuration, and routes and OSPF settings for the routers it
-// configures, IPv4 only, as its interface addresses are.
+// Formats of free-text spec fields, keyed like SPEC_BOUNDS. As with those
+// bounds, only the Inspector's form checks them. go-duration and
+// ipv4-network are the Builder's own formats (see createFormValidator). A
+// format that the served schema sets itself wins. Each format is what
+// phenix reads there: a delay timer with Go's time.ParseDuration, and
+// routes and OSPF settings for the routers it configures. These are IPv4
+// only, as its interface addresses are.
 export const SPEC_FORMATS = {
   'delay.timer': 'go-duration',
   'routes.destination': 'ipv4-network',
@@ -653,10 +656,10 @@ function branchTitle(branch, key, index, branches) {
   const proto = branch.properties?.proto?.enum;
 
   if (variant) {
-    // Named by what tells it apart, which keeps the name short enough to
-    // show whole in a narrow picker with wider text spacing (WCAG 1.4.12):
-    // its protocols when another branch has its type too ("Static or
-    // OSPF"), otherwise its type ("Serial").
+    // Named by what makes it different, so the name is short enough to show
+    // whole in a narrow picker with wider text spacing (WCAG 1.4.12). The
+    // name is its protocols when another branch has the same type ("Static
+    // or OSPF"). Otherwise the name is its type ("Serial").
     const shared =
       proto &&
       branches.some(
@@ -701,8 +704,9 @@ function asMap(schema, key) {
   };
 }
 
-// `trail` names the fields from the spec down to this one (see SPEC_BOUNDS);
-// list items and oneOf alternatives share their field's.
+// `trail` names the fields from the spec down to this one (see
+// SPEC_BOUNDS). List items and oneOf alternatives share the trail of their
+// field.
 function readable(schema, key, trail = []) {
   if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
     return schema;
@@ -760,10 +764,10 @@ function readable(schema, key, trail = []) {
 /**
  * The phenix node spec schema with labels a person can read: titles for
  * cryptic keys, names for oneOf alternatives, and free-form objects as maps
- * of keys and values (see MAP_KEYWORD) rather than empty groups. Apart from
- * titles it adds the bounds of SPEC_BOUNDS, the formats of SPEC_FORMATS and
- * the suggestions of SPEC_SUGGESTIONS; the spec's hostname, which Apply
- * sets, is read only.
+ * of keys and values (see MAP_KEYWORD) instead of empty groups. It also
+ * adds the bounds of SPEC_BOUNDS, the formats of SPEC_FORMATS and the
+ * suggestions of SPEC_SUGGESTIONS. The spec's hostname, which Apply sets,
+ * is read-only.
  *
  * @param {object} spec self-contained spec schema
  * @param {string} hostnameHelp what the spec's hostname says of itself
@@ -774,9 +778,10 @@ function readableSpec(spec, hostnameHelp) {
   const general = next.properties?.general;
   const hostname = general?.properties?.hostname;
 
-  // The device Hostname above is the one to edit; Apply copies it here, over
-  // whatever this field holds. So the field is read-only, and neither
-  // required nor checked: an error it cannot fix would only block Apply.
+  // The user edits the device Hostname above. Apply copies it here, over
+  // the value of this field. So the field is read-only, and neither
+  // required nor checked: an error that the user cannot fix here would only
+  // block Apply.
   if (hostname) {
     next.properties.general = {
       ...general,
@@ -796,9 +801,10 @@ function readableSpec(spec, hostnameHelp) {
   return next;
 }
 
-// A field that takes one of a list of values, each named by a title, and
-// no value: the values the served schema lists for it, less its empty one
-// (which a document may hold for none), or the editor's own list.
+// A field that takes one of a list of values, each named by a title, or no
+// value. The values are the ones the served schema lists for it, without
+// its empty value (which a document may hold for none). Without a served
+// list, they are the editor's own list.
 function choiceField(def, values, titles) {
   const offered = Array.isArray(def?.enum)
     ? def.enum.filter((value) => value !== '')
@@ -855,10 +861,10 @@ function iconSizeField(defs, description) {
   };
 }
 
-// A Builder definition or property of the bundle as an Inspector field
-// starts from it: without the title, description and examples that document
-// it in the bundle. The Inspector gives each field its own label and help,
-// so the bundle's documentation never changes what a form shows.
+// An Inspector field starts from a Builder definition or property of the
+// bundle, without the title, description and examples that document it in
+// the bundle. The Inspector gives each field its own label and help, so
+// the bundle's documentation never changes what a form shows.
 const DOCUMENTATION = ['title', 'description', 'examples'];
 
 function field(def, fallback) {
@@ -866,9 +872,9 @@ function field(def, fallback) {
 }
 
 // The outline or fill color of a device or a switch: the definition
-// itself, not the reference the bundle holds at the property, so the
-// field's own schema has the pattern its control and its error are chosen
-// by.
+// itself, not the reference the bundle holds at the property. So the
+// field's own schema has the pattern that selects its control and its
+// error.
 function hexColorField(defs) {
   return field(defs.hexColor, { type: 'string' });
 }
@@ -886,8 +892,8 @@ const CUSTOM_ICON_HELP =
 // What the fields of a device's form say of themselves. A device on the
 // canvas takes a new icon or color at once, and its hostname with Apply. A
 // template's device is edited in the template editor, where nothing is
-// applied before Save: its hostname is the name the devices made from it
-// start from, and its icon also marks it in Add nodes.
+// applied before Save. Its hostname is the base of the names of the
+// devices made from it. Its icon also marks it in Add nodes.
 const DEVICE_HELP = {
   canvas: {
     hostname: 'Unique host name; Apply also sets it as the node hostname.',

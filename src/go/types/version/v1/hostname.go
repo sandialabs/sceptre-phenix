@@ -18,10 +18,11 @@ const (
 	phenixHostname = "phenix"
 )
 
-// CheckHostname reports what phenix makes of a node's hostname when it creates
-// an experiment from the node: an error for a hostname it refuses, and a
-// warning for one it logs a warning about. osType is the node's os_type.
-// phenix checks no external node, so a caller leaves those out.
+// CheckHostname reports what phenix does with the hostname of a node when it
+// creates an experiment from the node. It returns an error for a hostname that
+// phenix refuses, and a warning for a hostname that phenix logs a warning
+// about. osType is the os_type of the node. phenix checks no external node, so
+// a caller leaves those out.
 func CheckHostname(hostname, osType string) (string, error) {
 	return checkHostnameKeywords(hostname, osType)
 }

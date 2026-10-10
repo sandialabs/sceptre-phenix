@@ -223,9 +223,9 @@
               return;
             }
 
-            // A topology with a legacy Builder diagram is edited as text
-            // like any other. Its diagram is left out of the text and
-            // written back as it was (see getConfigStr and getConfigObj).
+            // The user edits a topology with a legacy Builder diagram as
+            // text, like any other. The text leaves out the diagram, which
+            // goes back as it was (see getConfigStr and getConfigObj).
             this.config.obj = response.data;
             this.config.str = this.getConfigStr('yaml');
 
@@ -412,7 +412,8 @@
           obj = this.config.obj;
         }
 
-        // The legacy Builder diagram is kept aside and left out of the text.
+        // Keeps the legacy Builder diagram aside and leaves it out of the
+        // text.
         const annotations = obj.metadata?.annotations;
 
         if (

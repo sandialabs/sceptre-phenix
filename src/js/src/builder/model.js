@@ -1,8 +1,9 @@
 // Library independent builder document model.
 //
-// This module is the single source of truth for the wire contract implemented
-// by phenix/types/builder (Go). Every exported function takes a document and
-// returns a new document; nothing here knows about Vue, Vue Flow or JSON Forms.
+// This module is the single source of truth for the wire contract that
+// phenix/types/builder (Go) implements. Every exported function takes a
+// document and returns a new document. Nothing here knows about Vue, Vue Flow
+// or JSON Forms.
 //
 // Wire shape (see src/go/types/builder/document.go):
 //
@@ -12,14 +13,14 @@
 // where metadata is { id, name?, description?, createdBy?, createdAt?,
 // updatedBy?, updatedAt?, notes? }.
 //
-// Node payloads are discriminated by kind: device | switch | note | group |
+// The kind discriminates node payloads: device | switch | note | group |
 // shape | icon | line. The last three are drawings only, as notes and groups
-// are: nothing of theirs reaches a config.
+// are. No part of them gets to a config.
 // `owner` is a property of the draft envelope and is never part of a document.
-// The metadata's `createdBy`, `createdAt`, `updatedBy` and `updatedAt` are,
-// and only the server sets them: it answers a create and a save with the
-// values it wrote (the stamp), which the editor copies into its own copy (see
-// withStamp).
+// The metadata's `createdBy`, `createdAt`, `updatedBy` and `updatedAt` are
+// part of the document, and only the server sets them. Its response to a
+// create and a save includes the values that it wrote (the stamp). The editor
+// copies them into its own copy (see withStamp).
 
 import { iconKeyForSpec, isIconKey, kindMeta } from './catalog.js';
 import { isBuilderAnnotation } from './configs.js';
@@ -112,10 +113,10 @@ export const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 // The colors a device or a switch node may have of its own on the canvas.
 export const NODE_COLOR_KEYS = ['outlineColor', 'fillColor'];
 
-// The sizes a node's icon is drawn at (IconSizes in validate.go), smallest
-// first, and each one's side in pixels: Small is the size icons always had,
-// Medium one and a half times it and Large twice it. A document that names
-// none draws Small.
+// The sizes at which a node's icon is drawn (IconSizes in validate.go),
+// smallest first, and the side of each in pixels. Small is the size that
+// icons always had. Medium is one and a half times it, and Large is twice
+// it. A document that names no size draws Small.
 export const ICON_SIZES = ['small', 'medium', 'large'];
 export const ICON_SIZE_PIXELS = { small: 16, medium: 24, large: 32 };
 export const DEFAULT_ICON_SIZE = 'small';
@@ -154,7 +155,7 @@ export function nodeIconSize(doc, node) {
 /**
  * The side in pixels of an icon drawn at a size.
  *
- * @param {string} [size] one of ICON_SIZES; Small for any other
+ * @param {string} [size] one of ICON_SIZES. Small for any other value.
  * @returns {number}
  */
 export function iconPixels(size) {
@@ -190,11 +191,11 @@ export function setIconSize(doc, size) {
   return next;
 }
 
-// The levels of the Purdue model a device or a switch may be at
+// The levels of the Purdue model at which a device or a switch can be
 // (PurdueLevels in validate.go), from the top level to the bottom one, and
-// the name the Inspector shows for each. Level 3.5 is the industrial DMZ.
-// The Layered by tier layout reads them (see layouts/tiers.js). They stay
-// in the diagram: publishing never writes them to a config.
+// the name that the Inspector shows for each. Level 3.5 is the industrial
+// DMZ. The Layered by tier layout reads them (see layouts/tiers.js). They
+// stay in the diagram. Publishing never writes them to a config.
 export const PURDUE_LEVELS = ['5', '4', '3.5', '3', '2', '1', '0'];
 export const PURDUE_LEVEL_TITLES = {
   5: 'Level 5: Enterprise network',
@@ -210,8 +211,8 @@ export const PURDUE_LEVEL_TITLES = {
 export const PURDUE_KINDS = ['device', 'switch'];
 
 /**
- * The Purdue level of a node: its own when it is a device or a switch that
- * names one of PURDUE_LEVELS, else ''.
+ * The Purdue level of a node: its own level when it is a device or a switch
+ * that names one of PURDUE_LEVELS, or else ''.
  *
  * @param {object} [node]
  * @returns {string} one of PURDUE_LEVELS, or '' for none
@@ -229,8 +230,8 @@ export function purdueLevel(node) {
  * removes the node's `purdueLevel`, so the document's bytes are those of a
  * node that never had one. The same document is returned when nothing
  * changes: the node is not a device or a switch, the device is included
- * from another topology, the level is unknown, or the node is at it
- * already.
+ * from another topology, the level is unknown, or the node is already at
+ * that level.
  *
  * @param {object} doc
  * @param {string} id the node's id
@@ -268,9 +269,9 @@ export function setPurdueLevel(doc, id, level) {
 }
 
 // A device's presentation fields: its icon, the custom icon drawn in its
-// place (an icon name, see icons.js), the size its icon is drawn at and its
-// colors on the canvas. The Inspector applies a change of one at once,
-// without Apply, and a new device takes them from addNode's `look` option.
+// place (an icon name, see icons.js), the size of its icon and its colors on
+// the canvas. The Inspector applies a change to one of them at once, without
+// Apply. A new device takes them from addNode's `look` option.
 export const LOOK_KEYS = ['iconKey', 'icon', 'iconSize', ...NODE_COLOR_KEYS];
 
 // Those written only when set. A device always has an icon key.
@@ -278,7 +279,8 @@ const OPTIONAL_LOOK_KEYS = LOOK_KEYS.filter((key) => key !== 'iconKey');
 
 /**
  * The presentation fields of a device payload, or of the Inspector's
- * working copy of one (see LOOK_KEYS), each as text: '' for one not set.
+ * working copy of one (see LOOK_KEYS), each as text. '' for a field that is
+ * not set.
  *
  * @param {object} [payload]
  * @returns {{iconKey: string, icon: string, iconSize: string,
@@ -300,9 +302,9 @@ const GROUP_OPTIONAL_KEYS = [
 ];
 const SWITCH_OPTIONAL_KEYS = [...NODE_COLOR_KEYS, 'iconSize', 'purdueLevel'];
 
-// Removes the keys of optional fields that hold no value, so a field set
-// and emptied again leaves the payload, and the document's bytes, as they
-// were.
+// Removes the keys of optional fields that hold no value. Thus a field that
+// is set and then emptied leaves the payload, and the document's bytes,
+// unchanged.
 function dropEmpty(payload, keys) {
   for (const key of keys) {
     if ([undefined, null, ''].includes(payload[key])) {
@@ -314,9 +316,9 @@ function dropEmpty(payload, keys) {
 }
 
 // The payload of an icon node with a patch applied. It keeps exactly one
-// icon: a custom icon the patch sets replaces the built-in key, a key it
-// sets replaces the custom icon, and with neither left the node shows the
-// default icon.
+// icon. A custom icon that the patch sets replaces the built-in key. A key
+// that the patch sets replaces the custom icon. With neither left, the node
+// shows the default icon.
 function drawnIcon(current, patch) {
   const icon = dropEmpty({ ...current, ...patch }, ICON_OPTIONAL_KEYS);
 
@@ -362,13 +364,13 @@ export function sizeOf(node) {
 }
 
 /**
- * The notes a device or a switch shows below it on the canvas, in order. A
- * device's are its spec's general.notes, which publishing writes to the
- * topology and phenix copies to the VM's notes; a switch is no topology
- * node, so its notes are its own (switch.notes) and stay in the document.
- * An entry that is not text, or is only white space, shows nothing and is
- * left out here: phenix's schema and the diagram checks say what is wrong
- * with it. Other nodes have none.
+ * The notes that a device or a switch shows below it on the canvas, in
+ * order. A device's notes are its spec's general.notes, which publishing
+ * writes to the topology and phenix copies to the VM's notes. A switch is
+ * not a topology node, so its notes are its own (switch.notes) and stay in
+ * the document. An entry that is not text, or is only white space, shows
+ * nothing and is left out here. phenix's schema and the diagram checks tell
+ * what is wrong with it. Other nodes have no notes.
  *
  * @param {object} node
  * @returns {string[]}
@@ -388,9 +390,9 @@ export function nodeNotes(node) {
 }
 
 /**
- * The size addNode gives a new node of these options when they name none:
- * its kind's, a circle's for a circle, and for a line the box of its two
- * ends.
+ * The size that addNode gives a new node of these options when they name no
+ * size: the size of its kind, a circle's size for a circle, and for a line
+ * the box of its two ends.
  *
  * @param {object} [options] addNode's: kind, shape
  * @returns {{width: number, height: number}}
@@ -404,7 +406,7 @@ export function newNodeSize(options = {}) {
 }
 
 // The box from a line node's position to its farthest point, at least one
-// pixel a side: what a line without a size of its own takes.
+// pixel on each side. A line without its own size takes this box.
 function lineExtent(points) {
   const listed = Array.isArray(points) ? points : [];
 
@@ -415,9 +417,9 @@ function lineExtent(points) {
 }
 
 /**
- * A line's points as the model keeps them: the line node's position moved
- * to the top left corner of the points' box, each point relative to it, and
- * the size that box, at least one pixel a side.
+ * A line's points as the model keeps them. The line node's position moves to
+ * the top left corner of the points' box, and each point is relative to it.
+ * The size is the size of that box, at least one pixel on each side.
  *
  * @param {{x: number, y: number}} position the line node's position, which
  *   `points` are relative to
@@ -502,9 +504,9 @@ export function findNetwork(doc, id) {
 /**
  * @param {object} doc
  * @param {string} name
- * @returns {object|undefined} network matched case-insensitively, the one
- *   of that very name first: networks may differ only by case, as minimega
- *   VLANs may
+ * @returns {object|undefined} network matched case-insensitively, with the
+ *   network of that exact name first. Networks can differ only by case, as
+ *   minimega VLANs can.
  */
 export function networkByName(doc, name) {
   const wanted = String(name || '').toLowerCase();
@@ -573,10 +575,11 @@ export function specInterfaceFor(node, handleId) {
 // A diagram generated from a topology with includeTopologies also shows the
 // devices of the included topologies, marked with device.includedFrom. They
 // are defined in their own topology, and publishing leaves them out (the
-// includeTopologies reference brings them back), so they are read only here:
-// they can be moved, grouped and laid out, but not changed, renamed, deleted,
-// or connected differently. What would change them indirectly is refused too:
-// their connections, the switches they are on, and the name of their network.
+// includeTopologies reference brings them back). Thus they are read only
+// here. They can be moved, grouped and laid out, but not changed, renamed,
+// deleted, or connected differently. Changes that would change them
+// indirectly are also refused: their connections, the switches they are on,
+// and the name of their network.
 
 /**
  * The topology an included device comes from.
@@ -603,17 +606,17 @@ export function includedReason(node) {
 }
 
 /**
- * A new diagram in which the included devices of `doc` are its own, as
- * CombineIncludes and Detach in types/builder/detach.go make one on Import:
- * no device is marked included, and the diagram is linked to no config, so
- * publishing it makes a new topology. It still includes the topologies
- * whose devices were never in the diagram (source.unresolvedIncludes).
- * What the import of `doc` warned about is left behind with its source;
- * everything else is copied as it is.
+ * A new diagram in which the included devices of `doc` are its own devices,
+ * as CombineIncludes and Detach in types/builder/detach.go make one on
+ * Import. No device is marked included, and the diagram is linked to no
+ * config, so publishing it makes a new topology. It still includes the
+ * topologies whose devices were never in the diagram
+ * (source.unresolvedIncludes). The warnings from the import of `doc` stay
+ * behind with its source. Everything else is copied unchanged.
  *
  * @param {object} doc
  * @param {string} name the new diagram's name
- * @returns {object} the new document; `doc` is left as it is
+ * @returns {object} the new document. `doc` does not change.
  */
 export function combineIncluded(doc, name) {
   const { importedAt, unresolvedIncludes } = doc.source || {};
@@ -649,9 +652,9 @@ function includedEndpoint(doc, edge) {
 }
 
 /**
- * The included device on a network: its name is fixed, because renaming the
- * network would move the device's interface to a VLAN its own topology does
- * not name.
+ * The included device on a network. Its name is fixed, because a rename of
+ * the network would move the device's interface to a VLAN that its own
+ * topology does not name.
  *
  * @param {object} doc
  * @param {string} networkId
@@ -782,8 +785,8 @@ export function addNetwork(doc, init = {}) {
 }
 
 /**
- * Updates a network. Renaming a network rewrites the VLAN of every connected
- * device interface, keeping the document and the phenix spec consistent.
+ * Updates a network. A rename of a network changes the VLAN of every
+ * connected device interface, so the document and the phenix spec agree.
  *
  * @param {object} doc
  * @param {string} id
@@ -860,8 +863,8 @@ function nameSwitches(doc, networkId) {
 
 /**
  * The document with every switch named after its network (see
- * nameSwitches), as a document saved or imported with a stale switch label
- * is opened; the same document when every switch is already.
+ * nameSwitches), as when a document saved or imported with a stale switch
+ * label is opened. The same document when every switch is already named so.
  *
  * @param {object} doc
  * @returns {object} document
@@ -943,18 +946,21 @@ function uniqueHostname(doc, wanted) {
  * Adds a node of any kind. Switch nodes without an explicit network create one.
  *
  * @param {object} doc
- * @param {object} options kind, position, size, parentId, label, and kind
- *   specific fields: a device's hostname, spec, look (its presentation
- *   fields, see LOOK_KEYS), purdueLevel and interfaces; a switch's
- *   networkId, outlineColor, fillColor, iconSize, purdueLevel and notes; a note's text; a group's title,
- *   description, borderStyle, iconKey, icon and iconSize; a shape's shape
- *   (its figure), fillColor,
- *   outlineColor and borderStyle; an icon's iconKey or icon; a line's points
- *   (relative to `position`; by default two ends 160 pixels apart across),
- *   color, lineStyle, startArrow and endArrow. The label of a shape, an icon
- *   or a line is its payload's. A custom icon (a look's, a group's or an
- *   icon's `icon`) is an icon name, which the icon library resolves (see
- *   iconSrc in icons.js)
+ * @param {object} options kind, position, size, parentId, label, and the
+ *   fields specific to the kind:
+ *   - a device's hostname, spec, look (its presentation fields, see
+ *     LOOK_KEYS), purdueLevel and interfaces
+ *   - a switch's networkId, outlineColor, fillColor, iconSize, purdueLevel
+ *     and notes
+ *   - a note's text
+ *   - a group's title, description, borderStyle, iconKey, icon and iconSize
+ *   - a shape's shape (its figure), fillColor, outlineColor and borderStyle
+ *   - an icon's iconKey or icon
+ *   - a line's points (relative to `position`, by default two ends 160
+ *     pixels apart horizontally), color, lineStyle, startArrow and endArrow.
+ *   The label of a shape, an icon or a line is in its payload. A custom icon
+ *   (a look's, a group's or an icon's `icon`) is an icon name, which the
+ *   icon library resolves (see iconSrc in icons.js).
  * @returns {{doc: object, node: object, network?: object}}
  */
 export function addNode(doc, options = {}) {
@@ -1199,8 +1205,8 @@ export function updateNode(doc, id, patch = {}) {
     return doc;
   }
 
-  // An included device keeps its name and spec; where it sits is the
-  // diagram's own.
+  // An included device keeps its name and spec. Its position belongs to the
+  // diagram.
   if (includedFrom(node)) {
     patch = { position: patch.position, size: patch.size };
   }
@@ -1262,11 +1268,11 @@ export function updateNode(doc, id, patch = {}) {
     updated.label = patch.label !== undefined ? patch.label : device.hostname;
   }
 
-  // A patch that names no network keeps the switch on its own, and one that
-  // names no color, icon size or notes keeps those it has; an emptied color
-  // is no color, an emptied icon size the document's, and an emptied list
-  // of notes no notes, so the document's bytes are those of a switch that
-  // never had them.
+  // A patch that names no network keeps the switch on its own network. A
+  // patch that names no color, icon size or notes keeps the current values.
+  // An emptied color is no color, an emptied icon size is the document's
+  // size, and an emptied list of notes is no notes. Thus the document's bytes
+  // are those of a switch that never had them.
   if (patch.switch && node.kind === 'switch') {
     const next = dropEmpty(
       {
@@ -1390,15 +1396,16 @@ export function updateNode(doc, id, patch = {}) {
 }
 
 /**
- * Keeps interface handles aligned with the spec's interface list: an interface
- * added through the inspector gains a handle, one removed loses it. Handles are
- * matched by name because that is the only stable key the phenix spec carries.
- * An interface renamed in the Inspector keeps its handle, and so its
- * connection: when the spec has as many interfaces as there are handles, a
- * name no handle has takes, in order, a handle whose name the spec no longer
- * has and whose connection its VLAN still names (sameNetwork). An interface
- * removed while another is added is no rename, and keeps no handle. Two spec
- * entries of one name get a handle each.
+ * Keeps interface handles aligned with the spec's interface list. An
+ * interface added through the Inspector gets a handle, and an interface
+ * removed loses its handle. Handles match by name, because that is the only
+ * stable key in the phenix spec. An interface renamed in the Inspector keeps
+ * its handle, and thus its connection. When the spec has as many interfaces
+ * as there are handles, a name that no handle has takes, in order, a handle
+ * whose name is not in the spec now and whose connection its VLAN still
+ * names (sameNetwork). An interface removed while another is added is not a
+ * rename, and keeps no handle. Two spec entries of one name each get a
+ * handle.
  *
  * @param {object} device device payload (mutated)
  * @param {Function} [sameNetwork] (handleId, vlan) whether the VLAN names the
@@ -1448,9 +1455,9 @@ function reconcileDeviceHandles(device, sameNetwork = () => true) {
   });
 }
 
-// Whether a node's connections meet it where they did: same place, size and
-// group, and for a device the same interfaces in the same order, as its
-// handles are spaced along its sides by them.
+// Whether a node's connections meet it at the same points as before: same
+// position, size and group, and for a device the same interfaces in the
+// same order, because they set the spacing of its handles along its sides.
 function sameAnchors(a, b) {
   const sizeA = sizeOf(a);
   const sizeB = sizeOf(b);
@@ -1470,10 +1477,11 @@ function sameAnchors(a, b) {
 }
 
 /**
- * Drops the route a layout drew (edge.route) from each connection whose ends
- * moved between two versions of a document: an end node moved, was resized
- * or changed group, a device end's interfaces changed, or the connection
- * changed handles. The canvas then draws it as any other.
+ * Drops the route that a layout drew (edge.route) from each connection
+ * whose ends moved between two versions of a document. An end moved when an
+ * end node moved, was resized or changed group, a device end's interfaces
+ * changed, or the connection changed handles. The canvas then draws it as
+ * any other connection.
  *
  * @param {object} before document
  * @param {object} after the same document, changed
@@ -1553,8 +1561,8 @@ export function moveNodes(doc, moves = []) {
 
   const byId = new Map(moves.map((move) => [move.id, move.position]));
 
-  // Positions are absolute, so moving a group must carry its members (and
-  // theirs) along; members moved explicitly keep their own new position.
+  // Positions are absolute, so a group that moves must move its members (and
+  // their members). Members that are moved explicitly keep their new position.
   const shift = new Map();
   const nodes = doc.nodes || [];
 
@@ -1633,16 +1641,16 @@ export function resizeNode(doc, id, size) {
 }
 
 /**
- * Sets the points of a line, relative to its position as it is: the line
+ * Sets the points of a line, relative to its current position. The line
  * node then moves to the top left corner of their box, and takes the box as
- * its size (see placedLine). Points a line cannot have (fewer than
+ * its size (see placedLine). Points that a line cannot have (fewer than
  * MIN_LINE_POINTS, more than MAX_LINE_POINTS, or not finite) change
  * nothing.
  *
  * @param {object} doc
  * @param {string} id line node
  * @param {{x: number, y: number}[]} points
- * @returns {object} document; the same one when nothing changes
+ * @returns {object} document. The same document when nothing changes.
  */
 export function setLinePoints(doc, id, points) {
   const node = findNode(doc, id);
@@ -1662,8 +1670,8 @@ export function setLinePoints(doc, id, points) {
  * @param {object} doc
  * @param {string} id line node
  * @param {number} index the point's index
- * @param {{x: number, y: number}} point where it goes, relative to the line
- *   node's position as it is
+ * @param {{x: number, y: number}} point the new position, relative to the
+ *   current position of the line node
  * @returns {object} document
  */
 export function moveLinePoint(doc, id, index, point) {
@@ -1681,8 +1689,8 @@ export function moveLinePoint(doc, id, index, point) {
 }
 
 /**
- * Adds a bend to a line, in the segment that ends at point `index`; at the
- * middle of that segment unless a point is given. A line with
+ * Adds a bend to a line, in the segment that ends at point `index`. It goes
+ * at the middle of that segment unless a point is given. A line with
  * MAX_LINE_POINTS points takes no more.
  *
  * @param {object} doc
@@ -1715,13 +1723,13 @@ export function insertLinePoint(doc, id, index, point) {
 }
 
 /**
- * The segment of a line nearest to a point, as insertLinePoint takes it:
- * the index of the point that ends it.
+ * The segment of a line nearest to a point, in the form that
+ * insertLinePoint takes: the index of the point that ends it.
  *
  * @param {{x: number, y: number}[]} points the line's
  * @param {{x: number, y: number}} point in the same coordinates
- * @returns {number} from 1 to the number of points less one; 1 for a line
- *   of fewer than two points
+ * @returns {number} from 1 to the number of points less one. 1 for a line
+ *   of fewer than two points.
  */
 export function nearestSegment(points, point) {
   let best = 1;
@@ -1759,8 +1767,8 @@ export function nearestSegment(points, point) {
 }
 
 /**
- * What a point of a line is called, as its handle and announcements name
- * it: its start, its end, or a bend between them, numbered from the start.
+ * The name of a point of a line, as its handle and announcements use it:
+ * its start, its end, or a bend between them, numbered from the start.
  *
  * @param {object} node line node
  * @param {number} index
@@ -1782,7 +1790,7 @@ export function linePointName(node, index) {
 
 /**
  * A point of a line on the grid while the diagram snaps to it, or else on a
- * whole pixel; relative to the line's position, as the line's points are.
+ * whole pixel. It is relative to the line's position, as the line's points are.
  *
  * @param {object} node line node
  * @param {{x: number, y: number}} point
@@ -1811,11 +1819,13 @@ const LINE_POINT_ARROWS = {
 
 /**
  * What a key does on the focused handle of a point of a line (see
- * LineNode.vue): an arrow key moves the point by a grid step, onto the grid
- * while the diagram snaps to it, or by a pixel with Shift; Delete and
- * Backspace remove the point (removeLinePoint keeps at least
- * MIN_LINE_POINTS); Escape leaves the handle for the line. Any other key,
- * or an arrow key with Alt, Ctrl or ⌘, is not the handle's.
+ * LineNode.vue):
+ *   - An arrow key moves the point by a grid step, onto the grid while the
+ *     diagram snaps to it, or by a pixel with Shift.
+ *   - Delete and Backspace remove the point (removeLinePoint keeps at least
+ *     MIN_LINE_POINTS).
+ *   - Escape moves from the handle to the line.
+ * The handle ignores any other key, and an arrow key with Alt, Ctrl or ⌘.
  *
  * @param {object} node line node
  * @param {number} index the point's
@@ -1855,7 +1865,7 @@ export function linePointKey(node, index, event, grid) {
 }
 
 /**
- * Removes a point of a line, never leaving it fewer than MIN_LINE_POINTS.
+ * Removes a point of a line, and never leaves fewer than MIN_LINE_POINTS.
  *
  * @param {object} doc
  * @param {string} id line node
@@ -1928,16 +1938,16 @@ const MAX_SLOTS = 10000;
 
 /**
  * The first slot of a grid walk, in reading order, where a node of `size`
- * would overlap no node already there, a group's box included, with room to
+ * would overlap no existing node (group boxes included), with space to
  * spare. Positions follow the document's grid while it snaps.
  *
  * @param {object} doc
  * @param {{width: number, height: number}} size
- * @param {object} walk origin: the first slot's corner; slot: the step
- *   across and down; columns: slots across; within: a box the node must
- *   stay inside, which ends the walk at the first row below it; ignore: the
- *   ids of the nodes not in the way (the node placed, its members, and the
- *   groups it goes into)
+ * @param {object} walk origin: the first slot's corner. slot: the step
+ *   across and down. columns: slots across. within: a box that the node must
+ *   stay inside, which ends the walk at the first row below it. ignore: the
+ *   ids of the nodes that are not in the way (the node placed, its members,
+ *   and the groups it goes into).
  * @returns {{x: number, y: number}|null} null when no slot within is free
  */
 export function freeSpot(
@@ -2001,12 +2011,13 @@ function slotsFor(box, origin, columns) {
   };
 }
 
-// Where a node moving to group `target` (null for none) goes so that its box
-// says which group it is in, and whether that group must grow to hold it:
-// a free spot inside the new group, or else below its members and their
-// notes (see nodeFootprint, which takes `options`), which the group grows
-// to hold; outside the groups it leaves, in a free spot beside the
-// outermost. Position null when it can stay where it is.
+// Where a node that moves to group `target` (null for none) goes, so that its
+// box shows which group it is in, and whether that group must grow to hold
+// it. In the new group, it goes to a free spot, or else below the members
+// and their notes (see nodeFootprint, which takes `options`), and the group
+// grows to hold it. Outside the groups that it leaves, it goes to a free
+// spot beside the outermost one. Position is null when it can stay where it
+// is.
 function regroupedPosition(doc, node, target, options = {}) {
   const box = boxOf(node);
   const group = target ? findNode(doc, target) : null;
@@ -2084,10 +2095,10 @@ function regroupedPosition(doc, node, target, options = {}) {
   };
 }
 
-// Moves the nodes a group, grown, now covers out of its way, each to the
-// first free spot below it, with what they hold. A node in a group the grown
-// one is in may stay in that group, which grows to hold it in turn (see
-// fitGroups, which takes `options`).
+// Moves the nodes that a grown group covers out of its way, each to the
+// first free spot below it, with their contents. A node in a group that holds
+// the grown group can stay in that group, which in turn grows to hold it
+// (see fitGroups, which takes `options`).
 function clearGroup(doc, id, options = {}) {
   const group = findNode(doc, id);
 
@@ -2127,8 +2138,8 @@ function clearGroup(doc, id, options = {}) {
 }
 
 /**
- * Grows each group, and the groups it is in, to hold its members with room
- * to spare. A group never shrinks here, and its members stay where they are.
+ * Grows each group, and the groups that hold it, to hold its members with
+ * space to spare. A group never shrinks here, and its members do not move.
  * A member takes its footprint (see footprintBounds in nodeNotes.js): its
  * box, and its notes below it while the canvas shows them.
  *
@@ -2192,9 +2203,9 @@ export function fitGroups(doc, ids = [], options = {}) {
 }
 
 /**
- * The smallest size a group can be resized to: its members stay inside it,
- * with their notes while the canvas shows them (see fitGroups), with a grid
- * step to spare, and its title stays readable.
+ * The smallest size to which a group can be resized. Its members stay inside
+ * it, with their notes while the canvas shows them (see fitGroups), with a
+ * grid step to spare, and its title stays readable.
  *
  * @param {object} doc
  * @param {string} id group id
@@ -2225,9 +2236,9 @@ export function groupMinimumSize(doc, id, options = {}) {
   };
 }
 
-// The kinds of nodes that are resized, with the mouse or the keyboard, and
-// the least each other than a group can be: enough for its label, or for
-// an icon to show.
+// The kinds of nodes that can be resized, with the mouse or the keyboard, and
+// the minimum size of each kind except group: enough for its label, or for an
+// icon to show.
 export const RESIZABLE_KINDS = ['note', 'group', 'shape', 'icon'];
 export const MINIMUM_SIZES = {
   note: { width: 80, height: 48 },
@@ -2236,9 +2247,9 @@ export const MINIMUM_SIZES = {
 };
 
 /**
- * The smallest size a node can be resized to: a group's holds its members
- * (see groupMinimumSize), and a note, a shape or an icon has a least size
- * of its own.
+ * The smallest size to which a node can be resized. A group's minimum holds
+ * its members (see groupMinimumSize). A note, a shape or an icon has its own
+ * minimum size.
  *
  * @param {object} doc
  * @param {string} id
@@ -2264,10 +2275,11 @@ const RESIZE_ARROWS = {
 };
 
 /**
- * The size Alt+Shift and an arrow key resize a node of RESIZABLE_KINDS to,
- * from its bottom right corner (see BuilderCanvas.vue): Right and Down grow
- * it by `step`, Left and Up shrink it by as much, never past its least size
- * (minimumSize). A node smaller than that already keeps its size.
+ * The size to which Alt+Shift and an arrow key resize a node of
+ * RESIZABLE_KINDS, from its bottom right corner (see BuilderCanvas.vue).
+ * Right and Down grow it by `step`. Left and Up shrink it by the same
+ * amount, never below its minimum size (minimumSize). A node that is already
+ * smaller than that keeps its size.
  *
  * @param {object} doc
  * @param {string} id
@@ -2275,7 +2287,7 @@ const RESIZE_ARROWS = {
  * @param {number} step pixels
  * @param {{showNotes?: boolean}} [options] see groupMinimumSize
  * @returns {{width: number, height: number}|null} null when the node is
- *   none of RESIZABLE_KINDS, or the key is no arrow
+ *   not one of RESIZABLE_KINDS, or the key is not an arrow
  */
 export function keyResizedSize(doc, id, key, step, options = {}) {
   const node = findNode(doc, id);
@@ -2297,10 +2309,10 @@ export function keyResizedSize(doc, id, key, step, options = {}) {
 }
 
 /**
- * The box a node resized with the mouse takes: the box it was dragged to,
- * at least its least size, and for a group as large as its members need,
- * their notes included while the canvas shows them (see fitGroups), with a
- * grid step to spare, from whichever corner or side it was dragged.
+ * The box that a node resized with the mouse takes: the box it was dragged
+ * to, at least its minimum size. A group is also as large as its members
+ * need, their notes included while the canvas shows them (see fitGroups),
+ * with a grid step to spare, from the corner or side that was dragged.
  * Positions and sizes are whole pixels.
  *
  * @param {object} doc
@@ -2341,22 +2353,24 @@ export function resizedBox(doc, id, box, options = {}) {
 }
 
 /**
- * Moves a node into a group, into another one, or out of its group
- * (`parentId` null), rejecting cycles and non-group parents. The node, with
- * any members of its own, moves so that its place on the canvas agrees:
- * into a free spot in the new group, or else below its members, the group
- * growing to hold it and moving the nodes it would cover out of its way; or
- * to a free spot beside the group it left. So no node overlaps another, or
- * sits in a group it is not in. Moving a node to the group it is in already
- * changes nothing.
+ * Moves a node into a group, into another group, or out of its group
+ * (`parentId` null). It rejects cycles and parents that are not groups. The
+ * node, with its own members, moves so that its position on the canvas
+ * agrees:
+ *   - into a free spot in the new group, or else below its members. The
+ *     group then grows to hold it, and moves the nodes it would cover out of
+ *     its way.
+ *   - to a free spot beside the group that it left.
+ * Thus no node overlaps another, or is in the area of a group that it is not
+ * in. A move of a node to its current group changes nothing.
  *
  * @param {object} doc
  * @param {string} id
  * @param {string|null} parentId
  * @param {{showNotes?: boolean}} [options] whether the canvas shows node
- *   notes, true by default: a group that grows holds its members' notes
- *   too (see fitGroups)
- * @returns {object} document; the same one when nothing changes
+ *   notes, true by default. A group that grows also holds its members'
+ *   notes (see fitGroups).
+ * @returns {object} document. The same document when nothing changes.
  */
 export function setParent(doc, id, parentId, options = {}) {
   const node = findNode(doc, id);
@@ -2588,7 +2602,7 @@ function nodeRemoval(doc, ids = []) {
 }
 
 /**
- * Why a removal leaves some of what it would take in place: the refusal (see
+ * Why a removal leaves some of its targets in place: the refusal (see
  * removalRefusal) of each selected connection, and of each selected node or
  * node nested in a selected group, that removeElements keeps.
  *
@@ -2701,7 +2715,7 @@ function appendInterface(node, init = {}) {
   }
 
   // A spec entry of that name already describes the interface (a pasted
-  // device brings its own), so only an interface created here is added, as
+  // device brings its own). Thus only an interface created here is added, as
   // an Ethernet interface with no address management (manual).
   const interfaces = node.device.spec.network.interfaces;
 
@@ -2748,10 +2762,11 @@ export function addInterface(doc, nodeId, init = {}) {
 }
 
 /**
- * The name of a new interface: one past the highest ethN the device has, so
- * a device with eth1 and eth2 gets eth3 rather than a gap such as eth0. Spec
- * entries count as well as handles. Every new interface is named this way:
- * a drawn connection, Add connection point and the Inspector's interfaces.
+ * The name of a new interface: one past the highest ethN that the device
+ * has. Thus a device with eth1 and eth2 gets eth3, not a gap such as eth0.
+ * Spec entries count, as well as handles. Every new interface gets its name
+ * in this way: a drawn connection, Add connection point and the Inspector's
+ * interfaces.
  *
  * @param {object} node device node
  * @returns {string} eth0 when the device has no ethN interface yet
@@ -3013,14 +3028,14 @@ export function connect(doc, connection = {}) {
 }
 
 /**
- * Connects any two nodes the way the legacy Builder did, for drag-to-connect
- * on the canvas:
+ * Connects any two nodes as the legacy Builder did, for drag-to-connect on
+ * the canvas:
  *
  * - device and switch: the device joins the switch's network, on the given
- *   interface or on a new one;
- * - two devices: they get a network of their own, drawn as a new switch
- *   between them (a network is always a switch here), each on the given
- *   interface or a new one;
+ *   interface or on a new one.
+ * - two devices: they get their own network, drawn as a new switch between
+ *   them (a network is always a switch here), each on the given interface or
+ *   a new one.
  * - anything else (two switches, notes, groups, and the shapes, icons and
  *   lines drawn beside them) is refused with a reason.
  *
@@ -3143,8 +3158,8 @@ export function canConnect(doc, connection = {}) {
 }
 
 // Joins two devices through a new switch between them. The switch goes
-// halfway between the devices when that spot is free; otherwise just below
-// or above the pair, or beside it, wherever it overlaps no other node. Two
+// halfway between the devices when that spot is free. Otherwise it goes just
+// below or above the pair, or beside it, where it overlaps no other node. Two
 // devices in the same group keep their switch in that group.
 function connectDevices(doc, a, b, connection) {
   const size = DEFAULT_SIZES.switch;
@@ -3180,7 +3195,8 @@ function connectDevices(doc, a, b, connection) {
 }
 
 // The top-left corner for a box of `size` near the middle of two nodes that
-// overlaps no other node (groups excluded: a box may sit inside a group).
+// overlaps no other node (groups excluded, because a box can be inside a
+// group).
 function freeSpotBetween(doc, a, b, size) {
   const box = (node) => {
     const { width, height } = sizeOf(node);
@@ -3239,7 +3255,7 @@ function freeSpotBetween(doc, a, b, size) {
  * @param {object} doc
  * @param {string} id
  * @param {object} patch label, and color and lineStyle, the connection's
- *   own, drawn in place of its network's; '' removes any of them
+ *   own, drawn in place of its network's. '' removes any of them.
  * @returns {object} document
  */
 export function updateEdge(doc, id, patch = {}) {
@@ -3267,13 +3283,14 @@ export function updateEdge(doc, id, patch = {}) {
 
 // --- interface VLANs -------------------------------------------------------
 //
-// An interface's VLAN is the network it is on, in phenix and here alike: a
-// connected interface's VLAN is its network's name, and typing a VLAN in the
-// Inspector chooses the connection (see connectByVLAN). An unconnected
-// interface keeps the VLAN it has, which may name a network the diagram does
-// not have: phenix creates VLANs by name, and publishing keeps it. One with
-// no VLAN is on no network, which a draft may have but a published topology
-// may not: publishing refuses it (see validate.js).
+// An interface's VLAN is the network that it is on, in phenix and here. A
+// connected interface's VLAN is the name of its network, and a VLAN typed in
+// the Inspector chooses the connection (see connectByVLAN). An unconnected
+// interface keeps its VLAN, which can name a network that the diagram does
+// not have. phenix creates VLANs by name, and publishing keeps it. An
+// interface with no VLAN is on no network. A draft can have one, but a
+// published topology cannot, because publishing refuses it (see
+// validate.js).
 
 // The network each connected interface handle is on, by handle id.
 function handleNetworks(doc) {
@@ -3353,10 +3370,10 @@ export function syncInterfaceVLANs(doc) {
 }
 
 /**
- * Empties the VLAN of each of these interfaces that has no connection. One
- * whose connection was removed, or that was pasted without it, is on no
- * network, but its VLAN would still name the network, and publishing would
- * put it there.
+ * Empties the VLAN of each of these interfaces that has no connection. An
+ * interface whose connection was removed, or that was pasted without it, is
+ * on no network. But its VLAN would still name the network, and publishing
+ * would put it there.
  *
  * @param {object} doc
  * @param {string[]} handleIds interface handle ids
@@ -3389,15 +3406,18 @@ function firstSwitch(doc, networkId) {
 
 /**
  * Connects each interface of a device whose VLAN an edit changed, or that
- * it added, to the network its VLAN names, as the Inspector applies a VLAN:
- * typing one is choosing the connection. A VLAN naming a network of the
- * diagram, regardless of case, connects the interface to that network's
- * first switch, moving a connection it has to another network; a network
- * with no switch on the canvas gets one beside the device, as a connection
- * drawn between two devices does (see connectDevices), since publishing
- * puts the interface on that network. Any other VLAN, naming no network
- * here, leaves the interface unconnected and is kept as it is, and an empty
- * one is stored as '', as a connection removed on the canvas leaves it.
+ * the edit added, to the network that its VLAN names, as the Inspector
+ * applies a VLAN. Typing a VLAN chooses the connection:
+ *   - A VLAN that names a network of the diagram, case-insensitive, connects
+ *     the interface to that network's first switch, and moves an existing
+ *     connection to another network. A network with no switch on the canvas
+ *     gets one beside the device, as a connection drawn between two devices
+ *     does (see connectDevices), because publishing puts the interface on
+ *     that network.
+ *   - Any other VLAN, which names no network here, leaves the interface
+ *     unconnected and is kept unchanged.
+ *   - An empty VLAN is stored as '', as a connection removed on the canvas
+ *     leaves it.
  * Other interfaces keep their connection.
  *
  * @param {object} doc
@@ -3460,7 +3480,7 @@ function connectByVLAN(doc, nodeId, previous) {
         networkId: network.id,
       });
     } else if (edge.networkId !== network.id) {
-      // Moved, keeping its id, label and color; the device keeps its end.
+      // Moved, with the same id, label and color. The device keeps its end.
       edges[index] = {
         ...edge,
         [edge.sourceHandleId === handle.id ? 'targetNodeId' : 'sourceNodeId']:
@@ -3475,10 +3495,10 @@ function connectByVLAN(doc, nodeId, previous) {
 
 /**
  * What an edit changed about the connections of a device's interfaces, for
- * its announcement: each switch it added for them first, then each
- * interface whose connection changed. Interfaces are matched by handle,
- * which one renamed keeps (see reconcileDeviceHandles), else by name, as
- * their spec entries are; one the edit removed is not listed.
+ * its announcement: first each switch that it added for them, then each
+ * interface whose connection changed. Interfaces match by handle, which a
+ * renamed interface keeps (see reconcileDeviceHandles), or else by name, as
+ * their spec entries do. An interface that the edit removed is not listed.
  *
  * @param {object} before document
  * @param {object} after document
@@ -3529,16 +3549,17 @@ export function connectionChanges(before, after, nodeId) {
 
 // --- templates -------------------------------------------------------------
 
-// What a device node has that a template's device does not: its name is
-// the template's base hostname, in its spec, and its handles and the
-// topology it is included from belong to a diagram.
+// What a device node has that a template's device does not have: its name
+// (the template's base hostname, in its spec), and its handles and the
+// topology it is included from, which belong to a diagram.
 const NOT_TEMPLATE_KEYS = ['hostname', 'interfaces', 'includedFrom'];
 
 /**
  * The device of a template, from a device node's payload or from another
- * template's device: every field of the payload a template keeps, the spec
- * copied, and a presentation field that holds no value left out. A field
- * added to devices is a template's too, with no change here.
+ * template's device. It has every field of the payload that a template
+ * keeps, with the spec copied and the presentation fields that hold no value
+ * left out. A field added to devices is also a template's field, with no
+ * change here.
  *
  * @param {object} payload a node's `device`, or a template's
  * @returns {object} {iconKey?, icon?, iconSize?, outlineColor?, fillColor?,
@@ -3573,9 +3594,9 @@ function templateEntry(id, { name, description, device }) {
 }
 
 /**
- * Saves a device template in the diagram. The copy gets an id of its own,
- * whatever id the template came with: a built-in template's is a name, and
- * a library's may be in the diagram already.
+ * Saves a device template in the diagram. The copy gets its own id,
+ * whatever id the template came with: a built-in template's id is a name,
+ * and a library's template can already be in the diagram.
  *
  * @param {object} doc
  * @param {{name: string, description?: string, device: object}} template
@@ -3593,12 +3614,13 @@ export function addTemplate(doc, template) {
 
 /**
  * Changes a template of the diagram: its name, its description (an emptied
- * one is removed) and its device, each only when the patch has it.
+ * description is removed) and its device, each only when the patch has it.
  *
  * @param {object} doc
  * @param {string} id
  * @param {{name?: string, description?: string, device?: object}} patch
- * @returns {object} document, the same one when it has no such template
+ * @returns {object} document. The same document when it has no such
+ *   template.
  */
 export function updateTemplate(doc, id, patch = {}) {
   const templates = doc.templates || [];
@@ -3624,13 +3646,14 @@ export function updateTemplate(doc, id, patch = {}) {
 }
 
 /**
- * Removes a template from the diagram. A diagram left with none has no
- * `templates`, as one that never had any. Devices made from the template
- * stay as they are: they keep no link to it.
+ * Removes a template from the diagram. A diagram left with no templates has
+ * no `templates`, as one that never had any. Devices made from the template
+ * do not change, because they keep no link to it.
  *
  * @param {object} doc
  * @param {string} id
- * @returns {object} document, the same one when it has no such template
+ * @returns {object} document. The same document when it has no such
+ *   template.
  */
 export function removeTemplate(doc, id) {
   const templates = doc.templates || [];
@@ -3702,9 +3725,10 @@ export const MAX_DIAGRAM_NOTES = 100;
 export const MAX_DIAGRAM_NOTE_BYTES = 4096;
 
 /**
- * The metadata of a document: what it says of itself, its identifier, name,
- * description, who made and last saved it, and its notes. A document always
- * has one; this is an empty one for a value that is not a document.
+ * The metadata of a document: what it says about itself, its identifier,
+ * name, description, who made it and last saved it, and its notes. A
+ * document always has metadata. This is empty metadata for a value that is
+ * not a document.
  *
  * @param {object} doc
  * @returns {object}
@@ -3725,11 +3749,11 @@ function orderedMetadata(metadata) {
 
 /**
  * The document with the creator, creation time, last editor and last edit
- * time the server wrote into the stored copy of it (the `stamp` of a create
- * or save response) in its metadata. A value the stamp lacks is removed, as
- * the stored document has none. The metadata keeps the server's order, so a
- * download reads like the stored document. The same document is returned
- * when it holds exactly the stamp already.
+ * time that the server wrote into its stored copy (the `stamp` of a create
+ * or save response) in its metadata. A value that the stamp does not have is
+ * removed, because the stored document has none. The metadata keeps the
+ * server's order, so a download reads like the stored document. The same
+ * document is returned when it already holds exactly the stamp.
  *
  * @param {object} doc
  * @param {{createdBy?: string, createdAt?: string, updatedBy?: string,
@@ -3758,10 +3782,10 @@ export function withStamp(doc, stamp) {
 }
 
 /**
- * The stamp of the document a snapshot the server lists holds: every save
- * stores its user and its time, to the second, as the document's last
- * editor and last edit time, and keeps the creator and creation time of the
- * draft, which `doc`, another snapshot of it, holds too.
+ * The stamp of the document that a listed snapshot holds. Every save stores
+ * its user and its time, to the second, as the document's last editor and
+ * last edit time. It keeps the creator and creation time of the draft, which
+ * `doc`, another snapshot of it, also holds.
  *
  * @param {object} doc a document of the draft
  * @param {{createdBy?: string, createdAt?: string}} snapshot a row of the
@@ -3788,8 +3812,8 @@ export function savedStamp(doc, snapshot) {
 
 /**
  * Whether two documents differ at most in what the server stamps (see
- * withStamp): everything else, the rest of the metadata included, is the
- * very same content.
+ * withStamp). All other content, the rest of the metadata included, is
+ * identical.
  *
  * @param {object} a
  * @param {object} b
@@ -3837,7 +3861,7 @@ export function setDocumentInfo(doc, patch = {}) {
  * Why a diagram note cannot be written into the document, as the server
  * would refuse it (validateNotes in validate.go): it is longer than
  * MAX_DIAGRAM_NOTE_BYTES in UTF-8, or holds a control character other than
- * the newline and the tab. A blank note has no problem here, since
+ * the newline and the tab. A blank note has no problem here, because
  * setDiagramNotes drops it.
  *
  * @param {string} note
@@ -3860,12 +3884,12 @@ export function diagramNoteProblem(note) {
 
 /**
  * The document with the notes of its diagram, in order. A note that is only
- * white space is dropped, as the server would refuse it, and the others are
- * kept as written. A diagram left with no notes has no `notes` in its
- * metadata, as one that never had any. The same document is returned when
- * its notes are those already, and also when one of them cannot be written
- * (see diagramNoteProblem): the document then keeps the notes it had, so no
- * caller writes a note the server would refuse.
+ * white space is dropped, because the server would refuse it. The other
+ * notes are kept as written. A diagram left with no notes has no `notes` in
+ * its metadata, as one that never had any. The same document is returned
+ * when it already has these notes. It is also returned when one of them
+ * cannot be written (see diagramNoteProblem). The document then keeps its
+ * old notes, so no caller writes a note that the server would refuse.
  *
  * @param {object} doc
  * @param {string[]} notes
@@ -3916,9 +3940,9 @@ export function documentScenarios(doc) {
 }
 
 /**
- * Replaces the Scenario configs the document lists; an empty list removes
- * `scenarios`, which the document then leaves out, as the server encodes
- * it.
+ * Replaces the Scenario configs that the document lists. An empty list
+ * removes `scenarios`, which the document then leaves out, as the server
+ * encodes it.
  *
  * @param {object} doc
  * @param {string[]} names
@@ -3939,9 +3963,9 @@ export function setScenarios(doc, names = []) {
 }
 
 /**
- * The annotations of the config the document was imported from, as the
- * Inspector lists them: sorted by key, without the Builders' own, which
- * import leaves out already, and without any value that is not text.
+ * The annotations of the config that the document was imported from, as the
+ * Inspector lists them: sorted by key, without the Builder's own annotations
+ * (which import already leaves out), and without any value that is not text.
  *
  * @param {object} doc
  * @returns {[string, string][]} key and value pairs
@@ -4005,8 +4029,8 @@ export function documentSummary(doc) {
   );
   const theirs = (edge) =>
     included.has(edge.sourceNodeId) || included.has(edge.targetNodeId);
-  // Whether each node and each network is used only by included devices,
-  // by id, from one pass over the connections: false once any other
+  // Whether each node and each network is used only by included devices, by
+  // id, from one pass over the connections. It becomes false when any other
   // connection uses it.
   const nodeTheirs = new Map();
   const networkTheirs = new Map();
@@ -4040,8 +4064,8 @@ export function documentSummary(doc) {
 }
 
 /**
- * A note's first line of text, its spaces collapsed: what an unlabelled note
- * is named after.
+ * A note's first line of text, with its spaces collapsed. An unlabelled note
+ * gets its name from it.
  *
  * @param {object} node
  * @returns {string} '' for a note without text
@@ -4093,10 +4117,11 @@ export function nodeLabel(node) {
 }
 
 /**
- * The updateNode patch that gives a node of a kind other than a switch (whose
- * name is its network's) the label `label`, in the field the canvas and the
- * Inspector read it from: a device's hostname, a group's title, a shape's,
- * an icon's or a line's payload label, and a note's own label.
+ * The updateNode patch that gives the label `label` to a node of a kind
+ * other than a switch (whose name is its network's name). The patch sets the
+ * field from which the canvas and the Inspector read the label: a device's
+ * hostname, a group's title, the payload label of a shape, an icon or a line,
+ * and a note's own label.
  *
  * @param {object} node
  * @param {string} label
@@ -4118,8 +4143,8 @@ export function renamePatch(node, label) {
 }
 
 /**
- * What a node is called by its kind, as the outline and announcements name
- * it: a shape by its figure.
+ * The name of a node's kind, as the outline and announcements use it. A
+ * shape is named by its figure.
  *
  * @param {object} node
  * @returns {string} "Device", "Rectangle", "Circle", "Icon", "Line", ...
@@ -4134,8 +4159,8 @@ export function kindLabel(node) {
 
 /**
  * What a device node shows as its type: the phenix node type as stored
- * (VirtualMachine, Router, Firewall, ...), "External" for an external
- * device whatever its type, and "Device" when the spec names no type.
+ * (VirtualMachine, Router, Firewall, ...), "External" for an external device
+ * whatever its type, and "Device" when the spec names no type.
  *
  * @param {object} node
  * @returns {string}
@@ -4154,8 +4179,8 @@ export function deviceTypeLabel(node) {
 
 /**
  * Label for one end of a connection: the node's label, and at a device the
- * interface the connection uses, as "web-01 (eth1)", so two connections
- * between the same nodes are told apart.
+ * interface that the connection uses, as "web-01 (eth1)". Thus two
+ * connections between the same nodes have different labels.
  *
  * @param {object} node
  * @param {string|null} [handleId] the connection's handle at this node
@@ -4170,9 +4195,10 @@ export function connectionEndLabel(node, handleId) {
 }
 
 /**
- * A node's comment, which its accessible name ends with. A device's is the
- * phenix node description, shown on the node and in its info tooltip; a
- * note's is its text; a group's is its description, shown under its title.
+ * A node's comment, at the end of its accessible name. A device's comment is
+ * the phenix node description, shown on the node and in its info tooltip. A
+ * note's comment is its text. A group's comment is its description, shown
+ * under its title.
  *
  * @param {object} node
  * @returns {string}

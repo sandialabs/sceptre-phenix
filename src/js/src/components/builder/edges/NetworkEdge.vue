@@ -1,21 +1,21 @@
 <!--
   Network edge.
 
-  Network identity is carried by three redundant cues: stroke color (the
-  network's token, or the color the user gave it; see colors.js), dash
-  pattern and a visible text label, so the diagram stays readable without
-  color perception. The label is drawn in Vue Flow's label layer, above the nodes,
-  so a node never hides it, and lets the pointer through to what is under it:
-  the line, or a node it overlaps. Vue Flow's wrapper <g> is the focusable,
-  named element (see adapters/vueflow.js); the label only repeats the network
-  name.
+  Three redundant cues show the network: stroke color (the network's token,
+  or the color the user gave it, see colors.js), dash pattern and a visible
+  text label. So the diagram stays readable without color perception. The
+  edge draws the label in Vue Flow's label layer, above the nodes, so a
+  node never hides it. The label lets the pointer through to what is under
+  it: the line, or a node it overlaps. Vue Flow's wrapper <g> is the
+  focusable, named element (see adapters/vueflow.js). The label only
+  repeats the network name.
 
-  A color the user gave the connection itself replaces the network's; its
+  A color the user gave the connection itself replaces the network's. Its
   dash pattern and label still name the network.
 
   The line follows the route a layout drew for it (edge.route) while the
   route still starts and ends at its handles, with rounded bends. Otherwise
-  it steps across at one bend; the lines into one switch each bend in a
+  it steps across at one bend. The lines into one switch each bend in a
   column of their own (data.lane, see edgeLanes), not all in one.
 
   Vue Flow passes more attributes than these props, and the edge has several
@@ -39,7 +39,7 @@
     fill="none"
     pointer-events="none" />
   <!-- A casing under a line whose chosen color would fade into the canvas
-       in a theme (see colors.js); the theme's CSS draws it. -->
+       in a theme (see colors.js). The theme's CSS draws it. -->
   <path
     v-if="casing"
     class="builder-edge__casing"
@@ -66,9 +66,9 @@
     :data-network="style.label"
     :data-pattern="style.pattern"
     :data-routed="line.routed ? 'true' : undefined" />
-  <!-- Moved to Vue Flow's label layer, found once for the canvas (see
-       BuilderCanvas.vue) rather than by each edge, as Vue Flow's
-       EdgeLabelRenderer does; the foreignObject gives the label HTML's
+  <!-- Moved to Vue Flow's label layer. The canvas finds the layer once
+       (see BuilderCanvas.vue), not each edge, as Vue Flow's
+       EdgeLabelRenderer does. The foreignObject gives the label HTML's
        namespace. -->
   <svg v-if="label && labelLayer">
     <foreignObject height="0" width="0">

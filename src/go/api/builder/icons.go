@@ -18,9 +18,9 @@ import (
 	"phenix/util/plog"
 )
 
-// Limits of the icon library. They are plain bounds, not a quota: two
-// uploads at the same moment can each pass the check and leave the library,
-// or one user's share of it, one icon over, and the next upload is then
+// Limits of the icon library. They are plain bounds, not a quota. Two
+// uploads at the same moment can each pass the check. Then the library, or
+// the share of one user, is one icon over the limit, and the next upload is
 // refused.
 const (
 	// MaxIconUploadBytes bounds the image [Service.AddIcon] is given (64
@@ -45,10 +45,10 @@ const (
 // kindIcon names an icon in typed errors.
 const kindIcon = "icon"
 
-// The layout of the icon library's records (see [NamespaceIcons]). Every
-// icon name and every alias owns the record "name/" and its name in lower
-// case, so creating either is one create-if-absent write, and names are
-// unique across icons and aliases ignoring case.
+// The layout of the records of the icon library (see [NamespaceIcons]).
+// Every icon name and every alias owns the record "name/" plus its name in
+// lower case. Thus creating either is one create-if-absent write, and names
+// are unique across icons and aliases, ignoring case.
 const (
 	// iconKeyPrefix starts the key of every record of the icon library.
 	iconKeyPrefix = "name/"
@@ -58,18 +58,19 @@ const (
 	iconRecordKind  = "icon"
 	aliasRecordKind = "alias"
 
-	// maxAliasHops is the most aliases a name is followed through. A rename
-	// points every alias of the icon at its new name (see
-	// [Service.RenameIcon]), so an alias is one hop from its icon; longer
-	// chains are left only by a rename whose retargeting failed, and the
-	// bound keeps a damaged store from looping.
+	// maxAliasHops is the most aliases that resolution follows for a name. A
+	// rename points every alias of the icon at its new name (see
+	// [Service.RenameIcon]), so an alias is one hop from its icon. Only a
+	// rename whose retargeting failed leaves longer chains. The bound stops a
+	// damaged store from looping.
 	maxAliasHops = 16
 )
 
 // LibraryIcon is one icon of the icon library, and the value of its record.
-// Every user who may list the library sees it; only the user who uploaded it
-// and the holders of the builder-icons permissions rename or delete it, and
-// only the latter one the server added (see [ServerIconOwner]).
+// Every user who may list the library sees it. Only the user who uploaded it
+// and the holders of the builder-icons permissions rename or delete it. Only
+// those holders rename or delete an icon the server added (see
+// [ServerIconOwner]).
 type LibraryIcon struct {
 	// Kind is "icon": the record is an icon and not an alias.
 	Kind string `json:"kind"`
@@ -80,16 +81,16 @@ type LibraryIcon struct {
 	// ID is "sha256:" and the SHA-256 of the PNG (see [builder.IconID]), so
 	// two icons hold the same image exactly when their IDs are equal.
 	ID string `json:"id"`
-	// Owner is the user who uploaded the icon, or [ServerIconOwner] for one
-	// the server added from its template files, which no user owns.
+	// Owner is the user who uploaded the icon. It is [ServerIconOwner] for an
+	// icon the server added from its template files, which no user owns.
 	Owner string `json:"owner"`
 	// Width and Height are the size of the image in pixels, and Bytes the
 	// length of its PNG.
 	Width  int `json:"width"`
 	Height int `json:"height"`
 	Bytes  int `json:"bytes"`
-	// Created is when the icon was uploaded, and Updated when it was last
-	// renamed (when it was uploaded, before its first rename).
+	// Created is when the icon was uploaded. Updated is when it was last
+	// renamed, or when it was uploaded if it has no rename.
 	Created time.Time `json:"created"`
 	Updated time.Time `json:"updated"`
 	// Aliases are the names the icon had before its renames, as they were
@@ -103,8 +104,8 @@ type LibraryIcon struct {
 }
 
 // iconAlias is the record of a name an icon had before it was renamed. It
-// points at the record of the icon's name now: each rename points the
-// icon's aliases at the new name.
+// points at the record of the current name of the icon. Each rename points
+// the aliases of the icon at the new name.
 type iconAlias struct {
 	// Kind is "alias".
 	Kind string `json:"kind"`
@@ -129,8 +130,8 @@ func iconKey(name string) string {
 	return iconKeyPrefix + strings.ToLower(name)
 }
 
-// iconNameError is the refusal of a name that is not an icon name, in the
-// words of [builder.IconNameProblem]: Field and Reason read as one sentence.
+// iconNameError refuses a name that is not an icon name, in the words of
+// [builder.IconNameProblem]. Field and Reason read as one sentence.
 func iconNameError(name string) error {
 	problem := builder.IconNameProblem(name)
 	if problem == "" {
@@ -140,13 +141,13 @@ func iconNameError(name string) error {
 	return newValidationError("icon name", strings.TrimPrefix(problem, "icon name "))
 }
 
-// ListIcons returns every icon of the icon library, ordered by name without
-// regard to case.
+// ListIcons returns every icon of the icon library, ordered by name, ignoring
+// case.
 //
-// A record is returned only when it is an icon in every respect (see
-// readIcon). Any other record is logged and left out, so a damaged or
-// planted record never reaches a browser. Aliases are not listed: each icon
-// lists its own.
+// It returns a record only when the record is an icon in every respect (see
+// readIcon). It logs and leaves out any other record, so a damaged or
+// planted record never reaches a browser. It does not list aliases. Each
+// icon lists its own.
 func (s *Service) ListIcons(ctx context.Context) ([]LibraryIcon, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("listing icons: %w", err)
@@ -196,10 +197,10 @@ func IconUsage(icons []LibraryIcon, owner string) IconOwnerUsage {
 	return usage
 }
 
-// GetIcon returns the icon a name names: the icon of that name, or the one
-// that keeps it as an alias, ignoring case. The icon's Name is its name now.
-// A name that names no icon, whatever its form, is an error matching
-// [ErrNotFound].
+// GetIcon returns the icon a name names: the icon of that name, or the icon
+// that keeps it as an alias, ignoring case. The Name of the icon is its
+// current name. A name that names no icon, whatever its form, gives an error
+// that matches [ErrNotFound].
 func (s *Service) GetIcon(ctx context.Context, name string) (*LibraryIcon, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("reading an icon: %w", err)
@@ -210,20 +211,20 @@ func (s *Service) GetIcon(ctx context.Context, name string) (*LibraryIcon, error
 
 // AddIcon adds an image to the icon library under a name the owner chose,
 // and returns the stored icon. The second result is false when the name
-// already names an icon with the same bytes: that icon is returned as it is.
-// Two names may hold the same image.
+// already names an icon with the same bytes. Then AddIcon returns that icon
+// as it is. Two names may hold the same image.
 //
 // The name must be an icon name (see [builder.IconNameProblem]) that names
-// no icon and no alias, ignoring case; one that does is refused with an
-// [IconNameTakenError] naming the icon and who uploaded it. The image must
-// be a PNG of at most [builder.MaxIconPixels] a side and
-// [MaxIconUploadBytes]. One a document accepts as it is (see
-// [builder.ValidateIconPNG]) is stored unchanged. Any other is encoded
-// again, which keeps its pixels and nothing else.
+// no icon and no alias, ignoring case. AddIcon refuses a name that does, with
+// an [IconNameTakenError] that names the icon and who uploaded it. The image
+// must be a PNG of at most [builder.MaxIconPixels] a side and
+// [MaxIconUploadBytes]. AddIcon stores unchanged an image that a document
+// accepts as it is (see [builder.ValidateIconPNG]). It encodes any other
+// image again, which keeps its pixels and nothing else.
 //
 // A refusal for the name, the image or a full library is a
-// [ValidationError] whose Field and Reason read as one sentence, and one for
-// the size of the upload a [TooLargeError].
+// [ValidationError] whose Field and Reason read as one sentence. A refusal
+// for the size of the upload is a [TooLargeError].
 func (s *Service) AddIcon(ctx context.Context, owner, name string, upload []byte) (*LibraryIcon, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, fmt.Errorf("adding an icon: %w", err)
@@ -303,7 +304,7 @@ func (s *Service) createIcon(owner, name string, data []byte, width, height int)
 		return &icon, true, nil
 	case errors.Is(err, store.ErrRecordExist):
 		// Another request took the name first, or the name is an alias
-		// whose icon is gone, which a new icon may take over.
+		// whose icon is gone. A new icon may replace that alias.
 		return s.addIconOverAlias(name, id, &icon, value)
 	}
 
@@ -311,9 +312,10 @@ func (s *Service) createIcon(owner, name string, data []byte, width, height int)
 }
 
 // iconOfName reports whether name already names an icon. The second result
-// is true when it names one with the image id, which is returned. A name
-// that names another image is refused with an [IconNameTakenError]; one
-// that names nothing, or only an alias whose icon is gone, is not found.
+// is true when the name names an icon with the image id. Then iconOfName
+// returns that icon. It refuses a name that names another image with an
+// [IconNameTakenError]. A name that names nothing, or only an alias whose
+// icon is gone, is not found.
 func (s *Service) iconOfName(name, id string) (*LibraryIcon, bool, error) {
 	existing, err := s.resolveIcon(name)
 
@@ -329,10 +331,10 @@ func (s *Service) iconOfName(name, id string) (*LibraryIcon, bool, error) {
 	return existing, true, nil
 }
 
-// addIconOverAlias finishes an upload whose name's record was created by
-// someone else first: when it names an icon with the same image, that icon
-// is the answer; when it is an alias whose icon is gone, the new icon
-// replaces it; otherwise the name is taken.
+// addIconOverAlias finishes an upload when another request created the
+// record of the name first. When the record names an icon with the same
+// image, that icon is the answer. When it is an alias whose icon is gone,
+// the new icon replaces it. Otherwise the name is taken.
 func (s *Service) addIconOverAlias(name, id string, icon *LibraryIcon, value []byte) (*LibraryIcon, bool, error) {
 	if existing, found, err := s.iconOfName(name, id); found || err != nil {
 		return existing, false, err
@@ -381,20 +383,20 @@ func checkIconLimits(usage IconOwnerUsage, size int) error {
 	return nil
 }
 
-// RenameIcon gives the icon a name names a new name, and returns the icon
-// as renamed. The old name keeps naming it, as an alias. The caller must be
-// the user who uploaded the icon, or anyOwner must be set (the caller holds
-// the builder-icons update permission); otherwise the error matches
-// [ErrForbidden].
+// RenameIcon gives a new name to the icon that name names, and returns the
+// renamed icon. The old name continues to name it, as an alias. The caller
+// must be the user who uploaded the icon, or anyOwner must be set (the
+// caller holds the builder-icons update permission). Otherwise the error
+// matches [ErrForbidden].
 //
 // A change of case only renames the icon in place. Any other new name must
-// be one no icon and no alias has, ignoring case ([IconNameTakenError]),
-// except an alias of this same icon, which the icon takes back. The icon
-// moves to the new name's record first, and the old record becomes the
-// alias; when the old record changed in between, the move is undone and the
-// error matches [ErrConflict]. Every other alias the icon lists is then
-// pointed at the new name, so each stays one hop from the icon however
-// often it is renamed.
+// be one that no icon and no alias has, ignoring case ([IconNameTakenError]).
+// The exception is an alias of this same icon, which the icon takes back.
+// The icon moves to the record of the new name first, and the old record
+// becomes the alias. When the old record changed in between, RenameIcon
+// undoes the move and the error matches [ErrConflict]. Then RenameIcon
+// points every other alias the icon lists at the new name. Thus each alias
+// stays one hop from the icon, however often the icon is renamed.
 func (s *Service) RenameIcon(ctx context.Context, caller, name, newName string, anyOwner bool) (*LibraryIcon, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("renaming an icon: %w", err)
@@ -452,10 +454,10 @@ func (s *Service) writeRenamedIcon(icon, renamed *LibraryIcon) (*LibraryIcon, er
 	return renamed, nil
 }
 
-// moveIcon writes the renamed icon to the record of its new name, then turns
-// the record of its old name into an alias of the new one. When the new
-// name's record holds an alias of this icon, the icon takes it back. A
-// failure of the second write undoes the first.
+// moveIcon writes the renamed icon to the record of its new name. Then it
+// changes the record of its old name into an alias of the new name. When the
+// record of the new name holds an alias of this icon, the icon takes it back.
+// A failure of the second write undoes the first.
 func (s *Service) moveIcon(icon, renamed *LibraryIcon) (*LibraryIcon, error) {
 	value, err := encodeIconRecord(*renamed)
 	if err != nil {
@@ -471,8 +473,8 @@ func (s *Service) moveIcon(icon, renamed *LibraryIcon) (*LibraryIcon, error) {
 
 	newKey := iconKey(renamed.Name)
 
-	// What takes the new key back to what it held, should the old one not
-	// become an alias.
+	// undo puts back what the new key held, if the old key does not become
+	// an alias.
 	var undo func(revision int64) error
 
 	created, err := s.store.CreateRecord(NamespaceIcons, newKey, value)
@@ -516,10 +518,11 @@ func (s *Service) moveIcon(icon, renamed *LibraryIcon) (*LibraryIcon, error) {
 }
 
 // retargetAliases points every alias the renamed icon lists at the record of
-// its name now, so an alias never leads through another. An alias whose
-// record is gone, or holds no alias any more, is left alone. A failure is
-// logged and not returned: the rename is done, the alias still resolves
-// through the alias it pointed at, and the next rename retargets it again.
+// its current name, so an alias never leads through another alias. It does
+// not change an alias whose record is gone or holds no alias now. It logs a
+// failure and does not return it. The rename is done, the alias still
+// resolves through the alias it pointed at, and the next rename retargets it
+// again.
 func (s *Service) retargetAliases(renamed *LibraryIcon) {
 	target := strings.ToLower(renamed.Name)
 
@@ -559,11 +562,11 @@ func (s *Service) retargetAliases(renamed *LibraryIcon) {
 	}
 }
 
-// reclaimAlias writes the renamed icon over the record its new name already
-// has, when that record is an alias that names this same icon, or no icon at
-// all: renaming an icon back to a name it had takes the name back. It
-// returns the record written and the one it replaced. Any other record means
-// the name is taken.
+// reclaimAlias writes the renamed icon over the existing record of its new
+// name, when that record is an alias that names this same icon or no icon.
+// Thus renaming an icon back to an old name takes the name back. It returns
+// the record it wrote and the record it replaced. Any other record means
+// that the name is taken.
 func (s *Service) reclaimAlias(icon, renamed *LibraryIcon, value []byte) (store.Record, store.Record, error) {
 	var none store.Record
 
@@ -602,10 +605,10 @@ func (s *Service) reclaimAlias(icon, renamed *LibraryIcon, value []byte) (store.
 	return written, taken, nil
 }
 
-// mayChangeIcon reports whether caller may rename or delete the icon: its
-// uploader may, and with anyOwner (the caller holds the builder-icons
-// permission of that verb) anyone may. An icon the server added has no
-// uploader (see [ServerIconOwner]), so only anyOwner allows it.
+// mayChangeIcon reports whether caller may rename or delete the icon. Its
+// uploader may. With anyOwner (the caller holds the builder-icons permission
+// of that verb), any caller may. An icon the server added has no uploader
+// (see [ServerIconOwner]), so only anyOwner allows it.
 func mayChangeIcon(icon *LibraryIcon, caller string, anyOwner bool) bool {
 	return anyOwner || (icon.Owner != ServerIconOwner && icon.Owner == caller)
 }
@@ -633,17 +636,17 @@ func withoutName(names []string, name string) []string {
 	return kept
 }
 
-// DeleteIcon removes the icon a name names from the icon library, with
-// every alias that names it: deleting through an alias deletes the icon.
+// DeleteIcon removes the icon that a name names from the icon library, with
+// every alias that names it. Deleting through an alias deletes the icon.
 // Nodes that named it show their built-in icon, and documents that carry a
 // copy keep it. The caller must be the user who uploaded the icon, or
 // anyOwner must be set (the caller holds the builder-icons delete
-// permission); otherwise the error matches [ErrForbidden].
+// permission). Otherwise the error matches [ErrForbidden].
 //
-// A name that names no icon is an error matching [ErrNotFound]. With
-// anyOwner, a record of that name this server cannot read is removed. When
-// the icon is gone but an alias could not be removed, the error matches
-// [ErrCleanup].
+// A name that names no icon gives an error that matches [ErrNotFound]. With
+// anyOwner, DeleteIcon removes a record of that name that this server cannot
+// read. When the icon is gone but an alias could not be removed, the error
+// matches [ErrCleanup].
 func (s *Service) DeleteIcon(ctx context.Context, caller, name string, anyOwner bool) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("deleting an icon: %w", err)
@@ -688,8 +691,9 @@ func (s *Service) DeleteIcon(ctx context.Context, caller, name string, anyOwner 
 }
 
 // deleteUnreadableIcon removes the record of a name when this server cannot
-// read it, and otherwise returns the error that resolving the name gave: a
-// record further along its aliases is not the name's to remove.
+// read it. Otherwise it returns the error from resolving the name. A record
+// further along the aliases of the name does not belong to the name, so
+// deleteUnreadableIcon does not remove it.
 func (s *Service) deleteUnreadableIcon(name string, resolveErr error) error {
 	record, err := s.store.GetRecord(NamespaceIcons, iconKey(name))
 	if err != nil {
@@ -707,9 +711,9 @@ func (s *Service) deleteUnreadableIcon(name string, resolveErr error) error {
 	return nil
 }
 
-// aliasesOf returns the alias records whose chain ends at the icon, and
-// those of the aliases the icon lists whose chain ends at no icon: what
-// deleting the icon would leave pointing at nothing.
+// aliasesOf returns the records that deleting the icon would leave pointing
+// at nothing: the alias records whose chain ends at the icon, and the
+// records of the aliases the icon lists whose chain ends at no icon.
 func aliasesOf(records store.Records, icon *LibraryIcon) []store.Record {
 	var (
 		targets = make(map[string]string, len(records))
@@ -794,10 +798,10 @@ func (s *Service) CleanupLegacyIcons(ctx context.Context) (int, error) {
 	return removed, newCleanupError("removing icon records of the per-user layout", failures)
 }
 
-// resolveIcon returns the icon a name names, following aliases up to
-// [maxAliasHops]. A name that is not an icon name, has no record, or ends in
-// an alias whose icon is gone is not found; a record that is not an icon or
-// an alias in every respect is corrupt.
+// resolveIcon returns the icon a name names, and follows aliases up to
+// [maxAliasHops]. A name is not found when it is not an icon name, has no
+// record, or ends in an alias whose icon is gone. A record that is not an
+// icon or an alias in every respect is corrupt.
 func (s *Service) resolveIcon(name string) (*LibraryIcon, error) {
 	if builder.IconNameProblem(name) != "" {
 		return nil, newNotFoundError(kindIcon, name)
@@ -840,11 +844,11 @@ func encodeIconRecord(icon LibraryIcon) ([]byte, error) {
 	return value, nil
 }
 
-// iconPNG returns the PNG an uploaded image is stored as, and its width and
-// height in pixels: the upload itself when a document accepts it as it is,
-// and otherwise its pixels encoded again, which drops text, metadata, color
-// profiles, further frames, a palette the pixels do not use and anything
-// after the pixels or the end of the image.
+// iconPNG returns the PNG that stores an uploaded image, and its width and
+// height in pixels. When a document accepts the upload as it is, the PNG is
+// the upload. Otherwise the PNG is the pixels encoded again. This drops text,
+// metadata, color profiles, further frames, a palette the pixels do not use
+// and anything after the pixels or the end of the image.
 func iconPNG(upload []byte) ([]byte, int, int, error) {
 	if width, height, err := builder.ValidateIconPNG(upload); err == nil {
 		return upload, width, height, nil
@@ -852,8 +856,8 @@ func iconPNG(upload []byte) ([]byte, int, int, error) {
 
 	const notPNG = "is not a PNG image"
 
-	// Only the header is read, so an image that claims to be huge is
-	// refused for its size before any pixel is decoded.
+	// Read only the header, so an image that claims to be huge is refused
+	// for its size before any pixel is decoded.
 	config, err := png.DecodeConfig(bytes.NewReader(upload))
 	if err != nil {
 		return nil, 0, 0, newValidationCause(kindIcon, notPNG, err)
@@ -907,11 +911,16 @@ func readIconRecord(record store.Record) (*LibraryIcon, *iconAlias, error) {
 }
 
 // readIcon returns the icon a record holds. The record is an icon only when
-// it decodes strictly, has the name its key does, names an uploader (or
-// [ServerIconOwner]) and the ID of an image, lists aliases that are icon
-// names other than its own, and holds a PNG a document accepts whose ID is
-// that ID. Its size and its base64 are taken from that PNG, never from the
-// record.
+// all of these are true:
+//   - it decodes strictly
+//   - it has the name its key has
+//   - it names an uploader (or [ServerIconOwner]) and the ID of an image
+//   - it lists aliases that are icon names other than its own
+//   - it holds a PNG that a document accepts, and the ID of that PNG is that
+//     ID
+//
+// readIcon takes the size and the base64 of the icon from that PNG, never
+// from the record.
 func readIcon(record store.Record) (*LibraryIcon, error) {
 	var icon LibraryIcon
 
@@ -955,9 +964,9 @@ func readIcon(record store.Record) (*LibraryIcon, error) {
 	return &icon, nil
 }
 
-// aliasesProblem reports whether aliases are not the old names of an icon
-// named name: each an icon name, none equal to name or to another ignoring
-// case.
+// aliasesProblem reports whether aliases are not valid old names of an icon
+// named name. Each alias must be an icon name. No alias may equal name or
+// another alias, ignoring case.
 func aliasesProblem(name string, aliases []string) bool {
 	seen := map[string]bool{strings.ToLower(name): true}
 

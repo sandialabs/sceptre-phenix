@@ -25,10 +25,10 @@ const (
 )
 
 // builderLegacyRequest asks for the conversion of a diagram of the legacy
-// Builder. Content is the text of a file: the diagram's XML, or a Topology
-// config, as JSON or YAML, that carries the diagram in its "builder-xml"
-// annotation. Name names the document of a diagram that comes without a
-// topology.
+// Builder. Content is the text of a file. The file is the XML of the
+// diagram, or a Topology config (JSON or YAML) that carries the diagram in
+// its "builder-xml" annotation. Name names the document of a diagram that
+// comes without a topology.
 type builderLegacyRequest struct {
 	Content string `json:"content"`
 	Name    string `json:"name"`
@@ -45,13 +45,13 @@ type builderLegacyResponse struct {
 
 // convertLegacy - POST /builder/legacy.
 //
-// Like generation, conversion is a pure transform: nothing is read from the
-// store but the topologies a topology includes, and nothing is written.
+// Like generation, conversion is a pure transform. It reads from the store
+// only the topologies that a topology includes, and it writes nothing.
 //
-// The content is untrusted. It is never logged, and a refusal repeats
-// nothing of it but the kind and the name of a config, or the name of an XML
-// root element: the errors of the parsers, which may quote the content, are
-// not passed on.
+// The content is not trusted. It is never logged. A refusal repeats nothing
+// of it but the kind and the name of a config, or the name of an XML root
+// element. The parser errors, which may quote the content, are not passed
+// on.
 func (b *builderAPI) convertLegacy(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderConvertLegacy")
 
@@ -62,10 +62,10 @@ func (b *builderAPI) convertLegacy(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 
-	// A Topology config is parsed the way POST /configs parses one, which
-	// substitutes ${NAME} from the server's environment (see
-	// generationSource), so the conversion needs the permission to create
-	// configs, whatever the content turns out to be.
+	// A Topology config is parsed as POST /configs parses one, which
+	// substitutes ${NAME} from the environment of the server (see
+	// generationSource). Thus the conversion needs the permission to create
+	// configs, whatever the content is.
 	if !builderBaseAllowed(actor.role, builderVerbCreate) {
 		return builderForbidden(actor, action)
 	}
@@ -101,12 +101,12 @@ func (b *builderAPI) convertLegacy(w http.ResponseWriter, r *http.Request) error
 	}
 
 	// The conversion leaves the time out, so it converts the same diagram
-	// into the same document; the Inspector shows it with the source.
+	// into the same document. The Inspector shows the time with the source.
 	document.Source.ImportedAt = time.Now().UTC().Format(time.RFC3339)
 
-	// The document is encoded as [bapi.EncodeDocument] encodes one, but its
-	// size is checked first: a diagram can convert into a document far past
-	// the bound, which is then refused without being validated once more.
+	// Encode the document as [bapi.EncodeDocument] encodes one, but check its
+	// size first. A diagram can convert into a document far larger than the
+	// bound. Such a document is refused without a second validation.
 	data, err := bdoc.Encode(document)
 
 	switch {
@@ -190,8 +190,8 @@ func builderLegacyRefusal(format string, args ...any) *weberror.WebError {
 }
 
 // builderLegacyNotDiagram is the refusal of content that is neither a
-// diagram nor a config with a name and a known kind, in the words
-// [bdoc.DecodeLegacy] refuses with what is no XML.
+// diagram nor a config with a name and a known kind. It uses the words that
+// [bdoc.DecodeLegacy] uses to refuse content that is not XML.
 func builderLegacyNotDiagram() *weberror.WebError {
 	return builderLegacyRefusal(
 		"this is not a legacy Builder diagram: expected mxGraph XML, or a Topology config with the %s annotation",

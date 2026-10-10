@@ -12,8 +12,8 @@ import { pageStorage } from './storage.js';
 export const RECENT_STORAGE_KEY = 'phenix.builder.recentCommands';
 export const RECENT_LIMIT = 5;
 
-// The list as last written, which stands in for storage once storage has
-// refused a write (it would still hand back the older list).
+// The list as last written. It replaces storage after storage refuses a
+// write, because storage would still give back the older list.
 let memory = [];
 let unwritable = false;
 

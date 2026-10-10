@@ -88,9 +88,9 @@
         return;
       }
 
-      // Keyboard accessibility: Tab reaches the editor as one stop, Enter
-      // starts typing in it and Escape stops, so Tab moves on rather than
-      // indenting (WCAG 2.1.2).
+      // Keyboard accessibility: Tab reaches the editor as one stop. Enter
+      // starts typing in it and Escape stops typing, so Tab moves to the
+      // next stop and does not indent (WCAG 2.1.2).
       this.editor = this.ace.edit(this.$refs.editor, {
         theme: 'ace/theme/dracula',
         mode: 'ace/mode/' + this.lang,

@@ -6,18 +6,18 @@
   Arrow on its last. In the menu, Up and Down move and wrap, Home and End
   jump to the ends, a letter moves to the next item starting with it, and
   Enter or Space chooses. Choosing, Escape, and a click outside the menu
-  close it and give focus back to the button (a click on something that
-  takes focus then takes it); Tab closes it and goes on from the button.
-  So focus never falls to the page.
+  close it and give focus back to the button (when the click is on
+  something that takes focus, that element then takes it). Tab closes the
+  menu and moves on from the button. So focus never falls to the page.
 
-  An item is {id, label, description?, checked?, separator?}: a menuitemradio
-  when it has `checked`, a menuitem otherwise; the description is its
-  accessible description rather than part of its name; `separator` draws a
-  rule before it.
+  An item is {id, label, description?, checked?, separator?}. It is a
+  menuitemradio when it has `checked`, and a menuitem otherwise. The
+  description is its accessible description, not part of its name.
+  `separator` draws a rule before it.
 
   The button is a plain <button> and takes the attributes and listeners
   given to this component (a name, a tooltip), so a toolbar's roving Tab stop
-  takes it with its other buttons; the items are not buttons, and stay out
+  takes it with its other buttons. The items are not buttons, and stay out
   of it. The slot is the button's content, before its arrow.
 -->
 <template>
@@ -121,8 +121,9 @@
   const buttonEl = ref(null);
   const menuEl = ref(null);
   const open = ref(false);
-  // Aligned to the button's end when it would run off the window's and that
-  // keeps it on screen; otherwise moved left by `shift` px, as far as fits.
+  // The menu aligns to the button's end when it would run off the window's
+  // end and that keeps it on screen. Otherwise it moves left by `shift` px,
+  // as far as fits.
   const alignEnd = ref(false);
   const shift = ref(0);
 
@@ -246,14 +247,14 @@
       return;
     }
 
-    // Handled here: the Builder's own keys leave it alone (see
-    // dispatchKeydown).
+    // The menu handles the key, so the Builder's own key handling ignores
+    // it (see dispatchKeydown).
     event.preventDefault();
     event.stopPropagation();
   }
 
-  // A press outside closes the menu. Focus goes to the button first; what
-  // was pressed takes it from there if it takes focus.
+  // A press outside closes the menu. Focus goes to the button first. Then
+  // the element that was pressed takes the focus, if it can take focus.
   function onPointerdown(event) {
     if (!rootEl.value?.contains(event.target)) {
       hide();
@@ -274,9 +275,9 @@
     window[method]('focusin', onFocusin, true);
   }
 
-  // An item that goes while it has focus (Restore previous layout, once the
-  // diagram changes) hands focus to the item now in its place. Read before
-  // the menu re-renders.
+  // When an item with focus disappears (Restore previous layout, after the
+  // diagram changes), focus goes to the item now in its place. This reads
+  // the focused item before the menu re-renders.
   watch(
     () => props.items,
     () => {

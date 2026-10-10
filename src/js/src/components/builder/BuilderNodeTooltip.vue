@@ -3,7 +3,7 @@
   useFixedTooltip shows and places (see fixedTooltip.js and
   nodes/nodeTooltip.js): a list of labelled rows, each with one or more
   lines, as nodeInfo.js gives them. It is outside the diagram, so it does
-  not grow with the zoom and is in no image of the diagram.
+  not grow with the zoom and does not appear in an image of the diagram.
 
   Assistive technology gets the same facts as the node's description, so
   the tooltip is aria-hidden, as the other fixed tooltips are.

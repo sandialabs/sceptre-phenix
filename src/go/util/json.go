@@ -11,11 +11,11 @@ import (
 // carries more than one JSON value.
 var ErrTrailingJSON = errors.New("unexpected trailing content")
 
-// DecodeJSONStrict decodes exactly one JSON value from reader into target,
-// refusing unknown fields. Anything after the value but white space is
-// refused too, with an error wrapping [ErrTrailingJSON]: a second value, or a
-// stray '}' or ']', which [json.Decoder.More] misses at the top level. Any
-// other error is the decoder's own, unwrapped.
+// DecodeJSONStrict decodes exactly one JSON value from reader into target, and
+// refuses unknown fields. It also refuses anything after the value except
+// white space, with an error that wraps [ErrTrailingJSON]. This includes a
+// second value, or a stray '}' or ']', which [json.Decoder.More] misses at the
+// top level. Any other error is the error of the decoder, unwrapped.
 func DecodeJSONStrict(reader io.Reader, target any) error {
 	decoder := json.NewDecoder(reader)
 	decoder.DisallowUnknownFields()

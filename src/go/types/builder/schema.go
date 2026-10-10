@@ -33,23 +33,24 @@ const (
 
 // Schema returns the standalone Builder v1 JSON Schema as a freshly built map.
 //
-// The bundle is self contained: the phenix v1 OpenAPI component schemas are
-// embedded under $defs (namespaced with [PhenixDefPrefix]) and every
-// "#/components/schemas/..." reference is rewritten to a local "#/$defs/..."
-// reference, so device specs and property forms resolve without a network
-// fetch. It is suitable for a web schema endpoint and for JSON Forms.
+// The bundle is self contained. It holds the phenix v1 OpenAPI component
+// schemas under $defs, with the [PhenixDefPrefix] namespace. It rewrites every
+// "#/components/schemas/..." reference to a local "#/$defs/..." reference, so
+// device specs and property forms resolve without a network fetch. It is
+// suitable for a web schema endpoint and for JSON Forms.
 //
-// Object shapes that [Decode] rejects unknown fields for are marked
-// "additionalProperties": false. Free-form phenix payloads (device specs)
-// keep their own schemas.
+// The schema marks each object shape for which [Decode] rejects unknown
+// fields with "additionalProperties": false. Free-form phenix payloads
+// (device specs) keep their own schemas.
 //
-// Referential integrity between edges, handles, nodes, and networks cannot be
-// expressed in JSON Schema; it is structurally represented (typed identifier
-// references and required fields) and enforced by [Document.Validate].
+// JSON Schema cannot express referential integrity between edges, handles,
+// nodes and networks. The schema represents it in its structure (typed
+// identifier references and required fields), and [Document.Validate]
+// enforces it.
 //
-// Every definition and property the Builder owns has a title, a description
-// and examples (see [documented]); the bundled phenix schemas keep their own
-// documentation.
+// Every definition and property that the Builder owns has a title, a
+// description and examples (see [documented]). The bundled phenix schemas
+// keep their own documentation.
 func Schema() (map[string]any, error) {
 	defs, err := PhenixDefs()
 	if err != nil {
@@ -80,22 +81,22 @@ func rootProperties() map[string]any {
 	return map[string]any{
 		schemaKey: documented(
 			constDef(SchemaURI), "Schema URI",
-			"Identifies the Builder document schema, which a document must name exactly.",
+			"Identifies the Builder document schema. A document must name it exactly.",
 			[]any{SchemaURI},
 		),
 		revisionKey: documented(
 			constDef(SchemaRevision), "Schema Revision",
-			"Revision of the Builder document schema the document follows.",
+			"Revision of the Builder document schema that the document follows.",
 			[]any{SchemaRevision},
 		),
 		keyMetadata: documented(
 			ref(keyMetadata), "Metadata",
-			"What the document says of itself: its identifier, name, description, provenance and notes.",
+			"What the document says about itself: its identifier, name, description, provenance and notes.",
 			[]any{exampleMetadata()},
 		),
 		keyNodes: documented(
 			arrayDef(ref("node")), "Nodes",
-			"Items on the canvas: devices, switches, notes, groups, and the shapes, icons and lines drawn beside them.",
+			"Items on the canvas: devices, switches, notes, groups, and the shapes, icons and lines drawn next to them.",
 			[]any{[]any{
 				exampleDeviceNode(), exampleSwitchNode(), exampleNoteNode(),
 				exampleShapeNode(), exampleIconNode(), exampleLineNode(),
@@ -103,7 +104,7 @@ func rootProperties() map[string]any {
 		),
 		keyNetworks: documented(
 			arrayDef(ref("network")), "Networks",
-			"Networks (VLANs) the switches and connections of the document belong to.",
+			"Networks (VLANs) that the switches and connections of the document belong to.",
 			[]any{[]any{exampleNetwork()}},
 		),
 		keyEdges: documented(
@@ -124,19 +125,19 @@ func rootProperties() map[string]any {
 		keyScenarios: scenariosDef(),
 		keySource: documented(
 			ref(keySource), "Source",
-			"Where the document came from, and the warnings raised while generating it.",
+			"Where the document came from, and the warnings from its generation.",
 			[]any{exampleSource()},
 		),
 		keyLayout: documented(
 			stringDef(), "Layout",
-			"Automatic layout that last laid the document out, which the editor names in its layout menu; "+
-				"empty, or an id the editor does not know, means a layout did not make the positions.",
+			"Automatic layout that last arranged the document. The editor names it in its layout menu. "+
+				"Empty, or an id that the editor does not know, means that no layout made the positions.",
 			[]any{"elk"},
 		),
 		keyIconSize: documentedRef(
 			keyIconSize, "Icon Size",
-			"Size the canvas draws the icons of devices, switches and groups at, unless a node names its own; "+
-				"empty is small.",
+			"Size at which the canvas draws the icons of devices, switches and groups, unless a node names its "+
+				"own size. Empty is small.",
 			[]any{IconSizeLarge},
 		),
 		keyTemplates: templatesDef(),
@@ -145,7 +146,7 @@ func rootProperties() map[string]any {
 }
 
 // SchemaJSON returns the Builder v1 JSON Schema as deterministic, indented
-// JSON. Object keys are sorted by encoding/json, so repeated calls are byte
+// JSON. encoding/json sorts object keys, so repeated calls are byte
 // identical.
 func SchemaJSON() ([]byte, error) {
 	schema, err := Schema()
@@ -332,9 +333,9 @@ const (
 	defIconRef    = "iconRef"
 	defIdentifier = "identifier"
 
-	// defIconNode is the definition of the payload of an icon node, which
-	// the node holds under its kind, "icon": that name is the custom icon's
-	// definition.
+	// defIconNode is the definition of the payload of an icon node. The node
+	// holds the payload under its kind, "icon", but that name is the
+	// definition of the custom icon.
 	defIconNode = "iconNode"
 
 	keyLabel = "label"
@@ -351,16 +352,17 @@ const (
 	// metadata names.
 	noControlPattern = `^[^\x00-\x1f\x7f]*$`
 
-	// notePattern matches a diagram note: no control characters but the
-	// newline and the tab, and something besides white space. White space is
-	// what [strings.TrimSpace] trims ([unicode.IsSpace]), as
-	// [Document.Validate] finds a note blank: U+0009 to U+000D, U+0020,
-	// U+0085 and the Unicode separators \p{Z} (U+00A0, U+1680, U+2000 to
-	// U+200A, U+2028, U+2029, U+202F, U+205F and U+3000). It is spelled out
-	// rather than written \s, which in a JSON Schema (ECMAScript) pattern
-	// leaves out U+0085 and takes U+FEFF, and in Go's regexp is only
-	// [\t\n\f\r ]. Go's regexp and ECMAScript's with the u flag JSON Schema
-	// asks for read this one alike.
+	// notePattern matches a diagram note: no control characters other than
+	// the newline and the tab, and at least one character that is not white
+	// space. White space is what [strings.TrimSpace] trims
+	// ([unicode.IsSpace]), because [Document.Validate] uses it to find a
+	// blank note: U+0009 to U+000D, U+0020, U+0085 and the Unicode separators
+	// \p{Z} (U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F
+	// and U+3000). The pattern lists these characters and does not use \s. In
+	// a JSON Schema (ECMAScript) pattern, \s excludes U+0085 and includes
+	// U+FEFF. In Go's regexp, \s is only [\t\n\f\r ]. Go's regexp, and
+	// ECMAScript with the u flag that JSON Schema requires, read this pattern
+	// in the same way.
 	notePattern = `^[^\x00-\x08\x0b-\x1f\x7f]*[^\x00-\x20\x7f\x85\p{Z}][^\x00-\x08\x0b-\x1f\x7f]*$`
 
 	// configNamePattern matches a name phenix gives a config: at least one
@@ -430,7 +432,7 @@ func userDef() map[string]any {
 }
 
 // timeDef builds the schema of a time of the document metadata: the one form
-// of [TimeLayout]. The pattern is the rule; the format only names what the
+// of [TimeLayout]. The pattern is the rule. The format only names what the
 // value is.
 func timeDef() map[string]any {
 	def := stringDef()
@@ -442,9 +444,9 @@ func timeDef() map[string]any {
 
 // documented gives a schema what every Builder-owned definition and property
 // of the bundle carries: a title (a short name in title case), a description
-// (one plain sentence saying what it holds) and examples (values valid
+// (short plain sentences that say what it holds) and examples (values valid
 // against the schema). Readers of the served schema and of the OpenAPI
-// document rely on them; the Inspector sets its own field labels.
+// document rely on them. The Inspector sets its own field labels.
 func documented(def map[string]any, title, description string, examples []any) map[string]any {
 	def[keyTitle] = title
 	def[keyDescription] = description
@@ -490,8 +492,8 @@ func enumDef(values []any) map[string]any {
 	return def
 }
 
-// refDef wraps a reference so that sibling keywords such as descriptions are
-// honoured by every JSON Schema implementation.
+// refDef wraps a reference so that every JSON Schema implementation honors
+// sibling keywords such as descriptions.
 func refDef(name string) map[string]any {
 	return map[string]any{"allOf": []any{ref(name)}}
 }
@@ -517,7 +519,7 @@ func nodeKindKeys() []NodeKind {
 }
 
 // payloadDef returns the name of the definition of a node kind's payload,
-// which is the kind's own but for an icon node's.
+// which is the name of the kind, except for an icon node.
 func payloadDef(kind NodeKind) string {
 	if kind == NodeKindIcon {
 		return defIconNode
@@ -532,24 +534,24 @@ func builderDefs() map[string]any {
 		defIdentifier: identifierDef(),
 		keyIconKey: documented(
 			enumDef(iconKeyEnum()), "Icon Key",
-			"Built-in icon a node shows, from the Builder's icon registry; empty selects the default icon.",
+			"Built-in icon that a node shows, from the icon registry of the Builder. Empty selects the default icon.",
 			[]any{exampleIconKey},
 		),
 		defHexColor: hexColorDef(),
 		keyLineStyle: documented(
 			enumDef(styleEnum(lineStyles)), "Line Style",
-			"Dash pattern of a connection line; empty selects the automatic pattern.",
+			"Dash pattern of a connection line. Empty selects the automatic pattern.",
 			[]any{"dashed"},
 		),
 		keyBorderStyle: documented(
 			enumDef(styleEnum(borderStyles)), "Border Style",
-			"Border pattern of a group or a shape; empty selects the default, dashed for a group and solid for a shape.",
+			"Border pattern of a group or a shape. Empty selects the default: dashed for a group and solid for a shape.",
 			[]any{"double"},
 		),
 		keyIconSize: documented(
 			enumDef(styleEnum(iconSizes)), "Icon Size",
-			"Size a node icon is drawn at: small (16 pixels), medium (24) or large (32); empty selects the default, "+
-				"the document's size for a node and small for the document.",
+			"Size at which the canvas draws a node icon: small (16 pixels), medium (24) or large (32). Empty "+
+				"selects the default: the icon size of the document for a node, and small for the document.",
 			[]any{IconSizeMedium},
 		),
 		keyPurdueLevel: documented(
@@ -593,8 +595,8 @@ func identifierDef() map[string]any {
 
 	return documented(
 		def, "Identifier",
-		"Stable RFC 4122 UUID, found duplicate ignoring case but repeated exactly by every reference; "+
-			"the front end mints random (version 4) ones.",
+		"Stable RFC 4122 UUID. Two identifiers that differ only by case are duplicates. Every reference repeats "+
+			"the identifier exactly. The front end makes random (version 4) UUIDs.",
 		[]any{exampleDeviceID},
 	)
 }
@@ -645,40 +647,40 @@ func metadataDef() map[string]any {
 			),
 			keyCreatedBy: documented(
 				userDef(), "Created By",
-				"User who first made the document, which the server sets when a draft is created from a document "+
-					"that names none and keeps in every later save of that draft.",
+				"User who first made the document. When it creates a draft from a document that names no such user, "+
+					"the server sets it, and keeps it in every later save of that draft.",
 				[]any{exampleCreatedBy},
 			),
 			keyCreatedAt: documented(
 				timeDef(), "Created At",
-				"When the document was first made, as RFC 3339 in UTC with whole seconds (YYYY-MM-DDTHH:MM:SSZ), "+
-					"which the server sets and keeps the way it does createdBy.",
+				"When the document was first made, as RFC 3339 in UTC with whole seconds (YYYY-MM-DDTHH:MM:SSZ). "+
+					"As for createdBy, the server sets and keeps it.",
 				[]any{exampleCreatedAt},
 			),
 			keyUpdatedBy: documented(
 				userDef(), "Updated By",
-				"User whose save stored this content, which the server sets on every save in place of any value sent.",
+				"User whose save stored this content. On every save, the server sets it in place of any value sent.",
 				[]any{exampleUpdatedBy},
 			),
 			keyUpdatedAt: documented(
 				timeDef(), "Updated At",
-				"When this content was saved, as RFC 3339 in UTC with whole seconds, which the server sets on every save; "+
-					"it is not source.updatedAt, a time of the source config.",
+				"When this content was saved, as RFC 3339 in UTC with whole seconds. On every save, the server sets it. "+
+					"It is not source.updatedAt, which is a time of the source config.",
 				[]any{exampleUpdatedAt},
 			),
 			keyNotes: documented(
 				notes, "Notes",
 				fmt.Sprintf(
-					"Free text notes about the diagram as a whole: at most %d, each not only white space, "+
-						"at most %d bytes in UTF-8 (maxLength counts characters, so the byte limit is the stricter one "+
-						"outside ASCII), and without control characters but newlines and tabs.",
+					"Free text notes about the diagram as a whole, at most %d. Each note is not only white space, "+
+						"is at most %d bytes in UTF-8, and has no control characters other than newlines and tabs. "+
+						"maxLength counts characters, so outside ASCII the byte limit is the stricter limit.",
 					MaxDiagramNotes, MaxDiagramNoteBytes,
 				),
 				[]any{exampleNotes()},
 			),
 		}),
 		"Document Metadata",
-		"Identifier, name, description, provenance and notes of a document; none of it is published to a config.",
+		"Identifier, name, description, provenance and notes of a document. A publish writes no part of it to a config.",
 		[]any{exampleMetadata()},
 	)
 }
@@ -754,11 +756,11 @@ func interfaceHandleDef() map[string]any {
 			),
 			"index": documented(
 				index, "Interface Index",
-				"Place of the interface in the spec's interface list when the handle was made, for ordering only.",
+				"Position of the interface in the interface list of the spec when the handle was made. For ordering only.",
 				[]any{0},
 			),
 		}),
-		"Interface Handle", "Stable mapping of a canvas connection handle onto a named interface of the device spec.",
+		"Interface Handle", "Stable map from a canvas connection handle to a named interface of the device spec.",
 		[]any{exampleHandle()},
 	)
 }
@@ -774,7 +776,7 @@ func nodeSpecDef() map[string]any {
 			},
 		},
 		"Node Spec",
-		"Complete phenix topology node spec, in the stored snake_case form, which publishing writes to the topology.",
+		"Complete phenix topology node spec, in the stored snake_case form. A publish writes it to the topology.",
 		[]any{exampleSpec()},
 	)
 }
@@ -784,18 +786,20 @@ func deviceDef() map[string]any {
 		objectDef([]string{"hostname", keySpec, "interfaces"}, map[string]any{
 			"hostname": documented(
 				nameDef(), "Hostname",
-				"Hostname of the device, unique in the document ignoring case and without whitespace.",
+				"Hostname of the device, without whitespace. It is unique in the document, ignoring case.",
 				[]any{exampleHostname},
 			),
 			keyIconKey: documentedRef(
 				keyIconKey, "Icon", "Built-in icon the canvas draws for the device.", []any{exampleIconKey},
 			),
 			keyIcon: documentedRef(
-				defIconRef, "Custom Icon", "Name of the custom icon drawn in place of the built-in one; empty for none.",
+				defIconRef, "Custom Icon", "Name of the custom icon that the canvas draws in place of the built-in icon. "+
+					"Empty for none.",
 				[]any{exampleIconName},
 			),
 			keyIconSize: documentedRef(
-				keyIconSize, "Icon Size", "Size the device's icon is drawn at; empty uses the document's.",
+				keyIconSize, "Icon Size", "Size at which the canvas draws the icon of the device. Empty uses the icon "+
+					"size of the document.",
 				[]any{IconSizeLarge},
 			),
 			keyOutlineColor: documentedRef(
@@ -817,8 +821,8 @@ func deviceDef() map[string]any {
 			),
 			"includedFrom": documented(
 				nameDef(), "Included From",
-				"Topology that defines the device when it came from an included topology, "+
-					"which keeps it read only and out of what publishing writes.",
+				"Topology that defines the device, when the device came from an included topology. Such a device is "+
+					"read only, and a publish does not write it.",
 				[]any{exampleInclude},
 			),
 		}),
@@ -841,20 +845,22 @@ func switchDef() map[string]any {
 				defHexColor, "Fill Color", "Background color of the switch on the canvas.", []any{exampleFillColor},
 			),
 			keyIconSize: documentedRef(
-				keyIconSize, "Icon Size", "Size the switch's icon is drawn at; empty uses the document's.",
+				keyIconSize, "Icon Size", "Size at which the canvas draws the icon of the switch. Empty uses the icon "+
+					"size of the document.",
 				[]any{IconSizeMedium},
 			),
 			keyPurdueLevel: documentedRef(
 				keyPurdueLevel, "Purdue Layer",
-				"Purdue layer of the switch's network, which the Layered by tier layout reads. It is never published.",
+				"Purdue layer of the network of the switch, which the Layered by tier layout reads. It is never published.",
 				[]any{"2"},
 			),
 			keyNotes: documented(
 				notesDef(), "Notes",
 				fmt.Sprintf(
-					"Free text notes the canvas shows below the switch, never published: at most %d, each not only white "+
-						"space, at most %d bytes in UTF-8 (maxLength counts characters, so the byte limit is the stricter one "+
-						"outside ASCII), and without control characters but newlines and tabs.",
+					"Free text notes that the canvas shows below the switch, at most %d. They are never published. Each "+
+						"note is not only white space, is at most %d bytes in UTF-8, and has no control characters other "+
+						"than newlines and tabs. maxLength counts characters, so outside ASCII the byte limit is the "+
+						"stricter limit.",
 					MaxDiagramNotes, MaxDiagramNoteBytes,
 				),
 				[]any{exampleSwitchNotes()},
@@ -885,29 +891,31 @@ func groupDef() map[string]any {
 				stringDef(), "Title", "Title shown at the top of the group.", []any{exampleGroupTitle},
 			),
 			keyDescription: documented(
-				stringDef(), "Description", "Free text shown under the group's title.",
+				stringDef(), "Description", "Free text shown below the title of the group.",
 				[]any{"Two PLCs and the HMI that controls them."},
 			),
 			keyColor: documented(
 				stringDef(), "Color", "Background color of the group, as CSS color text.", []any{"#eef"},
 			),
 			keyBorderStyle: documentedRef(
-				keyBorderStyle, "Border Pattern", "Pattern of the group's border.", []any{"double"},
+				keyBorderStyle, "Border Pattern", "Pattern of the border of the group.", []any{"double"},
 			),
 			keyIconKey: documentedRef(
-				keyIconKey, "Icon", "Built-in icon beside the group's title.", []any{"server"},
+				keyIconKey, "Icon", "Built-in icon next to the title of the group.", []any{"server"},
 			),
 			keyIcon: documentedRef(
-				defIconRef, "Custom Icon", "Name of the custom icon drawn in place of the built-in one; empty for none.",
+				defIconRef, "Custom Icon", "Name of the custom icon that the canvas draws in place of the built-in icon. "+
+					"Empty for none.",
 				[]any{exampleIconName},
 			),
 			keyIconSize: documentedRef(
-				keyIconSize, "Icon Size", "Size the group's icon is drawn at; empty uses the document's.",
+				keyIconSize, "Icon Size", "Size at which the canvas draws the icon of the group. Empty uses the icon "+
+					"size of the document.",
 				[]any{IconSizeLarge},
 			),
 			"collapsed": documented(boolDef(), "Collapsed", "Whether the group is collapsed.", []any{false}),
 		}),
-		"Group", "Payload of a group node: a visual container other nodes may belong to, with no phenix meaning.",
+		"Group", "Payload of a group node: a visual container that other nodes can belong to, with no phenix meaning.",
 		[]any{exampleGroup()},
 	)
 }
@@ -917,8 +925,8 @@ func shapeDef() map[string]any {
 		objectDef([]string{"shape"}, map[string]any{
 			"shape": documented(
 				enumDef(anyStrings(shapeFigures)), "Figure",
-				"Figure drawn to fill the node's box: a rectangle, or a circle, which is an ellipse in a box that is "+
-					"not square.",
+				"Figure that fills the box of the node: a rectangle or a circle. In a box that is not square, the "+
+					"circle is an ellipse.",
 				[]any{"rectangle"},
 			),
 			keyLabel: documented(
@@ -928,13 +936,13 @@ func shapeDef() map[string]any {
 				defHexColor, "Fill Color", "Color inside the figure.", []any{exampleFillColor},
 			),
 			keyOutlineColor: documentedRef(
-				defHexColor, "Outline Color", "Color of the figure's border.", []any{exampleOutlineColor},
+				defHexColor, "Outline Color", "Color of the border of the figure.", []any{exampleOutlineColor},
 			),
 			keyBorderStyle: documentedRef(
-				keyBorderStyle, "Border Pattern", "Pattern of the figure's border; empty is solid.", []any{"dashed"},
+				keyBorderStyle, "Border Pattern", "Pattern of the border of the figure. Empty is solid.", []any{"dashed"},
 			),
 		}),
-		"Shape", "Payload of a shape node: a rectangle or a circle drawn on the canvas, which is never published.",
+		"Shape", "Payload of a shape node: a rectangle or a circle drawn on the canvas. It is never published.",
 		[]any{exampleShape()},
 	)
 }
@@ -944,10 +952,11 @@ func shapeDef() map[string]any {
 func iconNodeDef() map[string]any {
 	def := objectDef(nil, map[string]any{
 		keyIconKey: documentedRef(
-			keyIconKey, "Icon", "Built-in icon drawn, when the node names no custom icon.", []any{exampleIconNodeKey},
+			keyIconKey, "Icon", "Built-in icon that the canvas draws when the node names no custom icon.",
+			[]any{exampleIconNodeKey},
 		),
 		keyIcon: documentedRef(
-			defIconRef, "Custom Icon", "Name of the custom icon drawn, when the node names no built-in icon.",
+			defIconRef, "Custom Icon", "Name of the custom icon that the canvas draws when the node names no built-in icon.",
 			[]any{exampleIconName},
 		),
 		keyLabel: documented(stringDef(), "Label", "Text shown below the icon.", []any{exampleIconLabel}),
@@ -964,8 +973,8 @@ func iconNodeDef() map[string]any {
 
 	return documented(
 		def, "Icon Node",
-		"Payload of an icon node: exactly one of a built-in icon and a custom icon, scaled to the node's box with "+
-			"an optional label below it, which is never published.",
+		"Payload of an icon node: exactly one of a built-in icon and a custom icon, scaled to the box of the node, "+
+			"with an optional label below it. It is never published.",
 		[]any{exampleIconMark()},
 	)
 }
@@ -982,8 +991,8 @@ func lineDef() map[string]any {
 			"points": documented(
 				points, "Points",
 				fmt.Sprintf(
-					"Ends and bends of the line in order, %d to %d of them, relative to the node's position, which the "+
-						"editor keeps at the top left corner of their box.",
+					"Ends and bends of the line in order, %d to %d of them, relative to the node position. The editor "+
+						"keeps the node position at the top left corner of their box.",
 					MinLinePoints, MaxLinePoints,
 				),
 				[]any{exampleLinePoints()},
@@ -993,18 +1002,18 @@ func lineDef() map[string]any {
 			),
 			keyColor: documentedRef(defHexColor, "Color", "Color of the line.", []any{exampleLineColor}),
 			keyLineStyle: documentedRef(
-				keyLineStyle, "Line Style", "Dash pattern of the line; empty is solid.", []any{"dashed"},
+				keyLineStyle, "Line Style", "Dash pattern of the line. Empty is solid.", []any{"dashed"},
 			),
 			"startArrow": documented(
-				boolDef(), "Start Arrow", "Whether an arrowhead is drawn at the first point.", []any{false},
+				boolDef(), "Start Arrow", "Whether the canvas draws an arrowhead at the first point.", []any{false},
 			),
 			"endArrow": documented(
-				boolDef(), "End Arrow", "Whether an arrowhead is drawn at the last point.", []any{true},
+				boolDef(), "End Arrow", "Whether the canvas draws an arrowhead at the last point.", []any{true},
 			),
 		}),
 		"Line",
-		"Payload of a line node: a polyline drawn on the canvas, tied to no node or network, "+
-			"which is never published.",
+		"Payload of a line node: a polyline drawn on the canvas, tied to no node or network. "+
+			"It is never published.",
 		[]any{exampleLine()},
 	)
 }
@@ -1016,7 +1025,7 @@ func hexColorDef() map[string]any {
 	def := stringDef()
 	def["pattern"] = `^(` + hexColorPattern + `)?$`
 
-	return documented(def, "Hex Color", "Opaque color as #rrggbb; empty for none.", []any{exampleOutlineColor})
+	return documented(def, "Hex Color", "Opaque color as #rrggbb. Empty for none.", []any{exampleOutlineColor})
 }
 
 // styleEnum returns the enum of a line or border style, including the empty
@@ -1026,8 +1035,8 @@ func styleEnum(styles []string) []any {
 }
 
 // iconNameSchemaPattern matches an icon name's characters and length (see
-// [IconNameProblem]). That a name is neither "." nor ".." is checked by
-// [Document.Validate], not by the schema.
+// [IconNameProblem]). [Document.Validate], not the schema, checks that a
+// name is neither "." nor "..".
 func iconNameSchemaPattern() string {
 	return fmt.Sprintf(`[A-Za-z0-9_@.-]{1,%d}`, MaxIconNameBytes)
 }
@@ -1041,8 +1050,8 @@ func iconRefDef() map[string]any {
 
 	return documented(
 		def, "Custom Icon Reference",
-		"Name of a custom icon: a copy in the document's icons, else the server's icon library's icon of that "+
-			"name; empty for none. Without either, the node shows its built-in icon.",
+		"Name of a custom icon: a copy in the icons of the document, else the icon of that name in the icon "+
+			"library of the server. Empty for none. Without either, the node shows its built-in icon.",
 		[]any{exampleIconName},
 	)
 }
@@ -1076,8 +1085,8 @@ func iconDef() map[string]any {
 }
 
 // iconsDef builds the schema of the document's custom icons, bounded the way
-// [ValidateIcons] bounds them. That the bytes are an accepted PNG, JSON
-// Schema cannot express.
+// [ValidateIcons] bounds them. JSON Schema cannot express that the bytes
+// are an accepted PNG.
 func iconsDef() map[string]any {
 	return documented(
 		map[string]any{
@@ -1088,8 +1097,8 @@ func iconsDef() map[string]any {
 		},
 		"Custom Icons",
 		fmt.Sprintf(
-			"Copies of the custom icons the nodes and templates name, at most %d, each by its icon name: a "+
-				"downloaded document carries every icon it uses, a draft on a server none; never published.",
+			"Copies of the custom icons that the nodes and templates name, at most %d, each by its icon name. A "+
+				"downloaded document holds every icon it uses. A draft on a server holds none. Never published.",
 			MaxDocumentIcons,
 		),
 		[]any{map[string]any{exampleIconName: exampleIcon()}},
@@ -1103,7 +1112,7 @@ func templatesDef() map[string]any {
 
 	return documented(
 		def, "Templates",
-		fmt.Sprintf("Device templates saved with the diagram, at most %d; never published to a config.", MaxTemplates),
+		fmt.Sprintf("Device templates saved with the diagram, at most %d. Never published to a config.", MaxTemplates),
 		[]any{[]any{exampleTemplate()}},
 	)
 }
@@ -1126,24 +1135,24 @@ func templateDef() map[string]any {
 			[]string{keyID, keyName, "device"},
 			map[string]any{
 				keyID: documentedRef(
-					defIdentifier, "Template ID", "Identifier of the template, unique among the document's templates.",
+					defIdentifier, "Template ID", "Identifier of the template, unique among the templates of the document.",
 					[]any{exampleTemplateID},
 				),
 				keyName: documented(
 					name, "Template Name",
-					fmt.Sprintf("Name the template is offered under, 1 to %d bytes on one line.", MaxTemplateNameBytes),
+					fmt.Sprintf("Name under which the editor offers the template, 1 to %d bytes on one line.", MaxTemplateNameBytes),
 					[]any{"Edge router"},
 				),
 				keyDescription: documented(
 					description, "Template Description",
 					fmt.Sprintf(
-						"Text shown with the template, at most %d bytes on one line, which is never written into a node.",
+						"Text shown with the template, at most %d bytes on one line. It is never written into a node.",
 						MaxTemplateDescriptionBytes,
 					),
 					[]any{"VyOS router with one static interface"},
 				),
 				"device": documentedRef(
-					"templateDevice", "Template Device", "Fields the template fills in on a device made from it.",
+					"templateDevice", "Template Device", "Fields that the template fills in on a device made from it.",
 					[]any{exampleTemplateDevice()},
 				),
 			},
@@ -1154,8 +1163,8 @@ func templateDef() map[string]any {
 }
 
 // templateDeviceDef builds the schema of what a template fills in: the
-// fields of a device, but its hostname, its interface handles and where it
-// was included from.
+// fields of a device, other than its hostname, its interface handles and
+// where it was included from.
 func templateDeviceDef() map[string]any {
 	return documented(
 		objectDef(
@@ -1165,12 +1174,12 @@ func templateDeviceDef() map[string]any {
 					keyIconKey, "Icon", "Built-in icon of the devices made from the template.", []any{exampleIconKey},
 				),
 				keyIcon: documentedRef(
-					defIconRef, "Custom Icon", "Name of the custom icon of the devices made from the template; empty for none.",
+					defIconRef, "Custom Icon", "Name of the custom icon of the devices made from the template. Empty for none.",
 					[]any{exampleIconName},
 				),
 				keyIconSize: documentedRef(
 					keyIconSize, "Icon Size",
-					"Icon size of the devices made from the template; empty uses the document's.",
+					"Icon size of the devices made from the template. Empty uses the icon size of the document.",
 					[]any{IconSizeLarge},
 				),
 				keyOutlineColor: documentedRef(
@@ -1189,7 +1198,7 @@ func templateDeviceDef() map[string]any {
 			},
 		),
 		"Template Device",
-		fmt.Sprintf("Fields a template fills in, at most %d bytes as JSON.", MaxTemplateDeviceBytes),
+		fmt.Sprintf("Fields that a template fills in, at most %d bytes as JSON.", MaxTemplateDeviceBytes),
 		[]any{exampleTemplateDevice()},
 	)
 }
@@ -1209,11 +1218,11 @@ func nodeDef() map[string]any {
 		[]string{keyID, keyKind, keyPosition},
 		map[string]any{
 			keyID: documentedRef(
-				defIdentifier, "Node ID", "Identifier of the node, unique among the document's nodes.",
+				defIdentifier, "Node ID", "Identifier of the node, unique among the nodes of the document.",
 				[]any{exampleDeviceID},
 			),
 			keyKind: documented(
-				enumDef(enum), "Node Kind", "What the node is, which names the payload it carries.",
+				enumDef(enum), "Node Kind", "What the node is. It names the payload that the node holds.",
 				[]any{string(NodeKindDevice)},
 			),
 			keyLabel: documented(stringDef(), "Label", "Text shown on the node.", []any{exampleHostname}),
@@ -1221,11 +1230,11 @@ func nodeDef() map[string]any {
 				keyPosition, "Position", "Where the node is on the canvas.", []any{examplePosition(exampleX, exampleY)},
 			),
 			keySize: documentedRef(
-				keySize, "Size", "Explicit size of the node; without one the editor sizes the node itself.",
+				keySize, "Size", "Explicit size of the node. Without it, the editor sets the node size.",
 				[]any{exampleSize()},
 			),
 			"parentId": documented(
-				refDef(defIdentifier), "Parent Group", "Identifier of the group node this node belongs to.",
+				refDef(defIdentifier), "Parent Group", "Identifier of the group node that this node belongs to.",
 				[]any{exampleGroupID},
 			),
 
@@ -1256,7 +1265,7 @@ func nodeDef() map[string]any {
 	def["allOf"] = discriminated
 
 	return documented(
-		def, "Node", "Item on the canvas, whose payload key matches its kind.",
+		def, "Node", "Item on the canvas. Its payload key matches its kind.",
 		[]any{exampleDeviceNode(), exampleNoteNode()},
 	)
 }
@@ -1303,23 +1312,26 @@ func networkDef() map[string]any {
 				),
 				keyName: documented(
 					nameDef(), "Name",
-					"VLAN name, unique in the document and without whitespace, which device interfaces name as their vlan.",
+					"VLAN name, unique in the document and without whitespace. Device interfaces name it as their vlan.",
 					[]any{exampleNetworkName},
 				),
 				"alias": documented(
 					alias, "VLAN Alias",
-					fmt.Sprintf("Optional VLAN number published to an experiment's vlans.aliases, from 1 to %d.", maxVLANAlias),
+					fmt.Sprintf(
+						"Optional VLAN number, from 1 to %d, that a publish writes to the vlans.aliases of an experiment.",
+						maxVLANAlias,
+					),
 					[]any{exampleAlias},
 				),
 				keyDescription: documented(
 					stringDef(), "Description", "Free text describing the network.", []any{"Experiment network"},
 				),
 				keyColor: documented(
-					stringDef(), "Color", "Color of the network's connection lines, as CSS color text.",
+					stringDef(), "Color", "Color of the connection lines of the network, as CSS color text.",
 					[]any{exampleOutlineColor},
 				),
 				keyLineStyle: documentedRef(
-					keyLineStyle, "Line Style", "Dash pattern of the network's connection lines.", []any{"dashed"},
+					keyLineStyle, "Line Style", "Dash pattern of the connection lines of the network.", []any{"dashed"},
 				),
 			},
 		),
@@ -1337,7 +1349,7 @@ func edgeDef() map[string]any {
 					defIdentifier, "Connection ID", "Identifier of the connection.", []any{exampleEdgeID},
 				),
 				"sourceNodeId": documentedRef(
-					defIdentifier, "Source Node", "Identifier of the node the connection starts at.",
+					defIdentifier, "Source Node", "Identifier of the node where the connection starts.",
 					[]any{exampleDeviceID},
 				),
 				"sourceHandleId": documented(
@@ -1345,7 +1357,7 @@ func edgeDef() map[string]any {
 					[]any{exampleHandleID},
 				),
 				"targetNodeId": documentedRef(
-					defIdentifier, "Target Node", "Identifier of the node the connection ends at.",
+					defIdentifier, "Target Node", "Identifier of the node where the connection ends.",
 					[]any{exampleSwitchID},
 				),
 				"targetHandleId": documented(
@@ -1353,24 +1365,24 @@ func edgeDef() map[string]any {
 					[]any{exampleHandleID},
 				),
 				keyNetworkID: documentedRef(
-					defIdentifier, "Network ID", "Identifier of the network of the switch the connection joins.",
+					defIdentifier, "Network ID", "Identifier of the network of the switch that the connection joins.",
 					[]any{exampleNetworkID},
 				),
 				keyLabel: documented(stringDef(), "Label", "Text shown on the connection.", []any{"uplink"}),
 				keyColor: documented(
-					stringDef(), "Color", "Line color drawn in place of the network's, as CSS color text.",
+					stringDef(), "Color", "Line color drawn in place of the network color, as CSS color text.",
 					[]any{"#c0392b"},
 				),
 				keyLineStyle: documented(
-					refDef(keyLineStyle), "Line Style", "Dash pattern drawn in place of the network's.",
+					refDef(keyLineStyle), "Line Style", "Dash pattern drawn in place of the network pattern.",
 					[]any{"dotted"},
 				),
 				"route": routeDef(),
 			},
 		),
 		"Connection",
-		"Attaches a device interface handle to a switch, and so to its network; the server checks the nodes, "+
-			"handles and network it names, which this schema cannot.",
+		"Attaches a device interface handle to a switch, and thus to its network. The server checks the nodes, "+
+			"handles and network that it names. This schema cannot check them.",
 		[]any{exampleEdge()},
 	)
 }
@@ -1383,17 +1395,17 @@ func routeDef() map[string]any {
 
 	return documented(
 		def, "Route",
-		"Path an automatic layout drew, in absolute canvas coordinates from the source handle to the target handle, "+
-			"which is never published.",
+		"Path that an automatic layout drew, in absolute canvas coordinates from the source handle to the target "+
+			"handle. It is never published.",
 		[]any{exampleRoute()},
 	)
 }
 
 // scenariosDef builds the schema of the Scenario configs a document names,
 // bounded the way [Document.Validate] bounds them. uniqueItems compares the
-// names exactly; that no two differ only by case, JSON Schema cannot
-// express. maxLength counts characters, which a config name holds only one
-// byte each of.
+// names exactly. JSON Schema cannot express that no two names differ only by
+// case. maxLength counts characters, and each character of a config name is
+// one byte.
 func scenariosDef() map[string]any {
 	name := stringDef()
 	name["minLength"] = 1
@@ -1407,9 +1419,9 @@ func scenariosDef() map[string]any {
 	return documented(
 		def, "Scenarios",
 		fmt.Sprintf(
-			"Names of the Scenario configs on the server the diagram is used with, at most %d, each a config name "+
-				"of at most %d bytes and none twice ignoring case; publishing adds the topology to the topology "+
-				"annotation of each, and an experiment published with it uses one of them.",
+			"Names of the Scenario configs on the server for the diagram, at most %d. Each is a config name of at "+
+				"most %d bytes, and no name occurs twice, ignoring case. A publish adds the topology to the topology "+
+				"annotation of each. An experiment published with the topology uses one of them.",
 			MaxScenarios, MaxScenarioNameBytes,
 		),
 		[]any{[]any{exampleScenarioName, exampleScenarioName + "-attack"}},
@@ -1444,7 +1456,7 @@ func sourceDef() map[string]any {
 				),
 				keyDigest: documented(
 					digestDef(), "Digest",
-					"Digest of the source config's identity and spec, which publishing compares with the stored config.",
+					"Digest of the identity and spec of the source config. A publish compares it with the stored config.",
 					[]any{exampleDigest},
 				),
 				keyUpdatedAt: documented(
@@ -1453,28 +1465,29 @@ func sourceDef() map[string]any {
 				),
 				"includeTopologies": documented(
 					arrayDef(nameDef()), "Included Topologies",
-					"includeTopologies of the source topology, which publishing writes back in place of their nodes.",
+					"includeTopologies of the source topology. A publish writes them back in place of their nodes.",
 					[]any{[]any{exampleInclude}},
 				),
 				"unresolvedIncludes": documented(
 					arrayDef(nameDef()), "Unresolved Includes",
-					"Included topologies, at any depth, whose nodes are not in the document because they could not be read.",
+					"Included topologies, at any depth, whose nodes are not in the document because generation could not "+
+						"read them.",
 					[]any{[]any{exampleInclude}},
 				),
 				"annotations": annotationsDef(),
 				"warnings": documented(
-					arrayDef(stringDef()), "Warnings", "Warnings raised while the document was generated.",
+					arrayDef(stringDef()), "Warnings", "Warnings from the generation of the document.",
 					[]any{[]any{exampleWarning()}},
 				),
 			},
 		),
-		"Source", "Where the document came from, and the warnings raised while generating it.",
+		"Source", "Where the document came from, and the warnings from its generation.",
 		[]any{exampleSource()},
 	)
 }
 
 // annotationsDef builds the schema of the source annotations, bounded the way
-// [Document.Validate] bounds them, but for their total size, which JSON
+// [Document.Validate] bounds them, except their total size, which JSON
 // Schema cannot express.
 func annotationsDef() map[string]any {
 	key := stringDef()
@@ -1491,8 +1504,8 @@ func annotationsDef() map[string]any {
 		},
 		"Annotations",
 		fmt.Sprintf(
-			"metadata.annotations of the source config at import time without the Builder's own (builder-*), "+
-				"shown only and never published: at most %d, and %d KiB of keys and values in all.",
+			"metadata.annotations of the source config at import time, without the Builder's own (builder-*). "+
+				"They are shown only and never published. At most %d, and %d KiB of keys and values in all.",
 			MaxAnnotations, maxAnnotationKiB,
 		),
 		[]any{map[string]any{"topology": exampleTopology, "scenario": exampleScenarioName}},

@@ -1,14 +1,15 @@
 // Builder API client.
 //
-// Path builders are exported separately from the client so routes can be unit
-// tested without HTTP, and so the same paths can be reused by the autosave
-// queue. All requests are relative to the app's /api/v1/ base (axios instance).
+// The path builders are exported separately from the client, so unit tests
+// can test routes without HTTP, and the autosave queue can use the same
+// paths. All requests are relative to the app's /api/v1/ base (axios
+// instance).
 //
-// The draft record is versioned: every mutation carries the ETag the client
-// last observed as `If-Match`, and the server rejects a stale write instead of
-// letting one editor silently overwrite another. There is deliberately no
-// "force" variant of any call here. A draft's share list has a tag of its own
-// ("shares-N"), which its updates carry instead.
+// The draft record is versioned. Every mutation carries the ETag that the
+// client last observed as `If-Match`. The server rejects a stale write, so
+// one editor cannot overwrite another without notice. Intentionally, no call
+// here has a "force" variant. A draft's share list has its own tag
+// ("shares-N"), which its updates carry in place of the ETag.
 
 import axiosInstance from '@/utils/axios.js';
 
@@ -219,11 +220,11 @@ export function topologyDocumentPath(topology) {
   return `builder/topologies/${encodeURIComponent(topology)}/document`;
 }
 
-// A topology whose Builder document is read from the file it names has no
-// published document, and so no document id. Its row in the listing gets a
-// handle in place of one, "file/<topology>", which no id can be (an id
-// holds no slash), so cards, commands and the editor name the row as they
-// name any other.
+// A topology whose Builder document is read from the file that it names has
+// no published document, and thus no document id. Its row in the listing
+// gets a handle in place of the id, "file/<topology>". No id can have this
+// form (an id holds no slash). Thus cards, commands and the editor name the
+// row as they name any other row.
 const FILE_HANDLE = 'file/';
 
 /**
@@ -236,8 +237,8 @@ export function fileHandle(topology) {
 
 /**
  * @param {string} id a listed published diagram's id
- * @returns {string} the topology whose Builder file the diagram is read
- *   from, or '' when the id is a published document's
+ * @returns {string} the topology whose Builder file is the source of the
+ *   diagram, or '' when the id is a published document's id
  */
 export function fileTopology(id) {
   return typeof id === 'string' && id.startsWith(FILE_HANDLE)
@@ -257,11 +258,12 @@ function listedDocument(row) {
 export const MAX_SOURCE_FILE_BYTES = 255;
 
 /**
- * The name of an uploaded file as a new draft records it (`sourceFile`), or
- * '' for a name the server would refuse the draft for (ValidateSourceFile
- * in api/builder): one that is not a plain file name, is too long, or holds
- * a control character. The name is only shown, so one that cannot be
- * recorded is left out, and the upload goes ahead without it.
+ * The name of an uploaded file as a new draft records it (`sourceFile`). ''
+ * for a name that would cause the server to refuse the draft
+ * (ValidateSourceFile in api/builder): a name that is not a plain file name,
+ * is too long, or holds a control character. The name is only shown. Thus a
+ * name that cannot be recorded is left out, and the upload continues without
+ * it.
  *
  * @param {string} [name] the chosen file's name
  * @returns {string}
@@ -279,11 +281,12 @@ export function sourceFileName(name) {
 }
 
 /**
- * Reads the draft ETag from a response: from its body, which carries it in
- * every draft envelope (and a publish result's draft), or else from the ETag
- * header, tolerating header bags and Maps. The body comes first because a
- * compressing proxy rewrites the header (nginx turns "3" into the weak
- * W/"3", Apache into "3-gzip"), and the server refuses such a tag in If-Match.
+ * Reads the draft ETag from a response. It reads the body first, which
+ * carries the ETag in every draft envelope (and in a publish result's
+ * draft). If not there, it reads the ETag header, and accepts header bags and
+ * Maps. The body comes first because a compressing proxy rewrites the header
+ * (nginx changes "3" into the weak W/"3", Apache into "3-gzip"), and the
+ * server refuses such a tag in If-Match.
  *
  * @param {object} response axios-like response
  * @returns {string|null}
@@ -314,10 +317,11 @@ export function readETag(response) {
 
 /**
  * The draft's current ETag, from the header of the refusal (412) of a
- * request sent with an older one, for a delete to be sent again with. The
- * refusal's body does not carry it, and a damaged draft cannot be read for
- * it. A tag a compressing proxy rewrote (see readETag) is not the draft's,
- * so none is given, and the caller reads the draft instead.
+ * request sent with an older ETag, so that a delete can be sent again with
+ * it. The body of the refusal does not carry it, and a damaged draft cannot
+ * be read for it. A tag that a compressing proxy rewrote (see readETag) is
+ * not the draft's tag. Thus no tag is given, and the caller reads the draft
+ * instead.
  *
  * @param {object} error axios-like error
  * @returns {string|null}
@@ -348,10 +352,10 @@ function mebibytes(bytes) {
 }
 
 /**
- * An upload the server would refuse for its size, refused before it is
- * sent. The server refuses such a body before reading all of it, and some
- * browsers (Firefox) then report the reset connection rather than the 413,
- * which would read as the server being unreachable.
+ * An upload that the server would refuse for its size, refused before it is
+ * sent. The server refuses such a body before it reads all of it. Some
+ * browsers (Firefox) then report the reset connection and not the 413, which
+ * would look like an unreachable server.
  */
 export class TooLargeError extends Error {
   /**
@@ -378,7 +382,7 @@ function exceeds(text, limit) {
 }
 
 /**
- * Refuses an upload the server would refuse for its size: a document or
+ * Refuses an upload that the server would refuse for its size: a document or
  * the text of a file over MAX_DOCUMENT_BYTES, or a body over
  * MAX_REQUEST_BYTES.
  *
@@ -464,10 +468,10 @@ export function classifyError(error) {
 }
 
 /**
- * Whether a failure ends a bulk action (runBulk's `stop` in bulk.js): once
- * the session has ended or the server cannot be reached, the items left
- * would fail the same way. A failure already in words (BulkError), which no
- * request was sent for, never does.
+ * Whether a failure ends a bulk action (runBulk's `stop` in bulk.js). After
+ * the session ends or the server becomes unreachable, the remaining items
+ * would fail in the same way. A failure that is already in words (BulkError),
+ * for which no request was sent, never ends the action.
  *
  * @param {*} error
  * @returns {boolean}
@@ -480,9 +484,9 @@ export function endsBulk(error) {
 }
 
 // An id in a server message. A draft is named by its owner and its id
-// ("draft alice/<id> not found"): the owner goes with the id, as "alice/"
-// alone would read as a name cut short. An id inside a longer path keeps
-// what is before it.
+// ("draft alice/<id> not found"). The owner goes with the id, because
+// "alice/" alone would look like a name that was cut short. An id inside a
+// longer path keeps the part before it.
 const UUID_PATTERN =
   /(?:(?:^|\s+)[^\s/]+\/|\s*)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
@@ -508,21 +512,22 @@ export function sentence(text) {
 }
 
 // A server message that only names the operation ("unable to save builder
-// draft <id>", "builder document cannot be published as topology <name>");
-// the reason is then in the cause.
+// draft <id>", "builder document cannot be published as topology <name>").
+// The reason is then in the cause.
 const GENERIC_MESSAGE =
   /^(?:unable to |builder document cannot be (?:published as topology \S+|projected)$)/i;
 
 /**
- * The reason a server gave for refusing a request, in words a user can act
- * on, as a sentence: capitalized and ending in a full stop. Server errors
- * carry a `message` and a `cause`. Most messages say what is wrong ("config
- * core already exists; choose update explicitly") and are used as they are.
- * A generic one, which only names the operation refused ("unable to save
- * builder draft <id>"), is replaced by the first issue of the cause chain
- * ("builder: invalid request: document: ...: nodes[1].device.hostname:
- * duplicate hostname "node-2" (also nodes[0])"), without its prefixes,
- * document paths, array indexes and ids. Ids are never shown.
+ * The reason that a server gave for refusing a request, in words that a user
+ * can act on, as a sentence: capitalized and ending in a full stop. Server
+ * errors carry a `message` and a `cause`. Most messages tell what is wrong
+ * ("config core already exists; choose update explicitly") and are used
+ * unchanged. A generic message, which only names the refused operation
+ * ("unable to save builder draft <id>"), is replaced by the first issue of
+ * the cause chain ("builder: invalid request: document: ...:
+ * nodes[1].device.hostname: duplicate hostname "node-2" (also nodes[0])"),
+ * without its prefixes, document paths, array indexes and ids. Ids are never
+ * shown.
  *
  * @param {object} [error] axios-like error
  * @returns {string} the reason, or '' when the server gave none
@@ -543,8 +548,8 @@ export function serverReason(error) {
     return sentence(message);
   }
 
-  // Issues are separated by "; ", and schema errors by " | ", which can
-  // repeat one another.
+  // Issues are separated by "; ", and schema errors by " | ". These can
+  // repeat each other.
   const [reason, ...others] = new Set(
     cause
       .split(/; | \| /)
@@ -559,9 +564,9 @@ export function serverReason(error) {
 }
 
 /**
- * The code of the failure a server named for a refused request: a Builder
- * error's stable, machine-readable name (document.invalid,
- * publish.topology.exists; codes.go lists every one).
+ * The code of the failure that a server named for a refused request: a
+ * Builder error's stable, machine-readable name (document.invalid,
+ * publish.topology.exists). codes.go lists all of them.
  *
  * @param {object} [error] axios-like error
  * @returns {string} the code, or '' when the server gave none
@@ -573,10 +578,10 @@ export function serverCode(error) {
 }
 
 /**
- * Issues as the server reports them (BuilderIssue in openapi.yml): each with
- * its code, its severity and its message, and where it is when that is
- * known. A plain message, which a server of an earlier release sent, is an
- * issue of no code.
+ * Issues as the server reports them (BuilderIssue in openapi.yml). Each has
+ * its code, its severity and its message, and its location when known. A
+ * plain message, which a server of an earlier release sent, is an issue with
+ * no code.
  *
  * @param {Array} [list] the issues the server sent
  * @param {'error'|'warning'} [severity] the severity of an issue that says
@@ -615,12 +620,13 @@ const PREFLIGHT_STATUSES = ['passed', 'failed', 'unavailable'];
 
 /**
  * A preflight report as the server sends it (BuilderPreflightReport in
- * openapi.yml): each check in the order asked, with its status, its summary
- * and its issues (see readIssues; an issue that states no severity is a
- * warning), and the names of the checks by status, in the same order. A
- * check of a status this client does not know counts as unavailable.
+ * openapi.yml). It has each check in the requested order, with its status,
+ * its summary and its issues (see readIssues). An issue that states no
+ * severity is a warning. It also has the names of the checks by status, in
+ * the same order. A check with a status that this client does not know
+ * counts as unavailable.
  *
- * @param {object} [data] the body of the answer
+ * @param {object} [data] the body of the response
  * @returns {{checks: {name: string, status: string, summary: string,
  *   issues: object[]}[], passed: string[], failed: string[],
  *   unavailable: string[]}}
@@ -658,9 +664,9 @@ export function readPreflightReport(data) {
 }
 
 /**
- * A refused publish as publishRefusal() takes it: the server's code, its
- * reason (see serverReason()), and the scenario a refusal about one of the
- * scenarios the draft lists names in its metadata.
+ * A refused publish in the form that publishRefusal() takes: the server's
+ * code, its reason (see serverReason()), and the scenario that the refusal
+ * names, when it is about one of the scenarios in the draft's metadata.
  *
  * @param {object} [error] axios-like error
  * @returns {{code: string, reason: string, scenario: string}}
@@ -676,10 +682,10 @@ export function serverRefusal(error) {
 }
 
 /**
- * What the server said of a refused request, word for word, as a sentence.
- * For answers written to be shown as they are: why a topology's Builder
- * file cannot be used names its path, which serverReason() would take an id
- * out of.
+ * What the server said about a refused request, word for word, as a
+ * sentence. Use it for responses written to be shown unchanged. For example,
+ * the reason that a topology's Builder file cannot be used names its path,
+ * and serverReason() would remove an id from that path.
  *
  * @param {object} [error] axios-like error
  * @returns {string} the message, or '' when the server gave none
@@ -742,11 +748,12 @@ export function errorMessage(kind, error) {
 }
 
 /**
- * Why a request to the template library failed. The server's refusals of a
- * library change are written to be shown ("a library holds at most 200
- * templates"), so its reason is used, as a sentence. A session that ended
- * and a server that cannot be reached say what they say everywhere else;
- * the words errorMessage has for the rest are about a draft.
+ * Why a request to the template library failed. The server writes its
+ * refusals of a library change to be shown ("a library holds at most 200
+ * templates"), so this function uses its reason, as a sentence. For a session
+ * that ended and a server that cannot be reached, it gives the same message
+ * as everywhere else. The messages of errorMessage for the other cases are
+ * about a draft.
  *
  * @param {object} error axios-like error
  * @returns {string}
@@ -767,10 +774,10 @@ export function libraryErrorMessage(error) {
 }
 
 /**
- * Why the experiment a diagram was published with could not be opened. The
- * server answers a name it does not have with an error of its own, so any
- * failure but a refusal of the user or of the session, or a server that
- * cannot be reached, is taken to mean the experiment is gone.
+ * Why the experiment that a diagram was published with could not be opened.
+ * For a name that it does not have, the server gives its own error. Thus
+ * any failure, except a refusal of the user or of the session or an
+ * unreachable server, means that the experiment is gone.
  *
  * @param {string} name the experiment's name
  * @param {object} error axios-like error
@@ -794,9 +801,9 @@ function ifMatch(etag) {
 }
 
 /**
- * Normalizes a share list response. Its tag ("shares-3") is the share
- * list's own, apart from the draft's ETag, and is read from the body first
- * for the reason readETag gives.
+ * Normalizes a share list response. Its tag ("shares-3") belongs to the
+ * share list, separate from the draft's ETag. It is read from the body first
+ * for the reason that readETag gives.
  *
  * @param {object} response axios-like response
  * @returns {{shares: object[], sharesEtag: string|null, maxShares: number}}
@@ -849,8 +856,8 @@ export function shareErrors(error) {
 }
 
 /**
- * The users a share may name, from a listing of them: a draft's or the
- * template library's.
+ * The users that a share can name, from a listing of them: a draft's
+ * listing or the template library's listing.
  *
  * @param {object} response axios-like response
  * @returns {{username: string, name: string}[]} name may be ''
@@ -871,8 +878,8 @@ export function readCandidates(response) {
 }
 
 /**
- * What a change of who may use templates and collections came to: the
- * items it left as they were, and why ('not-found', 'too-many').
+ * The result of a change to who can use templates and collections: the
+ * items that it did not change, and why ('not-found', 'too-many').
  *
  * @param {object} response axios-like response
  * @returns {{failed: {kind: string, id: string, reason: string}[]}}
@@ -893,9 +900,9 @@ export function readLibraryResult(response) {
 
 /**
  * Normalizes a draft envelope: metadata, the current document and the history
- * index the server holds. Only a read of the draft carries its history; a
- * save answers with the draft alone, and its history is then null (unknown),
- * not empty.
+ * index that the server holds. Only a read of the draft carries its history.
+ * A save responds with only the draft, and its history is then null
+ * (unknown), not empty.
  *
  * @param {object} response axios-like response
  * @returns {{draft: object, document: object|null, history: object[]|null, cursor: number, etag: string|null}}
@@ -918,12 +925,12 @@ const PUBLISH_MODES = ['topology', 'topology-experiment'];
 const CONFIG_ACTIONS = ['create', 'update'];
 
 /**
- * Builds the publish request body. Publish is an *intent*: the server loads the
- * snapshot the draft cursor points at and re-runs its own checks, so document
- * bytes are never sent here. Anything that is not part of the intent is
- * dropped rather than forwarded. The experiment's scenario is sent by name
- * alone, and only with an experiment: the server adds the topology to every
- * scenario the document lists whatever the request says.
+ * Builds the publish request body. Publish is an *intent*. The server loads
+ * the snapshot that the draft cursor points at and runs its own checks
+ * again, so document bytes are never sent here. Anything that is not part of
+ * the intent is dropped, not forwarded. The experiment's scenario is sent
+ * only by name, and only with an experiment. The server adds the topology to
+ * every scenario that the document lists, whatever the request says.
  *
  * @param {object} intent mode, topology, scenario ({name}), experiment
  * @returns {object} request body
@@ -964,9 +971,9 @@ export function publishIntent(intent = {}) {
 }
 
 /**
- * Normalizes a publish response. The server reports per stage results, so a
- * partial failure (topology written, experiment refused) is surfaced instead of
- * being reported as a plain success.
+ * Normalizes a publish response. The server reports results per stage, so a
+ * partial failure (topology written, experiment refused) shows as a failure,
+ * not as a plain success.
  *
  * @param {object} response axios response
  * @returns {object} result
@@ -996,8 +1003,8 @@ export function readPublishResult(response) {
       : succeeded.length > 0
         ? 'partial'
         : 'failed');
-  // Each with its code (see readIssues); warnings and errors are what they
-  // say, which the Publish dialog lists.
+  // Each with its code (see readIssues). Warnings and errors are what their
+  // names say, and the Publish dialog lists them.
   const warningIssues = readIssues(data.warnings, 'warning');
   const errorIssues = readIssues(data.errors, 'error');
 
@@ -1039,10 +1046,11 @@ function aliasValue(value) {
 }
 
 /**
- * Normalizes the answer of a dry run of a publication (see
- * DescribePublishChanges in api/builder/changes.go): what publishing would
- * change, or null when the server would refuse it, and the warnings and the
- * refusal it would answer with, each an issue (see readIssues).
+ * Normalizes the response of a dry run of a publication (see
+ * DescribePublishChanges in api/builder/changes.go). It gives what
+ * publishing would change, or null when the server would refuse it. It also
+ * gives the warnings and the refusal of the response, each an issue (see
+ * readIssues).
  *
  * @param {object} response axios-like response
  * @returns {{changes: object|null, warningIssues: object[],
@@ -1092,11 +1100,11 @@ export function readPublishPreview(response) {
 export function createBuilderApi(http = axiosInstance) {
   return {
     /**
-     * Lists the drafts the user may see: their own (mine), those shared
-     * with them (shared), and other users' drafts their role lets them see
-     * (others). Those the server can no longer read are listed apart,
-     * marked damaged: they can only be deleted. A draft the user may delete
-     * says so (`canDelete`).
+     * Lists the drafts that the user can see: their own (mine), drafts
+     * shared with them (shared), and other users' drafts that their role
+     * lets them see (others). Drafts that the server cannot read now are
+     * listed separately, marked damaged. The user can only delete them. A
+     * draft that the user can delete says so (`canDelete`).
      */
     async listDrafts() {
       const response = await http.get(DRAFTS_PATH);
@@ -1120,10 +1128,11 @@ export function createBuilderApi(http = axiosInstance) {
      * @param {{owner?: string, title?: string, sourceToken?: string,
      *   sourceFile?: string, forkOf?: string, document: object,
      *   summary?: string}} request
-     *   forkOf: "<owner>/<draft id>" of a draft the new one forks, whose
-     *   source and last publication it takes in place of sourceToken;
-     *   sourceFile: the name of the uploaded file the document was read
-     *   from
+     *   forkOf: "<owner>/<draft id>" of a draft that the new one forks. The
+     *   new draft takes its source and last publication in place of
+     *   sourceToken.
+     *   sourceFile: the name of the uploaded file that the document was read
+     *   from.
      */
     async createDraft(request) {
       checkUploadSize(request);
@@ -1158,9 +1167,9 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Replaces who a draft is shared with, if the list has not changed since
-     * sharesEtag was read. The answer carries the draft too, whose ETag it
-     * changed.
+     * Replaces the list of people that a draft is shared with, if the list
+     * did not change since sharesEtag was read. The response also carries
+     * the draft, whose ETag the change changed.
      *
      * @param {string} owner
      * @param {string} id
@@ -1184,8 +1193,8 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Lists the users the draft's owner may share it with, by username,
-     * those already shared with too.
+     * Lists the users that the draft's owner can share it with, by username,
+     * including the users that it is already shared with.
      *
      * @param {string} owner
      * @param {string} id
@@ -1202,9 +1211,9 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Appends one snapshot. Every semantic edit is its own snapshot: the client
-     * never coalesces commits, because the history the user can undo through
-     * must be the history the server stores.
+     * Appends one snapshot. Every semantic edit is its own snapshot. The
+     * client never coalesces commits, because the history that the user can
+     * undo through must be the history that the server stores.
      *
      * @param {string} owner
      * @param {string} id
@@ -1231,9 +1240,9 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Deletes one snapshot from the draft's history. The current one (the
-     * cursor's) cannot be. The answer is the draft, as a save's is, with its
-     * new ETag.
+     * Deletes one snapshot from the draft's history. The current snapshot
+     * (the cursor's) cannot be deleted. The response is the draft, as for a
+     * save, with its new ETag.
      *
      * @param {string} owner
      * @param {string} id
@@ -1268,8 +1277,8 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Publishes the snapshot the draft cursor points at. Only the intent is
-     * sent: the server owns the document bytes and re-validates them.
+     * Publishes the snapshot that the draft cursor points at. Only the intent
+     * is sent. The server owns the document bytes and validates them again.
      *
      * @param {string} owner
      * @param {string} id
@@ -1297,10 +1306,11 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Asks what publishing the snapshot the draft cursor points at with this
-     * intent would change: a dry run of the publish route, which writes
-     * nothing and so needs no If-Match. A publication the server would
-     * refuse is answered with no changes and the refusal in errorIssues.
+     * Asks what publishing the snapshot that the draft cursor points at with
+     * this intent would change. This is a dry run of the publish route,
+     * which writes nothing and thus needs no If-Match. For a publication that
+     * the server would refuse, the response has no changes and the refusal
+     * in errorIssues.
      *
      * @param {string} owner
      * @param {string} id
@@ -1317,16 +1327,16 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Puts the snapshot the draft cursor points at through the preflight
-     * checks named, which the server makes against its cluster and itself.
-     * Nothing is written, and the draft's ETag stays as it is.
+     * Runs the named preflight checks on the snapshot that the draft cursor
+     * points at. The server runs them against its cluster and itself.
+     * Nothing is written, and the draft's ETag does not change.
      *
      * @param {string} owner
      * @param {string} id
      * @param {{checks: string[], experiment?: string}} request checks: ids
-     *   of the checks (capacity, network, disks, apps), in the order they
-     *   are reported; experiment: the experiment whose VLAN range and
-     *   default bridge the network check goes by, sent only when named
+     *   of the checks (capacity, network, disks, apps), in the order of the
+     *   report. experiment: the experiment whose VLAN range and default
+     *   bridge the network check uses, sent only when named.
      * @returns {Promise<object>} see readPreflightReport
      */
     async preflight(owner, id, { checks, experiment = '' }) {
@@ -1352,15 +1362,15 @@ export function createBuilderApi(http = axiosInstance) {
 
     /**
      * Asks the server to build a builder document from a stored config, or
-     * from an uploaded one given as JSON or YAML text. A topology may be
-     * imported with its included topologies combined into it, or as a copy;
-     * the document is then linked to no config and has a new name. Each of
-     * the three choices is sent only when it is made.
+     * from an uploaded config given as JSON or YAML text. A topology can be
+     * imported with its included topologies combined into it, or as a copy.
+     * The document is then linked to no config and has a new name. Each of
+     * the three options is sent only when the user chooses it.
      *
      * @param {{kind?: string, name?: string, content?: string,
      *   includes?: 'keep'|'combine', copy?: boolean, newName?: string}} request
-     *   kind and name of a stored config, or content; newName: the new
-     *   topology's name, with copy or includes 'combine'
+     *   kind and name of a stored config, or content. newName: the new
+     *   topology's name, with copy or includes 'combine'.
      * @returns {Promise<{document: object, warnings: string[], source: object|null}>}
      *   source as GET /builder/sources describes it (`stored` false for an
      *   upload): the config that was read, never the copy.
@@ -1401,8 +1411,8 @@ export function createBuilderApi(http = axiosInstance) {
      *
      * @param {{content: string, name?: string}} request content: the text
      *   of the file, which is the diagram's XML or a Topology config (JSON
-     *   or YAML) that holds one in its builder-xml annotation; name: the
-     *   document's name for a diagram that comes without a topology
+     *   or YAML) that holds one in its builder-xml annotation. name: the
+     *   document's name for a diagram that comes without a topology.
      * @returns {Promise<{document: object, warnings: string[], source: object|null}>}
      *   source as generate() gives it for a Topology config, and null for a
      *   diagram alone.
@@ -1423,19 +1433,19 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Asks the server for the phenix Topology config a document publishes
-     * as, which Publish would write. Nothing is written, and the document
-     * is sent, so it holds edits not saved yet.
+     * Asks the server for the phenix Topology config that a document
+     * publishes as, which Publish would write. Nothing is written. The
+     * request sends the document, so it holds edits that are not saved yet.
      *
      * @param {object} document
-     * @param {string} [name] the topology's name; without one, the server
-     *   names it as the Publish dialog proposes
+     * @param {string} [name] the topology's name. Without one, the server
+     *   names it as the Publish dialog proposes.
      * @returns {Promise<{name: string, yaml: string, warnings: string[],
      *   publishBlockers: string[], warningIssues: object[],
      *   publishBlockerIssues: object[]}>} the config as YAML, what the
      *   projection left out or changed, and why publishing it would be
-     *   refused, as what each says and as issues with their codes (see
-     *   readIssues)
+     *   refused. Each is given as text and as issues with their codes (see
+     *   readIssues).
      */
     async exportTopology(document, name = '') {
       const payload = name ? { document, name } : { document };
@@ -1464,17 +1474,17 @@ export function createBuilderApi(http = axiosInstance) {
 
     /**
      * Asks the server for the package of a document: the document, the
-     * sections include names and the list of what the diagram needs.
-     * Nothing is written, and the document is sent, so it holds edits not
-     * saved yet.
+     * sections that include names, and the list of what the diagram needs.
+     * Nothing is written. The request sends the document, so it holds edits
+     * that are not saved yet.
      *
      * @param {object} document
-     * @param {string[]} [include] the sections the package carries:
+     * @param {string[]} [include] the sections that the package carries:
      *   scenarios, topologies, icons and images
      * @returns {Promise<{package: object, warnings: Array<object|string>}>}
      *   warnings: what the package names but does not carry, or leaves out
-     *   of its requirements, and why, each an issue with its code (see
-     *   toIssue in issues.js)
+     *   of its requirements, and why. Each is an issue with its code (see
+     *   toIssue in issues.js).
      */
     async buildPackage(document, include = []) {
       const payload = { document, include };
@@ -1576,8 +1586,8 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Reads a stored scenario's spec, which a document that lists the
-     * scenario does not hold, to list its apps.
+     * Reads a stored scenario's spec, to list its apps. A document that
+     * lists the scenario does not hold the spec.
      *
      * @param {string} name
      * @returns {Promise<object>} the spec, upgraded to the latest version
@@ -1611,13 +1621,15 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Lists the published diagrams the user may see: each topology's
-     * current published document (source "store"), and each topology whose
-     * diagram is read from the Builder file it names (source "file"), which
-     * has a path and a handle for an id (see fileHandle), and no digest,
-     * time or user: the listing reads no file. A published document's row
-     * names the experiment its publication made (`experiment`), while one
-     * still exists and the user may get it.
+     * Lists the published diagrams that the user can see:
+     *   - each topology's current published document (source "store")
+     *   - each topology whose diagram is read from the Builder file that it
+     *     names (source "file"). Such a row has a path and a handle as its id
+     *     (see fileHandle). It has no digest, time or user, because the
+     *     listing reads no file.
+     * A published document's row names the experiment that its publication
+     * made (`experiment`), while that experiment exists and the user can get
+     * it.
      */
     async listDocuments() {
       const response = await http.get(DOCUMENTS_PATH);
@@ -1627,9 +1639,9 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Reads the Builder document a topology references, wherever it is
-     * kept: its published document, or the Builder file it names, which the
-     * server reads on every request.
+     * Reads the Builder document that a topology references, from where it
+     * is kept: its published document, or the Builder file that it names,
+     * which the server reads on every request.
      *
      * @param {string} name topology name
      * @returns {Promise<object>} the listing row, with `digest`, `size` and
@@ -1673,8 +1685,8 @@ export function createBuilderApi(http = axiosInstance) {
 
     /**
      * Lists every icon of the server's icon library, each with its PNG in
-     * base64, who uploaded it, its aliases and whether the user may rename
-     * or delete it, and the user's uploads against what each user may
+     * base64, its uploader, its aliases and whether the user can rename or
+     * delete it. Also lists the user's uploads against what each user can
      * upload.
      *
      * @returns {Promise<{icons: object[], maxIcons: number,
@@ -1709,10 +1721,10 @@ export function createBuilderApi(http = axiosInstance) {
 
     /**
      * Adds a PNG to the icon library under a name. The server checks the
-     * image and may encode it again, so the icon is the one it answers
-     * with: its data, not what was sent. A name that already names an icon
-     * with the same bytes is answered with that icon; one that names another
-     * is refused (409).
+     * image and can encode it again, so the icon is the one in the response:
+     * its data, not what was sent. For a name that already names an icon with
+     * the same bytes, the response is that icon. A name of an icon with other
+     * bytes is refused (409).
      *
      * @param {{name: string, data: string}} upload the name and the PNG in
      *   base64
@@ -1726,8 +1738,8 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Gives an icon of the icon library a new name; the old one keeps
-     * naming it, as an alias.
+     * Gives an icon of the icon library a new name. The old name continues
+     * to name it, as an alias.
      *
      * @param {string} name the icon's name, or an alias
      * @param {string} newName
@@ -1752,13 +1764,14 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Reads the template library the user can use: their own templates and
-     * collections, then those of other users that are shared with them or
-     * published server-wide (each item's source says which: own, shared or
-     * server), with what they may do and the library's limits. A user who
-     * never changed theirs has the built-in templates. The collections the
-     * server read from its template files come after them, each with its
-     * templates (source preloaded, no owner), read only for everyone.
+     * Reads the template library that the user can use: their own templates
+     * and collections, then those of other users that are shared with them
+     * or published server-wide. Each item's source tells which: own, shared
+     * or server. The result includes what the user can do and the library's
+     * limits. A user who never changed their library has the built-in
+     * templates. After them come the collections that the server read from
+     * its template files, each with its templates (source preloaded, no
+     * owner), read only for everyone.
      *
      * @returns {Promise<object>} owner, templates and collections (lists),
      *   canShare, canPublish, damaged (the stored library cannot be read,
@@ -1811,11 +1824,11 @@ export function createBuilderApi(http = axiosInstance) {
     /**
      * Adds templates to a library, and, with `collection`, a new collection
      * that holds exactly them, in the same change. The server names each
-     * template: one sent with an id is refused.
+     * template. A template sent with an id is refused.
      *
      * @param {string} owner the library's owner, who the caller must be
-     * @param {object} request templates: [{name, description?, device}];
-     *   collection: {name, description?}, optional
+     * @param {object} request templates: [{name, description?, device}].
+     *   collection: {name, description?}, optional.
      * @returns {Promise<{created: {id: string, etag: string}[],
      *   collection: {id: string, etag: string}|null}>}
      */
@@ -1834,8 +1847,8 @@ export function createBuilderApi(http = axiosInstance) {
 
     /**
      * Replaces the name, the description and the device of a template of a
-     * library. The server refuses the change (412) when the template is no
-     * longer at `etag`.
+     * library. The server refuses the change (412) when the template is not
+     * at `etag` now.
      *
      * @param {string} owner
      * @param {string} id template id
@@ -1870,8 +1883,8 @@ export function createBuilderApi(http = axiosInstance) {
 
     /**
      * Replaces the name, the description and the templates of a collection.
-     * The server refuses the change (412) when the collection is no longer
-     * at `etag`.
+     * The server refuses the change (412) when the collection is not at
+     * `etag` now.
      *
      * @param {string} owner
      * @param {string} id collection id
@@ -1891,9 +1904,9 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Deletes templates and collections of a library. Ids the library does
-     * not hold are ignored, so a repeat does no harm. A deleted template
-     * leaves the collections that held it; a deleted collection leaves its
+     * Deletes templates and collections of a library. Ids that the library
+     * does not hold are ignored, so a repeat does no harm. A deleted template
+     * leaves the collections that held it. A deleted collection leaves its
      * templates.
      *
      * @param {string} owner
@@ -1917,7 +1930,7 @@ export function createBuilderApi(http = axiosInstance) {
     /**
      * Restores deleted built-in templates of a library, with their original
      * ids. With no ids, every missing built-in template is restored. An id
-     * that is not a built-in id, or one the library holds, is ignored.
+     * that is not a built-in id, or an id that the library holds, is ignored.
      *
      * @param {string} owner
      * @param {{templates?: string[]}} [selection] built-in template ids
@@ -1945,14 +1958,15 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Adds people to templates and collections of a library, and takes
-     * people off them, each item at once. A person an item has already, or
-     * does not have, changes nothing there. The server refuses the whole
-     * request (422, see shareErrors) when it refuses a person to add.
+     * Adds people to templates and collections of a library, and removes
+     * people from them, each item at once. Adding a person that an item
+     * already has, or removing a person that it does not have, changes
+     * nothing for that item. The server refuses the whole request (422, see
+     * shareErrors) when it refuses a person to add.
      *
      * @param {string} owner the library's owner, who the caller must be
-     * @param {object} change templates, collections: the items, by id; add,
-     *   remove: usernames
+     * @param {object} change templates, collections: the items, by id. add,
+     *   remove: usernames.
      * @returns {Promise<{failed: object[]}>} the items left as they were,
      *   see readLibraryResult
      */
@@ -1972,12 +1986,12 @@ export function createBuilderApi(http = axiosInstance) {
 
     /**
      * Publishes templates and collections of a library server-wide, for
-     * everyone who can use the Builder, or takes them back. Only the owner
-     * publishes; the owner, or a role that may publish, takes back.
+     * everyone who can use the Builder, or withdraws them. Only the owner
+     * publishes. The owner, or a role that can publish, withdraws.
      *
      * @param {string} owner the library's owner
-     * @param {object} change templates, collections: the items, by id;
-     *   serverWide: whether they are to be server-wide
+     * @param {object} change templates, collections: the items, by id.
+     *   serverWide: whether they are to be server-wide.
      * @returns {Promise<{failed: object[]}>} see readLibraryResult
      */
     async publishTemplates(
@@ -1994,9 +2008,10 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Lists the disk images the server has: the image files in minimega's
-     * files directory and the images experiments use, of every kind (VM,
-     * container, ISO), as far as the user's role may list them.
+     * Lists the disk images that the server has: the image files in
+     * minimega's files directory and the images that experiments use, of
+     * every kind (VM, container, ISO), as far as the user's role can list
+     * them.
      *
      * @returns {Promise<string[]>} file names, without their directory
      */
@@ -2020,9 +2035,9 @@ export function createBuilderApi(http = axiosInstance) {
 }
 
 /**
- * An HTTP client that says when the server refuses the session (401), so
- * the Builder can offer to sign in again (see signin.js). Each request is
- * otherwise the client's own, and fails as it would.
+ * An HTTP client that reports when the server refuses the session (401), so
+ * the Builder can offer to sign in again (see signin.js). In all other
+ * respects, each request is the client's own, and fails as it would.
  *
  * @param {object} http axios-compatible client
  * @param {(error: object) => void} [ended] called for each 401

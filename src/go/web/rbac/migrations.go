@@ -114,7 +114,7 @@ const (
 )
 
 // builderGrant is a permission of the Builder role that a role of that name
-// is made to hold: verbs on a resource, with no resource names.
+// must hold: verbs on a resource, with no resource names.
 type builderGrant struct {
 	resource string
 	verbs    []string
@@ -135,13 +135,13 @@ func builderGrants() []builderGrant {
 // items to every user and rename and delete any icon of the icon library.
 // It runs at every start, after the default configs are created.
 //
-// A store that has no role named builder and none whose role name is Builder
-// gets the built-in one: the default configs are created only when a store is
-// first initialized, so a store made before the role was shipped would never
-// get it otherwise. A role of that name an administrator made, and every user
-// assigned it, gain a policy for each of those permissions they lack;
-// nothing else in them changes. On a store that holds the built-in role
-// unchanged, nothing is written.
+// A store that has no role named builder, and no role whose role name is
+// Builder, gets the built-in role. The default configs are created only at
+// the first initialization of a store. Thus a store made before the role was
+// shipped would never get it otherwise. A role of that name that an
+// administrator made, and every user assigned to it, gain a policy for each
+// of those permissions that they do not have. Nothing else in them changes.
+// On a store that holds the built-in role unchanged, nothing is written.
 func EnsureBuilderRolePermissions() error {
 	roles, err := GetRoles()
 	if err != nil {

@@ -2,25 +2,25 @@
   Share several drafts at once: the people listed here are added to every
   selected draft, all with the one access chosen.
 
-  It adds, and never removes: each draft keeps the people it is shared with
-  already, and someone listed here who is on a draft already gets the access
+  It adds, and never removes. Each draft keeps the people it is already
+  shared with. Someone listed here who is already on a draft gets the access
   chosen here (see mergeShareList in builder/bulk.js). The intro says so,
-  as that can lower someone from Can edit to Can view. Nothing changes until
-  the primary button is pressed, which is the one confirmation: a share can
-  be undone.
+  because that can lower someone from Can edit to Can view. Nothing changes
+  until the user presses the primary button, which is the one confirmation:
+  a share can be undone.
 
-  People are named through the user field the Share dialog has
-  (BuilderUserCombobox.vue), from the users the first draft may be shared
-  with: the drafts are all the user's own, so the same users go for each.
-  When the users cannot be read, a username can still be typed, and the
-  server checks it.
+  People are named through the same user field as in the Share dialog
+  (BuilderUserCombobox.vue). It offers the users that the first draft may be
+  shared with. The drafts are all the user's own, so the same users apply to
+  each. When the users cannot be read, the user can still type a username,
+  and the server checks it.
 
-  The drafts are shared a few at a time (see shareDrafts in store.js), the
-  status line saying how far it is; Cancel, Escape and a click outside do
-  nothing meanwhile. When every draft was shared, the dialog closes and the
-  page says so. When some were not, the form gives way to a summary of them,
-  each with why, which takes focus, and Close: the page keeps those drafts
-  selected, so Share selected tries them again.
+  The drafts are shared a few at a time (see shareDrafts in store.js), and
+  the status line shows the progress. Meanwhile, Cancel, Escape and a click
+  outside do nothing. When every draft was shared, the dialog closes and the
+  page says so. When some were not, a summary replaces the form. It lists
+  those drafts, each with why, takes focus, and has a Close button. The page
+  keeps those drafts selected, so Share selected tries them again.
 -->
 <template>
   <builder-dialog
@@ -261,8 +261,8 @@
 
   // --- the users -------------------------------------------------------
 
-  // The users the drafts may be shared with, once read; loading, failed or
-  // ready.
+  // The users the drafts may be shared with, once read. usersPhase is
+  // loading, failed or ready.
   const users = ref(null);
   const usersPhase = ref('loading');
 
@@ -297,7 +297,8 @@
     }
   }
 
-  // Retry goes while the users are read, so focus moves to the field first.
+  // Retry disappears while the users are read, so focus moves to the field
+  // first.
   function retryUsers() {
     userField.value?.focus();
     loadUsers();
@@ -336,7 +337,7 @@
     userField.value?.focus();
   }
 
-  // The row goes, and its button with it, so focus moves to the field.
+  // The row and its button disappear, so focus moves to the field.
   async function remove(user) {
     if (phase.value !== 'ready') {
       return;

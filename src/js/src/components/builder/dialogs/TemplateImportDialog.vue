@@ -3,17 +3,19 @@
   builder/templateFile.js) into the user's library as a new collection.
   Opened by Import templates on the drafts page's Node Templates tab.
 
-  Choosing a file reads and checks it at once: what keeps it from being
-  imported shows in the dialog, each problem with where it is in the file
-  ("templates[2].name: ..."). A file that can be imported is described: its
-  collection's name, which " (2)" and so on follow when one of the user's
-  collections has it, and how many templates and custom icons it holds.
-  Import adds the templates, each a copy under an id the server gives it,
-  with the collection, after the custom icons the file carries go to the
-  icon library. An icon that could not be added, or whose name the server
-  holds with other bytes, does not stop the import: the dialog then stays
-  open and lists what became of it. Otherwise it closes, and the page says
-  what was imported.
+  Choosing a file reads and checks it immediately. When something keeps the
+  file from being imported, the dialog shows each problem with where it is
+  in the file ("templates[2].name: ..."). For a file that can be imported,
+  the dialog shows its collection's name and how many templates and custom
+  icons it holds. When one of the user's collections has that name, " (2)"
+  and so on follows it.
+
+  Import first adds the custom icons that the file carries to the icon
+  library. It then adds the templates with the collection, each as a copy
+  under an id that the server gives it. An icon that could not be added, or
+  whose name the server holds with other bytes, does not stop the import.
+  The dialog then stays open and lists what became of each such icon.
+  Otherwise, the dialog closes and the page says what was imported.
 -->
 <template>
   <builder-dialog
@@ -71,8 +73,8 @@
         </template>
       </div>
 
-      <!-- Rendered from the start, so what it comes to say is read: the
-           page's live region cannot speak through a modal dialog. -->
+      <!-- Rendered from the start, so a screen reader reads what it later
+           says. The page's live region cannot speak through a modal dialog. -->
       <div class="builder-template-import__done" role="status">
         <template v-if="done">
           <p data-testid="template-import-done">{{ done.message }}</p>
@@ -152,7 +154,7 @@
   const done = ref(null);
   const importing = ref(false);
 
-  // The read under way: a file chosen while another is read replaces it.
+  // The read in progress. A file chosen while another is read replaces it.
   let reads = 0;
 
   // The name the new collection gets in the library as it is now.

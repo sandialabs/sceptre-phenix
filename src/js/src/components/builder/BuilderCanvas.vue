@@ -9,10 +9,10 @@
   The diagram is one Tab stop (a roving tabindex): the node or connection
   that last had focus, or else the canvas itself. The arrow keys move focus
   to the nearest node in their direction, and Page Down and Page Up through
-  a node's connections; Shift with an arrow key moves the selected nodes.
+  a node's connections. Shift with an arrow key moves the selected nodes.
   Each node and connection is Vue Flow's wrapper element, named and
-  described by adapters/vueflow.js. Vue Flow's own keyboard layer is off;
-  this component handles the keys, so the hints it gives are the keys that
+  described by adapters/vueflow.js. Vue Flow's own keyboard layer is off.
+  This component handles the keys, so the hints it gives are the keys that
   work.
 
   Accepted deviation, as in BuilderOutlineList.vue: the nodes are not each
@@ -24,14 +24,14 @@
   browse mode (Enter) selects and focuses it.
 
   A node or connection pressed into the selection (a click, Enter or Space)
-  shows the Inspector again when it is hidden (see BuilderPanes.vue); a
-  press on the one selected item then shows it rather than deselecting it.
+  shows the Inspector again when it is hidden (see BuilderPanes.vue). A
+  press on the one selected item then shows it and does not deselect it.
   Moving focus alone does not.
 
   The minimap has a handle at its top left corner that resizes it, as a
   splitter between it and the canvas (WAI-ARIA APG window splitter): it is
   dragged, or focused and moved with the arrow keys, and Home and End make
-  the minimap smallest and largest; Enter or a double-click restores the
+  the minimap smallest and largest. Enter or a double-click restores the
   default size. The size is remembered in this browser (see
   builder/panes.js), and Reset view forgets it.
 -->
@@ -56,8 +56,8 @@
       Diagram canvas
     </h2>
 
-    <!-- Why a gesture did nothing. The live region has announced it already;
-         it stays until dismissed or the next connection attempt. -->
+    <!-- Why a gesture did nothing. The live region has announced it already.
+         It stays until dismissed or the next connection attempt. -->
     <div
       v-if="store.notice"
       :key="store.notice.seq"
@@ -137,7 +137,7 @@
            that do the same on the canvas. Those keys do nothing on the
            buttons themselves, so the buttons have no aria-keyshortcuts.
            The third fits the whole diagram into view, which pans as well
-           as zooms; it then restores the view from before, until the view
+           as zooms. It then restores the view from before, until the view
            changes some other way (see toggleFit). -->
       <Controls
         position="bottom-left"
@@ -353,7 +353,7 @@
   );
 
   // What the keys do on a focused node or connection, and a summary for the
-  // canvas itself; a read-only draft can only be selected. Both follow the
+  // canvas itself. A read-only draft can only be selected. Both follow the
   // platform and the user's keys (see commands.js).
   const hints = computed(() => canvasHints({ readOnly: store.readOnly }));
 
@@ -364,7 +364,7 @@
 
   const MINIMAP_ID = 'builder-minimap';
   const MINIMAP_HINT_ID = 'builder-minimap-hint';
-  // Vue Flow keeps its panels 15px in from the pane's edges; the minimap has
+  // Vue Flow keeps its panels 15px in from the pane's edges. The minimap has
   // a 1px frame (builder.css).
   const PANEL_MARGIN = 15;
   const MINIMAP_FRAME = 1;
@@ -418,15 +418,15 @@
     };
   });
 
-  // The handle moves with the minimap's corner, so its tooltip goes rather
-  // than stay behind.
+  // The handle moves with the minimap's corner, so its tooltip hides and
+  // does not stay behind.
   function setMinimapWidth(width) {
     hideTip();
     minimapChosen.value = width;
     saveMinimap(width);
   }
 
-  // Said after a key press; the minimap's size is its handle's value too.
+  // Said after a key press. The minimap's size is its handle's value too.
   function announceMinimap() {
     const { width, height } = minimap.value;
     const { min, max } = minimapRange.value;
@@ -471,8 +471,8 @@
     announceMinimap();
   }
 
-  // A drag keeps the pointer, so it goes on over the canvas; it is stored
-  // when it ends, and Escape puts the size back.
+  // A drag keeps the pointer, so it continues over the canvas. The size is
+  // stored when the drag ends, and Escape puts the size back.
   function onMinimapPointerDown(event) {
     if (event.button !== 0 || minimapDrag.value) {
       return;
@@ -562,8 +562,8 @@
 
   // The box the nodes take on the canvas: their boxes, and the notes below
   // devices and switches while the canvas shows them (see footprintBounds).
-  // Fit, the least zoom and bringing nodes into view go by it, so no notes
-  // are left out of view.
+  // Fit, the least zoom, and the code that brings nodes into view use it,
+  // so no notes are left out of view.
   function diagramBounds(nodes = store.doc.nodes || []) {
     return footprintBounds(nodes, notesShown());
   }
@@ -587,7 +587,7 @@
   const atMaxZoom = computed(() => viewport.value.zoom >= MAX_ZOOM);
   const atMinZoom = computed(() => viewport.value.zoom <= minZoom.value);
 
-  // The zoom buttons' names and keys, as tooltips (WCAG 1.4.13); the
+  // The zoom buttons' names and keys, as tooltips (WCAG 1.4.13). The
   // palette's entries show theirs the same way. The keys work on the
   // canvas, its nodes and connections, not on the buttons, and say so.
   const tooltip = useFixedTooltip();
@@ -619,7 +619,7 @@
   // and BuilderNodeTooltip.vue): one for the whole canvas, above its node,
   // clear of the node's focus ring and corner marks at any zoom. It waits
   // for the pointer to rest on a node, as the pointer crosses nodes on its
-  // way elsewhere; keyboard focus shows it at once. Escape pressed on its
+  // way elsewhere. Keyboard focus shows it at once. Escape pressed on its
   // node only closes it, and leaves the selection as it is.
   const NODE_TIP_DELAY_MS = 400;
   const NODE_TIP_GAP = 10;
@@ -632,7 +632,7 @@
 
   provide(NODE_TIP, nodeTip);
 
-  // A drag, of a node or of a new connection, is done with the tooltip.
+  // A drag, of a node or of a new connection, ends the tooltip.
   function hideNodeTip() {
     nodeTip.hideTip();
   }
@@ -661,7 +661,7 @@
 
   const edgeTypes = markRaw({ builderNetwork: markRaw(NetworkEdge) });
 
-  // Vue Flow's layer for edge labels, looked up once for all the edges
+  // Vue Flow's layer for edge labels, found once for all the edges
   // (see NetworkEdge.vue). It is drawn with the canvas.
   const labelLayer = shallowRef(null);
 
@@ -892,24 +892,24 @@
 
   function dismissNotice() {
     store.dismissNotice();
-    // The button that had focus is gone; keep focus in the canvas.
+    // The button that had focus is gone. Keep focus in the canvas.
     root.value?.focus();
   }
 
   // Drag-to-connect works between any devices and switches, in either
   // direction, like the legacy Builder. Vue Flow reports a connection only
-  // when the drag ends on a handle; ending anywhere else on a node connects to
-  // that node on a new interface (see onConnectEnd).
+  // when the drag ends on a handle. A drag that ends anywhere else on a node
+  // connects to that node on a new interface (see onConnectEnd).
   let dragStart = null;
   let connectedThisDrag = false;
 
   // Refused targets (a used interface, two switches, notes, groups, the node
-  // itself) never look valid while dragging. Releasing on one of them falls
-  // through to the node-body rule below.
+  // itself) never look valid while dragging. A release on one of them goes
+  // to the node-body rule below.
   //
   // Vue Flow also runs this check on every edge it draws. An existing edge has
   // an id and already holds its interface, so canConnect() would refuse it and
-  // the edge would vanish; only a connection being dragged has no id.
+  // the edge would vanish. Only a connection being dragged has no id.
   function isValidConnection(connection) {
     if (connection.id) {
       return true;
@@ -968,7 +968,7 @@
       return null;
     }
 
-    // The topmost device or switch under the pointer; a release on a group's
+    // The topmost device or switch under the pointer. A release on a group's
     // empty area or on a note is a cancel, like a release on the pane.
     for (const element of document.elementsFromPoint(
       point.clientX,
@@ -994,7 +994,7 @@
 
   // A drag of several nodes is one edit: it becomes a single history commit and
   // therefore a single server snapshot. A drag that moved nothing is no edit
-  // (the store drops it); when it also ended where it began, it was a click
+  // (the store drops it). When it also ended where it began, it was a click
   // whose pointer wobbled less than a grid step. Vue Flow reports that as a
   // drag and the browser drops its click, so it is handled as a click here.
   function onNodeDragStop(event) {
@@ -1089,9 +1089,9 @@
   //
   // Vue Flow can report one click on a node twice: on mouseup, when the
   // pointer moved less than its drag threshold but not nowhere, then on the
-  // click that follows. Only the first report counts,
-  // and the click is kept from Vue Flow, which would otherwise select the
-  // node again right after a click deselected it.
+  // click that follows. Only the first report counts, and the click is kept
+  // from Vue Flow, which would otherwise select the node again right after
+  // a click deselected it.
   const REPEAT_CLICK_MS = 500;
   // How far the pointer may wander between press and release and still make
   // a click, as a touch-friendly slop in CSS pixels.
@@ -1158,7 +1158,7 @@
   }
 
   // Vue Flow blurs a node that a Shift+click takes out of the selection,
-  // which would leave focus on the page; the clicked node keeps it instead.
+  // which would leave focus on the page. The clicked node keeps it instead.
   // Focus set by script after a click does not match :focus-visible, so the
   // view does not pan.
   function onNodeClick({ event, node }) {
@@ -1176,8 +1176,8 @@
     });
   }
 
-  // A clicked node takes focus by itself; a clicked connection does not, so
-  // focus it here and Delete then removes it.
+  // A clicked node takes focus by itself. A clicked connection does not, so
+  // this focuses it, and Delete then removes it.
   function onEdgeClick({ event, edge }) {
     clickItem({ kind: 'edges', id: edge.id }, event);
     edgeElement(edge.id)?.focus({ preventScroll: true });
@@ -1239,13 +1239,13 @@
 
   // A node or connection is a toggle button, pressed while it is selected, so
   // Enter, Space or a click on it acts on the selection it was pressed on
-  // (`before`); pressSelection says what a plain or a Shift press does, the
+  // (`before`). pressSelection says what a plain or a Shift press does, the
   // same as on an outline row. The selection is set in full each time,
   // whatever Vue Flow did with the click, so aria-pressed always matches it.
   //
   // An item the press selects is shown in the Inspector, which shows again
-  // if it was hidden; a plain press on the one selected item does only that
-  // while the Inspector is hidden, rather than deselect it.
+  // if it was hidden. A plain press on the one selected item does only that
+  // while the Inspector is hidden, and does not deselect it.
   function pressItem(item, additive, before = store.selection) {
     const alone =
       !additive &&
@@ -1427,8 +1427,8 @@
 
     // The keys act only on a node, a connection or the canvas itself. On the
     // canvas's own controls (the zoom buttons and the notice's Dismiss
-    // button) they keep their usual meaning and never edit
-    // the diagram. The shortcuts with Ctrl or ⌘ (select all, copy, paste,
+    // button) they keep their usual meaning and never edit the diagram.
+    // The shortcuts with Ctrl or ⌘ (select all, copy, paste,
     // undo...), the zoom keys and F2 are the view's key dispatcher's, from
     // the command registry (commands.js).
     if (!item && event.target !== root.value) {
@@ -1450,7 +1450,7 @@
 
     // Moving focus is not editing either. Alt with Left or Right goes back
     // or forward in the browser, so an arrow key with any modifier is left
-    // alone here; Shift with one moves nodes, below.
+    // alone here. Shift with one moves nodes, below.
     const plain = !meta && !event.altKey && !event.shiftKey;
 
     if (arrow && plain) {
@@ -1559,9 +1559,6 @@
 
   // --- keeping keyboard focus in view (WCAG 2.4.11) -------------------------
 
-  // Pans the canvas so an item is fully visible and not under the minimap,
-  // the zoom controls or the notice, which float over the pane. The zoom
-  // stays as it is.
   // The part of an item to keep in view: the item itself, or, for a
   // connection too long to fit in the pane, its label, which marks the
   // middle of the line.
@@ -1596,8 +1593,11 @@
     );
   }
 
-  // Only a node or a connection is kept in view. The canvas section itself is
-  // taller than the pane, so "revealing" it would pan the whole diagram.
+  // Pans the canvas so an item is fully visible and not under the minimap,
+  // the zoom controls or the notice, which float over the pane. The zoom
+  // stays as it is. Only a node or a connection is kept in view. The canvas
+  // section itself is taller than the pane, so "revealing" it would pan the
+  // whole diagram.
   function reveal(element) {
     const pane = vueFlowRef.value?.getBoundingClientRect();
 
@@ -1785,8 +1785,8 @@
 
   // A diagram opens at 100% or at the settings' own percentage (see
   // startViewport), or fitted to the canvas as Fit does, if the settings
-  // say so. The fit waits for Vue Flow to measure the nodes, which
-  // it shows only then, so the diagram is never seen at 100% first. The
+  // say so. The fit waits for Vue Flow to measure the nodes, which it shows
+  // only then, so the diagram is never seen at 100% first. The
   // view makes a canvas for each diagram it opens, so this runs for each.
   let fitWhenMeasured =
     builderSettings.openZoom === 'fit' && store.doc.nodes.length > 0;
@@ -1801,9 +1801,9 @@
   // Fit: the whole diagram in view, its notes included (see diagramBounds),
   // at whatever zoom that takes, and clear of the minimap and the zoom
   // controls (see fitPadding). Vue Flow's own fit knows only the nodes'
-  // boxes, so the view is set from the diagram's bounds; before the pane
-  // has a size, or with no nodes, Vue Flow's fit stands in. The least zoom
-  // is the canvas's, or less when that is what the room takes.
+  // boxes, so the view is set from the diagram's bounds. Before the pane
+  // has a size, or with no nodes, Vue Flow's fit is used instead. The least
+  // zoom is the canvas's, or less when that is what the room takes.
   function fitDiagram(options = {}) {
     const bounds = diagramBounds();
     const fit = fitRoom(bounds, overlayBoxes(CORNER_OVERLAYS));
@@ -1848,7 +1848,7 @@
     nodeTip.follow();
   });
 
-  // A press from the keyboard leaves the tooltip up, so it takes the
+  // A press from the keyboard keeps the tooltip open, so it takes the
   // button's new name, while it is still that button's.
   watch(fitName, () => {
     const target = shownTip?.target;

@@ -1,7 +1,7 @@
 <!--
-  An Inspector field's error, warnings and hidden description, which its
-  input, or a list's group, is described by (see InspectorField.vue). An
-  error is in the danger color with a cross; a warning in the warning color
+  An Inspector field's error, warnings and hidden description. They
+  describe its input, or a list's group (see InspectorField.vue). An error
+  is in the danger color with a cross. A warning is in the warning color
   with a triangle and "Warning:".
 -->
 <template>

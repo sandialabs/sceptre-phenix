@@ -804,7 +804,8 @@
     },
 
     watch: {
-      // A name changed since is not known to be taken.
+      // After the user changes the name, the form does not know if it is
+      // taken.
       'user.username'() {
         this.userExists = false;
       },

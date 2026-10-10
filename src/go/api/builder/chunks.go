@@ -15,16 +15,16 @@ import (
 	"phenix/types/builder"
 )
 
-// Chunk scopes group the chunks of one payload so they can be removed with a
-// single bounded prefix deletion, and so no two writers ever share a chunk key.
+// Chunk scopes group the chunks of one payload. One bounded prefix deletion
+// removes a scope, and no two writers ever share a chunk key.
 //
 // Draft snapshots use "drafts/<draft-id>/<snapshot-id>/", which is unique per
-// snapshot: two concurrent appends of identical content never write the same
-// key, so the loser of a compare-and-swap can always delete its own chunks
-// without touching the winner's. Published documents work the same way: their
-// ID stays content addressed, but every attempt to store one writes its own
-// "published/<document-id>/<payload-id>/" scope, so no two writers ever share
-// a chunk key and a loser can never delete content a winner is using.
+// snapshot. Two concurrent appends of identical content never write the same
+// key. Thus the loser of a compare-and-swap can always delete its own chunks
+// and not touch the chunks of the winner. Published documents work the same
+// way. Their ID stays content addressed, but every attempt to store one writes
+// its own "published/<document-id>/<payload-id>/" scope. Thus a loser can never
+// delete content a winner uses.
 const (
 	scopeDrafts    = "drafts"
 	scopePublished = "published"
@@ -67,9 +67,9 @@ func publishedScope(documentID string) string {
 }
 
 // publishedPayloadScope returns the private chunk scope one attempt at storing
-// a published document wrote. The payload ID is generated per attempt and
-// recorded in the document's metadata, so the chunks a winner references are
-// never written or removed by anybody else.
+// a published document wrote. Each attempt generates its own payload ID and
+// records it in the document's metadata. Thus no other writer writes or
+// removes the chunks a winner references.
 func publishedPayloadScope(documentID, payloadID string) string {
 	return publishedScope(documentID) + payloadID + "/"
 }
@@ -155,13 +155,13 @@ func splitChunks(data []byte, chunkSize int) [][]byte {
 }
 
 // writeChunks creates every chunk of the payload that is not already stored. It
-// returns the keys it actually created so a failed compare-and-swap can remove
-// exactly the chunks the attempt added, leaving pre-existing (shared) chunks in
-// place.
+// returns the keys it created. Thus a failed compare-and-swap can remove
+// exactly the chunks the attempt added and keep pre-existing (shared) chunks.
 //
-// A partial failure never leaks: the chunks this attempt created are removed
-// before returning, and any failure to remove them is joined onto the returned
-// error so it matches both the original failure and [ErrCleanup].
+// A partial failure never leaks. writeChunks removes the chunks this attempt
+// created before it returns. It joins any failure to remove them to the
+// returned error, so the error matches both the original failure and
+// [ErrCleanup].
 func (s *Service) writeChunks(scope string, load *payload) ([]string, error) {
 	created := make([]string, 0, len(load.chunks))
 
@@ -210,11 +210,11 @@ func (s *Service) deleteChunkScope(scope string) error {
 	return nil
 }
 
-// readPayload reassembles, bounds checks, and verifies the document bytes
-// described by a manifest. Chunks are read strictly in manifest order and each
-// one must match its recorded digest, so a missing, reordered, truncated, or
-// modified chunk is always reported as corruption rather than silently
-// producing a different document.
+// readPayload reassembles, bounds checks, and verifies the document bytes a
+// manifest describes. It reads chunks strictly in manifest order, and each one
+// must match its recorded digest. Thus it always reports a missing, reordered,
+// truncated, or modified chunk as corruption, and never silently produces a
+// different document.
 func (s *Service) readPayload(kind, id, scope string, manifest SnapshotManifest) ([]byte, error) {
 	if err := validateManifestShape(kind, id, manifest); err != nil {
 		return nil, err
@@ -264,9 +264,9 @@ func (s *Service) readPayload(kind, id, scope string, manifest SnapshotManifest)
 	return data, nil
 }
 
-// decompress inflates a payload with a hard output bound. Reading one byte past
-// the expected size is treated as corruption, which prevents a maliciously or
-// accidentally crafted payload from expanding without limit.
+// decompress inflates a payload with a hard output bound. One byte past the
+// expected size is corruption. This stops a malicious or accidentally crafted
+// payload from expanding without limit.
 func decompress(kind, id string, compressed []byte, size int64) ([]byte, error) {
 	if size > MaxDocumentBytes {
 		return nil, newCorruptError(kind, id, fmt.Sprintf("declared size %d exceeds the document limit", size))

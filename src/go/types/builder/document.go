@@ -6,14 +6,14 @@ import (
 )
 
 const (
-	// SchemaURI identifies the builder document schema. Documents that do not
-	// carry this exact value are rejected by [Decode].
+	// SchemaURI identifies the builder document schema. [Decode] rejects
+	// documents that do not have this exact value.
 	SchemaURI = "https://phenix.sandia.gov/schemas/builder/v1"
 
-	// SchemaRevision is the revision of [SchemaURI] understood by this package.
-	// The revision is bumped for backwards compatible additions; the schema URI
-	// is bumped for breaking changes. Revision 1 is changed in place until it
-	// is first released.
+	// SchemaRevision is the revision of [SchemaURI] that this package
+	// understands. A backward-compatible addition increments the revision. A
+	// breaking change increments the schema URI. Revision 1 changes in place
+	// until its first release.
 	SchemaRevision = 1
 )
 
@@ -25,8 +25,8 @@ const (
 
 	// TimeLayout is the one form a time in the document metadata takes (see
 	// [Metadata.CreatedAt] and [Metadata.UpdatedAt]): RFC 3339 in UTC, whole
-	// seconds, with a literal "Z". The editor checks the same form, so a
-	// document is accepted or refused the same way on both sides.
+	// seconds, with a literal "Z". The editor checks the same form, so both
+	// sides accept or refuse a document in the same way.
 	TimeLayout = "2006-01-02T15:04:05Z"
 
 	// MaxDiagramNotes is the most notes a document's metadata may carry (see
@@ -60,9 +60,9 @@ const (
 	// NodeKindDevice is a phenix node (VM, container, external device, ...). It
 	// is the only node kind that maps to a topology node.
 	NodeKindDevice NodeKind = "device"
-	// NodeKindSwitch is a visual hub representing a network (VLAN). Switches are
-	// never written to a topology spec; they exist so device interfaces attached
-	// to the same network share a single visual attachment point.
+	// NodeKindSwitch is a visual hub that represents a network (VLAN). A
+	// topology spec never holds switches. They exist so that device
+	// interfaces on the same network share one visual attachment point.
 	NodeKindSwitch NodeKind = "switch"
 	// NodeKindNote is free-floating annotation text with no phenix semantics.
 	NodeKindNote NodeKind = "note"
@@ -92,8 +92,8 @@ const (
 	SourceKindExperiment SourceKind = "experiment"
 )
 
-// Document is the root of the builder model. It is versioned by [Document.Schema]
-// and [Document.Revision] and is safe to persist verbatim.
+// Document is the root of the builder model. [Document.Schema] and
+// [Document.Revision] give its version. It is safe to persist verbatim.
 type Document struct {
 	Schema   string `json:"$schema"`
 	Revision int    `json:"revision"`
@@ -113,14 +113,14 @@ type Document struct {
 	// topology uses one of them.
 	Scenarios []string `json:"scenarios,omitempty"`
 	Source    *Source  `json:"source,omitempty"`
-	// Layout is the id of the automatic layout that last laid this document
-	// out, which the editor names in its layout menu. Empty, or an id the
-	// editor does not know, means the positions were not made by a layout. It
+	// Layout is the id of the automatic layout that last arranged this
+	// document. The editor names it in its layout menu. Empty, or an id that
+	// the editor does not know, means that no layout made the positions. It
 	// is presentation only and never written to a config.
 	Layout string `json:"layout,omitempty"`
-	// IconSize is the size the editor draws the icons of devices, switches
-	// and groups at, one of [IconSizes]; a node's own [Device.IconSize],
-	// [Switch.IconSize] or [Group.IconSize] wins over it. Empty is
+	// IconSize is the size at which the editor draws the icons of devices,
+	// switches and groups, one of [IconSizes]. The [Device.IconSize],
+	// [Switch.IconSize] or [Group.IconSize] of a node overrides it. Empty is
 	// [IconSizeSmall]. It is presentation only and never written to a
 	// config.
 	IconSize string `json:"iconSize,omitempty"`
@@ -128,18 +128,18 @@ type Document struct {
 	// editor offers beside its own. They are presentation only and never
 	// written to a config.
 	Templates []Template `json:"templates,omitempty"`
-	// Icons holds copies of custom icons the document's nodes and templates
-	// name, by icon name (see [IconNameProblem]). On a phenix server a name
-	// resolves through the server's icon library and a draft carries none;
-	// a downloaded document carries every icon it uses, so it stands on its
-	// own. A copy wins over the library's icon of its name. Presentation
-	// only, never written to a config.
+	// Icons holds copies of the custom icons that the nodes and templates of
+	// the document name, by icon name (see [IconNameProblem]). On a phenix
+	// server, the icon library of the server resolves a name, and a draft
+	// holds no icons. A downloaded document holds every icon it uses, so it
+	// stands on its own. A copy overrides the library icon of the same name.
+	// Presentation only, never written to a config.
 	Icons map[string]Icon `json:"icons,omitempty"`
 }
 
-// Metadata is the part of a [Document] that describes the document itself
-// rather than the diagram on its canvas. It is document content and part of
-// the document's digest; none of it is written to a config.
+// Metadata is the part of a [Document] that describes the document itself,
+// not the diagram on its canvas. It is document content and part of the
+// digest of the document. No part of it goes into a config.
 type Metadata struct {
 	// ID is the document's identifier, a UUID (see [DocumentID]).
 	ID          string `json:"id"`
@@ -159,21 +159,21 @@ type Metadata struct {
 	UpdatedAt string `json:"updatedAt,omitempty"`
 	// Notes are free text about the diagram as a whole, in the order the
 	// editor lists them: at most [MaxDiagramNotes], each not blank, at most
-	// [MaxDiagramNoteBytes] and free of control characters but newline and
-	// tab.
+	// [MaxDiagramNoteBytes] and free of control characters other than
+	// newline and tab.
 	Notes []string `json:"notes,omitempty"`
 }
 
 // Node is a single item on the canvas. Exactly one of the kind-specific payload
-// fields must be populated, matching Kind.
+// fields must be set: the one that matches Kind.
 type Node struct {
 	ID       string   `json:"id"`
 	Kind     NodeKind `json:"kind"`
 	Label    string   `json:"label,omitempty"`
 	Position Position `json:"position"`
 	Size     *Size    `json:"size,omitempty"`
-	// ParentID optionally parents this node to a group node. Any node may be
-	// free (no parent) or inside a group, groups included.
+	// ParentID is the optional group node that contains this node. Any node,
+	// a group too, can be free (no parent) or in a group.
 	ParentID string    `json:"parentId,omitempty"`
 	Device   *Device   `json:"device,omitempty"`
 	Switch   *Switch   `json:"switch,omitempty"`
@@ -193,10 +193,11 @@ type Device struct {
 	// icon key registry (see [IsIconKey]). It is never written to a topology
 	// spec.
 	IconKey string `json:"iconKey,omitempty"`
-	// Icon is the name of a custom icon, drawn in place of IconKey: a copy
-	// in [Document.Icons], else the server's icon library's icon of that
-	// name; with neither, IconKey is drawn. Like the colors below, it is
-	// presentation only and never written to a topology spec.
+	// Icon is the name of a custom icon, drawn in place of IconKey. The
+	// editor draws the copy in [Document.Icons], else the icon of that name
+	// in the icon library of the server. With neither, it draws IconKey. Like
+	// the colors below, it is presentation only and never written to a
+	// topology spec.
 	Icon string `json:"icon,omitempty"`
 	// IconSize is the size the device's icon is drawn at, one of
 	// [IconSizes]. Empty uses the document's [Document.IconSize].
@@ -210,16 +211,17 @@ type Device struct {
 	// reads it. It stays in the document and is never written to a config.
 	PurdueLevel string `json:"purdueLevel,omitempty"`
 	// Spec is the complete phenix node spec, using the stored (snake_case)
-	// representation. Unknown keys are preserved verbatim so documents survive
-	// schema growth without data loss.
+	// representation. The document keeps unknown keys verbatim, so it loses
+	// no data when the schema grows.
 	Spec map[string]any `json:"spec"`
 	// Interfaces maps stable canvas handles onto interfaces of Spec.
 	Interfaces []InterfaceHandle `json:"interfaces"`
 	// IncludedFrom names the topology that defines the device when it came
 	// from the source topology's includeTopologies (directly or through a
-	// nested include). Such a device is shown for context only: it is never
-	// written to a published topology, whose includeTopologies brings it back,
-	// and the editor does not change it. Empty for the document's own devices.
+	// nested include). The editor shows such a device for context only and
+	// does not change it. A publish never writes it to the topology, because
+	// the includeTopologies of the topology brings it back. Empty for the
+	// devices of the document itself.
 	IncludedFrom string `json:"includedFrom,omitempty"`
 }
 
@@ -249,10 +251,11 @@ type Switch struct {
 	// PurdueLevel is the level of the Purdue model the switch's network is
 	// at, as [Device.PurdueLevel] is a device's.
 	PurdueLevel string `json:"purdueLevel,omitempty"`
-	// Notes are free text about the switch, which the editor shows below it,
-	// held to the rules of [Metadata.Notes]. A switch is no topology node, so
-	// they stay in the document and are never written to a config; a
-	// device's notes are its spec's general.notes, which are.
+	// Notes are free text about the switch, which the editor shows below it.
+	// The rules of [Metadata.Notes] apply. A switch is not a topology node, so
+	// its notes stay in the document and are never written to a config. The
+	// notes of a device are the general.notes of its spec, which a publish
+	// writes.
 	Notes []string `json:"notes,omitempty"`
 }
 
@@ -270,9 +273,9 @@ type Group struct {
 	// BorderStyle is the pattern of the group's border, one of
 	// [BorderStyles]. Empty leaves the editor's own.
 	BorderStyle string `json:"borderStyle,omitempty"`
-	// IconKey is drawn beside the title, from the icon key registry (see
-	// [IsIconKey]), and Icon, the name of a custom icon (see [Device.Icon]),
-	// in its place.
+	// IconKey is the icon that the editor draws next to the title, from the
+	// icon key registry (see [IsIconKey]). The editor draws Icon, the name of
+	// a custom icon (see [Device.Icon]), in place of IconKey.
 	IconKey string `json:"iconKey,omitempty"`
 	Icon    string `json:"icon,omitempty"`
 	// IconSize is the size the group's icon is drawn at, one of
@@ -315,8 +318,8 @@ type IconNode struct {
 type Line struct {
 	// Points are the line's ends and bends in order, from [MinLinePoints] to
 	// [MaxLinePoints] of them, relative to the node's position. The editor
-	// keeps the node's position at the top left corner of the points' box,
-	// and its size that box.
+	// keeps the node position at the top left corner of the box of the
+	// points, and the node size equal to that box.
 	Points []Position `json:"points"`
 	Label  string     `json:"label,omitempty"`
 	// Color is the line's color, as "#rrggbb". Empty leaves the editor's own.
@@ -364,7 +367,7 @@ type Edge struct {
 	LineStyle string `json:"lineStyle,omitempty"`
 	// Route is the path an automatic layout drew for the edge, in absolute
 	// canvas coordinates from the source handle to the target handle. The
-	// editor drops it once either end moves. Presentation only.
+	// editor removes it when either end moves. Presentation only.
 	Route []Position `json:"route,omitempty"`
 }
 
@@ -394,8 +397,8 @@ type Grid struct {
 	Snap    bool    `json:"snap"`
 }
 
-// Source records document provenance and any warnings raised while generating
-// it.
+// Source records the provenance of the document and the warnings from its
+// generation.
 type Source struct {
 	Kind       SourceKind `json:"kind"`
 	Name       string     `json:"name,omitempty"`
@@ -406,19 +409,19 @@ type Source struct {
 	ImportedAt string `json:"importedAt,omitempty"`
 	// Digest is the "sha256:<hex>" digest of the source config identity and
 	// spec, and of the legacy Builder diagram of a topology that has one, as
-	// returned by [ImportDigest]. Publishing compares it against the current
-	// stored config to detect a stale working copy.
+	// returned by [ImportDigest]. A publish compares it with the current
+	// stored config to find a stale working copy.
 	Digest string `json:"digest,omitempty"`
 	// UpdatedAt is the metadata.updated timestamp of the source config at
-	// import time. It is informational; [Source.Digest] is authoritative.
+	// import time. It is informational. [Source.Digest] is authoritative.
 	UpdatedAt string `json:"updatedAt,omitempty"`
 	// IncludeTopologies preserves the source topology's includeTopologies, so
 	// publishing writes the references back instead of flattening the included
 	// devices (see [Device.IncludedFrom]) into the topology.
 	IncludeTopologies []string `json:"includeTopologies,omitempty"`
 	// UnresolvedIncludes lists the included topologies, at any depth, whose
-	// nodes are not in the document: they could not be read when it was
-	// generated. Combining keeps exactly these in IncludeTopologies.
+	// nodes are not in the document, because generation could not read
+	// them. Combining keeps exactly these in IncludeTopologies.
 	UnresolvedIncludes []string `json:"unresolvedIncludes,omitempty"`
 	// Annotations are the source config's metadata.annotations at import time,
 	// such as an experiment's topology and scenario, without the Builders' own

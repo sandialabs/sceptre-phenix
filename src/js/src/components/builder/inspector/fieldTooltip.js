@@ -2,7 +2,7 @@
 // schema's description of the field, shown while the pointer is over the
 // label or the field has keyboard focus. It is the Builder's fixed tooltip
 // (see fixedTooltip.js), beside the Inspector over the canvas, so it covers
-// no field; it stays while the pointer moves onto it, and Escape dismisses it.
+// no field. It stays while the pointer moves onto it, and Escape dismisses it.
 //
 // Screen readers get the description once, as the field's accessible
 // description (aria-describedby, to a hidden element), so the tooltip itself
@@ -22,7 +22,7 @@ let hideShown = null;
 
 /**
  * @param {import('vue').MaybeRef<string>|(() => string)} text the tooltip's
- *   text; none shows no tooltip
+ *   text. None shows no tooltip
  */
 export function useFieldTooltip(text) {
   const { tip, setTipEl, showTip, scheduleHide, hideTip } = useFixedTooltip({

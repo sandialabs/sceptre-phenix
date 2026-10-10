@@ -1,15 +1,16 @@
 // Matching for the command palette: how well a query matches a title, and
-// which letters matched, so the palette can rank results and highlight them.
+// which letters matched. The palette uses this to rank and highlight results.
 //
-// Each word of the query must appear in the text, ignoring case. A word at
-// the start of the text ranks first, then one at the start of a word, then
-// one anywhere. When a word is missing, the query's letters must appear in
-// order ("grp" finds "Group selection"), ranked by how close together they
-// are. A word may also start one of the item's aliases, words that stand for
-// its name ("export" for Download): it then counts as a word of the title.
-// Keywords and a node's fields (its addresses, image and so on) match only
-// by words, and rank below any match on the title; as a last resort the
-// words may be spread over the title, the aliases and the keywords.
+// Each word of the query must occur in the text, case-insensitive. A word at
+// the start of the text ranks first, then a word at the start of a word, then
+// a word anywhere. When a word is missing, the letters of the query must
+// occur in order ("grp" finds "Group selection"), ranked by how close
+// together they are. A word can also start one of the item's aliases, which
+// are words that stand for its name ("export" for Download). It then counts
+// as a word of the title. Keywords and a node's fields (its addresses, image
+// and others) match only by words, and rank below any match on the title. As
+// a last resort, the words can be spread over the title, the aliases and the
+// keywords.
 
 // What starts a word, besides the start of the text.
 const BOUNDARY = /[\s\-_.:/,›·()@#]/;
@@ -45,8 +46,8 @@ function wordsOf(query) {
     .filter(Boolean);
 }
 
-// What a word that starts an alias is worth: a word found at the start of a
-// word, as far into the text as the penalty for that goes.
+// The value of a word that starts an alias: the same as a word found at the
+// start of a word, as far into the text as that penalty goes.
 const ALIAS_GRADE = 200;
 const ALIAS_SCORE = 150;
 
@@ -122,10 +123,10 @@ function byLetters(text, letters) {
 }
 
 /**
- * How well `query` matches an item: its title first (with its aliases),
- * then its fields (for a node: hostname, image, addresses...), then its
- * title, aliases and keywords taken together. An empty query matches
- * everything with score 0; ranges are [start, end) of the matched text.
+ * How well `query` matches an item: first its title (with its aliases), then
+ * its fields (for a node: hostname, image, addresses...), then its title,
+ * aliases and keywords together. An empty query matches everything with score
+ * 0. Ranges are [start, end) of the matched text.
  *
  * @param {object} item
  * @param {string} item.title
@@ -136,10 +137,11 @@ function byLetters(text, letters) {
  * @param {string[]} [item.keywords] more words, matched without saying so
  * @param {string} query
  * @returns {{score: number, ranges: number[][], grade?: number,
- *   field?: object}|null} with `field` ({label, value, ranges}) when a field
- *   matched rather than the title, and `grade` when the title matched by
- *   words: the score without its penalty for words further in, the same for
- *   titles that differ only in where their words are
+ *   field?: object}|null} `field` ({label, value, ranges}) is set when a
+ *   field matched and the title did not. `grade` is set when the title
+ *   matched by words. It is the score without the penalty for words further
+ *   in, so it is equal for titles that differ only in the position of their
+ *   words.
  */
 export function matchItem(item, query) {
   const words = wordsOf(query);

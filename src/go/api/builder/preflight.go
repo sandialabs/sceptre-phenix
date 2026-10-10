@@ -18,8 +18,9 @@ import (
 	"phenix/types/builder"
 )
 
-// PreflightCheck names one of the preflight checks a draft's document can be
-// put through before an experiment is started from it (see [RunPreflight]).
+// PreflightCheck names one of the preflight checks that can run on the
+// document of a draft before an experiment starts from it (see
+// [RunPreflight]).
 type PreflightCheck string
 
 // The preflight checks, in the order the editor lists them.
@@ -28,16 +29,19 @@ const (
 	// take with what the schedulable cluster hosts have free, and checks that
 	// each device fits on at least one host.
 	PreflightCapacity PreflightCheck = "capacity"
-	// PreflightNetwork compares the VLANs the document's devices use with an
-	// experiment's VLAN range, its networks' VLAN aliases with the VLANs
-	// running experiments use, and the bridges its interfaces use with those
-	// the cluster hosts have.
+	// PreflightNetwork compares:
+	//   - the VLANs the devices of the document use, with the VLAN range of an
+	//     experiment
+	//   - the VLAN aliases of its networks, with the VLANs running experiments
+	//     use
+	//   - the bridges its interfaces use, with the bridges the cluster hosts
+	//     have
 	PreflightNetwork PreflightCheck = "network"
-	// PreflightDisks looks up each drive image among the server's disk
-	// images, and checks it is of the kind its device needs.
+	// PreflightDisks finds each drive image among the disk images of the
+	// server, and checks that it is of the kind its device needs.
 	PreflightDisks PreflightCheck = "disks"
-	// PreflightApps looks up each app the document's scenarios name among the
-	// apps the server has.
+	// PreflightApps finds each app that the scenarios of the document name
+	// among the apps the server has.
 	PreflightApps PreflightCheck = "apps"
 )
 
@@ -60,8 +64,9 @@ const (
 )
 
 const (
-	// PreflightTimeout bounds one preflight check: a check that takes longer
-	// is reported unavailable, and the others are reported as they finish.
+	// PreflightTimeout bounds one preflight check. A check that takes longer
+	// is reported unavailable, and the other checks are reported as they
+	// finish.
 	PreflightTimeout = 20 * time.Second
 
 	// preflightDefaultVCPUs and preflightDefaultMemory are what a node spec
@@ -70,13 +75,14 @@ const (
 	preflightDefaultVCPUs  = 1
 	preflightDefaultMemory = 512
 
-	// preflightDefaultBridge is the bridge an experiment's interfaces are
-	// on unless it names another default bridge; an interface naming it, or
-	// none, is on the experiment's default bridge.
+	// preflightDefaultBridge is the bridge of the interfaces of an experiment,
+	// unless the experiment names another default bridge. An interface that
+	// names this bridge, or no bridge, is on the default bridge of the
+	// experiment.
 	preflightDefaultBridge = "phenix"
 
-	// preflightContainerType is the general.vm_type of a device phenix starts
-	// as a container; any other is a kvm VM.
+	// preflightContainerType is the general.vm_type of a device that phenix
+	// starts as a container. Any other device is a kvm VM.
 	preflightContainerType = "container"
 
 	// preflightListed is how many names a message lists before it says how
@@ -87,10 +93,10 @@ const (
 // ErrPreflightUnavailable is what a [PreflightUnavailableError] unwraps to.
 var ErrPreflightUnavailable = errors.New("builder: preflight source unavailable")
 
-// PreflightUnavailableError is what a [PreflightEnvironment] returns for what
-// it may not or cannot read: the caller's role does not allow it, or the
-// service holding it cannot be reached. Reason says which, in words shown to
-// the caller. It unwraps to [ErrPreflightUnavailable].
+// PreflightUnavailableError is what a [PreflightEnvironment] returns for data
+// it may not or cannot read. Either the role of the caller does not allow it,
+// or the service that holds it cannot be reached. Reason says which, in words
+// shown to the caller. It unwraps to [ErrPreflightUnavailable].
 type PreflightUnavailableError struct {
 	Reason string
 }
@@ -102,16 +108,16 @@ func (e *PreflightUnavailableError) Error() string {
 // Unwrap allows [errors.Is](err, ErrPreflightUnavailable) to succeed.
 func (e *PreflightUnavailableError) Unwrap() error { return ErrPreflightUnavailable }
 
-// NewPreflightUnavailable returns the error a [PreflightEnvironment] returns
-// for what it may not or cannot read, for the reason given: a lowercase
-// phrase such as "your role may not list the cluster hosts".
+// NewPreflightUnavailable returns the error that a [PreflightEnvironment]
+// returns for data it may not or cannot read. reason is a lowercase phrase
+// such as "your role may not list the cluster hosts".
 func NewPreflightUnavailable(reason string) error {
 	return &PreflightUnavailableError{Reason: reason}
 }
 
-// PreflightHost is a cluster host VMs can be scheduled on, as minimega
-// reports it: its CPUs, and its memory in MB, with what the VMs already on it
-// take of each.
+// PreflightHost is a cluster host that VMs can be scheduled on, as minimega
+// reports it: its CPUs and its memory in MB, and how much of each the VMs on
+// it already take.
 type PreflightHost struct {
 	Name      string
 	CPUs      int
@@ -129,8 +135,8 @@ type PreflightImage struct {
 }
 
 // PreflightExperiment is what the network check reads of the experiment a
-// request names: its VLAN range, which phenix applies only when both ends are
-// set, and its default bridge ("" for phenix's).
+// request names: its VLAN range, and its default bridge ("" for the phenix
+// default). phenix applies the VLAN range only when both ends are set.
 type PreflightExperiment struct {
 	VLANMin       int
 	VLANMax       int
@@ -146,19 +152,19 @@ type PreflightVLAN struct {
 }
 
 // PreflightVLANs is what the network check reads of the running experiments:
-// the VLANs those the caller may see hold, and whether a running experiment
-// the caller may not see was left out. Nothing names such an experiment or
-// the VLANs it holds, which the check then does not compare.
+// the VLANs held by the experiments the caller may see, and whether it left
+// out a running experiment the caller may not see. Nothing names such an
+// experiment or its VLANs, and the check does not compare them.
 type PreflightVLANs struct {
 	InUse  []PreflightVLAN
 	Hidden bool
 }
 
 // PreflightEnvironment is what the preflight checks read, as the caller may
-// read it: each method returns a [PreflightUnavailableError] for what the
-// caller's role does not allow, and any other error for what cannot be read.
-// Its methods may be called at once from several goroutines, and must never
-// write anything.
+// read it. Each method returns a [PreflightUnavailableError] for data the role
+// of the caller does not allow, and any other error for data that cannot be
+// read. Several goroutines may call its methods at once. The methods must
+// never write anything.
 type PreflightEnvironment interface {
 	// ClusterHosts returns the hosts VMs can be scheduled on.
 	ClusterHosts(ctx context.Context) ([]PreflightHost, error)
@@ -174,21 +180,22 @@ type PreflightEnvironment interface {
 	// Experiment returns the VLAN range and default bridge of the named
 	// experiment.
 	Experiment(ctx context.Context, name string) (PreflightExperiment, error)
-	// VLANsInUse returns the VLANs the running experiments the caller may
-	// see hold, but the one named except, and whether a running experiment
-	// the caller may not see was left out.
+	// VLANsInUse returns the VLANs held by the running experiments the caller
+	// may see, except the experiment named except. It also reports whether it
+	// left out a running experiment the caller may not see.
 	VLANsInUse(ctx context.Context, except string) (PreflightVLANs, error)
 	// Bridges returns the bridges each schedulable host has, by host name.
 	Bridges(ctx context.Context) (map[string][]string, error)
 }
 
-// PreflightResult is what one check found: its status, a summary of one
-// line, and its issues, each located at the element of the document it is
-// about when it is about one. A check failed when an issue is an error; it is
-// unavailable when it, or a part of it, could not be made and nothing failed,
-// and then a warning of code preflight.unavailable (or, for a scenario, of
-// preflight.app.scenario-unreadable) says why; otherwise it passed, with
-// warnings, if any, among its issues.
+// PreflightResult is what one check found: its status, a one-line summary, and
+// its issues. Each issue is located at the element of the document it is
+// about, when it is about one. The status is:
+//   - failed, when an issue is an error
+//   - unavailable, when the check, or a part of it, could not be made and
+//     nothing failed. Then a warning of code preflight.unavailable (or, for a
+//     scenario, preflight.app.scenario-unreadable) says why.
+//   - passed, in all other cases, with any warnings among its issues
 type PreflightResult struct {
 	Name    PreflightCheck  `json:"name"`
 	Status  PreflightStatus `json:"status"`
@@ -196,9 +203,9 @@ type PreflightResult struct {
 	Issues  []builder.Issue `json:"issues"`
 }
 
-// PreflightReport is the result of each check a request names, in its order,
-// and the names of those that passed, failed and were unavailable, in the
-// same order.
+// PreflightReport is the result of each check a request names, in request
+// order. It also gives the names of the checks that passed, failed and were
+// unavailable, in the same order.
 type PreflightReport struct {
 	Checks      []PreflightResult `json:"checks"`
 	Passed      []PreflightCheck  `json:"passed"`
@@ -207,15 +214,15 @@ type PreflightReport struct {
 }
 
 // PreflightRequest names the checks to make, in order, and the experiment
-// whose VLAN range and default bridge the network check goes by ("" for
-// none). Timeout bounds each check; zero is [PreflightTimeout].
+// whose VLAN range and default bridge the network check uses ("" for none).
+// Timeout bounds each check. Zero means [PreflightTimeout].
 type PreflightRequest struct {
 	Checks     []PreflightCheck
 	Experiment string
 	Timeout    time.Duration
-	// checkTimeouts bounds each check it names instead of Timeout, so one
-	// check can time out at once while the others have all the time they
-	// need, and a test of the timeout does not depend on how fast the other
+	// checkTimeouts bounds each check it names, instead of Timeout. Thus one
+	// check can time out at once while the other checks have all the time they
+	// need. A test of the timeout then does not depend on how fast the other
 	// checks run.
 	checkTimeouts map[PreflightCheck]time.Duration
 }
@@ -226,20 +233,20 @@ func PreflightChecks() []PreflightCheck {
 	return []PreflightCheck{PreflightCapacity, PreflightNetwork, PreflightDisks, PreflightApps}
 }
 
-// ParsePreflightCheck returns the check name names, and whether there is
-// one.
+// ParsePreflightCheck returns the check that name names, and whether such a
+// check exists.
 func ParsePreflightCheck(name string) (PreflightCheck, bool) {
 	check := PreflightCheck(name)
 
 	return check, slices.Contains(PreflightChecks(), check)
 }
 
-// RunPreflight makes the checks request names on doc, reading what they need
-// through env, all at once and each for at most request.Timeout, and reports
-// them in the order asked. The checks only read: nothing is written, and no
-// VM or experiment is started. A check whose source cannot be read, or that
-// does not finish in time, is unavailable, and never keeps the others from
-// being made.
+// RunPreflight makes the checks that request names on doc, and reads what they
+// need through env. It runs all the checks at once, each for at most
+// request.Timeout, and reports them in the requested order. The checks only
+// read. They write nothing and start no VM or experiment. A check whose source
+// cannot be read, or that does not finish in time, is unavailable. It never
+// stops the other checks.
 func RunPreflight(
 	ctx context.Context,
 	doc *builder.Document,
@@ -293,9 +300,9 @@ func RunPreflight(
 	return report
 }
 
-// runPreflightCheck makes one check, and reports it unavailable once it has
-// taken longer than timeout. A check left behind finishes on its own; its
-// result is dropped.
+// runPreflightCheck makes one check, and reports it unavailable when it takes
+// longer than timeout. A check that continues after that finishes on its own,
+// and its result is dropped.
 func runPreflightCheck(
 	ctx context.Context,
 	doc *builder.Document,
@@ -343,8 +350,9 @@ func preflightCheck(
 	return unavailableResult(check, "there is no such check")
 }
 
-// preflightResult is the result of a check that found issues: failed when
-// one is an error, else unavailable when incomplete, else passed.
+// preflightResult is the result of a check that found issues. It is failed
+// when an issue is an error, else unavailable when the check is incomplete,
+// else passed.
 func preflightResult(check PreflightCheck, summary string, issues []builder.Issue, incomplete bool) PreflightResult {
 	status := PreflightPassed
 
@@ -374,9 +382,9 @@ func unavailableIssue(reason string) builder.Issue {
 	return builder.NewIssue(builder.CodePreflightUnavailable, "", reason)
 }
 
-// unavailableReason is why a source of a check could not be read: the reason
-// a [PreflightUnavailableError] gives, else that what it holds cannot be
-// read, and why.
+// unavailableReason says why a source of a check could not be read. It returns
+// the reason of a [PreflightUnavailableError]. For any other error, it says
+// that what cannot be read, and why.
 func unavailableReason(what string, err error) string {
 	var unavailable *PreflightUnavailableError
 	if errors.As(err, &unavailable) {
@@ -386,9 +394,9 @@ func unavailableReason(what string, err error) string {
 	return fmt.Sprintf("%s cannot be read: %v", what, err)
 }
 
-// preflightDevice is a device of the document that phenix starts, as a VM or
-// a container: every device but an external one, those included from another
-// topology too, as an experiment merges them in.
+// preflightDevice is a device of the document that phenix starts, as a VM or a
+// container. This is every device except an external one. It includes the
+// devices from another topology, because an experiment merges them in.
 type preflightDevice struct {
 	index    int
 	node     *builder.Node
@@ -419,9 +427,9 @@ func preflightDevices(doc *builder.Document) []preflightDevice {
 	return devices
 }
 
-// issue is the issue of code about the field of the device's spec at path
-// (below the device's payload, with bracketed indexes) and field (the same
-// path as the Inspector names it), saying message.
+// issue returns the issue of code about a field of the device spec. path is
+// the field below the device payload, with bracketed indexes. field is the
+// same path as the Inspector names it. message is the text of the issue.
 func (d preflightDevice) issue(code builder.Code, path, field, message string) builder.Issue {
 	issue := builder.NewIssue(code, fmt.Sprintf("nodes[%d].device.%s", d.index, path), message)
 	issue.NodeID = d.node.ID
@@ -453,9 +461,9 @@ func specString(value any) string {
 }
 
 // specWhole reads a positive whole number of a node spec: a number, or text
-// holding one, which phenix's schema allows for vcpus and memory. It reports
-// none for zero, which phenix replaces with its default, and for anything
-// else.
+// that holds one. The phenix schema allows both for vcpus and memory. It
+// reports none for zero, which phenix replaces with its default, and for any
+// other value.
 func specWhole(value any) (int, bool) {
 	switch number := value.(type) {
 	case float64:
@@ -485,12 +493,12 @@ func positiveWhole(text string) (int, bool) {
 	return number, true
 }
 
-// capacityCheck compares what the document's devices take with what the
-// schedulable hosts have: the CPUs and memory they have free together, and
-// the CPUs and memory of each host, since a device runs on one host and so
-// must fit on at least one. Sharing CPUs is how VMs usually run, so having
-// too few free is a warning; too little memory, or a device no host can
-// hold, is an error.
+// capacityCheck compares what the devices of the document take with what the
+// schedulable hosts have. It compares the free CPUs and memory of all hosts
+// together, and the CPUs and memory of each host. A device runs on one host,
+// so it must fit on at least one host. VMs usually share CPUs, so too few free
+// CPUs is a warning. Too little memory, or a device that no host can hold, is
+// an error.
 func capacityCheck(ctx context.Context, doc *builder.Document, env PreflightEnvironment) PreflightResult {
 	hosts, err := env.ClusterHosts(ctx)
 	if err != nil {
@@ -556,11 +564,12 @@ func capacityCheck(ctx context.Context, doc *builder.Document, env PreflightEnvi
 	return preflightResult(PreflightCapacity, summary, issues, false)
 }
 
-// deviceFit returns the issues of a device taking vcpus and memory (in MB)
-// that no single host can hold: one with both at least that many CPUs and at
-// least that much memory. A device taking more CPUs, or more memory, than
-// every host has gets an issue at that field; one whose CPUs and memory each
-// fit some host, but never the same one, gets one issue at its vcpus.
+// deviceFit returns the issues of a device that takes vcpus and memory (in MB)
+// when no single host can hold it. A host holds it when the host has at least
+// that many CPUs and at least that much memory. A device that takes more CPUs,
+// or more memory, than every host has gets an issue at that field. A device
+// whose CPUs and memory each fit some host, but never the same host, gets one
+// issue at its vcpus.
 func deviceFit(device preflightDevice, vcpus, memory int, hosts []PreflightHost) []builder.Issue {
 	var largestCPUs, largestMemory int
 
@@ -609,26 +618,27 @@ func deviceFit(device preflightDevice, vcpus, memory int, hosts []PreflightHost)
 	return issues
 }
 
-// preflightBridgeUse is the first interface of a device that names a bridge,
-// which an issue about the bridge is located at.
+// preflightBridgeUse is the first interface of a device that names a bridge.
+// An issue about the bridge is located at this interface.
 type preflightBridgeUse struct {
 	device   preflightDevice
 	position int
 }
 
-// preflightNetworks is what the document's devices need of the network: the
-// VLANs their interfaces are on, each name once and sorted, and the bridges
-// they name, each with its first use ("" for the experiment's default one,
-// which an interface names by naming none or phenix's).
+// preflightNetworks is what the devices of the document need of the network.
+// It holds the VLANs their interfaces are on, each name once and sorted. It
+// also holds the bridges they name, each with its first use. The key "" is the
+// default bridge of the experiment, which an interface names when it names no
+// bridge or "phenix".
 type preflightNetworks struct {
 	vlans   []string
 	bridges map[string]*preflightBridgeUse
 }
 
-// networkNeeds reads what the document's devices need of the network. An
+// networkNeeds reads what the devices of the document need of the network. An
 // interface whose connection point is connected on the canvas is on the
-// network it is connected to, as publishing writes it; any other is on the
-// VLAN its spec names, if any.
+// network it is connected to, as publishing writes it. Any other interface is
+// on the VLAN its spec names, if any.
 func networkNeeds(doc *builder.Document) preflightNetworks {
 	var (
 		connected = connectedNetworks(doc)
@@ -668,9 +678,9 @@ func networkNeeds(doc *builder.Document) preflightNetworks {
 	return needs
 }
 
-// connectedNetworks returns the name of the network each connected
-// connection point of a device is connected to, by the device's node ID and
-// the connection point's ID, joined by a slash.
+// connectedNetworks returns the name of the network that each connected
+// connection point of a device is connected to. The key is the node ID of the
+// device and the ID of the connection point, joined by a slash.
 func connectedNetworks(doc *builder.Document) map[string]string {
 	devices := make(map[string]bool, len(doc.Nodes))
 
@@ -708,9 +718,9 @@ func connectedNetworks(doc *builder.Document) map[string]string {
 	return connected
 }
 
-// handleNetwork returns the network the device's connection point for the
-// spec interface named name is connected to, matching the name exactly, else
-// ignoring case, as publishing does.
+// handleNetwork returns the network that the connection point of the device
+// for the spec interface name is connected to. It matches the name exactly,
+// else ignoring case, as publishing does.
 func handleNetwork(device preflightDevice, name string, connected map[string]string) (string, bool) {
 	var (
 		fallback string
@@ -735,8 +745,8 @@ func handleNetwork(device preflightDevice, name string, connected map[string]str
 	return fallback, found
 }
 
-// networkCheck compares what the document's devices need of the network
-// with the experiment named (if any), the VLANs running experiments hold and
+// networkCheck compares what the devices of the document need of the network
+// with the named experiment (if any), the VLANs running experiments hold and
 // the bridges of the cluster hosts. A part that cannot be read leaves only
 // that part unchecked.
 func networkCheck(ctx context.Context, doc *builder.Document, experiment string, env PreflightEnvironment) PreflightResult {
@@ -800,10 +810,10 @@ func networkCheck(ctx context.Context, doc *builder.Document, experiment string,
 	return preflightResult(PreflightNetwork, summary, issues, len(unchecked) > 0)
 }
 
-// vlanRangeIssues compares the VLANs the document's devices use, and its
-// networks' VLAN aliases, with the experiment's VLAN range, which phenix
-// applies only when both of its ends are set. It returns the issues and the
-// part of the summary that says what was compared.
+// vlanRangeIssues compares the VLANs the devices of the document use, and the
+// VLAN aliases of its networks, with the VLAN range of the experiment. phenix
+// applies the range only when both of its ends are set. It returns the issues
+// and the part of the summary that says what was compared.
 func vlanRangeIssues(
 	doc *builder.Document,
 	vlans []string,
@@ -846,12 +856,12 @@ func vlanRangeIssues(
 	return issues, fmt.Sprintf("%s; experiment %s's VLAN range is %d to %d", used, experiment, low, high)
 }
 
-// aliasesInUse looks up each VLAN alias the document's networks fix among
-// the VLANs the running experiments the caller may see hold, but the
-// experiment named. It returns the issues, the part of the summary that
-// says what was compared, and why the aliases could not be compared, if
-// they could not. When a running experiment the caller may not see was left
-// out, the part says so, without naming it or its VLANs.
+// aliasesInUse finds each VLAN alias the networks of the document fix among
+// the VLANs held by the running experiments the caller may see, except the
+// named experiment. It returns the issues, the part of the summary that says
+// what was compared, and why the aliases could not be compared, if they could
+// not. When it left out a running experiment the caller may not see, the part
+// says so, without naming the experiment or its VLANs.
 func aliasesInUse(
 	ctx context.Context,
 	doc *builder.Document,
@@ -916,10 +926,10 @@ func aliasesInUse(
 	return issues, []string{part}, nil
 }
 
-// wantedBridges returns the bridges the document's devices are on, by name,
-// each with the interface an issue about it is located at (none for the
-// experiment's default bridge, which no interface names). The default bridge
-// is left out when it is not known.
+// wantedBridges returns the bridges the devices of the document are on, by
+// name. Each bridge has the interface an issue about it is located at (none
+// for the default bridge of the experiment, which no interface names). It
+// leaves out the default bridge when it is not known.
 func wantedBridges(
 	uses map[string]*preflightBridgeUse,
 	defaultBridge string,
@@ -941,11 +951,11 @@ func wantedBridges(
 	return wanted
 }
 
-// missingBridges looks up each wanted bridge among the bridges of the
-// schedulable hosts. A bridge a host lacks is a warning, since minimega
-// creates a bridge when a VM starts on it. It returns the issues, the part
-// of the summary that says what was compared, and why the bridges could not
-// be compared, if they could not.
+// missingBridges finds each wanted bridge among the bridges of the schedulable
+// hosts. A bridge that a host does not have is a warning, because minimega
+// creates a bridge when a VM starts on it. It returns the issues, the part of
+// the summary that says what was compared, and why the bridges could not be
+// compared, if they could not.
 func missingBridges(
 	ctx context.Context,
 	wanted map[string]*preflightBridgeUse,
@@ -1008,12 +1018,12 @@ func missingBridges(
 	)}, nil
 }
 
-// disksCheck looks up each drive image of the document's devices among the
-// server's disk images by file name, as the editor's own check does, and
-// checks it is of the kind its device needs: a VM or ISO image for a kvm VM,
-// a container image for a container. An empty list of images is what the
-// server gives when it cannot ask minimega, so the check is then unavailable,
-// as the editor then checks no image either.
+// disksCheck finds each drive image of the devices of the document among the
+// disk images of the server, by file name, as the check of the editor does. It
+// checks that each image is of the kind its device needs: a VM or ISO image
+// for a kvm VM, a container image for a container. The server gives an empty
+// list of images when it cannot ask minimega. Then the check is unavailable,
+// because the editor then checks no image either.
 func disksCheck(ctx context.Context, doc *builder.Document, env PreflightEnvironment) PreflightResult {
 	images, err := env.DiskImages(ctx)
 	if err != nil {
@@ -1114,10 +1124,10 @@ func imageKind(kind string) string {
 	return "an image of unknown kind"
 }
 
-// appsCheck reads each Scenario config the document lists and looks up each
-// app it runs among the apps the server has. A scenario that does not exist
-// fails the check; one the caller may not read, or that cannot be read,
-// leaves the check unavailable unless something else fails it.
+// appsCheck reads each Scenario config the document lists, and finds each app
+// it runs among the apps the server has. A scenario that does not exist fails
+// the check. A scenario the caller may not read, or that cannot be read, makes
+// the check unavailable, unless something else fails it.
 func appsCheck(ctx context.Context, doc *builder.Document, env PreflightEnvironment) PreflightResult {
 	if len(doc.Scenarios) == 0 {
 		return preflightResult(PreflightApps, "The diagram lists no scenarios, so it needs no apps.", nil, false)
@@ -1182,10 +1192,10 @@ func appsCheck(ctx context.Context, doc *builder.Document, env PreflightEnvironm
 	return preflightResult(PreflightApps, summary, issues, unreadable > 0)
 }
 
-// scenarioIssue is the issue of a listed scenario that could not be read:
-// the error preflight.app.scenario-missing for one that does not exist, the
-// warning preflight.app.scenario-unreadable for one the caller may not read
-// or that cannot be read now.
+// scenarioIssue is the issue of a listed scenario that could not be read. It
+// is the error preflight.app.scenario-missing for a scenario that does not
+// exist. It is the warning preflight.app.scenario-unreadable for a scenario
+// the caller may not read or that cannot be read now.
 func scenarioIssue(path, scenario string, err error) builder.Issue {
 	if errors.Is(err, ErrNotFound) {
 		return builder.NewIssue(

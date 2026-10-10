@@ -1,36 +1,36 @@
 // Minimal IndexedDB helper for the builder's offline autosave queue.
 //
-// Deliberately tiny (no external dependency) and fully injectable so unit
-// tests can pass a fake factory. Reads degrade to an empty result when
-// IndexedDB is unavailable (private windows, SSR, older embedded browsers);
-// a write that cannot happen throws, so the queue never claims to have kept
-// work it did not keep.
+// It is intentionally small (no external dependency) and fully injectable,
+// so unit tests can pass a fake factory. When IndexedDB is not available
+// (private windows, SSR, older embedded browsers), reads give an empty
+// result. A write that cannot occur throws, so the queue never claims that
+// it kept work that it did not keep.
 //
-// Each tab keeps a record of its own for a draft (see tabRecordKey and
-// tabs.js), so two tabs editing one draft never write each other's queue.
-// A draft's record keeps only what its queue needs to replay: the queue, the
-// ETag it was based on, and the metadata of the history entries the queue
-// refers to. Each entry's document snapshot is a record of its own, keyed by
-// the draft record and the commit id, and is written once: an edit stores
-// one snapshot and a small record, never the whole history again.
+// Each tab keeps its own record for a draft (see tabRecordKey and tabs.js),
+// so two tabs that edit one draft never write each other's queue. A draft's
+// record keeps only what its queue needs to replay: the queue, the ETag it
+// started from, and the metadata of the history entries that the queue
+// refers to. Each entry's document snapshot is a separate record, keyed by
+// the draft record and the commit id, and is written once. Thus an edit
+// stores one snapshot and a small record, never the whole history again.
 //
-// A write to IndexedDB finishes after the call that makes it, and leaving
-// the page (a reload, a closed tab) can cut it off, losing such edits as the
-// one applied as the page is left (see leave.js). So the page keeps, as it
-// is left, an unload copy in localStorage, whose writes finish at once: the
-// draft record, with the snapshots of the entries the database may not
-// hold (see keepForUnload in autosave.js). Reads merge it into the database's
-// record (see mergeUnloadCopy), unless the database was written after it,
-// and the queue removes it once the database holds what it copied. It is
-// keyed by the draft record's key, so by user, draft and tab, under
-// phenix.builder., which logout and another user's sign-in clear (see
-// session.js).
+// A write to IndexedDB finishes after the call that makes it. Leaving the
+// page (a reload, a closed tab) can stop the write, and lose edits such as
+// the edit applied as the page closes (see leave.js). Thus, as the page
+// closes, it keeps an unload copy in localStorage, whose writes finish at
+// once. The copy is the draft record, with the snapshots of the entries
+// that the database may not hold (see keepForUnload in autosave.js). Reads
+// merge it into the database's record (see mergeUnloadCopy), unless the
+// database was written after it. The queue removes it after the database
+// holds what it copied. The copy is keyed by the draft record's key (thus by
+// user, draft and tab), under phenix.builder., which logout and another
+// user's sign-in clear (see session.js).
 
 import { pageStorage } from './storage.js';
 
 const DB_NAME = 'phenix-builder';
-// Version 1 kept every entry's snapshot inside the draft record; version 2
-// moves them to ENTRY_STORE (see splitRecord).
+// Version 1 kept the snapshot of every entry inside the draft record.
+// Version 2 moves them to ENTRY_STORE (see splitRecord).
 const DB_VERSION = 2;
 const STORE_NAME = 'drafts';
 const ENTRY_STORE = 'entries';
@@ -42,14 +42,15 @@ const STORES = [STORE_NAME, ENTRY_STORE];
 // store the draft again.
 let generation = 0;
 
-// The last clearBuilderDatabase(). A store opens the database once it has
-// settled, so a Builder opened just after a sign-in neither reads the
-// records it clears nor writes records it would clear.
+// The last clearBuilderDatabase(). A store opens the database after it
+// settles. Thus a Builder opened just after a sign-in does not read the
+// records that it clears, and does not write records that it would clear.
 let clearing = Promise.resolve(true);
 
 /**
- * Key that scopes an entry to both the acting user and the draft owner, so a
- * shared draft opened by two different users never shares queue state.
+ * Key that scopes an entry to both the acting user and the draft owner, so
+ * when two different users open a shared draft, they never share queue
+ * state.
  *
  * @param {string} actor signed-in username
  * @param {string} owner draft owner
@@ -62,7 +63,7 @@ export function draftKey(actor, owner, id) {
 
 /**
  * Key of one tab's record of a draft (see tabs.js). A record kept before
- * tabs had ids, or by a queue with no tab, has the draft's key alone.
+ * tabs had ids, or by a queue with no tab, has only the draft's key.
  *
  * @param {string} key draftKey()
  * @param {string} [tab] the tab's id
@@ -136,7 +137,7 @@ export function unloadCopyKey(key) {
  * Writes the unload copy of a draft record: the record, and the snapshots
  * of the entries in `write`. It never throws. A copy that does not fit in
  * localStorage (its quota is a few megabytes) is not written, and an older
- * copy of the draft is removed, so it cannot stand in for newer work.
+ * copy of the draft is removed, so that it cannot replace newer work.
  *
  * @param {Storage|null} storage
  * @param {object} record draft record, its entries with their snapshots
@@ -224,11 +225,11 @@ function writtenAt(value) {
 }
 
 /**
- * Whether a draft's unload copy is older than the record the database holds
- * for it. The copy carries the time of the last write its page asked for;
- * a record written after that, by another tab or by the same page once the
- * user stayed, stands for newer work. A draft record is the last writer's,
- * as the database's own writes are, so such a copy is set aside.
+ * Whether a draft's unload copy is older than the record that the database
+ * holds for it. The copy carries the time of the last write that its page
+ * requested. A record written after that time, by another tab or by the same
+ * page after the user stayed, is newer work. A draft record belongs to the
+ * last writer, as the database's own writes do, so such a copy is set aside.
  *
  * @param {object|undefined} record the database's record, if any
  * @param {object|null} copy the unload copy, if any
@@ -239,21 +240,21 @@ export function staleUnloadCopy(record, copy) {
 }
 
 /**
- * Merges a draft's unload copy into the record the database holds for it.
- * A copy older than the record is left out (see staleUnloadCopy). Otherwise
- * the copy stands for the page's last write, which leaving the page may have
- * cut off, so its queue, ETag, head and cursor replace the record's: an
- * operation both hold is kept once, and one only the database holds was
- * sent since. Each entry the copy's queue needs is kept once, with the
- * copy's snapshot or else the database's; one neither holds is left out, as
- * a read of the database leaves it out.
+ * Merges a draft's unload copy into the record that the database holds for
+ * it. A copy older than the record is left out (see staleUnloadCopy).
+ * Otherwise the copy is the page's last write, which leaving the page may
+ * have stopped. Thus its queue, ETag, head and cursor replace the record's.
+ * An operation that both hold is kept once. An operation that only the
+ * database holds was sent since. Each entry that the copy's queue needs is
+ * kept once, with the copy's snapshot or else the database's. An entry that
+ * neither holds is left out, as a read of the database leaves it out.
  *
  * @param {object|undefined} record the database's record, if any
  * @param {object|null} copy the unload copy, if any
- * @param {object} [options] snapshots: false to merge the entries'
- *   metadata alone, as all() lists records
- * @returns {object|undefined} the record; with a copy merged into it,
- *   fromUnload is true
+ * @param {object} [options] snapshots: false to merge only the entries'
+ *   metadata, as all() lists records
+ * @returns {object|undefined} the record. With a copy merged into it,
+ *   fromUnload is true.
  */
 export function mergeUnloadCopy(record, copy, { snapshots = true } = {}) {
   if (!copy || staleUnloadCopy(record, copy)) {
@@ -307,8 +308,8 @@ function withUnloadCopies(records, storage) {
   ];
 }
 
-// A record, with its unload copy merged in (see mergeUnloadCopy), as it is
-// moved to another key; undefined when there is neither.
+// A record, with its unload copy merged in (see mergeUnloadCopy), as it
+// moves to another key. undefined when there is neither.
 function movedRecord(record, copy, key, patch) {
   const merged = mergeUnloadCopy(record, copy);
 
@@ -322,10 +323,11 @@ function movedRecord(record, copy, key, patch) {
 }
 
 /**
- * Splits a draft record as version 1 stored it, with every history entry's
- * snapshot inline, into the version 2 draft record and its entry records.
- * Only what the queue can still replay is kept: a record with nothing
- * queued, and every entry no queued operation refers to, are dropped.
+ * Splits a draft record as version 1 stored it, with the snapshot of every
+ * history entry inline, into the version 2 draft record and its entry
+ * records. Only what the queue can still replay is kept. A record with
+ * nothing queued is dropped, as is every entry that no queued operation
+ * refers to.
  *
  * @param {object} record version 1 draft record
  * @returns {{record: object, entries: object[]}|null} null when the record
@@ -400,8 +402,8 @@ function migrate(tx) {
  * Opens (and upgrades) the builder database.
  *
  * @param {IDBFactory} [factory]
- * @param {Function} [onClose] called when the connection is closed for
- *   another tab's upgrade, or a deletion of the database
+ * @param {Function} [onClose] called when the connection closes for another
+ *   tab's upgrade, or for a deletion of the database
  * @returns {Promise<IDBDatabase|null>} null when unavailable
  */
 function openBuilderDb(factory, onClose) {
@@ -459,8 +461,8 @@ function openBuilderDb(factory, onClose) {
 /**
  * Creates the store facade used by the autosave queue.
  *
- * @param {object} [options] factory; storage: the Storage that keeps the
- *   unload copies, the page's localStorage by default
+ * @param {object} [options] factory. storage: the Storage that keeps the
+ *   unload copies, the page's localStorage by default.
  * @returns {{put: Function, get: Function, remove: Function, all: Function,
  *   rekey: Function, keep: Function, release: Function}}
  */
@@ -518,8 +520,8 @@ export function createDraftStore(options = {}) {
      * transaction, the entry snapshots it adds and drops.
      *
      * @param {object} record
-     * @param {object} [changes] write: entries whose snapshots to store;
-     *   drop: commit ids of stored snapshots the record no longer needs
+     * @param {object} [changes] write: entries whose snapshots to store.
+     *   drop: commit ids of stored snapshots that the record does not need.
      * @throws {Error} when the record could not be stored
      */
     async put(record, { write = [], drop = [] } = {}) {
@@ -591,8 +593,8 @@ export function createDraftStore(options = {}) {
 
     /**
      * Moves a draft record, with its entry snapshots and its unload copy
-     * merged in, to another key, in one transaction: a tab takes the queue
-     * a closed tab left (see tabs.js).
+     * merged in, to another key, in one transaction. A tab uses it to take
+     * the queue that a closed tab left (see tabs.js).
      *
      * @param {string} from
      * @param {string} to
@@ -612,11 +614,11 @@ export function createDraftStore(options = {}) {
       // The unload copy taken, put back if the move fails.
       let copy = null;
 
-      // Requests settle in the order they were made, so both are read. Two
-      // moves of one record, by this page or another, run one after the
-      // other. The unload copy is taken as the record is read, not once
-      // the move is complete, which the other page may not wait for: the
-      // second move finds neither.
+      // Requests settle in the order they were made, so both reads are done
+      // here. Two moves of one record, by this page or another, run one after
+      // the other. The unload copy is taken as the record is read, not when
+      // the move is complete, because the other page may not wait for that.
+      // The second move finds neither.
       snapshots.onsuccess = () => {
         copy = readUnloadCopy(kept, from);
         removeUnloadCopy(kept, from);
@@ -653,9 +655,9 @@ export function createDraftStore(options = {}) {
     },
 
     /**
-     * Writes a draft record's unload copy at once, as the page is left (see
+     * Writes a draft record's unload copy at once, as the page closes (see
      * writeUnloadCopy). A store made before the drafts on this device were
-     * cleared writes none.
+     * cleared writes no copy.
      *
      * @param {object} record
      * @param {object} [changes] write: the entries whose snapshots to copy
@@ -741,13 +743,14 @@ async function clearRecords(options) {
 
 /**
  * The database's stand-in in unit tests, with the same surface. Like the
- * database, it keeps each entry's snapshot apart from the draft record. It
- * stores what the database's put stores, as IndexedDB does: a structured
- * clone, which each read clones again. Nothing it holds shares an object with
- * its caller, and a record IndexedDB could not clone fails here too.
+ * database, it keeps each entry's snapshot separate from the draft record.
+ * It stores what the database's put stores, as IndexedDB does: a structured
+ * clone, which each read clones again. Nothing that it holds shares an
+ * object with its caller, and a record that IndexedDB could not clone also
+ * fails here.
  *
  * @param {object} [options] storage: the Storage that keeps the unload
- *   copies; without one, none is kept
+ *   copies. Without one, no copy is kept.
  * @returns {{put: Function, get: Function, remove: Function, all: Function,
  *   rekey: Function, keep: Function, release: Function, snapshots: Map}}
  */

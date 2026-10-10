@@ -4,17 +4,17 @@
   The help text is the schema's description of the field. It is a tooltip on
   the label, shown on hover and keyboard focus (see fieldTooltip.js), and the
   input's accessible description, read once. A label with one is underlined
-  with dots. The error and the warnings are shown under the input: an error
-  in the danger color with a cross, which marks the input invalid; a warning
-  in the warning color with a triangle and "Warning:", which does not.
+  with dots. The error and the warnings show under the input. An error is
+  in the danger color with a cross, and marks the input invalid. A warning
+  is in the warning color with a triangle and "Warning:", and does not.
 
   A field showing its default (see useFieldDefault) says "Default" beside its
   input, and where the value comes from to a screen reader. A field the
   working copy changed has a bar at its side until the change is applied or
   cancelled, and says so in its description (see useFieldChanged).
 
-  The input itself is rendered by the control in the default slot, with the
-  ids and ARIA attributes from useInspectorControl(). The label has no space
+  The control in the default slot renders the input itself, with the ids
+  and ARIA attributes from useInspectorControl(). The label has no space
   before its asterisk, which would otherwise end the input's accessible name.
 -->
 <template>
@@ -46,7 +46,7 @@
     <div class="wrapper" :class="{ 'wrapper--default': Boolean(fallback) }">
       <slot />
       <!-- Screen readers get what the default is, as the input's
-           description; "Default" alone is for the eye. -->
+           description. "Default" alone is for the eye. -->
       <span
         v-if="fallback"
         :id="ids.fallback"

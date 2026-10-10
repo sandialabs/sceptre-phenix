@@ -1,62 +1,68 @@
 <!--
   Publish shell.
 
-  Publish is an intent, not an upload: the server loads the snapshot the draft
-  cursor points at and re-runs its own checks, so this dialog never sends the
-  document. It confirms the queue is drained first (store.publish does that),
-  then names the configs to write and reports the per stage result.
+  Publish is an intent, not an upload. The server loads the snapshot that
+  the draft cursor points at and runs its own checks again, so this dialog
+  never sends the document. The dialog first makes sure that the queue is
+  empty (store.publish does that). It then names the configs to write and
+  reports the result of each stage.
 
   Config names are checked here against the server's naming rule, so a bad
   name is reported on its field before anything is sent. While a name
-  breaks the rule, the field says why under it, with the rule; a name that
-  keeps it shows no rule. Whether each config is created or updated follows
-  the server's list of existing configs, which is read again every time the
-  dialog opens. The server lets a draft update only a config it was loaded
-  from or published, so it publishes again after further edits (see
-  updateBlocker), so the hints and the submit button promise an update only
-  then, and any other existing name is refused on its field before
-  anything is sent. A hint that promises an update warns, as an update
-  replaces the config. Updating a topology that still has a diagram of the
-  legacy Builder replaces that diagram, which the hint says.
+  breaks the rule, the field says why under it, with the rule. A name that
+  keeps the rule shows no rule. Whether each config is created or updated
+  follows the server's list of existing configs, which is read again every
+  time the dialog opens. The server lets a draft update only a config that
+  the draft was loaded from or published, so that the draft can publish
+  again after more edits (see updateBlocker). For this reason, the hints and
+  the submit button promise an update only then. Any other existing name is
+  refused on its field before anything is sent. A hint that promises an
+  update warns, because an update replaces the config. Updating a topology
+  that still has a diagram of the legacy Builder replaces that diagram, and
+  the hint says so.
 
-  An update replaces a config on the server, which no one can undo, so
-  Publish asks first, in an alert dialog that names each config replaced
-  (see overwriteConfirmation). Nothing is sent until the user confirms;
-  Cancel, Escape or a click outside return to the form, focus with them.
+  An update replaces a config on the server, which no one can undo. For this
+  reason, Publish asks first, in an alert dialog that names each config
+  replaced (see overwriteConfirmation). Nothing is sent until the user
+  confirms. Cancel, Escape or a click outside return to the form, and focus
+  returns with them.
 
-  Publishing adds the topology to every scenario the diagram lists, which
-  the dialog says; with an experiment, Experiment scenario picks the one it
-  uses, the first listed unless another or No scenario is chosen.
+  Publishing adds the topology to every scenario the diagram lists, and the
+  dialog says so. With an experiment, Experiment scenario picks the
+  scenario that it uses: the first one listed, unless the user chooses
+  another or No scenario.
 
   Above the buttons, What publishing changes lists what publishing to the
-  names in the form would change, as the server works it out from the
-  saved snapshot without writing anything (a dry run, previewPublish in
-  store.js): the Topology and Experiment configs, included topologies,
-  scenario annotations, disk images and VLAN aliases, with what publishing
-  would warn of, or the refusal. It lists no problem the dialog's checks
-  list already, nor one the server listed when it refused Publish (see
-  issuesNotInChecks), and while the checks' errors block publishing it
-  says so instead. It is read as the dialog opens, after a pause whenever
-  the form changes, and whenever the saved draft does; from the change on,
-  the list shown is marked busy. It never stops Publish, and when it cannot
-  be read it says Publish still works only while Publish is available.
+  names in the form would change. The server works this out from the saved
+  snapshot without writing anything (a dry run, previewPublish in
+  store.js). The list covers the Topology and Experiment configs, included
+  topologies, scenario annotations, disk images and VLAN aliases. It also
+  shows what publishing would warn of, or the refusal. It lists no problem
+  that the dialog's checks already list, nor one that the server listed
+  when it refused Publish (see issuesNotInChecks). While the checks' errors
+  block publishing, it says so instead. It is read when the dialog opens,
+  after a pause whenever the form changes, and whenever the saved draft
+  changes. From the change on, the list shown is marked busy. It never stops
+  Publish. When it cannot be read and Publish is available, it says that
+  Publish still works.
 
   The Inspector's unapplied edits are saved before the dialog opens (see
-  leave.js). Edits it cannot apply keep Publish from sending, rather than
-  being left out, and the dialog says so as it opens.
+  leave.js). Edits that the Inspector cannot apply stop Publish from
+  sending, so that the publish does not leave them out. The dialog says so
+  when it opens.
 
-  A draft's card on the drafts page opens the dialog too (landing): the
+  A draft's card on the drafts page also opens the dialog (landing). The
   draft is loaded, and the editor is not shown. The title then names the
-  draft, and Open draft leaves for the editor, which is where the diagram's
-  errors, a conflict or a save that failed are put right; the dialog says so
-  where one of them stops the publish.
+  draft. Open draft goes to the editor, where the user corrects the
+  diagram's errors, a conflict or a save that failed. Where one of them
+  stops the publish, the dialog says so.
 
-  The diagram's checks, what the server lists when it refuses a publish and
-  the errors and warnings of a result are listed by severity, the errors
+  The diagram's checks, what the server lists when it refuses a publish,
+  and the errors and warnings of a result are listed by severity, errors
   first (see BuilderIssueList.vue). Go to on an issue closes the dialog and
-  selects the element it is about, with focus on the Inspector field it
-  names (see goToIssue in store.js); on the drafts page it opens the draft
-  first.
+  selects the element that the issue is about, with focus on the Inspector
+  field it names (see goToIssue in store.js). On the drafts page, Go to
+  opens the draft first.
 -->
 <template>
   <builder-dialog
@@ -112,9 +118,9 @@
             :key="name"
             :value="name"></option>
         </datalist>
-        <!-- An update replaces a config no one can undo, so its hint warns:
-             the sign before the words, on a yellow ground. The words say
-             it as well, for screen readers and without color. -->
+        <!-- An update replaces a config, which no one can undo, so its hint
+             warns: the sign before the words, on a yellow ground. The words
+             say it as well, for screen readers and without color. -->
         <p
           id="publish-topology-action-hint"
           class="builder-hint"
@@ -180,7 +186,7 @@
       </div>
 
       <!-- The scenarios the diagram lists, which publishing adds the
-           topology to in either mode; an experiment uses one of them, or
+           topology to in either mode. An experiment uses one of them, or
            none. -->
       <div
         v-if="scenarios.length"
@@ -259,9 +265,9 @@
         testid="publish-refusal"
         @go="goTo" />
 
-      <!-- What publishing to these names changes, which the server works
-           out without writing anything each time the form or the saved
-           draft changes. The words say what is added, removed or kept. -->
+      <!-- What publishing to these names changes. The server works it out
+           without writing anything, each time the form or the saved draft
+           changes. The words say what is added, removed or kept. -->
       <section
         v-if="!store.readOnly"
         class="builder-field builder-publish-preview"
@@ -511,8 +517,8 @@
     readScenarioNames(store.sources.experiments),
   );
 
-  // The diagram name is free text; config names must follow the server's
-  // naming rule, so the topology's starts as a valid form of it. An
+  // The diagram name is free text. Config names must follow the server's
+  // naming rule, so the topology's name starts as a valid form of it. An
   // experiment uses the first scenario the diagram lists unless another, or
   // none, is chosen.
   const form = reactive({
@@ -532,10 +538,11 @@
   // lists finds out.
   let closed = false;
 
-  // What publishing changes (see publishPreview.js): read when the lists
-  // above are, then again, after a pause in typing, whenever the form or
-  // those lists change, and whenever the saved draft does. Nothing is asked
-  // for a draft the dialog cannot publish, or while it shows a result.
+  // What publishing changes (see publishPreview.js). It is read when the
+  // lists above are read. It is read again after a pause in typing whenever
+  // the form or those lists change, and whenever the saved draft changes.
+  // Nothing is asked for a draft that the dialog cannot publish, or while
+  // the dialog shows a result.
   const {
     preview,
     status: previewStatus,
@@ -654,8 +661,8 @@
     () => experimentExists.value && !experimentBlocker.value,
   );
 
-  // Why each name breaks the naming rule, with the rule, while it does; ''
-  // for a name that keeps it, which shows no rule.
+  // Why each name breaks the naming rule, with the rule, while it does. ''
+  // for a name that keeps the rule, which then shows no rule.
   const nameHints = computed(() => ({
     topologyName: configNameHint(form.topologyName),
     experimentName: configNameHint(form.experimentName),
@@ -670,9 +677,10 @@
     return [hintId, rule].filter(Boolean).join(' ');
   }
 
-  // What publishing refuses, an interface with no VLAN, an address two
-  // interfaces use and a hostname phenix refuses, is an error here, though
-  // not in the draft (see toIssue). Errors are listed first, then warnings.
+  // What publishing refuses is an error here, though not in the draft (see
+  // toIssue): an interface with no VLAN, an address that two interfaces
+  // use, and a hostname that phenix refuses. Errors are listed first, then
+  // warnings.
   const issues = computed(() =>
     issueEntries(store.doc, store.issues, { publishing: true }),
   );
@@ -690,9 +698,9 @@
   );
 
   // What the dry run would warn of or refuse that neither Checks nor the
-  // refusal of a Publish lists already: a problem Checks lists is listed
-  // there, and one only the server finds is listed under the refusal once
-  // Publish was refused, whichever of the two answers came first.
+  // refusal of a Publish already lists. A problem that Checks lists stays
+  // there. A problem that only the server finds is listed under the refusal
+  // after Publish was refused, whichever of the two answers came first.
   const previewIssues = computed(() =>
     issueEntries(
       store.doc,
@@ -863,7 +871,7 @@
 
     if (!published) {
       // A refusal about a config names its field, for example a name that
-      // exists after all; the list is read again, so the form now says so.
+      // exists after all. The list is read again, so the form now says so.
       // Changes the server does not hold (a conflict, a save that failed)
       // are settled in the editor, which the drafts page says how to reach.
       const reason = store.error || 'Publish failed.';
@@ -895,8 +903,8 @@
   }
 
   // Go to on an issue. The dialog closes, which gives focus back to what
-  // opened it, before Go to moves it on (see goToIssue). On the drafts page
-  // the editor opens on the draft first, where Go to then goes.
+  // opened it, before Go to moves focus (see goToIssue). On the drafts
+  // page, the editor first opens the draft, and Go to then goes there.
   async function goTo(issue) {
     if (props.landing) {
       emit('open-draft', issue);

@@ -1,11 +1,11 @@
 <!--
   The editor's polite live region.
 
-  Store announcements are paced by the announcer (see announce.js) and shown
-  here, one element per message, so a repeat is announced too. It is a
-  component of its own so that each message re-renders only this region:
-  re-rendering the view would also reset its form fields, and wipe text
-  being typed into them.
+  The announcer paces store announcements (see announce.js), and this
+  region shows them, one element per message, so screen readers announce a
+  repeat too. It is a component of its own so that each message re-renders
+  only this region: a re-render of the view would also reset its form
+  fields, and clear text that the user is typing into them.
 -->
 <template>
   <p
@@ -28,12 +28,12 @@
 
   const live = ref({ text: '', key: 0 });
 
-  // A modal dialog makes this region unreadable; its messages wait.
+  // A modal dialog makes this region unreadable, so its messages wait.
   function modalOpen() {
     try {
       return Boolean(document.querySelector('dialog:modal'));
     } catch {
-      // A browser without :modal; Builder dialogs are always modal.
+      // A browser without :modal. Builder dialogs are always modal.
       return Boolean(document.querySelector('dialog[open]'));
     }
   }
@@ -50,11 +50,11 @@
     hold: testHold > 0 ? testHold : undefined,
   });
 
-  // Store announcements arrive synchronously, so two made in the same tick
-  // are both queued rather than the second replacing the first. A save-state
-  // message still waiting when the save state has moved on is dropped, so
-  // "Offline" is never spoken after the conflict that followed it, nor that
-  // the session has ended once the user has signed in again.
+  // Store announcements arrive synchronously, so two in the same tick both
+  // go in the queue, and the second does not replace the first. The region
+  // drops a save-state message that still waits after the save state
+  // changed. So "Offline" is never spoken after the conflict that followed
+  // it, nor that the session ended after the user signed in again.
   watch(
     () => store.announcementSeq,
     () => {

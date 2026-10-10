@@ -1,12 +1,12 @@
 package builder
 
-// The examples of the schema's documentation (see [documented]) describe one
-// small diagram: a router on network EXP, a note beside it, a group, and
-// drawn beside them the Internet as an icon, a rectangle around the DMZ and
-// a line from the Internet to the router. Each
-// function returns a value of its own, so a caller that changes one schema
-// [Schema] returns changes no other. Every example is valid against the
-// schema it documents, which a test in the front end checks with ajv.
+// The examples of the schema documentation (see [documented]) describe one
+// small diagram: a router on network EXP, a note next to it, a group, and,
+// drawn next to them, the Internet as an icon, a rectangle around the DMZ and
+// a line from the Internet to the router. Each function returns its own
+// value, so a caller that changes one schema that [Schema] returns changes no
+// other. Every example is valid against the schema it documents. A test in
+// the front end uses ajv to check this.
 const (
 	exampleDocumentID = "49d876d1-571a-5b5c-91b7-aadf5bb5209c"
 	exampleGroupID    = "c60601dd-6d6b-56c7-97e5-149caf5ed993"

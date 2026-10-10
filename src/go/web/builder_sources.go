@@ -19,7 +19,8 @@ import (
 
 // Kind specific RBAC resources that gate the source kinds elsewhere in the API.
 // The calls to [rbac.Role.Allowed] still pass string literals so the policy
-// generator records them; these constants name the same values everywhere else.
+// generator records them. These constants name the same values in all other
+// places.
 const (
 	builderTopologies       = "topologies"
 	builderExperiments      = "experiments"
@@ -33,10 +34,10 @@ const (
 
 // builderSourceKind is one config kind the builder offers as a source.
 //
-// Topologies and experiments are what a document is generated from; scenarios
-// are offered so a publish can name one, and images so node properties can be
-// edited against the images that actually exist. VLANs are derived from the
-// document itself and are deliberately not a config kind.
+// A document is generated from a topology or an experiment. The builder
+// offers scenarios so a publish can name one. It offers images so a user can
+// edit node properties against the images that actually exist. VLANs come
+// from the document itself and are deliberately not a config kind.
 type builderSourceKind struct {
 	// kind is the canonical config kind, as stored.
 	kind string
@@ -67,7 +68,7 @@ var builderSourceKinds = []builderSourceKind{ //nolint:gochecknoglobals // immut
 		kind: builderKindScenario, list: builderSourceScenario,
 		resource: builderScenarios, key: builderScenarios, generatable: false,
 	},
-	// Image configs have no kind specific RBAC vocabulary; the config
+	// Image configs have no kind specific RBAC vocabulary. The config
 	// permission is their only gate.
 	{kind: "Image", list: "image", resource: "", key: "images", generatable: false},
 }
@@ -85,9 +86,9 @@ func builderSourceKindFor(kind string) (builderSourceKind, bool) {
 }
 
 // builderKindAllowed reports whether the role holds the kind specific list
-// permission that already gates a config kind elsewhere in the API. The checks
-// are written as literal calls so the RBAC policy generator (see
-// web/rbac/known_policy_gen.go) records them.
+// permission that already gates a config kind elsewhere in the API. Each
+// check is a literal call so the RBAC policy generator (see
+// web/rbac/known_policy_gen.go) records it.
 func builderKindAllowed(role rbac.Role, resource string, names ...string) bool {
 	switch resource {
 	case builderTopologies:
@@ -116,9 +117,9 @@ const (
 type builderGenerateRequest struct {
 	Source  string `json:"source"`
 	Content string `json:"content"`
-	// Includes says what becomes of a topology's included topologies: "keep",
-	// which an empty value means too, shows their nodes read only, and
-	// "combine" copies them into the document as its own.
+	// Includes says what happens to the included topologies of a topology.
+	// "keep" (also an empty value) shows their nodes read only. "combine"
+	// copies them into the document as its own.
 	Includes string `json:"includes"`
 	// Copy asks for a document that is not linked to the topology it is
 	// generated from, so that publishing it creates a new topology.
@@ -211,11 +212,11 @@ func newBuilderSourceResponse(cfg *store.Config, stored bool) (builderSourceResp
 
 // listSources - GET /builder/sources.
 //
-// Sources are grouped by kind: topologies and experiments to generate a
-// document from, scenarios to name when publishing, and images to edit node
-// properties against. Every config is filtered through the same per-config
-// authorization the /configs endpoints apply, plus the kind specific list
-// permission that gates the kind elsewhere in the API.
+// The response groups sources by kind: topologies and experiments to
+// generate a document from, scenarios to name in a publish, and images to
+// edit node properties against. Each config must pass the same per-config
+// authorization that the /configs endpoints apply. It must also pass the
+// kind specific list permission that gates the kind elsewhere in the API.
 func (b *builderAPI) listSources(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderListSources")
 
@@ -238,9 +239,9 @@ func (b *builderAPI) listSources(w http.ResponseWriter, r *http.Request) error {
 	return builderWriteJSON(w, http.StatusOK, "", response)
 }
 
-// sourcesOfKind returns the configs of one kind the caller may see. A caller
-// holding no list permission for the kind at all is answered with an empty
-// group rather than an error: the other groups are still usable.
+// sourcesOfKind returns the configs of one kind that the caller may see. A
+// caller with no list permission for the kind gets an empty group, not an
+// error, so the other groups are still usable.
 func (b *builderAPI) sourcesOfKind(
 	actor builderActor,
 	entry builderSourceKind,
@@ -288,19 +289,21 @@ func (b *builderAPI) sourcesOfKind(
 
 // generateDocument - POST /builder/generate.
 //
-// Generation is a pure transform: a stored config is read, or an uploaded one
-// is parsed, and the resulting document is returned to the caller. Nothing is
-// written, so a generated document only becomes durable once the caller stores
-// it in a draft. A topology the legacy Builder drew, and nothing has
-// published since, is converted from its diagram (see [builderAPI.generate]).
+// Generation is a pure transform. It reads a stored config or parses an
+// uploaded one, and returns the resulting document to the caller. It writes
+// nothing, so a generated document becomes durable only when the caller
+// stores it in a draft. A topology that the legacy Builder drew, with no
+// publish since then, is converted from its diagram (see
+// [builderAPI.generate]).
 //
-// A topology may be imported as a new one: with the nodes of its included
-// topologies copied into the document (includes "combine"), or as it is
-// (copy). Either way the document is detached from the topology (see
-// [bdoc.Document.Detach]) and takes the new topology's name, so that
-// publishing a draft of it creates that topology and leaves the source alone.
-// The document also gets the diagram note "Copied from <name>", where name is
-// the name in the source's metadata (see [bdoc.Document.NoteCopiedFrom]).
+// A topology may be imported as a new topology, in one of two ways: with the
+// nodes of its included topologies copied into the document (includes
+// "combine"), or as it is (copy). Both ways detach the document from the
+// topology (see [bdoc.Document.Detach]) and give it the name of the new
+// topology. Thus a publish of a draft of it creates that topology and does
+// not change the source. The document also gets the diagram note "Copied
+// from <name>", where name is the name in the metadata of the source (see
+// [bdoc.Document.NoteCopiedFrom]).
 func (b *builderAPI) generateDocument(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderGenerate")
 
@@ -377,7 +380,7 @@ func (b *builderAPI) generateDocument(w http.ResponseWriter, r *http.Request) er
 	}
 
 	// FromConfig leaves the time out, so it generates the same document from
-	// the same config; the Inspector shows it with the source.
+	// the same config. The Inspector shows the time with the source.
 	document.Source.ImportedAt = time.Now().UTC().Format(time.RFC3339)
 
 	data, err := bapi.EncodeDocument(document)
@@ -435,13 +438,13 @@ func builderGenerateOnlyTopology() *weberror.WebError {
 		SetStatus(http.StatusUnprocessableEntity)
 }
 
-// builderGenerateNewName returns the name of the new topology a copy or a
-// combined import of the source topology makes, or "" for a request that
-// asks for neither. It is the name the request gives, or else the source's
-// own with "-combined" or "-copy" added. It must be a config name of at most
-// [bdoc.MaxNameBytes], and not the name of the stored topology it is
-// imported from. The server does not look for a name no topology has: the
-// client proposes one, and publishing checks it.
+// builderGenerateNewName returns the name of the new topology that a copy or
+// a combined import of the source topology makes. It returns "" for a
+// request that asks for neither. The name is the one the request gives, or
+// else the source name with "-combined" or "-copy" added. It must be a
+// config name of at most [bdoc.MaxNameBytes], and not the name of the stored
+// topology it is imported from. The server does not look for a name that no
+// topology has. The client proposes one, and the publish checks it.
 //
 // An experiment is refused. A config of any other kind gets no name: no
 // document is generated from it, and that refusal says why.
@@ -482,9 +485,9 @@ func builderGenerateNewName(request builderGenerateRequest, source *store.Config
 	return name, nil
 }
 
-// generate builds the document of a config: from its legacy Builder diagram
-// when it is a topology that has one and no Builder document, and from the
-// config alone otherwise.
+// generate builds the document of a config. For a topology that has a
+// legacy Builder diagram and no Builder document, it builds from that
+// diagram. Otherwise it builds from the config alone.
 func (b *builderAPI) generate(
 	config *store.Config,
 	options ...bdoc.GenerateOption,
@@ -506,10 +509,10 @@ func (b *builderAPI) generationSource(
 		return b.storedSource(actor, request.Source)
 	}
 
-	// An upload is parsed the way POST /configs parses a config, including its
-	// ${NAME} substitution from the server's environment, so it needs the
-	// permission that endpoint needs. A role that may only read configs could
-	// otherwise read any server environment variable back from the generated
+	// An upload is parsed as POST /configs parses a config, with its ${NAME}
+	// substitution from the environment of the server. Thus it needs the
+	// permission of that endpoint. Otherwise a role that may only read configs
+	// could read any server environment variable back from the generated
 	// document. sandialabs/sceptre-phenix#436 describes the wider issue.
 	if !builderBaseAllowed(actor.role, builderVerbCreate) {
 		return nil, builderForbidden(actor, "importing a builder document from a config file")
@@ -522,11 +525,12 @@ func (b *builderAPI) generationSource(
 // experiment names, which is the server's fault and not the config's.
 var errBuilderScenarioLookup = errors.New("reading the scenario failed")
 
-// storedScenarioResolver tells generation whether the Scenario config an
-// experiment names is one the caller may list on this server: the config
-// permission and the scenarios permission, as GET /builder/sources lists
-// scenarios, and the config is stored. A scenario the caller may not list is
-// answered as one that does not exist, so its existence is not disclosed.
+// storedScenarioResolver tells generation whether the caller may list, on
+// this server, the Scenario config that an experiment names. This needs the
+// config permission and the scenarios permission, as GET /builder/sources
+// lists scenarios, and the config must be stored. A scenario that the caller
+// may not list gets the answer for one that does not exist, so its
+// existence is not disclosed.
 func (b *builderAPI) storedScenarioResolver(actor builderActor) bdoc.ScenarioResolver {
 	return func(name string) (bool, error) {
 		full := store.ConfigFullName(builderKindScenario, name)
@@ -550,8 +554,8 @@ func (b *builderAPI) storedScenarioResolver(actor builderActor) bdoc.ScenarioRes
 }
 
 // uploadedExperimentScenarioWarning says that the scenario an imported
-// experiment file names is listed as this server's Scenario config of that
-// name: the scenario the file holds is not imported, and may differ.
+// experiment file names is listed as the Scenario config of that name on
+// this server. The scenario in the file is not imported, and may differ.
 func uploadedExperimentScenarioWarning(document *bdoc.Document, warnings []string) []string {
 	warnings = append(warnings, fmt.Sprintf(
 		"scenario %q is this server's Scenario config of that name, not the copy the experiment file holds",
@@ -608,12 +612,12 @@ func (b *builderAPI) storedSource(
 var errBuilderIncludeForbidden = errors.New("you are not allowed to read it")
 
 // includedTopologyLoader resolves includeTopologies for generation and for
-// the checks publish makes of them. An include is read from the config store
-// only, under the same authorization as a stored source: phenix also accepts
-// a file path there, but the Builder never reads a file an include names.
-// The one file it reads from the server on a caller's behalf is the Builder
-// file a topology's "builder-doc" annotation names, under the limits of
-// [bapi.ReadDocumentFile].
+// the checks that publish makes of them. It reads an include only from the
+// config store, under the same authorization as a stored source. phenix
+// also accepts a file path there, but the Builder never reads a file that an
+// include names. The only file that the Builder reads from the server for a
+// caller is the Builder file that the "builder-doc" annotation of a topology
+// names, under the limits of [bapi.ReadDocumentFile].
 func (b *builderAPI) includedTopologyLoader(actor builderActor) bdoc.TopologyLoader {
 	return func(name string) (*store.Config, error) {
 		if strings.ContainsAny(name, `/\`) {

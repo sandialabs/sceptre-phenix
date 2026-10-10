@@ -1,11 +1,12 @@
-// What a device or a switch says about itself on the canvas: the rows of
-// its info tooltip (BuilderNodeTooltip.vue), shown on hover and keyboard
-// focus, and the same facts as one sentence, which describes the node to
-// assistive technology (see useNodeInfo in nodes/nodeTooltip.js). Note
-// nodes, groups and connections have neither. A device or a switch with
-// notes (see nodeNotes in model.js) lists them last, in both: the notes
-// block below the node is hidden from assistive technology, so the
-// sentence says them in its place, as much of them as the block shows.
+// What a device or a switch says about itself on the canvas:
+// - the rows of its info tooltip (BuilderNodeTooltip.vue), shown on hover
+//   and keyboard focus
+// - the same facts as one sentence, which describes the node to assistive
+//   technology (see useNodeInfo in nodes/nodeTooltip.js)
+// Note nodes, groups and connections have neither. A device or a switch
+// with notes (see nodeNotes in model.js) lists them last, in both. The
+// notes block below the node is hidden from assistive technology. So the
+// sentence says the notes in its place, as much of them as the block shows.
 
 import { count } from './announce.js';
 import { nodeNotes } from './model.js';
@@ -47,10 +48,13 @@ function lower(value) {
 }
 
 /**
- * The address an interface has, as the tooltips show it: "DHCP" for one
- * that asks a DHCP server (phenix then gives it none of its own), its
- * address with the mask after a slash (unless the address is written with
- * one), "serial" for a serial interface, and "no address" for any other.
+ * The address of an interface, as the tooltips show it:
+ * - "DHCP" for one that asks a DHCP server (phenix then gives it no
+ *   address of its own)
+ * - its address with the mask after a slash (unless the address already
+ *   has one)
+ * - "serial" for a serial interface
+ * - "no address" for any other
  *
  * @param {object} [iface] spec interface
  * @returns {string}
@@ -100,11 +104,12 @@ function spoken(entries, phrase) {
 }
 
 // The tooltip row of a node's notes, each cut to one line, and the sentence
-// that says them: the notes the block below the node shows (shownNotes),
-// each whole unless it is longer than the block can show at the node's
-// width (noteCharacters), and then how many more there are, as the block's
-// "+N more" line does. The notes are apart by semicolons, as a note may
-// hold commas. Both are empty for a node without notes.
+// that says them. The sentence has the notes that the block below the node
+// shows (shownNotes). Each is whole unless it is longer than the block can
+// show at the node's width (noteCharacters). Then the sentence says how
+// many more there are, as the block's "+N more" line does. Semicolons
+// separate the notes, because a note can hold commas. Both are empty for a
+// node without notes.
 function notesInfo(node) {
   const notes = nodeNotes(node);
 
@@ -137,8 +142,8 @@ function notesInfo(node) {
 
 /**
  * A device's info: its description, its interfaces with their addresses,
- * its OS type, and its notes when it has some. The sentence leaves the
- * description out, as the node's accessible name ends with it.
+ * its OS type, and its notes when it has some. The sentence omits the
+ * description, because the node's accessible name ends with it.
  *
  * @param {object} node device node
  * @returns {{rows: {label: string, lines: string[]}[], text: string}}
@@ -190,7 +195,7 @@ function byLabel(a, b) {
  * A switch's info: its network's name, VLAN alias and description, the
  * devices connected to this switch, by name, each with the addresses of
  * the interfaces it connects on, and the switch's notes when it has some.
- * The sentence leaves the network and the alias out, as the node's
+ * The sentence omits the network and the alias, because the node's
  * accessible name says both.
  *
  * @param {object} [network] the switch's network

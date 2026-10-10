@@ -8,10 +8,10 @@ import (
 	"phenix/api/disk"
 )
 
-// builderDiskListTTL is how long a listing of the server's disk images is
-// reused. Listing them runs minimega commands, and the Publish dialog asks
-// for a dry run after each pause in editing, so the routes that compare a
-// document with the server's images share one listing for this long.
+// builderDiskListTTL is how long a listing of the server disk images stays
+// in use. A listing runs minimega commands, and the Publish dialog asks for
+// a dry run after each pause in editing. Thus the routes that compare a
+// document with the server images share one listing for this long.
 const builderDiskListTTL = 10 * time.Second
 
 // builderDisksUnlisted is why a package's disk images are not checked when
@@ -22,13 +22,13 @@ const builderDisksUnlisted = "The server's disk images could not be listed."
 // disk images get when the listing ended without returning.
 var errBuilderDiskListAborted = errors.New("listing the disk images did not finish")
 
-// builderDiskLister lists the server's disk images for the Builder routes
-// that compare a document with them: package resolve, the dry run of a
+// builderDiskLister lists the server disk images for the Builder routes that
+// compare a document with them: package resolve, the dry run of a
 // publication and the preflight disks check. A listing that succeeded is
-// reused for ttl, and a request that asks while a listing runs waits for it
-// and shares its result rather than starting another, so concurrent requests
-// run minimega's commands once. A failed listing is not reused. Callers must
-// not change the slice they get, which other requests share.
+// reused for ttl. A request that asks while a listing runs waits for it and
+// shares its result, and does not start another. Thus concurrent requests
+// run the minimega commands once. A failed listing is not reused. Callers
+// must not change the slice they get, because other requests share it.
 type builderDiskLister struct {
 	// source lists the images, as GET /disks lists them.
 	source func() ([]disk.Details, error)
@@ -39,8 +39,8 @@ type builderDiskLister struct {
 	mu sync.Mutex
 	// running is the listing in progress, nil for none.
 	running *builderDiskListing
-	// last is the last listing that succeeded, made at lastAt; hasLast is
-	// unset until there is one.
+	// last is the last listing that succeeded, made at lastAt. hasLast is
+	// false until there is one.
 	last    []disk.Details
 	lastAt  time.Time
 	hasLast bool
@@ -69,9 +69,9 @@ func newBuilderDiskLister(source func() ([]disk.Details, error), now func() time
 	}
 }
 
-// images returns the server's disk images: the last listing when it
-// succeeded less than ttl ago, else the result of the listing in progress,
-// else that of a new one.
+// images returns the server disk images. It returns the last listing when
+// it succeeded less than ttl ago. Else it returns the result of the listing
+// in progress, else that of a new listing.
 func (l *builderDiskLister) images() ([]disk.Details, error) {
 	l.mu.Lock()
 

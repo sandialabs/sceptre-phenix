@@ -1,36 +1,43 @@
 <!--
   The template editor: a device template's name and description, and the
-  fields of the device it makes. Opened by the "+" beside the palette's
-  Device templates heading (a new template of the diagram, from the selected
-  device or from a plain one) and by Edit in the menu of a template of the
-  diagram; and, on the drafts page's Node Templates tab, by New template and
-  by a card's Edit, for a template of the user's library.
+  fields of the device it makes. These controls open it:
+
+  - the "+" beside the palette's Device templates heading (a new template
+    of the diagram, from the selected device or from a plain one)
+  - Edit in the menu of a template of the diagram
+  - on the drafts page's Node Templates tab, New template and a card's
+    Edit, for a template of the user's library.
 
   The node fields are the Inspector itself (BuilderInspector.vue, variant
   'template'), on a document of the dialog's own that holds the template's
-  one device (see templateDocument and templateEditorHost in templates.js):
-  the schema, the form, its checks and its renderers are the canvas's, with
+  one device (see templateDocument and templateEditorHost in templates.js).
+  The schema, the form, its checks and its renderers are the canvas's, with
   room to lay the fields out in columns. Nothing reaches the open diagram
   until Save, which is one edit of it.
 
-  Save applies the form's edits to that document, or moves focus to the
-  form's error summary; then checks the name, the description and the size
-  of the template; then saves it. Cancel, Escape or a click outside the
-  dialog asks before it drops changes. What the form announces goes to a
-  status region of the dialog, since the page's live region cannot be heard
-  through a modal dialog; saving is announced by the page, once the dialog
-  has closed.
+  Save does these steps:
 
-  A template of the library is saved by the server. While it is, Save says
-  so and the dialog stays; a failure is said in the dialog, which keeps
-  what was typed, so Save can be pressed again. A template that changed
-  since the editor opened (another tab) is not replaced unasked: the dialog
-  says so, and the next Save replaces it.
+  1. It applies the form's edits to that document, or moves focus to the
+     form's error summary.
+  2. It checks the name, the description and the size of the template.
+  3. It saves the template.
+
+  Cancel, Escape or a click outside the dialog asks before it drops changes.
+  What the form announces goes to a status region of the dialog, because
+  the page's live region cannot be heard through a modal dialog. The page
+  announces the save after the dialog closes.
+
+  The server saves a template of the library. While it does, Save says so
+  and the dialog stays open. A failure shows in the dialog, which keeps
+  what was typed, so the user can press Save again. The dialog does not
+  replace a template that changed since the editor opened (another tab)
+  without asking. It says so, and the next Save replaces it.
 
   Another user's template, shared with the user or published server-wide,
-  opens read only from its card's View: every field is locked, readable and
-  reachable with Tab, a line under the title says whose it is, and Copy to
-  my library, for a role that may add templates, adds a copy the user owns.
+  opens read only from its card's View. Every field is locked, but readable
+  and reachable with Tab. A line under the title says whose template it is.
+  Copy to my library, for a role that may add templates, adds a copy that
+  the user owns.
 -->
 <template>
   <builder-dialog
@@ -47,8 +54,8 @@
       data-testid="template-origin">
       {{ templateOrigin(template) }}
     </p>
-    <!-- tabindex: Firefox makes a box that scrolls a Tab stop of its own;
-         this one holds fields, which Tab reaches and scrolls into view. -->
+    <!-- tabindex: Firefox makes a box that scrolls a Tab stop of its own.
+         This box holds fields, which Tab reaches and scrolls into view. -->
     <div ref="body" class="builder-template-editor__body" tabindex="-1">
       <form
         :id="FORM_ID"
@@ -193,8 +200,8 @@
 </template>
 
 <script>
-  // What each way of opening the editor calls it, and its Save; `library`
-  // for a template of the user's library, not of the open diagram.
+  // What each way of opening the editor calls it, and its Save. `library`
+  // marks a template of the user's library, not of the open diagram.
   const MODES = {
     'diagram-new': {
       title: () => 'New device template',
@@ -258,10 +265,12 @@
   const FORM_ID = 'template-about';
 
   const props = defineProps({
-    // 'diagram-new': a new template of the open diagram; 'diagram-edit':
-    // one the diagram has, which `template` then is, with its id.
-    // 'library-new': a new template of the user's library; 'library-edit':
-    // one the library has, which `template` then is, with its id and etag.
+    // 'diagram-new': a new template of the open diagram.
+    // 'diagram-edit': one the diagram has, which `template` then is, with its
+    // id.
+    // 'library-new': a new template of the user's library.
+    // 'library-edit': one the library has, which `template` then is, with its
+    // id and etag.
     // 'view': another user's template, as listed, read only.
     mode: {
       type: String,
@@ -274,10 +283,10 @@
     // diagram's. The library keeps none: its templates' icons are the icon
     // library's.
     icons: { type: Object, default: null },
-    // The icon size of the diagram the template is in, which its device
-    // draws at while it names none of its own: empty for a template of the
-    // library, whose devices draw at the size of the diagram they are added
-    // to (see templateDocument).
+    // The icon size of the diagram that the template is in. The template's
+    // device draws at this size while it names no size of its own. Empty for
+    // a template of the library, whose devices draw at the size of the
+    // diagram they are added to (see templateDocument).
     iconSize: { type: String, default: '' },
   });
 
@@ -365,10 +374,10 @@
   let asked = null;
 
   // Cancel, Escape, the Close button and a click outside the dialog. With
-  // changes it asks first; asked again, it keeps editing, as Escape cancels
-  // a question.
+  // changes, it asks first. Asked again, it keeps editing, as Escape
+  // cancels a question.
   async function requestClose() {
-    // The save under way decides whether the dialog closes.
+    // The save in progress decides whether the dialog closes.
     if (saving.value) {
       return;
     }
@@ -402,9 +411,9 @@
     asked = null;
   }
 
-  // Escape with a field's tooltip up hides the tooltip only (WCAG 1.4.13),
-  // rather than ask to close the dialog too. This listener is added before
-  // a tooltip's own, which then hides it.
+  // Escape with a field's tooltip shown hides the tooltip only (WCAG
+  // 1.4.13), and does not ask to close the dialog. This listener is added
+  // before a tooltip's own, which then hides it.
   function keepOpenForTip(event) {
     if (
       event.key === 'Escape' &&
@@ -423,8 +432,8 @@
     body.value?.querySelector('.builder-inspector__error-link')?.focus();
   }
 
-  // Saves a template of the library, and says so once the dialog has
-  // closed. Resolves to whether it was saved; why not is said in the dialog.
+  // Saves a template of the library, and says so after the dialog closes.
+  // Resolves to whether it was saved. The dialog says why not.
   async function saveToLibrary(template) {
     saving.value = true;
 
@@ -439,8 +448,8 @@
 
       return true;
     } catch (failure) {
-      // Changed since it was read: the refusal carries the tag it has now,
-      // and so does the library, read again.
+      // Changed since it was read. The refusal carries the tag it has now, and
+      // so does the library, read again.
       if (failure?.response?.status === 412) {
         await store.fetchTemplates();
         etag =
@@ -460,8 +469,8 @@
   }
 
   // Another user's template, viewed, goes to the user's library as a copy
-  // they own, naming the custom icon it names. The page says so once the
-  // dialog has closed; a failure is said in the dialog.
+  // they own, naming the custom icon it names. The page says so after the
+  // dialog closes. The dialog shows a failure.
   async function copy() {
     if (saving.value) {
       return;
@@ -530,8 +539,8 @@
       return;
     }
 
-    // One edit of the diagram, which the page announces once the dialog
-    // has closed. A change names the description even when it is emptied,
+    // One edit of the diagram, which the page announces after the dialog
+    // closes. A change names the description even when it is emptied,
     // which removes it.
     const saved =
       props.mode === 'diagram-edit'
@@ -567,8 +576,8 @@
 </script>
 
 <style scoped>
-  /* A large part of the window, so the form has room; all of it in a
-     narrow one. The body scrolls, and the footer stays in view. */
+  /* A large part of the window, so the form has room, or all of a
+     narrow window. The body scrolls, and the footer stays in view. */
   .builder-template-editor[open] {
     display: flex;
     flex-direction: column;

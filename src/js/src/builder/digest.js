@@ -1,8 +1,8 @@
 // Content digests, as the server computes them (ContentDigest in
 // types/builder/ids.go): `sha256:<64 hex>` over Go's `json.Marshal` of the
 // content. Go marshals maps with sorted keys and HTML-escapes `<`, `>` and
-// `&`, so the canonical form below reproduces that byte for byte, and a
-// digest computed here equals the server's.
+// `&`. The canonical form below copies that byte for byte, so a digest
+// computed here is equal to the server's.
 
 import { toRaw } from 'vue';
 
@@ -19,10 +19,10 @@ export function isDigest(digest) {
   return typeof digest === 'string' && DIGEST_PATTERN.test(digest);
 }
 
-// Orders strings by Unicode code point, which is the order of their UTF-8
-// bytes and so the order Go sorts map keys in. A plain sort compares UTF-16
-// code units instead, which puts a character above U+FFFF (such as an emoji)
-// before one in U+E000 to U+FFFF (such as fullwidth forms).
+// Orders strings by Unicode code point. This is the order of their UTF-8
+// bytes, and thus the order in which Go sorts map keys. A plain sort compares
+// UTF-16 code units. That puts a character above U+FFFF (such as an emoji)
+// before a character in U+E000 to U+FFFF (such as fullwidth forms).
 function compareCodePoints(a, b) {
   let index = 0;
 
@@ -108,8 +108,8 @@ function rotr(value, bits) {
 
 /**
  * SHA-256 of `bytes` as lowercase hex. Validation runs synchronously in store
- * getters, where SubtleCrypto (asynchronous, and absent outside secure
- * contexts such as a UI served over plain HTTP) cannot be used.
+ * getters, so it cannot use SubtleCrypto. SubtleCrypto is asynchronous, and
+ * absent outside secure contexts such as a UI served over plain HTTP.
  *
  * @param {Uint8Array} bytes
  * @returns {string}

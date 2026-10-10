@@ -14,9 +14,10 @@ It requires a valid username and password.
       close-button-aria-label="Close"
       :auto-focus="false"
       :destroy-on-hide="false">
-      <!-- Kept in the page once closed: a dialog reopened as it was being
-           removed stayed open but invisible, over the page. A new form each
-           time it opens leaves no value or message from before. -->
+      <!-- The page keeps the dialog after it closes. Before this, a dialog
+           that reopened during its removal stayed open but invisible over
+           the page. A new form each time the dialog opens keeps no value or
+           message from before. -->
       <div class="modal-card" :key="signUpForm">
         <header class="modal-card-head">
           <p class="modal-card-title">Create a New Account</p>
@@ -316,7 +317,8 @@ It requires a valid username and password.
             : this.$refs.createAccount?.focus(),
         );
       },
-      // A name changed since is not known to be taken.
+      // After the user changes the name, the form does not know if it is
+      // taken.
       'signUp.username'() {
         this.userExists = false;
       },

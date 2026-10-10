@@ -1,21 +1,21 @@
 /**
- * The labels of the editor header's buttons. As the header narrows they go
- * in two steps, as the drafts' header's do (see .builder-header__label in
- * builder.css). The editor header also takes a step sooner when its labels
- * would move the counts from where the header puts them with no labels:
- * centered on it, or as near as Back to drafts, the name and the buttons
- * let them be. So the counts stay centered, and the buttons show their
- * labels only in the room beside them.
+ * The labels of the editor header's buttons. As the header narrows, the
+ * labels go in two steps, as in the drafts header (see .builder-header__label
+ * in builder.css). The editor header also takes a step sooner when its labels
+ * would move the counts from their position with no labels. That position is
+ * the center of the header, or as near to it as Back to drafts, the name and
+ * the buttons allow. Thus the counts stay centered, and the buttons show
+ * their labels only in the space beside them.
  *
- * data-labels on the header says which labels it may show: `all`, `some`
+ * data-labels on the header tells which labels it can show: `all`, `some`
  * (Reset view and Commands, without its keys) or `none`.
  */
 
 // From the most labels to none.
 const STEPS = ['all', 'some', 'none'];
 
-// Where the counts are, and how tall the header is: the labels of a step
-// that changes either would move the counts or wrap the header.
+// The position of the counts and the height of the header. A step whose
+// labels change either would move the counts or wrap the header.
 function place(header, counts) {
   const box = counts.getBoundingClientRect();
 
@@ -27,8 +27,9 @@ function samePlace(a, b) {
 }
 
 /**
- * Shows the most labels that leave the counts where they are with none.
- * Each step is laid out and measured in turn, before the page is drawn.
+ * Shows the most labels that keep the counts at their position with no
+ * labels. Each step is laid out and measured in turn, before the page is
+ * drawn.
  *
  * @param {HTMLElement} header the editor header
  * @returns {string} the step taken, or '' without counts to keep in place
@@ -57,10 +58,10 @@ export function fitHeaderLabels(header) {
 }
 
 /**
- * Fits the header's labels while it is shown: when the page it is on
- * changes size, and when its text changes (the name, the counts, the
- * checks, the theme or a key). Neither changes with the labels, so fitting
- * them never asks to fit them again.
+ * Fits the header's labels while the header shows. It fits them when the
+ * page that holds the header changes size, and when the header's text
+ * changes (the name, the counts, the checks, the theme or a key). The labels
+ * change neither, so fitting them never causes another fit.
  *
  * @param {HTMLElement} header the editor header
  * @param {HTMLElement} page the element the header is in, which the window

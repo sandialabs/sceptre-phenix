@@ -1,18 +1,19 @@
 <!--
   Signing in again without leaving Builder (see builder/signin.js).
 
-  When the session ends while the Builder is open (a request refused, or
-  the token expiring), a modal dialog asks for the password again, for the
-  same user: the username is shown, not typed, as signing in as someone
-  else goes through Logout. Signing in keeps the new token where the app
-  keeps it and sends the changes the server refused meanwhile, which the
-  live region says. A wrong password is said in the dialog, and focus goes
-  back to the field. Cancel keeps the changes queued in this browser; a
-  notice then says the session has ended and offers Sign in again, as
-  Retry saving does.
+  When the session ends while the Builder is open (a refused request, or an
+  expired token), a modal dialog asks for the password again, for the same
+  user. The dialog shows the username, and the user does not type it: to
+  sign in as another user, the user goes through Logout. Signing in keeps
+  the new token where the app keeps it, and sends the changes the server
+  refused meanwhile. The live region announces this. The dialog says when
+  the password is wrong, and focus goes back to the field. Cancel keeps the
+  changes queued in this browser. A notice then says the session has ended
+  and offers Sign in again, as Retry saving does.
 
-  The token's expiry is timed while the Builder is open, and checked again
-  when the page shows, as a hidden tab's timers run late.
+  A timer follows the token's expiry while the Builder is open. The page
+  checks the expiry again when it shows, because a hidden tab's timers run
+  late.
 -->
 <template>
   <div
@@ -146,8 +147,8 @@
     { password: 'builder-signin-password' },
   );
 
-  // A password sign-in works for a session with a JWT; proxy
-  // authentication takes none.
+  // A password sign-in works for a session with a JWT. Proxy
+  // authentication uses no JWT.
   const stopHosting = hostSignIn({
     available: () =>
       import.meta.env.VITE_AUTH !== 'proxy' &&
@@ -194,8 +195,8 @@
     }
   }
 
-  // Focus goes back where it was (see BuilderDialog), or, when that has
-  // gone, to the notice's Sign in again.
+  // Focus goes back where it was (see BuilderDialog), or, when that element
+  // is gone, to the notice's Sign in again.
   async function cancel() {
     password.value = '';
     error.clear();
@@ -211,8 +212,8 @@
     }
   }
 
-  // BuilderDialog focuses its panel as it opens; the password field takes
-  // it from there.
+  // BuilderDialog focuses its panel as it opens. Then the password field
+  // takes the focus.
   watch(
     () => signIn.open,
     async (open) => {
@@ -224,11 +225,12 @@
     { flush: 'post' },
   );
 
-  // The session ends as the token expires: timed from its claims, and
-  // checked again when the page shows. A timer waits at most about 24
-  // days. A new token that has expired already as it arrives says this
-  // device's clock runs ahead of the server's: the server's refusals tell
-  // instead, rather than the dialog opening again at once.
+  // The session ends when the token expires. A timer uses the token's
+  // claims, and the page checks again when it shows. A timer waits at most
+  // about 24 days. A new token that has already expired when it arrives
+  // shows that this device's clock runs ahead of the server's clock. Then
+  // the server's refusals end the session, so the dialog does not open
+  // again immediately.
   const MAX_WAIT_MS = 2 ** 31 - 1;
   let expiryTimer = null;
   let skewed = null;

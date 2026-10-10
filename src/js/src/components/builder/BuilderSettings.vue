@@ -1,15 +1,15 @@
 <!--
   Builder settings: how this viewer likes the editor, whatever the diagram.
-  Every change applies at once and is kept in this browser, through logout:
-  the theme by theme.js (as the toolbar's toggle), the single-key switch by
-  keymap.js (as the shortcut sheet's), the rest by builder/settings.js.
-  Reset to defaults puts all of them back; custom shortcut keys have their
-  own Reset all in the sheet.
+  Every change applies immediately, and this browser keeps it, also after
+  logout. theme.js keeps the theme (as for the toolbar's toggle), keymap.js
+  keeps the single-key switch (as for the shortcut sheet's), and
+  builder/settings.js keeps the rest. Reset to defaults restores all of
+  them. Custom shortcut keys have their own Reset all in the sheet.
 
   Change keyboard shortcuts opens the sheet's customization over this
-  dialog, and closing it comes back here. The Builder's live region waits
-  while a modal dialog is open, so this dialog speaks through a status
-  region of its own.
+  dialog. When the sheet closes, this dialog shows again. The Builder's
+  live region waits while a modal dialog is open, so this dialog speaks
+  through a status region of its own.
 -->
 <template>
   <builder-dialog
@@ -302,13 +302,13 @@
   const sheetOpen = ref(false);
 
   // The custom zoom's field holds what the user types until it is a
-  // percentage the setting takes; the message says when it is not.
+  // percentage the setting takes. The message says when it is not.
   const percentField = ref(null);
   const percentText = ref(builderSettings.openZoomPercent);
   const percentError = useMessage();
 
-  // The kept percentage back in the field, which drops what was typed and
-  // refused. The field is set as well as its model: the model holds the
+  // Puts the kept percentage back in the field, which drops the refused
+  // text. This sets the field as well as its model: the model holds the
   // number typed, which can equal the kept one while the text differs.
   function showKeptPercent() {
     percentError.clear();
@@ -319,8 +319,9 @@
     }
   }
 
-  // A number in the range is rounded to the field's step, kept, and chosen:
-  // Custom becomes the zoom diagrams open with. Anything else keeps nothing.
+  // Rounds a number in the range to the field's step, keeps it, and chooses
+  // it: Custom becomes the zoom diagrams open with. Anything else keeps
+  // nothing.
   function onZoomPercent(event) {
     const typed = event.target.value.trim();
     const number = typed === '' ? NaN : Number(typed);
@@ -415,7 +416,7 @@
   }
 
   /* A few short choices, side by side while they fit, in line along their
-     tops: the Custom zoom is taller, with a hint under its field. */
+     tops. The Custom zoom is taller, with a hint under its field. */
   .builder-settings__options {
     display: flex;
     flex-wrap: wrap;
@@ -423,7 +424,7 @@
     column-gap: 1.25rem;
   }
 
-  /* The Custom choice with its field and the field's hint under it; they
+  /* The Custom choice with its field and the field's hint under it. They
      wrap to the next line together. */
   .builder-settings__custom {
     display: inline-grid;

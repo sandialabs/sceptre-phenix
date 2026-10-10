@@ -1,8 +1,8 @@
 // Connection routes: the path a layout drew for a connection (edge.route),
 // in absolute canvas coordinates from the source handle to the target
-// handle. The ELK layout draws them; the canvas follows one while its ends
-// are still at their handles (NetworkEdge.vue), and the document drops one
-// once an end moves (see dropStaleRoutes in model.js).
+// handle. The ELK layout draws them. The canvas follows a route while its
+// ends are still at their handles (NetworkEdge.vue). The document drops a
+// route when an end moves (see dropStaleRoutes in model.js).
 //
 // A route is orthogonal: every stretch of it runs across or down.
 
@@ -37,8 +37,8 @@ export function handleOffsetY(node, handleId) {
 }
 
 /**
- * The route with repeated points and the points in the middle of a straight
- * stretch left out.
+ * The route without repeated points and without the points in the middle of
+ * a straight stretch.
  *
  * @param {{x: number, y: number}[]} points
  * @returns {{x: number, y: number}[]} copies
@@ -72,14 +72,14 @@ export function simplifyRoute(points) {
 /**
  * A route moved onto new ends: its first and last points become `start` and
  * `end`, and the bends next to them move with them so every stretch still
- * runs across or down. A straight route whose ends no longer line up gets a
- * step halfway.
+ * runs across or down. A straight route whose ends are no longer aligned
+ * gets a step halfway.
  *
  * @param {{x: number, y: number}[]} points
  * @param {{x: number, y: number}} start
  * @param {{x: number, y: number}} end
  * @param {number} [tolerance] how far an end may be from where the route
- *   had it; further, and the route no longer fits
+ *   had it. Past this distance, the route no longer fits
  * @returns {{x: number, y: number}[]|null} the fitted route, or null when
  *   there is none or it does not fit
  */

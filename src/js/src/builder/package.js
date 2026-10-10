@@ -1,14 +1,14 @@
-// Builder packages: one file that holds a diagram, the Scenario and Topology
-// configs and the custom icons it names that the user chose to put in, and
-// the list of what the diagram needs on a phenix server (Package in
-// phenix/types/builder package.go).
+// Builder packages: one file that holds a diagram and the list of what the
+// diagram needs on a phenix server (Package in phenix/types/builder
+// package.go). It also holds the Scenario and Topology configs and the
+// custom icons that the diagram names and that the user chose to include.
 //
-// The server makes a package of the open diagram (POST /builder/package)
-// and says, for a package uploaded to it, which of the diagram's needs it
-// has (POST /builder/package/resolve). This module decodes a package as
-// strictly as the server does, groups what the server says, and creates the
-// configs the user ticks, one at a time. A package never holds the content
-// of a file, a script or an app: those are only named.
+// The server makes a package of the open diagram (POST /builder/package).
+// For a package uploaded to it, the server says which of the diagram's
+// needs it has (POST /builder/package/resolve). This module decodes a
+// package as strictly as the server does, groups what the server says, and
+// creates the configs the user ticks, one at a time. A package never holds
+// the content of a file, a script or an app. It only names them.
 
 import { isBuilderAnnotation } from './configs.js';
 import { parseDocument } from './decode.js';
@@ -136,7 +136,7 @@ function truncate(value) {
   return `${cut}...`;
 }
 
-// Why a value is no entry of the requirements, in the words of the
+// Why a value is not a valid entry of the requirements, in the words of the
 // server's requirementProblem, or ''.
 function requirementProblem(value) {
   if (typeof value !== 'string') {
@@ -282,15 +282,18 @@ const CONFIG_LIMITS = {
 
 /**
  * Strictly decodes a package from a parsed file, as the server decodes one
- * (DecodePackage and Package.Validate in package.go): unknown fields are
- * refused, the document is decoded and validated as an uploaded document
- * is, a config must be of the kind of its list, named by its key (a config
- * name of at most MAX_SCENARIO_NAME_BYTES) and by the requirements, and
- * free of Builder annotations, at most MAX_SCENARIOS Scenario and
- * MAX_PACKAGE_TOPOLOGIES Topology configs are carried, and every list of
- * the requirements must be present, with at most MAX_PACKAGE_REQUIREMENTS
- * entries, none blank, longer than MAX_REQUIREMENT_BYTES or with control
- * characters. The messages are the server's words.
+ * (DecodePackage and Package.Validate in package.go):
+ * - Unknown fields are refused.
+ * - The document is decoded and validated as an uploaded document is.
+ * - A config must be of the kind of its list, named by its key (a config
+ *   name of at most MAX_SCENARIO_NAME_BYTES) and by the requirements, and
+ *   free of Builder annotations.
+ * - A package carries at most MAX_SCENARIOS Scenario and
+ *   MAX_PACKAGE_TOPOLOGIES Topology configs.
+ * - Every list of the requirements must be present, with at most
+ *   MAX_PACKAGE_REQUIREMENTS entries. No entry is blank, longer than
+ *   MAX_REQUIREMENT_BYTES or with control characters.
+ * The messages are the server's words.
  *
  * @param {object} value
  * @returns {object} the package (a copy): $schema, document, scenarios and
@@ -413,7 +416,7 @@ export function readDependencies(response) {
 
 /**
  * The dependencies grouped by kind, in the order of DEPENDENCY_GROUPS, each
- * group with its heading; a kind with no entry has no group.
+ * group with its heading. A kind with no entry has no group.
  *
  * @param {object[]} dependencies see readDependencies
  * @returns {{kind: string, label: string, items: object[]}[]}
@@ -445,7 +448,8 @@ export function canCreate(dependency) {
 
 /**
  * @param {object} dependency
- * @returns {string} what tells the dependency apart from the others
+ * @returns {string} the key that makes the dependency different from the
+ *   others
  */
 export function dependencyKey(dependency) {
   return `${dependency.kind}/${dependency.name}`;
@@ -487,8 +491,8 @@ export function packagedConfig(pkg, dependency) {
 /**
  * Creates the configs of a package the user ticked, one at a time, through
  * create (POST /configs, which checks the user's permission and the config).
- * A failure is kept with its error and the rest are still created. Only a
- * dependency canCreate allows is created.
+ * A failure is kept with its error, and the others are still created. Only
+ * a dependency that canCreate allows is created.
  *
  * @param {object} pkg a decoded package
  * @param {object[]} ticked the dependencies the user ticked

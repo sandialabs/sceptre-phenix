@@ -1,8 +1,10 @@
 <!--
-  What the diagram checks found about a node: a mark on its corner, a cross
-  for errors and a triangle for warnings only, so the two differ by shape
-  as well as color; and the hidden text that describes the node with them
-  (see toFlowNodes), such as "1 error: hostname is required."
+  What the diagram checks found about a node, in two parts:
+
+  - A mark on the node's corner: a cross for errors, and a triangle when
+    there are only warnings. The two marks differ by shape as well as color.
+  - Hidden text that describes the node with the issues (see toFlowNodes),
+    such as "1 error: hostname is required."
 -->
 <template>
   <span

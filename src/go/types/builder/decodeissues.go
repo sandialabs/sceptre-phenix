@@ -11,8 +11,9 @@ import (
 	"strings"
 )
 
-// What the issues of a list of notes that is not one, and of a note that
-// is not text, say, of the diagram's notes and of a switch's alike.
+// The messages of the issues for notes that are not a list and for a note
+// that is not text. The diagram notes and the notes of a switch use the
+// same messages.
 const (
 	notesNotList = "notes must be a list of text"
 	noteNotText  = "note must be text"
@@ -36,8 +37,8 @@ type decodeProblem struct {
 	unknown bool
 }
 
-// The interfaces a type decodes itself through: what such a type accepts
-// is its own to say.
+// The interfaces through which a type decodes itself. Such a type decides
+// what it accepts.
 //
 //nolint:gochecknoglobals // two reflected interface types, read only
 var (
@@ -124,8 +125,8 @@ func decodesItself(target reflect.Type) bool {
 }
 
 // fitsType reports whether encoding/json decodes value into a Go value of
-// type target without refusing its type; what an object or a list holds is
-// checked apart.
+// type target without refusing its type. It does not check the contents of
+// an object or a list.
 func fitsType(target reflect.Type, value any) bool {
 	kind := target.Kind()
 
@@ -170,10 +171,10 @@ type jsonField struct {
 	typ  reflect.Type
 }
 
-// jsonFields returns the fields encoding/json decodes a JSON object into a
-// value of the struct type target through, by the name of each: its json
-// tag, else its own name. A field tagged "-" and an unexported field are
-// none, and the fields of an embedded struct are its own.
+// jsonFields returns the fields through which encoding/json decodes a JSON
+// object into a value of the struct type target. Each field has the name of
+// its json tag, else its own name. It leaves out a field tagged "-" and an
+// unexported field, and it includes the fields of an embedded struct.
 func jsonFields(target reflect.Type) []jsonField {
 	fields := make([]jsonField, 0, target.NumField())
 
@@ -238,13 +239,13 @@ func joinDecodePath(path, key string) string {
 	return path + "." + key
 }
 
-// decodeIssues returns the issues of a document the strict decoder refused
-// (see [Decode]): one for each key an object of it does not have, and for
-// each value of the wrong type at a path the editor's decoder and validator
-// check the type of (see [decodeRule]). It returns nil when data is not a
-// single JSON value, when nothing in it is refused, or when a value of the
-// wrong type is at any other path: the decoder's own error then says what
-// is wrong.
+// decodeIssues returns the issues of a document that the strict decoder
+// refused (see [Decode]). It returns one issue for each key that its object
+// does not have. It also returns one for each value of the wrong type at a
+// path where the decoder and validator of the editor check the type (see
+// [decodeRule]). It returns nil when data is not a single JSON value, when
+// the decoder refuses nothing in it, or when a value of the wrong type is at
+// a different path. The decoder error then tells what is wrong.
 func decodeIssues(data []byte) []Issue {
 	var value any
 

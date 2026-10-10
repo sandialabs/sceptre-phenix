@@ -1,28 +1,28 @@
-// One action on several listed items at once: deleting, sharing or
-// downloading the selected drafts, deleting or downloading the selected
-// published diagrams, deleting the selected icons or adding them to the
-// server.
+// One action on several listed items at once. The actions are: delete, share
+// or download the selected drafts, delete or download the selected published
+// diagrams, and delete the selected icons or add them to the server.
 //
-// The server has a route for each item, not for a batch, so a bulk action
+// The server has a route for each item, not for a batch. Thus a bulk action
 // is a loop of requests, a few at a time. It never stops at the first
-// failure: every item is tried, and what failed is listed afterwards with
-// why, in one summary. Everything here is pure, so it is tested without a
-// browser; the requests themselves are the store's (see deleteDrafts,
+// failure. It tries every item and then lists each failure with its reason
+// in one summary. All functions here are pure, so tests run them without a
+// browser. The store sends the requests (see deleteDrafts,
 // deletePublishedMany and shareDrafts in store.js).
 
 import { count, describeNames } from './announce.js';
 
-// How many requests a bulk action has under way at once: fewer than the
-// six connections a browser opens to one host, so the page's own requests
-// are not held up.
+// How many requests a bulk action sends at the same time. This is fewer than
+// the six connections that a browser opens to one host, so the page's own
+// requests do not wait.
 export const BULK_CONCURRENCY = 4;
 
 // Why an item a stopped run never reached was not changed.
 export const NOT_ATTEMPTED = 'Not attempted.';
 
 /**
- * A failure of one item whose reason is already in words, such as a draft
- * that would be shared with too many people, which no request was sent for.
+ * A failure of one item whose reason is already in words, for example a
+ * draft that would be shared with too many people. No request was sent for
+ * it.
  */
 export class BulkError extends Error {
   /**
@@ -37,19 +37,19 @@ export class BulkError extends Error {
 
 /**
  * Runs `work` for each item, at most `limit` at a time, and reports every
- * outcome. A failure does not end the run, unless `stop` says it should
- * (the session ended, the server cannot be reached: endsBulk in api.js):
- * the items under way finish, and those not started are reported as
+ * outcome. A failure does not end the run unless `stop` says so (the session
+ * ended, or the server cannot be reached: see endsBulk in api.js). Then the
+ * items in progress finish, and the items not started are reported as
  * skipped.
  *
  * @param {object[]} items
  * @param {(item: object) => Promise<*>} work
- * @param {object} [options] limit: how many at once; onProgress(done,
- *   total): called as each item ends; stop(error): whether a failure ends
- *   the run
+ * @param {object} [options] limit: how many at once. onProgress(done,
+ *   total): called as each item ends. stop(error): whether a failure ends
+ *   the run.
  * @returns {Promise<Array<{item: object, ok: boolean, value?: *,
- *   error?: *, skipped?: boolean}>>} in the order of `items`; it never
- *   rejects
+ *   error?: *, skipped?: boolean}>>} in the order of `items`. It never
+ *   rejects.
  */
 export async function runBulk(
   items,
@@ -100,8 +100,8 @@ export async function runBulk(
 }
 
 /**
- * What a run comes to: the items it changed, and those it did not, each
- * with why.
+ * The result of a run: the items it changed, and the items it did not
+ * change, each with the reason.
  *
  * @param {Array<{item: object, ok: boolean, error?: *, skipped?: boolean}>}
  *   results as runBulk gives them
@@ -158,13 +158,14 @@ export function bulkDoneMessage(n, noun, plural, done) {
 }
 
 /**
- * What deleting several drafts does, for the one confirmation the batch
- * gets. Other users' drafts say whose they are (owners); the user's own say
- * how many are shared, as the people they are shared with lose them too.
+ * The text of the one confirmation for the deletion of several drafts. For
+ * other users' drafts, it names the owners. For the user's own drafts, it
+ * tells how many are shared, because the people they are shared with lose
+ * them too.
  *
  * @param {string[]} names the drafts, as their cards name them
- * @param {object} [options] shared: how many of them are shared; owners:
- *   the owners of other users' drafts
+ * @param {object} [options] shared: how many of them are shared. owners:
+ *   the owners of other users' drafts.
  * @returns {string}
  */
 export function draftsDeleteMessage(names, { shared = 0, owners = [] } = {}) {
@@ -201,11 +202,11 @@ export function iconsDeleteMessage(names) {
 }
 
 /**
- * The share list of a draft once `people` are added to it at `access`:
- * everyone it is shared with stays, with their access, but for the people
- * added, who get the access chosen, whatever they had. A share whose
- * account was removed (stale) is left out, as the Share dialog leaves it
- * out when it saves: it gives no access, and the server refuses a list that
+ * The share list of a draft after `people` are added to it at `access`.
+ * Everyone already on the list stays, with their access, except the people
+ * added. They get the chosen access, whatever access they had. A share whose
+ * account was removed (stale) is left out, as the Share dialog does when it
+ * saves. Such a share gives no access, and the server refuses a list that
  * holds one.
  *
  * @param {{user: string, access: string, stale?: boolean}[]} current the
@@ -213,7 +214,7 @@ export function iconsDeleteMessage(names) {
  * @param {string[]} people the users to add
  * @param {string} access 'view' or 'edit'
  * @returns {{shares: {user: string, access: string}[], changed: boolean}}
- *   the whole new list, and whether it differs from the one read
+ *   the whole new list, and whether it differs from the list read
  */
 export function mergeShareList(current, people, access) {
   const level = access === 'edit' ? 'edit' : 'view';

@@ -1,23 +1,27 @@
-// Which items of a list are selected, for a list whose items have a
-// checkbox each and a Select all above them (the drafts page's tabs, the
-// Node Templates library, the Custom icons dialog's lists), and the keys
+// Which items of a list are selected, for a list where each item has a
+// checkbox and a Select all is above them (the drafts page's tabs, the Node
+// Templates library, the lists of the Custom icons dialog). Also the keys
 // that move through such a list and select in it.
 //
-// The selection is a set of keys, not of items: a list read again from the
-// server holds new objects for the same items, which stay selected. An item
-// that leaves the list leaves the selection too, so one that comes back
-// later is not selected. (selection.js is the canvas's selection.)
+// The selection is a set of keys, not of items. A list read again from the
+// server holds new objects for the same items, and these stay selected. An
+// item that leaves the list also leaves the selection, so if it comes back
+// later it is not selected. (selection.js is the canvas's selection.)
 //
-// The keys (listKeyAction, onListKeydown): the list's items are one Tab
-// stop, which the arrow keys move (roving focus: Up and Down, and Left and
-// Right in a grid of cards), Home and End to the first and last item.
-// Space selects or unselects the focused item; Shift with Space or an arrow
-// key selects the range from the item last pressed (the anchor) to the
-// focused one, whether that press selected or unselected (a checkbox
-// pressed with Shift makes the range as the box now is). Mod+A (⌘A on macOS, Ctrl+A elsewhere) selects every item,
-// Escape unselects them all, and Delete (and Backspace on macOS) asks to
-// delete the selection where the list can. Typing in a field is never
-// taken.
+// The keys (listKeyAction, onListKeydown):
+//   - The list's items are one Tab stop. The arrow keys move it (roving
+//     focus: Up and Down, and Left and Right in a grid of cards). Home and
+//     End move it to the first and last item.
+//   - Space selects or unselects the focused item.
+//   - Shift with Space or an arrow key selects the range from the item last
+//     pressed (the anchor) to the focused item. This applies whether that
+//     press selected or unselected. A checkbox pressed with Shift sets the
+//     range to the new state of the box.
+//   - Mod+A (⌘A on macOS, Ctrl+A elsewhere) selects every item.
+//   - Escape unselects all items.
+//   - Delete (and Backspace on macOS) asks to delete the selection where the
+//     list can.
+// The keys never take typing in a field.
 
 import { computed, ref, shallowRef, toValue, watch } from 'vue';
 
@@ -31,8 +35,8 @@ import { rowTarget } from './roving.js';
  *   others
  * @param {object} [options]
  * @param {(item: object) => boolean} [options.selectable] whether an item
- *   can be selected (it has a checkbox); every item by default. The others
- *   are still in the list, for the keys to move to.
+ *   can be selected (it has a checkbox). Every item by default. The other
+ *   items are still in the list, for the keys to move to.
  * @returns {{
  *   has: (item: object) => boolean,
  *   toggle: (item: object, on?: boolean) => void,
@@ -49,8 +53,8 @@ import { rowTarget } from './roving.js';
  *   count: import('vue').ComputedRef<number>,
  *   total: import('vue').ComputedRef<number>,
  *   state: import('vue').ComputedRef<'none'|'some'|'all'>,
- * }} selected holds the selected items in list order; total is how many
- *   can be selected; state is what Select all shows
+ * }} selected holds the selected items in list order. total is how many
+ *   can be selected. state is what Select all shows.
  */
 export function useListSelection(
   items,
@@ -74,9 +78,10 @@ export function useListSelection(
     return count.value === total.value ? 'all' : 'some';
   });
 
-  // The item a range starts from (the last one pressed), and the selection
-  // as it was then: a range is laid over it, so a shorter range gives back
-  // what a longer one took. Select all and clear leave no anchor.
+  // The item that a range starts from (the last item pressed), and the
+  // selection at that time. A range is applied over that selection, so a
+  // shorter range gives back what a longer range took. Select all and clear
+  // leave no anchor.
   let anchor = null;
   let base = new Set();
   // The item that is the list's Tab stop, by key.
@@ -179,16 +184,16 @@ export function useListSelection(
       return keys.value.has(keyOf(item));
     },
 
-    // Selects the item, or with `on` false unselects it; without `on`, the
-    // other of what it is. It becomes the anchor.
+    // Selects the item, or with `on` false unselects it. Without `on`, it
+    // toggles the item. The item becomes the anchor.
     toggle,
 
     extendTo,
 
-    // A checkbox was pressed: with Shift (range), every item from the anchor
-    // to its item becomes as the box now is (checked selects the range,
-    // cleared unselects it). Without Shift, or with no anchor (nothing
-    // pressed since Select all or clear), its item alone, which becomes the
+    // A checkbox was pressed. With Shift (range), every item from the anchor
+    // to its item gets the new state of the box (checked selects the range,
+    // cleared unselects it). Without Shift, or with no anchor (no press
+    // since Select all or clear), only its item changes, and it becomes the
     // anchor.
     press(item, { checked, range = false }) {
       if (range && hasAnchor()) {
@@ -198,7 +203,8 @@ export function useListSelection(
       }
     },
 
-    // Select all: with none or some selected, every item; with all, none.
+    // Select all: with none or some selected, selects every item. With all
+    // selected, selects none.
     toggleAll() {
       settle(state.value === 'all' ? [] : list.value.map(keyOf));
       anchor = null;
@@ -225,8 +231,8 @@ export function useListSelection(
       }
     },
 
-    // Whether an item is the list's Tab stop: the one focus was last on in
-    // the list, or the first while that one is not listed.
+    // Whether an item is the list's Tab stop: the item that last had focus
+    // in the list, or the first item while that item is not in the list.
     tabStop(item) {
       const key = keyOf(item);
       const listed = all.value.some((entry) => keyOf(entry) === current.value);
@@ -283,10 +289,10 @@ export function isTyping(target) {
   );
 }
 
-// Where an arrow key moves in a grid of `columns` columns: Left and Right
-// one item, wrapping at the ends; Up and Down one row, stopping at the
-// first and last rows (Down from a row above a shorter last row goes to the
-// last item).
+// Where an arrow key moves in a grid of `columns` columns. Left and Right
+// move one item and wrap at the ends. Up and Down move one row and stop at
+// the first and last rows. Down from a row above a shorter last row goes to
+// the last item.
 function gridTarget(key, index, count, columns) {
   switch (key) {
     case 'ArrowLeft':
@@ -411,9 +417,9 @@ export function listKeyAction(
 
 /**
  * Handles a key pressed on an item of a selectable list (see
- * listKeyAction): moves focus with `focus`, changes the selection, or calls
- * onDelete. The key is then taken from the browser, and Escape from the
- * dialog the list may be in.
+ * listKeyAction). It moves focus with `focus`, changes the selection, or
+ * calls onDelete. It then stops the browser from also handling the key, and
+ * stops Escape from reaching a dialog that holds the list.
  *
  * @param {KeyboardEvent} event a keydown on the item or within it
  * @param {object} options
@@ -497,9 +503,9 @@ export function onListKeydown(event, options) {
 }
 
 /**
- * Tells whether Shift was held as a checkbox was pressed: by a click, or by
- * Space on the focused box, whose click does not carry the key in every
- * browser. Bind pointerdown, keydown and click, and ask `take` in the
+ * Tells whether Shift was held when a checkbox was pressed, by a click or by
+ * Space on the focused box. In some browsers, the click from Space does not
+ * carry the key. Bind pointerdown, keydown and click, and call `take` in the
  * change handler.
  *
  * @returns {{pointerdown: () => void, keydown: (event: KeyboardEvent) =>
@@ -531,8 +537,8 @@ export function shiftPress() {
 }
 
 /**
- * How many items a row of a laid-out list holds: those whose tops are the
- * first item's.
+ * How many items a row of a laid-out list holds: the items whose top is the
+ * same as the first item's top.
  *
  * @param {Element|null} list the list element, whose children are its items
  * @returns {number} at least 1

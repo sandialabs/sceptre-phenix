@@ -2,27 +2,27 @@
   Import topology or experiment, opened by Import on the drafts landing.
 
   POST /builder/generate asks the server to build a diagram from an existing
-  topology or experiment; the server owns the conversion, so the client only
+  topology or experiment. The server owns the conversion, so the client only
   picks the source and reports the warnings that come back. A generation with
   warnings keeps the dialog open on them, because each one names something
-  the draft left out or changed: the diagram is opened and its draft created
-  only when the user continues, and Cancel or closing the dialog instead
-  leaves the open draft as it is. Nothing says the diagram was imported until
-  its draft exists.
+  the draft left out or changed. The diagram opens, and its draft is
+  created, only when the user continues. Cancel, or closing the dialog,
+  leaves the open draft as it is. Nothing says the diagram was imported
+  until its draft exists.
 
-  An answer that arrives once the dialog is closed, or after another Import
-  was asked for, is dropped: the diagram open by then, and its autosave, stay
-  as they are.
+  An answer that arrives after the dialog closes, or after another Import
+  was asked for, is dropped. The diagram open by then, and its autosave,
+  stay as they are.
 
   The stored configs offered are read again every time the dialog opens, and
-  again when the chosen one turns out to have been removed since.
+  again when the chosen one was removed since the last read.
 
   A topology that still has a diagram of the legacy Builder (a builder-xml
   annotation) is marked in the list. The server converts that diagram as it
   imports the topology, and the dialog says so before and after.
 
   A topology that includes other topologies is imported with their nodes
-  read only, or with those nodes combined into it; a stored topology may
+  read only, or with those nodes combined into it. A stored topology may
   also be imported as a copy. Either gives the diagram a new name and links
   it to no config, so publishing it creates a new topology. The controls
   for these show only when they apply (see importOptions.js), after the
@@ -306,8 +306,8 @@
   let pending = null;
 
   // Whether the dialog was closed, or unmounted without a close (leaving
-  // the page): unmounting stops the dialog's effect scope. What a submit
-  // was still waiting for then changes nothing: the editor keeps the draft
+  // the page). Unmounting stops the dialog's effect scope. What a submit
+  // was still waiting for then changes nothing. The editor keeps the draft
   // it has open.
   let closed = false;
   onScopeDispose(() => {
@@ -362,8 +362,8 @@
       : '',
   );
 
-  // An error about one source says nothing about another, and one about a
-  // choice nothing about the other choice.
+  // An error about one source says nothing about another source. An error
+  // about one choice says nothing about the other choice.
   watch(
     () => [
       form.source,
@@ -396,10 +396,10 @@
     form.source === 'stored' ? Boolean(form.name) : Boolean(form.content),
   );
 
-  // Why the new name breaks the naming rule, with the rule, while it does;
-  // '' for a name that keeps it, which shows no rule. It describes the
-  // field while it shows, but not while the field's error does, which says
-  // the same.
+  // Why the new name breaks the naming rule, with the rule, while it does.
+  // '' for a name that keeps the rule, which then does not show. It
+  // describes the field while it shows, but not while the field's error
+  // shows, because that error says the same.
   const newNameHint = computed(() => configNameHint(options.newName));
   const newNameHintId = computed(() =>
     newNameHint.value && !invalid('newName') ? 'import-new-name-hint' : '',
@@ -543,7 +543,7 @@
 
   // Opens the imported diagram in place of the open one, and has its draft
   // made. The draft is created as the dialog closes, so focus returns to
-  // the page first and then moves on to the editor as it opens.
+  // the page first and then moves to the editor as it opens.
   function accept(result) {
     if (closed) {
       return;

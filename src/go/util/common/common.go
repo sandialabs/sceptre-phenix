@@ -73,9 +73,9 @@ func MountDir() string {
 	return MountBase
 }
 
-// BuilderTemplatesDir returns the directory of the Builder's template files:
-// BuilderTemplatesBase, or PhenixBase + "/builder/templates" when it has not
-// been set.
+// BuilderTemplatesDir returns the directory of the template files of the
+// Builder: BuilderTemplatesBase, or PhenixBase + "/builder/templates" when
+// BuilderTemplatesBase is not set.
 func BuilderTemplatesDir() string {
 	if BuilderTemplatesBase == "" {
 		return filepath.Join(PhenixBase, "builder", "templates")

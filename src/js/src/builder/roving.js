@@ -1,7 +1,7 @@
 // Arrow-key movement inside a one-row composite widget, such as the toolbar
-// and the drafts tabs (WAI-ARIA APG toolbar and tabs patterns), or a
-// one-column one, such as a menu: Left and Right (Up and Down in a column)
-// move one item and wrap at the ends, Home and End jump to the ends.
+// and the drafts tabs (WAI-ARIA APG toolbar and tabs patterns), or inside a
+// one-column widget, such as a menu. Left and Right (Up and Down in a
+// column) move one item and wrap at the ends. Home and End go to the ends.
 
 const KEYS = {
   horizontal: { next: 'ArrowRight', previous: 'ArrowLeft' },

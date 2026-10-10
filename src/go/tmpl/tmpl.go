@@ -18,12 +18,12 @@ var templatesFS embed.FS
 
 // escapeQuoted returns s escaped for a double-quoted argument of a minimega
 // command, such as the key and the value of `vm config tags "<key>"
-// "<value>"`, so that minimega reads the argument back as s and the command
-// stays on one line. minimega's command lexer (lexQuote and lexEscape in its
+// "<value>"`. Then minimega reads the argument back as s, and the command
+// stays on one line. The minimega command lexer (lexQuote and lexEscape in its
 // minicli package) ends the argument at a double quote and starts an escape at
-// a backslash, and reads \\, \", \n, \r and \t back as a backslash, a double
+// a backslash. It reads \\, \", \n, \r and \t back as a backslash, a double
 // quote, a line feed, a carriage return and a tab. A line break left as it is
-// would also end the command, since a script holds one command a line.
+// would also end the command, because a script holds one command per line.
 func escapeQuoted(s string) string {
 	return strings.NewReplacer(
 		`\`, `\\`,

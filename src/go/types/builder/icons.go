@@ -9,8 +9,8 @@ import (
 // system has no dedicated icon.
 const IconServer = "server"
 
-// Icon keys generation assigns by VM type and operating system as well as by
-// node type.
+// The icon keys that generation assigns by VM type and operating system, and
+// by node type.
 const (
 	iconContainer = "container"
 	iconDesktop   = "desktop"
@@ -24,8 +24,8 @@ const (
 // firewall, printer, external, vlan) plus the semantic keys the builder itself
 // assigns (server, desktop, switch, container).
 //
-// Keys are deliberately opaque, short identifiers: the front end resolves them
-// to bundled assets, so remote URLs and file paths are rejected.
+// Keys are short, opaque identifiers. The front end resolves them to bundled
+// assets, so validation rejects remote URLs and file paths.
 var iconKeys = []string{ //nolint:gochecknoglobals // immutable registry
 	"centos",
 	iconContainer,
@@ -43,8 +43,8 @@ var iconKeys = []string{ //nolint:gochecknoglobals // immutable registry
 }
 
 // IsIconKey reports whether key is a member of the icon key registry. The empty
-// string is not a registry member; it means "use the default icon" and is
-// accepted by [Document.Validate].
+// string is not a registry member. It means "use the default icon", and
+// [Document.Validate] accepts it.
 func IsIconKey(key string) bool {
 	return slices.Contains(iconKeys, key)
 }

@@ -3,16 +3,17 @@
 // previewPublish in store.js), with what the publication would warn of, or
 // the refusal it would answer with.
 //
-// It is read when asked (refresh), and read again after a pause whenever
-// the form, the lists the form reads or the saved draft change (schedule).
-// From such a change on, what is shown is no longer current: it stays
-// shown, marked busy (loading, which the dialog shows as aria-busy), and an
-// answer still on its way, which is for the form as it was, is dropped. An
-// answer that arrives once the dialog has closed is dropped too. blocked is
-// why the form makes no intent, and error why the answer could not be read;
-// neither stops Publish. error adds that Publish still works only while the
-// dialog lets the user publish, so it never contradicts a Publish button
-// the checks keep unavailable.
+// refresh reads the preview on request. schedule reads it again after a
+// pause whenever the form, the lists the form reads or the saved draft
+// change. After such a change, the preview on screen is no longer current.
+// It stays on screen, marked busy (loading, which the dialog shows as
+// aria-busy). An answer still on its way is for the old form, so it is
+// dropped. An answer that arrives after the dialog closes is dropped too.
+//
+// blocked says why the form makes no intent. error says why the answer
+// could not be read. Neither stops Publish. error adds that Publish still
+// works only while the dialog lets the user publish. Thus it never
+// contradicts a Publish button that the checks keep unavailable.
 
 import { reactive } from 'vue';
 
@@ -38,7 +39,7 @@ export const PREVIEW_DELAY_MS = 300;
  * @param {number} [options.delay] the pause, in milliseconds
  * @returns {{preview: object, status: object, refresh: function(): Promise<void>,
  *   schedule: function(): void, close: function(): void}} preview holds
- *   loading, changes, issues (errors, then warnings), error and blocked;
+ *   loading, changes, issues (errors, then warnings), error and blocked.
  *   status is the polite line that says the list was read again
  */
 export function usePublishPreview({

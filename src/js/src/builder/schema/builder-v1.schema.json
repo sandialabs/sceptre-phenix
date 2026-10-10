@@ -1,7 +1,7 @@
 {
   "$defs": {
     "borderStyle": {
-      "description": "Border pattern of a group or a shape; empty selects the default, dashed for a group and solid for a shape.",
+      "description": "Border pattern of a group or a shape. Empty selects the default: dashed for a group and solid for a shape.",
       "enum": [
         "",
         "solid",
@@ -67,7 +67,7 @@
           "title": "Fill Color"
         },
         "hostname": {
-          "description": "Hostname of the device, unique in the document ignoring case and without whitespace.",
+          "description": "Hostname of the device, without whitespace. It is unique in the document, ignoring case.",
           "examples": [
             "router"
           ],
@@ -78,7 +78,7 @@
         },
         "icon": {
           "$ref": "#/$defs/iconRef",
-          "description": "Name of the custom icon drawn in place of the built-in one; empty for none.",
+          "description": "Name of the custom icon that the canvas draws in place of the built-in icon. Empty for none.",
           "examples": [
             "plc"
           ],
@@ -94,14 +94,14 @@
         },
         "iconSize": {
           "$ref": "#/$defs/iconSize",
-          "description": "Size the device's icon is drawn at; empty uses the document's.",
+          "description": "Size at which the canvas draws the icon of the device. Empty uses the icon size of the document.",
           "examples": [
             "large"
           ],
           "title": "Icon Size"
         },
         "includedFrom": {
-          "description": "Topology that defines the device when it came from an included topology, which keeps it read only and out of what publishing writes.",
+          "description": "Topology that defines the device, when the device came from an included topology. Such a device is read only, and a publish does not write it.",
           "examples": [
             "shared-services"
           ],
@@ -144,7 +144,7 @@
           "title": "Purdue Layer"
         },
         "spec": {
-          "description": "Complete phenix topology node spec, in the stored snake_case form, which publishing writes to the topology.",
+          "description": "Complete phenix topology node spec, in the stored snake_case form. A publish writes it to the topology.",
           "examples": [
             {
               "general": {
@@ -194,7 +194,7 @@
     },
     "edge": {
       "additionalProperties": false,
-      "description": "Attaches a device interface handle to a switch, and so to its network; the server checks the nodes, handles and network it names, which this schema cannot.",
+      "description": "Attaches a device interface handle to a switch, and thus to its network. The server checks the nodes, handles and network that it names. This schema cannot check them.",
       "examples": [
         {
           "id": "503c4f01-e7e0-5a2e-a07d-26e2776fea8f",
@@ -206,7 +206,7 @@
       ],
       "properties": {
         "color": {
-          "description": "Line color drawn in place of the network's, as CSS color text.",
+          "description": "Line color drawn in place of the network color, as CSS color text.",
           "examples": [
             "#c0392b"
           ],
@@ -235,7 +235,7 @@
               "$ref": "#/$defs/lineStyle"
             }
           ],
-          "description": "Dash pattern drawn in place of the network's.",
+          "description": "Dash pattern drawn in place of the network pattern.",
           "examples": [
             "dotted"
           ],
@@ -243,14 +243,14 @@
         },
         "networkId": {
           "$ref": "#/$defs/identifier",
-          "description": "Identifier of the network of the switch the connection joins.",
+          "description": "Identifier of the network of the switch that the connection joins.",
           "examples": [
             "a8af611d-c68f-54e0-94a5-9176cea64e44"
           ],
           "title": "Network ID"
         },
         "route": {
-          "description": "Path an automatic layout drew, in absolute canvas coordinates from the source handle to the target handle, which is never published.",
+          "description": "Path that an automatic layout drew, in absolute canvas coordinates from the source handle to the target handle. It is never published.",
           "examples": [
             [
               {
@@ -284,7 +284,7 @@
         },
         "sourceNodeId": {
           "$ref": "#/$defs/identifier",
-          "description": "Identifier of the node the connection starts at.",
+          "description": "Identifier of the node where the connection starts.",
           "examples": [
             "4113dfc0-f4be-57f9-8115-6cecd1f1aea3"
           ],
@@ -304,7 +304,7 @@
         },
         "targetNodeId": {
           "$ref": "#/$defs/identifier",
-          "description": "Identifier of the node the connection ends at.",
+          "description": "Identifier of the node where the connection ends.",
           "examples": [
             "dee6bc70-8103-581e-8b31-6c95cda798a0"
           ],
@@ -367,7 +367,7 @@
     },
     "group": {
       "additionalProperties": false,
-      "description": "Payload of a group node: a visual container other nodes may belong to, with no phenix meaning.",
+      "description": "Payload of a group node: a visual container that other nodes can belong to, with no phenix meaning.",
       "examples": [
         {
           "title": "Control network"
@@ -376,7 +376,7 @@
       "properties": {
         "borderStyle": {
           "$ref": "#/$defs/borderStyle",
-          "description": "Pattern of the group's border.",
+          "description": "Pattern of the border of the group.",
           "examples": [
             "double"
           ],
@@ -399,7 +399,7 @@
           "type": "string"
         },
         "description": {
-          "description": "Free text shown under the group's title.",
+          "description": "Free text shown below the title of the group.",
           "examples": [
             "Two PLCs and the HMI that controls them."
           ],
@@ -408,7 +408,7 @@
         },
         "icon": {
           "$ref": "#/$defs/iconRef",
-          "description": "Name of the custom icon drawn in place of the built-in one; empty for none.",
+          "description": "Name of the custom icon that the canvas draws in place of the built-in icon. Empty for none.",
           "examples": [
             "plc"
           ],
@@ -416,7 +416,7 @@
         },
         "iconKey": {
           "$ref": "#/$defs/iconKey",
-          "description": "Built-in icon beside the group's title.",
+          "description": "Built-in icon next to the title of the group.",
           "examples": [
             "server"
           ],
@@ -424,7 +424,7 @@
         },
         "iconSize": {
           "$ref": "#/$defs/iconSize",
-          "description": "Size the group's icon is drawn at; empty uses the document's.",
+          "description": "Size at which the canvas draws the icon of the group. Empty uses the icon size of the document.",
           "examples": [
             "large"
           ],
@@ -443,7 +443,7 @@
       "type": "object"
     },
     "hexColor": {
-      "description": "Opaque color as #rrggbb; empty for none.",
+      "description": "Opaque color as #rrggbb. Empty for none.",
       "examples": [
         "#2f6fbf"
       ],
@@ -480,7 +480,7 @@
       "type": "object"
     },
     "iconKey": {
-      "description": "Built-in icon a node shows, from the Builder's icon registry; empty selects the default icon.",
+      "description": "Built-in icon that a node shows, from the icon registry of the Builder. Empty selects the default icon.",
       "enum": [
         "",
         "centos",
@@ -505,7 +505,7 @@
     },
     "iconNode": {
       "additionalProperties": false,
-      "description": "Payload of an icon node: exactly one of a built-in icon and a custom icon, scaled to the node's box with an optional label below it, which is never published.",
+      "description": "Payload of an icon node: exactly one of a built-in icon and a custom icon, scaled to the box of the node, with an optional label below it. It is never published.",
       "examples": [
         {
           "iconKey": "external",
@@ -537,7 +537,7 @@
       "properties": {
         "icon": {
           "$ref": "#/$defs/iconRef",
-          "description": "Name of the custom icon drawn, when the node names no built-in icon.",
+          "description": "Name of the custom icon that the canvas draws when the node names no built-in icon.",
           "examples": [
             "plc"
           ],
@@ -545,7 +545,7 @@
         },
         "iconKey": {
           "$ref": "#/$defs/iconKey",
-          "description": "Built-in icon drawn, when the node names no custom icon.",
+          "description": "Built-in icon that the canvas draws when the node names no custom icon.",
           "examples": [
             "external"
           ],
@@ -564,7 +564,7 @@
       "type": "object"
     },
     "iconRef": {
-      "description": "Name of a custom icon: a copy in the document's icons, else the server's icon library's icon of that name; empty for none. Without either, the node shows its built-in icon.",
+      "description": "Name of a custom icon: a copy in the icons of the document, else the icon of that name in the icon library of the server. Empty for none. Without either, the node shows its built-in icon.",
       "examples": [
         "plc"
       ],
@@ -573,7 +573,7 @@
       "type": "string"
     },
     "iconSize": {
-      "description": "Size a node icon is drawn at: small (16 pixels), medium (24) or large (32); empty selects the default, the document's size for a node and small for the document.",
+      "description": "Size at which the canvas draws a node icon: small (16 pixels), medium (24) or large (32). Empty selects the default: the icon size of the document for a node, and small for the document.",
       "enum": [
         "",
         "small",
@@ -587,7 +587,7 @@
       "type": "string"
     },
     "identifier": {
-      "description": "Stable RFC 4122 UUID, found duplicate ignoring case but repeated exactly by every reference; the front end mints random (version 4) ones.",
+      "description": "Stable RFC 4122 UUID. Two identifiers that differ only by case are duplicates. Every reference repeats the identifier exactly. The front end makes random (version 4) UUIDs.",
       "examples": [
         "4113dfc0-f4be-57f9-8115-6cecd1f1aea3"
       ],
@@ -598,7 +598,7 @@
     },
     "interfaceHandle": {
       "additionalProperties": false,
-      "description": "Stable mapping of a canvas connection handle onto a named interface of the device spec.",
+      "description": "Stable map from a canvas connection handle to a named interface of the device spec.",
       "examples": [
         {
           "id": "7f010dcd-e23d-514c-9206-3609df999026",
@@ -616,7 +616,7 @@
           "title": "Handle ID"
         },
         "index": {
-          "description": "Place of the interface in the spec's interface list when the handle was made, for ordering only.",
+          "description": "Position of the interface in the interface list of the spec when the handle was made. For ordering only.",
           "examples": [
             0
           ],
@@ -645,7 +645,7 @@
     },
     "line": {
       "additionalProperties": false,
-      "description": "Payload of a line node: a polyline drawn on the canvas, tied to no node or network, which is never published.",
+      "description": "Payload of a line node: a polyline drawn on the canvas, tied to no node or network. It is never published.",
       "examples": [
         {
           "color": "#c0392b",
@@ -678,7 +678,7 @@
           "title": "Color"
         },
         "endArrow": {
-          "description": "Whether an arrowhead is drawn at the last point.",
+          "description": "Whether the canvas draws an arrowhead at the last point.",
           "examples": [
             true
           ],
@@ -695,14 +695,14 @@
         },
         "lineStyle": {
           "$ref": "#/$defs/lineStyle",
-          "description": "Dash pattern of the line; empty is solid.",
+          "description": "Dash pattern of the line. Empty is solid.",
           "examples": [
             "dashed"
           ],
           "title": "Line Style"
         },
         "points": {
-          "description": "Ends and bends of the line in order, 2 to 64 of them, relative to the node's position, which the editor keeps at the top left corner of their box.",
+          "description": "Ends and bends of the line in order, 2 to 64 of them, relative to the node position. The editor keeps the node position at the top left corner of their box.",
           "examples": [
             [
               {
@@ -728,7 +728,7 @@
           "type": "array"
         },
         "startArrow": {
-          "description": "Whether an arrowhead is drawn at the first point.",
+          "description": "Whether the canvas draws an arrowhead at the first point.",
           "examples": [
             false
           ],
@@ -743,7 +743,7 @@
       "type": "object"
     },
     "lineStyle": {
-      "description": "Dash pattern of a connection line; empty selects the automatic pattern.",
+      "description": "Dash pattern of a connection line. Empty selects the automatic pattern.",
       "enum": [
         "",
         "solid",
@@ -759,7 +759,7 @@
     },
     "metadata": {
       "additionalProperties": false,
-      "description": "Identifier, name, description, provenance and notes of a document; none of it is published to a config.",
+      "description": "Identifier, name, description, provenance and notes of a document. A publish writes no part of it to a config.",
       "examples": [
         {
           "createdAt": "2026-10-01T15:04:05Z",
@@ -777,7 +777,7 @@
       ],
       "properties": {
         "createdAt": {
-          "description": "When the document was first made, as RFC 3339 in UTC with whole seconds (YYYY-MM-DDTHH:MM:SSZ), which the server sets and keeps the way it does createdBy.",
+          "description": "When the document was first made, as RFC 3339 in UTC with whole seconds (YYYY-MM-DDTHH:MM:SSZ). As for createdBy, the server sets and keeps it.",
           "examples": [
             "2026-10-01T15:04:05Z"
           ],
@@ -787,7 +787,7 @@
           "type": "string"
         },
         "createdBy": {
-          "description": "User who first made the document, which the server sets when a draft is created from a document that names none and keeps in every later save of that draft.",
+          "description": "User who first made the document. When it creates a draft from a document that names no such user, the server sets it, and keeps it in every later save of that draft.",
           "examples": [
             "alice"
           ],
@@ -823,7 +823,7 @@
           "type": "string"
         },
         "notes": {
-          "description": "Free text notes about the diagram as a whole: at most 100, each not only white space, at most 4096 bytes in UTF-8 (maxLength counts characters, so the byte limit is the stricter one outside ASCII), and without control characters but newlines and tabs.",
+          "description": "Free text notes about the diagram as a whole, at most 100. Each note is not only white space, is at most 4096 bytes in UTF-8, and has no control characters other than newlines and tabs. maxLength counts characters, so outside ASCII the byte limit is the stricter limit.",
           "examples": [
             [
               "Snapshot the PLC images before each run.",
@@ -841,7 +841,7 @@
           "type": "array"
         },
         "updatedAt": {
-          "description": "When this content was saved, as RFC 3339 in UTC with whole seconds, which the server sets on every save; it is not source.updatedAt, a time of the source config.",
+          "description": "When this content was saved, as RFC 3339 in UTC with whole seconds. On every save, the server sets it. It is not source.updatedAt, which is a time of the source config.",
           "examples": [
             "2026-10-02T09:30:00Z"
           ],
@@ -851,7 +851,7 @@
           "type": "string"
         },
         "updatedBy": {
-          "description": "User whose save stored this content, which the server sets on every save in place of any value sent.",
+          "description": "User whose save stored this content. On every save, the server sets it in place of any value sent.",
           "examples": [
             "bob"
           ],
@@ -880,7 +880,7 @@
       ],
       "properties": {
         "alias": {
-          "description": "Optional VLAN number published to an experiment's vlans.aliases, from 1 to 4094.",
+          "description": "Optional VLAN number, from 1 to 4094, that a publish writes to the vlans.aliases of an experiment.",
           "examples": [
             101
           ],
@@ -890,7 +890,7 @@
           "type": "integer"
         },
         "color": {
-          "description": "Color of the network's connection lines, as CSS color text.",
+          "description": "Color of the connection lines of the network, as CSS color text.",
           "examples": [
             "#2f6fbf"
           ],
@@ -915,14 +915,14 @@
         },
         "lineStyle": {
           "$ref": "#/$defs/lineStyle",
-          "description": "Dash pattern of the network's connection lines.",
+          "description": "Dash pattern of the connection lines of the network.",
           "examples": [
             "dashed"
           ],
           "title": "Line Style"
         },
         "name": {
-          "description": "VLAN name, unique in the document and without whitespace, which device interfaces name as their vlan.",
+          "description": "VLAN name, unique in the document and without whitespace. Device interfaces name it as their vlan.",
           "examples": [
             "EXP"
           ],
@@ -1300,7 +1300,7 @@
           }
         }
       ],
-      "description": "Item on the canvas, whose payload key matches its kind.",
+      "description": "Item on the canvas. Its payload key matches its kind.",
       "examples": [
         {
           "device": {
@@ -1428,14 +1428,14 @@
         },
         "id": {
           "$ref": "#/$defs/identifier",
-          "description": "Identifier of the node, unique among the document's nodes.",
+          "description": "Identifier of the node, unique among the nodes of the document.",
           "examples": [
             "4113dfc0-f4be-57f9-8115-6cecd1f1aea3"
           ],
           "title": "Node ID"
         },
         "kind": {
-          "description": "What the node is, which names the payload it carries.",
+          "description": "What the node is. It names the payload that the node holds.",
           "enum": [
             "device",
             "switch",
@@ -1502,7 +1502,7 @@
               "$ref": "#/$defs/identifier"
             }
           ],
-          "description": "Identifier of the group node this node belongs to.",
+          "description": "Identifier of the group node that this node belongs to.",
           "examples": [
             "c60601dd-6d6b-56c7-97e5-149caf5ed993"
           ],
@@ -1535,7 +1535,7 @@
         },
         "size": {
           "$ref": "#/$defs/size",
-          "description": "Explicit size of the node; without one the editor sizes the node itself.",
+          "description": "Explicit size of the node. Without it, the editor sets the node size.",
           "examples": [
             {
               "height": 420,
@@ -2974,7 +2974,7 @@
     },
     "shape": {
       "additionalProperties": false,
-      "description": "Payload of a shape node: a rectangle or a circle drawn on the canvas, which is never published.",
+      "description": "Payload of a shape node: a rectangle or a circle drawn on the canvas. It is never published.",
       "examples": [
         {
           "borderStyle": "dashed",
@@ -2987,7 +2987,7 @@
       "properties": {
         "borderStyle": {
           "$ref": "#/$defs/borderStyle",
-          "description": "Pattern of the figure's border; empty is solid.",
+          "description": "Pattern of the border of the figure. Empty is solid.",
           "examples": [
             "dashed"
           ],
@@ -3011,14 +3011,14 @@
         },
         "outlineColor": {
           "$ref": "#/$defs/hexColor",
-          "description": "Color of the figure's border.",
+          "description": "Color of the border of the figure.",
           "examples": [
             "#2f6fbf"
           ],
           "title": "Outline Color"
         },
         "shape": {
-          "description": "Figure drawn to fill the node's box: a rectangle, or a circle, which is an ellipse in a box that is not square.",
+          "description": "Figure that fills the box of the node: a rectangle or a circle. In a box that is not square, the circle is an ellipse.",
           "enum": [
             "rectangle",
             "circle"
@@ -3074,7 +3074,7 @@
     },
     "source": {
       "additionalProperties": false,
-      "description": "Where the document came from, and the warnings raised while generating it.",
+      "description": "Where the document came from, and the warnings from its generation.",
       "examples": [
         {
           "apiVersion": "phenix.sandia.gov/v1",
@@ -3090,7 +3090,7 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "metadata.annotations of the source config at import time without the Builder's own (builder-*), shown only and never published: at most 100, and 256 KiB of keys and values in all.",
+          "description": "metadata.annotations of the source config at import time, without the Builder's own (builder-*). They are shown only and never published. At most 100, and 256 KiB of keys and values in all.",
           "examples": [
             {
               "scenario": "pump-station-ntp",
@@ -3116,7 +3116,7 @@
           "type": "string"
         },
         "digest": {
-          "description": "Digest of the source config's identity and spec, which publishing compares with the stored config.",
+          "description": "Digest of the identity and spec of the source config. A publish compares it with the stored config.",
           "examples": [
             "sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4"
           ],
@@ -3133,7 +3133,7 @@
           "type": "string"
         },
         "includeTopologies": {
-          "description": "includeTopologies of the source topology, which publishing writes back in place of their nodes.",
+          "description": "includeTopologies of the source topology. A publish writes them back in place of their nodes.",
           "examples": [
             [
               "shared-services"
@@ -3177,7 +3177,7 @@
           "type": "string"
         },
         "unresolvedIncludes": {
-          "description": "Included topologies, at any depth, whose nodes are not in the document because they could not be read.",
+          "description": "Included topologies, at any depth, whose nodes are not in the document because generation could not read them.",
           "examples": [
             [
               "shared-services"
@@ -3200,7 +3200,7 @@
           "type": "string"
         },
         "warnings": {
-          "description": "Warnings raised while the document was generated.",
+          "description": "Warnings from the generation of the document.",
           "examples": [
             [
               "included topology shared-services could not be read and its nodes are not shown"
@@ -3238,7 +3238,7 @@
         },
         "iconSize": {
           "$ref": "#/$defs/iconSize",
-          "description": "Size the switch's icon is drawn at; empty uses the document's.",
+          "description": "Size at which the canvas draws the icon of the switch. Empty uses the icon size of the document.",
           "examples": [
             "medium"
           ],
@@ -3253,7 +3253,7 @@
           "title": "Network ID"
         },
         "notes": {
-          "description": "Free text notes the canvas shows below the switch, never published: at most 100, each not only white space, at most 4096 bytes in UTF-8 (maxLength counts characters, so the byte limit is the stricter one outside ASCII), and without control characters but newlines and tabs.",
+          "description": "Free text notes that the canvas shows below the switch, at most 100. They are never published. Each note is not only white space, is at most 4096 bytes in UTF-8, and has no control characters other than newlines and tabs. maxLength counts characters, so outside ASCII the byte limit is the stricter limit.",
           "examples": [
             [
               "Mirror port 24 feeds the IDS.",
@@ -3280,7 +3280,7 @@
         },
         "purdueLevel": {
           "$ref": "#/$defs/purdueLevel",
-          "description": "Purdue layer of the switch's network, which the Layered by tier layout reads. It is never published.",
+          "description": "Purdue layer of the network of the switch, which the Layered by tier layout reads. It is never published.",
           "examples": [
             "2"
           ],
@@ -3334,7 +3334,7 @@
       ],
       "properties": {
         "description": {
-          "description": "Text shown with the template, at most 1024 bytes on one line, which is never written into a node.",
+          "description": "Text shown with the template, at most 1024 bytes on one line. It is never written into a node.",
           "examples": [
             "VyOS router with one static interface"
           ],
@@ -3345,7 +3345,7 @@
         },
         "device": {
           "$ref": "#/$defs/templateDevice",
-          "description": "Fields the template fills in on a device made from it.",
+          "description": "Fields that the template fills in on a device made from it.",
           "examples": [
             {
               "iconKey": "router",
@@ -3381,14 +3381,14 @@
         },
         "id": {
           "$ref": "#/$defs/identifier",
-          "description": "Identifier of the template, unique among the document's templates.",
+          "description": "Identifier of the template, unique among the templates of the document.",
           "examples": [
             "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11"
           ],
           "title": "Template ID"
         },
         "name": {
-          "description": "Name the template is offered under, 1 to 128 bytes on one line.",
+          "description": "Name under which the editor offers the template, 1 to 128 bytes on one line.",
           "examples": [
             "Edge router"
           ],
@@ -3409,7 +3409,7 @@
     },
     "templateDevice": {
       "additionalProperties": false,
-      "description": "Fields a template fills in, at most 16384 bytes as JSON.",
+      "description": "Fields that a template fills in, at most 16384 bytes as JSON.",
       "examples": [
         {
           "iconKey": "router",
@@ -3452,7 +3452,7 @@
         },
         "icon": {
           "$ref": "#/$defs/iconRef",
-          "description": "Name of the custom icon of the devices made from the template; empty for none.",
+          "description": "Name of the custom icon of the devices made from the template. Empty for none.",
           "examples": [
             "plc"
           ],
@@ -3468,7 +3468,7 @@
         },
         "iconSize": {
           "$ref": "#/$defs/iconSize",
-          "description": "Icon size of the devices made from the template; empty uses the document's.",
+          "description": "Icon size of the devices made from the template. Empty uses the icon size of the document.",
           "examples": [
             "large"
           ],
@@ -3491,7 +3491,7 @@
           "title": "Purdue Layer"
         },
         "spec": {
-          "description": "Complete phenix topology node spec, in the stored snake_case form, which publishing writes to the topology.",
+          "description": "Complete phenix topology node spec, in the stored snake_case form. A publish writes it to the topology.",
           "examples": [
             {
               "general": {
@@ -3590,7 +3590,7 @@
   "properties": {
     "$schema": {
       "const": "https://phenix.sandia.gov/schemas/builder/v1",
-      "description": "Identifies the Builder document schema, which a document must name exactly.",
+      "description": "Identifies the Builder document schema. A document must name it exactly.",
       "examples": [
         "https://phenix.sandia.gov/schemas/builder/v1"
       ],
@@ -3629,7 +3629,7 @@
     },
     "iconSize": {
       "$ref": "#/$defs/iconSize",
-      "description": "Size the canvas draws the icons of devices, switches and groups at, unless a node names its own; empty is small.",
+      "description": "Size at which the canvas draws the icons of devices, switches and groups, unless a node names its own size. Empty is small.",
       "examples": [
         "large"
       ],
@@ -3639,7 +3639,7 @@
       "additionalProperties": {
         "$ref": "#/$defs/icon"
       },
-      "description": "Copies of the custom icons the nodes and templates name, at most 50, each by its icon name: a downloaded document carries every icon it uses, a draft on a server none; never published.",
+      "description": "Copies of the custom icons that the nodes and templates name, at most 50, each by its icon name. A downloaded document holds every icon it uses. A draft on a server holds none. Never published.",
       "examples": [
         {
           "plc": {
@@ -3655,7 +3655,7 @@
       "type": "object"
     },
     "layout": {
-      "description": "Automatic layout that last laid the document out, which the editor names in its layout menu; empty, or an id the editor does not know, means a layout did not make the positions.",
+      "description": "Automatic layout that last arranged the document. The editor names it in its layout menu. Empty, or an id that the editor does not know, means that no layout made the positions.",
       "examples": [
         "elk"
       ],
@@ -3664,7 +3664,7 @@
     },
     "metadata": {
       "$ref": "#/$defs/metadata",
-      "description": "What the document says of itself: its identifier, name, description, provenance and notes.",
+      "description": "What the document says about itself: its identifier, name, description, provenance and notes.",
       "examples": [
         {
           "createdAt": "2026-10-01T15:04:05Z",
@@ -3683,7 +3683,7 @@
       "title": "Metadata"
     },
     "networks": {
-      "description": "Networks (VLANs) the switches and connections of the document belong to.",
+      "description": "Networks (VLANs) that the switches and connections of the document belong to.",
       "examples": [
         [
           {
@@ -3701,7 +3701,7 @@
       "type": "array"
     },
     "nodes": {
-      "description": "Items on the canvas: devices, switches, notes, groups, and the shapes, icons and lines drawn beside them.",
+      "description": "Items on the canvas: devices, switches, notes, groups, and the shapes, icons and lines drawn next to them.",
       "examples": [
         [
           {
@@ -3846,14 +3846,14 @@
     },
     "revision": {
       "const": 1,
-      "description": "Revision of the Builder document schema the document follows.",
+      "description": "Revision of the Builder document schema that the document follows.",
       "examples": [
         1
       ],
       "title": "Schema Revision"
     },
     "scenarios": {
-      "description": "Names of the Scenario configs on the server the diagram is used with, at most 20, each a config name of at most 256 bytes and none twice ignoring case; publishing adds the topology to the topology annotation of each, and an experiment published with it uses one of them.",
+      "description": "Names of the Scenario configs on the server for the diagram, at most 20. Each is a config name of at most 256 bytes, and no name occurs twice, ignoring case. A publish adds the topology to the topology annotation of each. An experiment published with the topology uses one of them.",
       "examples": [
         [
           "pump-station-ntp",
@@ -3873,7 +3873,7 @@
     },
     "source": {
       "$ref": "#/$defs/source",
-      "description": "Where the document came from, and the warnings raised while generating it.",
+      "description": "Where the document came from, and the warnings from its generation.",
       "examples": [
         {
           "apiVersion": "phenix.sandia.gov/v1",
@@ -3887,7 +3887,7 @@
       "title": "Source"
     },
     "templates": {
-      "description": "Device templates saved with the diagram, at most 50; never published to a config.",
+      "description": "Device templates saved with the diagram, at most 50. Never published to a config.",
       "examples": [
         [
           {

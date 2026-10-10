@@ -5,17 +5,18 @@
   imported from, its scenarios, each with the hosts each of its apps runs
   on, and the notes of the diagram. All but the icon size and the notes are
   read only here. Edit scenarios (Add scenario when there is none) opens the
-  Scenario dialog the toolbar's Scenarios button opens, and like it, not in
-  a read-only draft.
+  same Scenario dialog as the toolbar's Scenarios button. Like that button,
+  it does not show in a read-only draft.
 
   Icon size is the size devices, switches and groups draw their icons at,
   unless one has a size of its own (see nodeIconSize in model.js). It is
   presentation only, so a choice applies at once, as one undo step (the
-  store's setIconSize). As in a device's form, one choice is one step: a
-  size chosen with the pointer applies at once, and one stepped to with the
-  arrow keys when the choice is made, on Enter or when focus leaves the
-  select (see heldCommit.js). A size the store refuses leaves the select
-  showing the diagram's size. A read-only draft shows the size as text.
+  store's setIconSize). As in a device's form, one choice is one step. A
+  size chosen with the pointer applies at once. A size that the user steps
+  to with the arrow keys applies when the choice is made: on Enter, or when
+  focus leaves the select (see heldCommit.js). A size the store refuses
+  leaves the select showing the diagram's size. A read-only draft shows the
+  size as text.
 
   Details shows what the server wrote into the document's metadata when it
   stored it: who made it and when, and the user and time of the save that
@@ -26,12 +27,12 @@
   save state announces already.
 
   A document names its scenarios and holds none of their content, so the
-  apps of each are read from its config (see the store's fetchScenario),
-  when the role may read it.
+  editor reads the apps of each scenario from its config (see the store's
+  fetchScenario), when the role may read it.
 
-  Notes are the metadata's notes, one text box each. A note is written
-  into the diagram when its box changes and loses focus, as one undo step
-  (the store's setDiagramNotes); a box left empty drops its note. Text the
+  Notes are the metadata's notes, one text box each. The editor writes a
+  note into the diagram when its box changes and loses focus, as one undo
+  step (the store's setDiagramNotes). A box left empty drops its note. Text the
   server would refuse (longer than its byte limit, or holding a control
   character other than newline and tab) shows an error under its box, and
   the diagram keeps the note as last saved until the text is fixed. A
@@ -290,8 +291,8 @@
 
   // A size the store refuses (while a conflict is resolved, or in a draft
   // that turned read only) leaves the document's size as it was, and so the
-  // select's binding too, which then would not put it back: the select is
-  // given the document's size again here.
+  // select's binding too, which then would not put it back. So this gives
+  // the select the document's size again.
   function commitIconSize(size) {
     const entry = store.setIconSize(size);
 
@@ -304,8 +305,8 @@
 
   const iconSizeChoice = heldCommit(commitIconSize);
 
-  // A key that steps the select holds the size it steps to; any other, such
-  // as Enter or a shortcut, applies the size held.
+  // A key that steps the select holds the size it steps to. Any other key,
+  // such as Enter or a shortcut, applies the size held.
   function onIconSizeKey(event) {
     const effect = keyEffect(event);
 
@@ -319,8 +320,8 @@
   onBeforeUnmount(() => iconSizeChoice.flush());
 
   // A user and a time the document holds, as a row: the time in the
-  // viewer's locale, then "by" the user. Either may be missing; with
-  // neither there is no row.
+  // viewer's locale, then "by" the user. Either may be missing. With
+  // neither, there is no row.
   function stampRow(id, label, user, at) {
     const time = formatTimestamp(at);
     const by = typeof user === 'string' && user ? `by ${user}` : '';
@@ -426,7 +427,7 @@
   // The notes being edited, one row each, with a key of their own so a row
   // keeps its text box, and the focus in it, while other rows come and go.
   // A row's `saved` is the note the diagram holds for it, which it keeps
-  // while the row's text cannot be written; a row added and not written yet
+  // while the row's text cannot be written. A row added and not written yet
   // has none, and is only here.
   const rows = ref([]);
   const noteBoxes = new Map();
@@ -507,8 +508,8 @@
     });
   }
 
-  // Writes the rows into the diagram, as one undo step; a blank row is
-  // dropped, also when the diagram's notes stay as they were. A row whose
+  // Writes the rows into the diagram, as one undo step. This drops a blank
+  // row, also when the diagram's notes stay as they were. A row whose
   // text cannot be written keeps its text box, with its error, and the
   // diagram its saved note.
   function writeNotes() {
@@ -522,7 +523,7 @@
   }
 
   // A box left empty takes its row, and the focus may have been on that
-  // row's Delete button; a box left with text keeps its row, and the focus
+  // row's Delete button. A box left with text keeps its row, and the focus
   // goes wherever the user moved it.
   function commitNotes(event) {
     const index = rows.value.findIndex(
@@ -652,7 +653,7 @@
     margin: 0 0 0 0.6rem;
   }
 
-  /* Values keep their line breaks and wrap anywhere; a long one scrolls
+  /* Values keep their line breaks and wrap anywhere. A long value scrolls
      in a box of about eight lines. */
   .inspector-diagram__value {
     max-height: 8.5rem;
@@ -676,7 +677,7 @@
     margin-top: 0.5rem;
   }
 
-  /* A note is its text box over its Delete button; its text keeps its line
+  /* A note is its text box over its Delete button. Its text keeps its line
      breaks when the draft is read only. */
   .inspector-diagram__notes {
     margin: 0 0 0.4rem;

@@ -1,11 +1,11 @@
-// Auto-group by name pattern: checking the pattern the user typed, and
-// matching it against the names (see grouping.js).
+// Auto-group by name pattern: checks the pattern that the user typed, and
+// matches it against the names (see grouping.js).
 //
-// The pattern is a JavaScript regular expression, compiled to ignore case.
-// A regular expression cannot be stopped once it runs, and some take
-// exponential time on a short name, so the matching runs in a Web Worker
-// the page can end (groupingWorker.js). This module is what the worker
-// loads, so it imports nothing.
+// The pattern is a JavaScript regular expression, compiled case-insensitive.
+// A regular expression cannot stop after it starts, and some take
+// exponential time on a short name. Thus the matching runs in a Web Worker
+// that the page can stop (groupingWorker.js). The worker loads this module,
+// so the module imports nothing.
 
 export const GROUP_PATTERN_MAX = 200;
 
@@ -39,9 +39,9 @@ export function patternProblem(pattern) {
 }
 
 /**
- * The text each name is grouped by: what the first pair of parentheses
- * matched when the pattern has one and it took part in the match, the
- * whole match otherwise, trimmed.
+ * The text by which each name is grouped, trimmed. When the pattern has a
+ * first pair of parentheses that took part in the match, it is the text that
+ * the pair matched. Otherwise it is the whole match.
  *
  * @param {string} pattern one patternProblem passes
  * @param {string[]} names

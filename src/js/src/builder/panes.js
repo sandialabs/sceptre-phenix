@@ -1,19 +1,20 @@
-// Widths of the editor's side columns: Add nodes and the Outline at the start,
-// the Inspector at the end. The splitters beside the canvas resize them, a
-// Widen toggle at each splitter makes its column as wide as it can be, and a
-// Hide toggle below it folds the column into a narrow strip (see
-// BuilderPanes.vue). Widths are CSS pixels; the limits are in rem, so they
-// grow with enlarged text, and always leave the canvas a usable width.
+// Widths of the editor's side columns: Add nodes and the Outline at the
+// start, the Inspector at the end (see BuilderPanes.vue):
+// - The splitters beside the canvas resize them.
+// - A Widen toggle at each splitter makes its column as wide as possible.
+// - A Hide toggle below it folds the column into a narrow strip.
+// Widths are CSS pixels. The limits are in rem, so they grow with enlarged
+// text, and always leave the canvas a usable width.
 //
 // A viewer's widths are kept in localStorage under phenix.builder.panes, per
-// browser. Only a side the viewer has resized is stored; the other keeps the
-// layout's default width for the window size. A side widened with its toggle
-// also keeps the width the toggle restores: {"end": 900, "widened": {"end":
-// 352}}, or null there for the default width. Hidden sides are listed:
-// {"hidden": ["end"]}.
+// browser. Only a side the viewer resized is stored. The other side keeps
+// the layout's default width for the window size. A side widened with its
+// toggle also keeps the width the toggle restores: {"end": 900, "widened":
+// {"end": 352}}, or null there for the default width. Hidden sides are
+// listed: {"hidden": ["end"]}.
 //
-// The minimap's size is kept apart, under phenix.builder.minimap (see the
-// end of this file).
+// The minimap's size is kept separately, under phenix.builder.minimap (see
+// the end of this file).
 
 import { pageStorage } from './storage.js';
 
@@ -61,10 +62,10 @@ export function clampPane(width, limits) {
 }
 
 /**
- * The width a key press on a splitter gives its side column, as the APG
- * window splitter pattern has it: the arrow keys move the splitter itself,
- * so Left Arrow narrows the start column and widens the end column; Home and
- * End give the column its smallest and largest width.
+ * The width a key press on a splitter gives its side column, as in the APG
+ * window splitter pattern. The arrow keys move the splitter itself, so Left
+ * Arrow narrows the start column and widens the end column. Home and End
+ * give the column its smallest and largest width.
  *
  * @param {'start'|'end'} side
  * @param {string} key KeyboardEvent.key
@@ -126,14 +127,14 @@ function hiddenOf(hidden) {
 /**
  * The widths this viewer chose, the sides widened with their toggle, and
  * the sides hidden. Nothing is stored in a private window, with site data
- * blocked or cleared, or before a splitter is first moved: the layout's
- * default widths then apply, and both sides show.
+ * blocked or cleared, or before a splitter first moves. Then the layout's
+ * default widths apply, and both sides show.
  *
  * @param {Storage|null} [storage] localStorage by default
  * @returns {{widths: {start?: number, end?: number},
  *   widened: {start?: number|null, end?: number|null},
- *   hidden: string[]}} pixels; a widened side's width to restore, or null
- *   for its default width; the hidden sides
+ *   hidden: string[]}} widths: pixels. widened: a widened side's width to
+ *   restore, or null for its default width. hidden: the hidden sides
  */
 export function loadPanes(storage) {
   try {
@@ -158,7 +159,7 @@ export function loadPanes(storage) {
 }
 
 /**
- * Keeps the widths this viewer chose, and the sides hidden; a side without
+ * Stores the widths this viewer chose, and the sides hidden. A side without
  * a width is left out, and takes the default width again.
  *
  * @param {{widths: {start?: number, end?: number},
@@ -205,7 +206,7 @@ export function savePanes({ widths, widened, hidden } = {}, storage) {
 //
 // The width a viewer chose is kept in localStorage under
 // phenix.builder.minimap, per browser: {"width": 280}. Without one, the
-// minimap has Vue Flow's own size, which Reset view puts back.
+// minimap has Vue Flow's own size, which Reset view restores.
 
 export const MINIMAP_STORAGE_KEY = 'phenix.builder.minimap';
 export const MINIMAP_DEFAULT_WIDTH = 200;
@@ -215,7 +216,7 @@ const MINIMAP_MAX_WIDTH = 600;
 // The most of the canvas's width, and of its height, it may cover.
 const MINIMAP_MAX_SHARE = 0.5;
 // Vue Flow keeps the minimap 15px in from the canvas's edges, inside a 1px
-// frame; the same room above it keeps its handle, at its top left corner,
+// frame. The same space above it keeps its handle, at its top left corner,
 // and the handle's focus ring on the canvas.
 const MINIMAP_ROOM = 2 * (15 + 1);
 // One arrow key press.
@@ -333,7 +334,7 @@ export function loadMinimap(storage) {
 }
 
 /**
- * Keeps the minimap width this viewer chose; null forgets it.
+ * Stores the minimap width this viewer chose. null forgets it.
  *
  * @param {number|null} width
  * @param {Storage|null} [storage] localStorage by default

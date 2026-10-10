@@ -1,14 +1,15 @@
 // The forms of the Add a connection and Move to a group dialogs
 // (ConnectDialog.vue, RegroupDialog.vue): what each offers, what it starts
 // from, what it says when Connect or Move cannot act, and what those do.
-// The dialogs show them; the rules are here, apart from the markup.
+// The dialogs show them. The rules are here, apart from the markup.
 //
-// Each form starts from the selection when its dialog opens and follows
-// the diagram while it is open: a choice that goes from the diagram
-// (removed, connected elsewhere, undone) is unpicked, so a form never sends
-// what it no longer shows. submit() returns {done, focus}: done once the
-// store has made the change, and else the id of the control that should
-// take focus, or ''.
+// Each form starts from the selection when its dialog opens. While the
+// dialog is open, the form follows the diagram. When a chosen element
+// leaves the diagram (removed, connected elsewhere, undone), the form
+// clears that choice. Thus a form never sends what it no longer shows.
+// submit() returns {done, focus}. done is true when the store made the
+// change. Otherwise, focus is the id of the control that should take focus,
+// or ''.
 
 import { computed, reactive, watch } from 'vue';
 
@@ -38,12 +39,12 @@ function tally(texts) {
 }
 
 /**
- * The names nodes are offered under in a dialog's list, which tell every
- * option apart for a keyboard or screen reader user: each node's own
- * `name(node)`, and where two or more share one, as unlabelled drawings of a
- * kind do ("Line (line)"), each of those followed by the node's position as
- * the Inspector shows it ("Line (line) at 120, 48"), and by its place among
- * those that share that too ("…, 2 of 3").
+ * The names that a dialog's list gives its nodes. The names tell every
+ * option apart for a keyboard or screen reader user. Each node gets its own
+ * `name(node)`. Where two or more nodes share a name, as unlabelled drawings
+ * of a kind do ("Line (line)"), each of those names adds the node's position
+ * as the Inspector shows it ("Line (line) at 120, 48"). Where nodes share
+ * that too, each name also adds the node's place among them ("…, 2 of 3").
  *
  * @param {object[]} nodes
  * @param {(node: object) => string} name
@@ -92,7 +93,7 @@ export function optionNames(nodes, name) {
  *   connect(connection, {announce})
  * @returns {object} form (deviceId, handleId, switchId), error, and the
  *   computed devices, switches, availableHandles, missingDevice,
- *   missingSwitch and message; switchLabel(node) and submit()
+ *   missingSwitch and message, plus switchLabel(node) and submit()
  */
 export function useConnectForm(store) {
   // A device from an included topology keeps its connections, so it is
@@ -114,7 +115,7 @@ export function useConnectForm(store) {
   });
 
   // `missing`: Connect was pressed with a field empty, and the message is
-  // built from the fields; `refusal`: why the store refused the
+  // built from the fields. `refusal`: why the store refused the
   // connection. A new seq replaces the message, so a repeated one is
   // announced again.
   const error = reactive({ refusal: '', missing: false, seq: 0 });
@@ -141,7 +142,7 @@ export function useConnectForm(store) {
   const missingSwitch = computed(() => error.missing && !form.switchId);
 
   // Names only the fields still empty, so the message never goes stale as
-  // they are filled in. A kind the diagram has none of cannot be chosen,
+  // the user fills them. A kind the diagram has none of cannot be chosen,
   // so the message says to add one instead.
   const message = computed(() => {
     if (!error.missing) {
@@ -175,15 +176,15 @@ export function useConnectForm(store) {
     error.seq += 1;
   }
 
-  // The message goes once every field it named has a value.
+  // The message clears when every field it named has a value.
   watch([missingDevice, missingSwitch], ([device, sw]) => {
     if (error.missing && !device && !sw) {
       clearError();
     }
   });
 
-  // Another device has other interfaces, so the one picked for the last
-  // goes.
+  // Another device has other interfaces, so clear the interface picked for
+  // the last device.
   watch(
     () => form.deviceId,
     () => {
@@ -213,10 +214,10 @@ export function useConnectForm(store) {
   }
 
   // With a field empty, the message names it and the first empty field
-  // takes focus. The form's message reads a refusal out, of the connection
-  // or of the edit (a conflict being resolved), so the store need not as
-  // well; it says what was connected. Only an edge the store returns means
-  // the change was made.
+  // takes focus. The form's message reads out a refusal of the connection
+  // or of the edit (a conflict being resolved). For this reason, the store
+  // does not also announce the refusal. The store says what was connected.
+  // Only an edge that the store returns means the change was made.
   function submit() {
     if (store.readOnly) {
       return { done: false, focus: '' };
@@ -273,7 +274,8 @@ export function useConnectForm(store) {
  * @param {object} store the Builder store: doc, selection, readOnly,
  *   editRefusal and setParent(id, parentId, {announce})
  * @returns {object} form (nodeId, groupId), error, and the computed
- *   movable, groupChoices, nodeNames, groupNames and missingNode; submit()
+ *   movable, groupChoices, nodeNames, groupNames and missingNode, plus
+ *   submit()
  */
 export function useRegroupForm(store) {
   // Every node can move to a group or out of one.
@@ -286,7 +288,7 @@ export function useRegroupForm(store) {
     groupId: first?.parentId || '',
   });
 
-  // Why Move did nothing; `missing` when no node was chosen. A new seq
+  // Why Move did nothing. `missing` is true when no node was chosen. A new seq
   // replaces the message, so a repeated one is announced again.
   const error = reactive({ text: '', missing: false, seq: 0 });
 
@@ -324,8 +326,8 @@ export function useRegroupForm(store) {
     error.seq += 1;
   }
 
-  // The group shows where the chosen node is now; a node or group that is
-  // gone is unpicked.
+  // Group shows where the chosen node is now. A node or group that is gone
+  // is cleared from the form.
   watch(
     () => form.nodeId,
     (id) => {
@@ -344,9 +346,9 @@ export function useRegroupForm(store) {
     }
   });
 
-  // The store says where the node went; a move that would change nothing,
+  // The store says where the node went. A move that would change nothing,
   // or that the store refuses (a conflict being resolved), says why
-  // instead, and focus stays where it is.
+  // instead. Focus then stays where it is.
   function submit() {
     if (store.readOnly) {
       return { done: false, focus: '' };

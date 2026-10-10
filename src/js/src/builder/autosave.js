@@ -1,49 +1,52 @@
 // Autosave: an ordered, per-commit persistence queue.
 //
-// Every semantic edit (a "commit") is recorded locally first and then sent to
-// the server as its own snapshot, in the order it was made. Commits are never
-// debounced or coalesced: the server history is meant to be the same history
-// the user can step through locally, so collapsing two edits into one snapshot
-// would silently lose an undo step.
+// Every semantic edit (a "commit") is recorded locally first. It is then sent
+// to the server as its own snapshot, in the order the user made it. Commits
+// are never debounced or coalesced. The server history must be the same
+// history that the user can step through locally, so if two edits became one
+// snapshot, an undo step would be lost without notice.
 //
-// Concurrency is handled with ETags only. A conflict stops the queue and
-// hands the store the server copy it read (see onConflict), which the store
-// merges with the unsaved changes (see merge.js): the queue then holds one
+// Only ETags control concurrency. A conflict stops the queue and gives the
+// store the server copy that it read (see onConflict). The store merges that
+// copy with the unsaved changes (see merge.js). The queue then holds one
 // snapshot of the merged document, sent with the ETag of that server copy
-// (see rebase). The user may also reload the server copy or save their local
-// history as a new draft. There is no code path that overwrites a draft whose
-// ETag we no longer hold.
+// (see rebase). The user can also reload the server copy or save their local
+// history as a new draft. No code path overwrites a draft whose ETag the
+// queue does not hold.
 //
-// Some changes to a draft leave its content as it was: a change to who it is
-// shared with, or someone else's publish. The queue keeps the head the server
-// last confirmed (serverHead: the current snapshot, the cursor and how many
-// snapshots it keeps), and on a conflict reads the draft again. When the
-// draft as read already holds the operation sent, an earlier delivery of it
-// was stored but its answer never came, so the read is taken as its answer
-// (see alreadyStored). When the head is the same, the content is what this
-// device last saw, so the queue takes the new ETag and sends again;
-// otherwise the conflict stands, naming who saved last and carrying the
-// draft as read. The read also finds a draft
-// that is no longer shared with the user, or that they may now only view
-// (accessLost).
+// Some changes to a draft do not change its content: a change to the list of
+// people it is shared with, or another user's publish. The queue keeps the
+// head that the server last confirmed (serverHead: the current snapshot, the
+// cursor and how many snapshots the draft keeps). On a conflict, it reads the
+// draft again:
+//   - When the draft as read already holds the operation sent, an earlier
+//     delivery of it was stored but its response never came. Thus the read
+//     is its response (see alreadyStored).
+//   - When the head is the same, the content is what this device last saw.
+//     Thus the queue takes the new ETag and sends again.
+//   - Otherwise the conflict stands. It names who saved last and carries the
+//     draft as read.
+// The read also finds a draft that is no longer shared with the user, or
+// that the user can now only view (accessLost).
 //
-// There is no presence, no live collaboration, no heartbeat and no polling:
-// another editor's changes reach this queue only through a conflict. The
-// only requests it makes are the draft read after a conflict, the draft
-// snapshot append and the draft history cursor move; the last two are
-// ordered, awaited and carry If-Match. "Cursor" here means the position in
+// There is no presence, no live collaboration, no heartbeat and no polling.
+// Changes from another editor get to this queue only through a conflict. The
+// queue makes only these requests: the draft read after a conflict, the draft
+// snapshot append and the draft history cursor move. The last two are
+// ordered, awaited and carry If-Match. Here, "cursor" means the position in
 // the draft's own undo history, not a collaborator's caret.
 //
 // A save stores the document with the creator, creation time, last editor
-// and last edit time the server writes into its metadata, and answers with
-// them (the stamp). The queue copies the stamp into its own copy of the
-// snapshot it sent, so that copy is the document the server stores (see
-// withStamp in model.js). It never makes these values up.
+// and last edit time that the server writes into its metadata. The response
+// includes these values (the stamp). The queue copies the stamp into its own
+// copy of the snapshot it sent, so that copy is the document that the server
+// stores (see withStamp in model.js). It never makes up these values.
 //
-// Other tabs of this browser are another matter (see tabs.js). Each tab
-// keeps its own local record of a draft, and while another tab, or a queue
-// a closed tab left, holds changes to the draft the server does not have,
-// this queue does not send its own: the user chooses which to save.
+// Other tabs of this browser are a different case (see tabs.js). Each tab
+// keeps its own local record of a draft. While another tab, or a queue that
+// a closed tab left, holds changes to the draft that the server does not
+// have, this queue does not send its own changes. The user chooses which
+// changes to save.
 
 import { count } from './announce.js';
 import { classifyError, errorMessage, sentence } from './api.js';
@@ -57,9 +60,9 @@ export const RETRY_DELAYS = [1000, 2000, 5000, 15000, 30000];
 // that left the content as it was.
 export const MAX_REBASES = 2;
 
-// Why a draft someone shared can no longer be saved (see accessLost in
-// initialState): 'role' is a draft still shared for editing whose user's
-// role may no longer change configs.
+// Why a draft that someone shared cannot be saved now (see accessLost in
+// initialState). 'role' is a draft still shared for editing whose user's
+// role cannot change configs now.
 const ACCESS_LOST = {
   'view-only': 'You can no longer edit this draft.',
   role: 'You can no longer edit this draft: your role cannot change configs.',
@@ -110,27 +113,29 @@ export function initialState() {
     // True while this device cannot store the queue (storage blocked, full
     // or unavailable), so nothing may claim that work is kept here.
     storageFailed: false,
-    // False while an error is one that sending again cannot fix (a refused
-    // or oversized snapshot, a deleted draft), so Retry saving is not
-    // offered for it.
+    // False while the error is one that sending again cannot fix (a refused
+    // or oversized snapshot, a deleted draft). Then Retry saving is not
+    // offered.
     retryable: true,
     // True while an error is the server refusing the session (401): the
     // queue waits for the user to sign in again (see signin.js).
     signInNeeded: false,
     // During a conflict: who saved the draft last, when the server said.
     lastModifiedBy: '',
-    // Why a draft someone shared can no longer be saved: 'view-only' (the
-    // user may now only view it), 'role' (their role may no longer change
-    // configs) or 'gone' (no longer shared with them, or deleted); ''
-    // otherwise. The queue is then blocked, as when forbidden.
+    // Why a draft that someone shared cannot be saved now: 'view-only' (the
+    // user can now only view it), 'role' (the user's role cannot change
+    // configs now) or 'gone' (not shared with the user any more, or
+    // deleted). '' otherwise. The queue is then blocked, as when forbidden.
     accessLost: '',
     // When the last change was queued.
     changedAt: null,
-    // The other tabs (see tabs.js): this tab's id; the other tabs with the
-    // draft open, each with its state; the other versions of the draft's
-    // unsaved changes, in other tabs or left by closed tabs; whether the
-    // queue waits for the user to choose which to save; and whether a
-    // conflict is the user's choice of another version.
+    // The other tabs (see tabs.js):
+    //   - this tab's id
+    //   - the other tabs with the draft open, each with its state
+    //   - the other versions of the draft's unsaved changes, in other tabs or
+    //     left by closed tabs
+    //   - whether the queue waits for the user to choose which to save
+    //   - whether a conflict is the user's choice of another version.
     tab: '',
     tabs: [],
     versions: [],
@@ -140,8 +145,9 @@ export function initialState() {
 }
 
 /**
- * The id of the snapshot a draft envelope's cursor points at. A save answers
- * with the draft alone, which names it; a read also carries the history.
+ * The id of the snapshot that a draft envelope's cursor points at. A save
+ * responds with only the draft, which names it. A read also carries the
+ * history.
  *
  * @param {object} envelope readEnvelope() result
  * @returns {string|undefined}
@@ -153,12 +159,12 @@ export function snapshotIdOf(envelope) {
 }
 
 /**
- * The stamp a create or save answered with: the creator, creation time, last
- * editor and last edit time of the document it stored. Empty for a document
- * that names none of them.
+ * The stamp in the response of a create or save: the creator, creation time,
+ * last editor and last edit time of the document that it stored. Empty for a
+ * document that names none of them.
  *
  * @param {object} envelope readEnvelope() result
- * @returns {object|null} null when the envelope carries none, as that of a
+ * @returns {object|null} null when the envelope carries no stamp, as for a
  *   read or a cursor move
  */
 export function stampOf(envelope) {
@@ -170,10 +176,10 @@ export function stampOf(envelope) {
 }
 
 /**
- * The head of the draft an envelope describes: its current snapshot, its
- * cursor and how many snapshots it keeps. Two envelopes with the same head
- * hold the same content, whatever else changed (who it is shared with, a
- * publication).
+ * The head of the draft that an envelope describes: its current snapshot,
+ * its cursor and how many snapshots it keeps. Two envelopes with the same
+ * head hold the same content, whatever else changed (the people it is shared
+ * with, a publication).
  *
  * @param {object} envelope readEnvelope() result, or {draft}
  * @returns {{snapshotId: string, cursor: number, snapshots: number}|null}
@@ -214,24 +220,26 @@ export function sameHead(a, b) {
 
 /**
  * The draft as read again after the server refused an operation with 412,
- * as the answer to that operation, when the server already holds it: an
- * earlier delivery of the same operation was stored, but its answer never
- * came (the connection dropped once the server had stored it, or the
- * request reached the server twice). A snapshot is held when the draft's
- * newest snapshot is its current one and carries the operation's id (see
- * send); a cursor move when the draft's current snapshot is the one it
- * moves to and the draft keeps as many snapshots as when the queue last
- * heard from the server. The draft is then what the operation left, so the
- * queue goes on from it instead of meeting a conflict with its own save. A
- * snapshot's answer carries the stamp the stored document holds, as a
- * save's does (see stampOf).
+ * used as the response to that operation when the server already holds it.
+ * This occurs when an earlier delivery of the same operation was stored, but
+ * its response never came (the connection dropped after the server stored
+ * it, or the request got to the server twice). The server holds:
+ *   - a snapshot when the draft's newest snapshot is its current one and
+ *     carries the operation's id (see send)
+ *   - a cursor move when the draft's current snapshot is the target of the
+ *     move, and the draft keeps as many snapshots as when the queue last
+ *     heard from the server.
+ * The draft is then the result of the operation. Thus the queue continues
+ * from it, and does not get a conflict with its own save. A snapshot's
+ * response carries the stamp that the stored document holds, as a save's
+ * response does (see stampOf).
  *
- * @param {object} op the operation the server refused
+ * @param {object} op the operation that the server refused
  * @param {object} envelope readEnvelope() result of the draft read again
  * @param {object|null} confirmed headOf() the draft the queue last heard
  *   of from the server (its serverHead)
- * @param {string} [target] the snapshot id a cursor move goes to
- * @returns {object|null} the envelope to go on from, or null when the
+ * @param {string} [target] the snapshot id that a cursor move goes to
+ * @returns {object|null} the envelope to continue from, or null when the
  *   server does not hold the operation
  */
 export function alreadyStored(op, envelope, confirmed, target = '') {
@@ -281,16 +289,16 @@ export function alreadyStored(op, envelope, confirmed, target = '') {
 
 /**
  * How many of a recovered queue's operations the server already holds. A
- * session that ended while a save was under way never saw the answer, so
- * the operation is still queued. A stored snapshot carries the id of the
- * operation that sent it (see send), and operations are sent in order, so
- * everything queued up to the last snapshot the server holds was sent.
+ * session that ended during a save never got the response, so the operation
+ * is still queued. A stored snapshot carries the id of the operation that
+ * sent it (see send), and operations are sent in order. Thus every operation
+ * queued up to the last snapshot that the server holds was sent.
  *
  * @param {object[]} queue recovered operations
  * @param {object[]|null} history the server's snapshot history
  * @returns {{count: number, snapshotIds: Map<string, string>}} how many
- *   leading operations were sent, and the snapshot id the server gave each
- *   snapshot among them, by commit id
+ *   leading operations were sent, and the snapshot id that the server gave
+ *   each snapshot among them, by commit id
  */
 export function appliedOperations(queue, history) {
   const stored = new Map(
@@ -316,22 +324,25 @@ export function appliedOperations(queue, history) {
 }
 
 /**
- * The undo history a recovered queue leaves, applying its operations in
- * order to the history the draft opened with, as the server does: a
- * snapshot drops the redo branch after the current entry and becomes
- * current, and a cursor move makes its entry current. So an edit undone
- * before a later edit is left out, as it is on the server. A move to an
- * entry this device holds that is not in that history yet, such as an undo
- * past the snapshot the draft opened at, puts the entry in it, before the
- * current entry when it is older and after it otherwise. A move to a
- * snapshot this device does not hold leaves the current entry as it is,
- * and a refused snapshot that a later operation replaces is skipped, as
- * the queue skips it.
+ * The undo history that a recovered queue leaves. It applies the queue's
+ * operations in order to the history that the draft opened with, as the
+ * server does:
+ *   - A snapshot drops the redo branch after the current entry and becomes
+ *     current. Thus an edit undone before a later edit is left out, as on
+ *     the server.
+ *   - A cursor move makes its entry current. A move to an entry that this
+ *     device holds but that is not in that history yet (such as an undo
+ *     past the snapshot that the draft opened at) puts the entry in it. The
+ *     entry goes before the current entry when it is older, and after it
+ *     otherwise. A move to a snapshot that this device does not hold leaves
+ *     the current entry unchanged.
+ *   - A refused snapshot that a later operation replaces is skipped, as the
+ *     queue skips it.
  *
  * @param {object[]} base history entries the queue starts from
  * @param {number} index the current entry of base
  * @param {object[]} queue operations
- * @param {object[]} entries the local entries the operations refer to
+ * @param {object[]} entries the local entries that the operations refer to
  * @returns {{entries: object[], index: number}}
  */
 export function replayHistory(base, index, queue, entries) {
@@ -437,10 +448,10 @@ export function describeState(state) {
 const PROBLEMS = ['offline', 'error', 'forbidden'];
 
 /**
- * What to announce when the queue state changes, if anything. Only
- * transitions a user must know about are spoken: a new problem, and the
- * recovery from one. The transient "Saving" and a problem that has not
- * changed (the offline queue retrying on its own) stay silent, so the live
+ * What to announce when the queue state changes, if anything. Only the
+ * transitions that a user must know about are spoken: a new problem, and the
+ * recovery from one. The transient "Saving" and a problem that did not
+ * change (the offline queue that retries itself) are silent. Thus the live
  * region does not repeat itself on every edit or retry.
  *
  * @param {object|null} last state last announced (status, message, storageFailed)
@@ -466,10 +477,10 @@ export function saveAnnouncement(last, next) {
 }
 
 /**
- * Whether a save-state message waiting to be spoken no longer holds. A
- * retry under way (idle or saving) does not make it stale: its outcome is
- * announced when known and replaces the waiting message. Any other status,
- * such as a conflict raised meanwhile, does.
+ * Whether a save-state message that waits to be spoken is out of date. A
+ * retry in progress (idle or saving) does not make it stale, because its
+ * outcome is announced when known and replaces the waiting message. Any
+ * other status, such as a conflict raised during the wait, makes it stale.
  *
  * @param {string} announced status the message describes
  * @param {string} current status now
@@ -479,14 +490,14 @@ export function staleSaveMessage(announced, current) {
   return announced !== current && !['idle', 'saving'].includes(current);
 }
 
-// Why a queue no longer sends: the user chose another version of the
+// Why a queue stopped sending: the user chose another version of the
 // draft's unsaved changes (see tabs.js).
 const OTHER_TAB_CHOSEN = 'You chose to save the changes made in another tab.';
 
 /**
- * The server copy a conflict carries: the draft as the read after the
- * conflict found it (see sendChecked), which the store merges with the
- * unsaved changes.
+ * The server copy that a conflict carries: the draft as the read after the
+ * conflict found it (see sendChecked). The store merges it with the unsaved
+ * changes.
  *
  * @param {object} envelope readEnvelope() result of a draft read
  * @returns {{document: object, etag: string, head: object|null,
@@ -512,12 +523,13 @@ export function serverCopyOf(envelope) {
  * Creates the autosave queue.
  *
  * @param {object} options api, store, actor, onState, onDraft, now, setTimeout,
- *   clearTimeout, isOnline, addOnlineListener, historyLimit; onConflict:
- *   called with the server copy (see serverCopyOf) when a save meets a
- *   draft someone else saved since; tabs: the other tabs of this browser
- *   (builderTabs in tabs.js), which a queue without one ignores;
+ *   clearTimeout, isOnline, addOnlineListener, historyLimit.
+ *   onConflict: called with the server copy (see serverCopyOf) when a save
+ *   finds a draft that someone else saved since.
+ *   tabs: the other tabs of this browser (builderTabs in tabs.js). A queue
+ *   without it ignores them.
  *   signInHere: () => whether the Builder can ask for the password again
- *   once the session has ended (see signin.js)
+ *   after the session ended (see signin.js).
  * @returns {object} queue
  */
 export function createAutosave(options = {}) {
@@ -569,9 +581,10 @@ export function createAutosave(options = {}) {
   // wrote it (see restamp), which the next write stores again.
   let restamped = new Set();
   // What the store is known to hold of the record: the entries and the
-  // operations its last finished write stored. Leaving the page copies the
-  // rest at once (see keepForUnload); copiedOps lists the operations such a
-  // copy holds, while it may be kept still, until the store holds them.
+  // operations that its last finished write stored. Leaving the page copies
+  // the rest at once (see keepForUnload). copiedOps lists the operations that
+  // such a copy holds, while the copy can still be kept, until the store
+  // holds them.
   let held = { entries: new Set(), ops: new Set() };
   let copiedOps = null;
   // While above zero, nothing is sent (see hold).
@@ -585,10 +598,10 @@ export function createAutosave(options = {}) {
   let coordinator = null;
   let waitingForTabs = false;
 
-  // A conflict that is the user's choice of another tab's changes says so
-  // (otherTab) until the queue leaves it; an error that is the session
-  // ending (signInNeeded) until another status, or another error, replaces
-  // it.
+  // A conflict that is the user's choice of the changes of another tab says
+  // so (otherTab) until the queue leaves it. An error that is the end of the
+  // session says so (signInNeeded) until another status, or another error,
+  // replaces it.
   const emit = (patch = {}) => {
     const conflicted = (patch.status || state.status) === 'conflict';
 
@@ -619,10 +632,11 @@ export function createAutosave(options = {}) {
     return tabRecordKey(draftKey(actor, owner, draftId), tab);
   }
 
-  // Tells the other tabs with the draft open about this queue, and hears
-  // theirs (see tabs.js): one coordinator per draft. `held` is the record
-  // this tab holds of it, whose changes its first message says: a tab that
-  // said none, as it reloads, would let another send its own.
+  // Tells the other tabs with the draft open about this queue, and receives
+  // their messages (see tabs.js): one coordinator per draft. `held` is the
+  // record that this tab holds of the draft, and its first message gives the
+  // record's changes. A tab that gave none, as it reloads, would let another
+  // tab send its own changes.
   function connect(owner, draftId, held) {
     const draft = `${owner}/${draftId}`;
 
@@ -665,8 +679,8 @@ export function createAutosave(options = {}) {
       return;
     }
 
-    // Another version was chosen: this one can no longer be sent to the
-    // draft, and waits to be saved as a new draft.
+    // The user chose another version. This version cannot be sent to the
+    // draft now, and waits to be saved as a new draft.
     if (
       coordinator.lost() &&
       record.queue.length > 0 &&
@@ -685,9 +699,9 @@ export function createAutosave(options = {}) {
       return;
     }
 
-    // Nothing seems to stand in the way of a held send: the queues closed
-    // tabs left are read first, as a tab that has just gone may have left
-    // its changes.
+    // Nothing seems to block a held send. The queues that closed tabs left
+    // are read first, because a tab that just closed may have left its
+    // changes.
     if (
       waitingForTabs &&
       !rechecking &&
@@ -719,10 +733,11 @@ export function createAutosave(options = {}) {
   }
 
   /**
-   * Takes the queue a closed tab left of the draft, when it is the only
-   * version of the draft's unsaved changes: this tab's record holds none.
-   * A tab reloaded without its id finds its queue so (see tabs.js). With
-   * more, none is taken: the user chooses which to save.
+   * Takes the queue that a closed tab left for the draft, when it is the
+   * only version of the draft's unsaved changes (this tab's record holds
+   * none). A tab reloaded without its id finds its queue in this way (see
+   * tabs.js). When there are more versions, none is taken, and the user
+   * chooses which to save.
    *
    * @param {string} key this tab's record key
    */
@@ -746,17 +761,17 @@ export function createAutosave(options = {}) {
     }
   }
 
-  // Local persistence must never reject into a caller that cannot handle it:
-  // the queue lives in memory too, so a storage failure is recorded in the
-  // state (the offline message then stops claiming work is kept on this
-  // device) and the send continues rather than raising an unhandled
+  // Local persistence must never reject into a caller that cannot handle it.
+  // The queue is also in memory. Thus a storage failure is recorded in the
+  // state (the offline message then stops claiming that work is kept on
+  // this device), and the send continues and does not raise an unhandled
   // rejection.
   //
-  // The store keeps only what the queue needs to replay: the entries its
-  // operations refer to, each written once. A drained queue needs nothing,
-  // so its record is removed. A save that settles after the queue was
-  // disposed is still recorded, so a reopened draft does not find that
-  // operation queued against an ETag the server has moved past.
+  // The store keeps only what the queue needs to replay: the entries that its
+  // operations refer to, each written once. An empty queue needs nothing, so
+  // its record is removed. A save that settles after the queue was disposed
+  // is still recorded. Thus a reopened draft does not find that operation
+  // queued against an ETag that the server moved past.
   const persist = async () => {
     if (!record || !store) {
       return;
@@ -836,10 +851,10 @@ export function createAutosave(options = {}) {
     copiedOps = null;
   }
 
-  // Records what a finished write stored (see held); an unload copy is
-  // removed once the store holds each operation it copied that is queued
-  // still. Those sent since need keeping no more, and those queued since
-  // the copy was taken are the store's to keep.
+  // Records what a finished write stored (see held). An unload copy is
+  // removed after the store holds each operation that it copied and that is
+  // still queued. The copy does not need to keep operations sent since. The
+  // store keeps the operations queued after the copy was made.
   function confirm(key, entries, ops) {
     if (record?.key !== key) {
       return;
@@ -858,16 +873,16 @@ export function createAutosave(options = {}) {
   }
 
   /**
-   * Keeps what the store may not hold yet as the page is left: a write to
+   * Keeps what the store may not hold yet as the page closes. A write to
    * IndexedDB finishes after the call that makes it, and a reload or a
-   * closed tab can cut it off. The operations queued since the store's last
-   * finished write, such as the edit leaving applies (see leave.js), are
-   * copied at once, with the snapshots it may lack (see writeUnloadCopy in
-   * idb.js); the next read of the draft merges the copy back, unless the
-   * store was written after it (see staleUnloadCopy). A copy that does not
-   * fit is not written: the caller keeps the browser's question, so the
-   * user can stay until the store holds the edits. Leaving anyway can lose
-   * those the store had not stored yet.
+   * closed tab can stop it. The operations queued since the store's last
+   * finished write, such as the edit that leaving applies (see leave.js),
+   * are copied at once, with the snapshots that the store may not have (see
+   * writeUnloadCopy in idb.js). The next read of the draft merges the copy
+   * back, unless the store was written after it (see staleUnloadCopy). A
+   * copy that does not fit is not written. The caller keeps the browser's
+   * question, so the user can stay until the store holds the edits. Leaving
+   * anyway can lose the edits that the store did not store yet.
    *
    * @returns {boolean} false when some queued work may not be kept
    */
@@ -918,12 +933,12 @@ export function createAutosave(options = {}) {
     }, delay);
   };
 
-  // A snapshot the server refused as invalid or too large can never be
-  // stored, nor can a cursor move to a snapshot the server no longer keeps
-  // ('pruned'). Once any later operation is queued (the user fixed the
-  // diagram, or undid the edit), it is dropped so it no longer blocks the
-  // queue, together with cursor moves that point at it. The local history
-  // keeps the entry.
+  // The server can never store a snapshot that it refused as invalid or too
+  // large, or a cursor move to a snapshot that it does not keep now
+  // ('pruned'). When a later operation is queued (the user fixed the
+  // diagram, or undid the edit), the refused operation is dropped, with the
+  // cursor moves that point at it, so it does not block the queue. The local
+  // history keeps the entry.
   const dropRejected = () => {
     const op = record.queue[0];
 
@@ -943,9 +958,10 @@ export function createAutosave(options = {}) {
   /**
    * Sends queued operations in order until the queue drains or is blocked.
    *
-   * @param {object} [options] background: a retry the user did not start;
-   *   the state keeps its problem text until the attempt settles, so the
-   *   status does not flicker between "Saving" and the problem on every retry
+   * @param {object} [options] background: a retry that the user did not
+   *   start. The state keeps its problem text until the attempt settles, so
+   *   the status does not flicker between "Saving" and the problem on every
+   *   retry.
    * @returns {Promise<object>} state, once this flush has ended
    */
   async function flush({ background = false } = {}) {
@@ -953,12 +969,12 @@ export function createAutosave(options = {}) {
       return state;
     }
 
-    // A save is under way. A foreground flush (an edit, Save now, publish)
-    // waits for it and then flushes again, so it returns how saving ended
-    // rather than "Saving", with whatever was queued meanwhile sent too.
-    // The flushes asked for meanwhile share that one follow-up, so edits
-    // made during a failing save do not each send again. A background
-    // retry leaves the save under way to finish.
+    // A save is in progress. A foreground flush (an edit, Save now, publish)
+    // waits for it and then flushes again. Thus it returns how saving ended,
+    // not "Saving", and also sends what was queued during the wait. The
+    // flushes requested during the wait share that one follow-up, so edits
+    // made during a failing save do not each send again. A background retry
+    // lets the save in progress finish.
     if (flushing) {
       if (background) {
         return state;
@@ -1001,8 +1017,8 @@ export function createAutosave(options = {}) {
         return emit({ status: 'saved', message: '' });
       }
 
-      // Only a new operation can unblock a refused snapshot; resending it
-      // would be refused again.
+      // Only a new operation can unblock a refused snapshot. If the queue
+      // sent it again, the server would refuse it again.
       if (record.queue[0].rejected) {
         const reasons = {
           'too-large': 'The diagram is too large.',
@@ -1094,8 +1110,8 @@ export function createAutosave(options = {}) {
         return state;
       }
 
-      // A draft someone shared that the user may no longer change: nothing
-      // queued can be saved to it.
+      // A draft that someone shared and that the user cannot change now:
+      // nothing queued can be saved to it.
       if (error?.accessLost) {
         cancelRetry();
 
@@ -1133,10 +1149,10 @@ export function createAutosave(options = {}) {
         return blocked;
       }
 
-      // The session ended (401). Sending again succeeds once the user is
-      // signed in again, so the queue stays retryable, but not on a timer:
-      // the same credentials are refused every time. Where the Builder can
-      // ask for the password again, it resumes the queue once it has it.
+      // The session ended (401). Sending again succeeds after the user signs
+      // in again, so the queue stays retryable, but not on a timer, because
+      // the server refuses the same credentials every time. Where the Builder
+      // can ask for the password again, it resumes the queue after it gets it.
       if (kind === 'unauthenticated') {
         cancelRetry();
 
@@ -1155,9 +1171,10 @@ export function createAutosave(options = {}) {
       if (kind === 'invalid' || kind === 'missing' || kind === 'too-large') {
         cancelRetry();
 
-        // A snapshot refused as invalid or too large is replaced by the
-        // next edit (see dropRejected); the kind says why after a reload.
-        // So is an undo or redo to a snapshot the server no longer keeps.
+        // The next edit replaces a snapshot refused as invalid or too large
+        // (see dropRejected). After a reload, the kind tells why. The same
+        // applies to an undo or redo to a snapshot that the server does not
+        // keep now.
         const head = record.queue[0];
         const pruned = kind === 'missing' && head?.kind === 'cursor';
 
@@ -1187,9 +1204,10 @@ export function createAutosave(options = {}) {
     }
   }
 
-  // Reads the draft again after a conflict or a refusal (see the header).
-  // A draft someone shared that is gone or may now only be viewed is thrown
-  // as access lost; a read that fails otherwise leaves `error` as it was.
+  // Reads the draft again after a conflict or a refusal (see the header). A
+  // shared draft that is gone or that the user can now only view is thrown
+  // as access lost. A read that fails for another reason does not change
+  // `error`.
   async function readAgain(error) {
     const shared = record.owner !== actor;
     let fresh;
@@ -1216,14 +1234,16 @@ export function createAutosave(options = {}) {
   }
 
   /**
-   * Sends `op`. A conflict reads the draft again. When the draft as read
-   * already holds the operation, an earlier delivery of it was stored and
-   * its answer never came: the read is its answer (see alreadyStored). When
-   * its head is the one the server last confirmed, the content is as this
-   * device last saw it: the queue takes the new ETag and sends again, at
-   * most MAX_REBASES times in a row. Otherwise the conflict is thrown,
-   * naming who saved last. A refusal (403 or 404) of a draft someone shared
-   * reads it again too, to tell whether the user lost access.
+   * Sends `op`. A conflict reads the draft again:
+   *   - When the draft as read already holds the operation, an earlier
+   *     delivery of it was stored and its response never came. The read is
+   *     its response (see alreadyStored).
+   *   - When its head is the head that the server last confirmed, the
+   *     content is as this device last saw it. The queue takes the new ETag
+   *     and sends again, at most MAX_REBASES times in a row.
+   *   - Otherwise the conflict is thrown, and names who saved last.
+   * A refusal (403 or 404) of a draft that someone shared also reads it
+   * again, to find whether the user lost access.
    *
    * @param {object} op queued operation
    * @returns {Promise<object>} the server's envelope
@@ -1358,18 +1378,18 @@ export function createAutosave(options = {}) {
     /**
      * Binds the queue to a draft, replacing any local record.
      *
-     * @param {object} draft owner, draftId, etag, entries, cursor, and
-     *   serverHead: headOf() the envelope etag came with, when known; key:
-     *   the record to bind to, when not this tab's (a record another page
-     *   left, which logout sends)
+     * @param {object} draft owner, draftId, etag, entries, cursor.
+     *   serverHead: headOf() the envelope that etag came with, when known.
+     *   key: the record to bind to, when not this tab's (a record that
+     *   another page left, which logout sends).
      */
     async attach(draft) {
       tab = tabs ? await tabs.tab() : '';
 
       const key = draft.key || ownKey(draft.owner, draft.draftId);
-      // Any log this device already holds for the draft is kept unless the
-      // caller passes a replacement: attaching must never be the reason local
-      // work disappears.
+      // Any log that this device already holds for the draft is kept unless
+      // the caller gives a replacement. Attaching must never cause local work
+      // to disappear.
       const explicit = draft.entries !== undefined || draft.queue !== undefined;
 
       if (!draft.key) {
@@ -1406,9 +1426,9 @@ export function createAutosave(options = {}) {
         changedAt: existing?.changedAt || existing?.updatedAt || null,
         updatedAt: now(),
       };
-      // A record merged with an unload copy may reference snapshots the
-      // store lacks: every one is written again, and the copy is removed
-      // once they are.
+      // A record merged with an unload copy can reference snapshots that the
+      // store does not have. All of them are written again, and the copy is
+      // removed after that.
       const merged = Boolean(existing?.fromUnload);
 
       copiedOps = merged
@@ -1517,12 +1537,12 @@ export function createAutosave(options = {}) {
     },
 
     /**
-     * Queues a move of the draft's *history* cursor (undo/redo) behind the
-     * commits already queued. This is not a collaboration or caret signal:
-     * it tells the server which snapshot the draft currently points at, so a
-     * reload and a publish use the same document the user sees. The entry
-     * it moves to is kept with the queue, so a reload shows it even when it
-     * was never saved from this device, as the draft it opened was not.
+     * Queues a move of the draft's *history* cursor (undo/redo) after the
+     * commits already queued. This is not a collaboration or caret signal.
+     * It tells the server which snapshot the draft points at now, so a
+     * reload and a publish use the same document that the user sees. The
+     * target entry is kept with the queue. Thus a reload shows it even when
+     * this device never saved it, as with the draft that it opened.
      *
      * @param {{snapshotId?: string, commitId?: string, entry?: object}} target
      *   server snapshot, and the history entry it is
@@ -1565,7 +1585,7 @@ export function createAutosave(options = {}) {
     },
 
     /**
-     * Blocks replay when locally queued work was based on another ETag.
+     * Blocks replay when locally queued work started from a different ETag.
      *
      * @param {string} [message]
      * @param {object} [options] server: the draft as the server holds it
@@ -1600,11 +1620,11 @@ export function createAutosave(options = {}) {
     },
 
     /**
-     * Puts the merge of the queue's changes with the server copy of a
-     * conflict in place of the queue: the record goes on from that copy's
-     * ETag and head, its entries are the history given (the server copy,
-     * then the merged document), and its queue is one snapshot of the last
-     * entry, sent on the next flush. The conflict ends.
+     * Replaces the queue with the merge of its changes and the server copy
+     * of a conflict. The record continues from that copy's ETag and head.
+     * Its entries are the given history (the server copy, then the merged
+     * document). Its queue is one snapshot of the last entry, sent on the
+     * next flush. The conflict ends.
      *
      * @param {object} merged etag and head of the server copy; entries: the
      *   history entries ({id, label, snapshot, serverSnapshotId}), the last
@@ -1666,14 +1686,14 @@ export function createAutosave(options = {}) {
     },
 
     /**
-     * Adopts the ETag of a change that left the content as it was, such as
-     * the owner's own change of who the draft is shared with: only when the
-     * draft's head is the one the server last confirmed to this queue, and
-     * the queue is not blocked. The ETag of a draft someone else saved
-     * meanwhile would let this queue write over their save, so it is not
-     * taken: the next save then meets the conflict, and reads the draft
-     * again (see sendChecked). Call it with nothing being sent (see hold
-     * and idle).
+     * Adopts the ETag of a change that did not change the content, such as
+     * the owner's own change to the people the draft is shared with. It does
+     * this only when the draft's head is the head that the server last
+     * confirmed to this queue, and the queue is not blocked. It does not take
+     * the ETag of a draft that someone else saved during that time, because
+     * that would let this queue write over their save. The next save then
+     * gets the conflict, and reads the draft again (see sendChecked). Call it
+     * while nothing is being sent (see hold and idle).
      *
      * @param {object} draft the draft the change answered with
      * @param {string} etag its ETag
@@ -1697,12 +1717,12 @@ export function createAutosave(options = {}) {
     },
 
     /**
-     * Adopts the ETag and head of a change made from here that left the
-     * content as it was but not the head, such as deleting an older
-     * snapshot: only when the change was sent with the ETag this queue
-     * holds, so the draft it answered with follows from the one the server
-     * last confirmed here, and the queue is not blocked. Call it with
-     * nothing being sent (see hold and idle).
+     * Adopts the ETag and head of a change made from here that did not
+     * change the content but changed the head, such as the deletion of an
+     * older snapshot. It does this only when the change was sent with the
+     * ETag that this queue holds, so the draft in the response follows from
+     * the draft that the server last confirmed here, and when the queue is
+     * not blocked. Call it while nothing is being sent (see hold and idle).
      *
      * @param {string} sentEtag the ETag the change was sent with
      * @param {object} draft the draft the change answered with
@@ -1745,27 +1765,28 @@ export function createAutosave(options = {}) {
     },
 
     /**
-     * Saves the local history as a brand new draft. This is the only
-     * conflict resolution that keeps local work: the conflicting draft is left
-     * untouched, so no other editor's changes are overwritten.
+     * Saves the local history as a new draft. This is the only conflict
+     * resolution that keeps local work. The conflicting draft does not
+     * change, so no other editor's changes are overwritten.
      *
-     * The history saved is the one the user steps through (the editor's
-     * undo history, when given), in order, and the new draft's cursor is put
-     * on the entry on screen, so undo, redo and publish there act on what the
-     * user sees. The new draft belongs to whoever saves it: the server
-     * refuses to create one for anybody else, such as the owner of a shared
-     * draft.
+     * The saved history is the one that the user steps through (the editor's
+     * undo history, when given), in order. The new draft's cursor is on the
+     * entry on screen, so undo, redo and publish there act on what the user
+     * sees. The new draft belongs to the user who saves it. The server
+     * refuses to create one for any other user, such as the owner of a
+     * shared draft.
      *
      * The new draft forks the conflicting one (forkOf), so the server gives
-     * it that draft's source and last publication: publishing it can update
-     * what that draft published or was opened from. Should that draft be gone, or no
-     * longer readable, the history is still saved, as a draft of its own.
+     * it the source and last publication of that draft. Thus publishing it
+     * can update what that draft published or was opened from. If that draft
+     * is gone, or the user cannot read it now, the history is still saved,
+     * as a separate draft.
      *
-     * @param {object} [options] title; entries and index: the history to
-     *   save and its current entry (the queue's own entries by default)
+     * @param {object} [options] title. entries and index: the history to
+     *   save and its current entry (the queue's own entries by default).
      * @returns {Promise<object>} new draft envelope, with snapshotIds: the
-     *   new draft's snapshot id of each entry, by entry id; and stamps: the
-     *   stamp the server answered each entry's save with, by entry id
+     *   new draft's snapshot id of each entry, by entry id. stamps: the stamp
+     *   in the server's response to each entry's save, by entry id.
      */
     async forkLocalHistory(options = {}) {
       const entries = options.entries || record?.entries || [];
@@ -1864,11 +1885,11 @@ export function createAutosave(options = {}) {
       copiedOps = null;
       serverCopy = null;
 
-      // The conflicting draft's queue lives on in the new draft. Should its
-      // record stay behind, reopening that draft offers the same choice again.
-      // It is removed before this tab leaves the other tabs with that draft
-      // open: they read the records again when a tab leaves (see left in
-      // tabs.js), and would list one still there as a closed tab's changes.
+      // The queue of the conflicting draft continues in the new draft. If its
+      // record stays, reopening that draft offers the same choice again. It is
+      // removed before this tab leaves the other tabs with that draft open.
+      // They read the records again when a tab leaves (see left in tabs.js),
+      // and would list a remaining record as the changes of a closed tab.
       try {
         await store?.remove(previous);
       } catch {}
@@ -1887,8 +1908,8 @@ export function createAutosave(options = {}) {
 
     /**
      * Retries a blocked queue (after the user fixed permissions, or manually).
-     * A send already under way is waited for first, so the state returned
-     * is the outcome of this retry, not of the attempt before it.
+     * It first waits for a send in progress, so the returned state is the
+     * outcome of this retry, not of the attempt before it.
      *
      * @returns {Promise<object>} state
      */
@@ -1916,11 +1937,11 @@ export function createAutosave(options = {}) {
     flush,
 
     /**
-     * Holds the queue: edits are still recorded and queued, but nothing is
+     * Holds the queue. Edits are still recorded and queued, but nothing is
      * sent until every hold is released. A publish holds it, so no save
-     * lands between the publish and the ETag it answers with.
+     * occurs between the publish and the ETag in its response.
      *
-     * @returns {Function} release, which sends whatever was queued meanwhile
+     * @returns {Function} release, which sends what was queued during the hold
      */
     hold() {
       let released = false;
@@ -1955,8 +1976,8 @@ export function createAutosave(options = {}) {
 
     /**
      * Sends the queue's states and saves to other callbacks, and tells the
-     * other tabs whether the draft is still open here: a draft closed for
-     * the drafts goes on sending in the background (see
+     * other tabs whether the draft is still open here. A draft closed for
+     * the drafts page continues to send in the background (see
      * createBackgroundSaves in leave.js).
      *
      * @param {object} callbacks onState, onDraft, onConflict
@@ -1971,8 +1992,8 @@ export function createAutosave(options = {}) {
 
     /**
      * Tells every tab which version of the draft's unsaved changes the user
-     * chose to save (see applyChoice in tabs.js); this queue sends its own
-     * only if they are the ones chosen.
+     * chose to save (see applyChoice in tabs.js). This queue sends its own
+     * changes only if they are the chosen version.
      *
      * @param {string} id a version's id: `tab:<id>` or `record:<key>`
      */
@@ -2003,9 +2024,9 @@ export function createAutosave(options = {}) {
     },
 
     /**
-     * Starts listening for connectivity changes so a queue parked offline
-     * drains as soon as the browser reconnects, and for the page being
-     * left, which keeps what the store may not hold yet (see
+     * Starts to listen for connectivity changes, so that a queue parked
+     * offline empties as soon as the browser reconnects. It also listens for
+     * the page closing, which keeps what the store may not hold yet (see
      * keepForUnload).
      *
      * @param {object} [target] window-like event target

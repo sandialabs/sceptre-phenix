@@ -16,14 +16,14 @@ import { itemNoun } from '@/builder/form-validator.js';
 import { lowerFirst } from '@/builder/text.js';
 
 // Provided by BuilderInspector: announces a message in the Builder's live
-// region. Renderers rendered anywhere else fall back to doing nothing.
+// region. Renderers rendered anywhere else do nothing.
 export const INSPECTOR_ANNOUNCE = Symbol('inspector-announce');
 
 export function useInspectorAnnounce() {
   return inject(INSPECTOR_ANNOUNCE, () => {});
 }
 
-// Provided by BuilderInspector: a count that goes up each time the form
+// Provided by BuilderInspector: a count that increases each time the form
 // reloads its data from the document (Cancel, undo, Apply), which may leave a
 // field's data as it was. Renderers rendered anywhere else get a count that
 // never changes.
@@ -37,9 +37,9 @@ export function useInspectorResets() {
 // a key/value row with no name, which never reaches the working copy. Each
 // renderer reports its own under its data path, as {path, message} entries
 // that the error summary lists and links to (path is the data-path of the
-// element to focus), and none once it goes. While any are reported, Apply
-// is refused, and the edit is not left to vanish silently. Renderers
-// rendered anywhere else report to nothing.
+// element to focus), and none once the problem is gone. While any are
+// reported, the Inspector refuses Apply, so the edit does not vanish
+// silently. Renderers rendered anywhere else report to nothing.
 export const INSPECTOR_LOCAL_PROBLEMS = Symbol('inspector-local-problems');
 
 export function useInspectorLocalProblems() {
@@ -137,7 +137,7 @@ export function useFieldChanged(control) {
 
 /**
  * Whether the working copy changed an entry of a map field (keys and
- * values; see InspectorMapRenderer), given the entry's key, which may hold
+ * values, see InspectorMapRenderer), given the entry's key, which may hold
  * dots: added, removed or given another value.
  *
  * @param {import('vue').ComputedRef<object>} control the map's control
@@ -165,7 +165,7 @@ export function useInspectorDrawnColor() {
 //
 //   entry(name)  the icon to show for a field's value: the document's copy
 //                of it, else the server's icon library's, as {name, data,
-//                ...}; undefined when nothing resolves the name
+//                ...}. Undefined when nothing resolves the name
 //   diagram()    the copies of icons the document carries, as
 //                [{name, data}]
 //
@@ -217,7 +217,7 @@ export function useInspectorIconLibrary() {
 /**
  * The text a field shows, which its input binds in place of its data: what
  * was typed in it, until its data changes or the form reloads it (Cancel,
- * undo, Apply; see useInspectorResets). Anything else that re-renders the
+ * undo, Apply, see useInspectorResets). Anything else that re-renders the
  * field, such as new warnings, the server's disk images arriving or a schema
  * update, patches the input's value with what it binds, and would put the
  * data back over text typed and not yet committed.
@@ -229,7 +229,7 @@ export function useInspectorIconLibrary() {
  * @param {import('vue').ComputedRef<{value: unknown}|undefined>} [options.fallback]
  *   what the field shows while it has no value (see useFieldDefault)
  * @returns {{text: import('vue').Ref<unknown>, onInput: (event: Event) => void, sync: () => void}}
- *   `onInput` takes the typed text; `sync` shows the data again, as the
+ *   `onInput` takes the typed text. `sync` shows the data again, as the
  *   form reads it once committed ("7" for "07")
  */
 export function useFieldText(
@@ -623,8 +623,8 @@ export function useInspectorControl(
   const { control } = input;
 
   const ids = computed(() => {
-    // JSON Forms assigns ids when the control mounts; server rendering has
-    // none, so fall back to the data path.
+    // JSON Forms assigns ids when the control mounts. Server rendering has
+    // none, so this uses the data path.
     const base = control.value.id || `field-${control.value.path || 'root'}`;
 
     return {

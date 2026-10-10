@@ -1,16 +1,14 @@
 <!--
   Add a connection, opened by the toolbar's Add connection and the palette's
-  command: a device's interface joined to a switch, without a drag.
+  command. It joins a device's interface to a switch, without a drag. The
+  rules are in structureForms.js.
 
-  The fields start from the selection: a selected device fills Device, and a
-  selected switch fills Switch. Interface offers the device's free
-  interfaces, a handle taking part in one connection only, as the server
-  requires, or a new one. Connect with a field empty names the fields still
-  empty, marks them and focuses the first; a kind the diagram has none of is
-  named as one to add first. A connection the store refuses says why here,
-  and the dialog stays open. Once connected, the dialog closes, focus goes
-  back to what opened it, and the live region, which waits while a dialog is
-  open, says the nodes were connected. The rules are in structureForms.js.
+  The fields start from the selection. Interface offers the device's free
+  interfaces, or a new one. Connect with a field empty names the empty
+  fields, marks them and focuses the first. When the store refuses a
+  connection, the dialog says why and stays open. After a connection, the
+  dialog closes and focus goes back to what opened it. The live region waits
+  while a dialog is open, and then says the nodes were connected.
 -->
 <template>
   <builder-dialog
@@ -66,9 +64,9 @@
         </select>
       </div>
 
-      <!-- Rendered empty from the start; a new key replaces the message, so
-           a repeated one is announced again. Its text follows the fields:
-           once a device is chosen it asks only for the switch. -->
+      <!-- Rendered empty from the start. A new key replaces the message, so
+           a repeated message is announced again. Its text follows the
+           fields: after a device is chosen, it asks only for the switch. -->
       <p
         :id="ERROR_ID"
         class="builder-dialog__message builder-dialog__error"

@@ -1,7 +1,7 @@
-// Package recordtest runs real record store backends inside tests, so code
-// built on phenix/store's RecordStore can be checked against every store
-// implementation and not only against in-memory fakes. It is imported only by
-// tests. Its package memrecord is the in-memory fake.
+// Package recordtest runs real record store backends inside tests. Thus code
+// built on the RecordStore of phenix/store can be checked against every store
+// implementation, not only against in-memory fakes. Only tests import it. Its
+// package memrecord is the in-memory fake.
 package recordtest
 
 import (

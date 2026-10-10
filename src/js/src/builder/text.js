@@ -57,9 +57,9 @@ export function hasControlCharactersInLines(text) {
   );
 }
 
-// The code points of the white space Go's strings.TrimSpace trims
+// The code points of the white space that Go's strings.TrimSpace removes
 // (unicode.IsSpace). String's own trim differs by two characters: it keeps
-// U+0085 and trims U+FEFF.
+// U+0085 and removes U+FEFF.
 const GO_SPACE = new Set([
   0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0x85, 0xa0, 0x1680, 0x2000, 0x2001,
   0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a,

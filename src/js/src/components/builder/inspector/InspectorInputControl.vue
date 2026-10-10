@@ -13,19 +13,19 @@
   A checkbox has no Bulma "input" class: that class draws a box without the
   checkbox's own look, so a checked box looked unchecked. An unset field
   shows its default (see useFieldDefault), the value phenix uses (Snapshot is
-  on unless turned off, a VM has 512 megabytes of memory), marked "Default";
-  a click on a checkbox stores the opposite of what it shows, and a text or
-  number field emptied shows its default again. A text or number field
-  showing its default has its text selected as it takes focus, so what is
-  typed replaces the default rather than adding to it.
+  on unless turned off, a VM has 512 megabytes of memory), marked "Default".
+  A click on a checkbox stores the opposite of what it shows, and an emptied
+  text or number field shows its default again. When a text or number field
+  that shows its default takes focus, its text is selected, so the typed
+  text replaces the default and does not add to it.
 
-  A field phenix takes as a number or as text (Memory, VCPUs; see
-  numberBranch) is a number field. Text it holds already is kept: a number
-  written as text ("2048") shows as the number, and any other text (a
-  template such as {{ .Memory }}) in a text field, until a number replaces
-  it. A field of one text value or a list (DNS servers; see isTextOrList)
-  is one line of values separated by commas: one value is stored as text,
-  several as a list, and a list stays a list.
+  A field phenix takes as a number or as text (Memory, VCPUs, see
+  numberBranch) is a number field. The field keeps the text it holds: a
+  number written as text ("2048") shows as the number, and any other text
+  (a template such as {{ .Memory }}) shows in a text field, until a number
+  replaces it. A field of one text value or a list (DNS servers, see
+  isTextOrList) is one line of values separated by commas. One value is
+  stored as text, several as a list, and a list stays a list.
 
   A whole-number field is a text field with a number keyboard (inputmode
   numeric), read as a spin button whose bounds are the field's, and its
@@ -35,8 +35,9 @@
 
   Text a number field cannot read (letters) is not committed: the field
   says it must be a number, and Apply waits for it, rather than the value
-  being cleared. So is a number a whole-number field cannot take (1.5,
-  1e3), which was cut to 1: the field says it must be a whole number.
+  being cleared. The same applies to a number that a whole-number field
+  cannot take (1.5, 1e3), which was cut to 1: the field says it must be a
+  whole number.
 
   A text or number field shows the text typed in it until it commits (see
   useFieldText), so nothing that re-renders it puts its data back over that
@@ -173,7 +174,7 @@
       readNumberText(input.control.value.data, false) === undefined,
   );
 
-  // One text value, or several as a list; a list stays a list.
+  // One text value, or several as a list. A list stays a list.
   function readList(text) {
     const values = String(text)
       .split(/[\s,]+/)

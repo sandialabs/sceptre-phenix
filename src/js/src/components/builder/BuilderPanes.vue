@@ -2,7 +2,7 @@
   The editor's three columns: Add nodes and the Outline, the canvas and the
   Inspector, with a splitter between each side column and the canvas (WAI-ARIA
   APG window splitter). A splitter is dragged, or focused and moved with the
-  arrow keys; Home and End make its column narrowest and widest, and Enter or
+  arrow keys. Home and End make its column narrowest and widest, and Enter or
   a double-click restores the default width. The canvas always keeps a usable
   width, and each viewer's widths are remembered in this browser (see
   builder/panes.js).
@@ -13,8 +13,8 @@
   24px wide, over the edge of the canvas beside it (WCAG 2.5.8).
 
   A Hide toggle under the Widen toggle folds its column into a narrow strip,
-  which gives the canvas the room; the toggle stays in the strip, named Show,
-  to bring the column back. The column stays mounted while it is hidden, so
+  which gives the canvas the room. The toggle stays in the strip, named Show,
+  to show the column again. The column stays mounted while it is hidden, so
   the Inspector keeps what it holds. Hidden columns are remembered with the
   widths. A node or connection pressed on the canvas shows the Inspector
   again (see BuilderCanvas.vue), and so do the commands that go to a column.
@@ -163,7 +163,7 @@
   const hideEls = { start: null, end: null };
 
   const saved = loadPanes();
-  // The widths this viewer chose; a side without one has the default width.
+  // The widths this viewer chose. A side without one has the default width.
   const chosen = reactive(saved.widths);
   // The sides widened with their toggle, each with the width it goes back
   // to: null for the default width.
@@ -307,7 +307,7 @@
   }
 
   // Reset view: both columns show, at their default widths again, which
-  // also forgets the widths stored for them. A drag under way ends there.
+  // also forgets the widths stored for them. A drag in progress ends.
   function resetWidths() {
     drag.value = null;
     hidden.clear();
@@ -465,8 +465,9 @@
     save();
   }
 
-  // A drag keeps the pointer, so it goes on over the canvas and the panels;
-  // it is stored when it ends, and Escape puts the width back.
+  // A drag keeps the pointer, so it continues over the canvas and the
+  // panels. The width is stored when the drag ends, and Escape puts the
+  // width back.
   function onPointerDown(side, event) {
     if (event.button !== 0 || drag.value) {
       return;

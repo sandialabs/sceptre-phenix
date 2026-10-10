@@ -5,13 +5,13 @@
 // the Inspector's field labels, and the History dialog's Restore and Delete
 // buttons (WCAG 1.4.13). It stays while the pointer moves onto it, across
 // the gap between them, until the pointer leaves both, the control loses
-// focus, or Escape dismisses it. The pointer on it does not bring up the
+// focus, or Escape dismisses it. The pointer on it does not show the
 // tooltip of a control beneath it, and neither does a control scrolled under
 // a pointer that stays still (see whenPointed). A canvas node keeps its
 // tooltip for as long as it has keyboard focus (see keep).
 //
 // The tooltip is fixed to the viewport so a scrolling side panel cannot clip
-// it; on scroll and resize it follows its control, and hides once the
+// it. On scroll and resize it follows its control, and hides once the
 // control scrolls out of view. It lets clicks through to what lies beneath,
 // and only repeats text that reaches screen readers as the control's name or
 // description, so it is aria-hidden.
@@ -128,7 +128,7 @@ function within(rect, x, y) {
 // pointermove near it in time. Moving the pointer onto the control sends
 // both at once: pointermove just after mouseenter (Chromium) or just before
 // it (Firefox). A dialog that closes soon after a click also uncovers a
-// control under the still pointer; focus has moved since the pointer did,
+// control under the still pointer. Focus has moved since the pointer did,
 // so the focused control keeps its tooltip.
 const MOVE_WINDOW_MS = 100;
 let lastPointer = null;
@@ -212,8 +212,8 @@ export function whenPointed(event, show) {
  * @param {'end'|'start'|'below'|'above'} [options.side] the side of the
  *   control the tooltip prefers: 'end' (right) for the left-hand panels,
  *   'start' (left) for the Inspector on the right, so it lies over the
- *   canvas in either case; 'below' for a row of controls such as the
- *   toolbar, so it covers none of the row; 'above' for a node on the
+ *   canvas in either case. 'below' for a row of controls such as the
+ *   toolbar, so it covers none of the row. 'above' for a node on the
  *   canvas, or below it without room above (see aboveControl)
  * @param {(control: HTMLElement) => HTMLElement|null} [options.beside] the
  *   element the tooltip is placed beside, on the side nearer the control,
@@ -227,7 +227,7 @@ export function whenPointed(event, show) {
  *   and the pointer reaches it by moving straight up
  * @param {number} [options.delay] how long, in milliseconds, the pointer
  *   rests on a control before its tooltip shows, for controls the pointer
- *   crosses on its way elsewhere; focus shows it at once
+ *   crosses on its way elsewhere. Focus shows it at once
  * @param {boolean} [options.stopEscape] Escape pressed on the control whose
  *   tooltip shows, or inside it, only hides the tooltip: the key goes no
  *   further, so it does not also do what Escape does there
@@ -276,8 +276,8 @@ export function useFixedTooltip({
     showFor(control, text);
   }
 
-  // Shows the tooltip for a control. One waiting to show for another
-  // control goes on waiting.
+  // Shows the tooltip for a control. A tooltip that waits to show for
+  // another control continues to wait.
   function showFor(control, text) {
     cancelHide();
     anchor = control;
@@ -291,7 +291,7 @@ export function useFixedTooltip({
   }
 
   // Once the pointer has rested on the control for the delay. A press
-  // meanwhile is done with the hint, as it is once the tooltip shows.
+  // during the delay ends the hint, as it does after the tooltip shows.
   function showLater(control, text) {
     cancelShow();
     window.addEventListener('pointerdown', cancelShow, true);
@@ -320,7 +320,7 @@ export function useFixedTooltip({
    * Makes a control's tooltip last as long as its keyboard focus does (WCAG
    * 1.4.13): once the pointer has left another control whose tooltip took
    * its place, and that tooltip, this control's shows again. Call it when
-   * the control takes keyboard focus, and release when it loses it.
+   * the control takes keyboard focus, and call release when it loses it.
    * Dismissing the tooltip, with Escape or a press, ends it too.
    *
    * @param {HTMLElement} control
@@ -355,8 +355,8 @@ export function useFixedTooltip({
   // names, on the side nearer the control (without room there, beside the
   // control on its other side). Without room on the preferred side (the
   // stacked narrow layout), below it at the end side, or above it at the
-  // start side, which keeps the Inspector's field under its label clear;
-  // always inside the viewport. Without room on the preferred side of what
+  // start side, which keeps the Inspector's field under its label clear.
+  // Always inside the viewport. Without room on the preferred side of what
   // `beside` names (a narrow window), above what `above` names instead (see
   // aboveRow).
   function placeTip() {
@@ -580,8 +580,7 @@ export function useFixedTooltip({
     window[method]('scroll', followAnchor, true);
     window[method]('resize', followAnchor);
     window[method]('pointermove', onPointerMove, true);
-    // Any click, on the canvas or on the control itself, is done with the
-    // hint.
+    // Any click, on the canvas or on the control itself, ends the hint.
     window[method]('pointerdown', hideTip, true);
   }
 
@@ -591,7 +590,7 @@ export function useFixedTooltip({
    *
    * @param {string|((control: HTMLElement) => string)} text the tooltip's
    *   text, or what gives it from the control when it shows, so it follows
-   *   the control's state; none shows no tooltip
+   *   the control's state. None shows no tooltip
    * @param {object} [hooks]
    * @param {(event: Event, text: string) => void} [hooks.onShow] runs as it
    *   shows

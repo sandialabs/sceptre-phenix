@@ -83,7 +83,7 @@ are only available to Global Administrator or Global Viewer.
     </template>
 
     <template #end>
-      <!-- Buttons, so the keyboard reaches them too; while a logout checks
+      <!-- Buttons, so the keyboard reaches them too. While a logout checks
            for Builder changes the server does not have, they say so. -->
       <b-navbar-item
         v-if="proxyAuth"
@@ -134,7 +134,7 @@ are only available to Global Administrator or Global Viewer.
         return import.meta.env.VITE_AUTH === 'proxy';
       },
 
-      // A logout under way, but not its warning, which asks for an answer.
+      // A logout in progress, but not while its warning asks for an answer.
       loggingOut() {
         const phenixStore = usePhenixStore();
         return phenixStore.loggingOut && !phenixStore.logoutWarning;
@@ -148,17 +148,17 @@ are only available to Global Administrator or Global Viewer.
     methods: {
       //  These methods are used to logout a user; or, present
       //  routable link based on a Global user role.
-      //  Builder changes the server does not have are sent first,
-      //  and a warning asks when some remain (see utils/logout.js).
+      //  A logout first sends Builder changes the server does not have.
+      //  When some remain, a warning asks the user (see utils/logout.js).
       logout(event) {
         const button = event?.currentTarget;
 
         usePhenixStore()
           .requestLogout('manual')
           .then((outcome) => {
-            // A logout the server did not answer leaves the session as it
-            // was, and says so; focus goes back to Logout, as it does on
-            // Stay signed in.
+            // When the server does not answer the logout, the session stays
+            // as it was and a toast says so. Focus goes back to Logout, as
+            // it does after Stay signed in.
             if (outcome === 'failed') {
               this.$buefy.toast.open({
                 message:
@@ -169,8 +169,8 @@ are only available to Global Administrator or Global Viewer.
               button?.focus();
             }
 
-            // A narrow window's menu, which held Logout, closes on a click;
-            // focus goes back to the button that opens it.
+            // In a narrow window, the menu that held Logout closes on a
+            // click. Focus goes back to the button that opens the menu.
             if (
               (outcome === 'stayed' || outcome === 'failed') &&
               !button?.getClientRects().length

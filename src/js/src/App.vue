@@ -69,7 +69,8 @@
     @keydown="timeout.resetTimer">
     <a class="skip-link" href="#main">Skip to main content</a>
     <!-- The Builder's focus mode hides the navigation bar, so the editor
-         fills the window (builder/focusMode.js); v-show keeps its state. -->
+         fills the window (builder/focusMode.js). v-show keeps the header's
+         state. -->
     <app-header v-show="!focusMode.on"></app-header>
     <main
       id="main"
@@ -78,8 +79,8 @@
       <router-view></router-view>
     </main>
     <app-footer v-if="!fullBleed"></app-footer>
-    <!-- Before a logout would delete Builder changes the server does
-         not have, on any page (see utils/logout.js). -->
+    <!-- Warns on any page before a logout that would delete Builder
+         changes the server does not have (see utils/logout.js). -->
     <logout-warning></logout-warning>
   </div>
 </template>
@@ -116,7 +117,7 @@
 
   /* Links that do not fit on one line, in a narrow window or with enlarged
      text, wrap instead of pushing the last ones off the page (WCAG 1.4.4,
-     1.4.10); the Builder page cannot scroll sideways at all. */
+     1.4.10). The Builder page cannot scroll sideways at all. */
   #app :deep(.navbar-menu) {
     flex-shrink: 1;
     min-width: 0;

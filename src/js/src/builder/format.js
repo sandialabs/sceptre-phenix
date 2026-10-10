@@ -6,8 +6,8 @@ const TIMESTAMP = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short',
 });
 
-// History snapshots are often seconds apart; without the seconds, several
-// entries would read the same.
+// History snapshots are often seconds apart. Without the seconds, several
+// entries would show the same text.
 const TIMESTAMP_SECONDS = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'medium',

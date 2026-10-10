@@ -6,8 +6,8 @@ import (
 	"maps"
 )
 
-// The definitions of the package schema besides those of the document
-// schema.
+// The definitions of the package schema, in addition to those of the
+// document schema.
 const (
 	defPackageDocument     = "packageDocument"
 	defPackageConfig       = "packageConfig"
@@ -16,13 +16,13 @@ const (
 )
 
 // PackageSchema returns the JSON Schema of a Builder package (see [Package])
-// as a freshly built map. Like [Schema], it is self contained: the document
-// a package holds is checked against the document schema, whose definitions
-// and bundled phenix v1 component schemas it holds under $defs, and every
-// part the Builder owns has a title, a description and examples. What JSON
-// Schema cannot express (that a carried config is named by the requirements,
-// and what [Document.Validate] checks of the document) [Package.Validate]
-// checks.
+// as a freshly built map. Like [Schema], it is self contained. It checks the
+// document of a package against the document schema, and it holds the
+// definitions of that schema and the bundled phenix v1 component schemas
+// under $defs. Every part that the Builder owns has a title, a description
+// and examples. [Package.Validate] checks what JSON Schema cannot express:
+// that the requirements name each carried config, and the checks of
+// [Document.Validate] on the document.
 func PackageSchema() (map[string]any, error) {
 	defs, err := PhenixDefs()
 	if err != nil {
@@ -41,8 +41,8 @@ func PackageSchema() (map[string]any, error) {
 	root[schemaKey] = SchemaDialect
 	root["$id"] = PackageSchemaURI
 	root[keyTitle] = "phenix Builder package"
-	root[keyDescription] = "One file holding a Builder document, the configs and icons it names that were chosen to go " +
-		"with it, and the list of what the diagram needs on a phenix server."
+	root[keyDescription] = "One file that holds a Builder document and the list of what the diagram needs on a " +
+		"phenix server. It also holds the configs and icons that the document names and that the user selected."
 	root["$defs"] = defs
 
 	return root, nil
@@ -68,19 +68,20 @@ func packageProperties() map[string]any {
 	return map[string]any{
 		schemaKey: documented(
 			constDef(PackageSchemaURI), "Schema URI",
-			"Identifies the Builder package format, which a package must name exactly.",
+			"Identifies the Builder package format. A package must name it exactly.",
 			[]any{PackageSchemaURI},
 		),
 		keyDocument: documentedRef(
 			defPackageDocument, "Document",
-			"The Builder document the package holds, with copies of the custom icons it carries.",
+			"The Builder document that the package holds, with copies of the custom icons that the document holds.",
 			[]any{examplePackageDocument()},
 		),
 		keyScenarios: documented(
 			packageConfigsDef(PackageKindScenario, MaxScenarios), "Scenario Configs",
 			fmt.Sprintf(
-				"Scenario configs the document names that the package carries, at most %d, each under its name; "+
-					"uploading the package creates one only when the user ticks it and the server has none of that name.",
+				"Scenario configs that the document names and that the package holds, at most %d, each under its name. "+
+					"An upload of the package creates a config only when the user selects it and the server has no "+
+					"config of that name.",
 				MaxScenarios,
 			),
 			[]any{map[string]any{exampleScenarioName: examplePackageScenario()}},
@@ -88,15 +89,16 @@ func packageProperties() map[string]any {
 		keyTopologies: documented(
 			packageConfigsDef(PackageKindTopology, MaxPackageTopologies), "Topology Configs",
 			fmt.Sprintf(
-				"Topology configs the document includes that the package carries, at most %d, each under its name; "+
-					"uploading the package creates one only when the user ticks it and the server has none of that name.",
+				"Topology configs that the document includes and that the package holds, at most %d, each under its "+
+					"name. An upload of the package creates a config only when the user selects it and the server has "+
+					"no config of that name.",
 				MaxPackageTopologies,
 			),
 			[]any{map[string]any{exampleInclude: examplePackageTopology()}},
 		),
 		keyRequirements: documentedRef(
 			defPackageRequirements, "Requirements",
-			"What the diagram needs on a phenix server, whether the package carries it or not.",
+			"What the diagram needs on a phenix server, whether the package holds it or not.",
 			[]any{examplePackageRequirements()},
 		),
 	}
@@ -162,12 +164,12 @@ func packageConfigDef() map[string]any {
 	return documented(
 		objectDef([]string{keyAPIVersion, keyKind, keyMetadata, keySpec}, map[string]any{
 			keyAPIVersion: documented(
-				apiVersion, "API Version", "apiVersion of the config, phenix.sandia.gov/ and a version.",
+				apiVersion, "API Version", "apiVersion of the config: phenix.sandia.gov/ and a version.",
 				[]any{exampleAPIVersion},
 			),
 			keyKind: documented(
 				enumDef([]any{PackageKindScenario, PackageKindTopology}), "Kind",
-				"Kind of the config: Scenario in the package's scenarios, Topology in its topologies.",
+				"Kind of the config: Scenario in the scenarios of the package, Topology in its topologies.",
 				[]any{PackageKindScenario},
 			),
 			keyMetadata: documented(
@@ -176,12 +178,12 @@ func packageConfigDef() map[string]any {
 			),
 			keySpec: documented(
 				map[string]any{keyType: "object"}, "Spec",
-				"Spec of the config as the server it came from stores it; the server it is created on checks it.",
+				"Spec of the config, as the source server stores it. The server that creates the config checks it.",
 				[]any{examplePackageScenarioSpec()},
 			),
 		}),
 		"Packaged Config",
-		"phenix config a package carries, as data: creating it on a server takes that server's config checks.",
+		"phenix config that a package holds, as data. A server that creates it applies its own config checks.",
 		[]any{examplePackageScenario()},
 	)
 }
@@ -223,24 +225,24 @@ func packageRequirementsDef() map[string]any {
 		),
 		keyIcons: documented(
 			requirementListDef(requirementDef()), "Custom Icons",
-			"Names of the custom icons the document's nodes and templates name.",
+			"Names of the custom icons that the nodes and templates of the document name.",
 			[]any{[]any{exampleIconName}},
 		),
 		keyImages: documented(
 			requirementListDef(ref(defPackageImage)), "Disk Images",
-			"Disk images the devices boot from, each with the devices that use it; empty unless the package was made "+
-				"to list them.",
+			"Disk images that the devices boot from, each with the devices that use it. Empty unless the package "+
+				"was made to list them.",
 			[]any{[]any{examplePackageImage()}},
 		),
 		keyApps: documented(
 			requirementListDef(requirementDef()), "Apps",
-			"Names of the apps of the Scenario configs the document names that could be read.",
+			"Names of the apps of the readable Scenario configs that the document names.",
 			[]any{[]any{examplePackageApp}},
 		),
 		keyFiles: documented(
 			requirementListDef(requirementDef()), "Files",
-			"Paths on the server that the document's devices and the packaged configs name, such as injection "+
-				"sources; the package never carries their content.",
+			"Paths on the server that the devices of the document and the packaged configs name, such as injection "+
+				"sources. The package never holds their content.",
 			[]any{[]any{examplePackageFile}},
 		),
 	}
@@ -252,8 +254,8 @@ func packageRequirementsDef() map[string]any {
 		),
 		"Package Requirements",
 		fmt.Sprintf(
-			"What the diagram needs on a phenix server: each list is present, empty when there is nothing in it, "+
-				"and holds at most %d entries of at most %d bytes.",
+			"What the diagram needs on a phenix server. Each list is present, and empty when it has no entries. "+
+				"Each list holds at most %d entries of at most %d bytes.",
 			MaxPackageRequirements, MaxRequirementBytes,
 		),
 		[]any{examplePackageRequirements()},
@@ -265,14 +267,14 @@ func packageImageDef() map[string]any {
 	return documented(
 		objectDef([]string{keyName, keyUsedBy}, map[string]any{
 			keyName: documented(
-				requirementDef(), "Image", "Disk image as the devices' drives name it.", []any{exampleImage},
+				requirementDef(), "Image", "Disk image, as the drives of the devices name it.", []any{exampleImage},
 			),
 			keyUsedBy: documented(
 				requirementListDef(requirementDef()), "Used By", "Hostnames of the devices that use the image.",
 				[]any{[]any{exampleHostname}},
 			),
 		}),
-		"Disk Image Requirement", "Disk image the diagram's devices need, with the devices that use it.",
+		"Disk Image Requirement", "Disk image that the devices of the diagram need, with the devices that use it.",
 		[]any{examplePackageImage()},
 	)
 }

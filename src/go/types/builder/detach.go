@@ -33,16 +33,16 @@ func (d *Document) CombineIncludes() {
 	d.Source.UnresolvedIncludes = nil
 }
 
-// Detach unlinks the document from the config it was generated from and
-// renames it: the document takes name and the ID of a document of that name
-// (see [DocumentID]), and its source becomes manual, naming no config. The
-// source keeps [Source.ImportedAt], [Source.IncludeTopologies],
-// [Source.UnresolvedIncludes] and [Source.Warnings]; its name, apiVersion,
-// topology, digest, updatedAt and annotations are removed. Publishing a
-// detached document therefore never updates the config it came from. A
-// document without a source is only renamed. Detach does not change
-// [Metadata.Notes]: a caller that wants a note to name the config calls
-// [Document.NoteCopiedFrom].
+// Detach removes the link from the document to the config it was generated
+// from, and renames the document. The document takes name and the ID of a
+// document of that name (see [DocumentID]). Its source becomes manual and
+// names no config. The source keeps [Source.ImportedAt],
+// [Source.IncludeTopologies], [Source.UnresolvedIncludes] and
+// [Source.Warnings]. Detach removes its name, apiVersion, topology, digest,
+// updatedAt and annotations. Thus a publish of a detached document never
+// changes the config it came from. Detach only renames a document without a
+// source. Detach does not change [Metadata.Notes]. For a note that names the
+// config, a caller calls [Document.NoteCopiedFrom].
 func (d *Document) Detach(name string) {
 	d.Metadata.Name = name
 	d.Metadata.ID = DocumentID(name)

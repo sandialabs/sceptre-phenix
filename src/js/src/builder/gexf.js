@@ -1,18 +1,18 @@
 // GEXF 1.3: the diagram as a graph for Gephi
 // (https://gexf.net/schema.html).
 //
-// Devices and networks are the nodes, and each connection (a device's
-// interface on a network) is an edge from the device to its network. All the
-// switches of one network are one node, so a network drawn twice is still one
-// hub to Gephi's statistics. Notes and group boxes are not nodes: they are not
-// part of the network, and as nodes with no connection they would change its
+// Devices and networks are the nodes. Each connection (a device's interface
+// on a network) is an edge from the device to its network. All the switches
+// of one network are one node, so a network drawn twice is still one hub in
+// Gephi's statistics. Notes and group boxes are not nodes. They are not part
+// of the network, and as nodes with no connection they would change its
 // statistics. A node's groups are columns instead (group, groups).
 //
-// A device's scenario apps are columns too (apps, disabled_apps): the apps
-// of the scenarios the diagram lists that list its hostname among their
-// hosts. The document names its scenarios and holds none of their content,
-// so they are written only when Download has read every one of them from
-// the server first.
+// A device's scenario apps are also columns (apps, disabled_apps). These are
+// the apps of the scenarios that the diagram lists and that list the
+// device's hostname among their hosts. The document names its scenarios but
+// holds none of their content. Thus the columns are written only when
+// Download first read every one of the scenarios from the server.
 //
 // What the file uses of GEXF 1.3:
 // - the 1.3 namespaces, and the schema's location, as the 1.3 primer and
@@ -20,41 +20,43 @@
 // - meta: the day of the diagram's last change, creator, keywords and the
 //   diagram's description.
 // - typed columns (string, integer, long, double, boolean, liststring), with
-//   a default where it holds for every node or edge (external, qinq and
+//   a default where it is true for every node or edge (external, qinq and
 //   autostart are false). Each label and annotation key has a column.
 // - viz: position (y up, as Gephi draws it), color as r, g, b and a, one
 //   size for every node, and node and edge shapes (Gephi ignores shapes).
 // - kind, on the edges of a device with more than one interface on one
-//   network: without it, GEXF readers merge them into one edge.
+//   network. Without it, GEXF readers merge them into one edge.
 //
 // What it leaves out, and why:
 // - pid, nested nodes and parents: Gephi 0.11 reports each pid as a
 //   deprecated hierarchy (SEVERE) and ignores it, and graphology drops it.
-// - anyURI columns, which Gephi drops; <options>, whose text Gephi reads as
-//   the column's default; hex colors, which networkx cannot read.
+// - anyURI columns, which Gephi drops.
+// - <options>, whose text Gephi reads as the column's default.
+// - hex colors, which networkx cannot read.
 // - the other list types and short, byte, char, bigdecimal and biginteger,
-//   which networkx cannot read: numbers in a list are written as text.
-//   float, as double holds every number a document can.
+//   which networkx cannot read. Numbers in a list are written as text.
+// - float, because double holds every number that a document can hold.
 // - dynamic mode, spells and timestamps: a diagram has no time.
-// - the metadata a scenario gives an app for each host: it configures the
-//   app, not the network, and can be large.
+// - the metadata that a scenario gives an app for each host. It configures
+//   the app, not the network, and can be large.
 // - directed edges (the model has none), and edge weight and thickness:
-//   every connection is alike.
+//   all connections are the same.
 //
-// Gephi Lite reads list columns as text, so the lists of values that repeat
-// across devices (VLANs, interfaces, labels, apps) are also written as one
-// text value, "a|b", which it can split into keywords. The edges carry each
-// interface's own values (network, address, MAC) as single values.
+// Gephi Lite reads list columns as text. Thus the lists of values that
+// repeat across devices (VLANs, interfaces, labels, apps) are also written as
+// one text value, "a|b", which it can split into keywords. The edges carry
+// the values of each interface (network, address, MAC) as single values.
 //
-// The schema's location (xsi:schemaLocation) is kept so that XML Schema tools
-// find gexf.xsd, although the official RelaxNG grammar, gexf.rng, rejects it:
-// <gexf> may carry only version and variant, and no element of the grammar
-// accepts an attribute it does not name. gexf.net says to remove it before
-// checking a file with xmllint. To check a file as saved, use a grammar that
-// includes gexf.rng unchanged and adds an optional xsi:schemaLocation
-// attribute to its gexf-content define (only <gexf> uses it) with
-// combine="interleave". The file has no xml-model instruction naming
-// gexf.rng: the tools that follow one would report the same error.
+// The file keeps the schema's location (xsi:schemaLocation) so that XML
+// Schema tools find gexf.xsd. The official RelaxNG grammar, gexf.rng, rejects
+// it: <gexf> can carry only version and variant, and no element of the
+// grammar accepts an attribute that it does not name. gexf.net says to remove
+// it before you check a file with xmllint. To check a file as saved, use a
+// grammar that includes gexf.rng unchanged and adds an optional
+// xsi:schemaLocation attribute to its gexf-content define (only <gexf> uses
+// it) with combine="interleave". The file has no xml-model instruction that
+// names gexf.rng, because the tools that follow one would report the same
+// error.
 
 import { networkStyle } from './adapters/vueflow.js';
 import { colorChannels, nodeColors } from './colors.js';
@@ -86,8 +88,9 @@ const DEVICE_LOOKS = {
   device: { color: '#6b7c93', shape: 'disc' },
 };
 
-// A connection's dash pattern on the canvas (its own line style, else its
-// network's; see adapters/vueflow.js), as the nearest edge shape GEXF has.
+// A connection's dash pattern on the canvas (its own line style, or else its
+// network's line style, see adapters/vueflow.js), as the nearest edge shape
+// that GEXF has.
 const EDGE_SHAPES = {
   solid: 'solid',
   dashed: 'dashed',
@@ -167,8 +170,8 @@ const EDGE_COLUMNS = [
 
 // --- XML ---------------------------------------------------------------------
 //
-// The file is built as a tree of elements whose names come from this module
-// only; every attribute value and text is escaped when it is written.
+// The file is built as a tree of elements whose names come only from this
+// module. Every attribute value and text is escaped when it is written.
 
 // Characters XML 1.0 does not allow, lone surrogates among them.
 const NOT_XML = /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu;
@@ -357,10 +360,11 @@ function annotationValue(value, type) {
     : String(value);
 }
 
-// A key as a column id takes it: its letters, digits, _ and -, at most 48.
-// The column's title keeps the key as it is. It is cut by characters, not
-// UTF-16 code units: a cut through a character would leave half of it, which
-// the file cannot hold, so two ids that differ only there would be one.
+// A key in the form that a column id accepts: its letters, digits, _ and -,
+// at most 48. The column's title keeps the key unchanged. The cut is by
+// characters, not UTF-16 code units. A cut through a character would leave
+// half of it, which the file cannot hold, and two ids that differ only there
+// would become one.
 function slug(key) {
   const kept = String(key)
     .replace(/[^\p{L}\p{N}_-]+/gu, '_')
@@ -369,8 +373,8 @@ function slug(key) {
   return Array.from(kept).slice(0, 48).join('') || 'key';
 }
 
-// A unique column id for each key: a key that is its own slug keeps it, and
-// the others add a number when theirs is taken.
+// A unique column id for each key. A key that is its own slug keeps it. The
+// other keys add a number when their slug is taken.
 function columnIds(prefix, keys) {
   const ids = new Map();
   const used = new Set();
@@ -536,8 +540,8 @@ function deviceLook(device) {
   };
 }
 
-// The scenario apps of each host, by hostname, as {apps, disabled}, from
-// the content of scenarios (v2 Scenario specs), in their order; an app two
+// The scenario apps of each host, by hostname, as {apps, disabled}, from the
+// content of scenarios (v2 Scenario specs), in their order. An app that two
 // scenarios run on a host is named once. null when there is no content.
 function appsByHost(contents) {
   const known = (Array.isArray(contents) ? contents : []).filter(
@@ -706,7 +710,7 @@ function groupPath(node, byId) {
 }
 
 // A connection as a device, one of its interfaces and a switch, whichever end
-// is which; null for one that is not.
+// is which. null for a connection that is not of this form.
 function connectionEnds(edge, byId) {
   const source = byId.get(edge.sourceNodeId);
   const target = byId.get(edge.targetNodeId);
@@ -793,8 +797,8 @@ function connectionsOf(doc, byId, hubs) {
 }
 
 // The edges of a device with more than one interface on one network need a
-// kind, unique between the two: the interface's name, or its place when it
-// has none or shares it.
+// kind that is unique between them: the interface's name, or its position
+// when it has no name or shares the name.
 function assignKinds(connections) {
   const pairs = new Map();
 
@@ -828,8 +832,8 @@ function assignKinds(connections) {
   }
 }
 
-// A device's or network's <node>; null for any other node, and for a
-// network's other switches.
+// The <node> of a device or network. null for any other node, and for the
+// other switches of a network.
 function nodeElement(node, context) {
   const { byId, hubs, columns, networkOf, hostApps, used } = context;
   let label;
@@ -917,13 +921,15 @@ function edgeElement(connection, used) {
 }
 
 /**
- * When the diagram last changed, which dates the file: the last change made
- * in this tab, else the save that stored the content shown (the metadata's
- * updatedAt, which a published diagram opened read only has too), else the
- * server's last change to the draft.
+ * When the diagram last changed, which gives the file its date. In order of
+ * preference:
+ *   1. the last change made in this tab
+ *   2. the save that stored the content shown (the metadata's updatedAt,
+ *      which a published diagram opened read only also has)
+ *   3. the server's last change to the draft.
  *
- * @param {object} [times] changedAt: the tab's last change; doc: the
- *   diagram; updated: the draft record's last change
+ * @param {object} [times] changedAt: the tab's last change. doc: the
+ *   diagram. updated: the draft record's last change.
  * @returns {string} a time, or '' when none is known
  */
 export function lastModified({ changedAt, doc, updated } = {}) {
@@ -965,10 +971,10 @@ function metaElement(doc, lastChange) {
  *
  * @param {object} doc
  * @param {object} [options] modified: when the diagram last changed (a date
- *   or its text; today when not given); scenarios: the content (v2 Scenario
- *   specs) of the scenarios the diagram lists, whose apps each device lists
- *   (none when not given: the document holds no scenario content); now: the
- *   clock, for tests
+ *   or its text, today when not given). scenarios: the content (v2 Scenario
+ *   specs) of the scenarios that the diagram lists, whose apps each device
+ *   lists (none when not given, because the document holds no scenario
+ *   content). now: the clock, for tests.
  * @returns {{text: string, devices: number, networks: number,
  *   connections: number}} the file, and how many devices, networks and
  *   connections it holds

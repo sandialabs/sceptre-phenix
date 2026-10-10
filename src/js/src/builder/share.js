@@ -4,10 +4,10 @@
 // or edit. The dialog edits a copy of it as rows, {user, access, stale,
 // removed}, and saves the whole list at once. A row the user removed stays
 // on screen, marked, until the list is saved, so nothing moves under the
-// pointer or focus. A share whose account was deleted or made again under
-// the same name (stale) no longer gives access, and starts marked removed.
+// pointer or focus. A share whose account was deleted, or made again with
+// the same name (stale), no longer gives access, and starts marked removed.
 //
-// Everything here is pure, so it is tested without a browser.
+// Everything here is pure, so the tests need no browser.
 
 import { count, describeNames, listOf } from './announce.js';
 import { MAX_SHARES, MAX_USER_BYTES } from './limits.js';
@@ -105,8 +105,8 @@ export function conflictMessage(by, me) {
 
 /**
  * Drafts ordered by when they last changed, the latest first. Times are
- * compared as times: the server's RFC 3339 text drops trailing zeros of a
- * fraction, so "…:43Z" is earlier than "…:43.1Z".
+ * compared as times, not as text. The server's RFC 3339 text drops trailing
+ * zeros of a fraction, so "…:43Z" is earlier than "…:43.1Z".
  *
  * @param {{updated?: string}[]} drafts
  * @returns {object[]} a new array
@@ -170,8 +170,8 @@ export function matchesMessage(n) {
 }
 
 /**
- * The note a row carries while it differs from the list as read: see
- * rowChange. A stale row says so instead.
+ * The note a row shows while it differs from the list as read (see
+ * rowChange). A stale row says that it is stale instead.
  *
  * @param {{user: string, access: string}[]} base
  * @param {object} row
@@ -254,8 +254,8 @@ export function sharesOf(rows) {
 }
 
 /**
- * How many people the rows change against the list they were made from:
- * each added, removed or given other access counts once.
+ * How many people the rows change, compared with the list they were made
+ * from. Each person added, removed or given other access counts once.
  *
  * @param {{user: string, access: string}[]} base the list as read
  * @param {object[]} rows the dialog's rows
@@ -304,13 +304,15 @@ export function rowChange(base, row) {
 }
 
 /**
- * Puts the user's edits (from `base` to `rows`) onto the list the server
- * holds now, after someone else changed it meanwhile (a 412): people added
- * are added, or given the access chosen when the other change added them
- * too; people removed are removed; access changed is changed. A person the
- * other change removed stays removed even when the user changed their
- * access, since the user did not ask to add them. Rows keep the server's
- * order, with the people the user added after them.
+ * Applies the user's edits (from `base` to `rows`) to the list the server
+ * holds now, after someone else changed it (a 412):
+ * - People added are added. If the other change also added them, they get
+ *   the access the user chose.
+ * - People removed are removed.
+ * - Access changed is changed.
+ * A person the other change removed stays removed, even when the user
+ * changed their access, because the user did not ask to add them. Rows
+ * keep the server's order, with the people the user added after them.
  *
  * @param {{user: string, access: string, stale?: boolean}[]} server the
  *   list as read again
@@ -358,7 +360,7 @@ export function mergeShares(server, base, rows) {
     }
   }
 
-  // People the user removed who are not among their rows any more.
+  // People the user removed who are no longer among the user's rows.
   for (const user of before.keys()) {
     const current = find(user);
 
@@ -380,7 +382,7 @@ export function mergeShares(server, base, rows) {
  *   with, or null when they are unknown
  * @param {number} [maxShares]
  * @returns {{user: string, error: string, row?: object}} error is '' when
- *   the person can be added; row is the row already there for them
+ *   the person can be added. row is the row that already exists for them
  */
 export function validateAdd(
   name,

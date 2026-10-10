@@ -35,11 +35,11 @@ func init() { //nolint:gochecknoinits // config hook
 	config.RegisterConfigHook(configKindTopology, topologyConfigHook)
 }
 
-// LeaveTopologyDocuments makes the Topology config hook leave the published
-// documents of the topology name alone when the topology is deleted, until
-// the returned function is called. A caller that deletes the topology and
-// then removes its documents itself, to learn of a failure the hook would
-// only log, calls it around the delete.
+// LeaveTopologyDocuments makes the Topology config hook keep the published
+// documents of the topology name when the topology is deleted, until the
+// caller calls the returned function. A caller that deletes the topology and
+// then removes its documents itself calls it around the delete. Thus the
+// caller learns of a failure that the hook would only log.
 func LeaveTopologyDocuments(name string) func() {
 	leftTopologies.mu.Lock()
 	defer leftTopologies.mu.Unlock()
@@ -67,15 +67,15 @@ func topologyDocumentsLeft(name string) bool {
 
 // topologyConfigHook keeps a Topology config and its published documents
 // together, whatever writes the config. Every phenix process registers it,
-// since the phenix binary links this package, and it reads the store the
+// because the phenix binary links this package. It reads the store the
 // process uses.
 //
-// Once a topology is deleted (DELETE /configs, `phenix config delete`, all
-// included) or renamed (an update that changes its name: PUT /configs, `phenix
-// config edit`), its documents are removed. A topology about to be stored is
-// refused when its document reference does not decode, and loses the part of
-// the reference that is another topology's, as a renamed topology's is (see
-// [checkTopologyReference]).
+// When a topology is deleted (DELETE /configs, `phenix config delete`, all
+// included) or renamed (an update that changes its name: PUT /configs,
+// `phenix config edit`), the hook removes its documents. The hook refuses a
+// topology about to be stored when its document reference does not decode.
+// It removes the part of the reference that belongs to another topology, as
+// in the reference of a renamed topology (see [checkTopologyReference]).
 func topologyConfigHook(stage string, c *store.Config) error {
 	switch stage {
 	case configStageCreate, configStageUpdate:
@@ -92,24 +92,26 @@ func topologyConfigHook(stage string, c *store.Config) error {
 }
 
 // checkTopologyReference checks the [DocumentAnnotation] of a topology about
-// to be stored, and stores it as [DocumentReference.EncodeReference] writes
-// it.
+// to be stored. It stores the annotation as [DocumentReference.EncodeReference]
+// writes it.
 //
-// A reference that does not decode refuses the write, with an error matching
-// [types.ErrValidationFailed] and [ErrInvalid]: every config write passes
-// here, validated or not, and a topology stored with such a reference could
-// be opened neither in the Builder nor as text.
+// A reference that does not decode refuses the write, with an error that
+// matches [types.ErrValidationFailed] and [ErrInvalid]. Every config write
+// passes here, validated or not. A topology stored with such a reference
+// could not be opened in the Builder or as text.
 //
 // A reference whose id is not the one its digest derives for this topology
 // (see [PublishedDocumentID]) names a document published to a topology of
 // another name. A renamed topology carries such a reference, and so does a
-// copy stored under a new name. That document is never listed or read
-// through this topology, so the id is dropped. The digest is dropped too,
-// unless the reference names a file, whose content the digest then pins; a
-// reference with nothing left is removed. An id without a digest cannot be
-// checked without reading the store, and is left: readers find that it names
-// nothing (see [DocumentReference.Names]). A path is never checked against
-// the files of this host, which may not be the host that reads it.
+// copy stored under a new name. Nothing lists or reads that document through
+// this topology, so checkTopologyReference drops the id. It also drops the
+// digest, unless the reference names a file. Then the digest pins the content
+// of that file. It removes a reference with nothing left.
+//
+// It cannot check an id without a digest unless it reads the store, so it
+// keeps that id. Readers find that the id names nothing (see
+// [DocumentReference.Names]). It never checks a path against the files of
+// this host, which may not be the host that reads it.
 func checkTopologyReference(c *store.Config) error {
 	value, ok := c.Metadata.Annotations[DocumentAnnotation]
 	if !ok {
@@ -152,10 +154,10 @@ func checkTopologyReference(c *store.Config) error {
 
 // deleteTopologyDocuments removes the published documents of a Topology
 // config that no longer exists under its name (see
-// [Service.DeleteConfigDocuments] for which). A failure is logged and never
-// fails the delete: the config is gone, so its documents are never listed or
-// read again, and the startup cleanup removes them. A Builder file the
-// config named is never read or removed.
+// [Service.DeleteConfigDocuments] for which documents). It logs a failure and
+// never fails the delete. The config is gone, so nothing lists or reads its
+// documents again, and the startup cleanup removes them. It never reads or
+// removes a Builder file the config named.
 func deleteTopologyDocuments(c *store.Config) {
 	deleted := DeletedConfig{Kind: c.Kind, Name: c.Metadata.Name, DocumentID: "", Updated: configUpdated(c)}
 

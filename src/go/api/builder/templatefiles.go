@@ -20,22 +20,22 @@ import (
 	"phenix/util/plog"
 )
 
-// ServerIconOwner is the owner the icon library records for an icon the
+// ServerIconOwner is the owner that the icon library records for an icon the
 // server adds from one of its template files: no name at all. A phenix user
-// name may hold any printable character, so no name is safe from an account
-// taking it, but none is empty: every request names its user, and the
-// service refuses an empty caller. No account owns such an icon, so only the
-// holders of the builder-icons permissions rename or delete it.
+// name may hold any printable character, so an account can take any name. But
+// no name is empty, because every request names its user, and the service
+// refuses an empty caller. No account owns such an icon, so only the holders
+// of the builder-icons permissions rename or delete it.
 const ServerIconOwner = ""
 
-// MaxServerTemplateFiles is the most template files the server reads from
-// its template directory. A file past it, in the order of their names, is
-// skipped as a problem.
+// MaxServerTemplateFiles is the most template files the server reads from its
+// template directory. The server skips the files past that number, in name
+// order, and records each one as a problem.
 const MaxServerTemplateFiles = 50
 
 // ServerIconReserve is how many of the [MaxIcons] places of the icon library
-// the server's template files leave to users: their icons are added only
-// while the library holds fewer than MaxIcons - ServerIconReserve icons.
+// the template files of the server leave to users. The server adds their icons
+// only while the library holds fewer than MaxIcons - ServerIconReserve icons.
 const ServerIconReserve = MaxIcons / 2
 
 // The identifiers of the collections and templates the server reads from its
@@ -50,9 +50,9 @@ const (
 // server reads from its template directory.
 var templateFileExtensions = []string{".yaml", ".yml", ".json"} //nolint:gochecknoglobals // immutable list
 
-// ServerCollection is a collection of templates the server read from one of
-// its template files at start. It is held in memory only, read only for
-// every user: the directory is where it is kept, and it is read again at the
+// ServerCollection is a collection of templates that the server read from one
+// of its template files at start. It is held in memory only, and is read only
+// for every user. The directory keeps it, and the server reads it again at the
 // next start.
 type ServerCollection struct {
 	// ID is derived from the name of the file, so it is the same at every
@@ -62,7 +62,7 @@ type ServerCollection struct {
 	Description string
 	// File is the name of the file in the template directory.
 	File string
-	// Templates are the file's templates, in its order, each with an ID
+	// Templates are the templates of the file, in file order. Each has an ID
 	// derived from the name of the file and its own name, ignoring case.
 	Templates []builder.Template
 }
@@ -77,8 +77,8 @@ type TemplateFileProblem struct {
 // TemplateDirectory is what [ReadTemplateDirectory] found in a template
 // directory.
 type TemplateDirectory struct {
-	// Collections are those of the files that could be used, in the order of
-	// the files' names.
+	// Collections are the collections of the usable files, in name order of
+	// the files.
 	Collections []ServerCollection
 	// Icons are the custom icons each of those files carries, by icon name,
 	// in the order of Collections.
@@ -89,18 +89,19 @@ type TemplateDirectory struct {
 	Missing bool
 }
 
-// ReadTemplateDirectory reads the template files directly in directory: the
-// files whose names end in .yaml, .yml or .json, in any case, and do not
-// start with "." (hidden files, and the copies some file systems make of a
-// file's attributes). Subdirectories are not read.
+// ReadTemplateDirectory reads the template files directly in directory. These
+// are the files whose names end in .yaml, .yml or .json, in any case, and do
+// not start with "." (hidden files, and the copies of file attributes that
+// some file systems make). It does not read subdirectories.
 //
-// The directory is opened through [os.Root], as a Builder file is (see
-// [ReadDocumentFile]): a symbolic link is followed only when it stays in the
-// directory. Each file must be a regular file of at most
+// It opens the directory through [os.Root], as for a Builder file (see
+// [ReadDocumentFile]). Thus it follows a symbolic link only when the link
+// stays in the directory. Each file must be a regular file of at most
 // [builder.MaxTemplateFileBytes] whose text [builder.ParseTemplateFile]
-// accepts; any other is a problem, with why, and the others are read. At most
-// [MaxServerTemplateFiles] files are read. A directory that does not exist is
-// no error: it has no files. One that cannot be opened is.
+// accepts. Any other file is a problem, with the reason, and the other files
+// are read. It reads at most [MaxServerTemplateFiles] files. A directory that
+// does not exist is not an error: it has no files. A directory that cannot be
+// opened is an error.
 func ReadTemplateDirectory(directory string) (*TemplateDirectory, error) {
 	found := &TemplateDirectory{Collections: []ServerCollection{}, Icons: nil, Problems: nil, Missing: false}
 
@@ -198,8 +199,8 @@ func readTemplateFile(root *os.Root, name string) (*builder.TemplateFile, string
 	return parsed, ""
 }
 
-// templateFileReason is why [builder.ParseTemplateFile] refused a file,
-// without what every refusal starts with.
+// templateFileReason says why [builder.ParseTemplateFile] refused a file,
+// without the prefix that every refusal starts with.
 func templateFileReason(err error) string {
 	return strings.TrimPrefix(err.Error(), builder.ErrInvalidTemplateFile.Error()+": ")
 }
@@ -233,20 +234,20 @@ func serverID(parts ...string) string {
 }
 
 // LoadServerTemplates reads the template files of directory (see
-// [ReadTemplateDirectory]) and keeps their collections as the server's, in
-// place of any it held, and returns the files it skipped. An empty directory
-// name reads nothing.
+// [ReadTemplateDirectory]). It keeps their collections as the collections of
+// the server, in place of any it held, and returns the files it skipped. An
+// empty directory name reads nothing.
 //
-// Each skipped file is logged with its name and why. A directory that does
-// not exist is logged at debug level only, and one that cannot be read as a
-// warning: the server has no collections of its own then.
+// It logs each skipped file with its name and the reason. It logs a directory
+// that does not exist at debug level only, and a directory that cannot be read
+// as a warning. Then the server has no collections of its own.
 //
-// The custom icons the files carry that the icon library lacks are added to
-// it, as [ServerIconOwner]'s, apart from what any user may upload, while the
-// library leaves [ServerIconReserve] places to users; the icons past that are
-// skipped, with one warning. A name the library holds with other bytes keeps
-// the library's icon, which is logged, and so is an icon the library
-// refuses.
+// It adds to the icon library the custom icons the files carry that the
+// library does not have. It adds them as icons of [ServerIconOwner], apart
+// from what any user may upload, while the library leaves [ServerIconReserve]
+// places to users. It skips the icons past that, with one warning. A name the
+// library holds with other bytes keeps the icon of the library, and
+// LoadServerTemplates logs this. It also logs an icon the library refuses.
 func (s *Service) LoadServerTemplates(ctx context.Context, directory string) []TemplateFileProblem {
 	collections := []ServerCollection{}
 
@@ -288,14 +289,15 @@ func (s *Service) LoadServerTemplates(ctx context.Context, directory string) []T
 	return found.Problems
 }
 
-// errNoRoomForServerIcon is what [Service.addServerIcon] refuses an icon
-// with once the library leaves no more places to the server's template files.
+// errNoRoomForServerIcon is the error [Service.addServerIcon] refuses an icon
+// with when the library leaves no more places to the template files of the
+// server.
 var errNoRoomForServerIcon = errors.New("the icon library leaves no more room to template files")
 
 // addServerIcons adds the custom icons the template files carry to the icon
-// library, as [Service.LoadServerTemplates] says, in the order of the files
-// and, in a file, of the icons' names. The library is listed once, for how
-// many icons it holds; each icon's name is then looked up on its own.
+// library, as [Service.LoadServerTemplates] says. It adds them in file order
+// and, in a file, in the order of the icon names. It lists the library once,
+// for how many icons it holds. Then it finds the name of each icon separately.
 func (s *Service) addServerIcons(ctx context.Context, found *TemplateDirectory) {
 	library, err := s.ListIcons(ctx)
 	if err != nil {
@@ -356,12 +358,12 @@ func (s *Service) addServerIcons(ctx context.Context, found *TemplateDirectory) 
 	}
 }
 
-// addServerIcon adds an icon of a template file to the icon library as
-// [ServerIconOwner]'s, under its name, as [Service.AddIcon] adds a user's
-// but apart from what any user may upload. A name that already names the
-// same image is that icon (false), and one that names another image is an
-// [IconNameTakenError], whatever room is left. Without room, a new icon is
-// refused with errNoRoomForServerIcon.
+// addServerIcon adds an icon of a template file to the icon library as an icon
+// of [ServerIconOwner], under its name. It does this as [Service.AddIcon] adds
+// the icon of a user, but apart from what any user may upload. A name that
+// already names the same image is that icon (false). A name that names another
+// image is an [IconNameTakenError], whatever room is left. Without room, it
+// refuses a new icon with errNoRoomForServerIcon.
 func (s *Service) addServerIcon(name string, upload []byte, room bool) (*LibraryIcon, bool, error) {
 	data, width, height, err := iconUpload(name, upload)
 	if err != nil {
@@ -379,10 +381,10 @@ func (s *Service) addServerIcon(name string, upload []byte, room bool) (*Library
 	return s.createIcon(ServerIconOwner, name, data, width, height)
 }
 
-// ServerCollections returns the collections the server read from its
-// template files (see [Service.LoadServerTemplates]), in the order of the
-// files' names. The lists are copies; the templates' specs are shared and
-// must not be changed.
+// ServerCollections returns the collections that the server read from its
+// template files (see [Service.LoadServerTemplates]), in name order of the
+// files. The lists are copies. The template specs are shared and must not be
+// changed.
 func (s *Service) ServerCollections() []ServerCollection {
 	held := s.serverTemplates.Load()
 	if held == nil {

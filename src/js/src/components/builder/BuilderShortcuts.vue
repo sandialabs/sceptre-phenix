@@ -1,11 +1,11 @@
 <!--
   Keyboard shortcut sheet, and where the shortcuts are changed.
 
-  Written from the command registry (builder/commands.js), so it lists the
+  Built from the command registry (builder/commands.js), so it lists the
   keys the dispatcher handles, as this platform writes them, and where each
   one works. "Change shortcuts" turns the same dialog into the customization:
   every command whose keys can change, a key recorder per command, Remove,
-  Reset and Reset all, all kept per browser by builder/keymap.js. The
+  Reset and Reset all. builder/keymap.js keeps the keys per browser. The
   single-key switch (WCAG 2.1.4) is in both. The Settings dialog opens the
   customization directly (customize), and Done then closes the sheet.
 
@@ -195,7 +195,7 @@
             </div>
 
             <!-- The key recorder. A text field, so screen readers pass the
-                 keys on to it; it types nothing, and Tab still leaves it. -->
+                 keys to it. It types nothing, and Tab still leaves it. -->
             <div
               v-if="recording?.id === row.id"
               class="builder-shortcuts__recorder"
@@ -338,8 +338,8 @@
   const customizeEl = ref(null);
   const query = ref('');
   const customizing = ref(props.customize);
-  // The command whose key is being recorded: {id, name, verdict, message,
-  // seq}; verdict and message are null until a key is pressed.
+  // The command whose key the recorder records now: {id, name, verdict,
+  // message, seq}. verdict and message are null until a key press.
   const recording = ref(null);
   const status = useMessage();
 
@@ -380,8 +380,9 @@
       : 'none';
   }
 
-  // The filter's result count, once typing pauses. Anything else said in
-  // the meantime is about what the user did since, so the count is dropped.
+  // The filter's result count, after typing pauses. Any other announcement
+  // during the pause is about what the user did since, so this drops the
+  // count.
   let countTimer = null;
 
   function say(text) {
@@ -430,8 +431,8 @@
   }
 
   // The dialog's content changes as a whole, so it starts again at the top,
-  // and focus moves to the dialog, which screen readers then name by its
-  // new title; back on the sheet, to the button that changed it.
+  // and focus moves to the dialog. Screen readers then name it by its new
+  // title. Back on the sheet, focus moves to the button that changed it.
   async function setCustomizing(on) {
     if (!on && props.customize) {
       emit('close');
@@ -497,7 +498,7 @@
 
   // Every key goes to the recorder except Tab, which leaves it as it leaves
   // any field. Plain Enter keeps the key, plain Escape cancels, and plain
-  // Backspace or Delete clears what was pressed; with modifiers they are
+  // Backspace or Delete clears what was pressed. With modifiers, they are
   // keys like any other.
   function onRecorderKeydown(event, row) {
     if (event.key === 'Tab') {
@@ -534,8 +535,8 @@
     }
   }
 
-  // Text that got in anyway (composition cannot always be cancelled) is
-  // replaced by the recorded key.
+  // The recorded key replaces text that got in anyway (composition cannot
+  // always be cancelled).
   function showRecorded(event) {
     event.target.value = recording.value?.verdict?.label || '';
   }
@@ -612,7 +613,7 @@
   }
 
   onMounted(() => {
-    // BuilderDialog has focused itself; the filter is where to start.
+    // BuilderDialog has focused itself. The filter is where to start.
     filterEl.value?.focus();
   });
 
@@ -628,7 +629,7 @@
     margin: 0.2rem 0 0;
   }
 
-  /* The sheet is wider than the other dialogs; the customization keeps
+  /* The sheet is wider than the other dialogs. The customization keeps
      their width. */
   .builder-shortcuts {
     width: min(68rem, calc(100vw - 2rem));
@@ -788,9 +789,9 @@
     margin: 0.3rem 0 0;
   }
 
-  /* Rendered, empty, from the start, so the first message is announced; it
-     takes no room until then. The words say what kind of message it is,
-     the border's color only repeats them. */
+  /* Rendered empty from the start, so screen readers announce the first
+     message. It takes no room until then. The words say what kind of
+     message it is, and the border's color only repeats them. */
   .builder-shortcuts__message {
     margin: 0.4rem 0 0;
     padding: 0.35rem 0.5rem;

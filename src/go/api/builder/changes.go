@@ -13,8 +13,8 @@ import (
 	"phenix/store"
 )
 
-// ChangeAction is what a publication does to a config it names: creates
-// it, updates it, or leaves it as it is because it already holds the
+// ChangeAction is what a publication does to a config it names. It creates
+// the config, updates it, or leaves it as it is because it already holds the
 // publication.
 type ChangeAction string
 
@@ -45,8 +45,9 @@ const (
 )
 
 // ScenarioChange is what a publication does to a Scenario config the
-// document lists: adds the topology to its "topology" annotation, or leaves
-// it as it is because that annotation names the topology already.
+// document lists. It adds the topology to the "topology" annotation, or
+// leaves the config as it is because the annotation names the topology
+// already.
 type ScenarioChange string
 
 const (
@@ -150,8 +151,8 @@ type PublishState struct {
 	// TopologyHeld reports that StoredTopology already holds the
 	// publication, so publishing writes nothing to it.
 	TopologyHeld bool
-	// Scenarios are the Scenario configs the document lists, as they are
-	// stored, each of which the publication adds the topology to unless its
+	// Scenarios are the stored Scenario configs the document lists. The
+	// publication adds the topology to the annotation of each one, unless the
 	// annotation names it already. A publication that changes no scenario
 	// names none.
 	Scenarios []*store.Config
@@ -164,13 +165,16 @@ type PublishState struct {
 }
 
 // DescribePublishChanges says what publishing changes, compared with what is
-// stored now: the Topology config and the topologies it includes, the
-// Scenario configs whose "topology" annotation gains the topology, the disk
-// images the topology's devices use (those the stored topology's devices use
-// compared with those the publication's do), and, for a publication that
-// writes an experiment, the Experiment config and its VLAN aliases (each
-// added when the experiment is created). It reads and writes nothing; an
-// error says a stored config could not be decoded.
+// stored now. It describes:
+//   - the Topology config and the topologies it includes
+//   - the Scenario configs whose "topology" annotation gains the topology
+//   - the disk images the devices of the stored topology use, compared with
+//     those the devices of the publication use
+//   - for a publication that writes an experiment, the Experiment config and
+//     its VLAN aliases (each one added when the experiment is created)
+//
+// It reads and writes nothing. An error means that it could not decode a
+// stored config.
 func DescribePublishChanges(state PublishState) (*PublishChanges, error) {
 	published, err := decodeSpecParts(state.Spec)
 	if err != nil {

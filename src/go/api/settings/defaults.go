@@ -117,8 +117,8 @@ func setMissingDefaults(existing []types.Setting) ([]types.Setting, error) {
 
 		err := store.Create(&c)
 		if errors.Is(err, store.ErrExist) {
-			// Another request stored it since the list was read, as requests
-			// to a new server do; the stored value is the one that counts.
+			// Another request stored it after the list was read, as requests
+			// to a new server do. The stored value is the one that counts.
 			stored, getErr := GetSetting(spec.Category, spec.Name)
 			if getErr != nil {
 				return nil, getErr

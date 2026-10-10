@@ -19,15 +19,16 @@ import (
 
 // listDocuments - GET /builder/documents.
 //
-// Published documents are the immutable content a config's "builder-doc"
-// annotation points at, so they are authorized exactly like the config they
-// were published to. A topology whose annotation names a Builder file, and no
-// stored document that is current, is listed too, with the path: the listing
-// reads no file, so it says nothing of what the file holds, or whether it
-// can be read.
+// Published documents are the immutable content that the "builder-doc"
+// annotation of a config points at. Thus their authorization is the same as
+// for the config they were published to. The listing also shows, with the
+// path, a topology whose annotation names a Builder file and no current
+// stored document. The listing reads no file. Thus it says nothing about
+// what the file holds, or whether the file can be read.
 //
-// A stored document's row names the experiment its publication made, while
-// one still exists that the caller may get (see [builderDocumentExperiment]).
+// The row of a stored document names the experiment that its publication
+// made, while that experiment exists and the caller may get it (see
+// [builderDocumentExperiment]).
 func (b *builderAPI) listDocuments(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderListDocuments")
 
@@ -135,11 +136,12 @@ func (b *builderAPI) getDocument(w http.ResponseWriter, r *http.Request) error {
 
 // getTopologyDocument - GET /builder/topologies/{topology}/document.
 //
-// It returns the Builder document a topology references, wherever it is
-// kept: the stored published document, or else the Builder file its
-// reference names (see [builderAPI.topologyDocument]). A file is read on
-// every request. A topology the caller may not get, one that does not exist,
-// and one that references no document are all answered with the same 404.
+// It returns the Builder document that a topology references, wherever it
+// is kept: the stored published document, or else the Builder file that its
+// reference names (see [builderAPI.topologyDocument]). It reads a file on
+// every request. These all get the same 404: a topology the caller may not
+// get, a topology that does not exist, and a topology that references no
+// document.
 func (b *builderAPI) getTopologyDocument(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderGetTopologyDocument")
 
@@ -181,10 +183,15 @@ func (b *builderAPI) getTopologyDocument(w http.ResponseWriter, r *http.Request)
 
 // readableTopologyDocument returns the stored topology name and the Builder
 // document it references (see [builderAPI.topologyDocument]), if the
-// caller may get that topology. A topology the caller may not get, one that
-// does not exist, one with no document reference or an invalid one, and one
-// whose reference names nothing here are indistinguishable: each is the same
-// 404. A Builder file that cannot be used is answered with why (see
+// caller may get that topology. These all get the same 404, so the client
+// cannot tell them apart:
+//
+//   - a topology the caller may not get
+//   - a topology that does not exist
+//   - a topology with no document reference, or an invalid one
+//   - a topology whose reference names nothing here
+//
+// For a Builder file that cannot be used, the answer tells why (see
 // [builderFileError]).
 func (b *builderAPI) readableTopologyDocument(
 	ctx context.Context,
@@ -245,10 +252,11 @@ func (b *builderAPI) readableTopologyDocument(
 	return topology, resolved, nil
 }
 
-// builderFileError answers a Builder file that cannot be used: the fixed
-// sentence of its reason, which names the path the topology's reference
-// already shows and nothing of the file's content, with 404 for a file that
-// does not exist, 413 for one that is too large, and 422 otherwise.
+// builderFileError answers a Builder file that cannot be used with the fixed
+// sentence of its reason. The sentence names the path that the topology
+// reference already shows, and nothing of the file content. The status is
+// 404 for a file that does not exist, 413 for a file that is too large, and
+// 422 otherwise.
 func builderFileError(err *bapi.DocumentFileError) *weberror.WebError {
 	status := http.StatusUnprocessableEntity
 
@@ -436,22 +444,22 @@ type builderTopologyDocument struct {
 	data   []byte
 }
 
-// topologyDocument resolves the Builder document that reference, read from
-// the topology name, names. It reports false when the reference names no
-// document here.
+// topologyDocument resolves the Builder document that reference names. The
+// reference was read from the topology name. It reports false when the
+// reference names no document here.
 //
 // The stored published document wins (see
-// [builderAPI.storedTopologyDocument]): it is what the stored topology was
-// published from, and a file may have moved on since. A stored document that
-// cannot be read is an error, never passed over for the file.
+// [builderAPI.storedTopologyDocument]). The stored topology was published
+// from it, and a file may have changed since. A stored document that cannot
+// be read is an error. The function never uses the file in its place.
 //
-// Without one, a reference with a path names the Builder file at that path
-// on this server, which is read now (see [bapi.ReadDocumentFile]). A digest
-// beside the path pins the file: a file whose document has another digest is
-// refused, so a reference that names a digest is never answered with other
-// content. An ID beside the path says nothing of the file. A file that
-// cannot be used is an error, a [bapi.DocumentFileError], and is logged with
-// its reason.
+// Without a stored document, a reference with a path names the Builder file
+// at that path on this server. The function reads that file now (see
+// [bapi.ReadDocumentFile]). A digest beside the path pins the file. The
+// function refuses a file whose document has another digest, so a reference
+// that names a digest never gets other content. An ID beside the path says
+// nothing about the file. A file that cannot be used is an error, a
+// [bapi.DocumentFileError], and the function logs it with its reason.
 func (b *builderAPI) topologyDocument(
 	ctx context.Context,
 	name string,
@@ -526,8 +534,8 @@ func (b *builderAPI) storedTopologyDocument(
 		return none, false, nil
 	}
 
-	// The content is read with the record again, which may have been stored
-	// afresh since: its ID still says it has this target and this digest.
+	// Read the content with the record again. The record may have been stored
+	// again since then, but its ID still says it has this target and digest.
 	record, data, err := b.drafts.GetPublishedDocumentData(ctx, id)
 
 	switch {
@@ -568,9 +576,9 @@ func builderConfigReference(config *store.Config, documentID string) (bapi.Docum
 // builderDocumentReferences tells a listing which published documents are
 // current, as [builderAPI.currentBuilderDocument] does for one document,
 // and which topologies name a Builder file. It lists each kind of config
-// once, when it is first needed, and decodes each config's reference once,
-// so documents left behind by deleted or republished topologies cost the
-// listing no config read each.
+// once, when it first needs it, and decodes the reference of each config
+// once. Thus the documents that deleted or republished topologies left
+// behind do not each cost the listing a config read.
 type builderDocumentReferences struct {
 	listConfigs func(kind string) (store.Configs, error)
 	// configs holds the configs of the kinds listed so far, by full name, and
@@ -692,13 +700,13 @@ const (
 	builderDocumentSourceFile  = "file"
 )
 
-// builderDocumentResponse is the JSON view of the Builder document a config
-// references: a stored published document (source "store"), or the Builder
-// file a topology names (source "file"). A file has no ID, author or time.
-// Its row in a listing holds only where it is, since a listing reads no
-// file; its digest, size and content, and whether the stored topology
-// differs from what it publishes, are in the answer of the request that
-// reads it. Chunk digests are storage details and are not exposed.
+// builderDocumentResponse is the JSON view of the Builder document that a
+// config references: a stored published document (source "store"), or the
+// Builder file that a topology names (source "file"). A file has no ID,
+// author or time. Its row in a listing holds only its location, because a
+// listing reads no file. The answer of the request that reads the file holds
+// its digest, size and content, and whether the stored topology differs from
+// what it publishes. Chunk digests are storage details and are not exposed.
 type builderDocumentResponse struct {
 	Source     string    `json:"source"`
 	ID         string    `json:"id,omitempty"`

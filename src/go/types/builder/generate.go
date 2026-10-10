@@ -30,7 +30,7 @@ const (
 
 // maxIncludeResolutions bounds how many included topologies one generation
 // resolves, so a pathological include graph (each topology including the
-// next one several times) cannot turn into an unbounded number of reads.
+// next one several times) cannot cause an unbounded number of reads.
 const maxIncludeResolutions = 100
 
 // maxListedIncludes is the most included topologies a warning names.
@@ -46,19 +46,19 @@ var ErrCombineExperiment = errors.New("only a topology's included topologies can
 
 // TopologyLoader reads the stored Topology config an includeTopologies entry
 // names. It returns an error when there is no such topology or the caller may
-// not read it; generation reports the error as a warning and goes on.
+// not read it. Generation reports the error as a warning and continues.
 type TopologyLoader func(name string) (*store.Config, error)
 
 // GenerateOption configures [FromConfig].
 type GenerateOption func(*generator)
 
 // WithTopologyLoader makes [FromConfig] resolve includeTopologies through load,
-// recursively and with cycle protection, the way phenix merges included
-// topologies when it creates an experiment. The devices of included
-// topologies are added to a document generated from a topology, and
-// recognized among the (already merged) nodes of an experiment; either way
-// they are marked with [Device.IncludedFrom]. Without a loader the references
-// are kept but not resolved.
+// recursively and with cycle protection, as phenix merges included topologies
+// when it creates an experiment. For a document generated from a topology,
+// [FromConfig] adds the devices of included topologies. For an experiment, it
+// identifies them among the nodes that phenix already merged. In both cases
+// it marks them with [Device.IncludedFrom]. Without a loader, [FromConfig]
+// keeps the references but does not resolve them.
 func WithTopologyLoader(load TopologyLoader) GenerateOption {
 	return func(g *generator) {
 		g.load = load
@@ -67,15 +67,15 @@ func WithTopologyLoader(load TopologyLoader) GenerateOption {
 
 // ScenarioResolver reports whether the Scenario config named name is stored
 // on this server for the caller: it exists, and the caller may list it. It
-// returns an error only when that cannot be told, such as when the store
-// cannot be read; generation then fails with that error.
+// returns an error only when it cannot tell, for example when it cannot read
+// the store. Generation then fails with that error.
 type ScenarioResolver func(name string) (bool, error)
 
 // WithScenarioResolver makes [FromConfig] list in [Document.Scenarios] the
 // Scenario config an Experiment config names in its "scenario" annotation,
-// when resolve finds it stored. Without a resolver, or for a scenario resolve
-// does not find, no scenario is listed and generation warns. The scenario
-// content an experiment holds is never taken into the document, which names
+// when resolve finds it stored. Without a resolver, or for a scenario that
+// resolve does not find, generation lists no scenario and gives a warning.
+// The document never takes the scenario content of an experiment. It names
 // scenarios but holds none.
 func WithScenarioResolver(resolve ScenarioResolver) GenerateOption {
 	return func(g *generator) {
@@ -87,10 +87,11 @@ func WithScenarioResolver(resolve ScenarioResolver) GenerateOption {
 // included topologies into the document as its own (no [Device.IncludedFrom])
 // and keep only the unresolved includes in [Source.IncludeTopologies] (see
 // [Document.CombineIncludes]). The document then publishes as one topology
-// that holds every node. Included topologies are only read through a loader
-// (see [WithTopologyLoader]): without one, nothing is copied and every
-// include is kept. An Experiment config is refused with
-// [ErrCombineExperiment], since its topology already holds the merged nodes.
+// that holds every node. Only a loader reads included topologies (see
+// [WithTopologyLoader]). Without one, nothing is copied and every include
+// stays. [FromConfig] refuses an Experiment config with
+// [ErrCombineExperiment], because its topology already holds the merged
+// nodes.
 func WithCombinedIncludes() GenerateOption {
 	return func(g *generator) {
 		g.combine = true
@@ -100,14 +101,14 @@ func WithCombinedIncludes() GenerateOption {
 // FromConfig generates a builder document from a validated phenix config of
 // kind Topology or Experiment.
 //
-// Generation is lossless with respect to phenix node semantics: every node spec
-// (including general.description and keys unknown to this package) is copied
-// verbatim into its device. In addition:
+// Generation keeps all phenix node semantics: it copies every node spec (with
+// general.description and keys that this package does not know) verbatim
+// into its device. Also:
 //
 //   - an interface handle is created for every named interface of every node,
 //   - a canonical network is created for every VLAN referenced by an interface
-//     and for every experiment VLAN alias; VLAN names are case sensitive, as
-//     in minimega, so VLANs differing only by case get separate networks,
+//     and for every experiment VLAN alias. VLAN names are case sensitive, as
+//     in minimega, so VLANs that differ only by case get separate networks,
 //   - a switch hub is created for every non-empty VLAN, including VLANs with a
 //     single attached interface,
 //   - every interface declaring a VLAN is connected to that VLAN's switch,
@@ -121,7 +122,7 @@ func WithCombinedIncludes() GenerateOption {
 //   - the injections an experiment's apps added when it started, whose
 //     sources are under the experiment's base directory, are dropped,
 //   - included topologies are resolved when a loader is given (see
-//     [WithTopologyLoader]); their devices are marked [Device.IncludedFrom]
+//     [WithTopologyLoader]). Their devices are marked [Device.IncludedFrom]
 //     and connected to the VLAN switches like any other device,
 //   - the included topologies of a Topology config whose devices are not in
 //     the document, because they were not resolved or could not be read, are
@@ -130,12 +131,11 @@ func WithCombinedIncludes() GenerateOption {
 //     topologies become the document's own, and only the unresolved
 //     includes stay on [Source.IncludeTopologies].
 //
-// Identifiers and initial positions are derived from hostnames, interface
-// names, and VLAN names, so repeated imports produce identical documents.
-// [Source.ImportedAt] is deliberately left empty for the same reason; callers
-// that want a timestamp should set it themselves. [Source.Digest] and
-// [Source.UpdatedAt] record the identity of the source config so publishing can
-// detect a stale working copy.
+// Identifiers and initial positions come from hostnames, interface names and
+// VLAN names, so repeated imports give identical documents. For the same
+// reason, [Source.ImportedAt] stays empty. Callers that want a timestamp set
+// it themselves. [Source.Digest] and [Source.UpdatedAt] record the identity
+// of the source config, so a publish can find a stale working copy.
 //
 // The returned warnings are also stored on the document's [Source].
 func FromConfig(config store.Config, options ...GenerateOption) (*Document, []string, error) {
@@ -241,10 +241,10 @@ type generator struct {
 	// members counts the interfaces attached to each network.
 	members map[string]int
 
-	// load resolves included topologies; nil leaves them unresolved.
+	// load resolves included topologies. A nil load leaves them unresolved.
 	load TopologyLoader
-	// resolveScenario tells whether the scenario an experiment names is
-	// stored; nil lists none.
+	// resolveScenario tells whether the scenario that an experiment names is
+	// stored. A nil resolveScenario lists none.
 	resolveScenario ScenarioResolver
 	// combine makes the devices of included topologies the document's own
 	// once it is generated (see [WithCombinedIncludes]).
@@ -257,8 +257,8 @@ type generator struct {
 	// resolutions counts included topologies read, see maxIncludeResolutions.
 	resolutions int
 	// includedBy lists, for every included topology reached, the topologies
-	// that include it, in the order they were reached; includeOrder is the
-	// order they were first reached in.
+	// that include it, in the order reached. includeOrder is the order in
+	// which they were first reached.
 	includedBy   map[string][]string
 	includeOrder []string
 	// unreadable collects the includes that could not be used.
@@ -422,13 +422,14 @@ func (g *generator) warnf(format string, args ...any) {
 // importTopology imports a topology spec named name: the source topology, or
 // the topology an experiment was created from.
 //
-// A topology's included topologies are resolved and their devices added after
-// its own, in the order phenix merges them. An experiment's topology already
-// holds those devices, merged by phenix when the experiment was created, so
-// they are recognized by hostname and marked instead of being added twice;
-// a hostname the topology defines itself is never taken for an included one.
-// The nodes phenix merged in from an included topology that cannot be read
-// now are marked too, as long as the topology itself can be read.
+// The included topologies of a topology are resolved, and their devices are
+// added after its own, in the order phenix merges them. The topology of an
+// experiment already holds those devices, because phenix merged them when it
+// created the experiment. Thus they are identified by hostname and marked,
+// not added twice. A hostname that the topology defines itself is never taken
+// for an included one. The nodes that phenix merged in from an included
+// topology that is unreadable now are marked too, if the topology itself is
+// readable.
 func (g *generator) importTopology(spec map[string]any, name string) {
 	if spec == nil {
 		return
@@ -524,11 +525,11 @@ func (g *generator) importIncludes(includes []string, root string) {
 }
 
 // unresolvedIncludes lists the included topologies whose devices are not in
-// the document: every valid include name that the topology named root (whose
-// own includes are given) or a resolved included topology lists, and that is
-// neither root nor a resolved topology, in the order first met and without
-// repeats. It reads only the specs already resolved, so the list is complete
-// even when resolution stopped at maxIncludeResolutions.
+// the document. These are the valid include names that the topology named
+// root (whose own includes are given) or a resolved included topology lists,
+// other than root and the resolved topologies. The list is in the order first
+// met, without repeats. It reads only the specs already resolved, so the list
+// is complete even when resolution stopped at maxIncludeResolutions.
 func unresolvedIncludes(includes []string, root string, resolved []includedTopology) []string {
 	specs := make(map[string]map[string]any, len(resolved))
 	for _, topology := range resolved {
@@ -636,15 +637,16 @@ func (g *generator) experimentIncludes(
 	return owners, resolved
 }
 
-// markUnreadable reports the included topologies of an experiment's topology
-// that cannot be read now. phenix merged their nodes into the experiment
-// when it created it, so a node of spec that neither root (own) nor a
-// readable included topology (owners) defines came from one of them: it is
-// added to owners as coming from the unreadable topology, or from the first
-// when there are several and their nodes cannot be told apart. Publishing the
-// topology then leaves it out, as phenix merges the include again. When root
-// cannot be read (own is nil), its own nodes cannot be told apart from those
-// either, so none is marked and they are published as the topology's own.
+// markUnreadable reports the included topologies of the topology of an
+// experiment that are unreadable now. phenix merged their nodes into the
+// experiment when it created it. Thus a node of spec that neither root (own)
+// nor a readable included topology (owners) defines came from one of them.
+// markUnreadable adds such a node to owners, as from the unreadable topology.
+// When there are several and their nodes are indistinguishable, it uses the
+// first. A publish of the topology then leaves the node out, because phenix
+// merges the include again. When root is unreadable (own is nil), its own
+// nodes are also indistinguishable from those nodes. Then markUnreadable
+// marks none, and a publish writes them as nodes of the topology.
 func (g *generator) markUnreadable(spec map[string]any, root string, own map[string]bool, owners map[string]string) {
 	if len(g.unreadable) == 0 {
 		return
@@ -872,14 +874,14 @@ func includers(parents []string) string {
 	return listOf(parts)
 }
 
-// resolveIncludes reads included topologies depth first: each topology,
-// then the topologies it includes in turn, which is the order phenix appends
-// their nodes in. parent names the topology including names. visited holds
-// the topologies on the current include path; a topology including one of
-// them is a cycle, which phenix rejects. A topology reached again by another
-// path is recorded in includedBy and skipped, so it is resolved once. A cycle
-// is reported and skipped; a topology that cannot be read is recorded in
-// unreadable and skipped, for the caller to report.
+// resolveIncludes reads included topologies depth first: each topology, then
+// the topologies that it includes. This is the order in which phenix appends
+// their nodes. parent names the topology that includes names. visited holds
+// the topologies on the current include path. A topology that includes one
+// of them makes a cycle, which phenix rejects. A topology reached again by a
+// different path is recorded in includedBy and skipped, so it is resolved
+// once. A cycle is reported and skipped. A topology that cannot be read is
+// recorded in unreadable and skipped, for the caller to report.
 func (g *generator) resolveIncludes(names []string, parent string, visited map[string]bool) []includedTopology {
 	var resolved []includedTopology
 
@@ -1183,7 +1185,8 @@ func (g *generator) addDevice(hostname string, spec map[string]any, includedFrom
 	g.devices = append(g.devices, node)
 }
 
-// network returns (creating if needed) the canonical network for a VLAN name.
+// network returns the canonical network for a VLAN name, and makes it when
+// needed.
 // VLAN names are compared exactly, as minimega compares them, so a VLAN that
 // differs from another only by case gets a network of its own, with a warning
 // in case the difference is a typo.
@@ -1481,7 +1484,7 @@ func (g *generator) warnUnrepresentedExperimentFields(spec map[string]any) {
 	}
 }
 
-// finish materializes networks, switch hubs, node ordering, and layout.
+// finish makes the networks, the switch hubs, the node order and the layout.
 func (g *generator) finish() {
 	networks := slices.Collect(maps.Values(g.networks))
 
@@ -1509,8 +1512,9 @@ func (g *generator) finish() {
 		})
 	}
 
-	// The topology's own devices come first, then those of each included
-	// topology, so a topology's devices are laid out together.
+	// The devices of the topology come first, then those of each included
+	// topology, so that the devices of a topology stay together in the
+	// layout.
 	sort.SliceStable(g.devices, func(i, j int) bool {
 		a, b := g.devices[i].Device, g.devices[j].Device
 		if a.IncludedFrom != b.IncludedFrom {
@@ -1562,7 +1566,7 @@ func layout(nodes []Node, originY float64) {
 	}
 }
 
-// layoutDevices lays devices out in rows like [layout], but starts a new row
+// layoutDevices puts devices in rows like [layout], but starts a new row
 // for each included topology so its devices stay together. It returns the
 // number of rows used.
 func layoutDevices(nodes []Node) int {
@@ -1591,8 +1595,8 @@ func layoutDevices(nodes []Node) int {
 
 // iconKeyForSpec derives the builder-local icon hint of a node spec. It only
 // ever returns a member of the icon key registry (see [IsIconKey]), or the
-// empty string when no registry key applies (the front end then falls back to
-// its default icon).
+// empty string when no registry key applies (the front end then uses its
+// default icon).
 //
 // Only "external": true marks external hardware, as iconKeyForSpec in the
 // front end's catalog.js decides it: phenix stores experiments with
@@ -1619,7 +1623,7 @@ func iconKeyForSpec(spec map[string]any) string {
 }
 
 // iconKeyForOS derives an icon key from a node's VM type and operating system,
-// falling back to the generic server icon. It maps them as iconKeyForSpec in
+// or else gives the generic server icon. It maps them as iconKeyForSpec in
 // the front end's catalog.js does, so a node gets the same icon whether it
 // was made in the editor or generated here (testdata/icon-keys.json holds the
 // cases both test suites check).
@@ -1669,10 +1673,10 @@ func toInt(value any) (int, bool) {
 //	 "name":       <config.Metadata.Name>,
 //	 "spec":       <config.Spec>}
 //
-// Mutable bookkeeping is deliberately excluded: status, metadata timestamps,
-// annotations, and labels do not change the digest, so re-importing an
-// unchanged config yields an unchanged digest. Object keys are sorted by
-// encoding/json, so the digest does not depend on map iteration order.
+// The digest excludes mutable bookkeeping on purpose: status, metadata
+// timestamps, annotations and labels do not change it. Thus a new import of
+// an unchanged config gives an unchanged digest. encoding/json sorts object
+// keys, so the digest does not depend on map iteration order.
 func SourceDigest(config store.Config) (string, error) {
 	return ContentDigest(sourceDigestInput(config))
 }

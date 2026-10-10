@@ -6,9 +6,9 @@
 
   Each issue says its severity in words as well as by its icon's shape and
   color, its message, the element it is about and the server's code for it,
-  when it has one. An issue the diagram has an element for has a Go to
-  button, named by the element and the message, which asks the list's owner
-  to go there (see goToIssue in store.js).
+  when it has one. An issue about an element in the diagram has a Go to
+  button, named by the element and the message. The button asks the list's
+  owner to go there (see goToIssue in store.js).
 -->
 <template>
   <div class="builder-issues builder-issue-groups" :data-testid="testid">
@@ -73,7 +73,7 @@
   import { goToName, severityHeading } from '@/builder/issues.js';
 
   const props = defineProps({
-    // The groups bySeverity gives, of issues issueEntries gives.
+    // The groups from bySeverity, of the issues from issueEntries.
     groups: { type: Array, required: true },
     // Whether the errors stop the diagram from being published, which
     // their heading then says.
@@ -91,7 +91,7 @@
 
   defineEmits(['go']);
 
-  // Told apart by shape as well as color, and by the words.
+  // The severities differ by shape as well as color, and by the words.
   const ICONS = { error: 'close', warning: 'warning' };
   const LABELS = { error: 'Error', warning: 'Warning' };
 
@@ -102,7 +102,7 @@
 
 <style scoped>
   /* The global .builder-issues list styles color a whole item and indent
-     it; here only the icon and the severity word take the color. */
+     it. Here only the icon and the severity word take the color. */
   .builder-issue-groups.builder-issues {
     padding-left: 0;
     font-size: 0.85rem;

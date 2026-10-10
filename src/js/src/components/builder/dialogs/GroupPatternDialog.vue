@@ -2,15 +2,17 @@
   Auto-group by name pattern, opened by the third item of the toolbar's
   Auto-group menu and by the palette's command.
 
-  The user types a regular expression; Group runs it on the names of the
+  The user types a regular expression. Group runs it on the names of the
   ungrouped devices and switches (the selected ones, when nodes are
-  selected) and groups those it matches the same text of (see
-  autoGroupByPattern in the store). The pattern runs only then, in a Web
-  Worker that is ended when it takes too long, so the page never freezes.
+  selected). It groups together the nodes where it matches the same text
+  (see autoGroupByPattern in the store). The pattern runs only then, in a
+  Web Worker. The dialog ends the worker when it takes too long, so the page
+  never freezes.
 
-  What keeps it from grouping shows under the field and the dialog stays
-  open; once groups are made it closes, and the Builder's live region, which
-  waits while a dialog is open, says how many. The pattern used last is
+  When something keeps Group from grouping, the reason shows under the field
+  and the dialog stays open. After Group makes groups, the dialog closes.
+  The Builder's live region waits while a dialog is open, and then says how
+  many groups Group made. The pattern used last is
   offered again, selected, so typing replaces it. Closing the dialog while a
   pattern runs ends the run.
 -->

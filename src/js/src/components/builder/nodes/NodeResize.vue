@@ -1,24 +1,24 @@
 <!--
-  The mouse resize of a note, a group, a shape or an icon: Vue Flow's
+  The mouse resize of a note, a group, a shape or an icon. It is Vue Flow's
   NodeResizer, shown while the node is selected and the draft can be
   changed. A resize is one edit, made when the drag ends (resizeNodeBox in
-  store.js), which keeps a node at its least size and a group around its
-  members, from whichever side or corner it is dragged. Alt+Shift and an
-  arrow key resize a selected node from the keyboard (see BuilderCanvas.vue),
-  and the Inspector's Width and Height fields set the size of a shape or an
-  icon.
+  store.js). From whichever side or corner the drag starts, the edit keeps a
+  node at its least size and a group around its members. Alt+Shift and an
+  arrow key resize a selected node from the keyboard (see
+  BuilderCanvas.vue). The Inspector's Width and Height fields set the size
+  of a shape or an icon.
 
-  The handles are drawn in Vue Flow's edge label layer, over every node, in
-  a frame that covers the node's box as Vue Flow draws it, also while it is
-  resized: a selected shape stays under the devices and switches it is
-  drawn around (see nodeZIndex in adapters/vueflow.js), and its handles
-  stay where the pointer can reach them. NodeResizer works from the
-  pointer's place on the canvas and the node's id, not from where its
-  handles are in the page. Outside the node's wrapper, a click on a handle
-  is kept from the pane, which would clear the selection.
+  The handles are drawn in Vue Flow's edge label layer, over every node.
+  They are in a frame that covers the node's box as Vue Flow draws it, also
+  during a resize. Thus a selected shape stays under the devices and
+  switches it is drawn around (see nodeZIndex in adapters/vueflow.js), and
+  its handles stay where the pointer can reach them. NodeResizer works from
+  the pointer's place on the canvas and the node's id, not from where its
+  handles are in the page. Outside the node's wrapper, the frame stops a
+  click on a handle from reaching the pane, which would clear the selection.
 
-  The handles are for the pointer only, with the keyboard and the Inspector
-  as their equivalents, so nothing here takes focus or is announced. Drawn
+  The handles are for the pointer only. The keyboard and the Inspector are
+  their equivalents, so nothing here takes focus or is announced. Drawn
   without the canvas (see canvasEditing.js), the node has no handles.
   While the handles show, the node hides its selection check mark, which
   the top right handle covers (see useResizeFrame in canvasEditing.js).
@@ -87,10 +87,11 @@
     };
   });
 
-  // The least size, but never more than the node has: NodeResizer grows a
-  // node smaller than its least size as soon as it is shown, which would
-  // draw the node at a size the document does not have. A group's holds its
-  // members' notes while the canvas shows them.
+  // The least size, but never more than the node's size. NodeResizer grows a
+  // node that is smaller than its least size as soon as the resizer shows.
+  // The canvas would then draw the node at a size the document does not
+  // have. A group's least size holds its members' notes while the canvas
+  // shows them.
   const least = computed(() => {
     const min = minimumSize(canvas?.store.doc, props.id, {
       showNotes: builderSettings.showNodeNotes,

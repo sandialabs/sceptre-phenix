@@ -1,12 +1,11 @@
 // Semantic outline: the accessible, non-drag mirror of the canvas.
 //
-// The outline is derived from the same document as the canvas. Its rows are
-// the nodes, and its forms connect and group them; Disconnect in the
-// Inspector's Connection points or the command palette removes a connection,
-// so nothing needs a drag. A row's name
-// (outlineLabel) is also the canvas node's accessible name, which is why it
-// names the networks a device is on rather than relying on the colors of
-// its connections on the canvas.
+// The outline comes from the same document as the canvas. Its rows are the
+// nodes, and its forms connect and group them. Disconnect in the
+// Inspector's Connection points or the command palette removes a
+// connection. So no task needs a drag. A row's name (outlineLabel) is also
+// the canvas node's accessible name. That is why it names the networks a
+// device is on, instead of the colors of its connections on the canvas.
 
 import { count, listOf } from './announce.js';
 import { nodeIcon, nodeIconKey } from './catalog.js';
@@ -28,9 +27,9 @@ import { capitalize } from './text.js';
 const NOTE_SUMMARY_LENGTH = 80;
 
 // Words for the device icon keys, which are the only visible sign of a
-// device's type. A plain device is a Linux VM, shown with the server or Linux
-// icon, so those two keys are not named: saying "Linux" on every row is noise.
-// `also` lists other words that name the type in a label.
+// device's type. A plain device is a Linux VM, shown with the server or
+// Linux icon. Those two keys have no word, because "Linux" on every row is
+// noise. `also` lists other words that name the type in a label.
 const DEVICE_TYPES = {
   centos: { name: 'CentOS' },
   container: { name: 'container' },
@@ -46,10 +45,11 @@ const DEVICE_TYPES = {
 };
 
 /**
- * Builds the outline tree: groups contain their members and ungrouped nodes
- * are top level. It lists nodes only; a node's name counts its connections
- * and names a device's networks, and the canvas, the Inspector's Connection
- * points and the command palette's Disconnect list the connections.
+ * Builds the outline tree: groups contain their members, and ungrouped
+ * nodes are at the top level. It lists only nodes. A node's name counts its
+ * connections and names a device's networks. The canvas, the Inspector's
+ * Connection points and the command palette's Disconnect list the
+ * connections.
  *
  * @param {object} doc
  * @returns {object[]} outline items
@@ -102,7 +102,8 @@ export function buildOutline(doc) {
  *
  * @param {object} doc
  * @param {string} id the row's node
- * @returns {string[]} node ids, the row's own first; none when it is gone
+ * @returns {string[]} node ids, the row's own first. None when the row's
+ *   node no longer exists
  */
 export function rowNodeIds(doc, id) {
   const nodes = doc?.nodes || [];
@@ -166,9 +167,8 @@ function kindRank(kind) {
 /**
  * Every connection, named from its device's end with the interface, as
  * "alpha (eth0) to EXP", with its network and label. The outline lists
- * nodes only, so these are what the command palette's Disconnect offers.
- * Nodes and networks are looked up once, so thousands of connections stay
- * linear.
+ * only nodes, so the command palette's Disconnect offers these. Each node
+ * and network lookup happens once, so thousands of connections stay linear.
  *
  * @param {object} doc
  * @returns {{id: string, name: string, networkName: string, label: string,
@@ -212,15 +212,15 @@ export function connectionList(doc) {
 }
 
 /**
- * What outlineLabel and the canvas's handles (handlesFor) look up, gathered
+ * What outlineLabel and the canvas's handles (handlesFor) look up, collected
  * once for a whole document: each node's connections, the network of each
  * connected handle, each group's member count, and the nodes and networks
- * by id. Naming and drawing every node then stays linear in the size of
- * the document.
+ * by id. Then the names and the drawing of every node stay linear in the
+ * size of the document.
  *
  * @param {object} doc
  * @returns {{links: Function, handle: Function, members: Function,
- *   node: Function, network: Function}} lookups by id; handle gives
+ *   node: Function, network: Function}} lookups by id. handle gives
  *   {networkId} for a connected handle, else null
  */
 export function labelIndex(doc) {
@@ -288,11 +288,16 @@ function scanIndex(doc) {
 }
 
 /**
- * Accessible name for a node: kind, label, device type (its icon's word,
- * then the phenix node type the canvas shows), the topology an included
- * device comes from, group, a switch's network, link or member count and
- * the networks a device is on, as "Device node, 2 connections, on EXP and
- * EXP-2".
+ * Accessible name for a node, as "Device node, 2 connections, on EXP and
+ * EXP-2". It has these parts:
+ * - kind and label
+ * - device type (its icon's word, then the phenix node type the canvas
+ *   shows)
+ * - the topology an included device comes from
+ * - group
+ * - a switch's network
+ * - link or member count
+ * - the networks a device is on
  *
  * @param {object} doc
  * @param {object} node
@@ -379,15 +384,16 @@ function arrowheads(line) {
   return line?.endArrow ? 'arrowhead at its end' : '';
 }
 
-// Kind and label, without repeating a label that only names the kind ("Group
-// Group"). A shape's kind is its figure ("Circle DMZ"). A note adds the start
-// of its text: its label stays "Note" unless renamed, so the text is what
-// tells notes apart.
+// Kind and label, without a repeat of a label that only names the kind
+// ("Group Group"). A shape's kind is its figure ("Circle DMZ"). A note adds
+// the start of its text. Its label stays "Note" unless renamed, so the text
+// is what makes notes different.
 function nodeName(node) {
   const kind = node.kind === 'shape' ? kindLabel(node) : capitalize(node.kind);
   const label = nodeLabel(node);
   const text = node.kind === 'note' ? noteSummary(node.note?.text) : '';
-  // The whole text: a first line longer than the summary starts it too.
+  // The whole text, because a first line longer than the summary also
+  // starts it.
   const redundant =
     !label ||
     label.toLowerCase() === kind.toLowerCase() ||
@@ -422,13 +428,15 @@ function holdsWords(words, name) {
 // a plain device.
 const PLAIN_TYPES = ['device', 'virtualmachine'];
 
-// A device's type, as up to two parts of its name. First the word for its
-// icon, unless its label already says it: palette templates name their
-// devices after their type ("router", "router-2", "external"). Then the
-// phenix node type the node shows on the canvas (deviceTypeLabel), unless
-// it is that of a plain device or the label or the icon's word already
-// says it: a Router with the Linux icon named "edge-1" is "Device edge-1,
-// Router".
+// A device's type, as up to two parts of its name:
+// 1. The word for its icon, unless its label already says it. Palette
+//    templates name their devices after their type ("router", "router-2",
+//    "external").
+// 2. The phenix node type the node shows on the canvas (deviceTypeLabel),
+//    unless it is that of a plain device, or the label or the icon's word
+//    already says it.
+// For example, a Router with the Linux icon named "edge-1" is "Device
+// edge-1, Router".
 function deviceTypes(node) {
   if (node.kind !== 'device') {
     return [];
@@ -543,8 +551,8 @@ function countTip(key, n, text) {
 
 /**
  * The diagram's counts, as the editor header shows them: each kind's
- * number, the word after it, both together ("2 devices"), and what pressing
- * the count does ("Select all 2 devices"; see kindSelection in
+ * number, the word after it, both together ("2 devices"), and what a press
+ * on the count does ("Select all 2 devices", see kindSelection in
  * selection.js).
  *
  * @param {object} doc

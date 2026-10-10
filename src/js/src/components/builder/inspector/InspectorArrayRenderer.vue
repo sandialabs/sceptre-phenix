@@ -4,13 +4,13 @@
   "↓" and "🗙" and whose add button sat inside the legend.
 
   Each item is its own group ("Drive 2: ubuntu.qc2") with named buttons
-  ("Move drive 2 up", "Remove drive 2"); "Add drive" follows the items. Add,
+  ("Move drive 2 up", "Remove drive 2"). "Add drive" follows the items. Add,
   remove and move are announced, and focus goes to the new item's first field
   or stays on the list instead of falling to the page. A locked list (see
   useInspectorLocked) has no buttons: its items cannot change. A new item is
   the one BuilderInspector provides for the list, if any (a new interface's
-  name and kind), else its schema's default. A list that takes an item
-  between two others (a line's points; see useInspectorInsertItem) has an
+  name and kind), or else its schema's default. A list that takes an item
+  between two others (a line's points, see useInspectorInsertItem) has an
   "Insert … after" button on each item but its last ("Insert point after
   point 2"), which puts the item BuilderInspector provides there.
 
@@ -231,8 +231,8 @@
   });
 
   // A list of primitives (Commands) edits each item with one unlabelled
-  // control; name it after the item. An item of a list of text of several
-  // lines (Notes; see isMultilineList) is a text area.
+  // control, so this names the control after the item. An item of a list of
+  // text of several lines (Notes, see isMultilineList) is a text area.
   function childUiSchema(index) {
     if (!primitiveItems.value) {
       return itemUiSchema.value;

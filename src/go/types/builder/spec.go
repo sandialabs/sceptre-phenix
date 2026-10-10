@@ -45,7 +45,7 @@ func specString(spec map[string]any, keys ...string) string {
 
 // specSetString sets a string value in nested spec maps, creating intermediate
 // maps as needed. It reports false when an existing intermediate value is not a
-// map (in which case nothing is modified).
+// map. In that case, it changes nothing.
 func specSetString(spec map[string]any, value string, keys ...string) bool {
 	if len(keys) == 0 {
 		return false
@@ -77,9 +77,10 @@ func specSetString(spec map[string]any, value string, keys ...string) bool {
 }
 
 // normalizeSpec converts an arbitrary decoded value (JSON or YAML) into a
-// canonical map[string]any / []any / scalar tree. YAML decoders may produce
-// map[any]any and JSON decoders produce float64 for every number; both are
-// normalized so specs survive a round trip through either format.
+// canonical map[string]any / []any / scalar tree. YAML decoders can produce
+// map[any]any, and JSON decoders produce float64 for every number.
+// normalizeSpec normalizes both, so specs survive a round trip through either
+// format.
 func normalizeSpec(value any) (any, error) {
 	switch typed := value.(type) {
 	case map[string]any:
@@ -127,8 +128,8 @@ func normalizeSpec(value any) (any, error) {
 
 		return out, nil
 	case float64:
-		// JSON decodes every number as float64; integral values are restored to
-		// int so generated specs marshal (and schema validate) as integers.
+		// JSON decodes every number as float64. Integral values change back to
+		// int, so generated specs marshal (and schema validate) as integers.
 		if typed == math.Trunc(typed) && !math.IsInf(typed, 0) &&
 			math.Abs(typed) <= math.MaxInt32 {
 			return int(typed), nil

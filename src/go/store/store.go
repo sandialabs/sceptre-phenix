@@ -16,11 +16,11 @@ const (
 	ComponentStore   Component = "store"
 )
 
-// RecordStore is the interface that identifies the functionality required for
-// persisting generic, non-config records (e.g. builder draft metadata and
-// immutable content chunks). Records are opaque byte values organized by
-// namespace and key, and are versioned with a store assigned, monotonically
-// increasing revision used for optimistic concurrency control.
+// RecordStore is the interface for persisting generic, non-config records (for
+// example builder draft metadata and immutable content chunks). Records are
+// opaque byte values organized by namespace and key. Each record has a
+// store-assigned, monotonically increasing revision for optimistic concurrency
+// control.
 type RecordStore interface {
 	// ListRecords returns every record in the given namespace whose key starts
 	// with the given prefix, ordered by key. An empty prefix matches every record
@@ -32,33 +32,33 @@ type RecordStore interface {
 	// Implementations must not load record values.
 	ListRecordKeys(namespace, prefix string) ([]string, error)
 
-	// GetRecord returns the record stored at the given namespace and key. A
-	// *RecordNotExistError is returned if the record does not exist.
+	// GetRecord returns the record stored at the given namespace and key. It
+	// returns a *RecordNotExistError if the record does not exist.
 	GetRecord(namespace, key string) (Record, error)
 
-	// CreateRecord persists the given value at the given namespace and key if no
-	// record already exists there, returning the created record. A
-	// *RecordExistError is returned if a record already exists.
+	// CreateRecord persists the given value at the given namespace and key if
+	// no record already exists there, and returns the created record. It
+	// returns a *RecordExistError if a record already exists.
 	CreateRecord(namespace, key string, value []byte) (Record, error)
 
-	// UpdateRecord replaces the value stored at the given namespace and key only
-	// if the stored revision matches the expected revision, returning the updated
-	// record. Passing AnyRevision skips the revision check. A
-	// *RecordNotExistError is returned if the record does not exist and a
-	// *RecordConflictError is returned if the revision does not match.
+	// UpdateRecord replaces the value stored at the given namespace and key
+	// only if the stored revision matches the expected revision, and returns
+	// the updated record. Passing AnyRevision skips the revision check. It
+	// returns a *RecordNotExistError if the record does not exist, and a
+	// *RecordConflictError if the revision does not match.
 	UpdateRecord(namespace, key string, value []byte, expectedRevision int64) (Record, error)
 
-	// DeleteRecord removes the record stored at the given namespace and key only
-	// if the stored revision matches the expected revision. Passing AnyRevision
-	// skips the revision check. A *RecordNotExistError is returned if the record
-	// does not exist and a *RecordConflictError is returned if the revision does
-	// not match.
+	// DeleteRecord removes the record stored at the given namespace and key
+	// only if the stored revision matches the expected revision. Passing
+	// AnyRevision skips the revision check. It returns a *RecordNotExistError
+	// if the record does not exist, and a *RecordConflictError if the revision
+	// does not match.
 	DeleteRecord(namespace, key string, expectedRevision int64) error
 
 	// DeleteRecordPrefix removes every record in the given namespace whose key
-	// starts with the given prefix, returning the number of records deleted. The
-	// prefix must not be empty so an entire namespace cannot be deleted
-	// accidentally.
+	// starts with the given prefix, and returns the number of records deleted.
+	// The prefix must not be empty, so an entire namespace cannot be deleted
+	// by accident.
 	DeleteRecordPrefix(namespace, prefix string) (int, error)
 }
 

@@ -16,12 +16,12 @@ import (
 )
 
 // builderDraftRequest creates a draft. The owner is always the authenticated
-// user: it may be sent for symmetry with the response, but never to create a
-// draft on somebody else's behalf. ForkOf, "<owner>/<draft id>", names a
-// draft the new one forks, whose source and last publication it takes in
-// place of SourceToken (see [builderAPI.forkOrigin]). SourceFile is the
-// name of the uploaded file the document came from, which is kept only to
-// show it; a fork records none.
+// user. A client may send the owner for symmetry with the response, but
+// never to create a draft for another user. ForkOf, "<owner>/<draft id>",
+// names a draft that the new draft forks. The new draft takes the source and
+// last publication of that draft in place of SourceToken (see
+// [builderAPI.forkOrigin]). SourceFile is the name of the uploaded file that
+// the document came from. It is kept only for display. A fork records none.
 type builderDraftRequest struct {
 	Title       string          `json:"title"`
 	SourceToken string          `json:"sourceToken"`
@@ -87,10 +87,10 @@ type builderDraftResponse struct {
 	Document     json.RawMessage           `json:"document,omitempty"`
 	History      []builderSnapshotResponse `json:"history,omitempty"`
 	// Stamp is the creator, creation time, last editor and last edit time of
-	// the document the request stored, as its metadata names them. Only creating a draft and saving one
-	// store a document, and neither returns it: the editor copies the stamp
-	// into its own copy instead. A field the stored document lacks is left
-	// out.
+	// the document that the request stored, as its metadata names them. Only a
+	// draft create and a draft save store a document, and neither returns it.
+	// The editor copies the stamp into its own copy instead. A field that the
+	// stored document does not have is left out.
 	Stamp *bdoc.Provenance `json:"stamp,omitempty"`
 
 	Publication *builderPublicationResponse `json:"publication,omitempty"`
@@ -113,12 +113,12 @@ type builderDraftResponse struct {
 	// CanDelete reports whether the caller may delete the draft, which a
 	// share never allows. It is reported where Access is.
 	CanDelete bool `json:"canDelete,omitempty"`
-	// Experiment is the name of an experiment the draft's publication made,
-	// while one still exists that the caller may get. It is worked out for
-	// each response and never stored (see [builderAPI.draftExperiment]),
-	// and reported by GET of one draft, creating a draft and the draft of a
-	// publish answer: never by the listing, which would have to list the
-	// experiments for it.
+	// Experiment is the name of an experiment that the publication of the draft
+	// made, while that experiment exists and the caller may get it. It is
+	// calculated for each response and never stored (see
+	// [builderAPI.draftExperiment]). GET of one draft, a draft create and the
+	// draft of a publish answer report it. The listing never reports it, because
+	// the listing would have to list the experiments for it.
 	Experiment string `json:"experiment,omitempty"`
 }
 
@@ -240,11 +240,14 @@ func newBuilderSnapshotResponse(
 	}
 }
 
-// builderDraftAccessFields fills in what the caller may do with a draft: its
-// access, where access to another user's draft comes from, whether the
-// draft is read only for the caller, and whether the caller may delete it,
-// as DELETE of the draft decides; and, for its owner only, whether the
-// caller may share it and whom it is shared with, stale shares included.
+// builderDraftAccessFields sets what the caller may do with a draft:
+//
+//   - its access
+//   - where access to the draft of another user comes from
+//   - whether the draft is read only for the caller
+//   - whether the caller may delete it, as DELETE of the draft decides
+//   - for its owner only: whether the caller may share it, and whom it is
+//     shared with, stale shares included
 func builderDraftAccessFields(
 	response *builderDraftResponse,
 	actor builderActor,
@@ -277,12 +280,13 @@ func builderDraftAccessFields(
 
 // listDrafts - GET /builder/drafts.
 //
-// The response separates the caller's own drafts from the drafts of other users
-// shared with the caller or the caller is explicitly allowed to list, and
-// lists apart the drafts whose metadata this server can no longer read, which
-// can only be deleted: the caller's own, and those of other users the caller
-// may list, never because of a share. Drafts the caller may not see are never
-// counted, described, or otherwise hinted at.
+// The response separates the drafts of the caller from the drafts of other
+// users. Those other drafts are shared with the caller, or the caller has
+// explicit permission to list them. The response lists separately the drafts
+// whose metadata this server can no longer read. These drafts can only be
+// deleted. They are the drafts of the caller, and those of other users that
+// the caller may list, never because of a share. The response never counts,
+// describes, or hints at drafts that the caller may not see.
 func (b *builderAPI) listDrafts(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderListDrafts")
 
@@ -309,9 +313,10 @@ func (b *builderAPI) listDrafts(w http.ResponseWriter, r *http.Request) error {
 	})
 }
 
-// partitionDrafts returns the responses of the caller's own drafts, and of the
-// drafts of other users shared with the caller or its role lets it list. The
-// caller's account is read at most once, and only when a draft needs it.
+// partitionDrafts returns the responses of the drafts of the caller. It also
+// returns those of the drafts of other users that are shared with the caller
+// or that its role lets it list. It reads the account of the caller at most
+// once, and only when a draft needs it.
 func (b *builderAPI) partitionDrafts(
 	actor builderActor,
 	drafts []bapi.DraftMetadata,
@@ -357,8 +362,9 @@ func (b *builderAPI) partitionDrafts(
 }
 
 // builderDamagedDraftResponse is the JSON view of a draft whose metadata this
-// server can no longer read: what could still be read of it, and whether the
-// caller may delete it, which is all that can be done with it.
+// server can no longer read. It holds what could still be read of the draft,
+// and whether the caller may delete it. Delete is the only operation left
+// for such a draft.
 type builderDamagedDraftResponse struct {
 	ID        string     `json:"id"`
 	Owner     string     `json:"owner"`
@@ -368,10 +374,10 @@ type builderDamagedDraftResponse struct {
 	CanDelete bool       `json:"canDelete"`
 }
 
-// builderDamagedDrafts returns the damaged drafts the caller may see, as
-// [builderAPI.listDrafts] lists readable ones: the caller's own, and those
-// of other users the caller may list. A draft whose owner cannot be read is
-// left out: no request can name it.
+// builderDamagedDrafts returns the damaged drafts that the caller may see,
+// as [builderAPI.listDrafts] lists readable ones. These are the drafts of the
+// caller, and those of other users that the caller may list. A draft whose
+// owner cannot be read is left out, because no request can name it.
 func builderDamagedDrafts(actor builderActor, damaged []bapi.DamagedDraft) []builderDamagedDraftResponse {
 	responses := []builderDamagedDraftResponse{}
 
@@ -438,8 +444,8 @@ func (b *builderAPI) createDraft(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	// Checked here too, so a name that is not one refuses a fork as well,
-	// which would otherwise drop it unseen.
+	// Check the name here too, so a name that is not valid also refuses a
+	// fork. Otherwise the fork would drop it without a message.
 	if err := bapi.ValidateSourceFile(request.SourceFile); err != nil {
 		return builderWebError(err, "unable to create the builder draft")
 	}
@@ -494,18 +500,18 @@ type builderDraftSource struct {
 //
 // A fork takes the source token and the last publication of the draft it
 // forks (see [builderAPI.forkOrigin]) and records no source file. Its
-// document is what the caller's editor holds, so it is stamped as any
+// document is what the editor of the caller holds, so it is stamped as any
 // request body is.
 //
-// A draft opened from a published document, or from the Builder file a
+// A draft opened from a published document, or from the Builder file that a
 // topology names, may update that topology (see [draftOwnsDocument] and
-// [builderAPI.holdsDraftDocument]), so only a caller who may read the
-// document may name it, and for a file only while the file still holds what
-// the caller opened. That document is the draft's origin: when the request
-// sends it back unchanged, the draft stores it as it is (see
-// [bapi.Service.CreateDraft]), so opening a diagram is not an edit of it.
-// Its digest is all that says, and it is the server's own: the record's, or
-// that of the file as it was read for this request.
+// [builderAPI.holdsDraftDocument]). Thus only a caller who may read the
+// document may name it. For a file, this applies only while the file still
+// holds what the caller opened. That document is the origin of the draft.
+// When the request sends it back unchanged, the draft stores it as it is
+// (see [bapi.Service.CreateDraft]), so the open of a diagram is not an edit
+// of it. Only its digest tells this, and the server supplies the digest:
+// that of the record, or that of the file as read for this request.
 func (b *builderAPI) draftSource(
 	r *http.Request,
 	actor builderActor,
@@ -586,9 +592,10 @@ func (b *builderAPI) getDraft(w http.ResponseWriter, r *http.Request) error {
 	return builderWriteJSON(w, http.StatusOK, meta.ETag(), response)
 }
 
-// builderDraftReadOnly reports whether the caller may not change a draft it
-// may see: its access does not allow updates, or its role cannot update
-// configs, even when a share gives it edit access.
+// builderDraftReadOnly reports whether the caller may not change a draft
+// that it may see. This is true when its access does not allow updates. It
+// is also true when its role cannot update configs, even if a share gives
+// it edit access.
 func builderDraftReadOnly(actor builderActor, access builderAccess) bool {
 	return !access.allows(builderVerbUpdate) || !builderBaseAllowed(actor.role, builderVerbUpdate)
 }
@@ -613,9 +620,9 @@ func (b *builderAPI) deleteDraft(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if err := builderCheckIfMatch(ifMatch, meta); err != nil {
-		// The caller may delete the draft, so it may know its current ETag,
-		// which it has no other way to read when the draft's metadata no
-		// longer validates: it is neither listed nor readable then.
+		// The caller may delete the draft, so it may know its current ETag. When
+		// the metadata of the draft no longer validates, the caller has no other
+		// way to read the ETag, because the draft is neither listed nor readable.
 		w.Header().Set("ETag", meta.ETag())
 
 		return err
@@ -626,7 +633,7 @@ func (b *builderAPI) deleteDraft(w http.ResponseWriter, r *http.Request) error {
 	switch {
 	case err == nil:
 	case errors.Is(err, bapi.ErrCleanup):
-		// The draft record is gone; only removing its content failed.
+		// The draft record is gone. Only the removal of its content failed.
 		builderWarnCleanup(w, err, "delete draft", actor.user)
 	default:
 		return builderWebError(err, "unable to delete builder draft %s", meta.ID)
@@ -691,10 +698,10 @@ func (b *builderAPI) getSnapshot(w http.ResponseWriter, r *http.Request) error {
 
 // deleteSnapshot - DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}.
 //
-// Removes a version from the draft's history, as the owner or anyone who may
-// save the draft. The current version cannot be removed; the cursor keeps
-// pointing at it. It requires the caller's If-Match to name the revision the
-// draft is currently at.
+// Removes a version from the history of the draft. The owner, or any caller
+// who may save the draft, may do this. The current version cannot be
+// removed. The cursor stays on it. The If-Match of the caller must name the
+// current revision of the draft.
 func (b *builderAPI) deleteSnapshot(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderDeleteSnapshot")
 

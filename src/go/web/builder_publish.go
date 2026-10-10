@@ -44,17 +44,19 @@ const (
 )
 
 // Config storage does not expose compare-and-swap. This lock prevents two
-// publications in this process from passing the same preflight concurrently;
-// multi-process deployments still rely on source digests and explicit actions.
+// publications in this process from passing the same preflight concurrently.
+// Deployments with more than one process still rely on source digests and
+// explicit actions.
 var builderPublishLock sync.Mutex //nolint:gochecknoglobals // process-wide publication transaction boundary
 
-// lockBuilderPublishing holds [builderPublishLock] while a Topology config is
-// deleted or renamed outside Builder, and returns the function that
-// releases it. Either removes the topology's published documents but those a
-// publication in flight may have just stored (see
-// bapi.Service.DeleteConfigDocuments), which only a document's time tells
-// apart; holding the lock, none is in flight in this process. name is the
-// config's full name. For a config of another kind it does nothing.
+// lockBuilderPublishing holds [builderPublishLock] while a caller outside
+// Builder deletes or renames a Topology config. It returns the function that
+// releases the lock. A delete or a rename removes the published documents of
+// the topology, except those that a publication in flight may have just
+// stored (see bapi.Service.DeleteConfigDocuments). Only the time of a
+// document tells them apart. While the lock is held, no publication is in
+// flight in this process. name is the full name of the config. For a config
+// of another kind, it does nothing.
 func lockBuilderPublishing(name string) func() {
 	if kind, _, _ := strings.Cut(name, "/"); kind != builderKindTopology {
 		return func() {}
@@ -65,15 +67,17 @@ func lockBuilderPublishing(name string) func() {
 	return builderPublishLock.Unlock
 }
 
-// errBuilderExperimentRunning refuses to update an experiment found running
-// once its lock is held, after the stages before it were written.
+// errBuilderExperimentRunning refuses to update an experiment that is
+// running when the publication gets its lock. At that time, the stages
+// before it are already written.
 var errBuilderExperimentRunning = errors.New("a running experiment cannot be updated")
 
-// builderExperimentAnnotation is the experiment config annotation recording
-// the draft, and the published document, that last published the experiment,
-// and the experiment's digest (see [bdoc.SourceDigest]) once its apps'
-// configure stage ran. A draft updates an experiment it published only while
-// the experiment still has that digest: nothing else has changed it since.
+// builderExperimentAnnotation is the experiment config annotation that
+// records the draft and the published document that last published the
+// experiment. It also records the digest of the experiment (see
+// [bdoc.SourceDigest]) after the configure stage of its apps ran. A draft
+// updates an experiment it published only while the experiment still has
+// that digest, that is, while nothing else changed it.
 const builderExperimentAnnotation = "builder-experiment"
 
 // builderExperimentPublication is the value of [builderExperimentAnnotation].
@@ -90,7 +94,7 @@ type builderPublishTarget struct {
 
 // builderPublishScenario names the scenario a topology-and-experiment
 // publication gives its experiment: one of the Scenario configs the draft's
-// document lists. Publishing never creates or replaces a scenario; it adds
+// document lists. Publishing never creates or replaces a scenario. It adds
 // the topology to the "topology" annotation of each one the document lists.
 type builderPublishScenario struct {
 	Name string `json:"name"`
@@ -99,8 +103,8 @@ type builderPublishScenario struct {
 type builderPublishRequest struct {
 	Mode     bapi.PublishMode     `json:"mode"`
 	Topology builderPublishTarget `json:"topology"`
-	// Scenario is the experiment's scenario; nil publishes the experiment
-	// without one.
+	// Scenario is the scenario of the experiment. A nil Scenario publishes the
+	// experiment without one.
 	Scenario   *builderPublishScenario `json:"scenario,omitempty"`
 	Experiment *builderPublishTarget   `json:"experiment,omitempty"`
 	// DryRun makes every check a publication makes, writes nothing, and
@@ -126,9 +130,9 @@ type builderPublishStage struct {
 }
 
 // builderPublishResponse is what a publication did. Warnings and Errors are
-// issues, each with its code (see [bdoc.Issue]): what the caller should know
-// of a publication that went through, and why a stage of a partial one
-// failed.
+// issues, each with its code (see [bdoc.Issue]). Warnings tell the caller
+// what to know about a publication that completed. Errors tell why a stage
+// of a partial publication failed.
 type builderPublishResponse struct {
 	Status     bapi.PublishStatus      `json:"status"`
 	Stages     []builderPublishStage   `json:"stages"`
@@ -151,8 +155,8 @@ type builderPublishOps struct {
 	// decodeTopology merges a topology config's includeTopologies, as phenix
 	// does when it creates an experiment.
 	decodeTopology func(store.Config) (ifaces.TopologySpec, error)
-	// reconfigureExperiment runs the apps' configure stage on an updated
-	// experiment; creating one runs it already.
+	// reconfigureExperiment runs the configure stage of the apps on an updated
+	// experiment. The create of an experiment runs it already.
 	reconfigureExperiment func(string) error
 	// annotateConfig stores a config whose annotations alone changed,
 	// without running its config hooks again.
@@ -230,8 +234,8 @@ func builderBroadcastExperiment(name, action string) error {
 }
 
 // publishDraft is the only Builder handler that creates or updates phenix
-// configs; deleteDocument deletes a published topology.
-// The request carries intent only; document bytes always come from the current,
+// configs. deleteDocument deletes a published topology. The request carries
+// only the intent. The document bytes always come from the current,
 // ETag-protected draft snapshot.
 //
 //nolint:funlen // ordered publication stages and partial results are kept together
@@ -320,9 +324,9 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 
 	switch {
 	case published != nil && errors.Is(err, bapi.ErrCleanup):
-		// The document is stored, repairing a damaged copy of it, but content
-		// it replaces was not removed: publishing goes on, as every other
-		// mutation does, and startup cleanup removes that content later.
+		// The document is stored (this repairs a damaged copy of it), but the
+		// content it replaces was not removed. Publishing continues, as every
+		// other mutation does. Startup cleanup removes that content later.
 		builderWarnCleanup(w, err, "publish", actor.user)
 		response.Warnings = append(response.Warnings, bdoc.NewIssue(bdoc.CodePublishCleanupFailed, "",
 			"the builder document was stored, but content it replaces could not be removed"))
@@ -351,8 +355,8 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 
 	topology.Metadata.Annotations[bapi.DocumentAnnotation] = reference
 
-	// A topology that is written is a Builder topology from then on: the
-	// diagram the legacy Builder kept on it goes.
+	// A topology that this stage writes is a Builder topology from then on.
+	// The write removes the diagram that the legacy Builder kept on it.
 	if !plan.topology.applied {
 		if warning, replaced := bapi.ReplaceLegacyDiagram(topology); replaced {
 			response.Warnings = append(response.Warnings, warning)
@@ -418,8 +422,8 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 	return builderWriteJSON(w, http.StatusOK, updated.ETag(), response)
 }
 
-// publishExperimentStage writes a publication's experiment stage (see
-// [builderAPI.writeExperiment]) and adds it to the response, with a
+// publishExperimentStage writes the experiment stage of a publication (see
+// [builderAPI.writeExperiment]) and adds it to the response. It adds a
 // warning for anything that did not complete after the experiment was
 // stored. It returns the error of a stage that failed.
 func (b *builderAPI) publishExperimentStage(
@@ -494,11 +498,11 @@ func builderPublishStatus(action string, applied bool) bapi.PublishStatus {
 	return bapi.PublishStatus(action + "d")
 }
 
-// builderPublishScenarioPlan is what a publication's scenario stage does
-// with the Scenario configs the draft's document lists: it adds the topology
-// to the "topology" annotation of those that do not name it yet (changed,
-// each an update of the stored config) and leaves the others (unchanged) as
-// they are.
+// builderPublishScenarioPlan is what the scenario stage of a publication
+// does with the Scenario configs that the draft document lists. It adds the
+// topology to the "topology" annotation of each scenario that does not name
+// it yet (changed, each an update of the stored config). It does not change
+// the others (unchanged).
 type builderPublishScenarioPlan struct {
 	changed   []builderPublishConfigPlan
 	unchanged []string
@@ -665,12 +669,13 @@ func (b *builderAPI) preflightPublish(
 }
 
 // publishProjectionRefusal refuses a document whose topology projection
-// cannot be published. Interfaces without a VLAN, addresses that interfaces
-// share, and hostnames phenix refuses are named in the message, which is what
-// clients show, and not only in its cause; past the first few, only their
-// number is. Its code is [bdoc.CodePublishBlocked], and its issues name each
-// of them where it is (see [builderCodedError]); a projection phenix's schema
-// refuses for a reason of its own has [bdoc.CodePublishTopologyInvalid].
+// cannot be published. The message names interfaces without a VLAN,
+// addresses that interfaces share, and hostnames that phenix refuses. Clients
+// show the message, so these names are not only in its cause. Past the first
+// few, the message gives only their number. Its code is
+// [bdoc.CodePublishBlocked], and its issues name each problem at its location
+// (see [builderCodedError]). A projection that the phenix schema refuses for
+// a different reason has [bdoc.CodePublishTopologyInvalid].
 func publishProjectionRefusal(topologyName string, err error) error {
 	problems, named := projectionProblems(err)
 	if !named {
@@ -682,11 +687,12 @@ func publishProjectionRefusal(topologyName string, err error) error {
 		SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishBlocked))
 }
 
-// projectionProblems names the interfaces without a VLAN, the addresses
-// interfaces share, or the hostnames phenix refuses, that err reports (see
-// [bdoc.InterfaceVLANError], [bdoc.InterfaceAddressError] and
-// [bdoc.NodeHostnameError]) as clients show them: the first few, then how
-// many more. It reports false for an error that names none.
+// projectionProblems names, as clients show them, the problems that err
+// reports (see [bdoc.InterfaceVLANError], [bdoc.InterfaceAddressError] and
+// [bdoc.NodeHostnameError]). These are interfaces without a VLAN, addresses
+// that interfaces share, or hostnames that phenix refuses. It names the
+// first few, then how many more. It reports false for an error that names
+// none.
 func projectionProblems(err error) (string, bool) {
 	const listed = 3
 
@@ -725,10 +731,11 @@ func projectionProblems(err error) (string, bool) {
 }
 
 // mergedIncludesRefusal is why an experiment update may not merge the
-// topologies the published topology includes. The update merges them itself
-// (see experimentTopology), so it reads them only the way import does: from
-// the config store, and only when the caller may read them. An experiment
-// create leaves the merge to phenix, as it is outside the Builder.
+// topologies that the published topology includes. The update merges them
+// itself (see experimentTopology). Thus it reads them only as import does:
+// from the config store, and only when the caller may read them. An
+// experiment create leaves the merge to phenix, as it is outside the
+// Builder.
 func mergedIncludesRefusal(actor builderActor, experimentName string, includes bdoc.IncludeReport) error {
 	for _, problem := range includes.Unreadable {
 		if errors.Is(problem.Err, errBuilderIncludeForbidden) {
@@ -863,15 +870,15 @@ func builderExperimentAllowed(role rbac.Role, action, name string) bool {
 }
 
 // checkSourceFreshness refuses a draft whose source config changed after the
-// draft was imported: its spec, or the legacy Builder diagram a topology
-// carries, which an update removes (see [bdoc.ImportDigest]). Publishing to
-// the source changes it too, so a source that holds this draft's own
-// publication, or the one of the published document it was opened from, is
-// fresh while nothing else has changed it since (see
-// [builderAPI.sourceHoldsDraftPublication]). A source deleted since holds
-// nothing a publication could overwrite, so the draft publishes as a new
-// diagram does: a published topology deleted from the drafts page is created
-// again.
+// draft was imported. The change can be to its spec, or to the legacy
+// Builder diagram that a topology carries, which an update removes (see
+// [bdoc.ImportDigest]). A publish to the source also changes it. Thus a
+// source is fresh when it holds the publication of this draft, or of the
+// published document that the draft was opened from, and nothing else
+// changed it since (see [builderAPI.sourceHoldsDraftPublication]). A source
+// deleted since then holds nothing that a publication could overwrite. Thus
+// the draft publishes as a new diagram does: a published topology deleted
+// from the drafts page is created again.
 func (b *builderAPI) checkSourceFreshness(
 	ctx context.Context,
 	actor builderActor,
@@ -940,13 +947,13 @@ func (b *builderAPI) checkSourceFreshness(
 	return nil
 }
 
-// sourceHoldsDraftPublication reports whether a source config changed only by
-// publishing this draft, or the published document it was opened from: a
-// topology that still holds exactly that document's projection, or an
-// experiment that still has the digest recorded when it was published (see
-// [experimentHoldsDraftPublication]). The apps' configure stage rewrites an
-// experiment's spec as it is published, so an experiment cannot be compared
-// with the document itself.
+// sourceHoldsDraftPublication reports whether only a publish of this draft,
+// or of the published document it was opened from, changed a source config.
+// That is a topology that still holds exactly the projection of that
+// document, or an experiment that still has the digest recorded at its
+// publish (see [experimentHoldsDraftPublication]). The configure stage of the
+// apps rewrites the spec of an experiment during the publish. Thus an
+// experiment cannot be compared with the document itself.
 func (b *builderAPI) sourceHoldsDraftPublication(
 	ctx context.Context,
 	meta *bapi.DraftMetadata,
@@ -965,11 +972,11 @@ func (b *builderAPI) sourceHoldsDraftPublication(
 }
 
 // experimentHoldsDraftPublication reports whether an experiment records (see
-// [builderExperimentAnnotation]) that this draft published it last, or the
-// published document the draft was opened from or last published did, and if
-// so, whether it still has the digest recorded then: nothing else has changed
-// it since, the configs API, another draft or the experiment's own start
-// included.
+// [builderExperimentAnnotation]) that its last publisher was this draft, or
+// the published document that the draft was opened from or last published.
+// If so, it also reports whether the experiment still has the digest
+// recorded then. That means nothing else changed it since, including the
+// configs API, another draft or the start of the experiment.
 func experimentHoldsDraftPublication(meta *bapi.DraftMetadata, exp *store.Config) (bool, bool, error) {
 	value, ok := exp.Metadata.Annotations[builderExperimentAnnotation]
 	if !ok {
@@ -995,12 +1002,12 @@ func experimentHoldsDraftPublication(meta *bapi.DraftMetadata, exp *store.Config
 	return true, digest == record.Digest, nil
 }
 
-// publishedTopologyReference is the document reference a publication stores
-// on its topology: the digest and the ID of the document it published, and
-// the path of a Builder file the topology it updates already named. Publish
-// never writes that file. The stored document is what the topology is read
-// from afterwards, and the file is used only where no such document is
-// stored, when its content has that digest.
+// publishedTopologyReference is the document reference that a publication
+// stores on its topology. It holds the digest and the ID of the published
+// document, and the path of a Builder file that the updated topology already
+// named. Publish never writes that file. After the publish, the topology is
+// read from the stored document. The file is used only when no such document
+// is stored and the file content has that digest.
 func publishedTopologyReference(published *bapi.PublishedDocument, existing *store.Config) bapi.DocumentReference {
 	reference := published.Reference()
 
@@ -1015,9 +1022,9 @@ func publishedTopologyReference(published *bapi.PublishedDocument, existing *sto
 	return reference
 }
 
-// builderFileNotWrittenWarning is what a publication says of the Builder
-// file its topology still names: the topology is read from the stored
-// document from now on, and the file is left as it was.
+// builderFileNotWrittenWarning is what a publication says about the Builder
+// file that its topology still names. From now on, the topology is read from
+// the stored document, and the file stays as it was.
 func builderFileNotWrittenWarning(topology, path string) string {
 	return fmt.Sprintf(
 		"Topology %s names the Builder file %s, which Publish does not change. "+
@@ -1026,11 +1033,11 @@ func builderFileNotWrittenWarning(topology, path string) string {
 	)
 }
 
-// draftNamesDocument reports whether the document reference a topology
-// carries names, by its ID alone, a stored document of this draft: one with
-// exactly the content the draft publishes now, or one the draft recorded
-// (see [draftOwnsDocument]). It reads nothing, so it holds for a document
-// that can no longer be read.
+// draftNamesDocument reports whether the document reference of a topology
+// names, by its ID alone, a stored document of this draft. That is a document
+// with exactly the content the draft publishes now, or one that the draft
+// recorded (see [draftOwnsDocument]). It reads nothing, so it holds for a
+// document that can no longer be read.
 func draftNamesDocument(
 	meta *bapi.DraftMetadata,
 	snapshot *bapi.Snapshot,
@@ -1043,9 +1050,9 @@ func draftNamesDocument(
 		(id == bapi.PublishedDocumentID(topology, snapshot.Manifest.Digest) || draftOwnsDocument(meta, id))
 }
 
-// draftOwnsDocument reports whether a published document is one of this
+// draftOwnsDocument reports whether a published document is one of the
 // draft's own: the one it was opened from, the one it last published, or the
-// one the draft it forks had last published when it was forked.
+// one that the forked draft had last published at the time of the fork.
 func draftOwnsDocument(meta *bapi.DraftMetadata, id string) bool {
 	return id != "" &&
 		(id == openedDocumentID(meta) ||
@@ -1058,8 +1065,8 @@ func draftOwnsDocument(meta *bapi.DraftMetadata, id string) bool {
 const builderDocTokenPrefix = "builder-doc/"
 
 // builderFileTokenPrefix starts the source token of a draft opened from the
-// Builder file a topology names: "builder-file/<topology name>/<digest>",
-// with the digest the file's document had when it was opened.
+// Builder file that a topology names: "builder-file/<topology name>/<digest>".
+// The digest is that of the file document when the draft was opened.
 const builderFileTokenPrefix = "builder-file/"
 
 // openedBuilderFile returns the topology and the digest the source token of
@@ -1094,14 +1101,14 @@ func draftOpenedFile(meta *bapi.DraftMetadata, topology, digest string) bool {
 }
 
 // openedTopologyFile returns the document of the Builder file that the
-// source token of a new draft names, read as GET
-// /builder/topologies/{topology}/document reads it and under the same
-// authorization: a draft opened from a file may update the topology that
-// names it (see [builderAPI.holdsDraftDocument]), so only a caller who may
-// read the topology's document may name it, and only while the file still
-// holds what the caller opened. A topology that is no longer read from its
-// file, and a file whose document has another digest now, are refused with
-// 409.
+// source token of a new draft names. It reads the file as GET
+// /builder/topologies/{topology}/document reads it, with the same
+// authorization. A draft opened from a file may update the topology that
+// names it (see [builderAPI.holdsDraftDocument]). Thus only a caller who may
+// read the document of the topology may name it, and only while the file
+// still holds what the caller opened. It refuses with 409 a topology that is
+// no longer read from its file, and a file whose document now has another
+// digest.
 func (b *builderAPI) openedTopologyFile(
 	ctx context.Context,
 	actor builderActor,
@@ -1136,10 +1143,10 @@ func (b *builderAPI) openedTopologyFile(
 	return resolved, nil
 }
 
-// builderUploadedTokenPrefix starts the source token of a draft generated
-// from an uploaded config, "uploaded/<kind>/<name>", and of one converted
-// from an uploaded diagram of the legacy Builder that came without a
-// topology, "uploaded/legacy-xml".
+// builderUploadedTokenPrefix starts two source tokens:
+// "uploaded/<kind>/<name>" for a draft generated from an uploaded config,
+// and "uploaded/legacy-xml" for a draft converted from an uploaded legacy
+// Builder diagram that came without a topology.
 const builderUploadedTokenPrefix = "uploaded/"
 
 // draftSourceUploaded reports whether a draft was generated from an upload,
@@ -1160,17 +1167,22 @@ func openedDocumentID(meta *bapi.DraftMetadata) string {
 }
 
 // forkOrigin returns the source token and the forked publication of a new
-// draft that forks the draft named "<owner>/<draft id>", as saving an
-// editor's history as a new draft does: that draft's own source token, and
-// its last publication (or else what it had forked). The fork may then
-// update what that draft published or was opened from, as long as nothing
-// else has changed it since (see [builderAPI.holdsDraftDocument] and
-// [experimentHoldsDraftPublication]), but not what that draft publishes
-// later. Its source token is not the published document's, so opening that
-// published diagram does not open the fork as the user's draft of it. Only a
-// caller who may read that draft, its owner, a user it is shared with, or one
-// holding "builder-drafts" "get" for it, gets its identity; for anyone else
-// it is a draft that does not exist (see [builderAPI.draftFor]).
+// draft that forks the draft named "<owner>/<draft id>". A save of the
+// editor history as a new draft makes such a fork. The values are the source
+// token of that draft, and its last publication (or else what that draft
+// had forked).
+//
+// The fork may then update what that draft published or was opened from,
+// while nothing else changed it since (see [builderAPI.holdsDraftDocument]
+// and [experimentHoldsDraftPublication]). It may not update what that draft
+// publishes later. Its source token is not the token of the published
+// document. Thus, when the user opens that published diagram, the fork does
+// not open as the draft of the user for it.
+//
+// Only a caller who may read that draft gets its identity: its owner, a
+// user it is shared with, or a user that holds "builder-drafts" "get" for
+// it. For any other caller, it is a draft that does not exist (see
+// [builderAPI.draftFor]).
 func (b *builderAPI) forkOrigin(
 	r *http.Request,
 	actor builderActor,
@@ -1210,20 +1222,24 @@ type builderHeldDocument struct {
 }
 
 // holdsDraftDocument reports whether a topology config holds a document of
-// this draft and, if so, whether its spec is still exactly that document's
-// projection: nothing has changed the topology since the document was
-// published to it.
+// this draft. If so, it also reports whether the topology spec is still
+// exactly the projection of that document. That means nothing changed the
+// topology since the document was published to it.
 //
-// The document the topology references (see [builderAPI.topologyDocument])
-// is this draft's own when the reference names one of the draft's stored
-// documents (see [draftNamesDocument]), when it holds exactly the content the
-// draft publishes now, when its record says this draft published it, or,
-// for a document read from the Builder file the topology names, when the
-// draft was opened from that file and the file still holds what it held then
-// (see [draftOpenedFile]). A document that can no longer be read or
-// projected, a Builder file that cannot be used included, counts as changed,
-// and is the draft's own only by the reference: its record vouches for
-// nothing.
+// The document that the topology references (see
+// [builderAPI.topologyDocument]) is the draft's own in these cases:
+//
+//   - The reference names one of the stored documents of the draft (see
+//     [draftNamesDocument]).
+//   - The document holds exactly the content that the draft publishes now.
+//   - The record of the document says that this draft published it.
+//   - The document was read from the Builder file that the topology names,
+//     the draft was opened from that file, and the file still holds what it
+//     held then (see [draftOpenedFile]).
+//
+// A document that can no longer be read or projected counts as changed.
+// This includes a Builder file that cannot be used. Such a document is the
+// draft's own only by the reference, because its record vouches for nothing.
 func (b *builderAPI) holdsDraftDocument(
 	ctx context.Context,
 	meta *bapi.DraftMetadata,
@@ -1325,19 +1341,22 @@ func (b *builderAPI) preflightTopology(
 	}, nil
 }
 
-// topologyUpdateRefusal refuses an update of an existing topology this draft
-// may not update. A draft updates a topology that holds one of its own
-// documents (see [builderAPI.holdsDraftDocument]), which it published or was opened
-// from, as long as nothing else has changed the topology since: that is how a
-// draft publishes again after further edits, whatever it was loaded from.
-// For a topology read from the Builder file it names, that is a draft opened
-// from the file as it is now, while the topology is still what the file
-// publishes, and a draft opened from that file updates the topology in no
-// other way. Otherwise a draft updates only the topology it was loaded from:
-// the one it was imported from, or the one its source experiment was built
-// from, whose freshness checkSourceFreshness checks. A topology the legacy
-// Builder drew is updated the same way, by the draft imported from it alone
-// (see [topologyUpdateMatchesSource]).
+// topologyUpdateRefusal refuses an update of an existing topology that this
+// draft may not update. A draft updates a topology that holds one of its own
+// documents (see [builderAPI.holdsDraftDocument]), which it published or was
+// opened from, while nothing else changed the topology since. That is how a
+// draft publishes again after more edits, whatever it was loaded from.
+//
+// For a topology read from the Builder file it names, this means a draft
+// opened from the file as it is now, while the topology is still what the
+// file publishes. A draft opened from that file updates the topology in no
+// other way.
+//
+// Otherwise a draft updates only the topology it was loaded from: the one it
+// was imported from, or the one its source experiment was built from.
+// checkSourceFreshness checks the freshness of that topology. A topology that
+// the legacy Builder drew is updated the same way, but only by the draft
+// imported from that topology itself (see [topologyUpdateMatchesSource]).
 func (b *builderAPI) topologyUpdateRefusal(
 	ctx context.Context,
 	meta *bapi.DraftMetadata,
@@ -1363,8 +1382,9 @@ func (b *builderAPI) topologyUpdateRefusal(
 			SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishTopologyChanged))
 	}
 
-	// Before the import rule: a document read from the file may itself have
-	// been imported from this topology, which says nothing of the file.
+	// Check this before the import rule. A document read from the file may
+	// itself have been imported from this topology, which says nothing about
+	// the file.
 	if opened, _, ok := openedBuilderFile(meta.SourceToken); ok && opened == name {
 		return weberror.NewWebError(
 			nil, "topology %s or its Builder file changed after this draft was opened from the file", name,
@@ -1383,10 +1403,10 @@ func (b *builderAPI) topologyUpdateRefusal(
 // the topology, or from an experiment built from it. An upload names no
 // stored config, so it never matches.
 //
-// A topology that still carries a diagram of the legacy Builder is matched
-// only by a document imported from the topology itself: that import
-// converted the diagram, which the update removes, and an experiment built
-// from the topology never held it.
+// A topology that still carries a diagram of the legacy Builder matches only
+// a document imported from the topology itself. That import converted the
+// diagram, which the update removes. An experiment built from the topology
+// never held the diagram.
 func topologyUpdateMatchesSource(meta *bapi.DraftMetadata, document *bdoc.Document, existing *store.Config) bool {
 	if draftSourceUploaded(meta) || document.Source == nil {
 		return false
@@ -1406,14 +1426,15 @@ func topologyUpdateMatchesSource(meta *bapi.DraftMetadata, document *bdoc.Docume
 }
 
 // topologyPublicationApplied reports whether an existing topology already
-// holds the publication of the content with this digest, so that publishing
-// it again writes nothing: its document reference names the stored document
-// that publication stores for it (see [existingBuilderDocumentReference]).
+// holds the publication of the content with this digest, so that a new
+// publish of it writes nothing. This is true when its document reference
+// names the stored document that the publication stores for it (see
+// [existingBuilderDocumentReference]).
 //
-// A reference that names a Builder file too says so of a topology that was
-// never published: its digest only pins the file. Such a topology holds the
-// publication only once that document is stored. Until then it is read from
-// the file, and is updated as any other topology is (see
+// A reference that also names a Builder file is on a topology that was never
+// published. Its digest only pins the file. Such a topology holds the
+// publication only after that document is stored. Until then, the topology
+// is read from the file and updated as any other topology (see
 // [builderAPI.topologyUpdateRefusal]).
 func (b *builderAPI) topologyPublicationApplied(ctx context.Context, existing *store.Config, digest string) (bool, error) {
 	reference, matches := existingBuilderDocumentReference(existing, digest)
@@ -1423,7 +1444,8 @@ func (b *builderAPI) topologyPublicationApplied(ctx context.Context, existing *s
 
 	name := existing.Metadata.Name
 
-	// A damaged record is one: storing the document again repairs it.
+	// A damaged record counts as stored. A new store of the document repairs
+	// it.
 	_, err := b.drafts.GetPublishedDocument(ctx, reference.StoredID(name))
 
 	switch {
@@ -1436,10 +1458,10 @@ func (b *builderAPI) topologyPublicationApplied(ctx context.Context, existing *s
 	return true, nil
 }
 
-// existingBuilderDocumentReference returns an existing topology's document
-// reference, and whether it names the stored document a publication of the
-// content with this digest stores for it, whichever of the digest and the ID
-// the reference holds. No record is read.
+// existingBuilderDocumentReference returns the document reference of an
+// existing topology. It also reports whether the reference names the stored
+// document that a publication of the content with this digest stores for
+// it, whether the reference holds the digest or the ID. It reads no record.
 func existingBuilderDocumentReference(existing *store.Config, digest string) (bapi.DocumentReference, bool) {
 	none := bapi.DocumentReference{Digest: "", ID: "", Path: ""}
 
@@ -1460,14 +1482,15 @@ func existingBuilderDocumentReference(existing *store.Config, digest string) (ba
 	return ref, ref.Publishes(existing.Metadata.Name, digest)
 }
 
-// preflightScenarios plans the scenario stage of a publication, which runs
-// whenever the draft's document lists scenarios, in either mode: each listed
-// Scenario config must exist, and one whose "topology" annotation does not
-// name the topology yet gets it added, which needs the configs update
-// permission for it. A scenario the caller may not read is refused as one
-// that does not exist, so its existence is not disclosed. The experiment's
-// scenario must be one of those listed. For a document that lists none, the
-// plan lists none either, and the publication has no scenario stage.
+// preflightScenarios plans the scenario stage of a publication. The stage
+// runs in either mode whenever the draft document lists scenarios. Each
+// listed Scenario config must exist. When the "topology" annotation of a
+// scenario does not name the topology yet, the stage adds it. This needs the
+// configs update permission for that scenario. A scenario that the caller may
+// not read is refused as one that does not exist, so its existence is not
+// disclosed. The scenario of the experiment must be one of those listed. For
+// a document that lists no scenario, the plan lists none, and the
+// publication has no scenario stage.
 func (b *builderAPI) preflightScenarios(
 	actor builderActor,
 	document *bdoc.Document,
@@ -1558,24 +1581,24 @@ func (b *builderAPI) listedScenario(actor builderActor, name string) (*store.Con
 	return existing, nil
 }
 
-// builderScenarioMetadata is the key of the metadata of a refusal about one
-// of the scenarios a draft's document lists, whose value names that
-// scenario, so that a client can tell whether it is the experiment's.
+// builderScenarioMetadata is the metadata key of a refusal about one of the
+// scenarios that the draft document lists. Its value names that scenario, so
+// a client can tell whether it is the scenario of the experiment.
 const builderScenarioMetadata = "scenario"
 
-// builderScenarioRefusal answers a publication refused for one of the
-// scenarios the draft's document lists, named name, with 422, the code of the
-// refusal, and the scenario's name in its metadata.
+// builderScenarioRefusal answers a publication refused for name, one of the
+// scenarios that the draft document lists. The answer has 422, the refusal
+// code, and the scenario name in its metadata.
 func builderScenarioRefusal(refusal *weberror.WebError, code bdoc.Code, name string) *weberror.WebError {
 	return refusal.SetStatus(http.StatusUnprocessableEntity).WithCode(string(code)).
 		WithMetadata(builderScenarioMetadata, name, true)
 }
 
-// publishScenarioStage writes a publication's scenario stage: each listed
-// scenario that does not name the topology yet is stored with it added and
-// broadcast. It adds the stage to the response, with a message saying what
-// it did, and returns the error of a write that failed, after a warning
-// naming the scenarios it already updated.
+// publishScenarioStage writes the scenario stage of a publication. It adds
+// the topology to each listed scenario that does not name it yet, then
+// stores and broadcasts that scenario. It adds the stage to the response,
+// with a message that says what it did. If a write fails, it returns the
+// error, after a warning that names the scenarios it already updated.
 func (b *builderAPI) publishScenarioStage(
 	topologyName string,
 	plan builderPublishScenarioPlan,
@@ -1694,12 +1717,17 @@ func (b *builderAPI) preflightExperiment(
 	return plan, nil
 }
 
-// experimentCreateRefusal refuses, before anything is written, an experiment
-// that experiment.Create would refuse only after the document, topology and
-// scenario are: the reserved name "all", a name longer than a bridge name
-// when phenix names each experiment's bridge after it (auto bridge mode), or
-// a config the Experiment schema refuses. validatePublishTarget has already
-// checked the name against the config naming rule.
+// experimentCreateRefusal refuses an experiment before anything is written.
+// It refuses what experiment.Create would refuse only after the document,
+// topology and scenario are written:
+//
+//   - the reserved name "all"
+//   - a name longer than a bridge name, when phenix names the bridge of each
+//     experiment after it (auto bridge mode)
+//   - a config that the Experiment schema refuses
+//
+// validatePublishTarget already checked the name against the config naming
+// rule.
 func experimentCreateRefusal(name string, projection *bdoc.Topology) error {
 	// experiment.Create's limit, the longest Linux interface name.
 	const maxBridgeName = 15
@@ -1737,13 +1765,13 @@ func experimentCreateRefusal(name string, projection *bdoc.Topology) error {
 	return nil
 }
 
-// experimentUpdateRefusal refuses an update of an existing experiment this
-// draft may not update. A draft updates an experiment it published, or that
-// the published document it was opened from published, as long as nothing
-// else has changed the experiment since (see
+// experimentUpdateRefusal refuses an update of an existing experiment that
+// this draft may not update. A draft updates an experiment that it
+// published, or that the published document it was opened from published.
+// This applies only while nothing else changed the experiment since (see
 // [experimentHoldsDraftPublication]). Otherwise it updates only the
-// experiment it was imported from, whose freshness checkSourceFreshness
-// checks.
+// experiment it was imported from. checkSourceFreshness checks the
+// freshness of that experiment.
 func experimentUpdateRefusal(meta *bapi.DraftMetadata, document *bdoc.Document, existing *store.Config) error {
 	name := existing.Metadata.Name
 
@@ -1776,11 +1804,12 @@ func experimentUpdateMatchesSource(
 		document.Source.Name == target
 }
 
-// experimentTopology returns the topology an experiment holds for the
-// projection. The projection leaves the devices of included topologies out
-// and names those topologies instead (see [bdoc.Document.ToTopology]); phenix
-// merges them into an experiment when it creates one, so an update merges
-// them the same way, once mergedIncludesRefusal has checked it may.
+// experimentTopology returns the topology that an experiment holds for the
+// projection. The projection does not include the devices of included
+// topologies. It names those topologies instead (see
+// [bdoc.Document.ToTopology]). phenix merges them into an experiment when it
+// creates one. Thus an update merges them the same way, after
+// mergedIncludesRefusal checks that it may.
 func (b *builderAPI) experimentTopology( //nolint:ireturn // returns decodeTopology's interface
 	projection *bdoc.Topology,
 	topologyName string,
@@ -1805,11 +1834,12 @@ func (b *builderAPI) experimentTopology( //nolint:ireturn // returns decodeTopol
 	return b.publish.decodeTopology(*config)
 }
 
-// updatedExperimentConfig is the experiment config an update writes: the
-// existing one with the projection's topology and VLAN aliases, and the
-// scenario of scenarioConfig, as it is once the scenario stage ran, merged
-// for the topology the way phenix merges one when it creates an experiment.
-// A nil scenarioConfig leaves the experiment without a scenario.
+// updatedExperimentConfig is the experiment config that an update writes. It
+// is the existing config with the topology and VLAN aliases of the
+// projection, and the scenario of scenarioConfig as it is after the scenario
+// stage ran. It is merged for the topology as phenix merges one when it
+// creates an experiment. A nil scenarioConfig leaves the experiment without
+// a scenario.
 func updatedExperimentConfig(
 	existing *store.Config,
 	topologySpec ifaces.TopologySpec,
@@ -1857,9 +1887,9 @@ func updatedExperimentConfig(
 	return updated, nil
 }
 
-// publishConfigStage writes the topology config cfg as plan says, adds its
-// stage to the response and, unless an earlier attempt already applied it,
-// broadcasts the change. It returns the config as written.
+// publishConfigStage writes the topology config cfg as plan says, and adds
+// its stage to the response. It broadcasts the change, unless an earlier
+// attempt already applied it. It returns the config as written.
 func (b *builderAPI) publishConfigStage(
 	stage string,
 	plan builderPublishConfigPlan,
@@ -1913,11 +1943,11 @@ func (b *builderAPI) writePublishedConfig(
 	return cfg, nil
 }
 
-// writeExperiment creates or updates the experiment, holding its lock, and
-// then records on it which draft and document published it (see
-// [builderExperimentAnnotation]). It reports whether that record was stored:
-// a failure to store it does not undo the publication, but leaves the draft
-// unable to update the experiment again.
+// writeExperiment creates or updates the experiment while it holds the
+// experiment lock. Then it records on the experiment which draft and
+// document published it (see [builderExperimentAnnotation]). It reports
+// whether it stored that record. A failure to store the record does not undo
+// the publication, but the draft then cannot update the experiment again.
 func (b *builderAPI) writeExperiment(
 	ctx context.Context,
 	plan builderPublishExperimentPlan,
@@ -1944,8 +1974,8 @@ func (b *builderAPI) writeExperiment(
 	}
 
 	// Preflight read the experiment before the lock, and it may have been
-	// started or changed since, so it is read again and the update rebuilt
-	// from it: a stale status or spec is never written back.
+	// started or changed since. Thus read it again and rebuild the update from
+	// it, so a stale status or spec is never written back.
 	current, err := b.getConfig(store.ConfigFullName(kindExperiment, plan.name))
 	if err != nil {
 		return false, fmt.Errorf("reloading experiment %s: %w", plan.name, err)
@@ -1969,10 +1999,10 @@ func (b *builderAPI) writeExperiment(
 		return false, err
 	}
 
-	// As every other update of an experiment spec does (the configs API, the
-	// workflow API and the CLI), the apps' configure stage runs on the new
-	// spec. If it fails, the experiment is put back as it was, so the failed
-	// stage wrote nothing and publishing again retries all of it.
+	// Run the configure stage of the apps on the new spec, as every other
+	// update of an experiment spec does (the configs API, the workflow API and
+	// the CLI). If it fails, put the experiment back as it was. Then the failed
+	// stage wrote nothing, and a new publish retries all of it.
 	if err := b.publish.reconfigureExperiment(plan.name); err != nil {
 		b.restoreExperiment(current)
 
@@ -1984,9 +2014,10 @@ func (b *builderAPI) writeExperiment(
 
 // restoreExperiment puts an experiment back as it was before an update whose
 // configure stage failed. The experiment lock does not stop the CLI from
-// starting it meanwhile, which is also why the configure stage can fail, so
-// it is read again first: a running experiment is left as it is, and one that
-// is not keeps its current status.
+// starting the experiment meanwhile, which is also why the configure stage
+// can fail. Thus it reads the experiment again first. It does not change a
+// running experiment. An experiment that is not running keeps its current
+// status.
 func (b *builderAPI) restoreExperiment(previous *store.Config) {
 	name := previous.Metadata.Name
 
@@ -2021,9 +2052,10 @@ func (b *builderAPI) restoreExperiment(previous *store.Config) {
 }
 
 // recordExperimentPublication stores on an experiment, just published and
-// still locked, which draft and document published it and the digest it has
-// now that its configure stage ran (see [builderExperimentAnnotation]). It
-// reports whether the record was stored, and logs why when it was not.
+// still locked, which draft and document published it. It also stores the
+// digest that the experiment has after its configure stage ran (see
+// [builderExperimentAnnotation]). It reports whether it stored the record,
+// and logs the reason when it did not.
 func (b *builderAPI) recordExperimentPublication(name string, publication builderExperimentPublication) bool {
 	err := func() error {
 		current, err := b.getConfig(store.ConfigFullName(kindExperiment, name))
@@ -2085,9 +2117,9 @@ func (b *builderAPI) configIfExists(kind, name string) (*store.Config, bool, err
 }
 
 // requirePublishAction refuses a create of a config of kind (Topology or
-// Experiment) that exists, and an update of one that does not, unless an
-// earlier attempt already applied the publication. The code of the refusal
-// names the kind and what the caller did not expect.
+// Experiment) that exists, and an update of one that does not exist. It
+// does not refuse when an earlier attempt already applied the publication.
+// The code of the refusal names the kind and what the caller did not expect.
 func requirePublishAction(kind string, target builderPublishTarget, exists, applied bool) error {
 	taken, absent := bdoc.CodePublishTopologyExists, bdoc.CodePublishTopologyMissing
 	if kind == kindExperiment {
@@ -2166,12 +2198,12 @@ func invalidPublishTarget(kind, name string) error {
 		SetStatus(http.StatusBadRequest).WithCode(string(bdoc.CodePublishTargetInvalid))
 }
 
-// addTopologyAnnotation adds topology to value, a scenario's comma-separated
-// "topology" annotation, when value does not name it yet (see
-// [hasTopologyAnnotation]). The value is otherwise kept byte for byte: the
-// name is appended after a comma, or is the whole annotation when value is
-// empty, and the names value already has are not trimmed, reordered or
-// de-duplicated.
+// addTopologyAnnotation adds topology to value, the comma-separated
+// "topology" annotation of a scenario, when value does not name it yet (see
+// [hasTopologyAnnotation]). Apart from the added name, the value stays the
+// same byte for byte. It appends the name after a comma, or uses the name
+// as the whole annotation when value is empty. It does not trim, reorder or
+// de-duplicate the names that value already has.
 func addTopologyAnnotation(value, topology string) string {
 	switch {
 	case hasTopologyAnnotation(value, topology):

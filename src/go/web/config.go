@@ -369,9 +369,9 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 			WithMetadata("validation", err.Error(), true)
 	}
 
-	// The check above is for creating configs at all; this one is for the
-	// config the body names, so a role scoped to some kinds or names creates
-	// no other config.
+	// The check above is for the creation of any config. This check is for the
+	// config that the body names, so a role scoped to some kinds or names
+	// creates no other config.
 	if name := c.FullName(); !role.Allowed("configs", "create", name) {
 		return configForbidden(ctx, "creating", name)
 	}
@@ -625,9 +625,9 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		)
 	}
 
-	// The config is stored under the kind and name the body gives, which
-	// may differ from those of the path: a rename, or another config
-	// altogether. So the caller must also be allowed to update that one.
+	// The config is stored under the kind and name that the body gives. These
+	// can differ from those of the path: a rename, or a different config. Thus
+	// the caller must also have permission to update that config.
 	if target := c.FullName(); target != name && !role.Allowed("configs", "update", target) {
 		return configForbidden(ctx, "updating", target)
 	}
@@ -750,8 +750,8 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 }
 
 // configForbidden logs and returns the refusal of a request whose role may
-// not act on the config name, where action says what it asked for, such as
-// "creating".
+// not act on the config name. action says what the request asked for, such
+// as "creating".
 func configForbidden(ctx context.Context, action, name string) error {
 	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 	plog.Warn(
@@ -791,8 +791,8 @@ func broadcastConfig(c *store.Config, name, action string) error {
 }
 
 // deleteConfig deletes the config name through the config API, which runs
-// the kind's delete hooks, then tells everyone who may list the config that
-// it is gone.
+// the delete hooks of the kind. Then it tells everyone who may list the
+// config that it is gone.
 func deleteConfig(name string) error {
 	if err := config.Delete(name); err != nil {
 		return err //nolint:wrapcheck // callers word the error themselves

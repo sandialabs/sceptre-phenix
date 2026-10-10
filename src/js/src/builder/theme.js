@@ -1,8 +1,9 @@
 // Builder-only theme handling.
 //
-// The rest of phenix keeps its own styling; Builder scopes its theme
-// to its own root element via a data attribute, so switching here never leaks
-// into other views. The preference is persisted under phenix.builder.theme.
+// The rest of phenix keeps its own styling. The Builder applies its theme
+// only to its own root element, through a data attribute, so a theme change
+// here never affects other views. The preference is stored under
+// phenix.builder.theme.
 
 export const THEME_STORAGE_KEY = 'phenix.builder.theme';
 const THEMES = ['system', 'light', 'dark'];
@@ -17,7 +18,7 @@ export function isValidTheme(value) {
 }
 
 /**
- * Reads the persisted preference, falling back to "system".
+ * Reads the stored preference, or "system" when there is none.
  *
  * @param {Storage} [storage]
  * @returns {string}
@@ -32,7 +33,7 @@ export function readStoredTheme(storage) {
 }
 
 /**
- * Persists the preference. Storage failures (private mode) are non-fatal.
+ * Stores the preference. A storage failure (private mode) is not an error.
  *
  * @param {string} theme
  * @param {Storage} [storage]
@@ -144,10 +145,11 @@ export function watchSystemTheme(matchMedia, onChange) {
 }
 
 /**
- * The theme the toolbar toggle moves to. From System it goes to the opposite
- * of what the system shows, so the first press always changes the colors,
- * then to the system's own, then back to System: System, Dark, Light for a
- * light system, and System, Light, Dark for a dark one.
+ * The next theme of the toolbar toggle. From System it goes to the opposite
+ * of what the system shows, so the first press always changes the colors.
+ * Then it goes to the system's own, then back to System. The order is
+ * System, Dark, Light for a light system, and System, Light, Dark for a
+ * dark one.
  *
  * @param {string} theme preference
  * @param {'light'|'dark'} [system] what System shows now (see resolveTheme)

@@ -22,7 +22,7 @@ export const PALETTE_TEMPLATE_MIME = 'application/x-phenix-builder-template';
  * @param {string} kind node kind, or the id of a palette entry (see
  *   PALETTE in catalog.js), which adds the entry's options too: "circle"
  *   adds a shape that is a circle
- * @param {string} [key] a device template's key; one that names no
+ * @param {string} [key] a device template's key. A key that names no
  *   template adds a plain device
  * @returns {object}
  */
@@ -50,9 +50,9 @@ const COLUMNS = 5;
  * there, a group's box included, so it never lands on top of another (see
  * freeSpot).
  * With `area`, the part of the canvas in view (flow coordinates), the grid
- * is centred in it, as many slots across as fit, its rows going on below;
- * without, it starts at (80, 80), five slots across. Positions follow the
- * document's grid while it snaps.
+ * is centred in it, as many slots across as fit, with more rows below.
+ * Without it, the grid starts at (80, 80), five slots across. Positions
+ * follow the document's grid while it snaps.
  *
  * @param {object} doc
  * @param {object} [options]
@@ -92,9 +92,9 @@ export function nextPosition(
 
 /**
  * Adds a node where a click on a palette entry or an Add command puts it:
- * nextPosition's free spot in the part of the canvas in view, which is then
- * brought into view if it is not (a diagram whose view is full). Focus stays
- * where it is.
+ * nextPosition's free spot in the part of the canvas in view. The view then
+ * moves to that spot if it is not in view (a diagram whose view is full).
+ * Focus stays where it is.
  *
  * @param {{store: object, view?: object}} context the command context: the
  *   Builder store, and the view adapter for the canvas's visible area

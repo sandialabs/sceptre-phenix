@@ -9,13 +9,13 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-// boltRecordsBucket is the dedicated top-level bucket holding all non-config
-// records. Record namespaces are nested buckets within it, keeping records
-// isolated from config kind buckets.
+// boltRecordsBucket is the dedicated top-level bucket that holds all
+// non-config records. Record namespaces are nested buckets in it, which keeps
+// records separate from config kind buckets.
 const boltRecordsBucket = "phenix_records"
 
-// boltRecordEnvelope is the on-disk representation of a record. The namespace
-// and key are implied by the bucket and key the envelope is stored under.
+// boltRecordEnvelope is the on-disk representation of a record. The bucket and
+// key that the envelope is stored under give the namespace and key.
 type boltRecordEnvelope struct {
 	Value    []byte    `json:"value"`
 	Revision int64     `json:"revision"`
@@ -375,9 +375,9 @@ func boltEnsureNamespaceBucket(tx *bbolt.Tx, namespace string) (*bbolt.Bucket, e
 	return bucket, nil
 }
 
-// boltNextRevision returns the next monotonically increasing revision. The
-// sequence is stored by Bolt in the records bucket, so revisions keep
-// increasing across reopens of the database file.
+// boltNextRevision returns the next monotonically increasing revision. Bolt
+// stores the sequence in the records bucket, so revisions continue to increase
+// across reopens of the database file.
 func boltNextRevision(tx *bbolt.Tx) (int64, error) {
 	root, err := tx.CreateBucketIfNotExists([]byte(boltRecordsBucket))
 	if err != nil {

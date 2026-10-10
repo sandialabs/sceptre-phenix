@@ -60,8 +60,8 @@
 
   const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]';
 
-  // The controls Tab visits, in order. A radio group is one stop: its
-  // unchecked buttons are skipped when one of them is checked.
+  // The controls Tab visits, in order. A radio group is one stop: Tab skips
+  // its unchecked buttons when one of them is checked.
   function tabStops() {
     const dialog = panel.value;
 
@@ -99,8 +99,8 @@
       return;
     }
 
-    // The page behind is inert, but Tab past either end would still leave
-    // for the browser's own controls; wrap to the other end instead.
+    // The page behind is inert, but Tab past either end would still go to
+    // the browser's own controls. So focus wraps to the other end.
     const stops = tabStops();
     const active = document.activeElement;
 
@@ -180,7 +180,7 @@
     margin-bottom: 0.75rem;
   }
 
-  /* Titles can carry a user's draft name; wrap it anywhere so a long,
+  /* Titles can contain a user's draft name. It wraps anywhere, so a long,
      unbroken name never pushes Close off a narrow screen. */
   .builder-dialog__header h2 {
     font-size: 1.05rem;

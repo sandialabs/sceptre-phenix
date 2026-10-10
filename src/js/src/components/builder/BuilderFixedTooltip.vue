@@ -1,7 +1,7 @@
 <!--
-  The tooltip useFixedTooltip shows and places (see fixedTooltip.js). The
-  component showing it passes what useFixedTooltip returned as `tooltip`,
-  which the tooltip hands its element back to.
+  The tooltip that useFixedTooltip shows and places (see fixedTooltip.js).
+  The component that shows it passes the return value of useFixedTooltip as
+  `tooltip`. The tooltip gives its element back to that object.
 -->
 <template>
   <div

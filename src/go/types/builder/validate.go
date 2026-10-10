@@ -20,9 +20,9 @@ const maxVLANAlias = 4094
 const MaxNameBytes = 512
 
 // Bounds on the source config annotations a document carries (see
-// [Source.Annotations]). They keep what the document only shows to a small
-// part of the 5 MiB a stored document may take. An annotation key is bounded
-// like the document name.
+// [Source.Annotations]). They keep the content that the document only shows
+// to a small part of the 5 MiB that a stored document can take. An annotation
+// key is bounded like the document name.
 const (
 	// MaxAnnotations is the most annotations a document's source may carry.
 	MaxAnnotations = 100
@@ -110,14 +110,17 @@ func ShapeFigures() []string {
 }
 
 // Issue is a single problem found in a document, a template file or a
-// publication: the [Code] of the rule it breaks, its [Severity], what it
-// says, and where it is, by the parts that are known. Path is a JSON-ish
-// path within the document (nodes[0].device.hostname); NodeID, EdgeID and
-// NetworkID name the element the issue is about, which still finds it once
-// an edit has moved the indexes in the path; Field is the JSON Forms data
-// path of the device field it is about (spec.hardware.drives.0.image). The
-// web UI's validator reports its issues in the same shape, with the same
-// codes for the same rules.
+// publication. It holds the [Code] of the rule it breaks, its [Severity], its
+// message, and its location, by the parts that are known:
+//
+//   - Path is a JSON-like path in the document (nodes[0].device.hostname).
+//   - NodeID, EdgeID and NetworkID name the element that the issue is about.
+//     They still find it after an edit moves the indexes in the path.
+//   - Field is the JSON Forms data path of the device field that the issue
+//     is about (spec.hardware.drives.0.image).
+//
+// The validator of the web UI reports its issues in the same shape, with the
+// same codes for the same rules.
 type Issue struct {
 	Code      Code     `json:"code"`
 	Severity  Severity `json:"severity"`
@@ -174,11 +177,11 @@ type noteCodes struct {
 
 // Validate performs structural and semantic validation of the document.
 //
-// Size limits (counts, lengths, payload sizes) are intentionally not checked
-// here; they belong to the API layer. The exceptions are bounds the editor
-// checks too, by the same rules, before it saves: those on the metadata's
-// names and notes, the scenarios, the source annotations, the templates and
-// the custom icons. Validate rejects:
+// Validate does not check size limits (counts, lengths, payload sizes) on
+// purpose. The API layer checks them. The exceptions are the bounds that the
+// editor also checks, with the same rules, before it saves: the bounds on the
+// names and notes of the metadata, the scenarios, the source annotations, the
+// templates and the custom icons. Validate rejects:
 //
 //   - wrong schema URI or revision,
 //   - a document name longer than [MaxNameBytes] or containing control
@@ -270,11 +273,11 @@ func (d *Document) Validate() error {
 	return &ValidationError{Issues: val.issues}
 }
 
-// LocateIssues gives each issue whose path starts at a node, an edge or a
-// network of the document the ID of that element, as the editor locates the
-// issues it finds, so an issue still names its element once an edit has
-// moved the indexes in its path. A blank ID is not given, and an issue that
-// names an element already keeps it.
+// LocateIssues gives the ID of an element to each issue whose path starts at
+// a node, an edge or a network of the document, as the editor locates the
+// issues it finds. Thus an issue still names its element after an edit moves
+// the indexes in its path. It does not give a blank ID. An issue that already
+// names an element keeps it.
 func (d *Document) LocateIssues(issues []Issue) {
 	for i := range issues {
 		d.locateIssue(&issues[i])
@@ -388,7 +391,7 @@ func isControl(r rune) bool {
 }
 
 // isNoteControl reports whether r is a control character a diagram note
-// may not hold: any but the newline and the tab, which multiline text
+// may not hold: any other than the newline and the tab, which multiline text
 // needs.
 func isNoteControl(r rune) bool {
 	return isControl(r) && r != '\n' && r != '\t'
@@ -396,8 +399,8 @@ func isNoteControl(r rune) bool {
 
 // validateNotes checks the notes at path, of the diagram or of a switch: at
 // most [MaxDiagramNotes], each not blank, at most [MaxDiagramNoteBytes], and
-// free of control characters but newlines and tabs. codes are the codes of
-// the notes' owner.
+// free of control characters other than newlines and tabs. codes are the
+// codes of the owner of the notes.
 func (v *validator) validateNotes(at string, notes []string, codes noteCodes) {
 	if len(notes) > MaxDiagramNotes {
 		v.addf(codes.tooMany, at, "at most %d notes are allowed, not %d", MaxDiagramNotes, len(notes))
@@ -688,10 +691,10 @@ func iconKeyProblem(key string) string {
 }
 
 // validateIconRef checks the custom icon a device, a group or an icon node
-// names: none, or an icon name (see [IconNameProblem]). A name the document
-// does not carry is allowed: on a phenix server it names an icon of the
-// server's icon library, and where nothing resolves it the node shows its
-// built-in icon.
+// names: none, or an icon name (see [IconNameProblem]). A name that the
+// document does not carry is allowed. On a phenix server, it names an icon of
+// the icon library of the server. Where nothing resolves it, the node shows
+// its built-in icon.
 func (v *validator) validateIconRef(name, path string, code Code) {
 	if name == "" {
 		return
@@ -856,10 +859,10 @@ func (v *validator) validateTemplates() {
 	}
 }
 
-// validateIncludedFrom checks the topology an included device names. Included
-// devices are left out of the published topology on the strength of the
-// document's includeTopologies, so a document that includes nothing must not
-// carry any: publishing it would silently drop them.
+// validateIncludedFrom checks the topology an included device names. A
+// publish leaves included devices out of the topology because the
+// includeTopologies of the document bring them back. Thus a document that
+// includes nothing must not carry any: a publish would silently drop them.
 func (v *validator) validateIncludedFrom(name, path string) {
 	switch {
 	case name == "":
@@ -1274,12 +1277,12 @@ func annotationKeyProblem(key string) (Code, string) {
 }
 
 // validateID enforces the identifier contract: every entity identifier is an
-// RFC 4122 UUID. Generated identifiers are name based UUIDs; identifiers minted
-// by the front end are random (version 4) UUIDs. It reports whether there is
-// an identifier at all: a blank one is reported as missing here, with the
-// code required, and is then neither a duplicate of another blank one nor a
-// name to look an entity up by. One that is not a UUID is reported with the
-// code invalid.
+// RFC 4122 UUID. Generated identifiers are name-based UUIDs. Identifiers that
+// the front end makes are random (version 4) UUIDs. It reports whether there
+// is an identifier at all. It reports a blank identifier as missing, with the
+// code required. A blank identifier is then neither a duplicate of another
+// blank one nor a name to find an entity by. It reports an identifier that is
+// not a UUID with the code invalid.
 func (v *validator) validateID(path, kindName, id string, required, invalid Code) bool {
 	if strings.TrimSpace(id) == "" {
 		v.addf(required, path, "%s ID is required", kindName)

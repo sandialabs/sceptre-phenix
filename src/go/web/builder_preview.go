@@ -19,11 +19,11 @@ import (
 // builderPublishPreviewStatus is the status of a dry run's answer.
 const builderPublishPreviewStatus = "preview"
 
-// builderPublishPreview answers a dry run of a publication: what publishing
-// the draft to the request's targets would change (see
+// builderPublishPreview answers a dry run of a publication. It tells what a
+// publish of the draft to the request targets would change (see
 // [bapi.DescribePublishChanges]), what the publication would warn of, and
-// why it would be refused, each an issue with its code. Changes is nil when
-// it would be refused.
+// why it would be refused. Each warning and refusal is an issue with its
+// code. Changes is nil when the publication would be refused.
 type builderPublishPreview struct {
 	Status   string               `json:"status"`
 	Changes  *bapi.PublishChanges `json:"changes"`
@@ -32,14 +32,16 @@ type builderPublishPreview struct {
 }
 
 // previewPublish answers a dry run of a publication (a publish request with
-// dryRun): it authorizes the draft and the targets as a publication does,
-// makes every check of preflightPublish on the draft's current snapshot, and
-// writes nothing: no published document, config, scenario, experiment or
-// draft record. A publication would be refused with 409 or 422 (or 400 for
-// a target name), and the dry run lists that refusal in its errors with
-// 200; authorization failures (403, and 404 for a draft the caller may not
-// see) keep their status, as do the server's own failures. It needs no
-// If-Match, and takes no publish lock: what it reports may change before a
+// dryRun). It authorizes the draft and the targets as a publication does. It
+// makes every check of preflightPublish on the current snapshot of the
+// draft. It writes nothing: no published document, config, scenario,
+// experiment or draft record.
+//
+// Where a publication would get 409 or 422 (or 400 for a target name), the
+// dry run lists that refusal in its errors, with 200. Authorization failures
+// (403, and 404 for a draft that the caller may not see) keep their status.
+// The failures of the server also keep their status. It needs no If-Match,
+// and takes no publish lock. Thus what it reports may change before a
 // publication is sent.
 func (b *builderAPI) previewPublish(
 	w http.ResponseWriter,
@@ -74,9 +76,9 @@ func (b *builderAPI) previewPublish(
 	return builderWriteJSON(w, http.StatusOK, meta.ETag(), preview)
 }
 
-// publishPreview makes the checks of a publication of the draft's current
-// snapshot and returns what it would change and warn of, or the error it
-// would be refused with.
+// publishPreview makes the checks of a publication of the current snapshot
+// of the draft. It returns what the publication would change and warn of,
+// or the error that would refuse it.
 func (b *builderAPI) publishPreview(
 	ctx context.Context,
 	actor builderActor,
@@ -141,11 +143,11 @@ func (b *builderAPI) publishPreview(
 	return changes, warnings, nil
 }
 
-// publishPreviewWarnings are the warnings a publication adds once it writes
-// the topology, which a dry run reports without writing it: a Builder file
-// the topology names, which publishing leaves behind, and a legacy Builder
-// diagram the update replaces. topology is the config the publication would
-// write, which nothing stores.
+// publishPreviewWarnings are the warnings that a publication adds when it
+// writes the topology. A dry run reports them without the write. They are
+// about a Builder file that the topology names, which the publish leaves
+// behind, and a legacy Builder diagram that the update replaces. topology is
+// the config that the publication would write, which nothing stores.
 func publishPreviewWarnings(name string, topology *store.Config, plan *builderPublishPlan) []bdoc.Issue {
 	var warnings []bdoc.Issue
 
@@ -168,9 +170,10 @@ func publishPreviewWarnings(name string, topology *store.Config, plan *builderPu
 
 // builderPublishIntent reads a publish request and the entity tag it is
 // based on. A publication answers a missing or malformed entity tag (400)
-// before its body is decoded. A dry run writes nothing, so it needs no
-// entity tag: only a request without a valid one has its body looked at
-// first, for dryRun, and goes on to be decoded when it asks for a dry run.
+// before it decodes its body. A dry run writes nothing, so it needs no
+// entity tag. Only for a request without a valid tag does the function first
+// look at the body, for dryRun. It decodes the body when the request asks
+// for a dry run.
 func builderPublishIntent(w http.ResponseWriter, r *http.Request) (builderPublishRequest, string, error) {
 	var request builderPublishRequest
 
@@ -191,10 +194,10 @@ func builderPublishIntent(w http.ResponseWriter, r *http.Request) (builderPublis
 }
 
 // builderDryRunRequested reports whether the body of a publish request asks
-// for a dry run, and puts the body back for the request's own decoding. It
-// reads at most [builderMaxRequestBytes]. A body it cannot read or decode
-// asks for none, so a publication answers its missing entity tag first, as
-// it does without looking at the body.
+// for a dry run. It puts the body back for the decode of the request. It
+// reads at most [builderMaxRequestBytes]. A body that it cannot read or
+// decode asks for no dry run. Thus a publication answers its missing entity
+// tag first, as it does without a look at the body.
 func builderDryRunRequested(w http.ResponseWriter, r *http.Request) bool {
 	if r.Body == nil {
 		return false
@@ -218,12 +221,13 @@ func builderDryRunRequested(w http.ResponseWriter, r *http.Request) bool {
 	return peek.DryRun
 }
 
-// builderPreviewRefusal returns the issues a dry run lists for the error a
-// publication would be refused with, and whether it lists it: a refusal a
-// publication answers with a 4xx status other than 401, 403 and 404, which
-// say who may do what and keep their status. The issues are those the
-// refusal is made of (see [bdoc.ErrorIssues]), or else one of its code
-// saying what it says, each an error.
+// builderPreviewRefusal returns the issues that a dry run lists for the
+// error that would refuse a publication, and whether it lists them. It lists
+// a refusal that a publication answers with a 4xx status other than 401, 403
+// and 404. Those three say who may do what, and keep their status. The
+// issues are those of the refusal (see [bdoc.ErrorIssues]), or else one
+// issue with its code that says what the refusal says. Each issue is an
+// error.
 func builderPreviewRefusal(err error) ([]bdoc.Issue, bool) {
 	web := &weberror.WebError{} //nolint:exhaustruct // filled by errors.As
 
@@ -249,14 +253,15 @@ func builderPreviewRefusal(err error) ([]bdoc.Issue, bool) {
 	return issues, true
 }
 
-// serverImages returns the file names of every disk image the server has,
-// as GET /disks reads them, or nil when they are unknown: the caller may
-// list no disks, the listing failed, or it lists none, as it does when
-// minimega is not running. It holds the images the caller may not list by
-// name too, which [hideUnlistedImages] then reports nothing of. It lists
-// nothing when spec, the topology the publication writes, names no disk
-// image: the Publish dialog sends a dry run after each pause in editing,
-// and there is then no image the server's list would say anything of.
+// serverImages returns the file names of every disk image that the server
+// has, as GET /disks reads them. It returns nil when they are unknown: the
+// caller may list no disks, the listing failed, or the listing is empty (as
+// it is when minimega is not running). The result also holds the images that
+// the caller may not list by name. [hideUnlistedImages] then reports nothing
+// about them. It lists nothing when spec, the topology that the publication
+// writes, names no disk image. The Publish dialog sends a dry run after each
+// pause in editing, and the server list would then say nothing about any
+// image.
 func (b *builderAPI) serverImages(actor builderActor, spec map[string]any) []string {
 	if !actor.role.Allowed("disks", "list") || !bapi.NamesDiskImage(spec) {
 		return nil
@@ -284,11 +289,11 @@ func (b *builderAPI) serverImages(actor builderActor, spec map[string]any) []str
 	return names
 }
 
-// hideUnlistedImages makes whether the server has a disk image unknown
-// (onServer null) for each image whose file name the caller may not list,
-// which GET /disks leaves out for the caller. That holds whether the server
-// has the image or not, so the answer never tells an image hidden from the
-// caller from one the server lacks.
+// hideUnlistedImages sets onServer to null (unknown) for each image whose
+// file name the caller may not list. GET /disks leaves such images out for
+// the caller. This applies whether the server has the image or not. Thus the
+// answer never tells apart an image hidden from the caller and an image that
+// the server does not have.
 func hideUnlistedImages(changes *bapi.PublishChanges, actor builderActor) {
 	for i := range changes.Images {
 		if !actor.role.Allowed("disks", "list", path.Base(changes.Images[i].Name)) {

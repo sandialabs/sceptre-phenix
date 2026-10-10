@@ -132,10 +132,10 @@ func (b *builderAPI) getShares(w http.ResponseWriter, r *http.Request) error {
 
 // putShares - PUT /builder/drafts/{owner}/{draft}/shares.
 //
-// The request replaces the whole list, and needs an If-Match naming the
-// list's own entity tag, `"shares-N"`. Only the owner may make it, and only
+// The request replaces the whole list. It needs an If-Match that names the
+// entity tag of the list, `"shares-N"`. Only the owner may make it, and only
 // with a user account of its own. Every user in the list must have an
-// account; a share is bound to it.
+// account. A share is bound to that account.
 func (b *builderAPI) putShares(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderPutShares")
 
@@ -219,9 +219,9 @@ func (b *builderAPI) putShares(w http.ResponseWriter, r *http.Request) error {
 	})
 }
 
-// sharingDraft returns the draft the request path names once actor may change
-// who it is shared with: its owner, holding the share permission and a user
-// account of its own.
+// sharingDraft returns the draft that the request path names, when actor may
+// change who it is shared with. Actor must be its owner, with the share
+// permission and a user account of its own.
 func (b *builderAPI) sharingDraft(
 	r *http.Request,
 	actor builderActor,
@@ -283,9 +283,9 @@ func (b *builderAPI) shareCandidates(meta *bapi.DraftMetadata) ([]builderShareCa
 	})
 }
 
-// listShareCandidates returns, sorted by username, every user with an account
-// that accepts reports true for, given the user name and the account's
-// creation time ("" when it has none).
+// listShareCandidates returns, sorted by username, every user with an
+// account for which accepts reports true. accepts gets the user name and the
+// creation time of the account ("" when it has none).
 func (b *builderAPI) listShareCandidates(accepts func(user, created string) bool) ([]builderShareCandidate, error) {
 	candidates := []builderShareCandidate{}
 
@@ -318,11 +318,15 @@ func (b *builderAPI) listShareCandidates(accepts func(user, created string) bool
 }
 
 // builderShareAccepts reports whether a share of the draft with the named
-// user, whose account was created at created ("" when there is none), would
-// be accepted: the user is not the owner, the name can name a user, the
-// account exists, and the draft is not shared with the user through an
-// account since removed (see [builderShareShapeErrors] and
-// [builderAPI.resolveShareGrants]).
+// user would be accepted. created is the creation time of the account of the
+// user ("" when there is none). The share is accepted when all these are
+// true (see [builderShareShapeErrors] and [builderAPI.resolveShareGrants]):
+//
+//   - The user is not the owner.
+//   - The name can name a user.
+//   - The account exists.
+//   - The draft is not shared with the user through an account that was
+//     removed since.
 func builderShareAccepts(meta *bapi.DraftMetadata, user, created string) bool {
 	stored := meta.ShareFor(user)
 
@@ -404,9 +408,10 @@ func builderShareShapeErrors(owner string, entries []builderShareRequestEntry) [
 }
 
 // resolveShareGrants binds each entry of a well-formed share list to the
-// account it names. A user already shared with keeps the account it was
-// shared with, and is refused when that account is gone; a new user must have
-// an account. Refusals are logged: they may be probing for user names.
+// account it names. A user who already has a share keeps the account of
+// that share, and is refused when that account is gone. A new user must have
+// an account. Refusals are logged, because they may be probes for user
+// names.
 func (b *builderAPI) resolveShareGrants(
 	actor builderActor,
 	meta *bapi.DraftMetadata,
@@ -458,8 +463,9 @@ func (b *builderAPI) resolveShareGrants(
 }
 
 // sharesUpdateError maps a failed change of who a draft is shared with. A
-// change that lost to another one is a failed precondition, answered with the
-// list's current entity tag; a draft that kept changing under it is busy.
+// change that lost to another change is a failed precondition. Its answer
+// has the current entity tag of the list. A draft that kept changing during
+// the change is busy.
 func (b *builderAPI) sharesUpdateError(
 	w http.ResponseWriter,
 	r *http.Request,

@@ -81,8 +81,8 @@ func (b *BoltDB) open() error {
 
 	db, err := bbolt.Open(b.path, boltFileMode, &bbolt.Options{NoFreelistSync: true}) //nolint:exhaustruct // partial initialization
 	if err != nil {
-		// The lock is only held while the database is open, so it must be released
-		// when opening fails (callers do not call Close in that case).
+		// The lock is held only while the database is open, so release it when
+		// opening fails. Callers do not call Close in that case.
 		b.mu.Unlock()
 
 		return fmt.Errorf("opening BoltDB file %s: %w", b.path, err)

@@ -107,7 +107,7 @@ type LegacyDiagram struct {
 	byID  map[string]int
 	// variables are the diagram's experiment variables, by name.
 	variables map[string]string
-	// grid is the model's grid attribute; "0" turns the grid off.
+	// grid is the grid attribute of the model. "0" disables the grid.
 	grid string
 }
 
@@ -125,7 +125,7 @@ type legacyCell struct {
 	box    legacyBox
 	// relative marks a geometry whose x and y are fractions of the parent.
 	relative bool
-	// hasSettings reports a schemaVars attribute; settings is its content,
+	// hasSettings reports a schemaVars attribute. settings is its content,
 	// or nil when it could not be read.
 	hasSettings bool
 	settings    map[string]any
@@ -248,7 +248,7 @@ func legacyMalformed(decoder *xml.Decoder, err error) *LegacyError {
 // legacyReader builds a diagram from the elements of mxGraph XML. Cells are
 // the direct children of the root container: an mxCell, or a wrapper element
 // of any name holding one. A cell's geometry is a direct child of its
-// mxCell. Every other element is passed over.
+// mxCell. Every other element is ignored.
 type legacyReader struct {
 	diagram *LegacyDiagram
 	// container is the depth of the root container's element, and inside
@@ -511,10 +511,9 @@ func jsonDeeperThan(value any, limit int) bool {
 var legacyVariableName = regexp.MustCompile(`^[A-Z_0-9]+$`)
 
 // decodeLegacyVariables reads the experiment variables of a model: a JSON list of
-// {name, value}. An entry is used when its name holds capital letters,
-// digits and underscores only and its value is text or a number, within
-// the bounds above; the first entry of a name wins. Anything else is passed
-// over.
+// {name, value}. An entry is used when its name holds only capital letters,
+// digits and underscores, and its value is text or a number, within the
+// bounds above. The first entry of a name wins. Anything else is ignored.
 func decodeLegacyVariables(text string) map[string]string {
 	variables := map[string]string{}
 

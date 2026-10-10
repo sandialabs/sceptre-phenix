@@ -11,19 +11,19 @@
   group, which open dialogs that connect and regroup nodes without a drag,
   Minimap and Draft History, followed by the save state. Commands and the
   theme are in the editor header (Builder.vue).
-  The layout menu is named after the layout the draft keeps, the last one
-  that laid it out, or Default for a draft that has none; it lays the
-  diagram out with the one chosen, which the draft keeps, and after a layout
-  it offers to put the previous one back. Edits are saved as they are made,
-  so there is no Save button (Save now is a key and a command); the save
-  state shows after Draft History, as text rather than a button, and Retry
-  saving shows at the right end, while a save needs it.
+  The layout menu has the name of the layout the draft keeps (the last one
+  that arranged it), or Default for a draft that has none. It arranges the
+  diagram with the chosen layout, which the draft keeps. After a layout, it
+  offers to put the previous one back. Edits save as they are made, so
+  there is no Save button (Save now is a key and a command). The save state
+  shows after Draft History, as text, not as a button. Retry saving shows
+  at the right end while a save needs it.
 
   It follows the APG toolbar pattern: the toolbar is one Tab stop, and the
   arrow keys, Home and End move between its buttons. Unavailable buttons are
   aria-disabled rather than disabled, so they stay in that sequence and a
   button that becomes unavailable while focused keeps focus. The two menu
-  buttons (BuilderMenuButton.vue) are buttons in that sequence; Down and Up
+  buttons (BuilderMenuButton.vue) are buttons in that sequence. Down and Up
   open their menus.
 -->
 <template>
@@ -161,7 +161,7 @@
     <div class="builder-toolbar__group">
       <!-- Named after the layout that made the positions, or Default, with
            "layout" after it for screen readers. While a layout runs, a
-           turning ring in place of the icon; reduced motion stops it turning
+           turning ring replaces the icon. Reduced motion stops the turning
            (see builder.css). -->
       <builder-menu-button
         testid="toolbar-layout"
@@ -181,8 +181,8 @@
           aria-hidden="true"></span>
         <builder-icon v-else name="layout" :size="14" />
         <!-- Every layout's name, and Default, holds the button's width, so
-             it stays under the pointer when the layout changes; the hidden
-             ones are not shown or named. -->
+             it stays under the pointer when the layout changes. The hidden
+             names do not show and do not name the button. -->
         <span class="builder-button__swap">
           <span
             v-for="algorithm in [DEFAULT_LAYOUT, ...LAYOUT_ALGORITHMS]"
@@ -254,8 +254,8 @@
         <builder-icon name="publish" :size="14" />
         Publish
       </button>
-      <!-- The owner shares; someone the draft was shared with sees who
-           may. Anyone else has no Share. -->
+      <!-- The owner shares. A user that the draft is shared with sees who
+           can share it. Anyone else has no Share. -->
       <button
         v-if="store.canShare || store.sharedBy"
         type="button"
@@ -385,7 +385,7 @@
     </div>
 
     <!-- The tooltips' text reaches screen readers as the buttons'
-         descriptions; the tooltips themselves are aria-hidden. -->
+         descriptions. The tooltips themselves are aria-hidden. -->
     <span
       v-for="(entry, key) in tips"
       :id="`toolbar-tip-${key}`"
@@ -470,7 +470,7 @@
     scenario: store.readOnly,
     connect: store.readOnly,
     regroup: store.readOnly,
-    // Upload makes a new draft; Publish writes configs (see the store's
+    // Upload makes a new draft. Publish writes configs (see the store's
     // canCreateDrafts and canPublish).
     upload: !store.canCreateDrafts,
     publish: store.readOnly || !store.canPublish,
@@ -493,10 +493,10 @@
     () => layoutAlgorithm(store.currentLayout) || DEFAULT_LAYOUT,
   );
 
-  // The layouts, the draft's checked (none at Default); choosing one runs it
-  // and the draft keeps it, the checked one included. Right after a layout,
-  // until the diagram changes some other way, the previous one can be put
-  // back.
+  // The layouts, with the draft's layout checked (none at Default). A choice
+  // runs the layout and the draft keeps it, also for the checked one. Right
+  // after a layout, until the diagram changes some other way, the user can
+  // put the previous one back.
   const layoutItems = computed(() => [
     ...LAYOUT_ALGORITHMS.map((algorithm) => ({
       id: algorithm.id,
@@ -561,8 +561,8 @@
     return [...(toolbarEl.value?.querySelectorAll('button') || [])];
   }
 
-  // The template leaves tabindex unbound, so a re-render keeps these values;
-  // a button added later (Retry saving) is brought into line on update.
+  // The template leaves tabindex unbound, so a re-render keeps these values.
+  // A button added later (Retry saving) gets the same treatment on update.
   function syncTabStop() {
     const all = buttons();
     if (!all.includes(current)) {
@@ -616,8 +616,8 @@
   // The command each button runs, for its keys, and its name in the
   // tooltip. aria-keyshortcuts only where the keys work with focus here:
   // Delete works on the canvas and in the outline. A button whose tooltip
-  // is `named` shows its name in it, keys or not; any other has a tooltip
-  // only while it has keys.
+  // is `named` shows its name in it, keys or not. Any other button has a
+  // tooltip only while it has keys.
   const TIPS = {
     undo: { command: 'edit.undo', name: 'Undo' },
     redo: { command: 'edit.redo', name: 'Redo' },
@@ -646,9 +646,10 @@
 
   // Per button: the tooltip's text ('' for none), the description screen
   // readers get in its place (the keys: the name is the button's own), and
-  // aria-keyshortcuts. The menus' tooltips say what they do, keys or not;
-  // the layout's keys run the layout again rather than open its menu, or at
-  // Default the one Settings chooses, and Auto-group's run its first rule.
+  // aria-keyshortcuts. The menus' tooltips say what they do, keys or not.
+  // The layout's keys run the layout again and do not open its menu (at
+  // Default, they run the one Settings chooses). Auto-group's keys run its
+  // first rule.
   const tips = computed(() => {
     const entries = Object.entries(TIPS).map(([key, entry]) => {
       const keys = shortcutLabel(entry.command);
@@ -710,8 +711,8 @@
   const tooltip = useFixedTooltip({ side: 'below' });
   const { hideTip, tipEvents } = tooltip;
 
-  // Read when shown, so a tooltip follows the button's state. None over an
-  // open menu.
+  // Read when the tooltip shows, so it follows the button's state. None
+  // over an open menu.
   function tipFor(key) {
     return tipEvents(() => openMenu.value !== key && tips.value[key].text);
   }

@@ -1,19 +1,19 @@
 // Document validation, mirroring phenix/types/builder validate.go.
 //
-// The rules here are the same rules the server enforces, reported as issues the
-// inspector and outline can surface before a save is attempted. Issues use the
-// server's `path` form (nodes[0].device.hostname) so a server rejection and a
-// local rejection read identically. An issue about a node, a connection or a
-// network also carries its id (nodeId, edgeId, networkId), which still finds
-// it once an edit has moved the indexes in the path.
+// The rules here are the same rules the server enforces. They are reported
+// as issues that the Inspector and outline can show before a save. Issues
+// use the server's `path` form (nodes[0].device.hostname), so a server
+// rejection and a local rejection read the same. An issue about a node, a
+// connection or a network also carries its id (nodeId, edgeId, networkId),
+// which still finds it after an edit moved the indexes in the path.
 //
-// testdata/validation-corpus.json in types/builder holds documents both
+// testdata/validation-corpus.json in types/builder holds documents that both
 // sides must agree on. Two errors are the editor's own, stricter than the
 // server: an interface connection point with no interface of that name in
 // the node's spec, and a spec hostname that is not the device's. The server
 // publishes such a device with the device's hostname and without that
-// connection, which the editor would not show. One check is the server's
-// alone: that the PNG of a custom icon decodes (see icons.js).
+// connection, which the editor would not show. One check is only the
+// server's: that the PNG of a custom icon decodes (see icons.js).
 
 import { count } from './announce.js';
 import { isIconKey } from './catalog.js';
@@ -79,8 +79,9 @@ export const MAX_TEMPLATE_DESCRIPTION_BYTES = 1024;
 export const MAX_TEMPLATE_DEVICE_BYTES = 16 * 1024;
 
 // The apiVersion of the Scenario configs the Scenario dialog uploads: the
-// latest phenix stores scenarios at. The server stores a scenario of
-// another version too, but the dialog reads the apps of this one only.
+// latest version that phenix stores scenarios at. The server also stores a
+// scenario of another version, but the dialog reads only the apps of this
+// version.
 export const SCENARIO_API_VERSION = 'phenix.sandia.gov/v2';
 
 // The most Scenario configs a document may list, and the longest name of
@@ -128,9 +129,9 @@ function finite(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-// Adds the issue of the rule `code` (a code of the registry Go generates,
-// schema/codes.json) at path. `severity` repeats `level`, which existing
-// callers read, under the name the server's issues use.
+// Adds the issue of the rule `code` (a code of the registry that Go
+// generates, schema/codes.json) at path. `severity` repeats `level`, which
+// existing callers read, with the name that the server's issues use.
 function issue(issues, code, path, message, level = 'error', extra = {}) {
   issues.push({ code, path, message, level, severity: level, ...extra });
 }
@@ -140,8 +141,8 @@ const QUOTED_BYTES = 64;
 
 // What Go writes as it is between quotes: letters, marks, numbers,
 // punctuation, symbols and the space (strconv.IsPrint). Go and the browser
-// each know a version of Unicode, so a character new to one of them can
-// still be written differently.
+// each know a version of Unicode. So a character that is new to one of them
+// can still be written differently.
 const PRINTABLE = /^[\p{L}\p{M}\p{N}\p{P}\p{S} ]$/u;
 
 // The characters Go's %q writes as a backslash and a letter.
@@ -162,8 +163,8 @@ function isLoneSurrogate(ch) {
 }
 
 // Text between double quotes as Go's %q writes it (strconv.Quote), so that a
-// message which quotes a value reads the same here and from the server:
-// what does not print is written as an escape.
+// message that quotes a value reads the same here and from the server. A
+// character that does not print is written as an escape.
 function goQuoted(text) {
   let out = '';
 
@@ -219,8 +220,8 @@ function quoted(value) {
   return goQuoted(truncated(String(value)));
 }
 
-// Whether a field that is text when set is not set: absent, empty, or null,
-// which Go decodes as none.
+// Whether a text field is not set: absent, empty, or null, which Go decodes
+// as no value.
 function unset(value) {
   return value === undefined || value === null || value === '';
 }
@@ -230,15 +231,16 @@ function isObject(value) {
 }
 
 // The icon key of a device, a group or a template's device (validateIconKey
-// in validate.go): none, or one of the registry. code is the owner's.
+// in validate.go): none, or one of the registry. code is the code of the
+// owner.
 function validateIconKey(key, path, issues, code) {
   if (!unset(key) && !isIconKey(key)) {
     issue(issues, code, path, `unknown icon key "${key}"`);
   }
 }
 
-// Why a color is no outline or fill color (colorProblem in validate.go), or
-// '': none, or #rrggbb.
+// Why a color is not a valid outline or fill color (colorProblem in
+// validate.go), or ''. A valid color is none, or #rrggbb.
 function colorProblem(color) {
   return unset(color) || (typeof color === 'string' && HEX_COLOR.test(color))
     ? ''
@@ -257,9 +259,9 @@ function validateColors(payload, path, issues, code) {
   });
 }
 
-// Why an icon size is none the document, a device, a switch, a group or a
-// template's device may name (iconSizeProblem in validate.go), or '': none,
-// or one of ICON_SIZES.
+// Why an icon size is not one that the document, a device, a switch, a
+// group or a template's device may name (iconSizeProblem in validate.go),
+// or ''. A valid size is none, or one of ICON_SIZES.
 function iconSizeProblem(size) {
   return unset(size) || ICON_SIZES.includes(size)
     ? ''
@@ -274,9 +276,9 @@ function validateIconSize(size, path, issues, code) {
   }
 }
 
-// Why a Purdue level is none a device, a switch or a template's device may
-// name (purdueLevelProblem in validate.go), or '': none, or one of
-// PURDUE_LEVELS.
+// Why a Purdue level is not one that a device, a switch or a template's
+// device may name (purdueLevelProblem in validate.go), or ''. A valid level
+// is none, or one of PURDUE_LEVELS.
 function purdueLevelProblem(level) {
   return unset(level) || PURDUE_LEVELS.includes(level)
     ? ''
@@ -305,9 +307,9 @@ function validateLineStyle(style, path, issues, code) {
 }
 
 /**
- * Why text is no icon name, in the server's words (IconNameProblem in
- * customicons.go), or '': 1 to MAX_ICON_NAME_BYTES letters, digits, "_",
- * "@", "." and "-", and neither "." nor "..".
+ * Why text is not an icon name, in the server's words (IconNameProblem in
+ * customicons.go), or ''. An icon name is 1 to MAX_ICON_NAME_BYTES letters,
+ * digits, "_", "@", "." and "-", and is neither "." nor "..".
  *
  * @param {*} name
  * @returns {string}
@@ -327,8 +329,8 @@ export function iconNameProblem(name) {
 }
 
 // The custom icon a device, a group, an icon node or a template names
-// (validateIconRef in validate.go): none, or an icon name. A name the document does not carry
-// is allowed: the server's icon library resolves it.
+// (validateIconRef in validate.go): none, or an icon name. A name that the
+// document does not carry is allowed: the server's icon library resolves it.
 function validateIconRef(name, path, issues, code) {
   if (unset(name)) {
     return;
@@ -341,8 +343,8 @@ function validateIconRef(name, path, issues, code) {
   }
 }
 
-// Data already found to be a PNG the Builder accepts: validation runs on
-// every edit, so data that was checked is not decoded again.
+// Data that is already known to be a PNG the Builder accepts. Validation
+// runs on every edit, so data that was checked is not decoded again.
 const checkedIcons = new Set();
 const MAX_CHECKED_ICONS = 256;
 
@@ -350,8 +352,8 @@ const MAX_CHECKED_ICONS = 256;
  * Checks the custom icons a document carries (ValidateIcons in
  * customicons.go): at most MAX_DOCUMENT_ICONS, each key an icon name (see
  * iconNameProblem), each data strict base64 of a PNG the Builder accepts
- * (see iconPNGProblem). An icon nothing uses is valid: the editor drops it
- * on its next edit.
+ * (see iconPNGProblem). An icon that nothing uses is valid: the editor
+ * drops it on its next edit.
  *
  * @param {object|null|undefined} icons by name, {data}
  * @param {string} [path] the path the issues are reported at
@@ -438,7 +440,7 @@ export function validateIcons(icons, path = 'icons') {
 }
 
 // The length of a template's device as the server encodes it: without the
-// icon and color fields that are not set, which it leaves out.
+// icon and color fields that are not set, which the server omits.
 function templateDeviceBytes(device) {
   const encoded = Object.fromEntries(
     Object.entries(device).filter(
@@ -450,16 +452,21 @@ function templateDeviceBytes(device) {
 }
 
 /**
- * What makes a template unusable (Template.Issues in template.go): a name
- * that is blank, longer than MAX_TEMPLATE_NAME_BYTES or holds control
- * characters; a description longer than MAX_TEMPLATE_DESCRIPTION_BYTES or
- * holding control characters; a device without a spec, or whose spec has no
- * general.hostname, a blank one or one with whitespace; an unknown icon key;
- * a custom icon that is not an icon name; an unknown icon size; a color that
- * is not #rrggbb; and a device longer than MAX_TEMPLATE_DEVICE_BYTES as JSON.
- * The spec is not checked against the phenix schema here, as a device's is
- * not. Neither is the id, whose form depends on where the template is kept:
- * validateDocument checks it for a document's templates.
+ * What makes a template unusable (Template.Issues in template.go):
+ * - a name that is blank, longer than MAX_TEMPLATE_NAME_BYTES or holds
+ *   control characters
+ * - a description longer than MAX_TEMPLATE_DESCRIPTION_BYTES or that holds
+ *   control characters
+ * - a device without a spec, or whose spec has no general.hostname, a blank
+ *   one or one with whitespace
+ * - an unknown icon key
+ * - a custom icon that is not an icon name
+ * - an unknown icon size
+ * - a color that is not #rrggbb
+ * - a device longer than MAX_TEMPLATE_DEVICE_BYTES as JSON
+ * The spec is not checked against the phenix schema here, as a device's
+ * spec is not. Neither is the id, whose form depends on where the template
+ * is kept. validateDocument checks it for a document's templates.
  *
  * @param {object} template {id, name, description?, device}
  * @param {string} path the path of the template, which the issues' paths
@@ -591,8 +598,8 @@ export function templateIssues(template, path) {
 }
 
 // The document's templates (validateTemplates in validate.go): how many,
-// the id of each, which is unique among them, and what templateIssues
-// checks, which includes the custom icon each names.
+// the id of each (unique among them), and what templateIssues checks,
+// which includes the custom icon each names.
 function validateTemplates(doc, issues) {
   // null is none, as the server decodes it.
   if (doc.templates === undefined || doc.templates === null) {
@@ -649,9 +656,9 @@ function validateTemplates(doc, issues) {
   });
 }
 
-// Every identifier is a UUID: crypto.randomUUID mints the editor's, and the
-// server derives name based ones (validateID in validate.go). A missing one
-// is reported where it is required. code is the kind's.
+// Every identifier is a UUID. crypto.randomUUID makes the editor's, and the
+// server derives name-based ones (validateID in validate.go). A missing id
+// is reported where it is required. code is the code of the kind.
 function validateUUID(issues, path, kind, id, code) {
   if (trimSpace(String(id || '')) && !UUID_PATTERN.test(String(id))) {
     issue(
@@ -762,9 +769,9 @@ const SWITCH_NOTE_CODES = {
 };
 
 // The notes at `at`, of the diagram or of a switch (validateNotes in
-// validate.go): at most MAX_DIAGRAM_NOTES, each text that is not blank, at
-// most MAX_DIAGRAM_NOTE_BYTES long, and without control characters but the
-// newline and the tab. codes are the codes of the notes' owner.
+// validate.go): at most MAX_DIAGRAM_NOTES, each a text that is not blank,
+// at most MAX_DIAGRAM_NOTE_BYTES long, and without control characters
+// except the newline and the tab. codes are the codes of the notes' owner.
 function validateNotes(
   notes,
   issues,
@@ -1177,8 +1184,8 @@ function validateDeviceHandles(node, path, issues, handleOwner) {
 }
 
 // A device included from another topology is left out of the published
-// topology on the strength of the document's includeTopologies, so a
-// document that includes nothing must not carry one.
+// topology because of the document's includeTopologies. So a document that
+// includes nothing must not carry such a device.
 function validateIncludedFrom(doc, name, path, issues) {
   if (name === undefined || name === '') {
     return;
@@ -1202,10 +1209,10 @@ function validateIncludedFrom(doc, name, path, issues) {
 }
 
 // The payload of the device node at index (validateDevice in validate.go):
-// its hostname, unique among the devices ignoring case, a spec whose
+// its hostname (unique among the devices, ignoring case), a spec whose
 // hostname is the device's, its icon and colors, the topology it is
-// included from, and its connection points. seenHostnames holds the index of
-// each folded hostname seen so far, and handleOwner the node of each
+// included from, and its connection points. seenHostnames holds the index
+// of each folded hostname found so far. handleOwner holds the node of each
 // connection point id.
 function validateDevice(
   doc,
@@ -1736,9 +1743,10 @@ function validateEdges(doc, issues, nodesById, networksById) {
 }
 
 /**
- * Why a Scenario config name is one a document may not list, or '': it must
- * be a config name of at most MAX_SCENARIO_NAME_BYTES (validateScenarios in
- * validate.go). The Scenario dialog checks a name it is about to add with it.
+ * Why a document may not list a Scenario config name, or ''. It must be a
+ * config name of at most MAX_SCENARIO_NAME_BYTES (validateScenarios in
+ * validate.go). The Scenario dialog uses this to check a name before it
+ * adds the name.
  *
  * @param {string} name
  * @returns {string}
@@ -1747,8 +1755,8 @@ export function scenarioNameProblem(name) {
   return scenarioNameRule(name).message;
 }
 
-// Why a Scenario config name is one a document may not list, with the code
-// of that rule, or no message.
+// Why a document may not list a Scenario config name, with the code of that
+// rule, or no message.
 function scenarioNameRule(name) {
   const text = typeof name === 'string' ? name : '';
 
@@ -1983,8 +1991,8 @@ function validateAnnotations(annotations, issues) {
 }
 
 // What a device's spec is checked against: the folded names of the
-// diagram's networks, and the disk images the server has (null while they
-// are unknown, and drive images then go unchecked).
+// diagram's networks, and the disk images the server has. The disk images
+// are null while they are unknown, and drive images are then not checked.
 function specContext(doc, disks) {
   return {
     networks: new Set(
@@ -2005,23 +2013,24 @@ function arrayOf(value) {
 }
 
 /**
- * The fields of a device spec that name something outside the device and
- * name nothing there: an interface VLAN that is no network of the diagram,
- * and a drive image that is no disk image of the server. A VLAN naming a
- * network in another case is not reported here: typing one connects the
- * interface to that network (see connectByVLAN in model.js), and one an
- * unconnected interface already has is reported with its connection (see
- * interfaceWarnings). Images are matched by file name, as the server lists
- * them. An external node runs no image of its own.
+ * The fields of a device spec that name something outside the device, and
+ * that thing does not exist: an interface VLAN that is not a network of
+ * the diagram, and a drive image that is not a disk image of the server. A
+ * VLAN that names a network in another case is not reported here. When the
+ * user types it, the interface connects to that network (see connectByVLAN
+ * in model.js). When an unconnected interface already has it, it is
+ * reported with its connection (see interfaceWarnings). Images are matched
+ * by file name, as the server lists them. An external node runs no image
+ * of its own.
  *
  * @param {object} spec
  * @param {string} hostname the device's, for the issue text
  * @param {object} context see specContext
  * @returns {{code: string, field: string, path: string, warning: string,
- *   issue: string}[]} code is the rule's; field is the JSON Forms data path
- *   of the field (spec.hardware.drives.0.image) and path its path under the
- *   node (device.spec.hardware.drives[0].image); warning is worded for the
- *   field, and issue for the diagram
+ *   issue: string}[]} code: the rule's code. field: the JSON Forms data
+ *   path of the field (spec.hardware.drives.0.image). path: its path under
+ *   the node (device.spec.hardware.drives[0].image). warning: the text for
+ *   the field. issue: the text for the diagram
  */
 function specFindings(spec, hostname, { networks, disks }) {
   const findings = [];
@@ -2071,19 +2080,19 @@ function specFindings(spec, hostname, { networks, disks }) {
 }
 
 /**
- * What phenix makes of the hostname of a device it starts, in its words: one
- * it refuses, which blocks publishing, or one it warns about. Its schema
- * refuses a hostname of one character, and it refuses "all", all digits, and
- * "phenix" on a Windows node when it creates an experiment, although it
- * stores a topology with one (checkHostnameKeywords in
- * types/version/v1/hostname.go). The server refuses to publish them too
+ * What phenix makes of the hostname of a device it starts, in its words: a
+ * hostname it refuses, which blocks publishing, or one it warns about. Its
+ * schema refuses a hostname of one character. When it creates an
+ * experiment, it refuses "all", all digits, and "phenix" on a Windows node,
+ * but it stores a topology with such a hostname (checkHostnameKeywords in
+ * types/version/v1/hostname.go). The server also refuses to publish them
  * (checkHostnames in types/builder/topology.go). phenix checks no external
  * node.
  *
  * @param {string} hostname
  * @param {object} spec the device spec
  * @returns {{code: string, message: string, refused: boolean}|null} null
- *   for a hostname phenix takes as it is; code is the rule's
+ *   for a hostname phenix takes as it is. code is the rule's code
  *   (hostnameCode in types/builder/topology.go)
  */
 function hostnameFinding(hostname, spec) {
@@ -2159,10 +2168,10 @@ function hostnameFinding(hostname, spec) {
  * @param {object} doc the diagram the device is in
  * @param {object} spec the device spec
  * @param {object} [options] disks: file names of the server's disk images,
- *   or null while they are unknown; nodeId: the id of the device the spec
- *   is of, whose own spec in the diagram it stands for when its addresses
- *   are compared with the other devices' (see sharedAddresses); hostname:
- *   the device's, when it is to be checked
+ *   or null while they are unknown. nodeId: the id of the device that has
+ *   the spec. This spec replaces the device's spec in the diagram when its
+ *   addresses are compared with the other devices' (see sharedAddresses).
+ *   hostname: the device's, when it is to be checked
  * @returns {Object<string, string[]>} messages, keyed by the JSON Forms data
  *   path of the field (hostname, spec.network.interfaces.0.vlan)
  */
@@ -2221,8 +2230,8 @@ export function deviceFieldWarnings(
 }
 
 // Whether a spec interface names a VLAN, as the server decides it (hasVLAN
-// in types/builder/topology.go): a VLAN that is not a string is left to the
-// schema.
+// in types/builder/topology.go). The schema checks a VLAN that is not a
+// string.
 function hasVLAN(iface) {
   const vlan = iface?.vlan;
 
@@ -2230,7 +2239,7 @@ function hasVLAN(iface) {
 }
 
 // How a message names each spec interface of a device: by its name, or by
-// its position when that does not tell it apart, as the server names it
+// its position when the name does not identify it, as the server names it
 // (interfaceLabels in types/builder/topology.go).
 function interfaceLabels(interfaces) {
   const names = interfaces.map((iface) =>
@@ -2252,21 +2261,21 @@ function interfaceLabels(interfaces) {
 /**
  * What publishing does with each interface of a device that is not
  * connected on the canvas. These are the device spec's interfaces, as the
- * server checks them, so they include those with no connection point: an
- * unnamed one, a second one of the same name (a connection point is the
- * first one's, see specInterfaceFor in model.js), and one an uploaded
- * document gave none. One is named by its position when its name does not
- * tell it apart.
+ * server checks them. So they include the interfaces with no connection
+ * point: an unnamed one, a second one of the same name (a connection point
+ * is the first one's, see specInterfaceFor in model.js), and one that an
+ * uploaded document gave no connection point. An interface is named by its
+ * position when its name does not identify it.
  *
  * An interface's VLAN is published as it is, and phenix matches VLAN names
- * exactly, so only a network of that very name is the one it is put on.
+ * exactly. So the interface goes only on a network of exactly that name.
  *
  * @param {object} node device node
  * @param {Set<string>} connected ids of the connected interface handles
  * @param {object} networks networksByName(doc)
  * @returns {{index: number, code: string, message: string,
- *   blocksPublish?: true}[]} index is the interface's in the spec, and code
- *   the rule's
+ *   blocksPublish?: true}[]} index: the interface's index in the spec.
+ *   code: the rule's code
  */
 function interfaceWarnings(node, connected, networks) {
   const interfaces = specInterfaces(node);
@@ -2281,7 +2290,7 @@ function interfaceWarnings(node, connected, networks) {
   const warnings = [];
 
   interfaces.forEach((iface, index) => {
-    // An entry of the wrong shape is left to the schema, as on the server.
+    // The schema checks an entry of the wrong shape, as on the server.
     if (!iface || typeof iface !== 'object') {
       return;
     }
@@ -2362,7 +2371,7 @@ function interfaceWarnings(node, connected, networks) {
   return warnings;
 }
 
-// The named networks by name, and by name in one case: the first of each.
+// The named networks by name, and by folded name: the first of each.
 function networksByName(doc) {
   const exact = new Map();
   const folded = new Map();
@@ -2399,8 +2408,8 @@ export function ipv4Octets(text) {
 }
 
 // An IPv6 address as its eight groups, or null when it is not one, as Go's
-// netip.ParseAddr reads it: `::` stands for at least one group of zeros,
-// and an IPv4 address may end it, for the last two groups.
+// netip.ParseAddr reads it. `::` is at least one group of zeros, and an
+// IPv4 address may end it, for the last two groups.
 function ipv6Groups(text) {
   const halves = text.split('::');
 
@@ -2441,32 +2450,35 @@ function ipv6Groups(text) {
   return groups.map((field) => parseInt(field, 16));
 }
 
-// Trims the ASCII whitespace around an address or a proto, as the server
-// does (trimASCIISpace in types/builder/topology.go). String.prototype.trim
-// and Go's strings.TrimSpace each trim a character the other keeps (U+FEFF
-// and U+0085), so they would disagree about an address.
+// Removes the ASCII whitespace around an address or a proto, as the server
+// does (trimASCIISpace in types/builder/topology.go).
+// String.prototype.trim and Go's strings.TrimSpace each remove a character
+// that the other keeps (U+FEFF and U+0085), so they would disagree about an
+// address.
 function trimASCIISpace(text) {
   return text.replace(/^[\t\n\v\f\r ]+|[\t\n\v\f\r ]+$/g, '');
 }
 
-// Protos whose interface phenix gives no address of its own: dhcp asks a
-// DHCP server for one, and phenix brings a manual one up with none.
+// Protos whose interface phenix gives no address of its own. A dhcp
+// interface asks a DHCP server for one. phenix starts a manual interface
+// with no address.
 const UNADDRESSED_PROTOS = new Set(['dhcp', 'manual']);
 
 /**
  * The IP address an interface uses, as typed without a prefix length, and
- * as a key that is the same however it is written: parsed as the server
- * parses it (interfaceIP in types/builder/topology.go), without a zone, and
- * an IPv4 address mapped into IPv6 as the IPv4 address. A manual
- * interface's address is not read, as the Inspector does not show it,
- * though the vrouter app gives it to a Vyatta or VyOS router; a QinQ
- * interface's is, as minirouter and Vyatta give it to the interface.
+ * as a key that is the same in every written form. The address is parsed
+ * as the server parses it (interfaceIP in types/builder/topology.go),
+ * without a zone. An IPv4 address mapped into IPv6 becomes the IPv4
+ * address. A manual interface's address is not read, because the Inspector
+ * does not show it, but the vrouter app gives it to a Vyatta or VyOS
+ * router. A QinQ interface's address is read, because minirouter and
+ * Vyatta give it to the interface.
  *
  * @param {object} iface spec interface
- * @returns {{text: string, key: string}|null} null for none: a blank
- *   address, one the interface asks DHCP for or is brought up without
- *   (proto manual), and one that does not parse, which the Inspector's form
- *   reports
+ * @returns {{text: string, key: string}|null} null for no address: a blank
+ *   address, an address that the interface asks DHCP for or starts without
+ *   (proto manual), and an address that does not parse, which the
+ *   Inspector's form reports
  */
 function interfaceIP(iface) {
   const proto = typeof iface.proto === 'string' ? iface.proto : '';
@@ -2514,8 +2526,8 @@ function interfaceIP(iface) {
  * AA-BB-CC-DD-EE-FF and aabb.ccdd.eeff are one address.
  *
  * @param {object} iface spec interface
- * @returns {{text: string, key: string}|null} null for none: a blank MAC,
- *   for which minimega makes one, and one that is not twelve hex digits,
+ * @returns {{text: string, key: string}|null} null for no MAC: a blank MAC,
+ *   for which minimega makes one, and a MAC that is not twelve hex digits,
  *   which the Inspector's form reports
  */
 function interfaceMAC(iface) {
@@ -2526,9 +2538,9 @@ function interfaceMAC(iface) {
 }
 
 // The addresses sharedAddresses compares: the field each is in, its name in
-// a message, whether an external device's count, and the code of one two
-// interfaces use. phenix does not start an external device, and its schema
-// (so the Inspector) has no MAC.
+// a message, whether an external device's addresses count, and the code
+// for an address that two interfaces use. phenix does not start an
+// external device, and its schema (so the Inspector) has no MAC.
 const ADDRESS_FIELDS = [
   {
     field: 'address',
@@ -2546,8 +2558,8 @@ const ADDRESS_FIELDS = [
   },
 ];
 
-// The bridge an interface names to be on the experiment's default bridge,
-// as a blank bridge does: phenix replaces both with that bridge
+// The bridge name that puts an interface on the experiment's default
+// bridge, as a blank bridge does. phenix replaces both with that bridge
 // (defaultBridgeName in types/builder/topology.go).
 const DEFAULT_BRIDGE = 'phenix';
 
@@ -2586,14 +2598,15 @@ function connectionNetworks(doc) {
   return handles;
 }
 
-// The spec interface a connection point of that name is, as the server
+// The spec interface of a connection point of that name, as the server
 // finds it (findInterface in types/builder/topology.go): the first of
-// exactly that name, else the first of that name in any case, or -1.
+// exactly that name, else the first of that name in any letter case, or
+// -1.
 function specInterfaceIndex(interfaces, name) {
   let fallback = -1;
 
   for (const [index, iface] of interfaces.entries()) {
-    // An entry of the wrong shape is left to the schema.
+    // The schema checks an entry of the wrong shape.
     if (iface && typeof iface === 'object') {
       const own = typeof iface.name === 'string' ? iface.name : '';
 
@@ -2611,8 +2624,9 @@ function specInterfaceIndex(interfaces, name) {
 }
 
 // The VLAN each spec interface of a device is published with, as the
-// server projects it (connectInterfaces in types/builder/topology.go): a
-// connected interface's is its network's name, and any other keeps its own.
+// server projects it (connectInterfaces in types/builder/topology.go). A
+// connected interface's VLAN is its network's name. Any other interface
+// keeps its own VLAN.
 function publishedVLANs(node, interfaces, connected) {
   const vlans = interfaces.map((iface) => iface?.vlan);
 
@@ -2634,10 +2648,10 @@ function typedVLAN(iface) {
 }
 
 // The VLAN each interface of the Inspector's working copy of a device is
-// published with once it is applied. Applying connects an interface whose
-// VLAN the working copy changed by that VLAN (see connectByVLAN in
-// model.js), so it is on the VLAN as typed; any other interface keeps the
-// network publishing puts it on now (see publishedVLANs).
+// published with after Apply. Apply connects an interface whose VLAN the
+// working copy changed by that VLAN (see connectByVLAN in model.js), so it
+// is on the VLAN as typed. Any other interface keeps the network that
+// publishing puts it on now (see publishedVLANs).
 function workingVLANs(node, interfaces, connected) {
   const published = publishedVLANs(node, interfaces, connected);
   const before = new Map(
@@ -2653,11 +2667,12 @@ function workingVLANs(node, interfaces, connected) {
   });
 }
 
-// The network each spec interface is on once published, given the VLAN it
+// The network each spec interface is on after publishing, from the VLAN it
 // is published with, as the server names it (interfaceNetwork in
-// types/builder/topology.go): the bridge as written, '' for the
-// experiment's default one, and the VLAN without the white space around
-// it, '' for none; null for an entry of the wrong shape.
+// types/builder/topology.go):
+// - bridge: as written, '' for the experiment's default bridge
+// - vlan: without the white space around it, '' for none
+// null for an entry of the wrong shape.
 function interfaceNetworks(interfaces, vlans) {
   return interfaces.map((iface, index) => {
     if (!iface || typeof iface !== 'object') {
@@ -2675,8 +2690,8 @@ function interfaceNetworks(interfaces, vlans) {
   });
 }
 
-// How a message names a network interfaceNetworks returns, after the words
-// it is used in, as the server names it (networkPhrase in
+// How a message names a network that interfaceNetworks returns, after the
+// words that it is used in, as the server names it (networkPhrase in
 // types/builder/topology.go).
 function networkPhrase({ bridge, vlan }) {
   if (!vlan) {
@@ -2708,30 +2723,33 @@ function addressDevice(node, connected) {
 }
 
 /**
- * The interfaces that use an IP address or a MAC address another interface
- * on the same network uses too: of any two devices, or of one. Each
- * interface is on the network publishing puts it on: its bridge and the
- * VLAN it is published with (see interfaceNetworks), so interfaces on
- * different VLANs, or on VLANs of one name on different bridges, may use
+ * The interfaces that use an IP address or a MAC address that another
+ * interface on the same network also uses, on two devices or on one.
+ *
+ * Each interface is on the network that publishing puts it on: its bridge
+ * and the VLAN it is published with (see interfaceNetworks). So interfaces
+ * on different VLANs, or on VLANs of one name on different bridges, may use
  * the same addresses, as the server allows (checkInterfaceAddresses in
  * types/builder/topology.go). Interfaces without a VLAN are compared with
- * each other. The interfaces of an included device count, as phenix merges
- * them into the experiment, but are not reported, and neither is an address
- * only included devices share: they are their topology's to fix. An
- * external device's IP addresses count, and its MAC addresses do not (see
- * ADDRESS_FIELDS). Interfaces are looked up by network and address, so the
- * check grows with the diagram, never with its square.
+ * each other.
+ *
+ * The interfaces of an included device count, because phenix merges them
+ * into the experiment. But they are not reported, and neither is an
+ * address that only included devices share. Their topology must fix them.
+ * An external device's IP addresses count, and its MAC addresses do not
+ * (see ADDRESS_FIELDS). Interfaces are found by network and address, so
+ * the check grows with the diagram, never with its square.
  *
  * @param {{hostname: string, interfaces: object[], networks: object[],
  *   included: boolean, external: boolean}[]} devices networks holds the
  *   network of each interface (see interfaceNetworks)
  * @returns {{device: number, index: number, field: string, name: string,
  *   code: string, text: string, network: string, label: string,
- *   hostname: string, other: object, more: number}[]} for each interface,
- *   by the device's position in `devices` and its own in the spec, the
- *   address as typed, the code of the rule, its network as a message names
- *   it (see networkPhrase), and another interface that uses it (label and
- *   hostname), and how many more do
+ *   hostname: string, other: object, more: number}[]} for each interface:
+ *   the device's position in `devices` and the interface's position in the
+ *   spec, the address as typed, the code of the rule, its network as a
+ *   message names it (see networkPhrase), another interface that uses the
+ *   address (label and hostname), and how many more interfaces use it
  */
 function sharedAddresses(devices) {
   const users = ADDRESS_FIELDS.map(() => new Map());
@@ -2740,7 +2758,7 @@ function sharedAddresses(devices) {
     const labels = interfaceLabels(device.interfaces);
 
     device.interfaces.forEach((iface, index) => {
-      // An entry of the wrong shape is left to the schema.
+      // The schema checks an entry of the wrong shape.
       if (!iface || typeof iface !== 'object') {
         return;
       }
@@ -2807,19 +2825,20 @@ function otherUsers({ other, more }) {
 }
 
 /**
- * Advisory checks that are not server errors but are worth surfacing while
+ * Advisory checks that are not server errors but are useful to show while
  * editing. None blocks saving. Three block publishing, and say so with
- * `blocksPublish`: an interface with no VLAN, which phenix stores but
- * minimega refuses when the experiment starts, an IP or MAC address that
- * two interfaces on one network use (see sharedAddresses), which phenix
- * stores too, but which clash once the experiment runs, and a hostname
- * phenix refuses (see hostnameFinding), which a draft imported from a
- * topology an older phenix stored can have. The server refuses to publish
- * any of them
- * (PublishTopologyConfig in types/builder/topology.go), checking every
- * interface in the device spec, as interfaceWarnings does. An external
- * device is not started, so its interfaces need no VLAN, and phenix does
- * not check its hostname.
+ * `blocksPublish`:
+ * - an interface with no VLAN, which phenix stores but minimega refuses
+ *   when the experiment starts
+ * - an IP or MAC address that two interfaces on one network use (see
+ *   sharedAddresses), which phenix also stores, but which clash when the
+ *   experiment runs
+ * - a hostname that phenix refuses (see hostnameFinding), which a draft
+ *   imported from a topology that an older phenix stored can have
+ * The server refuses to publish any of them (PublishTopologyConfig in
+ * types/builder/topology.go). It checks every interface in the device spec,
+ * as interfaceWarnings does. An external device is not started, so its
+ * interfaces need no VLAN, and phenix does not check its hostname.
  *
  * @param {object} doc
  * @param {object[]} issues
@@ -2958,8 +2977,8 @@ function locate(doc, entry) {
  * @returns {{code: string, path: string, message: string,
  *   level: 'error'|'warning', severity: 'error'|'warning', nodeId?: string,
  *   edgeId?: string, networkId?: string, field?: string,
- *   blocksPublish?: true}[]} issues sorted by path; code is a code of the
- *   registry Go generates (schema/codes.json), and severity is level
+ *   blocksPublish?: true}[]} issues sorted by path. code is a code of the
+ *   registry that Go generates (schema/codes.json). severity is level
  */
 export function validateDocument(doc, { disks = null } = {}) {
   const issues = [];

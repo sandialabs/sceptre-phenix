@@ -1,10 +1,11 @@
-// Copy/paste for canvas elements, implemented as pure document transforms so
-// it can be driven from the canvas, the keyboard or the semantic outline.
+// Copy and paste for canvas elements, implemented as pure document
+// transforms. The canvas, the keyboard and the semantic outline can all use
+// them.
 //
-// A payload is self contained: it carries the networks its switches reference
-// and the copies of custom icons its nodes use that the document carries, so
-// a paste into another document still produces a valid document that shows
-// them. Identifiers are always regenerated on paste, never reused.
+// A payload is self-contained. It carries the networks that its switches
+// reference, and the document's copies of the custom icons that its nodes
+// use. Thus a paste into another document still produces a valid document
+// that shows them. A paste always makes new identifiers. It never reuses them.
 
 import { MAX_DOCUMENT_ICONS, iconRefs } from './icons.js';
 import {
@@ -41,8 +42,8 @@ function clone(value) {
  * @param {object} doc
  * @param {{nodes?: string[], edges?: string[]}} selection
  * @returns {{nodes: object[], edges: object[], networks: object[],
- *   icons: object}} icons: the copies of custom icons the nodes use that
- *   the document carries, by name (the icon library has the others)
+ *   icons: object}} icons: the document's copies of the custom icons that the
+ *   nodes use, by name. The icon library has the others.
  */
 export function copySelection(doc, selection = {}) {
   const ids = new Set(selection.nodes || []);
@@ -87,10 +88,10 @@ export function copySelection(doc, selection = {}) {
   return { nodes, edges, networks, icons };
 }
 
-// The document, carrying the copies of icons from `icons` that its nodes
-// name and it lacks, while it carries fewer than MAX_DOCUMENT_ICONS. A copy
-// it carries already stays; a name past the most is left to the icon
-// library.
+// The document, with the copies of icons from `icons` that its nodes name
+// and that it does not have, while it carries fewer than MAX_DOCUMENT_ICONS.
+// A copy that it already carries stays. A name past the maximum is left to
+// the icon library.
 function withCopies(doc, icons) {
   if (!icons || typeof icons !== 'object') {
     return doc;
@@ -144,9 +145,9 @@ function resolveNetwork(doc, payloadNetwork, networkId) {
   return { doc: created.doc, networkId: created.network.id };
 }
 
-// Pasting the same nodes again cascades: each paste goes one PASTE_OFFSET
-// further, past every earlier copy, so no copy lands on top of another: a
-// node of its kind at the very same spot.
+// Each paste of the same nodes goes one PASTE_OFFSET further than all earlier
+// copies. Thus no copy lands on top of another node of its kind at the same
+// position.
 const MAX_CASCADE = 100;
 
 function cascadeOffset(doc, nodes) {
@@ -167,9 +168,9 @@ function cascadeOffset(doc, nodes) {
   return { x: PASTE_OFFSET.x * MAX_CASCADE, y: PASTE_OFFSET.y * MAX_CASCADE };
 }
 
-// A copy is named as a new node of its kind would be: a device after its
-// own hostname, unless it was labelled otherwise; a switch after its network
-// (addNode). Any other label is kept.
+// A copy gets the name a new node of its kind gets (see addNode). A device is
+// named after its own hostname, unless it had a different label. A switch is
+// named after its network. Any other label is kept.
 function pastedLabel(node) {
   if (
     node.kind === 'device' &&
@@ -182,16 +183,17 @@ function pastedLabel(node) {
 }
 
 /**
- * Pastes a clipboard payload, remapping every identifier and offsetting
- * positions. The document comes to carry the payload's copies of the custom
- * icons the copies name that it lacks; the commit of the paste drops those
- * the icon library holds as they are (see settleIcons in icons.js).
+ * Pastes a clipboard payload, with new identifiers and offset positions. The
+ * document gets the payload's copies of custom icons that the pasted nodes
+ * name and that the document does not have. When the paste is committed, it
+ * drops the copies that are identical in the icon library (see settleIcons in
+ * icons.js).
  *
  * @param {object} doc
  * @param {{nodes: object[], edges?: object[], networks?: object[],
  *   icons?: object}} payload
- * @param {object} [options] offset; by default each paste of the same nodes
- *   goes PASTE_OFFSET further than the copies already there
+ * @param {object} [options] offset. By default, each paste of the same nodes
+ *   goes PASTE_OFFSET further than the copies already there.
  * @returns {{doc: object, nodeIds: string[]}}
  */
 export function pasteClipboard(doc, payload, options = {}) {
@@ -258,9 +260,9 @@ export function pasteClipboard(doc, payload, options = {}) {
       init.iconSize = node.group?.iconSize;
     }
 
-    // A drawing's payload is what addNode takes for it: a shape's figure,
-    // an icon's icon, a line's points (relative to its position), and the
-    // label, colors and styles of each.
+    // A drawing's payload is what addNode takes for it: a shape's figure, an
+    // icon's icon, a line's points (relative to its position), and the label,
+    // colors and styles of each.
     if (DRAWING_KINDS.includes(node.kind)) {
       Object.assign(init, node[node.kind]);
     }
@@ -314,10 +316,10 @@ export function pasteClipboard(doc, payload, options = {}) {
     next = result.doc;
   });
 
-  // A copy keeps its interfaces' spec entries, VLAN included. One pasted
-  // without its connection is on no network, so its VLAN is emptied when it
-  // names a network of the diagram; one naming no network is kept, as on
-  // the original.
+  // A copy keeps the spec entries of its interfaces, VLAN included. A copy
+  // pasted without its connection is on no network. Thus its VLAN is emptied
+  // when the VLAN names a network of the diagram. A VLAN that names no
+  // network is kept, as on the original.
   const synced = syncInterfaceVLANs(next);
   const naming = [...nodeIds.values()].flatMap((id) => {
     const node = findNode(synced, id);
