@@ -7,8 +7,10 @@ holds everything about it that the main phenix skill leaves out.
 publishing, import, upload, download or generation, the conversion of legacy
 diagrams, custom icons, node templates and their libraries, template files
 (export, import, and the server collections read from
-`--base-dir.builder-templates`), its `/api/v1/builder/*`,
-`/schemas/builder/v1` or `/schemas/builder/templates/v1` routes, the
+`--base-dir.builder-templates`), Builder packages (`/builder/package`, `/builder/package/resolve`),
+its `/api/v1/builder/*`,
+`/schemas/builder/v1`, `/schemas/builder/templates/v1` or
+`/schemas/builder/package/v1` routes, the
 `builder-drafts` and
 `builder-templates` RBAC resources or the built-in Builder role, the Builder
 document format (`builder/v1`), the `builder-doc` annotation, Builder files
@@ -784,6 +786,111 @@ attribute on `<gexf>`, the only element that uses `gexf-content`:
   </define>
 </grammar>
 ```
+
+### Builder packages
+
+A package (`bdoc.Package`, `types/builder/package.go`; `package.js`) is one
+JSON or YAML file: `{$schema:
+"https://phenix.sandia.gov/schemas/builder/package/v1", document,
+scenarios?: {<name>: config}, topologies?: {<name>: config},
+requirements: {scenarios, topologies, templates, icons, images: [{name,
+usedBy}], apps, files}}`. A config is `{apiVersion, kind, metadata: {name,
+annotations?}, spec}`, of the kind of its list, named by its key, and named
+by the requirements; it is data only (no times, no `builder-*`
+annotations: `Validate` refuses each `IsBuilderAnnotation` key, one issue
+per key, `<list>.<name>.metadata.annotations: "builder-doc" is a Builder
+annotation, which a package never carries`, so no config created from a
+package claims a document). Every requirements list is present (empty
+allowed), at most 1000 entries of at most 4096 bytes, none blank or with
+control characters. Strict everywhere (unknown fields refused), YAML
+through `JSONFromYAML`, at most 5 MiB (`MaxPackageBytes`), at most 20
+scenarios (`MaxScenarios`) and 100 topologies (`MaxPackageTopologies`).
+`decodePackage` in `package.js` makes the same checks with the same words
+(it stops at the first). `ParsePackage`, `DecodePackage`,
+`Package.Validate`/`Issues` (`*PackageError`, `ErrInvalidPackage`),
+`NewPackage(document, PackageContents)` (lists entries as named, so it may
+not validate), `Package.TrimRequirements` (leaves out each entry that is
+blank, too long or has control characters, then entries past 1000, and
+returns a warning naming each: `The package does not list file
+"/a\nb": it must not contain control characters.`, `The package lists at
+most 1000 apps, so it does not list 4 more: "a", "b", "c" and 1 more.`),
+`Document.IconNames`; schema `PackageSchema()`
+(`package_schema.go`, documented like the others, checked by
+`TestPackageSchemaDocumentsEveryProperty`), served by `GET
+/schemas/builder/package/v1` (`schemas` `get` on `builder`). The docs
+example `docs/content/builder/examples/pump-station.package.yaml` must load
+(`TestDocsPackageExampleLoads`). `IsDocumentText` is false for a package.
+A package never holds a file's content, a script or an app.
+
+`POST /builder/package` (`web/builder_package.go`, `configs` `get`) takes
+`{document, include: [scenarios|topologies|icons|images]}` (strict; an
+unknown or repeated section is 400) and answers `{package, warnings}`.
+Requirements, whatever is included: the document's `scenarios`, its
+`source.includeTopologies`, its templates' names, `IconNames`, the apps of
+the Scenario configs that could be read (`apps[].name`, v2, or v1's
+`experiment` and `host` lists), and the files (device and carried topology
+node `injections[].src`, carried scenario `apps[].assetDir`); `images` (each
+drive `hardware.drives[].image` of the document's devices and carried
+topology nodes, with sorted `usedBy` hostnames) only with `images`. Each
+listed scenario is read with `configs` `get` and `scenarios` `list` (carried
+with `scenarios`), each include with `topologies` (`configs` `get`,
+`topologies` `list`; a file path is never read). Missing and forbidden read
+alike and give a warning `Scenario config <n> does not exist on this
+server, or your role cannot read it: the package names it but does not
+carry it.` (`... the package lists none of its apps.` without `scenarios`;
+`Included topology <n> ...`; `Included topology <path> is a file path: ...`).
+`icons` copies each named icon the document lacks from the library (at most
+50; a missing one warns). Then `TrimRequirements` (its warnings join the
+others; e.g. an injection `src` with a newline, or an app name a stored
+scenario holds with a control character) and `Validate`: what it still
+refuses (a stored config without a spec) is 422 with the issues in
+`cause`, so the route never answers a package the resolve route refuses.
+Over 5 MiB is 413. Nothing is written.
+
+`POST /builder/package/resolve` (`configs` `get`; the body is the package,
+at most `MaxPackageBytes` through `builderDecodeLimit`, else 413 before
+decoding; strict, 422 when it does not decode or validate) answers `{dependencies:
+[{kind, name, status, packaged, detail?}]}` in requirement order by kind
+(scenario, topology, template, icon, image, app, file). Configs: `present`
+(same spec as the package's copy by canonical JSON, or no copy), `different`,
+`missing`, or `unknown` when the caller may not read it (`configs` `get` and
+the kind's `list`) or the name is no config name. Icons: the library by
+name (`configs` `list`), bytes compared. Images: `disks` `list`, then the
+listing (`diskImages`, default `disk.GetImages("")`) filtered by `disks`
+`list` on each image's name as `GET /disks` filters it, so an image the
+caller may not see is `missing` like an absent one; matched by name or full
+path, else by file name (`builderFindDisk`), and then the detail says so
+(`Matched by file name pkg.qc2; this server's image is
+/phenix/images/pkg.qc2.`, `builderDiskMatch`); a listing error is
+`unknown`. Apps: `applications` `list` and by name
+(`appNames`, default `app.List()` plus `app.DefaultApps()`). Templates are
+`present`; files always `unknown`. Nothing is written; the tests inject
+`withBuilderDiskImages` and `withBuilderApps`.
+
+UI: Download dialog's **Builder package** fieldset (ticks
+`download-package-<section>`, none ticked; `download-package-format` JSON or
+YAML; button `download-package`; `store.buildPackage`); warnings hold the
+file (`download-package-held`, `download-package-save`, `-discard`) until
+the user saves; the file is `<name>.package.json|yaml` (`packageFileName`).
+Upload recognizes a package by `$schema` (`isPackageValue`), decodes it
+(`decodePackage`), calls `store.resolvePackage`, and shows
+`dialogs/PackageImport.vue` (testids `upload-package`,
+`upload-package-group-<kind>`, `upload-package-item-<kind>-<name>`,
+`upload-package-status-<kind>-<name>`, `upload-package-create-<kind>-<name>`,
+`upload-package-continue`, `upload-package-cancel`): status in words
+(Present, Missing, Different, Not checked, ", in the package"), an unticked
+"Create on this server" checkbox only for a missing carried scenario or
+topology (`canCreate`). Continue creates the ticked configs one at a time
+(`createTickedConfigs`, `store.createPackagedConfig`, `POST /configs`; a
+failure is a warning and the rest go on), runs `ingestIcons`, then opens the
+document as a new draft as a plain upload does (`openUploaded`); failures
+and icon warnings show first in `ImportWarnings`. While Continue works
+(`creating` in `UploadDialog.vue`), `upload-package-cancel` is
+aria-disabled and described by `upload-package-progress` (the status
+text), and `requestClose` ignores Close, Escape and the backdrop, as
+`ShareDialog` does while it saves. References are never rewritten. e2e:
+`builder-package.spec.js` (with its `@axe` test; `page.route` stubs a
+failing and a held `POST /configs` and a held `POST /builder/package`).
 
 After a publication, older published documents of the same topology are
 removed once they are more than an hour old; newer ones go at a later publish
@@ -1653,6 +1760,7 @@ All routes are relative to `/api/v1`.
 |---|---|
 | `GET /schemas/builder/v1` | JSON Schema of the Builder document (`builder/v1`); needs `schemas` `get` on the resource name `builder` |
 | `GET /schemas/builder/templates/v1` | JSON Schema of a template file; same permission |
+| `GET /schemas/builder/package/v1` | JSON Schema of a Builder package; same permission |
 | `GET/POST /builder/drafts` | List the caller's drafts (`drafts`), other users' drafts the caller may see (`shared`) and unreadable drafts (`damaged`); create a draft (optionally `forkOf` or `sourceToken`) |
 | `GET/DELETE /builder/drafts/{owner}/{draft}` | Read a draft with its current document; delete it |
 | `GET/POST /builder/drafts/{owner}/{draft}/snapshots` | List or append snapshots (append needs `If-Match`) |
@@ -1666,6 +1774,8 @@ All routes are relative to `/api/v1`.
 | `POST /builder/generate` | Build a document from a stored or uploaded Topology or Experiment, with `includes`, `copy`, `name`; converts a `builder-xml` topology (`configs` `get`; `create` for `content`) |
 | `POST /builder/legacy` | Convert a legacy diagram or a Topology file with `builder-xml` into a document (`configs` `get` and `create`; nothing is written) |
 | `POST /builder/export/topology` | The Topology config a document publishes as, as YAML, with `warnings` and `publishBlockers` (nothing is written; needs `configs` `get`) |
+| `POST /builder/package` | The Builder package of a document, with the sections `include` names, and `warnings` (nothing is written; `configs` `get`) |
+| `POST /builder/package/resolve` | Which of what a package's diagram needs this server has: `present`, `missing`, `different`, `unknown` (nothing is written; `configs` `get`) |
 | `GET /builder/documents[/{document}]` | Published Builder documents (`source: "store"`); the listing also has a row per topology read from a Builder file (`source: "file"`) |
 | `DELETE /builder/documents/{document}` | Delete the topology a published document is current for, and the topology's published documents |
 | `GET /builder/topologies/{topology}/document` | The document a topology's `builder-doc` names, stored or read from its Builder file: the listing row plus `digest`, `size`, `document`, and for a file `topologyDiffers` |

@@ -71,7 +71,9 @@ integrations include:
   a git-based CI/CD pipeline reacting to push events.
 * [Builder](builder/administration.md#rest-api) - create, edit,
   share, and publish Builder drafts through the `/api/v1/builder/`
-  routes; convert legacy Builder diagrams (`/api/v1/builder/legacy`); and
+  routes; convert legacy Builder diagrams (`/api/v1/builder/legacy`); make
+  a Builder package of a diagram and check one against the server
+  (`/api/v1/builder/package`); and
   manage the server's icon library (`/api/v1/builder/icons`) and your
   template library (`/api/v1/builder/templates`). Each route needs the
   `configs` permission of its verb; publishing templates server-wide also

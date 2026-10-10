@@ -23,6 +23,10 @@ export const SOURCES_PATH = 'builder/sources';
 export const GENERATE_PATH = 'builder/generate';
 export const LEGACY_PATH = 'builder/legacy';
 export const EXPORT_TOPOLOGY_PATH = 'builder/export/topology';
+// Builder packages (web/builder_package.go): one is made of a document, and
+// one is checked against what this server has.
+export const PACKAGE_PATH = 'builder/package';
+export const RESOLVE_PACKAGE_PATH = 'builder/package/resolve';
 export const DOCUMENTS_PATH = 'builder/documents';
 // The server's icon library, which every user shares (web/builder_icons.go).
 export const ICONS_PATH = 'builder/icons';
@@ -1203,6 +1207,52 @@ export function createBuilderApi(http = axiosInstance) {
           ? data.publishBlockers
           : [],
       };
+    },
+
+    /**
+     * Asks the server for the package of a document: the document, the
+     * sections include names and the list of what the diagram needs.
+     * Nothing is written, and the document is sent, so it holds edits not
+     * saved yet.
+     *
+     * @param {object} document
+     * @param {string[]} [include] the sections the package carries:
+     *   scenarios, topologies, icons and images
+     * @returns {Promise<{package: object, warnings: string[]}>} warnings:
+     *   what the package names but does not carry, and why
+     */
+    async buildPackage(document, include = []) {
+      const payload = { document, include };
+
+      checkUploadSize(payload);
+
+      const response = await http.post(PACKAGE_PATH, payload);
+      const data = response.data || {};
+
+      if (!data.package || typeof data.package !== 'object') {
+        throw new TypeError('The server sent an unexpected package.');
+      }
+
+      return {
+        package: data.package,
+        warnings: Array.isArray(data.warnings) ? data.warnings : [],
+      };
+    },
+
+    /**
+     * Asks the server which of what a package's diagram needs it has.
+     * Nothing is written.
+     *
+     * @param {object} pkg the package, decoded
+     * @returns {Promise<object>} the answer, {dependencies}, which
+     *   readDependencies in package.js reads
+     */
+    async resolvePackage(pkg) {
+      checkUploadSize({ content: JSON.stringify(pkg) }, 'This package');
+
+      const response = await http.post(RESOLVE_PACKAGE_PATH, pkg);
+
+      return response.data || {};
     },
 
     /**

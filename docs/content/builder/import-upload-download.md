@@ -1,16 +1,16 @@
 # Import, Upload and Download
 
 Builder can start a draft from a phenix config or from a file you have, and
-it can save a diagram as a file in six formats. Three words name these, and
+it can save a diagram as a file in seven formats. Three words name these, and
 these pages use them the same way everywhere:
 
 - **Import** makes a draft from a phenix config: a Topology or Experiment
   config stored in phenix, or a config file. The phenix server converts the
   config into a diagram.
 - **Upload** opens a file you have that is already a diagram: a Builder
-  document, such as a draft you downloaded, or a diagram of the
-  [legacy Builder](legacy.md). Its **Published diagram** source opens a
-  diagram published on the server.
+  document, such as a draft you downloaded, a Builder package, or a diagram
+  of the [legacy Builder](legacy.md). Its **Published diagram** source opens
+  a diagram published on the server.
 - **Download** saves the open diagram as a file.
 
 None of this changes a config on the phenix server: in the web UI, only
@@ -20,7 +20,8 @@ line, `phenix builder publish` makes a topology from a Builder file.
 | To | Use | Where | Result |
 |---|---|---|---|
 | Start from a Topology or Experiment config | **Import** | Drafts page, and the **Configs** page | A new draft |
-| Open a Builder document, a published diagram, or a legacy Builder diagram | **Upload** | Drafts page and editor toolbar | A new draft |
+| Open a Builder document, a Builder package, a published diagram, or a legacy Builder diagram | **Upload** | Drafts page and editor toolbar | A new draft |
+| Move a diagram to another phenix server with what it needs | **Download** a **Builder package**, then **Upload** it there | Editor toolbar, then the drafts page | A file, then a new draft (see [Moving a diagram with a Builder package](#moving-a-diagram-with-a-builder-package)) |
 | Save the diagram as a file | **Download** | Editor toolbar | A file |
 | Make a topology from a Builder file | `phenix builder publish` | Command line | A Topology config (see [From the command line](#from-the-command-line)) |
 | Show the diagram of a topology kept in files | A `builder-doc` annotation with a `path` | The Topology config | A card under **Published Diagrams** (see [A Builder file beside a topology](#a-builder-file-beside-a-topology)) |
@@ -369,6 +370,7 @@ starts that download. Typing `export` in the palette finds them all (see
 | **PNG** | `riverside-water.png` | A picture of the whole diagram | An image viewer |
 | **SVG** | `riverside-water.svg` | The same picture, as SVG | A web browser |
 | **Gephi (GEXF)** | `riverside-water.gexf` | The devices, networks and connections as a graph | Gephi |
+| **Builder package** | `riverside-water.package.json` or `.package.yaml` | The Builder document, the configs and icons you tick, and the list of what the diagram needs | **Upload** |
 
 The file name is the diagram name in lower case, with a hyphen for each run
 of other characters than letters, digits, `.`, `_` and `-`. "Riverside Water"
@@ -694,6 +696,127 @@ To find devices by VLAN, use the nodes' **VLANs (text)** column. It holds
 the VLANs of a device separated by `|`, for example `INTERNET|DMZ|CORP` for
 edge-rtr. Select **Use regex** and type `(.*\|)?OT(\|.*)?` to keep the
 devices on OT and the OT network itself.
+
+## Moving a diagram with a Builder package
+
+A Builder document names the scenarios, included topologies, custom icons
+and disk images of its diagram, but another phenix server may not have
+them. A **Builder package** is one file, JSON or YAML, that holds the
+Builder document, the configs and icons you choose to put in, and the list
+of everything the diagram needs. Uploading it on another server shows which
+of those that server has, and creates a missing Scenario or Topology config
+only when you tick it.
+
+A package never holds the content of a file, a script or an app. Disk
+images, apps, and files such as injection sources are only listed by name.
+
+### Downloading a package
+
+1. Open the draft and select **Download**.
+2. Under **Builder package**, tick what the file also carries:
+    - **Scenario configs**: the Scenario configs the diagram names.
+    - **Included topologies**: the Topology configs the diagram includes.
+      An include that names a file is listed, not read.
+    - **Custom icons**: a copy of each custom icon the diagram names, from
+      the server's icon library.
+    - **Disk-image requirements**: the disk images the devices boot from,
+      each with the devices that use it.
+
+    None is ticked at first. Whatever you tick, the file lists the diagram's
+    scenarios, included topologies, templates, custom icons, the apps of its
+    scenarios and the files its devices and the configs in the package name.
+3. Choose JSON or YAML in **Package format**, then select **Builder
+   package**. The file is named after the diagram, for example
+   `pump-station.package.json`.
+
+The server reads each config under your permissions. A config that does
+not exist, or that your role cannot read, is listed but not carried, and
+the dialog lists it before the file is saved, for example "Scenario config
+pump-station-ntp does not exist on this server, or your role cannot read
+it: the package names it but does not carry it." Select **Save package** to
+save the file anyway, or **Do not save**. A config is carried without its
+creation and update times and without the Builder's own annotations
+(`builder-*`).
+
+The list of requirements holds at most 1000 entries of each kind, each at
+most 4096 bytes long and without control characters. An entry that does
+not fit, such as an injection source with a line break in it, is left out
+of the list, and the dialog names it the same way before the file is
+saved, for example "The package does not list file "/phenix/injects/a\nb":
+it must not contain control characters."
+
+[pump-station.package.yaml](examples/pump-station.package.yaml) is the
+pump station with **Scenario configs** and **Disk-image requirements**
+ticked. It ends with its list of requirements:
+
+```yaml
+requirements:
+  scenarios:
+    - pump-station-ntp
+  topologies: []
+  templates: []
+  icons: []
+  images:
+    - name: bennu.qc2
+      usedBy:
+        - rtu-01
+    - name: minirouter.qc2
+      usedBy:
+        - station-rtr
+    - name: windows10.qc2
+      usedBy:
+        - eng-ws-01
+  apps:
+    - ntp
+  files: []
+```
+
+### Uploading a package
+
+1. Select **Upload** and choose the package file, as for a Builder document
+   (see [Uploading a Builder document](#uploading-a-builder-document)), then
+   select **Upload**.
+2. The dialog lists what the diagram needs, under **Scenario configs**,
+   **Included topologies**, **Templates**, **Custom icons**, **Disk
+   images**, **Apps** and **Files**. Each entry says its status in words,
+   and "in the package" when the file carries it:
+    - **Present**: the server has it. A config or icon of that name with the
+      same content as the package's copy is present.
+    - **Missing**: the server does not have it.
+    - **Different**: the server has a config or icon of that name with other
+      content. It is not changed.
+    - **Not checked**: the server cannot check it, for example because your
+      role cannot read that config, or cannot list disk images or apps.
+      Files on the server are never checked.
+
+    A disk image is looked for among the images your role can list, so one
+    your role cannot see reads Missing. A drive whose image has the same
+    file name as one of the server's, but another path, counts as present,
+    and the entry says which image matched, for example "Matched by file
+    name ubuntu.qc2; this server's image is /phenix/images/ubuntu.qc2."
+3. A Scenario or Topology config that is missing and in the package has a
+   **Create on this server** checkbox, which is not ticked. Tick each config
+   to create. No other entry has one: Builder never replaces a config the
+   server has, and disk images, apps and files are only listed.
+4. Select **Continue to editor**. Builder creates the ticked configs, one at
+   a time, which needs the `configs` `create` permission for each; adds the
+   custom icons the server lacks to its icon library, as an upload of a
+   Builder document does; and opens the diagram as a new draft. The diagram
+   still names its scenarios and topologies as the file does, whether or
+   not you created them.
+
+While Builder creates the configs and adds the icons, the dialog stays open
+and says what it is doing; **Cancel** and closing the dialog do nothing
+until it is done. When a config cannot be created, or an icon cannot be
+added, the dialog says why before it opens the diagram, and the other
+configs are still created. **Cancel** then opens nothing; configs already
+created stay.
+
+A package whose configs carry Builder annotations (`builder-*`) is refused,
+since those name records of the server that wrote them.
+
+The phenix server describes the format as a JSON Schema at
+`/api/v1/schemas/builder/package/v1`.
 
 ## From the command line
 

@@ -973,7 +973,7 @@ func TestBuilderResponseHeaders(t *testing.T) {
 
 				assertIconHeaders(t, what, recorder)
 			case strings.HasPrefix(op.template, "/builder/"), op.template == "/schemas/builder/v1",
-				op.template == "/schemas/builder/templates/v1":
+				op.template == "/schemas/builder/templates/v1", op.template == "/schemas/builder/package/v1":
 				builder++
 
 				if got := header.Get("X-Content-Type-Options"); got != builderNoSniff {
@@ -1006,6 +1006,8 @@ func TestBuilderResponseHeaders(t *testing.T) {
 		{method: http.MethodPost, template: "/builder/legacy"},
 		{method: http.MethodPost, template: "/builder/generate"},
 		{method: http.MethodPost, template: "/builder/export/topology"},
+		{method: http.MethodPost, template: "/builder/package"},
+		{method: http.MethodPost, template: "/builder/package/resolve"},
 		{method: http.MethodGet, template: "/builder/documents/{document}"},
 		{method: http.MethodGet, template: "/builder/drafts/{owner}/{draft}"},
 		{method: http.MethodGet, template: "/builder/templates"},
@@ -1030,6 +1032,7 @@ func TestBuilderResponseHeaders(t *testing.T) {
 		{http.MethodPatch, "/builder/drafts", http.StatusMethodNotAllowed, true, false},
 		{http.MethodPut, "/schemas/builder/v1", http.StatusMethodNotAllowed, true, false},
 		{http.MethodPut, "/schemas/builder/templates/v1", http.StatusMethodNotAllowed, true, false},
+		{http.MethodPut, "/schemas/builder/package/v1", http.StatusMethodNotAllowed, true, false},
 		{http.MethodPatch, builderIconsRoute, http.StatusMethodNotAllowed, true, true},
 		{http.MethodPost, builderIconsRoute + "/x", http.StatusMethodNotAllowed, true, true},
 		{http.MethodGet, builderIconsRoute + "/x/y", http.StatusNotFound, true, true},

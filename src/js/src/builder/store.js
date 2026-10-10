@@ -2806,6 +2806,47 @@ export const useBuilderStore = defineStore('builder', {
       return builderApi.exportTopology(doc, name);
     },
 
+    /**
+     * The package of a document, for the Download dialog, which reports a
+     * failure itself.
+     *
+     * @param {object} doc
+     * @param {string[]} include the sections the package carries
+     * @returns {Promise<object>} see buildPackage in api.js
+     */
+    buildPackage(doc, include) {
+      return builderApi.buildPackage(doc, include);
+    },
+
+    /**
+     * Which of what a package's diagram needs this server has, for the
+     * Upload dialog, which reports a failure itself.
+     *
+     * @param {object} pkg the package, decoded
+     * @returns {Promise<object>} see resolvePackage in api.js
+     */
+    resolvePackage(pkg) {
+      return builderApi.resolvePackage(pkg);
+    },
+
+    /**
+     * Stores a config a package carries as a new config (POST /configs),
+     * for the Upload dialog: the server checks the caller's `configs`
+     * `create` permission and the config, and its refusal is thrown. The
+     * content read before of a scenario of that name is dropped, so the
+     * Inspector reads it again.
+     *
+     * @param {object} config apiVersion, kind, metadata, spec
+     * @returns {Promise<void>}
+     */
+    async createPackagedConfig(config) {
+      await builderApi.createConfig(config);
+
+      if (config.kind === 'Scenario') {
+        delete this.storedScenarios[config.metadata.name];
+      }
+    },
+
     async fetchDocuments() {
       const epoch = sessionEpoch;
 

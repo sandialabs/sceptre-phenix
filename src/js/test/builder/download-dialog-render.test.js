@@ -60,6 +60,8 @@ describe('the Download dialog', () => {
       ),
     ].map(([, inner]) => textOf(inner));
 
+    // The Builder package's button comes after the two rows, with its
+    // ticks and its format.
     expect(names).toEqual([
       'Builder JSON',
       'Builder YAML',
@@ -67,7 +69,58 @@ describe('the Download dialog', () => {
       'PNG',
       'SVG',
       'Gephi (GEXF)',
+      'Builder package',
     ]);
+  });
+
+  test('offers a Builder package of JSON or YAML, every section unticked', async () => {
+    const html = await render();
+    const [, fieldset] = html.match(
+      /<fieldset\b[^>]*builder-download__package[^>]*>([\s\S]*?)<\/fieldset>/,
+    );
+    const ticks = [
+      ...fieldset.matchAll(
+        /<label\b[^>]*>\s*<input\b([^>]*)>([\s\S]*?)<\/label>/g,
+      ),
+    ].map(([, attributes, label]) => ({
+      testId: attributes.match(/data-testid="([a-z-]+)"/)[1],
+      checked: /\schecked\b/.test(attributes),
+      label: textOf(label),
+    }));
+
+    expect(textOf(fieldset)).toMatch(
+      /^Builder package One file with the diagram/,
+    );
+    expect(ticks).toEqual([
+      {
+        testId: 'download-package-scenarios',
+        checked: false,
+        label: 'Scenario configs',
+      },
+      {
+        testId: 'download-package-topologies',
+        checked: false,
+        label: 'Included topologies',
+      },
+      {
+        testId: 'download-package-icons',
+        checked: false,
+        label: 'Custom icons',
+      },
+      {
+        testId: 'download-package-images',
+        checked: false,
+        label: 'Disk-image requirements',
+      },
+    ]);
+    expect(fieldset).toMatch(
+      /<label for="download-package-format"[^>]*>Package format<\/label>/,
+    );
+    expect(
+      [...fieldset.matchAll(/<option value="([a-z]+)"/g)].map(
+        ([, value]) => value,
+      ),
+    ).toEqual(['json', 'yaml']);
   });
 
   test('links Gephi in its hint to the project, in a new tab, and says so', async () => {

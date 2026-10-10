@@ -25,6 +25,13 @@
   Builder YAML, Topology YAML), then the pictures and the graph (PNG, SVG,
   Gephi (GEXF)). Each row wraps on its own in a narrow dialog.
 
+  Builder package, below them, comes from the server (POST /builder/package,
+  see package.js): one JSON or YAML file with the diagram and the lists of
+  what it needs, carrying also the sections the user ticks, none by
+  default. What the package names but does not carry (a scenario the user's
+  role cannot read, an icon the server lacks) is listed before the file is
+  saved, and the user saves it anyway or does not.
+
   A palette command that names a format (Download PNG) opens the dialog with
   `start`: that format's button takes focus and its download starts at once,
   so its result and its errors show here as they do after a press.
@@ -145,6 +152,94 @@
       >. The Builder cannot open it.
     </p>
 
+    <fieldset
+      class="builder-field builder-download__package"
+      aria-describedby="download-package-hint">
+      <legend>Builder package</legend>
+      <p id="download-package-hint" class="builder-hint">
+        One file with the diagram and the lists of what it needs on a phenix
+        server: scenarios, included topologies, templates, custom icons, apps
+        and files. Tick what the file also carries. It never carries file
+        contents, scripts or apps.
+      </p>
+      <div class="builder-download__ticks">
+        <label
+          v-for="section in PACKAGE_SECTIONS"
+          :key="section.id"
+          class="builder-choice">
+          <input
+            v-model="packageSections"
+            type="checkbox"
+            :value="section.id"
+            :data-testid="`download-package-${section.id}`" />
+          {{ section.label }}
+        </label>
+      </div>
+      <div class="builder-download__package-actions">
+        <label for="download-package-format">Package format</label>
+        <select
+          id="download-package-format"
+          v-model="packageFormat"
+          data-testid="download-package-format">
+          <option value="json">JSON</option>
+          <option value="yaml">YAML</option>
+        </select>
+        <button
+          ref="packageButton"
+          type="button"
+          class="builder-button"
+          data-testid="download-package"
+          :disabled="Boolean(unapplied)"
+          :aria-disabled="packageBusy ? 'true' : undefined"
+          :aria-busy="packageBusy || undefined"
+          @click="downloadPackage">
+          <span
+            v-if="packageBusy"
+            class="builder-toolbar__spinner"
+            aria-hidden="true"></span>
+          <builder-icon v-else name="download" :size="14" />
+          Builder package
+        </button>
+      </div>
+    </fieldset>
+
+    <div
+      v-if="packageHeld"
+      class="builder-download__held"
+      data-testid="download-package-held">
+      <p id="download-package-held-summary">{{ packageHeldSummary }}</p>
+      <ul
+        id="download-package-warnings"
+        class="builder-issues"
+        data-testid="download-package-warnings">
+        <li
+          v-for="(warning, index) in packageHeld.warnings"
+          :key="index"
+          data-level="warning">
+          <strong>Warning:</strong>
+          {{ warning }}
+        </li>
+      </ul>
+      <div class="builder-dialog__actions">
+        <button
+          type="button"
+          class="builder-button"
+          data-testid="download-package-discard"
+          @click="discardPackage">
+          Do not save
+        </button>
+        <button
+          ref="packageSaveButton"
+          type="button"
+          class="builder-button builder-button--primary"
+          aria-describedby="download-package-held-summary download-package-warnings"
+          data-testid="download-package-save"
+          @click="savePackage">
+          Save package
+        </button>
+      </div>
+    </div>
+
     <p class="builder-dialog__message" role="status">
       <span v-if="status.text" :key="status.key">{{ status.text }}</span>
     </p>
@@ -163,7 +258,7 @@
 </template>
 
 <script setup>
-  import { computed, nextTick, onMounted, ref } from 'vue';
+  import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
   import { saveAs } from 'file-saver';
   import { toPng, toSvg } from 'html-to-image';
 
@@ -188,6 +283,7 @@
   import { iconLibrary } from '@/builder/iconLibrary.js';
   import { unappliedBlock } from '@/builder/leave.js';
   import { documentScenarios } from '@/builder/model.js';
+  import { PACKAGE_SECTIONS, packageFileName } from '@/builder/package.js';
   import { builderSettings } from '@/builder/settings.js';
   import { useBuilderStore } from '@/builder/store.js';
 
@@ -207,6 +303,28 @@
   const topologyBusy = ref(false);
   const status = useMessage();
   const error = useMessage();
+
+  // The Builder package: the sections ticked (none by default), its format,
+  // and a package held, with its warnings, until the user saves it or not.
+  const packageSections = ref([]);
+  const packageFormat = ref('json');
+  const packageBusy = ref(false);
+  const packageHeld = ref(null);
+  const packageButton = ref(null);
+  const packageSaveButton = ref(null);
+
+  const packageHeldSummary = computed(() => {
+    const warnings = packageHeld.value?.warnings.length || 0;
+
+    return `The package names ${count(warnings, 'thing')} it does not carry. Save it anyway?`;
+  });
+
+  // Whether the dialog was closed. A package the server sends after that is
+  // not saved.
+  let closed = false;
+  onBeforeUnmount(() => {
+    closed = true;
+  });
 
   // An image holds the node notes the canvas shows (see NodeNotes.vue).
   const bounds = computed(() =>
@@ -275,6 +393,88 @@
     } finally {
       topologyBusy.value = false;
     }
+  }
+
+  // Saves a package the server made as a file of the chosen format.
+  function savePackageFile(pkg, format) {
+    const fileName = packageFileName(store.doc, format);
+
+    saveText({
+      text: format === 'yaml' ? toYAMLString(pkg) : toJSONString(pkg),
+      mime: format === 'yaml' ? 'text/yaml' : 'application/json',
+      fileName,
+      saveAs,
+    });
+
+    status.set(`Saved ${fileName}.`);
+  }
+
+  // The Builder package of the diagram, with the sections ticked. When it
+  // names something it does not carry, the warnings are shown and the file
+  // is saved only when the user says so.
+  async function downloadPackage() {
+    // A busy button keeps focus, so it can still be pressed.
+    if (packageBusy.value) {
+      return;
+    }
+
+    error.clear();
+    packageHeld.value = null;
+    status.set('Making the Builder package…');
+    packageBusy.value = true;
+
+    const format = packageFormat.value;
+
+    try {
+      const built = await store.buildPackage(store.doc, [
+        ...packageSections.value,
+      ]);
+
+      if (closed) {
+        return;
+      }
+
+      if (built.warnings.length) {
+        status.clear();
+        packageHeld.value = {
+          pkg: built.package,
+          format,
+          warnings: built.warnings,
+        };
+        await nextTick();
+        packageSaveButton.value?.focus();
+
+        return;
+      }
+
+      savePackageFile(built.package, format);
+    } catch (err) {
+      status.clear();
+      error.set(
+        err instanceof TypeError
+          ? `Could not download the Builder package. ${err.message}`
+          : store.describeError(err, 'download the Builder package'),
+      );
+    } finally {
+      packageBusy.value = false;
+    }
+  }
+
+  function savePackage() {
+    const held = packageHeld.value;
+
+    packageHeld.value = null;
+    packageButton.value?.focus();
+
+    if (held) {
+      savePackageFile(held.pkg, held.format);
+    }
+  }
+
+  function discardPackage() {
+    packageHeld.value = null;
+    packageButton.value?.focus();
+    status.set('The Builder package was not saved.');
   }
 
   async function downloadImageAs(format) {
@@ -451,5 +651,23 @@
   .builder-download__link .builder-icon {
     margin-inline-start: 0.2em;
     vertical-align: -0.1em;
+  }
+
+  /* The package's ticks, then its format and button, each a row that
+     wraps on its own. */
+  .builder-download__ticks,
+  .builder-download__package-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+  }
+
+  .builder-download__package-actions {
+    margin-top: 0.5rem;
+  }
+
+  .builder-download__held {
+    margin-bottom: 0.75rem;
   }
 </style>

@@ -1718,6 +1718,36 @@ paths:
                 additionalProperties: true
         "403":
           $ref: "#/components/responses/BuilderForbidden"
+  "/schemas/builder/package/v1":
+    get:
+      tags:
+        - Builder
+        - Schemas
+      summary: Get the JSON Schema of Builder packages
+      description: >
+        Requires the `schemas` `get` permission for `builder`, as the
+        document schema does. A Builder package is one JSON or YAML file
+        holding a Builder document, the Scenario and Topology configs and the
+        custom icons it names that were chosen to go with it, and the list of
+        what the diagram needs on a phenix server (`POST /builder/package`
+        makes one).
+      operationId: getBuilderPackageSchema
+      responses:
+        "200":
+          description: >
+            the complete JSON Schema (draft 2020-12) of a package (`$id`
+            `https://phenix.sandia.gov/schemas/builder/package/v1`), which
+            holds the document schema's definitions, with a title, a
+            description and examples for each of its properties; that a
+            carried config is named by the requirements, and what the
+            document schema cannot express, phenix checks beside it
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
   "/builder/drafts":
     get:
       tags:
@@ -2606,6 +2636,115 @@ paths:
           $ref: "#/components/responses/BuilderForbidden"
         "404":
           $ref: "#/components/responses/BuilderNotFound"
+        "413":
+          $ref: "#/components/responses/BuilderTooLarge"
+        "422":
+          $ref: "#/components/responses/BuilderUnprocessable"
+  "/builder/package":
+    post:
+      tags:
+        - Builder
+      summary: Make a Builder package of a document
+      description: >
+        Returns the package of the document the request carries, edits not
+        saved yet included: the document, the sections `include` names, and
+        the requirements, which list the document's scenarios, included
+        topologies, templates, custom icons, the apps of the scenarios that
+        could be read, and the files the document's devices and the packaged
+        configs name (injection sources, app asset directories), whatever the
+        package carries. Requires `configs` `get`. Each Scenario config the
+        document names, and with `topologies` each included topology, is read
+        from the config store under the caller's permissions (`configs`
+        `get` on it and `scenarios` or `topologies` `list`); one that does
+        not exist and one the caller may not read are named in the
+        requirements but not carried, and a warning says so, in the same
+        words for both. An include that is a file path is never read. The
+        `icons` section gives the document a copy of each custom icon it
+        names from the icon library. Configs are carried without their times
+        and the Builder's annotations (`builder-*`). The package never holds
+        the content of a file, a script or an app. Nothing is written. The
+        package answered is always one `POST /builder/package/resolve` takes:
+        a requirements entry the package format refuses (blank, longer than
+        4096 bytes, holding control characters such as a newline in an
+        injection source, or past the first 1000 entries of its list) is left
+        out of the requirements, and a warning names it. Anything else the
+        package would be refused for, such as a stored config without a spec,
+        is answered 422 with the issues. A package larger than 5242880 bytes
+        is refused with 413.
+      operationId: postBuilderPackage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderPackageRequest"
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderPackageResult"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "413":
+          $ref: "#/components/responses/BuilderTooLarge"
+        "422":
+          $ref: "#/components/responses/BuilderUnprocessable"
+  "/builder/package/resolve":
+    post:
+      tags:
+        - Builder
+      summary: Check what a Builder package's diagram needs on this server
+      description: >
+        Reports, for each entry of the package's requirements, whether this
+        server has it. Requires `configs` `get`. The package is the request
+        body, at most 5242880 bytes (413 beyond), decoded strictly (unknown
+        fields are refused) and checked as the package schema describes, else
+        422; a carried config with a Builder annotation (`builder-*`) is
+        refused too. A Scenario or Topology config
+        is `present` when the server has one of that name with the package's
+        spec, or the package carries none; `different` when its spec is
+        another; `missing` when there is none; and `unknown` when the caller
+        may not read it (`configs` `get` on it and `scenarios` or
+        `topologies` `list`), so its existence is not disclosed. A custom
+        icon is compared by its bytes the same way, under `configs` `list`.
+        Disk images are looked for among those `GET /disks` lists the caller
+        (`disks` `list`, then by name), so one the caller may not see is
+        `missing`, as an absent one is; a drive is matched by the image's
+        name or full path, else by its file name, which the `detail` then
+        says (`Matched by file name pkg.qc2; this server's image is
+        /phenix/images/pkg.qc2.`). Apps need `applications` `list`, for the
+        name too. Without `disks` `list` or `applications` `list`, or when
+        the disk images cannot be listed, they are `unknown`. Templates
+        travel in the document and are
+        `present`. Files are never checked and are `unknown`. Nothing is
+        written: the Builder creates a missing config the user ticks through
+        `POST /configs`.
+      operationId: postBuilderPackageResolve
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: >
+                a Builder package, as `GET /schemas/builder/package/v1`
+                describes it
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderPackageDependencies"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
         "413":
           $ref: "#/components/responses/BuilderTooLarge"
         "422":
@@ -4894,6 +5033,82 @@ components:
           type: array
           items:
             type: string
+    BuilderPackageRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        document:
+          $ref: "#/components/schemas/BuilderDocument"
+        include:
+          description: >
+            the sections the package carries, each at most once: `scenarios`
+            (the Scenario configs the document names), `topologies` (the
+            topologies it includes), `icons` (a copy of each custom icon it
+            names) and `images` (the disk images the devices use, listed in
+            the requirements with the hosts that use each)
+          type: array
+          items:
+            type: string
+            enum:
+              - scenarios
+              - topologies
+              - icons
+              - images
+      required:
+        - document
+    BuilderPackageResult:
+      type: object
+      properties:
+        package:
+          description: >
+            the package, as `GET /schemas/builder/package/v1` describes it,
+            ready to be saved as a JSON or YAML file
+          type: object
+          additionalProperties: true
+        warnings:
+          description: what the package names but does not carry, and why
+          type: array
+          items:
+            type: string
+    BuilderPackageDependencies:
+      type: object
+      properties:
+        dependencies:
+          description: >
+            one entry per entry of the package's requirements, by kind in the
+            order scenario, topology, template, icon, image, app, file
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                enum:
+                  - scenario
+                  - topology
+                  - template
+                  - icon
+                  - image
+                  - app
+                  - file
+              name:
+                description: the name or path, as the requirements give it
+                type: string
+              status:
+                type: string
+                enum:
+                  - present
+                  - missing
+                  - different
+                  - unknown
+              packaged:
+                description: whether the package carries it
+                type: boolean
+              detail:
+                description: >
+                  why the status is what it is, such as the devices that use
+                  a disk image, when that needs saying
+                type: string
     BuilderPublishedDocument:
       description: >
         The Builder document a config references: a stored published

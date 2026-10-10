@@ -74,12 +74,18 @@ const documentSchemaPrefix = "https://phenix.sandia.gov/schemas/builder/"
 // [documentSchemaPrefix] but names no Builder document.
 const templateFileSchemaPrefix = documentSchemaPrefix + "templates/"
 
+// packageSchemaPrefix starts the schema URI of every revision of the package
+// format (see [PackageSchemaURI]), which is below [documentSchemaPrefix] but
+// names no Builder document.
+const packageSchemaPrefix = documentSchemaPrefix + "package/"
+
 // IsDocumentText reports whether text, the content of a JSON or YAML file,
 // is a Builder document and not a phenix config: a map whose "$schema" is a
 // Builder document schema URI, of any revision, and that has no "kind". The
 // two share no key, so the content tells them apart where the name of the
 // file does not: the Builder exports a document as plain .json or .yaml. A
-// template file (see [TemplateFileSchemaURI]) is not a Builder document.
+// template file (see [TemplateFileSchemaURI]) and a package (see
+// [PackageSchemaURI]) are not Builder documents.
 //
 // Only those two keys are looked at, and YAML is read leniently, so a
 // document that is not valid, or that uses YAML [JSONFromYAML] refuses, is
@@ -88,7 +94,7 @@ func IsDocumentText(text []byte) bool {
 	schema, kind, ok := textHead(text)
 
 	return ok && !kind && strings.HasPrefix(schema, documentSchemaPrefix) &&
-		!strings.HasPrefix(schema, templateFileSchemaPrefix)
+		!strings.HasPrefix(schema, templateFileSchemaPrefix) && !strings.HasPrefix(schema, packageSchemaPrefix)
 }
 
 // textHead returns the "$schema" of text, the content of a JSON or YAML

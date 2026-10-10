@@ -590,10 +590,22 @@ test.describe('download and upload', () => {
         await expect.soft(link).toHaveAttribute('rel', /\bnoopener\b/);
         await expect.soft(link).toHaveAttribute('rel', /\bnoreferrer\b/);
         await expect.soft(link).toHaveCSS('text-decoration-line', 'underline');
-        // A Tab stop after the format buttons, before Close.
+        // A Tab stop after the format buttons, before the Builder package's
+        // ticks, its format and its button, then Close.
         await dialog.getByTestId('download-gexf').focus();
         await page.keyboard.press('Tab');
         await expect.soft(link).toBeFocused();
+        for (const testId of [
+          'download-package-scenarios',
+          'download-package-topologies',
+          'download-package-icons',
+          'download-package-images',
+          'download-package-format',
+          'download-package',
+        ]) {
+          await page.keyboard.press('Tab');
+          await expect.soft(dialog.getByTestId(testId)).toBeFocused();
+        }
         await page.keyboard.press('Tab');
         await expect
           .soft(dialog.getByRole('button', { name: 'Close', exact: true }))

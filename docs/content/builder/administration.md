@@ -1044,6 +1044,7 @@ for Import and Publish.
 |---|---|---|
 | `GET /schemas/builder/v1` | The JSON Schema of the Builder document | None: `schemas` `get` on `builder` |
 | `GET /schemas/builder/templates/v1` | The JSON Schema of a template file | None: `schemas` `get` on `builder` |
+| `GET /schemas/builder/package/v1` | The JSON Schema of a Builder package | None: `schemas` `get` on `builder` |
 | `GET /builder/drafts` | List your drafts (`drafts`), other users' drafts you can see (`shared`), and drafts this server cannot read (`damaged`) | `list` |
 | `POST /builder/drafts` | Create a draft | `create` |
 | `GET /builder/drafts/{owner}/{draft}` | Read a draft, with its current document | `get` |
@@ -1060,6 +1061,8 @@ for Import and Publish.
 | `POST /builder/generate` | Make a document from a stored Topology or Experiment config, or from a config file, with the [import options](import-upload-download.md#import-options) (`includes`, `copy`, `name`) | `get`; `create` for a config file |
 | `POST /builder/legacy` | Convert a [legacy Builder](legacy.md) diagram, or a Topology config file that holds one, into a document (writes nothing) | `get` and `create` |
 | `POST /builder/export/topology` | The Topology YAML a document would publish as (writes nothing) | `get` |
+| `POST /builder/package` | The [Builder package](import-upload-download.md#moving-a-diagram-with-a-builder-package) of a document, with the sections `include` names (writes nothing) | `get`, and for each config it carries `get` with `scenarios` or `topologies` `list` |
+| `POST /builder/package/resolve` | Which of what a package's diagram needs this server has: `present`, `missing`, `different` or `unknown` (writes nothing) | `get`; `list` for icons, `disks` `list` for disk images, `applications` `list` for apps |
 | `GET /builder/documents` | List the published documents (`source` `store`), and the topologies that name a Builder file instead (`source` `file`, with the `path` and no `id`) | `list` |
 | `GET /builder/documents/{document}` | Read a published document | `get` on its topology |
 | `DELETE /builder/documents/{document}` | Delete a published topology and its published documents | `delete` on the topology |

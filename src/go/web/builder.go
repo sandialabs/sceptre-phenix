@@ -12,6 +12,7 @@ import (
 
 	bapi "phenix/api/builder"
 	"phenix/api/config"
+	"phenix/api/disk"
 	"phenix/store"
 	bdoc "phenix/types/builder"
 	putil "phenix/util"
@@ -133,6 +134,12 @@ type builderAPI struct {
 	// start, as the server's collections of templates (see
 	// [bapi.Service.LoadServerTemplates]); "" reads none.
 	templateFiles string
+	// diskImages lists this server's disk images, which a package's diagram
+	// may need (see [builderAPI.resolvePackage]).
+	diskImages func() ([]disk.Details, error)
+	// appNames lists the apps this server runs, which a package's diagram
+	// may need.
+	appNames func() []string
 }
 
 // builderOption configures a [builderAPI].
@@ -159,6 +166,8 @@ func newBuilderAPI(opts ...builderOption) (*builderAPI, error) {
 		publish:       newBuilderPublishOps(),
 		documentFiles: builderDocumentFiles,
 		templateFiles: common.BuilderTemplatesDir(),
+		diskImages:    builderDiskImages,
+		appNames:      builderAppNames,
 	}
 
 	for _, opt := range opts {
@@ -870,6 +879,10 @@ const (
 	// template file format.
 	builderTemplateSchemaPath = "/schemas/builder/templates/v1"
 
+	// builderPackageSchemaPath is the path of the schema route of the
+	// package format.
+	builderPackageSchemaPath = "/schemas/builder/package/v1"
+
 	// builderIconsPath is the path of the icon library, whose routes are
 	// this path and the paths below it.
 	builderIconsPath = builderRoutePrefix + "icons"
@@ -881,7 +894,7 @@ const (
 
 // builderResponseHeaders sets the security headers of the responses to
 // requests under the Builder's paths: every path below /api/v1/builder/, and
-// the two schema routes. It goes by the request's path, not by the route it
+// the schema routes of the document, template file and package formats. It goes by the request's path, not by the route it
 // matched, and leaves every other path alone. [builderAPI.routes] makes it a
 // middleware of the API router, so it also covers what the middleware after
 // it answers, and wraps the router's handlers of a request that matches no
@@ -896,7 +909,7 @@ func builderResponseHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if path, ok := strings.CutPrefix(r.URL.Path, builderAPIPrefix); ok {
 			if strings.HasPrefix(path, builderRoutePrefix) || path == builderSchemaPath ||
-				path == builderTemplateSchemaPath {
+				path == builderTemplateSchemaPath || path == builderPackageSchemaPath {
 				w.Header().Set("X-Content-Type-Options", "nosniff")
 			}
 
@@ -944,6 +957,8 @@ func (b *builderAPI) routes(router *mux.Router) {
 		Methods("GET", "OPTIONS")
 	router.Handle(builderTemplateSchemaPath, weberror.ErrorHandler(b.getTemplateSchema)).
 		Methods("GET", "OPTIONS")
+	router.Handle(builderPackageSchemaPath, weberror.ErrorHandler(b.getPackageSchema)).
+		Methods("GET", "OPTIONS")
 	router.Handle("/builder/drafts", weberror.ErrorHandler(b.listDrafts)).
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder/drafts", weberror.ErrorHandler(b.createDraft)).
@@ -979,6 +994,10 @@ func (b *builderAPI) routes(router *mux.Router) {
 	router.Handle("/builder/legacy", weberror.ErrorHandler(b.convertLegacy)).
 		Methods("POST", "OPTIONS")
 	router.Handle("/builder/export/topology", weberror.ErrorHandler(b.exportTopology)).
+		Methods("POST", "OPTIONS")
+	router.Handle("/builder/package", weberror.ErrorHandler(b.buildPackage)).
+		Methods("POST", "OPTIONS")
+	router.Handle("/builder/package/resolve", weberror.ErrorHandler(b.resolvePackage)).
 		Methods("POST", "OPTIONS")
 	router.Handle("/builder/documents", weberror.ErrorHandler(b.listDocuments)).
 		Methods("GET", "OPTIONS")

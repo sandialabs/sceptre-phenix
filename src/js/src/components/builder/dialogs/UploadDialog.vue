@@ -26,12 +26,26 @@
   server refuses, or has with other bytes under that name, stays in the
   draft, and the dialog shows a warning for it, as it shows the warnings of
   a conversion, before the draft is made.
+
+  A Builder package (see package.js), recognized by its $schema, is decoded
+  as strictly as a document, and the server says which of what its diagram
+  needs it has (POST /builder/package/resolve). That list replaces the form
+  (see PackageImport). Continue to editor creates the configs the user
+  ticked, one at a time through POST /configs, puts the custom icons the
+  diagram carries into the icon library, and opens the diagram as a new
+  draft, as any upload does; the diagram's references are never rewritten.
+  A config that could not be created, and an icon warning, are shown first,
+  as an upload's warnings are. Cancel, or closing the dialog, leaves the
+  open draft as it is. While Continue creates the configs and adds the
+  icons, the dialog stays open: Cancel is unavailable and says what the
+  dialog is doing, and Close, Escape and a click outside do nothing, so
+  that no config is created out of sight.
 -->
 <template>
   <builder-dialog
     title="Upload diagram"
     title-id="upload-dialog-title"
-    @close="$emit('close')">
+    @close="requestClose">
     <import-warnings
       v-if="warnings.length"
       ref="warningsView"
@@ -40,6 +54,15 @@
       :warnings="warnings"
       @cancel="$emit('close')"
       @continue="proceed" />
+
+    <package-import
+      v-else-if="packageView"
+      ref="packageImportView"
+      :dependencies="packageView.dependencies"
+      :busy="busy"
+      :progress="status.text"
+      @cancel="requestClose"
+      @continue="continuePackage" />
 
     <form v-else @submit.prevent="submit">
       <fieldset class="builder-field">
@@ -186,6 +209,7 @@
 
   import BuilderDialog from '../BuilderDialog.vue';
   import ImportWarnings from './ImportWarnings.vue';
+  import PackageImport from './PackageImport.vue';
   import {
     LEGACY_SOURCE,
     fileBaseName,
@@ -196,9 +220,16 @@
     useMessage,
   } from './message.js';
 
-  import { count, describeImport } from '@/builder/announce.js';
+  import { count, describeImport, listOf } from '@/builder/announce.js';
   import { parseImport, tooLargeText } from '@/builder/decode.js';
   import { iconLibrary, ingestIcons } from '@/builder/iconLibrary.js';
+  import {
+    configNoun,
+    createTickedConfigs,
+    decodePackage,
+    isPackageValue,
+    readDependencies,
+  } from '@/builder/package.js';
   import { useBuilderStore } from '@/builder/store.js';
   import { hasControlCharacters } from '@/builder/text.js';
 
@@ -219,6 +250,10 @@
   const busy = ref(false);
   const warnings = ref([]);
   const warningsView = ref(null);
+  // An uploaded package, what the server says its diagram needs, and the
+  // name of its file, while that list is shown (see PackageImport).
+  const packageView = ref(null);
+  const packageImportView = ref(null);
   // A conversion, or an uploaded document whose custom icons gave warnings
   // (see ingestIcons), held until the user continues; pendingKind says
   // which: 'legacy' or 'upload'.
@@ -231,6 +266,19 @@
   onBeforeUnmount(() => {
     closed = true;
   });
+
+  // Whether Continue is creating a package's configs and adding its icons:
+  // writes to the server that closing could not stop, so the dialog stays
+  // open until they are done and says what came of them.
+  const creating = ref(false);
+
+  function requestClose() {
+    if (creating.value) {
+      return;
+    }
+
+    emit('close');
+  }
 
   // `file` is the chosen file's state: '' (none), 'read' or 'too-large',
   // and `fileName` the name of the file read.
@@ -437,8 +485,10 @@
 
   // Loads an uploaded document and has its draft made. Upload always starts
   // a new draft: the current draft is detached before the uploaded content
-  // is loaded, so a later edit can never overwrite that draft.
-  function openUploaded({ document, sourceFile }) {
+  // is loaded, so a later edit can never overwrite that draft. The configs
+  // a package's upload created (`created`, as the dialog names them) are
+  // announced with it.
+  function openUploaded({ document, sourceFile, created = [] }) {
     store.newDocument({ name: document.metadata?.name });
 
     const opened = store.setDocument(document, {
@@ -447,15 +497,130 @@
 
     if (!opened) {
       warnings.value = [];
+      packageView.value = null;
       status.clear();
       error.set(store.error);
 
       return;
     }
 
+    if (created.length) {
+      store.announce(`Created ${listOf(created)} on this server.`);
+    }
+
     // Only a chosen file has a name to record.
     emit('uploaded', sourceFile ? { sourceFile } : {});
     emit('close');
+  }
+
+  // Reads an uploaded package and asks the server which of what its
+  // diagram needs it has; that list then replaces the form.
+  async function openPackage(value) {
+    let pkg;
+
+    try {
+      pkg = decodePackage(value);
+    } catch (err) {
+      fail(
+        `This Builder package cannot be opened. ${err.message}`,
+        form.source,
+      );
+
+      return;
+    }
+
+    const sourceFile = form.source === 'file' ? form.fileName : '';
+    let dependencies;
+
+    busy.value = true;
+    status.set('Checking what the package needs on this server…');
+
+    try {
+      dependencies = readDependencies(await store.resolvePackage(pkg));
+    } catch (err) {
+      if (!closed) {
+        status.clear();
+        fail(store.describeError(err, 'check the package'), '');
+      }
+
+      return;
+    } finally {
+      busy.value = false;
+    }
+
+    if (closed) {
+      return;
+    }
+
+    status.set(`The diagram needs ${count(dependencies.length, 'item')}.`);
+    packageView.value = { pkg, dependencies, sourceFile };
+
+    // The list replaces the form, and the button that had focus with it.
+    await nextTick();
+    packageImportView.value?.focusFirst();
+  }
+
+  // Creates the configs of the package the user ticked, puts the custom
+  // icons its diagram carries into the icon library, then opens the
+  // diagram as a new draft. What could not be created or added is shown
+  // first; the configs created stay whatever the user does next.
+  async function continuePackage(ticked) {
+    if (busy.value || !packageView.value) {
+      return;
+    }
+
+    const { pkg, sourceFile } = packageView.value;
+    const found = [];
+    const upload = { document: pkg.document, sourceFile, created: [] };
+
+    busy.value = true;
+    creating.value = true;
+    status.set(
+      ticked.length
+        ? `Creating ${count(ticked.length, 'config')} on this server…`
+        : 'Opening the diagram…',
+    );
+
+    try {
+      const create = (config) => store.createPackagedConfig(config);
+      const result = await createTickedConfigs(pkg, ticked, create);
+
+      upload.created = result.created.map(
+        (dependency) => `${configNoun(dependency.kind)} ${dependency.name}`,
+      );
+      result.failed.forEach(({ dependency, error: failure }) => {
+        found.push(
+          store.describeError(
+            failure,
+            `create ${configNoun(dependency.kind)} ${dependency.name}`,
+          ),
+        );
+      });
+
+      if (carriesIcons(pkg.document)) {
+        const ingested = await ingestIcons(pkg.document, iconLibrary);
+
+        upload.document = ingested.doc;
+        found.push(...ingested.warnings);
+      }
+    } finally {
+      busy.value = false;
+      creating.value = false;
+      status.clear();
+    }
+
+    if (closed) {
+      return;
+    }
+
+    if (found.length) {
+      packageView.value = null;
+      await hold('upload', upload, found);
+
+      return;
+    }
+
+    openUploaded(upload);
   }
 
   async function submit() {
@@ -511,6 +676,16 @@
         form.file === 'too-large' ? TOO_LARGE : 'Choose a file to upload.',
         'file',
       );
+      return;
+    }
+
+    // A Builder package names its own schema; anything else is read as a
+    // Builder document.
+    const raw = parseImport(form.text, { as: 'raw' });
+
+    if (raw.ok && isPackageValue(raw.value)) {
+      await openPackage(raw.value);
+
       return;
     }
 
