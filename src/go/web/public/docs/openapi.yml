@@ -2225,9 +2225,31 @@ paths:
         `partial`. When the published document was stored but content it
         replaces could not be removed, the publication goes on and answers
         with a `Warning` header and a warning in the result.
+
+        With `"dryRun": true` the request is a dry run: it needs the same
+        permissions, makes every check of the publication on the draft's
+        current snapshot, writes nothing (no published document, config,
+        scenario annotation, experiment or draft record), needs no If-Match,
+        and answers 200 with a `BuilderPublishPreview`: what the
+        publication would change, the warnings it would give, and, in
+        `errors`, the refusal a publication would answer with 400, 409 or
+        422. A 403, a 404, a body that is not a publish request (400) and a
+        server failure keep their status. It takes no lock, so what it
+        reports may change before the publication is sent. The Publish
+        dialog shows it as What publishing changes.
       operationId: postBuilderDraftPublish
       parameters:
-        - $ref: "#/components/parameters/BuilderIfMatch"
+        - name: If-Match
+          in: header
+          description: >
+            The ETag of the draft revision the publication is based on, as
+            for every Builder mutation (`BuilderIfMatch`): required, except
+            for a dry run, which writes nothing and ignores it. A missing or
+            malformed one is answered with 400 before the body is decoded,
+            unless the body asks for a dry run.
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -2236,7 +2258,9 @@ paths:
               $ref: "#/components/schemas/BuilderPublishRequest"
       responses:
         "200":
-          description: publication succeeded
+          description: >
+            publication succeeded, or, for a dry run, what it would change
+            (`BuilderPublishPreview`, status `preview`)
           headers:
             ETag:
               $ref: "#/components/headers/BuilderETag"
@@ -2245,7 +2269,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BuilderPublishResult"
+                oneOf:
+                  - $ref: "#/components/schemas/BuilderPublishResult"
+                  - $ref: "#/components/schemas/BuilderPublishPreview"
         "400":
           $ref: "#/components/responses/BuilderBadRequest"
         "403":
@@ -4911,9 +4937,178 @@ components:
           $ref: "#/components/schemas/BuilderPublishScenario"
         experiment:
           $ref: "#/components/schemas/BuilderPublishTarget"
+        dryRun:
+          description: >
+            make every check of the publication, write nothing, and answer
+            with what it would change (`BuilderPublishPreview`). A dry run
+            needs no If-Match.
+          type: boolean
+          default: false
       required:
         - mode
         - topology
+    BuilderPublishPreview:
+      description: >
+        the answer of a dry run of a publication: what it would change, the
+        warnings it would give, and the refusal it would be answered with.
+        Nothing is written.
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - preview
+        changes:
+          description: >
+            what publishing would change, compared with what is stored now;
+            null when the publication would be refused
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/BuilderPublishChanges"
+        warnings:
+          description: what the publication would warn of, each with its code
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderIssue"
+        errors:
+          description: >
+            why the publication would be refused, each an error with its code:
+            what a publish answers with 400 (a target name), 409 or 422, such
+            as `publish.topology.exists`, `publish.scenario.missing`, or the
+            issues of `publish.blocked`. Refusals of who may do what (403, and
+            404 for a draft the caller may not see) keep their status.
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderIssue"
+    BuilderPublishChanges:
+      description: >
+        what publishing a draft to a target changes, compared with what is
+        stored now. Every list is sorted by name.
+      type: object
+      properties:
+        topology:
+          $ref: "#/components/schemas/BuilderConfigChange"
+        includes:
+          description: the topologies the Topology config includes (`spec.includeTopologies`)
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderIncludeChange"
+        scenarios:
+          description: >
+            the Scenario configs the document lists, each of which gets the
+            topology in its `topology` annotation unless it names it already
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderScenarioAnnotation"
+        images:
+          description: >
+            the disk images the devices of the stored topology use, compared
+            with those the published topology's devices use
+            (`hardware.drives[].image`)
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderImageChange"
+        experiment:
+          description: the Experiment config, for a `topology-experiment` publication only
+          allOf:
+            - $ref: "#/components/schemas/BuilderConfigChange"
+        vlanAliases:
+          description: >
+            the experiment's VLAN aliases (`spec.vlans.aliases`), each added
+            when the experiment is created; for a `topology-experiment`
+            publication only, and left out when there is none
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderVLANAliasChange"
+    BuilderConfigChange:
+      type: object
+      properties:
+        name:
+          type: string
+        action:
+          description: >
+            `create`, `update`, or `unchanged` when the config already holds
+            this publication, so nothing is written to it
+          type: string
+          enum:
+            - create
+            - update
+            - unchanged
+    BuilderIncludeChange:
+      type: object
+      properties:
+        name:
+          description: included topology
+          type: string
+        change:
+          type: string
+          enum:
+            - added
+            - removed
+            - kept
+    BuilderScenarioAnnotation:
+      type: object
+      properties:
+        name:
+          description: Scenario config name
+          type: string
+        change:
+          description: >
+            `annotate` adds the topology to the scenario's `topology`
+            annotation; `unchanged` names a scenario that names it already
+          type: string
+          enum:
+            - annotate
+            - unchanged
+    BuilderImageChange:
+      type: object
+      properties:
+        name:
+          description: the image as the drives name it
+          type: string
+        change:
+          type: string
+          enum:
+            - added
+            - removed
+            - kept
+        devices:
+          description: >
+            the hostnames of the devices that use the image once published,
+            or, for a removed image, of those that used it
+          type: array
+          items:
+            type: string
+        onServer:
+          description: >
+            whether the server has a disk image of that file name, as
+            GET /disks lists them; null when unknown (the caller may not list
+            disks or may not list that file name, whether the server has it
+            or not, or the listing failed or is empty, as it is without
+            minimega)
+          type: boolean
+          nullable: true
+    BuilderVLANAliasChange:
+      type: object
+      properties:
+        name:
+          description: network name
+          type: string
+        from:
+          description: the experiment's alias now, null for none
+          type: integer
+          nullable: true
+        to:
+          description: the alias the publication writes, null for none
+          type: integer
+          nullable: true
+        change:
+          type: string
+          enum:
+            - added
+            - removed
+            - changed
+            - kept
     BuilderPublishStage:
       type: object
       properties:

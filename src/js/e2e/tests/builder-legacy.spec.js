@@ -14,6 +14,7 @@ const {
   API,
   expect,
   expectNoFatal,
+  isPublishResponse,
   openConfigs,
   test,
   uniqueName,
@@ -754,16 +755,24 @@ test('a topology with a legacy diagram converts from a file and from the store, 
         'A topology with this name exists and will be updated. ' +
           'Its legacy Builder diagram is replaced by this diagram.',
       );
+    // What publishing changes lists the warning the publication gives,
+    // with its code, before anything is written.
+    const previewWarning = page
+      .getByTestId('publish-preview-issues-warning')
+      .getByTestId('issue')
+      .filter({ hasText: 'was replaced by this diagram' });
+    await expect
+      .soft(previewWarning.getByTestId('issue-message'))
+      .toHaveText(
+        `Warning: The legacy Builder diagram of topology ${name} was replaced by this diagram.`,
+      );
+    await expect
+      .soft(previewWarning.getByTestId('issue-code'))
+      .toHaveText('publish.legacy.replaced');
     const submit = page.getByTestId('publish-submit');
     await expect(submit).toHaveText('Update topology');
 
-    const published = page.waitForResponse(
-      (candidate) =>
-        candidate.request().method() === 'POST' &&
-        /\/builder\/drafts\/[^/]+\/[^/]+\/publish$/.test(
-          new URL(candidate.url()).pathname,
-        ),
-    );
+    const published = page.waitForResponse(isPublishResponse);
     await submit.click();
     // Replacing a config cannot be undone, so Publish asks first.
     const confirm = page.getByRole('alertdialog');
@@ -857,13 +866,7 @@ test('a topology with a legacy diagram converts from a file and from the store, 
           'Its legacy Builder diagram could not be read and is removed.',
       );
 
-    const published = page.waitForResponse(
-      (candidate) =>
-        candidate.request().method() === 'POST' &&
-        /\/builder\/drafts\/[^/]+\/[^/]+\/publish$/.test(
-          new URL(candidate.url()).pathname,
-        ),
-    );
+    const published = page.waitForResponse(isPublishResponse);
     await page.getByTestId('publish-submit').click();
     await page.getByTestId('confirm-accept').click();
     const answered = await published;

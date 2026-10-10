@@ -97,6 +97,52 @@ work the same way.
     rename the diagram to match it (see
     [Renaming the diagram](editor.md#renaming-the-diagram)).
 
+### What publishing changes
+
+Above the buttons, **What publishing changes** lists what publishing to the
+names in the form would change, compared with what the server holds now. The
+server works it out from the draft's last saved snapshot, with the same
+checks as Publish, and writes nothing. The dialog reads it when it opens,
+again after you stop typing in the form or change a choice, and again after
+each save of the draft. From the change until the new lists arrive, the part
+is marked as busy, which screen readers announce, and the lists it shows are
+those for the form as it was. It never makes **Publish** unavailable.
+
+Each list says its changes in words:
+
+- **Configs**: "Creates Topology config riverside-water", "Updates Topology
+  config riverside-water", or "Topology config riverside-water is unchanged:
+  it already holds this diagram" when it already holds the saved snapshot.
+  With an experiment, the same for the Experiment config.
+- **Included topologies**: "Adds included topology corp-services",
+  "Removes included topology …" or "Keeps included topology …", compared with
+  the topology's `includeTopologies` now.
+- **Scenarios**: "Adds topology riverside-water to Scenario riverside-water",
+  or "Scenario riverside-water already names topology riverside-water".
+- **Disk images**: each image the devices use, compared with those the
+  topology's devices use now, and the devices that use it: "Disk image
+  ubuntu.qc2 is new (used by web-01 and ws-01)", "… is still used (by …)" or
+  "… is no longer used (was used by …)". When your role can list the
+  server's disk images, the line ends "; the server has it" or "; the server
+  does not have it". Without minimega running, without the `disks` `list`
+  permission, or for an image whose name your role may not list, it says
+  neither.
+- **VLAN aliases**, with an experiment: "VLAN alias for network CORP is set to
+  120", "VLAN alias for network OT changes from 101 to 120", "VLAN alias 5
+  for network DMZ is removed" or "VLAN alias for network EXP stays 0". A new
+  experiment gets every alias.
+
+When there are no included topologies, scenarios, disk images or VLAN
+aliases, it says "Nothing outside the Topology changes." Below the lists, it
+shows the warnings publishing would give, as the checks do, under a heading
+such as "1 warning", each with the server's code, for example "The legacy
+Builder diagram of topology riverside-water was replaced by this diagram."
+(`publish.legacy.replaced`). When the server would refuse the publish, it
+lists why instead, under a heading such as "1 error blocks publishing",
+before any warnings. A name that breaks the naming
+rule shows why under the heading, and nothing is asked of the server. When
+the server cannot be asked, the part says so and that you can still publish.
+
 ### Create or update
 
 The hint under **Topology name** says what publishing does with that name.

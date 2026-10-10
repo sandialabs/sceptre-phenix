@@ -981,6 +981,74 @@ again. A draft that published the topology, was imported from it, or was
 opened from its published diagram creates it again when it publishes: a source
 config deleted since then passes the source freshness check.
 
+## Publish preview (dry run)
+
+`POST /builder/drafts/{owner}/{draft}/publish` with `"dryRun": true` in the
+intent (`builderPublishRequest.DryRun`, `previewPublish` in
+`web/builder_preview.go`) needs no If-Match and takes no publish lock. A
+publish still answers a missing or malformed If-Match (400) before it decodes
+the body; only a request without a valid one has its body read first for
+`dryRun` (`builderPublishIntent`; `builderDryRunRequested` decodes loosely
+and puts the body back for the strict decode), and is answered with that 400
+unless it asks for a dry run. It
+authorizes the draft (`builderVerbUpdate`) and the targets and runs
+`preflightPublish` on the current snapshot as a publish does, writes nothing
+(no published document, config, scenario, experiment or `MarkPublished`),
+and answers 200 `{status: "preview", changes, warnings, errors}`. A refusal a
+publish answers with 400 (a target name), 409 or 422 is listed in `errors`
+(the refusal's issues, `bdoc.ErrorIssues`, else one issue of its code and
+words, each severity `error`) with `changes: null`
+(`builderPreviewRefusal`); 401, 403, 404, a body strict decoding refuses and
+5xx keep their status. `warnings` are the projection's plus those a publish
+adds once it writes the topology (`publish.file.unchanged`,
+`publish.legacy.replaced`/`removed`).
+
+`changes` is `bapi.DescribePublishChanges(PublishState)` in
+`api/builder/changes.go`, which reads and writes nothing: `topology` and
+`experiment` (`{name, action}`, action `create`, `update` or `unchanged` when
+the config already holds the publication: `plan.topology.applied`,
+`plan.experiment.applied`), `includes` (`spec.includeTopologies` of the
+stored topology against the projection's: `added`, `removed`, `kept`),
+`scenarios` (`annotate`, or `unchanged` when `HasTopologyAnnotation`),
+`images` (`hardware.drives[].image` of the stored topology's devices against
+the projection's, with the hostnames using each, those of the stored
+topology for a removed one, and `onServer`), `vlanAliases` (experiment only,
+left out when empty: `spec.vlans.aliases` of the stored experiment against
+`projection.VLANAliases`, `{name, from, to, change}`, all `added` on
+create). Lists are sorted by name. `onServer` compares the image's file name
+(`path.Base`, as `validate.js` does) with the names of every image the
+server has (`builderAPI.listDisks`, `disk.GetImages("")`; tests set
+`withBuilderDisks`), and is null without `disks` `list`, when the listing
+fails, when it lists none (minimega not running), and for an image whose
+file name the caller may not list (`hideUnlistedImages`, as `GET /disks`
+leaves it out), whether the server has it or not. `PublishChanges.Lines()`
+words each change as the dialog does (`publishChangeLines` in
+`publish.js`), ending "Nothing outside the Topology changes" when the four
+lists are empty. `planTopology` never fails on it: when a stored topology
+cannot be decoded for it, `TopologyPublication.Changes` is nil and only a
+dry run warns (`publish.changes.unknown`).
+
+The Publish dialog's What publishing changes (testids `publish-preview`,
+lists `publish-preview-configs`, `-includes`, `-scenarios`, `-images`,
+`-aliases`; `publish-preview-blocked`, `publish-preview-error`,
+`publish-preview-issues`) calls `store.previewPublish(intent)` once the
+lists it reads on open settle, 300 ms after a change of the form or of
+`store.sources`/`store.documents`, after each save (`store.etag`), and after
+Back (`usePublishPreview` in `dialogs/publishPreview.js`). The store drops an
+answer a later preview made stale (`previewRequest`, and a change of draft)
+and returns a failure as `{failed, message}` without setting `store.error`;
+the dialog also drops an answer asked for before a later change, once it
+closed, or for an intent it could not build (shown as
+`publish-preview-blocked`, nothing sent). The section is `aria-busy` from
+the change that schedules a preview (through the 300 ms pause) until the
+answer, keeps the last answer meanwhile, and says it was read again through
+a polite live line (no second `status` role) that counts the warnings. The
+answer's `errors`, then `warnings`, are listed below the changes in
+`BuilderIssueList` (`publish-preview-issues`, `-error`, `-warning`, with
+codes). It is hidden for a read-only draft and never disables Publish. e2e helpers that wait for a
+publish use `isPublishRequest`/`isPublishResponse` in `builder-support.js`,
+which leave out dry runs (`isPublishPreview`).
+
 ## The builder-doc reference
 
 `metadata.annotations["builder-doc"]` of a Topology config is a map with the
@@ -1301,8 +1369,12 @@ running `phenix ui`.
   An update keeps the topology's other annotations and an existing `path`.
 - `--dry-run` runs every check, writes nothing, and prints a report on
   stdout (Document, File, Digest, Document ID, optional Path, Topology with
-  "would be created/updated/left as it is", Nodes, Warnings). A refusal
-  prints the error and exits 1. It is the way to get a file's digest.
+  "would be created/updated/left as it is", Nodes, Changes, Warnings).
+  Changes are `TopologyPublication.Changes.Lines()` (see
+  [Publish preview (dry run)](#publish-preview-dry-run)): the topology,
+  its includes and its disk images, with no scenario, no experiment and no
+  `onServer` (the CLI reads no disk list). A refusal prints the error and
+  exits 1. It is the way to get a file's digest.
 - `--record-path` also writes `path`: the absolute, clean path of the input
   file (must pass the path rule). Outside the base directory or below the
   mount directory the command still succeeds and warns that the server does
@@ -1878,7 +1950,7 @@ All routes are relative to `/api/v1`.
 | `GET /builder/drafts/{owner}/{draft}/snapshots/{snapshot\|current}` | Read one snapshot's document |
 | `DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Delete a version other than the current one (needs `If-Match`) |
 | `PATCH/PUT /builder/drafts/{owner}/{draft}/cursor` | Undo and redo: move the draft's current snapshot |
-| `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the topology and experiment configs, and add the topology to the document's scenarios |
+| `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the topology and experiment configs, and add the topology to the document's scenarios; with `dryRun`, say what that would change and write nothing |
 | `GET/PUT /builder/drafts/{owner}/{draft}/shares` | Read or replace who a draft is shared with (owner only) |
 | `GET /builder/drafts/{owner}/{draft}/shares/candidates` | Every account that can receive a share of the draft |
 | `GET /builder/sources` | Configs a document can be generated from or publish to; topology rows have `includeCount` |
@@ -2013,13 +2085,13 @@ Read this section before changing any file listed below.
 | Area | Files |
 |---|---|
 | Document model, generation, publishing to configs, validation, JSON Schema, YAML reading | `src/go/types/builder/` (`document.go`, `generate.go`, `detach.go` (combine, copy), `topology.go`, `validate.go`, `schema.go`, `yaml.go`, `customicons.go`, `template.go`, `templatefile.go` and `templatefile_schema.go` (template files), `legacy_xml.go` and `legacy.go` (legacy conversion)) |
-| Drafts, snapshots, sharing, published documents, libraries, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`, `icons.go`, `templates.go`, `templatefiles.go` (the server collections read at start), `scope.go`; `config_hook.go` checks a topology's `builder-doc` and removes a deleted or renamed topology's documents; `file.go` reads Builder files; `publish.go` publishes a document as a topology for the CLI, and `ReplaceLegacyDiagram`) |
+| Drafts, snapshots, sharing, published documents, libraries, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`, `icons.go`, `templates.go`, `templatefiles.go` (the server collections read at start), `scope.go`; `config_hook.go` checks a topology's `builder-doc` and removes a deleted or renamed topology's documents; `file.go` reads Builder files; `publish.go` publishes a document as a topology for the CLI, and `ReplaceLegacyDiagram`; `changes.go` says what a publication changes, `DescribePublishChanges`) |
 | Built-in Builder role and its start-up check | `src/go/api/config/default/builder.yml`, `src/go/web/rbac/migrations.go` (`EnsureBuilderRolePermissions`), `src/go/web/init.go` |
 | `builder-doc` codec (nested in JSON and YAML, a string in memory and in the store) | `src/go/store/types.go` |
 | `phenix builder publish`, and `phenix config create` recognizing Builder documents | `src/go/cmd/builder.go`, `src/go/cmd/config.go` |
 | `phenix builder drafts` and `phenix builder templates`, the REST client they share | `src/go/cmd/builder_drafts.go`, `src/go/cmd/builder_templates.go`, `src/go/cmd/builder_client.go` |
 | Record store for drafts (BoltDB and etcd, etcd compaction) | `src/go/store/*record*.go`, `src/go/store/etcd_record_compact.go` |
-| HTTP routes, authorization and RBAC | `src/go/web/builder*.go` (`builder.go` holds the authorization model, the routes and the response headers; `builder_legacy.go`, `builder_icons.go`, `builder_templates.go`, `builder_experiments.go` (the `experiment` link); `builder_assets.go` serves the editor's files, which `src/js/plugins/builder-assets.js` compresses in the UI build) |
+| HTTP routes, authorization and RBAC | `src/go/web/builder*.go` (`builder.go` holds the authorization model, the routes and the response headers; `builder_legacy.go`, `builder_icons.go`, `builder_templates.go`, `builder_experiments.go` (the `experiment` link); `builder_preview.go` (the dry run of a publication); `builder_assets.go` serves the editor's files, which `src/js/plugins/builder-assets.js` compresses in the UI build) |
 | Editor page and drafts landing | `src/js/src/views/Builder.vue`, `src/js/src/components/builder/BuilderDrafts.vue`, `BuilderTemplates.vue` (the Node Templates tab), `BuilderBulkBar.vue`, `BuilderBulkSummary.vue`, `BuilderHeaderButtons.vue` (the buttons both headers share) |
 | Configs page links | `src/js/src/components/configs/ConfigsList.vue`, `ConfigsEditor.vue`, `src/js/src/builder/configs.js` |
 | Editor components | `src/js/src/components/builder/` (canvas, Inspector, outline, toolbar, side columns, `BuilderSignIn.vue`, dialogs, nodes, edges) |

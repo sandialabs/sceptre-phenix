@@ -954,6 +954,70 @@ export function readPublishResult(response) {
   };
 }
 
+// The entries of a list of what publishing changes that name something.
+function namedEntries(list) {
+  return (Array.isArray(list) ? list : []).filter(
+    (entry) => entry && typeof entry.name === 'string',
+  );
+}
+
+// A config of what publishing changes, or null for none.
+function configChange(value) {
+  return value && typeof value.name === 'string'
+    ? { name: value.name, action: String(value.action || '') }
+    : null;
+}
+
+// A VLAN alias of what publishing changes, or null for none.
+function aliasValue(value) {
+  return Number.isInteger(value) ? value : null;
+}
+
+/**
+ * Normalizes the answer of a dry run of a publication (see
+ * DescribePublishChanges in api/builder/changes.go): what publishing would
+ * change, or null when the server would refuse it, and the warnings and the
+ * refusal it would answer with, each an issue (see readIssues).
+ *
+ * @param {object} response axios-like response
+ * @returns {{changes: object|null, warningIssues: object[],
+ *   errorIssues: object[]}} changes: topology and experiment ({name,
+ *   action}, experiment null without one), includes, scenarios, images
+ *   (devices, and onServer true, false or null when unknown) and
+ *   vlanAliases (from and to, null for none)
+ */
+export function readPublishPreview(response) {
+  const data = response?.data || {};
+  const changes = data.changes;
+  const topology = configChange(changes?.topology);
+
+  return {
+    changes: topology
+      ? {
+          topology,
+          experiment: configChange(changes.experiment),
+          includes: namedEntries(changes.includes),
+          scenarios: namedEntries(changes.scenarios),
+          images: namedEntries(changes.images).map((image) => ({
+            ...image,
+            devices: (Array.isArray(image.devices) ? image.devices : []).filter(
+              (device) => typeof device === 'string',
+            ),
+            onServer:
+              typeof image.onServer === 'boolean' ? image.onServer : null,
+          })),
+          vlanAliases: namedEntries(changes.vlanAliases).map((alias) => ({
+            ...alias,
+            from: aliasValue(alias.from),
+            to: aliasValue(alias.to),
+          })),
+        }
+      : null,
+    warningIssues: readIssues(data.warnings, 'warning'),
+    errorIssues: readIssues(data.errors, 'error'),
+  };
+}
+
 /**
  * Creates an API client bound to an HTTP implementation.
  *
@@ -1165,6 +1229,26 @@ export function createBuilderApi(http = axiosInstance) {
       }
 
       return { result: readPublishResult(response), etag: readETag(response) };
+    },
+
+    /**
+     * Asks what publishing the snapshot the draft cursor points at with this
+     * intent would change: a dry run of the publish route, which writes
+     * nothing and so needs no If-Match. A publication the server would
+     * refuse is answered with no changes and the refusal in errorIssues.
+     *
+     * @param {string} owner
+     * @param {string} id
+     * @param {object} intent mode, topology, scenario, experiment
+     * @returns {Promise<object>} readPublishPreview()
+     */
+    async previewPublish(owner, id, intent) {
+      const response = await http.post(publishPath(owner, id), {
+        ...publishIntent(intent),
+        dryRun: true,
+      });
+
+      return readPublishPreview(response);
     },
 
     async getSources() {

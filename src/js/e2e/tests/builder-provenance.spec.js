@@ -14,6 +14,7 @@ const {
   expect,
   expectDetail,
   expectNoFatal,
+  isPublishResponse,
   labDocument,
   nextSecond,
   provenanceOf,
@@ -196,11 +197,7 @@ test('Edit as a draft of a published diagram keeps who made and last edited it, 
     await expect(dialog.getByTestId('publish-name')).toHaveValue(name);
     const submit = dialog.getByTestId('publish-submit');
     await expect(submit).toHaveText('Update topology');
-    const answered = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        new URL(response.url()).pathname.endsWith('/publish'),
-    );
+    const answered = page.waitForResponse(isPublishResponse);
     await submit.click();
     await page.getByTestId('confirm-accept').click();
     const response = await answered;

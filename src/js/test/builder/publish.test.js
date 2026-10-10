@@ -1,10 +1,14 @@
 import { describe, expect, test, vi } from 'vitest';
 
+import { createBuilderApi, readPublishPreview } from '@/builder/api.js';
 import {
   CONFIG_NAME_RULE,
   LEGACY_TOKEN,
   actionFor,
+  aliasChangeText,
   buildPublishIntent,
+  changedItems,
+  configChangeText,
   configName,
   configNameHint,
   configNameProblem,
@@ -12,14 +16,20 @@ import {
   describePublishResult,
   draftCanUpdate,
   hasLegacyDiagram,
+  imageChangeText,
+  includeChangeText,
   keptIncludesText,
   legacyDiagramUpdate,
   mergeTopologyAnnotation,
   overwriteConfirmation,
+  publishChangeGroups,
+  publishChangeLines,
+  publishChangesSummary,
   publishChecks,
   publishLabel,
   publishRefusal,
   replacedScenarioConfig,
+  scenarioChangeText,
   scenarioNames,
   scenarioStageHint,
   stageFailed,
@@ -1196,6 +1206,244 @@ describe('publish result', () => {
     expect(stageFailed({ status: 'failed' })).toBe(true);
     expect(stageFailed({ status: 'error' })).toBe(true);
     expect(stageFailed({ status: 'created' })).toBe(false);
+  });
+});
+
+describe('what publishing changes', () => {
+  // A preview as readPublishPreview reads the server's answer.
+  const changes = {
+    topology: { name: 'riverside', action: 'create' },
+    experiment: { name: 'lab', action: 'update' },
+    includes: [
+      { name: 'plant-a', change: 'removed' },
+      { name: 'plant-b', change: 'added' },
+      { name: 'plant-c', change: 'kept' },
+    ],
+    scenarios: [
+      { name: 'water-ops', change: 'annotate' },
+      { name: 'drill', change: 'unchanged' },
+    ],
+    images: [
+      {
+        name: 'ubuntu.qc2',
+        change: 'added',
+        devices: ['web-1', 'web-2'],
+        onServer: false,
+      },
+      {
+        name: 'centos.qc2',
+        change: 'kept',
+        devices: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+        onServer: true,
+      },
+      { name: 'old.qc2', change: 'removed', devices: ['db'], onServer: null },
+    ],
+    vlanAliases: [
+      { name: 'ot', from: 101, to: 120, change: 'changed' },
+      { name: 'it', from: null, to: 7, change: 'added' },
+      { name: 'dmz', from: 5, to: null, change: 'removed' },
+      { name: 'corp', from: 9, to: 9, change: 'kept' },
+    ],
+  };
+
+  test('says what publishing does to each config', () => {
+    expect(configChangeText('Topology', changes.topology)).toBe(
+      'Creates Topology config riverside',
+    );
+    expect(configChangeText('Experiment', changes.experiment)).toBe(
+      'Updates Experiment config lab',
+    );
+    expect(
+      configChangeText('Topology', { name: 'riverside', action: 'unchanged' }),
+    ).toBe(
+      'Topology config riverside is unchanged: it already holds this diagram',
+    );
+  });
+
+  test('words every line as phenix builder publish --dry-run does', () => {
+    // The same lines as PublishChanges.Lines in api/builder/changes.go
+    // (TestPublishChangesLines).
+    expect(publishChangeLines(changes)).toEqual([
+      'Creates Topology config riverside',
+      'Updates Experiment config lab',
+      'Removes included topology plant-a',
+      'Adds included topology plant-b',
+      'Keeps included topology plant-c',
+      'Adds topology riverside to Scenario water-ops',
+      'Scenario drill already names topology riverside',
+      'Disk image ubuntu.qc2 is new (used by web-1 and web-2); the server does not have it',
+      'Disk image centos.qc2 is still used (by a, b, c, d, e and 2 more); the server has it',
+      'Disk image old.qc2 is no longer used (was used by db)',
+      'VLAN alias for network ot changes from 101 to 120',
+      'VLAN alias for network it is set to 7',
+      'VLAN alias 5 for network dmz is removed',
+      'VLAN alias for network corp stays 9',
+    ]);
+  });
+
+  test('says whether the server has an image only when that is known', () => {
+    const image = { name: 'vyos.qc2', change: 'added', devices: ['fw'] };
+
+    expect(imageChangeText(image)).toBe(
+      'Disk image vyos.qc2 is new (used by fw)',
+    );
+    expect(imageChangeText({ ...image, onServer: true })).toBe(
+      'Disk image vyos.qc2 is new (used by fw); the server has it',
+    );
+    // Nothing is said of a removed image's presence.
+    expect(
+      imageChangeText({ ...image, change: 'removed', onServer: false }),
+    ).toBe('Disk image vyos.qc2 is no longer used (was used by fw)');
+  });
+
+  test('words each item of the other lists', () => {
+    expect(includeChangeText({ name: 'a', change: 'added' })).toBe(
+      'Adds included topology a',
+    );
+    expect(scenarioChangeText({ name: 's', change: 'annotate' }, 't')).toBe(
+      'Adds topology t to Scenario s',
+    );
+    expect(
+      aliasChangeText({ name: 'ot', from: null, to: 0, change: 'added' }),
+    ).toBe('VLAN alias for network ot is set to 0');
+  });
+
+  test('groups the lines by what they are about, leaving out empty lists', () => {
+    expect(
+      publishChangeGroups(changes).map(({ key, title, lines }) => [
+        key,
+        title,
+        lines.length,
+      ]),
+    ).toEqual([
+      ['configs', 'Configs', 2],
+      ['includes', 'Included topologies', 3],
+      ['scenarios', 'Scenarios', 2],
+      ['images', 'Disk images', 3],
+      ['aliases', 'VLAN aliases', 4],
+    ]);
+
+    const topologyOnly = {
+      topology: { name: 'riverside', action: 'unchanged' },
+      experiment: null,
+      includes: [],
+      scenarios: [],
+      images: [],
+      vlanAliases: [],
+    };
+
+    expect(publishChangeGroups(topologyOnly)).toEqual([
+      {
+        key: 'configs',
+        title: 'Configs',
+        lines: [
+          'Topology config riverside is unchanged: it already holds this diagram',
+        ],
+      },
+    ]);
+    expect(changedItems(topologyOnly)).toBe(0);
+    expect(publishChangeLines(topologyOnly)).toEqual([
+      'Topology config riverside is unchanged: it already holds this diagram',
+      'Nothing outside the Topology changes',
+    ]);
+    expect(publishChangeGroups(null)).toEqual([]);
+  });
+
+  test('announces what happens to the configs and how many lines follow', () => {
+    expect(publishChangesSummary(changes)).toBe(
+      'What publishing changes: Creates Topology config riverside. ' +
+        'Updates Experiment config lab. 12 more lines below.',
+    );
+    expect(
+      publishChangesSummary({
+        topology: { name: 'riverside', action: 'create' },
+        includes: [],
+        scenarios: [],
+        images: [],
+      }),
+    ).toBe(
+      'What publishing changes: Creates Topology config riverside. ' +
+        'Nothing outside the Topology changes.',
+    );
+  });
+
+  test('reads the server answer to a dry run', () => {
+    expect(
+      readPublishPreview({
+        data: {
+          status: 'preview',
+          changes: {
+            topology: { name: 'riverside', action: 'update' },
+            includes: [{ name: 'plant-a', change: 'kept' }, { change: 'x' }],
+            scenarios: [],
+            images: [{ name: 'ubuntu.qc2', change: 'kept', devices: null }],
+          },
+          warnings: [{ code: 'publish.file.unchanged', message: 'kept' }],
+          errors: [],
+        },
+      }),
+    ).toEqual({
+      changes: {
+        topology: { name: 'riverside', action: 'update' },
+        experiment: null,
+        includes: [{ name: 'plant-a', change: 'kept' }],
+        scenarios: [],
+        images: [
+          { name: 'ubuntu.qc2', change: 'kept', devices: [], onServer: null },
+        ],
+        vlanAliases: [],
+      },
+      warningIssues: [
+        {
+          code: 'publish.file.unchanged',
+          severity: 'warning',
+          message: 'kept',
+        },
+      ],
+      errorIssues: [],
+    });
+
+    // A publication the server would refuse has no changes.
+    const refused = readPublishPreview({
+      data: {
+        status: 'preview',
+        changes: null,
+        warnings: [],
+        errors: [
+          {
+            code: 'publish.topology.exists',
+            message: 'config riverside already exists',
+          },
+        ],
+      },
+    });
+
+    expect(refused.changes).toBeNull();
+    expect(refused.errorIssues).toEqual([
+      {
+        code: 'publish.topology.exists',
+        severity: 'error',
+        message: 'config riverside already exists',
+      },
+    ]);
+  });
+
+  test('a dry run sends the intent with dryRun and no If-Match', async () => {
+    const post = vi.fn(async () => ({
+      data: { status: 'preview', changes: null, warnings: [], errors: [] },
+    }));
+    const preview = await createBuilderApi({ post }).previewPublish(
+      'alice',
+      'd1',
+      { mode: 'topology', topology: { name: 'core', action: 'create' } },
+    );
+
+    expect(post).toHaveBeenCalledWith('builder/drafts/alice/d1/publish', {
+      mode: 'topology',
+      topology: { name: 'core', action: 'create' },
+      dryRun: true,
+    });
+    expect(preview.changes).toBeNull();
   });
 });
 

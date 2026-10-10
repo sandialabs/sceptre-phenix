@@ -62,6 +62,11 @@ const api = vi.hoisted(() => ({
     },
     etag: '"4"',
   })),
+  previewPublish: vi.fn(async () => ({
+    changes: null,
+    warningIssues: [],
+    errorIssues: [],
+  })),
   generate: vi.fn(async () => ({ document: null, warnings: ['a warning'] })),
   convertLegacy: vi.fn(async () => ({
     document: null,
@@ -2442,6 +2447,83 @@ describe('server data', () => {
     expect(store.sources.topologies).toEqual(['core']);
     // So is the list of published diagrams, which says what it may update.
     expect(api.listDocuments).toHaveBeenCalledOnce();
+  });
+
+  test('a publish preview keeps only the answer to the last one asked for', async () => {
+    await withDraft();
+
+    const intent = (action) => ({
+      mode: 'topology',
+      topology: { name: 'core', action },
+    });
+    const answer = (action) => ({
+      changes: {
+        topology: { name: 'core', action },
+        experiment: null,
+        includes: [],
+        scenarios: [],
+        images: [],
+        vlanAliases: [],
+      },
+      warningIssues: [],
+      errorIssues: [],
+    });
+
+    let answerFirst;
+
+    api.previewPublish.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answerFirst = resolve;
+        }),
+    );
+    api.previewPublish.mockResolvedValueOnce(answer('update'));
+
+    const first = store.previewPublish(intent('create'));
+    const second = store.previewPublish(intent('update'));
+
+    await expect(second).resolves.toEqual(answer('update'));
+    // The first answers last: a later preview made it stale.
+    answerFirst(answer('create'));
+    await expect(first).resolves.toBeNull();
+    expect(api.previewPublish).toHaveBeenCalledWith(
+      'alice',
+      'd1',
+      intent('create'),
+    );
+    expect(api.previewPublish.mock.calls.at(-1)[2].document).toBeUndefined();
+
+    // A failure is answered, not thrown, and is no error of the store: the
+    // preview never stands in the way of publishing.
+    api.previewPublish.mockRejectedValueOnce(
+      Object.assign(new Error('unavailable'), {
+        response: { status: 500, data: { message: 'store unavailable' } },
+      }),
+    );
+
+    const failed = await store.previewPublish(intent('create'));
+
+    expect(failed).toMatchObject({ failed: true });
+    expect(failed.message).toMatch(
+      /^Could not work out what publishing changes\./,
+    );
+    expect(store.error).toBe('');
+
+    // A failure a later preview made stale is dropped too.
+    let failFirst;
+
+    api.previewPublish.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          failFirst = reject;
+        }),
+    );
+
+    const stale = store.previewPublish(intent('create'));
+
+    await store.previewPublish(intent('update'));
+    failFirst(new Error('late'));
+    await expect(stale).resolves.toBeNull();
   });
 
   test('Publish knows which config the draft was loaded from and what it saved', async () => {

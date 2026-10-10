@@ -13,6 +13,7 @@ const {
   blankDocument,
   expectAccessible,
   expectNoFatal,
+  isPublishResponse,
   uniqueName,
   visit,
   draftPath,
@@ -904,11 +905,7 @@ test.describe('Builder persistence', () => {
       await dialog.getByTestId('publish-name').fill(title);
       const submit = dialog.getByTestId('publish-submit');
       await expect(submit).toHaveText('Update topology');
-      const published = builder.page.waitForResponse(
-        (candidate) =>
-          candidate.request().method() === 'POST' &&
-          new URL(candidate.url()).pathname.endsWith('/publish'),
-      );
+      const published = builder.page.waitForResponse(isPublishResponse);
       await submit.click();
       await builder.page.getByTestId('confirm-accept').click();
       const response = await published;
@@ -2137,11 +2134,7 @@ test.describe('Builder persistence', () => {
       await expect(publish.getByTestId('publish-submit')).toHaveText(
         'Update topology',
       );
-      const published = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' &&
-          new URL(response.url()).pathname.endsWith('/publish'),
-      );
+      const published = page.waitForResponse(isPublishResponse);
       await publish.getByTestId('publish-submit').click();
       await page.getByTestId('confirm-accept').click();
       const response = await published;

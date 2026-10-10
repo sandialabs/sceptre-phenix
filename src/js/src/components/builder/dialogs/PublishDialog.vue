@@ -28,6 +28,15 @@
   the dialog says; with an experiment, Experiment scenario picks the one it
   uses, the first listed unless another or No scenario is chosen.
 
+  Above the buttons, What publishing changes lists what publishing to the
+  names in the form would change, as the server works it out from the
+  saved snapshot without writing anything (a dry run, previewPublish in
+  store.js): the Topology and Experiment configs, included topologies,
+  scenario annotations, disk images and VLAN aliases, with what publishing
+  would warn of, or the refusal. It is read as the dialog opens, after a
+  pause whenever the form changes, and whenever the saved draft does; from
+  the change on, the list shown is marked busy. It never stops Publish.
+
   The Inspector's unapplied edits are saved before the dialog opens (see
   leave.js). Edits it cannot apply keep Publish from sending, rather than
   being left out, and the dialog says so as it opens.
@@ -246,6 +255,78 @@
         testid="publish-refusal"
         @go="goTo" />
 
+      <!-- What publishing to these names changes, which the server works
+           out without writing anything each time the form or the saved
+           draft changes. The words say what is added, removed or kept. -->
+      <section
+        v-if="!store.readOnly"
+        class="builder-field builder-publish-preview"
+        aria-labelledby="publish-preview-title"
+        :aria-busy="preview.loading ? 'true' : 'false'"
+        data-testid="publish-preview">
+        <h3 id="publish-preview-title">What publishing changes</h3>
+        <p
+          v-if="preview.blocked"
+          class="builder-hint"
+          data-testid="publish-preview-blocked">
+          {{ preview.blocked }}
+        </p>
+        <p
+          v-else-if="preview.error"
+          class="builder-hint"
+          data-testid="publish-preview-error">
+          {{ preview.error }}
+        </p>
+        <template v-else>
+          <template v-if="preview.changes">
+            <div
+              v-for="group in previewGroups"
+              :key="group.key"
+              class="builder-publish-preview__group">
+              <h4 :id="`publish-preview-${group.key}-title`">
+                {{ group.title }}
+              </h4>
+              <ul
+                :aria-labelledby="`publish-preview-${group.key}-title`"
+                :data-testid="`publish-preview-${group.key}`">
+                <li v-for="(line, index) in group.lines" :key="index">
+                  {{ line }}
+                </li>
+              </ul>
+            </div>
+            <p v-if="!changedItems(preview.changes)">
+              Nothing outside the Topology changes.
+            </p>
+          </template>
+          <!-- Why the server would refuse to publish, or what publishing
+               would warn of, such as a legacy diagram it replaces. -->
+          <builder-issue-list
+            v-if="previewIssues.length"
+            :groups="previewIssueGroups"
+            blocking
+            :heading-level="4"
+            id-prefix="publish-preview-issues"
+            testid="publish-preview-issues"
+            @go="goTo" />
+          <p
+            v-else-if="!preview.changes && preview.loading"
+            class="builder-hint">
+            Working out what publishing changes…
+          </p>
+        </template>
+        <!-- Polite, as the dialog's own status line is, but no second
+             status role: it says only that the list was read again. -->
+        <p
+          class="builder-visually-hidden"
+          aria-live="polite"
+          aria-atomic="true"
+          data-testid="publish-preview-status">
+          <span v-if="previewStatus.text" :key="previewStatus.key">{{
+            previewStatus.text
+          }}</span>
+        </p>
+      </section>
+
       <div class="builder-dialog__actions">
         <button
           v-if="landing"
@@ -342,6 +423,7 @@
     onMounted,
     reactive,
     ref,
+    watch,
   } from 'vue';
 
   import BuilderConfirm from '../BuilderConfirm.vue';
@@ -349,6 +431,7 @@
   import BuilderIcon from '../BuilderIcon.vue';
   import BuilderIssueList from '../BuilderIssueList.vue';
   import { useFieldError, useMessage, useRefusalIssues } from './message.js';
+  import { usePublishPreview } from './publishPreview.js';
 
   import { count, listOf } from '@/builder/announce.js';
   import {
@@ -360,12 +443,14 @@
   import { documentScenarios } from '@/builder/model.js';
   import {
     buildPublishIntent,
+    changedItems,
     configName,
     configNameHint,
     describePublishResult,
     keptIncludesText,
     legacyDiagramUpdate,
     overwriteConfirmation,
+    publishChangeGroups,
     publishLabel,
     scenarioNames as readScenarioNames,
     scenarioStageHint,
@@ -433,8 +518,25 @@
   // lists finds out.
   let closed = false;
 
+  // What publishing changes (see publishPreview.js): read when the lists
+  // above are, then again, after a pause in typing, whenever the form or
+  // those lists change, and whenever the saved draft does. Nothing is asked
+  // for a draft the dialog cannot publish, or while it shows a result.
+  const {
+    preview,
+    status: previewStatus,
+    refresh: refreshPreview,
+    schedule: schedulePreview,
+    close: closePreview,
+  } = usePublishPreview({
+    buildIntent: () => buildIntent(),
+    previewPublish: (intent) => store.previewPublish(intent),
+    idle: () => store.readOnly || Boolean(result.value),
+  });
+
   onBeforeUnmount(() => {
     closed = true;
+    closePreview();
   });
 
   // What the server listed when it refused a publish shows while the dialog
@@ -448,7 +550,29 @@
       store.fetchDocuments(),
       store.readOnly ? null : store.saveNow(),
     ]);
+    sourcesLoaded.then(() => refreshPreview());
   });
+
+  const previewGroups = computed(() => publishChangeGroups(preview.changes));
+  const previewIssues = computed(() => issueEntries(store.doc, preview.issues));
+  const previewIssueGroups = computed(() =>
+    bySeverity(previewIssues.value, store.doc),
+  );
+
+  // The targets, and the lists that say whether each is created or updated.
+  watch(
+    () => [
+      form.mode,
+      form.topologyName,
+      form.experimentName,
+      form.scenarioName,
+      store.sources,
+      store.documents,
+    ],
+    schedulePreview,
+  );
+  // The saved draft: its ETag changes with every save the server takes.
+  watch(() => store.etag, schedulePreview);
 
   const topologyExists = computed(() =>
     (store.sources.topologies || []).some(
@@ -739,6 +863,7 @@
     result.value = null;
     await nextTick();
     submitButton.value?.focus();
+    refreshPreview();
   }
 
   // Go to on an issue. The dialog closes, which gives focus back to what
@@ -767,5 +892,16 @@
 
   .builder-publish-result__issues {
     margin-top: 0.75rem;
+  }
+
+  .builder-publish-preview__group h4 {
+    margin: 0.5rem 0 0.25rem;
+    font-size: inherit;
+  }
+
+  .builder-publish-preview__group ul {
+    margin: 0;
+    padding-left: 1.25rem;
+    list-style: disc;
   }
 </style>

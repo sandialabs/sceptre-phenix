@@ -436,6 +436,10 @@ let sessionEpoch = 0;
 // for fills the History dialog (see fetchHistory).
 let historyRequest = 0;
 
+// Bumped on every preview of a publication, so only the last one asked for
+// is answered (see previewPublish).
+let previewRequest = 0;
+
 // Bumped by every merge of a conflict (see mergeConflict), so only the last
 // one lets edits through again: a save of a merged diagram can meet another
 // conflict, whose merge starts before the first one has ended.
@@ -3660,6 +3664,57 @@ export const useBuilderStore = defineStore('builder', {
       } finally {
         this.publishing = false;
         this.trackQueue(release());
+      }
+    },
+
+    /**
+     * Asks the server what publishing the open draft with this intent would
+     * change, as a dry run of the publish route that writes nothing: the
+     * server reads the draft's last saved snapshot and makes every check of
+     * a publication. Each preview makes the ones asked for before it stale,
+     * so an answer that arrives after a later preview was asked for, or
+     * after another draft was opened, is dropped. A failure is returned, not
+     * thrown and not set as the store's error: the preview never stands in
+     * the way of publishing.
+     *
+     * @param {object} intent as buildPublishIntent() in publish.js builds it
+     * @returns {Promise<{changes: object|null, warningIssues: object[],
+     *   errorIssues: object[]}|{failed: true, message: string}|null>} the
+     *   server's answer (see readPublishPreview in api.js), why it could not
+     *   be read, or null for a stale answer
+     */
+    async previewPublish(intent) {
+      previewRequest += 1;
+
+      const request = previewRequest;
+      const { owner, draftId } = this;
+      const current = () =>
+        request === previewRequest &&
+        this.owner === owner &&
+        this.draftId === draftId;
+
+      if (!owner || !draftId) {
+        return {
+          failed: true,
+          message:
+            'Save this diagram as a draft to see what publishing changes.',
+        };
+      }
+
+      try {
+        const preview = await builderApi.previewPublish(owner, draftId, intent);
+
+        return current() ? preview : null;
+      } catch (error) {
+        return current()
+          ? {
+              failed: true,
+              message: this.describeError(
+                error,
+                'work out what publishing changes',
+              ),
+            }
+          : null;
       }
     },
 

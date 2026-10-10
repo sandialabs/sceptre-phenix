@@ -607,6 +607,10 @@
     "severity": "warning",
     "description": "A config was stored, but its live update could not be broadcast."
   },
+  "publish.changes.unknown": {
+    "severity": "warning",
+    "description": "A stored config could not be read to say what publishing changes."
+  },
   "publish.cleanup.failed": {
     "severity": "warning",
     "description": "The publication went through, but content it replaces could not be removed."

@@ -159,6 +159,14 @@ type TopologyPublication struct {
 	// has no place for, and what could not be checked or cleaned up. Each is
 	// an issue of severity warning, with its code.
 	Warnings []builder.Issue
+	// Changes says what the publication changes compared with what was
+	// stored before it (see [DescribePublishChanges]): the topology, the
+	// topologies it includes and the disk images its devices use. It changes
+	// no scenario and writes no experiment, and the server's disk images are
+	// not read, so no image says whether the server has it. It is nil when
+	// the stored topology could not be read for it, which a dry run warns of
+	// ([builder.CodePublishChangesUnknown]).
+	Changes *PublishChanges
 }
 
 // PublishTopology publishes a Builder document as a Topology config, as the
@@ -335,6 +343,24 @@ func (s *Service) planTopology(ctx context.Context, req PublishTopologyRequest) 
 		)))
 	}
 
+	// What the publication changes is only reported, so a stored topology it
+	// cannot be worked out from never stops the publication: it goes on
+	// without Changes, and a dry run says why.
+	changes, err := DescribePublishChanges(PublishState{
+		TopologyName: name, Spec: export.Config.Spec, VLANAliases: export.VLANAliases,
+		StoredTopology: existing, TopologyHeld: outcome == TopologyUnchanged,
+		Scenarios: nil, Experiment: nil, ServerImages: nil,
+	})
+	if err != nil {
+		changes = nil
+
+		if req.DryRun {
+			warnings = append(warnings, builder.NewIssue(builder.CodePublishChangesUnknown, "", fmt.Sprintf(
+				"What publishing changes could not be worked out: %v.", err,
+			)))
+		}
+	}
+
 	if outcome == TopologyUnchanged {
 		cfg = existing
 	} else {
@@ -359,7 +385,7 @@ func (s *Service) planTopology(ctx context.Context, req PublishTopologyRequest) 
 		config: cfg,
 		publication: &TopologyPublication{
 			Name: name, Outcome: outcome, Title: document.Metadata.Name, Digest: digest, Reference: reference,
-			Document: nil, Config: cfg, Warnings: warnings,
+			Document: nil, Config: cfg, Warnings: warnings, Changes: changes,
 		},
 	}, nil
 }

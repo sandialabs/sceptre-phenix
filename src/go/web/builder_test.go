@@ -59,6 +59,9 @@ type builderHarness struct {
 	failExperiment    bool
 	configWrites      int
 	experimentWrites  int
+	// broadcasts counts the config and experiment updates broadcast to open
+	// pages.
+	broadcasts int
 	// failConfigName fails the writes of the one config of this full name
 	// ("Scenario/sc"), as failConfigKind fails those of a kind.
 	failConfigName string
@@ -160,6 +163,7 @@ func newBuilderHarnessWith(t *testing.T, extra []builderOption, configs ...store
 		failExperiment:    false,
 		configWrites:      0,
 		experimentWrites:  0,
+		broadcasts:        0,
 		failReconfigure:   false,
 		reconfigured:      nil,
 		lockedExperiment:  nil,
@@ -273,14 +277,20 @@ func (h *builderHarness) publishOps() builderPublishOps {
 		},
 		unlockExperiment: func(string) {},
 		broadcastConfig: func(config *store.Config, _ string) error {
+			h.broadcasts++
+
 			if config.Kind == h.failBroadcastKind {
 				return errors.New("injected broadcast failure")
 			}
 
 			return nil
 		},
-		broadcastExperiment: func(string, string) error { return nil },
-		decodeTopology:      h.decodeTopology,
+		broadcastExperiment: func(string, string) error {
+			h.broadcasts++
+
+			return nil
+		},
+		decodeTopology: h.decodeTopology,
 		reconfigureExperiment: func(name string) error {
 			if h.configuring != nil {
 				h.configuring(name)

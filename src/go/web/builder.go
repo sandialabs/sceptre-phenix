@@ -140,6 +140,10 @@ type builderAPI struct {
 	// appNames lists the apps this server runs, which a package's diagram
 	// may need.
 	appNames func() []string
+	// listDisks lists the disk images the server has, as GET /disks lists
+	// them, for a dry run of a publication to say whether the server has
+	// each image the topology's devices use.
+	listDisks func() ([]disk.Details, error)
 }
 
 // builderOption configures a [builderAPI].
@@ -168,6 +172,7 @@ func newBuilderAPI(opts ...builderOption) (*builderAPI, error) {
 		templateFiles: common.BuilderTemplatesDir(),
 		diskImages:    builderDiskImages,
 		appNames:      builderAppNames,
+		listDisks:     func() ([]disk.Details, error) { return disk.GetImages("") },
 	}
 
 	for _, opt := range opts {
@@ -281,6 +286,11 @@ func builderDocumentFiles() (string, []string) {
 // at start as the server's template collections; "" reads none.
 func withBuilderTemplateFiles(directory string) builderOption {
 	return func(api *builderAPI) { api.templateFiles = directory }
+}
+
+// withBuilderDisks sets how the server's disk images are listed.
+func withBuilderDisks(list func() ([]disk.Details, error)) builderOption {
+	return func(api *builderAPI) { api.listDisks = list }
 }
 
 // withBuilderDocumentFiles sets the directory Builder files are read from,

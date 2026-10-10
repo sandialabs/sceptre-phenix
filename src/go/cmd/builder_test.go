@@ -325,6 +325,9 @@ func TestBuilderPublishDryRun(t *testing.T) { //nolint:paralleltest // replaces 
 		"Digest:       " + parsed.Digest + "\n",
 		"Document ID:  " + builder.PublishedDocumentID("riverside", parsed.Digest) + "\n",
 		"Topology:     riverside (would be created)\n",
+		"Changes:\n",
+		"  - Creates Topology config riverside\n",
+		"  - Adds included topology corp-services\n",
 		"Warnings:\n",
 		"  - The document's scenario is not changed: only the topology is published. [publish.scenario.unchanged]\n",
 		"  - Included topology corp-services was not checked for duplicate hostnames: no stored topology has that name." +
@@ -364,7 +367,9 @@ func TestBuilderPublishDryRun(t *testing.T) { //nolint:paralleltest // replaces 
 	}
 
 	output, err = runBuilder("publish", file, "--dry-run", "--name", "riverside")
-	if err != nil || !strings.Contains(output, "Topology:     riverside (would be left as it is: it already holds this document)\n") {
+	if err != nil || !strings.Contains(output, "Topology:     riverside (would be left as it is: it already holds this document)\n") ||
+		!strings.Contains(output, "  - Topology config riverside is unchanged: it already holds this diagram\n") ||
+		!strings.Contains(output, "  - Keeps included topology corp-services\n") {
 		t.Errorf("dry run of a published document: %v\n%s", err, output)
 	}
 }

@@ -20,6 +20,8 @@ const {
   expectAccessible,
   expectNoFatal,
   expectNoInvisibleText,
+  isPublishRequest,
+  isPublishResponse,
   labDocument,
   publishTopology,
   uniqueName,
@@ -91,13 +93,7 @@ async function publishedId(request, name) {
 
 // Submits the Publish dialog and expects the publish to succeed.
 async function publishFromDialog(page) {
-  const answered = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST' &&
-      /\/builder\/drafts\/[^/]+\/[^/]+\/publish$/.test(
-        new URL(response.url()).pathname,
-      ),
-  );
+  const answered = page.waitForResponse(isPublishResponse);
   await page.getByTestId('publish-submit').click();
   const response = await answered;
   expect(response.status(), await response.text()).toBe(200);
@@ -337,11 +333,10 @@ test(
 
     await test.step('what the server lacks is not published, and the dialog says where to settle it', async () => {
       let sent = 0;
+      // The dialog's dry runs of the publish, which write nothing, are not
+      // publishes.
       const onRequest = (request) => {
-        if (
-          request.method() === 'POST' &&
-          new URL(request.url()).pathname.endsWith('/publish')
-        ) {
+        if (isPublishRequest(request)) {
           sent += 1;
         }
       };
@@ -395,23 +390,21 @@ test(
         release = resolve;
       });
       const isPublish = (url) => url.pathname.endsWith('/publish');
+      // Only the publish is held: the dialog's dry runs, which write
+      // nothing, go on to the server.
       await page.route(isPublish, async (route) => {
-        await held;
+        if (isPublishRequest(route.request())) {
+          await held;
+        }
+
         await route.continue();
       });
-      const answered = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' &&
-          isPublish(new URL(response.url())),
-      );
+      const answered = page.waitForResponse(isPublishResponse);
 
       await publish.click();
       await expect(dialog).toBeVisible();
       await expect(page.getByTestId('publish-name')).toHaveValue(topology);
-      const sent = page.waitForRequest(
-        (request) =>
-          request.method() === 'POST' && isPublish(new URL(request.url())),
-      );
+      const sent = page.waitForRequest(isPublishRequest);
       await page.getByTestId('publish-submit').click();
       await sent;
       await expect

@@ -914,13 +914,27 @@ Digest:       sha256:1ff0029f39e932995bffdc1335c03683dc7ff94bead6b943b788431187d
 Document ID:  3da3426690fe1cfddce33b19a0596a7362da0ff2ba342a6b69554d7be110d47e
 Topology:     Riverside-Water (would be created)
 Nodes:        10
+Changes:
+  - Creates Topology config Riverside-Water
+  - Adds included topology corp-services
+  - Disk image kali.qc2 is new (used by kali-01)
+  - Disk image minirouter.qc2 is new (used by ot-fw)
+  - Disk image ubuntu.qc2 is new (used by files-01, historian-01 and web-01)
+  - Disk image vyos.qc2 is new (used by edge-rtr)
+  - Disk image windows10.qc2 is new (used by hmi-01, ws-01 and ws-02)
 Warnings:
   - The document's scenario is not changed: only the topology is published. [publish.scenario.unchanged]
 Nothing was written.
 ```
 
 The **Topology** line says "(would be created)", "(would be updated)" or
-"(would be left as it is: it already holds this document)". Each warning,
+"(would be left as it is: it already holds this document)". **Changes**
+lists what publishing would change, in the words of the Publish dialog's
+[What publishing changes](publishing.md#what-publishing-changes): the
+topology, its included topologies and the disk images its devices use,
+compared with the topology the server holds now. The command changes no
+scenario and makes no experiment, and it does not read the server's disk
+images, so no line says whether the server has an image. Each warning,
 and each line of a refusal, ends with its code in brackets (see
 [Error Codes](error-codes.md)). A document that cannot be published prints
 the reason as an error instead, and the command exits with 1. This makes

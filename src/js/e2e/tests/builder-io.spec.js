@@ -20,6 +20,7 @@ const {
   expectNoFatal,
   iconName,
   iconOf,
+  isPublishResponse,
   knownDefect,
   ownColor,
   pngOf,
@@ -1612,11 +1613,7 @@ test.describe('import', () => {
         'Update topology',
       );
 
-      const published = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' &&
-          new URL(response.url()).pathname.endsWith('/publish'),
-      );
+      const published = page.waitForResponse(isPublishResponse);
       await publish.getByTestId('publish-submit').click();
       // Publish asks before it replaces the topology.
       await page.getByTestId('confirm-accept').click();
@@ -2455,11 +2452,7 @@ test.describe('import', () => {
       await name.fill(combined);
       await expect(hint).toHaveText('A new topology will be created.');
 
-      const published = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' &&
-          new URL(response.url()).pathname.endsWith('/publish'),
-      );
+      const published = page.waitForResponse(isPublishResponse);
       await go.click();
       const response = await published;
       expect(response.status(), await response.text()).toBe(200);
@@ -2616,11 +2609,7 @@ test.describe('import', () => {
         'Create topology',
       );
 
-      const published = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' &&
-          new URL(response.url()).pathname.endsWith('/publish'),
-      );
+      const published = page.waitForResponse(isPublishResponse);
       await publish.getByTestId('publish-submit').click();
       const response = await published;
       expect(response.status(), await response.text()).toBe(200);

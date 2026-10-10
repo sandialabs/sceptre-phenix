@@ -954,6 +954,11 @@ either of these:
     Document ID:  730b1f91c47dfcecd644e07b61dd22896d34381a505426652b826e94423347fd
     Topology:     Pump-station (would be created)
     Nodes:        3
+    Changes:
+      - Creates Topology config Pump-station
+      - Disk image bennu.qc2 is new (used by rtu-01)
+      - Disk image minirouter.qc2 is new (used by station-rtr)
+      - Disk image windows10.qc2 is new (used by eng-ws-01)
     Nothing was written.
     ```
 
@@ -1060,7 +1065,7 @@ for Import and Publish.
 | `GET /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Read one snapshot's document (`current` for the current one) | `get` |
 | `DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Delete a snapshot other than the current one | `update` |
 | `PATCH` or `PUT /builder/drafts/{owner}/{draft}/cursor` | Undo and redo: choose the current snapshot | `update` |
-| `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the Topology and Experiment configs, and add the topology to the `topology` annotation of each scenario the document lists | `update`, and each config's own |
+| `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the Topology and Experiment configs, and add the topology to the `topology` annotation of each scenario the document lists. With `"dryRun": true`, say what publishing would change and write nothing; a dry run needs no `If-Match` | `update`, and each config's own |
 | `GET`, `PUT /builder/drafts/{owner}/{draft}/shares` | Read or replace who a draft is shared with (owner only) | `get`, `update` |
 | `GET /builder/drafts/{owner}/{draft}/shares/candidates` | The users a draft can be shared with | `update` |
 | `GET /builder/sources` | The configs a document can be made from or published with | `list` |

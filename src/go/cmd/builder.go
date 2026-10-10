@@ -285,7 +285,9 @@ func builderRefusal(refused *bapi.PublishRefusedError, hint string) string {
 // writeBuilderDryRun writes the report of a dry run: the document and the
 // file it was read from, the digest, the ID and, when one is recorded, the
 // path the topology's document reference would hold, what publishing would
-// do to which topology, and every warning, with its code.
+// do to which topology, what it would change (the topology, its included
+// topologies and the disk images its devices use; see
+// [bapi.PublishChanges.Lines]), and every warning, with its code.
 func writeBuilderDryRun(out io.Writer, path string, publication *bapi.TopologyPublication, warnings []bdoc.Issue) error {
 	result := "would be left as it is: it already holds this document"
 
@@ -312,6 +314,14 @@ func writeBuilderDryRun(out io.Writer, path string, publication *bapi.TopologyPu
 
 	fmt.Fprintf(&report, "Topology:     %s (%s)\n", publication.Name, result)
 	fmt.Fprintf(&report, "Nodes:        %d\n", len(nodes))
+
+	if publication.Changes != nil {
+		report.WriteString("Changes:\n")
+
+		for _, line := range publication.Changes.Lines() {
+			fmt.Fprintf(&report, "  - %s\n", line)
+		}
+	}
 
 	if len(warnings) > 0 {
 		report.WriteString("Warnings:\n")

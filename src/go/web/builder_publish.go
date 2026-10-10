@@ -104,6 +104,10 @@ type builderPublishRequest struct {
 	// without one.
 	Scenario   *builderPublishScenario `json:"scenario,omitempty"`
 	Experiment *builderPublishTarget   `json:"experiment,omitempty"`
+	// DryRun makes every check a publication makes, writes nothing, and
+	// answers with what the publication would change (see
+	// [builderAPI.previewPublish]).
+	DryRun bool `json:"dryRun,omitempty"`
 }
 
 // scenarioName is the name of the experiment's scenario, or "" for none.
@@ -240,14 +244,15 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 		return builderForbidden(actor, "publishing a builder draft")
 	}
 
-	ifMatch, err := builderIfMatch(r)
+	request, ifMatch, err := builderPublishIntent(w, r)
 	if err != nil {
 		return err
 	}
 
-	var request builderPublishRequest
-	if err := builderDecode(w, r, &request); err != nil {
-		return err
+	// A dry run writes nothing, so it needs no entity tag: it reports on the
+	// draft as it is saved now.
+	if request.DryRun {
+		return b.previewPublish(w, r, actor, request)
 	}
 
 	if err := validateBuilderPublishRequest(request); err != nil {
@@ -468,6 +473,9 @@ type builderPublishExperimentPlan struct {
 	action  string
 	name    string
 	applied bool
+	// existing is the experiment as preflight read it, or nil when there is
+	// none.
+	existing *store.Config
 	// rebuild returns the updated config an update writes, from the
 	// experiment config as it is when it is written.
 	rebuild func(*store.Config) (*store.Config, error)
@@ -495,8 +503,10 @@ func builderPublishStatus(action string, applied bool) bapi.PublishStatus {
 type builderPublishScenarioPlan struct {
 	changed   []builderPublishConfigPlan
 	unchanged []string
-	// listed is every scenario the document lists, in its order.
+	// listed is every scenario the document lists, in its order, and stored
+	// each of them as preflight read it.
 	listed []string
+	stored []*store.Config
 	// picked is the experiment's scenario as it is once the stage ran, or
 	// nil when the experiment has none or no experiment is published.
 	picked *store.Config
@@ -1474,7 +1484,7 @@ func (b *builderAPI) preflightScenarios(
 
 	topologyName := request.Topology.Name
 	plan := &builderPublishScenarioPlan{
-		changed: nil, unchanged: nil, listed: slices.Clone(document.Scenarios), picked: nil,
+		changed: nil, unchanged: nil, listed: slices.Clone(document.Scenarios), stored: nil, picked: nil,
 	}
 
 	for _, name := range document.Scenarios {
@@ -1483,6 +1493,7 @@ func (b *builderAPI) preflightScenarios(
 			return nil, err
 		}
 
+		plan.stored = append(plan.stored, existing)
 		scenario := existing
 
 		if hasTopologyAnnotation(existing.Metadata.Annotations["topology"], topologyName) {
@@ -1625,7 +1636,7 @@ func (b *builderAPI) preflightExperiment(
 	}
 
 	plan := &builderPublishExperimentPlan{
-		action: target.Action, name: target.Name, applied: applied, rebuild: nil,
+		action: target.Action, name: target.Name, applied: applied, existing: existing, rebuild: nil,
 	}
 
 	if applied {
@@ -2177,13 +2188,7 @@ func addTopologyAnnotation(value, topology string) string {
 // "topology" annotation, names topology: one of its names, trimmed, is
 // exactly topology. A name that only contains it does not count.
 func hasTopologyAnnotation(value, topology string) bool {
-	for name := range strings.SplitSeq(value, ",") {
-		if strings.TrimSpace(name) == topology {
-			return true
-		}
-	}
-
-	return false
+	return bapi.HasTopologyAnnotation(value, topology)
 }
 
 func experimentAlreadyApplied(

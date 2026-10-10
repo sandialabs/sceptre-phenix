@@ -17,6 +17,7 @@ const {
   expectDetail,
   expectNoFatal,
   expectNoInvisibleText,
+  isPublishResponse,
   labDocument,
   test: base,
   uniqueName,
@@ -167,11 +168,7 @@ function watchDraftCreates(page) {
 async function publishUpdate(page) {
   const submit = page.getByTestId('publish-submit');
   await expect(submit).toHaveText('Update topology');
-  const answered = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST' &&
-      new URL(response.url()).pathname.endsWith('/publish'),
-  );
+  const answered = page.waitForResponse(isPublishResponse);
   await submit.click();
   await page.getByTestId('confirm-accept').click();
 
@@ -616,11 +613,7 @@ test('a draft of a Builder file that differs from its topology cannot update the
     await dialog.getByTestId('publish-name').fill(other);
     const submit = dialog.getByTestId('publish-submit');
     await expect(submit).toHaveText('Create topology');
-    const answered = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        new URL(response.url()).pathname.endsWith('/publish'),
-    );
+    const answered = page.waitForResponse(isPublishResponse);
     await submit.click();
     const response = await answered;
     const body = await response.text();

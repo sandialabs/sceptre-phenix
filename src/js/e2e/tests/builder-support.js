@@ -477,6 +477,43 @@ function isApi(response, method, suffix, search) {
   );
 }
 
+// Whether a request goes to a draft's publish route: a POST to
+// /builder/drafts/{owner}/{draft}/publish.
+function isPublishRoute(request) {
+  return (
+    request.method() === 'POST' &&
+    /\/builder\/drafts\/[^/]+\/[^/]+\/publish$/.test(
+      new URL(request.url()).pathname,
+    )
+  );
+}
+
+// Whether a request is a dry run of the publish route, which writes
+// nothing: the Publish dialog sends one (dryRun in the body) to show what
+// publishing changes, as it opens and whenever its form changes.
+function isPublishPreview(request) {
+  if (!isPublishRoute(request)) {
+    return false;
+  }
+
+  try {
+    return request.postDataJSON()?.dryRun === true;
+  } catch {
+    return false;
+  }
+}
+
+// Whether a request publishes a draft: a POST to its publish route that is
+// not a dry run (see isPublishPreview).
+function isPublishRequest(request) {
+  return isPublishRoute(request) && !isPublishPreview(request);
+}
+
+// Whether a response answers a publish of a draft; see isPublishRequest().
+function isPublishResponse(response) {
+  return isPublishRequest(response.request());
+}
+
 // Resolves with the page's next response of that kind; see isApi().
 function waitForApi(page, method, suffix, search) {
   return page.waitForResponse((response) =>
@@ -1515,6 +1552,9 @@ module.exports = {
   iconPath,
   invisibleText,
   isApi,
+  isPublishPreview,
+  isPublishRequest,
+  isPublishResponse,
   knownDefect,
   labDocument,
   libraryChange,

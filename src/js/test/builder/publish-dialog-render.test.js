@@ -34,23 +34,25 @@ function diagram({ publishable }) {
     : doc;
 }
 
-// `setup` changes the store before the dialog renders, and `form` the
-// dialog's fields, as the user would have changed them: Vue runs `created`
-// after the dialog's setup and before it renders.
+// `setup` changes the store before the dialog renders, `form` the dialog's
+// fields, as the user would have changed them, and `preview` what it shows
+// of what publishing changes, as a dry run would have left it: Vue runs
+// `created` after the dialog's setup and before it renders.
 async function render(
   props = {},
-  { publishable = true, setup = () => {}, form = null } = {},
+  { publishable = true, setup = () => {}, form = null, preview = null } = {},
 ) {
   const pinia = createPinia();
   const app = createSSRApp({ render: () => h(PublishDialog, props) });
 
   app.use(pinia);
 
-  if (form) {
+  if (form || preview) {
     app.mixin({
       created() {
         if (this.$.type === PublishDialog) {
-          Object.assign(this.$.setupState.form, form);
+          Object.assign(this.$.setupState.form, form || {});
+          Object.assign(this.$.setupState.preview, preview || {});
         }
       },
     });
@@ -374,5 +376,96 @@ describe('the scenarios', () => {
     const html = await render({}, { form: withExperiment });
 
     expect(html).not.toContain('publish-scenario');
+  });
+});
+
+describe('what publishing changes', () => {
+  // A dry run's answer: topology lab is updated, and nothing else changes.
+  const changes = {
+    topology: { name: 'lab', action: 'update' },
+    experiment: null,
+    includes: [],
+    scenarios: [],
+    images: [],
+    vlanAliases: [],
+  };
+  const legacyWarning = {
+    code: 'publish.legacy.replaced',
+    severity: 'warning',
+    message:
+      'The legacy Builder diagram of topology lab was replaced by this diagram.',
+  };
+
+  // The section, from its tag to its polite status line, its last child.
+  // The issue list holds sections of its own, one per severity.
+  function section(html) {
+    const start = html.lastIndexOf(
+      '<section',
+      html.indexOf('data-testid="publish-preview"'),
+    );
+    const end = html.indexOf('data-testid="publish-preview-status"', start);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    return html.slice(start, end);
+  }
+
+  test('lists the dry run’s warnings after its changes, by severity and with their codes', async () => {
+    const html = section(
+      await render(
+        {},
+        { preview: { loading: false, changes, issues: [legacyWarning] } },
+      ),
+    );
+
+    expect(html).toMatch(/^<section[^>]*aria-busy="false"/);
+    expect(text(html)).toContain('Updates Topology config lab');
+    expect(html).toContain('data-testid="publish-preview-issues"');
+    expect(html).toContain('data-testid="publish-preview-issues-warning"');
+    expect(html).not.toContain('publish-preview-issues-error');
+    expect(text(html)).toContain('1 warning');
+    expect(html).toMatch(/<strong[^>]*>\s*Warning:\s*<\/strong>/);
+    expect(html).toMatch(
+      /data-testid="issue-code"[^>]*>\s*publish\.legacy\.replaced\s*</,
+    );
+    expect(html.indexOf('publish-preview-issues')).toBeGreaterThan(
+      html.indexOf('publish-preview-configs'),
+    );
+  });
+
+  test('while it is read again, keeps the last answer shown, marked busy', async () => {
+    const html = section(
+      await render({}, { preview: { loading: true, changes, issues: [] } }),
+    );
+
+    expect(html).toMatch(/^<section[^>]*aria-busy="true"/);
+    expect(text(html)).toContain('Updates Topology config lab');
+    expect(html).not.toContain('Working out what publishing changes');
+  });
+
+  test('a refusal is listed as errors, with no changes', async () => {
+    const refusal = {
+      code: 'publish.topology.exists',
+      severity: 'error',
+      message: 'config lab already exists',
+    };
+    const html = section(
+      await render(
+        {},
+        {
+          preview: {
+            loading: false,
+            changes: null,
+            issues: [refusal, legacyWarning],
+          },
+        },
+      ),
+    );
+
+    expect(html).toContain('data-testid="publish-preview-issues-error"');
+    expect(html).toContain('data-testid="publish-preview-issues-warning"');
+    expect(text(html)).toContain('1 error blocks publishing');
+    expect(html).not.toContain('publish-preview-configs');
   });
 });

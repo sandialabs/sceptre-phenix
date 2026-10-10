@@ -31,6 +31,8 @@ All notable changes to this project will be documented in this file.
 - **Builder merging**: Builder merges a draft with another editor's changes when both saved, and asks only about clashing fields.
 - **Builder packages**: Download saves a diagram as a Builder package: one JSON or YAML file with the Scenario configs, included topologies and custom icons you tick, and a list of what the diagram needs. Uploading it shows which of those the server has, and creates a missing config only when you tick it.
 - **Builder error codes**: Builder REST errors, validation issues, publish blockers and package warnings carry stable error codes.
+- **Builder error codes**: Builder REST errors, validation issues and publish blockers carry stable error codes.
+- **Builder publish preview**: The Publish dialog previews what publishing changes: Topology, included topologies, Scenario annotations, disk images and experiment VLAN aliases, with the warnings publishing would give. The publish route takes `dryRun`, and `phenix builder publish --dry-run` lists the same changes.
 
 ### Changed
 

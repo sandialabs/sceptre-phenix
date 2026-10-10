@@ -4,7 +4,7 @@
 // draft cursor points at and re-runs its own validation. The editor only
 // describes *what* to write, which is what these helpers build.
 
-import { listOf } from './announce.js';
+import { count, listOf } from './announce.js';
 import { sentence } from './api.js';
 import { LEGACY_ANNOTATION } from './configs.js';
 
@@ -933,4 +933,248 @@ export function describePublishResult(result) {
  */
 export function stageFailed(stage) {
   return ['failed', 'error'].includes(stage?.status);
+}
+
+// --- What publishing changes --------------------------------------------------
+//
+// The Publish dialog asks the server what publishing would change (a dry
+// run; see DescribePublishChanges in api/builder/changes.go) and says it in
+// these words, which `phenix builder publish --dry-run` uses too
+// (PublishChanges.Lines). Text carries the meaning: what is added, removed
+// or kept is in the words, not in a color.
+
+// How many devices a disk image's line names before it counts the rest, as
+// the server's lines do (maxNamedDevices in api/builder/changes.go).
+const NAMED_DEVICES = 5;
+
+/**
+ * What publishing does to a config.
+ *
+ * @param {'Topology'|'Experiment'} kind
+ * @param {{name: string, action: string}} change action 'create', 'update'
+ *   or 'unchanged'
+ * @returns {string} "Creates Topology config riverside"
+ */
+export function configChangeText(kind, change) {
+  const { name = '', action = '' } = change || {};
+
+  if (action === 'create') {
+    return `Creates ${kind} config ${name}`;
+  }
+
+  if (action === 'update') {
+    return `Updates ${kind} config ${name}`;
+  }
+
+  return `${kind} config ${name} is unchanged: it already holds this diagram`;
+}
+
+/**
+ * What publishing does to a topology the Topology config includes.
+ *
+ * @param {{name: string, change: string}} entry change 'added', 'removed'
+ *   or 'kept'
+ * @returns {string} "Removes included topology plant-a"
+ */
+export function includeChangeText({ name, change } = {}) {
+  if (change === 'added') {
+    return `Adds included topology ${name}`;
+  }
+
+  return change === 'removed'
+    ? `Removes included topology ${name}`
+    : `Keeps included topology ${name}`;
+}
+
+/**
+ * What publishing does to a Scenario config the diagram lists.
+ *
+ * @param {{name: string, change: string}} entry change 'annotate' or
+ *   'unchanged'
+ * @param {string} topology the topology's name
+ * @returns {string} "Adds topology riverside to Scenario water-ops"
+ */
+export function scenarioChangeText({ name, change } = {}, topology = '') {
+  return change === 'annotate'
+    ? `Adds topology ${topology} to Scenario ${name}`
+    : `Scenario ${name} already names topology ${topology}`;
+}
+
+// The devices of a disk image's line: the first few, then how many more.
+function devicesText(devices = []) {
+  const more = devices.length - NAMED_DEVICES;
+
+  return listOf(
+    more > 0 ? [...devices.slice(0, NAMED_DEVICES), `${more} more`] : devices,
+  );
+}
+
+/**
+ * What publishing does to a disk image the topology's devices use, and
+ * whether the server has it, when that is known.
+ *
+ * @param {{name: string, change: string, devices: string[],
+ *   onServer: boolean|null}} entry change 'added', 'removed' or 'kept'
+ * @returns {string} "Disk image ubuntu.qc2 is new (used by web-1 and
+ *   web-2); the server does not have it"
+ */
+export function imageChangeText({
+  name,
+  change,
+  devices = [],
+  onServer = null,
+} = {}) {
+  const used = devicesText(devices);
+
+  if (change === 'removed') {
+    return `Disk image ${name} is no longer used (was used by ${used})`;
+  }
+
+  const line =
+    change === 'added'
+      ? `Disk image ${name} is new (used by ${used})`
+      : `Disk image ${name} is still used (by ${used})`;
+
+  if (typeof onServer !== 'boolean') {
+    return line;
+  }
+
+  return onServer
+    ? `${line}; the server has it`
+    : `${line}; the server does not have it`;
+}
+
+/**
+ * What publishing does to the VLAN alias of a network of the experiment.
+ *
+ * @param {{name: string, from: number|null, to: number|null,
+ *   change: string}} entry change 'added', 'removed', 'changed' or 'kept'
+ * @returns {string} "VLAN alias for network ot changes from 101 to 120"
+ */
+export function aliasChangeText({ name, from, to, change } = {}) {
+  switch (change) {
+    case 'added':
+      return `VLAN alias for network ${name} is set to ${to}`;
+    case 'removed':
+      return `VLAN alias ${from} for network ${name} is removed`;
+    case 'changed':
+      return `VLAN alias for network ${name} changes from ${from} to ${to}`;
+    default:
+      return `VLAN alias for network ${name} stays ${to}`;
+  }
+}
+
+/**
+ * How many items of the lists outside the configs (included topologies,
+ * scenarios, disk images and VLAN aliases) the changes name.
+ *
+ * @param {object} [changes] as readPublishPreview in api.js reads them
+ * @returns {number}
+ */
+export function changedItems(changes) {
+  if (!changes) {
+    return 0;
+  }
+
+  return ['includes', 'scenarios', 'images', 'vlanAliases'].reduce(
+    (total, key) => total + (changes[key] || []).length,
+    0,
+  );
+}
+
+/**
+ * The Publish dialog's lists of what publishing changes, one per kind of
+ * change that has lines: the configs, included topologies, scenarios, disk
+ * images and VLAN aliases.
+ *
+ * @param {object} [changes] as readPublishPreview in api.js reads them
+ * @returns {{key: string, title: string, lines: string[]}[]}
+ */
+export function publishChangeGroups(changes) {
+  if (!changes) {
+    return [];
+  }
+
+  const topology = changes.topology?.name || '';
+  const groups = [
+    {
+      key: 'configs',
+      title: 'Configs',
+      lines: [
+        changes.topology && configChangeText('Topology', changes.topology),
+        changes.experiment &&
+          configChangeText('Experiment', changes.experiment),
+      ].filter(Boolean),
+    },
+    {
+      key: 'includes',
+      title: 'Included topologies',
+      lines: (changes.includes || []).map(includeChangeText),
+    },
+    {
+      key: 'scenarios',
+      title: 'Scenarios',
+      lines: (changes.scenarios || []).map((entry) =>
+        scenarioChangeText(entry, topology),
+      ),
+    },
+    {
+      key: 'images',
+      title: 'Disk images',
+      lines: (changes.images || []).map(imageChangeText),
+    },
+    {
+      key: 'aliases',
+      title: 'VLAN aliases',
+      lines: (changes.vlanAliases || []).map(aliasChangeText),
+    },
+  ];
+
+  return groups.filter((group) => group.lines.length > 0);
+}
+
+/**
+ * Every line of what publishing changes, in the order the dialog lists
+ * them, with "Nothing outside the Topology changes" when the lists outside
+ * the configs are empty: what `phenix builder publish --dry-run` prints
+ * (PublishChanges.Lines in api/builder/changes.go).
+ *
+ * @param {object} [changes] as readPublishPreview in api.js reads them
+ * @returns {string[]}
+ */
+export function publishChangeLines(changes) {
+  if (!changes) {
+    return [];
+  }
+
+  const lines = publishChangeGroups(changes).flatMap((group) => group.lines);
+
+  return changedItems(changes) === 0
+    ? [...lines, 'Nothing outside the Topology changes']
+    : lines;
+}
+
+/**
+ * What the Publish dialog announces when its list of changes is read again:
+ * what publishing does to the configs, how many more lines follow, and how
+ * many warnings the server listed with them.
+ *
+ * @param {object} [changes] as readPublishPreview in api.js reads them
+ * @param {number} [warnings] how many warnings the dry run answered with
+ * @returns {string}
+ */
+export function publishChangesSummary(changes, warnings = 0) {
+  const [configs] = publishChangeGroups(changes);
+  const lines = configs?.key === 'configs' ? configs.lines : [];
+  const more = changedItems(changes);
+  const said = lines.length ? `${lines.join('. ')}.` : '';
+  const rest = more
+    ? ` ${count(more, 'more line')} below.`
+    : ' Nothing outside the Topology changes.';
+  const warned = warnings > 0 ? ` ${count(warnings, 'warning')} below.` : '';
+
+  return `What publishing changes: ${said}${rest}${warned}`.replace(
+    /\s+/g,
+    ' ',
+  );
 }

@@ -351,6 +351,7 @@ const (
 	CodePublishAliasUnpublished     Code = "publish.alias.unpublished"
 	CodePublishIncludeUnchecked     Code = "publish.include.unchecked"
 	CodePublishRetryComplete        Code = "publish.retry.complete"
+	CodePublishChangesUnknown       Code = "publish.changes.unknown"
 )
 
 // Codes of sharing drafts and templates.
@@ -652,6 +653,7 @@ var codeRegistry = []CodeInfo{
 	{CodePublishAliasUnpublished, SeverityWarning, "The document's VLAN aliases are not published: a topology holds none."},
 	{CodePublishIncludeUnchecked, SeverityWarning, "An included topology could not be read to check for duplicate hostnames."},
 	{CodePublishRetryComplete, SeverityWarning, "The same publication was already complete; nothing was written."},
+	{CodePublishChangesUnknown, SeverityWarning, "A stored config could not be read to say what publishing changes."},
 
 	{CodeShareUsersRefused, SeverityError, "Some users of a share list were refused; errors names each and why."},
 

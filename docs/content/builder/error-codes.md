@@ -352,6 +352,7 @@ The warnings of an import or of a legacy diagram's conversion
 | `publish.alias.unpublished` | warning | The document's VLAN aliases are not published: a topology holds none. |
 | `publish.include.unchecked` | warning | An included topology could not be read to check for duplicate hostnames. |
 | `publish.retry.complete` | warning | The same publication was already complete; nothing was written. |
+| `publish.changes.unknown` | warning | A stored config could not be read to say what publishing changes. |
 | `share.users.refused` | error | Some users of a share list were refused; errors names each and why. |
 | `draft.stale` | error | The If-Match entity tag names a version of the draft that is no longer current. |
 | `draft.conflict` | error | The draft changed while the request was handled; read it again and retry. |

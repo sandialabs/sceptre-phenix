@@ -1138,6 +1138,56 @@ func TestPublishTopologyDryRun(t *testing.T) { //nolint:paralleltest // replaces
 	}
 }
 
+// TestPublishTopologyGoesOnWithoutChanges updates a stored topology whose
+// spec what publishing changes cannot be worked out from, as its nodes are
+// not a list: a dry run reports no changes and warns of it, and the
+// publication goes through as before, with no changes and no such warning.
+func TestPublishTopologyGoesOnWithoutChanges(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+	p := newPublishTest(t)
+
+	stored, _, err := publishableDocument("broken", "alpha").ToTopologyConfig("broken")
+	if err != nil {
+		t.Fatalf("ToTopologyConfig returned error: %v", err)
+	}
+
+	// Written to the store as it is: phenix's schema would refuse it.
+	stored.Spec = map[string]any{"nodes": "not a list"}
+
+	if err := p.configs.Create(stored); err != nil {
+		t.Fatalf("storing topology broken returned error: %v", err)
+	}
+
+	digest, err := builder.ImportDigest(*p.stored("broken"))
+	if err != nil {
+		t.Fatalf("ImportDigest returned error: %v", err)
+	}
+
+	// A document made from the topology as it is, so it may update it.
+	doc := publishableDocument("broken", "alpha")
+	doc.Source = &builder.Source{Kind: builder.SourceKindTopology, Name: "broken", Digest: digest}
+
+	unknown := func(warnings []builder.Issue) bool {
+		return slices.ContainsFunc(warnings, func(warning builder.Issue) bool {
+			return warning.Code == builder.CodePublishChangesUnknown && warning.Severity == builder.SeverityWarning
+		})
+	}
+
+	dry := p.mustPublish(doc, PublishTopologyRequest{Name: "broken", Update: true, DryRun: true}, TopologyUpdated)
+	if dry.Changes != nil || !unknown(dry.Warnings) {
+		t.Fatalf("dry run = changes %+v, warnings %+v, want no changes and a %s warning",
+			dry.Changes, dry.Warnings, builder.CodePublishChangesUnknown)
+	}
+
+	published := p.mustPublish(doc, PublishTopologyRequest{Name: "broken", Update: true}, TopologyUpdated)
+	if published.Changes != nil || unknown(published.Warnings) {
+		t.Fatalf("publication = changes %+v, warnings %+v, want neither", published.Changes, published.Warnings)
+	}
+
+	if got := hostnames(t, p.stored("broken")); !slices.Equal(got, []string{"alpha"}) {
+		t.Errorf("nodes = %v, want the document's alpha", got)
+	}
+}
+
 // TestPublishTopologyWarnsOfWhatIsNotPublished publishes documents with a
 // scenario, which a topology publication leaves alone, and VLAN aliases,
 // which a topology has no place for.

@@ -13,6 +13,9 @@ const {
   draftPath,
   expectAccessible,
   expectNoFatal,
+  isPublishPreview,
+  isPublishRequest,
+  isPublishResponse,
   labDocument,
   openConfigs,
   publishTopology,
@@ -89,13 +92,7 @@ async function fillPublish(page, { topology, experiment }) {
 async function expectPublish(page, status) {
   const submit = page.getByTestId('publish-submit');
   const updates = /update/i.test(await submit.textContent());
-  const pending = page.waitForResponse(
-    (candidate) =>
-      candidate.request().method() === 'POST' &&
-      /\/builder\/drafts\/[^/]+\/[^/]+\/publish$/.test(
-        new URL(candidate.url()).pathname,
-      ),
-  );
+  const pending = page.waitForResponse(isPublishResponse);
   await submit.click();
   if (updates) {
     await page.getByTestId('confirm-accept').click();
@@ -108,16 +105,12 @@ async function expectPublish(page, status) {
 }
 
 // Records the publish requests the page sends from now on, so a test can
-// check that a refusal came before anything was sent.
+// check that a refusal came before anything was sent. The dry runs the
+// dialog sends to show what publishing changes are not publishes.
 function watchPublishes(page) {
   const sent = [];
   page.on('request', (request) => {
-    if (
-      request.method() === 'POST' &&
-      /\/builder\/drafts\/[^/]+\/[^/]+\/publish$/.test(
-        new URL(request.url()).pathname,
-      )
-    ) {
+    if (isPublishRequest(request)) {
       sent.push(request.postDataJSON());
     }
   });
@@ -1830,34 +1823,37 @@ test('a partial publication lists the failed stage and lets the user go back', a
   await builder.createBlank();
 
   // The server's partial-failure response (writePublishPartial), served
-  // without touching the server so the test writes no configs.
+  // without touching the server so the test writes no configs. The dialog's
+  // dry runs, which write nothing, still reach the server.
   await page.route('**/builder/drafts/*/*/publish', (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        status: 'partial',
-        stages: [
-          {
-            name: 'document',
-            status: 'created',
-            message: 'immutable builder document stored',
-          },
-          {
-            name: 'topology',
-            status: 'created',
-            config: `Topology/${topology}`,
-          },
-          {
-            name: 'experiment',
-            status: 'failed',
-            message: 'experiment publication failed',
-          },
-        ],
-        warnings: [],
-        errors: ['experiment publication failed'],
-      }),
-    }),
+    isPublishPreview(route.request())
+      ? route.continue()
+      : route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'partial',
+            stages: [
+              {
+                name: 'document',
+                status: 'created',
+                message: 'immutable builder document stored',
+              },
+              {
+                name: 'topology',
+                status: 'created',
+                config: `Topology/${topology}`,
+              },
+              {
+                name: 'experiment',
+                status: 'failed',
+                message: 'experiment publication failed',
+              },
+            ],
+            warnings: [],
+            errors: ['experiment publication failed'],
+          }),
+        }),
   );
 
   await openPublish(builder);
@@ -2083,31 +2079,34 @@ test('a refused publish lists the issues the server names, with Go to their node
   await listDriveImages(page);
   await builder.openDraft(await builder.seedDraft(document));
   await builder.expectSummary('2 connections');
+  // The dialog's dry runs, which write nothing, still reach the server.
   await page.route('**/builder/drafts/*/*/publish', (route) =>
-    route.fulfill({
-      status: 422,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        message: `topology ${topology} cannot be published: ${reason}`,
-        code: 'publish.blocked',
-        errors: [
-          {
-            code: 'node.hostname.reserved',
-            severity: 'error',
-            message: reason,
-            nodeId: server2.id,
-            field: 'hostname',
-          },
-        ],
-        warnings: [
-          {
-            code: 'publish.file.unchanged',
-            severity: 'warning',
-            message: 'the Builder file of the topology is not changed',
-          },
-        ],
-      }),
-    }),
+    isPublishPreview(route.request())
+      ? route.continue()
+      : route.fulfill({
+          status: 422,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            message: `topology ${topology} cannot be published: ${reason}`,
+            code: 'publish.blocked',
+            errors: [
+              {
+                code: 'node.hostname.reserved',
+                severity: 'error',
+                message: reason,
+                nodeId: server2.id,
+                field: 'hostname',
+              },
+            ],
+            warnings: [
+              {
+                code: 'publish.file.unchanged',
+                severity: 'warning',
+                message: 'the Builder file of the topology is not changed',
+              },
+            ],
+          }),
+        }),
   );
 
   const dialog = await openPublish(builder);
@@ -2200,6 +2199,198 @@ test(
           include: '[data-testid="checks-dialog"]',
           soft: true,
           label: `axe on the Checks dialog (${scheme})`,
+        });
+        await page.keyboard.press('Escape');
+        await expect(builder.dialog).toHaveCount(0);
+      });
+    }
+
+    expectNoFatal(issues);
+  },
+);
+
+// --- what publishing changes ------------------------------------------------------
+
+// The lines of one list of the Publish dialog's What publishing changes:
+// configs, includes, scenarios, images or aliases.
+function previewLines(page, list) {
+  return page.getByTestId(`publish-preview-${list}`).getByRole('listitem');
+}
+
+// A topology another one includes, with one device, `hostname`.
+function includedTopology(name, hostname) {
+  return {
+    apiVersion: 'phenix.sandia.gov/v1',
+    kind: 'Topology',
+    metadata: { name },
+    spec: {
+      nodes: [
+        {
+          type: 'VirtualMachine',
+          general: { hostname, vm_type: 'kvm' },
+          hardware: { os_type: 'linux', drives: [{ image: 'centos.qc2' }] },
+          network: {
+            interfaces: [
+              { name: 'eth0', proto: 'dhcp', type: 'ethernet', vlan: 'EXP' },
+            ],
+          },
+        },
+      ],
+    },
+  };
+}
+
+// labDocument(name), including the topology `included` and listing the
+// scenario `scenario`.
+function previewLab(name, { included, scenario }) {
+  const document = labDocument(name);
+
+  if (included) {
+    document.source = { kind: 'manual', includeTopologies: [included] };
+  }
+
+  if (scenario) {
+    document.scenarios = [scenario];
+  }
+
+  return document;
+}
+
+test('the Publish dialog shows what publishing changes, follows the form, and writes nothing until Publish', async ({
+  page,
+  builder,
+  tracker,
+  issues,
+}, testInfo) => {
+  const topology = uniqueName(testInfo, 'preview');
+  const renamed = uniqueName(testInfo, 'preview-b');
+  const experiment = uniqueName(testInfo, 'preview-exp');
+  const included = uniqueName(testInfo, 'preview-inc');
+  const scenario = uniqueName(testInfo, 'preview-scn');
+  tracker.config('Topology', topology);
+  await builder.seedConfig(includedTopology(included, 'preview-inc-host'));
+  await builder.seedConfig(scenarioConfig(scenario, 'builder-e2e-preview'));
+
+  await builder.openDraft(
+    await builder.seedDraft(previewLab(topology, { included, scenario })),
+  );
+  await builder.expectSummary('2 connections');
+
+  const dialog = await openPublish(builder);
+  await expect(
+    dialog.getByRole('heading', { name: 'What publishing changes' }),
+  ).toBeVisible();
+  await expect(previewLines(page, 'configs')).toHaveText([
+    `Creates Topology config ${topology}`,
+  ]);
+  await expect(previewLines(page, 'includes')).toHaveText([
+    `Adds included topology ${included}`,
+  ]);
+  await expect(previewLines(page, 'scenarios')).toHaveText([
+    `Adds topology ${topology} to Scenario ${scenario}`,
+  ]);
+  // Whether the server has the image depends on its minimega, which the
+  // line says only when the server's images can be read.
+  await expect(previewLines(page, 'images')).toHaveText([
+    /^Disk image ubuntu\.qc2 is new \(used by server and server-2\)/,
+  ]);
+  await expect(dialog.getByTestId('publish-preview')).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  // The preview never holds Publish back.
+  await expect(page.getByTestId('publish-submit')).toBeEnabled();
+
+  await test.step('the preview follows the names and the mode', async () => {
+    // From the change on, the lines shown are marked as being read again,
+    // through the pause before the server is asked.
+    await page.getByTestId('publish-name').fill(renamed);
+    await expect(dialog.getByTestId('publish-preview')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+
+    await fillPublish(page, { topology: renamed, experiment });
+    await expect(previewLines(page, 'configs')).toHaveText([
+      `Creates Topology config ${renamed}`,
+      `Creates Experiment config ${experiment}`,
+    ]);
+    await expect(previewLines(page, 'scenarios')).toHaveText([
+      `Adds topology ${renamed} to Scenario ${scenario}`,
+    ]);
+
+    // A name the server would refuse is not sent: the preview says why.
+    await page.getByTestId('publish-name').fill('not a name');
+    await expect(page.getByTestId('publish-preview-blocked')).toContainText(
+      'The topology name "not a name" is not allowed',
+    );
+
+    await page.getByRole('radio', { name: 'Topology only' }).check();
+    await page.getByTestId('publish-name').fill(topology);
+    await expect(previewLines(page, 'configs')).toHaveText([
+      `Creates Topology config ${topology}`,
+    ]);
+  });
+
+  // Previewing wrote nothing.
+  expect(await builder.config('Topology', topology)).toBeNull();
+  expect(await builder.config('Topology', renamed)).toBeNull();
+  expect(await builder.config('Experiment', experiment)).toBeNull();
+  expect(
+    (await builder.config('Scenario', scenario)).metadata.annotations?.topology,
+  ).toBeUndefined();
+
+  await expectPublish(page, 200);
+  await expect(page.getByTestId('publish-result')).toContainText(
+    'Every stage succeeded',
+  );
+  await closeButton(page).click();
+  await expect(builder.dialog).toHaveCount(0);
+
+  await test.step('reopened, the dialog says publishing again changes nothing', async () => {
+    await openPublish(builder);
+    await expect(page.getByTestId('publish-name')).toHaveValue(topology);
+    await expect(previewLines(page, 'configs')).toHaveText([
+      `Topology config ${topology} is unchanged: it already holds this diagram`,
+    ]);
+    await expect(previewLines(page, 'includes')).toHaveText([
+      `Keeps included topology ${included}`,
+    ]);
+    await expect(previewLines(page, 'scenarios')).toHaveText([
+      `Scenario ${scenario} already names topology ${topology}`,
+    ]);
+    await expect(previewLines(page, 'images')).toHaveText([
+      /^Disk image ubuntu\.qc2 is still used \(by server and server-2\)/,
+    ]);
+  });
+
+  expectNoFatal(issues);
+});
+
+test(
+  'axe finds no serious violations in the Publish dialog showing what publishing changes',
+  { tag: ['@axe'] },
+  async ({ page, builder, issues }, testInfo) => {
+    const scenario = uniqueName(testInfo, 'axe-preview-scn');
+    await builder.seedConfig(scenarioConfig(scenario, 'builder-e2e-axe'));
+    const draft = await builder.seedDraft(
+      previewLab(uniqueName(testInfo, 'axe-preview'), { scenario }),
+    );
+
+    for (const scheme of ['light', 'dark']) {
+      await test.step(`the ${scheme} theme`, async () => {
+        await page.emulateMedia({ colorScheme: scheme });
+        await builder.openDraft(draft);
+
+        await openPublish(builder);
+        await expect(previewLines(page, 'scenarios')).toHaveCount(1);
+        await expect(
+          builder.dialog.getByTestId('publish-preview'),
+        ).toHaveAttribute('aria-busy', 'false');
+        await expectAccessible(page, {
+          include: '[data-testid="builder-dialog"]',
+          soft: true,
+          label: `axe on the Publish dialog's preview (${scheme})`,
         });
         await page.keyboard.press('Escape');
         await expect(builder.dialog).toHaveCount(0);
