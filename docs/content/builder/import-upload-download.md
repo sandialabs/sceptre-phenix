@@ -780,8 +780,8 @@ $ cd /phenix/topologies/riverside-water
 $ phenix builder publish riverside-water.builder.json --dry-run
 Document:     Riverside Water
 File:         /phenix/topologies/riverside-water/riverside-water.builder.json
-Digest:       sha256:a3c6569728e1ea77cc3519c48c904cf2e300f2ed535821cb50d05963c17cc1f5
-Document ID:  0dff463189b8e26b702884a420105cf01fb91130338892a98feb45b3786e8583
+Digest:       sha256:1ff0029f39e932995bffdc1335c03683dc7ff94bead6b943b788431187d861db
+Document ID:  3da3426690fe1cfddce33b19a0596a7362da0ff2ba342a6b69554d7be110d47e
 Topology:     Riverside-Water (would be created)
 Nodes:        10
 Warnings:
@@ -824,7 +824,7 @@ in two cases only:
     ```console
     $ phenix builder publish riverside-water.builder.json --name riverside-water --update
     2026-10-01 21:51:07.132 WRN The document's scenario is not changed: only the topology is published. type=SYSTEM topology=riverside-water
-    2026-10-01 21:51:07.132 INF topology updated type=SYSTEM name=riverside-water document=9b8b4b74fb6835c64b543443ad341b21c4812e185c40e7221f292995fead6761 digest=sha256:a3c6569728e1ea77cc3519c48c904cf2e300f2ed535821cb50d05963c17cc1f5
+    2026-10-01 21:51:07.132 INF topology updated type=SYSTEM name=riverside-water document=87d5f9c5e686bdf96898b772f1b8f863b7d3c0f3e7ece332629a03f3849badcb digest=sha256:1ff0029f39e932995bffdc1335c03683dc7ff94bead6b943b788431187d861db
     ```
 
 !!! note

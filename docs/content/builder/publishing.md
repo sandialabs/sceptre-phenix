@@ -76,7 +76,7 @@ The confirmation in step 5, and the result in step 6:
 
 ![The confirmation Replace topology riverside-water?, saying publishing replaces the topology on the server and cannot be undone, with Cancel and Update topology.](../images/builder/quickstart-publish-confirm.png)
 
-![The Publish diagram dialog after publishing: Published. Every stage succeeded, with the document created, topology updated and draft ok, and a Close button.](../images/builder/quickstart-publish-result.png)
+![The Publish diagram dialog after publishing: Published. Every stage succeeded, with the document created, topology updated, scenario skipped because scenario riverside-water already names topology riverside-water, and draft ok, and a Close button.](../images/builder/publish-result.png)
 
 Config names can use only letters, numbers, underscores (_), at signs (@),
 periods (.) and hyphens (-), with no spaces. The dialog shows this rule only
@@ -157,8 +157,8 @@ metadata:
     name: riverside-water
     annotations:
         builder-doc:
-            digest: sha256:a62655786319cf4b5a38653dd6c16118a1802a621e4a0f65a78b8e1392177691
-            id: 14c17b46f3a0c6f5ba2f66c6fdd2ff20ef621a57c1aa65ddba5e91413435dc81
+            digest: sha256:81477ee371ab55828177eb1596ce51497e441c7eef5176e0cf9b7c454567d814
+            id: 9aa9b64dc31e5bc9aa3c86d66b450165f0ba32c947227697b3fd08231feef136
         maintainer: range-team
         purpose: Water utility training range
 ```
@@ -258,7 +258,7 @@ To update `riverside-water` and create the experiment `riverside-lab` from it:
 
 The dialog in step 5:
 
-![The Publish diagram dialog set to Topology and an experiment, with Topology name riverside-water to be updated, Experiment name riverside-lab to be created, the stored scenario riverside-water, the checks summary, and the Update topology and create experiment button.](../images/builder/publish-experiment.png)
+![The Publish diagram dialog set to Topology and an experiment: Topology name riverside-water with the warning A topology with this name exists and will be updated., Experiment name riverside-lab to be created, Experiment scenario riverside-water with the hint that publishing adds this topology to the topology annotation of the scenario riverside-water, the checks summary, and the Update topology and create experiment button.](../images/builder/publish-experiment.png)
 
 The Experiment config `riverside-lab` now uses the topology `riverside-water`
 and the scenario `riverside-water`. Start it from the **Experiments** page
@@ -392,7 +392,7 @@ Error: interface "eth0" of "historian-01-2" is not connected to a network and ha
 Error: IP address 10.10.30.20 of interface "eth0" of "historian-01-2" is also used by interface "eth0" of "historian-01"
 ```
 
-![The Publish diagram dialog for Riverside Water expansion with three errors under Checks, for the shared address 10.10.30.20 and the unconnected eth0 of historian-01-2, and the Create topology button unavailable.](../images/builder/publish-blocked.png)
+![The Publish diagram dialog for Riverside Water expansion: Topology only, Topology name Riverside-Water-expansion with the hint A new topology will be created., the Scenarios part, and three errors under Checks, for the shared address 10.10.30.20 and the unconnected eth0 of historian-01-2, with the Create topology button unavailable.](../images/builder/publish-blocked.png)
 
 To fix them:
 

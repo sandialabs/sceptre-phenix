@@ -32,7 +32,7 @@ it was made from: changing or deleting a template later changes no device.
 
 ## Templates in Add nodes
 
-![Add nodes with Device, Switch, Note and Group, then the Device templates heading with the New device template (+) and Node Templates library buttons; under This diagram, the template Engineering workstation with its menu open, offering Edit, Save to library and Delete; and under My library, Server, Workstation, Router, Firewall and External device.](../images/builder/palette-templates.png) { width="240" }
+![Add nodes with Device, Switch, Note, Group, Rectangle, Circle, Icon and Line, then the Device templates heading with the New device template (+) and Node Templates library buttons; under This diagram, the template Engineering workstation with its menu open, offering Edit, Save to library and Delete; under My library, Server, Workstation, Router, Firewall and External device; and under Server: Example Plant Templates, PLC, HMI and Plant router.](../images/builder/palette-templates.png){ width="240" }
 
 **Add nodes** lists the device templates in groups, in this order:
 
@@ -127,7 +127,7 @@ tooltip says "This diagram has 50 templates, the most it can hold."
 
 ### The template editor
 
-![The New device template editor made from ws-01: on the left, under Template, Name Engineering workstation and Description CORP workstation with CAD tools with its hint; on the right, under Node fields in two columns, Hostname ws-01, Icon windows, Custom icon None, Outline Color, Fill Color and the Node section with Type VirtualMachine and the General fields; and Cancel and Save to diagram at the bottom.](../images/builder/template-editor.png)
+![The New device template editor made from ws-01: on the left, under Template, Name Engineering workstation and Description CORP workstation with CAD tools with its hint; on the right, under Node fields in two columns, Hostname ws-01, Icon windows, Custom icon None, Icon size Diagram default (Small), Outline Color, Fill Color and the Node section with Type VirtualMachine and the General fields, its notes among them; and Cancel and Save to diagram at the bottom.](../images/builder/template-editor.png)
 
 The template editor is a large dialog, so the fields have room. On the left,
 under **Template**:
@@ -188,7 +188,7 @@ or select **Node Templates library** in **Add nodes**. The command palette
 has **Open Node Templates library** in the editor, and **Show Node
 Templates** on the drafts page.
 
-![The Node Templates tab showing the collection Riverside lab: New template and New collection; Show set to Riverside lab; the collection's name, 5 templates, its description, and Edit collection, Share and Delete collection; the selection row with Select all, 2 of 5 selected, Add to collection, Remove from collection, Share selected and Delete selected; and cards for Server, Workstation, Router, Firewall and External device, with Workstation and Firewall selected, each saying In Riverside lab, with its description and Edit, Share and Delete.](../images/builder/node-templates-tab.png)
+![The Node Templates tab showing the collection Riverside lab: New template, New collection and Import templates; Show set to Riverside lab; the collection's name, 5 templates, its description, and Edit collection, Share, Delete collection and Export collection; the selection row with Select all, 2 of 5 selected, Add to collection, Remove from collection, Share selected, Delete selected and Export selected; and cards for Server, Workstation, Router, Firewall and External device, with Workstation and Firewall selected, each saying In Riverside lab, with its description and Edit, Share, Delete and Export.](../images/builder/node-templates-tab.png)
 
 The tab holds:
 
@@ -298,8 +298,9 @@ shared with you. Export keeps the first name and numbers the others, "plc
 (2)", "plc (3)" and so on, and says so: "The templates of a file need names
 that differ even ignoring case, so it holds "plc" as "plc (2)"."
 
-A file looks like this
-([download the example](examples/node-templates.yaml)):
+A file looks like this (the example file
+[node-templates.yaml](examples/node-templates.yaml) is another one, with
+three templates and no icons):
 
 ```yaml
 $schema: https://phenix.sandia.gov/schemas/builder/templates/v1
@@ -354,6 +355,11 @@ To import a template file into your library:
    floor: 2 templates and 1 custom icon."
 3. Select **Import**.
 
+The dialog in step 3, with the example file
+[node-templates.yaml](examples/node-templates.yaml):
+
+![The Import templates dialog with node-templates.yaml chosen as the Template file, its hint, the description Example Plant Templates: 3 templates., and the Cancel and Import buttons.](../images/builder/template-import.png){ width="592" }
+
 The templates are added to your library as copies, in a new collection with
 the file's name and description. When one of your collections already has
 that name, the new one gets a number, for example "Plant floor (2)", which
@@ -393,6 +399,11 @@ collection to my library** and **Export collection**. To change a template,
 copy it to your library and change the copy. The collection says "Read from
 a template file on the phenix server. To change a template, copy it to your
 library."
+
+Here the server's template directory holds the example file
+[node-templates.yaml](examples/node-templates.yaml):
+
+![The Node Templates tab with Show set to the server collection Example Plant Templates: its name, 3 templates, the note Read from a template file on the phenix server. To change a template, copy it to your library., its description, Copy collection to my library and Export collection; the selection row with Select all, Copy to my library and Export selected; and cards for PLC, HMI and Plant router, each with View, Copy to my library and Export.](../images/builder/templates-server.png)
 
 ## Sharing templates
 

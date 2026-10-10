@@ -729,8 +729,8 @@ of a config is text. In the JSON of a config it is an object:
 ```json
 "annotations": {
   "builder-doc": {
-    "digest": "sha256:a3c6569728e1ea77cc3519c48c904cf2e300f2ed535821cb50d05963c17cc1f5",
-    "id": "9b8b4b74fb6835c64b543443ad341b21c4812e185c40e7221f292995fead6761"
+    "digest": "sha256:1ff0029f39e932995bffdc1335c03683dc7ff94bead6b943b788431187d861db",
+    "id": "87d5f9c5e686bdf96898b772f1b8f863b7d3c0f3e7ece332629a03f3849badcb"
   },
   "maintainer": "range-team",
   "purpose": "Water utility training range"
@@ -1003,8 +1003,8 @@ document, as every publish does, and writes `digest` and `id` beside the
 
 ```yaml
     builder-doc:
-      digest: sha256:ea65ffe247c2e425e96ced25ba077fd50104c481435974f995d2a05ce10fe159
-      id: bcf0b3bd4b8b876f594637d3d43e2f6b6fcdedaceb0bfde99e994c9992928a03
+      digest: sha256:4ba9ae46494bb7d2498f5119b55996f332c52c1b95d79502361afbf50707cbc3
+      id: 89f0a9779c2e5892da9f7a9ae2ed5c58c564fe57ea86f50f4452f174cb68ad93
       path: /phenix/topologies/pump-station/pump-station.builder.json
 ```
 

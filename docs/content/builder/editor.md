@@ -9,7 +9,7 @@ step-by-step tasks, such as adding devices and connecting them, see
 The examples on this page use the Riverside Water draft of the
 [example lab](index.md#the-example-lab).
 
-![The Builder editor showing the Riverside Water diagram: the header and toolbar at the top, Add nodes and Outline on the left, the canvas with the DMZ, INTERNET, OT and CORP groups in the middle, and the Inspector with the diagram's details, annotations and scenario on the right.](../images/builder/overview-editor.png)
+![The Builder editor showing the Riverside Water diagram: the header and toolbar at the top, Add nodes and Outline on the left, the canvas with the DMZ, INTERNET, OT and CORP groups in the middle, and the Inspector with the diagram's name, description, icon size, details and annotations on the right.](../images/builder/overview-editor.png)
 
 The editor has five areas:
 
@@ -103,7 +103,7 @@ that when you publish (see [Publishing](publishing.md)).
 
 ## Toolbar
 
-![The editor toolbar with its editing, layout, scenario, download, upload, publish, Minimap and Draft History buttons, and the save state All changes saved.](../images/builder/editor-toolbar.png)
+![The editor toolbar: Undo, Redo, Copy, Paste, Delete, Group, Ungroup, Auto-group, the layout menu set to ELK layered, Scenarios, Download, Upload and Publish on the first row; Add connection, Move to group, Minimap, Draft History and the save state All changes saved on the second.](../images/builder/editor-toolbar.png)
 
 The toolbar's buttons, from left to right:
 
@@ -269,7 +269,7 @@ groups or more have templates. See
 
 ## Outline
 
-![The Outline listing the CORP, DMZ, INTERNET and OT groups with their switches and devices, dns-01 and ntp-01 marked INCLUDED, and ot-fw selected.](../images/builder/outline-panel.png){ width="242" }
+![The Outline listing the CORP, DMZ, INTERNET and OT groups with their switches and devices, dns-01 and ntp-01 marked INCLUDED, ot-fw selected, and the note; below the tree, Networks lists CORP, DMZ, INTERNET and OT, each with no alias, its number of devices and a remove button.](../images/builder/outline-panel.png){ width="240" }
 
 The **Outline** lists every node of the diagram as a tree: each group with
 the nodes in it, then the nodes that are in no group. Each row shows what
@@ -307,7 +307,7 @@ with several items selected, it shows the diagram itself.
 
 ### With nothing selected
 
-![The Inspector with nothing selected: the diagram's Name and Description; Details, with Created Sep 29, 2026, 10:18 AM by e2e-admin, Last edited Sep 29, 2026, 10:30 AM by global-admin and Source file riverside-water.builder.json; the Annotations imported from Topology riverside-water (maintainer and purpose); and the Scenario section listing the vrouter and ntp apps with their hosts and an Edit scenario button.](../images/builder/inspector-diagram.png){ width="354" }
+![The Inspector with nothing selected: the diagram's Name and Description; Icon size Small (16 pixels) with its hint; Details, with Created Sep 29, 2026, 12:17 PM by e2e-admin, Last edited Oct 9, 2026, 10:51 PM by global-admin and Source file riverside-water.builder.json; the Annotations imported from Topology riverside-water (maintainer and purpose); Scenarios, with Scenario riverside-water, its vrouter and ntp apps with their hosts, and an Edit scenarios button; and Notes, with No notes. and an Add note button.](../images/builder/inspector-diagram.png){ width="352" }
 
 The **Diagram** section has:
 
@@ -332,10 +332,9 @@ The **Diagram** section has:
     `riverside-water.builder.json` that names `e2e-admin` as the maker of
     the diagram (its `createdBy`), and **Upload** keeps it. The upload itself is the
     last edit. Its user is `global-admin`, the user everyone has on a phenix
-    server with authentication disabled. The times are those of the day the
-    picture was taken: uploading the example file of that name shows the
-    time the file gives for **Created**, and the time of your upload for
-    **Last edited**. A row is left out when the diagram does not have its
+    server with authentication disabled. The times are shown in US Mountain
+    Time: **Created** is the time the file gives, and **Last edited** the
+    time of the upload. A row is left out when the diagram does not have its
     value. See
     [Who made and last saved a diagram](import-upload-download.md#who-made-and-last-saved-a-diagram).
 - **Annotations**: for a draft imported from a config, the annotations of
@@ -367,7 +366,7 @@ The **Diagram** section has:
 
 ### Editing a node
 
-![The Inspector for the device edge-rtr: Hostname, Icon router, Custom icon None, Outline Color, Fill Color, Type Router, and the General and Hardware sections with the description VyOS edge router, the drive vyos.qc2, 2048 MB of memory and OS type vyos.](../images/builder/inspector-device.png){ width="354" }
+![The Inspector for the device edge-rtr: Hostname, Icon router, Custom icon None, Icon size Diagram default (Small), Outline Color, Fill Color, Type Router, and the General and Hardware sections with the description VyOS edge router, Notes with No notes. and Add note, the drive vyos.qc2, 2048 MB of memory, OS type vyos and 2 VCPUs.](../images/builder/inspector-device.png){ width="352" }
 
 Select a node to see its fields. A device has these sections:
 
@@ -732,7 +731,7 @@ Select **Settings** in the header to open **Builder settings**, or press
 editor or on the drafts page. Changes apply at once. The browser keeps them,
 and they stay after you log out.
 
-![The Builder settings dialog: Theme System, Light or Dark, Reduce motion, Default layout set to ELK layered, Show the minimap, Zoom when a diagram opens with 100%, Fit the whole diagram in view and Custom with a percentage field, Single-key shortcuts, Change keyboard shortcuts, Reset to defaults and Done.](../images/builder/settings-dialog.png)
+![The Builder settings dialog: Theme System, Light or Dark, Reduce motion, Default layout set to ELK layered, Show the minimap, Show node notes, Zoom when a diagram opens with 100%, Fit the whole diagram in view and Custom with a percentage field, Single-key shortcuts, Change keyboard shortcuts, Reset to defaults and Done.](../images/builder/settings-dialog.png)
 
 - **Theme**: **System**, **Light** or **Dark**. System follows your
   device's light or dark appearance.

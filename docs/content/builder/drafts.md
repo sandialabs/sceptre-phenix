@@ -232,7 +232,7 @@ network between your browser and the server goes down:
 
 The save state in step 1:
 
-![The toolbar with the save state Offline: 1 change kept on this device. Saving retries automatically.](../images/builder/save-state-offline.png)
+![The toolbar with the save state Offline: 1 change kept on this device. Saving retries automatically., and the Retry saving button at the end of its second row.](../images/builder/save-state-offline.png)
 
 The changes stay in this browser even if you close the tab. The next time
 you open the draft in this browser, Builder sends them. Logging out

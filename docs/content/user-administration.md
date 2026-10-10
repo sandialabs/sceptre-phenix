@@ -143,8 +143,9 @@ Key: E - experiment resource, V - VM resource, U - user resource
 
 The built-in **Builder** role is for users of the [Builder](builder/index.md),
 the web topology editor. It controls configs rather than experiments or VMs:
-it can list, get, create, update and delete every config, reach every
-user's Builder drafts, publish Builder templates server-wide, and list, get,
+it can list, get, create, update and delete Topology, Scenario and Experiment
+configs, reach every user's Builder drafts, publish Builder templates
+server-wide, rename and delete any user's Builder icons, and list, get,
 create and update experiments. See
 [The Builder role](builder/administration.md#the-builder-role).
 
@@ -619,8 +620,9 @@ spec:
   - resources:
     - configs
     resourceNames:
-    - "*"
-    - "*/*"
+    - "Topology/*"
+    - "Scenario/*"
+    - "Experiment/*"
     verbs:
     - list
     - get

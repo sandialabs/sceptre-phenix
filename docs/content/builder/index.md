@@ -7,7 +7,7 @@ server, apart from the phenix configs. Only **Publish** writes Topology and
 Experiment configs and adds a topology to its scenarios, and only the
 **Scenarios** dialog stores a Scenario config, from a file you upload.
 
-![The Builder editor showing the Riverside Water diagram: the header and toolbar at the top, Add nodes and Outline on the left, the canvas with the DMZ, INTERNET, OT and CORP groups in the middle, and the Inspector with the diagram's details, annotations and scenario on the right.](../images/builder/overview-editor.png)
+![The Builder editor showing the Riverside Water diagram: the header and toolbar at the top, Add nodes and Outline on the left, the canvas with the DMZ, INTERNET, OT and CORP groups in the middle, and the Inspector with the diagram's name, description, icon size, details and annotations on the right.](../images/builder/overview-editor.png)
 
 ## What you can do with Builder
 

@@ -134,7 +134,7 @@ The Inspector of a switch, for example "Network CORP", has these fields:
 For example, to give CORP the VLAN alias 120, select the CORP switch, type
 `120` in **VLAN alias**, and select **Apply**.
 
-![The Inspector for network CORP: a note that CORP cannot be renamed because ntp-01 from the included topology corp-services is on it, Name CORP (read only), VLAN alias 120 marked as changed, Description, Edge Color, Line style, Outline Color, Fill Color, Unapplied changes with Apply and Cancel, and Position.](../images/builder/inspector-network.png){ width="354" }
+![The Inspector for network CORP: a note that CORP cannot be renamed because ntp-01 from the included topology corp-services is on it, Name CORP (read only), VLAN alias 120 marked as changed, Description, Edge Color, Line style, Outline Color, Fill Color, Icon size Diagram default (Small), Notes with No notes. and Add note, Unapplied changes with Apply and Cancel, and Position.](../images/builder/inspector-network.png){ width="352" }
 
 A network that a device from an included topology is on cannot be renamed or
 removed. Its other fields can still change. In Riverside Water, that is CORP,
@@ -181,6 +181,10 @@ selected device in **Device**, a selected switch in **Switch**.
    that has no connection yet.
 3. In **Switch**, choose **CORP (CORP)**.
 4. Select **Connect**.
+
+The dialog before step 4:
+
+![The Add a connection dialog with Device ws-03, Interface Add a new interface and Switch CORP (CORP), and the Cancel and Connect buttons.](../images/builder/connect-dialog.png){ width="496" }
 
 The dialog closes and focus returns to **Add connection**. With a field
 empty, **Connect** says which one and moves focus to it, and a connection
@@ -342,6 +346,12 @@ them as part of the node's description.
    its own, and **Remove** takes one away.
 3. Select **Apply**.
 
+For example, the pump station of
+[pump-station.builder.json](examples/pump-station.builder.json) after adding
+two notes to rtu-01 and one to the STATION switch:
+
+![Part of the pump station diagram: below rtu-01, a card with the notes Modbus TCP on port 502 and Firmware 2.4: update it before the exercise; below the STATION switch, a card with the note Field network, no route to the internet.](../images/builder/node-notes.png)
+
 A device's notes are its node's `general.notes`: publishing writes them to
 the topology, and a new experiment copies them to the VM's notes (see
 [Publishing](publishing.md)). A switch is not part of the topology, so its
@@ -408,6 +418,8 @@ rectangle**, **Add circle**, **Add icon** and **Add line**. Like any node,
 a drawing can be moved, put in a group, copied, duplicated and deleted, and
 the layouts leave it where it is: one in a group moves with its group, and
 the group grows to hold it when the layout makes it smaller.
+
+![The pump station with drawings: a dashed blue rectangle labelled Pump house behind eng-ws-01 and rtu-01, a green circle labelled Reservoir, the built-in external icon labelled Cell tower, a dashed amber line labelled LTE uplink with an arrowhead at each end between station-rtr and the cell tower, and a gray line labelled Fiber to the reservoir that runs down from the reservoir, bends and ends in an arrowhead beside the WAN switch.](../images/builder/drawings.png)
 
 Select a drawing to change it in the Inspector, then select **Apply**:
 
@@ -592,6 +604,8 @@ ends with an ellipsis, as before; the Inspector and the node's tooltip show
 it whole. PNG and SVG downloads draw the icons at their sizes. Icon sizes
 stay in the Builder document: publishing writes none of them.
 
+![Three devices of the pump station: eng-ws-01 with a Small icon before its name, rtu-01 with a Medium icon and station-rtr with a Large icon, each left of the node's lines, which end with an ellipsis where they no longer fit.](../images/builder/icon-sizes.png)
+
 At **Medium** and **Large**, a switch's second line, which names its network
 (for example "Network CORP, VLAN alias 120"), shows fewer characters than at
 **Small** before its ellipsis, because the icon takes part of its width. The
@@ -632,6 +646,8 @@ The dialog lists:
   "You uploaded 2 of 64 icons, 3.0 KiB of 1 MiB." **Filter icons** narrows
   the list by name, other name or uploader. Each icon has **Use**, and
   **Rename** and **Delete** when you may change it.
+
+![The Custom icons dialog: its description, Upload icon…, and Server icons (3) with You uploaded 3 of 64 icons, 1.5 KiB of 1 MiB, the Filter icons field, and the icons plc, pump and valve, each uploaded by global-admin, with its size and the Use, Rename and Delete buttons; and Close.](../images/builder/custom-icons-dialog.png){ width="624" }
 
 ### Uploading an icon
 
@@ -817,6 +833,10 @@ it to another diagram, such as your
 2. In **Add a stored scenario**, choose `riverside-water`, and select
    **Add**. It is listed under **Scenarios of this diagram**.
 3. Select **Save scenarios**.
+
+The dialog before step 3:
+
+![The Scenarios dialog: riverside-water under Scenarios of this diagram with a Remove button, Add a stored scenario with Choose a scenario and Add, Upload a scenario file with its file field and hint, the status Added scenario riverside-water to the list., and the Cancel and Save scenarios buttons.](../images/builder/scenario-dialog.png)
 
 With nothing selected, the Inspector now lists "Scenario riverside-water",
 with each app and its hosts under **Apps and their hosts**: vrouter on
