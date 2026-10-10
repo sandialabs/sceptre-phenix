@@ -1271,20 +1271,24 @@ when (`createdBy`, `createdAt`) instead of a `path`.
 
 The Builder page loads large script files that the other pages do not
 load. The UI build writes a Brotli copy and a gzip copy of each of these
-files. phenix sends the copy that the browser accepts, and tells the
-browser to keep the file for one year. Each release gives the files new
-names, so browsers download them again after an upgrade.
+files when the copy is smaller than the file. phenix sends the copy that the
+browser accepts, and tells the browser to keep the file for one year. A file
+gets a new name when its content changes, so browsers download changed files
+again after an upgrade.
 
 The environment variable `PHENIX_BROTLI_QUALITY` sets the Brotli quality of
 the UI build. Use a whole number from 0 to 11. The default is 9. A higher
 quality makes smaller copies, but the build takes more time. The build
 stops with an error when the value is not a whole number from 0 to 11.
 
-These builds set quality 11:
+The Docker image (`docker/Dockerfile`) and the Podman image
+(`podman/Containerfile`) set quality 11. These builds use those images:
 
-- `make docker`
-- `make deb`
-- the Podman image (`podman/Containerfile`)
+- `make docker` builds `docker/Dockerfile`.
+- `make deb` builds `docker/Dockerfile`, and then makes the package from that
+  image. When you set `PHENIX_BUILD_IMAGE` to an image that you built before,
+  `make deb` uses that image. The package then has the quality that the image
+  used.
 
 All other builds use quality 9, for example `make build` and
 `npm run build`.
@@ -1297,8 +1301,8 @@ The table shows the results for the Builder's files (7 files, 3.1 MB):
 | 10 | 725 kB | 1.3 s |
 | 11 (packages) | 711 kB | 3.0 s |
 
-Quality 11 saves 74 kB, and a browser downloads the files only one time for
-each release. Thus quality 9 is the default, because it is faster for
+Quality 11 saves 74 kB, and a browser downloads a file again only when the
+file changes. Thus quality 9 is the default, because it is faster for
 frequent builds. To build the UI with quality 11, as the packages do:
 
 ```bash
