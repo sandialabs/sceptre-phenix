@@ -176,7 +176,10 @@ topology (`canCreate`). Continue creates the ticked configs one at a time
 (`createTickedConfigs`, `store.createPackagedConfig`, `POST /configs`; a
 failure is a warning and the rest go on), runs `ingestIcons`, then opens the
 document as a new draft as a plain upload does (`openUploaded`); failures
-and icon warnings show first in `ImportWarnings`. While Continue works
+and icon warnings show first in `ImportWarnings`, whose summary names the
+configs created first (`Created Scenario config <n> on this server. This
+upload has 1 warning.`, `createdConfigs`), and Cancel or closing that view
+announces `Created … on this server.` again. While Continue works
 (`creating` in `UploadDialog.vue`), `upload-package-cancel` is
 aria-disabled and described by `upload-package-progress` (the status
 text), and `requestClose` ignores Close, Escape and the backdrop, as

@@ -204,7 +204,8 @@ where your changes are:
 | Offline: 2 changes not stored anywhere yet. Keep this tab open; saving retries automatically. | The server cannot be reached, and the browser could not store the changes either. | Keep the tab open until the save state says All changes saved. |
 | Offline: no unsaved changes | The server cannot be reached, and nothing is waiting. | Nothing. |
 | 1 change not saved yet. Choose which changes to save. | Another tab of this browser also has changes to this draft. | See [One draft in several tabs](#one-draft-in-several-tabs). |
-| This draft changed on the server | Someone saved a newer version first, and Builder is merging it with your changes, or some of your changes clash with theirs. | See [When the draft changed on the server](#when-the-draft-changed-on-the-server). |
+| Merging your changes with the server version… | Someone saved a newer version first, and Builder is merging it with your changes. Edits wait until it is done. | Wait. See [When the draft changed on the server](#when-the-draft-changed-on-the-server). |
+| This draft changed on the server | Someone saved a newer version first, and some of your changes clash with theirs, or merging is not available. | See [When the draft changed on the server](#when-the-draft-changed-on-the-server). |
 | Not saved: you chose another tab's changes | You chose to save another tab's changes. | Builder keeps this tab's changes as a new draft. |
 | You cannot save changes to this draft | You lost access to the draft. | See [When access changes](#when-access-changes). |
 | Not saved: your session has ended. Sign in again to save your changes. | Your sign-in expired. | See [Signing in again](#signing-in-again). |
@@ -269,13 +270,19 @@ Someone else can save a newer version of the draft before your changes reach
 the server. This happens, for example, when two people edit a draft shared
 with **Can edit** at the same time, or when you work offline and the other
 person edits it meanwhile. Builder then merges their changes with yours,
-field by field:
+field by field. While it merges, the save state says "Merging your changes
+with the server version…", which is announced once, and edits wait until
+it is done:
 
 - A change only one of you made is kept. Changes to different devices, or to
   different fields of one device, are both kept: if alice moves router-1 and
   you rename it, router-1 is moved and renamed.
 - Devices, switches, connections and other items one of you added are kept.
-  An item one of you deleted is deleted, unless the other changed it.
+  An item one of you deleted is deleted, unless the other changed it, or
+  connected it: added a connection to a device, switch or interface the
+  other deleted.
+- An interface renamed by one of you is still the same interface, so the
+  other's changes to it are kept on it.
 - Scenarios either of you added are added, and scenarios either of you
   removed are removed.
 - Your view of the canvas (its zoom and position) stays as it is.
@@ -287,10 +294,18 @@ lists the save as "Merged changes from alice". Undo goes back to alice's
 version, without your changes, and Redo brings the merged diagram back.
 
 A field you both changed to different values clashes, and so does an item
-one of you deleted while the other changed it. A device's name, its
-hostname and the hostname in its settings are one choice: when any of them
-clashes, **Keep mine** or **Keep theirs** keeps all three as that version
-has them. When something clashes, or the merged diagram would have an error
+one of you deleted while the other changed or connected it. A device's
+name, its hostname and the hostname in its settings are one choice: when
+any of them clashes, **Keep mine** or **Keep theirs** keeps all three as
+that version has them. An interface you both renamed differently is one
+choice too, for example "ws-01 interface eth0 name": the interface keeps the
+name chosen, and the diagram keeps one interface. For a device or interface
+one of you deleted and the other connected, the choices are, for example,
+**Keep theirs: delete ws-01 and drop your connection to it** and **Keep
+mine: keep ws-01 with your connection**; once the merged diagram is saved,
+Builder announces each connection it dropped, for example "Dropped the
+connection from ws-01 to EXP: the device or interface it connects was
+deleted." When something clashes, or the merged diagram would have an error
 (two devices with the same hostname, for example), a panel opens under the
 header:
 
@@ -314,9 +329,13 @@ Choose one:
   "1 of 2 chosen", says how many have a choice. **Save merged** saves the
   merged diagram on top of the newer version, with every change that does not
   clash. If the merged diagram has an error, such as two devices with the same
-  hostname, the dialog lists it and stays open. If Builder is already merging
-  again with a newer version when you select **Save merged**, nothing is saved
-  and the dialog says "Another change arrived; the merge is being redone."
+  hostname, the dialog lists it and stays open. When nothing clashes and the
+  dialog opens only for such an error, there is nothing to choose: it lists
+  the errors, says that **Cancel** offers saving your history as a new draft
+  or discarding it, and **Save merged** is unavailable. If Builder is
+  already merging again with a newer version when you select **Save
+  merged**, nothing is saved and the dialog says "Another change arrived;
+  the merge is being redone."
   If the save fails, the dialog says why ("The merged diagram could not be
   saved: …") and keeps your choices, so you can select **Save merged**
   again. **Cancel** goes back to the panel.

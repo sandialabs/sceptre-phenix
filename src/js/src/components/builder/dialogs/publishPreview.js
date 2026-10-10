@@ -10,7 +10,9 @@
 // answer still on its way, which is for the form as it was, is dropped. An
 // answer that arrives once the dialog has closed is dropped too. blocked is
 // why the form makes no intent, and error why the answer could not be read;
-// neither stops Publish.
+// neither stops Publish. error adds that Publish still works only while the
+// dialog lets the user publish, so it never contradicts a Publish button
+// the checks keep unavailable.
 
 import { reactive } from 'vue';
 
@@ -31,6 +33,8 @@ export const PREVIEW_DELAY_MS = 300;
  *   ({failed, message}), or null for an answer the store dropped
  * @param {function(): boolean} options.idle true while nothing is to be
  *   read: the draft is read only, or the dialog shows a result
+ * @param {function(): boolean} [options.publishable] false while the
+ *   dialog keeps Publish unavailable (the checks' errors, for example)
  * @param {number} [options.delay] the pause, in milliseconds
  * @returns {{preview: object, status: object, refresh: function(): Promise<void>,
  *   schedule: function(): void, close: function(): void}} preview holds
@@ -41,6 +45,7 @@ export function usePublishPreview({
   buildIntent,
   previewPublish,
   idle,
+  publishable = () => true,
   delay = PREVIEW_DELAY_MS,
 }) {
   const preview = reactive({
@@ -102,7 +107,9 @@ export function usePublishPreview({
         loading: false,
         changes: null,
         issues: [],
-        error: `${answer.message} You can still publish.`,
+        error: publishable()
+          ? `${answer.message} You can still publish.`
+          : answer.message,
         blocked: '',
       });
       status.set(preview.error);

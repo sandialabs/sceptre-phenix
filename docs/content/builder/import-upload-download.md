@@ -823,8 +823,10 @@ While Builder creates the configs and adds the icons, the dialog stays open
 and says what it is doing; **Cancel** and closing the dialog do nothing
 until it is done. When a config cannot be created, or an icon cannot be
 added, the dialog says why before it opens the diagram, and the other
-configs are still created. **Cancel** then opens nothing; configs already
-created stay.
+configs are still created. It names the configs it created first, for
+example "Created Scenario config pump-station-ntp on this server. This
+upload has 1 warning." **Cancel** then opens nothing; configs already
+created stay, which Builder announces again as the dialog closes.
 
 A package whose configs carry Builder annotations (`builder-*`) is refused,
 since those name records of the server that wrote them.

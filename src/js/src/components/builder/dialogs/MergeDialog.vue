@@ -14,6 +14,11 @@
   cancel to save their history as a new draft or discard it from the
   conflict panel. When the save itself fails, the dialog stays open with
   the choices made and says why, so the user can try again or cancel.
+
+  With no field that clashes, the dialog opens only because the strict
+  check refuses the merged diagram: there is nothing to choose, so it lists
+  the problems, says that Cancel leads back to saving the history as a new
+  draft or discarding it, and Save merged is unavailable.
 -->
 <template>
   <builder-dialog
@@ -30,8 +35,8 @@
         and the merged diagram is saved on top of their version.
       </template>
       <template v-else>
-        Nothing you and {{ from }} changed clashes, but the merged diagram
-        cannot be saved as it is.
+        Nothing you and {{ from }} changed clashes, so there is nothing to
+        choose, but the merged diagram cannot be saved as it is.
       </template>
     </p>
 
@@ -122,9 +127,9 @@
           type="submit"
           class="builder-button builder-button--primary"
           data-testid="merge-save"
-          :aria-disabled="!ready || busy || undefined"
+          :aria-disabled="!clashes.length || !ready || busy || undefined"
           :aria-busy="busy || undefined"
-          :aria-describedby="clashes.length ? 'merge-count' : undefined">
+          :aria-describedby="clashes.length ? 'merge-count' : 'merge-error'">
           {{ busy ? 'Saving…' : 'Save merged' }}
         </button>
       </div>
@@ -175,15 +180,31 @@
     form.value?.querySelector(`input[name="merge-clash-${index}"]`)?.focus();
   }
 
+  // Why the merged diagram was refused: with clashes, another choice may
+  // change that; with none, only Cancel is left.
   function refused(found) {
     issues.value = found;
     error.set(
-      'The merged diagram cannot be saved. Choose otherwise, or cancel to save your history as a new draft or discard it.',
+      clashes.length
+        ? 'The merged diagram cannot be saved. Choose otherwise, or cancel to save your history as a new draft or discard it.'
+        : 'The merged diagram cannot be saved because of the problems listed below. Cancel offers saving your history as a new draft or discarding it.',
     );
+  }
+
+  // With nothing to choose, why the merged diagram cannot be saved.
+  function explain() {
+    refused(store.mergeProblems({}));
   }
 
   async function save() {
     if (busy.value) {
+      return;
+    }
+
+    // Save merged is unavailable: it says again why.
+    if (!clashes.length) {
+      explain();
+
       return;
     }
 
@@ -251,7 +272,7 @@
     if (clashes.length) {
       focusUnchosen();
     } else {
-      refused(store.mergeProblems({}));
+      explain();
     }
   });
 </script>

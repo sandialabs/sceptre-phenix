@@ -247,8 +247,13 @@ connection or network, or both about none, whatever the words or severity),
 so a check the server also refuses (`interface.vlan.missing`,
 `interface.ip.shared`, a refused hostname) is listed once, under Checks;
 server-only refusals (`publish.include.clash`, `publish.scenario.missing`)
-still show. While the checks have errors, the section says "Publishing is
-blocked by the errors listed under Checks." (`publish-preview-checks`). It
-is hidden for a read-only draft and never disables Publish. e2e helpers that wait for a
+still show, until a refused Publish lists them (`store.publishIssues`,
+`publish-refusal`): the same rule leaves out what the refusal lists, in
+whichever order the two answers arrive. While the checks have errors, the
+section says "Publishing is blocked by the errors listed under Checks."
+(`publish-preview-checks`). A dry run that fails shows its message
+(`publish-preview-error`), with "You can still publish." only while Publish
+is available (`publishable` in `publishPreview.js`). It is hidden for a
+read-only draft and never disables Publish. e2e helpers that wait for a
 publish use `isPublishRequest`/`isPublishResponse` in `builder-support.js`,
 which leave out dry runs (`isPublishPreview`).

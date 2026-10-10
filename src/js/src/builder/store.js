@@ -85,7 +85,12 @@ import {
   ownLayout,
   runLayout,
 } from './layouts/index.js';
-import { changesFrom, mergeDocuments, possessive } from './merge.js';
+import {
+  changesFrom,
+  droppedText,
+  mergeDocuments,
+  possessive,
+} from './merge.js';
 import {
   FILE_TOKEN,
   LEGACY_TOKEN,
@@ -634,6 +639,10 @@ const MERGE_SLOW_BASE =
 const MERGE_NO_THEIRS =
   'Merging is not available: the version on the server could not be read.';
 
+// What the save state says, and the live region once, while a conflict's
+// merge runs (see mergeConflict).
+export const MERGING_TEXT = 'Merging your changes with the server version…';
+
 // How long a merge waits for the server to send the version the unsaved
 // changes started from (see mergeBase). The conflict panel stays hidden
 // while it waits, so the wait is bounded: after it, merging is not
@@ -958,6 +967,12 @@ export const useBuilderStore = defineStore('builder', {
     errors: (state) =>
       validateDocument(state.doc).filter((issue) => issue.level === 'error'),
     hasConflict: (state) => state.saveState.status === 'conflict',
+    // Whether a conflict's merge, which may end it without asking, is under
+    // way (see mergeConflict): edits are refused, the conflict panel waits,
+    // and the save state says the changes are being merged.
+    mergingConflict: (state) =>
+      state.saveState.status === 'conflict' &&
+      state.merge?.status === 'merging',
     // Whether the conflict panel shows: a conflict, unless a merge that may
     // end it without asking is under way (see mergeConflict).
     conflictShown: (state) =>
@@ -972,7 +987,10 @@ export const useBuilderStore = defineStore('builder', {
 
       return state.resolvingConflict ? RESOLVING_REFUSAL : '';
     },
-    saveStateText: (state) => describeState(state.saveState),
+    saveStateText: (state) =>
+      state.saveState.status === 'conflict' && state.merge?.status === 'merging'
+        ? MERGING_TEXT
+        : describeState(state.saveState),
     // What the signed-in role may do (see configsAllowed). Blank, Import and
     // Upload, and editing a published diagram, all create a draft.
     canCreateDrafts: () => configsAllowed('create'),
@@ -2082,8 +2100,16 @@ export const useBuilderStore = defineStore('builder', {
         });
       };
 
+      // A merge redone as a newer version arrives is announced once, by
+      // the first.
+      const announced = this.merge?.status === 'merging';
+
       blocked('merging');
       this.resolvingConflict = true;
+
+      if (!announced) {
+        this.announce(MERGING_TEXT);
+      }
 
       try {
         const { doc: base, reason } = await this.mergeBase(autosave);
@@ -2116,7 +2142,7 @@ export const useBuilderStore = defineStore('builder', {
           result.clashes.length === 0 ? checkedMerge(result.doc).doc : null;
 
         if (merged) {
-          return await this.saveMerged(merged, checked, from);
+          return await this.saveMerged(merged, checked, from, result.dropped);
         }
 
         blocked('review', '', {
@@ -2211,9 +2237,11 @@ export const useBuilderStore = defineStore('builder', {
      * @param {object} merged the merged document, checked
      * @param {object} server the server copy, its document checked
      * @param {string} from who saved the server's version (see changesFrom)
+     * @param {object[]} [dropped] the connections the merge dropped, which
+     *   the announcement names (see droppedText in merge.js)
      * @returns {Promise<object>} the document
      */
-    async saveMerged(merged, server, from) {
+    async saveMerged(merged, server, from, dropped = []) {
       const { autosave } = this;
       const doc = settleIcons(merged, iconLibrary);
       const entries = [
@@ -2271,7 +2299,11 @@ export const useBuilderStore = defineStore('builder', {
       // mergeReview in Builder.vue), and an edit goes after the merge.
       this.merge = null;
       this.resolvingConflict = false;
-      this.announce(`Merged ${possessive(from)} changes with yours.`);
+      this.announce(
+        [`Merged ${possessive(from)} changes with yours.`, droppedText(dropped)]
+          .filter(Boolean)
+          .join(' '),
+      );
       this.trackQueue(autosave.flush());
 
       return doc;
@@ -2345,14 +2377,13 @@ export const useBuilderStore = defineStore('builder', {
         return { saved: false, issues: [] };
       }
 
-      const checked = checkedMerge(
-        mergeDocuments(
-          merge.base,
-          toRaw(this.doc),
-          merge.server.document,
-          choices,
-        ).doc,
+      const result = mergeDocuments(
+        merge.base,
+        toRaw(this.doc),
+        merge.server.document,
+        choices,
       );
+      const checked = checkedMerge(result.doc);
 
       if (!checked.doc) {
         return { saved: false, issues: checked.issues };
@@ -2363,7 +2394,12 @@ export const useBuilderStore = defineStore('builder', {
       this.resolvingConflict = true;
 
       try {
-        await this.saveMerged(checked.doc, merge.server, merge.from);
+        await this.saveMerged(
+          checked.doc,
+          merge.server,
+          merge.from,
+          result.dropped,
+        );
       } catch (error) {
         return { saved: false, issues: [], error: mergeSaveFailure(error) };
       } finally {

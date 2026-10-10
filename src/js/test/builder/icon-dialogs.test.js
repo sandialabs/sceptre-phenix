@@ -197,6 +197,71 @@ describe('the Upload dialog', () => {
     expect(emitted.close).toHaveBeenCalledTimes(1);
   });
 
+  test('a package whose configs were created before an icon warning names them with it, and again on Cancel', async () => {
+    vi.spyOn(iconLibrary, 'load').mockImplementation(async () =>
+      libraryHolds([{ name: 'hmi', aliases: [], data: THEIRS }]),
+    );
+    vi.spyOn(iconLibrary, 'upload').mockImplementation(async (icon) => ({
+      icon: { ...icon },
+      created: true,
+    }));
+
+    const emitted = { uploaded: vi.fn(), close: vi.fn() };
+    const { bindings, store } = await opened(UploadDialog, {
+      onUploaded: emitted.uploaded,
+      onClose: emitted.close,
+    });
+    const create = vi
+      .spyOn(store, 'createPackagedConfig')
+      .mockResolvedValue(undefined);
+    const ticked = {
+      kind: 'scenario',
+      name: 'plant-ntp',
+      status: 'missing',
+      packaged: true,
+      detail: '',
+    };
+
+    // The list of what the package needs, as the server answered it.
+    bindings.packageView = {
+      pkg: {
+        document: { ...namingIcons(), icons: { hmi: { data: OURS } } },
+        scenarios: {
+          'plant-ntp': {
+            apiVersion: 'phenix.sandia.gov/v2',
+            kind: 'Scenario',
+            metadata: { name: 'plant-ntp' },
+            spec: { apps: [{ name: 'ntp' }] },
+          },
+        },
+        topologies: {},
+      },
+      dependencies: [ticked],
+      sourceFile: '',
+    };
+
+    await bindings.continuePackage([ticked]);
+
+    // The config is created, and hmi, which the server has with other
+    // bytes, gives a warning: the warnings name what the server now has.
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(bindings.warnings).toEqual([CLASH]);
+    expect(bindings.warningSummary).toBe(
+      'Created Scenario config plant-ntp on this server. This upload has 1 warning.',
+    );
+    expect(bindings.status.text).toBe(bindings.warningSummary);
+    expect(emitted.uploaded).not.toHaveBeenCalled();
+
+    // Cancel opens nothing, and says what stays on the server.
+    bindings.requestClose();
+
+    expect(store.announcement).toBe(
+      'Created Scenario config plant-ntp on this server.',
+    );
+    expect(emitted.close).toHaveBeenCalledTimes(1);
+    expect(emitted.uploaded).not.toHaveBeenCalled();
+  });
+
   test('makes the draft at once when the library takes every icon', async () => {
     vi.spyOn(iconLibrary, 'load').mockImplementation(async () =>
       libraryHolds([{ name: 'hmi', aliases: [], data: OURS }]),

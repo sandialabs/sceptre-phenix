@@ -33,15 +33,36 @@ recovered queue based on an older ETag. The store merges three ways
 (`mergeDocuments(base, mine, theirs)` in `merge.js`): the base is the snapshot
 of the queue's `serverHead`, from the undo history or the queue's entries, else
 `GET .../snapshots/{snapshot}` (given `MERGE_BASE_TIMEOUT_MS`, 15 s, while the
-panel stays hidden); mine is the diagram on screen; theirs the server copy. Nodes, networks, edges and templates match by id, icons by name, other
-lists by a unique `id` or else `name` (device interface handles, spec
-interfaces) and otherwise are one value, as are a node's `position` and `size`;
+panel stays hidden; meanwhile `store.mergingConflict` is true, the save
+state reads `Merging your changes with the server version…`
+(`MERGING_TEXT`, class `builder-status--merging`, no warning sign), and the
+live region says it once per merge, not again when a newer version restarts
+it); mine is the diagram on screen; theirs the server copy. Nodes, networks, edges and templates match by id, icons by name, other
+lists by a unique `id` or else `name` (device interface handles by `id`)
+and otherwise are one value, as are a node's `position` and `size`; a
+device's spec interfaces match by the id of the handle of the same name
+(a `HANDLE` symbol `tagSpecInterfaces` adds and `untagSpecInterfaces`
+removes; `name:<name>` where no handle has the name), so a rename on one
+side and another change on the other is one interface;
 objects merge key by key; `scenarios` merge as a set; `viewport` is mine;
 `$schema`, `revision`, `metadata.id` and the four stamps are theirs; order is
 theirs, then mine's additions. A device's `label`, `hostname` and
 `spec.general.hostname` are one choice: when any of them clashes, one clash
 covers all three and the chosen side's values are kept for all three
-(`settleDeviceName`); a switch's label never clashes. Without
+(`settleDeviceName`); a switch's label never clashes. An interface both
+sides renamed differently is one clash, `<device> interface <old> name`,
+keyed by its handle (`settleInterfaceNames`), and the chosen name goes on
+the handle and its spec entry in every version. A node, or a device's
+interface (handle or spec entry), that one side deleted and the other
+connected (a new or changed edge ends at it, `connectionsOf`) is a clash
+too, at the node or the handle (`connectionTarget`; the interface lists are
+then merged item by item, `forceItems`), with "delete <node> and drop your
+connection to it" and "keep <node> with your connection" (or "with your
+changes" when that side changed it as well). After the merge,
+`dropDangling` removes each edge whose node or device handle the merged
+document lacks and lists it in `dropped`; the announcement then adds
+`droppedText` ("Dropped the connection from <a> to <b>: the device or
+interface it connects was deleted."). Without
 clashes, and when `parseDocument` takes the result, `saveMerged` replaces the
 queue with one snapshot `Merged changes from <user>` sent with the server
 copy's ETag (`rebase` in `autosave.js`), the undo history becomes the server
@@ -51,7 +72,9 @@ changes with yours.` (`another tab` when the server names the user,
 `review` (the panel's Review and merge, `conflict-merge`, opens
 `dialogs/MergeDialog.vue`: one fieldset per clash with Keep mine / Keep
 theirs, Keep all mine, Keep all theirs, Save merged aria-disabled until each
-has a choice, `store.saveMergeChoices`, which answers
+has a choice, and always with no clash, when the dialog opens only for
+what `parseDocument` refuses: it lists that and says Cancel offers saving
+the history as a new draft or discarding it; `store.saveMergeChoices`, which answers
 `{saved: false, busy: true}` while another merge runs and the dialog then says
 "Another change arrived; the merge is being redone.", and `{saved: false,
 error}` when `autosave.rebase` throws: `saveMerged` then puts back the

@@ -14,6 +14,7 @@ vi.mock('@/store.js', () => ({
 }));
 
 import MergeDialog from '@/components/builder/dialogs/MergeDialog.vue';
+import { addNode } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
@@ -41,8 +42,9 @@ function renamed(doc, id, name) {
 }
 
 // The dialog over a review of `mine` and `theirs`, both changed from the
-// sample diagram, which bob saved.
-function render(change) {
+// sample diagram, which bob saved. With `opened`, what the dialog does once
+// it has opened (the server never runs onMounted) is run before it renders.
+function render(change, { opened = false } = {}) {
   const pinia = createPinia();
 
   setActivePinia(pinia);
@@ -65,7 +67,22 @@ function render(change) {
 
   app.use(pinia);
 
+  if (opened) {
+    app.mixin({
+      serverPrefetch() {
+        if (this.$.type === MergeDialog && !this.$.setupState.clashes.length) {
+          this.$.setupState.explain();
+        }
+      },
+    });
+  }
+
   return renderToString(app);
+}
+
+// The tag of the element with that test id.
+function tagOf(html, testId) {
+  return html.match(new RegExp(`<[a-z]+[^>]*data-testid="${testId}"[^>]*>`))[0];
 }
 
 describe('the merge dialog', () => {
@@ -108,6 +125,48 @@ describe('the merge dialog', () => {
     expect(html).toMatch(/Keep mine: delete bravo\s*<\/label>/);
     expect(html).toMatch(
       /Keep theirs: keep bravo with their changes\s*<\/label>/,
+    );
+  });
+
+  test('with nothing to choose, lists why the merged diagram is refused, offers only Cancel, and Save merged is unavailable', async () => {
+    // Both add a device charlie: no field clashes, but the merged diagram
+    // has two devices of one hostname, which the strict check refuses.
+    const charlie = (doc) =>
+      addNode(doc, { kind: 'device', hostname: 'charlie' }).doc;
+    const html = await render(
+      (base) => ({ mine: charlie(base), theirs: charlie(base) }),
+      { opened: true },
+    );
+    const save = tagOf(html, 'merge-save');
+
+    expect(html).toMatch(
+      /Nothing you and bob changed clashes, so there is nothing to\s+choose, but the merged diagram cannot be saved as it is\./,
+    );
+    expect(html).not.toContain('Keep all mine');
+    expect(html).not.toContain('merge-count');
+    expect(html).toContain(
+      'The merged diagram cannot be saved because of the problems listed below. Cancel offers saving your history as a new draft or discarding it.',
+    );
+    expect(html).not.toContain('Choose otherwise');
+    expect(html).toMatch(
+      /data-testid="merge-issues"[^>]*>[\s\S]*duplicate hostname &quot;charlie&quot;/,
+    );
+    expect(save).toContain('aria-disabled="true"');
+    expect(save).toContain('aria-describedby="merge-error"');
+  });
+
+  test('with a clash, nothing is refused as it opens, and Save merged is described by the count', async () => {
+    const html = await render(
+      (base, alpha) => ({
+        mine: renamed(base, alpha.id, 'mine'),
+        theirs: renamed(base, alpha.id, 'theirs'),
+      }),
+      { opened: true },
+    );
+
+    expect(html).not.toContain('merge-issues');
+    expect(tagOf(html, 'merge-save')).toContain(
+      'aria-describedby="merge-count"',
     );
   });
 });

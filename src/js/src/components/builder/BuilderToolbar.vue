@@ -354,10 +354,12 @@
       <!-- Shown but not spoken: it changes on every edit, so the store
            announces only the transitions that matter (a new problem, or
            the recovery from one) through the live region. Text, not a
-           control, so the arrow keys pass it by (see buttons). -->
+           control, so the arrow keys pass it by (see buttons). While a
+           conflict's merge runs it says so, as work under way rather than
+           a problem. -->
       <p
         class="builder-status builder-toolbar__save"
-        :class="`builder-status--${store.saveState.status}`"
+        :class="`builder-status--${store.mergingConflict ? 'merging' : store.saveState.status}`"
         data-testid="builder-save-state">
         <span class="builder-status__dot" aria-hidden="true"></span>
         <!-- Decorative: the text beside it says the same. -->
@@ -714,10 +716,12 @@
     return tipEvents(() => openMenu.value !== key && tips.value[key].text);
   }
 
-  const saveNeedsAttention = computed(() =>
-    ['conflict', 'forbidden', 'error', 'offline'].includes(
-      store.saveState.status,
-    ),
+  const saveNeedsAttention = computed(
+    () =>
+      !store.mergingConflict &&
+      ['conflict', 'forbidden', 'error', 'offline'].includes(
+        store.saveState.status,
+      ),
   );
 
   // Not for an error that sending again cannot fix (a refused snapshot):

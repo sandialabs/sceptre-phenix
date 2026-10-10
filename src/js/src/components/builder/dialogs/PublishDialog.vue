@@ -34,10 +34,12 @@
   store.js): the Topology and Experiment configs, included topologies,
   scenario annotations, disk images and VLAN aliases, with what publishing
   would warn of, or the refusal. It lists no problem the dialog's checks
-  list already (see issuesNotInChecks), and while their errors block
-  publishing it says so instead. It is read as the dialog opens, after a
-  pause whenever the form changes, and whenever the saved draft does; from
-  the change on, the list shown is marked busy. It never stops Publish.
+  list already, nor one the server listed when it refused Publish (see
+  issuesNotInChecks), and while the checks' errors block publishing it
+  says so instead. It is read as the dialog opens, after a pause whenever
+  the form changes, and whenever the saved draft does; from the change on,
+  the list shown is marked busy. It never stops Publish, and when it cannot
+  be read it says Publish still works only while Publish is available.
 
   The Inspector's unapplied edits are saved before the dialog opens (see
   leave.js). Edits it cannot apply keep Publish from sending, rather than
@@ -544,6 +546,7 @@
     buildIntent: () => buildIntent(),
     previewPublish: (intent) => store.previewPublish(intent),
     idle: () => store.readOnly || Boolean(result.value),
+    publishable: () => !blocked.value,
   });
 
   onBeforeUnmount(() => {
@@ -678,24 +681,29 @@
     issues.value.some((issue) => issue.severity === 'error'),
   );
 
-  // What the dry run would warn of or refuse that Checks does not list
-  // already: a problem both find is listed once, under Checks.
-  const previewIssues = computed(() =>
-    issueEntries(
-      store.doc,
-      issuesNotInChecks(store.doc, preview.issues, issues.value),
-    ),
-  );
-  const previewIssueGroups = computed(() =>
-    bySeverity(previewIssues.value, store.doc),
-  );
-
   // What the server listed with a refusal, and with a result.
   const refusalIssues = computed(() =>
     issueEntries(store.doc, store.publishIssues),
   );
   const refusalGroups = computed(() =>
     bySeverity(refusalIssues.value, store.doc),
+  );
+
+  // What the dry run would warn of or refuse that neither Checks nor the
+  // refusal of a Publish lists already: a problem Checks lists is listed
+  // there, and one only the server finds is listed under the refusal once
+  // Publish was refused, whichever of the two answers came first.
+  const previewIssues = computed(() =>
+    issueEntries(
+      store.doc,
+      issuesNotInChecks(store.doc, preview.issues, [
+        ...issues.value,
+        ...refusalIssues.value,
+      ]),
+    ),
+  );
+  const previewIssueGroups = computed(() =>
+    bySeverity(previewIssues.value, store.doc),
   );
   // A result keeps its errors and warnings as issues, each with its code
   // (errorIssues and warningIssues, see readPublishResult), beside their

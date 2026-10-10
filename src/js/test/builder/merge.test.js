@@ -3,13 +3,21 @@ import { describe, expect, test } from 'vitest';
 import {
   applyChoices,
   changesFrom,
+  droppedText,
   mergeDocuments,
   mergeScenarios,
   possessive,
   sameValue,
   valueText,
 } from '@/builder/merge.js';
-import { addNode, setDocumentInfo } from '@/builder/model.js';
+import {
+  addNode,
+  connect,
+  nodeLabel,
+  removeInterface,
+  renameInterface,
+  setDocumentInfo,
+} from '@/builder/model.js';
 
 import { sampleDocument, testId } from './fixtures.js';
 
@@ -744,6 +752,232 @@ describe('mergeDocuments', () => {
     expect(
       kept.networks.find((entry) => entry.id === network.id).description,
     ).toBe('Plant floor');
+  });
+});
+
+describe('interfaces and the connections that use them', () => {
+  // The names of a device's interface handles and of its spec interfaces.
+  function interfaceNames(doc, id) {
+    const { device } = nodeOf(doc, id);
+
+    return {
+      handles: device.interfaces.map((handle) => handle.name),
+      spec: device.spec.network.interfaces.map((iface) => iface.name),
+    };
+  }
+
+  // The document with the spec interface `name` of device `id` changed.
+  function changeInterface(doc, id, name, change) {
+    return changeNode(doc, id, (node) => ({
+      ...node,
+      device: {
+        ...node.device,
+        spec: {
+          ...node.device.spec,
+          network: {
+            ...node.device.spec.network,
+            interfaces: node.device.spec.network.interfaces.map((iface) =>
+              iface.name === name ? { ...iface, ...change } : iface,
+            ),
+          },
+        },
+      },
+    }));
+  }
+
+  // The sample diagram with bravo's eth0 connected to the switch.
+  function connectBravo(doc, sw, bravo) {
+    return connect(doc, {
+      sourceNodeId: bravo.id,
+      sourceHandleId: bravo.device.interfaces[0].id,
+      targetNodeId: sw.id,
+    });
+  }
+
+  test('an interface both renamed differently is one clash on its name, and the side chosen names the one interface', () => {
+    const { doc: base, alpha } = sampleDocument();
+    const handle = alpha.device.interfaces[0];
+    const mine = renameInterface(base, alpha.id, handle.id, 'lan0');
+    const theirs = renameInterface(base, alpha.id, handle.id, 'wan0');
+
+    const result = mergeDocuments(base, mine, theirs);
+
+    expect(result.clashes).toHaveLength(1);
+    expect(result.clashes[0]).toMatchObject({
+      key: `nodes["${alpha.id}"].device.interfaces["${handle.id}"].name`,
+      label: 'alpha interface eth0 name',
+      mineText: 'lan0',
+      theirsText: 'wan0',
+      summary: 'You and they both changed alpha interface eth0 name.',
+    });
+
+    const { key } = result.clashes[0];
+
+    // Theirs until a choice is made, and one interface whichever is kept.
+    expect(interfaceNames(result.doc, alpha.id)).toEqual({
+      handles: ['wan0'],
+      spec: ['wan0'],
+    });
+
+    const kept = applyChoices(result, { [key]: 'mine' });
+    const theirsKept = applyChoices(result, { [key]: 'theirs' });
+    const specs = nodeOf(kept, alpha.id).device.spec.network.interfaces;
+
+    expect(interfaceNames(kept, alpha.id)).toEqual({
+      handles: ['lan0'],
+      spec: ['lan0'],
+    });
+    expect(interfaceNames(theirsKept, alpha.id)).toEqual({
+      handles: ['wan0'],
+      spec: ['wan0'],
+    });
+    // The connection still uses the interface, and nothing the merge
+    // matched the interfaces by is left on them.
+    expect(kept.edges).toEqual(base.edges);
+    expect(specs.flatMap(Object.getOwnPropertySymbols)).toEqual([]);
+  });
+
+  test('an interface one side renamed and the other changed is one interface with both changes', () => {
+    const { doc: base, alpha } = sampleDocument();
+    const handle = alpha.device.interfaces[0];
+    const mine = renameInterface(base, alpha.id, handle.id, 'lan0');
+    const theirs = changeInterface(base, alpha.id, 'eth0', {
+      address: '10.0.0.5',
+    });
+
+    const result = mergeDocuments(base, mine, theirs);
+    const specs = nodeOf(result.doc, alpha.id).device.spec.network.interfaces;
+
+    expect(result.clashes).toEqual([]);
+    expect(specs).toEqual([
+      expect.objectContaining({ name: 'lan0', address: '10.0.0.5' }),
+    ]);
+    expect(interfaceNames(result.doc, alpha.id).handles).toEqual(['lan0']);
+  });
+
+  test('a device one side deleted and the other connected clashes: deleting it drops the connection, which the merge names', () => {
+    const { doc: base, sw, bravo } = sampleDocument();
+    const connected = connectBravo(base, sw, bravo);
+    const deleted = remove(base, bravo.id);
+
+    const result = mergeDocuments(base, connected.doc, deleted);
+
+    // Connecting set bravo's eth0 VLAN too, which keeping it keeps.
+    expect(result.clashes).toHaveLength(1);
+    expect(result.clashes[0]).toMatchObject({
+      key: `nodes["${bravo.id}"]`,
+      kind: 'removed-theirs',
+      label: 'bravo',
+      mineText: 'keep bravo with your changes',
+      theirsText: 'delete bravo and drop your connection to it',
+      summary: expect.stringMatching(
+        /^They deleted bravo; you changed .+ and connected it\.$/,
+      ),
+    });
+
+    const { key } = result.clashes[0];
+    const dropped = mergeDocuments(base, connected.doc, deleted, {
+      [key]: 'theirs',
+    });
+
+    expect(nodeOf(dropped.doc, bravo.id)).toBeUndefined();
+    expect(dropped.doc.edges.map((entry) => entry.id)).toEqual(
+      base.edges.map((entry) => entry.id),
+    );
+    expect(dropped.dropped).toEqual([
+      {
+        key: `edges["${connected.edge.id}"]`,
+        label: `connection from bravo to ${nodeLabel(sw)}`,
+      },
+    ]);
+    expect(droppedText(dropped.dropped)).toBe(
+      `Dropped the connection from bravo to ${nodeLabel(sw)}: the device or interface it connects was deleted.`,
+    );
+    // theirs is what a merge with no choice keeps.
+    expect(result.dropped).toEqual(dropped.dropped);
+
+    const kept = mergeDocuments(base, connected.doc, deleted, {
+      [key]: 'mine',
+    });
+
+    expect(nodeOf(kept.doc, bravo.id)).toBeDefined();
+    expect(kept.doc.edges.map((entry) => entry.id)).toContain(
+      connected.edge.id,
+    );
+    expect(kept.dropped).toEqual([]);
+
+    // The other way round.
+    const [mirrored] = mergeDocuments(base, deleted, connected.doc).clashes;
+
+    expect(mirrored).toMatchObject({
+      kind: 'removed-mine',
+      mineText: 'delete bravo and drop their connection to it',
+      theirsText: 'keep bravo with their changes',
+    });
+  });
+
+  test('a node one side deleted and the other connected without changing it clashes too', () => {
+    const { doc: base, sw, bravo } = sampleDocument();
+    const name = nodeLabel(sw);
+    const connected = connectBravo(base, sw, bravo);
+    const deleted = remove(base, sw.id);
+
+    const result = mergeDocuments(base, deleted, connected.doc);
+    const clash = result.clashes.find(
+      (entry) => entry.key === `nodes["${sw.id}"]`,
+    );
+
+    expect(clash).toMatchObject({
+      kind: 'removed-mine',
+      mineText: `delete ${name} and drop their connection to it`,
+      theirsText: `keep ${name} with their connection`,
+      summary: `You deleted ${name}; they connected it.`,
+    });
+
+    const gone = applyChoices(result, { [clash.key]: 'mine' });
+
+    expect(nodeOf(gone, sw.id)).toBeUndefined();
+    expect(gone.edges).toEqual([]);
+  });
+
+  test('an interface one side removed and the other connected is one clash: removing it drops the connection', () => {
+    const { doc: base, sw, bravo } = sampleDocument();
+    const handle = bravo.device.interfaces[0];
+    const connected = connectBravo(base, sw, bravo);
+    const removed = removeInterface(base, bravo.id, handle.id);
+
+    const result = mergeDocuments(base, connected.doc, removed);
+
+    expect(result.clashes).toHaveLength(1);
+    expect(result.clashes[0]).toMatchObject({
+      key: `nodes["${bravo.id}"].device.interfaces["${handle.id}"]`,
+      kind: 'removed-theirs',
+      label: 'bravo interface eth0',
+      mineText: 'keep bravo interface eth0 with your connection',
+      theirsText: 'remove bravo interface eth0 and drop your connection to it',
+      summary: 'They removed bravo interface eth0; you connected it.',
+    });
+
+    const { key } = result.clashes[0];
+    const removing = mergeDocuments(base, connected.doc, removed, {
+      [key]: 'theirs',
+    });
+
+    expect(interfaceNames(removing.doc, bravo.id)).toEqual({
+      handles: [],
+      spec: [],
+    });
+    expect(removing.dropped.map((entry) => entry.key)).toEqual([
+      `edges["${connected.edge.id}"]`,
+    ]);
+
+    const keeping = applyChoices(result, { [key]: 'mine' });
+
+    expect(interfaceNames(keeping, bravo.id)).toEqual({
+      handles: ['eth0'],
+      spec: ['eth0'],
+    });
+    expect(keeping.edges.map((entry) => entry.id)).toContain(connected.edge.id);
   });
 });
 

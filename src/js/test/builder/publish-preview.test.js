@@ -64,9 +64,15 @@ function later() {
 function setup({
   idle = () => false,
   buildIntent = () => ({ intent: INTENT, error: '' }),
+  publishable,
 } = {}) {
   const previewPublish = vi.fn();
-  const reader = usePublishPreview({ buildIntent, previewPublish, idle });
+  const reader = usePublishPreview({
+    buildIntent,
+    previewPublish,
+    idle,
+    publishable,
+  });
 
   return { ...reader, previewPublish };
 }
@@ -174,6 +180,32 @@ describe('what publishing changes', () => {
     expect(status.text).toBe(
       'What publishing changes: the server would refuse to publish.',
     );
+  });
+
+  test('an answer that cannot be read says Publish still works only while it does', async () => {
+    const failure = {
+      failed: true,
+      message:
+        'Could not work out what publishing changes: the server is down.',
+    };
+    let publishable = true;
+    const { preview, status, refresh, previewPublish } = setup({
+      publishable: () => publishable,
+    });
+
+    previewPublish.mockResolvedValueOnce(failure);
+    await refresh();
+
+    expect(preview.error).toBe(`${failure.message} You can still publish.`);
+    expect(status.text).toBe(preview.error);
+
+    // The checks' errors keep Publish unavailable.
+    publishable = false;
+    previewPublish.mockResolvedValueOnce(failure);
+    await refresh();
+
+    expect(preview.error).toBe(failure.message);
+    expect(status.text).toBe(failure.message);
   });
 
   test('asks nothing for a form that makes no intent, and says why', async () => {

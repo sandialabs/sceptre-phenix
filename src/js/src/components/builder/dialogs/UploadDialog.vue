@@ -35,7 +35,9 @@
   diagram carries into the icon library, and opens the diagram as a new
   draft, as any upload does; the diagram's references are never rewritten.
   A config that could not be created, and an icon warning, are shown first,
-  as an upload's warnings are. Cancel, or closing the dialog, leaves the
+  as an upload's warnings are, after the configs that were created, which
+  stay on the server whatever the user does next: Cancel, or closing the
+  dialog, then says so again. Cancel, or closing the dialog, leaves the
   open draft as it is. While Continue creates the configs and adds the
   icons, the dialog stays open: Cancel is unavailable and says what the
   dialog is doing, and Close, Escape and a click outside do nothing, so
@@ -52,7 +54,7 @@
       prefix="upload"
       :summary="warningSummary"
       :warnings="warnings"
-      @cancel="$emit('close')"
+      @cancel="requestClose"
       @continue="proceed" />
 
     <package-import
@@ -272,9 +274,27 @@
   // open until they are done and says what came of them.
   const creating = ref(false);
 
+  // The configs a package's upload created before its warnings were shown,
+  // as the dialog names them ("Scenario config a"): they stay on the server
+  // whether the user goes on or not.
+  const createdConfigs = ref([]);
+
+  // What a package's upload created, as a sentence, or ''.
+  const createdText = computed(() =>
+    createdConfigs.value.length
+      ? `Created ${listOf(createdConfigs.value)} on this server.`
+      : '',
+  );
+
+  // Closing while the warnings are shown leaves the configs created, which
+  // the live region says once more.
   function requestClose() {
     if (creating.value) {
       return;
+    }
+
+    if (warnings.value.length && createdText.value) {
+      store.announce(createdText.value);
     }
 
     emit('close');
@@ -311,10 +331,15 @@
     return 'Upload';
   });
 
-  // Before the user continues, nothing has been made into a draft.
-  const warningSummary = computed(
-    () =>
+  // Before the user continues, nothing has been made into a draft; the
+  // configs a package's upload created are named first.
+  const warningSummary = computed(() =>
+    [
+      createdText.value,
       `This ${pendingKind.value === 'upload' ? 'upload' : 'conversion'} has ${count(warnings.value.length, 'warning')}.`,
+    ]
+      .filter(Boolean)
+      .join(' '),
   );
 
   // The read of the chosen file, which a submit waits for.
@@ -466,6 +491,7 @@
   async function hold(kind, held, found) {
     pending = held;
     pendingKind.value = kind;
+    createdConfigs.value = held.created || [];
     warnings.value = found;
     status.set(warningSummary.value);
 

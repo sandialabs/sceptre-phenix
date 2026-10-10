@@ -37,10 +37,19 @@ function diagram({ publishable }) {
 // `setup` changes the store before the dialog renders, `form` the dialog's
 // fields, as the user would have changed them, and `preview` what it shows
 // of what publishing changes, as a dry run would have left it: Vue runs
-// `created` after the dialog's setup and before it renders.
+// `created` after the dialog's setup and before it renders. `prefetch`
+// runs after `created` and is waited for before the dialog renders, with
+// the dialog's bindings and the store, for what the dialog does with the
+// answers it waits for.
 async function render(
   props = {},
-  { publishable = true, setup = () => {}, form = null, preview = null } = {},
+  {
+    publishable = true,
+    setup = () => {},
+    form = null,
+    preview = null,
+    prefetch = null,
+  } = {},
 ) {
   const pinia = createPinia();
   const app = createSSRApp({ render: () => h(PublishDialog, props) });
@@ -59,6 +68,16 @@ async function render(
   }
 
   const store = useBuilderStore(pinia);
+
+  if (prefetch) {
+    app.mixin({
+      async serverPrefetch() {
+        if (this.$.type === PublishDialog) {
+          await prefetch(this.$.setupState, store);
+        }
+      },
+    });
+  }
 
   store.doc = diagram({ publishable });
   setup(store);
@@ -504,5 +523,88 @@ describe('what publishing changes', () => {
     expect(text(html)).toContain('1 error blocks publishing');
     expect(text(html)).toContain(clash.message);
     expect(text(html)).not.toContain('has no VLAN');
+  });
+
+  test('a problem only the server finds is listed once after a refused Publish, whichever answer came first', async () => {
+    const missing = {
+      code: 'publish.scenario.missing',
+      severity: 'error',
+      message: 'scenario plant-ntp does not exist',
+    };
+
+    for (const refusalFirst of [true, false]) {
+      const html = await render(
+        {},
+        {
+          prefetch: async (bindings, store) => {
+            vi.spyOn(store, 'previewPublish').mockResolvedValue({
+              changes: null,
+              errorIssues: [missing],
+              warningIssues: [],
+            });
+
+            if (refusalFirst) {
+              store.publishIssues = [missing];
+            }
+
+            await bindings.refreshPreview();
+
+            if (!refusalFirst) {
+              store.publishIssues = [missing];
+            }
+          },
+        },
+      );
+      const refusal = html.slice(
+        html.indexOf('data-testid="publish-refusal"'),
+        html.indexOf('data-testid="publish-preview"'),
+      );
+
+      expect(html, `refusal first: ${refusalFirst}`).toContain(
+        'data-testid="publish-refusal"',
+      );
+      expect(text(refusal)).toContain(missing.message);
+      expect(text(section(html))).not.toContain(missing.message);
+      expect(html).not.toContain('publish-preview-issues');
+      expect(text(html).split(missing.message)).toHaveLength(2);
+    }
+  });
+
+  test('a dry run that cannot be read says Publish still works only while it does', async () => {
+    const failure = {
+      failed: true,
+      message:
+        'Could not work out what publishing changes: the server is down.',
+    };
+
+    for (const publishable of [true, false]) {
+      const html = await render(
+        {},
+        {
+          publishable,
+          prefetch: async (bindings, store) => {
+            vi.spyOn(store, 'previewPublish').mockResolvedValue(failure);
+            await bindings.refreshPreview();
+          },
+        },
+      );
+      const [, shown] = section(html).match(
+        /data-testid="publish-preview-error"[^>]*>([\s\S]*?)<\/p>/,
+      );
+      const [submit] = tags(html, 'button').filter((tag) =>
+        tag.includes('data-testid="publish-submit"'),
+      );
+
+      if (publishable) {
+        expect(text(shown)).toBe(`${failure.message} You can still publish.`);
+        expect(submit).not.toMatch(/\sdisabled\b/);
+      } else {
+        // The checks' errors keep Publish unavailable, which nothing
+        // contradicts.
+        expect(text(shown)).toBe(failure.message);
+        expect(submit).toMatch(/\sdisabled\b/);
+        expect(html).not.toContain('You can still publish');
+      }
+    }
   });
 });

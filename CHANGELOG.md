@@ -14,12 +14,10 @@ All notable changes to this project will be documented in this file.
 - **etcd**: Automatic history compaction for every etcd store. It compacts the whole etcd cluster. Set it with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
 - **Builder**: New topology editor at `/builder`, with `phenix builder publish` to create a topology from a Builder file. See the [Builder documentation](https://phenix.sceptre.dev/latest/builder/).
   - The toolbar's **Add connection** and **Move to group** open dialogs that connect a device to a switch and move a node into or out of a group without dragging. The Publish dialog marks an update as a warning, and says why a config name is not allowed.
-  - The Publish and Diagram checks dialogs list errors before warnings, and **Go to** on an issue selects its node or connection and focuses the field it names.
-  - The drafts lists, the Node Templates library and the Custom icons dialog select items with the keyboard: arrow keys, Space, Shift for a range, Mod+A, Escape, and Delete.
-  - **Download selected** saves the selected drafts or published diagrams as Builder files, one each.
-  - The Custom icons dialog adds the selected diagram icons to the server, or deletes the selected server icons, at once.
+  - Checks listed errors first, each with **Go to** its node and field.
+  - Keyboard multi-select and bulk actions in the drafts lists, the Node Templates library and the Custom icons dialog.
   - **N** on the canvas adds a Device.
-  - `phenix builder drafts list|export|validate|preflight` and `phenix builder templates list|export|import` work with drafts and Node Templates on a phenix server from scripts and CI, at `--url` with an API token or over the `phenix ui` unix socket, which now serves the Builder API too.
+  - The `phenix builder drafts` and `phenix builder templates` commands.
 - **Node Notes**: Topology nodes take `general.notes`; a new experiment copies them to each VM's notes.
 - **Builder documents**: A Builder document keeps its ID, name, description, up to 100 notes (which the Inspector lists and edits), and who made and last saved it (`createdBy`, `createdAt`, `updatedBy`, `updatedAt`) in a required `metadata` object. Its JSON Schema gives every field a title, a description and examples.
 - **Builder node notes**: Devices and switches show their notes in a card below them on the canvas, in their info tooltips and in PNG and SVG downloads, and layouts leave room for them. A device's notes are its `general.notes`; a switch keeps up to 100 of its own in the diagram. **Show node notes** in the Builder settings hides them.
@@ -28,19 +26,18 @@ All notable changes to this project will be documented in this file.
 - **Builder drawings**: Rectangles, circles, icons and lines (with bends and arrowheads) that are drawn in a diagram and never published. Shapes, icons, notes and groups resize with the mouse.
 - **Builder icon sizes**: Devices, switches and groups draw their icons Small (16 pixels), Medium (24) or Large (32): a size for the whole diagram (`iconSize`), and optionally one of a node's own, both chosen in the Inspector.
 - **Builder template files**: Node Templates export to and import from YAML or JSON template files, one collection per file, with the custom icons they use. `phenix ui` reads the template files in `base-dir.builder-templates` (default `<base-dir.phenix>/builder/templates`) at start as read-only server collections that every user sees and can copy.
-- **Builder merging**: Builder merges a draft with another editor's changes when both saved, and asks only about clashing fields.
-- **Builder packages**: Download saves a diagram as a Builder package: one JSON or YAML file with the Scenario configs, included topologies and custom icons you tick, and a list of what the diagram needs. Uploading it shows which of those the server has, and creates a missing config only when you tick it.
-- **Builder error codes**: Builder REST errors, validation issues, publish blockers and package warnings carry stable error codes.
-- **Builder publish preview**: The Publish dialog previews what publishing changes: Topology, included topologies, Scenario annotations, disk images and experiment VLAN aliases, with the warnings publishing would give, and does not repeat a problem the dialog's checks list. The publish route takes `dryRun`, and `phenix builder publish --dry-run` lists the same changes.
-- **Builder preflight**: The Diagram checks dialog and `POST /builder/drafts/{owner}/{draft}/preflight` check a draft's host capacity, VLANs and bridges, disk images and scenario apps against the server and its cluster, and say which checks passed, failed or could not be made.
+- **Builder merging**: Merging a draft with another editor's changes on a save conflict.
+- **Builder packages**: Diagrams downloaded and uploaded with their configs and icons as one file.
+- **Builder error codes**: Stable error codes on Builder errors and issues.
+- **Builder publish preview**: What publishing changes, in the Publish dialog and `phenix builder publish --dry-run`.
+- **Builder preflight**: Checks of a draft against the server's hosts, VLANs, bridges, images and apps.
 
 ### Changed
 
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, and form controls, labelled the config selection checkboxes, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, and code colours, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
 - **Config Schemas**: Descriptions for node and interface fields in the v1 schema; defaults shown as phenix applies them (`general.snapshot` `true`, `hardware.memory` 512).
-- **CI**: The Frontend workflow runs the browser tests in parallel jobs.
-- **Builds and CI**: UI builds compress the Builder's files faster, at Brotli quality 9 unless `PHENIX_BROTLI_QUALITY` sets another (0 to 11); the Docker, Podman and Debian packages use 11. The Frontend workflow runs the browser tests only for changes that can affect them.
+- **Builds and CI**: Browser tests run in parallel jobs and only for changes that can affect them; `PHENIX_BROTLI_QUALITY` (0 to 11, default 9) sets how hard UI builds compress the Builder's files.
 - **Topology validation**: Reject the node hostnames `all`, all-digit names, and `phenix` on Windows nodes, and warn about hostnames that may cause problems.
 - **Topology schema**: Require node hostnames to be at least 2 characters long.
 - **Workflow API**: A workflow apply is validated before a running experiment is stopped, so an invalid one returns 400 or 409 instead of 500 and leaves the experiment running. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
@@ -74,11 +71,6 @@ All notable changes to this project will be documented in this file.
 - **Configs page**: The viewer opens for topologies saved by the legacy Builder instead of showing an error, is labeled with the config's name, and returns focus to it when closed.
 - **Users**: Signing in as the same user from parallel requests no longer loses a token. Creating a user or signing up with a name already in use returns 409, and the Users page and the Create Account dialog say the user exists. Creating a user with an unknown role no longer leaves a user without a role. A `ui.users` entry without a role is skipped and logged instead of crashing phenix.
 - **etcd store**: Crash at startup with an empty etcd; wrong errors for missing or existing configs, and for writes to a full etcd.
-- **Builder**: Builder no longer refuses the same IP or MAC address on two different networks.
-- **Builder Import**: An Import closed before the server answers no longer replaces the diagram opened since, and an Import with warnings opens nothing until Continue.
-- **Builder Inspector**: Text being typed in a field is kept when a layout or another change reaches the diagram.
-- **Builder Duplicate**: Duplicate copies only the selected nodes, never what the clipboard holds, and with only connections selected it does nothing and says why.
-- **Builder downloads**: PNG and SVG downloads are at most 4096 pixels wide and high, however large the diagram.
 
 ### Security
 

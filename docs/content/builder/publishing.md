@@ -151,9 +151,11 @@ lists, such as an interface with no VLAN: while the errors under **Checks**
 block publishing, it says "Publishing is blocked by the errors listed under
 Checks." and lists only the problems the server finds besides them, such as
 a hostname an included topology also uses or a scenario that does not
-exist. A name that breaks the naming
+exist. Once the server has refused a **Publish**, a problem its refusal
+lists is shown there only, not again here. A name that breaks the naming
 rule shows why under the heading, and nothing is asked of the server. When
-the server cannot be asked, the part says so and that you can still publish.
+the server cannot be asked, the part says so, and, while the button is
+available, that you can still publish.
 
 ### Create or update
 

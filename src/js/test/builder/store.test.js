@@ -163,6 +163,7 @@ import { createMemoryStore } from '@/builder/idb.js';
 import { mergeDocuments } from '@/builder/merge.js';
 import {
   addNode,
+  connect,
   createDocument,
   findNode,
   setDocumentInfo,
@@ -2019,6 +2020,96 @@ describe('merging a conflict', () => {
       );
       expect(store.conflictShown).toBe(true);
       expect(store.resolvingConflict).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('keeping their deletion of a device you connected drops the connection, and the merge names it', async () => {
+    const { base, bravo } = await opened();
+    const sw = base.nodes.find((node) => node.kind === 'switch');
+
+    // Bob deleted bravo, which you connect.
+    savedFirst({
+      ...base,
+      nodes: base.nodes.filter((node) => node.id !== bravo.id),
+    });
+    store.commit(
+      connect(toRaw(store.doc), {
+        sourceNodeId: bravo.id,
+        sourceHandleId: bravo.device.interfaces[0].id,
+        targetNodeId: sw.id,
+      }).doc,
+      'Connected bravo',
+    );
+
+    await vi.waitFor(() => expect(store.merge?.status).toBe('review'));
+
+    const [clash] = store.mergeReview().clashes;
+
+    expect(clash.key).toBe(`nodes["${bravo.id}"]`);
+    expect(clash.theirsText).toBe(
+      'delete bravo and drop your connection to it',
+    );
+    expect(await store.saveMergeChoices({ [clash.key]: 'theirs' })).toEqual({
+      saved: true,
+      issues: [],
+    });
+    expect(store.announcement).toMatch(
+      /^Merged .+'s changes with yours\. Dropped the connection from bravo to .+: the device or interface it connects was deleted\.$/,
+    );
+    expect(findNode(store.doc, bravo.id)).toBeFalsy();
+    expect(store.doc.edges).toHaveLength(base.edges.length);
+    await vi.waitFor(() => expect(store.saveState.status).toBe('saved'));
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  test('while the merge runs, the save state says the changes are being merged, which is announced once', async () => {
+    const { base, alpha } = await opened();
+    const merging = 'Merging your changes with the server version…';
+
+    // The editor no longer holds snapshot s1, and the server never answers,
+    // for either merge.
+    store.history.currentEntry().serverSnapshotId = 's0';
+    api.getSnapshot
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+
+    try {
+      store.autosave.conflict(undefined, {
+        server: serverCopyOf(read(rename(base, alpha.id, 'alpha-2'), {})),
+      });
+
+      expect(store.merge.status).toBe('merging');
+      expect(store.mergingConflict).toBe(true);
+      expect(store.saveStateText).toBe(merging);
+      expect(store.announcement).toBe(merging);
+
+      // A newer version arrives while it runs: the merge is made again,
+      // and not announced again.
+      const announced = store.announcementSeq;
+
+      store.mergeConflict(
+        serverCopyOf(
+          read(rename(base, alpha.id, 'carol'), {
+            id: 's3',
+            cursor: 2,
+            etag: '"3"',
+            by: 'carol',
+          }),
+        ),
+      );
+      expect(store.merge.status).toBe('merging');
+      expect(store.saveStateText).toBe(merging);
+      expect(store.announcementSeq).toBe(announced);
+      // Edits stay refused.
+      expect(store.editRefusal).not.toBe('');
+
+      await vi.advanceTimersByTimeAsync(MERGE_BASE_TIMEOUT_MS);
+      await vi.waitFor(() => expect(store.merge.status).toBe('unavailable'));
+      expect(store.mergingConflict).toBe(false);
+      expect(store.saveStateText).toBe('This draft changed on the server');
     } finally {
       vi.useRealTimers();
     }
