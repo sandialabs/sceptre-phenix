@@ -6,11 +6,45 @@
 
 import YAML from 'js-yaml';
 
+import { listOf } from './announce.js';
 import { sentence } from './api.js';
+import { MAX_DOCUMENT_ICONS, embedIcons } from './icons.js';
 import { footprintBounds } from './nodeNotes.js';
 import { configName } from './publish.js';
 
 export const IMAGE_PADDING = 40;
+
+/**
+ * The document a Builder JSON or YAML download saves: a copy that carries
+ * every custom icon its nodes and templates name, from its own copies or
+ * the server's icon library (see embedIcons), so the file stands on its own
+ * and an upload elsewhere brings its icons along.
+ *
+ * @param {object} doc
+ * @param {{lookup: Function}|null} [library] the icon library
+ * @returns {{doc: object, note: string}} the copy, and what the dialog says
+ *   of the icons it could not carry ('' for none)
+ */
+export function downloadDocument(doc, library = null) {
+  const { doc: carried, missing, left } = embedIcons(doc, library);
+  const notes = [];
+
+  if (missing.length > 0) {
+    notes.push(
+      missing.length === 1
+        ? `It does not carry the custom icon ${missing[0]}, which the server's icon library does not have: the nodes that name it show their built-in icon.`
+        : `It does not carry the custom icons ${listOf(missing)}, which the server's icon library does not have: the nodes that name them show their built-in icon.`,
+    );
+  }
+
+  if (left.length > 0) {
+    notes.push(
+      `It carries at most ${MAX_DOCUMENT_ICONS} custom icons, so ${listOf(left)} ${left.length === 1 ? 'was' : 'were'} left out.`,
+    );
+  }
+
+  return { doc: carried, note: notes.join(' ') };
+}
 
 /**
  * @param {object} doc

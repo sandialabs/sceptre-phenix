@@ -45,8 +45,8 @@ const (
 	exampleLineLabel     = "uplink to ISP"
 	exampleLineColor     = "#c0392b"
 
-	// exampleIconID is the icon id of exampleIconData, a PNG of one pixel.
-	exampleIconID   = "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+	// exampleIconName names a custom icon, and exampleIconData is a PNG of
+	// one pixel.
 	exampleIconData = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 	exampleIconName = "plc"
 
@@ -294,7 +294,7 @@ func exampleWarning() string {
 
 // exampleIcon returns a custom icon.
 func exampleIcon() map[string]any {
-	return map[string]any{keyName: exampleIconName, "data": exampleIconData}
+	return map[string]any{"data": exampleIconData}
 }
 
 // exampleTemplateDevice returns what a template of the router fills in.

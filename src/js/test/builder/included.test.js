@@ -435,7 +435,7 @@ describe('combining included devices into a new diagram', () => {
       metadata: { ...doc.metadata, description: 'Plant floor' },
       scenarios: ['plant-apps'],
       templates: [{ id: alpha.id, name: 'PLC', device: { spec: {} } }],
-      icons: { abc: { name: 'plc.png', data: 'AAAA' } },
+      icons: { abc: { data: 'AAAA' } },
     };
     const before = structuredClone(marked);
     const combined = combineIncluded(marked, 'root-combined');

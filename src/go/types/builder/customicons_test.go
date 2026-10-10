@@ -19,11 +19,12 @@ import (
 	"phenix/types/builder"
 )
 
-// A 1 by 1 PNG of 70 bytes, in base64, and its icon id. validate.test.js and
-// icons.test.js use the same icon.
+// A 1 by 1 PNG of 70 bytes, in base64, its icon id, and the name the tests
+// give it. validate.test.js and icons.test.js use the same icon.
 const (
 	iconFixtureData = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 	iconFixtureID   = "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+	iconFixtureName = "plc-icon"
 )
 
 // iconFixture returns the bytes of the fixture icon.
@@ -657,8 +658,8 @@ func TestNormalizeIconPNGRefuses(t *testing.T) {
 	}
 }
 
-// distinctIcons returns count icons of one pixel each, no two alike, by icon
-// id.
+// distinctIcons returns count icons of one pixel each, no two alike, by
+// name.
 func distinctIcons(t *testing.T, count int) map[string]builder.Icon {
 	t.Helper()
 
@@ -669,7 +670,7 @@ func distinctIcons(t *testing.T, count int) map[string]builder.Icon {
 		img.SetNRGBA(0, 0, color.NRGBA{R: byte(i), G: byte(i >> 8), B: 7, A: 255})
 
 		data := encodePNG(t, img)
-		icons[builder.IconID(data)] = builder.Icon{Name: "", Data: base64.StdEncoding.EncodeToString(data)}
+		icons[fmt.Sprintf("icon-%02d", i)] = builder.Icon{Data: base64.StdEncoding.EncodeToString(data)}
 	}
 
 	if len(icons) != count {
@@ -679,13 +680,47 @@ func distinctIcons(t *testing.T, count int) map[string]builder.Icon {
 	return icons
 }
 
+func TestIconNameProblem(t *testing.T) {
+	const charset = `must be 1 to 64 letters, digits, "_", "@", "." or "-"`
+
+	for _, name := range []string{
+		"a", "plc", "PLC", "plc-2", "plc_2", "alice@site", "v1.2", "...", ".hidden", "-", "_", "@",
+		strings.Repeat("n", builder.MaxIconNameBytes),
+	} {
+		if problem := builder.IconNameProblem(name); problem != "" {
+			t.Errorf("IconNameProblem(%q) = %q, want none", name, problem)
+		}
+	}
+
+	for _, test := range []struct{ name, want string }{
+		{name: "", want: `icon name "" ` + charset},
+		{name: strings.Repeat("n", builder.MaxIconNameBytes+1), want: charset},
+		{name: "plc icon", want: `icon name "plc icon" ` + charset},
+		{name: "plc/icon", want: charset},
+		{name: iconFixtureID, want: charset},
+		{name: "ñandú", want: charset},
+		{name: "tab\there", want: `icon name "tab\there" ` + charset},
+		{name: ".", want: `icon name "." must not be "." or ".."`},
+		{name: "..", want: `icon name ".." must not be "." or ".."`},
+	} {
+		if problem := builder.IconNameProblem(test.name); !strings.Contains(problem, test.want) {
+			t.Errorf("IconNameProblem(%q) = %q, want %q", test.name, problem, test.want)
+		}
+	}
+}
+
 func TestValidateIconsAccepts(t *testing.T) {
 	if issues := builder.ValidateIcons(nil, "icons"); len(issues) != 0 {
 		t.Fatalf("no icons: %v", issues)
 	}
 
-	icons := distinctIcons(t, builder.MaxDocumentIcons-1)
-	icons[iconFixtureID] = builder.Icon{Name: strings.Repeat("é", builder.MaxIconNameBytes/2), Data: iconFixtureData}
+	icons := distinctIcons(t, builder.MaxDocumentIcons-2)
+
+	// The longest name, and a name that is not the image's digest: a key
+	// names the icon and says nothing of its bytes, so two names may carry
+	// the same image.
+	icons[strings.Repeat("n", builder.MaxIconNameBytes)] = builder.Icon{Data: iconFixtureData}
+	icons[iconFixtureName] = builder.Icon{Data: iconFixtureData}
 
 	if issues := builder.ValidateIcons(icons, "icons"); len(issues) != 0 {
 		t.Fatalf("%d icons: %v", len(icons), issues)
@@ -695,11 +730,12 @@ func TestValidateIconsAccepts(t *testing.T) {
 func TestValidateIconsRefuses(t *testing.T) {
 	fixture := iconFixture(t)
 	encode := base64.StdEncoding.EncodeToString
-	otherID := "sha256:" + strings.Repeat("0", 64)
 
 	// The fixture's data ends "gg==": the last character holds four bits no
 	// byte takes, which strict base64 wants zero.
 	loosePadding := strings.TrimSuffix(iconFixtureData, "gg==") + "gh=="
+
+	const charset = `must be 1 to 64 letters, digits, "_", "@", "." or "-"`
 
 	tests := []struct {
 		name    string
@@ -712,91 +748,81 @@ func TestValidateIconsRefuses(t *testing.T) {
 			wantMsg: "at most 50 custom icons are allowed, not 51",
 		},
 		{
-			name:    "a key that is no icon id",
-			icons:   map[string]builder.Icon{"plc": {Data: iconFixtureData}},
-			wantMsg: `icon key "plc" must be sha256: and 64 hex digits`,
+			name:    "a key that is an icon id",
+			icons:   map[string]builder.Icon{iconFixtureID: {Data: iconFixtureData}},
+			wantMsg: `icon name "` + iconFixtureID[:64] + `..." ` + charset,
 		},
 		{
-			name:    "a key in upper case",
-			icons:   map[string]builder.Icon{strings.ToUpper(iconFixtureID): {Data: iconFixtureData}},
-			wantMsg: "must be sha256: and 64 hex digits",
+			name:    "a key with a space",
+			icons:   map[string]builder.Icon{"plc icon": {Data: iconFixtureData}},
+			wantMsg: `icon name "plc icon" ` + charset,
 		},
 		{
-			name:    "a long key, cut in the message",
-			icons:   map[string]builder.Icon{strings.Repeat("k", 100): {Data: iconFixtureData}},
-			wantMsg: `icon key "` + strings.Repeat("k", 64) + `..." must be`,
+			name:    "a key of 65 bytes, cut in the message",
+			icons:   map[string]builder.Icon{strings.Repeat("k", 65): {Data: iconFixtureData}},
+			wantMsg: `icon name "` + strings.Repeat("k", 64) + `..." ` + charset,
 		},
 		{
-			name:    "a name of 65 bytes",
-			icons:   map[string]builder.Icon{iconFixtureID: {Name: strings.Repeat("n", 65), Data: iconFixtureData}},
-			wantMsg: `icon "` + iconFixtureID[:64] + `..." name must be at most 64 bytes and contain no control characters`,
-		},
-		{
-			name:    "a name with a line break",
-			icons:   map[string]builder.Icon{iconFixtureID: {Name: "two\nlines", Data: iconFixtureData}},
-			wantMsg: "name must be at most 64 bytes and contain no control characters",
+			name:    "a key that is two dots",
+			icons:   map[string]builder.Icon{"..": {Data: iconFixtureData}},
+			wantMsg: `icon name ".." must not be "." or ".."`,
 		},
 		{
 			name:    "no data",
-			icons:   map[string]builder.Icon{iconFixtureID: {Data: ""}},
-			wantMsg: "data must be base64 of at most 40960 bytes",
+			icons:   map[string]builder.Icon{iconFixtureName: {Data: ""}},
+			wantMsg: `icon "plc-icon" data must be base64 of at most 40960 bytes`,
 		},
 		{
 			name:    "data that is not base64",
-			icons:   map[string]builder.Icon{iconFixtureID: {Data: "<svg onload=alert(1)>"}},
+			icons:   map[string]builder.Icon{iconFixtureName: {Data: "<svg onload=alert(1)>"}},
 			wantMsg: "data must be base64 of at most 40960 bytes",
 		},
 		{
 			name:    "URL-safe base64",
-			icons:   map[string]builder.Icon{iconFixtureID: {Data: strings.Replace(iconFixtureData, "A", "_", 1)}},
+			icons:   map[string]builder.Icon{iconFixtureName: {Data: strings.Replace(iconFixtureData, "A", "_", 1)}},
 			wantMsg: "data must be base64 of at most 40960 bytes",
 		},
 		{
 			name:    "base64 without padding",
-			icons:   map[string]builder.Icon{iconFixtureID: {Data: strings.TrimRight(iconFixtureData, "=")}},
+			icons:   map[string]builder.Icon{iconFixtureName: {Data: strings.TrimRight(iconFixtureData, "=")}},
 			wantMsg: "data must be base64 of at most 40960 bytes",
 		},
 		{
 			name:    "base64 with a line break",
-			icons:   map[string]builder.Icon{iconFixtureID: {Data: iconFixtureData[:40] + "\n" + iconFixtureData[40:]}},
+			icons:   map[string]builder.Icon{iconFixtureName: {Data: iconFixtureData[:40] + "\n" + iconFixtureData[40:]}},
 			wantMsg: "data must be base64 of at most 40960 bytes",
 		},
 		{
 			name:    "base64 with bits set in its padding",
-			icons:   map[string]builder.Icon{iconFixtureID: {Data: loosePadding}},
+			icons:   map[string]builder.Icon{iconFixtureName: {Data: loosePadding}},
 			wantMsg: "data must be base64 of at most 40960 bytes",
 		},
 		{
 			name:    "a data URL",
-			icons:   map[string]builder.Icon{iconFixtureID: {Data: "data:image/png;base64," + iconFixtureData}},
+			icons:   map[string]builder.Icon{iconFixtureName: {Data: "data:image/png;base64," + iconFixtureData}},
 			wantMsg: "data must be base64 of at most 40960 bytes",
 		},
 		{
 			name: "one byte too many",
-			icons: map[string]builder.Icon{iconFixtureID: {
+			icons: map[string]builder.Icon{iconFixtureName: {
 				Data: encode(append(bytes.Clone(fixture), make([]byte, builder.MaxIconBytes+1-len(fixture))...)),
 			}},
 			wantMsg: "data must be base64 of at most 40960 bytes",
 		},
 		{
 			name:    "an SVG",
-			icons:   map[string]builder.Icon{iconFixtureID: {Data: encode([]byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`))}},
-			wantMsg: "is not an accepted PNG: the image is not a PNG",
+			icons:   map[string]builder.Icon{iconFixtureName: {Data: encode([]byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`))}},
+			wantMsg: `icon "plc-icon" is not an accepted PNG: the image is not a PNG`,
 		},
 		{
 			name:    "97 pixels wide",
-			icons:   map[string]builder.Icon{iconFixtureID: {Data: encode(headerOnly(97, 1))}},
+			icons:   map[string]builder.Icon{iconFixtureName: {Data: encode(headerOnly(97, 1))}},
 			wantMsg: "is not an accepted PNG: icon is 97 x 1 pixels; the limit is 96 x 96",
 		},
 		{
 			name:    "a text chunk",
-			icons:   map[string]builder.Icon{iconFixtureID: {Data: encode(withChunk(t, "tEXt", []byte("a\x00b")))}},
+			icons:   map[string]builder.Icon{iconFixtureName: {Data: encode(withChunk(t, "tEXt", []byte("a\x00b")))}},
 			wantMsg: `is not an accepted PNG: the PNG holds a "tEXt" chunk`,
-		},
-		{
-			name:    "a key of other bytes",
-			icons:   map[string]builder.Icon{otherID: {Data: iconFixtureData}},
-			wantMsg: `icon "` + otherID[:64] + `..." does not match its data`,
 		},
 	}
 
@@ -821,19 +847,20 @@ func TestValidateIconsRefuses(t *testing.T) {
 // Keys are walked in order, so the issues of a set are the same every time.
 func TestValidateIconsIsStable(t *testing.T) {
 	icons := map[string]builder.Icon{
-		"b":           {Data: "?"},
-		"a":           {Data: iconFixtureData},
-		iconFixtureID: {Name: "ok", Data: iconFixtureData},
+		"b":             {Data: "?"},
+		"a b":           {Data: iconFixtureData},
+		iconFixtureName: {Data: iconFixtureData},
 	}
 
 	first := fmt.Sprint(builder.ValidateIcons(icons, "icons"))
 
-	// A malformed key is reported once: its data is not compared with it.
-	if strings.Count(first, `"a"`) != 1 || strings.Contains(first, "does not match") {
+	// A malformed key is reported once, and the icon of a valid one with
+	// valid data not at all.
+	if strings.Count(first, `"a b"`) != 1 || strings.Contains(first, iconFixtureName) {
 		t.Fatalf("unexpected issues: %s", first)
 	}
 
-	if !strings.Contains(first, `icon key "a"`) || strings.Index(first, `"a"`) > strings.Index(first, `"b"`) {
+	if !strings.Contains(first, `icon name "a b"`) || strings.Index(first, `"a b"`) > strings.Index(first, `"b"`) {
 		t.Fatalf("issues are not in key order: %s", first)
 	}
 

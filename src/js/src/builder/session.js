@@ -482,10 +482,11 @@ function fileNames(drafts) {
 
 /**
  * The file Download saves for one of the drafts unsentBuilderWork names: its
- * diagram as this browser has it now, as Download saves JSON.
+ * diagram as this browser has it now, as Download saves JSON, with a copy of
+ * every custom icon it uses (see downloadedDiagram).
  *
  * @param {object} options username; key and name, as unsentBuilderWork
- *   names the draft; draftStore, for tests
+ *   names the draft; draftStore and iconLibrary, for tests
  * @returns {Promise<{name: string, text: string}|null>} null when this
  *   browser no longer holds the draft
  */
@@ -494,6 +495,7 @@ export async function draftExport({
   key,
   name,
   draftStore = createDraftStore(),
+  iconLibrary = null,
 }) {
   const draft = editedDraft();
   const closed = closedQueues().find((queue) => queue.record.key === key);
@@ -509,12 +511,47 @@ export async function draftExport({
     doc = record?.actor === username ? queuedDiagram(record) : null;
   }
 
-  return doc ? { name, text: diagramFile(doc).text } : null;
+  if (!doc) {
+    return null;
+  }
+
+  const file = diagramFile(await downloadedDiagram(doc, { iconLibrary }));
+
+  return { name, text: file.text };
+}
+
+/**
+ * A diagram as Download saves it as JSON or YAML: a copy that carries every
+ * custom icon its nodes and templates name, from its own copies, else the
+ * server's icon library, which is read first unless it was read already
+ * (see embedIcons in icons.js and downloadDocument in exporters.js). An icon
+ * neither has is left out, and the nodes that name it show their built-in
+ * icon. The modules that do this are loaded only for a diagram that names a
+ * custom icon, as this module is loaded with the app.
+ *
+ * @param {object} doc Builder document
+ * @param {{iconLibrary?: object}} [options] the icon library (see
+ *   iconLibrary.js), for tests
+ * @returns {Promise<object>}
+ */
+export async function downloadedDiagram(doc, { iconLibrary = null } = {}) {
+  const { embedIcons, iconRefs } = await import('./icons.js');
+
+  if (iconRefs(doc).size === 0) {
+    return embedIcons(doc).doc;
+  }
+
+  const library = iconLibrary || (await import('./iconLibrary.js')).iconLibrary;
+
+  await library.ensure().catch(() => {});
+
+  return embedIcons(doc, library).doc;
 }
 
 /**
  * A diagram as Download saves it as JSON (see exporters.js, which this module
- * does not load): its file name and text.
+ * does not load): its file name and text. The diagram is written as it is
+ * given: downloadedDiagram makes the copy that carries its custom icons.
  *
  * @param {object} doc Builder document
  * @returns {{name: string, text: string}}

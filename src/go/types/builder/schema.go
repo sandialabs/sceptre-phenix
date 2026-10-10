@@ -331,8 +331,7 @@ const (
 
 	keyLabel = "label"
 
-	// digestPattern matches a digest (see [IsDigest]), which is also the
-	// form of an icon id (see [IconID]).
+	// digestPattern matches a digest (see [IsDigest]).
 	digestPattern = `sha256:[0-9a-f]{64}`
 
 	// base64Pattern matches standard base64 with padding and no line
@@ -771,8 +770,8 @@ func deviceDef() map[string]any {
 				keyIconKey, "Icon", "Built-in icon the canvas draws for the device.", []any{exampleIconKey},
 			),
 			keyIcon: documentedRef(
-				defIconRef, "Custom Icon", "Custom icon drawn in place of the built-in one; empty for none.",
-				[]any{exampleIconID},
+				defIconRef, "Custom Icon", "Name of the custom icon drawn in place of the built-in one; empty for none.",
+				[]any{exampleIconName},
 			),
 			keyOutlineColor: documentedRef(
 				defHexColor, "Outline Color", "Border color of the device on the canvas.", []any{exampleOutlineColor},
@@ -860,8 +859,8 @@ func groupDef() map[string]any {
 				keyIconKey, "Icon", "Built-in icon beside the group's title.", []any{"server"},
 			),
 			keyIcon: documentedRef(
-				defIconRef, "Custom Icon", "Custom icon drawn in place of the built-in one; empty for none.",
-				[]any{exampleIconID},
+				defIconRef, "Custom Icon", "Name of the custom icon drawn in place of the built-in one; empty for none.",
+				[]any{exampleIconName},
 			),
 			"collapsed": documented(boolDef(), "Collapsed", "Whether the group is collapsed.", []any{false}),
 		}),
@@ -905,8 +904,8 @@ func iconNodeDef() map[string]any {
 			keyIconKey, "Icon", "Built-in icon drawn, when the node names no custom icon.", []any{exampleIconNodeKey},
 		),
 		keyIcon: documentedRef(
-			defIconRef, "Custom Icon", "Custom icon drawn, when the node names no built-in icon.",
-			[]any{exampleIconID},
+			defIconRef, "Custom Icon", "Name of the custom icon drawn, when the node names no built-in icon.",
+			[]any{exampleIconName},
 		),
 		keyLabel: documented(stringDef(), "Label", "Text shown below the icon.", []any{exampleIconLabel}),
 	})
@@ -983,26 +982,31 @@ func styleEnum(styles []string) []any {
 	return append([]any{""}, anyStrings(styles)...)
 }
 
-// iconRefDef builds the schema of the custom icon a device, a group or a
-// template names. That the document carries it is checked by
-// [Document.Validate], not by this schema.
+// iconNameSchemaPattern matches an icon name's characters and length (see
+// [IconNameProblem]). That a name is neither "." nor ".." is checked by
+// [Document.Validate], not by the schema.
+func iconNameSchemaPattern() string {
+	return fmt.Sprintf(`[A-Za-z0-9_@.-]{1,%d}`, MaxIconNameBytes)
+}
+
+// iconRefDef builds the schema of the custom icon a device, a group, an icon
+// node or a template names: an icon name, which resolves to a copy in the document's
+// icons or to the server's icon library's icon of that name.
 func iconRefDef() map[string]any {
 	def := stringDef()
-	def["pattern"] = `^(` + digestPattern + `)?$`
+	def["pattern"] = `^(` + iconNameSchemaPattern() + `)?$`
 
 	return documented(
-		def, "Custom Icon Reference", "Custom icon of the document's icons, by icon id; empty for none.",
-		[]any{exampleIconID},
+		def, "Custom Icon Reference",
+		"Name of a custom icon: a copy in the document's icons, else the server's icon library's icon of that "+
+			"name; empty for none. Without either, the node shows its built-in icon.",
+		[]any{exampleIconName},
 	)
 }
 
 // iconDef builds the schema of a custom icon. maxLength counts the base64
 // text of the largest PNG an icon may be.
 func iconDef() map[string]any {
-	name := stringDef()
-	name["maxLength"] = MaxIconNameBytes
-	name["pattern"] = noControlPattern
-
 	data := stringDef()
 	data["maxLength"] = base64.StdEncoding.EncodedLen(MaxIconBytes)
 	data["pattern"] = base64Pattern
@@ -1013,11 +1017,6 @@ func iconDef() map[string]any {
 		objectDef(
 			[]string{"data"},
 			map[string]any{
-				keyName: documented(
-					name, "Icon Name",
-					fmt.Sprintf("Name the icon is listed under, at most %d bytes without control characters.", MaxIconNameBytes),
-					[]any{exampleIconName},
-				),
 				"data": documented(
 					data, "Icon Data", "The PNG bytes of the icon, in standard base64 with padding and no line breaks.",
 					[]any{exampleIconData},
@@ -1034,23 +1033,23 @@ func iconDef() map[string]any {
 }
 
 // iconsDef builds the schema of the document's custom icons, bounded the way
-// [ValidateIcons] bounds them. That a key is the digest of its icon's bytes,
-// and that the bytes are an accepted PNG, JSON Schema cannot express.
+// [ValidateIcons] bounds them. That the bytes are an accepted PNG, JSON
+// Schema cannot express.
 func iconsDef() map[string]any {
 	return documented(
 		map[string]any{
 			keyType:                "object",
 			"maxProperties":        MaxDocumentIcons,
-			"propertyNames":        map[string]any{"pattern": `^` + digestPattern + `$`},
+			"propertyNames":        map[string]any{"pattern": `^` + iconNameSchemaPattern() + `$`},
 			"additionalProperties": ref(keyIcon),
 		},
 		"Custom Icons",
 		fmt.Sprintf(
-			"Custom icons the nodes and templates use, at most %d, each by its icon id (sha256: and the SHA-256 "+
-				"of its PNG bytes); never published.",
+			"Copies of the custom icons the nodes and templates name, at most %d, each by its icon name: a "+
+				"downloaded document carries every icon it uses, a draft on a server none; never published.",
 			MaxDocumentIcons,
 		),
-		[]any{map[string]any{exampleIconID: exampleIcon()}},
+		[]any{map[string]any{exampleIconName: exampleIcon()}},
 	)
 }
 
@@ -1123,8 +1122,8 @@ func templateDeviceDef() map[string]any {
 					keyIconKey, "Icon", "Built-in icon of the devices made from the template.", []any{exampleIconKey},
 				),
 				keyIcon: documentedRef(
-					defIconRef, "Custom Icon", "Custom icon of the devices made from the template; empty for none.",
-					[]any{exampleIconID},
+					defIconRef, "Custom Icon", "Name of the custom icon of the devices made from the template; empty for none.",
+					[]any{exampleIconName},
 				),
 				keyOutlineColor: documentedRef(
 					defHexColor, "Outline Color", "Border color of the devices made from the template.",

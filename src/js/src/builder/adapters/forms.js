@@ -614,17 +614,15 @@ const LOOK_NAMES = {
  * first of the fields that differs names it, as "Changed the fill color of
  * Device web-01 to #2f6fbf", "Removed the fill color of Device web-01",
  * "Changed the icon of Device web-01 to the default" or "Changed the custom
- * icon of Device web-01 to plc". A custom icon is said by its name, never
- * by its id.
+ * icon of Device web-01 to plc". A custom icon is said by its name, which
+ * is what the field holds.
  *
  * @param {string} title the device's title, from inspectorTarget
  * @param {object} before its look (see lookOf)
  * @param {object} after the look it is given
- * @param {(id: string) => string|undefined} [iconName] the name of a
- *   custom icon, by its id
  * @returns {string} '' when they are the same
  */
-export function lookChangeLabel(title, before, after, iconName = () => '') {
+export function lookChangeLabel(title, before, after) {
   const key = LOOK_KEYS.find((name) => before[name] !== after[name]);
 
   if (!key) {
@@ -639,10 +637,7 @@ export function lookChangeLabel(title, before, after, iconName = () => '') {
     return `Removed the ${LOOK_NAMES[key]} of ${title}`;
   }
 
-  const value =
-    key === 'icon' ? iconName(after.icon) || 'an unnamed icon' : after[key];
-
-  return `Changed the ${LOOK_NAMES[key]} of ${title} to ${value}`;
+  return `Changed the ${LOOK_NAMES[key]} of ${title} to ${after[key]}`;
 }
 
 /**

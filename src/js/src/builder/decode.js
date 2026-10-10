@@ -183,7 +183,9 @@ const OWN_DEVICE_KEYS = ['hostname', 'interfaces', 'includedFrom'];
 export const TEMPLATE_DEVICE_KEYS = new Set(
   [...DEVICE_KEYS].filter((key) => !OWN_DEVICE_KEYS.includes(key)),
 );
-export const ICON_ENTRY_KEYS = new Set(['name', 'data']);
+// A copy of a custom icon is its data alone: its key is its name (Icon in
+// customicons.go).
+export const ICON_ENTRY_KEYS = new Set(['data']);
 
 function rejectUnknown(value, allowed, path) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

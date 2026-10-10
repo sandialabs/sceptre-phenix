@@ -56,8 +56,8 @@ A device made from a template:
 - has a connection point for each interface the template names, and is
   connected to nothing: a VLAN that names a network of the diagram is
   emptied, and other VLAN text is kept;
-- brings the template's custom icon into the diagram (see
-  [Custom icons](diagrams.md#custom-icons)).
+- names the template's custom icon, which the server's icon library holds
+  (see [Custom icons](diagrams.md#custom-icons)).
 
 In the command palette, **Add device** lists **Device**, then every template
 by group, with its group and image on the second line, for example "My
@@ -153,8 +153,9 @@ A template of **This diagram** has a menu beside it ("Actions for template"
 and its name):
 
 - **Edit** opens the template editor, titled "Edit template" and the name.
-- **Save to library** copies the template, and its custom icon, into your
-  library: "Saved Engineering workstation to your library." The two are
+- **Save to library** copies the template, which names its custom icon as
+  the diagram's does, into your library: "Saved Engineering workstation to
+  your library." The two are
   separate from then on. Your role needs `configs` `create`.
 - **Delete** removes the template from the diagram, without asking. It is
   one change: **Undo** brings it back.
@@ -369,8 +370,7 @@ storage.
 | Templates in a library | 200 |
 | Collections in a library | 50 |
 | Templates in a collection | 200 |
-| Custom icons used by a library's templates | 50 |
-| Whole library: templates, collections and icons | 512 KiB |
+| Whole library: templates and collections | 512 KiB |
 | Template name | 1 to 128 bytes, one line |
 | Template description | 1024 bytes, one line |
 | A template's device, as JSON | 16 KiB |

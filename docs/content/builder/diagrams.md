@@ -581,30 +581,44 @@ built-in icon. To choose one:
 3. Select **Upload icon…** and choose an image file, or select **Use** on an
    icon the dialog lists.
 
-![The Custom icons dialog: Upload icon…; In this diagram (1), listing the icon plc with Use and Save to my library; My library (2 of 64, 3.0 KiB of 1 MiB), listing the icons pump and valve with their sizes, each with Use and Delete; and Close.](../images/builder/custom-icons-dialog.png)
-
 The field then shows the icon, its name, **Change…** and **Remove**. On a
 device, the change takes effect at once, without **Apply**, as one step of
 **Undo**. On a group, it waits for **Apply**. A switch and a note have no
 custom icon.
 
-The dialog lists two places:
+The phenix server keeps one icon library, which every user of the server
+shares. A node names its custom icon, and the node shows the server's icon
+of that name. When the server has no icon of that name (it was deleted, or
+the diagram came from another server), the field says "(not found: the
+built-in icon is shown)" after the name, and the node shows its built-in
+icon until an icon of that name is uploaded.
 
-- **In this diagram**: the icons the diagram carries. **Save to my library**
-  copies one into your library; "In my library" says it is there already.
-- **My library**: your own icons, kept on the phenix server, with how many
-  there are and how much room they take, for example "My library (2 of 64,
-  3.0 KiB of 1 MiB)". Each has **Use** and **Delete**.
+The dialog lists:
+
+- **In this diagram**: copies of icons the diagram carries, from a file it
+  was uploaded from (see [The diagram and its icons](#the-diagram-and-its-icons)).
+  Each has **Use**, and **Add to server** when the server lacks it; "On the
+  server" says the server has it as it is.
+- **Server icons**: every icon on the server, with who uploaded it, its
+  size and its other names, and how many of them you uploaded, for example
+  "You uploaded 2 of 64 icons, 3.0 KiB of 1 MiB." **Filter icons** narrows
+  the list by name, other name or uploader. Each icon has **Use**, and
+  **Rename** and **Delete** when you may change it.
 
 ### Uploading an icon
 
 **Upload icon…** takes a PNG, JPEG, GIF, WebP or SVG file of at most 5 MiB.
 The browser converts it to a PNG of at most 96 by 96 pixels, in the
-picture's own proportions, and uploads that PNG to your library. A small
-picture is not enlarged; an SVG is drawn as large as an icon may be. The
-icon is named after the file, without its extension, cut to 64 bytes. An
-upload your library already holds says "Your library already has this icon,
-as" and its name.
+picture's own proportions. A small picture is not enlarged; an SVG is drawn
+as large as an icon may be. The dialog then asks for the icon's name,
+proposed from the file's name, and **Add icon** uploads it to the server.
+
+A name is 1 to 64 letters, digits, `_`, `@`, `.` or `-`, and is unique on
+the server, ignoring case: the first upload of a name keeps it. A name the
+server already has for another image is refused with who uploaded that icon,
+for example "icon name "plc" is taken by an icon alice uploaded; choose
+another name". Uploading the same image under its own name again says "The
+server already has this icon as" and its name.
 
 An SVG is drawn on its own: nothing it refers to outside its own file
 (style sheets, images, fonts) is loaded, so those parts are missing from the
@@ -616,32 +630,49 @@ An icon is drawn at 16 pixels on the canvas (14 in the Outline), in its own
 colors, the same in the light and the dark theme. Choose one that reads on
 both, or give the node a **Fill Color**.
 
-### The diagram keeps its own copy
+### The diagram and its icons
 
-A diagram keeps a copy of each icon it uses. It shows its icons on another
-phenix server, for another user, and after the icon is deleted from the
-library. Copy and paste carry the icons of the nodes, also into another
-diagram in the same browser tab. Downloads as Builder JSON or YAML, PNG and
-SVG include them. An icon that no node or template of the diagram uses any
-more leaves the diagram with the edit that removed its last use; **Undo**
-brings it back.
+A draft names its icons and carries no image of them, so a draft saved on
+the server stays small. A download as Builder JSON or YAML carries a copy
+of each icon the diagram names, at most 50, so the file shows its icons on
+another phenix server; PNG and SVG downloads draw them. A name the server
+has no icon of is left out of the file, and the download says so. The
+**Download** that logging out offers for changes the server does not have
+yet carries the icons too.
 
-A diagram holds at most 50 custom icons. The dialog refuses a 51st: "This
-diagram already has 50 custom icons. Remove one from a node first." A paste
-or another edit that would pass 50 leaves the icon out, the node keeps its
-built-in icon, and Builder says "1 custom icon was left out: a diagram holds
-at most 50."
+Uploading a file that carries icons, or editing as a draft the diagram of a
+topology read from its Builder file, adds each one the server lacks to the
+server's library, as uploaded by you, and the draft names it. A copy the
+server already has under its name, with the same image, is dropped. The
+draft keeps its own copy of an icon when the server has another image under
+that name, or when the server could not take it (your share of the library
+is full, for example), and the Builder says so; the copy is shown in place of
+the server's icon. **Add to server** in the dialog adds a kept copy later.
+An icon that no node or template of the diagram uses any more leaves the
+diagram with the edit that removed its last use; **Undo** brings it back.
 
-### Your icon library
+Copy and paste carry the copies of the nodes' icons the diagram carries,
+also into another diagram in the same browser tab.
 
-Your icon library holds at most 64 icons and 1 MiB of them. It is yours
-only: it is never shared, and no role can read another user's. An icon
-cannot be renamed or replaced: delete it and upload it again.
+### Renaming and deleting icons
 
-**Delete** asks "Delete icon?" and says "Delete NAME from your library?
-Diagrams that use it keep their copy." Deleting an icon changes no diagram.
-There is no `phenix` command for the icon library: use the editor or the
-REST API.
+The user who uploaded an icon can rename and delete it. A role with the
+`builder-icons` permissions can rename (`update`) and delete (`delete`)
+every user's icons (see
+[Icons of other users](administration.md#icons-of-other-users)).
+
+**Rename** asks for the new name. The old name keeps naming the icon, so
+diagrams and templates that use it keep showing it: "Renamed OLD to NEW. OLD
+keeps working as another name of it." The icon lists its other names.
+
+**Delete** asks "Delete icon?" and says "Delete NAME from the server?
+Diagrams and templates that use it, by any of its names, will show their
+built-in icon instead." Deleting an icon removes its other names too, and
+changes no diagram: its nodes keep the name.
+
+Each user may upload at most 64 icons and 1 MiB of them, and the server
+holds at most 2,000 icons. There is no `phenix` command for the icon
+library: use the editor or the REST API.
 
 ## Layouts
 

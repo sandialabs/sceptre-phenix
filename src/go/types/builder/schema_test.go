@@ -384,7 +384,7 @@ func TestSchemaVisualNodes(t *testing.T) {
 }
 
 // TestSchemaPresentationPatterns checks what the patterns of colors, icon
-// ids and icon data take.
+// names and icon data take.
 func TestSchemaPresentationPatterns(t *testing.T) {
 	schema := mustSchema(t)
 	defs := mapAt(t, schema, "$defs")
@@ -401,13 +401,16 @@ func TestSchemaPresentationPatterns(t *testing.T) {
 		},
 		"iconRef": {
 			pattern: mapAt(t, defs, "iconRef")["pattern"],
-			yes:     []string{"", iconFixtureID},
-			no:      []string{"sha256:abc", strings.ToUpper(iconFixtureID), "server", "data:image/png;base64,AAAA"},
+			yes:     []string{"", iconFixtureName, "server", "PLC", "a@b.c_d-e", strings.Repeat("n", builder.MaxIconNameBytes)},
+			no: []string{
+				iconFixtureID, "plc icon", "plc/icon", "data:image/png;base64,AAAA", "ñ",
+				strings.Repeat("n", builder.MaxIconNameBytes+1),
+			},
 		},
 		"icons key": {
 			pattern: mapAt(t, mapAt(t, root, "icons"), "propertyNames")["pattern"],
-			yes:     []string{iconFixtureID},
-			no:      []string{"", "plc", iconFixtureID + "0"},
+			yes:     []string{iconFixtureName, "plc", strings.Repeat("n", builder.MaxIconNameBytes)},
+			no:      []string{"", iconFixtureID, "plc icon", strings.Repeat("n", builder.MaxIconNameBytes+1)},
 		},
 		"icon data": {
 			pattern: mapAt(t, mapAt(t, mapAt(t, defs, "icon"), "properties"), "data")["pattern"],
@@ -453,12 +456,13 @@ func TestSchemaBoundsIconsAndTemplates(t *testing.T) {
 	icon := mapAt(t, defs, "icon")
 	iconProps := mapAt(t, icon, "properties")
 
-	if !containsAny(icon["required"], "data") || containsAny(icon["required"], "name") {
-		t.Fatalf("an icon does not require only its data: %v", icon["required"])
+	if !containsAny(icon["required"], "data") {
+		t.Fatalf("an icon does not require its data: %v", icon["required"])
 	}
 
-	if got := mapAt(t, iconProps, "name")["maxLength"]; got != builder.MaxIconNameBytes {
-		t.Fatalf("icon name maxLength = %v, want %d", got, builder.MaxIconNameBytes)
+	// The key is the icon's name: an entry holds its data alone.
+	if _, named := iconProps["name"]; named || len(iconProps) != 1 {
+		t.Fatalf("an icon holds more than its data: %v", iconProps)
 	}
 
 	// The base64 text of the largest icon.

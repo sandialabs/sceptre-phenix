@@ -74,6 +74,8 @@ phenix has a built-in role for the people who draw and publish topologies:
 - `builder-templates` `publish`: it publishes templates server-wide, and
   takes back any user's server-wide template (see
   [Server-wide templates](#server-wide-templates));
+- `builder-icons` `update` and `delete`: it renames and deletes the icons
+  other users uploaded (see [Icons of other users](#icons-of-other-users));
 - `schemas` `get`, for the Inspector's fields;
 - `topologies` and `scenarios` `list` and `get`, `experiments` `list`,
   `get`, `create` and `update`, and `disks` `list`, for Import, Publish and
@@ -114,6 +116,11 @@ spec:
     verbs:
     - publish
   - resources:
+    - builder-icons
+    verbs:
+    - update
+    - delete
+  - resources:
     - schemas
     resourceNames:
     - "*"
@@ -150,9 +157,10 @@ Each time `phenix ui` starts, it makes sure the role exists:
   `Builder`, it creates the role above. So a store made before the role
   existed gets it too, and a deleted role comes back at the next start.
 - A role of that name that is already stored, such as one an administrator
-  made, keeps its policies. If it cannot publish templates server-wide, it
-  gains the `builder-templates` `publish` policy, and so do the users it is
-  assigned to. Nothing else in it changes.
+  made, keeps its policies. If it cannot publish templates server-wide, or
+  rename or delete other users' icons, it gains the `builder-templates`
+  `publish` or `builder-icons` `update` and `delete` policy it lacks, and so
+  do the users it is assigned to. Nothing else in it changes.
 
 Assign the role to a user on the **Users** page (see
 [Updating Users](../user-administration.md#updating-users)). For a site
@@ -188,7 +196,11 @@ instead.
 | Get the Inspector's fields from the server | `schemas` `get` on `builder` |
 | Get drive image suggestions and missing-image checks | `disks` `list` |
 | List, open, change or delete other users' drafts | `builder-drafts` (see [Other users' drafts](#other-users-drafts)) |
-| Use your icon library: list, add, delete icons | `configs` `list`, `create`, `delete` |
+| See and use the server's icons | `configs` `list` |
+| Upload an icon, and add a diagram's icons to the server with **Upload** | `configs` `create` |
+| Rename an icon you uploaded | `configs` `update` |
+| Delete an icon you uploaded | `configs` `delete` |
+| Rename or delete another user's icon | Also `builder-icons` `update` or `delete` (see [Icons of other users](#icons-of-other-users)) |
 | See the **Node Templates** tab, and use templates | `configs` `list` |
 | Add templates and collections, **Save to library**, **Copy to my library** | `configs` `create` |
 | Edit templates and collections, add to and remove from a collection | `configs` `update` |
@@ -297,11 +309,41 @@ A role with it can also take back any user's server-wide template or
 collection. The owner of an item can take it back without it. Of the
 built-in roles, Global Admin and Builder have it.
 
-A user's icon library and template library are their own: no role, not even
-Global Admin or one with `builder-drafts`, reads or changes another user's
-library. Taking back a server-wide item is the one exception. The security
-log records each change of who an item is shared with, each server-wide
-publication and its removal, and each request for another user's library.
+A user's template library is their own: no role, not even Global Admin or
+one with `builder-drafts`, reads or changes another user's library. Taking
+back a server-wide item is the one exception. The security log records each
+change of who an item is shared with, each server-wide publication and its
+removal, and each request for another user's library.
+
+### Icons of other users
+
+The server keeps one icon library, which every user with `configs` `list`
+sees and uses (see [Custom icons](diagrams.md#custom-icons)). The user who
+uploaded an icon can rename it, with `configs` `update`, and delete it, with
+`configs` `delete`. The `builder-icons` resource lets a role rename and
+delete every user's icons, for example to tidy up names or to remove an icon
+that should not be there:
+
+| Verb | What it allows |
+|---|---|
+| `update` | Rename another user's icon. Its old name keeps naming it |
+| `delete` | Delete another user's icon, with all its names |
+
+It takes no resource names, and the `configs` permission of the same verb is
+still needed:
+
+```yaml
+- resources:
+  - builder-icons
+  verbs:
+  - update
+  - delete
+```
+
+Of the built-in roles, Global Admin and Builder have it. Without it, the
+Custom icons dialog shows no **Rename** or **Delete** on another user's icon,
+and the server answers 403. The server logs each upload, rename and delete
+of an icon with the user who made it.
 
 ### Example roles
 
@@ -455,6 +497,9 @@ server still checks every request.
   need `configs` `create`, **Edit** needs `configs` `update`, and
   **Delete** needs `configs` `delete`. A role without them sees the
   templates but not those buttons.
+- In the **Custom icons** dialog, **Rename** and **Delete** show on the
+  icons the user uploaded, with `configs` `update` and `delete`, and on
+  every icon with `builder-icons` too.
 - Without `experiments` `get` on the experiment a publication made, there
   is no **Exp** button for it.
 
@@ -479,17 +524,24 @@ list them. Limits:
   50 custom icons, 50 device templates and 100 notes of its own.
 - A draft can be shared with at most 25 people.
 
-A diagram keeps its own copy of each custom icon it uses, so it opens on any
-phenix server. Each snapshot of a draft holds those copies again, so a draft
-with icons keeps fewer snapshots within its 50 MiB.
+A diagram names its custom icons, which the server's icon library holds, so
+a draft carries no image data. It carries a copy of an icon only when it was
+uploaded from a file whose icon the server lacks under that name or holds
+with another image; each snapshot of a draft holds such copies again.
 
-Each user also has an icon library and a template library on the server.
-They are records in the phenix store too:
+The server has one icon library, and each user a template library. They are
+records in the phenix store too:
 
 | Library | Records | Limits |
 |---|---|---|
-| Icons | Namespace `builder.icons`, one record per icon | 64 icons and 1 MiB of PNG data per user. An icon is a PNG of at most 96 × 96 pixels and 40,960 bytes, and a record is about 1.4 times the size of its PNG |
-| Templates | Namespace `builder.templates`, one record per user, under `lib/` and the SHA-256 of the user name | 512 KiB per user: at most 200 templates, 50 collections, 200 templates in a collection and 50 custom icons. A template's name is at most 128 bytes, its description 1024 bytes, and its device 16 KiB as JSON. A template or collection is shared with at most 25 people |
+| Icons | Namespace `builder.icons`, one record per icon under `name/` and its name in lower case, and one per other name of an icon | 2,000 icons in all, and 64 icons and 1 MiB of PNG data per uploader. An icon is a PNG of at most 96 × 96 pixels and 40,960 bytes, and a record is about 1.4 times the size of its PNG |
+| Templates | Namespace `builder.templates`, one record per user, under `lib/` and the SHA-256 of the user name | 512 KiB per user: at most 200 templates, 50 collections and 200 templates in a collection. A template's name is at most 128 bytes, its description 1024 bytes, and its device 16 KiB as JSON. A template or collection is shared with at most 25 people |
+
+An icon stays when the account of the user who uploaded it is deleted, and
+counts towards that user name's 64 icons. At start, phenix deletes the icon
+records an earlier version kept per user, under the SHA-256 of the user
+name, and logs how many it removed; diagrams that named them by their old
+keys show their built-in icons.
 
 Sharing and server-wide publishing also write small records under `in/` and
 `pub/` in `builder.templates`, which are never removed. A library belongs to
@@ -938,9 +990,11 @@ for Import and Publish.
 | `GET /builder/documents/{document}` | Read a published document | `get` on its topology |
 | `DELETE /builder/documents/{document}` | Delete a published topology and its published documents | `delete` on the topology |
 | `GET /builder/topologies/{topology}/document` | Read the diagram a topology names in `builder-doc`, from the store or from its Builder file | `get` on the topology |
-| `GET /builder/icons` | List your icon library | `list` |
-| `POST /builder/icons` | Add a PNG to your icon library | `create` |
-| `DELETE /builder/icons/{icon}` | Delete an icon from your icon library | `delete` |
+| `GET /builder/icons` | List the server's icon library, with how many icons and bytes you uploaded | `list` |
+| `POST /builder/icons` | Upload a PNG under a name | `create` |
+| `GET /builder/icons/{icon}` | Read an icon, by its name or another name of it | `get` |
+| `PUT /builder/icons/{icon}` | Rename an icon; its old name keeps naming it | `update`; for another user's icon, also `builder-icons` `update` |
+| `DELETE /builder/icons/{icon}` | Delete an icon and all its names | `delete`; for another user's icon, also `builder-icons` `delete` |
 | `GET /builder/templates` | List the templates and collections you can use: yours, those shared with you, and the server-wide ones | `list` |
 | `GET /builder/templates/candidates` | The users your templates can be shared with | `update`, and authentication enabled |
 | `POST /builder/templates/{owner}/items` | Add templates to your library | `create` |

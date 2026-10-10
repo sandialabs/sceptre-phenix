@@ -68,13 +68,13 @@ const (
 	VisibleServer Visibility = "server"
 )
 
-// maxShownIDBytes bounds an identifier a refusal repeats. An icon ID, the
-// longest one in use, is 71 bytes and is shown whole.
+// maxShownIDBytes bounds an identifier a refusal repeats.
 const maxShownIDBytes = 80
 
 // TemplateLibrary is the device templates one user keeps, and the value of
-// that user's library record. It is one record, so a change of a template,
-// of a collection and of the icons they use is always one write.
+// that user's library record. It is one record, so a change of templates
+// and of the collections that hold them is always one write. A template's
+// custom icon is a name the icon library resolves (see [LibraryIcon]).
 //
 // A user who never changed the library has no record: [Service.GetLibrary]
 // then returns the built-in templates, and the first change stores them with
@@ -87,11 +87,8 @@ type TemplateLibrary struct {
 	// Templates and Collections are in the order they were added.
 	Templates   []LibraryTemplate    `json:"templates"`
 	Collections []TemplateCollection `json:"collections"`
-	// Icons holds the custom icons the templates name, by icon ID, as a
-	// document carries them. A stored library holds no other icon.
-	Icons     map[string]builder.Icon `json:"icons,omitempty"`
-	Updated   time.Time               `json:"updated"`
-	UpdatedBy string                  `json:"updatedBy"`
+	Updated     time.Time            `json:"updated"`
+	UpdatedBy   string               `json:"updatedBy"`
 	// Revision is the record revision, 0 for a library that has no record
 	// yet.
 	Revision int64 `json:"-"`
@@ -242,20 +239,14 @@ func (l *TemplateLibrary) Collection(id string) *TemplateCollection {
 
 // AddTemplates adds templates to the library, each under a new ID from
 // newID, whatever ID it came with, and returns those IDs in order. A
-// template that names a custom icon needs that icon in the library already
-// or in icons, the icons the request carries; the ones it needs are added
-// with it.
+// template's custom icon is a name the icon library resolves, whether or not
+// it holds the icon now.
 //
-// A template that is not valid (see [builder.Template.Issues]) and a custom
-// icon nothing carries are refused with a [LibraryError] that names the
-// template by its index, and a library that would hold more than
-// [MaxLibraryTemplates] with one that is a limit. A refusal leaves the
-// library as it was.
-func (l *TemplateLibrary) AddTemplates(
-	templates []builder.Template,
-	icons map[string]builder.Icon,
-	newID IDSource,
-) ([]string, error) {
+// A template that is not valid (see [builder.Template.Issues]) is refused
+// with a [LibraryError] that names the template by its index, and a library
+// that would hold more than [MaxLibraryTemplates] with one that is a limit.
+// A refusal leaves the library as it was.
+func (l *TemplateLibrary) AddTemplates(templates []builder.Template, newID IDSource) ([]string, error) {
 	if len(l.Templates)+len(templates) > MaxLibraryTemplates {
 		return nil, newLibraryLimitErrorf("a library holds at most %d templates", MaxLibraryTemplates)
 	}
@@ -266,7 +257,7 @@ func (l *TemplateLibrary) AddTemplates(
 	for i := range templates {
 		template := templates[i]
 
-		if err := l.checkTemplate(&template, fmt.Sprintf("templates[%d]", i), i, icons); err != nil {
+		if err := checkTemplate(&template, fmt.Sprintf("templates[%d]", i)); err != nil {
 			return nil, err
 		}
 
@@ -292,10 +283,6 @@ func (l *TemplateLibrary) AddTemplates(
 		})
 	}
 
-	for i := range added {
-		l.keepIcon(added[i].Device.Icon, icons)
-	}
-
 	l.Templates = append(l.Templates, added...)
 
 	return ids, nil
@@ -304,19 +291,17 @@ func (l *TemplateLibrary) AddTemplates(
 // ReplaceTemplate replaces the name, the description and the device of the
 // template with the given ID, which keeps its ID, who it is shared with and
 // whether it is published. The rules of [TemplateLibrary.AddTemplates] hold
-// for the content and for icons. An ID the library does not hold is an
-// error matching [ErrNotFound].
-func (l *TemplateLibrary) ReplaceTemplate(id string, content builder.Template, icons map[string]builder.Icon) error {
+// for the content. An ID the library does not hold is an error matching
+// [ErrNotFound].
+func (l *TemplateLibrary) ReplaceTemplate(id string, content builder.Template) error {
 	template := l.Template(id)
 	if template == nil {
 		return newNotFoundError(kindTemplate, id)
 	}
 
-	if err := l.checkTemplate(&content, kindTemplate, 0, icons); err != nil {
+	if err := checkTemplate(&content, kindTemplate); err != nil {
 		return err
 	}
-
-	l.keepIcon(content.Device.Icon, icons)
 
 	template.Name = content.Name
 	template.Description = content.Description
@@ -616,52 +601,13 @@ func (l *TemplateLibrary) VisibleTo(user, created string, exists bool) (map[stri
 }
 
 // checkTemplate checks the content a template is made of or replaced with.
-// Issues are located under path; a custom icon nothing carries names the
-// template by index, its place in the request.
-func (l *TemplateLibrary) checkTemplate(
-	template *builder.Template,
-	path string,
-	index int,
-	icons map[string]builder.Icon,
-) error {
+// Issues are located under path.
+func checkTemplate(template *builder.Template, path string) error {
 	if issues := template.Issues(path); len(issues) != 0 {
 		return newLibraryErrorf("%s", issues[0].String())
 	}
 
-	icon := template.Device.Icon
-	if icon == "" {
-		return nil
-	}
-
-	if _, held := l.Icons[icon]; held {
-		return nil
-	}
-
-	if _, carried := icons[icon]; carried {
-		return nil
-	}
-
-	return newLibraryErrorf(
-		"template %d names custom icon %q, which the request does not carry", index, shownID(icon),
-	)
-}
-
-// keepIcon adds the custom icon a template names to the library, from the
-// icons a request carries, unless the library holds it already.
-func (l *TemplateLibrary) keepIcon(id string, icons map[string]builder.Icon) {
-	if id == "" {
-		return
-	}
-
-	if _, held := l.Icons[id]; held {
-		return
-	}
-
-	if l.Icons == nil {
-		l.Icons = map[string]builder.Icon{}
-	}
-
-	l.Icons[id] = icons[id]
+	return nil
 }
 
 // checkCollection checks the content a collection is made of or replaced
@@ -736,27 +682,6 @@ func (l *TemplateLibrary) normalize() {
 	for i := range l.Collections {
 		if l.Collections[i].TemplateIDs == nil {
 			l.Collections[i].TemplateIDs = []string{}
-		}
-	}
-
-	if len(l.Icons) == 0 {
-		l.Icons = nil
-	}
-}
-
-// dropUnusedIcons removes the custom icons no template of the library names.
-func (l *TemplateLibrary) dropUnusedIcons() {
-	used := make(map[string]bool, len(l.Icons))
-
-	for i := range l.Templates {
-		if icon := l.Templates[i].Device.Icon; icon != "" {
-			used[icon] = true
-		}
-	}
-
-	for id := range l.Icons {
-		if !used[id] {
-			delete(l.Icons, id)
 		}
 	}
 }
@@ -859,7 +784,6 @@ func builtinLibrary(owner string) *TemplateLibrary {
 		Owner:       owner,
 		Templates:   templates,
 		Collections: []TemplateCollection{},
-		Icons:       nil,
 		Updated:     time.Time{},
 		UpdatedBy:   "",
 		Revision:    0,
@@ -1046,13 +970,11 @@ func (s *Service) storedLibrary(key string) (*TemplateLibrary, error) {
 // is returned. So change must depend only on the library it is given, and
 // may run more than once. An error it returns is returned as it is.
 //
-// After change ran, the icons no template names are dropped, every template
-// and collection gets its version and times (see [TemplateLibrary.stamp]),
-// and the library is validated. One that would hold more than
-// [MaxLibraryTemplateIcons] icons or take more than [MaxMetadataBytes] is
-// refused with a [LibraryError] that is a limit, and an icon that is not one
-// a document accepts with one that is not. When change left the library as
-// it was, nothing is written and the library read is returned.
+// After change ran, every template and collection gets its version and
+// times (see [TemplateLibrary.stamp]), and the library is validated. One
+// that would take more than [MaxMetadataBytes] is refused with a
+// [LibraryError] that is a limit. When change left the library as it was,
+// nothing is written and the library read is returned.
 func (s *Service) UpdateLibrary(
 	ctx context.Context,
 	owner, actor string,
@@ -1139,17 +1061,7 @@ func (s *Service) libraryForUpdate(owner, key string) (*TemplateLibrary, *Templa
 func (s *Service) settleLibrary(key string, before, library *TemplateLibrary, actor string) ([]byte, bool, error) {
 	now := s.clock().UTC()
 
-	library.dropUnusedIcons()
 	library.normalize()
-
-	if len(library.Icons) > MaxLibraryTemplateIcons {
-		return nil, false, newLibraryLimitErrorf("a library holds at most %d custom icons", MaxLibraryTemplateIcons)
-	}
-
-	if issues := builder.ValidateIcons(library.Icons, "icons"); len(issues) != 0 {
-		return nil, false, newLibraryErrorf("%s", issues[0].String())
-	}
-
 	library.stamp(before, now)
 
 	if problem := libraryProblem(key, library); problem != "" {
@@ -1261,11 +1173,9 @@ func decodeLibrary(record store.Record) (*TemplateLibrary, error) {
 // be another user's library. The library holds at most
 // [MaxLibraryTemplates] templates and [MaxLibraryCollections] collections,
 // each with an ID of its own; every template is valid (see
-// [builder.Template.Issues]) and names no custom icon but one the library
-// carries; every collection names only templates of the library; the icons
-// are ones a document accepts; and who an item is shared with or published
-// by is well formed. Shares are never read leniently: a tampered list
-// grants nobody anything.
+// [builder.Template.Issues]); every collection names only templates of the
+// library; and who an item is shared with or published by is well formed.
+// Shares are never read leniently: a tampered list grants nobody anything.
 func libraryProblem(key string, library *TemplateLibrary) string {
 	switch {
 	case validateText("owner", library.Owner, MaxOwnerLength, true) != nil:
@@ -1280,10 +1190,6 @@ func libraryProblem(key string, library *TemplateLibrary) string {
 		return fmt.Sprintf(
 			"the library holds %d collections, more than %d", len(library.Collections), MaxLibraryCollections,
 		)
-	case len(library.Icons) > MaxLibraryTemplateIcons:
-		return fmt.Sprintf("the library holds %d custom icons, more than %d", len(library.Icons), MaxLibraryTemplateIcons)
-	case len(builder.ValidateIcons(library.Icons, "icons")) != 0:
-		return "a custom icon is not one a document accepts"
 	}
 
 	if problem := libraryTemplatesProblem(library); problem != "" {
@@ -1313,12 +1219,6 @@ func libraryTemplatesProblem(library *TemplateLibrary) string {
 		}
 
 		seen[template.ID] = true
-
-		if icon := template.Device.Icon; icon != "" {
-			if _, held := library.Icons[icon]; !held {
-				return fmt.Sprintf("template %d names a custom icon the library does not carry", i)
-			}
-		}
 
 		if problem := librarySharingProblem(library.Owner, template.Shares, template.Public); problem != "" {
 			return fmt.Sprintf("template %d %s", i, problem)

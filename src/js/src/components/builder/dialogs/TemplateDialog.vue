@@ -242,6 +242,7 @@
 
   import { preconditionETag } from '@/builder/api.js';
   import { isTextEntry } from '@/builder/commands.js';
+  import { iconLibrary } from '@/builder/iconLibrary.js';
   import { useBuilderStore } from '@/builder/store.js';
   import {
     copiedMessage,
@@ -249,7 +250,6 @@
     templateDocument,
     templateEditorHost,
     templateFromDocument,
-    templateIcons,
     templateOrigin,
     templateProblem,
     templateText,
@@ -270,8 +270,9 @@
     },
     // What the editor starts from: {id?, name, description?, device}.
     template: { type: Object, required: true },
-    // The custom icons kept where the template is, by icon id: the
-    // diagram's, or the library's.
+    // The copies of icons kept where the template is, by name: the
+    // diagram's. The library keeps none: its templates' icons are the icon
+    // library's.
     icons: { type: Object, default: null },
   });
 
@@ -309,13 +310,14 @@
       source: store,
       announce: (message) => status.set(message),
       readOnly: viewing,
+      library: iconLibrary,
     }),
   );
 
   // The template as the editor's document has it: its device with the
   // form's applied edits, under the name and description typed.
   function current() {
-    const { template, icons } = templateFromDocument(host.doc);
+    const { template } = templateFromDocument(host.doc);
     const text = templateText(description.value);
 
     return {
@@ -324,7 +326,6 @@
         ...(text ? { description: text } : {}),
         device: template.device,
       },
-      icons,
     };
   }
 
@@ -417,20 +418,15 @@
 
   // Saves a template of the library, and says so once the dialog has
   // closed. Resolves to whether it was saved; why not is said in the dialog.
-  async function saveToLibrary(template, icons) {
+  async function saveToLibrary(template) {
     saving.value = true;
 
     try {
       if (props.mode === 'library-edit') {
-        await store.updateLibraryTemplate(
-          props.template.id,
-          template,
-          etag,
-          icons,
-        );
+        await store.updateLibraryTemplate(props.template.id, template, etag);
         store.announce(`Updated template ${template.name}.`);
       } else {
-        await store.createLibraryTemplates([template], { icons });
+        await store.createLibraryTemplates([template]);
         store.announce(`Saved ${template.name} to your library.`);
       }
 
@@ -457,7 +453,7 @@
   }
 
   // Another user's template, viewed, goes to the user's library as a copy
-  // they own, with the custom icon it names. The page says so once the
+  // they own, naming the custom icon it names. The page says so once the
   // dialog has closed; a failure is said in the dialog.
   async function copy() {
     if (saving.value) {
@@ -477,9 +473,7 @@
     saving.value = true;
 
     try {
-      await store.createLibraryTemplates([props.template], {
-        icons: templateIcons(props.template, props.icons),
-      });
+      await store.createLibraryTemplates([props.template]);
       store.announce(copiedMessage([props.template]));
       emit('close');
     } catch (failure) {
@@ -512,7 +506,7 @@
       return;
     }
 
-    const { template, icons } = current();
+    const { template } = current();
     const problem = templateProblem(template);
 
     if (problem) {
@@ -522,7 +516,7 @@
     }
 
     if (inLibrary) {
-      if (await saveToLibrary(template, icons)) {
+      if (await saveToLibrary(template)) {
         emit('close');
       }
 
@@ -534,12 +528,11 @@
     // which removes it.
     const saved =
       props.mode === 'diagram-edit'
-        ? store.updateTemplate(
-            props.template.id,
-            { description: '', ...template },
-            icons,
-          )
-        : store.addTemplate(template, icons);
+        ? store.updateTemplate(props.template.id, {
+            description: '',
+            ...template,
+          })
+        : store.addTemplate(template);
 
     if (!saved) {
       await fail(

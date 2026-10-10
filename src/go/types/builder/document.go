@@ -122,8 +122,12 @@ type Document struct {
 	// editor offers beside its own. They are presentation only and never
 	// written to a config.
 	Templates []Template `json:"templates,omitempty"`
-	// Icons holds the custom icons the document's nodes and templates use, by
-	// icon id (see [IconID]). Presentation only, never written to a config.
+	// Icons holds copies of custom icons the document's nodes and templates
+	// name, by icon name (see [IconNameProblem]). On a phenix server a name
+	// resolves through the server's icon library and a draft carries none;
+	// a downloaded document carries every icon it uses, so it stands on its
+	// own. A copy wins over the library's icon of its name. Presentation
+	// only, never written to a config.
 	Icons map[string]Icon `json:"icons,omitempty"`
 }
 
@@ -183,9 +187,10 @@ type Device struct {
 	// icon key registry (see [IsIconKey]). It is never written to a topology
 	// spec.
 	IconKey string `json:"iconKey,omitempty"`
-	// Icon names a custom icon of [Document.Icons], drawn in place of
-	// IconKey. Like the colors below, it is presentation only and never
-	// written to a topology spec.
+	// Icon is the name of a custom icon, drawn in place of IconKey: a copy
+	// in [Document.Icons], else the server's icon library's icon of that
+	// name; with neither, IconKey is drawn. Like the colors below, it is
+	// presentation only and never written to a topology spec.
 	Icon string `json:"icon,omitempty"`
 	// OutlineColor and FillColor color the node's border and background, as
 	// "#rrggbb". Empty leaves the editor's own.
@@ -247,8 +252,8 @@ type Group struct {
 	// [BorderStyles]. Empty leaves the editor's own.
 	BorderStyle string `json:"borderStyle,omitempty"`
 	// IconKey is drawn beside the title, from the icon key registry (see
-	// [IsIconKey]), and Icon, a custom icon of [Document.Icons], in its
-	// place.
+	// [IsIconKey]), and Icon, the name of a custom icon (see [Device.Icon]),
+	// in its place.
 	IconKey   string `json:"iconKey,omitempty"`
 	Icon      string `json:"icon,omitempty"`
 	Collapsed bool   `json:"collapsed,omitempty"`

@@ -33,6 +33,12 @@ spec:
     - builder-templates
     verbs:
     - publish
+  # Rename and delete any icon of the icon library, whoever uploaded it.
+  - resources:
+    - builder-icons
+    verbs:
+    - update
+    - delete
   - resources:
     - schemas
     resourceNames:

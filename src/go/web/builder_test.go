@@ -1915,6 +1915,8 @@ func TestBuilderOutOfSpaceDocumented(t *testing.T) {
 		{draft + "/publish", "post"},
 		{draft + "/shares", "put"},
 		{"/builder/icons", "post"},
+		{"/builder/icons/{icon}", "put"},
+		{"/builder/icons/{icon}", "delete"},
 		{library + "/items", "post"},
 		{library + "/items/{template}", "put"},
 		{library + "/collections", "post"},

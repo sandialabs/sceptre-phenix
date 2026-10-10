@@ -154,14 +154,18 @@ publishing the draft imported from the topology replaces `builder-xml` with
 `builder-doc`. Its one CLI command is `phenix builder publish <file>`, which
 makes a topology from a Builder document file; `phenix config create` skips
 or refuses Builder documents. There is no CLI for import, the legacy
-conversion, the icon library or the template library. The built-in role
-`Builder` holds every Builder permission, `builder-templates` `publish`
+conversion, the icon library or the template library. The icon library is
+one server-wide set of custom icons with unique names, which nodes and
+templates name; drafts carry no image data, and a downloaded file embeds the
+icons it uses. The built-in role `Builder` holds every Builder permission,
+`builder-templates` `publish` and `builder-icons` `update` and `delete`
 included.
 
 For anything about the Builder (its drafts, sharing, publishing, import from
 topologies and experiments, legacy conversion, icons and node templates,
 `/builder/…` routes, the `builder-doc` annotation and Builder files, the
-`builder-drafts` and `builder-templates` RBAC resources, or its code),
+`builder-drafts`, `builder-templates` and `builder-icons` RBAC resources, or
+its code),
 **read [`references/builder.md`](references/builder.md)** first.
 
 ## CLI Overview

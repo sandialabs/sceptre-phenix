@@ -347,11 +347,11 @@ func decoratedDocument(t *testing.T) *builder.Document {
 
 	doc := loadDocumentFixture(t, "document.json")
 
-	doc.Icons = map[string]builder.Icon{iconFixtureID: {Name: "plc", Data: iconFixtureData}}
+	doc.Icons = map[string]builder.Icon{iconFixtureName: {Data: iconFixtureData}}
 	doc.Templates = []builder.Template{sampleTemplate()}
 
 	router := nodeByHostname(t, doc, "router").Device
-	router.Icon = iconFixtureID
+	router.Icon = iconFixtureName
 	router.OutlineColor = "#2f6fbf"
 	router.FillColor = "#eef4fb"
 
@@ -364,7 +364,7 @@ func decoratedDocument(t *testing.T) *builder.Document {
 	rack.Description = "first rack\nsecond line"
 	rack.BorderStyle = "dotted"
 	rack.IconKey = "container"
-	rack.Icon = iconFixtureID
+	rack.Icon = iconFixtureName
 
 	doc.Networks[0].LineStyle = "dashed"
 	doc.Edges[0].LineStyle = "dash-dot"

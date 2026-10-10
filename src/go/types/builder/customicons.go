@@ -14,6 +14,7 @@ import (
 	"image/png"
 	"io"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -29,7 +30,7 @@ const (
 	// MaxIconBytes bounds the PNG of an icon.
 	MaxIconBytes = 40960
 
-	// MaxIconNameBytes bounds the name an icon was given.
+	// MaxIconNameBytes bounds the name of an icon (see [IconNameProblem]).
 	MaxIconNameBytes = 64
 
 	// MaxDocumentIcons is the most custom icons a document may carry (see
@@ -81,19 +82,39 @@ const (
 // [NormalizeIconPNG] wraps. The refusal's text says why after it.
 var ErrInvalidIcon = errors.New("icon is not an accepted PNG")
 
-// Icon is a custom icon carried in a document.
+// Icon is a custom icon a document carries, under its name (see
+// [Document.Icons]). A document carries one only when it is to stand on its
+// own, as a downloaded file does: on a phenix server, a node names an icon
+// of the server's icon library and the document carries nothing of it.
 type Icon struct {
-	// Name is the name the icon was given, for people. It identifies
-	// nothing.
-	Name string `json:"name,omitempty"`
 	// Data is the PNG, in standard base64 with padding.
 	Data string `json:"data"`
 }
 
-// IconID returns the id of an icon: "sha256:" and the lowercase hex SHA-256
-// of its PNG bytes. An icon is named by its content, so a document that
-// carries one needs nothing else to show it, and the same image has the same
-// id everywhere.
+// iconNamePattern is the form of an icon name: the characters a phenix
+// config name may hold.
+var iconNamePattern = regexp.MustCompile(`^[A-Za-z0-9_@.-]+$`)
+
+// IconNameProblem says why name is no icon name, or returns "". An icon
+// name is 1 to [MaxIconNameBytes] letters, digits, "_", "@", "." and "-",
+// the characters of a phenix config name, and is neither "." nor "..". Two
+// names that differ only in case name the same icon of a server's library.
+func IconNameProblem(name string) string {
+	switch {
+	case name == "" || len(name) > MaxIconNameBytes || !iconNamePattern.MatchString(name):
+		return fmt.Sprintf(
+			`icon name %q must be 1 to %d letters, digits, "_", "@", "." or "-"`, truncate(name), MaxIconNameBytes,
+		)
+	case name == "." || name == "..":
+		return fmt.Sprintf(`icon name %q must not be "." or ".."`, name)
+	}
+
+	return ""
+}
+
+// IconID returns the id of an icon's image: "sha256:" and the lowercase hex
+// SHA-256 of its PNG bytes. The same image has the same id everywhere, so
+// two icons are the same image exactly when their ids are equal.
 func IconID(png []byte) string {
 	sum := sha256.Sum256(png)
 
@@ -207,15 +228,13 @@ func NormalizeIconPNG(input []byte) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
-// ValidateIcons checks a set of custom icons, as a document or a template
-// library carries them, and returns what it finds at path:
+// ValidateIcons checks the custom icons a document carries, and returns what
+// it finds at path:
 //
 //   - at most [MaxDocumentIcons] icons,
-//   - each key an icon id: "sha256:" and 64 lowercase hex digits,
-//   - each name at most [MaxIconNameBytes] bytes, without control characters,
+//   - each key an icon name (see [IconNameProblem]),
 //   - each data strict standard base64 of 1 to [MaxIconBytes] bytes,
-//   - which are a PNG [ValidateIconPNG] accepts,
-//   - and whose [IconID] is the key.
+//   - which are a PNG [ValidateIconPNG] accepts.
 //
 // Keys are checked in order, so the issues are the same every time. An icon
 // nothing uses is valid: the editor drops it on its next edit.
@@ -233,14 +252,9 @@ func ValidateIcons(icons map[string]Icon, path string) []Issue {
 	for _, key := range slices.Sorted(maps.Keys(icons)) {
 		icon := icons[key]
 		shown := truncate(key)
-		keyed := IsDigest(key)
 
-		if !keyed {
-			addf("icon key %q must be sha256: and 64 hex digits", shown)
-		}
-
-		if len(icon.Name) > MaxIconNameBytes || strings.ContainsFunc(icon.Name, isControl) {
-			addf("icon %q name must be at most %d bytes and contain no control characters", shown, MaxIconNameBytes)
+		if problem := IconNameProblem(key); problem != "" {
+			addf("%s", problem)
 		}
 
 		data, ok := decodeIconData(icon.Data)
@@ -252,12 +266,6 @@ func ValidateIcons(icons map[string]Icon, path string) []Issue {
 
 		if _, _, err := ValidateIconPNG(data); err != nil {
 			addf("icon %q is not an accepted PNG: %s", shown, iconReason(err))
-
-			continue
-		}
-
-		if keyed && IconID(data) != key {
-			addf("icon %q does not match its data", shown)
 		}
 	}
 

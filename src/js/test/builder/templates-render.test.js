@@ -28,7 +28,7 @@ import { blankTemplate } from '@/builder/templates.js';
 import { MAX_TEMPLATES } from '@/builder/validate.js';
 
 import { sampleDocument, tags, withTemplates } from './fixtures.js';
-import { ICON_DATA, ICON_KEY } from './png.js';
+import { ICON_DATA } from './png.js';
 
 const PLC = {
   name: 'PLC',
@@ -123,12 +123,9 @@ describe('the palette’s device templates', () => {
     const { html } = await render(BuilderPalette, {}, (store) => {
       added = addTemplate(store.doc, {
         ...PLC,
-        device: { ...PLC.device, icon: ICON_KEY },
+        device: { ...PLC.device, icon: 'plc-icon' },
       });
-      store.doc = {
-        ...added.doc,
-        icons: { [ICON_KEY]: { name: 'plc', data: ICON_DATA } },
-      };
+      store.doc = { ...added.doc, icons: { 'plc-icon': { data: ICON_DATA } } };
     });
     const id = added.template.id;
 
@@ -352,19 +349,19 @@ describe('the template editor', () => {
     expect(html).toContain('data-testid="template-discard-confirm"');
   });
 
-  test('a template with a custom icon shows it, from the icons it is given', async () => {
+  test('a template with a custom icon shows it, from the copies it is given', async () => {
     const template = {
       ...PLC,
-      device: { ...PLC.device, icon: ICON_KEY },
+      device: { ...PLC.device, icon: 'plc-icon' },
     };
     const { html } = await render(TemplateDialog, {
       mode: 'diagram-new',
       template,
-      icons: { [ICON_KEY]: { name: 'plc icon', data: ICON_DATA } },
+      icons: { 'plc-icon': { data: ICON_DATA } },
     });
 
     expect(html).toContain(`src="data:image/png;base64,${ICON_DATA}"`);
-    expect(html).toContain('plc icon');
+    expect(html).toContain('plc-icon');
   });
 });
 

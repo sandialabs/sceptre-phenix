@@ -12,7 +12,6 @@ import (
 
 	bapi "phenix/api/builder"
 	"phenix/store"
-	bdoc "phenix/types/builder"
 	"phenix/util/plog/plogtest"
 	"phenix/web/rbac"
 )
@@ -151,7 +150,7 @@ func (f *builderSharedFixture) revision(t *testing.T) int64 {
 
 // TestBuilderTemplateShare asserts the owner shares a template with one
 // user and a collection with another, and each recipient lists what it was
-// given, read only and as it is now, with the icon it names.
+// given, read only and as it is now, naming the icon it names.
 func TestBuilderTemplateShare(t *testing.T) {
 	fixture := newBuilderSharedFixture(t)
 	harness := fixture.harness
@@ -182,8 +181,8 @@ func TestBuilderTemplateShare(t *testing.T) {
 	plc := listedTemplate(bob, fixture.plc)
 
 	if plc.Name != "PLC" || plc.Shares != nil || len(plc.Collections) != 0 || plc.Collections == nil || plc.ServerWide ||
-		bob.Icons[fixture.iconID] != fixture.icon || !bob.CanShare || bob.CanPublish {
-		t.Fatalf("bob's view of PLC = %+v, canShare %v, icons %v", plc, bob.CanShare, bob.Icons)
+		plc.Device.Icon != builderTemplateIconName || !bob.CanShare || bob.CanPublish {
+		t.Fatalf("bob's view of PLC = %+v, canShare %v", plc, bob.CanShare)
 	}
 
 	// Carol sees the collection and the templates in it, which name it.
@@ -221,7 +220,7 @@ func TestBuilderTemplateShare(t *testing.T) {
 
 	// A change by the owner is what the recipient sees next.
 	edited := builderJSON(t, builderTemplateUpdateRequest{
-		builderTemplateContent: builderTemplateContentOf("PLC two", fixture.iconID), Icons: nil,
+		builderTemplateContent: builderTemplateContentOf("PLC two", builderTemplateIconName),
 	})
 	if replaced := harness.put("/items/"+fixture.plc, edited, `"1"`); replaced.Code != http.StatusOK {
 		t.Fatalf("replacing PLC = %d %s", replaced.Code, replaced.Body)
@@ -274,14 +273,13 @@ func TestBuilderTemplateSharedIsReadOnly(t *testing.T) {
 		t.Fatal("a request of a recipient changed the owner's library")
 	}
 
-	// Bob copies PLC into his own library, with its icon: the copy is his.
+	// Bob copies PLC into his own library, naming its icon: the copy is his.
 	bob := harness.templates(builderTestPeer)
 	shared := listedTemplate(bob, fixture.plc)
 
 	copied := builderJSON(t, builderTemplateCreateRequest{
 		Templates:  []builderTemplateContent{{Name: shared.Name, Description: shared.Description, Device: shared.Device}},
 		Collection: nil,
-		Icons:      map[string]bdoc.Icon{fixture.iconID: bob.Icons[fixture.iconID]},
 	})
 
 	recorder := harness.library(http.MethodPost, builderLibraryPath(builderTestPeer, "/items"), builderTestPeer, copied, "")
@@ -294,7 +292,7 @@ func TestBuilderTemplateSharedIsReadOnly(t *testing.T) {
 	harness.decode(recorder, &made)
 
 	if own := listedTemplate(harness.templates(builderTestPeer), made.Created[0].ID); own == nil || own.Source != builderTemplateOwn ||
-		own.Owner != builderTestPeer || own.Device.Icon != fixture.iconID {
+		own.Owner != builderTestPeer || own.Device.Icon != builderTemplateIconName {
 		t.Fatalf("bob's copy = %+v", own)
 	}
 }
@@ -697,7 +695,7 @@ func TestBuilderTemplatePublish(t *testing.T) {
 		plc, hmi := listedTemplate(list, fixture.plc), listedTemplate(list, fixture.hmi)
 
 		if !plc.ServerWide || plc.PublishedBy != builderTestOwner || plc.PublishedAt.IsZero() || hmi.ServerWide ||
-			!listedCollection(list, fixture.floor).ServerWide || list.Icons[fixture.iconID] != fixture.icon {
+			!listedCollection(list, fixture.floor).ServerWide || plc.Device.Icon != builderTemplateIconName {
 			t.Fatalf("%s's view of PLC = %+v and of HMI = %+v", user, plc, hmi)
 		}
 	}

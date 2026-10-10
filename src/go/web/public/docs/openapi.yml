@@ -44,12 +44,15 @@ tags:
       draft gets 404, exactly as for a draft that does not exist, so draft
       existence is never disclosed; a caller who can see it but may not
       perform the operation gets 403.
-      An icon library belongs to one user: its operations act on the
-      caller's own, and no role reaches another user's. So does a template
-      library, except that its owner may share templates and collections,
-      read only, with other users, and publish them to every user with
-      `builder-templates` `publish`; anyone with that permission may take
-      any user's published item back.
+      The icon library is the server's: every caller with `configs` `list`
+      sees every icon, each under a name unique ignoring case; an icon is
+      renamed or deleted by the user who uploaded it, or with
+      `builder-icons` `update` or `delete`. A template library belongs to
+      one user: its operations act on the caller's own, and no role reaches
+      another user's, except that its owner may share templates and
+      collections, read only, with other users, and publish them to every
+      user with `builder-templates` `publish`; anyone with that permission
+      may take any user's published item back.
       Every response of a Builder operation carries
       `X-Content-Type-Options: nosniff`.
 paths:
@@ -2727,14 +2730,15 @@ paths:
     get:
       tags:
         - Builder
-      summary: List the icons of your Builder icon library
+      summary: List the icons of the Builder icon library
       description: >
-        Requires `configs` `list`. Returns only the caller's own icons, each
-        with its PNG as base64, sorted by name, and the library's limits. An
-        icon library belongs to one user: no operation reaches the library of
-        another user, whatever the caller's role. The image is only ever sent
-        as base64 inside JSON, never as an image. Every response of the icon
-        operations also carries
+        Requires `configs` `list`. Returns every icon of the server's icon
+        library, sorted by name ignoring case, each with its PNG as base64,
+        who uploaded it, its aliases (the names it had before its renames,
+        which still name it), and whether the caller may rename or delete
+        it; and how many icons and PNG bytes each user may upload and the
+        caller has. The image is only ever sent as base64 inside JSON, never
+        as an image. Every response of the icon operations also carries
         `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`.
       operationId: listBuilderIcons
       responses:
@@ -2749,21 +2753,25 @@ paths:
     post:
       tags:
         - Builder
-      summary: Add an icon to your Builder icon library
+      summary: Add an icon to the Builder icon library
       description: >
-        Requires `configs` `create`. Takes a PNG of at most 96 by 96 pixels
-        and 65536 bytes, as base64. Only the bytes say what the image is: no
-        file name, extension or declared type is read, and anything that is
-        not a PNG (SVG, JPEG, GIF, WebP) is refused. A PNG that holds only
-        the chunks `IHDR`, `PLTE`, `tRNS`, `IDAT` and `IEND`, a `PLTE` or
-        `tRNS` only where its color type uses one, nothing after its pixels,
-        and is at most 40960 bytes is stored as it is. Any other is encoded
-        again, which keeps its pixels and drops everything else (text,
-        metadata, color profiles, further frames, an unused palette, data
-        after the pixels), so use the `id` and `data` the response returns.
-        Sending bytes the library already holds answers 200 with the stored
-        icon, under the name it has. A library holds at most 64 icons and
-        1 MiB of PNG bytes.
+        Requires `configs` `create`. Adds a PNG under a name the caller
+        chooses: 1 to 64 letters, digits, `_`, `@`, `.` and `-`, not `.` or
+        `..`, which no icon and no alias has, ignoring case. Takes a PNG of
+        at most 96 by 96 pixels and 65536 bytes, as base64. Only the bytes
+        say what the image is: no file name, extension or declared type is
+        read, and anything that is not a PNG (SVG, JPEG, GIF, WebP) is
+        refused. A PNG that holds only the chunks `IHDR`, `PLTE`, `tRNS`,
+        `IDAT` and `IEND`, a `PLTE` or `tRNS` only where its color type uses
+        one, nothing after its pixels, and is at most 40960 bytes is stored
+        as it is. Any other is encoded again, which keeps its pixels and
+        drops everything else (text, metadata, color profiles, further
+        frames, an unused palette, data after the pixels), so use the `data`
+        the response returns. A name that already names an icon with the
+        same bytes answers 200 with that icon; one that names another icon,
+        or is another icon's alias, answers 409. Each user may upload at most
+        64 icons and 1 MiB of PNG bytes; the library holds at most 2000
+        icons.
       operationId: createBuilderIcon
       requestBody:
         required: true
@@ -2773,7 +2781,7 @@ paths:
               $ref: "#/components/schemas/BuilderIconUpload"
       responses:
         "200":
-          description: the library already held this icon
+          description: the name already names an icon with the same bytes
           content:
             application/json:
               schema:
@@ -2795,6 +2803,16 @@ paths:
                 $ref: "#/components/schemas/WebError"
         "403":
           $ref: "#/components/responses/BuilderForbidden"
+        "409":
+          description: >
+            The name, ignoring case, names another icon or is another icon's
+            alias. The message names that icon and who uploaded it, for
+            example `icon name "plc" is taken by an icon alice uploaded;
+            choose another name`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
         "413":
           description: >
             The request body is larger than 131072 bytes, or the image is
@@ -2805,9 +2823,9 @@ paths:
                 $ref: "#/components/schemas/WebError"
         "422":
           description: >
-            The image is not a PNG, is more than 96 pixels wide or high, or
-            its name is over 64 bytes or holds control characters; or the
-            library is full.
+            The name is not an icon name, the image is not a PNG or is more
+            than 96 pixels wide or high, or the caller's share of the library,
+            or the library, is full.
           content:
             application/json:
               schema:
@@ -2815,34 +2833,119 @@ paths:
         "507":
           $ref: "#/components/responses/InsufficientStorage"
   "/builder/icons/{icon}":
+    parameters:
+      - name: icon
+        in: path
+        description: >
+          the icon's name, or one of its aliases, in any case. A path that
+          names no icon is answered with 404, whatever its form.
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Builder
+      summary: Read an icon of the Builder icon library
+      description: >
+        Requires `configs` `get`. Returns the icon the path names; `name` is
+        the name it has now.
+      operationId: getBuilderIcon
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderIcon"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderIconNotFound"
+    put:
+      tags:
+        - Builder
+      summary: Rename an icon of the Builder icon library
+      description: >
+        Requires `configs` `update`, and being the user who uploaded the icon
+        or holding `builder-icons` `update` (403 otherwise). Gives the icon
+        the path names a new name, which no other icon and no other icon's
+        alias may have, ignoring case. The old name becomes an alias, so
+        diagrams and templates that name it keep showing the icon. A change
+        of case renames the icon in place; renaming it back to one of its
+        aliases takes that name back.
+      operationId: renameBuilderIcon
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderIconRename"
+      responses:
+        "200":
+          description: the icon as renamed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderIcon"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderIconNotFound"
+        "409":
+          description: >
+            The new name is taken by another icon or its alias, or the icon
+            changed while it was renamed; nothing was renamed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "413":
+          description: The request body is larger than 4096 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "422":
+          description: The new name is not an icon name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
     delete:
       tags:
         - Builder
-      summary: Delete an icon from your Builder icon library
+      summary: Delete an icon from the Builder icon library
       description: >
-        Requires `configs` `delete`. Diagrams that use the icon keep their
-        own copy. An icon the caller's library does not hold, and a path
-        that is not 64 lowercase hex digits, are answered with the same 404.
+        Requires `configs` `delete`, and being the user who uploaded the
+        icon or holding `builder-icons` `delete` (403 otherwise). Deletes the
+        icon the path names, by its name or an alias, with all its aliases.
+        Diagrams and templates that name it show their built-in icon; a
+        downloaded document keeps its own copy. With `builder-icons`
+        `delete`, a record of that name this server cannot read is removed.
+        When an alias could not be removed, the answer is still 204, with a
+        `Warning: 199` header.
       operationId: deleteBuilderIcon
-      parameters:
-        - name: icon
-          in: path
-          description: the 64 hex digits of the icon ID, without `sha256:`
-          required: true
-          schema:
-            type: string
-            pattern: "^[0-9a-f]{64}$"
       responses:
         "204":
           description: icon deleted
         "403":
           $ref: "#/components/responses/BuilderForbidden"
         "404":
-          description: The caller's library holds no such icon.
+          $ref: "#/components/responses/BuilderIconNotFound"
+        "409":
+          description: >
+            The icon changed while it was deleted (it was renamed, say);
+            nothing was deleted.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/WebError"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
   "/builder/templates":
     get:
       tags:
@@ -2850,7 +2953,8 @@ paths:
       summary: List the device templates you can use
       description: >
         Requires `configs` `list`. Returns the templates and collections the
-        caller can use, and the custom icons those templates name. First the
+        caller can use; a template names its custom icon, which the icon
+        library resolves. First the
         caller's own library (`source` `own`), in the order its items were
         added; then, sorted by owner, the items of other users' libraries
         shared with the caller (`shared`) or published to every user
@@ -2907,10 +3011,10 @@ paths:
         Requires `configs` `create`, and being `{owner}`. Adds 1 to 200
         templates in one write, each under a new ID. With `collection`, a new
         collection holding exactly those templates is made in the same write.
-        A template that names a custom icon (`device.icon`) needs that icon
-        in the library already or in `icons`; an entry of `icons` nothing
-        names is dropped. The first change of a library also stores the
-        built-in templates it started with.
+        A template's custom icon (`device.icon`) is an icon name, which the
+        icon library resolves whether or not it holds that icon now. The
+        first change of a library also stores the built-in templates it
+        started with.
       operationId: createBuilderTemplates
       requestBody:
         required: true
@@ -2959,10 +3063,8 @@ paths:
       description: >
         Requires `configs` `update`, and being `{owner}`. Replaces the name,
         the description and the device of one template, which keeps its ID.
-        The custom icon rule of POST /builder/templates/{owner}/items holds;
-        an icon no template names any more leaves the library. Content equal
-        to what is stored changes nothing and keeps the entity tag. Devices
-        already made from the template are not changed.
+        Content equal to what is stored changes nothing and keeps the entity
+        tag. Devices already made from the template are not changed.
       operationId: putBuilderTemplate
       parameters:
         - $ref: "#/components/parameters/BuilderTemplateIfMatch"
@@ -3107,9 +3209,8 @@ paths:
         Requires `configs` `delete`, and being `{owner}`. Deletes the named
         templates and collections in one write. An ID the library does not
         hold is ignored, so repeating the request is harmless. A deleted
-        template leaves every collection that held it, and its custom icon
-        leaves the library with the last template that names it; a deleted
-        collection leaves its templates. A built-in template is deleted like
+        template leaves every collection that held it; a deleted collection
+        leaves its templates. A built-in template is deleted like
         any other and does not come back. Diagrams are not changed: a device
         made from a template keeps no link to it.
       operationId: deleteBuilderTemplates
@@ -3996,17 +4097,17 @@ components:
         icons:
           title: Custom Icons
           description: >
-            the custom icons the nodes and templates use, at most 50: base64
-            PNG data and a name by icon id (`sha256:` and the SHA-256 of the
-            PNG bytes)
+            copies of the custom icons the nodes and templates name, at most
+            50, each its base64 PNG data under its icon name. A draft on a
+            server carries none (names resolve through the icon library); a
+            downloaded document carries every icon it uses.
           type: object
           maxProperties: 50
           additionalProperties:
             type: object
             additionalProperties: true
           example:
-            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581":
-              name: plc
+            plc:
               data: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==
     BuilderDocumentMetadata:
       title: Builder Document Metadata
@@ -4917,30 +5018,50 @@ components:
     BuilderIconUpload:
       type: object
       required:
+        - name
         - data
       properties:
         name:
           description: >
-            a name for people, at most 64 bytes, without control characters;
-            it is trimmed, and identifies nothing
+            the icon's name: 1 to 64 letters, digits, `_`, `@`, `.` and `-`,
+            not `.` or `..`, which no icon and no alias has, ignoring case.
+            Nodes and templates name the icon by it.
           type: string
+          pattern: "^[A-Za-z0-9_@.-]{1,64}$"
         data:
           description: >
             a PNG of at most 96 by 96 pixels and 65536 bytes, in standard
             base64 with padding and without line breaks
           type: string
+    BuilderIconRename:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          description: >
+            the icon's new name, by the rules of a name an icon is added
+            under; the old name becomes an alias
+          type: string
+          pattern: "^[A-Za-z0-9_@.-]{1,64}$"
     BuilderIcon:
       type: object
       properties:
+        name:
+          description: >
+            the icon's name now. It is the key of the icon in a Builder
+            document's `icons`, and what a node's or template's `icon` names.
+          type: string
         id:
           description: >
             `sha256:` and the SHA-256 of the stored PNG, as 64 lowercase hex
-            digits. It is the key of the icon in a Builder document's
-            `icons`, and the same image has the same ID in every library.
+            digits: two icons hold the same image exactly when their IDs are
+            equal.
           type: string
           pattern: "^sha256:[0-9a-f]{64}$"
-        name:
-          description: the name the icon was given, empty when it has none
+        owner:
+          description: the user who uploaded the icon
           type: string
         width:
           description: width in pixels, 1 to 96
@@ -4952,30 +5073,54 @@ components:
           description: length of the stored PNG, at most 40960
           type: integer
         created:
-          description: when the icon was added
+          description: when the icon was uploaded
           type: string
           format: date-time
+        updated:
+          description: when the icon was last renamed, or uploaded
+          type: string
+          format: date-time
+        aliases:
+          description: >
+            the names the icon had before its renames, oldest first, each of
+            which still names it
+          type: array
+          items:
+            type: string
         data:
           description: >
             the stored PNG in standard base64 with padding, which may differ
             from what was sent
           type: string
+        canRename:
+          description: >
+            whether the caller may rename the icon: `configs` `update`, and
+            being its uploader or holding `builder-icons` `update`
+          type: boolean
+        canDelete:
+          description: >
+            whether the caller may delete the icon: `configs` `delete`, and
+            being its uploader or holding `builder-icons` `delete`
+          type: boolean
     BuilderIconList:
       type: object
       properties:
         icons:
-          description: the caller's icons, sorted by name without regard to case, then by ID
+          description: every icon of the library, sorted by name without regard to case
           type: array
           items:
             $ref: "#/components/schemas/BuilderIcon"
         maxIcons:
-          description: the most icons a library holds
+          description: the most icons each user may upload
           type: integer
         maxBytes:
-          description: the most PNG bytes the icons of a library have together
+          description: the most PNG bytes the icons each user uploads may have together
           type: integer
         usedBytes:
-          description: the PNG bytes of the listed icons together
+          description: the PNG bytes of the icons the caller uploaded, together
+          type: integer
+        usedIcons:
+          description: how many icons the caller uploaded
           type: integer
     BuilderTemplateDevice:
       description: >
@@ -4992,10 +5137,10 @@ components:
           type: string
         icon:
           description: >
-            the ID of a custom icon, a key of the `icons` the library or the
-            request carries
+            the name of a custom icon of the icon library, drawn in place of
+            `iconKey` while the library has an icon of that name
           type: string
-          pattern: "^sha256:[0-9a-f]{64}$"
+          pattern: "^[A-Za-z0-9_@.-]{1,64}$"
         outlineColor:
           type: string
           pattern: "^#[0-9a-fA-F]{6}$"
@@ -5010,25 +5155,6 @@ components:
             not checked against the phenix node schema.
           type: object
           additionalProperties: true
-    BuilderTemplateIcons:
-      description: >
-        Custom icons by icon ID (`sha256:` and the SHA-256 of the PNG bytes),
-        in the shape of a Builder document's `icons`. A library holds at most
-        50, and only the ones its templates name.
-      type: object
-      additionalProperties:
-        type: object
-        required:
-          - data
-        properties:
-          name:
-            description: a name for people, at most 64 bytes
-            type: string
-          data:
-            description: >
-              a PNG of at most 96 by 96 pixels and 40960 bytes that holds
-              only its image, in standard base64 with padding
-            type: string
     BuilderTemplateShare:
       description: one user a template or a collection is shared with
       type: object
@@ -5201,12 +5327,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BuilderTemplateCollection"
-        icons:
-          description: >
-            the custom icons of every listed template; left out when none
-            names one
-          allOf:
-            - $ref: "#/components/schemas/BuilderTemplateIcons"
         canShare:
           description: >
             the caller may share its templates and collections: it has
@@ -5244,9 +5364,6 @@ components:
             deviceBytes:
               description: the most bytes a template's `device` takes as JSON
               type: integer
-            icons:
-              description: the most custom icons the templates of a library name together
-              type: integer
     BuilderTemplateContent:
       type: object
       additionalProperties: false
@@ -5262,12 +5379,6 @@ components:
           type: string
         device:
           $ref: "#/components/schemas/BuilderTemplateDevice"
-        icons:
-          description: >
-            the custom icon `device.icon` names, when the library may not
-            hold it yet
-          allOf:
-            - $ref: "#/components/schemas/BuilderTemplateIcons"
     BuilderTemplateCreate:
       type: object
       additionalProperties: false
@@ -5304,12 +5415,6 @@ components:
               type: string
             description:
               type: string
-        icons:
-          description: >
-            the custom icons the templates name that the library may not
-            hold yet
-          allOf:
-            - $ref: "#/components/schemas/BuilderTemplateIcons"
     BuilderTemplateCreateResult:
       type: object
       properties:
@@ -5817,6 +5922,14 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/WebError"
+    BuilderIconNotFound:
+      description: >
+        No icon of the icon library has the name in the path, nor keeps it
+        as an alias, ignoring case. The message never repeats the path.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
     BuilderTemplateNotFound:
       description: >
         `{owner}` is not the caller: a library is changed by its owner only,
@@ -5849,8 +5962,8 @@ components:
       description: >
         The request body is larger than the route allows (6 MiB to add
         templates, 1 MiB to replace one, 64 KiB otherwise); or the library
-        would hold more than 200 templates, 50 collections, 200 templates in
-        one collection or 50 custom icons, or take more than 512 KiB.
+        would hold more than 200 templates, 50 collections or 200 templates
+        in one collection, or take more than 512 KiB.
       content:
         application/json:
           schema:
@@ -5860,10 +5973,10 @@ components:
         The request is well formed but cannot be applied; `message` says
         why. A template that is not valid is named by its place in the
         request and the field, such as `templates[0].name: template name is
-        required`, and one whose custom icon nothing carries as `template 0
-        names custom icon "<icon id>", which the request does not carry`. A
-        collection is refused for its name, its description, or a template
-        the library does not hold or that is named twice.
+        required` or `templates[0].device.icon: icon name "a b" must be 1 to
+        64 letters, digits, "_", "@", "." or "-"`. A collection is refused
+        for its name, its description, or a template the library does not
+        hold or that is named twice.
       content:
         application/json:
           schema:

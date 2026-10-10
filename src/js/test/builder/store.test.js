@@ -111,6 +111,15 @@ const api = vi.hoisted(() => ({
   updateShares: vi.fn(),
   listShareCandidates: vi.fn(async () => []),
   deleteSnapshot: vi.fn(),
+  // The server's icon library: empty, and taking every upload as it is.
+  listIcons: vi.fn(async () => ({
+    icons: [],
+    maxIcons: 64,
+    maxBytes: 1048576,
+    usedIcons: 0,
+    usedBytes: 0,
+  })),
+  uploadIcon: vi.fn(async (icon) => ({ icon: { ...icon }, created: true })),
 }));
 
 vi.mock('@/builder/api.js', async (importOriginal) => {
@@ -138,12 +147,14 @@ import {
   findNode,
   setDocumentInfo,
   STAMP_KEYS,
+  updateNode,
   withStamp,
 } from '@/builder/model.js';
 import { builderSchemaV1 } from '@/builder/schema.js';
 import { draftForPublished, useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
+import { base64Of, ICON_DATA, png } from './png.js';
 
 let store;
 
@@ -3903,6 +3914,66 @@ describe('the diagram of a topology read from its Builder file', () => {
       'Opened your draft of the diagram of topology plant.',
     );
     expect(api.createDraft).toHaveBeenCalledTimes(1);
+  });
+
+  test('editing it adds the custom icons the file carries to the icon library, as an upload does', async () => {
+    const sample = sampleDocument();
+    const theirs = base64Of(png(2, 2, [200, 40, 80, 255]));
+    const ours = base64Of(png(2, 2, [10, 120, 40, 255]));
+    let doc = updateNode(sample.doc, sample.alpha.id, {
+      device: { icon: 'plc' },
+    });
+
+    doc = updateNode(doc, sample.bravo.id, { device: { icon: 'hmi' } });
+    doc = { ...doc, icons: { plc: { data: ICON_DATA }, hmi: { data: ours } } };
+
+    api.getTopologyDocument.mockResolvedValueOnce({
+      ...row,
+      digest: FILE_DIGEST,
+      size: 1024,
+      topologyDiffers: false,
+      document: doc,
+    });
+    // The library has no plc, and an hmi of other bytes.
+    api.listIcons.mockResolvedValueOnce({
+      icons: [{ name: 'hmi', aliases: [], data: theirs }],
+      maxIcons: 64,
+      maxBytes: 1048576,
+      usedIcons: 0,
+      usedBytes: 0,
+    });
+
+    await store.viewPublishedDocument('file/plant');
+
+    // Shown read only, the file's own copies draw its icons; nothing is
+    // uploaded until it is edited.
+    expect(store.doc.icons).toEqual(doc.icons);
+    expect(api.uploadIcon).not.toHaveBeenCalled();
+
+    await expect(store.editPublished()).resolves.toBeTruthy();
+
+    const warning =
+      "The server already has an icon named hmi that differs from this diagram's. The diagram keeps its own copy, which it shows in place of the server's.";
+
+    // plc is added under its name and leaves the draft; hmi, which the
+    // library has with other bytes, stays, with a warning.
+    expect(api.uploadIcon).toHaveBeenCalledTimes(1);
+    expect(api.uploadIcon).toHaveBeenCalledWith({
+      name: 'plc',
+      data: ICON_DATA,
+    });
+    expect(api.createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceToken: `builder-file/plant/${FILE_DIGEST}`,
+        document: expect.objectContaining({ icons: { hmi: { data: ours } } }),
+      }),
+    );
+    expect(store.doc.icons).toEqual({ hmi: { data: ours } });
+    expect(findNode(store.doc, sample.alpha.id).device.icon).toBe('plc');
+    expect(store.announcement).toBe(
+      `Opened the diagram of topology plant as a new draft. ${warning}`,
+    );
+    expect(store.notice).toMatchObject({ text: warning });
   });
 
   test('a file that changed since the draft was made gets a new draft', async () => {

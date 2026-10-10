@@ -53,7 +53,6 @@ import {
   paletteTemplateGroups,
   templateByKey,
   templateContent,
-  templateIcons,
   templateKey,
   templatesDeleteQuestion,
   templatesDeletedMessage,
@@ -61,9 +60,6 @@ import {
 import { paletteNode } from '@/components/builder/paletteDnd.js';
 
 import { libraryOf, sampleDocument } from './fixtures.js';
-import { ICON_DATA, ICON_KEY } from './png.js';
-
-const ICON = { name: 'plc', data: ICON_DATA };
 
 // A template as the server lists it.
 function listed(id, init = {}) {
@@ -97,7 +93,6 @@ function answer({ templates = [listed('plc')], ...rest } = {}) {
     owner: 'alice',
     templates,
     collections: [],
-    icons: {},
     canShare: false,
     canPublish: false,
     damaged: false,
@@ -164,13 +159,20 @@ describe('the library calls of the API client', () => {
   test('a read gives the library as listed, and lists where the server sent none', async () => {
     const library = answer({
       collections: [{ id: 'c1', name: 'Plant' }],
-      icons: { [ICON_KEY]: ICON },
       canPublish: true,
       limits: { templates: 200 },
     });
     const http = fakeHttp({ 'get builder/templates': { data: library } });
 
     expect(await createBuilderApi(http).listTemplates()).toEqual(library);
+    // Icons are the icon library's: a library carries none.
+    expect(
+      await createBuilderApi(
+        fakeHttp({
+          'get builder/templates': { data: { ...library, icons: { a: {} } } },
+        }),
+      ).listTemplates(),
+    ).toEqual(library);
     expect(http.calls).toEqual([{ method: 'get', url: 'builder/templates' }]);
 
     for (const data of [
@@ -181,7 +183,6 @@ describe('the library calls of the API client', () => {
         // Only what has an id is a template or a collection.
         templates: [null, {}, { id: '' }, { id: 7 }],
         collections: 'no',
-        icons: [],
         canShare: 'yes',
         damaged: 1,
         limits: null,
@@ -195,7 +196,6 @@ describe('the library calls of the API client', () => {
         owner: '',
         templates: [],
         collections: [],
-        icons: {},
         canShare: false,
         canPublish: false,
         damaged: false,
@@ -212,7 +212,7 @@ describe('the library calls of the API client', () => {
     ).toBe(true);
   });
 
-  test('templates are added with the collection and the icons that go with them, when there are some', async () => {
+  test('templates are added with the collection that goes with them, when there is one', async () => {
     const created = { created: [{ id: 'n1', etag: '"1"' }] };
     const http = fakeHttp({
       'post builder/templates/alice/items': { status: 201, data: created },
@@ -230,19 +230,13 @@ describe('the library calls of the API client', () => {
     await client.createTemplates('alice', {
       templates,
       collection: { name: 'Plant' },
-      icons: { [ICON_KEY]: ICON },
     });
     expect(http.calls[1].body).toEqual({
       templates,
       collection: { name: 'Plant' },
-      icons: { [ICON_KEY]: ICON },
     });
 
-    await client.createTemplates('alice', {
-      templates,
-      collection: null,
-      icons: {},
-    });
+    await client.createTemplates('alice', { templates, collection: null });
     expect(http.calls[2].body).toEqual({ templates });
     expect(
       await createBuilderApi(fakeHttp()).createTemplates('alice', {
@@ -260,20 +254,10 @@ describe('the library calls of the API client', () => {
     const client = createBuilderApi(http);
     const content = templateContent(listed('plc'));
 
-    expect(
-      await client.updateTemplate(
-        'alice',
-        'plc',
-        { ...content, icons: { [ICON_KEY]: ICON } },
-        '"3"',
-      ),
-    ).toEqual({ id: 'plc' });
-    await client.updateTemplate(
-      'alice',
-      'plc',
-      { ...content, icons: null },
-      '"4"',
+    expect(await client.updateTemplate('alice', 'plc', content, '"3"')).toEqual(
+      { id: 'plc' },
     );
+    await client.updateTemplate('alice', 'plc', content, '"4"');
 
     const collection = { name: 'Plant', description: '', templateIds: ['plc'] };
 
@@ -288,7 +272,7 @@ describe('the library calls of the API client', () => {
       {
         method: 'put',
         url: 'builder/templates/alice/items/plc',
-        body: { ...content, icons: { [ICON_KEY]: ICON } },
+        body: content,
         config: { headers: { 'If-Match': '"3"' } },
       },
       {
@@ -526,19 +510,6 @@ describe('the palette’s groups, with a library', () => {
 });
 
 describe('what goes with a template to another place', () => {
-  test('the one icon it names, from the icons kept beside it', () => {
-    const template = listed('plc');
-
-    template.device.icon = ICON_KEY;
-
-    expect(templateIcons(template, { [ICON_KEY]: ICON, other: ICON })).toEqual({
-      [ICON_KEY]: ICON,
-    });
-    expect(templateIcons(template, { other: ICON })).toEqual({});
-    expect(templateIcons(template, null)).toEqual({});
-    expect(templateIcons(listed('plc'), { [ICON_KEY]: ICON })).toEqual({});
-  });
-
   test('its name, description and a copy of its device, and nothing else', () => {
     const template = listed('plc', { description: 'Plant' });
     const content = templateContent(template);
@@ -704,9 +675,9 @@ describe('the template library in the store', () => {
       owner: '',
       items: [],
       collections: [],
-      icons: {},
       damaged: false,
     });
+    expect(store.templates).not.toHaveProperty('icons');
     expect(store.templates.limits).toEqual({
       templates: 200,
       collections: 50,
@@ -714,7 +685,6 @@ describe('the template library in the store', () => {
       nameBytes: 128,
       descriptionBytes: 1024,
       deviceBytes: 16384,
-      icons: 50,
     });
     expect(store.ownTemplates).toEqual([]);
     expect(store.paletteTemplateGroups.map((group) => group.id)).toEqual([
@@ -732,7 +702,6 @@ describe('the template library in the store', () => {
           listed('hmi', { owner: 'bob', source: 'shared' }),
         ],
         collections: [collection],
-        icons: { [ICON_KEY]: ICON },
         limits: { templates: 3 },
       }),
     );
@@ -750,7 +719,6 @@ describe('the template library in the store', () => {
       loaded: true,
       owner: 'alice',
       collections: [collection],
-      icons: { [ICON_KEY]: ICON },
     });
     // What the server did not say keeps its default.
     expect(store.templates.limits).toMatchObject({
@@ -897,7 +865,7 @@ describe('the template library in the store', () => {
     expect(store.ownTemplates).toEqual([]);
   });
 
-  test('templates are added as copies, with their icons, and the library is read again', async () => {
+  test('templates are added as copies, and the library is read again', async () => {
     await store.fetchTemplates();
     api.listTemplates.mockClear();
     api.createTemplates.mockResolvedValue({
@@ -906,17 +874,18 @@ describe('the template library in the store', () => {
     });
 
     const template = listed('rtu', { description: 'Remote' });
-    const result = await store.createLibraryTemplates([template], {
-      icons: { [ICON_KEY]: ICON },
-    });
+
+    template.device.icon = 'rtu-icon';
+
+    const result = await store.createLibraryTemplates([template]);
 
     expect(result.created).toEqual([{ id: 'new', etag: '"1"' }]);
     expect(api.createTemplates).toHaveBeenCalledExactlyOnceWith('alice', {
-      // No id, owner or tag: the server refuses a template with any.
+      // No id, owner or tag: the server refuses a template with any. The
+      // custom icon goes as the name it is.
       templates: [
         { name: 'RTU', description: 'Remote', device: template.device },
       ],
-      icons: { [ICON_KEY]: ICON },
       collection: null,
     });
     expect(api.listTemplates).toHaveBeenCalledTimes(1);
@@ -982,9 +951,7 @@ describe('the template library in the store', () => {
     api.updateTemplate.mockResolvedValue({ ...listed('plc'), etag: '"2"' });
 
     const content = { name: 'PLC 2', device: listed('plc').device };
-    const saved = await store.updateLibraryTemplate('plc', content, '"1"', {
-      [ICON_KEY]: ICON,
-    });
+    const saved = await store.updateLibraryTemplate('plc', content, '"1"');
 
     expect(saved.etag).toBe('"2"');
     // An emptied description is sent, which removes it.
@@ -995,7 +962,6 @@ describe('the template library in the store', () => {
         name: 'PLC 2',
         description: '',
         device: content.device,
-        icons: { [ICON_KEY]: ICON },
       },
       '"1"',
     );
@@ -1223,13 +1189,11 @@ describe('the template library in the store', () => {
     });
   });
 
-  test('a device made from a template of the library takes its custom icon along', async () => {
+  test('a device made from a template of the library names its custom icon', async () => {
     const template = listed('plc');
 
-    template.device.icon = ICON_KEY;
-    api.listTemplates.mockResolvedValue(
-      answer({ templates: [template], icons: { [ICON_KEY]: ICON } }),
-    );
+    template.device.icon = 'plc-icon';
+    api.listTemplates.mockResolvedValue(answer({ templates: [template] }));
     await store.fetchTemplates();
     store.setDocument(sampleDocument().doc);
 
@@ -1237,9 +1201,9 @@ describe('the template library in the store', () => {
 
     expect(findNode(store.doc, node.id).device).toMatchObject({
       hostname: 'plc',
-      icon: ICON_KEY,
+      icon: 'plc-icon',
     });
-    // The diagram has its own copy now, from the library's.
-    expect(store.doc.icons).toEqual({ [ICON_KEY]: ICON });
+    // The icon library resolves the name: the diagram carries no copy.
+    expect(store.doc).not.toHaveProperty('icons');
   });
 });

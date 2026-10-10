@@ -110,7 +110,7 @@ export const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 export const NODE_COLOR_KEYS = ['outlineColor', 'fillColor'];
 
 // A device's presentation fields: its icon, the custom icon drawn in its
-// place (an icon id, see icons.js) and its colors on the canvas. The
+// place (an icon name, see icons.js) and its colors on the canvas. The
 // Inspector applies a change of one at once, without Apply, and a new
 // device takes them from addNode's `look` option.
 export const LOOK_KEYS = ['iconKey', 'icon', ...NODE_COLOR_KEYS];
@@ -787,8 +787,8 @@ function uniqueHostname(doc, wanted) {
  *   (relative to `position`; by default two ends 160 pixels apart across),
  *   color, lineStyle, startArrow and endArrow. The label of a shape, an icon
  *   or a line is its payload's. A custom icon (a look's, a group's or an
- *   icon's `icon`) is an icon id: the document comes to carry the icon when
- *   it is committed (see settleIcons in icons.js)
+ *   icon's `icon`) is an icon name, which the icon library resolves (see
+ *   iconSrc in icons.js)
  * @returns {{doc: object, node: object, network?: object}}
  */
 export function addNode(doc, options = {}) {

@@ -163,41 +163,49 @@ export function useInspectorDrawnColor() {
 // (InspectorIconControl) and its dialog work with, so a form that edits
 // something else than the open diagram can supply its own:
 //
-//   entry(id)                 the icon to show for a field's value, as
-//                             {name?, data}, or undefined when it is unknown
-//   shelve(id, {name, data})  makes an icon known before a field is given
-//                             its id, so the edit that applies the field
-//                             can copy it into the document
-//   diagram()                 the icons the diagram carries, as
-//                             [{id, name, data}]
-//   full(id)                  whether the diagram cannot take this icon: it
-//                             holds as many as a document may, and not it
+//   entry(name)  the icon to show for a field's value: the document's copy
+//                of it, else the server's icon library's, as {name, data,
+//                ...}; undefined when nothing resolves the name
+//   diagram()    the copies of icons the document carries, as
+//                [{name, data}]
 //
 // Renderers rendered anywhere else know no icon.
 export const INSPECTOR_ICONS = Symbol('inspector-icons');
 
 const NO_ICONS = Object.freeze({
   entry: () => undefined,
-  shelve: () => {},
   diagram: () => [],
-  full: () => false,
 });
 
 export function useInspectorIcons() {
   return inject(INSPECTOR_ICONS, NO_ICONS);
 }
 
-// Provided by BuilderInspector: the user's icon library on the server, for
-// the Custom icons dialog (see iconLibrary.js): list(), upload({name,
-// data}), remove(id) and failure(error), which says why one of them failed.
-// A dialog opened anywhere else has no library to reach.
+// Provided by BuilderInspector: the server's icon library, for the Custom
+// icons dialog (see createIconLibrary in iconLibrary.js): its reactive
+// state, load(), lookup(name), upload({name, data}), rename(name, newName),
+// remove(name) and failure(error), which says why one of them failed. A
+// dialog opened anywhere else has no library to reach.
 export const INSPECTOR_ICON_LIBRARY = Symbol('inspector-icon-library');
 
 const NO_LIBRARY_TEXT = 'The icon library is not available here.';
 const noLibrary = () => Promise.reject(new Error(NO_LIBRARY_TEXT));
 const NO_LIBRARY = Object.freeze({
-  list: noLibrary,
+  state: Object.freeze({
+    status: 'failed',
+    error: NO_LIBRARY_TEXT,
+    icons: [],
+    index: new Map(),
+    maxIcons: 0,
+    maxBytes: 0,
+    usedIcons: 0,
+    usedBytes: 0,
+  }),
+  load: noLibrary,
+  ensure: noLibrary,
+  lookup: () => null,
   upload: noLibrary,
+  rename: noLibrary,
   remove: noLibrary,
   failure: () => NO_LIBRARY_TEXT,
 });

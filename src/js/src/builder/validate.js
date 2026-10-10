@@ -19,12 +19,11 @@ import { count } from './announce.js';
 import { isIconKey } from './catalog.js';
 import { canonicalJSON, isDigest } from './digest.js';
 import {
-  ICON_ID,
+  ICON_NAME,
   MAX_DOCUMENT_ICONS,
   MAX_ICON_BYTES,
   MAX_ICON_NAME_BYTES,
   decodeIconData,
-  iconId,
   iconPNGProblem,
 } from './icons.js';
 import { MAX_USER_BYTES } from './limits.js';
@@ -264,38 +263,56 @@ function validateLineStyle(style, path, issues) {
   }
 }
 
-// The custom icon a device, a group or a template names (validateIconRef in
-// validate.go): none, or one the document carries.
-function validateIconRef(doc, id, path, issues) {
-  if (unset(id)) {
+/**
+ * Why text is no icon name, in the server's words (IconNameProblem in
+ * customicons.go), or '': 1 to MAX_ICON_NAME_BYTES letters, digits, "_",
+ * "@", "." and "-", and neither "." nor "..".
+ *
+ * @param {*} name
+ * @returns {string}
+ */
+export function iconNameProblem(name) {
+  const text = typeof name === 'string' ? name : String(name ?? '');
+
+  if (typeof name !== 'string' || !ICON_NAME.test(name)) {
+    return `icon name ${quoted(text)} must be 1 to ${MAX_ICON_NAME_BYTES} letters, digits, "_", "@", "." or "-"`;
+  }
+
+  if (name === '.' || name === '..') {
+    return `icon name ${quoted(name)} must not be "." or ".."`;
+  }
+
+  return '';
+}
+
+// The custom icon a device, a group, an icon node or a template names
+// (validateIconRef in validate.go): none, or an icon name. A name the document does not carry
+// is allowed: the server's icon library resolves it.
+function validateIconRef(name, path, issues) {
+  if (unset(name)) {
     return;
   }
 
-  if (
-    typeof id !== 'string' ||
-    !isObject(doc.icons) ||
-    !Object.hasOwn(doc.icons, id)
-  ) {
-    issue(issues, path, `unknown custom icon ${quoted(id)}`);
+  const problem = iconNameProblem(name);
+
+  if (problem) {
+    issue(issues, path, problem);
   }
 }
 
-// Icons already found to be what their keys say, by id: the data each was
-// checked with. Validation runs on every edit, and an icon's id is the
-// digest of its bytes, so one that was checked is not decoded and hashed
-// again.
-const checkedIcons = new Map();
+// Data already found to be a PNG the Builder accepts: validation runs on
+// every edit, so data that was checked is not decoded again.
+const checkedIcons = new Set();
 const MAX_CHECKED_ICONS = 256;
 
 /**
- * Checks a set of custom icons, as a document or a template library carries
- * them (ValidateIcons in customicons.go): at most MAX_DOCUMENT_ICONS, each
- * key an icon id, each name at most MAX_ICON_NAME_BYTES bytes without
- * control characters, each data strict base64 of a PNG the Builder accepts
- * (see iconPNGProblem), whose id is the key. An icon nothing uses is valid:
- * the editor drops it on its next edit.
+ * Checks the custom icons a document carries (ValidateIcons in
+ * customicons.go): at most MAX_DOCUMENT_ICONS, each key an icon name (see
+ * iconNameProblem), each data strict base64 of a PNG the Builder accepts
+ * (see iconPNGProblem). An icon nothing uses is valid: the editor drops it
+ * on its next edit.
  *
- * @param {object|null|undefined} icons by icon id, {name?, data}
+ * @param {object|null|undefined} icons by name, {data}
  * @param {string} [path] the path the issues are reported at
  * @returns {{path: string, message: string, level: 'error'}[]} in the order
  *   of the keys
@@ -310,7 +327,7 @@ export function validateIcons(icons, path = 'icons') {
 
   // The server refuses any other value when it decodes the document.
   if (!isObject(icons)) {
-    issue(issues, path, 'custom icons must be an object of icons by icon id');
+    issue(issues, path, 'custom icons must be an object of icons by name');
 
     return issues;
   }
@@ -326,31 +343,14 @@ export function validateIcons(icons, path = 'icons') {
   }
 
   keys.forEach((key) => {
-    const { name, data } = isObject(icons[key]) ? icons[key] : {};
-    const keyed = ICON_ID.test(key);
+    const { data } = isObject(icons[key]) ? icons[key] : {};
+    const problem = iconNameProblem(key);
 
-    if (!keyed) {
-      issue(
-        issues,
-        path,
-        `icon key ${quoted(key)} must be sha256: and 64 hex digits`,
-      );
+    if (problem) {
+      issue(issues, path, problem);
     }
 
-    if (
-      !unset(name) &&
-      (typeof name !== 'string' ||
-        utf8Length(name) > MAX_ICON_NAME_BYTES ||
-        hasControlCharacters(name))
-    ) {
-      issue(
-        issues,
-        path,
-        `icon ${quoted(key)} name must be at most ${MAX_ICON_NAME_BYTES} bytes and contain no control characters`,
-      );
-    }
-
-    if (keyed && checkedIcons.get(key) === data) {
+    if (typeof data === 'string' && checkedIcons.has(data)) {
       return;
     }
 
@@ -366,24 +366,14 @@ export function validateIcons(icons, path = 'icons') {
       return;
     }
 
-    const problem = iconPNGProblem(bytes);
+    const pngProblem = iconPNGProblem(bytes);
 
-    if (problem) {
+    if (pngProblem) {
       issue(
         issues,
         path,
-        `icon ${quoted(key)} is not an accepted PNG: ${problem}`,
+        `icon ${quoted(key)} is not an accepted PNG: ${pngProblem}`,
       );
-
-      return;
-    }
-
-    if (!keyed) {
-      return;
-    }
-
-    if (iconId(bytes) !== key) {
-      issue(issues, path, `icon ${quoted(key)} does not match its data`);
 
       return;
     }
@@ -392,7 +382,7 @@ export function validateIcons(icons, path = 'icons') {
       checkedIcons.clear();
     }
 
-    checkedIcons.set(key, data);
+    checkedIcons.add(data);
   });
 
   return issues;
@@ -416,12 +406,11 @@ function templateDeviceBytes(device) {
  * characters; a description longer than MAX_TEMPLATE_DESCRIPTION_BYTES or
  * holding control characters; a device without a spec, or whose spec has no
  * general.hostname, a blank one or one with whitespace; an unknown icon key;
- * a color that is not #rrggbb; and a device longer than
- * MAX_TEMPLATE_DEVICE_BYTES as JSON. The spec is not checked against the
- * phenix schema here, as a device's is not. Neither are the id, whose form
- * depends on where the template is kept, and the custom icon, which names an
- * icon kept beside the template: validateDocument checks both for a
- * document's templates.
+ * a custom icon that is not an icon name; a color that is not #rrggbb; and a
+ * device longer than MAX_TEMPLATE_DEVICE_BYTES as JSON. The spec is not
+ * checked against the phenix schema here, as a device's is not. Neither is
+ * the id, whose form depends on where the template is kept:
+ * validateDocument checks it for a document's templates.
  *
  * @param {object} template {id, name, description?, device}
  * @param {string} path the path of the template, which the issues' paths
@@ -496,6 +485,7 @@ export function templateIssues(template, path) {
   }
 
   validateIconKey(device.iconKey, `${path}.device.iconKey`, issues);
+  validateIconRef(device.icon, `${path}.device.icon`, issues);
   validateColors(device, `${path}.device`, issues);
 
   const size = templateDeviceBytes(device);
@@ -512,8 +502,8 @@ export function templateIssues(template, path) {
 }
 
 // The document's templates (validateTemplates in validate.go): how many,
-// the id of each, which is unique among them, the custom icon each names,
-// and what templateIssues checks.
+// the id of each, which is unique among them, and what templateIssues
+// checks, which includes the custom icon each names.
 function validateTemplates(doc, issues) {
   // null is none, as the server decodes it.
   if (doc.templates === undefined || doc.templates === null) {
@@ -555,7 +545,6 @@ function validateTemplates(doc, issues) {
 
     validateUUID(issues, `${path}.id`, 'template', id);
     issues.push(...templateIssues(template, path));
-    validateIconRef(doc, template?.device?.icon, `${path}.device.icon`, issues);
   });
 }
 
@@ -1053,7 +1042,7 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
       }
 
       validateIconKey(node.device.iconKey, `${path}.device.iconKey`, issues);
-      validateIconRef(doc, node.device.icon, `${path}.device.icon`, issues);
+      validateIconRef(node.device.icon, `${path}.device.icon`, issues);
       validateColors(node.device, `${path}.device`, issues);
       validateIncludedFrom(doc, node.device.includedFrom, path, issues);
       validateDeviceHandles(node, path, issues, handleOwner);
@@ -1085,7 +1074,7 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
         issues,
       );
       validateIconKey(node.group.iconKey, `${path}.group.iconKey`, issues);
-      validateIconRef(doc, node.group.icon, `${path}.group.icon`, issues);
+      validateIconRef(node.group.icon, `${path}.group.icon`, issues);
     }
 
     if (node.kind === 'shape' && isObject(node.shape)) {
@@ -1093,7 +1082,7 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
     }
 
     if (node.kind === 'icon' && isObject(node.icon)) {
-      validateIconNode(doc, node.icon, `${path}.icon`, issues);
+      validateIconNode(node.icon, `${path}.icon`, issues);
     }
 
     if (node.kind === 'line' && isObject(node.line)) {
@@ -1130,8 +1119,8 @@ function validateShape(shape, path, issues) {
 }
 
 // The payload of an icon node (validateIconNode in validate.go): exactly
-// one of a built-in icon key and a custom icon the document carries.
-function validateIconNode(doc, icon, path, issues) {
+// one of a built-in icon key and a custom icon name.
+function validateIconNode(icon, path, issues) {
   if (unset(icon.iconKey) === unset(icon.icon)) {
     issue(
       issues,
@@ -1141,7 +1130,7 @@ function validateIconNode(doc, icon, path, issues) {
   }
 
   validateIconKey(icon.iconKey, `${path}.iconKey`, issues);
-  validateIconRef(doc, icon.icon, `${path}.icon`, issues);
+  validateIconRef(icon.icon, `${path}.icon`, issues);
 }
 
 // The payload of a line (validateLine in validate.go): from MIN_LINE_POINTS

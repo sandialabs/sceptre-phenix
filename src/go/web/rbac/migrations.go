@@ -100,29 +100,49 @@ func experimentResourceNames(role *v1.RoleSpec) []string {
 	return nil
 }
 
-// The built-in Builder role (api/config/default/builder.yml), and the one
-// permission of it that [EnsureBuilderTemplatesPublishPermission] makes sure
-// a role of that name holds.
+// The built-in Builder role (api/config/default/builder.yml), and the
+// permissions of it that [EnsureBuilderRolePermissions] makes sure a role of
+// that name holds.
 const (
 	builderRoleConfig           = "builder"
 	builderRoleName             = "Builder"
 	builderTemplatesResource    = "builder-templates"
 	builderTemplatesPublishVerb = "publish"
+	builderIconsResource        = "builder-icons"
+	builderIconsUpdateVerb      = "update"
+	builderIconsDeleteVerb      = "delete"
 )
 
-// EnsureBuilderTemplatesPublishPermission makes sure the store holds the
-// built-in Builder role, and that it lets its users publish Builder template
-// library items to every user. It runs at every start, after the default
-// configs are created.
+// builderGrant is a permission of the Builder role that a role of that name
+// is made to hold: verbs on a resource, with no resource names.
+type builderGrant struct {
+	resource string
+	verbs    []string
+}
+
+// builderGrants returns the permissions [EnsureBuilderRolePermissions] adds:
+// publishing template library items to every user, and renaming and
+// deleting any icon of the icon library.
+func builderGrants() []builderGrant {
+	return []builderGrant{
+		{resource: builderTemplatesResource, verbs: []string{builderTemplatesPublishVerb}},
+		{resource: builderIconsResource, verbs: []string{builderIconsUpdateVerb, builderIconsDeleteVerb}},
+	}
+}
+
+// EnsureBuilderRolePermissions makes sure the store holds the built-in
+// Builder role, and that it lets its users publish Builder template library
+// items to every user and rename and delete any icon of the icon library.
+// It runs at every start, after the default configs are created.
 //
 // A store that has no role named builder and none whose role name is Builder
 // gets the built-in one: the default configs are created only when a store is
 // first initialized, so a store made before the role was shipped would never
 // get it otherwise. A role of that name an administrator made, and every user
-// assigned it, gain the builder-templates publish policy when they lack it;
+// assigned it, gain a policy for each of those permissions they lack;
 // nothing else in them changes. On a store that holds the built-in role
 // unchanged, nothing is written.
-func EnsureBuilderTemplatesPublishPermission() error {
+func EnsureBuilderRolePermissions() error {
 	roles, err := GetRoles()
 	if err != nil {
 		return fmt.Errorf("getting roles: %w", err)
@@ -140,7 +160,7 @@ func EnsureBuilderTemplatesPublishPermission() error {
 		found = true
 		names[role.Spec.Name] = true
 
-		if err := role.ensureBuilderTemplatesPublish(); err != nil {
+		if err := role.ensureBuilderGrants(); err != nil {
 			return err
 		}
 	}
@@ -157,13 +177,13 @@ func EnsureBuilderTemplatesPublishPermission() error {
 	}
 
 	for _, user := range users {
-		if user.Spec.Role == nil || !names[user.Spec.Role.Name] || builderTemplatesPublishAllowed(user.Spec.Role) {
+		if user.Spec.Role == nil || !names[user.Spec.Role.Name] || len(missingBuilderGrants(user.Spec.Role)) == 0 {
 			continue
 		}
 
 		err := user.update(func(spec *v1.UserSpec) {
-			if spec.Role != nil && !builderTemplatesPublishAllowed(spec.Role) {
-				spec.Role.Policies = append(spec.Role.Policies, builderTemplatesPublishPolicy())
+			if spec.Role != nil {
+				spec.Role.Policies = append(spec.Role.Policies, missingBuilderGrants(spec.Role)...)
 			}
 		})
 		if err != nil {
@@ -174,16 +194,17 @@ func EnsureBuilderTemplatesPublishPermission() error {
 	return nil
 }
 
-// ensureBuilderTemplatesPublish adds the builder-templates publish policy to
-// the role, unless it allows that already. The policy is added to the
+// ensureBuilderGrants adds to the role a policy for each permission of
+// [builderGrants] it does not allow already. The policies are added to the
 // stored spec as it is, so the role's other policies are written back
 // exactly as they were.
-func (r *Role) ensureBuilderTemplatesPublish() error {
-	if builderTemplatesPublishAllowed(r.Spec) {
+func (r *Role) ensureBuilderGrants() error {
+	missing := missingBuilderGrants(r.Spec)
+	if len(missing) == 0 {
 		return nil
 	}
 
-	r.Spec.Policies = append(r.Spec.Policies, builderTemplatesPublishPolicy())
+	r.Spec.Policies = append(r.Spec.Policies, missing...)
 	r.mappedPolicies = nil
 
 	// The store decodes a list of policies as a list of values. A spec of
@@ -193,10 +214,16 @@ func (r *Role) ensureBuilderTemplatesPublish() error {
 		return r.Save()
 	}
 
-	r.config.Spec["policies"] = append(policies, map[string]any{
-		"resources": []any{builderTemplatesResource},
-		"verbs":     []any{builderTemplatesPublishVerb},
-	})
+	for _, policy := range missing {
+		verbs := make([]any, 0, len(policy.Verbs))
+		for _, verb := range policy.Verbs {
+			verbs = append(verbs, verb)
+		}
+
+		policies = append(policies, map[string]any{"resources": []any{policy.Resources[0]}, "verbs": verbs})
+	}
+
+	r.config.Spec["policies"] = policies
 
 	if err := store.Update(r.config); err != nil {
 		return fmt.Errorf("saving role %s: %w", r.Spec.Name, err)
@@ -205,19 +232,28 @@ func (r *Role) ensureBuilderTemplatesPublish() error {
 	return nil
 }
 
-// builderTemplatesPublishAllowed reports whether the role allows publishing
-// Builder template library items to every user, through any policy.
-func builderTemplatesPublishAllowed(spec *v1.RoleSpec) bool {
-	return Role{Spec: spec}.Allowed(builderTemplatesResource, builderTemplatesPublishVerb) //nolint:exhaustruct // a role to check
-}
+// missingBuilderGrants returns a policy for each resource of [builderGrants]
+// whose verbs the role does not all allow, through any policy, holding the
+// verbs it lacks. It lists no resource names: none of the permissions is
+// about one item.
+func missingBuilderGrants(spec *v1.RoleSpec) []*v1.PolicySpec {
+	role := Role{Spec: spec} //nolint:exhaustruct // a role to check
 
-// builderTemplatesPublishPolicy returns the policy that allows publishing
-// Builder template library items to every user. It lists no resource
-// names: the permission is not about one item.
-func builderTemplatesPublishPolicy() *v1.PolicySpec {
-	return &v1.PolicySpec{
-		Resources:     []string{builderTemplatesResource},
-		ResourceNames: nil,
-		Verbs:         []string{builderTemplatesPublishVerb},
+	var missing []*v1.PolicySpec
+
+	for _, grant := range builderGrants() {
+		var verbs []string
+
+		for _, verb := range grant.verbs {
+			if !role.Allowed(grant.resource, verb) {
+				verbs = append(verbs, verb)
+			}
+		}
+
+		if len(verbs) != 0 {
+			missing = append(missing, &v1.PolicySpec{Resources: []string{grant.resource}, ResourceNames: nil, Verbs: verbs})
+		}
 	}
+
+	return missing
 }

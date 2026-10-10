@@ -165,10 +165,11 @@ func newBuilderAPI(opts ...builderOption) (*builderAPI, error) {
 	return api, nil
 }
 
-// cleanupStorage removes interrupted chunk writes and published documents no
-// topology references. Document cleanup only runs after a complete topology
-// listing with entirely decodable references; otherwise deleting an apparently
-// orphaned document could break a topology omitted from the reference set. A
+// cleanupStorage removes interrupted chunk writes, published documents no
+// topology references, and icon records of the per-user layout of earlier
+// builds. Document cleanup only runs after a complete topology listing with
+// entirely decodable references; otherwise deleting an apparently orphaned
+// document could break a topology omitted from the reference set. A
 // reference that names only a file names no stored document, and keeps none.
 func (b *builderAPI) cleanupStorage() {
 	topologies, err := b.listConfigs(builderKindTopology)
@@ -214,6 +215,15 @@ func (b *builderAPI) cleanupStorage() {
 
 	if _, err := b.drafts.CleanupOrphanedChunks(context.Background()); err != nil {
 		plog.Error(plog.TypeSystem, "cleaning orphaned builder chunks", "err", err)
+	}
+
+	removed, err := b.drafts.CleanupLegacyIcons(context.Background())
+	if err != nil {
+		plog.Error(plog.TypeSystem, "removing builder icon records of the per-user layout", "err", err)
+	}
+
+	if removed > 0 {
+		plog.Info(plog.TypeSystem, "removed builder icon records of the per-user layout", "records", removed)
 	}
 }
 
@@ -326,6 +336,20 @@ func builderBaseAllowed(role rbac.Role, verb builderVerb, names ...string) bool 
 // back. The check is a literal call so the RBAC policy generator records it.
 func builderTemplatesPublishAllowed(role rbac.Role) bool {
 	return role.Allowed("builder-templates", "publish")
+}
+
+// builderIconsUpdateAllowed reports whether the role may rename any icon of
+// the icon library, whoever uploaded it. The check is a literal call so the
+// RBAC policy generator records it.
+func builderIconsUpdateAllowed(role rbac.Role) bool {
+	return role.Allowed("builder-icons", "update")
+}
+
+// builderIconsDeleteAllowed reports whether the role may delete any icon of
+// the icon library, whoever uploaded it. The check is a literal call so the
+// RBAC policy generator records it.
+func builderIconsDeleteAllowed(role rbac.Role) bool {
+	return role.Allowed("builder-icons", "delete")
 }
 
 // builderCrossUserAllowed reports whether the role may operate on a draft
@@ -827,8 +851,8 @@ const (
 	// builderSchemaPath is the path of the Builder's schema route.
 	builderSchemaPath = "/schemas/builder/v1"
 
-	// builderIconsPath is the path of the caller's icon library, whose
-	// routes are this path and the paths below it.
+	// builderIconsPath is the path of the icon library, whose routes are
+	// this path and the paths below it.
 	builderIconsPath = builderRoutePrefix + "icons"
 
 	// builderIconPolicy is the Content-Security-Policy of the icon
@@ -946,6 +970,10 @@ func (b *builderAPI) routes(router *mux.Router) {
 		Methods("GET", "OPTIONS")
 	router.Handle(builderIconsPath, weberror.ErrorHandler(b.createIcon)).
 		Methods("POST", "OPTIONS")
+	router.Handle(builderIconsPath+"/{icon}", weberror.ErrorHandler(b.getIcon)).
+		Methods("GET", "OPTIONS")
+	router.Handle(builderIconsPath+"/{icon}", weberror.ErrorHandler(b.renameIcon)).
+		Methods("PUT", "OPTIONS")
 	router.Handle(builderIconsPath+"/{icon}", weberror.ErrorHandler(b.deleteIcon)).
 		Methods("DELETE", "OPTIONS")
 	router.Handle(builderTemplatesPath, weberror.ErrorHandler(b.listTemplates)).

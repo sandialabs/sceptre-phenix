@@ -46,11 +46,12 @@ import {
 import { paletteNode } from '@/components/builder/paletteDnd.js';
 
 import { sampleDocument } from './fixtures.js';
-import { ICON_DATA, ICON_KEY } from './png.js';
+import { ICON_DATA } from './png.js';
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const PLC = { name: 'plc', data: ICON_DATA };
+// A copy of the custom icon named plc, as a diagram carries one.
+const PLC = { data: ICON_DATA };
 
 const errorsOf = (doc) =>
   validateDocument(doc).filter((issue) => issue.level === 'error');
@@ -87,7 +88,7 @@ describe('a template from a device', () => {
   function device() {
     const { doc, alpha } = sampleDocument();
     const next = updateNode(doc, alpha.id, {
-      device: { outlineColor: '#2f6fbf', icon: ICON_KEY },
+      device: { outlineColor: '#2f6fbf', icon: 'plc' },
     });
 
     return findNode(next, alpha.id);
@@ -106,7 +107,7 @@ describe('a template from a device', () => {
       device: {
         iconKey: 'linux',
         outlineColor: '#2f6fbf',
-        icon: ICON_KEY,
+        icon: 'plc',
         spec: node.device.spec,
       },
     });
@@ -310,34 +311,36 @@ describe('the template editor’s document', () => {
     expect(doc.networks).toEqual([]);
     expect(doc.edges).toEqual([]);
     // No network, so no VLAN is emptied.
-    expect(templateFromDocument(doc)).toEqual({ template, icons: {} });
+    expect(templateFromDocument(doc)).toEqual({ template });
     expect(errorsOf(doc)).toEqual([]);
   });
 
-  test('carries the template’s custom icon, and hands it back', () => {
+  test('carries the copy of the template’s custom icon its diagram carries', () => {
     const template = plcTemplate();
 
-    template.device.icon = ICON_KEY;
+    template.device.icon = 'plc';
 
-    const doc = templateDocument(template, { [ICON_KEY]: PLC, other: PLC });
+    const doc = templateDocument(template, { plc: PLC, other: PLC });
 
-    expect(doc.icons).toEqual({ [ICON_KEY]: PLC });
-    expect(templateFromDocument(doc)).toEqual({
-      template,
-      icons: { [ICON_KEY]: PLC },
-    });
+    expect(doc.icons).toEqual({ plc: PLC });
+    expect(doc.icons.plc).not.toBe(PLC);
+    expect(templateFromDocument(doc)).toEqual({ template });
     expect(errorsOf(doc)).toEqual([]);
   });
 
-  test('an icon it is not given is left out, with the template’s use of it', () => {
+  // The icon library resolves the name, so the device names it all the same.
+  test('a custom icon its diagram carries no copy of is named still', () => {
     const template = plcTemplate();
 
-    template.device.icon = ICON_KEY;
+    template.device.icon = 'plc';
 
-    const doc = templateDocument(template, null);
+    for (const icons of [null, {}, { other: PLC }]) {
+      const doc = templateDocument(template, icons);
 
-    expect(doc).not.toHaveProperty('icons');
-    expect(doc.nodes[0].device).not.toHaveProperty('icon');
+      expect(doc).not.toHaveProperty('icons');
+      expect(doc.nodes[0].device.icon).toBe('plc');
+      expect(templateFromDocument(doc).template).toEqual(template);
+    }
   });
 
   test('a template with no name or description round trips as one', () => {
@@ -360,23 +363,18 @@ describe('the template editor’s document', () => {
 });
 
 describe('the template editor’s host', () => {
-  function hosted() {
+  function hosted({ doc = templateDocument(plcTemplate()), library } = {}) {
     const source = {
       schema: { $defs: {} },
       schemaError: '',
       disks: ['a.qc2'],
-      iconShelf: new Map(),
-      shelveIcons: vi.fn((icons) => {
-        Object.entries(icons).forEach(([id, entry]) =>
-          source.iconShelf.set(id, entry),
-        );
-      }),
     };
     const said = [];
     const host = templateEditorHost({
-      doc: templateDocument(plcTemplate()),
+      doc,
       source,
       announce: (message) => said.push(message),
+      library,
     });
 
     return { host, source, said };
@@ -402,23 +400,42 @@ describe('the template editor’s host', () => {
     expect(host.schemaError).toBe('bundled');
   });
 
-  test('a commit replaces the document, which then carries the icon it names', () => {
-    const { host, source } = hosted();
+  test('a commit replaces the document, which names the icon and carries no copy of it', () => {
+    const { host } = hosted();
     const id = host.doc.nodes[0].id;
-
-    host.shelveIcons({ [ICON_KEY]: PLC });
-    expect(source.shelveIcons).toHaveBeenCalledWith({ [ICON_KEY]: PLC });
-    expect(host.iconShelf).toBe(source.iconShelf);
-
-    const next = updateNode(host.doc, id, { device: { icon: ICON_KEY } });
+    const next = updateNode(host.doc, id, { device: { icon: 'plc' } });
 
     expect(host.commit(next, 'Changed the custom icon')).toBe(true);
-    expect(host.doc.icons).toEqual({ [ICON_KEY]: PLC });
-    expect(templateFromDocument(host.doc).icons).toEqual({ [ICON_KEY]: PLC });
-
-    // And loses it with the device's last use of it.
-    host.commit(updateNode(host.doc, id, { device: { icon: '' } }));
+    expect(host.doc).toBe(next);
     expect(host.doc).not.toHaveProperty('icons');
+    expect(templateFromDocument(host.doc).template.device.icon).toBe('plc');
+  });
+
+  test('a commit drops a copy the device stops naming, or the library holds as it is', () => {
+    const template = plcTemplate();
+
+    template.device.icon = 'plc';
+
+    const doc = templateDocument(template, { plc: PLC });
+    const id = doc.nodes[0].id;
+    const moved = (host) =>
+      updateNode(host.doc, id, { position: { x: 4, y: 4 } });
+
+    // Kept while the device names it and the library lacks it.
+    const kept = hosted({ doc, library: { lookup: () => undefined } });
+
+    kept.host.commit(moved(kept.host));
+    expect(kept.host.doc.icons).toEqual({ plc: PLC });
+    kept.host.commit(updateNode(kept.host.doc, id, { device: { icon: '' } }));
+    expect(kept.host.doc).not.toHaveProperty('icons');
+
+    const held = hosted({
+      doc,
+      library: { lookup: (name) => (name === 'plc' ? PLC : undefined) },
+    });
+
+    held.host.commit(moved(held.host));
+    expect(held.host.doc).not.toHaveProperty('icons');
   });
 
   test('says what the Inspector says, and does nothing of the canvas', () => {
@@ -600,30 +617,43 @@ describe('templates in the store', () => {
     expect(store.doc).not.toHaveProperty('templates');
   });
 
-  // The diagram keeps its own copy of an icon a template uses.
-  test('a template’s custom icon goes into the diagram, and leaves with its last use', () => {
+  // A template names its custom icon, which the icon library resolves: the
+  // diagram carries no copy for it.
+  test('a template’s custom icon is a name, and a device made from it names it too', () => {
     const template = plcTemplate();
 
-    template.device.icon = ICON_KEY;
+    template.device.icon = 'plc';
 
-    const added = store.addTemplate(template, { [ICON_KEY]: PLC });
+    const added = store.addTemplate(template);
 
-    expect(added.device.icon).toBe(ICON_KEY);
-    expect(store.doc.icons).toEqual({ [ICON_KEY]: PLC });
+    expect(added.device.icon).toBe('plc');
+    expect(store.doc).not.toHaveProperty('icons');
     expect(errorsOf(store.doc)).toEqual([]);
-
-    // A device made from it uses the diagram's copy.
-    store.iconShelf.clear();
 
     const node = store.addNode(
       paletteNode(store, 'device', `diagram:${added.id}`),
     );
 
-    expect(findNode(store.doc, node.id).device.icon).toBe(ICON_KEY);
+    expect(findNode(store.doc, node.id).device.icon).toBe('plc');
+    expect(store.doc).not.toHaveProperty('icons');
+  });
 
-    // The template goes; the device still uses the icon.
+  // A copy the diagram carries, as an uploaded diagram may, stays while a
+  // template or a device names it.
+  test('a copy of a template’s custom icon leaves with its last use', () => {
+    const template = plcTemplate();
+
+    template.device.icon = 'plc';
+
+    const added = store.addTemplate(template);
+    const node = store.addNode(
+      paletteNode(store, 'device', `diagram:${added.id}`),
+    );
+
+    store.setDocument({ ...store.doc, icons: { plc: PLC } });
+
     store.removeTemplate(added.id);
-    expect(store.doc.icons).toEqual({ [ICON_KEY]: PLC });
+    expect(store.doc.icons).toEqual({ plc: PLC });
 
     store.remove({ nodes: [node.id], edges: [] });
     expect(store.doc).not.toHaveProperty('icons');
@@ -632,12 +662,12 @@ describe('templates in the store', () => {
 
   test('an update can give a template another icon', () => {
     const added = store.addTemplate(plcTemplate());
-    const device = { ...added.device, icon: ICON_KEY };
+    const device = { ...added.device, icon: 'plc' };
 
-    store.updateTemplate(added.id, { device }, { [ICON_KEY]: PLC });
+    store.updateTemplate(added.id, { device });
 
-    expect(store.doc.templates[0].device.icon).toBe(ICON_KEY);
-    expect(store.doc.icons).toEqual({ [ICON_KEY]: PLC });
+    expect(store.doc.templates[0].device.icon).toBe('plc');
+    expect(store.doc).not.toHaveProperty('icons');
   });
 
   test('the palette lists the diagram’s templates, then the built-in ones', () => {
@@ -707,7 +737,7 @@ describe('the palette’s groups', () => {
     let doc = createDocument();
     const template = plcTemplate();
 
-    template.device.icon = ICON_KEY;
+    template.device.icon = 'plc';
     doc = addTemplate(doc, template).doc;
     doc = addTemplate(
       doc,
@@ -727,7 +757,7 @@ describe('the palette’s groups', () => {
         name: 'PLC',
         description: 'A controller',
         iconKey: 'firewall',
-        icon: ICON_KEY,
+        icon: 'plc',
         image: 'plc.qc2',
         template: first,
       },

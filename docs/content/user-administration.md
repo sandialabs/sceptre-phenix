@@ -493,6 +493,15 @@ every config, User and Role configs included.
 | Exp. Scoped | no
 | Res. Scoped | no
 
+#### Resource: `builder-icons`
+
+|
+|------|------
+| Verb | update, delete
+| Desc | rename and delete Builder icons other users uploaded (see [Icons of other users](builder/administration.md#icons-of-other-users))
+| Exp. Scoped | no
+| Res. Scoped | no
+
 #### Resource: `settings`
 
 |      |      |
@@ -595,8 +604,9 @@ spec:
 
 phenix creates this role at start when the store has no role named
 `builder` (or with the role name `Builder`). A role of that name that is
-already stored gains the `builder-templates` `publish` policy at start, and
-so do the users assigned to it.
+already stored gains the `builder-templates` `publish` and `builder-icons`
+`update` and `delete` policies it lacks at start, and so do the users
+assigned to it.
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1
@@ -631,6 +641,11 @@ spec:
     - builder-templates
     verbs:
     - publish
+  - resources:
+    - builder-icons
+    verbs:
+    - update
+    - delete
   - resources:
     - schemas
     resourceNames:

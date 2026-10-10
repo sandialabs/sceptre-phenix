@@ -301,23 +301,32 @@ then one recording the document, then the first by name).
 `builder-templates` `publish` (no resource names; a literal check,
 `builderTemplatesPublishAllowed` in `web/builder.go`, so `make generate`
 records it) lets a role publish template library items to every user and
-take any user's server-wide item back. The icon and template libraries are
-the caller's own: no role, also not Global Admin or `builder-drafts`, reads
-or changes another user's (404), except taking back a server-wide item.
+take any user's server-wide item back. The template library is the caller's
+own: no role, also not Global Admin or `builder-drafts`, reads or changes
+another user's (404), except taking back a server-wide item.
+
+`builder-icons` `update` and `delete` (no resource names; literal checks,
+`builderIconsUpdateAllowed` and `builderIconsDeleteAllowed` in
+`web/builder.go`) let a role rename and delete icons of the shared icon
+library that other users uploaded. Every caller with `configs` `list` reads
+the whole icon library; the uploader of an icon renames and deletes it with
+`configs` `update` and `delete`.
 
 The built-in role `Builder` (`api/config/default/builder.yml`,
 `metadata.name: builder`) holds every Builder permission: `configs` all five
 verbs on `Topology/*`, `Scenario/*`, `Experiment/*` only (never `*/*`, which
 would expose User and Role configs: password hashes and role changes),
 `builder-drafts` `list`/`get`/`update`/`delete` on
-`*`/`*/*`, `builder-templates` `publish`, `schemas` `get`, `topologies` and
-`scenarios` `list`/`get`, `experiments` `list`/`get`/`create`/`update`,
-`disks` `list`. `rbac.EnsureBuilderTemplatesPublishPermission` (called from
-`web.Init` at every start) creates it when no role is named `builder` or has
-role name `Builder` (so old stores get it, and a deleted one comes back),
-and adds the `builder-templates` `publish` policy to an existing role of
-that name and to the users assigned it, changing nothing else. Of the other
-built-in roles only Global Admin can publish templates (`*`). The example
+`*`/`*/*`, `builder-templates` `publish`, `builder-icons` `update`/`delete`,
+`schemas` `get`, `topologies` and `scenarios` `list`/`get`, `experiments`
+`list`/`get`/`create`/`update`, `disks` `list`.
+`rbac.EnsureBuilderRolePermissions` (called from `web.Init` at every start)
+creates it when no role is named `builder` or has role name `Builder` (so old
+stores get it, and a deleted one comes back), and adds the
+`builder-templates` `publish` and `builder-icons` `update`/`delete` grants it
+lacks to an existing role of that name and to the users assigned it,
+changing nothing else. Of the other built-in roles only Global Admin can
+publish templates or rename and delete other users' icons (`*`). The example
 roles `docs/content/builder/examples/roles/topology-*.role.yaml` are for
 sites that want less.
 
@@ -1150,17 +1159,23 @@ rules of `metadata.notes`; a device's notes are its spec's `general.notes`,
 which are published); network and edge
 `lineStyle` (`solid`, `dashed`, `dotted`, `dash-dot`; empty is Auto); group
 `description`, `borderStyle` (`solid`, `dashed`, `dotted`, `double`),
-`iconKey`, `icon`; device `icon`; root `icons` (`{"sha256:<hex>": {name?,
-data}}`, at most 50 (`MaxDocumentIcons`, `MAX_DOCUMENT_ICONS`), each a PNG of 1 to 96 pixels a side and at most 40960
-bytes, chunks `IHDR`, `PLTE`, `tRNS`, `IDAT`, `IEND` only, key = SHA-256 of
-the bytes; `bdoc.ValidateIcons`, `customicons.go`) and root `templates` (at
-most 50; see [Node templates](#node-templates)). Go and JS validate them
-alike (`testdata/validation-corpus.json`). The Inspector writes them; the
-network's own `color` is labelled "Edge Color".
+`iconKey`, `icon` (an icon name); device `icon` (an icon name); root `icons`
+(`{"<icon name>": {data}}`, at most 50 (`MaxDocumentIcons`,
+`MAX_DOCUMENT_ICONS`), each a PNG of 1 to 96 pixels a side and at most 40960
+bytes, chunks `IHDR`, `PLTE`, `tRNS`, `IDAT`, `IEND` only;
+`bdoc.ValidateIcons`, `customicons.go`) and root `templates` (at most 50;
+see [Node templates](#node-templates)). An icon name is 1 to 64 bytes of
+`^[A-Za-z0-9_@.-]+$`, neither `.` nor `..` (`bdoc.IconNameProblem`,
+`iconNameProblem` in `validate.js`); a document may name an icon it does not
+carry. Go and JS validate them alike (`testdata/validation-corpus.json`).
+The Inspector writes them; the network's own `color` is labelled "Edge
+Color".
 
 Drawings: node kinds `shape` (`shape: {shape: rectangle|circle, label?,
 fillColor?, outlineColor?, borderStyle?}`), `icon` (`icon: {iconKey?, icon?,
-label?}`, exactly one of a built-in key and a custom icon) and `line`
+label?}`, exactly one of a built-in key and a custom icon name, which
+resolves, embeds and uploads as a device's does; one nothing resolves draws
+the built-in `external`) and `line`
 (`line: {points, label?, color?, lineStyle?, startArrow?, endArrow?}`, 2 to
 64 points (`MinLinePoints`, `MaxLinePoints`) relative to the node's
 position, which the editor keeps at the top left of the points' box with
@@ -1214,24 +1229,59 @@ A device node shows `spec.type` as stored ("External" when `spec.external`,
 hover (400 ms) and on keyboard focus (`BuilderNodeTooltip.vue`,
 `nodeInfo.js`, `useFixedTooltip`); it is not in PNG or SVG downloads.
 
-Custom icons: a document keeps its own copy of each icon it uses, so it
-opens anywhere; the browser converts PNG, JPEG, GIF, WebP and SVG (up to
-5 MiB) to a PNG of at most 96 pixels before upload. Icon bytes are drawn
-only through `BuilderIcon`'s `<img>` with a `data:image/png;base64,` URL
-built by `iconSrc` in `icons.js`, never as markup. `store.iconShelf` holds
-icons the open diagram may take in; `settleIcons(doc, known)` in
-`store.commit` adds used icons and drops unused ones. The per-user icon
-library: `GET/POST /builder/icons`, `DELETE /builder/icons/{hex}` (`configs`
-`list`/`create`/`delete`; own library only, no owner in the path); a PNG of
-at most 96 pixels and 65536 bytes (body 131072); a strict PNG of at most
-40960 bytes is kept as it is, any other is re-encoded to its pixels; 64
-icons and 1 MiB per user; 201 for a new icon, 200 for bytes already held;
-no rename. Records: `builder.icons`, key `<OwnerScope(user)>/<hex>`
-(`api/builder/icons.go`, `scope.go`). Every `/builder/` response has
-`X-Content-Type-Options: nosniff`; the icon routes also
-`Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`
-(`builderResponseHeaders`). No CSP is set on the application page. Files:
-`icons.js`, `iconLibrary.js`, `dialogs/IconDialog.vue`,
+Custom icons: the server keeps one icon library for every user
+(`api/builder/icons.go`, `web/builder_icons.go`). Each icon has a unique
+name its uploader chose (the icon name rule; unique ignoring case; the first
+upload of a name wins, a later one with other bytes is 409 naming the
+uploader), an `id` (SHA-256 of the bytes), `owner`, size and times. Nodes
+and templates name icons; a draft carries no image data, and `settleIcons(doc,
+library)` in `store.commit` only drops copies: those nothing names and those
+the library holds under that name with the same bytes. A name resolves to
+the document's copy, else to the library's icon (`resolveIcon`, `iconSrc`
+in `icons.js`; the library is `iconLibrary` in `iconLibrary.js`, read once a
+session and after each change); a name nothing resolves draws the node's
+built-in icon. A download embeds a copy of every icon the document names
+(`embedIcons`, `downloadDocument` in `exporters.js`; at most 50), and so
+does the logout warning's and the version chooser's Download
+(`downloadedDiagram` in `session.js`, which loads `icons.js` and
+`iconLibrary.js` only for a diagram that names a custom icon). An upload
+with copies (`ingestIcons`) adds each name the library lacks (as the
+uploader's), drops copies the library holds with the same bytes, and keeps
+copies whose name the library holds with other bytes or that it could not
+add, each with a warning; Edit as a draft of a topology's Builder file
+does the same before it creates the draft (`openPublishedDocument` in
+`store.js`; the warnings are announced and stay in the canvas notice). The browser converts PNG, JPEG, GIF, WebP and SVG
+(up to 5 MiB) to a PNG of at most 96 pixels before upload. Icon bytes are
+drawn only through `BuilderIcon`'s `<img>` with a `data:image/png;base64,`
+URL, never as markup.
+
+Routes (`{icon}` is a name or an alias, ignoring case): `GET/POST
+/builder/icons` (`configs` `list`/`create`; the listing has every icon,
+`canRename`/`canDelete` per icon, and the caller's `usedIcons`/`usedBytes`
+of `maxIcons`/`maxBytes`), `GET /builder/icons/{icon}` (`configs` `get`),
+`PUT /builder/icons/{icon}` `{name}` renames (`configs` `update`; the
+uploader, or `builder-icons` `update`; the old name stays an alias; a case
+change keeps no alias), `DELETE /builder/icons/{icon}` deletes the icon and
+its aliases (`configs` `delete`; the uploader, or `builder-icons` `delete`).
+Another user's icon without the permission is 403; an unknown or invalid
+name is 404 `icon not found`. An upload is a PNG of at most 96 pixels and
+65536 bytes (body 131072); a strict PNG of at most 40960 bytes is kept as it
+is, any other is re-encoded to its pixels; 201 for a new icon, 200 for the
+same name with the same bytes. Limits: 64 icons and 1 MiB per uploader
+(`MaxLibraryIcons`, `MaxLibraryIconBytes`), 2000 icons in all (`MaxIcons`).
+Records in `builder.icons`: `name/<lowercase name>` holds an icon
+(`{kind: "icon", name, id, owner, width, height, bytes, created, updated,
+aliases, data}`) or an alias (`{kind: "alias", name, target}`). A rename
+points every alias the icon lists at the new name (`retargetAliases`), so an
+alias is one hop from its icon; resolution follows at most 16 hops, which
+only a failed retarget can need. Creates are create-if-absent and renames
+compare-and-swap, so two uploads of one name never both win. A delete that
+loses a race to a change of the icon is 409. At start, `CleanupLegacyIcons`
+deletes records of the earlier per-user layout (`<OwnerScope>/<hex>`).
+Every `/builder/` response has `X-Content-Type-Options: nosniff`; the icon
+routes also `Content-Security-Policy: default-src 'none'; frame-ancestors
+'none'` (`builderResponseHeaders`). No CSP is set on the application page.
+Files: `icons.js`, `iconLibrary.js`, `dialogs/IconDialog.vue`,
 `inspector/InspectorIconControl.vue`, `nodes/nodeColors.js`.
 
 ## Node templates
@@ -1251,14 +1301,15 @@ it.
 
 The per-user library (`api/builder/templates.go`, `web/builder_templates.go`):
 one record per user in `builder.templates` under `lib/<OwnerScope(user)>`
-(`LibraryKey`), at most 512 KiB, holding templates, collections and the
-custom icons they name (`icons`). A user with no record has the five
-built-in templates at version 1; the first change stores them, and a
-deleted one never comes back. Limits: 200 templates, 50 collections, 200
-templates per collection, 50 icons, 25 users per item. Every write is
-`Service.UpdateLibrary(ctx, owner, actor, change)`: read, run `change`,
-drop unused icons, stamp versions and times, validate, write against the
-read revision; up to 5 tries, then `ErrBusy` (503, `Retry-After: 1`).
+(`LibraryKey`), at most 512 KiB, holding templates and collections; a
+template names its custom icon, which the icon library resolves (a library
+carries no icons). A user with no record has the five built-in templates at
+version 1; the first change stores them, and a deleted one never comes back.
+Limits: 200 templates, 50 collections, 200 templates per collection, 25
+users per item. Every write is `Service.UpdateLibrary(ctx, owner, actor,
+change)`: read, run `change`, stamp versions and times, validate, write
+against the read revision; up to 5 tries, then `ErrBusy` (503,
+`Retry-After: 1`).
 Refusals are `*LibraryError`. Templates and collections have strong ETags
 `"<version>"`; only the two PUT routes need `If-Match`. A record a newer
 phenix wrote is `damaged`: listed with no own items, and every change 409.
@@ -1270,8 +1321,8 @@ and `pub/<OwnerScope(owner)>` (value `{}`, never removed), so a listing
 reads only the libraries hints name. A share is bound to the recipient's
 account (stale after it is deleted or recreated). With authentication off
 the one library is `global-admin`'s and sharing is unavailable. The
-start-of-server cleanup never touches `builder.icons` or
-`builder.templates`. UI: the Node Templates tab (`BuilderTemplates.vue`,
+start-of-server cleanup never touches `builder.templates`, and in
+`builder.icons` only records of the earlier per-user layout. UI: the Node Templates tab (`BuilderTemplates.vue`,
 `CollectionDialog.vue`, `TemplateShareDialog.vue`), palette groups "This
 diagram", "My library", "Shared with me", "Server-wide", "Built-in"
 (`paletteTemplateGroups`, `TEMPLATE_GROUP_LABELS`; a group heading shows only
@@ -1307,8 +1358,9 @@ All routes are relative to `/api/v1`.
 | `GET /builder/documents[/{document}]` | Published Builder documents (`source: "store"`); the listing also has a row per topology read from a Builder file (`source: "file"`) |
 | `DELETE /builder/documents/{document}` | Delete the topology a published document is current for, and the topology's published documents |
 | `GET /builder/topologies/{topology}/document` | The document a topology's `builder-doc` names, stored or read from its Builder file: the listing row plus `digest`, `size`, `document`, and for a file `topologyDiffers` |
-| `GET/POST /builder/icons`, `DELETE /builder/icons/{icon}` | The caller's icon library (`configs` `list`, `create`, `delete`) |
-| `GET /builder/templates` | Templates and collections the caller can use: own (`source` `own`), shared (`shared`), server-wide (`server`), with their `icons`, `canShare`, `canPublish`, `damaged`, `limits` (`configs` `list`) |
+| `GET/POST /builder/icons` | The server's icon library: list every icon, upload one under a name (`configs` `list`, `create`) |
+| `GET/PUT/DELETE /builder/icons/{icon}` | Read, rename (the old name stays an alias), delete an icon by name or alias (`configs` `get`, `update`, `delete`; another user's icon also needs `builder-icons` `update` or `delete`) |
+| `GET /builder/templates` | Templates and collections the caller can use: own (`source` `own`), shared (`shared`), server-wide (`server`), with `canShare`, `canPublish`, `damaged`, `limits` (`configs` `list`) |
 | `GET /builder/templates/candidates` | Accounts the caller's items can be shared with (`configs` `update`, a user account) |
 | `POST /builder/templates/{owner}/items`, `PUT …/items/{template}` | Add templates (optionally as a new `collection`), replace one (`If-Match`) (`configs` `create`, `update`; owner only) |
 | `POST /builder/templates/{owner}/collections`, `PUT …/collections/{collection}` | Add, replace a collection (`If-Match` on PUT) (`configs` `create`, `update`; owner only) |
@@ -1322,11 +1374,14 @@ The OpenAPI document served at `/docs/` describes every request and response.
 
 Drafts live in the phenix store as records, apart from configs
 (`builder.drafts`, `builder.chunks`, `builder.published`; the startup cleanup
-lists only these three). The icon and template libraries are records in
-`builder.icons` and `builder.templates`, keyed through `OwnerScope(user)`
-(the lowercase hex SHA-256 of the user name, `api/builder/scope.go`): a
-library follows the user name, as draft ownership does, and nothing removes
-it when an account is deleted. With an etcd
+lists only these three). The template libraries are records in
+`builder.templates`, keyed through `OwnerScope(user)` (the lowercase hex
+SHA-256 of the user name, `api/builder/scope.go`): a library follows the
+user name, as draft ownership does, and nothing removes it when an account
+is deleted. The icon library is records in `builder.icons` keyed by
+`name/<lowercase icon name>`; an icon's `owner` is the uploader's user name,
+and nothing removes an icon when its uploader's account is deleted. With an
+etcd
 store, phenix compacts etcd's history for the whole cluster (see
 `compaction-retention` in [cli.md](./cli.md)). When etcd reaches its space quota,
 any write it refuses, including config writes (`POST`/`PUT /configs`) and

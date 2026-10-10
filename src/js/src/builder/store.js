@@ -54,7 +54,8 @@ import {
 } from './grouping.js';
 import { patternProblem } from './groupingPattern.js';
 import { History, DEFAULT_HISTORY_LIMIT } from './history.js';
-import { droppedIconsNote, ICON_ID, settleIcons } from './icons.js';
+import { iconLibrary, ingestIcons } from './iconLibrary.js';
+import { settleIcons } from './icons.js';
 import { createDraftStore } from './idb.js';
 import { uniqueName } from './ids.js';
 import {
@@ -394,10 +395,6 @@ const PUBLISHED_GONE =
 // answers the same.
 const NOT_SHARED = 'This draft does not exist, or it is not shared with you.';
 
-// The most custom icons the icon shelf keeps (see shelveIcons): those of a
-// user's whole icon library, twice over.
-const MAX_SHELVED_ICONS = 128;
-
 // The lists as they are before they are read.
 function emptyLists() {
   return { mine: [], shared: [], others: [], published: [], damaged: [] };
@@ -412,7 +409,6 @@ const LIBRARY_LIMITS = Object.freeze({
   nameBytes: 128,
   descriptionBytes: 1024,
   deviceBytes: 16384,
-  icons: 50,
 });
 
 // The user's template library as it is before it is read.
@@ -424,7 +420,6 @@ function emptyLibrary() {
     owner: '',
     items: [],
     collections: [],
-    icons: {},
     canShare: false,
     canPublish: false,
     damaged: false,
@@ -607,13 +602,6 @@ export const useBuilderStore = defineStore('builder', {
     saveAnnounced: null,
     selection: emptySelection(),
     clipboard: null,
-    // Custom icons the session has seen and a diagram may come to use, by
-    // icon id, as {name?, data}: those chosen in the icon dialog and those
-    // of a clipboard (see shelveIcons). A commit copies the ones the
-    // document names from here (see commit). It is memory of this page
-    // only, never saved, and is markRaw, as the History is: nothing
-    // observes it.
-    iconShelf: markRaw(new Map()),
     // What the last automatic layout changed (layoutChanges: where it moved
     // nodes from, the routes and layout choice it replaced), and the history
     // entry that layout made. It can be put back only while that entry is
@@ -695,8 +683,7 @@ export const useBuilderStore = defineStore('builder', {
     // the rest is what the server answered: the library's owner, its
     // templates (items) and collections, and those of other users shared
     // with the user or published server-wide (each with its source and
-    // owner), the custom icons the templates name (by icon id: {name?,
-    // data}), what the user may do (canShare, canPublish), whether the
+    // owner), what the user may do (canShare, canPublish), whether the
     // stored library cannot be read (damaged), and its limits. A read that
     // fails keeps what an earlier one answered.
     templates: emptyLibrary(),
@@ -964,49 +951,12 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Keeps custom icons for the documents that come to use them: before an
-     * edit gives a node an icon the document may lack (one chosen in the
-     * icon dialog, one a paste brings), its entry is put here, and the
-     * commit of that edit copies it into the document. The shelf keeps the
-     * icons put there last.
-     *
-     * @param {Map<string, object>|object|null} [icons] by icon id, {name?,
-     *   data}
-     */
-    shelveIcons(icons) {
-      const entries =
-        icons instanceof Map ? [...icons] : Object.entries(icons || {});
-
-      for (const [id, entry] of entries) {
-        if (!ICON_ID.test(id) || typeof entry?.data !== 'string') {
-          continue;
-        }
-
-        this.iconShelf.delete(id);
-        this.iconShelf.set(id, {
-          ...(entry.name ? { name: entry.name } : {}),
-          data: entry.data,
-        });
-      }
-
-      for (const id of this.iconShelf.keys()) {
-        if (this.iconShelf.size <= MAX_SHELVED_ICONS) {
-          break;
-        }
-
-        this.iconShelf.delete(id);
-      }
-    },
-
-    /**
      * Records one semantic edit: local history, then the autosave queue. Every
      * call becomes exactly one server snapshot.
      *
-     * The document recorded carries exactly the custom icons it uses (see
-     * settleIcons): one it names and lacks comes from the icon shelf, and
-     * one no node names any more goes. This is the one place that does so
-     * for every edit, so every snapshot is a document the server accepts.
-     * Icons left out, past the most a document holds, are announced.
+     * The document recorded carries copies only of custom icons its nodes
+     * name that the icon library lacks or holds otherwise (see settleIcons):
+     * this is the one place that drops the others for every edit.
      *
      * @param {object} doc next document
      * @param {string} label short description
@@ -1023,20 +973,16 @@ export const useBuilderStore = defineStore('builder', {
         return null;
       }
 
-      const settled = settleIcons(doc, this.iconShelf);
+      const settled = settleIcons(doc, iconLibrary);
 
-      this.doc = settled.doc;
+      this.doc = settled;
       this.layoutRestore = null;
 
-      const entry = this.history.push(settled.doc, label);
+      const entry = this.history.push(settled, label);
       this.historyChanged();
 
       if (label) {
         this.announce(`${label}${this.unsavedNote()}`);
-      }
-
-      if (settled.dropped > 0) {
-        this.announce(droppedIconsNote(settled.dropped));
       }
 
       if (this.autosave && !this.readOnly) {
@@ -2462,7 +2408,8 @@ export const useBuilderStore = defineStore('builder', {
      * opening the same diagram again never piles up copies; otherwise a new
      * draft made from it. A draft made from a topology's Builder file is
      * one made from what the file holds now: once the file changes, a new
-     * draft is made from it.
+     * draft is made from it. The custom icons the file carries are added to
+     * the server's icon library first, as an upload's are (see ingestIcons).
      *
      * @param {string} id a listed published diagram's id: a published
      *   document's, or the handle of a topology's Builder file
@@ -2547,18 +2494,41 @@ export const useBuilderStore = defineStore('builder', {
           return null;
         }
 
+        // A Builder file carries copies of the custom icons it uses, as a
+        // downloaded diagram does. They go to the server's icon library
+        // first, as those of an uploaded file do (see ingestIcons), so the
+        // draft keeps only the copies the library refused or holds with
+        // other bytes, each with a warning.
+        const ingested =
+          read.source === 'file'
+            ? await ingestIcons(read.document, iconLibrary)
+            : { doc: read.document, warnings: [] };
+
+        if (this.sessionEndedSince(epoch)) {
+          return null;
+        }
+
         // One message for the whole operation, so neither half is lost.
         const readName = metadataOf(read.document).name;
+        const opened =
+          announcement ||
+          (topology
+            ? `Opened the diagram of topology ${topology} as a new draft.`
+            : `Opened published diagram ${readName || id} as a new draft.`);
         const created = await this.createDraft({
-          document: read.document,
+          document: ingested.doc,
           title: readName,
           sourceToken: token,
-          announcement:
-            announcement ||
-            (topology
-              ? `Opened the diagram of topology ${topology} as a new draft.`
-              : `Opened published diagram ${readName || id} as a new draft.`),
+          announcement: [opened, ...ingested.warnings].join(' '),
         });
+
+        // The warnings stay on the canvas until they are dismissed.
+        if (created && ingested.warnings.length > 0) {
+          this.notice = {
+            text: ingested.warnings.join(' '),
+            seq: this.announcementSeq,
+          };
+        }
 
         return created ? this.doc : null;
       } catch (error) {
@@ -4051,16 +4021,13 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Saves a device template in the open diagram, as one edit. The custom
-     * icon it names, if any, goes with it: the commit copies it into the
-     * document (see commit).
+     * icon it names is a name the icon library resolves.
      *
      * @param {{name: string, description?: string, device: object}} template
-     * @param {object} [icons] the custom icons the template names, by icon
-     *   id: {name?, data}
      * @returns {object|null} the template as the diagram holds it, with its
      *   id; null when the diagram did not take it
      */
-    addTemplate(template, icons = null) {
+    addTemplate(template) {
       const full = templatesFull(this.doc);
 
       if (full) {
@@ -4068,8 +4035,6 @@ export const useBuilderStore = defineStore('builder', {
 
         return null;
       }
-
-      this.shelveIcons(icons);
 
       const result = addTemplate(this.doc, template);
 
@@ -4084,13 +4049,10 @@ export const useBuilderStore = defineStore('builder', {
      *
      * @param {string} id
      * @param {{name?: string, description?: string, device?: object}} patch
-     * @param {object} [icons] as addTemplate's
      * @returns {object|null} the template as the diagram holds it now; null
      *   when the diagram has no such template, or did not take the change
      */
-    updateTemplate(id, patch, icons = null) {
-      this.shelveIcons(icons);
-
+    updateTemplate(id, patch) {
       const next = updateTemplate(this.doc, id, patch);
       const updated = (next.templates || []).find(
         (template) => template.id === id,
@@ -4161,7 +4123,6 @@ export const useBuilderStore = defineStore('builder', {
             owner: library.owner,
             items: library.templates,
             collections: library.collections,
-            icons: library.icons,
             canShare: library.canShare,
             canPublish: library.canPublish,
             damaged: library.damaged,
@@ -4222,21 +4183,16 @@ export const useBuilderStore = defineStore('builder', {
      *
      * @param {{name: string, description?: string, device: object}[]}
      *   templates
-     * @param {object} [options] icons: the custom icons the templates name,
-     *   by icon id ({name?, data}); collection: {name, description?}, a new
+     * @param {object} [options] collection: {name, description?}, a new
      *   collection that holds exactly these templates
      * @returns {Promise<{created: object[], collection: object|null}>} the
      *   ids and tags the server gave
      */
-    async createLibraryTemplates(
-      templates,
-      { icons = null, collection = null } = {},
-    ) {
+    async createLibraryTemplates(templates, { collection = null } = {}) {
       const owner = await this.libraryOwner();
       const result = await libraryWrite(() =>
         builderApi.createTemplates(owner, {
           templates: templates.map(templateContent),
-          icons,
           collection,
         }),
       );
@@ -4254,16 +4210,15 @@ export const useBuilderStore = defineStore('builder', {
      * @param {string} id
      * @param {{name: string, description?: string, device: object}} content
      * @param {string} etag the template's tag, as listed
-     * @param {object} [icons] as createLibraryTemplates'
      * @returns {Promise<object>} the template as the server has it now
      */
-    async updateLibraryTemplate(id, content, etag, icons = null) {
+    async updateLibraryTemplate(id, content, etag) {
       const owner = await this.libraryOwner();
       const saved = await libraryWrite(() =>
         builderApi.updateTemplate(
           owner,
           id,
-          { description: '', ...templateContent(content), icons },
+          { description: '', ...templateContent(content) },
           etag,
         ),
       );
@@ -4605,23 +4560,9 @@ export const useBuilderStore = defineStore('builder', {
         return [];
       }
 
-      // The copies' custom icons are made known first, as before any edit
-      // that gives a node an icon the document may lack (see shelveIcons).
-      // The paste itself puts them into the document (see pasteClipboard).
-      this.shelveIcons(this.clipboard.icons);
-
       const result = pasteClipboard(this.doc, this.clipboard);
 
-      if (
-        this.commit(
-          result.doc,
-          `Pasted ${count(result.nodeIds.length, 'node')}`,
-        ) &&
-        result.dropped > 0
-      ) {
-        this.announce(droppedIconsNote(result.dropped));
-      }
-
+      this.commit(result.doc, `Pasted ${count(result.nodeIds.length, 'node')}`);
       this.selection = { nodes: result.nodeIds, edges: [] };
 
       return result.nodeIds;

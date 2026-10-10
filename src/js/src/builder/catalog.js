@@ -5,7 +5,7 @@
 // may only ever produce keys from this list. Shape + text label mean node
 // identity is never communicated by color alone.
 
-import { ICON_ID } from './icons.js';
+import { isIconName } from './icons.js';
 
 /** Bounded icon key registry, identical to the server registry. */
 const ICON_KEYS = [
@@ -268,20 +268,21 @@ export function nodeIconKey(node) {
 
 /**
  * The custom icon a node names: a device's, a group's or an icon node's,
- * which is drawn in place of the icon of its key when the document carries
- * it (see iconSrc in icons.js). Other kinds of nodes have none.
+ * which is drawn in place of the icon of its key when the document's copy
+ * of it or the icon library resolves it (see iconSrc in icons.js). Other
+ * kinds of nodes have none.
  *
  * @param {object} node builder document node
- * @returns {string} an icon id, or '' for none and for a value that is no
- *   icon id
+ * @returns {string} an icon name, or '' for none and for a value that is no
+ *   icon name
  */
 export function nodeIcon(node) {
-  const id =
+  const name =
     node?.device?.icon ||
     node?.group?.icon ||
     (node?.kind === 'icon' ? node.icon?.icon : '');
 
-  return typeof id === 'string' && ICON_ID.test(id) ? id : '';
+  return isIconName(name) ? name : '';
 }
 
 /**

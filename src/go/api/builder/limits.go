@@ -108,8 +108,8 @@ const (
 )
 
 // Limits of a user's template library (see [TemplateLibrary]). The whole
-// library is one record, so [MaxMetadataBytes] bounds it too: its templates,
-// its collections and its custom icons together.
+// library is one record, so [MaxMetadataBytes] bounds it too: its templates
+// and its collections together.
 const (
 	// MaxLibraryTemplates is the most templates one library holds.
 	MaxLibraryTemplates = 200
@@ -119,11 +119,6 @@ const (
 
 	// MaxCollectionTemplates is the most templates one collection names.
 	MaxCollectionTemplates = 200
-
-	// MaxLibraryTemplateIcons is the most custom icons the templates of one
-	// library use together. It is what a document may carry, so every
-	// template of a library fits in one diagram with its icon.
-	MaxLibraryTemplateIcons = builder.MaxDocumentIcons
 )
 
 // Record namespaces used by this package. They are separate namespaces so
@@ -144,9 +139,10 @@ const (
 	// keyed by published document ID.
 	NamespacePublished = "builder.published"
 
-	// NamespaceIcons holds one record per icon of a user's icon library,
-	// keyed by "<owner scope>/<the 64 hex digits of the icon ID>" (see
-	// [OwnerScope] and [LibraryIcon]). A record is never updated.
+	// NamespaceIcons holds the server-wide icon library: one record per icon
+	// name and per alias, keyed by "name/" and the name in lower case (see
+	// [LibraryIcon]). An icon's record holds the icon; an alias's record
+	// points at the record of the name its icon was renamed to.
 	NamespaceIcons = "builder.icons"
 
 	// NamespaceTemplates holds one record per user's template library,

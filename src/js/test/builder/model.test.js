@@ -2030,26 +2030,26 @@ describe('colors, line styles and group fields', () => {
     ).toEqual(['hostname', 'iconKey', 'spec', 'interfaces']);
   });
 
-  // The document comes to carry the icon when the edit is committed (see
-  // settleIcons): the writers only name it.
+  // A node names a custom icon, which the icon library resolves: the
+  // writers only name it, and the document need not carry a copy.
   test('a custom icon is named by a device and by a group, and emptied away', () => {
     const { doc, alpha } = sampleDocument();
     const device = (document) => findNode(document, alpha.id).device;
     const added = addNode(doc, {
       kind: 'device',
       hostname: 'plc',
-      look: { iconKey: 'router', icon: ICON_KEY },
+      look: { iconKey: 'router', icon: 'plc' },
     });
 
     expect(added.node.device).toMatchObject({
       iconKey: 'router',
-      icon: ICON_KEY,
+      icon: 'plc',
     });
     expect('icons' in added.doc).toBe(false);
 
-    const named = updateNode(doc, alpha.id, { device: { icon: ICON_KEY } });
+    const named = updateNode(doc, alpha.id, { device: { icon: 'plc' } });
 
-    expect(device(named).icon).toBe(ICON_KEY);
+    expect(device(named).icon).toBe('plc');
     // A rename, a new icon key or a color keeps it.
     for (const patch of [
       { hostname: 'a2' },
@@ -2057,7 +2057,7 @@ describe('colors, line styles and group fields', () => {
       { fillColor: '#1f7a5a' },
     ]) {
       expect(device(updateNode(named, alpha.id, { device: patch })).icon).toBe(
-        ICON_KEY,
+        'plc',
       );
     }
     expect(
@@ -2067,21 +2067,21 @@ describe('colors, line styles and group fields', () => {
     const group = addNode(doc, {
       kind: 'group',
       title: 'Zone',
-      icon: ICON_KEY,
+      icon: 'plc',
     });
 
     expect(group.node.group).toEqual({
       title: 'Zone',
       color: '',
       collapsed: false,
-      icon: ICON_KEY,
+      icon: 'plc',
     });
     expect(
       findNode(
         updateNode(group.doc, group.node.id, { group: { title: 'Cell' } }),
         group.node.id,
       ).group.icon,
-    ).toBe(ICON_KEY);
+    ).toBe('plc');
     expect(
       findNode(
         updateNode(group.doc, group.node.id, { group: { icon: '' } }),
@@ -2089,14 +2089,18 @@ describe('colors, line styles and group fields', () => {
       ).group,
     ).toEqual({ title: 'Zone', color: '', collapsed: false });
 
-    // A document that carries the icon passes the checks; one that names
-    // it without carrying it does not.
-    const icons = { [ICON_KEY]: { name: 'plc', data: ICON_DATA } };
+    // A document passes the checks whether or not it carries a copy of the
+    // icon; one that names something that is no icon name does not.
+    const icons = { plc: { data: ICON_DATA } };
 
+    expect(errorsOf(named)).toEqual([]);
     expect(errorsOf({ ...named, icons })).toEqual([]);
     expect(errorsOf({ ...group.doc, icons })).toEqual([]);
-    expect(errorsOf(named).map((issue) => issue.path)).toEqual([
-      `nodes[${named.nodes.indexOf(findNode(named, alpha.id))}].device.icon`,
+
+    const unnamed = updateNode(doc, alpha.id, { device: { icon: ICON_KEY } });
+
+    expect(errorsOf(unnamed).map((issue) => issue.path)).toEqual([
+      `nodes[${unnamed.nodes.indexOf(findNode(unnamed, alpha.id))}].device.icon`,
     ]);
   });
 
@@ -2367,68 +2371,65 @@ describe('colors, line styles and group fields', () => {
     expect('lineStyle' in plain.edges[0]).toBe(false);
   });
 
-  // The copy carries the icons its nodes use, and the paste puts them into
-  // the document: it is valid on its own, before any commit.
-  test('a copy carries the custom icons its nodes use, and no others', () => {
+  // The copy carries the copies of icons the document carries for its
+  // nodes, and the paste puts them into the document: a node names its
+  // icon, and the icon library resolves the names it carries no copy of.
+  test('a copy carries the copies of custom icons its nodes use, and no others', () => {
     const { doc, alpha, bravo } = sampleDocument();
-    const other =
-      'sha256:0000000000000000000000000000000000000000000000000000000000000000';
     const group = addNode(doc, {
       kind: 'group',
       title: 'Zone',
-      icon: ICON_KEY,
+      icon: 'plc',
     });
     const source = {
       ...updateNode(
-        updateNode(group.doc, alpha.id, { device: { icon: ICON_KEY } }),
+        updateNode(group.doc, alpha.id, { device: { icon: 'plc' } }),
         bravo.id,
-        { device: { icon: other } },
+        { device: { icon: 'other' } },
       ),
       icons: {
-        [ICON_KEY]: { name: 'plc', data: ICON_DATA },
-        [other]: { data: 'AAAA' },
+        plc: { data: ICON_DATA },
+        other: { data: 'AAAA' },
       },
     };
     const copied = copySelection(source, {
       nodes: [alpha.id, group.node.id],
     });
 
-    expect(copied.icons).toEqual({
-      [ICON_KEY]: { name: 'plc', data: ICON_DATA },
-    });
+    expect(copied.icons).toEqual({ plc: { data: ICON_DATA } });
     // The copy is its own: a later change of the document is not in it.
-    expect(copied.icons[ICON_KEY]).not.toBe(source.icons[ICON_KEY]);
+    expect(copied.icons.plc).not.toBe(source.icons.plc);
     expect(copySelection(doc, { nodes: [alpha.id] }).icons).toEqual({});
 
     const pasted = pasteClipboard(createDocument({ name: 'Other' }), copied);
 
-    expect(pasted.dropped).toBe(0);
-    expect(pasted.doc.icons).toEqual({
-      [ICON_KEY]: { name: 'plc', data: ICON_DATA },
-    });
+    expect(pasted).not.toHaveProperty('dropped');
+    expect(pasted.doc.icons).toEqual({ plc: { data: ICON_DATA } });
     expect(
       pasted.doc.nodes.map((node) => (node.device || node.group).icon),
-    ).toEqual([ICON_KEY, ICON_KEY]);
+    ).toEqual(['plc', 'plc']);
     expect(errorsOf(pasted.doc)).toEqual([]);
 
-    // A payload without the icon (one made before the icon was there, or
-    // by hand) pastes the node with its built-in icon, and says so.
+    // A payload without the copy (one of a diagram that carried none)
+    // pastes the nodes naming the icon all the same.
     const bare = pasteClipboard(createDocument({ name: 'Other' }), {
       ...copied,
       icons: undefined,
     });
 
-    expect(bare.dropped).toBe(1);
     expect('icons' in bare.doc).toBe(false);
     expect(
       bare.doc.nodes.map((node) => (node.device || node.group).icon),
-    ).toEqual([undefined, undefined]);
+    ).toEqual(['plc', 'plc']);
     expect(errorsOf(bare.doc)).toEqual([]);
-    // Nothing to paste leaves nothing out.
-    expect(pasteClipboard(doc, { nodes: [] })).toEqual({
-      doc,
-      nodeIds: [],
-      dropped: 0,
+
+    // A copy the document carries already stays as it is.
+    const carrying = { ...createDocument(), icons: { plc: { data: 'BBBB' } } };
+
+    expect(pasteClipboard(carrying, copied).doc.icons).toEqual({
+      plc: { data: 'BBBB' },
     });
+    // Nothing to paste changes nothing.
+    expect(pasteClipboard(doc, { nodes: [] })).toEqual({ doc, nodeIds: [] });
   });
 });

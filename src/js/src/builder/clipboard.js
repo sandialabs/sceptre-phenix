@@ -2,11 +2,11 @@
 // it can be driven from the canvas, the keyboard or the semantic outline.
 //
 // A payload is self contained: it carries the networks its switches reference
-// and the custom icons its nodes use, so a paste into another document still
-// produces a valid document. Identifiers are always regenerated on paste,
-// never reused.
+// and the copies of custom icons its nodes use that the document carries, so
+// a paste into another document still produces a valid document that shows
+// them. Identifiers are always regenerated on paste, never reused.
 
-import { ICON_ID, iconRefs, settleIcons } from './icons.js';
+import { MAX_DOCUMENT_ICONS, iconRefs } from './icons.js';
 import {
   addNetwork,
   addNode,
@@ -36,7 +36,8 @@ function clone(value) {
  * @param {object} doc
  * @param {{nodes?: string[], edges?: string[]}} selection
  * @returns {{nodes: object[], edges: object[], networks: object[],
- *   icons: object}} icons: the custom icons the nodes use, by icon id
+ *   icons: object}} icons: the copies of custom icons the nodes use that
+ *   the document carries, by name (the icon library has the others)
  */
 export function copySelection(doc, selection = {}) {
   const ids = new Set(selection.nodes || []);
@@ -72,13 +73,39 @@ export function copySelection(doc, selection = {}) {
 
   const icons = {};
 
-  for (const id of iconRefs({ nodes })) {
-    if (ICON_ID.test(id) && doc.icons && Object.hasOwn(doc.icons, id)) {
-      icons[id] = clone(doc.icons[id]);
+  for (const name of iconRefs({ nodes })) {
+    if (doc.icons && Object.hasOwn(doc.icons, name)) {
+      icons[name] = clone(doc.icons[name]);
     }
   }
 
   return { nodes, edges, networks, icons };
+}
+
+// The document, carrying the copies of icons from `icons` that its nodes
+// name and it lacks, while it carries fewer than MAX_DOCUMENT_ICONS. A copy
+// it carries already stays; a name past the most is left to the icon
+// library.
+function withCopies(doc, icons) {
+  if (!icons || typeof icons !== 'object') {
+    return doc;
+  }
+
+  const carried = { ...(doc.icons || {}) };
+  let added = false;
+
+  for (const name of iconRefs(doc)) {
+    if (
+      Object.hasOwn(icons, name) &&
+      !Object.hasOwn(carried, name) &&
+      Object.keys(carried).length < MAX_DOCUMENT_ICONS
+    ) {
+      carried[name] = clone(icons[name]);
+      added = true;
+    }
+  }
+
+  return added ? { ...doc, icons: carried } : doc;
 }
 
 function resolveNetwork(doc, payloadNetwork, networkId) {
@@ -151,21 +178,20 @@ function pastedLabel(node) {
 
 /**
  * Pastes a clipboard payload, remapping every identifier and offsetting
- * positions. The document comes to carry the custom icons the copies use,
- * from the payload; those past the most a document holds are left out, and
- * the copies that named them show their built-in icon (see settleIcons).
+ * positions. The document comes to carry the payload's copies of the custom
+ * icons the copies name that it lacks; the commit of the paste drops those
+ * the icon library holds as they are (see settleIcons in icons.js).
  *
  * @param {object} doc
  * @param {{nodes: object[], edges?: object[], networks?: object[],
  *   icons?: object}} payload
  * @param {object} [options] offset; by default each paste of the same nodes
  *   goes PASTE_OFFSET further than the copies already there
- * @returns {{doc: object, nodeIds: string[], dropped: number}} dropped: how
- *   many custom icons were left out
+ * @returns {{doc: object, nodeIds: string[]}}
  */
 export function pasteClipboard(doc, payload, options = {}) {
   if (!payload || !Array.isArray(payload.nodes) || payload.nodes.length === 0) {
-    return { doc, nodeIds: [], dropped: 0 };
+    return { doc, nodeIds: [] };
   }
 
   const offset = options.offset || cascadeOffset(doc, payload.nodes);
@@ -297,14 +323,8 @@ export function pasteClipboard(doc, payload, options = {}) {
       .map((handle) => handle.id);
   });
 
-  const settled = settleIcons(
-    clearInterfaceVLANs(synced, naming),
-    payload.icons,
-  );
-
   return {
-    doc: settled.doc,
+    doc: withCopies(clearInterfaceVLANs(synced, naming), payload.icons),
     nodeIds: [...nodeIds.values()],
-    dropped: settled.dropped,
   };
 }

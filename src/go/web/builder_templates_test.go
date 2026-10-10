@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,15 +63,9 @@ func builderJSON(t *testing.T, value any) string {
 	return string(body)
 }
 
-// builderTemplateIcon returns the id and the entry of a custom icon whose
-// image depends on seed.
-func builderTemplateIcon(t *testing.T, seed int) (string, bdoc.Icon) {
-	t.Helper()
-
-	png := builderIconPNG(t, 2, 2, seed)
-
-	return bdoc.IconID(png), bdoc.Icon{Name: "icon " + strconv.Itoa(seed), Data: base64.StdEncoding.EncodeToString(png)}
-}
+// builderTemplateIconName is the custom icon the template PLC of the fixture
+// names: a name the icon library resolves.
+const builderTemplateIconName = "plc-icon"
 
 // builderLibraryPath returns a path below the library of owner.
 func builderLibraryPath(owner, rest string) string {
@@ -143,7 +136,7 @@ func (h *builderHarness) templates(user string) builderTemplateLibraryResponse {
 func (h *builderHarness) addTemplates(user string, names ...string) []builderTemplateRef {
 	h.t.Helper()
 
-	request := builderTemplateCreateRequest{Templates: nil, Collection: nil, Icons: nil}
+	request := builderTemplateCreateRequest{Templates: nil, Collection: nil}
 	for _, name := range names {
 		request.Templates = append(request.Templates, builderTemplateContentOf(name, ""))
 	}
@@ -186,7 +179,6 @@ func TestBuilderTemplateLibraryStartsWithBuiltins(t *testing.T) {
 		Owner       string            `json:"owner"`
 		Templates   []json.RawMessage `json:"templates"`
 		Collections json.RawMessage   `json:"collections"`
-		Icons       json.RawMessage   `json:"icons"`
 		CanShare    *bool             `json:"canShare"`
 		CanPublish  *bool             `json:"canPublish"`
 		Damaged     *bool             `json:"damaged"`
@@ -195,8 +187,13 @@ func TestBuilderTemplateLibraryStartsWithBuiltins(t *testing.T) {
 
 	harness.decode(recorder, &raw)
 
-	if raw.Owner != builderTestOwner || string(raw.Collections) != "[]" || raw.Icons != nil {
-		t.Fatalf("the listing = %s, want the caller's, with an empty list of collections and no icons", recorder.Body)
+	// The icon library holds the icons: a template listing carries none.
+	if strings.Contains(recorder.Body.String(), `"icons"`) {
+		t.Fatalf("the listing carries icons: %s", recorder.Body)
+	}
+
+	if raw.Owner != builderTestOwner || string(raw.Collections) != "[]" {
+		t.Fatalf("the listing = %s, want the caller's, with an empty list of collections", recorder.Body)
 	}
 
 	// Sharing and publishing are not offered, and the flags are sent: alice
@@ -208,7 +205,7 @@ func TestBuilderTemplateLibraryStartsWithBuiltins(t *testing.T) {
 	}
 
 	if got, want := string(raw.Limits),
-		`{"templates":200,"collections":50,"shares":25,"nameBytes":128,"descriptionBytes":1024,"deviceBytes":16384,"icons":50}`; got != want {
+		`{"templates":200,"collections":50,"shares":25,"nameBytes":128,"descriptionBytes":1024,"deviceBytes":16384}`; got != want {
 		t.Errorf("limits = %s, want %s", got, want)
 	}
 
@@ -243,29 +240,26 @@ func TestBuilderTemplateLibraryStartsWithBuiltins(t *testing.T) {
 }
 
 // builderTemplateFixture is a library of alice's that holds, after the
-// built-in templates, the templates PLC, which names a custom icon, and HMI,
-// and the collection "Plant floor" of the two.
+// built-in templates, the templates PLC, which names the custom icon
+// builderTemplateIconName, and HMI, and the collection "Plant floor" of the
+// two.
 type builderTemplateFixture struct {
 	harness         *builderHarness
 	logs            *plogtest.Logs
 	plc, hmi, floor string
-	iconID          string
-	icon            bdoc.Icon
 }
 
-// newBuilderTemplateFixture makes the fixture with one request, which also
-// carries an icon no template names.
+// newBuilderTemplateFixture makes the fixture with one request.
 func newBuilderTemplateFixture(t *testing.T) *builderTemplateFixture {
 	t.Helper()
 
 	fixture := &builderTemplateFixture{harness: newBuilderHarness(t), logs: plogtest.Capture(t)}
-	fixture.iconID, fixture.icon = builderTemplateIcon(t, 21)
-	spareID, spare := builderTemplateIcon(t, 22)
 
 	request := builderTemplateCreateRequest{
-		Templates:  []builderTemplateContent{builderTemplateContentOf("PLC", fixture.iconID), builderTemplateContentOf("HMI", "")},
+		Templates: []builderTemplateContent{
+			builderTemplateContentOf("PLC", builderTemplateIconName), builderTemplateContentOf("HMI", ""),
+		},
 		Collection: nil,
-		Icons:      map[string]bdoc.Icon{fixture.iconID: fixture.icon, spareID: spare},
 	}
 
 	body := strings.Replace(builderJSON(t, request), `"collection":null`, `"collection":{"name":"Plant floor","description":"line 1"}`, 1)
@@ -290,7 +284,7 @@ func newBuilderTemplateFixture(t *testing.T) *builderTemplateFixture {
 }
 
 // assertLogged asserts what was done is logged by id, and that the log
-// holds nothing a template, a collection or an icon holds.
+// holds nothing a template or a collection holds.
 func (f *builderTemplateFixture) assertLogged(t *testing.T, messages ...string) {
 	t.Helper()
 
@@ -300,14 +294,14 @@ func (f *builderTemplateFixture) assertLogged(t *testing.T, messages ...string) 
 		}
 	}
 
-	if text := f.logs.String(); strings.Contains(text, builderTemplateSecret) || strings.Contains(text, f.icon.Data[:24]) ||
-		strings.Contains(text, "Plant floor") {
-		t.Errorf("the log holds what a template, a collection or an icon holds: %s", text)
+	if text := f.logs.String(); strings.Contains(text, builderTemplateSecret) || strings.Contains(text, "Plant floor") {
+		t.Errorf("the log holds what a template or a collection holds: %s", text)
 	}
 }
 
-// TestBuilderTemplateCreate asserts templates, a collection of them and the
-// icon they name are added in one request, and listed as the caller's own.
+// TestBuilderTemplateCreate asserts templates and a collection of them are
+// added in one request, and listed as the caller's own, each naming its
+// custom icon as it was sent.
 func TestBuilderTemplateCreate(t *testing.T) {
 	fixture := newBuilderTemplateFixture(t)
 	list := fixture.harness.templates(builderTestOwner)
@@ -319,14 +313,9 @@ func TestBuilderTemplateCreate(t *testing.T) {
 		t.Fatalf("the listing holds %q, want %q", got, want)
 	}
 
-	// Only the icon a template names is kept and listed.
-	if len(list.Icons) != 1 || list.Icons[fixture.iconID] != fixture.icon {
-		t.Fatalf("the listing carries the icons %v, want only %s", list.Icons, fixture.iconID)
-	}
-
 	plc := list.Templates[len(builderBuiltinIDs)]
 
-	if plc.Name != "PLC" || plc.Description != "made by a test" || plc.Device.Icon != fixture.iconID ||
+	if plc.Name != "PLC" || plc.Description != "made by a test" || plc.Device.Icon != builderTemplateIconName ||
 		plc.Device.IconKey != bdoc.IconServer || plc.Version != 1 || plc.Created.IsZero() ||
 		!plc.Created.Equal(plc.Updated) || !slices.Equal(plc.Collections, []string{fixture.floor}) || plc.Shares == nil {
 		t.Fatalf("the new template = %+v", plc)
@@ -353,7 +342,7 @@ func TestBuilderTemplateReplace(t *testing.T) {
 	fixture := newBuilderTemplateFixture(t)
 	harness := fixture.harness
 
-	content := builderJSON(t, builderTemplateUpdateRequest{builderTemplateContent: builderTemplateContentOf("PLC two", ""), Icons: nil})
+	content := builderJSON(t, builderTemplateUpdateRequest{builderTemplateContent: builderTemplateContentOf("PLC two", "")})
 	path := "/items/" + fixture.plc
 
 	replaced := harness.put(path, content, `"1"`)
@@ -368,11 +357,6 @@ func TestBuilderTemplateReplace(t *testing.T) {
 		t.Fatalf("replacing a template = %d %s", replaced.Code, replaced.Body)
 	}
 
-	// The icon no template names any more left the library.
-	if list := harness.templates(builderTestOwner); len(list.Icons) != 0 {
-		t.Fatalf("after the replacement the listing carries the icons %v", list.Icons)
-	}
-
 	// The same content again changes nothing and keeps the tag.
 	again := harness.put(path, content, `"2"`)
 	if again.Code != http.StatusOK || again.Header().Get("ETag") != `"2"` {
@@ -385,19 +369,20 @@ func TestBuilderTemplateReplace(t *testing.T) {
 		t.Fatalf("replacing with the old tag = %d %v, want 412 with the current tag", stale.Code, stale.Header())
 	}
 
-	// A replacement may bring the icon it names.
+	// A replacement may name any custom icon, which the icon library
+	// resolves.
 	drawn := builderJSON(t, builderTemplateUpdateRequest{
-		builderTemplateContent: builderTemplateContentOf("PLC three", fixture.iconID),
-		Icons:                  map[string]bdoc.Icon{fixture.iconID: fixture.icon},
+		builderTemplateContent: builderTemplateContentOf("PLC three", "other-icon"),
 	})
 
-	if back := harness.put(path, drawn, `"2"`); back.Code != http.StatusOK ||
-		back.Header().Get("ETag") != `"3"` {
-		t.Fatalf("replacing with an icon = %d %s", back.Code, back.Body)
-	}
+	back := harness.put(path, drawn, `"2"`)
 
-	if list := harness.templates(builderTestOwner); len(list.Icons) != 1 || list.Icons[fixture.iconID] != fixture.icon {
-		t.Fatalf("after bringing the icon back the listing carries %v", list.Icons)
+	var named builderTemplateResponse
+
+	harness.decode(back, &named)
+
+	if back.Code != http.StatusOK || back.Header().Get("ETag") != `"3"` || named.Device.Icon != "other-icon" {
+		t.Fatalf("replacing with an icon = %d %s", back.Code, back.Body)
 	}
 
 	fixture.assertLogged(t, "changed builder template")
@@ -488,11 +473,10 @@ func TestBuilderTemplateDelete(t *testing.T) {
 	}
 
 	// The collection that held the deleted template lost it, and its tag
-	// moved on. The template's icon left with it. The deleted collection's
-	// template stays.
+	// moved on. The deleted collection's template stays.
 	if len(list.Collections) != 1 || list.Collections[0].ID != fixture.floor || list.Collections[0].ETag != `"2"` ||
-		!slices.Equal(list.Collections[0].TemplateIDs, []string{fixture.hmi}) || len(list.Icons) != 0 {
-		t.Fatalf("after the delete the collections = %+v and the icons %v", list.Collections, list.Icons)
+		!slices.Equal(list.Collections[0].TemplateIDs, []string{fixture.hmi}) {
+		t.Fatalf("after the delete the collections = %+v", list.Collections)
 	}
 
 	// The same delete again is harmless.
@@ -627,7 +611,7 @@ func TestBuilderTemplatePermissions(t *testing.T) {
 
 			item := builderJSON(t, builderTemplateContentOf("Changed", ""))
 			items := builderJSON(t, builderTemplateCreateRequest{
-				Templates: []builderTemplateContent{builderTemplateContentOf("New", "")}, Collection: nil, Icons: nil,
+				Templates: []builderTemplateContent{builderTemplateContentOf("New", "")}, Collection: nil,
 			})
 
 			for i, request := range []builderRequest{
@@ -698,7 +682,7 @@ func TestBuilderTemplateLibraryIsTheCallersOwn(t *testing.T) {
 	before := revision()
 	item := builderJSON(t, builderTemplateContentOf("Taken over", ""))
 	items := builderJSON(t, builderTemplateCreateRequest{
-		Templates: []builderTemplateContent{builderTemplateContentOf("Planted", "")}, Collection: nil, Icons: nil,
+		Templates: []builderTemplateContent{builderTemplateContentOf("Planted", "")}, Collection: nil,
 	})
 
 	// The peer's role holds every permission there is, on other users'
@@ -787,7 +771,7 @@ func builderTemplateRefusals(t *testing.T, template, collection string) []builde
 		one         = collections + "/" + collection
 		remove      = builderLibraryPath(builderTestOwner, "/delete")
 		valid       = builderJSON(t, builderTemplateContentOf("Fine", ""))
-		missingIcon = "sha256:" + strings.Repeat("a", 64)
+		digestIcon  = "sha256:" + strings.Repeat("a", 64)
 		wrap        = func(templates string) string { return `{"templates":[` + templates + `]}` }
 	)
 
@@ -801,7 +785,7 @@ func builderTemplateRefusals(t *testing.T, template, collection string) []builde
 	badColor := builderTemplateContentOf("Colored", "")
 	badColor.Device.FillColor = "red"
 	noSpec := `{"name":"Bare","device":{}}`
-	drawn := builderJSON(t, builderTemplateContentOf("Drawn", missingIcon))
+	drawn := builderJSON(t, builderTemplateContentOf("Drawn", digestIcon))
 
 	return []builderTemplateRefusal{
 		// Malformed requests.
@@ -908,14 +892,16 @@ func builderTemplateRefusals(t *testing.T, template, collection string) []builde
 			message: `templates[0].device.fillColor: color "red" must be a hex color such as #2f6fbf`,
 		},
 		{
-			name: "items: an icon the request does not carry", method: post, path: items, body: wrap(valid + "," + drawn), status: 422,
-			message: `template 1 names custom icon "` + missingIcon + `", which the request does not carry`,
+			name: "items: an icon that is not an icon name", method: post, path: items, body: wrap(valid + "," + drawn), status: 422,
+			message: `templates[1].device.icon: icon name "sha256:` + strings.Repeat("a", 57) +
+				`..." must be 1 to 64 letters, digits, "_", "@", "." or "-"`,
 		},
 		{
-			name: "items: an icon that is not a PNG", method: post, path: items,
-			body:    `{"templates":[` + drawn + `],"icons":{"` + missingIcon + `":{"data":"bm90IGEgUE5H"}}}`,
-			status:  422,
-			message: `icons: icon "sha256:` + strings.Repeat("a", 57) + `..." is not an accepted PNG: the image is not a PNG`,
+			// The icon library holds the icons: a request carries none.
+			name: "items: icons carried", method: post, path: items,
+			body:    `{"templates":[` + valid + `],"icons":{"plc":{"data":"bm90IGEgUE5H"}}}`,
+			status:  400,
+			message: malformed,
 		},
 		{
 			name: "items: a collection with no name", method: post, path: items,
@@ -926,8 +912,9 @@ func builderTemplateRefusals(t *testing.T, template, collection string) []builde
 			message: "template.name: template name is required",
 		},
 		{
-			name: "item: an icon the request does not carry", method: put, path: item, body: drawn, ifMatch: `"1"`, status: 422,
-			message: `template 0 names custom icon "` + missingIcon + `", which the request does not carry`,
+			name: "item: an icon that is not an icon name", method: put, path: item, body: drawn, ifMatch: `"1"`, status: 422,
+			message: `template.device.icon: icon name "sha256:` + strings.Repeat("a", 57) +
+				`..." must be 1 to 64 letters, digits, "_", "@", "." or "-"`,
 		},
 		{name: "collection: no name", method: post, path: collections, body: `{}`, status: 422, message: "collection name is required"},
 		{
@@ -1031,17 +1018,11 @@ func TestBuilderTemplateRequests(t *testing.T) {
 func TestBuilderTemplateBodyLimits(t *testing.T) {
 	harness := newBuilderHarness(t)
 
-	// Icons nothing names are dropped, so a large request is a small write.
-	icons := make(map[string]bdoc.Icon, 40)
-	filler := strings.Repeat("A", 54_000)
-
-	for i := range 40 {
-		icons["sha256:"+fmt.Sprintf("%064x", i)] = bdoc.Icon{Name: "", Data: filler}
-	}
-
-	large := builderJSON(t, builderTemplateCreateRequest{
-		Templates: []builderTemplateContent{builderTemplateContentOf("Carried", "")}, Collection: nil, Icons: icons,
-	})
+	// White space between the tokens of a request is a large request and a
+	// small write.
+	large := strings.Replace(builderJSON(t, builderTemplateCreateRequest{
+		Templates: []builderTemplateContent{builderTemplateContentOf("Carried", "")}, Collection: nil,
+	}), "{", "{"+strings.Repeat(" ", 2<<20), 1)
 
 	if len(large) < 2<<20 {
 		t.Fatalf("the request is %d bytes, want it over 2 MiB", len(large))
@@ -1051,11 +1032,11 @@ func TestBuilderTemplateBodyLimits(t *testing.T) {
 		t.Fatalf("adding a template with a %d byte request = %d %.200s", len(large), recorder.Code, recorder.Body)
 	}
 
-	if list := harness.templates(builderTestOwner); len(list.Icons) != 0 || len(list.Templates) != len(builderBuiltinIDs)+1 {
-		t.Fatalf("the listing = %d templates and %d icons", len(list.Templates), len(list.Icons))
+	if list := harness.templates(builderTestOwner); len(list.Templates) != len(builderBuiltinIDs)+1 {
+		t.Fatalf("the listing = %d templates", len(list.Templates))
 	}
 
-	over := `{"templates":[],"icons":{"x":{"data":"` + strings.Repeat("A", builderMaxRequestBytes) + `"}}}`
+	over := `{"templates":[` + strings.Repeat(" ", builderMaxRequestBytes) + `]}`
 
 	recorder := harness.post("/items", over)
 	want := fmt.Sprintf("request body is larger than %d bytes", builderMaxRequestBytes)
@@ -1066,8 +1047,8 @@ func TestBuilderTemplateBodyLimits(t *testing.T) {
 }
 
 // TestBuilderTemplateLibraryLimits asserts the bounds of a library that only
-// several requests reach: its templates, its collections, its icons and the
-// size of its record.
+// several requests reach: its templates, its collections and the size of its
+// record.
 func TestBuilderTemplateLibraryLimits(t *testing.T) {
 	harness := newBuilderHarness(t)
 
@@ -1079,7 +1060,7 @@ func TestBuilderTemplateLibraryLimits(t *testing.T) {
 	harness.addTemplates(builderTestOwner, names...)
 
 	one := builderJSON(t, builderTemplateCreateRequest{
-		Templates: []builderTemplateContent{builderTemplateContentOf("One more", "")}, Collection: nil, Icons: nil,
+		Templates: []builderTemplateContent{builderTemplateContentOf("One more", "")}, Collection: nil,
 	})
 
 	recorder := harness.post("/items", one)
@@ -1098,39 +1079,15 @@ func TestBuilderTemplateLibraryLimits(t *testing.T) {
 		t.Fatalf("the 51st collection = %d %s", recorder.Code, recorder.Body)
 	}
 
-	// Room for templates again, each with an icon of its own.
+	// Room for templates again.
 	everything := builderTemplateSelection{Templates: builderTemplateIDs(harness.templates(builderTestOwner)), Collections: nil}
 
 	if cleared := harness.post("/delete", builderJSON(t, everything)); cleared.Code != http.StatusOK {
 		t.Fatalf("emptying the library = %d %s", cleared.Code, cleared.Body)
 	}
 
-	drawn := builderTemplateCreateRequest{Templates: nil, Collection: nil, Icons: map[string]bdoc.Icon{}}
-
-	for i := range bapi.MaxLibraryTemplateIcons + 1 {
-		id, icon := builderTemplateIcon(t, 300+i)
-		drawn.Icons[id] = icon
-		drawn.Templates = append(drawn.Templates, builderTemplateContentOf("Drawn "+strconv.Itoa(i), id))
-	}
-
-	recorder = harness.post("/items", builderJSON(t, drawn))
-	if recorder.Code != http.StatusRequestEntityTooLarge || builderMessage(t, recorder) != "a library holds at most 50 custom icons" {
-		t.Fatalf("51 icons = %d %.300s", recorder.Code, recorder.Body)
-	}
-
-	drawn.Templates = drawn.Templates[:bapi.MaxLibraryTemplateIcons]
-
-	if added := harness.post("/items", builderJSON(t, drawn)); added.Code != http.StatusCreated {
-		t.Fatalf("50 icons = %d %.300s", added.Code, added.Body)
-	}
-
-	list := harness.templates(builderTestOwner)
-	if len(list.Icons) != bapi.MaxLibraryTemplateIcons || list.Limits.Icons != len(list.Icons) {
-		t.Fatalf("the listing carries %d icons, want %d", len(list.Icons), bapi.MaxLibraryTemplateIcons)
-	}
-
 	// The record itself: templates of close to 16 KiB each fill 512 KiB.
-	heavy := builderTemplateCreateRequest{Templates: nil, Collection: nil, Icons: nil}
+	heavy := builderTemplateCreateRequest{Templates: nil, Collection: nil}
 
 	for i := range 40 {
 		content := builderTemplateContentOf("Heavy "+strconv.Itoa(i), "")
@@ -1349,7 +1306,7 @@ func TestBuilderTemplateDamagedLibrary(t *testing.T) {
 	list := harness.templates(builderTestOwner)
 
 	if !list.Damaged || list.Owner != builderTestOwner || len(list.Templates) != 0 || list.Templates == nil ||
-		len(list.Collections) != 0 || list.Collections == nil || len(list.Icons) != 0 || list.Limits.Templates != bapi.MaxLibraryTemplates {
+		len(list.Collections) != 0 || list.Collections == nil || list.Limits.Templates != bapi.MaxLibraryTemplates {
 		t.Fatalf("the listing of a damaged library = %+v", list)
 	}
 
@@ -1361,7 +1318,7 @@ func TestBuilderTemplateDamagedLibrary(t *testing.T) {
 
 	item := builderJSON(t, builderTemplateContentOf("Changed", ""))
 	items := builderJSON(t, builderTemplateCreateRequest{
-		Templates: []builderTemplateContent{builderTemplateContentOf("New", "")}, Collection: nil, Icons: nil,
+		Templates: []builderTemplateContent{builderTemplateContentOf("New", "")}, Collection: nil,
 	})
 
 	for _, request := range []builderRequest{
@@ -1535,7 +1492,7 @@ func TestBuilderTemplateOutOfSpace(t *testing.T) {
 
 	item := builderJSON(t, builderTemplateContentOf("Changed", ""))
 	items := builderJSON(t, builderTemplateCreateRequest{
-		Templates: []builderTemplateContent{builderTemplateContentOf("New", "")}, Collection: nil, Icons: nil,
+		Templates: []builderTemplateContent{builderTemplateContentOf("New", "")}, Collection: nil,
 	})
 
 	requests := []builderRequest{

@@ -677,6 +677,7 @@
   } from '@/builder/focusMode.js';
   import { formatTimestamp } from '@/builder/format.js';
   import { followHeaderLabels } from '@/builder/headerLabels.js';
+  import { iconLibrary } from '@/builder/iconLibrary.js';
   import { createDraftStore } from '@/builder/idb.js';
   import { uniqueName } from '@/builder/ids.js';
   import { followShortcutSettings } from '@/builder/keymap.js';
@@ -701,6 +702,7 @@
   } from '@/builder/share.js';
   import {
     diagramFile,
+    downloadedDiagram,
     queuedDiagram,
     registerOpenDraft,
   } from '@/builder/session.js';
@@ -1101,11 +1103,20 @@
   let listingErrorSeq = 0;
   const listed = ref(false);
 
+  // Reads the server's icon library, which draws the custom icons nodes and
+  // templates name. A library that cannot be read leaves the built-in icons
+  // drawn, and the Custom icons dialog says why.
+  function loadIcons() {
+    iconLibrary.load().catch(() => {});
+  }
+
   // With keepError, the page alert keeps saying what failed before.
   async function refresh({ keepError = false } = {}) {
     const errors = store.errorSeq;
     // The template library is read with the lists: its tab is one of
     // theirs. It says itself when it cannot be read.
+    loadIcons();
+
     const current = Promise.all([
       store.fetchDrafts({ keepError }),
       store.fetchDocuments(),
@@ -1158,6 +1169,7 @@
       }
       if (editing.value) {
         store.fetchTemplates();
+        loadIcons();
         return;
       }
       if (store.error && store.errorSeq !== listingErrorSeq) {
@@ -1183,9 +1195,11 @@
     }
 
     // The palette of the draft that opens lists the template library as
-    // it is now.
+    // it is now, and its nodes draw the icon library's icons as they are
+    // now.
     if (now && !before) {
       store.fetchTemplates();
+      loadIcons();
     }
   });
 
@@ -1911,9 +1925,9 @@
         ),
     }[mode]?.();
 
-    templateRequest.value = template
-      ? { mode, template, icons: store.templates.icons }
-      : null;
+    // A template of a library names its custom icon, which the icon
+    // library resolves: it comes with no copies of icons.
+    templateRequest.value = template ? { mode, template, icons: null } : null;
 
     return Boolean(template);
   }
@@ -2131,6 +2145,7 @@
   async function afterSignIn() {
     if (editing.value) {
       store.fetchTemplates();
+      loadIcons();
     } else {
       refresh();
     }
@@ -2345,10 +2360,11 @@
   }
 
   // The file Download saves for a version this tab holds: the diagram as it
-  // is shown, or as a closed tab's changes leave it.
+  // is shown, or as a closed tab's changes leave it, with a copy of every
+  // custom icon it uses (see downloadedDiagram).
   async function downloadVersion(row) {
     if (row.where === 'this') {
-      return diagramFile(store.doc);
+      return diagramFile(await downloadedDiagram(store.doc));
     }
 
     const record = await createDraftStore()
@@ -2356,7 +2372,7 @@
       .catch(() => null);
     const doc = record ? queuedDiagram(record) : null;
 
-    return doc ? diagramFile(doc) : null;
+    return doc ? diagramFile(await downloadedDiagram(doc)) : null;
   }
 
   // --- header -----------------------------------------------------------------

@@ -843,14 +843,14 @@ function hexColorField(defs) {
 }
 
 // The custom icon of a device or a group: the definition itself, as for a
-// color, so the field's own schema says an icon id is what it takes.
+// color, so the field's own schema says an icon name is what it takes.
 function iconRefField(defs) {
   return field(defs.iconRef, { type: 'string' });
 }
 
 // What the Custom icon field says of itself, on a device and on a group.
 const CUSTOM_ICON_HELP =
-  'An image of your own, drawn in place of the icon. The diagram keeps a copy, so it shows wherever the diagram is opened.';
+  "An image of the server's icon library, drawn in place of the icon. The node names it, so a renamed icon keeps showing.";
 
 // What the fields of a device's form say of themselves. A device on the
 // canvas takes a new icon or color at once, and its hostname with Apply. A
@@ -875,7 +875,7 @@ const DEVICE_HELP = {
       'Name new devices start from. A number is added when the name is taken.',
     iconKey:
       'Icon drawn on the canvas and in Add nodes. A custom icon, when set, is drawn in its place.',
-    icon: 'An image of your own, drawn in place of the icon. The template keeps a copy, so it shows wherever the template is used.',
+    icon: "An image of the server's icon library, drawn in place of the icon. Devices made from the template name it too.",
     outlineColor: 'Border color of the node on the canvas.',
     fillColor:
       'Background color of the node on the canvas. Text and icon turn black or white to stay readable.',

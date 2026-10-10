@@ -242,6 +242,7 @@
   import { NODE_TIP } from './nodes/nodeTooltip.js';
 
   import { canvasHints, focusLost, shortcutLabel } from '@/builder/commands.js';
+  import { iconLibrary } from '@/builder/iconLibrary.js';
   import { nodeIssueSummaries } from '@/builder/issues.js';
   import {
     boundsOf,
@@ -686,10 +687,14 @@
   // connections it touches, the selection only those it selects or
   // deselects, and a new Tab stop only the old and the new one: the rest
   // stay the same objects (see keepUnchanged, withSelection and
-  // withTabStop).
+  // withTabStop). Custom icons resolve to the diagram's copies, else to the
+  // server's icon library, whose reactive state the graph follows too.
   const baseNodes = computed((previous) =>
     keepUnchanged(
-      toFlowNodes(store.doc, { issues: nodeIssues.value }),
+      toFlowNodes(store.doc, {
+        issues: nodeIssues.value,
+        library: iconLibrary,
+      }),
       previous,
     ),
   );

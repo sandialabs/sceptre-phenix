@@ -445,36 +445,28 @@ func TestValidateRejects(t *testing.T) {
 			wantMsg: `edges[1].lineStyle: unknown line style "Dashed"`,
 		},
 		{
-			name:    "device custom icon the document does not carry",
+			name:    "device custom icon that is an icon id",
 			mutate:  func(d *builder.Document) { nodeWithHostname(d, "router").Device.Icon = iconFixtureID },
-			wantMsg: `nodes[1].device.icon: unknown custom icon "` + iconFixtureID[:64] + `..."`,
+			wantMsg: `nodes[1].device.icon: icon name "` + iconFixtureID[:64] + `..." must be 1 to 64 letters`,
 		},
 		{
-			name: "device custom icon that is a built-in key",
+			name:    "group custom icon with a space",
+			mutate:  func(d *builder.Document) { d.NodeByID(idGrpRack).Group.Icon = "plc icon" },
+			wantMsg: `nodes[0].group.icon: icon name "plc icon" must be 1 to 64 letters`,
+		},
+		{
+			name: "custom icon whose key is an icon id",
 			mutate: func(d *builder.Document) {
 				d.Icons = map[string]builder.Icon{iconFixtureID: {Data: iconFixtureData}}
-				nodeWithHostname(d, "router").Device.Icon = "server"
 			},
-			wantMsg: `nodes[1].device.icon: unknown custom icon "server"`,
-		},
-		{
-			name:    "group custom icon the document does not carry",
-			mutate:  func(d *builder.Document) { d.NodeByID(idGrpRack).Group.Icon = iconFixtureID },
-			wantMsg: `nodes[0].group.icon: unknown custom icon`,
-		},
-		{
-			name: "custom icon whose key is not its data's",
-			mutate: func(d *builder.Document) {
-				d.Icons = map[string]builder.Icon{"sha256:" + strings.Repeat("0", 64): {Data: iconFixtureData}}
-			},
-			wantMsg: "icons: icon \"sha256:" + strings.Repeat("0", 57) + "...\" does not match its data",
+			wantMsg: `icons: icon name "` + iconFixtureID[:64] + `..." must be 1 to 64 letters`,
 		},
 		{
 			name: "custom icon that is not a PNG",
 			mutate: func(d *builder.Document) {
-				d.Icons = map[string]builder.Icon{iconFixtureID: {Data: "PHN2Zy8+"}}
+				d.Icons = map[string]builder.Icon{iconFixtureName: {Data: "PHN2Zy8+"}}
 			},
-			wantMsg: "is not an accepted PNG: the image is not a PNG",
+			wantMsg: `icon "plc-icon" is not an accepted PNG: the image is not a PNG`,
 		},
 		{
 			name: "unresolved include with whitespace",
@@ -550,11 +542,23 @@ func TestValidateAllowsPresentationFields(t *testing.T) {
 		}
 	}
 
+	// A custom icon the document does not carry names an icon of a server's
+	// icon library, and is valid, also when it is named like a built-in key.
+	for _, name := range []string{"elsewhere", "server", iconFixtureName} {
+		doc := loadDocumentFixture(t, "document.json")
+		nodeWithHostname(doc, "router").Device.Icon = name
+		doc.NodeByID(idGrpRack).Group.Icon = name
+
+		if err := doc.Validate(); err != nil {
+			t.Fatalf("custom icon %q the document does not carry is refused: %v", name, err)
+		}
+	}
+
 	// An icon nothing uses is valid: the editor drops it on its next edit.
 	// A group's description is free text, and the colors a note, a group, a
 	// network and an edge already had are not checked.
 	doc := loadDocumentFixture(t, "document.json")
-	doc.Icons = map[string]builder.Icon{iconFixtureID: {Data: iconFixtureData}}
+	doc.Icons = map[string]builder.Icon{iconFixtureName: {Data: iconFixtureData}}
 	doc.NodeByID(idGrpRack).Group.Description = "one\ntwo\t" + strings.Repeat("long ", 500)
 	doc.NodeByID(idGrpRack).Group.Color = "papayawhip"
 	doc.Networks[0].Color = "#abc"

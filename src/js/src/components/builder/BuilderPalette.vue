@@ -119,7 +119,7 @@
             v-on="tipEvents(entry.description)">
             <builder-icon
               :name="entry.iconKey"
-              :src="iconSrc(entry.icon, iconsOf(entry))"
+              :src="iconSrc(entry.icon, iconsOf(entry), iconLibrary)"
               :size="18" />
             <span class="builder-palette__label">{{ entry.name }}</span>
           </button>
@@ -173,11 +173,11 @@
 
   import { PALETTE } from '@/builder/catalog.js';
   import { focusLost, runCommand } from '@/builder/commands.js';
+  import { iconLibrary } from '@/builder/iconLibrary.js';
   import { iconSrc } from '@/builder/icons.js';
   import { useBuilderStore } from '@/builder/store.js';
   import {
     diagramTemplateActions,
-    templateIcons,
     templatesFull,
   } from '@/builder/templates.js';
   import {
@@ -204,10 +204,11 @@
     diagramTemplateActions(store.templateRights),
   );
 
-  // The custom icons kept where an entry's template is: the diagram's, or
-  // the library's.
+  // The copies of icons kept where an entry's template is: the diagram's.
+  // The template library keeps none: its templates' icons are the icon
+  // library's.
   function iconsOf(entry) {
-    return entry.source === 'diagram' ? store.doc.icons : store.templates.icons;
+    return entry.source === 'diagram' ? store.doc.icons : null;
   }
 
   // The library's first read is under way, or the last read failed: Retry
@@ -306,13 +307,11 @@
     }
   }
 
-  // A copy of a template of the diagram, with the custom icon it names,
+  // A copy of a template of the diagram, naming the custom icon it names,
   // goes to the user's library. The template stays in the diagram.
   async function saveToLibrary(entry) {
     try {
-      await store.createLibraryTemplates([entry.template], {
-        icons: templateIcons(entry.template, store.doc.icons),
-      });
+      await store.createLibraryTemplates([entry.template]);
       store.announce(`Saved ${entry.name} to your library.`);
     } catch (error) {
       store.setError(

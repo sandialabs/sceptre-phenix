@@ -42,22 +42,16 @@ function fakeHost(doc, nodeId, init = {}) {
     issues: [],
     canRedo: false,
     canCreateDrafts: false,
-    iconShelf: new Map(),
     commits: [],
     said: [],
     commit(next, label) {
-      host.doc = settleIcons(next, host.iconShelf).doc;
+      host.doc = settleIcons(next, null);
       host.commits.push(label);
 
       return true;
     },
     announce(message) {
       host.said.push(message);
-    },
-    shelveIcons(icons) {
-      Object.entries(icons).forEach(([id, entry]) =>
-        host.iconShelf.set(id, entry),
-      );
     },
     addInterface() {},
     removeInterface() {},
@@ -170,40 +164,34 @@ describe('the Inspector on a host of its own', () => {
     expect(host.commits).toEqual([]);
   });
 
-  test('reads and keeps custom icons through the host', async () => {
+  test('reads the copies of icons the host’s document carries', async () => {
     const { doc, node } = oneDevice();
     const host = fakeHost(doc, node.id);
     const { provides } = await openInspector({ host });
     const icons = provides[INSPECTOR_ICONS];
 
-    expect(icons.entry(ICON_KEY)).toBeUndefined();
+    expect(icons.entry('plc')).toBeUndefined();
     expect(icons.diagram()).toEqual([]);
 
-    icons.shelve(ICON_KEY, { name: 'plc', data: ICON_DATA });
+    host.doc = { ...host.doc, icons: { plc: { data: ICON_DATA } } };
 
-    expect(host.iconShelf.get(ICON_KEY)).toEqual({
-      name: 'plc',
-      data: ICON_DATA,
-    });
-    expect(icons.entry(ICON_KEY)).toEqual({ name: 'plc', data: ICON_DATA });
+    expect(icons.entry('plc')).toEqual({ name: 'plc', data: ICON_DATA });
+    expect(icons.entry('PLC')).toBeUndefined();
+    expect(icons.entry(ICON_KEY)).toBeUndefined();
+    expect(icons.diagram()).toEqual([{ name: 'plc', data: ICON_DATA }]);
   });
 
-  // A device's look is applied without Apply, through the host's commit,
-  // which makes the document carry the icon.
+  // A device's look is applied without Apply, through the host's commit.
+  // The device names the icon; the document carries no copy of it.
   test('a custom icon chosen in the form is committed to the host at once', async () => {
     const { doc, node } = oneDevice();
     const host = fakeHost(doc, node.id);
-
-    host.shelveIcons({ [ICON_KEY]: { name: 'plc', data: ICON_DATA } });
-
     const { exposed } = await openInspector({ host }, (data) => {
-      data.icon = ICON_KEY;
+      data.icon = 'plc';
     });
 
-    expect(findNode(host.doc, node.id).device.icon).toBe(ICON_KEY);
-    expect(host.doc.icons).toEqual({
-      [ICON_KEY]: { name: 'plc', data: ICON_DATA },
-    });
+    expect(findNode(host.doc, node.id).device.icon).toBe('plc');
+    expect('icons' in host.doc).toBe(false);
     expect(host.commits).toEqual([
       'Changed the custom icon of Device plc to plc',
     ]);

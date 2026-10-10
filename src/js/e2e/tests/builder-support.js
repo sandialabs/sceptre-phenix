@@ -851,8 +851,8 @@ async function libraryChange(request, method, path, options = {}) {
   return response;
 }
 
-// Reads the library of the user `request` is: owner, templates, collections
-// and icons.
+// Reads the library of the user `request` is: owner, templates and
+// collections.
 async function readLibrary(request) {
   const response = await request.get(LIBRARY);
   expect(response.ok(), await response.text()).toBeTruthy();
@@ -864,12 +864,7 @@ async function readLibrary(request) {
 // description?}) a collection that holds them, and schedules what it made
 // for deletion. Returns the library's owner, the ids of the new templates,
 // in order, and the id of the collection.
-async function seedTemplates(
-  request,
-  tracker,
-  templates,
-  { collection, icons } = {},
-) {
+async function seedTemplates(request, tracker, templates, { collection } = {}) {
   const { owner } = await readLibrary(request);
   const response = await libraryChange(
     request,
@@ -879,7 +874,6 @@ async function seedTemplates(
       data: {
         templates,
         ...(collection ? { collection } : {}),
-        ...(icons ? { icons } : {}),
       },
     },
   );
@@ -962,6 +956,12 @@ class Tracker {
     this.configs = [];
     // The templates and collections added to a library, by its owner.
     this.libraries = new Map();
+    // The names of the icons added to the server's icon library.
+    this.icons = new Set();
+  }
+
+  icon(name) {
+    this.icons.add(name);
   }
 
   library(owner) {
@@ -1008,6 +1008,23 @@ class Tracker {
       try {
         const body = await response.json();
         this.draft(body.draft || body);
+      } catch {
+        // Response bodies are unavailable once the page has closed.
+      }
+    });
+
+    // What the page adds to the icon library: one deleted by any of its
+    // names goes with all of them.
+    page.on('response', async (response) => {
+      if (
+        !isApi(response, 'POST', '/builder/icons') ||
+        response.status() !== 201
+      ) {
+        return;
+      }
+
+      try {
+        this.icon((await response.json()).name);
       } catch {
         // Response bodies are unavailable once the page has closed.
       }
@@ -1068,6 +1085,11 @@ class Tracker {
           },
         },
       ).catch(() => {});
+    }
+
+    // Names the library no longer has are answered 404, and ignored.
+    for (const name of this.icons) {
+      await request.delete(iconPath(name)).catch(() => {});
     }
   }
 }
@@ -1411,13 +1433,37 @@ function pngOf(width, height, color) {
   ]);
 }
 
-// An icon as a document carries it: its id, the digest of its bytes, and
-// its entry.
-function iconOf(bytes, name) {
+// A name for an icon of the test's own: the server's icon library is
+// shared by every test and every worker, and a name is unique in it.
+function iconName(prefix = 'icon') {
+  return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+// The route of an icon of the library, by one of its names.
+function iconPath(name) {
+  return `${API}/builder/icons/${encodeURIComponent(name)}`;
+}
+
+// An icon: its name (one of the test's own unless given), the id the
+// server gives its bytes (their digest), its data, and its entry as a
+// document carries a copy of it, under its name.
+function iconOf(bytes, name = iconName()) {
   const id = `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}`;
   const data = bytes.toString('base64');
 
-  return { id, data, entry: name ? { name, data } : { data } };
+  return { name, id, data, entry: { data } };
+}
+
+// Uploads `icon` (see iconOf) to the server's icon library, and schedules
+// it for deletion. Returns the icon as the server answers.
+async function seedIcon(request, tracker, icon) {
+  const response = await request.post(`${API}/builder/icons`, {
+    data: { name: icon.name, data: icon.data },
+  });
+  expect(response.status(), await response.text()).toBe(201);
+  tracker.icon(icon.name);
+
+  return response.json();
 }
 
 // A color of the test's own: no theme color, and neither black, white nor
@@ -1464,7 +1510,9 @@ module.exports = {
   expectDetail,
   expectNoFatal,
   expectNoInvisibleText,
+  iconName,
   iconOf,
+  iconPath,
   invisibleText,
   isApi,
   knownDefect,
@@ -1480,6 +1528,7 @@ module.exports = {
   recordAnnouncements,
   seedConfig,
   seedDraft,
+  seedIcon,
   seedTemplates,
   signIn,
   summaryText,

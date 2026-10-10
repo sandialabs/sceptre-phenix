@@ -126,6 +126,7 @@
   import BuilderOutlineList from './BuilderOutlineList.vue';
 
   import { nodeIconKey } from '@/builder/catalog.js';
+  import { iconLibrary } from '@/builder/iconLibrary.js';
   import { iconSrc } from '@/builder/icons.js';
   import { findNode, includedReason, networkRefusal } from '@/builder/model.js';
   import { outlineHint, textFieldCommand } from '@/builder/commands.js';
@@ -255,9 +256,9 @@
   }
 
   // The address of the row's custom icon, drawn in place of that icon, or
-  // '' for a row without one.
+  // '' for a row without one or one nothing resolves (see iconSrc).
   function iconSrcFor(item) {
-    return item.icon ? iconSrc(item.icon, store.doc.icons) : '';
+    return item.icon ? iconSrc(item.icon, store.doc.icons, iconLibrary) : '';
   }
 
   function isSelected(id) {

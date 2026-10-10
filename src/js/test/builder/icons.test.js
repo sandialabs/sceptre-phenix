@@ -4,7 +4,7 @@ import {
   ICON_FILE_NOT_CONVERTED,
   ICON_FILE_NOT_IMAGE,
   ICON_FILE_TOO_LARGE,
-  ICON_ID,
+  ICON_NAME,
   IconFileError,
   MAX_DOCUMENT_ICONS,
   MAX_ICON_BYTES,
@@ -14,7 +14,7 @@ import {
   MAX_ICON_PIXELS,
   MAX_ICON_UPLOAD_BYTES,
   decodeIconData,
-  droppedIconsNote,
+  embedIcons,
   encodeIconData,
   iconCanvasSize,
   iconDetails,
@@ -24,11 +24,14 @@ import {
   iconRefs,
   iconSizeText,
   iconSrc,
+  indexIcons,
+  isIconName,
   isIconSrc,
-  libraryTitle,
   rasterizeIcon,
+  resolveIcon,
   settleIcons,
   sortIcons,
+  usageText,
 } from '@/builder/icons.js';
 import { addNode, createDocument } from '@/builder/model.js';
 import bundle from '@/builder/schema/builder-v1.schema.json';
@@ -64,35 +67,57 @@ describe('custom icon limits', () => {
     const icon = bundle.$defs.icon;
 
     expect(MAX_DOCUMENT_ICONS).toBe(bundle.properties.icons.maxProperties);
-    expect(MAX_ICON_NAME_BYTES).toBe(icon.properties.name.maxLength);
     expect(MAX_ICON_DATA_LENGTH).toBe(icon.properties.data.maxLength);
     expect(MAX_ICON_DATA_LENGTH).toBe(54616);
+    expect(Object.keys(icon.properties)).toEqual(['data']);
     expect(icon.description).toBe(
       `Custom icon: a PNG of at most ${MAX_ICON_PIXELS} by ${MAX_ICON_PIXELS} pixels and ${MAX_ICON_BYTES} bytes.`,
     );
-    expect(`^${ICON_ID.source.slice(1, -1)}$`).toBe(
+    expect(`^${ICON_NAME.source.slice(1, -1)}$`).toBe(
       bundle.properties.icons.propertyNames.pattern,
     );
     expect(bundle.$defs.iconRef.pattern).toBe(
-      `^(${ICON_ID.source.slice(1, -1)})?$`,
+      `^(${ICON_NAME.source.slice(1, -1)})?$`,
     );
+    expect(MAX_ICON_NAME_BYTES).toBe(64);
   });
 
   test('an icon id is sha256: and the digest of the bytes', () => {
     expect(iconId(fixture)).toBe(ICON_KEY);
-    expect(ICON_ID.test(ICON_KEY)).toBe(true);
-    expect(ICON_ID.test(iconId(new Uint8Array()))).toBe(true);
+    expect(iconId(new Uint8Array())).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
 
-    for (const id of [
-      '',
-      'server',
-      ICON_KEY.toUpperCase(),
-      `${ICON_KEY}0`,
-      ICON_KEY.slice(0, -1),
-      `${ICON_KEY}\n`,
-      `data:image/png;base64,${ICON_DATA}`,
+  test('an icon name is what a phenix config name may hold', () => {
+    for (const name of [
+      'a',
+      'plc',
+      'PLC',
+      'plc-2',
+      'plc_2',
+      'alice@site',
+      'v1.2',
+      '...',
+      '.hidden',
+      'n'.repeat(64),
     ]) {
-      expect(ICON_ID.test(id), id).toBe(false);
+      expect(isIconName(name), name).toBe(true);
+    }
+
+    for (const name of [
+      '',
+      '.',
+      '..',
+      'plc icon',
+      'plc/icon',
+      'ñandú',
+      'n'.repeat(65),
+      ICON_KEY,
+      `plc\n`,
+      undefined,
+      null,
+      7,
+    ]) {
+      expect(isIconName(name), String(name)).toBe(false);
     }
   });
 });
@@ -403,22 +428,22 @@ describe('iconPNGProblem', () => {
   });
 });
 
-// An icon of its own bytes: a PNG of one color, with its id and its entry.
+// An icon of its own bytes: a PNG of one color, with its name and its entry.
 function iconOf(pixel, name) {
   const bytes = png(2, 2, pixel);
   const data = base64Of(bytes);
 
-  return { id: iconId(bytes), data, entry: name ? { name, data } : { data } };
+  return { name, id: iconId(bytes), data, entry: { data } };
 }
 
 const RED = iconOf([255, 0, 0, 255], 'red');
 const BLUE = iconOf([0, 0, 255, 255], 'blue');
 
-// A document with a device that names each of `ids` as its custom icon.
-function documentUsing(ids, icons) {
+// A document with a device that names each of `names` as its custom icon.
+function documentUsing(names, icons) {
   let doc = createDocument({ id: 'd0000000-0000-4000-8000-000000000001' });
 
-  ids.forEach((icon, index) => {
+  names.forEach((icon, index) => {
     doc = addNode(doc, {
       kind: 'device',
       hostname: `host-${index}`,
@@ -429,6 +454,14 @@ function documentUsing(ids, icons) {
   return icons ? { ...doc, icons } : doc;
 }
 
+// The icon library as icons.js sees it: lookup by name or alias, ignoring
+// case (see createIconLibrary).
+function libraryOf(icons) {
+  const index = indexIcons(icons);
+
+  return { lookup: (name) => index.get(String(name).toLowerCase()) || null };
+}
+
 const errorsOf = (doc) =>
   validateDocument(doc).filter((issue) => issue.level === 'error');
 
@@ -436,7 +469,7 @@ describe('iconSrc', () => {
   const PREFIX = 'data:image/png;base64,';
 
   test('is a PNG data URL of the icon’s data', () => {
-    const src = iconSrc(ICON_KEY, { [ICON_KEY]: { data: ICON_DATA } });
+    const src = iconSrc('plc', { plc: { data: ICON_DATA } });
 
     expect(src).toBe(`${PREFIX}${ICON_DATA}`);
     expect(isIconSrc(src)).toBe(true);
@@ -445,88 +478,98 @@ describe('iconSrc', () => {
   // Every node that shows the icon is given its address on every edit: the
   // same text, not one built again.
   test('gives the same address while the data is the same', () => {
-    const icons = { [RED.id]: RED.entry };
-    const first = iconSrc(RED.id, icons);
+    const icons = { red: RED.entry };
+    const first = iconSrc('red', icons);
 
-    expect(iconSrc(RED.id, { [RED.id]: { ...RED.entry } })).toBe(first);
-    // Other data under that id gives the address of that data.
-    expect(iconSrc(RED.id, { [RED.id]: BLUE.entry })).toBe(
-      `${PREFIX}${BLUE.data}`,
+    expect(iconSrc('red', { red: { ...RED.entry } })).toBe(first);
+    // Other data under that name gives the address of that data.
+    expect(iconSrc('red', { red: BLUE.entry })).toBe(`${PREFIX}${BLUE.data}`);
+    expect(iconSrc('red', icons)).toBe(first);
+  });
+
+  test('resolves a copy the document carries before the icon library', () => {
+    const library = libraryOf([
+      { name: 'Red-2', aliases: ['red'], data: BLUE.data },
+    ]);
+
+    expect(iconSrc('red', { red: RED.entry }, library)).toBe(
+      `${PREFIX}${RED.data}`,
     );
-    expect(iconSrc(RED.id, icons)).toBe(first);
+    // The library by an alias, in any case, and by the name it has now.
+    expect(iconSrc('RED', null, library)).toBe(`${PREFIX}${BLUE.data}`);
+    expect(iconSrc('red-2', {}, library)).toBe(`${PREFIX}${BLUE.data}`);
+    // Nothing resolves the name: the node draws its built-in icon.
+    expect(iconSrc('green', { red: RED.entry }, library)).toBe('');
+    expect(resolveIcon('green', null, library)).toBeNull();
+    expect(resolveIcon('red', { red: RED.entry }, library)).toBe(RED.entry);
   });
 
   test.each([
-    ['no id', '', { '': { data: ICON_DATA } }],
-    ['an id that is none', 'server', { server: { data: ICON_DATA } }],
-    ['an id the icons lack', BLUE.id, { [RED.id]: RED.entry }],
-    ['no icons', RED.id, undefined],
-    ['icons that are no object', RED.id, 'icons'],
-    ['a key of every object', '__proto__', {}],
-    ['an entry without data', RED.id, { [RED.id]: { name: 'red' } }],
-    ['an entry that is null', RED.id, { [RED.id]: null }],
-    ['data that is no text', RED.id, { [RED.id]: { data: 7 } }],
-    ['empty data', RED.id, { [RED.id]: { data: '' } }],
-    ['data with a space in it', RED.id, { [RED.id]: { data: 'iVBO Rw0K' } }],
+    ['no name', '', { '': { data: ICON_DATA } }],
+    ['a name that is none', 'a b', { 'a b': { data: ICON_DATA } }],
+    ['an icon id', ICON_KEY, { [ICON_KEY]: { data: ICON_DATA } }],
+    ['a name the icons lack', 'blue', { red: RED.entry }],
+    ['no icons', 'red', undefined],
+    ['icons that are no object', 'red', 'icons'],
+    ['a key of every object', 'constructor', {}],
+    ['an entry without data', 'red', { red: { name: 'red' } }],
+    ['an entry that is null', 'red', { red: null }],
+    ['data that is no text', 'red', { red: { data: 7 } }],
+    ['empty data', 'red', { red: { data: '' } }],
+    ['data with a space in it', 'red', { red: { data: 'iVBO Rw0K' } }],
     [
       'data that ends a URL and starts markup',
-      RED.id,
-      { [RED.id]: { data: 'AAAA"><script>alert(1)</script>' } },
+      'red',
+      { red: { data: 'AAAA"><script>alert(1)</script>' } },
     ],
-    [
-      'data that is a URL',
-      RED.id,
-      { [RED.id]: { data: 'javascript:alert(1)' } },
-    ],
-    ['URL-safe base64', RED.id, { [RED.id]: { data: 'iVBORw0KGgo-_w==' } }],
+    ['data that is a URL', 'red', { red: { data: 'javascript:alert(1)' } }],
+    ['URL-safe base64', 'red', { red: { data: 'iVBORw0KGgo-_w==' } }],
     [
       'data past the largest icon',
-      RED.id,
-      { [RED.id]: { data: 'A'.repeat(MAX_ICON_DATA_LENGTH + 4) } },
+      'red',
+      { red: { data: 'A'.repeat(MAX_ICON_DATA_LENGTH + 4) } },
     ],
     // The browser is given only a PNG the Builder accepts to decode.
-    ['base64 that is no image', RED.id, { [RED.id]: { data: 'AAAA' } }],
+    ['base64 that is no image', 'red', { red: { data: 'AAAA' } }],
     [
       'an image of another format',
-      RED.id,
-      { [RED.id]: { data: 'R0lGODlhAQABAAAAACwAAAAAAQABAAA=' } },
+      'red',
+      { red: { data: 'R0lGODlhAQABAAAAACwAAAAAAQABAAA=' } },
     ],
     [
       'a PNG larger than an icon',
-      RED.id,
-      { [RED.id]: { data: base64Of(png(97, 1)) } },
+      'red',
+      { red: { data: base64Of(png(97, 1)) } },
     ],
     [
       'a PNG that says it is 50000 pixels wide',
-      RED.id,
+      'red',
       {
-        [RED.id]: {
+        red: {
           data: base64Of(concat(SIGNATURE, header(50000, 50000), pixels, end)),
         },
       },
     ],
     [
       'a PNG with a text chunk',
-      RED.id,
+      'red',
       {
-        [RED.id]: {
+        red: {
           data: base64Of(
             concat(SIGNATURE, head, chunk('tEXt', [65, 0, 66]), pixels, end),
           ),
         },
       },
     ],
-  ])('is nothing for %s', (_, id, icons) => {
-    expect(iconSrc(id, icons)).toBe('');
+  ])('is nothing for %s', (_, name, icons) => {
+    expect(iconSrc(name, icons)).toBe('');
     // And again: what is remembered of the data is that it gives nothing.
-    expect(iconSrc(id, icons)).toBe('');
+    expect(iconSrc(name, icons)).toBe('');
   });
 
   test('gives an address again once the data is an icon', () => {
-    expect(iconSrc(RED.id, { [RED.id]: { data: 'AAAA' } })).toBe('');
-    expect(iconSrc(RED.id, { [RED.id]: RED.entry })).toBe(
-      `${PREFIX}${RED.data}`,
-    );
+    expect(iconSrc('red', { red: { data: 'AAAA' } })).toBe('');
+    expect(iconSrc('red', { red: RED.entry })).toBe(`${PREFIX}${RED.data}`);
   });
 
   test.each([
@@ -551,254 +594,197 @@ describe('iconRefs', () => {
   test('names the icons of devices, groups and templates, each once', () => {
     const doc = {
       nodes: [
-        { kind: 'device', device: { icon: RED.id } },
-        { kind: 'device', device: { icon: RED.id } },
+        { kind: 'device', device: { icon: 'red' } },
+        { kind: 'device', device: { icon: 'red' } },
         { kind: 'device', device: { icon: '' } },
         { kind: 'device', device: {} },
-        { kind: 'group', group: { icon: BLUE.id } },
+        { kind: 'group', group: { icon: 'blue' } },
         { kind: 'switch', switch: { networkId: 'n' } },
         { kind: 'note', note: { text: 'icon' } },
       ],
       templates: [
-        { id: 't', device: { icon: ICON_KEY } },
+        { id: 't', device: { icon: 'plc' } },
         { id: 'u', device: { icon: null } },
         { id: 'v' },
       ],
     };
 
-    expect([...iconRefs(doc)]).toEqual([RED.id, BLUE.id, ICON_KEY]);
+    expect([...iconRefs(doc)]).toEqual(['red', 'blue', 'plc']);
     expect([...iconRefs({})]).toEqual([]);
     expect([...iconRefs(undefined)]).toEqual([]);
   });
 });
 
 describe('settleIcons', () => {
-  test('leaves a document that uses no icon the object it is', () => {
-    const doc = documentUsing([]);
+  test('leaves a document that carries no copy the object it is', () => {
+    const doc = documentUsing(['red']);
 
-    expect(settleIcons(doc, new Map())).toEqual({ doc, dropped: 0 });
-    expect(settleIcons(doc, new Map()).doc).toBe(doc);
+    expect(settleIcons(doc, libraryOf([]))).toBe(doc);
+    expect(settleIcons(doc)).toBe(doc);
     expect('icons' in doc).toBe(false);
   });
 
-  test('leaves a document that carries what it uses the object it is', () => {
-    const doc = documentUsing([RED.id, BLUE.id], {
-      [RED.id]: RED.entry,
-      [BLUE.id]: BLUE.entry,
+  test('leaves a document whose copies the library lacks the object it is', () => {
+    const doc = documentUsing(['red', 'blue'], {
+      red: RED.entry,
+      blue: BLUE.entry,
     });
 
-    expect(settleIcons(doc, null).doc).toBe(doc);
-    expect(settleIcons(doc, new Map([[RED.id, BLUE.entry]])).doc).toBe(doc);
+    expect(settleIcons(doc, null)).toBe(doc);
+    // The library's icon of a name with other bytes: the copy wins.
+    expect(
+      settleIcons(doc, libraryOf([{ name: 'red', data: BLUE.data }])),
+    ).toBe(doc);
   });
 
-  test('copies an icon the document names from the known ones, a map or an object', () => {
-    const doc = documentUsing([RED.id]);
+  // Nothing is ever copied in: a node names its icon, and the library
+  // resolves it.
+  test('adds nothing for an icon the document names and lacks', () => {
+    const doc = documentUsing(['red']);
+    const settled = settleIcons(
+      doc,
+      libraryOf([{ name: 'red', ...RED.entry }]),
+    );
 
-    for (const known of [
-      new Map([[RED.id, RED.entry]]),
-      { [RED.id]: RED.entry },
-    ]) {
-      const settled = settleIcons(doc, known);
+    expect(settled).toBe(doc);
+    expect('icons' in settled).toBe(false);
+  });
 
-      expect(settled.dropped).toBe(0);
-      expect(settled.doc.icons).toEqual({ [RED.id]: RED.entry });
-      expect(settled.doc.nodes).toBe(doc.nodes);
-      expect(errorsOf(settled.doc)).toEqual([]);
-    }
+  test('drops a copy the library holds under that name with the same bytes', () => {
+    const doc = documentUsing(['red', 'blue', 'old'], {
+      red: RED.entry,
+      blue: BLUE.entry,
+      old: RED.entry,
+    });
+    const settled = settleIcons(
+      doc,
+      libraryOf([
+        { name: 'RED', data: RED.data },
+        { name: 'new', aliases: ['old'], data: RED.data },
+        { name: 'blue', data: RED.data },
+      ]),
+    );
 
+    expect(settled.icons).toEqual({ blue: BLUE.entry });
+    expect(settled.nodes).toBe(doc.nodes);
+    expect(errorsOf(settled)).toEqual([]);
     // The document given is not changed.
-    expect('icons' in doc).toBe(false);
+    expect(Object.keys(doc.icons)).toEqual(['red', 'blue', 'old']);
   });
 
-  test('removes an icon no node names any more, and the key with the last one', () => {
-    const both = { [RED.id]: RED.entry, [BLUE.id]: BLUE.entry };
-    const one = settleIcons(documentUsing([BLUE.id], both), null);
+  test('removes a copy no node names any more, and the key with the last one', () => {
+    const both = { red: RED.entry, blue: BLUE.entry };
+    const one = settleIcons(documentUsing(['blue'], both), null);
 
-    expect(one).toMatchObject({ dropped: 0 });
-    expect(one.doc.icons).toEqual({ [BLUE.id]: BLUE.entry });
+    expect(one.icons).toEqual({ blue: BLUE.entry });
 
     const none = settleIcons(documentUsing([], both), null);
 
-    expect(none.dropped).toBe(0);
-    expect('icons' in none.doc).toBe(false);
+    expect('icons' in none).toBe(false);
 
     // An empty or null `icons` goes too.
-    expect('icons' in settleIcons(documentUsing([], {}), null).doc).toBe(false);
-    expect('icons' in settleIcons(documentUsing([], null), null).doc).toBe(
-      false,
-    );
+    expect('icons' in settleIcons(documentUsing([], {}), null)).toBe(false);
+    expect('icons' in settleIcons(documentUsing([], null), null)).toBe(false);
   });
 
-  test('takes the icon off every node and template that names one it cannot get', () => {
+  test('keeps the icon every node and template names, whether or not it resolves', () => {
     const doc = {
-      ...documentUsing([RED.id, BLUE.id, BLUE.id]),
+      ...documentUsing(['red', 'blue']),
+      templates: [{ id: 't', name: 'T', device: { icon: 'gone', spec: {} } }],
+      icons: { gone: RED.entry },
+    };
+    const settled = settleIcons(doc, libraryOf([]));
+
+    expect(settled).toBe(doc);
+    expect(settled.nodes.map((node) => node.device.icon)).toEqual([
+      'red',
+      'blue',
+    ]);
+  });
+
+  test('leaves icons of another shape to the validator', () => {
+    const doc = { ...documentUsing([]), icons: ['x'] };
+
+    expect(settleIcons(doc, null)).toBe(doc);
+  });
+});
+
+describe('embedIcons', () => {
+  test('carries every icon the document uses, from its copies or the library', () => {
+    const doc = {
+      ...documentUsing(['red', 'blue', 'red', 'old']),
       templates: [
-        { id: 't', name: 'T', device: { icon: BLUE.id, spec: {} } },
-        { id: 'u', name: 'U', device: { icon: RED.id, spec: {} } },
+        {
+          id: 'aaaaaaaa-0000-4000-8000-000000000001',
+          name: 'T',
+          device: { icon: 'plc', spec: { general: { hostname: 'plc-t' } } },
+        },
       ],
+      icons: { red: RED.entry, unused: BLUE.entry },
     };
-    const group = addNode(doc, { kind: 'group', title: 'Zone', icon: BLUE.id });
-    const settled = settleIcons(group.doc, new Map([[RED.id, RED.entry]]));
-
-    expect(settled.dropped).toBe(1);
-    expect(settled.doc.icons).toEqual({ [RED.id]: RED.entry });
-    expect(settled.doc.nodes.map((node) => node.device?.icon)).toEqual([
-      RED.id,
-      undefined,
-      undefined,
-      undefined,
+    const library = libraryOf([
+      { name: 'red', data: BLUE.data },
+      { name: 'Blue', data: BLUE.data, canRename: true },
+      { name: 'new', aliases: ['old'], data: RED.data },
     ]);
-    expect(
-      settled.doc.nodes.map((node) => 'icon' in (node.device || {})),
-    ).toEqual([true, false, false, false]);
-    expect('icon' in settled.doc.nodes[3].group).toBe(false);
-    expect(settled.doc.nodes[3].group.title).toBe('Zone');
-    // A node that keeps its icon is the object it was.
-    expect(settled.doc.nodes[0]).toBe(group.doc.nodes[0]);
-    expect(settled.doc.templates).toEqual([
-      { id: 't', name: 'T', device: { spec: {} } },
-      { id: 'u', name: 'U', device: { icon: RED.id, spec: {} } },
-    ]);
-    expect(settled.doc.templates[1]).toBe(group.doc.templates[1]);
-    // The nodes keep the icon of their key.
-    expect(settled.doc.nodes[1].device.iconKey).toBe(
-      group.doc.nodes[1].device.iconKey,
-    );
+    const embedded = embedIcons(doc, library);
+
+    // The document's copy wins over the library's icon of its name; a name
+    // the library knows as an alias is carried under the name the node
+    // uses; a name nothing resolves is left out and said.
+    expect(embedded.doc.icons).toEqual({
+      red: { data: RED.data },
+      blue: { data: BLUE.data },
+      old: { data: RED.data },
+    });
+    expect(embedded.missing).toEqual(['plc']);
+    expect(embedded.left).toEqual([]);
+    expect(errorsOf(embedded.doc)).toEqual([]);
+    // The document given is not changed.
+    expect(doc.icons).toEqual({ red: RED.entry, unused: BLUE.entry });
   });
 
-  test('a template alone keeps the icon it names', () => {
-    const doc = {
-      ...documentUsing([]),
-      templates: [{ id: 't', name: 'T', device: { icon: RED.id, spec: {} } }],
-      icons: { [RED.id]: RED.entry },
-    };
-
-    expect(settleIcons(doc, null).doc).toBe(doc);
-  });
-
-  // Nothing a document would be refused for is ever copied into one. The
-  // last three are under the ids of their own bytes: what refuses them is
-  // what they are.
-  const labelled = concat(
-    SIGNATURE,
-    head,
-    chunk('tEXt', [65, 0, 66]),
-    pixels,
-    end,
-  );
-  const notImage = new Uint8Array([1, 2, 3]);
-  const wide = png(97, 1);
-
-  test.each([
-    ['bytes under another id', RED.id, { data: BLUE.data }],
-    ['data that is no base64', RED.id, { data: '<svg onload="alert(1)"/>' }],
-    ['an entry without data', RED.id, { name: 'red' }],
-    ['no entry', RED.id, undefined],
-    ['data that is no PNG', iconId(notImage), { data: base64Of(notImage) }],
-    ['a PNG with a text chunk', iconId(labelled), { data: base64Of(labelled) }],
-    ['a PNG of 97 pixels', iconId(wide), { data: base64Of(wide) }],
-  ])('does not take %s for an icon', (_, id, entry) => {
-    const settled = settleIcons(documentUsing([id]), new Map([[id, entry]]));
-
-    expect(settled.dropped).toBe(1);
-    expect('icons' in settled.doc).toBe(false);
-    expect('icon' in settled.doc.nodes[0].device).toBe(false);
-    expect(errorsOf(settled.doc)).toEqual([]);
-  });
-
-  test('does not take a value that is no icon id', () => {
-    const settled = settleIcons(
-      documentUsing(['server']),
-      new Map([['server', RED.entry]]),
+  test('a document that uses no icon carries none', () => {
+    const embedded = embedIcons(
+      { ...documentUsing([]), icons: { red: RED.entry } },
+      null,
     );
 
-    expect(settled.dropped).toBe(1);
-    expect('icon' in settled.doc.nodes[0].device).toBe(false);
+    expect('icons' in embedded.doc).toBe(false);
+    expect(embedded.missing).toEqual([]);
   });
 
-  // Only an edited file holds such keys. An edit drops them, and with them
-  // what names them, so the document is one the server accepts again; a key
-  // every object has is never written through.
-  test('drops an entry under a key that is no icon id, with the nodes that name it', () => {
-    const doc = documentUsing(
-      ['__proto__', 'server', RED.id],
-      JSON.parse(
-        `{"__proto__": {"data": "${BLUE.data}"}, "server": {"data": "${BLUE.data}"}, "${RED.id}": {"data": "${RED.data}"}}`,
-      ),
-    );
-
-    expect(Object.keys(doc.icons)).toHaveLength(3);
-
-    const settled = settleIcons(doc, null);
-
-    expect(settled.dropped).toBe(2);
-    expect(Object.keys(settled.doc.icons)).toEqual([RED.id]);
-    expect(Object.getPrototypeOf(settled.doc.icons)).toBe(Object.prototype);
-    expect(settled.doc.nodes.map((node) => node.device.icon)).toEqual([
-      undefined,
-      undefined,
-      RED.id,
-    ]);
-    expect(errorsOf(settled.doc)).toEqual([]);
-  });
-
-  test('keeps the icon and leaves out a name an icon may not have', () => {
-    for (const name of ['a\u0007b', 'x'.repeat(MAX_ICON_NAME_BYTES + 1), 7]) {
-      const settled = settleIcons(
-        documentUsing([RED.id]),
-        new Map([[RED.id, { name, data: RED.data }]]),
-      );
-
-      expect(settled.doc.icons).toEqual({ [RED.id]: { data: RED.data } });
-      expect(errorsOf(settled.doc)).toEqual([]);
-    }
-  });
-
-  test('holds at most 50 icons: one more is left out, and one freed makes room', () => {
+  test('carries at most 50 icons, and says which it left out', () => {
     const many = Array.from({ length: MAX_DOCUMENT_ICONS + 1 }, (_, index) =>
-      iconOf([index, 7, 9, 255], `icon ${index}`),
+      iconOf([index, 7, 9, 255], `icon-${index}`),
     );
-    const known = new Map(many.map((icon) => [icon.id, icon.entry]));
-    const settled = settleIcons(
-      documentUsing(many.map((icon) => icon.id)),
-      known,
+    const embedded = embedIcons(
+      documentUsing(many.map((icon) => icon.name)),
+      libraryOf(many.map((icon) => ({ name: icon.name, data: icon.data }))),
     );
 
-    expect(settled.dropped).toBe(1);
-    expect(Object.keys(settled.doc.icons)).toEqual(
-      many.slice(0, MAX_DOCUMENT_ICONS).map((icon) => icon.id),
-    );
-    expect('icon' in settled.doc.nodes[MAX_DOCUMENT_ICONS].device).toBe(false);
-    expect(errorsOf(settled.doc)).toEqual([]);
-
-    // A full document whose first device takes another icon: the icon it
-    // had is no longer used, so the new one has its place.
-    const full = settled.doc;
-    const swapped = {
-      ...full,
-      nodes: full.nodes.map((node, index) =>
-        index === 0
-          ? { ...node, device: { ...node.device, icon: many.at(-1).id } }
-          : node,
-      ),
-    };
-    const again = settleIcons(swapped, known);
-
-    expect(again.dropped).toBe(0);
-    expect(Object.keys(again.doc.icons)).toHaveLength(MAX_DOCUMENT_ICONS);
-    expect(Object.hasOwn(again.doc.icons, many[0].id)).toBe(false);
-    expect(Object.hasOwn(again.doc.icons, many.at(-1).id)).toBe(true);
+    expect(Object.keys(embedded.doc.icons)).toHaveLength(MAX_DOCUMENT_ICONS);
+    expect(embedded.left).toEqual([many.at(-1).name]);
+    expect(errorsOf(embedded.doc)).toEqual([]);
   });
+});
 
-  test('says how many icons were left out', () => {
-    expect(droppedIconsNote(0)).toBe('');
-    expect(droppedIconsNote(undefined)).toBe('');
-    expect(droppedIconsNote(1)).toBe(
-      '1 custom icon was left out: a diagram holds at most 50.',
-    );
-    expect(droppedIconsNote(3)).toBe(
-      '3 custom icons were left out: a diagram holds at most 50.',
-    );
+describe('the icon library index', () => {
+  test('finds an icon by its name and aliases, ignoring case', () => {
+    const plc = { name: 'PLC-2', aliases: ['plc', 'Plc-1'], data: RED.data };
+    const index = indexIcons([
+      plc,
+      { name: 'hmi', data: BLUE.data },
+      { name: 'a b', data: BLUE.data },
+      { name: 'nodata' },
+    ]);
+
+    expect(index.get('plc-2')).toBe(plc);
+    expect(index.get('plc')).toBe(plc);
+    expect(index.get('plc-1')).toBe(plc);
+    expect(index.get('hmi').data).toBe(BLUE.data);
+    expect(index.has('a b')).toBe(false);
+    expect(index.has('nodata')).toBe(false);
   });
 });
 
@@ -825,37 +811,32 @@ describe('what a list says of an icon', () => {
     expect(iconSizeText(undefined)).toBe('');
   });
 
-  test('the library says what it holds of what it may', () => {
-    expect(libraryTitle(null)).toBe('My library');
+  test('the library says what the user uploaded of what each user may', () => {
+    expect(usageText(null)).toBe('');
     expect(
-      libraryTitle({
-        icons: [{}, {}, {}],
+      usageText({
         maxIcons: 64,
         maxBytes: 1048576,
+        usedIcons: 3,
         usedBytes: 20480,
       }),
-    ).toBe('My library (3 of 64, 20.0 KiB of 1 MiB)');
+    ).toBe('You uploaded 3 of 64 icons, 20.0 KiB of 1 MiB.');
     expect(
-      libraryTitle({ icons: [], maxIcons: 8, maxBytes: 65536, usedBytes: 0 }),
-    ).toBe('My library (0 of 8, 0.0 KiB of 64.0 KiB)');
+      usageText({ maxIcons: 8, maxBytes: 65536, usedIcons: 0, usedBytes: 0 }),
+    ).toBe('You uploaded 0 of 8 icons, 0.0 KiB of 64.0 KiB.');
+    expect(usageText({ maxIcons: 0, maxBytes: 0 })).toBe('');
   });
 
-  test('icons are listed by name, whatever its case, then by id', () => {
-    const list = [
-      { id: 'sha256:b', name: 'plc' },
-      { id: 'sha256:c', name: 'Alarm' },
-      { id: 'sha256:a', name: 'PLC' },
-      { id: 'sha256:d' },
-    ];
+  test('icons are listed by name, whatever its case', () => {
+    const list = [{ name: 'plc' }, { name: 'Alarm' }, { name: 'PLC' }];
 
-    expect(sortIcons(list).map((icon) => icon.id)).toEqual([
-      'sha256:d',
-      'sha256:c',
-      'sha256:a',
-      'sha256:b',
+    expect(sortIcons(list).map((icon) => icon.name)).toEqual([
+      'Alarm',
+      'PLC',
+      'plc',
     ]);
     // A new list: the one given keeps its order.
-    expect(list[0].id).toBe('sha256:b');
+    expect(list[0].name).toBe('plc');
   });
 });
 
@@ -871,27 +852,26 @@ describe('making an icon of a file', () => {
     expect(bytesOf(encodeIconData(bytes))).toEqual(bytes);
   });
 
+  // The name an upload proposes is an icon name, or nothing.
   test.each([
     ['plc.png', 'plc'],
     ['my.plc.icon.svg', 'my.plc.icon'],
-    ['  spaced name .jpeg', 'spaced name'],
+    ['  spaced name .jpeg', 'spaced-name'],
     ['no-extension', 'no-extension'],
+    ['alice@site_2.png', 'alice@site_2'],
     ['.svg', ''],
+    ['..png', ''],
     ['', ''],
     [undefined, ''],
-    ['tab\there\u0000\u007f.png', 'tabhere'],
+    ['tab\there\u0000\u007f.png', 'tab-here'],
+    ['Pompe à eau.png', 'Pompe-eau'],
+    ['ééé.gif', ''],
     [`${'a'.repeat(70)}.png`, 'a'.repeat(64)],
-    // Cut between two characters, never inside one: 21 of three bytes are
-    // 63 bytes, and the next would be past 64.
-    [`${'é'.repeat(40)}.gif`, 'é'.repeat(32)],
-    [`${'€'.repeat(30)}.gif`, '€'.repeat(21)],
-    [`${'😀'.repeat(20)}.webp`, '😀'.repeat(16)],
     [`${'a'.repeat(63)} b.png`, 'a'.repeat(63)],
   ])('the name of %j is %j', (file, name) => {
     expect(iconNameFromFile(file)).toBe(name);
-    expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(
-      MAX_ICON_NAME_BYTES,
-    );
+    expect(name === '' || isIconName(name)).toBe(true);
+    expect(name.length).toBeLessThanOrEqual(MAX_ICON_NAME_BYTES);
   });
 
   test.each([
@@ -1034,7 +1014,7 @@ describe('making an icon of a file', () => {
     const photo = file('Rack photo.JPG', 'image/jpeg');
 
     expect(await rasterizeIcon(photo, deps)).toEqual({
-      name: 'Rack photo',
+      name: 'Rack-photo',
       data: base64Of(output),
     });
     // The file itself is what the browser is given, as an image.

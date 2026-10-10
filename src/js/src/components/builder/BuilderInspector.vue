@@ -412,7 +412,7 @@
   } from '@/builder/form-validator.js';
   import { SAVED_UNAPPLIED } from '@/builder/history.js';
   import { iconLibrary } from '@/builder/iconLibrary.js';
-  import { MAX_DOCUMENT_ICONS } from '@/builder/icons.js';
+  import { resolveIcon } from '@/builder/icons.js';
   import { countsText, issueCounts, issuesAbout } from '@/builder/issues.js';
   import {
     connectionChanges,
@@ -437,12 +437,12 @@
     // What the Inspector reads and edits, in place of the Builder store,
     // which it is by default: a reactive object with the store's members
     // the Inspector uses. Those are doc, inspectorSelection, schema,
-    // schemaError, readOnly, disks, issues, canRedo, canCreateDrafts and
-    // iconShelf, and the actions commit(doc, label), announce(message),
-    // addInterface, removeInterface, remove, moveNodes and
-    // shelveIcons(icons). A commit that is not the store's makes the
-    // document carry the icons it names, as the store's does (see
-    // settleIcons in icons.js), and returns whether it took the document.
+    // schemaError, readOnly, disks, issues, canRedo and canCreateDrafts,
+    // and the actions commit(doc, label), announce(message), addInterface,
+    // removeInterface, remove and moveNodes. A commit that is not the
+    // store's drops the copies of icons the document need not carry, as
+    // the store's does (see settleIcons in icons.js), and returns whether
+    // it took the document.
     // The Inspector keeps the host it is set up with.
     host: { type: Object, default: null },
     // 'canvas', or 'template' for the template editor (see the top of this
@@ -653,37 +653,24 @@
   );
 
   // The custom icons the Custom icon field and its dialog work with (see
-  // INSPECTOR_ICONS): those the host's document carries, and those chosen
-  // in the dialog, which the host keeps until the edit that names one is
-  // committed (see shelveIcons and commit in the store).
-  function iconEntry(id) {
-    const carried = host.doc.icons;
+  // INSPECTOR_ICONS): a name resolves to the host's document's copy of the
+  // icon, else to the server's icon library's (see resolveIcon).
+  function iconEntry(name) {
+    const icon = resolveIcon(name, host.doc.icons, iconLibrary);
 
-    return carried && Object.hasOwn(carried, id)
-      ? carried[id]
-      : host.iconShelf.get(id);
+    return icon ? { name, ...icon } : undefined;
   }
 
   provide(INSPECTOR_ICONS, {
     entry: iconEntry,
-    shelve: (id, entry) => host.shelveIcons({ [id]: entry }),
     diagram: () =>
-      Object.entries(host.doc.icons || {}).map(([id, entry]) => ({
-        id,
-        name: entry?.name || '',
+      Object.entries(host.doc.icons || {}).map(([name, entry]) => ({
+        name,
         data: entry?.data,
       })),
-    full: (id) => {
-      const carried = host.doc.icons || {};
-
-      return (
-        Object.keys(carried).length >= MAX_DOCUMENT_ICONS &&
-        !Object.hasOwn(carried, id)
-      );
-    },
   });
 
-  // The user's icon library on the server, for the same dialog.
+  // The server's icon library, for the same dialog.
   provide(INSPECTOR_ICON_LIBRARY, iconLibrary);
 
   // The drive image field suggests the server's disk images, once known.
@@ -1210,12 +1197,7 @@
     }
 
     const has = lookOf(device.data);
-    const label = lookChangeLabel(
-      device.title,
-      has,
-      { ...has, ...change },
-      (id) => iconEntry(id)?.name,
-    );
+    const label = lookChangeLabel(device.title, has, { ...has, ...change });
 
     if (!label) {
       return false;

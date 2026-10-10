@@ -39,6 +39,10 @@ var (
 	// ErrBusy is returned when an operation gave up because the draft kept
 	// changing under it. Trying again later may succeed.
 	ErrBusy = errors.New("builder: busy, try again")
+
+	// ErrForbidden is returned when the caller may see what it asked to
+	// change but may not change it, as another user's icon.
+	ErrForbidden = errors.New("builder: not allowed")
 )
 
 type (
@@ -91,6 +95,16 @@ type (
 	CleanupError struct {
 		Op     string
 		Errors []error
+	}
+
+	// IconNameTakenError reports that an icon name, or one that differs from
+	// it only in case, already names an icon of the icon library: the icon
+	// itself (Name), or another name it keeps as an alias. Owner is the user
+	// who uploaded that icon. It unwraps to [ErrConflict].
+	IconNameTakenError struct {
+		Name  string
+		Icon  string
+		Owner string
 	}
 )
 
@@ -160,6 +174,27 @@ func (e *CleanupError) Error() string {
 func (e *CleanupError) Unwrap() []error {
 	return append([]error{ErrCleanup}, e.Errors...)
 }
+
+func (e *IconNameTakenError) Error() string {
+	return fmt.Sprintf("%v: %s", ErrConflict, e.Sentence())
+}
+
+// Sentence says which icon has the name, in words a person is shown. It
+// names the icon and the user who uploaded it, which every user who may
+// list the icon library sees anyway.
+func (e *IconNameTakenError) Sentence() string {
+	if strings.EqualFold(e.Name, e.Icon) {
+		return fmt.Sprintf("icon name %q is taken by an icon %s uploaded; choose another name", e.Name, e.Owner)
+	}
+
+	return fmt.Sprintf(
+		"icon name %q is taken: it is another name of icon %q, which %s uploaded; choose another name",
+		e.Name, e.Icon, e.Owner,
+	)
+}
+
+// Unwrap allows [errors.Is](err, ErrConflict) to succeed.
+func (e *IconNameTakenError) Unwrap() error { return ErrConflict }
 
 func newNotFoundError(kind, id string) *NotFoundError {
 	return &NotFoundError{Kind: kind, ID: id}

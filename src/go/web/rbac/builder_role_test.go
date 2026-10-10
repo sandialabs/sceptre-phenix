@@ -78,6 +78,7 @@ func builderRolePolicies() []*v1.PolicySpec {
 		},
 		{Resources: []string{"builder-drafts"}, ResourceNames: []string{"*", "*/*"}, Verbs: []string{"list", "get", "update", "delete"}},
 		{Resources: []string{"builder-templates"}, ResourceNames: nil, Verbs: []string{"publish"}},
+		{Resources: []string{"builder-icons"}, ResourceNames: nil, Verbs: []string{"update", "delete"}},
 		{Resources: []string{"schemas"}, ResourceNames: []string{"*"}, Verbs: []string{"get"}},
 		{Resources: []string{"topologies", "scenarios"}, ResourceNames: []string{"*"}, Verbs: []string{"list", "get"}},
 		{Resources: []string{"experiments"}, ResourceNames: []string{"*"}, Verbs: []string{"list", "get", "create", "update"}},
@@ -100,8 +101,8 @@ func mustRole(t *testing.T, name string) *Role {
 // TestBuiltinBuilderRole asserts a new store holds the Builder role with
 // every permission the Builder checks and none on the configs of accounts
 // and roles, that no other built-in role but Global Admin may publish
-// templates to every user, and that the start-up migration writes nothing
-// to such a store.
+// templates to every user or rename and delete any user's icons, and that
+// the start-up migration writes nothing to such a store.
 func TestBuiltinBuilderRole(t *testing.T) {
 	counting := useDefaultConfigs(t)
 
@@ -145,6 +146,8 @@ func TestBuiltinBuilderRole(t *testing.T) {
 		{"builder-drafts", "update", "bob/draft"},
 		{"builder-drafts", "delete", "bob/draft"},
 		{"builder-templates", "publish", ""},
+		{"builder-icons", "update", ""},
+		{"builder-icons", "delete", ""},
 		{"schemas", "get", "builder"},
 		{"topologies", "list", "site"},
 		{"topologies", "get", "site"},
@@ -179,22 +182,31 @@ func TestBuiltinBuilderRole(t *testing.T) {
 		t.Fatalf("GetRoles returned error: %v", err)
 	}
 
-	var publishers []string
+	var publishers, iconAdmins []string
 
 	for _, role := range roles {
 		if role.Allowed(builderTemplatesResource, builderTemplatesPublishVerb) {
 			publishers = append(publishers, role.Spec.Name)
 		}
+
+		if role.Allowed(builderIconsResource, builderIconsUpdateVerb) || role.Allowed(builderIconsResource, builderIconsDeleteVerb) {
+			iconAdmins = append(iconAdmins, role.Spec.Name)
+		}
 	}
 
 	slices.Sort(publishers)
+	slices.Sort(iconAdmins)
 
 	if want := []string{"Builder", "Global Admin"}; !slices.Equal(publishers, want) {
 		t.Errorf("the built-in roles that may publish templates are %q, want %q", publishers, want)
 	}
 
-	if err := EnsureBuilderTemplatesPublishPermission(); err != nil {
-		t.Fatalf("EnsureBuilderTemplatesPublishPermission returned error: %v", err)
+	if want := []string{"Builder", "Global Admin"}; !slices.Equal(iconAdmins, want) {
+		t.Errorf("the built-in roles that may rename or delete any icon are %q, want %q", iconAdmins, want)
+	}
+
+	if err := EnsureBuilderRolePermissions(); err != nil {
+		t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
 	}
 
 	if len(counting.writes) != 0 {
@@ -215,8 +227,8 @@ func TestEnsureBuilderRoleCreatesMissingRole(t *testing.T) {
 	counting.writes = nil
 
 	for range 2 {
-		if err := EnsureBuilderTemplatesPublishPermission(); err != nil {
-			t.Fatalf("EnsureBuilderTemplatesPublishPermission returned error: %v", err)
+		if err := EnsureBuilderRolePermissions(); err != nil {
+			t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
 		}
 	}
 
@@ -286,12 +298,12 @@ func seedBuilderRoles(t *testing.T) []any {
 	return made
 }
 
-// TestEnsureBuilderTemplatesPublishPermission asserts a Builder role an
-// administrator made, by name or by role name, gains the permission to
-// publish templates and keeps everything else, that so do the users
-// assigned it, that other roles and users are left alone, and that running
-// again writes nothing.
-func TestEnsureBuilderTemplatesPublishPermission(t *testing.T) {
+// TestEnsureBuilderRolePermissions asserts a Builder role an administrator
+// made, by name or by role name, gains the permissions to publish templates
+// and to rename and delete any icon, and keeps everything else, that so do
+// the users assigned it, that other roles and users are left alone, and
+// that running again writes nothing.
+func TestEnsureBuilderRolePermissions(t *testing.T) {
 	counting := useDefaultConfigs(t)
 	made := seedBuilderRoles(t)
 
@@ -307,8 +319,8 @@ func TestEnsureBuilderTemplatesPublishPermission(t *testing.T) {
 
 	counting.writes = nil
 
-	if err := EnsureBuilderTemplatesPublishPermission(); err != nil {
-		t.Fatalf("EnsureBuilderTemplatesPublishPermission returned error: %v", err)
+	if err := EnsureBuilderRolePermissions(); err != nil {
+		t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
 	}
 
 	if want := []string{"update Role/builder", "update Role/workshop", "update User/alice", "update User/carol"}; !sameWrites(
@@ -317,24 +329,27 @@ func TestEnsureBuilderTemplatesPublishPermission(t *testing.T) {
 		t.Fatalf("the migration wrote %q, want %q", counting.writes, want)
 	}
 
-	// The role keeps its policies as stored, and gains the one.
+	// The role keeps its policies as stored, and gains the two.
 	stored, err := config.Get("role/builder", false)
 	if err != nil {
 		t.Fatalf("getting the Builder role: %v", err)
 	}
 
 	policies, _ := stored.Spec["policies"].([]any)
-	if len(policies) != 3 || !reflect.DeepEqual(policies[:2], made) {
-		t.Fatalf("the Builder role's policies are %v, want %v and one more", policies, made)
+	if len(policies) != 4 || !reflect.DeepEqual(policies[:2], made) {
+		t.Fatalf("the Builder role's policies are %v, want %v and two more", policies, made)
 	}
 
-	publish := &v1.PolicySpec{Resources: []string{"builder-templates"}, ResourceNames: nil, Verbs: []string{"publish"}}
+	added := []*v1.PolicySpec{
+		{Resources: []string{"builder-templates"}, ResourceNames: nil, Verbs: []string{"publish"}},
+		{Resources: []string{"builder-icons"}, ResourceNames: nil, Verbs: []string{"update", "delete"}},
+	}
 
 	for _, name := range []string{"builder", "workshop"} {
 		role := mustRole(t, name)
 
-		if !reflect.DeepEqual(role.Spec.Policies[len(role.Spec.Policies)-1], publish) {
-			t.Errorf("role %s ends with %s, want the publish policy", name, policiesText(role.Spec.Policies))
+		if !reflect.DeepEqual(role.Spec.Policies[len(role.Spec.Policies)-2:], added) {
+			t.Errorf("role %s ends with %s, want the publish and icon policies", name, policiesText(role.Spec.Policies))
 		}
 	}
 
@@ -346,7 +361,7 @@ func TestEnsureBuilderTemplatesPublishPermission(t *testing.T) {
 
 		policies := user.Spec.Role.Policies
 
-		if user.Spec.Role.Name != "Builder" || len(policies) != 3 || !reflect.DeepEqual(policies[2], publish) ||
+		if user.Spec.Role.Name != "Builder" || len(policies) != 4 || !reflect.DeepEqual(policies[2:], added) ||
 			!slices.Equal(policies[0].Verbs, []string{"list", "get"}) || len(user.Spec.Tokens) != 1 {
 			t.Errorf("user %s after the migration: %s, %d tokens", name, policiesText(policies), len(user.Spec.Tokens))
 		}
@@ -364,8 +379,8 @@ func TestEnsureBuilderTemplatesPublishPermission(t *testing.T) {
 	// Running again changes nothing.
 	counting.writes = nil
 
-	if err := EnsureBuilderTemplatesPublishPermission(); err != nil {
-		t.Fatalf("EnsureBuilderTemplatesPublishPermission returned error: %v", err)
+	if err := EnsureBuilderRolePermissions(); err != nil {
+		t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
 	}
 
 	if len(counting.writes) != 0 {
@@ -373,8 +388,42 @@ func TestEnsureBuilderTemplatesPublishPermission(t *testing.T) {
 	}
 }
 
+// TestEnsureBuilderRoleAddsMissingVerbs asserts a Builder role that holds
+// some of the permissions gains a policy of only the verbs it lacks.
+func TestEnsureBuilderRoleAddsMissingVerbs(t *testing.T) {
+	counting := useDefaultConfigs(t)
+
+	builder, err := config.Get("role/builder", false)
+	if err != nil {
+		t.Fatalf("getting the Builder role: %v", err)
+	}
+
+	builder.Spec = map[string]any{"roleName": "Builder", "policies": []any{
+		map[string]any{"resources": []any{"builder-templates"}, "verbs": []any{"publish"}},
+		map[string]any{"resources": []any{"builder-icons"}, "verbs": []any{"update"}},
+	}}
+
+	if err := store.Update(builder); err != nil {
+		t.Fatalf("replacing the Builder role: %v", err)
+	}
+
+	counting.writes = nil
+
+	if err := EnsureBuilderRolePermissions(); err != nil {
+		t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
+	}
+
+	role := mustRole(t, "builder")
+	want := &v1.PolicySpec{Resources: []string{"builder-icons"}, ResourceNames: nil, Verbs: []string{"delete"}}
+
+	if len(role.Spec.Policies) != 3 || !reflect.DeepEqual(role.Spec.Policies[2], want) ||
+		!slices.Equal(counting.writes, []string{"update Role/builder"}) {
+		t.Fatalf("the role after the migration has %s, written %q", policiesText(role.Spec.Policies), counting.writes)
+	}
+}
+
 // TestEnsureBuilderTemplatesPublishKeepsWildcards asserts a Builder role
-// that allows publishing through a wildcard is left as it is.
+// that allows the permissions through a wildcard is left as it is.
 func TestEnsureBuilderTemplatesPublishKeepsWildcards(t *testing.T) {
 	counting := useDefaultConfigs(t)
 
@@ -393,18 +442,18 @@ func TestEnsureBuilderTemplatesPublishKeepsWildcards(t *testing.T) {
 
 	counting.writes = nil
 
-	if err := EnsureBuilderTemplatesPublishPermission(); err != nil {
-		t.Fatalf("EnsureBuilderTemplatesPublishPermission returned error: %v", err)
+	if err := EnsureBuilderRolePermissions(); err != nil {
+		t.Fatalf("EnsureBuilderRolePermissions returned error: %v", err)
 	}
 
 	if len(counting.writes) != 0 {
-		t.Fatalf("the migration wrote %q to a role that allows publishing", counting.writes)
+		t.Fatalf("the migration wrote %q to a role that allows publishing and icons", counting.writes)
 	}
 }
 
 // TestEnsureBuilderTemplatesPublishOtherShape asserts a role whose stored
 // policies are not in the shape the store decodes is written back from its
-// decoded policies, with the permission added.
+// decoded policies, with the permissions added.
 func TestEnsureBuilderTemplatesPublishOtherShape(t *testing.T) {
 	useBoltStore(t)
 
@@ -428,14 +477,15 @@ func TestEnsureBuilderTemplatesPublishOtherShape(t *testing.T) {
 
 	c.Spec["policies"] = []map[string]any{{"resources": []string{"configs"}, "resourceNames": []string{"*"}, "verbs": []string{"list"}}}
 
-	if err := role.ensureBuilderTemplatesPublish(); err != nil {
-		t.Fatalf("ensureBuilderTemplatesPublish returned error: %v", err)
+	if err := role.ensureBuilderGrants(); err != nil {
+		t.Fatalf("ensureBuilderGrants returned error: %v", err)
 	}
 
 	stored := mustRole(t, "builder")
 
-	if len(stored.Spec.Policies) != 2 || !stored.Allowed("configs", "list", "x") ||
-		!stored.Allowed(builderTemplatesResource, builderTemplatesPublishVerb) {
+	if len(stored.Spec.Policies) != 3 || !stored.Allowed("configs", "list", "x") ||
+		!stored.Allowed(builderTemplatesResource, builderTemplatesPublishVerb) ||
+		!stored.Allowed(builderIconsResource, builderIconsUpdateVerb) || !stored.Allowed(builderIconsResource, builderIconsDeleteVerb) {
 		t.Fatalf("the role written back has %s", policiesText(stored.Spec.Policies))
 	}
 }

@@ -1206,7 +1206,7 @@ func TestToTopologyOmitsPresentationFields(t *testing.T) {
 
 	encoded := asJSON(t, got)
 
-	presentation := []string{iconFixtureID, iconFixtureData, "#2f6fbf", "dotted", "dash-dot", "PLC", "Mirror port"}
+	presentation := []string{iconFixtureName, iconFixtureData, "#2f6fbf", "dotted", "dash-dot", "PLC", "Mirror port"}
 
 	for _, text := range append(presentation, decorationKeys...) {
 		if strings.Contains(encoded, text) {

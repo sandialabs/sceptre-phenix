@@ -1,18 +1,17 @@
 <!--
-  The custom icon of a device or a group: an image of the user's own, drawn
-  in place of the built-in icon. The field holds the icon's id; the diagram
-  carries the image itself (see icons.js).
+  The custom icon of a device or a group: an image of the server's icon
+  library, drawn in place of the built-in icon. The field holds the icon's
+  name, which the document's copy of the icon or the icon library resolves
+  (see iconSrc in icons.js); with neither, the node draws its built-in icon.
 
   With no icon the field says None and offers Choose…; with one it shows the
   icon, its name, Change… and Remove. Choose… and Change… open the Custom
   icons dialog (IconDialog), where an icon is uploaded or picked from the
-  diagram's or from the user's library. The control mounts the dialog
+  server's or from the diagram's copies. The control mounts the dialog
   itself, so it works in any form the Inspector's renderers are used in.
 
   The icons come from what the form's host provides (see INSPECTOR_ICONS in
-  control.js). An icon picked in the dialog is made known to the host first,
-  and the field then takes its id, so the edit that applies the field finds
-  the image to copy into the document.
+  control.js).
 
   A locked or read-only form disables the buttons.
 -->
@@ -70,7 +69,7 @@
   import InspectorField from './InspectorField.vue';
   import { useInspectorControl, useInspectorIcons } from './control.js';
 
-  import { ICON_ID, iconSrc } from '@/builder/icons.js';
+  import { iconSrc, isIconName } from '@/builder/icons.js';
 
   const props = defineProps(rendererProps());
   const input = useJsonFormsControl(props);
@@ -83,9 +82,9 @@
 
   // The icon the field names, or '' for none.
   const value = computed(() => {
-    const id = control.value.data;
+    const name = control.value.data;
 
-    return typeof id === 'string' && ICON_ID.test(id) ? id : '';
+    return isIconName(name) ? name : '';
   });
   const entry = computed(() =>
     value.value ? icons.entry(value.value) : undefined,
@@ -94,27 +93,26 @@
     entry.value ? iconSrc(value.value, { [value.value]: entry.value }) : '',
   );
 
+  // The name the field holds, and what a name nothing resolves means: the
+  // node shows its built-in icon.
   const name = computed(() => {
     if (!value.value) {
       return 'None';
     }
 
-    if (!entry.value) {
-      return 'Unknown icon';
-    }
-
-    return entry.value.name || 'Unnamed icon';
+    return entry.value
+      ? value.value
+      : `${value.value} (not found: the built-in icon is shown)`;
   });
 
   const disabled = computed(() => locked.value || !control.value.enabled);
 
-  // The dialog's choice: the icon is made known, then the field names it.
+  // The dialog's choice: the field names the icon.
   function use(icon) {
     open.value = false;
-    icons.shelve(icon.id, { name: icon.name, data: icon.data });
 
-    if (icon.id !== control.value.data) {
-      input.handleChange(control.value.path, icon.id);
+    if (icon.name !== control.value.data) {
+      input.handleChange(control.value.path, icon.name);
     }
   }
 

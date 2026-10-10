@@ -110,8 +110,8 @@ func TestJSONFromYAMLKeepsTheDocument(t *testing.T) {
 
 // TestJSONFromYAMLKeepsPresentationFields writes a document that uses
 // every presentation field as YAML and reads it back: colors, which start
-// with the comment character, icon ids, which hold a colon, and base64 data
-// come back as they were, so the document and its digest do.
+// with the comment character, icon names, and base64 data come back as they
+// were, so the document and its digest do.
 func TestJSONFromYAMLKeepsPresentationFields(t *testing.T) {
 	t.Parallel()
 

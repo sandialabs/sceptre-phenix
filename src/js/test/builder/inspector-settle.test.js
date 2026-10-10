@@ -17,11 +17,13 @@ import {
 
 import { inspectorTarget } from '@/builder/adapters/forms.js';
 import { savedAutomatically } from '@/builder/history.js';
+import { iconLibrary } from '@/builder/iconLibrary.js';
+import { indexIcons } from '@/builder/icons.js';
 import { addNode, findNode, updateNode } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { experimentNodeSpec, sampleDocument } from './fixtures.js';
-import { ICON_DATA, ICON_KEY } from './png.js';
+import { ICON_DATA } from './png.js';
 
 vi.mock('@/utils/axios.js', () => ({ default: {} }));
 vi.mock('@/store.js', () => ({
@@ -410,8 +412,6 @@ describe('saving unapplied edits before leaving or reading the diagram', () => {
 // presentation only: a change of it in the form reaches the canvas at once,
 // as an edit of its own, and is no unapplied edit for Apply.
 describe("a device's look is applied without Apply", () => {
-  const PLC = { name: 'plc', data: ICON_DATA };
-
   const lookOf = (store, node) => {
     const { outlineColor, fillColor, iconKey } = findNode(
       store.doc,
@@ -481,24 +481,17 @@ describe("a device's look is applied without Apply", () => {
     );
   });
 
-  // The dialog makes the icon known before the field takes its id (see
-  // InspectorIconControl), and the commit of the field copies it into the
-  // document.
-  test('a custom icon chosen in its dialog is on the device at once, and in the document', async () => {
+  // The dialog's choice is a name (see InspectorIconControl), which the
+  // icon library resolves: the document carries no copy for it.
+  test('a custom icon chosen in its dialog is on the device at once, by its name', async () => {
     const { doc, alpha } = sampleDocument();
-    const { store, settle, setup, icons } = await openInspector(
-      doc,
-      alpha,
-      (data, provides) => {
-        provides[INSPECTOR_ICONS].shelve(ICON_KEY, PLC);
-        data.icon = ICON_KEY;
-      },
-    );
+    const { store, settle, setup } = await openInspector(doc, alpha, (data) => {
+      data.icon = 'plc';
+    });
     const device = () => findNode(store.doc, alpha.id).device;
 
-    expect(device().icon).toBe(ICON_KEY);
-    expect(store.doc.icons).toEqual({ [ICON_KEY]: PLC });
-    // Said, and undone, by the icon's name, not by its id.
+    expect(device().icon).toBe('plc');
+    expect('icons' in store.doc).toBe(false);
     expect(store.history.undoLabel()).toBe(
       'Changed the custom icon of Device alpha to plc',
     );
@@ -509,25 +502,16 @@ describe("a device's look is applied without Apply", () => {
     expect(setup.dirty).toBe(false);
     expect(settle()).toBe('');
 
-    // The field and the dialog see the diagram's icons.
-    expect(icons.entry(ICON_KEY)).toEqual(PLC);
-    expect(icons.diagram()).toEqual([{ id: ICON_KEY, ...PLC }]);
-    expect(icons.full(ICON_KEY)).toBe(false);
-
     store.undo();
 
     expect('icon' in device()).toBe(false);
-    expect('icons' in store.doc).toBe(false);
-    expect(icons.diagram()).toEqual([]);
-    // Chosen once, the icon stays known for the session.
-    expect(icons.entry(ICON_KEY)).toEqual(PLC);
   });
 
-  test('a custom icon removed says so, and leaves the document', async () => {
+  test('a custom icon removed says so, and its copy leaves the document', async () => {
     const { doc, alpha } = sampleDocument();
     const using = {
-      ...updateNode(doc, alpha.id, { device: { icon: ICON_KEY } }),
-      icons: { [ICON_KEY]: { data: ICON_DATA } },
+      ...updateNode(doc, alpha.id, { device: { icon: 'plc' } }),
+      icons: { plc: { data: ICON_DATA } },
     };
     // An emptied field has no key in the form.
     const { store } = await openInspector(using, alpha, (data) => {
@@ -539,66 +523,51 @@ describe("a device's look is applied without Apply", () => {
     expect(store.history.undoLabel()).toBe(
       'Removed the custom icon of Device alpha',
     );
-
-    // One without a name is said to be so.
-    const renamed = await openInspector(doc, alpha, (data, provides) => {
-      provides[INSPECTOR_ICONS].shelve(ICON_KEY, { name: '', data: ICON_DATA });
-      data.icon = ICON_KEY;
-    });
-
-    expect(renamed.store.history.undoLabel()).toBe(
-      'Changed the custom icon of Device alpha to an unnamed icon',
-    );
-    expect(renamed.store.doc.icons).toEqual({
-      [ICON_KEY]: { data: ICON_DATA },
-    });
   });
 
-  // An icon the dialog never made known is not in the document, so the
-  // device cannot name it: the edit is made without it, and says so.
-  test('an icon that is not known is left out of the edit', async () => {
+  // The device names an icon the server may get later: its node draws the
+  // built-in icon meanwhile.
+  test('a name nothing resolves is the device’s all the same', async () => {
     const { doc, alpha } = sampleDocument();
     const { store } = await openInspector(doc, alpha, (data) => {
-      data.icon = ICON_KEY;
+      data.icon = 'not-uploaded';
     });
 
-    expect('icon' in findNode(store.doc, alpha.id).device).toBe(false);
+    expect(findNode(store.doc, alpha.id).device.icon).toBe('not-uploaded');
     expect('icons' in store.doc).toBe(false);
-    expect(store.announcement).toBe(
-      '1 custom icon was left out: a diagram holds at most 50.',
-    );
   });
 
-  test('a diagram with 50 icons is full for an icon it does not carry', async () => {
+  test('the field and the dialog see the diagram’s copies, then the icon library’s icons', async () => {
     const { doc, alpha } = sampleDocument();
-    const carried = Object.fromEntries(
-      Array.from({ length: 50 }, (_, index) => [
-        `sha256:${String(index).padStart(64, '0')}`,
-        { data: ICON_DATA },
-      ]),
-    );
     const { icons, library } = await openInspector(
       doc,
       alpha,
       () => {},
       (store) => {
-        store.doc = { ...store.doc, icons: carried };
+        store.doc = { ...store.doc, icons: { plc: { data: ICON_DATA } } };
       },
     );
 
-    expect(icons.diagram()).toHaveLength(50);
-    expect(icons.full(ICON_KEY)).toBe(true);
-    expect(icons.full(Object.keys(carried)[0])).toBe(false);
-    // Nothing of an object's own makes an id look carried.
-    expect(icons.full('constructor')).toBe(true);
+    expect(icons.diagram()).toEqual([{ name: 'plc', data: ICON_DATA }]);
+    expect(icons.entry('plc')).toEqual({ name: 'plc', data: ICON_DATA });
+    expect(icons.entry('rtu')).toBeUndefined();
+    // Nothing of an object's own makes a name look known.
     expect(icons.entry('constructor')).toBeUndefined();
-    // The dialog's library is the user's own, on the server.
-    expect(Object.keys(library)).toEqual([
-      'list',
-      'upload',
-      'remove',
-      'failure',
+
+    // A name the server's icon library knows, by any of an icon's names.
+    iconLibrary.state.index = indexIcons([
+      { name: 'RTU', aliases: ['old-rtu'], data: ICON_DATA },
     ]);
+
+    try {
+      expect(icons.entry('old-rtu')).toMatchObject({ data: ICON_DATA });
+      expect(icons.entry('rtu')).toMatchObject({ data: ICON_DATA });
+    } finally {
+      iconLibrary.state.index = indexIcons([]);
+    }
+
+    // The dialog's library is the server's.
+    expect(library).toBe(iconLibrary);
   });
 
   // The field shows the error; the device keeps the color it has, and a

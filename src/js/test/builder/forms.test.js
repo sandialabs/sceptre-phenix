@@ -711,32 +711,24 @@ describe('what a change of look says', () => {
     ).toBe('Removed the fill color of Device web-01');
   });
 
-  // A custom icon is said by its name, which the caller knows: its id is
-  // a digest, and says nothing.
-  test('names a custom icon by its name, never by its id', () => {
+  // A custom icon is said by its name, which is what the field holds.
+  test('names a custom icon by its name', () => {
     const title = 'Device web-01';
-    const names = (id) => (id === ICON_KEY ? 'plc' : undefined);
-    const custom = { ...none, icon: ICON_KEY };
+    const custom = { ...none, icon: 'plc' };
 
-    expect(lookChangeLabel(title, none, custom, names)).toBe(
+    expect(lookChangeLabel(title, none, custom)).toBe(
       'Changed the custom icon of Device web-01 to plc',
     );
-    expect(lookChangeLabel(title, none, custom, () => '')).toBe(
-      'Changed the custom icon of Device web-01 to an unnamed icon',
-    );
-    expect(lookChangeLabel(title, none, custom)).toBe(
-      'Changed the custom icon of Device web-01 to an unnamed icon',
-    );
-    expect(lookChangeLabel(title, custom, none, names)).toBe(
+    expect(lookChangeLabel(title, custom, none)).toBe(
       'Removed the custom icon of Device web-01',
     );
     // The icon of its key comes first when both change.
-    expect(
-      lookChangeLabel(title, none, { ...custom, iconKey: 'router' }, names),
-    ).toBe('Changed the icon of Device web-01 to router');
+    expect(lookChangeLabel(title, none, { ...custom, iconKey: 'router' })).toBe(
+      'Changed the icon of Device web-01 to router',
+    );
     // And the custom icon before a color.
     expect(
-      lookChangeLabel(title, none, { ...custom, fillColor: '#222222' }, names),
+      lookChangeLabel(title, none, { ...custom, fillColor: '#222222' }),
     ).toBe('Changed the custom icon of Device web-01 to plc');
   });
 

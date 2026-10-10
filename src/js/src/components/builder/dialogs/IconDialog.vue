@@ -2,22 +2,27 @@
   Custom icons, opened by the Custom icon field of a device or a group (see
   InspectorIconControl).
 
-  It lists the icons the diagram carries and those of the user's own icon
-  library on the server, and gives the field the one chosen with Use (the
-  `use` event, with the icon's id, name and data). Upload icon… takes a PNG,
+  It lists the server's icons, which every user shares, and the copies of
+  icons the diagram carries, and gives the field the name of the one chosen
+  with Use (the `use` event, with the icon's name). Upload icon… takes a PNG,
   JPEG, GIF, WebP or SVG file: the browser draws it and the PNG that results
-  is what is sent (see rasterizeIcon in icons.js); the library keeps and
-  returns PNGs only, and the icon shown is the one the server answered with.
-  An icon of the diagram can be saved to the library, and one of the library
-  deleted, after a confirmation: diagrams that use it keep their own copy.
+  is what is sent (see rasterizeIcon in icons.js), under a name the user
+  types (proposed from the file's name). A copy the diagram carries can be
+  added to the server under its name. A server icon is renamed or deleted
+  only by the user who uploaded it, or with the builder-icons permissions:
+  Rename and Delete show only when the server says the user may. A renamed
+  icon keeps its old name as another name, so diagrams that use it keep
+  showing it; a deleted one leaves them showing their built-in icon.
 
   Every icon is drawn through BuilderIcon, as an <img> with a PNG data URL.
   The thumbnails are decoration: each row names its icon in text, and every
   button names the icon it acts on.
 
-  The status and error regions are rendered, empty, from the start. After an
-  upload focus moves to the new icon's Use, and after a delete to Upload
-  icon…, so it is never left on a control that went.
+  The status and error regions are rendered, empty, from the start. Focus
+  moves to the new icon's Use after an upload, to the renamed icon's Rename
+  after a rename, to Upload icon… after a delete, and back to the button
+  that opened a form when the form closes, so it is never left on a control
+  that went.
 -->
 <template>
   <builder-dialog
@@ -27,16 +32,18 @@
     data-testid="icon-dialog"
     @close="$emit('close')">
     <p class="builder-hint builder-icons__intro">
-      An icon is a small image, drawn at 16 pixels. PNG, JPEG, GIF, WebP and SVG
-      files are converted to a PNG of at most 96 by 96 pixels.
+      An icon is a small image, drawn at 16 pixels, that every user of this
+      server can use. PNG, JPEG, GIF, WebP and SVG files are converted to a PNG
+      of at most 96 by 96 pixels.
     </p>
 
     <button
+      v-if="!adding"
       ref="uploadButton"
       type="button"
       class="builder-button"
       data-testid="icon-upload"
-      :aria-busy="busy === 'upload' || undefined"
+      :aria-busy="busy === 'convert' || undefined"
       :aria-disabled="busy ? 'true' : undefined"
       @click="chooseFile">
       <builder-icon name="upload" :size="14" />
@@ -55,6 +62,57 @@
       @input.stop
       @change.stop="onFile" />
 
+    <form
+      v-if="adding"
+      class="builder-icons__form"
+      data-testid="icon-upload-form"
+      aria-labelledby="icon-upload-title"
+      @submit.prevent="submitUpload">
+      <h3 id="icon-upload-title" class="builder-icons__heading">
+        Name the new icon
+      </h3>
+      <div class="builder-icons__row">
+        <builder-icon name="image" :src="srcOf(adding)" :size="32" />
+        <span class="builder-icons__field">
+          <label for="icon-upload-name">Name</label>
+          <input
+            id="icon-upload-name"
+            ref="uploadName"
+            v-model="uploadNameText"
+            class="builder-input"
+            type="text"
+            required
+            maxlength="64"
+            autocomplete="off"
+            spellcheck="false"
+            aria-describedby="icon-upload-hint"
+            :aria-invalid="uploadNameError ? 'true' : undefined"
+            data-testid="icon-upload-name"
+            @input.stop
+            @change.stop />
+          <span id="icon-upload-hint" class="builder-hint">
+            Nodes and templates name the icon by it. {{ ICON_NAME_HINT }}
+          </span>
+        </span>
+      </div>
+      <div class="builder-icons__buttons">
+        <button
+          type="submit"
+          class="builder-button builder-button--primary"
+          data-testid="icon-upload-submit"
+          :aria-disabled="busy ? 'true' : undefined">
+          Add icon
+        </button>
+        <button
+          type="button"
+          class="builder-button"
+          data-testid="icon-upload-cancel"
+          @click="cancelUpload">
+          Cancel
+        </button>
+      </div>
+    </form>
+
     <p class="builder-dialog__message" role="status">
       <span v-if="status.text" :key="status.key" data-testid="icon-status">{{
         status.text
@@ -70,15 +128,18 @@
       <h3 class="builder-icons__heading">
         In this diagram ({{ diagram.length }})
       </h3>
+      <p class="builder-hint">
+        Copies the diagram carries, from a file it was uploaded from.
+      </p>
       <ul class="builder-icons__list" data-testid="icon-diagram-list">
         <li
           v-for="icon in diagram"
-          :key="icon.id"
+          :key="icon.name"
           class="builder-icons__row"
-          :data-icon="icon.id">
+          :data-icon="icon.name">
           <builder-icon name="image" :src="srcOf(icon)" :size="32" />
           <span class="builder-icons__text">
-            <span class="builder-icons__name">{{ nameOf(icon) }}</span>
+            <span class="builder-icons__name">{{ icon.name }}</span>
             <span class="builder-hint">{{ iconSizeText(icon) }}</span>
           </span>
           <span class="builder-icons__buttons">
@@ -86,37 +147,100 @@
               type="button"
               class="builder-button"
               data-testid="icon-use"
-              :aria-label="`Use ${nameOf(icon)}`"
+              :aria-label="`Use ${icon.name}`"
               @click="use(icon)">
               Use
             </button>
-            <!-- Whether the library has it is known once it is read. -->
-            <template v-if="library">
-              <span v-if="inLibrary(icon.id)" class="builder-hint">
-                In my library
-              </span>
-              <button
-                v-else
-                type="button"
-                class="builder-button"
-                data-testid="icon-save"
-                :aria-label="`Save ${nameOf(icon)} to my library`"
-                :aria-disabled="busy ? 'true' : undefined"
-                @click="save(icon)">
-                Save to my library
-              </button>
-            </template>
+            <span
+              v-if="onServer(icon)"
+              class="builder-hint"
+              data-testid="icon-on-server">
+              On the server
+            </span>
+            <button
+              v-else-if="library.state.status === 'ready'"
+              type="button"
+              class="builder-button"
+              data-testid="icon-add-to-server"
+              :aria-label="`Add ${icon.name} to the server`"
+              :aria-disabled="busy ? 'true' : undefined"
+              @click="addToServer(icon)">
+              Add to server
+            </button>
           </span>
         </li>
       </ul>
     </template>
 
     <h3 class="builder-icons__heading" data-testid="icon-library-heading">
-      {{ libraryHeading }}
+      Server icons ({{ library.state.icons.length }})
     </h3>
-    <p v-if="loading" class="builder-hint">Loading your library…</p>
-    <div v-else-if="loadError" class="builder-icons__failed">
-      <p class="builder-dialog__error" role="alert">{{ loadError }}</p>
+    <p v-if="usage" class="builder-hint" data-testid="icon-usage">
+      {{ usage }}
+    </p>
+
+    <form
+      v-if="renaming"
+      class="builder-icons__form"
+      data-testid="icon-rename-form"
+      aria-labelledby="icon-rename-title"
+      @submit.prevent="submitRename">
+      <h3 id="icon-rename-title" class="builder-icons__heading">
+        Rename {{ renaming.name }}
+      </h3>
+      <span class="builder-icons__field">
+        <label for="icon-rename-name">New name</label>
+        <input
+          id="icon-rename-name"
+          ref="renameName"
+          v-model="renameText"
+          class="builder-input"
+          type="text"
+          required
+          maxlength="64"
+          autocomplete="off"
+          spellcheck="false"
+          aria-describedby="icon-rename-hint"
+          data-testid="icon-rename-name"
+          @input.stop
+          @change.stop />
+        <span id="icon-rename-hint" class="builder-hint">
+          The old name, {{ renaming.name }}, keeps working as another name of
+          this icon, so diagrams and templates that use it keep showing it.
+          {{ ICON_NAME_HINT }}
+        </span>
+      </span>
+      <div class="builder-icons__buttons">
+        <button
+          type="submit"
+          class="builder-button builder-button--primary"
+          data-testid="icon-rename-submit"
+          :aria-disabled="busy ? 'true' : undefined">
+          Rename
+        </button>
+        <button
+          type="button"
+          class="builder-button"
+          data-testid="icon-rename-cancel"
+          @click="cancelRename">
+          Cancel
+        </button>
+      </div>
+    </form>
+
+    <p
+      v-if="library.state.status === 'loading' && !library.state.icons.length"
+      class="builder-hint">
+      Loading the server's icons…
+    </p>
+    <div
+      v-else-if="
+        library.state.status === 'failed' && !library.state.icons.length
+      "
+      class="builder-icons__failed">
+      <p class="builder-dialog__error" role="alert">
+        {{ library.state.error }}
+      </p>
       <button
         type="button"
         class="builder-button"
@@ -125,41 +249,71 @@
         Retry
       </button>
     </div>
-    <p v-else-if="!library || !library.icons.length" class="builder-hint">
-      Your library has no icons yet.
+    <p v-else-if="!library.state.icons.length" class="builder-hint">
+      The server has no icons yet.
     </p>
-    <ul v-else class="builder-icons__list" data-testid="icon-library-list">
-      <li
-        v-for="icon in library.icons"
-        :key="icon.id"
-        class="builder-icons__row"
-        :data-icon="icon.id">
-        <builder-icon name="image" :src="srcOf(icon)" :size="32" />
-        <span class="builder-icons__text">
-          <span class="builder-icons__name">{{ nameOf(icon) }}</span>
-          <span class="builder-hint">{{ iconSizeText(icon) }}</span>
+    <template v-else>
+      <div class="builder-icons__filter">
+        <label for="icon-filter">Filter icons</label>
+        <input
+          id="icon-filter"
+          v-model="filterText"
+          class="builder-input"
+          type="search"
+          autocomplete="off"
+          spellcheck="false"
+          aria-describedby="icon-filter-count"
+          data-testid="icon-filter"
+          @input.stop
+          @change.stop />
+        <span id="icon-filter-count" class="builder-hint">
+          {{ filterCount }}
         </span>
-        <span class="builder-icons__buttons">
-          <button
-            type="button"
-            class="builder-button"
-            data-testid="icon-use"
-            :aria-label="`Use ${nameOf(icon)}`"
-            @click="use(icon)">
-            Use
-          </button>
-          <button
-            type="button"
-            class="builder-button builder-button--danger"
-            data-testid="icon-delete"
-            :aria-label="`Delete ${nameOf(icon)} from my library`"
-            :aria-disabled="busy ? 'true' : undefined"
-            @click="askDelete(icon)">
-            Delete
-          </button>
-        </span>
-      </li>
-    </ul>
+      </div>
+      <ul class="builder-icons__list" data-testid="icon-library-list">
+        <li
+          v-for="icon in shown"
+          :key="icon.name"
+          class="builder-icons__row"
+          :data-icon="icon.name">
+          <builder-icon name="image" :src="srcOf(icon)" :size="32" />
+          <span class="builder-icons__text">
+            <span class="builder-icons__name">{{ icon.name }}</span>
+            <span class="builder-hint">{{ detailsOf(icon) }}</span>
+          </span>
+          <span class="builder-icons__buttons">
+            <button
+              type="button"
+              class="builder-button"
+              data-testid="icon-use"
+              :aria-label="`Use ${icon.name}`"
+              @click="use(icon)">
+              Use
+            </button>
+            <button
+              v-if="icon.canRename"
+              type="button"
+              class="builder-button"
+              data-testid="icon-rename"
+              :aria-label="`Rename ${icon.name}`"
+              :aria-disabled="busy ? 'true' : undefined"
+              @click="askRename(icon, $event)">
+              Rename
+            </button>
+            <button
+              v-if="icon.canDelete"
+              type="button"
+              class="builder-button builder-button--danger"
+              data-testid="icon-delete"
+              :aria-label="`Delete ${icon.name} from the server`"
+              :aria-disabled="busy ? 'true' : undefined"
+              @click="askDelete(icon)">
+              Delete
+            </button>
+          </span>
+        </li>
+      </ul>
+    </template>
 
     <div class="builder-dialog__actions">
       <button
@@ -175,7 +329,7 @@
       v-if="deleting"
       id="icon-delete"
       title="Delete icon?"
-      :message="`Delete ${nameOf(deleting)} from your library? Diagrams that use it keep their copy.`"
+      :message="`Delete ${deleting.name} from the server? Diagrams and templates that use it, by any of its names, will show their built-in icon instead.`"
       confirm-label="Delete"
       @cancel="deleting = null"
       @confirm="confirmDelete" />
@@ -195,13 +349,14 @@
   import { useMessage } from './message.js';
 
   import {
+    ICON_NAME_HINT,
     IconFileError,
-    MAX_DOCUMENT_ICONS,
     iconSizeText,
     iconSrc,
-    libraryTitle,
+    isIconName,
     rasterizeIcon,
     sortIcons,
+    usageText,
   } from '@/builder/icons.js';
 
   const props = defineProps({
@@ -216,92 +371,101 @@
   const ACCEPT =
     '.png,.jpg,.jpeg,.gif,.webp,.svg,image/png,image/jpeg,image/gif,image/webp,image/svg+xml';
 
+  // What a refused name says beside the name rule.
+  const BAD_NAME = 'Enter a name for the icon.';
+
   const icons = useInspectorIcons();
-  // The user's icon library on the server (see iconLibrary.js).
-  const server = useInspectorIconLibrary();
+  // The server's icon library (see iconLibrary.js).
+  const library = useInspectorIconLibrary();
   const status = useMessage();
   const error = useMessage();
 
   const uploadButton = ref(null);
   const fileField = ref(null);
-  // The library as the server last listed it, with the changes made here
-  // since: null until it is read.
-  const library = ref(null);
-  const loading = ref(true);
-  const loadError = ref('');
-  // What is under way: 'upload', 'save' or 'delete', or ''. A busy button
-  // keeps focus, so it can still be pressed, and is then ignored.
+  const uploadName = ref(null);
+  const renameName = ref(null);
+  // The converted image waiting for its name ({data}), or null.
+  const adding = ref(null);
+  const uploadNameText = ref('');
+  const uploadNameError = ref(false);
+  // The server icon being renamed, the new name typed, and the button that
+  // opened the form, which takes focus back when it closes.
+  const renaming = ref(null);
+  const renameText = ref('');
+  let renameOpener = null;
+  const filterText = ref('');
+  // What is under way: 'convert', 'upload', 'add', 'rename' or 'delete', or
+  // ''. A busy button keeps focus, so it can still be pressed, and is then
+  // ignored.
   const busy = ref('');
-  // The library icon Delete asks about, or null.
+  // The server icon Delete asks about, or null.
   const deleting = ref(null);
   // Set once the dialog has gone: an answer that comes later changes
   // nothing.
   let closed = false;
 
-  // The icons the diagram carries, in the order the library lists its own.
+  // The copies the diagram carries, by name.
   const diagram = computed(() => sortIcons(icons.diagram()));
 
-  const libraryHeading = computed(() => libraryTitle(library.value));
+  const usage = computed(() => usageText(library.state));
 
-  function nameOf(icon) {
-    return icon.name || 'Unnamed icon';
-  }
+  const shown = computed(() => {
+    const words = filterText.value.trim().toLowerCase();
+
+    if (!words) {
+      return library.state.icons;
+    }
+
+    return library.state.icons.filter((icon) =>
+      [icon.name, icon.owner, ...(icon.aliases || [])].some((text) =>
+        String(text || '')
+          .toLowerCase()
+          .includes(words),
+      ),
+    );
+  });
+
+  const filterCount = computed(() =>
+    filterText.value.trim()
+      ? `${shown.value.length} of ${library.state.icons.length} icons shown.`
+      : '',
+  );
 
   function srcOf(icon) {
-    return iconSrc(icon.id, { [icon.id]: icon });
+    const key = isIconName(icon?.name) ? icon.name : 'new-icon';
+
+    return iconSrc(key, { [key]: icon });
   }
 
-  function inLibrary(id) {
-    return Boolean(library.value?.icons.some((icon) => icon.id === id));
+  function detailsOf(icon) {
+    const parts = [
+      icon.owner ? `Uploaded by ${icon.owner}` : '',
+      iconSizeText(icon),
+      icon.aliases?.length ? `also named ${icon.aliases.join(', ')}` : '',
+    ];
+
+    return parts.filter(Boolean).join(' · ');
+  }
+
+  // Whether the server has a copy as it is, under its name or an alias.
+  function onServer(icon) {
+    return library.lookup(icon.name)?.data === icon.data;
   }
 
   async function load() {
-    loading.value = true;
-    loadError.value = '';
-
     try {
-      const read = await server.list();
-
-      if (!closed) {
-        library.value = { ...read, icons: sortIcons(read.icons) };
-      }
-    } catch (caught) {
-      if (!closed) {
-        loadError.value = server.failure(caught);
-      }
-    } finally {
-      loading.value = false;
+      await library.load();
+    } catch {
+      // The library's state says why.
     }
-  }
-
-  // Puts an icon the server answered with into the list shown. A library
-  // that could not be read before is read now.
-  async function keep(icon) {
-    const read = library.value;
-
-    if (!read) {
-      await load();
-
-      return;
-    }
-
-    if (inLibrary(icon.id)) {
-      return;
-    }
-
-    library.value = {
-      ...read,
-      icons: sortIcons([...read.icons, icon]),
-      usedBytes: read.usedBytes + (icon.bytes || 0),
-    };
   }
 
   // Focuses a row's button once the list shows the row.
-  async function focusRow(list, id, testid) {
+  async function focusRow(list, name, testid) {
     await nextTick();
     document
       .querySelector(
-        `[data-testid="${list}"] [data-icon="${CSS.escape(id)}"] [data-testid="${testid}"]`,
+        `[data-testid="${list}"] [data-icon="${CSS.escape(name)}"] [data-testid="${testid}"]`,
       )
       ?.focus();
   }
@@ -325,30 +489,27 @@
 
     status.clear();
     error.clear();
-    busy.value = 'upload';
+    busy.value = 'convert';
 
     try {
-      const { icon, created } = await server.upload(
-        await props.rasterize(file),
-      );
+      const icon = await props.rasterize(file);
 
       if (closed) {
         return;
       }
 
-      await keep(icon);
-      status.set(
-        created
-          ? `Added ${nameOf(icon)} to your library.`
-          : `Your library already has this icon, as ${nameOf(icon)}.`,
-      );
-      await focusRow('icon-library-list', icon.id, 'icon-use');
+      adding.value = { data: icon.data };
+      uploadNameText.value = icon.name;
+      uploadNameError.value = false;
+      await nextTick();
+      uploadName.value?.focus();
+      uploadName.value?.select();
     } catch (caught) {
       if (!closed) {
         error.set(
           caught instanceof IconFileError
             ? caught.message
-            : server.failure(caught),
+            : library.failure(caught),
         );
       }
     } finally {
@@ -356,36 +517,172 @@
     }
   }
 
-  async function save(icon) {
-    if (busy.value) {
+  async function cancelUpload() {
+    adding.value = null;
+    uploadNameError.value = false;
+    await nextTick();
+    uploadButton.value?.focus();
+  }
+
+  // Why a typed name cannot be sent, or ''.
+  function nameProblem(name) {
+    return isIconName(name) ? '' : `${BAD_NAME} ${ICON_NAME_HINT}`;
+  }
+
+  async function submitUpload() {
+    const name = uploadNameText.value.trim();
+
+    if (busy.value || !adding.value) {
       return;
     }
 
     status.clear();
     error.clear();
-    busy.value = 'save';
+
+    const problem = nameProblem(name);
+
+    if (problem) {
+      uploadNameError.value = true;
+      error.set(problem);
+      uploadName.value?.focus();
+
+      return;
+    }
+
+    busy.value = 'upload';
 
     try {
-      const answer = await server.upload({
-        name: icon.name,
-        data: icon.data,
+      const { icon, created } = await library.upload({
+        name,
+        data: adding.value.data,
       });
 
       if (closed) {
         return;
       }
 
-      await keep(answer.icon);
+      adding.value = null;
+      uploadNameError.value = false;
       status.set(
-        answer.created
-          ? `Saved ${nameOf(answer.icon)} to your library.`
-          : `Your library already has this icon, as ${nameOf(answer.icon)}.`,
+        created
+          ? `Added ${icon.name} to the server.`
+          : `The server already has this icon as ${icon.name}.`,
       );
-      // Save to my library went with the save.
-      await focusRow('icon-diagram-list', icon.id, 'icon-use');
+      await focusRow('icon-library-list', icon.name, 'icon-use');
     } catch (caught) {
       if (!closed) {
-        error.set(server.failure(caught));
+        // A taken name asks for another; the form stays.
+        uploadNameError.value = true;
+        error.set(library.failure(caught));
+        uploadName.value?.focus();
+      }
+    } finally {
+      busy.value = '';
+    }
+  }
+
+  async function addToServer(icon) {
+    if (busy.value) {
+      return;
+    }
+
+    status.clear();
+    error.clear();
+    busy.value = 'add';
+
+    try {
+      const answer = await library.upload({ name: icon.name, data: icon.data });
+
+      if (closed) {
+        return;
+      }
+
+      status.set(
+        answer.created
+          ? `Added ${answer.icon.name} to the server. The diagram drops its copy with its next edit.`
+          : `The server already has this icon as ${answer.icon.name}.`,
+      );
+      // Add to server went with the upload.
+      await focusRow('icon-diagram-list', icon.name, 'icon-use');
+    } catch (caught) {
+      if (!closed) {
+        error.set(library.failure(caught));
+      }
+    } finally {
+      busy.value = '';
+    }
+  }
+
+  async function askRename(icon, event) {
+    if (busy.value) {
+      return;
+    }
+
+    status.clear();
+    error.clear();
+    renameOpener = event?.currentTarget || null;
+    renaming.value = icon;
+    renameText.value = icon.name;
+    await nextTick();
+    renameName.value?.focus();
+    renameName.value?.select();
+  }
+
+  async function cancelRename() {
+    const opener = renameOpener;
+
+    renaming.value = null;
+    renameOpener = null;
+    await nextTick();
+    opener?.focus();
+  }
+
+  async function submitRename() {
+    const icon = renaming.value;
+    const name = renameText.value.trim();
+
+    if (busy.value || !icon) {
+      return;
+    }
+
+    status.clear();
+    error.clear();
+
+    const problem = nameProblem(name);
+
+    if (problem) {
+      error.set(problem);
+      renameName.value?.focus();
+
+      return;
+    }
+
+    if (name === icon.name) {
+      await cancelRename();
+
+      return;
+    }
+
+    busy.value = 'rename';
+
+    try {
+      const renamed = await library.rename(icon.name, name);
+
+      if (closed) {
+        return;
+      }
+
+      renaming.value = null;
+      renameOpener = null;
+      filterText.value = '';
+      status.set(
+        `Renamed ${icon.name} to ${renamed?.name || name}. ${icon.name} keeps working as another name of it.`,
+      );
+      await focusRow('icon-library-list', renamed?.name || name, 'icon-rename');
+    } catch (caught) {
+      if (!closed) {
+        error.set(library.failure(caught));
+        renameName.value?.focus();
       }
     } finally {
       busy.value = '';
@@ -412,25 +709,18 @@
     busy.value = 'delete';
 
     try {
-      await server.remove(icon.id);
+      await library.remove(icon.name);
 
       if (closed) {
         return;
       }
 
-      const read = library.value;
-
-      library.value = {
-        ...read,
-        icons: read.icons.filter((entry) => entry.id !== icon.id),
-        usedBytes: Math.max(0, read.usedBytes - (icon.bytes || 0)),
-      };
-      status.set(`Deleted ${nameOf(icon)} from your library.`);
+      status.set(`Deleted ${icon.name} from the server.`);
       await nextTick();
       uploadButton.value?.focus();
     } catch (caught) {
       if (!closed) {
-        error.set(server.failure(caught));
+        error.set(library.failure(caught));
       }
     } finally {
       busy.value = '';
@@ -438,16 +728,7 @@
   }
 
   function use(icon) {
-    if (icons.full(icon.id)) {
-      status.clear();
-      error.set(
-        `This diagram already has ${MAX_DOCUMENT_ICONS} custom icons. Remove one from a node first.`,
-      );
-
-      return;
-    }
-
-    emit('use', { id: icon.id, name: icon.name || '', data: icon.data });
+    emit('use', { name: icon.name });
   }
 
   onMounted(load);
@@ -488,10 +769,12 @@
     border-top: 1px solid var(--bx-border);
   }
 
-  .builder-icons__text {
+  .builder-icons__text,
+  .builder-icons__field {
     display: flex;
     flex: 1 1 10rem;
     flex-direction: column;
+    gap: 0.2rem;
     min-width: 0;
   }
 
@@ -505,6 +788,24 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.4rem;
+  }
+
+  .builder-icons__form {
+    margin: 0.6rem 0;
+    padding: 0.6rem;
+    border: 1px solid var(--bx-border);
+    border-radius: 6px;
+  }
+
+  .builder-icons__form .builder-icons__buttons {
+    margin-top: 0.5rem;
+  }
+
+  .builder-icons__filter {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin-bottom: 0.4rem;
   }
 
   .builder-icons__failed {

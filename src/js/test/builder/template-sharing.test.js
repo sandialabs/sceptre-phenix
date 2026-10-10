@@ -657,7 +657,6 @@ describe('sharing in the store', () => {
       owner: 'alice',
       templates: [],
       collections: [],
-      icons: {},
       canShare: true,
       canPublish: true,
       damaged: false,

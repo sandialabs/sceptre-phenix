@@ -3,9 +3,10 @@
 // data URL. The dialog's requests and its file chooser need a browser, so
 // they are left to the Playwright specs.
 
-// Nothing here stands in for the API client: neither BuilderIcon, the
-// nodes, the outline rows nor the dialog import it. The dialog is given its
-// library by the Inspector (see iconLibrary.js).
+// Nothing here reaches the server: the flow nodes are given an icon library
+// of the test's own, or the Builder's, which nothing here reads, and the
+// dialog is given its library as the Inspector gives it (see
+// iconLibrary.js).
 
 import { describe, expect, test } from 'vitest';
 import { createSSRApp, h, reactive } from 'vue';
@@ -22,7 +23,7 @@ import GroupNode from '@/components/builder/nodes/GroupNode.vue';
 
 import { toFlowNodes } from '@/builder/adapters/vueflow.js';
 import { nodeIcon } from '@/builder/catalog.js';
-import { iconId, iconSrc } from '@/builder/icons.js';
+import { iconSrc } from '@/builder/icons.js';
 import { addNode, updateNode } from '@/builder/model.js';
 import { buildOutline } from '@/builder/outline.js';
 import { keepUnchanged } from '@/builder/stable.js';
@@ -31,7 +32,21 @@ import { sampleDocument, tags } from './fixtures.js';
 import { base64Of, ICON_DATA, ICON_KEY, png } from './png.js';
 
 const SRC = `data:image/png;base64,${ICON_DATA}`;
-const PLC = { name: 'plc', data: ICON_DATA };
+const PLC = { data: ICON_DATA };
+
+// The icon library as the nodes see it (see createIconLibrary).
+function libraryOf(icons) {
+  return {
+    lookup: (name) =>
+      icons.find(
+        (icon) =>
+          icon.name.toLowerCase() === String(name).toLowerCase() ||
+          (icon.aliases || []).some(
+            (alias) => alias.toLowerCase() === String(name).toLowerCase(),
+          ),
+      ) || null,
+  };
+}
 
 async function render(component, props = {}, provides = []) {
   const app = createSSRApp({ render: () => h(component, props) });
@@ -54,46 +69,42 @@ function textOf(html) {
 }
 
 // The sample document with a custom icon on its alpha device and on a
-// group, which carries it.
+// group, which carries a copy of it.
 function iconDocument() {
   const sample = sampleDocument();
   const group = addNode(sample.doc, {
     kind: 'group',
     title: 'Zone',
-    icon: ICON_KEY,
+    icon: 'plc',
   });
 
   return {
     ...sample,
     group: group.node,
     doc: {
-      ...updateNode(group.doc, sample.alpha.id, { device: { icon: ICON_KEY } }),
-      icons: { [ICON_KEY]: PLC },
+      ...updateNode(group.doc, sample.alpha.id, { device: { icon: 'plc' } }),
+      icons: { plc: PLC },
     },
   };
 }
 
 describe('the custom icon a node names', () => {
-  test('is a device’s or a group’s, and only an icon id', () => {
-    expect(nodeIcon({ kind: 'device', device: { icon: ICON_KEY } })).toBe(
-      ICON_KEY,
-    );
-    expect(nodeIcon({ kind: 'group', group: { icon: ICON_KEY } })).toBe(
-      ICON_KEY,
-    );
+  test('is a device’s or a group’s, and only an icon name', () => {
+    expect(nodeIcon({ kind: 'device', device: { icon: 'plc' } })).toBe('plc');
+    expect(nodeIcon({ kind: 'group', group: { icon: 'PLC-2' } })).toBe('PLC-2');
 
     for (const node of [
       undefined,
       { kind: 'device', device: {} },
       { kind: 'device', device: { icon: '' } },
-      { kind: 'device', device: { icon: 'router' } },
+      { kind: 'device', device: { icon: ICON_KEY } },
       { kind: 'device', device: { icon: 'https://example.com/a.png' } },
       { kind: 'device', device: { icon: 'data:image/svg+xml;base64,AAAA' } },
       { kind: 'device', device: { icon: 7 } },
       { kind: 'group', group: { iconKey: 'firewall' } },
       // A switch and a note have none.
-      { kind: 'switch', switch: { icon: ICON_KEY } },
-      { kind: 'note', note: { icon: ICON_KEY } },
+      { kind: 'switch', switch: { icon: 'plc' } },
+      { kind: 'note', note: { icon: 'plc' } },
     ]) {
       expect(nodeIcon(node), JSON.stringify(node)).toBe('');
     }
@@ -105,10 +116,10 @@ describe('the custom icon a node names', () => {
       buildOutline(doc).map((item) => [item.id, item]),
     );
 
-    expect(rows[alpha.id]).toMatchObject({ iconKey: 'linux', icon: ICON_KEY });
+    expect(rows[alpha.id]).toMatchObject({ iconKey: 'linux', icon: 'plc' });
     expect(rows[group.id]).toMatchObject({
       iconKey: 'container',
-      icon: ICON_KEY,
+      icon: 'plc',
     });
     expect(rows[bravo.id].icon).toBe('');
     expect(rows[sw.id].icon).toBe('');
@@ -116,8 +127,8 @@ describe('the custom icon a node names', () => {
 
   test('a flow node has the address it is drawn from, or none', () => {
     const { doc, alpha, bravo, sw, group } = iconDocument();
-    const data = (document, id) =>
-      toFlowNodes(document).find((node) => node.id === id).data;
+    const data = (document, id, options) =>
+      toFlowNodes(document, options).find((node) => node.id === id).data;
 
     expect(data(doc, alpha.id)).toMatchObject({
       iconKey: 'linux',
@@ -127,13 +138,21 @@ describe('the custom icon a node names', () => {
     expect(data(doc, bravo.id).iconSrc).toBe('');
     expect(data(doc, sw.id).iconSrc).toBe('');
 
-    // A document that names an icon it does not carry draws the built-in
-    // one: nothing is fetched for it.
+    // A document that carries no copy draws the icon library's icon of
+    // that name, by its name or an alias...
     const bare = { ...doc };
+    const other = base64Of(png(2, 2, [1, 2, 3, 255]));
 
     delete bare.icons;
-    expect(data(bare, alpha.id).iconSrc).toBe('');
-    expect(data(bare, alpha.id).iconKey).toBe('linux');
+    expect(
+      data(bare, alpha.id, {
+        library: libraryOf([{ name: 'PLC-2', aliases: ['plc'], data: other }]),
+      }).iconSrc,
+    ).toBe(`data:image/png;base64,${other}`);
+
+    // ...and with neither, the built-in one: nothing is fetched for it.
+    expect(data(bare, alpha.id, { library: libraryOf([]) }).iconSrc).toBe('');
+    expect(data(bare, alpha.id, { library: null }).iconKey).toBe('linux');
   });
 
   // Vue Flow is handed only the nodes an edit changed.
@@ -149,10 +168,9 @@ describe('the custom icon a node names', () => {
 
     // Another icon on the device is a change of that node alone.
     const other = png(2, 2, [1, 2, 3, 255]);
-    const id = iconId(other);
     const swapped = {
-      ...updateNode(doc, alpha.id, { device: { icon: id } }),
-      icons: { ...doc.icons, [id]: { data: base64Of(other) } },
+      ...updateNode(doc, alpha.id, { device: { icon: 'other' } }),
+      icons: { ...doc.icons, other: { data: base64Of(other) } },
     };
     const next = keepUnchanged(toFlowNodes(swapped), before);
 
@@ -162,7 +180,6 @@ describe('the custom icon a node names', () => {
     expect(at(next, bravo.id)).toBe(at(before, bravo.id));
   });
 });
-
 describe('BuilderIcon', () => {
   test('draws a custom icon as an image, at the size asked for', async () => {
     const html = await render(BuilderIcon, {
@@ -287,29 +304,69 @@ describe('a custom icon on the canvas and in the outline', () => {
 describe('the Custom icons dialog', () => {
   const other = png(3, 2, [9, 9, 9, 255]);
   const diagram = [
-    { id: iconId(other), name: '', data: base64Of(other) },
-    { id: ICON_KEY, name: 'plc <b>', data: ICON_DATA },
+    { name: 'plc', data: ICON_DATA },
+    { name: 'aaa', data: base64Of(other) },
   ];
-  const provides = (extra = {}) => [
+  const server = [
+    {
+      name: 'hmi',
+      owner: 'alice',
+      width: 1,
+      height: 1,
+      bytes: 70,
+      aliases: ['old-hmi'],
+      data: ICON_DATA,
+      canRename: true,
+      canDelete: true,
+    },
+    {
+      name: 'valve',
+      owner: 'bob',
+      width: 3,
+      height: 2,
+      bytes: 80,
+      aliases: [],
+      data: base64Of(other),
+      canRename: false,
+      canDelete: false,
+    },
+  ];
+
+  // The library the dialog is given: its state as the server last listed
+  // it, and calls that never answer.
+  function libraryWith(state) {
+    const pending = () => new Promise(() => {});
+
+    return {
+      state: {
+        status: 'loading',
+        error: '',
+        icons: [],
+        maxIcons: 64,
+        maxBytes: 1048576,
+        usedIcons: 0,
+        usedBytes: 0,
+        ...state,
+      },
+      load: pending,
+      ensure: pending,
+      lookup: (name) =>
+        (state.icons || []).find(
+          (icon) => icon.name.toLowerCase() === name.toLowerCase(),
+        ) || null,
+      upload: pending,
+      rename: pending,
+      remove: pending,
+      failure: () => 'failed',
+    };
+  }
+
+  const provides = ({ icons = {}, library = {} } = {}) => [
     [
       INSPECTOR_ICONS,
-      {
-        entry: () => undefined,
-        shelve: () => {},
-        diagram: () => diagram,
-        full: () => false,
-        ...extra,
-      },
+      { entry: () => undefined, diagram: () => diagram, ...icons },
     ],
-    [
-      INSPECTOR_ICON_LIBRARY,
-      {
-        list: () => new Promise(() => {}),
-        upload: () => new Promise(() => {}),
-        remove: () => new Promise(() => {}),
-        failure: () => 'failed',
-      },
-    ],
+    [INSPECTOR_ICON_LIBRARY, libraryWith(library)],
   ];
 
   test('says what an icon is, and has one button to upload a file', async () => {
@@ -318,7 +375,7 @@ describe('the Custom icons dialog', () => {
     expect(html).toMatch(/<h2 id="icon-dialog-title"[^>]*>Custom icons<\/h2>/);
     expect(html).toContain('aria-labelledby="icon-dialog-title"');
     expect(textOf(html)).toContain(
-      'An icon is a small image, drawn at 16 pixels. PNG, JPEG, GIF, WebP and SVG files are converted to a PNG of at most 96 by 96 pixels.',
+      'An icon is a small image, drawn at 16 pixels, that every user of this server can use. PNG, JPEG, GIF, WebP and SVG files are converted to a PNG of at most 96 by 96 pixels.',
     );
 
     const [upload] = tags(html, 'button').filter((tag) =>
@@ -346,7 +403,7 @@ describe('the Custom icons dialog', () => {
     expect(textOf(html)).toMatch(/Close$/);
   });
 
-  test('lists the diagram’s icons by name, each with its size and Use', async () => {
+  test('lists the diagram’s copies by name, each with its size and Use', async () => {
     const html = await render(IconDialog, {}, provides());
     const list = html.slice(
       html.indexOf('data-testid="icon-diagram-list"'),
@@ -359,15 +416,10 @@ describe('the Custom icons dialog', () => {
 
     expect(textOf(html)).toContain('In this diagram (2)');
     expect(rows).toHaveLength(2);
-    // An icon without a name comes first, and is named as such.
-    expect(textOf(`<li${rows[0]}`)).toBe(
-      'Unnamed icon 3 × 2 pixels, 0.1 KiB Use',
-    );
-    expect(rows[0]).toContain('aria-label="Use Unnamed icon"');
-    expect(textOf(`<li${rows[1]}`)).toBe(
-      'plc &lt;b&gt; 1 × 1 pixels, 0.1 KiB Use',
-    );
-    expect(rows[1]).toContain('aria-label="Use plc &lt;b&gt;"');
+    // By name.
+    expect(textOf(`<li${rows[0]}`)).toBe('aaa 3 × 2 pixels, 0.1 KiB Use');
+    expect(rows[0]).toContain('aria-label="Use aaa"');
+    expect(textOf(`<li${rows[1]}`)).toBe('plc 1 × 1 pixels, 0.1 KiB Use');
 
     // Each thumbnail is an image of the icon's PNG, and decoration.
     const images = tags(list, 'img');
@@ -382,14 +434,82 @@ describe('the Custom icons dialog', () => {
       expect(image).toContain('aria-hidden="true"');
     }
 
-    // Whether the library has an icon is not known until it is read.
-    expect(list).not.toContain('Save to my library');
-    expect(list).not.toContain('In my library');
-    expect(textOf(html)).toContain('My library Loading your library…');
+    // Whether the server has a copy is not known until it is read.
+    expect(list).not.toContain('Add to server');
+    expect(list).not.toContain('On the server');
+    expect(textOf(html)).toContain('Server icons (0)');
+    expect(textOf(html)).toContain('Loading the server');
   });
 
-  test('a diagram without icons has no list of them', async () => {
-    const html = await render(IconDialog, {}, provides({ diagram: () => [] }));
+  test('lists the server’s icons, with Rename and Delete only where the user may', async () => {
+    const html = await render(
+      IconDialog,
+      {},
+      provides({
+        library: {
+          status: 'ready',
+          icons: server,
+          usedIcons: 1,
+          usedBytes: 70,
+        },
+      }),
+    );
+    const list = html.slice(html.indexOf('data-testid="icon-library-list"'));
+    const rows = list
+      .split('<li')
+      .slice(1)
+      .map((row) => row.slice(0, row.indexOf('</li>')));
+
+    expect(textOf(html)).toContain('Server icons (2)');
+    expect(textOf(html)).toContain(
+      'You uploaded 1 of 64 icons, 0.1 KiB of 1 MiB.',
+    );
+    expect(textOf(`<li${rows[0]}`)).toBe(
+      'hmi Uploaded by alice · 1 × 1 pixels, 0.1 KiB · also named old-hmi Use Rename Delete',
+    );
+    expect(rows[0]).toContain('aria-label="Rename hmi"');
+    expect(rows[0]).toContain('aria-label="Delete hmi from the server"');
+    expect(textOf(`<li${rows[1]}`)).toBe(
+      'valve Uploaded by bob · 3 × 2 pixels, 0.1 KiB Use',
+    );
+
+    // The filter is a labelled field.
+    expect(html).toMatch(/<label for="icon-filter"[^>]*>Filter icons<\/label>/);
+    expect(tags(html, 'input')).toHaveLength(2);
+
+    // The diagram's copy the server has as it is says so; one it lacks
+    // offers to add it.
+    const copies = html.slice(
+      html.indexOf('data-testid="icon-diagram-list"'),
+      html.indexOf('data-testid="icon-library-heading"'),
+    );
+
+    expect(copies).toContain('aria-label="Add aaa to the server"');
+    expect(copies).toContain('aria-label="Add plc to the server"');
+  });
+
+  test('a copy the server has as it is is on the server', async () => {
+    const html = await render(
+      IconDialog,
+      {},
+      provides({
+        icons: { diagram: () => [{ name: 'HMI', data: ICON_DATA }] },
+        library: { status: 'ready', icons: server },
+      }),
+    );
+
+    expect(textOf(html)).toContain(
+      'HMI 1 × 1 pixels, 0.1 KiB Use On the server',
+    );
+    expect(html).not.toContain('Add HMI to the server');
+  });
+
+  test('a diagram without copies has no list of them', async () => {
+    const html = await render(
+      IconDialog,
+      {},
+      provides({ icons: { diagram: () => [] } }),
+    );
 
     expect(html).not.toContain('In this diagram');
     expect(html).not.toContain('icon-diagram-list');
@@ -400,6 +520,7 @@ describe('the Custom icons dialog', () => {
     const html = await render(IconDialog);
 
     expect(html).not.toContain('In this diagram');
-    expect(textOf(html)).toContain('My library Loading your library…');
+    expect(textOf(html)).toContain('The icon library is not available here.');
+    expect(html).toContain('data-testid="icon-retry"');
   });
 });

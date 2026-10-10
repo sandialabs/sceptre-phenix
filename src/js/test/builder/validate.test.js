@@ -15,6 +15,7 @@ import {
 import bundle from '@/builder/schema/builder-v1.schema.json';
 import {
   deviceFieldWarnings,
+  iconNameProblem,
   isTime,
   MAX_ANNOTATION_BYTES,
   MAX_ANNOTATIONS,
@@ -1361,9 +1362,9 @@ describe('colors, styles, custom icons and templates', () => {
     );
   });
 
-  // An icon id names a key of the document's icons, never a property every
-  // object has.
-  test('a custom icon is looked up among the document icons only', () => {
+  // A custom icon is a name, which a document need not carry: the server's
+  // icon library resolves it. A property every object has is a name too.
+  test('a custom icon is any icon name, carried or not', () => {
     const { doc, alpha } = sampleDocument();
     const using = (icon, icons) => {
       const next = JSON.parse(JSON.stringify(doc));
@@ -1377,49 +1378,70 @@ describe('colors, styles, custom icons and templates', () => {
       return paths(next);
     };
     const path = expect.stringMatching(/^nodes\[\d+\]\.device\.icon$/);
-    const icons = { [ICON_KEY]: { data: ICON_DATA } };
+    const icons = { plc: { data: ICON_DATA } };
 
-    expect(using(ICON_KEY, icons)).toEqual([]);
-    expect(using(ICON_KEY)).toEqual([path]);
-    expect(using('constructor', icons)).toEqual([path]);
-    expect(using('toString', icons)).toEqual([path]);
-    expect(using('__proto__', icons)).toEqual([path]);
+    expect(using('plc', icons)).toEqual([]);
+    expect(using('plc')).toEqual([]);
+    expect(using('constructor', icons)).toEqual([]);
+    expect(using('__proto__')).toEqual([]);
+    expect(using(ICON_KEY, icons)).toEqual([path]);
+    expect(using('plc icon')).toEqual([path]);
+    expect(using('..')).toEqual([path]);
+  });
+
+  test('iconNameProblem says why a name is none, in the server’s words', () => {
+    expect(iconNameProblem('plc')).toBe('');
+    expect(iconNameProblem('n'.repeat(MAX_ICON_NAME_BYTES))).toBe('');
+    expect(iconNameProblem('')).toBe(
+      'icon name "" must be 1 to 64 letters, digits, "_", "@", "." or "-"',
+    );
+    expect(iconNameProblem('tab\there')).toBe(
+      'icon name "tab\\there" must be 1 to 64 letters, digits, "_", "@", "." or "-"',
+    );
+    expect(iconNameProblem('n'.repeat(65))).toBe(
+      `icon name "${'n'.repeat(64)}..." must be 1 to 64 letters, digits, "_", "@", "." or "-"`,
+    );
+    expect(iconNameProblem('.')).toBe('icon name "." must not be "." or ".."');
+    expect(iconNameProblem(7)).toBe(
+      'icon name "7" must be 1 to 64 letters, digits, "_", "@", "." or "-"',
+    );
   });
 
   test('validateIcons reports at the path it is given', () => {
     expect(validateIcons(undefined)).toEqual([]);
     expect(validateIcons(null)).toEqual([]);
     expect(validateIcons({})).toEqual([]);
-    expect(validateIcons({ [ICON_KEY]: { data: ICON_DATA } })).toEqual([]);
+    expect(validateIcons({ plc: { data: ICON_DATA } })).toEqual([]);
     expect(
-      validateIcons({ plc: { data: ICON_DATA } }, 'library.icons'),
+      validateIcons({ [ICON_KEY]: { data: ICON_DATA } }, 'library.icons'),
     ).toEqual([
       {
         path: 'library.icons',
-        message: 'icon key "plc" must be sha256: and 64 hex digits',
+        message: `icon name "${ICON_KEY.slice(0, 64)}..." must be 1 to 64 letters, digits, "_", "@", "." or "-"`,
         level: 'error',
       },
     ]);
-    expect(validateIcons({ [ICON_KEY]: 'x' })[0]).toMatchObject({
+    expect(validateIcons({ plc: 'x' })[0]).toMatchObject({
       path: 'icons',
-      message: expect.stringContaining('data must be base64'),
+      message: expect.stringMatching(
+        /^icon "plc" data must be base64 of at most \d+ bytes$/,
+      ),
     });
     expect(messages(validateIcons([ICON_DATA]))).toEqual([
-      'custom icons must be an object of icons by icon id',
+      'custom icons must be an object of icons by name',
     ]);
   });
 
   test('icons are counted, and reported in the order of their keys', () => {
     const icons = (count) =>
       Object.fromEntries(
-        Array.from({ length: count }, (_, i) => {
-          const data = base64Of(png(1, 1, [i, 0, 7, 255]));
-
-          return [`sha256:${String(i).padStart(64, '0')}`, { data }];
-        }),
+        Array.from({ length: count }, (_, i) => [
+          `icon ${String(i).padStart(2, '0')}`,
+          { data: base64Of(png(1, 1, [i, 0, 7, 255])) },
+        ]),
       );
 
-    // Each key is the id of other bytes, so each is reported, in order.
+    // Each key is no icon name, so each is reported, in order.
     const issues = messages(validateIcons(icons(MAX_DOCUMENT_ICONS + 1)));
 
     expect(issues[0]).toBe('at most 50 custom icons are allowed, not 51');
@@ -1430,46 +1452,47 @@ describe('colors, styles, custom icons and templates', () => {
     );
   });
 
-  // An icon that was checked is not decoded and hashed again on every edit:
-  // its id is the digest of its data. Other data under the same id is.
+  // Data that was checked is not decoded again on every edit; other data is
+  // checked, and every key is.
   test('an icon found valid is checked again when its data changes', () => {
-    const other = base64Of(png(2, 2, [1, 2, 3, 255]));
-
-    expect(validateIcons({ [ICON_KEY]: { data: ICON_DATA } })).toEqual([]);
-    expect(validateIcons({ [ICON_KEY]: { data: ICON_DATA } })).toEqual([]);
-    expect(messages(validateIcons({ [ICON_KEY]: { data: other } }))).toEqual([
-      expect.stringContaining('does not match its data'),
-    ]);
-    expect(messages(validateIcons({ [ICON_KEY]: { data: 'x' } }))).toEqual([
+    expect(validateIcons({ plc: { data: ICON_DATA } })).toEqual([]);
+    expect(validateIcons({ plc: { data: ICON_DATA } })).toEqual([]);
+    expect(messages(validateIcons({ plc: { data: 'x' } }))).toEqual([
       expect.stringContaining('data must be base64'),
     ]);
-    // The name is checked each time: it is no part of the id.
-    expect(
-      messages(
-        validateIcons({
-          [ICON_KEY]: {
-            name: 'n'.repeat(MAX_ICON_NAME_BYTES + 1),
-            data: ICON_DATA,
-          },
-        }),
-      ),
-    ).toEqual([expect.stringContaining('name must be at most 64 bytes')]);
-    expect(validateIcons({ [ICON_KEY]: { data: ICON_DATA } })).toEqual([]);
+    expect(messages(validateIcons({ 'a b': { data: ICON_DATA } }))).toEqual([
+      expect.stringContaining('icon name "a b" must be'),
+    ]);
+    expect(validateIcons({ plc: { data: ICON_DATA } })).toEqual([]);
   });
 
   test('templateIssues reports under the path it is given', () => {
     expect(templateIssues(template(), 'templates[0]')).toEqual([]);
 
-    // The id and the custom icon are checked where the template is kept.
+    // The id is checked where the template is kept; the custom icon is a
+    // name the template need not carry.
     expect(
       templateIssues(
         template({
           id: 'server',
-          device: { icon: ICON_KEY, spec: { general: { hostname: 'x' } } },
+          device: { icon: 'plc', spec: { general: { hostname: 'x' } } },
         }),
         'templates[0]',
       ),
     ).toEqual([]);
+    expect(
+      templateIssues(
+        template({
+          device: { icon: ICON_KEY, spec: { general: { hostname: 'x' } } },
+        }),
+        'templates[0]',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        path: 'templates[0].device.icon',
+        message: expect.stringContaining('must be 1 to 64 letters'),
+      }),
+    ]);
 
     expect(
       templateIssues(

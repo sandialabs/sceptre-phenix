@@ -13,16 +13,20 @@
 //     the document's digest and ID, in the topology's "builder-doc" annotation.
 //     The Topology config hook of this package checks that reference in every
 //     topology about to be stored.
-//   - Icon libraries: the custom icons a user uploaded, one immutable record
-//     per icon in a namespace of its own, named by the SHA-256 of its PNG
-//     bytes (see [Service.AddIcon]). A library belongs to one user and is
-//     never shared: an icon reaches another user only inside a document,
-//     which carries its own copy. [Service.CleanupOrphanedChunks] and
-//     [Service.CleanupOrphanedDocuments] never list or delete in that
-//     namespace.
+//   - The icon library: the custom icons every user of the server shares,
+//     each under a unique name its uploader chose, with one record per icon
+//     name and per alias in a namespace of its own (see [Service.AddIcon]).
+//     Nodes and templates name icons; a document carries copies only when
+//     it is to stand on its own, as a downloaded file does. Only an icon's
+//     uploader, or a caller the web layer allows to act on any icon, renames
+//     or deletes it (see [Service.RenameIcon], [Service.DeleteIcon]).
+//     [Service.CleanupOrphanedChunks] and [Service.CleanupOrphanedDocuments]
+//     never list or delete in that namespace; [Service.CleanupLegacyIcons]
+//     removes records of the per-user layout of earlier builds.
 //   - Template libraries: the device templates a user keeps, with their
-//     collections and the custom icons they use, as one record per user in a
-//     namespace of its own (see [TemplateLibrary]). A user who never changed
+//     collections, as one record per user in a namespace of its own (see
+//     [TemplateLibrary]). A template names its custom icon, which the icon
+//     library resolves. A user who never changed
 //     the library has no record and is given the built-in templates; the
 //     first change stores them with the record, so one that was deleted
 //     stays deleted. Every change is one compare-and-swap of that record

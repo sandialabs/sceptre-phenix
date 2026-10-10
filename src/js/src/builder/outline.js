@@ -78,7 +78,7 @@ export function buildOutline(doc) {
           kind: node.kind,
           label: nodeLabel(node),
           iconKey: nodeIconKey(node),
-          // The id of its custom icon, which the row draws in place of the
+          // The name of its custom icon, which the row draws in place of the
           // icon of its key (see iconSrcFor in BuilderOutline).
           icon: nodeIcon(node),
           depth,

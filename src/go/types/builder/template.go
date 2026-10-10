@@ -69,14 +69,15 @@ type TemplateDevice struct {
 //     control characters,
 //   - a device without a spec, or whose spec has no general.hostname, a
 //     blank one or one with whitespace,
-//   - an icon key outside the icon key registry (see [IsIconKey]), or a
-//     color that is not "#rrggbb",
+//   - an icon key outside the icon key registry (see [IsIconKey]), a custom
+//     icon that is not an icon name (see [IconNameProblem]), or a color
+//     that is not "#rrggbb",
 //   - a device whose JSON encoding is longer than [MaxTemplateDeviceBytes].
 //
 // The spec is not checked against the phenix schema, as a device's is not.
-// Neither are the id, whose form depends on where the template is kept, and
-// the custom icon, which names an icon kept beside the template:
-// [Document.Validate] checks both for a document's templates.
+// Neither is the id, whose form depends on where the template is kept:
+// [Document.Validate] checks it for a document's templates. The custom icon
+// names an icon of the server's icon library, or one a document carries.
 func (t *Template) Issues(path string) []Issue {
 	var issues []Issue
 
@@ -117,6 +118,12 @@ func (t *Template) Issues(path string) []Issue {
 
 	if problem := iconKeyProblem(device.IconKey); problem != "" {
 		addf(".device.iconKey", "%s", problem)
+	}
+
+	if device.Icon != "" {
+		if problem := IconNameProblem(device.Icon); problem != "" {
+			addf(".device.icon", "%s", problem)
+		}
 	}
 
 	if problem := colorProblem(device.OutlineColor); problem != "" {

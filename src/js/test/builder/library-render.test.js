@@ -30,12 +30,14 @@ import {
   getCommand,
   runCommand,
 } from '@/builder/commands.js';
+import { iconLibrary } from '@/builder/iconLibrary.js';
+import { indexIcons } from '@/builder/icons.js';
 import { addTemplate, createDocument } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 import { blankTemplate } from '@/builder/templates.js';
 
 import { libraryOf, sampleDocument, tags, withTemplates } from './fixtures.js';
-import { ICON_DATA, ICON_KEY } from './png.js';
+import { ICON_DATA } from './png.js';
 
 // A role that may do `verbs` to configs, and so to its template library.
 // roleAllowed remembers its answers by the role's name.
@@ -131,6 +133,8 @@ async function render(component, props = {}, prepare = () => {}) {
 
 beforeEach(() => {
   phenix.role = EVERYTHING;
+  // The server's icon library holds the icon the templates name.
+  iconLibrary.state.index = indexIcons([{ name: 'plc-icon', data: ICON_DATA }]);
 });
 
 describe('the Node Templates tab', () => {
@@ -140,7 +144,7 @@ describe('the Node Templates tab', () => {
         template('plc', {
           description: 'A controller',
           updated: '2026-10-01T12:00:00Z',
-          device: { ...template('plc').device, icon: ICON_KEY },
+          device: { ...template('plc').device, icon: 'plc-icon' },
         }),
         template('hmi'),
         template('rtu'),
@@ -149,7 +153,6 @@ describe('the Node Templates tab', () => {
         { id: 'c1', name: 'Plant floor', templateIds: ['rtu', 'plc'] },
         { id: 'c2', name: 'Office', templateIds: ['plc'] },
       ],
-      icons: { [ICON_KEY]: { name: 'plc', data: ICON_DATA } },
     });
   const tab = (prepare) =>
     render(BuilderTemplates, {}, (store) => {
@@ -507,10 +510,9 @@ describe('the palette’s library', () => {
       templates: [
         template('server', { name: 'Server', description: 'Generic' }),
         template('plc', {
-          device: { ...template('plc').device, icon: ICON_KEY },
+          device: { ...template('plc').device, icon: 'plc-icon' },
         }),
       ],
-      icons: { [ICON_KEY]: { name: 'plc', data: ICON_DATA } },
     });
 
   test('the library button stands after "+", named for where it goes', async () => {
@@ -536,7 +538,7 @@ describe('the palette’s library', () => {
     expect(button).not.toMatch(/\sdisabled(\s|>|=)/);
   });
 
-  test('a library that was read is the one group, under no heading, with its own icons', async () => {
+  test('a library that was read is the one group, under no heading, with the icons it names', async () => {
     const { html } = await render(BuilderPalette, {}, (store) => {
       store.templates = library();
     });
@@ -713,25 +715,20 @@ describe('the template editor on a template of the library', () => {
     expect(html).toContain('Hostname');
   });
 
-  test('one the library has: named in the title, with its icon from the library', async () => {
+  test('one the library has: named in the title, with its icon from the icon library', async () => {
     const library = libraryOf({
       templates: [
         template('plc', {
           description: 'A controller',
-          device: { ...template('plc').device, icon: ICON_KEY },
+          device: { ...template('plc').device, icon: 'plc-icon' },
         }),
         // Another of the same name in the library, which is said.
         template('other', { name: ' plc ' }),
       ],
-      icons: { [ICON_KEY]: { name: 'plc icon', data: ICON_DATA } },
     });
     const { html } = await render(
       TemplateDialog,
-      {
-        mode: 'library-edit',
-        template: library.items[0],
-        icons: library.icons,
-      },
+      { mode: 'library-edit', template: library.items[0] },
       (store) => {
         store.templates = library;
         // A template of the open diagram has nothing to do with it.
@@ -781,7 +778,6 @@ describe('the library commands', () => {
         selection: { nodes: [], edges: [] },
         announce: vi.fn(),
         addNode: vi.fn(() => ({ id: 'added' })),
-        shelveIcons: vi.fn(),
         ...store,
       }),
       view: fullView,
@@ -829,13 +825,12 @@ describe('the library commands', () => {
     ).toBe('This tab is already shown.');
   });
 
-  test('Add device offers the library’s templates by group, and takes their icons along', () => {
-    const icons = { [ICON_KEY]: { name: 'plc', data: ICON_DATA } };
+  test('Add device offers the library’s templates by group, with the icons they name', () => {
     const templates = libraryOf({
       templates: [
         template('plc', {
           description: 'A controller',
-          device: { ...template('plc').device, icon: ICON_KEY },
+          device: { ...template('plc').device, icon: 'plc-icon' },
         }),
         template('hmi', { owner: 'bob', source: 'shared' }),
         template('fw', {
@@ -847,7 +842,6 @@ describe('the library commands', () => {
           },
         }),
       ],
-      icons,
     });
     const ctx = context({ store: { templates } });
     const choices = getCommand('add.device').choices(ctx);
@@ -867,12 +861,11 @@ describe('the library commands', () => {
     expect(choices[2].keywords).toEqual(['Shared by bob.']);
 
     runCommand('add.device', ctx, choices[1]);
-    expect(ctx.store.shelveIcons).toHaveBeenCalledWith(icons);
     expect(ctx.store.addNode).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'device',
         hostname: 'plc',
-        look: { iconKey: 'router', icon: ICON_KEY },
+        look: { iconKey: 'router', icon: 'plc-icon' },
       }),
     );
   });

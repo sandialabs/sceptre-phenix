@@ -334,11 +334,11 @@ describe('inspector schemas', () => {
     }
 
     expect(device.icon.description).toBe(
-      'An image of your own, drawn in place of the icon. The diagram keeps a copy, so it shows wherever the diagram is opened. Applies at once, without Apply.',
+      "An image of the server's icon library, drawn in place of the icon. The node names it, so a renamed icon keeps showing. Applies at once, without Apply.",
     );
     // A group's waits for Apply with the rest of its form.
     expect(group.icon.description).toBe(
-      'An image of your own, drawn in place of the icon. The diagram keeps a copy, so it shows wherever the diagram is opened.',
+      "An image of the server's icon library, drawn in place of the icon. The node names it, so a renamed icon keeps showing.",
     );
     expect(device.iconKey.description).toBe(
       'Canvas icon. A custom icon, when set, is drawn in its place. Presentation only, so a new one applies at once, without Apply.',

@@ -21,7 +21,7 @@ const (
 )
 
 // sampleTemplate returns a template that uses every field, the custom icon
-// being the fixture's (see iconFixtureID).
+// being the fixture's (see iconFixtureName).
 func sampleTemplate() builder.Template {
 	return builder.Template{
 		ID:          idTemplate,
@@ -29,7 +29,7 @@ func sampleTemplate() builder.Template {
 		Description: "Programmable logic controller",
 		Device: builder.TemplateDevice{
 			IconKey:      "server",
-			Icon:         iconFixtureID,
+			Icon:         iconFixtureName,
 			OutlineColor: "#2f6fbf",
 			FillColor:    "#EEF4FB",
 			Spec: map[string]any{
@@ -82,14 +82,15 @@ func TestTemplateIssuesAccepts(t *testing.T) {
 			tpl.Description = ""
 			tpl.Device = builder.TemplateDevice{Spec: tpl.Device.Spec}
 		},
-		// The id is the document's to check, and the custom icon is checked
-		// against the icons kept beside the template.
-		"an id that is no UUID":         func(tpl *builder.Template) { tpl.ID = "server" },
-		"no id":                         func(tpl *builder.Template) { tpl.ID = "" },
-		"a custom icon nothing carries": func(tpl *builder.Template) { tpl.Device.Icon = "sha256:" + strings.Repeat("0", 64) },
-		"a name of 128 bytes":           func(tpl *builder.Template) { tpl.Name = strings.Repeat("é", 64) },
-		"a description of 1024 bytes":   func(tpl *builder.Template) { tpl.Description = strings.Repeat("d", 1024) },
-		"a device of 16384 bytes":       func(tpl *builder.Template) { tpl.Device = deviceOfBytes(t, builder.MaxTemplateDeviceBytes) },
+		// The id is the document's to check, and the custom icon is a name
+		// a server's icon library resolves, whatever carries it.
+		"an id that is no UUID":          func(tpl *builder.Template) { tpl.ID = "server" },
+		"no id":                          func(tpl *builder.Template) { tpl.ID = "" },
+		"a custom icon nothing carries":  func(tpl *builder.Template) { tpl.Device.Icon = "elsewhere" },
+		"a custom icon name of 64 bytes": func(tpl *builder.Template) { tpl.Device.Icon = strings.Repeat("n", 64) },
+		"a name of 128 bytes":            func(tpl *builder.Template) { tpl.Name = strings.Repeat("é", 64) },
+		"a description of 1024 bytes":    func(tpl *builder.Template) { tpl.Description = strings.Repeat("d", 1024) },
+		"a device of 16384 bytes":        func(tpl *builder.Template) { tpl.Device = deviceOfBytes(t, builder.MaxTemplateDeviceBytes) },
 		// As for a device node, the spec is not checked against the phenix
 		// schema: only that it names the device.
 		"a spec that is only a hostname": func(tpl *builder.Template) {
@@ -207,6 +208,24 @@ func TestTemplateIssuesRefuses(t *testing.T) {
 			wantMsg:  "must be one of the built-in keys, not a URL or path",
 		},
 		{
+			name:     "a custom icon that is an icon id",
+			mutate:   func(tpl *builder.Template) { tpl.Device.Icon = iconFixtureID },
+			wantPath: ".device.icon",
+			wantMsg:  `icon name "` + iconFixtureID[:64] + `..." must be 1 to 64 letters, digits, "_", "@", "." or "-"`,
+		},
+		{
+			name:     "a custom icon name of 65 bytes",
+			mutate:   func(tpl *builder.Template) { tpl.Device.Icon = strings.Repeat("n", 65) },
+			wantPath: ".device.icon",
+			wantMsg:  `must be 1 to 64 letters`,
+		},
+		{
+			name:     "a custom icon named two dots",
+			mutate:   func(tpl *builder.Template) { tpl.Device.Icon = ".." },
+			wantPath: ".device.icon",
+			wantMsg:  `icon name ".." must not be "." or ".."`,
+		},
+		{
 			name:     "a named outline color",
 			mutate:   func(tpl *builder.Template) { tpl.Device.OutlineColor = "red" },
 			wantPath: ".device.outlineColor",
@@ -253,7 +272,7 @@ func withTemplates(t *testing.T, templates ...builder.Template) *builder.Documen
 	t.Helper()
 
 	doc := loadDocumentFixture(t, "document.json")
-	doc.Icons = map[string]builder.Icon{iconFixtureID: {Name: "plc", Data: iconFixtureData}}
+	doc.Icons = map[string]builder.Icon{iconFixtureName: {Data: iconFixtureData}}
 	doc.Templates = templates
 
 	return doc
@@ -338,15 +357,16 @@ func TestValidateTemplates(t *testing.T) {
 			wantMsg:  "template name is required",
 		},
 		{
-			name: "a custom icon the document does not carry",
+			// Reported once, by Template.Issues.
+			name: "a custom icon that is not an icon name",
 			doc: func() *builder.Document {
-				doc := withTemplates(t, sampleTemplate())
-				doc.Icons = nil
+				template := sampleTemplate()
+				template.Device.Icon = "plc icon"
 
-				return doc
+				return withTemplates(t, template)
 			},
 			wantPath: "templates[0].device.icon",
-			wantMsg:  `unknown custom icon "` + iconFixtureID[:64] + `..."`,
+			wantMsg:  `icon name "plc icon" must be 1 to 64 letters, digits, "_", "@", "." or "-"`,
 		},
 	}
 

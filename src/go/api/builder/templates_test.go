@@ -2,7 +2,6 @@ package builder
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,16 +46,6 @@ func paddedTemplate(name string, size int) builder.Template {
 	return template
 }
 
-// testIcon returns the id and the entry of a custom icon whose image
-// depends on seed.
-func testIcon(t *testing.T, seed int) (string, builder.Icon) {
-	t.Helper()
-
-	png := iconPixel(t, seed)
-
-	return builder.IconID(png), builder.Icon{Name: fmt.Sprintf("icon %d", seed), Data: base64.StdEncoding.EncodeToString(png)}
-}
-
 // iconTemplate returns a valid template that names a custom icon.
 func iconTemplate(name, icon string) builder.Template {
 	template := testTemplate(name)
@@ -99,7 +88,7 @@ func mustAddTemplates(t *testing.T, h *testHarness, owner string, templates ...b
 	mustUpdate(t, h, owner, func(library *TemplateLibrary) error {
 		var err error
 
-		ids, err = library.AddTemplates(templates, nil, h.service.NewID)
+		ids, err = library.AddTemplates(templates, h.service.NewID)
 
 		return err
 	})
@@ -181,8 +170,8 @@ func TestLibraryStartsWithTheBuiltins(t *testing.T) {
 		t.Fatalf("a new library = %+v, want the owner's, with no revision and no times", library)
 	}
 
-	if len(library.Collections) != 0 || library.Collections == nil || len(library.Icons) != 0 {
-		t.Fatalf("a new library has collections %v and icons %v, want none", library.Collections, library.Icons)
+	if len(library.Collections) != 0 || library.Collections == nil {
+		t.Fatalf("a new library has collections %v, want none", library.Collections)
 	}
 
 	builtins := builder.BuiltinTemplates()
@@ -318,7 +307,7 @@ func TestLibraryDeletedBuiltinStaysDeleted(t *testing.T) {
 	ids := mustAddTemplates(t, h, testOwner, testTemplate("PLC"))
 
 	mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
-		return library.ReplaceTemplate("server", testTemplate("Server two"), nil)
+		return library.ReplaceTemplate("server", testTemplate("Server two"))
 	})
 
 	if got := templateIDs(mustLibrary(t, h, testOwner)); !slices.Equal(got, append(want, ids...)) {
@@ -349,7 +338,7 @@ func TestLibraryAddTemplates(t *testing.T) {
 	first, second := testTemplate("One"), testTemplate("Two")
 	first.ID = "server"
 
-	ids, err := library.AddTemplates([]builder.Template{first, second}, nil, h.service.NewID)
+	ids, err := library.AddTemplates([]builder.Template{first, second}, h.service.NewID)
 	if err != nil {
 		t.Fatalf("AddTemplates returned error: %v", err)
 	}
@@ -364,7 +353,7 @@ func TestLibraryAddTemplates(t *testing.T) {
 		t.Fatalf("the new templates = %+v", library.Templates[len(builtinIDs):])
 	}
 
-	if added, err := library.AddTemplates(nil, nil, h.service.NewID); err != nil || len(added) != 0 {
+	if added, err := library.AddTemplates(nil, h.service.NewID); err != nil || len(added) != 0 {
 		t.Fatalf("adding no template = %q, %v, want nothing", added, err)
 	}
 
@@ -398,15 +387,14 @@ func TestLibraryAddTemplates(t *testing.T) {
 			want:      "templates[0].device: template device must take at most 16384 bytes as JSON, not",
 		},
 		{
-			name:      "a custom icon nothing carries",
+			name:      "a custom icon that is an icon id",
 			templates: []builder.Template{testTemplate("Fine"), iconTemplate("Drawn", "sha256:"+strings.Repeat("a", 64))},
-			want: `template 1 names custom icon "sha256:` + strings.Repeat("a", 64) +
-				`", which the request does not carry`,
+			want:      `templates[1].device.icon: icon name "sha256:` + strings.Repeat("a", 57) + `..." must be 1 to 64`,
 		},
 		{
 			name:      "a custom icon with a long name",
-			templates: []builder.Template{iconTemplate("Drawn", strings.Repeat("é", 100))},
-			want:      `template 0 names custom icon "` + strings.Repeat("é", 40) + `...", which the request does not carry`,
+			templates: []builder.Template{iconTemplate("Drawn", strings.Repeat("n", 65))},
+			want:      `templates[0].device.icon: icon name "` + strings.Repeat("n", 64) + `..." must be 1 to 64`,
 		},
 	}
 
@@ -414,15 +402,15 @@ func TestLibraryAddTemplates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			library := mustLibrary(t, h, testOwner)
 
-			_, err := library.AddTemplates(tt.templates, nil, h.service.NewID)
+			_, err := library.AddTemplates(tt.templates, h.service.NewID)
 
 			if reason, limit := refusal(t, err); !strings.HasPrefix(reason, tt.want) || limit != tt.limit {
 				t.Fatalf("refused with %q (limit %v), want %q", reason, limit, tt.want)
 			}
 
 			// A refusal leaves the library as it was.
-			if got := templateIDs(library); !slices.Equal(got, builtinIDs) || len(library.Icons) != 0 {
-				t.Fatalf("a refused change left %q and %d icons", got, len(library.Icons))
+			if got := templateIDs(library); !slices.Equal(got, builtinIDs) {
+				t.Fatalf("a refused change left %q", got)
 			}
 		})
 	}
@@ -432,13 +420,13 @@ func TestLibraryAddTemplates(t *testing.T) {
 	broken := errors.New("no more ids")
 
 	if _, err := library.AddTemplates(
-		[]builder.Template{testTemplate("X")}, nil, func() (string, error) { return "", broken },
+		[]builder.Template{testTemplate("X")}, func() (string, error) { return "", broken },
 	); !errors.Is(err, broken) {
 		t.Fatalf("a failing id source = %v, want its error", err)
 	}
 
 	if _, err := library.AddTemplates(
-		[]builder.Template{testTemplate("X")}, nil, func() (string, error) { return "server", nil },
+		[]builder.Template{testTemplate("X")}, func() (string, error) { return "server", nil },
 	); err == nil || errors.Is(err, ErrInvalid) {
 		t.Fatalf("an id the library has = %v, want an error that is not the caller's", err)
 	}
@@ -456,7 +444,7 @@ func TestLibraryReplaceTemplate(t *testing.T) {
 	content.Description = ""
 
 	updated := mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
-		return library.ReplaceTemplate(ids[0], content, nil)
+		return library.ReplaceTemplate(ids[0], content)
 	})
 
 	after := updated.Template(ids[0])
@@ -475,7 +463,7 @@ func TestLibraryReplaceTemplate(t *testing.T) {
 	revision := updated.Revision
 
 	same := mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
-		return library.ReplaceTemplate(ids[0], content, nil)
+		return library.ReplaceTemplate(ids[0], content)
 	})
 
 	if same.Revision != revision || same.Template(ids[0]).Version != after.Version ||
@@ -485,7 +473,7 @@ func TestLibraryReplaceTemplate(t *testing.T) {
 
 	// A built-in is edited like any other.
 	edited := mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
-		return library.ReplaceTemplate("router", testTemplate("Edge router"), nil)
+		return library.ReplaceTemplate("router", testTemplate("Edge router"))
 	})
 
 	if router := edited.Template("router"); router.Name != "Edge router" || router.Version != 2 ||
@@ -495,20 +483,20 @@ func TestLibraryReplaceTemplate(t *testing.T) {
 
 	library := mustLibrary(t, h, testOwner)
 
-	if err := library.ReplaceTemplate("no-such", content, nil); !errors.Is(err, ErrNotFound) {
+	if err := library.ReplaceTemplate("no-such", content); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("replacing a template the library does not hold = %v, want ErrNotFound", err)
 	}
 
-	err := library.ReplaceTemplate(ids[0], testTemplate(""), nil)
+	err := library.ReplaceTemplate(ids[0], testTemplate(""))
 
 	if reason, limit := refusal(t, err); reason != "template.name: template name is required" || limit {
 		t.Fatalf("an invalid replacement is refused with %q", reason)
 	}
 
-	err = library.ReplaceTemplate(ids[0], iconTemplate("Drawn", "sha256:"+strings.Repeat("b", 64)), nil)
+	err = library.ReplaceTemplate(ids[0], iconTemplate("Drawn", "two words"))
 
-	if reason, _ := refusal(t, err); !strings.HasPrefix(reason, `template 0 names custom icon "sha256:bbbb`) {
-		t.Fatalf("a missing icon is refused with %q", reason)
+	if reason, _ := refusal(t, err); !strings.HasPrefix(reason, `template.device.icon: icon name "two words" must be`) {
+		t.Fatalf("an icon that is not an icon name is refused with %q", reason)
 	}
 
 	if library.Template(ids[0]).Name != "PLC two" {
@@ -734,107 +722,49 @@ func TestLibraryDeletePrunesCollections(t *testing.T) {
 	}
 }
 
-// TestLibraryIcons asserts the custom icons of a library's templates travel
-// in its record, and leave it with the last template that names them.
-func TestLibraryIcons(t *testing.T) {
+// TestLibraryTemplateIcons asserts a template names its custom icon, which
+// the icon library resolves: the library record carries no image, and a
+// template keeps the name whether or not an icon of that name exists.
+func TestLibraryTemplateIcons(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 
-	usedID, used := testIcon(t, 1)
-	spareID, spare := testIcon(t, 2)
-	icons := map[string]builder.Icon{usedID: used, spareID: spare}
+	mustAddIcon(t, h, testPeer, "plc", iconPixel(t, 1))
 
-	var ids []string
+	ids := mustAddTemplates(t, h, testOwner,
+		iconTemplate("One", "plc"), iconTemplate("Two", "Not-uploaded"), testTemplate("Plain"))
 
-	added := mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
-		var err error
+	library := mustLibrary(t, h, testOwner)
 
-		ids, err = library.AddTemplates(
-			[]builder.Template{iconTemplate("One", usedID), iconTemplate("Two", usedID), testTemplate("Plain")}, icons, h.service.NewID,
-		)
-
-		return err
-	})
-
-	// The icon the templates name is kept once; the one nothing names is not.
-	if len(added.Icons) != 1 || added.Icons[usedID] != used {
-		t.Fatalf("the library carries %v, want only %s", added.Icons, usedID)
+	if one, two := library.Template(ids[0]), library.Template(ids[1]); one.Device.Icon != "plc" ||
+		two.Device.Icon != "Not-uploaded" {
+		t.Fatalf("the templates name the icons %q and %q", one.Device.Icon, two.Device.Icon)
 	}
 
-	if stored := mustLibrary(t, h, testOwner); len(stored.Icons) != 1 || stored.Icons[usedID] != used ||
-		len(builder.ValidateIcons(stored.Icons, "icons")) != 0 {
-		t.Fatalf("the stored library carries %v", stored.Icons)
+	value := string(libraryRecord(t, h).Value)
+
+	if strings.Contains(value, `"icons"`) || strings.Contains(value, "iVBOR") {
+		t.Fatalf("the library record carries an image: %s", value)
 	}
 
-	// A later template may name an icon the library already holds.
-	more := mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
-		return library.ReplaceTemplate(ids[2], iconTemplate("Plain", usedID), nil)
-	})
-
-	if len(more.Icons) != 1 {
-		t.Fatalf("after naming a held icon the library carries %v", more.Icons)
+	// Renaming or deleting the icon leaves the templates as they are: the
+	// old name keeps resolving, and then nothing does.
+	if _, err := h.service.RenameIcon(ctx, testPeer, "plc", "plc-v2", false); err != nil {
+		t.Fatalf("RenameIcon returned error: %v", err)
 	}
 
-	// Replacing a template's icon brings the new one in.
-	swapped := mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
-		return library.ReplaceTemplate(ids[2], iconTemplate("Plain", spareID), icons)
-	})
-
-	if len(swapped.Icons) != 2 || swapped.Icons[spareID] != spare {
-		t.Fatalf("after a swap the library carries %v", swapped.Icons)
+	if err := h.service.DeleteIcon(ctx, testPeer, "plc", false); err != nil {
+		t.Fatalf("DeleteIcon returned error: %v", err)
 	}
 
-	// The icon stays while one template names it, and goes with the last.
-	one := mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
-		library.Delete([]string{ids[0], ids[2]}, nil)
-
-		return nil
-	})
-
-	if len(one.Icons) != 1 || one.Icons[usedID] != used {
-		t.Fatalf("after deleting two templates the library carries %v", one.Icons)
-	}
-
-	none := mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
-		library.Delete([]string{ids[1]}, nil)
-
-		return nil
-	})
-
-	if none.Icons != nil || strings.Contains(string(libraryRecord(t, h).Value), `"icons"`) {
-		t.Fatalf("after deleting the last template the library carries %v", none.Icons)
-	}
-
-	// An icon that is not one a document accepts is refused, with nothing
-	// written.
-	revision := none.Revision
-	wrongID := "sha256:" + strings.Repeat("c", 64)
-
-	for name, entry := range map[string]builder.Icon{
-		"another image's id": used,
-		"not base64":         {Name: "", Data: "not base64!"},
-		"not a PNG":          {Name: "", Data: base64.StdEncoding.EncodeToString([]byte("<svg/>"))},
-	} {
-		_, err := h.service.UpdateLibrary(ctx, testOwner, testOwner, func(library *TemplateLibrary) error {
-			_, err := library.AddTemplates(
-				[]builder.Template{iconTemplate("Bad", wrongID)}, map[string]builder.Icon{wrongID: entry}, h.service.NewID,
-			)
-
-			return err
-		})
-
-		if reason, limit := refusal(t, err); !strings.HasPrefix(reason, `icons: icon "sha256:cccc`) || limit {
-			t.Errorf("%s: refused with %q", name, reason)
-		}
-	}
-
-	if libraryRecord(t, h).Revision != revision {
-		t.Fatal("a refused icon wrote the library")
+	if after := mustLibrary(t, h, testOwner); after.Template(ids[0]).Device.Icon != "plc" ||
+		after.Revision != library.Revision {
+		t.Fatalf("changing the icon library changed the template library: %+v", after.Template(ids[0]))
 	}
 }
 
 // TestLibraryLimits asserts each bound of a library: its templates, its
-// collections, the templates of one collection, its icons and its record.
+// collections, the templates of one collection and its record.
 func TestLibraryLimits(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -851,7 +781,7 @@ func TestLibraryLimits(t *testing.T) {
 	}
 
 	_, err := h.service.UpdateLibrary(ctx, testOwner, testOwner, func(library *TemplateLibrary) error {
-		_, err := library.AddTemplates([]builder.Template{testTemplate("One more")}, nil, h.service.NewID)
+		_, err := library.AddTemplates([]builder.Template{testTemplate("One more")}, h.service.NewID)
 
 		return err
 	})
@@ -901,49 +831,6 @@ func TestLibraryLimits(t *testing.T) {
 	}
 }
 
-func TestLibraryIconLimit(t *testing.T) {
-	h := newHarness(t)
-	ctx := context.Background()
-
-	icons := map[string]builder.Icon{}
-	templates := make([]builder.Template, 0, MaxLibraryTemplateIcons+1)
-
-	for i := range MaxLibraryTemplateIcons + 1 {
-		id, icon := testIcon(t, 100+i)
-		icons[id] = icon
-		templates = append(templates, iconTemplate(fmt.Sprintf("T%d", i), id))
-	}
-
-	add := func(templates []builder.Template) error {
-		_, err := h.service.UpdateLibrary(ctx, testOwner, testOwner, func(library *TemplateLibrary) error {
-			_, err := library.AddTemplates(templates, icons, h.service.NewID)
-
-			return err
-		})
-
-		return err
-	}
-
-	if err := add(templates[:MaxLibraryTemplateIcons]); err != nil {
-		t.Fatalf("a library with %d icons is refused: %v", MaxLibraryTemplateIcons, err)
-	}
-
-	if library := mustLibrary(t, h, testOwner); len(library.Icons) != MaxLibraryTemplateIcons {
-		t.Fatalf("the library carries %d icons, want %d", len(library.Icons), MaxLibraryTemplateIcons)
-	}
-
-	err := add(templates[MaxLibraryTemplateIcons:])
-
-	if reason, limit := refusal(t, err); reason != "a library holds at most 50 custom icons" || !limit {
-		t.Fatalf("the 51st icon is refused with %q (limit %v)", reason, limit)
-	}
-
-	// One more template with an icon the library has is not one more icon.
-	if err := add([]builder.Template{iconTemplate("Again", templates[0].Device.Icon)}); err != nil {
-		t.Fatalf("a template with a held icon is refused: %v", err)
-	}
-}
-
 func TestLibraryRecordLimit(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -965,7 +852,7 @@ func TestLibraryRecordLimit(t *testing.T) {
 	}
 
 	_, err := h.service.UpdateLibrary(ctx, testOwner, testOwner, func(library *TemplateLibrary) error {
-		_, err := library.AddTemplates([]builder.Template{paddedTemplate("One more", each)}, nil, h.service.NewID)
+		_, err := library.AddTemplates([]builder.Template{paddedTemplate("One more", each)}, h.service.NewID)
 
 		return err
 	})
@@ -1011,7 +898,7 @@ func TestUpdateLibraryRetriesOnConflict(t *testing.T) {
 			library := mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
 				runs++
 
-				_, err := library.AddTemplates([]builder.Template{testTemplate("Mine")}, nil, h.service.NewID)
+				_, err := library.AddTemplates([]builder.Template{testTemplate("Mine")}, h.service.NewID)
 
 				return err
 			})
@@ -1052,7 +939,7 @@ func TestUpdateLibraryGivesUp(t *testing.T) {
 		defer func() { racing = false }()
 
 		mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
-			return library.ReplaceTemplate("server", testTemplate(fmt.Sprintf("Server %d", h.now.Load())), nil)
+			return library.ReplaceTemplate("server", testTemplate(fmt.Sprintf("Server %d", h.now.Load())))
 		})
 
 		return nil
@@ -1063,7 +950,7 @@ func TestUpdateLibraryGivesUp(t *testing.T) {
 	_, err := h.service.UpdateLibrary(context.Background(), testOwner, testOwner, func(library *TemplateLibrary) error {
 		runs++
 
-		_, err := library.AddTemplates([]builder.Template{testTemplate("Mine")}, nil, h.service.NewID)
+		_, err := library.AddTemplates([]builder.Template{testTemplate("Mine")}, h.service.NewID)
 
 		return err
 	})
@@ -1098,7 +985,7 @@ func TestUpdateLibraryConcurrent(t *testing.T) {
 
 			for {
 				_, err := h.service.UpdateLibrary(context.Background(), testOwner, testOwner, func(library *TemplateLibrary) error {
-					_, err := library.AddTemplates([]builder.Template{testTemplate(fmt.Sprintf("W%d", i))}, nil, h.service.NewID)
+					_, err := library.AddTemplates([]builder.Template{testTemplate(fmt.Sprintf("W%d", i))}, h.service.NewID)
 
 					return err
 				})
@@ -1141,7 +1028,7 @@ func TestUpdateLibraryStoreFailures(t *testing.T) {
 
 	add := func(name string) (*TemplateLibrary, error) {
 		return h.service.UpdateLibrary(ctx, testOwner, testOwner, func(library *TemplateLibrary) error {
-			_, err := library.AddTemplates([]builder.Template{testTemplate(name)}, nil, h.service.NewID)
+			_, err := library.AddTemplates([]builder.Template{testTemplate(name)}, h.service.NewID)
 
 			return err
 		})
@@ -1387,9 +1274,9 @@ func libraryValue(t *testing.T, h *testHarness, edit func(library map[string]any
 // [damagedLibraryCases] hold, so an error that repeats a record is seen.
 const damagedLibrarySecret = "s3cret-content"
 
-// damagedLibraryIconSeed is the seed of the icon the library of
-// TestLibraryRefusesDamagedRecords carries.
-const damagedLibraryIconSeed = 3
+// damagedLibraryIcon is the custom icon the sixth template of the library of
+// TestLibraryRefusesDamagedRecords names.
+const damagedLibraryIcon = "plc"
 
 // damagedLibraryCase is one record that is, or is not, a library this
 // package stores: raw, or the stored record with edit applied.
@@ -1408,8 +1295,6 @@ func damagedLibraryCases(t *testing.T) []damagedLibraryCase {
 	t.Helper()
 
 	const secret = damagedLibrarySecret
-
-	iconID, _ := testIcon(t, damagedLibraryIconSeed)
 
 	item := func(library map[string]any, list string, index int) map[string]any {
 		items, _ := library[list].([]any)
@@ -1479,17 +1364,20 @@ func damagedLibraryCases(t *testing.T) []damagedLibraryCase {
 			want: "template 5 has version 0",
 		},
 		{
-			name: "a template whose icon the library does not carry",
-			edit: func(library map[string]any) { delete(library, "icons") },
-			want: "template 5 names a custom icon the library does not carry",
+			name: "a template whose icon is not an icon name",
+			edit: func(library map[string]any) {
+				device, _ := item(library, "templates", 5)["device"].(map[string]any)
+				device["icon"] = "sha256:" + secret
+			},
+			want: "template 5 is not a valid template",
 		},
 		{
-			name: "an icon that does not match its id",
+			// Icons are the icon library's: a library record carries none.
+			name: "icons carried in the record",
 			edit: func(library map[string]any) {
-				_, other := testIcon(t, 77)
-				library["icons"] = map[string]any{iconID: map[string]any{"data": other.Data}}
+				library["icons"] = map[string]any{damagedLibraryIcon: map[string]any{"data": secret}}
 			},
-			want: "a custom icon is not one a document accepts",
+			want: "is not valid JSON",
 		},
 		{
 			name: "a share with the owner",
@@ -1587,8 +1475,6 @@ func damagedLibraryCases(t *testing.T) []damagedLibraryCase {
 // this package stores is never read leniently: reading and changing it both
 // fail, and the error repeats nothing the record holds.
 func TestLibraryRefusesDamagedRecords(t *testing.T) {
-	iconID, icon := testIcon(t, damagedLibraryIconSeed)
-
 	for _, tt := range damagedLibraryCases(t) {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(t)
@@ -1596,7 +1482,7 @@ func TestLibraryRefusesDamagedRecords(t *testing.T) {
 
 			mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
 				ids, err := library.AddTemplates(
-					[]builder.Template{iconTemplate("Drawn", iconID)}, map[string]builder.Icon{iconID: icon}, h.service.NewID,
+					[]builder.Template{iconTemplate("Drawn", damagedLibraryIcon)}, h.service.NewID,
 				)
 				if err != nil {
 					return err
@@ -1702,7 +1588,7 @@ func TestLibraryKeepsSharesAndPublication(t *testing.T) {
 
 	// Replacing the content keeps who the item is shared with.
 	replaced := mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
-		if err := library.ReplaceTemplate(ids[0], testTemplate("PLC two"), nil); err != nil {
+		if err := library.ReplaceTemplate(ids[0], testTemplate("PLC two")); err != nil {
 			return err
 		}
 

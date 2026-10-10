@@ -28,7 +28,7 @@ import { addNode, SCHEMA_URI, STAMP_KEYS } from '@/builder/model.js';
 import bundle from '@/builder/schema/builder-v1.schema.json';
 
 import { sampleDocument, testId } from './fixtures.js';
-import { ICON_DATA, ICON_KEY } from './png.js';
+import { ICON_DATA } from './png.js';
 
 // A document that uses every presentation field a document may leave out:
 // the custom icon and colors of a device, the colors of a switch, a group's
@@ -41,9 +41,9 @@ function decoratedDocument() {
   const doc = JSON.parse(JSON.stringify(group.doc));
   const find = (id) => doc.nodes.find((node) => node.id === id);
 
-  doc.icons = { [ICON_KEY]: { name: 'plc', data: ICON_DATA } };
+  doc.icons = { plc: { data: ICON_DATA } };
   Object.assign(find(sample.alpha.id).device, {
-    icon: ICON_KEY,
+    icon: 'plc',
     outlineColor: '#2f6fbf',
     fillColor: '#EEF4FB',
   });
@@ -55,7 +55,7 @@ function decoratedDocument() {
     description: 'first rack\nsecond line',
     borderStyle: 'dotted',
     iconKey: 'container',
-    icon: ICON_KEY,
+    icon: 'plc',
   });
   doc.networks[0].lineStyle = 'dashed';
   doc.edges[0].lineStyle = 'dash-dot';
@@ -71,7 +71,7 @@ function decoratedDocument() {
       description: 'Programmable logic controller',
       device: {
         iconKey: 'server',
-        icon: ICON_KEY,
+        icon: 'plc',
         outlineColor: '#2f6fbf',
         fillColor: '#EEF4FB',
         spec: {
@@ -386,14 +386,18 @@ describe('strict decoding', () => {
     expect(refused({ icons: 'x' })).toThrowError(
       'document: "icons" must be an object',
     );
-    expect(refused({ icons: { [ICON_KEY]: ICON_DATA } })).toThrowError(
+    expect(refused({ icons: { plc: ICON_DATA } })).toThrowError(
       'icons: expected an object',
     );
     expect(
       refused({
-        icons: { [ICON_KEY]: { data: ICON_DATA, type: 'image/svg+xml' } },
+        icons: { plc: { data: ICON_DATA, type: 'image/svg+xml' } },
       }),
     ).toThrowError('icons: unknown field "type"');
+    // An icon's name is its key: an entry holds its data alone.
+    expect(
+      refused({ icons: { plc: { name: 'plc', data: ICON_DATA } } }),
+    ).toThrowError('icons: unknown field "name"');
   });
 
   test('unknown fields beside the presentation fields are refused', () => {

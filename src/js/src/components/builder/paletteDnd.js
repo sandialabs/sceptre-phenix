@@ -4,7 +4,7 @@
 
 import { paletteEntry } from '@/builder/catalog.js';
 import { freeSpot, newNodeSize, sizeOf } from '@/builder/model.js';
-import { nodeOptionsFromTemplate, templateIcons } from '@/builder/templates.js';
+import { nodeOptionsFromTemplate } from '@/builder/templates.js';
 
 // A palette entry's id: its kind, or for a shape the figure it draws.
 export const PALETTE_MIME = 'application/x-phenix-builder-kind';
@@ -13,12 +13,9 @@ export const PALETTE_MIME = 'application/x-phenix-builder-kind';
 export const PALETTE_TEMPLATE_MIME = 'application/x-phenix-builder-template';
 
 /**
- * The store.addNode options for a palette entry, less its position.
- *
- * A template of the library can name a custom icon the diagram lacks: the
- * library's copy of it is put on the store's icon shelf, from where the
- * commit that adds the device copies it into the diagram (see shelveIcons
- * in store.js).
+ * The store.addNode options for a palette entry, less its position. A
+ * template's custom icon is a name, which the device names too and the icon
+ * library resolves.
  *
  * @param {object} store the Builder store, which knows the templates and
  *   the diagram the node is for
@@ -37,8 +34,6 @@ export function paletteNode(store, kind, key) {
 
     return entry ? { kind: entry.kind, ...entry.options } : { kind };
   }
-
-  store.shelveIcons?.(templateIcons(template, store.templates?.icons));
 
   return nodeOptionsFromTemplate(template, store.doc);
 }

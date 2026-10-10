@@ -20,6 +20,7 @@ import (
 
 	bapi "phenix/api/builder"
 	"phenix/store"
+	"phenix/store/recordtest/memrecord"
 	bdoc "phenix/types/builder"
 	"phenix/util/plog/plogtest"
 	"phenix/web/rbac"
@@ -33,6 +34,9 @@ const (
 	// responses, written out so a changed constant fails the test.
 	builderNoSniff = "nosniff"
 	builderIconCSP = "default-src 'none'; frame-ancestors 'none'"
+
+	// builderIconCharset is how a refused icon name ends.
+	builderIconCharset = `must be 1 to 64 letters, digits, "_", "@", "." or "-"`
 )
 
 // builderIconPNG returns a PNG of the given size whose color depends on
@@ -64,27 +68,54 @@ func builderIconBody(t *testing.T, name string, data []byte) string {
 	return string(body)
 }
 
-// postIcon adds an icon to the user's library.
+// builderIconUser returns a role holding every configs permission the
+// Builder checks and no builder-icons permission: one that renames and
+// deletes only the icons its user uploaded.
+func builderIconUser() *rbac.Role {
+	return builderShareRole(builderShareConfigVerbs)
+}
+
+// builderIconAdmin returns builderIconUser with builder-icons update and
+// delete, which rename and delete any user's icon.
+func builderIconAdmin() *rbac.Role {
+	role := builderRole(append(
+		slices.Clone(builderIconUser().Spec.Policies),
+		builderPolicy([]string{"builder-icons"}, nil, []string{"update", "delete"}),
+	)...)
+
+	return &role
+}
+
+// postIcon adds an icon, as the user with builderIconUser.
 func (h *builderHarness) postIcon(user, name string, data []byte) *httptest.ResponseRecorder {
 	h.t.Helper()
 
 	return h.do(builderRequest{
 		method: http.MethodPost, path: builderIconsRoute, body: builderIconBody(h.t, name, data), user: user,
+		role: builderIconUser(),
 	})
 }
 
-// icons returns the user's icon library, as the list route answers.
-func (h *builderHarness) icons(user string) builderIconListResponse {
+// iconRequest makes a request of one icon, as the user with role, and checks
+// its headers.
+func (h *builderHarness) iconRequest(method, name, body, user string, role *rbac.Role) *httptest.ResponseRecorder {
 	h.t.Helper()
 
-	recorder := h.do(builderRequest{method: http.MethodGet, path: builderIconsRoute, user: user})
+	recorder := h.do(builderRequest{method: method, path: builderIconsRoute + "/" + name, body: body, user: user, role: role})
+
+	assertIconHeaders(h.t, method+" "+name, recorder)
+
+	return recorder
+}
+
+// icons returns the icon library, as the list route answers the user with
+// role.
+func (h *builderHarness) icons(user string, role *rbac.Role) builderIconListResponse {
+	h.t.Helper()
+
+	recorder := h.do(builderRequest{method: http.MethodGet, path: builderIconsRoute, user: user, role: role})
 	if recorder.Code != http.StatusOK {
 		h.t.Fatalf("listing icons: status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
-	}
-
-	// The owner is never sent: it is always the caller.
-	if strings.Contains(recorder.Body.String(), `"owner"`) {
-		h.t.Fatalf("the icon list names an owner: %s", recorder.Body)
 	}
 
 	var list builderIconListResponse
@@ -92,14 +123,6 @@ func (h *builderHarness) icons(user string) builderIconListResponse {
 	h.decode(recorder, &list)
 
 	return list
-}
-
-// builderIconPath returns the path of an icon, which holds the hex digits
-// of its ID.
-func builderIconPath(id string) string {
-	_, digits, _ := strings.Cut(id, ":")
-
-	return builderIconsRoute + "/" + digits
 }
 
 // builderMessage returns the message of an error response.
@@ -135,92 +158,166 @@ func assertIconHeaders(t *testing.T, what string, recorder *httptest.ResponseRec
 	}
 
 	if got := header.Get("ETag"); got != "" {
-		t.Errorf("%s: ETag = %q, want none: an icon never changes", what, got)
+		t.Errorf("%s: ETag = %q, want none", what, got)
 	}
 }
 
-func TestBuilderIconLibrary(t *testing.T) {
-	harness := newBuilderHarness(t)
-	logs := plogtest.Capture(t)
+// addBuilderIcon adds an icon as alice, with builderIconUser, asserts it was
+// created, and returns it as the answer gives it.
+func addBuilderIcon(t *testing.T, harness *builderHarness, name string, upload []byte) builderIconResponse {
+	t.Helper()
 
-	// A raw read, so an empty library is seen to be a list and not null.
-	empty := harness.do(builderRequest{method: http.MethodGet, path: builderIconsRoute, user: builderTestOwner})
-	assertIconHeaders(t, "the empty list", empty)
-
-	if got, want := strings.TrimSpace(empty.Body.String()),
-		`{"icons":[],"maxIcons":64,"maxBytes":1048576,"usedBytes":0}`; empty.Code != http.StatusOK || got != want {
-		t.Fatalf("the empty list = %d %s, want %s", empty.Code, got, want)
-	}
-
-	upload := builderIconPNG(t, 3, 2, 1)
-	data := base64.StdEncoding.EncodeToString(upload)
-
-	created := harness.postIcon(builderTestOwner, "  plc  ", upload)
+	created := harness.postIcon(builderTestOwner, name, upload)
 	assertIconHeaders(t, "a new icon", created)
 
 	if created.Code != http.StatusCreated {
 		t.Fatalf("adding an icon: status = %d, want %d: %s", created.Code, http.StatusCreated, created.Body)
 	}
 
-	if strings.Contains(created.Body.String(), `"owner"`) {
-		t.Fatalf("the icon names an owner: %s", created.Body)
-	}
-
 	var icon builderIconResponse
 
 	harness.decode(created, &icon)
 
-	want := builderIconResponse{
-		ID: bdoc.IconID(upload), Name: "plc", Width: 3, Height: 2, Bytes: len(upload), Created: icon.Created, Data: data,
+	return icon
+}
+
+func TestBuilderIconLibrary(t *testing.T) {
+	harness := newBuilderHarness(t)
+	user := builderIconUser()
+
+	// A raw read, so an empty library is seen to be a list and not null.
+	empty := harness.do(builderRequest{method: http.MethodGet, path: builderIconsRoute, user: builderTestOwner, role: user})
+	assertIconHeaders(t, "the empty list", empty)
+
+	if got, want := strings.TrimSpace(empty.Body.String()),
+		`{"icons":[],"maxIcons":64,"maxBytes":1048576,"usedBytes":0,"usedIcons":0}`; empty.Code != http.StatusOK || got != want {
+		t.Fatalf("the empty list = %d %s, want %s", empty.Code, got, want)
 	}
 
-	if icon != want || icon.Created.IsZero() {
+	upload := builderIconPNG(t, 3, 2, 1)
+	data := base64.StdEncoding.EncodeToString(upload)
+	icon := addBuilderIcon(t, harness, "PLC", upload)
+
+	want := builderIconResponse{
+		Name: "PLC", ID: bdoc.IconID(upload), Owner: builderTestOwner, Width: 3, Height: 2, Bytes: len(upload),
+		Created: icon.Created, Updated: icon.Created, Aliases: []string{}, Data: data, CanRename: true, CanDelete: true,
+	}
+
+	if fmt.Sprint(icon) != fmt.Sprint(want) || icon.Created.IsZero() {
 		t.Fatalf("the new icon = %+v, want %+v", icon, want)
 	}
 
-	// The icon is one a document accepts under that ID.
-	if issues := bdoc.ValidateIcons(map[string]bdoc.Icon{icon.ID: {Name: icon.Name, Data: icon.Data}}, "icons"); len(issues) != 0 {
+	// A document accepts the icon under its name.
+	if issues := bdoc.ValidateIcons(map[string]bdoc.Icon{icon.Name: {Data: icon.Data}}, "icons"); len(issues) != 0 {
 		t.Fatalf("a document refuses the icon: %v", issues)
 	}
+}
 
-	// The same bytes again are the icon the library has, under its name.
-	again := harness.postIcon(builderTestOwner, "another name", upload)
+// TestBuilderIconNameIsTaken asserts the same bytes under the same name, in
+// any case, are the icon the library has, and other bytes are refused,
+// naming who has the name.
+func TestBuilderIconNameIsTaken(t *testing.T) {
+	harness := newBuilderHarness(t)
+	user := builderIconUser()
+	upload := builderIconPNG(t, 3, 2, 1)
+
+	addBuilderIcon(t, harness, "PLC", upload)
+
+	again := harness.postIcon(builderTestPeer, "plc", upload)
 	assertIconHeaders(t, "an icon the library has", again)
 
 	var same builderIconResponse
 
 	harness.decode(again, &same)
 
-	if again.Code != http.StatusOK || !same.Created.Equal(icon.Created) || same.ID != icon.ID || same.Name != "plc" {
-		t.Fatalf("adding the same bytes = %d %+v, want 200 and %+v", again.Code, same, icon)
+	if again.Code != http.StatusOK || same.Name != "PLC" || same.Owner != builderTestOwner || same.CanRename || same.CanDelete {
+		t.Fatalf("adding the same bytes = %d %+v, want 200 and alice's icon, which bob may not change", again.Code, same)
 	}
 
-	list := harness.icons(builderTestOwner)
+	taken := harness.postIcon(builderTestPeer, "Plc", builderIconPNG(t, 3, 2, 2))
+	assertIconHeaders(t, "a taken name", taken)
 
-	if len(list.Icons) != 1 || list.Icons[0].ID != icon.ID || list.Icons[0].Data != data ||
-		list.MaxIcons != bapi.MaxLibraryIcons || list.MaxBytes != bapi.MaxLibraryIconBytes || list.UsedBytes != len(upload) {
-		t.Fatalf("the list = %+v, want the icon and %d used bytes", list, len(upload))
+	if taken.Code != http.StatusConflict ||
+		builderMessage(t, taken) != `icon name "Plc" is taken by an icon alice uploaded; choose another name` {
+		t.Fatalf("other bytes under a taken name = %d %s, want 409", taken.Code, taken.Body)
 	}
 
-	deleted := harness.do(builderRequest{method: http.MethodDelete, path: builderIconPath(icon.ID), user: builderTestOwner})
-	assertIconHeaders(t, "a deleted icon", deleted)
+	if got := harness.iconRequest(http.MethodGet, "plc", "", builderTestPeer, user); got.Code != http.StatusOK {
+		t.Fatalf("reading the icon by its name in another case = %d %s", got.Code, got.Body)
+	}
+}
+
+// TestBuilderIconRenameAndDelete asserts a renamed icon keeps its old name
+// as an alias, that a delete through either name removes the icon and both
+// names, and that each change is logged without the image.
+func TestBuilderIconRenameAndDelete(t *testing.T) {
+	harness := newBuilderHarness(t)
+	logs := plogtest.Capture(t)
+	user := builderIconUser()
+	upload := builderIconPNG(t, 3, 2, 1)
+	data := base64.StdEncoding.EncodeToString(upload)
+	icon := addBuilderIcon(t, harness, "PLC", upload)
+
+	renamed := harness.iconRequest(http.MethodPut, "plc", `{"name":"plc-2"}`, builderTestOwner, user)
+
+	var moved builderIconResponse
+
+	harness.decode(renamed, &moved)
+
+	if renamed.Code != http.StatusOK || moved.Name != "plc-2" || !slices.Equal(moved.Aliases, []string{"PLC"}) ||
+		moved.ID != icon.ID || !moved.Updated.After(moved.Created) {
+		t.Fatalf("renaming the icon = %d %s", renamed.Code, renamed.Body)
+	}
+
+	// The old name keeps naming it.
+	var byAlias builderIconResponse
+
+	harness.decode(harness.iconRequest(http.MethodGet, "PLC", "", builderTestPeer, user), &byAlias)
+
+	if byAlias.Name != "plc-2" || byAlias.Data != data {
+		t.Fatalf("the old name names %+v, want the renamed icon", byAlias)
+	}
+
+	list := harness.icons(builderTestOwner, user)
+
+	if len(list.Icons) != 1 || list.Icons[0].Name != "plc-2" || list.MaxIcons != bapi.MaxLibraryIcons ||
+		list.MaxBytes != bapi.MaxLibraryIconBytes || list.UsedBytes != len(upload) || list.UsedIcons != 1 {
+		t.Fatalf("the list = %+v, want the icon and alice's usage", list)
+	}
+
+	if peer := harness.icons(builderTestPeer, user); peer.UsedIcons != 0 || peer.UsedBytes != 0 || len(peer.Icons) != 1 {
+		t.Fatalf("bob's list = %+v, want the icon and none of his own", peer)
+	}
+
+	// Deleting through the old name deletes the icon and both its names.
+	deleted := harness.iconRequest(http.MethodDelete, "PLC", "", builderTestOwner, user)
 
 	if deleted.Code != http.StatusNoContent || deleted.Body.Len() != 0 {
 		t.Fatalf("deleting the icon = %d %q, want an empty 204", deleted.Code, deleted.Body)
 	}
 
-	if list := harness.icons(builderTestOwner); len(list.Icons) != 0 || list.UsedBytes != 0 {
+	if list := harness.icons(builderTestOwner, user); len(list.Icons) != 0 || list.UsedBytes != 0 ||
+		harness.store.Count(bapi.NamespaceIcons) != 0 {
 		t.Fatalf("the list after the delete = %+v, want it empty", list)
 	}
 
-	gone := harness.do(builderRequest{method: http.MethodDelete, path: builderIconPath(icon.ID), user: builderTestOwner})
+	gone := harness.iconRequest(http.MethodDelete, "plc-2", "", builderTestOwner, user)
 	if gone.Code != http.StatusNotFound || builderMessage(t, gone) != "icon not found" {
 		t.Fatalf("deleting it again = %d %s, want 404 icon not found", gone.Code, gone.Body)
 	}
 
-	// Who added and deleted which icon is logged; the image never is.
-	if !strings.Contains(logs.String(), "added builder icon") || !strings.Contains(logs.String(), "deleted builder icon") {
-		t.Errorf("the log does not say an icon was added and deleted: %s", logs)
+	assertIconChangesLogged(t, logs, data)
+}
+
+// assertIconChangesLogged asserts the log says once who added, renamed and
+// deleted an icon, and never holds the image, whose base64 is data.
+func assertIconChangesLogged(t *testing.T, logs *plogtest.Logs, data string) {
+	t.Helper()
+
+	for _, message := range []string{"added builder icon", "renamed builder icon", "deleted builder icon"} {
+		if len(logs.Records(t, plogtest.Message(message))) != 1 {
+			t.Errorf("the log does not say %q once: %s", message, logs)
+		}
 	}
 
 	if strings.Contains(logs.String(), data) || strings.Contains(logs.String(), data[:24]) {
@@ -228,47 +325,60 @@ func TestBuilderIconLibrary(t *testing.T) {
 	}
 }
 
-// TestBuilderIconLibraryIsTheCallersOwn asserts a library belongs to one
-// user: another user, even one whose role holds every permission there is,
-// on other users' drafts too, neither sees nor deletes its icons.
-func TestBuilderIconLibraryIsTheCallersOwn(t *testing.T) {
+// TestBuilderIconLibraryIsShared asserts every user sees every icon, with
+// who uploaded it, and that only its uploader or a holder of the
+// builder-icons permissions renames or deletes it.
+func TestBuilderIconLibraryIsShared(t *testing.T) {
 	harness := newBuilderHarness(t)
-	upload := builderIconPNG(t, 2, 2, 9)
-	path := builderIconPath(bdoc.IconID(upload))
+	user, admin := builderIconUser(), builderIconAdmin()
 
-	if recorder := harness.postIcon(builderTestOwner, "mine", upload); recorder.Code != http.StatusCreated {
+	if recorder := harness.postIcon(builderTestOwner, "mine", builderIconPNG(t, 2, 2, 9)); recorder.Code != http.StatusCreated {
 		t.Fatalf("adding an icon: status = %d, want %d", recorder.Code, http.StatusCreated)
 	}
 
-	if peer := harness.icons(builderTestPeer); len(peer.Icons) != 0 || peer.UsedBytes != 0 {
-		t.Fatalf("another user's list = %+v, want it empty", peer)
+	peer := harness.icons(builderTestPeer, user)
+
+	if len(peer.Icons) != 1 || peer.Icons[0].Name != "mine" || peer.Icons[0].Owner != builderTestOwner ||
+		peer.Icons[0].CanRename || peer.Icons[0].CanDelete {
+		t.Fatalf("bob's list = %+v, want alice's icon, which he may not change", peer)
 	}
 
-	foreign := harness.do(builderRequest{method: http.MethodDelete, path: path, user: builderTestPeer})
-	assertIconHeaders(t, "deleting another user's icon", foreign)
-
-	if foreign.Code != http.StatusNotFound || builderMessage(t, foreign) != "icon not found" {
-		t.Fatalf("deleting another user's icon = %d %s, want 404 icon not found", foreign.Code, foreign.Body)
+	if own := harness.icons(builderTestOwner, user); !own.Icons[0].CanRename || !own.Icons[0].CanDelete {
+		t.Fatalf("alice's list = %+v, want her icon, which she may change", own)
 	}
 
-	// The same image in the peer's library is the peer's own icon, with the
-	// same ID, and deleting one leaves the other.
-	if recorder := harness.postIcon(builderTestPeer, "theirs", upload); recorder.Code != http.StatusCreated {
-		t.Fatalf("the peer adding the same image: status = %d, want %d", recorder.Code, http.StatusCreated)
+	if listed := harness.icons(builderTestPeer, admin); !listed.Icons[0].CanRename || !listed.Icons[0].CanDelete {
+		t.Fatalf("the list of a holder of builder-icons = %+v, want the icon, which it may change", listed)
 	}
 
-	if recorder := harness.do(builderRequest{
-		method: http.MethodDelete, path: path, user: builderTestOwner,
-	}); recorder.Code != http.StatusNoContent {
-		t.Fatalf("deleting the icon: status = %d, want %d", recorder.Code, http.StatusNoContent)
+	logs := plogtest.Capture(t)
+
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		recorder := harness.iconRequest(method, "mine", `{"name":"theirs"}`, builderTestPeer, user)
+
+		if recorder.Code != http.StatusForbidden {
+			t.Errorf("%s of another user's icon = %d %s, want 403", method, recorder.Code, recorder.Body)
+		}
 	}
 
-	if list := harness.icons(builderTestOwner); len(list.Icons) != 0 {
-		t.Fatalf("the list after the delete = %+v, want it empty", list)
+	if refused := logs.Records(t, plogtest.Message("builder request not allowed")); len(refused) != 2 {
+		t.Errorf("logged %d refusals, want 2", len(refused))
 	}
 
-	if peer := harness.icons(builderTestPeer); len(peer.Icons) != 1 || peer.Icons[0].Name != "theirs" {
-		t.Fatalf("the peer's list after the delete = %+v, want its icon", peer)
+	if names := harness.icons(builderTestOwner, user); names.Icons[0].Name != "mine" || harness.store.Count(bapi.NamespaceIcons) != 1 {
+		t.Fatalf("a refused request changed the library: %+v", names)
+	}
+
+	if renamed := harness.iconRequest(http.MethodPut, "mine", `{"name":"theirs"}`, builderTestPeer, admin); renamed.Code != http.StatusOK {
+		t.Fatalf("renaming with builder-icons update = %d %s", renamed.Code, renamed.Body)
+	}
+
+	if deleted := harness.iconRequest(http.MethodDelete, "mine", "", builderTestPeer, admin); deleted.Code != http.StatusNoContent {
+		t.Fatalf("deleting with builder-icons delete = %d %s", deleted.Code, deleted.Body)
+	}
+
+	if got := harness.store.Count(bapi.NamespaceIcons); got != 0 {
+		t.Fatalf("%d icon records after the delete, want 0", got)
 	}
 }
 
@@ -296,23 +406,23 @@ func TestBuilderIconUploadIsNormalized(t *testing.T) {
 
 	if bytes.Contains(stored, []byte("script")) || icon.ID != bdoc.IconID(stored) || icon.ID == bdoc.IconID(loose) ||
 		icon.Bytes != len(stored) || icon.Width != 4 || icon.Height != 4 {
-		t.Fatalf("the stored icon = %+v, want the pixels of the upload alone, under their own ID", icon)
+		t.Fatalf("the stored icon = %+v, want the pixels of the upload alone", icon)
 	}
 
 	if _, _, err := bdoc.ValidateIconPNG(stored); err != nil {
 		t.Fatalf("the stored icon is not one a document accepts: %v", err)
 	}
 
-	// The same upload again finds the stored icon.
-	if again := harness.postIcon(builderTestOwner, "", loose); again.Code != http.StatusOK {
+	// The same upload under the same name again finds the stored icon.
+	if again := harness.postIcon(builderTestOwner, "loose", loose); again.Code != http.StatusOK {
 		t.Fatalf("the same upload again: status = %d, want %d", again.Code, http.StatusOK)
 	}
 
 	// One record, which holds the stored bytes and nothing else of the
 	// upload.
 	keys := harness.store.Keys(bapi.NamespaceIcons)
-	if len(keys) != 1 {
-		t.Fatalf("icon records = %q, want one", keys)
+	if !slices.Equal(keys, []string{"name/loose"}) {
+		t.Fatalf("icon records = %q, want name/loose", keys)
 	}
 
 	record, err := harness.store.GetRecord(bapi.NamespaceIcons, keys[0])
@@ -337,12 +447,12 @@ func TestBuilderIconRequests(t *testing.T) {
 		notBase64  = "icon data is not base64"
 		required   = "icon data is required"
 		notPNG     = "icon is not a PNG image"
-		badName    = "icon name must be at most 64 bytes and contain no control characters"
 	)
 
 	pixel := builderIconPNG(t, 1, 1, 3)
 	valid := base64.StdEncoding.EncodeToString(pixel)
 	encode := func(data []byte) string { return base64.StdEncoding.EncodeToString(data) }
+	named := func(data string) string { return `{"name":"plc","data":"` + data + `"}` }
 
 	tests := []struct {
 		name    string
@@ -353,69 +463,73 @@ func TestBuilderIconRequests(t *testing.T) {
 		{name: "not JSON", body: `<svg/>`, status: http.StatusBadRequest, message: notRequest},
 		{name: "an array", body: `[]`, status: http.StatusBadRequest, message: notRequest},
 		{
-			name: "an unknown field", body: `{"data":"` + valid + `","owner":"bob"}`,
+			name: "an unknown field", body: `{"name":"plc","data":"` + valid + `","owner":"bob"}`,
 			status: http.StatusBadRequest, message: notRequest,
 		},
 		{
-			name: "a declared type", body: `{"data":"` + valid + `","type":"image/svg+xml"}`,
+			name: "a declared type", body: `{"name":"plc","data":"` + valid + `","type":"image/svg+xml"}`,
 			status: http.StatusBadRequest, message: notRequest,
 		},
 		{
-			name: "two values", body: `{"data":"` + valid + `"}{}`,
+			name: "two values", body: named(valid) + `{}`,
 			status: http.StatusBadRequest, message: "request body carries more than one JSON value",
 		},
-		{name: "data that is a number", body: `{"data":1}`, status: http.StatusBadRequest, message: notRequest},
+		{name: "data that is a number", body: `{"name":"plc","data":1}`, status: http.StatusBadRequest, message: notRequest},
+		{name: "a name that is a number", body: `{"name":1,"data":"` + valid + `"}`, status: http.StatusBadRequest, message: notRequest},
 		{name: "no data", body: `{"name":"plc"}`, status: http.StatusBadRequest, message: required},
-		{name: "empty data", body: `{"data":""}`, status: http.StatusBadRequest, message: required},
-		{name: "data that is markup", body: `{"data":"<svg onload=alert(1)>"}`, status: http.StatusBadRequest, message: notBase64},
-		{name: "data without its padding", body: `{"data":"YWI"}`, status: http.StatusBadRequest, message: notBase64},
+		{name: "empty data", body: named(""), status: http.StatusBadRequest, message: required},
+		{name: "data that is markup", body: named("<svg onload=alert(1)>"), status: http.StatusBadRequest, message: notBase64},
+		{name: "data without its padding", body: named("YWI"), status: http.StatusBadRequest, message: notBase64},
+		{name: "data with a line break", body: named(valid[:8] + `\n` + valid[8:]), status: http.StatusBadRequest, message: notBase64},
 		{
-			name: "data with a line break", body: `{"data":"` + valid[:8] + `\n` + valid[8:] + `"}`,
+			name: "data in the URL alphabet", body: named(base64.URLEncoding.EncodeToString([]byte{0xfb, 0xff, 0xfe})),
 			status: http.StatusBadRequest, message: notBase64,
 		},
+		{name: "a data URL", body: named("data:image/png;base64," + valid), status: http.StatusBadRequest, message: notBase64},
 		{
-			name: "data in the URL alphabet", body: `{"data":"` + base64.URLEncoding.EncodeToString([]byte{0xfb, 0xff, 0xfe}) + `"}`,
-			status: http.StatusBadRequest, message: notBase64,
-		},
-		{
-			name: "a data URL", body: `{"data":"data:image/png;base64,` + valid + `"}`,
-			status: http.StatusBadRequest, message: notBase64,
+			name: "no name", body: `{"data":"` + valid + `"}`,
+			status: http.StatusUnprocessableEntity, message: `icon name "" ` + builderIconCharset,
 		},
 		{
 			name: "a name of 65 bytes", body: `{"name":"` + strings.Repeat("n", 65) + `","data":"` + valid + `"}`,
-			status: http.StatusUnprocessableEntity, message: badName,
+			status: http.StatusUnprocessableEntity, message: `icon name "` + strings.Repeat("n", 64) + `..." ` + builderIconCharset,
 		},
 		{
 			name: "a name with a control character", body: `{"name":"a\u0000b","data":"` + valid + `"}`,
-			status: http.StatusUnprocessableEntity, message: badName,
+			status: http.StatusUnprocessableEntity, message: `icon name "a\x00b" ` + builderIconCharset,
+		},
+		{
+			name: "a name with a space", body: `{"name":"plc icon","data":"` + valid + `"}`,
+			status: http.StatusUnprocessableEntity, message: `icon name "plc icon" ` + builderIconCharset,
+		},
+		{
+			name: "a name of one dot", body: `{"name":".","data":"` + valid + `"}`,
+			status: http.StatusUnprocessableEntity, message: `icon name "." must not be "." or ".."`,
 		},
 		{
 			name:   "an SVG",
-			body:   `{"data":"` + encode([]byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)) + `"}`,
+			body:   named(encode([]byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`))),
 			status: http.StatusUnprocessableEntity, message: notPNG,
 		},
 		{
-			name: "a GIF", body: `{"data":"` + encode([]byte("GIF89a\x01\x00\x01\x00\x00\x00\x00;")) + `"}`,
+			name: "a GIF", body: named(encode([]byte("GIF89a\x01\x00\x01\x00\x00\x00\x00;"))),
 			status: http.StatusUnprocessableEntity, message: notPNG,
 		},
+		{name: "a PNG cut short", body: named(encode(pixel[:len(pixel)-16])), status: http.StatusUnprocessableEntity, message: notPNG},
 		{
-			name: "a PNG cut short", body: `{"data":"` + encode(pixel[:len(pixel)-16]) + `"}`,
-			status: http.StatusUnprocessableEntity, message: notPNG,
-		},
-		{
-			name: "97 pixels wide", body: `{"data":"` + encode(builderIconPNG(t, 97, 1, 4)) + `"}`,
+			name: "97 pixels wide", body: named(encode(builderIconPNG(t, 97, 1, 4))),
 			status: http.StatusUnprocessableEntity, message: "icon is 97 x 1 pixels; the limit is 96 x 96",
 		},
 		{
-			name: "97 pixels high", body: `{"data":"` + encode(builderIconPNG(t, 1, 97, 4)) + `"}`,
+			name: "97 pixels high", body: named(encode(builderIconPNG(t, 1, 97, 4))),
 			status: http.StatusUnprocessableEntity, message: "icon is 1 x 97 pixels; the limit is 96 x 96",
 		},
 		{
-			name: "one byte above the upload limit", body: `{"data":"` + encode(make([]byte, bapi.MaxIconUploadBytes+1)) + `"}`,
+			name: "one byte above the upload limit", body: named(encode(make([]byte, bapi.MaxIconUploadBytes+1))),
 			status: http.StatusRequestEntityTooLarge, message: "icon is larger than 65536 bytes",
 		},
 		{
-			name: "a body above its limit", body: `{"data":"` + strings.Repeat("A", builderIconRequestBytes) + `"}`,
+			name: "a body above its limit", body: named(strings.Repeat("A", builderIconRequestBytes)),
 			status: http.StatusRequestEntityTooLarge, message: "request body is larger than 131072 bytes",
 		},
 	}
@@ -443,7 +557,7 @@ func TestBuilderIconRequests(t *testing.T) {
 				t.Fatalf("a refused upload left %d records", got)
 			}
 
-			// Neither the answer nor the log repeats what was sent.
+			// Neither the answer nor the log repeats the image that was sent.
 			for _, sent := range []string{"alert", "onload", valid} {
 				if strings.Contains(recorder.Body.String(), sent) || strings.Contains(logs.String(), sent) {
 					t.Fatalf("the answer or the log repeats %q of the request: %s | %s", sent, recorder.Body, logs)
@@ -453,30 +567,92 @@ func TestBuilderIconRequests(t *testing.T) {
 	}
 }
 
+// TestBuilderIconRename asserts the answers of a rename: the new name, also
+// a change of case; a taken name; a name that is none; a request that is
+// not one.
+func TestBuilderIconRename(t *testing.T) {
+	harness := newBuilderHarness(t)
+	user := builderIconUser()
+
+	for name, seed := range map[string]int{"plc": 1, "hmi": 2} {
+		if recorder := harness.postIcon(builderTestOwner, name, builderIconPNG(t, 1, 1, seed)); recorder.Code != http.StatusCreated {
+			t.Fatalf("adding %s: status = %d", name, recorder.Code)
+		}
+	}
+
+	for _, tt := range []struct {
+		name, icon, body string
+		status           int
+		message          string
+	}{
+		{
+			name: "a taken name", icon: "plc", body: `{"name":"HMI"}`, status: http.StatusConflict,
+			message: `icon name "HMI" is taken by an icon alice uploaded; choose another name`,
+		},
+		{
+			name: "a name that is none", icon: "plc", body: `{"name":"p l c"}`, status: http.StatusUnprocessableEntity,
+			message: `icon name "p l c" ` + builderIconCharset,
+		},
+		{name: "no name", icon: "plc", body: `{}`, status: http.StatusUnprocessableEntity, message: `icon name "" ` + builderIconCharset},
+		{name: "an unknown field", icon: "plc", body: `{"name":"x","owner":"bob"}`, status: http.StatusBadRequest, message: "request body is not a valid Builder request"},
+		{
+			name: "a body above its limit", icon: "plc", body: `{"name":"` + strings.Repeat("n", builderIconRenameBytes) + `"}`,
+			status: http.StatusRequestEntityTooLarge, message: "request body is larger than 4096 bytes",
+		},
+		{name: "an icon nobody has", icon: "scada", body: `{"name":"x"}`, status: http.StatusNotFound, message: "icon not found"},
+	} {
+		recorder := harness.iconRequest(http.MethodPut, tt.icon, tt.body, builderTestOwner, user)
+
+		if recorder.Code != tt.status || builderMessage(t, recorder) != tt.message {
+			t.Errorf("%s: %d %s, want %d %q", tt.name, recorder.Code, recorder.Body, tt.status, tt.message)
+		}
+	}
+
+	if keys := harness.store.Keys(bapi.NamespaceIcons); !slices.Equal(keys, []string{"name/hmi", "name/plc"}) {
+		t.Fatalf("refused renames changed the records to %q", keys)
+	}
+
+	cased := harness.iconRequest(http.MethodPut, "plc", `{"name":"PLC"}`, builderTestOwner, user)
+
+	var icon builderIconResponse
+
+	harness.decode(cased, &icon)
+
+	if cased.Code != http.StatusOK || icon.Name != "PLC" || len(icon.Aliases) != 0 {
+		t.Fatalf("a change of case = %d %s", cased.Code, cased.Body)
+	}
+}
+
 func TestBuilderIconLibraryIsBounded(t *testing.T) {
 	harness := newBuilderHarness(t)
 
 	for i := range bapi.MaxLibraryIcons {
 		if _, _, err := harness.service.AddIcon(
-			context.Background(), builderTestOwner, fmt.Sprintf("icon %d", i), builderIconPNG(t, 1, 1, i),
+			context.Background(), builderTestOwner, fmt.Sprintf("icon-%d", i), builderIconPNG(t, 1, 1, i),
 		); err != nil {
 			t.Fatalf("adding icon %d: %v", i, err)
 		}
 	}
 
-	recorder := harness.postIcon(builderTestOwner, "one too many", builderIconPNG(t, 1, 1, bapi.MaxLibraryIcons))
+	recorder := harness.postIcon(builderTestOwner, "one-too-many", builderIconPNG(t, 1, 1, bapi.MaxLibraryIcons))
 
 	if recorder.Code != http.StatusUnprocessableEntity ||
-		builderMessage(t, recorder) != "icon library is full: at most 64 icons" {
-		t.Fatalf("the 65th icon = %d %s, want 422 and the library full", recorder.Code, recorder.Body)
+		builderMessage(t, recorder) != "icon library is full for you: each user may upload at most 64 icons" {
+		t.Fatalf("the 65th icon = %d %s, want 422 and the library full for alice", recorder.Code, recorder.Body)
 	}
 
-	if list := harness.icons(builderTestOwner); len(list.Icons) != bapi.MaxLibraryIcons {
-		t.Fatalf("the library lists %d icons, want %d", len(list.Icons), bapi.MaxLibraryIcons)
+	if list := harness.icons(builderTestOwner, builderIconUser()); len(list.Icons) != bapi.MaxLibraryIcons ||
+		list.UsedIcons != bapi.MaxLibraryIcons {
+		t.Fatalf("the library lists %d icons, %d of alice's, want %d", len(list.Icons), list.UsedIcons, bapi.MaxLibraryIcons)
 	}
 
-	// The byte limit: icons of the most bytes fill a library well before it
-	// holds the most icons.
+	// Another user's uploads are their own.
+	if recorder := harness.postIcon(builderTestPeer, "theirs", builderIconPNG(t, 1, 1, 999)); recorder.Code != http.StatusCreated {
+		t.Fatalf("bob's icon = %d %s, want 201", recorder.Code, recorder.Body)
+	}
+
+	// The byte limit: icons of the most bytes fill a user's share well
+	// before it holds the most icons.
 	bytesHarness := newBuilderHarness(t)
 
 	var (
@@ -498,20 +674,20 @@ func TestBuilderIconLibraryIsBounded(t *testing.T) {
 
 		large = out.Bytes()
 
-		recorder := bytesHarness.postIcon(builderTestOwner, "large", large)
+		recorder := bytesHarness.postIcon(builderTestOwner, fmt.Sprintf("large-%d", seed), large)
 		if recorder.Code == http.StatusCreated {
 			continue
 		}
 
 		if recorder.Code != http.StatusUnprocessableEntity ||
-			builderMessage(t, recorder) != "icon library is full: at most 1048576 bytes" {
-			t.Fatalf("icon %d = %d %s, want 422 and the library full of bytes", seed, recorder.Code, recorder.Body)
+			builderMessage(t, recorder) != "icon library is full for you: the icons each user uploads may take at most 1048576 bytes" {
+			t.Fatalf("icon %d = %d %s, want 422 and the library full of alice's bytes", seed, recorder.Code, recorder.Body)
 		}
 
 		refused = true
 	}
 
-	list := bytesHarness.icons(builderTestOwner)
+	list := bytesHarness.icons(builderTestOwner, builderIconUser())
 
 	if !refused || len(list.Icons) >= bapi.MaxLibraryIcons || list.UsedBytes > list.MaxBytes ||
 		list.UsedBytes+len(large) <= list.MaxBytes {
@@ -520,7 +696,7 @@ func TestBuilderIconLibraryIsBounded(t *testing.T) {
 	}
 }
 
-func TestBuilderIconDeleteNotFound(t *testing.T) {
+func TestBuilderIconNotFound(t *testing.T) {
 	harness := newBuilderHarness(t)
 	upload := builderIconPNG(t, 1, 1, 5)
 
@@ -528,43 +704,37 @@ func TestBuilderIconDeleteNotFound(t *testing.T) {
 		t.Fatalf("adding an icon: status = %d", recorder.Code)
 	}
 
-	id := bdoc.IconID(upload)
-	_, digits, _ := strings.Cut(id, ":")
+	_, digits, _ := strings.Cut(bdoc.IconID(upload), ":")
 
 	for _, icon := range []string{
-		"plc",
-		id,
-		strings.ToUpper(digits),
-		digits[:63],
-		digits + "0",
-		strings.Repeat("0", 64),
-		strings.Repeat("g", 64),
+		"missing",
+		digits,
+		"sha256:" + digits,
+		"kept%20",
+		"a%20b",
 		bapi.OwnerScope(builderTestOwner),
 	} {
-		recorder := harness.do(builderRequest{
-			method: http.MethodDelete, path: builderIconsRoute + "/" + icon, user: builderTestOwner,
-		})
+		for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+			recorder := harness.iconRequest(method, icon, `{"name":"renamed"}`, builderTestOwner, builderIconAdmin())
 
-		assertIconHeaders(t, icon, recorder)
+			if recorder.Code != http.StatusNotFound || builderMessage(t, recorder) != "icon not found" {
+				t.Errorf("%s %s = %d %s, want 404 icon not found", method, icon, recorder.Code, recorder.Body)
+			}
 
-		if recorder.Code != http.StatusNotFound || builderMessage(t, recorder) != "icon not found" {
-			t.Errorf("DELETE %s = %d %s, want 404 icon not found", icon, recorder.Code, recorder.Body)
-		}
-
-		// The answer never repeats the path.
-		if len(icon) > 8 && strings.Contains(recorder.Body.String(), icon[:8]) {
-			t.Errorf("DELETE %s: the answer repeats the path: %s", icon, recorder.Body)
+			// The answer never repeats the path.
+			if len(icon) > 8 && strings.Contains(recorder.Body.String(), icon[:8]) {
+				t.Errorf("%s %s: the answer repeats the path: %s", method, icon, recorder.Body)
+			}
 		}
 	}
 
-	if list := harness.icons(builderTestOwner); len(list.Icons) != 1 {
-		t.Fatalf("the library lists %d icons, want the one that was kept", len(list.Icons))
+	if list := harness.icons(builderTestOwner, builderIconUser()); len(list.Icons) != 1 || list.Icons[0].Name != "kept" {
+		t.Fatalf("the library lists %+v, want the one that was kept", list.Icons)
 	}
 }
 
 func TestBuilderIconPermissions(t *testing.T) {
 	upload := builderIconPNG(t, 1, 1, 6)
-	path := builderIconPath(bdoc.IconID(upload))
 
 	role := func(verbs ...string) *rbac.Role {
 		return builderShareRole(verbs)
@@ -572,44 +742,56 @@ func TestBuilderIconPermissions(t *testing.T) {
 
 	// Every permission there is but on configs.
 	noConfigs := builderRole(builderPolicy(
-		[]string{builderDraftsResource, "schemas", "topologies", "experiments", "scenarios"},
+		[]string{builderDraftsResource, "builder-icons", "schemas", "topologies", "experiments", "scenarios"},
 		[]string{"*", "*/*"},
 		builderShareConfigVerbs,
 	))
 
 	tests := []struct {
-		name                 string
-		role                 *rbac.Role
-		anonymous            bool
-		list, create, remove int
+		name                                 string
+		role                                 *rbac.Role
+		anonymous                            bool
+		list, get, create, rename, deleteOne int
 	}{
 		{
 			name: "no identity", anonymous: true,
-			list: http.StatusForbidden, create: http.StatusForbidden, remove: http.StatusForbidden,
+			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusForbidden,
+			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
 		},
 		{
 			name: "no permission", role: role(),
-			list: http.StatusForbidden, create: http.StatusForbidden, remove: http.StatusForbidden,
+			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusForbidden,
+			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
 		},
 		{
 			name: "everything but configs", role: &noConfigs,
-			list: http.StatusForbidden, create: http.StatusForbidden, remove: http.StatusForbidden,
+			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusForbidden,
+			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
 		},
 		{
 			name: "configs list", role: role("list"),
-			list: http.StatusOK, create: http.StatusForbidden, remove: http.StatusForbidden,
+			list: http.StatusOK, get: http.StatusForbidden, create: http.StatusForbidden,
+			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
 		},
 		{
-			name: "configs get and update", role: role("get", "update"),
-			list: http.StatusForbidden, create: http.StatusForbidden, remove: http.StatusForbidden,
+			name: "configs get", role: role("get"),
+			list: http.StatusForbidden, get: http.StatusOK, create: http.StatusForbidden,
+			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
 		},
 		{
 			name: "configs create", role: role("create"),
-			list: http.StatusForbidden, create: http.StatusCreated, remove: http.StatusForbidden,
+			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusCreated,
+			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
+		},
+		{
+			name: "configs update", role: role("update"),
+			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusForbidden,
+			rename: http.StatusOK, deleteOne: http.StatusForbidden,
 		},
 		{
 			name: "configs delete", role: role("delete"),
-			list: http.StatusForbidden, create: http.StatusForbidden, remove: http.StatusNoContent,
+			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusForbidden,
+			rename: http.StatusForbidden, deleteOne: http.StatusNoContent,
 		},
 	}
 
@@ -617,8 +799,9 @@ func TestBuilderIconPermissions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			harness := newBuilderHarness(t)
 
-			// The library holds the icon, so a delete that is allowed finds it.
-			if _, _, err := harness.service.AddIcon(context.Background(), builderTestOwner, "", upload); err != nil {
+			// The library holds the caller's icon, so a request that is
+			// allowed finds one the caller may change.
+			if _, _, err := harness.service.AddIcon(context.Background(), builderTestOwner, "plc", upload); err != nil {
 				t.Fatalf("adding the icon: %v", err)
 			}
 
@@ -635,8 +818,10 @@ func TestBuilderIconPermissions(t *testing.T) {
 				want int
 			}{
 				{builderRequest{method: http.MethodGet, path: builderIconsRoute}, tt.list},
-				{builderRequest{method: http.MethodPost, path: builderIconsRoute, body: builderIconBody(t, "", other)}, tt.create},
-				{builderRequest{method: http.MethodDelete, path: path}, tt.remove},
+				{builderRequest{method: http.MethodGet, path: builderIconsRoute + "/plc"}, tt.get},
+				{builderRequest{method: http.MethodPost, path: builderIconsRoute, body: builderIconBody(t, "other", other)}, tt.create},
+				{builderRequest{method: http.MethodPut, path: builderIconsRoute + "/plc", body: `{"name":"plc-2"}`}, tt.rename},
+				{builderRequest{method: http.MethodDelete, path: builderIconsRoute + "/plc"}, tt.deleteOne},
 			} {
 				request.user = user
 				request.role = tt.role
@@ -653,8 +838,8 @@ func TestBuilderIconPermissions(t *testing.T) {
 	}
 }
 
-// TestBuilderIconOutOfSpace asserts adding an icon etcd refused for lack of
-// space says so plainly.
+// TestBuilderIconOutOfSpace asserts adding or renaming an icon etcd refused
+// for lack of space says so plainly.
 func TestBuilderIconOutOfSpace(t *testing.T) {
 	harness := newBuilderHarness(t)
 
@@ -673,6 +858,58 @@ func TestBuilderIconOutOfSpace(t *testing.T) {
 
 	if recorder := harness.postIcon(builderTestOwner, "plc", builderIconPNG(t, 1, 1, 8)); recorder.Code != http.StatusCreated {
 		t.Fatalf("adding it after freeing space: status = %d, want %d", recorder.Code, http.StatusCreated)
+	}
+
+	harness.store.BeforeCreate = func(namespace, key string) error {
+		return fmt.Errorf("creating record %s/%s in Etcd: %w", namespace, key, store.ErrNoSpace)
+	}
+
+	renamed := harness.iconRequest(http.MethodPut, "plc", `{"name":"plc-2"}`, builderTestOwner, builderIconUser())
+
+	if renamed.Code != http.StatusInsufficientStorage || builderMessage(t, renamed) != store.ErrNoSpace.Error() {
+		t.Fatalf("renaming an icon = %d %s, want 507 and the store's message", renamed.Code, renamed.Body)
+	}
+}
+
+// TestBuilderIconStartupCleanup asserts a server start removes the icon
+// records of the per-user layout of earlier builds, and keeps the library.
+func TestBuilderIconStartupCleanup(t *testing.T) {
+	fake := memrecord.New()
+
+	service, err := bapi.New(bapi.WithStore(fake))
+	if err != nil {
+		t.Fatalf("bapi.New returned error: %v", err)
+	}
+
+	if _, _, err := service.AddIcon(context.Background(), builderTestOwner, "kept", builderIconPNG(t, 1, 1, 3)); err != nil {
+		t.Fatalf("adding an icon: %v", err)
+	}
+
+	legacy := bapi.OwnerScope(builderTestOwner) + "/" + strings.Repeat("b", 64)
+
+	if _, err := fake.CreateRecord(bapi.NamespaceIcons, legacy, []byte(`{"id":"x"}`)); err != nil {
+		t.Fatalf("planting a record of the per-user layout: %v", err)
+	}
+
+	logs := plogtest.Capture(t)
+	_, api := newBuilderRouter()
+
+	if err := registerBuilderRoutes(api,
+		withBuilderService(service),
+		withBuilderConfigs(
+			func(string) (store.Configs, error) { return store.Configs{}, nil },
+			func(string) (*store.Config, error) { return nil, store.ErrNotExist },
+		),
+	); err != nil {
+		t.Fatalf("registerBuilderRoutes returned error: %v", err)
+	}
+
+	if keys := fake.Keys(bapi.NamespaceIcons); !slices.Equal(keys, []string{"name/kept"}) {
+		t.Fatalf("after the start the icon records are %q, want name/kept alone", keys)
+	}
+
+	if len(logs.Records(t, plogtest.Message("removed builder icon records of the per-user layout"))) != 1 {
+		t.Fatalf("the start does not log the removal: %s", logs)
 	}
 }
 
@@ -755,10 +992,10 @@ func TestBuilderResponseHeaders(t *testing.T) {
 		}
 	}
 
-	// Both users, for each method of each route: the icon library has three
+	// Both users, for each method of each route: the icon library has five
 	// operations and their OPTIONS, the rest of the Builder 23 and theirs
 	// (the cursor's two methods share one).
-	if icons != 2*6 || builder < 2*45 || others != 2 {
+	if icons != 2*10 || builder < 2*45 || others != 2 {
 		t.Fatalf("checked %d icon, %d other Builder and %d other responses", icons, builder, others)
 	}
 
@@ -772,6 +1009,7 @@ func TestBuilderResponseHeaders(t *testing.T) {
 		{method: http.MethodGet, template: "/builder/drafts/{owner}/{draft}"},
 		{method: http.MethodGet, template: "/builder/templates"},
 		{method: http.MethodPost, template: "/builder/templates/{owner}/items"},
+		{method: http.MethodGet, template: "/builder/icons/{icon}"},
 	} {
 		if !slices.Contains(operations, want) {
 			t.Errorf("%s %s was not checked: it is not a registered route", want.method, want.template)
@@ -791,6 +1029,7 @@ func TestBuilderResponseHeaders(t *testing.T) {
 		{http.MethodPatch, "/builder/drafts", http.StatusMethodNotAllowed, true, false},
 		{http.MethodPut, "/schemas/builder/v1", http.StatusMethodNotAllowed, true, false},
 		{http.MethodPatch, builderIconsRoute, http.StatusMethodNotAllowed, true, true},
+		{http.MethodPost, builderIconsRoute + "/x", http.StatusMethodNotAllowed, true, true},
 		{http.MethodGet, builderIconsRoute + "/x/y", http.StatusNotFound, true, true},
 		{http.MethodGet, "/no-such-route", http.StatusNotFound, false, false},
 		{http.MethodPatch, "/configs/x/x", http.StatusMethodNotAllowed, false, false},

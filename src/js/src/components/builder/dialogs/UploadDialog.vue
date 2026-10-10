@@ -19,6 +19,13 @@
   the Inspector then shows. Pasted text has none. The published diagrams
   offered include those of topologies read from the Builder file they name,
   marked (File).
+
+  A document that carries copies of custom icons (a downloaded file does)
+  puts them into the server's icon library first (see ingestIcons): a copy
+  the server has as it is, or takes under its name, is dropped; one the
+  server refuses, or has with other bytes under that name, stays in the
+  draft, and the dialog shows a warning for it, as it shows the warnings of
+  a conversion, before the draft is made.
 -->
 <template>
   <builder-dialog
@@ -191,6 +198,7 @@
 
   import { count, describeImport } from '@/builder/announce.js';
   import { parseImport, tooLargeText } from '@/builder/decode.js';
+  import { iconLibrary, ingestIcons } from '@/builder/iconLibrary.js';
   import { useBuilderStore } from '@/builder/store.js';
   import { hasControlCharacters } from '@/builder/text.js';
 
@@ -211,8 +219,11 @@
   const busy = ref(false);
   const warnings = ref([]);
   const warningsView = ref(null);
-  // A conversion with warnings, held until the user continues.
+  // A conversion, or an uploaded document whose custom icons gave warnings
+  // (see ingestIcons), held until the user continues; pendingKind says
+  // which: 'legacy' or 'upload'.
   let pending = null;
+  const pendingKind = ref('');
 
   // Whether the dialog was closed. What a submit was still waiting for then
   // changes nothing: the editor keeps the draft it has open.
@@ -252,9 +263,10 @@
     return 'Upload';
   });
 
-  // Before the user continues, nothing has been converted into a draft.
+  // Before the user continues, nothing has been made into a draft.
   const warningSummary = computed(
-    () => `This conversion has ${count(warnings.value.length, 'warning')}.`,
+    () =>
+      `This ${pendingKind.value === 'upload' ? 'upload' : 'conversion'} has ${count(warnings.value.length, 'warning')}.`,
   );
 
   // The read of the chosen file, which a submit waits for.
@@ -398,8 +410,15 @@
       return;
     }
 
-    pending = result;
-    warnings.value = result.warnings;
+    await hold('legacy', result, result.warnings);
+  }
+
+  // Shows the warnings in place of the form, and keeps what they are about
+  // until the user continues.
+  async function hold(kind, held, found) {
+    pending = held;
+    pendingKind.value = kind;
+    warnings.value = found;
     status.set(warningSummary.value);
 
     // The warnings replace the form, and the button that had focus with it.
@@ -409,7 +428,34 @@
 
   // Makes the draft once the user has seen the warnings.
   function proceed() {
-    openConverted(pending);
+    if (pendingKind.value === 'upload') {
+      openUploaded(pending);
+    } else {
+      openConverted(pending);
+    }
+  }
+
+  // Loads an uploaded document and has its draft made. Upload always starts
+  // a new draft: the current draft is detached before the uploaded content
+  // is loaded, so a later edit can never overwrite that draft.
+  function openUploaded({ document, sourceFile }) {
+    store.newDocument({ name: document.metadata?.name });
+
+    const opened = store.setDocument(document, {
+      label: 'Uploaded diagram',
+    });
+
+    if (!opened) {
+      warnings.value = [];
+      status.clear();
+      error.set(store.error);
+
+      return;
+    }
+
+    // Only a chosen file has a name to record.
+    emit('uploaded', sourceFile ? { sourceFile } : {});
+    emit('close');
   }
 
   async function submit() {
@@ -481,25 +527,52 @@
       return;
     }
 
-    // Upload always starts a new draft. Detach the current draft before loading
-    // uploaded content so a later edit can never overwrite that draft.
-    store.newDocument({ name: result.document.metadata?.name });
+    // The custom icons the file carries go to the server's icon library,
+    // so the draft carries only those the server cannot take as they are
+    // (see ingestIcons).
+    const upload = {
+      document: result.document,
+      sourceFile: form.source === 'file' ? form.fileName : '',
+    };
+    let found = [];
 
-    const opened = store.setDocument(result.document, {
-      label: 'Uploaded diagram',
-    });
+    if (carriesIcons(result.document)) {
+      busy.value = true;
+      status.set('Adding the custom icons of the diagram to the server…');
 
-    if (!opened) {
-      error.set(store.error);
+      try {
+        const ingested = await ingestIcons(result.document, iconLibrary);
+
+        upload.document = ingested.doc;
+        found = ingested.warnings;
+      } finally {
+        busy.value = false;
+        status.clear();
+      }
+
+      if (closed) {
+        return;
+      }
+    }
+
+    if (found.length) {
+      await hold('upload', upload, found);
 
       return;
     }
 
-    // Only a chosen file has a name to record.
-    emit(
-      'uploaded',
-      form.source === 'file' ? { sourceFile: form.fileName } : {},
+    openUploaded(upload);
+  }
+
+  // Whether a document carries copies of custom icons.
+  function carriesIcons(document) {
+    const icons = document?.icons;
+
+    return (
+      Boolean(icons) &&
+      typeof icons === 'object' &&
+      !Array.isArray(icons) &&
+      Object.keys(icons).length > 0
     );
-    emit('close');
   }
 </script>

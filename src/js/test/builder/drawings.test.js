@@ -13,9 +13,10 @@ import {
   inspectorTarget,
   newListItem,
 } from '@/builder/adapters/forms.js';
+import { toFlowNodes } from '@/builder/adapters/vueflow.js';
 import { copySelection, pasteClipboard } from '@/builder/clipboard.js';
 import { toGEXF } from '@/builder/gexf.js';
-import { iconRefs, settleIcons } from '@/builder/icons.js';
+import { embedIcons, iconRefs, settleIcons } from '@/builder/icons.js';
 import { runLayout } from '@/builder/layouts/index.js';
 import {
   addNode,
@@ -51,10 +52,19 @@ import { selectionItemName } from '@/builder/selection.js';
 import { validateDocument } from '@/builder/validate.js';
 
 import { sampleDocument } from './fixtures.js';
-import { ICON_DATA, ICON_KEY } from './png.js';
+import { ICON_DATA } from './png.js';
 
 const errorsOf = (doc) =>
   validateDocument(doc).filter((entry) => entry.level === 'error');
+
+// A custom icon of the server's icon library, which an icon node names.
+const ICON_NAME = 'plc';
+const library = {
+  lookup: (name) =>
+    name.toLowerCase() === ICON_NAME
+      ? { name: ICON_NAME, aliases: [], data: ICON_DATA }
+      : null,
+};
 
 // The sample document with a rectangle, a circle, an icon and a line.
 function drawnDocument() {
@@ -160,10 +170,10 @@ describe('icons', () => {
       icon: { iconKey: 'external', label: 'Internet' },
     });
 
-    const custom = updateNode(doc, id, { icon: { icon: ICON_KEY } });
+    const custom = updateNode(doc, id, { icon: { icon: ICON_NAME } });
 
     expect(findNode(custom, id).icon).toEqual({
-      icon: ICON_KEY,
+      icon: ICON_NAME,
       label: 'Internet',
     });
     expect(
@@ -184,25 +194,53 @@ describe('icons', () => {
     expect(nodeLabel(unlabelled)).toBe('Icon');
   });
 
-  test('a custom icon is carried, or left out for the built-in one', () => {
+  test('a custom icon is a name the library resolves, as a device names one', () => {
     const { doc, icon } = drawnDocument();
-    const custom = updateNode(doc, icon.id, { icon: { icon: ICON_KEY } });
+    const custom = updateNode(doc, icon.id, { icon: { icon: ICON_NAME } });
 
-    expect([...iconRefs(custom)]).toEqual([ICON_KEY]);
+    expect([...iconRefs(custom)]).toEqual([ICON_NAME]);
+    // A name the document carries no copy of is the library's to resolve.
+    expect(errorsOf(custom)).toEqual([]);
+    expect(
+      errorsOf(updateNode(doc, icon.id, { icon: { icon: 'plc icon' } })),
+    ).toEqual([
+      expect.objectContaining({
+        path: `nodes[${custom.nodes.length - 2}].icon.icon`,
+      }),
+    ]);
 
-    const carried = settleIcons(custom, { [ICON_KEY]: { data: ICON_DATA } });
+    // Drawn from the library, else from the document's copy; with neither,
+    // the node shows the built-in icon of its kind.
+    const drawn = (next, library) =>
+      toFlowNodes(next, { library }).find((node) => node.id === icon.id).data;
 
-    expect(carried.doc.icons).toEqual({ [ICON_KEY]: { data: ICON_DATA } });
-    expect(errorsOf(carried.doc)).toEqual([]);
-
-    const dropped = settleIcons(custom, null);
-
-    expect(dropped.dropped).toBe(1);
-    expect(findNode(dropped.doc, icon.id).icon).toEqual({
+    expect(drawn(custom, library)).toMatchObject({
       iconKey: 'external',
-      label: 'Internet',
+      iconSrc: `data:image/png;base64,${ICON_DATA}`,
     });
-    expect(errorsOf(dropped.doc)).toEqual([]);
+    expect(drawn(custom, null)).toMatchObject({
+      iconKey: 'external',
+      iconSrc: '',
+    });
+    expect(
+      drawn({ ...custom, icons: { [ICON_NAME]: { data: ICON_DATA } } }, null)
+        .iconSrc,
+    ).toBe(`data:image/png;base64,${ICON_DATA}`);
+
+    // A draft keeps no copy of an icon the library holds as it is, and a
+    // download carries one.
+    const copied = { ...custom, icons: { [ICON_NAME]: { data: ICON_DATA } } };
+
+    expect(settleIcons(copied, library)).not.toHaveProperty('icons');
+    expect(settleIcons(copied, null).icons).toEqual(copied.icons);
+    expect(embedIcons(custom, library)).toMatchObject({
+      doc: { icons: { [ICON_NAME]: { data: ICON_DATA } } },
+      missing: [],
+    });
+    expect(embedIcons(custom, null).missing).toEqual([ICON_NAME]);
+
+    // The built-in icon names no custom icon.
+    expect([...iconRefs(doc)]).toEqual([]);
   });
 });
 
@@ -485,14 +523,16 @@ describe('drawings in a diagram', () => {
 
   test('are copied and pasted with their payloads', () => {
     const drawn = drawnDocument();
-    const doc = settleIcons(
-      updateNode(drawn.doc, drawn.icon.id, { icon: { icon: ICON_KEY } }),
-      { [ICON_KEY]: { data: ICON_DATA } },
-    ).doc;
+    // The diagram carries a copy of the icon node's custom icon, which the
+    // copy brings along.
+    const doc = {
+      ...updateNode(drawn.doc, drawn.icon.id, { icon: { icon: ICON_NAME } }),
+      icons: { [ICON_NAME]: { data: ICON_DATA } },
+    };
     const ids = [drawn.circle.id, drawn.icon.id, drawn.line.id];
     const payload = copySelection(doc, { nodes: ids });
 
-    expect(Object.keys(payload.icons)).toEqual([ICON_KEY]);
+    expect(Object.keys(payload.icons)).toEqual([ICON_NAME]);
 
     const pasted = pasteClipboard(doc, payload, { offset: { x: 40, y: 40 } });
     const copies = pasted.nodeIds.map((id) => findNode(pasted.doc, id));
@@ -841,13 +881,13 @@ describe('the Inspector', () => {
     next = applyFormData(
       next,
       { type: 'node', id: icon.id },
-      { iconKey: 'external', icon: ICON_KEY, label: 'Net', width: 48 },
+      { iconKey: 'external', icon: ICON_NAME, label: 'Net', width: 48 },
     );
 
     expect(findNode(next, icon.id)).toMatchObject({
       label: 'Net',
       size: { width: 48, height: 64 },
-      icon: { icon: ICON_KEY, label: 'Net' },
+      icon: { icon: ICON_NAME, label: 'Net' },
     });
     expect(findNode(next, icon.id).icon).not.toHaveProperty('iconKey');
   });

@@ -28,7 +28,12 @@ const {
   expect,
   expectAccessible,
   expectDetail,
+  iconName,
+  iconOf,
+  iconPath,
   labDocument,
+  ownColor,
+  pngOf,
   recordAnnouncements,
   signIn,
   test,
@@ -1702,3 +1707,95 @@ test(
     await guest.dispose();
   },
 );
+
+// The icon library is the server's: every user sees and uses every icon,
+// and only its uploader (or a role with builder-icons) renames or deletes
+// it. The sharing users' role has no builder-icons.
+test('another user sees and uses an icon one user uploaded, and may neither rename nor delete it', async ({
+  sharingUsers,
+}) => {
+  const { owner, stranger } = sharingUsers;
+  const { page } = stranger;
+  const icon = iconOf(pngOf(12, 12, ownColor()), iconName('shared'));
+  const path = iconPath(icon.name);
+  const draft = await seedDraft(stranger, 'Icon lab');
+
+  const uploaded = await owner.api.post(`${API}/builder/icons`, {
+    data: { name: icon.name, data: icon.data },
+  });
+  expect(uploaded.status(), await uploaded.text()).toBe(201);
+
+  try {
+    await test.step('the listing gives every user the icon, and says who may change it', async () => {
+      const listed = async (user) =>
+        (await (await user.api.get(`${API}/builder/icons`)).json()).icons.find(
+          (entry) => entry.name === icon.name,
+        );
+
+      expect(await listed(owner)).toMatchObject({
+        owner: owner.username,
+        canRename: true,
+        canDelete: true,
+      });
+      expect(await listed(stranger)).toMatchObject({
+        owner: owner.username,
+        data: icon.data,
+        canRename: false,
+        canDelete: false,
+      });
+    });
+
+    await test.step('the server refuses another user’s rename and delete', async () => {
+      const renamed = await stranger.api.put(path, {
+        data: { name: iconName('taken-over') },
+      });
+
+      expect(renamed.status()).toBe(403);
+      expect((await stranger.api.delete(path)).status()).toBe(403);
+      expect((await stranger.api.get(path)).status()).toBe(200);
+    });
+
+    await test.step('the Custom icons dialog offers Use alone on another user’s icon, and the device names it', async () => {
+      await openOwn(stranger, draft);
+      // The device added is selected, so the Inspector edits it.
+      await page.getByTestId('palette-device').click();
+
+      const field = page
+        .locator('section[aria-labelledby="inspector-title"]')
+        .locator('[data-path="icon"]');
+
+      await field.getByTestId('inspector-icon-choose').click();
+
+      const dialog = page.getByTestId('icon-dialog');
+      const row = dialog
+        .getByTestId('icon-library-list')
+        .locator(`[data-icon="${icon.name}"]`);
+
+      await expect(row).toContainText(`Uploaded by ${owner.username}`);
+      await expect.soft(row.getByTestId('icon-rename')).toHaveCount(0);
+      await expect.soft(row.getByTestId('icon-delete')).toHaveCount(0);
+      await row.getByRole('button', { name: `Use ${icon.name}` }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(field.locator('img.builder-icon--custom')).toHaveAttribute(
+        'src',
+        `data:image/png;base64,${icon.data}`,
+      );
+      await expect(page.getByTestId('builder-save-state')).toContainText(SAVED);
+    });
+
+    await test.step('its uploader renames it, and the other user’s device still shows it', async () => {
+      const renamed = await owner.api.put(path, {
+        data: { name: iconName('renamed') },
+      });
+
+      expect(renamed.status()).toBe(200);
+      // A new page load reads the icon library again.
+      await openOwn(stranger, draft);
+      await expect(
+        page.locator('.vue-flow__node img.builder-icon--custom'),
+      ).toHaveAttribute('src', `data:image/png;base64,${icon.data}`);
+    });
+  } finally {
+    await owner.api.delete(path).catch(() => {});
+  }
+});

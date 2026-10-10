@@ -2,6 +2,11 @@
   Download diagram: builder documents (JSON/YAML), the phenix Topology config
   (Topology YAML), PNG/SVG images and a Gephi (GEXF) graph.
 
+  A Builder JSON or YAML file carries a copy of every custom icon the
+  diagram uses, taken from the server's icon library, so the file stands on
+  its own; an icon the library no longer has is left out, and the status
+  says which.
+
   Topology YAML comes from the server, which owns that conversion, so the file
   is the config Publish would write; a client rendering could disagree with
   it. What keeps the topology from being published yet is said after the
@@ -169,6 +174,7 @@
   import {
     describeTopologyExport,
     documentBounds,
+    downloadDocument,
     exportFileName,
     exportImage,
     IMAGE_PADDING,
@@ -179,6 +185,7 @@
   } from '@/builder/exporters.js';
   import { count, listOf } from '@/builder/announce.js';
   import { GEXF_MIME, lastModified, toGEXF } from '@/builder/gexf.js';
+  import { iconLibrary } from '@/builder/iconLibrary.js';
   import { unappliedBlock } from '@/builder/leave.js';
   import { documentScenarios } from '@/builder/model.js';
   import { builderSettings } from '@/builder/settings.js';
@@ -208,26 +215,36 @@
     }),
   );
 
-  function downloadText(kind) {
+  // A Builder JSON or YAML file carries every custom icon the diagram uses
+  // (see downloadDocument), from the server's icon library, which is read
+  // first unless it was read already.
+  async function downloadText(kind) {
     error.clear();
 
+    await iconLibrary.ensure().catch(() => {});
+
+    const { doc, note } = downloadDocument(store.doc, iconLibrary);
     const map = {
       json: {
-        text: toJSONString(store.doc),
+        text: toJSONString(doc),
         mime: 'application/json',
         ext: 'json',
       },
-      yaml: { text: toYAMLString(store.doc), mime: 'text/yaml', ext: 'yaml' },
+      yaml: { text: toYAMLString(doc), mime: 'text/yaml', ext: 'yaml' },
     }[kind];
 
     saveText({
       text: map.text,
       mime: map.mime,
-      fileName: exportFileName(store.doc, map.ext),
+      fileName: exportFileName(doc, map.ext),
       saveAs,
     });
 
-    status.set(`Saved ${exportFileName(store.doc, map.ext)}.`);
+    status.set(
+      [`Saved ${exportFileName(doc, map.ext)}.`, note]
+        .filter(Boolean)
+        .join(' '),
+    );
   }
 
   async function downloadTopologyYAML() {

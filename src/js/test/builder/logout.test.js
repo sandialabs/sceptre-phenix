@@ -28,6 +28,7 @@ import { createMemoryStore, draftKey } from '@/builder/idb.js';
 import {
   LOGOUT_SEND_WAIT_MS,
   diagramFile,
+  downloadedDiagram,
   draftExport,
   registerOpenDraft,
   registerQueue,
@@ -1338,5 +1339,67 @@ describe("the Builder's changes this browser holds", () => {
       text: '{\n  "metadata": {\n    "name": "  Core Lab: v2! "\n  }\n}\n',
     });
     expect(diagramFile({}).name).toBe('topology.json');
+  });
+
+  // As Download does, the file carries a copy of every custom icon the
+  // diagram uses, from its own copies or the server's icon library, which
+  // is read first: the file stands on its own once the draft is gone.
+  test('carries the custom icons the diagram uses', async () => {
+    const node = (id, icon) => ({
+      id,
+      kind: 'device',
+      device: { hostname: id, icon },
+    });
+    const icons = new Map();
+    const iconLibrary = {
+      ensure: vi.fn(async () => {
+        icons.set('plc', { name: 'plc', data: 'cGxj' });
+        icons.set('hmi', { name: 'hmi', data: 'aG1p' });
+      }),
+      lookup: (name) => icons.get(name.toLowerCase()) || null,
+    };
+    const named = record(
+      'alice',
+      'alice',
+      'd5',
+      [snapshot('i')],
+      [
+        {
+          id: 'i',
+          label: 'Edit i',
+          snapshot: {
+            metadata: { name: 'Icons lab' },
+            nodes: [node('a', 'PLC'), node('b', 'hmi'), node('c', 'gone')],
+            edges: [],
+            icons: { hmi: { data: 'b3du' }, unused: { data: 'b3du' } },
+          },
+        },
+      ],
+    );
+    const draftStore = await stored(named);
+
+    const file = await draftExport({
+      username: 'alice',
+      key: named.key,
+      name: 'icons-lab.json',
+      draftStore,
+      iconLibrary,
+    });
+
+    expect(iconLibrary.ensure).toHaveBeenCalledTimes(1);
+    expect(file.name).toBe('icons-lab.json');
+    // Keyed by the names the nodes use: the diagram's own copy wins, and an
+    // icon neither has, or one no node names, is left out.
+    expect(JSON.parse(file.text).icons).toEqual({
+      PLC: { data: 'cGxj' },
+      hmi: { data: 'b3du' },
+    });
+
+    // A diagram that names no custom icon does not read the library.
+    iconLibrary.ensure.mockClear();
+    await expect(
+      downloadedDiagram({ metadata: { name: 'Plain' } }, { iconLibrary }),
+    ).resolves.toEqual({ metadata: { name: 'Plain' } });
+    expect(iconLibrary.ensure).not.toHaveBeenCalled();
   });
 });

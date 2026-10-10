@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -48,7 +49,7 @@ func builtinBuilderRole(t *testing.T) *rbac.Role {
 // import, upload and legacy conversion, drafts and their sharing,
 // publishing a topology with a scenario and an experiment, other users'
 // drafts, the template library with its sharing and server-wide
-// publishing, and icons.
+// publishing, and icons, also renaming and deleting another user's.
 func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 	role := builtinBuilderRole(t)
 
@@ -165,16 +166,13 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 
 	// The template library: a template of alice's own, shared with bob and
 	// published server-wide.
-	iconID, icon := builderTemplateIcon(t, 31)
-
 	var made builderTemplateCreateResponse
 
 	harness.decode(do("adding a template", builderRequest{
 		method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/items"),
 		body: builderJSON(t, builderTemplateCreateRequest{
-			Templates:  []builderTemplateContent{builderTemplateContentOf("PLC", iconID)},
+			Templates:  []builderTemplateContent{builderTemplateContentOf("PLC", "plc")},
 			Collection: nil,
-			Icons:      map[string]bdoc.Icon{iconID: icon},
 		}),
 	}, http.StatusCreated), &made)
 
@@ -218,4 +216,15 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 		method: http.MethodPost, path: builderIconsRoute, body: builderIconBody(t, "plc", builderIconPNG(t, 1, 1, 31)),
 	}, http.StatusCreated)
 	do("listing the icons", builderRequest{method: http.MethodGet, path: builderIconsRoute}, http.StatusOK)
+	do("reading the icon", builderRequest{method: http.MethodGet, path: builderIconsRoute + "/PLC"}, http.StatusOK)
+
+	// Any user's icon, through builder-icons update and delete.
+	if _, _, err := harness.service.AddIcon(context.Background(), builderTestPeer, "hmi", builderIconPNG(t, 1, 1, 32)); err != nil {
+		t.Fatalf("adding bob's icon: %v", err)
+	}
+
+	do("renaming another user's icon", builderRequest{
+		method: http.MethodPut, path: builderIconsRoute + "/hmi", body: `{"name":"hmi-2"}`,
+	}, http.StatusOK)
+	do("deleting another user's icon", builderRequest{method: http.MethodDelete, path: builderIconsRoute + "/hmi"}, http.StatusNoContent)
 }

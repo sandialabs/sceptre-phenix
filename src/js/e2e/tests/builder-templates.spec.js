@@ -38,12 +38,14 @@ const {
   expect,
   expectAccessible,
   expectNoFatal,
+  iconName,
   iconOf,
   libraryChange,
   ownColor,
   pngOf,
   publishTopology,
   readLibrary,
+  seedIcon,
   seedTemplates,
   templateLibrary,
   uniqueName,
@@ -831,7 +833,7 @@ test(
   },
 );
 
-test('a template keeps its colors and its custom icon, of which the diagram keeps its own copy', async ({
+test('a template keeps its colors and names its custom icon, which the diagram’s copy or the icon library draws', async ({
   page,
   builder,
   issues,
@@ -839,27 +841,33 @@ test('a template keeps its colors and its custom icon, of which the diagram keep
   const plc = iconOf(pngOf(32, 16, ownColor()), 'plc');
   const pump = iconOf(pngOf(16, 32, ownColor()), 'pump');
   const src = (icon) => `data:image/png;base64,${icon.data}`;
+  // The diagram carries a copy of plc, which the icon library lacks.
   const draft = await builder.seedDraft(
     plantDocument(uniqueName(testInfo, 'templates-icons'), {
-      look: { icon: plc.id, fillColor: '#1b2330' },
-      icons: { [plc.id]: plc.entry },
+      look: { icon: plc.name, fillColor: '#1b2330' },
+      icons: { [plc.name]: plc.entry },
     }),
   );
   const palette = templatePalette(page);
   const editor = templateEditor(page);
   const customIcon = (scope) => scope.locator('img.builder-icon--custom');
   const iconField = editor.field('icon');
-  // The icon library the Custom icons dialog reads: one icon, which the
-  // diagram does not have. No test's library is touched.
+  // The icon library the Builder reads: one icon, which the diagram does
+  // not carry. No test's icons are touched.
   const listed = [
     {
+      name: pump.name,
       id: pump.id,
-      name: 'pump',
+      owner: 'alice',
       width: 16,
       height: 32,
       bytes: Buffer.from(pump.data, 'base64').length,
       created: '2026-10-02T12:00:00Z',
+      updated: '2026-10-02T12:00:00Z',
+      aliases: [],
       data: pump.data,
+      canRename: false,
+      canDelete: false,
     },
   ];
 
@@ -869,7 +877,8 @@ test('a template keeps its colors and its custom icon, of which the diagram keep
         icons: listed,
         maxIcons: 64,
         maxBytes: 1048576,
-        usedBytes: listed[0].bytes,
+        usedIcons: 0,
+        usedBytes: 0,
       },
     }),
   );
@@ -885,11 +894,11 @@ test('a template keeps its colors and its custom icon, of which the diagram keep
     await expect(customIcon(iconField)).toHaveAttribute('src', src(plc));
     await expect
       .soft(iconField.getByTestId('inspector-icon-name'))
-      .toHaveText('plc');
+      .toHaveText(plc.name);
     await expect
       .soft(iconField.getByTestId('inspector-icon-choose'))
       .toHaveAccessibleDescription(
-        'An image of your own, drawn in place of the icon. The template keeps a copy, so it shows wherever the template is used.',
+        "An image of the server's icon library, drawn in place of the icon. Devices made from the template name it too.",
       );
     await editor.name.fill('PLC');
     await editor.save.click();
@@ -900,25 +909,25 @@ test('a template keeps its colors and its custom icon, of which the diagram keep
 
     [saved] = doc.templates;
     expect.soft(saved.device).toMatchObject({
-      icon: plc.id,
+      icon: plc.name,
       fillColor: '#1b2330',
     });
-    expect.soft(doc.icons).toEqual({ [plc.id]: plc.entry });
-    // The palette draws the template's own icon.
+    expect.soft(doc.icons).toEqual({ [plc.name]: plc.entry });
+    // The palette draws the template's icon, from the diagram's copy.
     await expect(customIcon(palette.entry(saved.id))).toHaveAttribute(
       'src',
       src(plc),
     );
   });
 
-  await test.step('the diagram keeps the icon while only the template uses it', async () => {
+  await test.step('the diagram keeps its copy while only the template names it', async () => {
     await builder.selectInOutline('plc-01');
     await builder.toolbar('delete').click();
     await builder.persisted(draft, hostnames, []);
 
     const doc = await builder.serverDocument(draft);
 
-    expect.soft(doc.icons).toEqual({ [plc.id]: plc.entry });
+    expect.soft(doc.icons).toEqual({ [plc.name]: plc.entry });
     expect.soft(doc.templates).toEqual([saved]);
     await expect
       .soft(customIcon(palette.entry(saved.id)))
@@ -932,10 +941,10 @@ test('a template keeps its colors and its custom icon, of which the diagram keep
     );
     expect
       .soft(byHostname(await builder.serverDocument(draft), 'plc-01').device)
-      .toMatchObject({ icon: plc.id, fillColor: '#1b2330' });
+      .toMatchObject({ icon: plc.name, fillColor: '#1b2330' });
   });
 
-  await test.step('an icon chosen in the editor is the template’s once it is saved, and the diagram’s', async () => {
+  await test.step('an icon of the library chosen in the editor is the template’s once it is saved, and the diagram carries no copy of it', async () => {
     await palette.actions(saved.id).click();
     await palette.action(saved.id, 'edit').click();
     await iconField.getByTestId('inspector-icon-choose').click();
@@ -943,21 +952,24 @@ test('a template keeps its colors and its custom icon, of which the diagram keep
     const icons = page.getByTestId('icon-dialog');
 
     await expect(icons).toBeVisible();
-    // The template's own icon, not the diagram's others.
+    // The copy of the template's own icon, not the diagram's others.
     await expect
       .soft(icons.getByTestId('icon-diagram-list').locator('[data-icon]'))
       .toHaveCount(1);
-    await icons
+    // Another user's icon has Use alone.
+    const row = icons
       .getByTestId('icon-library-list')
-      .locator(`[data-icon="${pump.id}"]`)
-      .getByTestId('icon-use')
-      .click();
+      .locator(`[data-icon="${pump.name}"]`);
+
+    await expect.soft(row.getByTestId('icon-rename')).toHaveCount(0);
+    await expect.soft(row.getByTestId('icon-delete')).toHaveCount(0);
+    await row.getByTestId('icon-use').click();
     await expect(icons).toHaveCount(0);
     await expect(editor.dialog).toBeVisible();
     await expect(customIcon(iconField)).toHaveAttribute('src', src(pump));
     await expect
       .soft(iconField.getByTestId('inspector-icon-name'))
-      .toHaveText('pump');
+      .toHaveText(pump.name);
     // Nothing of the diagram changed yet.
     expect
       .soft((await builder.serverDocument(draft)).templates)
@@ -975,39 +987,37 @@ test('a template keeps its colors and its custom icon, of which the diagram keep
     await builder.persisted(
       draft,
       (doc) => doc.templates[0].device.icon,
-      pump.id,
+      pump.name,
     );
     const doc = await builder.serverDocument(draft);
 
     expect.soft(doc.templates[0].device).toMatchObject({
-      icon: pump.id,
+      icon: pump.name,
       outlineColor: '#ffd400',
     });
     expect.soft(doc.templates[0].device).not.toHaveProperty('fillColor');
-    // The device made before keeps the first icon, so the diagram has both.
-    expect.soft(doc.icons).toEqual({
-      [plc.id]: plc.entry,
-      [pump.id]: pump.entry,
-    });
+    // The device made before keeps the first icon, whose copy stays; the
+    // library draws the template's.
+    expect.soft(doc.icons).toEqual({ [plc.name]: plc.entry });
     await expect(customIcon(palette.entry(saved.id))).toHaveAttribute(
       'src',
       src(pump),
     );
   });
 
-  await test.step('deleting the template takes its icon out of the diagram, and Undo brings both back', async () => {
+  await test.step('deleting the template leaves the device’s copy, and Undo brings the template back', async () => {
     await palette.actions(saved.id).click();
     await palette.action(saved.id, 'delete').click();
     await builder.persisted(draft, (doc) => doc.templates ?? null, null);
     expect
       .soft((await builder.serverDocument(draft)).icons)
-      .toEqual({ [plc.id]: plc.entry });
+      .toEqual({ [plc.name]: plc.entry });
 
     await builder.toolbar('undo').click();
     await builder.persisted(
       draft,
-      (doc) => Object.keys(doc.icons).sort(),
-      [plc.id, pump.id].sort(),
+      (doc) => doc.templates?.[0]?.device.icon ?? null,
+      pump.name,
     );
     await expect(customIcon(palette.entry(saved.id))).toHaveAttribute(
       'src',
@@ -1853,7 +1863,7 @@ test('collections group templates of the library, and several templates are adde
   expectNoFatal(issues);
 });
 
-test('a template of a diagram is saved to the library with its icon, and the built-in templates stand in when the library cannot be read', async ({
+test('a template of a diagram is saved to the library naming its icon, and the built-in templates stand in when the library cannot be read', async ({
   page,
   builder,
   request,
@@ -1861,16 +1871,17 @@ test('a template of a diagram is saved to the library with its icon, and the bui
   issues,
 }, testInfo) => {
   const name = uniqueName(testInfo, 'unit');
-  const icon = iconOf(pngOf(8, 8, ownColor()), 'unit');
+  // An icon of the server's icon library, which the template names.
+  const icon = iconOf(pngOf(8, 8, ownColor()), iconName('unit'));
+
+  await seedIcon(request, tracker, icon);
+
   const unit = template(name, {
     description: 'A unit',
-    device: unitDevice('unit', { iconKey: 'router', icon: icon.id }),
+    device: unitDevice('unit', { iconKey: 'router', icon: icon.name }),
   });
   const draft = await builder.seedDraft(
-    plantDocument(uniqueName(testInfo, 'to-library'), {
-      icons: { [icon.id]: icon.entry },
-      templates: [unit],
-    }),
+    plantDocument(uniqueName(testInfo, 'to-library'), { templates: [unit] }),
   );
   const palette = templatePalette(page);
   const library = templateLibrary(page);
@@ -1897,10 +1908,9 @@ test('a template of a diagram is saved to the library with its icon, and the bui
     const answer = await added;
 
     expect(answer.status()).toBe(201);
-    // A copy, with the custom icon it names, and without its id.
+    // A copy, naming its custom icon, and without its id.
     expect(answer.request().postDataJSON()).toEqual({
       templates: [{ name, description: 'A unit', device: unit.device }],
-      icons: { [icon.id]: icon.entry },
     });
     [{ id }] = (await answer.json()).created;
     await expect(builder).toHaveAnnounced(`Saved ${name} to your library.`);
@@ -1910,16 +1920,17 @@ test('a template of a diagram is saved to the library with its icon, and the bui
     await expect(palette.entry(unit.id)).toBeVisible();
     await expect(palette.own(id)).toHaveText(name);
     await expect.soft(palette.own(id)).toHaveAccessibleDescription('A unit');
+    // The icon library draws the icon the template names.
     await expect
       .soft(palette.own(id).locator('img.builder-icon--custom'))
-      .toHaveCount(1);
+      .toHaveAttribute('src', `data:image/png;base64,${icon.data}`);
 
     const stored = await readLibrary(request);
 
     expect
       .soft(stored.templates.find((entry) => entry.id === id).device)
       .toEqual(unit.device);
-    expect.soft(stored.icons[icon.id]).toEqual(icon.entry);
+    expect.soft(stored).not.toHaveProperty('icons');
   });
 
   await test.step('a template added elsewhere is listed once the window comes back to the front', async () => {
@@ -1933,12 +1944,11 @@ test('a template of a diagram is saved to the library with its icon, and the bui
     await expect(palette.own(ids[0])).toHaveText(later);
   });
 
-  await test.step('a device made from the library’s copy brings its icon into a diagram that lacks it', async () => {
-    // Without its own template the diagram has no use for the icon.
+  await test.step('a device made from the library’s copy names its icon, and the diagram carries no image of it', async () => {
     await palette.actions(unit.id).click();
     await palette.action(unit.id, 'delete').click();
     await expect(palette.diagram).toHaveCount(0);
-    await builder.persisted(draft, (doc) => doc.icons ?? null, null);
+    await builder.persisted(draft, (doc) => doc.templates ?? null, null);
 
     await palette.own(id).click();
     await builder.persisted(draft, hostnames, ['plc-01', 'unit']);
@@ -1947,12 +1957,12 @@ test('a template of a diagram is saved to the library with its icon, and the bui
 
     expect.soft(byHostname(doc, 'unit').device).toMatchObject({
       iconKey: 'router',
-      icon: icon.id,
+      icon: icon.name,
     });
-    expect.soft(doc.icons).toEqual({ [icon.id]: icon.entry });
+    expect.soft(doc).not.toHaveProperty('icons');
     await expect
       .soft(builder.node('unit', 'device').locator('img.builder-icon--custom'))
-      .toHaveCount(1);
+      .toHaveAttribute('src', `data:image/png;base64,${icon.data}`);
     await builder.waitSaved();
   });
 
@@ -2051,7 +2061,10 @@ test(
       uniqueName(testInfo, part),
     );
     const set = uniqueName(testInfo, 'axe-set');
-    const icon = iconOf(pngOf(8, 8, ownColor()), 'axe');
+    const icon = iconOf(pngOf(8, 8, ownColor()), iconName('axe'));
+
+    await seedIcon(request, tracker, icon);
+
     const seeded = await seedTemplates(
       request,
       tracker,
@@ -2059,14 +2072,11 @@ test(
         {
           name: names[0],
           description: 'With an icon of its own',
-          device: unitDevice('axe-a', { icon: icon.id }),
+          device: unitDevice('axe-a', { icon: icon.name }),
         },
         { name: names[1], description: '', device: unitDevice('axe-b') },
       ],
-      {
-        collection: { name: set, description: 'A set for the scan' },
-        icons: { [icon.id]: icon.entry },
-      },
+      { collection: { name: set, description: 'A set for the scan' } },
     );
     const [alfa] = seeded.ids;
     const draft = await builder.seedDraft(
@@ -2204,17 +2214,18 @@ for (const scheme of ['light', 'dark']) {
     async ({ page, builder, issues }, testInfo) => {
       await page.emulateMedia({ colorScheme: scheme });
 
-      const plc = iconOf(pngOf(8, 8, ownColor()), 'plc');
+      // A copy the diagram carries, of an icon the server lacks.
+      const plc = iconOf(pngOf(8, 8, ownColor()), iconName('plc'));
       const draft = await builder.seedDraft(
         plantDocument(uniqueName(testInfo, `templates-axe-${scheme}`), {
-          look: { icon: plc.id, fillColor: '#ffeecc' },
-          icons: { [plc.id]: plc.entry },
+          look: { icon: plc.name, fillColor: '#ffeecc' },
+          icons: { [plc.name]: plc.entry },
           templates: [
             template('RTU', {
               description: 'Remote terminal unit',
               device: {
                 iconKey: 'router',
-                icon: plc.id,
+                icon: plc.name,
                 outlineColor: '#2f6fbf',
                 spec: plcSpec('rtu', ''),
               },

@@ -32,12 +32,14 @@ import {
   uiSchemaForKind,
 } from '@/builder/adapters/forms.js';
 import { createFormValidator } from '@/builder/form-validator.js';
+import { iconLibrary } from '@/builder/iconLibrary.js';
+import { indexIcons } from '@/builder/icons.js';
 import { addNode, updateNetwork, updateNode } from '@/builder/model.js';
 import { builderSchemaV1, schemaForKind } from '@/builder/schema.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument, tags } from './fixtures.js';
-import { ICON_DATA, ICON_KEY } from './png.js';
+import { ICON_DATA } from './png.js';
 
 vi.mock('@/utils/axios.js', () => ({ default: {} }));
 vi.mock('@/store.js', () => ({
@@ -1444,10 +1446,15 @@ describe('the Custom icon field', () => {
       tag.includes(`data-testid="${testid}"`),
     );
   const images = (html) => tags(fieldOf(html, 'icon'), 'img');
+  // The device names the icon plc; `entry` is the diagram's copy of it.
   const withIcon = (entry) => ({
     change: ({ doc, alpha }) =>
-      updateNode(doc, alpha.id, { device: { icon: ICON_KEY } }),
-    patch: entry ? { icons: { [ICON_KEY]: entry } } : {},
+      updateNode(doc, alpha.id, { device: { icon: 'plc' } }),
+    patch: entry ? { icons: { plc: entry } } : {},
+  });
+
+  afterEach(() => {
+    iconLibrary.state.index = indexIcons([]);
   });
 
   test('says None and offers Choose… while the device has none', async () => {
@@ -1468,16 +1475,14 @@ describe('the Custom icon field', () => {
     expect(field).toContain(`<label for="${id}"`);
     expect(choose).toMatch(/aria-describedby="[^"]*-description"/);
     expect(field).toContain(
-      'An image of your own, drawn in place of the icon.',
+      'An image of the server&#39;s icon library, drawn in place of the icon.',
     );
     // The dialog is there only once it is opened.
     expect(html).not.toContain('data-testid="icon-dialog"');
   });
 
   test('shows the icon and its name, with Change… and Remove', async () => {
-    const html = await renderInspector(
-      withIcon({ name: 'plc <b>', data: ICON_DATA }),
-    );
+    const html = await renderInspector(withIcon({ data: ICON_DATA }));
     const [image] = images(html);
 
     expect(images(html)).toHaveLength(1);
@@ -1488,9 +1493,8 @@ describe('the Custom icon field', () => {
     // Decoration: its alternative text is empty.
     expect(image).toMatch(/ alt(=""|\s)/);
     expect(image).toContain('aria-hidden="true"');
-    // The name is text: markup in it is shown, not read.
     expect(fieldOf(html, 'icon')).toMatch(
-      /data-testid="inspector-icon-name"[^>]*>plc &lt;b&gt;<\/span>/,
+      /data-testid="inspector-icon-name"[^>]*>plc<\/span>/,
     );
     expect(button(html, 'inspector-icon-choose')).toContain(
       'aria-label="Change custom icon"',
@@ -1502,25 +1506,40 @@ describe('the Custom icon field', () => {
     expect(button(html, 'inspector-icon-remove')).not.toContain('disabled');
   });
 
-  test('names an icon without a name, and one the diagram does not carry', async () => {
-    const unnamed = await renderInspector(withIcon({ data: ICON_DATA }));
+  test('shows an icon of the icon library the diagram carries no copy of', async () => {
+    iconLibrary.state.index = indexIcons([
+      { name: 'PLC', aliases: [], data: ICON_DATA },
+    ]);
 
-    expect(fieldOf(unnamed, 'icon')).toContain('>Unnamed icon</span>');
-    expect(images(unnamed)).toHaveLength(1);
+    const html = await renderInspector(withIcon(null));
 
+    expect(images(html)).toHaveLength(1);
+    expect(images(html)[0]).toContain(
+      `src="data:image/png;base64,${ICON_DATA}"`,
+    );
+    // The field holds the name the device names.
+    expect(fieldOf(html, 'icon')).toContain('>plc</span>');
+  });
+
+  test('says when nothing resolves the name the device names', async () => {
     const unknown = await renderInspector(withIcon(null));
 
-    expect(fieldOf(unknown, 'icon')).toContain('>Unknown icon</span>');
+    expect(fieldOf(unknown, 'icon')).toContain(
+      '>plc (not found: the built-in icon is shown)</span>',
+    );
     // Nothing is drawn from an icon that is not known: the built-in mark.
     expect(images(unknown)).toEqual([]);
     expect(fieldOf(unknown, 'icon')).toContain('builder-icon--image');
+    expect(button(unknown, 'inspector-icon-remove')).toContain(
+      'aria-label="Remove custom icon"',
+    );
   });
 
   // The bytes of an icon reach the page as the address of an image and as
   // nothing else: data that is no base64 gives no image at all.
   test('draws nothing from data that is not base64', async () => {
     const html = await renderInspector(
-      withIcon({ name: 'x', data: '"><script>alert(1)</script>' }),
+      withIcon({ data: '"><script>alert(1)</script>' }),
     );
 
     expect(images(html)).toEqual([]);
@@ -1530,7 +1549,7 @@ describe('the Custom icon field', () => {
 
   test('a read-only draft disables its buttons', async () => {
     const html = await renderInspector({
-      ...withIcon({ name: 'plc', data: ICON_DATA }),
+      ...withIcon({ data: ICON_DATA }),
       readOnly: true,
     });
 

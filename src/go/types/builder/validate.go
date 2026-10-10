@@ -162,7 +162,8 @@ type validator struct {
 //     does not name exactly one of a built-in and a custom icon, and a line
 //     with fewer than [MinLinePoints] or more than [MaxLinePoints] points,
 //   - custom icons [ValidateIcons] refuses, and a device, group, icon node
-//     or template naming a custom icon the document does not carry,
+//     or template whose custom icon is not an icon name (see
+//     [IconNameProblem]),
 //   - more than [MaxTemplates] templates, a template whose id is not a UUID
 //     or is used twice (case-insensitive), and one [Template.Issues]
 //     refuses,
@@ -567,16 +568,18 @@ func iconKeyProblem(key string) string {
 	}
 }
 
-// validateIconRef checks the custom icon a device, a group, an icon node or
-// a template names: none, or one the document carries (see
-// [Document.Icons]).
-func (v *validator) validateIconRef(id, path string) {
-	if id == "" {
+// validateIconRef checks the custom icon a device, a group or an icon node
+// names: none, or an icon name (see [IconNameProblem]). A name the document
+// does not carry is allowed: on a phenix server it names an icon of the
+// server's icon library, and where nothing resolves it the node shows its
+// built-in icon.
+func (v *validator) validateIconRef(name, path string) {
+	if name == "" {
 		return
 	}
 
-	if _, ok := v.doc.Icons[id]; !ok {
-		v.addf(path, "unknown custom icon %q", truncate(id))
+	if problem := IconNameProblem(name); problem != "" {
+		v.addf(path, "%s", problem)
 	}
 }
 
@@ -632,7 +635,7 @@ func (v *validator) validateShape(shape *Shape, path string) {
 }
 
 // validateIconNode checks the payload of an icon node at path: exactly one
-// of a built-in icon key and a custom icon the document carries.
+// of a built-in icon key and a custom icon name.
 func (v *validator) validateIconNode(icon *IconNode, path string) {
 	if (icon.IconKey == "") == (icon.Icon == "") {
 		v.addf(path, "an icon node must name exactly one of a built-in icon and a custom icon")
@@ -666,8 +669,8 @@ func (v *validator) validateLine(line *Line, path string) {
 }
 
 // validateTemplates checks the document's templates: how many, the id of
-// each, which is unique among them, the custom icon each names, and what
-// [Template.Issues] checks.
+// each, which is unique among them, and what [Template.Issues] checks,
+// which includes the custom icon each names.
 func (v *validator) validateTemplates() {
 	if len(v.doc.Templates) > MaxTemplates {
 		v.addf(keyTemplates, "at most %d templates are allowed, not %d", MaxTemplates, len(v.doc.Templates))
@@ -688,7 +691,6 @@ func (v *validator) validateTemplates() {
 		}
 
 		v.issues = append(v.issues, template.Issues(path)...)
-		v.validateIconRef(template.Device.Icon, path+".device.icon")
 	}
 }
 

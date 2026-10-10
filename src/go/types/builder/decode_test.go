@@ -178,8 +178,15 @@ func TestDecodeRejects(t *testing.T) {
 		{
 			name: "unknown field of a custom icon",
 			data: strings.Replace(string(valid), `"viewport":`,
-				`"icons": {"`+iconFixtureID+`": {"data": "`+iconFixtureData+`", "type": "image/svg+xml"}}, "viewport":`, 1),
+				`"icons": {"`+iconFixtureName+`": {"data": "`+iconFixtureData+`", "type": "image/svg+xml"}}, "viewport":`, 1),
 			wantMsg: `unknown field "type"`,
+		},
+		{
+			// The key is the icon's name: an entry has no name of its own.
+			name: "a name of a custom icon",
+			data: strings.Replace(string(valid), `"viewport":`,
+				`"icons": {"`+iconFixtureName+`": {"name": "plc", "data": "`+iconFixtureData+`"}}, "viewport":`, 1),
+			wantMsg: `unknown field "name"`,
 		},
 		{
 			name: "unknown field of a template",

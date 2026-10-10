@@ -1,10 +1,14 @@
 // Custom icons, mirroring phenix/types/builder customicons.go.
 //
-// A custom icon is a small PNG a document carries as base64 text, named by
-// the SHA-256 of its bytes, so the document needs nothing else to show it.
-// The checks here are the server's, but for those that need a decoder: the
-// checksum of each chunk, that the pixels inflate, and that nothing follows
-// them in their chunks. The server makes those when it stores the document.
+// A custom icon is a small PNG with a name. The server keeps one icon
+// library that every user shares (see iconLibrary.js), and a node names its
+// icon there. A document carries copies of icons, by name, only to stand on
+// its own, as a downloaded file does (see embedIcons): a copy is drawn in
+// place of the library's icon of that name, and a draft drops the copies the
+// library holds as they are (see settleIcons). The checks here are the
+// server's, but for those that need a decoder: the checksum of each chunk,
+// that the pixels inflate, and that nothing follows them in their chunks.
+// The server makes those when it stores the document.
 //
 // An icon is only ever drawn by an <img> whose address is a data URL of a
 // PNG, built here from the base64 text of a PNG that passes those checks
@@ -13,16 +17,20 @@
 // nothing of the file itself is stored, sent or put into the page.
 
 import { sha256Hex } from './digest.js';
-import { utf8Length } from './text.js';
 
-// The form of an icon id (IconID in customicons.go): "sha256:" and the
-// lowercase hex SHA-256 of the PNG bytes.
-export const ICON_ID = /^sha256:[0-9a-f]{64}$/;
+// The form of an icon name (IconNameProblem in customicons.go): 1 to 64
+// letters, digits, "_", "@", "." and "-", the characters of a phenix config
+// name. A name is also neither "." nor ".." (see isIconName).
+export const ICON_NAME = /^[A-Za-z0-9_@.-]{1,64}$/;
+
+// What a name must be, as a field's hint says it.
+export const ICON_NAME_HINT =
+  'Use 1 to 64 letters, digits, _, @, . or -, and not . or .. alone.';
 
 // Bounds on an icon and on the icons of one document (MaxIconPixels,
 // MaxIconBytes, MaxIconNameBytes and MaxDocumentIcons in customicons.go):
-// its pixels on a side, the bytes of its PNG, the UTF-8 bytes of its name,
-// and how many a document may carry.
+// its pixels on a side, the bytes of its PNG, the bytes of its name, and how
+// many a document may carry.
 export const MAX_ICON_PIXELS = 96;
 export const MAX_ICON_BYTES = 40960;
 export const MAX_ICON_NAME_BYTES = 64;
@@ -53,13 +61,29 @@ const BASE64_VALUES = new Uint8Array(128);
 });
 
 /**
- * The id of an icon (IconID in customicons.go).
+ * The id of an icon's image (IconID in customicons.go): two icons hold the
+ * same image exactly when their ids are equal.
  *
  * @param {Uint8Array} bytes the PNG
  * @returns {string} "sha256:" and the lowercase hex SHA-256 of the bytes
  */
 export function iconId(bytes) {
   return `sha256:${sha256Hex(bytes)}`;
+}
+
+/**
+ * Whether text is an icon name (IconNameProblem in customicons.go).
+ *
+ * @param {*} name
+ * @returns {boolean}
+ */
+export function isIconName(name) {
+  return (
+    typeof name === 'string' &&
+    ICON_NAME.test(name) &&
+    name !== '.' &&
+    name !== '..'
+  );
 }
 
 /**
@@ -284,7 +308,7 @@ export function isIconSrc(src) {
   );
 }
 
-// The addresses built last, by icon id, each with the data it was built
+// The addresses built last, by icon name, each with the data it was built
 // from ('' for data no address is built from). An address is tens of
 // kilobytes of text, and every node that shows the icon is given it on
 // every edit: the same icon gets the same string, which is compared, and
@@ -305,30 +329,52 @@ function isIconImage(data) {
   return bytes !== null && iconPNGProblem(bytes) === '';
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * The icon a name names: a document's copy of it, else the icon library's.
+ *
+ * @param {string} name icon name, as a node names it
+ * @param {object|null|undefined} icons a document's `icons`: copies by name,
+ *   {data}
+ * @param {{lookup: Function}|null} [library] the icon library (see
+ *   iconLibrary.js), whose lookup(name) finds an icon by its name or an
+ *   alias, ignoring case
+ * @returns {{data: string}|null} null when neither has it
+ */
+export function resolveIcon(name, icons, library = null) {
+  if (!isIconName(name)) {
+    return null;
+  }
+
+  if (isPlainObject(icons) && Object.hasOwn(icons, name)) {
+    return isPlainObject(icons[name]) ? icons[name] : null;
+  }
+
+  return library?.lookup?.(name) || null;
+}
+
 /**
  * The address an <img> draws a custom icon from: "data:image/png;base64,"
- * and the icon's data, when `icons` has the icon and its data is base64 of
- * a PNG the Builder accepts.
+ * and the icon's data, when a name resolves (see resolveIcon) to base64 of
+ * a PNG the Builder accepts. With none, the node draws its built-in icon.
  *
- * @param {string} id icon id
- * @param {object|null|undefined} icons by icon id, {name?, data}: a
- *   document's `icons`
- * @returns {string} '' for no icon, one `icons` lacks, or data that is not
- *   such a PNG
+ * @param {string} name icon name
+ * @param {object|null|undefined} icons a document's `icons`
+ * @param {{lookup: Function}|null} [library] the icon library
+ * @returns {string} '' for no icon, one nothing resolves, or data that is
+ *   not such a PNG
  */
-export function iconSrc(id, icons) {
-  if (
-    typeof id !== 'string' ||
-    !ICON_ID.test(id) ||
-    !icons ||
-    typeof icons !== 'object' ||
-    !Object.hasOwn(icons, id)
-  ) {
+export function iconSrc(name, icons, library = null) {
+  const data = resolveIcon(name, icons, library)?.data;
+
+  if (typeof data !== 'string') {
     return '';
   }
 
-  const data = icons[id]?.data;
-  const built = sources.get(id);
+  const built = sources.get(name);
 
   if (built && built.data === data) {
     return built.src;
@@ -340,9 +386,37 @@ export function iconSrc(id, icons) {
     sources.clear();
   }
 
-  sources.set(id, { data, src });
+  sources.set(name, { data, src });
 
   return src;
+}
+
+/**
+ * The icon library's icons by every name that names one: each icon's name
+ * and aliases, in lower case, as the server matches them.
+ *
+ * @param {{name: string, aliases?: string[]}[]} icons as the server lists
+ *   them
+ * @returns {Map<string, object>}
+ */
+export function indexIcons(icons) {
+  const index = new Map();
+
+  for (const icon of icons || []) {
+    if (!isIconName(icon?.name) || typeof icon.data !== 'string') {
+      continue;
+    }
+
+    index.set(icon.name.toLowerCase(), icon);
+
+    for (const alias of Array.isArray(icon.aliases) ? icon.aliases : []) {
+      if (isIconName(alias) && !index.has(alias.toLowerCase())) {
+        index.set(alias.toLowerCase(), icon);
+      }
+    }
+  }
+
+  return index;
 }
 
 /**
@@ -377,23 +451,23 @@ function kibibytes(bytes) {
 }
 
 /**
- * Icons in the order the server lists a library: by name, whatever its
- * case, then by id.
+ * Icons in the order the server lists the library: by name, whatever its
+ * case.
  *
- * @param {{id: string, name?: string}[]} icons
+ * @param {{name: string}[]} icons
  * @returns {object[]} a new list
  */
 export function sortIcons(icons) {
-  const key = (icon) => String(icon?.name || '').toLowerCase();
+  const key = (icon) => String(icon?.name || '');
 
   return [...icons].sort((a, b) => {
-    const [first, second] = [key(a), key(b)];
+    const [first, second] = [key(a).toLowerCase(), key(b).toLowerCase()];
 
     if (first !== second) {
       return first < second ? -1 : 1;
     }
 
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    return key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0;
   });
 }
 
@@ -416,74 +490,55 @@ export function iconSizeText(icon) {
 }
 
 /**
- * The heading of the user's icon library: how many icons it holds of how
- * many it may, and their bytes of those it may hold.
+ * What the icon library says of the caller's uploads: how many icons and
+ * bytes they take of what each user may upload.
  *
- * @param {{icons: object[], maxIcons: number, maxBytes: number,
- *   usedBytes: number}|null} library as listIcons answers; null while it
- *   is not read
- * @returns {string} "My library (3 of 64, 20.0 KiB of 1 MiB)"
+ * @param {{maxIcons: number, maxBytes: number, usedIcons: number,
+ *   usedBytes: number}|null} usage as listIcons answers; null while it is
+ *   not read
+ * @returns {string} "You uploaded 3 of 64 icons, 20.0 KiB of 1 MiB." or ''
  */
-export function libraryTitle(library) {
-  if (!library) {
-    return 'My library';
+export function usageText(usage) {
+  if (!usage || !(usage.maxIcons > 0) || !(usage.maxBytes > 0)) {
+    return '';
   }
 
-  const { icons, maxIcons, maxBytes, usedBytes } = library;
+  const { maxIcons, maxBytes, usedIcons, usedBytes } = usage;
   const most =
     maxBytes >= MIB && maxBytes % MIB === 0
       ? `${maxBytes / MIB} MiB`
       : kibibytes(maxBytes);
 
-  return `My library (${icons.length} of ${maxIcons}, ${kibibytes(usedBytes)} of ${most})`;
+  return `You uploaded ${usedIcons || 0} of ${maxIcons} icons, ${kibibytes(usedBytes || 0)} of ${most}.`;
 }
 
-function isControlCharacter(character) {
-  const code = character.codePointAt(0);
-
-  return code < 0x20 || code === 0x7f;
-}
-
-// Whether a name is one an icon may have (rule I3 of ValidateIcons).
-function isIconName(name) {
-  return (
-    typeof name === 'string' &&
-    utf8Length(name) <= MAX_ICON_NAME_BYTES &&
-    ![...name].some(isControlCharacter)
-  );
-}
-
-// The ids of the icons a payload names: a device's, a group's, an icon
+// The name of the icon a payload names: a device's, a group's, an icon
 // node's or a template device's `icon`.
 function refOf(payload) {
-  const id = payload?.icon;
+  const name = payload?.icon;
 
-  return id === undefined || id === null || id === '' ? null : id;
+  return name === undefined || name === null || name === '' ? null : name;
 }
 
-// The payload of an icon node, which holds its custom icon as a device does.
+// The payload of an icon node, which names its custom icon as a device does.
 function drawnIconOf(node) {
   return node?.kind === 'icon' ? node.icon : undefined;
 }
-
-// The built-in icon an icon node shows when its custom icon is left out: it
-// names exactly one icon (validateIconNode in validate.go).
-const FALLBACK_DRAWN_ICON = 'external';
 
 /**
  * The custom icons a document uses: those its devices, its groups, its icon
  * nodes and the devices of its templates name.
  *
  * @param {object} doc
- * @returns {Set<string>} icon ids, in the order they are first named
+ * @returns {Set<string>} icon names, in the order they are first named
  */
 export function iconRefs(doc) {
   const refs = new Set();
   const add = (payload) => {
-    const id = refOf(payload);
+    const name = refOf(payload);
 
-    if (id !== null) {
-      refs.add(id);
+    if (name !== null) {
+      refs.add(name);
     }
   };
 
@@ -500,132 +555,94 @@ export function iconRefs(doc) {
   return refs;
 }
 
-// Entries already found to be the icons their ids say, by id: the data
-// each was checked with (as checkedIcons in validate.js).
-const acceptedData = new Map();
-const MAX_ACCEPTED = 256;
-
-// The entry a document takes for an icon it comes to use: its data, when
-// that is a PNG the Builder accepts whose id is `id`, with its name when it
-// is one an icon may have. Null for anything else, so nothing a document
-// would be refused for is ever copied into one.
-function acceptedEntry(id, entry) {
-  const data = entry?.data;
-
-  if (typeof id !== 'string' || !ICON_ID.test(id) || typeof data !== 'string') {
-    return null;
+/**
+ * Drops the copies of icons a document need not carry: those nothing names,
+ * and those the icon library holds under the same name with the same bytes,
+ * which nodes draw from there. Every commit of the store does this (see
+ * commit in store.js), so a draft carries a copy only of an icon the server
+ * lacks or holds otherwise. Nothing is ever added: a node names an icon, and
+ * the icon library resolves it. A document left with no copy has no
+ * `icons`.
+ *
+ * @param {object} doc
+ * @param {{lookup: Function}|null} [library] the icon library (see
+ *   iconLibrary.js)
+ * @returns {object} the document, the same object when nothing changed
+ */
+export function settleIcons(doc, library = null) {
+  if (doc?.icons === undefined) {
+    return doc;
   }
 
-  if (acceptedData.get(id) !== data) {
-    const bytes = decodeIconData(data);
-
-    if (!bytes || iconPNGProblem(bytes) !== '' || iconId(bytes) !== id) {
-      return null;
+  if (!isPlainObject(doc.icons)) {
+    // null is none, as the server decodes it; any other value is the
+    // validator's to report.
+    if (doc.icons !== null) {
+      return doc;
     }
 
-    if (acceptedData.size >= MAX_ACCEPTED) {
-      acceptedData.clear();
+    const next = { ...doc };
+
+    delete next.icons;
+
+    return next;
+  }
+
+  const refs = iconRefs(doc);
+  const kept = {};
+  let changed = false;
+
+  for (const [name, entry] of Object.entries(doc.icons)) {
+    const shared = refs.has(name) ? library?.lookup?.(name) : null;
+
+    if (!refs.has(name) || (shared && shared.data === entry?.data)) {
+      changed = true;
+    } else {
+      kept[name] = entry;
     }
-
-    acceptedData.set(id, data);
   }
 
-  const name = entry.name;
-
-  return name && isIconName(name) ? { name, data } : { data };
-}
-
-function knownEntry(known, id) {
-  if (!known || typeof id !== 'string') {
-    return undefined;
+  if (!changed && Object.keys(kept).length > 0) {
+    return doc;
   }
 
-  if (known instanceof Map) {
-    return known.get(id);
+  const next = { ...doc };
+
+  delete next.icons;
+
+  if (Object.keys(kept).length > 0) {
+    next.icons = kept;
   }
 
-  return Object.hasOwn(known, id) ? known[id] : undefined;
-}
-
-// A payload without its custom icon, when that is one of `ids`; the same
-// payload otherwise.
-function withoutIcon(payload, ids) {
-  if (!payload || !ids.has(refOf(payload))) {
-    return payload;
-  }
-
-  const rest = { ...payload };
-
-  delete rest.icon;
-
-  return rest;
+  return next;
 }
 
 /**
- * Makes a document carry exactly the custom icons it uses, so it can be
- * saved: every commit of the store does this (see commit in store.js), and
- * so does a paste.
- *
- * Icons nothing names any more are removed. An icon the document names
- * without carrying it is copied from `known`, while the document has fewer
- * than MAX_DOCUMENT_ICONS; one that `known` lacks, or holds as anything but
- * the PNG of that id, or that is one too many, is left out: the nodes and
- * templates that name it lose their custom icon and show their built-in
- * one. A document left with no icon has no `icons`.
+ * A copy of a document that carries every custom icon it uses, so that it
+ * stands on its own, as a downloaded file must: a copy it carries already,
+ * else the icon library's icon of that name, at most MAX_DOCUMENT_ICONS.
  *
  * @param {object} doc
- * @param {Map<string, object>|object|null} [known] icons by id, {name?,
- *   data}: those the session has seen (the store's icon shelf), or those a
- *   clipboard carries
- * @returns {{doc: object, dropped: number}} the document, the same object
- *   when nothing changed, and how many icons were left out
+ * @param {{lookup: Function}|null} [library] the icon library
+ * @returns {{doc: object, missing: string[], left: string[]}} the copy;
+ *   the names nothing resolves, which the copy does not carry (their nodes
+ *   show their built-in icon); and those left out past the most a document
+ *   carries
  */
-export function settleIcons(doc, known) {
-  const refs = iconRefs(doc);
-  const carried =
-    doc?.icons && typeof doc.icons === 'object' && !Array.isArray(doc.icons)
-      ? doc.icons
-      : null;
-  const ids = carried ? Object.keys(carried) : [];
-
-  // Nothing to do, as after most edits: every icon in use is carried under
-  // its id, and nothing else is.
-  if (
-    ids.length === refs.size &&
-    ids.every((id) => refs.has(id) && ICON_ID.test(id)) &&
-    (ids.length > 0 || doc?.icons === undefined)
-  ) {
-    return { doc, dropped: 0 };
-  }
-
-  // Only what an icon id names is carried on: a key that is none, which
-  // only an edited file can hold, goes, and the nodes that name it lose it.
+export function embedIcons(doc, library = null) {
   const icons = {};
+  const missing = [];
+  const left = [];
 
-  for (const id of ids) {
-    if (refs.has(id) && ICON_ID.test(id)) {
-      icons[id] = carried[id];
-    }
-  }
+  for (const name of iconRefs(doc)) {
+    const icon = resolveIcon(name, doc?.icons, library);
 
-  const dropped = new Set();
-  let count = Object.keys(icons).length;
-
-  for (const id of refs) {
-    if (Object.hasOwn(icons, id)) {
-      continue;
-    }
-
-    const entry =
-      count < MAX_DOCUMENT_ICONS
-        ? acceptedEntry(id, knownEntry(known, id))
-        : null;
-
-    if (entry) {
-      icons[id] = entry;
-      count += 1;
+    if (!icon || typeof icon.data !== 'string') {
+      missing.push(name);
+    } else if (Object.keys(icons).length >= MAX_DOCUMENT_ICONS) {
+      left.push(name);
     } else {
-      dropped.add(id);
+      icons[name] = { data: icon.data };
     }
   }
 
@@ -633,63 +650,11 @@ export function settleIcons(doc, known) {
 
   delete next.icons;
 
-  if (dropped.size > 0) {
-    next.nodes = (doc.nodes || []).map((node) => {
-      const drawn = drawnIconOf(node);
-
-      // An icon node left without its custom icon shows a built-in one.
-      if (drawn && withoutIcon(drawn, dropped) !== drawn) {
-        const { label } = drawn;
-
-        return {
-          ...node,
-          icon: { iconKey: FALLBACK_DRAWN_ICON, ...(label ? { label } : {}) },
-        };
-      }
-
-      const device = withoutIcon(node.device, dropped);
-      const group = withoutIcon(node.group, dropped);
-
-      if (device === node.device && group === node.group) {
-        return node;
-      }
-
-      return {
-        ...node,
-        ...(node.device ? { device } : {}),
-        ...(node.group ? { group } : {}),
-      };
-    });
-
-    if (Array.isArray(doc.templates)) {
-      next.templates = doc.templates.map((template) => {
-        const device = withoutIcon(template?.device, dropped);
-
-        return device === template?.device ? template : { ...template, device };
-      });
-    }
-  }
-
-  if (count > 0) {
+  if (Object.keys(icons).length > 0) {
     next.icons = icons;
   }
 
-  return { doc: next, dropped: dropped.size };
-}
-
-/**
- * What an edit that left custom icons out says of them, after what it says
- * of itself.
- *
- * @param {number} dropped how many icons settleIcons left out
- * @returns {string} '' for none
- */
-export function droppedIconsNote(dropped) {
-  if (!(dropped > 0)) {
-    return '';
-  }
-
-  return `${dropped === 1 ? '1 custom icon was' : `${dropped} custom icons were`} left out: a diagram holds at most ${MAX_DOCUMENT_ICONS}.`;
+  return { doc: next, missing, left };
 }
 
 // What the upload dialog says of a file it cannot make an icon of.
@@ -713,32 +678,22 @@ export class IconFileError extends Error {
 const SVG_TYPE = 'image/svg+xml';
 
 /**
- * The name an icon made from a file gets: the file's name without its
- * extension and without control characters, trimmed, and cut to
- * MAX_ICON_NAME_BYTES bytes between two characters.
+ * The name an upload proposes for an icon made from a file: the file's name
+ * without its extension, each run of characters an icon name may not hold
+ * made one "-", without "-" around it, cut to MAX_ICON_NAME_BYTES.
  *
  * @param {string} fileName
- * @returns {string} '' for a name with nothing left
+ * @returns {string} an icon name, or '' when nothing of the file's name is
+ *   left
  */
 export function iconNameFromFile(fileName) {
-  const base = [...String(fileName ?? '').replace(/\.[^.]*$/, '')]
-    .filter((character) => !isControlCharacter(character))
-    .join('')
-    .trim();
-  let name = '';
-  let length = 0;
+  const name = String(fileName ?? '')
+    .replace(/\.[^.]*$/, '')
+    .replace(/[^A-Za-z0-9_@.-]+/g, '-')
+    .slice(0, MAX_ICON_NAME_BYTES)
+    .replace(/^-+|-+$/g, '');
 
-  for (const character of base) {
-    length += utf8Length(character);
-
-    if (length > MAX_ICON_NAME_BYTES) {
-      break;
-    }
-
-    name += character;
-  }
-
-  return name.trim();
+  return isIconName(name) ? name : '';
 }
 
 /**

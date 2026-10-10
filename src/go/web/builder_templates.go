@@ -22,7 +22,7 @@ const (
 	builderTemplatesPath = builderRoutePrefix + "templates"
 
 	// builderTemplateItemBytes bounds the body of a request replacing one
-	// template (1 MiB): the template and the custom icon it names.
+	// template (1 MiB).
 	builderTemplateItemBytes = 1 << 20
 
 	// builderTemplateRequestBytes bounds the body of every other request
@@ -41,15 +41,14 @@ const (
 )
 
 // builderTemplateLibraryResponse is everything of the template libraries the
-// caller can use: the caller's own templates and collections first. Icons
-// holds the custom icons of every template in it, by icon ID, as a document
-// carries them. Damaged is set when the caller's own library record cannot
-// be read: the lists then hold nothing of it.
+// caller can use: the caller's own templates and collections first. A
+// template names its custom icon, which the icon library resolves. Damaged
+// is set when the caller's own library record cannot be read: the lists
+// then hold nothing of it.
 type builderTemplateLibraryResponse struct {
 	Owner       string                              `json:"owner"`
 	Templates   []builderTemplateResponse           `json:"templates"`
 	Collections []builderTemplateCollectionResponse `json:"collections"`
-	Icons       map[string]bdoc.Icon                `json:"icons,omitempty"`
 	CanShare    bool                                `json:"canShare"`
 	CanPublish  bool                                `json:"canPublish"`
 	Damaged     bool                                `json:"damaged"`
@@ -64,7 +63,6 @@ type builderTemplateLimits struct {
 	NameBytes        int `json:"nameBytes"`
 	DescriptionBytes int `json:"descriptionBytes"`
 	DeviceBytes      int `json:"deviceBytes"`
-	Icons            int `json:"icons"`
 }
 
 // builderTemplateResponse is one template of a library. Collections names
@@ -123,22 +121,18 @@ type builderTemplateContent struct {
 }
 
 // builderTemplateCreateRequest adds templates to a library and, with
-// Collection, a new collection holding exactly them. Icons carries the
-// custom icons the templates name that the library may not hold yet.
+// Collection, a new collection holding exactly them.
 type builderTemplateCreateRequest struct {
 	Templates  []builderTemplateContent `json:"templates"`
 	Collection *struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	} `json:"collection"`
-	Icons map[string]bdoc.Icon `json:"icons"`
 }
 
 // builderTemplateUpdateRequest replaces one template.
 type builderTemplateUpdateRequest struct {
 	builderTemplateContent
-
-	Icons map[string]bdoc.Icon `json:"icons"`
 }
 
 // builderTemplateCollectionContent is what a collection is made of or
@@ -258,7 +252,6 @@ func builderTemplateLibraryLimits() builderTemplateLimits {
 		NameBytes:        bdoc.MaxTemplateNameBytes,
 		DescriptionBytes: bdoc.MaxTemplateDescriptionBytes,
 		DeviceBytes:      bdoc.MaxTemplateDeviceBytes,
-		Icons:            bapi.MaxLibraryTemplateIcons,
 	}
 }
 
@@ -442,25 +435,6 @@ func (b *builderAPI) ownCollection(
 	return response, nil
 }
 
-// addIcon adds to the listing the custom icon with the given ID, which a
-// listed template of library names, when the library holds it.
-func (l *builderTemplateLibraryResponse) addIcon(library *bapi.TemplateLibrary, id string) {
-	icon, ok := library.Icons[id]
-	if !ok {
-		return
-	}
-
-	if l.Icons == nil {
-		l.Icons = map[string]bdoc.Icon{}
-	}
-
-	// An icon ID is the digest of its image, so two libraries that hold the
-	// same ID hold the same image: the first one listed is kept.
-	if _, listed := l.Icons[id]; !listed {
-		l.Icons[id] = icon
-	}
-}
-
 // listTemplates - GET /builder/templates.
 //
 // The answer holds the caller's own library first, which is the built-in
@@ -489,7 +463,6 @@ func (b *builderAPI) listTemplates(w http.ResponseWriter, r *http.Request) error
 		Owner:       actor.user,
 		Templates:   []builderTemplateResponse{},
 		Collections: []builderTemplateCollectionResponse{},
-		Icons:       nil,
 		CanShare:    canShare,
 		CanPublish:  builderBaseAllowed(actor.role, builderVerbUpdate) && builderTemplatesPublishAllowed(actor.role),
 		Damaged:     false,
@@ -530,7 +503,6 @@ func (b *builderAPI) listOwnTemplates(response *builderTemplateLibraryResponse, 
 		}
 
 		response.Templates = append(response.Templates, template)
-		response.addIcon(library, template.Device.Icon)
 	}
 
 	for i := range library.Collections {
@@ -611,7 +583,6 @@ func (b *builderAPI) listOtherTemplates(
 
 			if how, ok := templates[template.ID]; ok {
 				response.Templates = append(response.Templates, templateItem(library, template, string(how), collections))
-				response.addIcon(library, template.Device.Icon)
 			}
 		}
 
@@ -667,7 +638,7 @@ func (b *builderAPI) createTemplates(w http.ResponseWriter, r *http.Request) err
 
 		collection = ""
 
-		ids, err = library.AddTemplates(templates, request.Icons, b.drafts.NewID)
+		ids, err = library.AddTemplates(templates, b.drafts.NewID)
 		if err != nil || request.Collection == nil {
 			return err
 		}
@@ -738,7 +709,7 @@ func (b *builderAPI) putTemplate(w http.ResponseWriter, r *http.Request) error {
 			return &builderTemplateStaleError{kind: builderKindTemplate, id: id, etag: current.ETag()}
 		}
 
-		return library.ReplaceTemplate(id, content, request.Icons)
+		return library.ReplaceTemplate(id, content)
 	})
 	if err != nil {
 		return builderTemplateError(w, err, "unable to change template %s", id)

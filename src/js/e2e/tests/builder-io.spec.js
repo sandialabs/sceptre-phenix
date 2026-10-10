@@ -4,6 +4,7 @@
 // topologies and experiments this spec creates through the API are registered
 // with the tracker too (seedDraft, publishTopology and createExperiment).
 
+const crypto = require('crypto');
 const fs = require('fs');
 
 const {
@@ -17,9 +18,14 @@ const {
   expectAccessible,
   expectDetail,
   expectNoFatal,
+  iconName,
+  iconOf,
   knownDefect,
+  ownColor,
+  pngOf,
   publishTopology,
   seedConfig,
+  seedIcon,
   test,
   uniqueName,
   visit,
@@ -1105,6 +1111,173 @@ test.describe('download and upload', () => {
         .soft(builder.inspector.getByTestId('inspector-source-file'))
         .toContainText(fileName);
       await builder.waitSaved();
+    });
+
+    expectNoFatal(issues);
+  });
+
+  // A draft names its custom icons; the file it downloads as carries a copy
+  // of each the server has, so it shows them anywhere, and an upload puts
+  // the copies the server lacks into its icon library. Each icon here has a
+  // name and colors of the test's own; the tracker deletes them.
+  test('a download carries copies of the icons the diagram names, and an upload adds those the server lacks', async ({
+    page,
+    request,
+    builder,
+    tracker,
+    issues,
+  }, testInfo) => {
+    const title = uniqueName(testInfo, 'icons');
+    // On the server, and named by a device.
+    const ours = iconOf(pngOf(16, 8, ownColor()), iconName('io-ours'));
+    // Named by a device, and on no server.
+    const gone = iconOf(pngOf(8, 8, ownColor()), iconName('io-gone'));
+    // On the server with other bytes than the file's copy has.
+    const clash = iconOf(pngOf(8, 16, ownColor()), iconName('io-clash'));
+    const theirs = iconOf(pngOf(8, 16, ownColor()), clash.name);
+    const device = (hostname, icon, x) => ({
+      id: crypto.randomUUID(),
+      kind: 'device',
+      label: hostname,
+      position: { x, y: 64 },
+      device: {
+        hostname,
+        iconKey: 'linux',
+        icon: icon.name,
+        spec: {
+          type: 'VirtualMachine',
+          general: { hostname, vm_type: 'kvm' },
+          hardware: { os_type: 'linux', drives: [{ image: 'ubuntu.qc2' }] },
+          network: { interfaces: [] },
+        },
+        interfaces: [],
+      },
+    });
+
+    await seedIcon(request, tracker, ours);
+    await seedIcon(request, tracker, clash);
+
+    const draft = await builder.seedDraft(
+      blankDocument(title, {
+        nodes: [device('ours-01', ours, 64), device('gone-01', gone, 320)],
+      }),
+    );
+
+    await builder.openDraft(draft);
+    await expect(
+      builder.node('ours-01', 'device').locator('img.builder-icon--custom'),
+    ).toHaveAttribute('src', `data:image/png;base64,${ours.data}`);
+    // A name nothing resolves draws the built-in icon.
+    await expect
+      .soft(
+        builder.node('gone-01', 'device').locator('img.builder-icon--custom'),
+      )
+      .toHaveCount(0);
+
+    const downloaded =
+      await test.step('the JSON download carries a copy of each icon the server has, and says which it lacks', async () => {
+        const dialog = await builder.openDialog('download');
+        const file = await download(page, () =>
+          dialog.getByTestId('download-json').click(),
+        );
+        const doc = JSON.parse(file.buffer.toString('utf8'));
+
+        expect(doc.icons).toEqual({ [ours.name]: { data: ours.data } });
+        await expect
+          .soft(dialog.getByRole('status'))
+          .toHaveText(
+            `Saved ${file.name}. It does not carry the custom icon ${gone.name}, which the server's icon library does not have: the nodes that name it show their built-in icon.`,
+          );
+        // The draft itself still carries no image.
+        expect
+          .soft(await builder.serverDocument(draft))
+          .not.toHaveProperty('icons');
+        await dialog
+          .getByRole('button', { name: 'Close', exact: true })
+          .click();
+
+        return doc;
+      });
+
+    await test.step('an upload adds the copy the server lacks, and keeps one whose name the server has for another image, with a warning', async () => {
+      // The server loses ours; the file carries a copy of clash that is
+      // not the server's.
+      expect(
+        (await request.delete(`${API}/builder/icons/${ours.name}`)).status(),
+      ).toBe(204);
+
+      const file = {
+        ...downloaded,
+        metadata: {
+          ...downloaded.metadata,
+          id: crypto.randomUUID(),
+          name: `${title} uploaded`,
+        },
+        nodes: downloaded.nodes.map((node) =>
+          node.device?.hostname === 'gone-01'
+            ? { ...node, device: { ...node.device, icon: clash.name } }
+            : node,
+        ),
+        icons: { ...downloaded.icons, [clash.name]: theirs.entry },
+      };
+
+      await builder.open();
+      const dialog = await openUpload(page);
+
+      await dialog.getByTestId('upload-file').setInputFiles({
+        name: `${title}.builder.json`,
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify(file)),
+      });
+
+      const added = waitForApi(page, 'POST', '/builder/icons');
+
+      await dialog.getByTestId('upload-submit').click();
+
+      const response = await added;
+
+      expect(response.status()).toBe(201);
+      expect.soft(response.request().postDataJSON()).toEqual({
+        name: ours.name,
+        data: ours.data,
+      });
+
+      // The warning comes before any draft is made.
+      const warnings = dialog.getByTestId('upload-warnings');
+
+      await expect(warnings).toHaveText(
+        `Warning: The server already has an icon named ${clash.name} that differs from this diagram's. The diagram keeps its own copy, which it shows in place of the server's.`,
+      );
+      await expect
+        .soft(dialog.getByTestId('upload-status'))
+        .toHaveText('This upload has 1 warning.');
+      await expect.soft(dialog.getByTestId('upload-continue')).toBeFocused();
+
+      const created = waitForApi(page, 'POST', '/builder/drafts');
+
+      await dialog.getByTestId('upload-continue').click();
+
+      const uploaded = await (await created).json();
+
+      await expect(builder.canvas).toBeVisible();
+      await builder.waitSaved();
+      // Only the copy the server cannot take as it is stays in the draft.
+      await builder.persisted(uploaded, (doc) => doc.icons ?? null, {
+        [clash.name]: theirs.entry,
+      });
+      // The copy wins over the server's icon of its name.
+      await expect(
+        builder.node('gone-01', 'device').locator('img.builder-icon--custom'),
+      ).toHaveAttribute('src', `data:image/png;base64,${theirs.data}`);
+      await expect(
+        builder.node('ours-01', 'device').locator('img.builder-icon--custom'),
+      ).toHaveAttribute('src', `data:image/png;base64,${ours.data}`);
+
+      // The server has ours again, as the uploader's.
+      const back = await request.get(`${API}/builder/icons/${ours.name}`);
+
+      expect.soft(back.status()).toBe(200);
+      expect.soft((await back.json()).data).toBe(ours.data);
     });
 
     expectNoFatal(issues);

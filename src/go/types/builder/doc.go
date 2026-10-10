@@ -15,10 +15,11 @@
 //     the notes of switches, viewport, and grid settings; the colors of
 //     nodes, the line style of
 //     networks and edges, and the description, border and icon of groups;
-//     custom icons ([Icon]), which the document carries as PNG data named
-//     by its SHA-256 ([IconID]), so that it needs nothing else to show
-//     them; and device templates ([Template]) saved with the diagram. None
-//     of it is ever written to a config.
+//     custom icons, which nodes name and a phenix server's icon library
+//     holds, and which a document carries as PNG data under their names
+//     ([Icon]) when it is to stand on its own, as a downloaded file does;
+//     and device templates ([Template]) saved with the diagram. None of it
+//     is ever written to a config.
 //   - phenix semantics: the complete node spec of every device, canonical
 //     networks (VLANs) with optional integer aliases, the edges that bind
 //     device interfaces to networks, and the names of the Scenario configs

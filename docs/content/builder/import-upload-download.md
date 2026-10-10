@@ -388,8 +388,11 @@ and under `metadata` the diagram's name, description and notes and who made
 and last saved it. They also hold how the diagram looks: the
 colors and line styles of nodes and connections, the description, border
 pattern and icon of each group, the diagram's own device templates
-(`templates`), and a copy of each custom icon the diagram uses (`icons`),
-so the file opens the same on another phenix server. The example file
+(`templates`), and a copy of each custom icon the diagram names (`icons`,
+by name, from the server's icon library), so the file opens the same on
+another phenix server. Uploading the file adds the icons that server lacks
+to its icon library (see
+[The diagram and its icons](diagrams.md#the-diagram-and-its-icons)). The example file
 `riverside-water.builder.json` begins like this as YAML:
 
 ```yaml

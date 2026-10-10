@@ -7,6 +7,7 @@ import {
   computeExportViewport,
   describeTopologyExport,
   documentBounds,
+  downloadDocument,
   exportCopy,
   exportFileName,
   exportImage,
@@ -19,6 +20,7 @@ import {
 } from '@/builder/exporters.js';
 import { parseDocument } from '@/builder/decode.js';
 import { lastModified, toGEXF } from '@/builder/gexf.js';
+import { MAX_DOCUMENT_ICONS } from '@/builder/icons.js';
 import {
   addNetwork,
   addNode,
@@ -34,6 +36,7 @@ import {
 } from '@/builder/model.js';
 
 import { sampleDocument } from './fixtures.js';
+import { base64Of, ICON_DATA, png } from './png.js';
 
 // Vitest runs without a DOM, so these stand in for the canvas's elements:
 // enough of Element for the image helpers, matching the selectors they use
@@ -284,6 +287,100 @@ describe('document download', () => {
     expect(exportFileName({}, 'png')).toBe('topology.png');
     // The name is the metadata's: one at the root is no document's.
     expect(exportFileName({ name: 'Root' }, 'png')).toBe('topology.png');
+  });
+});
+
+// A Builder JSON or YAML download carries the custom icons the diagram uses
+// (see downloadDocument), so the file stands on its own.
+describe('the custom icons a Builder file carries', () => {
+  // An icon library holding these icons, which it finds by name ignoring
+  // case, as the Builder's does.
+  const libraryOf = (icons) => ({
+    lookup: (name) =>
+      icons.find((icon) => icon.name.toLowerCase() === name.toLowerCase()) ||
+      null,
+  });
+  const OWN = base64Of(png(2, 2, [1, 2, 3, 255]));
+
+  // A document of devices, the nth naming the nth of `names`.
+  function devicesNaming(names) {
+    let doc = createDocument({ id: 'icons', name: 'Icons' });
+
+    names.forEach((name, index) => {
+      const added = addNode(doc, {
+        kind: 'device',
+        hostname: `host-${index}`,
+        position: { x: index * 200, y: 0 },
+      });
+
+      doc = updateNode(added.doc, added.node.id, { device: { icon: name } });
+    });
+
+    return doc;
+  }
+
+  test('carries every icon its nodes name: its own copy, else the library’s', () => {
+    const doc = {
+      ...devicesNaming(['plc', 'HMI']),
+      icons: { HMI: { data: OWN }, unused: { data: OWN } },
+    };
+    const { doc: carried, note } = downloadDocument(
+      doc,
+      libraryOf([
+        { name: 'PLC', data: ICON_DATA },
+        { name: 'hmi', data: ICON_DATA },
+      ]),
+    );
+
+    // Keyed by the name the nodes use; the copy the diagram carries wins,
+    // and one nothing names is left out.
+    expect(carried.icons).toEqual({
+      plc: { data: ICON_DATA },
+      HMI: { data: OWN },
+    });
+    expect(note).toBe('');
+    expect(carried.nodes).toBe(doc.nodes);
+    // The diagram itself is not changed.
+    expect(Object.keys(doc.icons)).toEqual(['HMI', 'unused']);
+  });
+
+  test('says which icons neither the diagram nor the library has, and carries none of them', () => {
+    const one = downloadDocument(devicesNaming(['plc']), libraryOf([]));
+
+    expect(one.doc).not.toHaveProperty('icons');
+    expect(one.note).toBe(
+      "It does not carry the custom icon plc, which the server's icon library does not have: the nodes that name it show their built-in icon.",
+    );
+
+    // Without a library, only the diagram's own copies are carried.
+    const two = downloadDocument({
+      ...devicesNaming(['plc', 'hmi', 'valve']),
+      icons: { valve: { data: OWN } },
+    });
+
+    expect(two.doc.icons).toEqual({ valve: { data: OWN } });
+    expect(two.note).toBe(
+      "It does not carry the custom icons plc and hmi, which the server's icon library does not have: the nodes that name them show their built-in icon.",
+    );
+  });
+
+  test(`carries at most ${MAX_DOCUMENT_ICONS} icons, and says which it left out`, () => {
+    const names = Array.from(
+      { length: MAX_DOCUMENT_ICONS + 2 },
+      (_, index) => `icon-${String(index).padStart(2, '0')}`,
+    );
+    const library = libraryOf(names.map((name) => ({ name, data: ICON_DATA })));
+    const { doc, note } = downloadDocument(
+      devicesNaming([...names, 'gone']),
+      library,
+    );
+    const [first, second] = names.slice(MAX_DOCUMENT_ICONS);
+
+    expect(Object.keys(doc.icons)).toEqual(names.slice(0, MAX_DOCUMENT_ICONS));
+    expect(note).toBe(
+      "It does not carry the custom icon gone, which the server's icon library does not have: the nodes that name it show their built-in icon. " +
+        `It carries at most ${MAX_DOCUMENT_ICONS} custom icons, so ${first} and ${second} were left out.`,
+    );
   });
 });
 

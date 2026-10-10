@@ -367,19 +367,24 @@ function describedBy(node, issue) {
  * carries what they found (data.issue), and is described by it as well. A
  * device carries the type it shows (data.typeLabel), and a switch the
  * devices connected to it (data.connected). A device, a group or an icon
- * node with a custom icon the document carries has the address it is drawn
- * from (data.iconSrc, see iconSrc in icons.js); it is '' otherwise. A shape,
- * an icon and a line carry the name of their kind (data.kindLabel), and a
- * line the dash array of its line style (data.dashArray).
+ * node whose custom icon resolves, to the document's copy or to the icon
+ * library's icon of that name, has the address it is drawn from
+ * (data.iconSrc, see iconSrc in icons.js); it is '' otherwise, and the node
+ * draws its built-in icon. A shape, an icon and a line carry the name of
+ * their kind (data.kindLabel), and a line the dash array of its line style
+ * (data.dashArray).
  *
  * @param {object} doc
  * @param {object} [options] selectedIds; issues: nodeIssueSummaries by
- *   node id
+ *   node id; library: the icon library (see iconLibrary.js), whose reactive
+ *   state makes nodes follow its changes; without one, only the document's
+ *   copies resolve
  * @returns {object[]}
  */
 export function toFlowNodes(doc, options = {}) {
   const selected = new Set(options.selectedIds || []);
   const issues = options.issues || new Map();
+  const library = options.library || null;
   const index = labelIndex(doc);
   const styleOf = networkStyles(doc);
 
@@ -446,7 +451,7 @@ export function toFlowNodes(doc, options = {}) {
         node,
         label: nodeLabel(node),
         iconKey: nodeIconKey(node),
-        iconSrc: iconSrc(nodeIcon(node), doc.icons),
+        iconSrc: iconSrc(nodeIcon(node), doc.icons, library),
         shape: kindMeta(node.kind).shape,
         comment: nodeComment(node),
         typeLabel: node.kind === 'device' ? deviceTypeLabel(node) : undefined,

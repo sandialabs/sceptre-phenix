@@ -23,7 +23,7 @@ export const GENERATE_PATH = 'builder/generate';
 export const LEGACY_PATH = 'builder/legacy';
 export const EXPORT_TOPOLOGY_PATH = 'builder/export/topology';
 export const DOCUMENTS_PATH = 'builder/documents';
-// The caller's own icon library (web/builder_icons.go).
+// The server's icon library, which every user shares (web/builder_icons.go).
 export const ICONS_PATH = 'builder/icons';
 // The template library the caller can use (web/builder_templates.go).
 export const TEMPLATES_PATH = 'builder/templates';
@@ -117,12 +117,11 @@ export function documentPath(id) {
 }
 
 /**
- * @param {string} id icon id, "sha256:" and 64 hex digits
- * @returns {string} the icon of that id in the caller's library, which the
- *   server names by the digits alone
+ * @param {string} name icon name, or one of its aliases
+ * @returns {string} the icon of that name in the icon library
  */
-export function iconPath(id) {
-  return `${ICONS_PATH}/${encodeURIComponent(String(id).replace(/^sha256:/, ''))}`;
+export function iconPath(name) {
+  return `${ICONS_PATH}/${encodeURIComponent(String(name))}`;
 }
 
 /**
@@ -1351,55 +1350,81 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Lists the icons of the user's own icon library, each with its PNG in
-     * base64, and the library's limits. No one reads another user's.
+     * Lists every icon of the server's icon library, each with its PNG in
+     * base64, who uploaded it, its aliases and whether the user may rename
+     * or delete it, and the user's uploads against what each user may
+     * upload.
      *
      * @returns {Promise<{icons: object[], maxIcons: number,
-     *   maxBytes: number, usedBytes: number}>} each icon {id, name, width,
-     *   height, bytes, created, data}
+     *   maxBytes: number, usedIcons: number, usedBytes: number}>} each icon
+     *   {name, id, owner, width, height, bytes, created, updated, aliases,
+     *   data, canRename, canDelete}
      */
     async listIcons() {
       const data = (await http.get(ICONS_PATH)).data || {};
       const number = (value) => (Number.isFinite(value) ? value : 0);
 
       return {
-        icons: (Array.isArray(data.icons) ? data.icons : []).filter(
-          (icon) =>
-            typeof icon?.id === 'string' && typeof icon.data === 'string',
-        ),
+        icons: (Array.isArray(data.icons) ? data.icons : [])
+          .filter(
+            (icon) =>
+              typeof icon?.name === 'string' && typeof icon.data === 'string',
+          )
+          .map((icon) => ({
+            ...icon,
+            aliases: Array.isArray(icon.aliases)
+              ? icon.aliases.filter((alias) => typeof alias === 'string')
+              : [],
+            canRename: icon.canRename === true,
+            canDelete: icon.canDelete === true,
+          })),
         maxIcons: number(data.maxIcons),
         maxBytes: number(data.maxBytes),
+        usedIcons: number(data.usedIcons),
         usedBytes: number(data.usedBytes),
       };
     },
 
     /**
-     * Adds a PNG to the user's icon library. The server checks the image
-     * and may encode it again, so the icon is the one it answers with: its
-     * id and data, not what was sent. Bytes the library already holds are
-     * answered with the icon it has, under the name that one was given.
+     * Adds a PNG to the icon library under a name. The server checks the
+     * image and may encode it again, so the icon is the one it answers
+     * with: its data, not what was sent. A name that already names an icon
+     * with the same bytes is answered with that icon; one that names another
+     * is refused (409).
      *
-     * @param {{name?: string, data: string}} upload the PNG in base64
+     * @param {{name: string, data: string}} upload the name and the PNG in
+     *   base64
      * @returns {Promise<{icon: object, created: boolean}>} created: false
      *   when the library already held it
      */
     async uploadIcon({ name, data }) {
-      const response = await http.post(ICONS_PATH, {
-        ...(name ? { name } : {}),
-        data,
-      });
+      const response = await http.post(ICONS_PATH, { name, data });
 
       return { icon: response.data, created: response.status === 201 };
     },
 
     /**
-     * Deletes an icon from the user's icon library. Diagrams that use it
-     * keep their own copy.
+     * Gives an icon of the icon library a new name; the old one keeps
+     * naming it, as an alias.
      *
-     * @param {string} id icon id
+     * @param {string} name the icon's name, or an alias
+     * @param {string} newName
+     * @returns {Promise<object>} the icon as renamed
      */
-    async deleteIcon(id) {
-      await http.delete(iconPath(id));
+    async renameIcon(name, newName) {
+      const response = await http.put(iconPath(name), { name: newName });
+
+      return response.data;
+    },
+
+    /**
+     * Deletes an icon from the icon library, with its aliases. Nodes that
+     * name it show their built-in icon.
+     *
+     * @param {string} name the icon's name, or an alias
+     */
+    async deleteIcon(name) {
+      await http.delete(iconPath(name));
 
       return true;
     },
@@ -1412,9 +1437,8 @@ export function createBuilderApi(http = axiosInstance) {
      * never changed theirs has the built-in templates.
      *
      * @returns {Promise<object>} owner, templates and collections (lists),
-     *   icons (the custom icons the templates name, by icon id: {name?,
-     *   data}), canShare, canPublish, damaged (the stored library cannot be
-     *   read, and lists nothing) and limits
+     *   canShare, canPublish, damaged (the stored library cannot be read,
+     *   and lists nothing) and limits
      */
     async listTemplates() {
       const data = (await http.get(TEMPLATES_PATH)).data || {};
@@ -1431,7 +1455,6 @@ export function createBuilderApi(http = axiosInstance) {
         owner: typeof data.owner === 'string' ? data.owner : '',
         templates: list(data.templates),
         collections: list(data.collections),
-        icons: object(data.icons),
         canShare: data.canShare === true,
         canPublish: data.canPublish === true,
         damaged: data.damaged === true,
@@ -1446,16 +1469,14 @@ export function createBuilderApi(http = axiosInstance) {
      *
      * @param {string} owner the library's owner, who the caller must be
      * @param {object} request templates: [{name, description?, device}];
-     *   collection: {name, description?}, optional; icons: the custom icons
-     *   the templates name, by icon id ({name?, data}), optional
+     *   collection: {name, description?}, optional
      * @returns {Promise<{created: {id: string, etag: string}[],
      *   collection: {id: string, etag: string}|null}>}
      */
-    async createTemplates(owner, { templates, collection, icons } = {}) {
+    async createTemplates(owner, { templates, collection } = {}) {
       const response = await http.post(templateItemsPath(owner), {
         templates,
         ...(collection ? { collection } : {}),
-        ...(icons && Object.keys(icons).length ? { icons } : {}),
       });
       const data = response.data || {};
 
@@ -1472,19 +1493,15 @@ export function createBuilderApi(http = axiosInstance) {
      *
      * @param {string} owner
      * @param {string} id template id
-     * @param {object} content name, description?, device, and icons: the
-     *   custom icon the device names ({name?, data} by icon id), optional
+     * @param {object} content name, description? and device
      * @param {string} etag the template's tag, as listed
      * @returns {Promise<object>} the template as it is now, with its new
      *   etag
      */
-    async updateTemplate(owner, id, { icons, ...content }, etag) {
+    async updateTemplate(owner, id, content, etag) {
       const response = await http.put(
         templateItemPath(owner, id),
-        {
-          ...content,
-          ...(icons && Object.keys(icons).length ? { icons } : {}),
-        },
+        content,
         ifMatch(etag),
       );
 

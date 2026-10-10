@@ -63,9 +63,8 @@ function specInterfaces(spec) {
  * that names a network of `doc` is emptied, since the new device is
  * connected to nothing; any other text is kept.
  *
- * A template's custom icon is an icon id: the document comes to carry the
- * icon when the device is committed, from its own icons or from the store's
- * icon shelf (see settleIcons).
+ * A template's custom icon is an icon name, which the icon library resolves
+ * (see iconSrc in icons.js): the device names it as the template does.
  *
  * @param {object} template
  * @param {object} doc the document the device is for
@@ -153,13 +152,14 @@ export function blankTemplate() {
 
 /**
  * The document the template editor edits a template in: one that holds
- * exactly one device, made from the template as a diagram makes one, and
- * the custom icon the template names. It has no networks, so no VLAN is
- * emptied. Its name and description are the template's.
+ * exactly one device, made from the template as a diagram makes one, and a
+ * copy of the custom icon the template names when the diagram the template
+ * is in carries one, so the editor shows it. It has no networks, so no VLAN
+ * is emptied. Its name and description are the template's.
  *
  * @param {object} template
- * @param {Map<string, object>|object|null} [icons] custom icons by id,
- *   {name?, data}: those kept beside the template (a diagram's `icons`)
+ * @param {object|null} [icons] the copies of icons the template's diagram
+ *   carries (its `icons`), by name
  * @returns {object} document
  */
 export function templateDocument(template, icons = null) {
@@ -173,18 +173,23 @@ export function templateDocument(template, icons = null) {
     },
   };
   const { doc } = addNode(empty, nodeOptionsFromTemplate(template, empty));
+  const name = template?.device?.icon;
 
-  return settleIcons(doc, icons).doc;
+  return name &&
+    icons &&
+    typeof icons === 'object' &&
+    Object.hasOwn(icons, name)
+    ? { ...doc, icons: { [name]: clone(icons[name]) } }
+    : doc;
 }
 
 /**
  * Reads a template back from the template editor's document (see
  * templateDocument): its one device, as typed, with the document's name and
- * description, and the custom icon it names.
+ * description. Its custom icon is the name the device names.
  *
  * @param {object} doc
- * @returns {{template: object, icons: object}} the template, without an
- *   id, and the icons it names, by icon id: {name?, data}
+ * @returns {{template: object}} the template, without an id
  */
 export function templateFromDocument(doc) {
   const node = (doc?.nodes || []).find((entry) => entry.kind === 'device');
@@ -192,22 +197,16 @@ export function templateFromDocument(doc) {
     name: doc?.metadata?.name || '',
     description: doc?.metadata?.description || '',
   });
-  const icons = {};
-  const id = template.device.icon;
 
-  if (id && doc?.icons && Object.hasOwn(doc.icons, id)) {
-    icons[id] = clone(doc.icons[id]);
-  }
-
-  return { template, icons };
+  return { template };
 }
 
 /**
  * What the Inspector edits in the template editor, in place of the Builder
  * store (see the `host` prop of BuilderInspector.vue): a document of the
  * template's one device, which is always the selection. A commit replaces
- * the document, which then carries the custom icon it names, as a commit of
- * the store does. The schema, the disk images and the icon shelf are the
+ * the document, dropping copies of icons it need not carry, as a commit of
+ * the store does (see settleIcons). The schema and the disk images are the
  * Builder store's; the actions of a canvas do nothing.
  *
  * The template editor makes it reactive.
@@ -219,6 +218,7 @@ export function templateFromDocument(doc) {
  *   says goes here: the editor is a modal dialog, which the page's live
  *   region cannot speak through
  * @param {boolean} [options.readOnly]
+ * @param {{lookup: Function}|null} [options.library] the icon library
  * @returns {object}
  */
 export function templateEditorHost({
@@ -226,6 +226,7 @@ export function templateEditorHost({
   source,
   announce,
   readOnly = false,
+  library = null,
 }) {
   const node = (doc.nodes || []).find((entry) => entry.kind === 'device');
 
@@ -245,14 +246,8 @@ export function templateEditorHost({
     get disks() {
       return source.disks;
     },
-    get iconShelf() {
-      return source.iconShelf;
-    },
-    shelveIcons(icons) {
-      source.shelveIcons(icons);
-    },
     commit(next) {
-      this.doc = settleIcons(next, source.iconShelf).doc;
+      this.doc = settleIcons(next, library);
 
       return true;
     },
@@ -331,22 +326,6 @@ export function templateByKey(doc, key, library = null) {
     default:
       return undefined;
   }
-}
-
-/**
- * The custom icon a template names, as the entry kept beside it holds it,
- * for the place the template is copied to: a diagram, or the library.
- *
- * @param {object} template
- * @param {object|null} icons the icons kept where the template is, by icon
- *   id: {name?, data}
- * @returns {object} the one entry the template names, by its id; empty
- *   when it names none, or one that is not there
- */
-export function templateIcons(template, icons) {
-  const id = template?.device?.icon;
-
-  return id && icons && Object.hasOwn(icons, id) ? { [id]: icons[id] } : {};
 }
 
 // --- the palette -----------------------------------------------------------

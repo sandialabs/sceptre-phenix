@@ -340,7 +340,7 @@
             <h2>
               <builder-icon
                 :name="template.device?.iconKey || 'server'"
-                :src="iconSrc(template.device?.icon, library.icons)"
+                :src="iconSrc(template.device?.icon, null, iconLibrary)"
                 :size="18" />
               <span>
                 {{ template.name }}
@@ -485,6 +485,7 @@
   import { count, listOf } from '@/builder/announce.js';
   import { focusLost } from '@/builder/commands.js';
   import { formatTimestamp } from '@/builder/format.js';
+  import { iconLibrary } from '@/builder/iconLibrary.js';
   import { iconSrc } from '@/builder/icons.js';
   import { useListSelection } from '@/builder/listSelection.js';
   import { describeShares } from '@/builder/share.js';
@@ -501,7 +502,6 @@
     sharedWith,
     shownList,
     showChoices,
-    templateIcons,
     templatesDeleteQuestion,
     templatesDeletedMessage,
     unpublishQuestion,
@@ -813,7 +813,7 @@
     }
   }
 
-  // Copies of other users' templates, with the custom icons they name, go
+  // Copies of other users' templates, naming the custom icons they name, go
   // to the user's library, as a collection of their own when `from` is
   // one. A library at its most templates takes none.
   async function copyTemplates(templates, from = null) {
@@ -832,12 +832,6 @@
       }
 
       await store.createLibraryTemplates(templates, {
-        icons: Object.assign(
-          {},
-          ...templates.map((template) =>
-            templateIcons(template, library.value.icons),
-          ),
-        ),
         collection: from
           ? {
               name: from.name,

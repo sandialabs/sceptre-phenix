@@ -57,16 +57,11 @@ export function withTemplates(store) {
  * fetchTemplates in store.js): `templates` and `collections` are listed as
  * the server lists them, the user's own unless they say otherwise.
  *
- * @param {object} [init] templates, collections, icons, and what else the
- *   store's `templates` holds
+ * @param {object} [init] templates, collections, and what else the store's
+ *   `templates` holds
  * @returns {object}
  */
-export function libraryOf({
-  templates = [],
-  collections = [],
-  icons = {},
-  ...rest
-} = {}) {
+export function libraryOf({ templates = [], collections = [], ...rest } = {}) {
   const listed = (item, index) => ({
     owner: 'alice',
     source: 'own',
@@ -95,7 +90,6 @@ export function libraryOf({
       shares: [],
       ...listed(collection, index),
     })),
-    icons,
     canShare: false,
     canPublish: false,
     damaged: false,
@@ -106,7 +100,6 @@ export function libraryOf({
       nameBytes: 128,
       descriptionBytes: 1024,
       deviceBytes: 16384,
-      icons: 50,
     },
     ...rest,
   };

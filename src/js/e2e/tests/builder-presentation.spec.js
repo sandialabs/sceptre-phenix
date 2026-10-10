@@ -9,10 +9,10 @@
 // afterwards. A check that no later step depends on is soft, so one failure
 // does not hide the steps after it.
 //
-// With authentication off every test is the same user, so they share one
-// icon library. A test that adds an icon to it builds the image itself, in
-// colors drawn at random, so no other test has those bytes, and the
-// `libraryIcons` fixture deletes what the test added.
+// Every test and every worker shares the server's one icon library. A test
+// that adds an icon to it gives it a name of its own (iconName) and builds
+// the image itself, in colors drawn at random, so no other test has that
+// name or those bytes; the `tracker` fixture deletes what the test added.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -20,15 +20,15 @@ const fs = require('fs');
 const {
   API,
   PNG_SIGNATURE,
-  test: base,
+  test,
   blankDocument,
   contrast,
   devicesOf,
   expect,
   expectAccessible,
   expectNoFatal,
+  iconName,
   iconOf,
-  isApi,
   ownColor,
   pngOf,
   waitForApi,
@@ -37,38 +37,6 @@ const {
 // How many custom icons one document may carry: MAX_DOCUMENT_ICONS in
 // src/builder/icons.js and MaxDocumentIcons in customicons.go.
 const MAX_DOCUMENT_ICONS = 50;
-
-// The path of an icon of the library: the server names it by the hex
-// digits of its id.
-function iconPath(id) {
-  return `${API}/builder/icons/${id.replace('sha256:', '')}`;
-}
-
-const test = base.extend({
-  // The ids of the icons the test's page added to the icon library, which
-  // are deleted from it when the test ends.
-  libraryIcons: async ({ page, request }, use) => {
-    const ids = new Set();
-
-    page.on('response', async (response) => {
-      if (!isApi(response, 'POST', '/builder/icons') || !response.ok()) {
-        return;
-      }
-
-      try {
-        ids.add((await response.json()).id);
-      } catch {
-        // Response bodies are unavailable once the page has closed.
-      }
-    });
-
-    await use(ids);
-
-    for (const id of ids) {
-      await request.delete(iconPath(id)).catch(() => {});
-    }
-  },
-});
 
 test.use({ announceHold: 100 });
 
@@ -1524,15 +1492,41 @@ function iconField(page, builder) {
     error: dialog.getByTestId('icon-error'),
     upload: dialog.getByTestId('icon-upload'),
     file: dialog.getByTestId('icon-file'),
+    // The form that names a converted image before it is uploaded.
+    uploadName: dialog.getByTestId('icon-upload-name'),
+    uploadSubmit: dialog.getByTestId('icon-upload-submit'),
+    uploadCancel: dialog.getByTestId('icon-upload-cancel'),
     heading: dialog.getByTestId('icon-library-heading'),
-    // The row of an icon in the list of the user's library, and in that of
-    // the diagram's icons.
-    inLibrary: (id) =>
-      dialog.getByTestId('icon-library-list').locator(`[data-icon="${id}"]`),
-    inDiagram: (id) =>
-      dialog.getByTestId('icon-diagram-list').locator(`[data-icon="${id}"]`),
+    usage: dialog.getByTestId('icon-usage'),
+    renameName: dialog.getByTestId('icon-rename-name'),
+    renameSubmit: dialog.getByTestId('icon-rename-submit'),
+    renameCancel: dialog.getByTestId('icon-rename-cancel'),
+    // The row of an icon, by its name, in the list of the server's icons,
+    // and in that of the copies the diagram carries.
+    inLibrary: (name) =>
+      dialog.getByTestId('icon-library-list').locator(`[data-icon="${name}"]`),
+    inDiagram: (name) =>
+      dialog.getByTestId('icon-diagram-list').locator(`[data-icon="${name}"]`),
     close: dialog.getByTestId('icon-close'),
   };
+}
+
+// Chooses `file` ({name, mimeType, buffer}) in the open Custom icons
+// dialog, and uploads the image it becomes under `name`, or under the name
+// the dialog proposes. Returns the POST's response.
+async function uploadIcon(page, icons, file, name) {
+  await icons.file.setInputFiles(file);
+  await expect(icons.uploadName).toBeVisible();
+
+  if (name !== undefined) {
+    await icons.uploadName.fill(name);
+  }
+
+  const added = waitForApi(page, 'POST', '/builder/icons');
+
+  await icons.uploadSubmit.click();
+
+  return added;
 }
 
 // A custom icon as a node draws it.
@@ -1541,12 +1535,15 @@ function customIcon(scope) {
 }
 
 test(
-  'a custom icon is uploaded as a PNG whatever the file holds, shows on a device and a group, and stays in the diagram when it leaves the library',
+  'a custom icon is uploaded under a name as a PNG whatever the file holds, shows on a device and a group by its name, and is renamed and deleted on the server',
   { tag: '@cross-browser' },
-  async ({ page, builder, request, issues, libraryIcons }, testInfo) => {
+  async ({ page, builder, request, issues, tracker }, testInfo) => {
     const { draft } = await seedStyled(builder, testInfo);
-    const nonce = crypto.randomUUID().slice(0, 8);
-    const names = { plc: `plc-${nonce}`, pump: `pump-${nonce}` };
+    const names = {
+      plc: iconName('plc'),
+      pump: iconName('pump'),
+      renamed: iconName('pump'),
+    };
     const icons = iconField(page, builder);
     const web01 = builder.node('web-01', 'device');
     const zone = builder.node('Zone', 'group');
@@ -1581,7 +1578,7 @@ test(
       await expect
         .soft(icons.choose)
         .toHaveAccessibleDescription(
-          /An image of your own, drawn in place of the icon\. The diagram keeps a copy, so it shows wherever the diagram is opened\. Applies at once, without Apply\./,
+          /An image of the server's icon library, drawn in place of the icon\. The node names it, so a renamed icon keeps showing\. Applies at once, without Apply\./,
         );
       await expect.soft(icons.remove).toHaveCount(0);
       await expect.soft(customIcon(web01)).toHaveCount(0);
@@ -1597,10 +1594,19 @@ test(
         .toContainText(
           'PNG, JPEG, GIF, WebP and SVG files are converted to a PNG of at most 96 by 96 pixels.',
         );
-      // Other tests may have icons in the library: its heading counts them.
+      // Other tests may have icons in the library: its heading counts them,
+      // and the usage says what this user uploaded.
+      // The text is matched trimmed: the template's white space is kept as
+      // a space at either end.
       await expect
         .soft(icons.heading)
-        .toHaveText(/^My library \(\d+ of 64, [\d.]+ KiB of 1 MiB\)$/);
+        .toHaveText(/^\s*Server icons \(\d+\)\s*$/);
+      await expect
+        .soft(icons.usage)
+        .toHaveText(
+          /^\s*You uploaded \d+ of 64 icons, [\d.]+ KiB of 1 MiB\.\s*$/,
+        );
+      // The diagram carries no copy of an icon.
       await expect
         .soft(icons.dialog.getByTestId('icon-diagram-list'))
         .toHaveCount(0);
@@ -1675,11 +1681,10 @@ test(
       await expect(hostname).toHaveValue('web-01');
     });
 
-    await test.step('a PNG file is drawn by the browser and sent as a PNG of at most 96 pixels a side', async () => {
+    await test.step('a PNG file is drawn by the browser, named, and sent as a PNG of at most 96 pixels a side', async () => {
       await icons.choose.click();
-      await expect(icons.heading).toHaveText(/^My library \(/);
+      await expect(icons.heading).toHaveText(/Server icons \(/);
 
-      const added = waitForApi(page, 'POST', '/builder/icons');
       const [chooser] = await Promise.all([
         page.waitForEvent('filechooser'),
         icons.upload.click(),
@@ -1698,6 +1703,31 @@ test(
         buffer: pngOf(200, 100, ownColor()),
       });
 
+      // The name is asked for, proposed from the file's, and selected.
+      await expect(icons.uploadName).toBeFocused();
+      await expect.soft(icons.uploadName).toHaveValue(names.plc);
+      await expect.soft(icons.uploadName).toHaveAccessibleName('Name');
+      await expect
+        .soft(icons.uploadName)
+        .toHaveAccessibleDescription(
+          /^Nodes and templates name the icon by it\./,
+        );
+
+      // A name that breaks the rule is refused before anything is sent.
+      await icons.uploadName.fill('plc icon');
+      await icons.uploadSubmit.click();
+      await expect(icons.error).toContainText('Enter a name for the icon.');
+      await expect
+        .soft(icons.uploadName)
+        .toHaveAttribute('aria-invalid', 'true');
+      await expect.soft(icons.uploadName).toBeFocused();
+
+      await icons.uploadName.fill(names.plc);
+
+      const added = waitForApi(page, 'POST', '/builder/icons');
+
+      await icons.uploadSubmit.click();
+
       const response = await added;
       const sent = response.request().postDataJSON();
 
@@ -1706,20 +1736,25 @@ test(
       // Only a name and a PNG are sent: nothing of the file's own.
       expect.soft(Object.keys(sent).sort()).toEqual(['data', 'name']);
       expect.soft(sent.name).toBe(names.plc);
+      expect.soft(plc.name).toBe(names.plc);
       expect.soft(isPNG(sent.data), 'what is sent is a PNG').toBe(true);
       expect.soft(isPNG(plc.data), 'what is stored is a PNG').toBe(true);
       // 200 by 100 pixels, scaled to fit inside 96.
       expect.soft([plc.width, plc.height]).toEqual([96, 48]);
       expect.soft(plc.id).toBe(iconOf(Buffer.from(plc.data, 'base64')).id);
+      expect.soft([plc.canRename, plc.canDelete]).toEqual([true, true]);
 
       await expect(icons.status).toHaveText(
-        `Added ${names.plc} to your library.`,
+        `Added ${names.plc} to the server.`,
       );
-      const row = icons.inLibrary(plc.id);
+      await expect.soft(icons.uploadName).toHaveCount(0);
+      const row = icons.inLibrary(names.plc);
 
       await expect(row).toHaveCount(1);
       await expect.soft(row).toContainText(names.plc);
-      await expect.soft(row).toContainText(/96 × 48 pixels, [\d.]+ KiB/);
+      await expect
+        .soft(row)
+        .toContainText(/Uploaded by \S+ · 96 × 48 pixels, [\d.]+ KiB/);
       await expect
         .soft(customIcon(row))
         .toHaveAttribute('src', `data:image/png;base64,${plc.data}`);
@@ -1728,37 +1763,58 @@ test(
         .soft(row.getByRole('button', { name: `Use ${names.plc}` }))
         .toBeFocused();
 
-      // The same picture again is the icon the library has, under the name
-      // it has.
-      const again = waitForApi(page, 'POST', '/builder/icons');
-
-      await icons.file.setInputFiles({
-        name: `other-${nonce}.png`,
+      // The same picture again, under its name, is the icon the server has.
+      const again = await uploadIcon(page, icons, {
+        name: `${names.plc}.png`,
         mimeType: 'image/png',
         buffer: Buffer.from(sent.data, 'base64'),
       });
-      expect.soft((await again).status()).toBe(200);
+
+      expect.soft(again.status()).toBe(200);
       await expect
         .soft(icons.status)
-        .toHaveText(`Your library already has this icon, as ${names.plc}.`);
-      await expect.soft(icons.inLibrary(plc.id)).toHaveCount(1);
+        .toHaveText(`The server already has this icon as ${names.plc}.`);
+      await expect.soft(icons.inLibrary(names.plc)).toHaveCount(1);
+
+      // Another picture under a name the server has is refused, and says
+      // who has the name; the form stays for another name. The name is
+      // taken whatever its case.
+      const taken = await uploadIcon(
+        page,
+        icons,
+        {
+          name: 'other.png',
+          mimeType: 'image/png',
+          buffer: pngOf(8, 8, ownColor()),
+        },
+        names.plc.toUpperCase(),
+      );
+
+      expect.soft(taken.status()).toBe(409);
+      await expect(icons.error).toHaveText(
+        new RegExp(
+          `^Icon name "${names.plc.toUpperCase()}" is taken by an icon \\S+ uploaded; choose another name\\.$`,
+        ),
+      );
+      await expect.soft(icons.uploadName).toBeFocused();
+      await icons.uploadCancel.click();
+      await expect(icons.uploadName).toHaveCount(0);
+      await expect.soft(icons.upload).toBeFocused();
     });
 
     await test.step('an SVG file with a script in it becomes a PNG too: nothing in it runs, and nothing is fetched for it', async () => {
       const color = ownColor();
-      const added = waitForApi(page, 'POST', '/builder/icons');
-
-      await icons.file.setInputFiles({
+      // The name proposed from the file's is the one sent.
+      const response = await uploadIcon(page, icons, {
         name: `${names.pump}.svg`,
         mimeType: 'image/svg+xml',
         buffer: Buffer.from(hostileSVG(color, new URL(page.url()).origin)),
       });
-
-      const response = await added;
       const sent = response.request().postDataJSON();
 
       expect(response.status()).toBe(201);
       pump = await response.json();
+      expect.soft(sent.name).toBe(names.pump);
       expect.soft(isPNG(sent.data), 'what is sent is a PNG').toBe(true);
       expect.soft(isPNG(pump.data), 'what is stored is a PNG').toBe(true);
       for (const data of [sent.data, pump.data]) {
@@ -1769,7 +1825,7 @@ test(
       // A vector image is drawn as large as an icon may be.
       expect.soft([pump.width, pump.height]).toEqual([96, 48]);
       await expect(icons.status).toHaveText(
-        `Added ${names.pump} to your library.`,
+        `Added ${names.pump} to the server.`,
       );
 
       // The picture is the file's: its rectangle, in the test's color.
@@ -1797,19 +1853,22 @@ test(
         .soft(list.headers()['content-security-policy'])
         .toBe("default-src 'none'; frame-ancestors 'none'");
       for (const icon of [plc, pump]) {
-        const found = listed.find((entry) => entry.id === icon.id);
+        const found = listed.find((entry) => entry.name === icon.name);
 
         expect.soft(found?.data, `${icon.name} as listed`).toBe(icon.data);
+        expect.soft(found?.id, `${icon.name} as listed`).toBe(icon.id);
         expect.soft(isPNG(found?.data || '')).toBe(true);
       }
-      expect.soft([...libraryIcons].sort()).toEqual([plc.id, pump.id].sort());
+      expect
+        .soft([...tracker.icons].sort())
+        .toEqual([names.plc, names.pump].sort());
     });
 
     const src = () => `data:image/png;base64,${pump.data}`;
 
     await test.step('Use gives the device the icon at once: on the canvas, in the outline and in the Inspector', async () => {
       await icons
-        .inLibrary(pump.id)
+        .inLibrary(names.pump)
         .getByRole('button', { name: `Use ${names.pump}` })
         .click();
       await expect(icons.dialog).toHaveCount(0);
@@ -1850,48 +1909,45 @@ test(
         .soft(builder.inspector.getByTestId('inspector-apply'))
         .toHaveCount(0);
 
-      // The diagram keeps its own copy of the PNG, and nothing else of it.
+      // The device names the icon, and the draft carries no image of it.
       await builder.waitSaved();
       await builder.persisted(
         draft,
         (doc) => ({
-          icons: doc.icons,
+          icons: 'icons' in doc,
           icon: devicesOf(doc).find((node) => node.device.hostname === 'web-01')
             .device.icon,
         }),
-        {
-          icons: { [pump.id]: { name: names.pump, data: pump.data } },
-          icon: pump.id,
-        },
+        { icons: false, icon: names.pump },
       );
       expect
         .soft(JSON.stringify(await builder.serverDocument(draft)))
         .not.toMatch(/<svg|<script|onload|icon-probe/i);
     });
 
-    await test.step('a group takes an icon with Apply, and the dialog lists the diagram’s own', async () => {
+    await test.step('a group takes an icon with Apply, and the diagram still carries no copy', async () => {
       await builder.selectInOutline('Zone');
       await expect.soft(icons.name).toHaveText('None');
       await expect
         .soft(icons.choose)
         .toHaveAccessibleDescription(
-          /The diagram keeps a copy, so it shows wherever the diagram is opened\.$/,
+          /The node names it, so a renamed icon keeps showing\.$/,
         );
       await icons.choose.click();
+      await expect(icons.heading).toHaveText(/Server icons \(/);
       await expect
-        .soft(
-          icons.dialog.getByRole('heading', { name: 'In this diagram (1)' }),
-        )
-        .toBeVisible();
-      await expect.soft(icons.inDiagram(pump.id)).toContainText(names.pump);
-      await expect
-        .soft(icons.inDiagram(pump.id))
-        .toContainText('In my library');
-      await expect
-        .soft(icons.inDiagram(pump.id).getByTestId('icon-save'))
+        .soft(icons.dialog.getByTestId('icon-diagram-list'))
         .toHaveCount(0);
 
-      await icons.inLibrary(plc.id).getByTestId('icon-use').click();
+      // The filter finds an icon by its name.
+      const filter = icons.dialog.getByTestId('icon-filter');
+
+      await filter.fill(names.plc);
+      await expect.soft(icons.inLibrary(names.pump)).toHaveCount(0);
+      await expect
+        .soft(icons.dialog.locator('#icon-filter-count'))
+        .toHaveText(/^\s*1 of \d+ icons shown\.\s*$/);
+      await icons.inLibrary(names.plc).getByTestId('icon-use').click();
       await expect(icons.dialog).toHaveCount(0);
       // A group's form waits for Apply: the field shows the choice, the
       // canvas not yet.
@@ -1915,27 +1971,82 @@ test(
       await builder.persisted(
         draft,
         (doc) => [
-          Object.keys(doc.icons).sort(),
+          'icons' in doc,
           doc.nodes.find((node) => node.kind === 'group').group.icon,
         ],
-        [[plc.id, pump.id].sort(), plc.id],
+        [false, names.plc],
       );
     });
 
-    await test.step('Delete asks first, and takes the icon from the library alone', async () => {
+    await test.step('Rename gives the icon a new name, and the device that names the old one keeps showing it', async () => {
+      await builder.selectInOutline('web-01');
       await icons.choose.click();
-      const row = icons.inLibrary(pump.id);
+      const row = icons.inLibrary(names.pump);
+      const rename = row.getByRole('button', { name: `Rename ${names.pump}` });
+
+      await rename.click();
+      await expect(icons.renameName).toBeFocused();
+      await expect.soft(icons.renameName).toHaveValue(names.pump);
+      await expect
+        .soft(icons.renameName)
+        .toHaveAccessibleDescription(
+          new RegExp(`^The old name, ${names.pump}, keeps working`),
+        );
+      // Cancel keeps the name, and focus goes back to Rename.
+      await icons.renameCancel.click();
+      await expect(icons.renameName).toHaveCount(0);
+      await expect.soft(rename).toBeFocused();
+
+      await rename.click();
+      await icons.renameName.fill(names.renamed);
+
+      const renamed = waitForApi(page, 'PUT', `/builder/icons/${names.pump}`);
+
+      await icons.renameSubmit.click();
+
+      const response = await renamed;
+
+      expect(response.status()).toBe(200);
+      expect.soft(response.request().postDataJSON()).toEqual({
+        name: names.renamed,
+      });
+      expect.soft((await response.json()).aliases).toEqual([names.pump]);
+      await expect(icons.status).toHaveText(
+        `Renamed ${names.pump} to ${names.renamed}. ${names.pump} keeps working as another name of it.`,
+      );
+
+      const moved = icons.inLibrary(names.renamed);
+
+      await expect(moved).toHaveCount(1);
+      await expect.soft(icons.inLibrary(names.pump)).toHaveCount(0);
+      await expect.soft(moved).toContainText(`also named ${names.pump}`);
+      await expect
+        .soft(moved.getByRole('button', { name: `Rename ${names.renamed}` }))
+        .toBeFocused();
+      await icons.close.click();
+      await expect(icons.dialog).toHaveCount(0);
+
+      // The device names the old name, which still resolves.
+      await expect(customIcon(web01)).toHaveAttribute('src', src());
+      await expect.soft(icons.name).toHaveText(names.pump);
+      await expect.soft(icons.image).toHaveAttribute('src', src());
+    });
+
+    await test.step('Delete asks first, and the group that names the icon shows its built-in icon', async () => {
+      await builder.selectInOutline('Zone');
+      await icons.choose.click();
+      const row = icons.inLibrary(names.plc);
       const confirm = page.getByTestId('builder-confirm');
 
       await row
-        .getByRole('button', { name: `Delete ${names.pump} from my library` })
+        .getByRole('button', { name: `Delete ${names.plc} from the server` })
         .click();
       await expect(confirm).toBeVisible();
       await expect.soft(confirm).toHaveAccessibleName('Delete icon?');
       await expect
         .soft(confirm)
         .toContainText(
-          `Delete ${names.pump} from your library? Diagrams that use it keep their copy.`,
+          `Delete ${names.plc} from the server? Diagrams and templates that use it, by any of its names, will show their built-in icon instead.`,
         );
       // Cancel is where focus starts, and keeps the icon.
       await expect.soft(confirm.getByTestId('confirm-cancel')).toBeFocused();
@@ -1944,66 +2055,50 @@ test(
       await expect.soft(row).toHaveCount(1);
 
       await row.getByTestId('icon-delete').click();
-      const deleted = waitForApi(
-        page,
-        'DELETE',
-        `/builder/icons/${pump.id.replace('sha256:', '')}`,
-      );
+      const deleted = waitForApi(page, 'DELETE', `/builder/icons/${names.plc}`);
 
       await confirm.getByRole('button', { name: 'Delete' }).click();
       expect((await deleted).status()).toBe(204);
       await expect(icons.status).toHaveText(
-        `Deleted ${names.pump} from your library.`,
+        `Deleted ${names.plc} from the server.`,
       );
       await expect(row).toHaveCount(0);
       await expect.soft(icons.upload).toBeFocused();
-      // The diagram's copy is still listed, and can be saved back.
-      await expect
-        .soft(
-          icons
-            .inDiagram(pump.id)
-            .getByRole('button', { name: `Save ${names.pump} to my library` }),
-        )
-        .toBeVisible();
       await icons.close.click();
       await expect(icons.dialog).toHaveCount(0);
+
+      // The group keeps the name; nothing resolves it now.
+      await expect(customIcon(zone)).toHaveCount(0);
+      await expect
+        .soft(zone.locator('.builder-icon--container'))
+        .toHaveCount(1);
+      await expect
+        .soft(icons.name)
+        .toHaveText(`${names.plc} (not found: the built-in icon is shown)`);
+      await expect.soft(icons.image).toHaveCount(0);
       await expect(customIcon(web01)).toHaveAttribute('src', src());
     });
 
-    await test.step('the diagram opens with its icon after a new page load, without the library', async () => {
+    await test.step('after a new page load the diagram reads its icons from the server again', async () => {
       await builder.waitSaved();
       await builder.openDraft(draft);
 
       const listed = (await (await request.get(`${API}/builder/icons`)).json())
         .icons;
 
-      expect.soft(listed.map((icon) => icon.id)).not.toContain(pump.id);
+      expect.soft(listed.map((icon) => icon.name)).not.toContain(names.plc);
+      // The old name finds the renamed icon, ignoring case too.
+      const old = await request.get(
+        `${API}/builder/icons/${names.pump.toUpperCase()}`,
+      );
+
+      expect.soft(old.status()).toBe(200);
+      expect.soft((await old.json()).name).toBe(names.renamed);
       await expect(customIcon(web01)).toHaveAttribute('src', src());
       await expect.soft(customIcon(web01)).toHaveJSProperty('naturalWidth', 96);
-      await expect(customIcon(zone)).toHaveCount(1);
+      await expect.soft(customIcon(zone)).toHaveCount(0);
       await builder.selectInOutline('web-01');
       await expect.soft(icons.name).toHaveText(names.pump);
-    });
-
-    await test.step('Save to my library puts the diagram’s copy back, as the icon it was', async () => {
-      await icons.choose.click();
-      const row = icons.inDiagram(pump.id);
-      const saved = waitForApi(page, 'POST', '/builder/icons');
-
-      await row.getByTestId('icon-save').click();
-      const response = await saved;
-
-      expect(response.status()).toBe(201);
-      // The same bytes, so the same id.
-      expect.soft((await response.json()).id).toBe(pump.id);
-      await expect(icons.status).toHaveText(
-        `Saved ${names.pump} to your library.`,
-      );
-      await expect.soft(row).toContainText('In my library');
-      await expect.soft(row.getByTestId('icon-use')).toBeFocused();
-      await expect.soft(icons.inLibrary(pump.id)).toHaveCount(1);
-      await icons.close.click();
-      await expect.soft(icons.choose).toBeFocused();
     });
 
     expect.soft(prompts, 'dialogs opened during the test').toEqual([]);
@@ -2013,42 +2108,48 @@ test(
 );
 
 // Seeds a draft of styledDocument() whose web-01 device and Zone group use
-// `icon`, which the document carries: no library has it.
+// `icon`, a copy of which the document carries: the server has no icon of
+// its name.
 async function seedWithIcon(builder, testInfo, icon) {
   const { edgeIds: _, ...document } = styledDocument(
     `icons-${testInfo.project.name}-${Date.now()}`,
-    { 'web-01': { icon: icon.id } },
+    { 'web-01': { icon: icon.name } },
   );
 
-  document.nodes.find((node) => node.kind === 'group').group.icon = icon.id;
+  document.nodes.find((node) => node.kind === 'group').group.icon = icon.name;
 
-  return builder.seedDraft({ ...document, icons: { [icon.id]: icon.entry } });
+  return builder.seedDraft({
+    ...document,
+    icons: { [icon.name]: icon.entry },
+  });
 }
 
-test('a custom icon a diagram carries is removed and undone, copied with its node and drawn in the downloads, and a file that is no picture is refused', async ({
+test('a copy of a custom icon a diagram carries is removed and undone, copied with its node and drawn in the downloads, and a file that is no picture is refused', async ({
   page,
   builder,
   issues,
 }, testInfo) => {
   const color = ownColor();
-  const plc = iconOf(pngOf(32, 16, color), 'plc');
+  const plc = iconOf(pngOf(32, 16, color), iconName('plc'));
   const src = `data:image/png;base64,${plc.data}`;
   const draft = await seedWithIcon(builder, testInfo, plc);
   const icons = iconField(page, builder);
   const web01 = builder.node('web-01', 'device');
   const zone = builder.node('Zone', 'group');
-  // The requests for the icon library, which only the dialog makes.
-  const asked = [];
+  // The requests that change the icon library: none here adds an icon.
+  const changes = [];
 
   page.on('request', (sent) => {
-    if (new URL(sent.url()).pathname.endsWith('/builder/icons')) {
-      asked.push(sent.method());
+    const { pathname } = new URL(sent.url());
+
+    if (pathname.includes('/builder/icons') && sent.method() !== 'GET') {
+      changes.push(`${sent.method()} ${pathname}`);
     }
   });
 
   await builder.openDraft(draft);
 
-  await test.step('the diagram shows the icon it carries, and asks no library for it', async () => {
+  await test.step('the diagram shows the copy it carries, of an icon the server lacks', async () => {
     await expect(customIcon(web01)).toHaveAttribute('src', src);
     await expect.soft(customIcon(zone)).toHaveAttribute('src', src);
     await expect.soft(customIcon(builder.outlineItem('Zone'))).toHaveCount(1);
@@ -2057,9 +2158,8 @@ test('a custom icon a diagram carries is removed and undone, copied with its nod
       .soft(customIcon(builder.node('web-02', 'device')))
       .toHaveCount(0);
     await builder.selectInOutline('web-01');
-    await expect.soft(icons.name).toHaveText('plc');
+    await expect.soft(icons.name).toHaveText(plc.name);
     await expect.soft(icons.image).toHaveAttribute('src', src);
-    expect.soft(asked, 'requests for the icon library').toEqual([]);
   });
 
   await test.step('Remove takes the icon off the device at once; the diagram keeps it while the group uses it, and drops it after', async () => {
@@ -2082,7 +2182,7 @@ test('a custom icon a diagram carries is removed and undone, copied with its nod
           devicesOf(doc).find((node) => node.device.hostname === 'web-01')
             .device,
       ],
-      [{ [plc.id]: plc.entry }, false],
+      [{ [plc.name]: plc.entry }, false],
     );
 
     await builder.selectInOutline('Zone');
@@ -2109,7 +2209,7 @@ test('a custom icon a diagram carries is removed and undone, copied with its nod
     await expect(customIcon(web01)).toHaveAttribute('src', src);
     await builder.waitSaved();
     await builder.persisted(draft, (doc) => doc.icons, {
-      [plc.id]: plc.entry,
+      [plc.name]: plc.entry,
     });
   });
 
@@ -2124,9 +2224,9 @@ test('a custom icon a diagram carries is removed and undone, copied with its nod
       draft,
       (doc) => [
         Object.keys(doc.icons),
-        devicesOf(doc).filter((node) => node.device.icon === plc.id).length,
+        devicesOf(doc).filter((node) => node.device.icon === plc.name).length,
       ],
-      [[plc.id], 2],
+      [[plc.name], 2],
     );
   });
 
@@ -2163,14 +2263,18 @@ test('a custom icon a diagram carries is removed and undone, copied with its nod
   await test.step('what cannot be made an icon is said in the dialog, and nothing is added', async () => {
     await builder.selectInOutline('web-01');
     await icons.choose.click();
-    await expect(icons.heading).toHaveText(/^My library \(/);
+    await expect(icons.heading).toHaveText(/Server icons \(/);
     await expect
-      .soft(icons.inDiagram(plc.id))
+      .soft(icons.dialog.getByRole('heading', { name: 'In this diagram (1)' }))
+      .toBeVisible();
+    await expect
+      .soft(icons.inDiagram(plc.name))
       .toContainText('32 × 16 pixels, 0.1 KiB');
-    // The library does not have the diagram's icon: it can be saved there.
+    // The server lacks the diagram's icon: it can be added there.
     await expect
-      .soft(icons.inDiagram(plc.id).getByTestId('icon-save'))
-      .toHaveAccessibleName('Save plc to my library');
+      .soft(icons.inDiagram(plc.name).getByTestId('icon-add-to-server'))
+      .toHaveAccessibleName(`Add ${plc.name} to the server`);
+    await expect.soft(icons.inLibrary(plc.name)).toHaveCount(0);
 
     await icons.file.setInputFiles({
       name: 'notes.png',
@@ -2189,65 +2293,91 @@ test('a custom icon a diagram carries is removed and undone, copied with its nod
     await expect(icons.error).toHaveText(
       'The image file is larger than 5 MiB.',
     );
-    expect.soft(asked, 'requests for the icon library').toEqual(['GET']);
+    await expect.soft(icons.uploadName).toHaveCount(0);
 
-    // What the server says of an icon it refuses is shown as a sentence.
+    // What the server says of an icon it refuses is shown as a sentence,
+    // and the form stays.
     const refuse = (route) =>
       route.request().method() === 'POST'
         ? route.fulfill({
-            status: 422,
+            status: 413,
             json: {
-              message: 'icon library is full: at most 64 icons',
-              cause: 'builder: invalid request: icon library: is full',
+              message:
+                'icon library is full for you: each user may upload at most 64 icons',
+              cause: 'builder: too large: icon library',
             },
           })
         : route.fallback();
 
     await page.route('**/api/v1/builder/icons', refuse);
-    await icons.file.setInputFiles({
-      name: 'one-more.png',
-      mimeType: 'image/png',
-      buffer: pngOf(8, 8, ownColor()),
-    });
+    await uploadIcon(
+      page,
+      icons,
+      {
+        name: 'one-more.png',
+        mimeType: 'image/png',
+        buffer: pngOf(8, 8, ownColor()),
+      },
+      iconName('one-more'),
+    );
     await expect(icons.error).toHaveText(
-      'Icon library is full: at most 64 icons.',
+      'Icon library is full for you: each user may upload at most 64 icons.',
     );
     await expect.soft(icons.status).toHaveCount(0);
-    await expect.soft(icons.upload).not.toHaveAttribute('aria-busy', 'true');
+    await expect.soft(icons.uploadName).toBeVisible();
+    await expect.soft(icons.upload).toHaveCount(0);
     await page.unroute('**/api/v1/builder/icons', refuse);
+    await icons.uploadCancel.click();
+    await expect.soft(icons.upload).toBeFocused();
     await icons.close.click();
+    expect
+      .soft(changes, 'changes of the icon library')
+      .toEqual([expect.stringMatching(/^POST .*\/builder\/icons$/)]);
   });
 
-  await test.step('a library that cannot be read says why, and Retry reads it', async () => {
+  await test.step('a library that cannot be read says why, the diagram still shows its copy, and Retry reads it', async () => {
     const fail = (route) =>
-      route.fulfill({
-        status: 500,
-        json: { message: 'unable to list the icons' },
-      });
+      route.request().method() === 'GET'
+        ? route.fulfill({
+            status: 500,
+            json: { message: 'unable to list the icons' },
+          })
+        : route.fallback();
 
+    // A new page load reads the library from the start.
+    await builder.waitSaved();
     await page.route('**/api/v1/builder/icons', fail);
+    await builder.openDraft(draft);
+    await expect(customIcon(web01)).toHaveAttribute('src', src);
+    await builder.selectInOutline('web-01');
     await icons.choose.click();
     await expect(
       icons.dialog.getByRole('alert').filter({ hasText: 'Unable' }),
     ).toHaveText('Unable to list the icons.');
-    await expect.soft(icons.heading).toHaveText('My library');
-    // The diagram's own icons need no library.
+    await expect.soft(icons.heading).toHaveText('Server icons (0)');
+    // The diagram's copies need no library, but cannot be added to it.
     await expect
-      .soft(icons.inDiagram(plc.id).getByTestId('icon-use'))
+      .soft(icons.inDiagram(plc.name).getByTestId('icon-use'))
       .toBeVisible();
+    await expect
+      .soft(icons.inDiagram(plc.name).getByTestId('icon-add-to-server'))
+      .toHaveCount(0);
 
     await page.unroute('**/api/v1/builder/icons', fail);
     await icons.dialog.getByTestId('icon-retry').click();
-    await expect(icons.heading).toHaveText(/^My library \(\d+ of 64, /);
+    await expect(icons.heading).toHaveText(/^\s*Server icons \(\d+\)\s*$/);
+    await expect
+      .soft(icons.inDiagram(plc.name).getByTestId('icon-add-to-server'))
+      .toBeVisible();
     await icons.close.click();
   });
 
   expectNoFatal(issues);
 });
 
-// A device for each of `icons`, in rows of eight, each with its icon, which
-// the document carries: as many custom icons as a diagram holds, when there
-// are MAX_DOCUMENT_ICONS.
+// A device for each of `icons`, in rows of eight, each with its icon, a copy
+// of which the document carries: as many copies as a diagram holds, when
+// there are MAX_DOCUMENT_ICONS.
 function iconsDocument(name, icons) {
   return {
     ...blankDocument(name, {
@@ -2262,7 +2392,7 @@ function iconsDocument(name, icons) {
           device: {
             hostname,
             iconKey: 'linux',
-            icon: icon.id,
+            icon: icon.name,
             spec: {
               type: 'VirtualMachine',
               general: { hostname, vm_type: 'kvm' },
@@ -2277,13 +2407,13 @@ function iconsDocument(name, icons) {
         };
       }),
     }),
-    icons: Object.fromEntries(icons.map((icon) => [icon.id, icon.entry])),
+    icons: Object.fromEntries(icons.map((icon) => [icon.name, icon.entry])),
   };
 }
 
 // Custom icons are images in their own colors, the same in both themes, on
 // nodes, outline rows and the rows of the Custom icons dialog. The diagram
-// here is full: it carries as many icons as a document holds.
+// here is full: it carries as many copies as a document holds.
 for (const scheme of ['light', 'dark']) {
   test(
     `axe finds no serious violations in the Custom icons dialog and on a canvas of custom icons in the ${scheme} theme`,
@@ -2294,20 +2424,26 @@ for (const scheme of ['light', 'dark']) {
       const icons = Array.from({ length: MAX_DOCUMENT_ICONS }, (_, index) =>
         iconOf(
           pngOf(4, 4, ownColor()),
-          `icon ${String(index).padStart(2, '0')}`,
+          `icon-${String(index).padStart(2, '0')}`,
         ),
       );
       const spare = iconOf(pngOf(4, 4, ownColor()), 'spare');
-      // The library the dialog reads: one icon the diagram has, and one it
-      // has not. No test's library is touched.
+      // The library the dialog reads: one icon the diagram has a copy of,
+      // with the same bytes, and one it has not, which another name also
+      // names. No test's icons are touched.
       const listed = [icons[0], spare].map((icon) => ({
+        name: icon.name,
         id: icon.id,
-        name: icon.entry.name,
+        owner: 'alice',
         width: 4,
         height: 4,
         bytes: Buffer.from(icon.data, 'base64').length,
         created: '2026-10-02T12:00:00Z',
+        updated: '2026-10-02T12:00:00Z',
+        aliases: icon === spare ? ['spare-old'] : [],
         data: icon.data,
+        canRename: true,
+        canDelete: true,
       }));
 
       await page.route('**/api/v1/builder/icons', (route) =>
@@ -2316,6 +2452,7 @@ for (const scheme of ['light', 'dark']) {
             icons: listed,
             maxIcons: 64,
             maxBytes: 1048576,
+            usedIcons: listed.length,
             usedBytes: listed.reduce((sum, icon) => sum + icon.bytes, 0),
           },
         }),
@@ -2342,7 +2479,7 @@ for (const scheme of ['light', 'dark']) {
         .toHaveCount(MAX_DOCUMENT_ICONS);
 
       await builder.selectInOutline('plc-01');
-      await expect(field.name).toHaveText('icon 01');
+      await expect(field.name).toHaveText('icon-01');
       await expectAccessible(page, {
         soft: true,
         label: `axe on a canvas of custom icons and the Custom icon field (${scheme})`,
@@ -2354,30 +2491,39 @@ for (const scheme of ['light', 'dark']) {
           name: `In this diagram (${MAX_DOCUMENT_ICONS})`,
         }),
       ).toBeVisible();
-      await expect(field.heading).toHaveText(
-        /^My library \(2 of 64, [\d.]+ KiB of 1 MiB\)$/,
+      await expect(field.heading).toHaveText('Server icons (2)');
+      await expect(field.usage).toHaveText(
+        /^\s*You uploaded 2 of 64 icons, [\d.]+ KiB of 1 MiB\.\s*$/,
       );
       await expect
-        .soft(field.inDiagram(icons[0].id))
-        .toContainText('In my library');
-      // Every icon of the diagram but the one the library has can be saved
-      // to it.
+        .soft(field.inDiagram(icons[0].name))
+        .toContainText('On the server');
+      // Every copy of the diagram but the one the server holds as it is can
+      // be added to the server.
       await expect
-        .soft(field.dialog.getByTestId('icon-save'))
+        .soft(field.dialog.getByTestId('icon-add-to-server'))
         .toHaveCount(MAX_DOCUMENT_ICONS - 1);
+      await expect
+        .soft(field.inLibrary(spare.name))
+        .toContainText('Uploaded by alice · 4 × 4 pixels');
+      await expect
+        .soft(field.inLibrary(spare.name))
+        .toContainText('also named spare-old');
 
-      // The diagram is full for an icon it does not carry yet.
-      await field.inLibrary(spare.id).getByTestId('icon-use').click();
-      await expect(field.error).toHaveText(
-        `This diagram already has ${MAX_DOCUMENT_ICONS} custom icons. Remove one from a node first.`,
-      );
-      await expect(field.dialog).toBeVisible();
+      // The rename form, open in the dialog.
+      const rename = field.inLibrary(spare.name).getByTestId('icon-rename');
+
+      await rename.click();
+      await expect(field.renameName).toBeFocused();
       await expectAccessible(page, {
         soft: true,
-        label: `axe on the Custom icons dialog, with its error (${scheme})`,
+        label: `axe on the Custom icons dialog, renaming an icon (${scheme})`,
       });
+      await field.renameCancel.click();
+      await expect(field.renameName).toHaveCount(0);
+      await expect.soft(rename).toBeFocused();
 
-      await field.inLibrary(spare.id).getByTestId('icon-delete').click();
+      await field.inLibrary(spare.name).getByTestId('icon-delete').click();
       const confirm = page.getByTestId('builder-confirm');
 
       await expect(confirm).toBeVisible();
@@ -2389,23 +2535,28 @@ for (const scheme of ['light', 'dark']) {
       await expect(confirm).toHaveCount(0);
       // Focus is back on the button that asked.
       await expect
-        .soft(field.inLibrary(spare.id).getByTestId('icon-delete'))
+        .soft(field.inLibrary(spare.name).getByTestId('icon-delete'))
         .toBeFocused();
 
-      // An icon the diagram has can still be given to another node.
-      await field.inDiagram(icons[0].id).getByTestId('icon-use').click();
+      // A copy the diagram carries can be given to another node.
+      await field.inDiagram(icons[0].name).getByTestId('icon-use').click();
       await expect(field.dialog).toHaveCount(0);
       await expect
         .soft(builder)
-        .toHaveAnnounced('Changed the custom icon of Device plc-01 to icon 00');
-      await expect.soft(field.name).toHaveText('icon 00');
-      // The icon it had is no longer used, and leaves the diagram: the
-      // diagram keeps one icon fewer than it holds.
+        .toHaveAnnounced('Changed the custom icon of Device plc-01 to icon-00');
+      await expect.soft(field.name).toHaveText('icon-00');
+      // The copy plc-01 used is no longer used, and the server holds
+      // icon-00 as it is: both leave the diagram, which keeps two copies
+      // fewer than it holds.
       await builder.waitSaved();
       await builder.persisted(
         draft,
-        (doc) => [Object.keys(doc.icons).length, icons[1].id in doc.icons],
-        [MAX_DOCUMENT_ICONS - 1, false],
+        (doc) => [
+          Object.keys(doc.icons).length,
+          icons[0].name in doc.icons,
+          icons[1].name in doc.icons,
+        ],
+        [MAX_DOCUMENT_ICONS - 2, false, false],
         { soft: true },
       );
 
