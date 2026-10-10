@@ -25,11 +25,19 @@ Locks, by the tabs that answer within 500 ms over the BroadcastChannel
 
 ### Merge on conflict
 
-A save refused with `412` reads the draft again; when its head (current
-snapshot, cursor, snapshot count) is the one the queue last confirmed, the
-queue takes the new ETag and sends again, else the conflict carries the draft
-as read (`serverCopyOf` in `autosave.js`) to `store.mergeConflict`, as does a
-recovered queue based on an older ETag. The store merges three ways
+A save refused with `412` reads the draft again. When the draft as read
+already holds the save, an earlier delivery of it was stored and its answer
+never came: for a snapshot, the newest snapshot is the current one and
+carries the save's `opId`; for a cursor move, the current snapshot is its
+target and the snapshot count is the one the queue last confirmed. The read
+is then the save's answer, with the stamp of the document it holds
+(`alreadyStored` in `autosave.js`): nothing is merged or sent again. Else,
+when its head (current snapshot, cursor, snapshot count) is the one the
+queue last confirmed, the queue takes the new ETag and sends again, else
+the conflict carries the draft as read (`serverCopyOf` in `autosave.js`) to
+`store.mergeConflict`, as does a recovered queue based on an older ETag
+(a recovered queue whose operations the server holds goes on without one:
+`appliedOperations`). The store merges three ways
 (`mergeDocuments(base, mine, theirs)` in `merge.js`): the base is the snapshot
 of the queue's `serverHead`, from the undo history or the queue's entries, else
 `GET .../snapshots/{snapshot}` (given `MERGE_BASE_TIMEOUT_MS`, 15 s, while the

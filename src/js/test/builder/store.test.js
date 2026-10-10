@@ -2322,6 +2322,40 @@ describe('merging a conflict', () => {
     }
   });
 
+  test('a save sent again after the server stored it, its answer lost, is saved and never merged', async () => {
+    const { bravo } = await opened();
+    const moved = move(toRaw(store.doc), bravo.id, { x: 96, y: 240 });
+
+    // The server stored the save as s2, but its answer never came: the
+    // save reaches the server again and is refused, and the read after
+    // the refusal finds it, newest and current.
+    api.appendSnapshot.mockRejectedValueOnce(refused());
+    api.getDraft.mockImplementationOnce(async () => ({
+      ...read(moved, { by: 'alice' }),
+      history: [
+        { id: 's1', current: false },
+        { id: 's2', opId: store.history.currentEntry().id, current: true },
+      ],
+    }));
+    store.commit(moved, 'Moved bravo');
+
+    await vi.waitFor(() => {
+      expect(api.getDraft).toHaveBeenCalledTimes(1);
+      expect(store.saveState.status).toBe('saved');
+    });
+
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
+    expect(mergeDocuments).not.toHaveBeenCalled();
+    expect(store.merge).toBeNull();
+    expect(store.hasConflict).toBe(false);
+    expect(store.etag).toBe('"2"');
+    // The edit stays one undo step, which is the snapshot the server
+    // stored.
+    expect(store.history.undoLabel()).toBe('Moved bravo');
+    expect(store.history.currentEntry().serverSnapshotId).toBe('s2');
+    expect(findNode(store.doc, bravo.id).position).toEqual({ x: 96, y: 240 });
+  });
+
   test('discarding from the review clears the merge and loads the server version', async () => {
     const { base, alpha } = await opened();
     const theirs = rename(base, alpha.id, 'theirs');

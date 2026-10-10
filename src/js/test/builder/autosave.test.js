@@ -1452,6 +1452,214 @@ describe('a conflict with another save', () => {
   });
 });
 
+describe('a save the server stored, whose answer never came', () => {
+  const stamp = {
+    createdBy: 'alice',
+    createdAt: '2026-10-10T12:20:57Z',
+    updatedBy: 'alice',
+    updatedAt: '2026-10-10T12:21:01Z',
+  };
+
+  // The draft as read after the refusal: the save of `opId` stored s2,
+  // which is still its newest and current snapshot.
+  function readAfter(opId, document) {
+    return {
+      draft: {
+        id: 'd1',
+        owner: 'alice',
+        snapshotId: 's2',
+        cursor: 1,
+        snapshots: 2,
+        lastModifiedBy: 'alice',
+      },
+      document,
+      history: [
+        { id: 's1', current: false },
+        { id: 's2', opId, current: true },
+      ],
+      cursor: 1,
+      etag: '"3"',
+    };
+  }
+
+  // A queue at snapshot s1 with ETag "1", whose next save is refused
+  // because an earlier delivery of it was stored, and whose read after
+  // the refusal finds `read`. The save after that is stored as s3.
+  async function deliveredTwice(read, extra = {}) {
+    const api = fakeApi({
+      appendSnapshot: vi
+        .fn(async () => ({
+          draft: {
+            id: 'd1',
+            owner: 'alice',
+            snapshotId: 's3',
+            cursor: 2,
+            snapshots: 3,
+          },
+          history: null,
+          etag: '"5"',
+        }))
+        .mockRejectedValueOnce(conflict()),
+      getDraft: vi.fn(async () => read),
+      ...extra,
+    });
+    const onConflict = vi.fn();
+    const onDraft = vi.fn();
+    const queue = createAutosave({
+      api,
+      store: memoryStore(),
+      actor: 'alice',
+      onConflict,
+      onDraft,
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+      isOnline: () => true,
+    });
+
+    await queue.attach({
+      owner: 'alice',
+      draftId: 'd1',
+      etag: '"1"',
+      serverHead: { snapshotId: 's1', cursor: 0, snapshots: 1 },
+    });
+
+    return { api, onConflict, onDraft, queue };
+  }
+
+  test('is saved: no conflict, no merge, and nothing sent again', async () => {
+    const own = named(doc, 'Mine');
+    const { api, onConflict, onDraft, queue } = await deliveredTwice(
+      readAfter('c1', withStamp(own, stamp)),
+    );
+
+    const state = await queue.commit({ id: 'c1', label: 'one', snapshot: own });
+
+    expect(state).toMatchObject({ status: 'saved', pending: 0, etag: '"3"' });
+    expect(onConflict).not.toHaveBeenCalled();
+    expect(queue.serverCopy).toBeNull();
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
+    expect(api.getDraft).toHaveBeenCalledTimes(1);
+    // The queue goes on from the draft as read, and its entry is the
+    // snapshot the server stored, with the stamp it stored it with.
+    expect(queue.record.etag).toBe('"3"');
+    expect(queue.record.serverHead).toEqual({
+      snapshotId: 's2',
+      cursor: 1,
+      snapshots: 2,
+    });
+    expect(queue.record.entries).toEqual([
+      expect.objectContaining({
+        id: 'c1',
+        serverSnapshotId: 's2',
+        snapshot: withStamp(own, stamp),
+      }),
+    ]);
+    expect(onDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        etag: '"3"',
+        draft: expect.objectContaining({ stamp }),
+      }),
+      expect.objectContaining({ opId: 'c1', kind: 'snapshot' }),
+    );
+
+    // The next edit goes on from it.
+    expect(
+      (await queue.commit({ id: 'c2', label: 'two', snapshot: doc })).status,
+    ).toBe('saved');
+    expect(api.appendSnapshot).toHaveBeenLastCalledWith(
+      'alice',
+      'd1',
+      expect.objectContaining({ opId: 'c2' }),
+      '"3"',
+    );
+  });
+
+  test('stands as a conflict once someone else saved after it', async () => {
+    const read = readAfter('c1', doc);
+    const { onConflict, queue } = await deliveredTwice({
+      ...read,
+      draft: {
+        ...read.draft,
+        snapshotId: 's3',
+        cursor: 2,
+        snapshots: 3,
+        lastModifiedBy: 'bob',
+      },
+      history: [
+        { id: 's1', current: false },
+        { id: 's2', opId: 'c1', current: false },
+        { id: 's3', opId: 'bob-1', current: true },
+      ],
+      cursor: 2,
+    });
+
+    const state = await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(state).toMatchObject({ status: 'conflict', lastModifiedBy: 'bob' });
+    expect(onConflict).toHaveBeenCalledTimes(1);
+    expect(queue.record.queue).toHaveLength(1);
+  });
+
+  test('stands as a conflict when the newest snapshot is another save', async () => {
+    const { onConflict, queue } = await deliveredTwice(readAfter('bob-1', doc));
+
+    expect(
+      (await queue.commit({ id: 'c1', label: 'one', snapshot: doc })).status,
+    ).toBe('conflict');
+    expect(onConflict).toHaveBeenCalledTimes(1);
+  });
+
+  test('an undo whose answer never came is saved too, unless the draft keeps other snapshots now', async () => {
+    // The draft is at s2, and the undo goes back to s1.
+    const undone = {
+      draft: { id: 'd1', owner: 'alice', snapshotId: 's1', cursor: 0 },
+      document: doc,
+      history: [
+        { id: 's1', current: true },
+        { id: 's2', current: false },
+      ],
+      cursor: 0,
+      etag: '"4"',
+    };
+    const undo = async (snapshots) => {
+      const moveCursor = vi.fn().mockRejectedValueOnce(conflict());
+      const { api, onConflict, queue } = await deliveredTwice(
+        { ...undone, draft: { ...undone.draft, snapshots } },
+        { moveCursor },
+      );
+
+      await queue.attach({
+        owner: 'alice',
+        draftId: 'd1',
+        etag: '"3"',
+        serverHead: { snapshotId: 's2', cursor: 1, snapshots: 2 },
+      });
+
+      const state = await queue.moveCursor({ snapshotId: 's1' });
+
+      return { api, onConflict, queue, state };
+    };
+
+    const saved = await undo(2);
+
+    expect(saved.state.status).toBe('saved');
+    expect(saved.onConflict).not.toHaveBeenCalled();
+    expect(saved.api.moveCursor).toHaveBeenCalledTimes(1);
+    expect(saved.queue.record.etag).toBe('"4"');
+    expect(saved.queue.record.serverHead).toEqual({
+      snapshotId: 's1',
+      cursor: 0,
+      snapshots: 2,
+    });
+
+    // Someone saved a snapshot since: the draft is not what the undo left.
+    const other = await undo(3);
+
+    expect(other.state.status).toBe('conflict');
+    expect(other.onConflict).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('changes that leave the content as it was', () => {
   test('a conflict over the same content takes the new ETag and sends again', async () => {
     const shared = sharedDraft();

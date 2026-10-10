@@ -17,10 +17,13 @@
 // Some changes to a draft leave its content as it was: a change to who it is
 // shared with, or someone else's publish. The queue keeps the head the server
 // last confirmed (serverHead: the current snapshot, the cursor and how many
-// snapshots it keeps), and on a conflict reads the draft again. When the head
-// is the same, the content is what this device last saw, so the queue takes
-// the new ETag and sends again; otherwise the conflict stands, naming who
-// saved last and carrying the draft as read. The read also finds a draft
+// snapshots it keeps), and on a conflict reads the draft again. When the
+// draft as read already holds the operation sent, an earlier delivery of it
+// was stored but its answer never came, so the read is taken as its answer
+// (see alreadyStored). When the head is the same, the content is what this
+// device last saw, so the queue takes the new ETag and sends again;
+// otherwise the conflict stands, naming who saved last and carrying the
+// draft as read. The read also finds a draft
 // that is no longer shared with the user, or that they may now only view
 // (accessLost).
 //
@@ -46,7 +49,7 @@ import { count } from './announce.js';
 import { classifyError, errorMessage, sentence } from './api.js';
 import { DEFAULT_HISTORY_LIMIT } from './history.js';
 import { draftKey, tabRecordKey } from './idb.js';
-import { withStamp } from './model.js';
+import { metadataOf, STAMP_KEYS, withStamp } from './model.js';
 
 export const RETRY_DELAYS = [1000, 2000, 5000, 15000, 30000];
 
@@ -207,6 +210,73 @@ export function sameHead(a, b) {
     a.cursor === b.cursor &&
     a.snapshots === b.snapshots
   );
+}
+
+/**
+ * The draft as read again after the server refused an operation with 412,
+ * as the answer to that operation, when the server already holds it: an
+ * earlier delivery of the same operation was stored, but its answer never
+ * came (the connection dropped once the server had stored it, or the
+ * request reached the server twice). A snapshot is held when the draft's
+ * newest snapshot is its current one and carries the operation's id (see
+ * send); a cursor move when the draft's current snapshot is the one it
+ * moves to and the draft keeps as many snapshots as when the queue last
+ * heard from the server. The draft is then what the operation left, so the
+ * queue goes on from it instead of meeting a conflict with its own save. A
+ * snapshot's answer carries the stamp the stored document holds, as a
+ * save's does (see stampOf).
+ *
+ * @param {object} op the operation the server refused
+ * @param {object} envelope readEnvelope() result of the draft read again
+ * @param {object|null} confirmed headOf() the draft the queue last heard
+ *   of from the server (its serverHead)
+ * @param {string} [target] the snapshot id a cursor move goes to
+ * @returns {object|null} the envelope to go on from, or null when the
+ *   server does not hold the operation
+ */
+export function alreadyStored(op, envelope, confirmed, target = '') {
+  const head = headOf(envelope);
+
+  if (!envelope?.etag || !head) {
+    return null;
+  }
+
+  if (op?.kind === 'cursor') {
+    const moved =
+      Boolean(target) &&
+      head.snapshotId === target &&
+      head.snapshots === confirmed?.snapshots;
+
+    return moved ? envelope : null;
+  }
+
+  const newest = Array.isArray(envelope.history)
+    ? envelope.history.at(-1)
+    : null;
+
+  if (
+    op?.kind !== 'snapshot' ||
+    !op.opId ||
+    newest?.opId !== op.opId ||
+    newest.id !== head.snapshotId
+  ) {
+    return null;
+  }
+
+  if (!envelope.document) {
+    return envelope;
+  }
+
+  const metadata = metadataOf(envelope.document);
+  const stamp = {};
+
+  STAMP_KEYS.forEach((key) => {
+    if (typeof metadata[key] === 'string') {
+      stamp[key] = metadata[key];
+    }
+  });
+
+  return { ...envelope, draft: { ...envelope.draft, stamp } };
 }
 
 /**
@@ -1146,12 +1216,14 @@ export function createAutosave(options = {}) {
   }
 
   /**
-   * Sends `op`. A conflict reads the draft again, and when its head is the
-   * one the server last confirmed, the content is as this device last saw
-   * it: the queue takes the new ETag and sends again, at most MAX_REBASES
-   * times in a row. Otherwise the conflict is thrown, naming who saved last.
-   * A refusal (403 or 404) of a draft someone shared reads it again too, to
-   * tell whether the user lost access.
+   * Sends `op`. A conflict reads the draft again. When the draft as read
+   * already holds the operation, an earlier delivery of it was stored and
+   * its answer never came: the read is its answer (see alreadyStored). When
+   * its head is the one the server last confirmed, the content is as this
+   * device last saw it: the queue takes the new ETag and sends again, at
+   * most MAX_REBASES times in a row. Otherwise the conflict is thrown,
+   * naming who saved last. A refusal (403 or 404) of a draft someone shared
+   * reads it again too, to tell whether the user lost access.
    *
    * @param {object} op queued operation
    * @returns {Promise<object>} the server's envelope
@@ -1175,6 +1247,17 @@ export function createAutosave(options = {}) {
           throw error;
         }
 
+        const delivered = alreadyStored(
+          op,
+          fresh,
+          record.serverHead,
+          targetOf(op),
+        );
+
+        if (delivered) {
+          return delivered;
+        }
+
         if (!fresh?.etag || !sameHead(headOf(fresh), record.serverHead)) {
           throw Object.assign(new Error(error?.message || 'conflict'), {
             response: error?.response,
@@ -1194,12 +1277,21 @@ export function createAutosave(options = {}) {
     }
   }
 
+  // The server snapshot a cursor move goes to: the one it names, or the
+  // one its entry was saved as.
+  function targetOf(op) {
+    if (op.kind !== 'cursor') {
+      return '';
+    }
+
+    const entry = record.entries.find((item) => item.id === op.commitId);
+
+    return op.snapshotId || entry?.serverSnapshotId || '';
+  }
+
   async function send(op) {
     if (op.kind === 'cursor') {
-      const snapshotId =
-        op.snapshotId ||
-        record.entries.find((item) => item.id === op.commitId)
-          ?.serverSnapshotId;
+      const snapshotId = targetOf(op);
 
       if (!snapshotId) {
         throw Object.assign(new Error('missing server snapshot id'), {

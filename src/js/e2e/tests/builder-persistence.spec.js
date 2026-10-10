@@ -1450,6 +1450,42 @@ test.describe('Builder persistence', () => {
         }))
         .toEqual({ drafts: [], entries: 0, copies: [] });
     });
+
+    await test.step('a save that reaches the server twice is stored once, without a conflict', async () => {
+      // The server stores the first save, and then the browser's own
+      // request reaches it too, as a save whose answer was lost and that
+      // is sent again does. The server refuses that one, as its ETag is
+      // stale, and the editor finds its save stored.
+      const sent = [];
+      await page.route(SNAPSHOTS, async (route) => {
+        if (route.request().method() !== 'POST') {
+          return route.fallback();
+        }
+
+        sent.push(route.request().postDataJSON().opId);
+        if (sent.length === 1) {
+          await route.fetch();
+        }
+
+        await route.continue();
+      });
+      const before = await listSnapshots(builder.request, draft);
+      await addDevices(builder, 1);
+      await expectServerCounts(builder, draft, { devices: 4 });
+      await builder.waitSaved();
+      await page.unroute(SNAPSHOTS);
+
+      await expect(page.getByTestId('builder-conflict')).toHaveCount(0);
+      expect(sent, 'snapshots the browser sent').toHaveLength(1);
+      const after = await listSnapshots(builder.request, draft);
+      expect(after.slice(0, -1).map((snapshot) => snapshot.id)).toEqual(
+        before.map((snapshot) => snapshot.id),
+      );
+      expect(after.at(-1).opId).toBe(sent[0]);
+      await expect
+        .poll(() => localDrafts(page))
+        .toEqual({ drafts: [], entries: 0 });
+    });
   });
 
   test(

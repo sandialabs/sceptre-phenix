@@ -239,6 +239,10 @@ The changes stay in this browser even if you close the tab. The next time
 you open the draft in this browser, Builder sends them. Logging out
 deletes changes that are still waiting (see [Logging out](#logging-out)).
 
+When the connection drops after the server saved a change but before its
+answer reached the browser, Builder finds the change saved the next time it
+reaches the server: the change is saved once, and nothing is merged.
+
 ### One draft in several tabs
 
 You can open a draft in more than one tab of the same browser. Each tab shows
