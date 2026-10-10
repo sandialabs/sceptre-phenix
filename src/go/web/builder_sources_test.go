@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,25 +21,6 @@ import (
 	"phenix/web/rbac"
 	"phenix/web/weberror"
 )
-
-// builderConfig returns a minimal stored config of the given kind.
-func builderConfig(t *testing.T, kind, name string) store.Config {
-	t.Helper()
-
-	body := `{
-		"apiVersion": "phenix.sandia.gov/v1",
-		"kind": "` + kind + `",
-		"metadata": {"name": "` + name + `"},
-		"spec": {"nodes": [], "vlans": {"aliases": {}}}
-	}`
-
-	config, err := store.NewConfigFromJSON([]byte(body))
-	if err != nil {
-		t.Fatalf("NewConfigFromJSON returned error: %v", err)
-	}
-
-	return *config
-}
 
 // builderSourceGroups is the grouped JSON view GET /builder/sources
 // returns.
@@ -522,53 +502,53 @@ func TestBuilderGenerateRequests(t *testing.T) {
 	}
 }
 
-// TestBuilderGenerateRequiresKindPermission asserts the kind specific list
-// permission gates generation as well as listing, so a config the caller
-// cannot see is not reachable by naming it directly.
-func TestBuilderGenerateRequiresKindPermission(t *testing.T) {
-	harness := newBuilderHarness(t, builderConfig(t, "Topology", "topo"))
+// TestBuilderDocumentRoutePermissions asks the import and published
+// document routes as roles that may or may not read what a request names.
+// The kind specific list permission gates generation as it gates listing,
+// so a config the caller cannot see is not reachable by naming it; a config
+// the caller cannot read through /configs cannot be read through the
+// Builder; and a published document of a config the caller may not read is
+// answered as one that does not exist.
+func TestBuilderDocumentRoutePermissions(t *testing.T) {
+	harness := newBuilderHarness(t, builderConfig(t, "Topology", "topo"), builderConfig(t, "Topology", "secret"))
+	document := builderPublish(t, harness, "hidden")
 
-	role := builderRole(builderPolicy(
-		[]string{"configs"},
-		[]string{"*", "*/*"},
-		[]string{"list", "get"},
-	))
+	var (
+		// configs list and get on every config, and no topologies
+		// permission.
+		noKind = builderRole(builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"list", "get"}))
+		// configs list and get on a config that is not the one asked for.
+		public = builderRole(builderPolicy([]string{"configs"}, []string{"Topology/public"}, []string{"list", "get"}))
+	)
 
-	recorder := harness.do(builderRequest{
-		method: http.MethodPost,
-		path:   "/builder/generate",
-		body:   `{"source":"Topology/topo"}`,
-		user:   builderTestOwner,
-		role:   &role,
-	})
-
-	if recorder.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusForbidden, recorder.Body)
+	generate := func(source string) builderRequest {
+		return builderRequest{method: http.MethodPost, path: "/builder/generate", body: `{"source":"` + source + `"}`}
 	}
-}
 
-// TestBuilderGenerateFromUnauthorizedSource asserts a caller cannot read a
-// config through the builder that it cannot read through /configs.
-func TestBuilderGenerateFromUnauthorizedSource(t *testing.T) {
-	harness := newBuilderHarness(t, builderConfig(t, "Topology", "secret"))
-
-	role := builderRole(builderPolicy(
-		[]string{"configs"},
-		[]string{"Topology/public"},
-		[]string{"list", "get"},
-	))
-
-	recorder := harness.do(builderRequest{
-		method: http.MethodPost,
-		path:   "/builder/generate",
-		body:   `{"source":"Topology/secret"}`,
-		user:   builderTestOwner,
-		role:   &role,
-	})
-
-	if recorder.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
+	get := func(id string) builderRequest {
+		return builderRequest{method: http.MethodGet, path: "/builder/documents/" + id}
 	}
+
+	runBuilderAccessCases(t, harness, []builderAccessCase{
+		{
+			name: "generating without the kind's list permission", user: builderTestOwner, role: &noKind,
+			request: generate("Topology/topo"), status: http.StatusForbidden, code: bdoc.CodeRequestForbidden,
+		},
+		{
+			name: "generating from a config the role may not read", user: builderTestOwner, role: &public,
+			request: generate("Topology/secret"), status: http.StatusForbidden, code: bdoc.CodeRequestForbidden,
+		},
+		{name: "generating with every permission", user: builderTestOwner, request: generate("Topology/topo"), status: http.StatusOK},
+		{
+			name: "a document of a config the role may not read", user: builderTestOwner, role: &public,
+			request: get(document.ID), status: http.StatusNotFound, code: bdoc.CodeRequestNotFound,
+		},
+		{
+			name: "a document that does not exist", user: builderTestOwner, role: &public,
+			request: get("missing"), status: http.StatusNotFound, code: bdoc.CodeRequestNotFound,
+		},
+		{name: "a document with every permission", user: builderTestOwner, request: get(document.ID), status: http.StatusOK},
+	})
 }
 
 // TestBuilderGenerateResolvesIncludes asserts included topologies are
@@ -838,7 +818,7 @@ func TestBuilderGenerateChoices(t *testing.T) {
 				t.Fatalf("status = %d, want %d: %s", recorder.Code, tt.status, recorder.Body)
 			}
 
-			var refusal builderPublishRefusal
+			var refusal builderErrorBody
 
 			harness.decode(recorder, &refusal)
 
@@ -911,7 +891,7 @@ func TestBuilderGenerateCopy(t *testing.T) {
 			Warnings:           response.Warnings,
 		}
 		if !reflect.DeepEqual(source, want) {
-			t.Errorf("%s: source = %s, want %s", body, asBuilderJSON(t, source), asBuilderJSON(t, want))
+			t.Errorf("%s: source = %s, want %s", body, builderJSON(t, source), builderJSON(t, want))
 		}
 
 		if !reflect.DeepEqual(response.Warnings, plain.Source.Warnings) {
@@ -920,7 +900,7 @@ func TestBuilderGenerateCopy(t *testing.T) {
 
 		if !reflect.DeepEqual(document.Nodes, plain.Nodes) || !reflect.DeepEqual(document.Edges, plain.Edges) ||
 			document.FindDevice("visible-host").Device.IncludedFrom != "visible" {
-			t.Errorf("%s: nodes = %s, want those of a plain import", body, asBuilderJSON(t, document.Nodes))
+			t.Errorf("%s: nodes = %s, want those of a plain import", body, builderJSON(t, document.Nodes))
 		}
 
 		// The response names what was read, not the copy.
@@ -962,7 +942,7 @@ func TestBuilderGenerateCombine(t *testing.T) {
 		Warnings:          response.Warnings,
 	}
 	if !reflect.DeepEqual(document.Source, want) || document.Source.ImportedAt == "" {
-		t.Errorf("source = %s, want %s", asBuilderJSON(t, document.Source), asBuilderJSON(t, want))
+		t.Errorf("source = %s, want %s", builderJSON(t, document.Source), builderJSON(t, want))
 	}
 
 	wantWarnings := []string{
@@ -991,7 +971,7 @@ func TestBuilderGenerateCombine(t *testing.T) {
 
 	if nodes, _ := topology.Spec["nodes"].([]any); len(nodes) != 2 ||
 		!reflect.DeepEqual(topology.Spec["includeTopologies"], []string{"secret", "../outside.yml"}) {
-		t.Errorf("projected topology = %s, want two nodes and the two kept includes", asBuilderJSON(t, topology.Spec))
+		t.Errorf("projected topology = %s, want two nodes and the two kept includes", builderJSON(t, topology.Spec))
 	}
 
 	// A caller who may read every include, and names the new topology.
@@ -1001,7 +981,7 @@ func TestBuilderGenerateCombine(t *testing.T) {
 	if document.Metadata.Name != "site_all" || document.FindDevice("secret-host") == nil ||
 		!reflect.DeepEqual(document.Source.IncludeTopologies, []string{"../outside.yml"}) {
 		t.Errorf("name = %q, source = %s, want site_all with secret-host and only the file still included",
-			document.Metadata.Name, asBuilderJSON(t, document.Source))
+			document.Metadata.Name, builderJSON(t, document.Source))
 	}
 
 	// A config file is combined the same way, from the store.
@@ -1011,7 +991,7 @@ func TestBuilderGenerateCombine(t *testing.T) {
 	}
 
 	response, document = builderGenerate(t, harness, nil,
-		asBuilderJSON(t, map[string]string{"content": string(content), "includes": "combine"}))
+		builderJSON(t, map[string]string{"content": string(content), "includes": "combine"}))
 
 	if document.Metadata.Name != "root-combined" || document.FindDevice("visible-host") == nil || response.Source.Stored {
 		t.Errorf("name = %q, source = %+v, want root-combined made from the file", document.Metadata.Name, response.Source)
@@ -1151,38 +1131,6 @@ func TestBuilderListSourcesIncludeCount(t *testing.T) {
 	if got := counts(builderListSources(t, harness, &role).Topologies); !reflect.DeepEqual(got, want) {
 		t.Errorf("topology include counts for a caller who may get only root = %v, want %v", got, want)
 	}
-}
-
-// builderPublish stores a published document and its target config,
-// standing in for the publish endpoint exercised separately.
-func builderPublish(t *testing.T, harness *builderHarness, target string) *bapi.PublishedDocument {
-	t.Helper()
-
-	document, err := harness.service.PutPublishedDocument(
-		context.Background(),
-		bapi.PutPublishedDocumentRequest{
-			Target:     target,
-			Kind:       "Topology",
-			Actor:      builderTestOwner,
-			Document:   builderDocument(t, target),
-			DraftID:    "",
-			SnapshotID: "",
-		},
-	)
-	if err != nil {
-		t.Fatalf("PutPublishedDocument returned error: %v", err)
-	}
-
-	reference, err := document.Reference().EncodeReference()
-	if err != nil {
-		t.Fatalf("EncodeReference returned error: %v", err)
-	}
-
-	config := builderConfig(t, builderKindTopology, target)
-	config.Metadata.Annotations = store.Annotations{bapi.DocumentAnnotation: reference}
-	harness.configs = append(harness.configs, config)
-
-	return document
 }
 
 func TestBuilderListDocuments(t *testing.T) {
@@ -1339,54 +1287,6 @@ func TestBuilderGetDocument(t *testing.T) {
 	if !strings.Contains(string(response.Document), "topo") {
 		t.Error("response does not carry the published document")
 	}
-}
-
-// TestBuilderGetDocumentNoLeak asserts a document belonging to a config the
-// caller may not read is indistinguishable from one that does not exist.
-func TestBuilderGetDocumentNoLeak(t *testing.T) {
-	harness := newBuilderHarness(t)
-	document := builderPublish(t, harness, "secret")
-
-	role := builderRole(builderPolicy(
-		[]string{"configs"},
-		[]string{"Topology/public"},
-		[]string{"list", "get"},
-	))
-
-	paths := []string{"/builder/documents/" + document.ID, "/builder/documents/missing"}
-
-	for _, path := range paths {
-		recorder := harness.do(builderRequest{
-			method: http.MethodGet,
-			path:   path,
-			user:   builderTestOwner,
-			role:   &role,
-		})
-
-		if recorder.Code != http.StatusNotFound {
-			t.Errorf("GET %s: status = %d, want %d", path, recorder.Code, http.StatusNotFound)
-		}
-	}
-}
-
-// builderPutDocument stores a published document of a target that no
-// config references yet.
-func builderPutDocument(t *testing.T, harness *builderHarness, kind, target, content string) *bapi.PublishedDocument {
-	t.Helper()
-
-	document, err := harness.service.PutPublishedDocument(t.Context(), bapi.PutPublishedDocumentRequest{
-		Target:     target,
-		Kind:       kind,
-		Actor:      builderTestOwner,
-		Document:   builderDocument(t, content),
-		DraftID:    "",
-		SnapshotID: "",
-	})
-	if err != nil {
-		t.Fatalf("PutPublishedDocument returned error: %v", err)
-	}
-
-	return document
 }
 
 // TestBuilderDeleteDocument deletes a published topology: the config

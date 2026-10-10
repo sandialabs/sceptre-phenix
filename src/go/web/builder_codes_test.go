@@ -12,14 +12,6 @@ import (
 	"phenix/web/weberror"
 )
 
-// builderErrorBody is what a Builder route answers a refused request with.
-type builderErrorBody struct {
-	Code    string       `json:"code"`
-	Message string       `json:"message"`
-	Cause   string       `json:"cause"`
-	Issues  []bdoc.Issue `json:"issues"`
-}
-
 // TestBuilderErrorsCarryCodes asserts a refused Builder request is answered
 // with the code of its failure, which the registry holds, and, for a document
 // that does not validate, each issue with its code and where it is.

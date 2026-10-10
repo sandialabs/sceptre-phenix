@@ -97,7 +97,7 @@ func TestBuilderPublishDryRunWritesNothing(t *testing.T) {
 	slices.SortFunc(aliases, func(a, b bapi.VLANAliasChange) int { return strings.Compare(a.Name, b.Name) })
 
 	draft := createBuilderPublishDraft(t, harness, document, "Topology/root")
-	before := asBuilderJSON(t, harness.configs)
+	before := builderJSON(t, harness.configs)
 
 	recorder, preview := previewBuilderDraft(t, harness, draft, nil,
 		`{"mode":"topology-experiment","topology":{"name":"root","action":"update"},`+
@@ -121,7 +121,7 @@ func TestBuilderPublishDryRunWritesNothing(t *testing.T) {
 	if preview.Status != builderPublishPreviewStatus || len(preview.Errors) != 0 ||
 		!reflect.DeepEqual(preview.Changes, want) {
 		t.Fatalf("preview = %s, want status preview, no errors and changes %s",
-			recorder.Body.String(), asBuilderJSON(t, want))
+			recorder.Body.String(), builderJSON(t, want))
 	}
 
 	if harness.configWrites != 0 || harness.experimentWrites != 0 ||
@@ -130,7 +130,7 @@ func TestBuilderPublishDryRunWritesNothing(t *testing.T) {
 			harness.configWrites, harness.experimentWrites, harness.store.Count(bapi.NamespacePublished))
 	}
 
-	if after := asBuilderJSON(t, harness.configs); after != before {
+	if after := builderJSON(t, harness.configs); after != before {
 		t.Fatalf("a dry run changed the configs:\n%s\nwas\n%s", after, before)
 	}
 
@@ -354,7 +354,7 @@ func imagedPreview(t *testing.T, disks builderOption) (*builderHarness, builderD
 
 	device := document.FindDevice(previewHostA)
 	if device == nil {
-		t.Fatalf("device %s is not in the document: %s", previewHostA, asBuilderJSON(t, document))
+		t.Fatalf("device %s is not in the document: %s", previewHostA, builderJSON(t, document))
 	}
 
 	device.Device.Spec["hardware"] = imagedNode(previewHostA, previewKeptImage, previewAddedImage)["hardware"]
@@ -459,7 +459,7 @@ func TestBuilderPublishDryRunComparesDiskImages(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(preview.Changes.Images, want) {
-				t.Errorf("images = %s, want %s", asBuilderJSON(t, preview.Changes.Images), asBuilderJSON(t, want))
+				t.Errorf("images = %s, want %s", builderJSON(t, preview.Changes.Images), builderJSON(t, want))
 			}
 
 			if listed := calls > 0; listed != test.listed {
@@ -501,7 +501,7 @@ func setPreviewAliases(t *testing.T, document *bdoc.Document, aliases map[string
 	}
 
 	if set != len(aliases) {
-		t.Fatalf("networks = %s, want each of %v", asBuilderJSON(t, document.Networks), aliases)
+		t.Fatalf("networks = %s, want each of %v", builderJSON(t, document.Networks), aliases)
 	}
 }
 
@@ -587,7 +587,7 @@ func TestBuilderPublishDryRunOfAnExperimentUpdateWritesNothing(t *testing.T) {
 	}
 
 	var (
-		configs     = asBuilderJSON(t, harness.configs)
+		configs     = builderJSON(t, harness.configs)
 		writes      = harness.configWrites
 		experiments = harness.experimentWrites
 		broadcasts  = harness.broadcasts
@@ -611,7 +611,7 @@ func TestBuilderPublishDryRunOfAnExperimentUpdateWritesNothing(t *testing.T) {
 		!reflect.DeepEqual(preview.Changes.Scenarios,
 			[]bapi.ScenarioAnnotation{{Name: "already", Change: bapi.ScenarioUnchanged}}) {
 		t.Fatalf("preview = %s, want experiment lab updated, aliases %s and scenario already unchanged",
-			asBuilderJSON(t, preview), asBuilderJSON(t, wantAliases))
+			builderJSON(t, preview), builderJSON(t, wantAliases))
 	}
 
 	if harness.configWrites != writes || harness.experimentWrites != experiments ||
@@ -624,7 +624,7 @@ func TestBuilderPublishDryRunOfAnExperimentUpdateWritesNothing(t *testing.T) {
 			len(harness.reconfigured)-configured)
 	}
 
-	if after := asBuilderJSON(t, harness.configs); after != configs {
+	if after := builderJSON(t, harness.configs); after != configs {
 		t.Fatalf("a dry run changed the configs:\n%s\nwas\n%s", after, configs)
 	}
 
@@ -633,9 +633,9 @@ func TestBuilderPublishDryRunOfAnExperimentUpdateWritesNothing(t *testing.T) {
 		t.Fatalf("GetDraft returned error: %v", err)
 	}
 
-	if after.ETag() != before.ETag() || asBuilderJSON(t, after.Publication) != asBuilderJSON(t, before.Publication) {
+	if after.ETag() != before.ETag() || builderJSON(t, after.Publication) != builderJSON(t, before.Publication) {
 		t.Fatalf("draft after a dry run = %s with publication %s, want it as it was (%s, %s)",
-			after.ETag(), asBuilderJSON(t, after.Publication), before.ETag(), asBuilderJSON(t, before.Publication))
+			after.ETag(), builderJSON(t, after.Publication), before.ETag(), builderJSON(t, before.Publication))
 	}
 }
 
@@ -693,7 +693,7 @@ func TestBuilderPublishIfMatchComesBeforeTheBody(t *testing.T) {
 				return
 			}
 
-			var refusal builderPublishRefusal
+			var refusal builderErrorBody
 
 			harness.decode(recorder, &refusal)
 

@@ -2,7 +2,6 @@ package web
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"log/slog"
 	"maps"
@@ -16,7 +15,6 @@ import (
 	bapi "phenix/api/builder"
 	"phenix/store"
 	bdoc "phenix/types/builder"
-	v1 "phenix/types/version/v1"
 	"phenix/util/plog"
 	"phenix/util/plog/plogtest"
 	"phenix/web/rbac"
@@ -33,57 +31,6 @@ const (
 	builderShareDave  = "dave"
 	builderShareErin  = "erin"
 )
-
-// builderShareConfigVerbs is every config verb.
-var builderShareConfigVerbs = []string{"list", "get", "create", "update", "delete"} //nolint:gochecknoglobals // test fixture
-
-// builderShareRole returns a role holding the given config verbs, and the
-// given "builder-drafts" verbs on every draft. The config resources are
-// enumerated so no wildcard grants "builder-drafts" by accident.
-func builderShareRole(configVerbs []string, draftVerbs ...string) *rbac.Role {
-	policies := []*v1.PolicySpec{builderPolicy(
-		[]string{"configs", "schemas", "topologies", "experiments", "scenarios"},
-		[]string{"*", "*/*"},
-		configVerbs,
-	)}
-
-	if len(draftVerbs) != 0 {
-		policies = append(policies, builderPolicy(
-			[]string{builderDraftsResource}, []string{"*", "*/*"}, draftVerbs,
-		))
-	}
-
-	role := builderRole(policies...)
-
-	return &role
-}
-
-// builderShareUser returns the User config of an account created at created.
-func builderShareUser(name, created string) store.Config {
-	return store.Config{
-		Version: "phenix.sandia.gov/v1",
-		Kind:    "User",
-		Metadata: store.ConfigMetadata{
-			Name: name, Created: created, Updated: created, Annotations: nil,
-		},
-		Spec:   nil,
-		Status: nil,
-	}
-}
-
-// setUser gives the named user an account created at created, replacing
-// any it had, as deleting a user and creating one of the same name does.
-func (h *builderHarness) setUser(name, created string) {
-	h.removeUser(name)
-	h.configs = append(h.configs, builderShareUser(name, created))
-}
-
-// removeUser deletes the account of the named user.
-func (h *builderHarness) removeUser(name string) {
-	h.configs = slices.DeleteFunc(h.configs, func(config store.Config) bool {
-		return config.Kind == "User" && config.Metadata.Name == name
-	})
-}
 
 // builderShareFixture is a draft owned by alice in a harness where alice,
 // bob, carol, dave and erin all have accounts.
@@ -119,12 +66,7 @@ func newBuilderShareFixture(t *testing.T) *builderShareFixture {
 func (f *builderShareFixture) meta() *bapi.DraftMetadata {
 	f.t.Helper()
 
-	meta, err := f.harness.service.GetDraft(context.Background(), f.id)
-	if err != nil {
-		f.t.Fatalf("GetDraft returned error: %v", err)
-	}
-
-	return meta
+	return mustDraftMeta(f.t, f.harness, f.id)
 }
 
 // builderShareBody returns the body of a request replacing who a draft is
@@ -156,7 +98,7 @@ func (f *builderShareFixture) put(ifMatch, body string) *httptest.ResponseRecord
 		path:    f.path + "/shares",
 		body:    body,
 		user:    builderTestOwner,
-		role:    builderShareRole(builderShareConfigVerbs),
+		role:    builderConfigsRole(),
 		ifMatch: ifMatch,
 	})
 }
@@ -373,7 +315,7 @@ const builderShareDenied = "builder cross-user draft request not allowed"
 // it is not shared with the caller or the share's account is gone, is
 // answered exactly as a draft that does not exist, on every route.
 func TestBuilderShareNoLeak(t *testing.T) {
-	role := builderShareRole(builderShareConfigVerbs)
+	role := builderConfigsRole()
 
 	for _, route := range builderShareRoutes {
 		t.Run(route.method+" "+route.route, func(t *testing.T) {
@@ -527,7 +469,7 @@ func TestBuilderShareDamagedDraftOtherOwner(t *testing.T) {
 	harness := fixture.harness
 	etag := fixture.damage()
 
-	all := builderShareRole(builderShareConfigVerbs)
+	all := builderConfigsRole()
 	scoped := builderRole(
 		builderPolicy([]string{"configs"}, []string{"*", "*/*"}, builderShareConfigVerbs),
 		builderPolicy([]string{builderDraftsResource}, []string{builderShareErin + "/*"}, []string{"list", "get", "update"}),
@@ -638,7 +580,7 @@ func TestBuilderShareListing(t *testing.T) {
 
 	recorder := harness.do(builderRequest{
 		method: http.MethodPut, path: "/builder/drafts/" + builderShareCarol + "/" + carols + "/shares",
-		user: builderShareCarol, role: builderShareRole(builderShareConfigVerbs), ifMatch: `"shares-0"`,
+		user: builderShareCarol, role: builderConfigsRole(), ifMatch: `"shares-0"`,
 		body: builderShareBody(t, builderTestPeer+":view"),
 	})
 	if recorder.Code != http.StatusOK {
@@ -711,9 +653,9 @@ func checkBuilderShareOwnerListing(t *testing.T, fixture *builderShareFixture, u
 		account  bool
 		canShare bool
 	}{
-		{name: "owner", role: builderShareRole(builderShareConfigVerbs), account: true, canShare: true},
+		{name: "owner", role: builderConfigsRole(), account: true, canShare: true},
 		{name: "owner without config update", role: builderShareRole([]string{"list", "get"}), account: true},
-		{name: "owner without an account", role: builderShareRole(builderShareConfigVerbs)},
+		{name: "owner without an account", role: builderConfigsRole()},
 	} {
 		if !test.account {
 			fixture.harness.removeUser(builderTestOwner)
@@ -745,7 +687,7 @@ func checkBuilderShareOwnerListing(t *testing.T, fixture *builderShareFixture, u
 func (f *builderShareFixture) shares() (builderSharesResponse, *httptest.ResponseRecorder) {
 	f.t.Helper()
 
-	recorder := f.as(builderTestOwner, builderShareRole(builderShareConfigVerbs), http.MethodGet, "/shares")
+	recorder := f.as(builderTestOwner, builderConfigsRole(), http.MethodGet, "/shares")
 	if recorder.Code != http.StatusOK {
 		f.t.Fatalf("GET shares: status = %d: %s", recorder.Code, recorder.Body)
 	}
@@ -864,7 +806,7 @@ func TestBuilderShareCandidates(t *testing.T) {
 	}
 
 	viewing := func(names ...string) *rbac.Role {
-		role := builderShareRole(builderShareConfigVerbs)
+		role := builderConfigsRole()
 		role.Spec.Policies = append(role.Spec.Policies, builderPolicy([]string{"users"}, names, []string{"list"}))
 
 		return role
@@ -878,7 +820,7 @@ func TestBuilderShareCandidates(t *testing.T) {
 
 	// Every one of them is listed without users list, and a users list
 	// naming only some of them lists the rest too.
-	for _, role := range []*rbac.Role{builderShareRole(builderShareConfigVerbs), viewing("carol"), viewing("*")} {
+	for _, role := range []*rbac.Role{builderConfigsRole(), viewing("carol"), viewing("*")} {
 		if got, _ := candidates(role); !slices.Equal(got, want) {
 			t.Fatalf("candidates = %+v, want %+v", got, want)
 		}
@@ -889,7 +831,7 @@ func TestBuilderShareCandidates(t *testing.T) {
 	fixture.share(builderTestPeer+":view", builderShareCarol+":edit", builderShareErin+":view")
 
 	withDave := slices.Insert(slices.Clone(want), 2, builderShareCandidate{Username: builderShareDave, Name: ""})
-	if got, _ := candidates(builderShareRole(builderShareConfigVerbs)); !slices.Equal(got, withDave) {
+	if got, _ := candidates(builderConfigsRole()); !slices.Equal(got, withDave) {
 		t.Fatalf("candidates = %+v, want %+v", got, withDave)
 	}
 
@@ -898,7 +840,7 @@ func TestBuilderShareCandidates(t *testing.T) {
 		harness.removeUser(user)
 	}
 
-	if got, body := candidates(builderShareRole(builderShareConfigVerbs)); len(got) != 0 ||
+	if got, body := candidates(builderConfigsRole()); len(got) != 0 ||
 		!strings.Contains(body, `"users":[]`) {
 		t.Fatalf("candidates without other accounts = %s, want none", body)
 	}
@@ -1017,7 +959,7 @@ func TestBuilderPutSharesRequests(t *testing.T) {
 		then func()
 	}{
 		{name: "without config update", role: builderShareRole([]string{"list", "get"}), then: func() {}},
-		{name: "without an account", role: builderShareRole(builderShareConfigVerbs), then: func() {
+		{name: "without an account", role: builderConfigsRole(), then: func() {
 			fixture.harness.removeUser(owner)
 		}},
 	} {
@@ -1083,7 +1025,7 @@ func TestBuilderPutShares(t *testing.T) {
 	// A save at the draft's ETag before the change is stale.
 	recorder = fixture.harness.do(builderRequest{
 		method: http.MethodPost, path: fixture.path + "/snapshots", user: builderTestPeer,
-		role:    builderShareRole(builderShareConfigVerbs),
+		role:    builderConfigsRole(),
 		body:    `{"document":` + string(builderDocument(t, "second")) + `}`,
 		ifMatch: before.ETag(),
 	})
@@ -1121,7 +1063,7 @@ func TestBuilderShareLifecycle(t *testing.T) {
 	var (
 		harness = fixture.harness
 		bob     = builderTestPeer
-		all     = builderShareRole(builderShareConfigVerbs)
+		all     = builderConfigsRole()
 		reads   = builderShareRole([]string{"list", "get"})
 		none    = builderShareRole([]string{"create"})
 	)
@@ -1231,7 +1173,7 @@ func raceBuilderShares(fixture *builderShareFixture, race func()) *bool {
 // removal left it.
 func TestBuilderShareRevokeRacesSave(t *testing.T) {
 	fixture := newBuilderShareFixture(t)
-	all := builderShareRole(builderShareConfigVerbs)
+	all := builderConfigsRole()
 
 	// Two snapshots, so there is something to undo.
 	if code := fixture.as(builderTestOwner, all, http.MethodPost, "/snapshots").Code; code != http.StatusCreated {
@@ -1278,7 +1220,7 @@ func TestBuilderShareRacesSave(t *testing.T) {
 	fixture := newBuilderShareFixture(t)
 	fixture.share(builderTestPeer + ":edit")
 
-	all := builderShareRole(builderShareConfigVerbs)
+	all := builderConfigsRole()
 
 	raced := raceBuilderShares(fixture, func() {
 		if code := fixture.as(builderTestPeer, all, http.MethodPost, "/snapshots").Code; code != http.StatusCreated {
@@ -1327,7 +1269,7 @@ func TestBuilderShareEditorPublishes(t *testing.T) {
 			recorder.Code, fixture.harness.configWrites, http.StatusForbidden)
 	}
 
-	recorder = fixture.as(builderTestPeer, builderShareRole(builderShareConfigVerbs), http.MethodPost, "/publish")
+	recorder = fixture.as(builderTestPeer, builderConfigsRole(), http.MethodPost, "/publish")
 
 	meta := fixture.meta()
 
@@ -1346,7 +1288,7 @@ func TestBuilderShareFork(t *testing.T) {
 	fixture.harness.removeUser(builderShareCarol)
 
 	forkOf := builderTestOwner + "/" + fixture.id
-	all := builderShareRole(builderShareConfigVerbs)
+	all := builderConfigsRole()
 
 	for user, status := range map[string]int{
 		builderTestPeer:   http.StatusCreated,
@@ -1373,7 +1315,7 @@ func TestBuilderShareFork(t *testing.T) {
 func TestBuilderShareAuditLog(t *testing.T) {
 	fixture := newBuilderShareFixture(t)
 	logs := plogtest.Capture(t)
-	all := builderShareRole(builderShareConfigVerbs)
+	all := builderConfigsRole()
 
 	const changed = "builder draft sharing changed"
 

@@ -8,7 +8,6 @@ import (
 	"hash/crc32"
 	"maps"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -21,45 +20,6 @@ import (
 	"phenix/util/common"
 	"phenix/web/rbac"
 )
-
-func createBuilderPublishDraft(
-	t *testing.T,
-	harness *builderHarness,
-	document *bdoc.Document,
-	sourceToken ...string,
-) builderDraftResponse {
-	t.Helper()
-
-	data, err := bapi.EncodeDocument(document)
-	if err != nil {
-		t.Fatalf("EncodeDocument returned error: %v", err)
-	}
-
-	request := map[string]any{"document": json.RawMessage(data)}
-	if len(sourceToken) != 0 {
-		request["sourceToken"] = sourceToken[0]
-	}
-
-	body, err := json.Marshal(request)
-	if err != nil {
-		t.Fatalf("encoding draft request: %v", err)
-	}
-
-	recorder := harness.do(builderRequest{
-		method: http.MethodPost,
-		path:   "/builder/drafts",
-		body:   string(body),
-		user:   builderTestOwner,
-	})
-	if recorder.Code != http.StatusCreated {
-		t.Fatalf("creating publish draft: status %d: %s", recorder.Code, recorder.Body.String())
-	}
-
-	var draft builderDraftResponse
-	harness.decode(recorder, &draft)
-
-	return draft
-}
 
 func TestBuilderPublishUpdatePreservesAnnotations(t *testing.T) {
 	topology := builderConfig(t, builderKindTopology, "existing")
@@ -958,7 +918,7 @@ func TestBuilderGenerateExperimentScenario(t *testing.T) {
 		t.Fatalf("encoding the experiment file: %v", err)
 	}
 
-	upload := asBuilderJSON(t, map[string]string{"content": string(content)})
+	upload := builderJSON(t, map[string]string{"content": string(content)})
 
 	hidden := builderRole(
 		builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"list", "get", "create"}),
@@ -1334,7 +1294,7 @@ func TestBuilderPublishExperimentWithIncludedTopology(t *testing.T) {
 	document := generateBuilderDocument(t, harness, "Experiment/exp")
 
 	if included := document.FindDevice("inc-host"); included == nil || included.Device.IncludedFrom != "shared" {
-		t.Fatalf("inc-host is not marked as included: %s", asBuilderJSON(t, document))
+		t.Fatalf("inc-host is not marked as included: %s", builderJSON(t, document))
 	}
 
 	draft := createBuilderPublishDraft(t, harness, document, "Experiment/exp")
@@ -1426,17 +1386,6 @@ func generateBuilderDocument(t *testing.T, harness *builderHarness, source strin
 	document, _ := postBuilderGenerate(t, harness, nil, `{"source":"`+source+`"}`)
 
 	return document
-}
-
-func asBuilderJSON(t *testing.T, value any) string {
-	t.Helper()
-
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatalf("encoding %T: %v", value, err)
-	}
-
-	return string(data)
 }
 
 // TestBuilderPublishRejectsIncludedHostnameClash refuses, before writing
@@ -1552,7 +1501,7 @@ func TestBuilderPublishCopyCreatesNewTopology(t *testing.T) {
 // the topologies it was combined from stay as they were.
 func TestBuilderPublishCombinedCreatesNewTopology(t *testing.T) {
 	harness := newBuilderHarness(t, includedTopologyFixture(t, "shared")...)
-	before := asBuilderJSON(t, harness.configs)
+	before := builderJSON(t, harness.configs)
 
 	document, _ := postBuilderGenerate(t, harness, nil, `{"source":"Topology/root","includes":"combine"}`)
 	draft := createBuilderPublishDraft(t, harness, document, "")
@@ -1575,7 +1524,7 @@ func TestBuilderPublishCombinedCreatesNewTopology(t *testing.T) {
 		t.Errorf("root-combined includes %v, want nothing", created.Spec["includeTopologies"])
 	}
 
-	if after := asBuilderJSON(t, harness.configs[:3]); after != before {
+	if after := builderJSON(t, harness.configs[:3]); after != before {
 		t.Errorf("the configs it was combined from = %s, want them unchanged: %s", after, before)
 	}
 }
@@ -1741,103 +1690,6 @@ func TestBuilderPublishExperimentUpdateChecksIncludes(t *testing.T) {
 			}
 		})
 	}
-}
-
-// publishBuilderDraft posts a publish intent for the draft, which must be
-// answered with the given status, and returns the publish response, or for a
-// refusal, which has none, the reason the server gave.
-func publishBuilderDraft(
-	t *testing.T,
-	harness *builderHarness,
-	draft builderDraftResponse,
-	body string,
-	status int,
-) (builderPublishResponse, string) {
-	t.Helper()
-
-	response, refusal := publishBuilderDraftAs(t, harness, draft, nil, body, status)
-
-	return response, refusal.Message
-}
-
-// builderPublishRefusal is what the server says of a publication it refused:
-// the code of the refusal, its words, and the issues it is made of.
-type builderPublishRefusal struct {
-	Code     string            `json:"code"`
-	Message  string            `json:"message"`
-	Cause    string            `json:"cause"`
-	Metadata map[string]string `json:"metadata"`
-	Issues   []bdoc.Issue      `json:"issues"`
-}
-
-// publishBuilderDraftAs is [publishBuilderDraft] with the caller holding role
-// (the full role when nil), returning all of a refusal.
-func publishBuilderDraftAs(
-	t *testing.T,
-	harness *builderHarness,
-	draft builderDraftResponse,
-	role *rbac.Role,
-	body string,
-	status int,
-) (builderPublishResponse, builderPublishRefusal) {
-	t.Helper()
-
-	recorder := harness.do(builderRequest{
-		method: http.MethodPost,
-		path:   "/builder/drafts/" + draft.Owner + "/" + draft.ID + "/publish",
-		body:   body, user: builderTestOwner, role: role, ifMatch: draft.ETag,
-	})
-	if recorder.Code != status {
-		t.Fatalf("publish %s: status = %d, want %d: %s", body, recorder.Code, status, recorder.Body.String())
-	}
-
-	var (
-		response builderPublishResponse
-		refusal  builderPublishRefusal
-	)
-
-	harness.decode(recorder, &response)
-	harness.decode(recorder, &refusal)
-
-	return response, refusal
-}
-
-// editBuilderDraft adds a device to the document and saves it as the draft's
-// next snapshot, as an edit in the editor does, and returns the draft after
-// it.
-func editBuilderDraft(
-	t *testing.T,
-	harness *builderHarness,
-	draft builderDraftResponse,
-	document *bdoc.Document,
-	hostname string,
-) builderDraftResponse {
-	t.Helper()
-
-	document.Nodes = append(document.Nodes, bdoc.Node{
-		ID: bdoc.DeviceNodeID(hostname), Kind: bdoc.NodeKindDevice, Label: hostname,
-		Device: &bdoc.Device{Hostname: hostname, Spec: includeNode(hostname), Interfaces: []bdoc.InterfaceHandle{}},
-	})
-
-	data, err := bapi.EncodeDocument(document)
-	if err != nil {
-		t.Fatalf("EncodeDocument returned error: %v", err)
-	}
-
-	recorder := harness.do(builderRequest{
-		method: http.MethodPost,
-		path:   "/builder/drafts/" + draft.Owner + "/" + draft.ID + "/snapshots",
-		body:   `{"summary":"added ` + hostname + `","document":` + string(data) + `}`,
-		user:   builderTestOwner, ifMatch: draft.ETag,
-	})
-	if recorder.Code != http.StatusCreated {
-		t.Fatalf("saving the edit: status = %d: %s", recorder.Code, recorder.Body.String())
-	}
-
-	var edited builderDraftResponse
-	harness.decode(recorder, &edited)
-
-	return edited
 }
 
 // openedBuilderDocument is a published document as the editor opens it.
@@ -2072,34 +1924,6 @@ func TestBuilderPublishAgainAfterTopologyDeleted(t *testing.T) {
 	}
 }
 
-// forkBuilderDraft creates a draft for the user that forks the draft named
-// forkOf ("<owner>/<draft id>"), as saving the editor's history as a new
-// draft does, and returns the answer.
-func forkBuilderDraft(
-	t *testing.T,
-	harness *builderHarness,
-	user string,
-	role *rbac.Role,
-	forkOf string,
-	document *bdoc.Document,
-) *httptest.ResponseRecorder {
-	t.Helper()
-
-	data, err := bapi.EncodeDocument(document)
-	if err != nil {
-		t.Fatalf("EncodeDocument returned error: %v", err)
-	}
-
-	body, err := json.Marshal(map[string]any{"forkOf": forkOf, "document": json.RawMessage(data)})
-	if err != nil {
-		t.Fatalf("encoding fork request: %v", err)
-	}
-
-	return harness.do(builderRequest{
-		method: http.MethodPost, path: "/builder/drafts", body: string(body), user: user, role: role,
-	})
-}
-
 // TestBuilderPublishForkUpdatesWhatItsDraftPublished saves a draft's
 // edited history as a new draft, as the editor does when the draft changed
 // on the server, and publishes it. The fork updates the topology the draft
@@ -2248,14 +2072,14 @@ func TestBuilderPublishForkUpdatesWhatItsDraftPublished(t *testing.T) {
 
 	t.Run("refused to a user who may not read the draft", func(t *testing.T) {
 		harness, original, document := start(t)
-		owner := builderOwnerRole()
+		owner := builderConfigsRole()
 
 		for _, forkOf := range []string{
 			original.Owner + "/" + original.ID,
 			original.Owner + "/id-missing",
 			original.ID,
 		} {
-			recorder := forkBuilderDraft(t, harness, builderTestPeer, &owner, forkOf, document)
+			recorder := forkBuilderDraft(t, harness, builderTestPeer, owner, forkOf, document)
 			if recorder.Code != http.StatusNotFound {
 				t.Errorf("fork of %q: status = %d, want %d: %s",
 					forkOf, recorder.Code, http.StatusNotFound, recorder.Body.String())
@@ -2263,7 +2087,7 @@ func TestBuilderPublishForkUpdatesWhatItsDraftPublished(t *testing.T) {
 		}
 
 		recorder := harness.do(builderRequest{
-			method: http.MethodGet, path: "/builder/drafts", user: builderTestPeer, role: &owner,
+			method: http.MethodGet, path: "/builder/drafts", user: builderTestPeer, role: owner,
 		})
 
 		var listing struct {

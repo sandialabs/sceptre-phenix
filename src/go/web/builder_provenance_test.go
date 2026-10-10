@@ -58,7 +58,7 @@ func postBuilderDraft(
 
 	recorder := harness.do(builderRequest{
 		method: http.MethodPost, path: "/builder/drafts", user: user,
-		body: string(mustBuilderJSON(t, fields)),
+		body: builderJSON(t, fields),
 	})
 
 	var draft builderDraftResponse
@@ -258,12 +258,12 @@ func TestBuilderStampNamesTheSaver(t *testing.T) {
 
 	// A value no document may hold refuses the save, though it would have
 	// been replaced.
-	invalid := mustBuilderJSON(t, map[string]any{"document": json.RawMessage(
+	invalid := builderJSON(t, map[string]any{"document": json.RawMessage(
 		strings.Replace(string(builderDocument(t, "bad")), `"metadata": {`, `"metadata": {"updatedAt": "today",`, 1),
 	)})
 
 	recorder := harness.do(builderRequest{
-		method: http.MethodPost, path: fixture.path + "/snapshots", body: string(invalid),
+		method: http.MethodPost, path: fixture.path + "/snapshots", body: invalid,
 		user: builderTestOwner, ifMatch: saved.ETag,
 	})
 	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), "updatedAt") {
@@ -530,7 +530,7 @@ func TestBuilderFileDraftKeepsTheFileDocument(t *testing.T) {
 		}
 
 		// A save writes the last edit, and no creator the file did not name.
-		saved := saveBuilderDraft(t, harness, builderTestOwner, draft, mustBuilderJSON(t, opened.document))
+		saved := saveBuilderDraft(t, harness, builderTestOwner, draft, []byte(builderJSON(t, opened.document)))
 
 		edit := bdoc.Provenance{
 			CreatedBy: want.CreatedBy, CreatedAt: want.CreatedAt, UpdatedBy: builderTestOwner,
@@ -746,7 +746,7 @@ func TestBuilderDraftSourceFile(t *testing.T) {
 		} {
 			recorder, _ := postBuilderDraft(t, harness, builderTestOwner, fields)
 
-			var refusal builderPublishRefusal
+			var refusal builderErrorBody
 
 			harness.decode(recorder, &refusal)
 

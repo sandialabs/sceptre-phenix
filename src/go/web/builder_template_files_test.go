@@ -169,7 +169,7 @@ func TestBuilderTemplateFileIconsBelongToNoUser(t *testing.T) {
 		return builderIconResponse{}
 	}
 
-	if icon := listed(builderIconUser()); icon.Owner != "" || icon.CanRename || icon.CanDelete {
+	if icon := listed(builderConfigsRole()); icon.Owner != "" || icon.CanRename || icon.CanDelete {
 		t.Fatalf("rtu-icon is listed to %s as %+v, want no owner, and neither rename nor delete", account, icon)
 	}
 
@@ -177,7 +177,7 @@ func TestBuilderTemplateFileIconsBelongToNoUser(t *testing.T) {
 		{http.MethodPut, `{"name":"rtu-renamed"}`},
 		{http.MethodDelete, ""},
 	} {
-		recorder := harness.iconRequest(request.method, "rtu-icon", request.body, account, builderIconUser())
+		recorder := harness.iconRequest(request.method, "rtu-icon", request.body, account, builderConfigsRole())
 		if recorder.Code != http.StatusForbidden {
 			t.Errorf("%s rtu-icon as %s: status = %d, want %d: %s",
 				request.method, account, recorder.Code, http.StatusForbidden, recorder.Body)

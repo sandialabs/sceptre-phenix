@@ -74,12 +74,11 @@ func preflightFixture(t *testing.T, hostReads *atomic.Int32, configs ...store.Co
 	return harness, createBuilderPublishDraft(t, harness, document)
 }
 
-// postBuilderPreflight asks for the preflight checks of draft as user, with
-// role (nil for full access).
+// postBuilderPreflight asks for the preflight checks of draft as its owner
+// alice, with role (nil for full access).
 func postBuilderPreflight(
 	harness *builderHarness,
 	draft builderDraftResponse,
-	user string,
 	role *rbac.Role,
 	body string,
 ) *httptest.ResponseRecorder {
@@ -87,7 +86,7 @@ func postBuilderPreflight(
 		method: http.MethodPost,
 		path:   "/builder/drafts/" + draft.Owner + "/" + draft.ID + "/preflight",
 		body:   body,
-		user:   user,
+		user:   builderTestOwner,
 		role:   role,
 	})
 }
@@ -132,7 +131,7 @@ func TestBuilderPreflightReportsEachCheck(t *testing.T) {
 	drafts := harness.store.Count(bapi.NamespaceDrafts)
 	published := harness.store.Count(bapi.NamespacePublished)
 
-	report := preflightReport(t, harness, postBuilderPreflight(harness, draft, builderTestOwner, nil,
+	report := preflightReport(t, harness, postBuilderPreflight(harness, draft, nil,
 		`{"checks":["disks","apps","capacity","network"]}`))
 
 	names := make([]bapi.PreflightCheck, len(report.Checks))
@@ -170,9 +169,45 @@ func TestBuilderPreflightReportsEachCheck(t *testing.T) {
 	}
 }
 
+// TestBuilderPreflightRoutePermissions asks for the preflight checks of a
+// draft as callers with and without what reading the draft takes, which is
+// what GET of the draft takes: a caller with no identity, or whose role may
+// list the sources of the checks but not get configs, is refused; another
+// user, with whom the draft is not shared, is answered as if it did not
+// exist; and a request naming an unknown check is refused as malformed.
+func TestBuilderPreflightRoutePermissions(t *testing.T) {
+	var hostReads atomic.Int32
+
+	harness, draft := preflightFixture(t, &hostReads)
+
+	var (
+		noConfigs = builderRole(preflightLister())
+		path      = "/builder/drafts/" + draft.Owner + "/" + draft.ID + "/preflight"
+		capacity  = builderRequest{method: http.MethodPost, path: path, body: `{"checks":["capacity"]}`}
+		unknown   = builderRequest{method: http.MethodPost, path: path, body: `{"checks":["everything"]}`}
+	)
+
+	runBuilderAccessCases(t, harness, []builderAccessCase{
+		{name: "with every permission", user: builderTestOwner, request: capacity, status: http.StatusOK},
+		{name: "with no identity", request: capacity, status: http.StatusForbidden, code: bdoc.CodeRequestForbidden},
+		{
+			name: "without configs get", user: builderTestOwner, role: &noConfigs,
+			request: capacity, status: http.StatusForbidden, code: bdoc.CodeRequestForbidden,
+		},
+		{
+			name: "another user's draft", user: builderTestPeer, role: builderConfigsRole(),
+			request: capacity, status: http.StatusNotFound, code: bdoc.CodeRequestNotFound,
+		},
+		{
+			name: "an unknown check", user: builderTestOwner,
+			request: unknown, status: http.StatusBadRequest, code: bdoc.CodeRequestInvalid,
+		},
+	})
+}
+
 // TestBuilderPreflightFollowsRBAC reports as unavailable each check whose
 // source the caller's role may not list, says why, and still makes the
-// others; reading the draft needs what GET of the draft needs.
+// others.
 func TestBuilderPreflightFollowsRBAC(t *testing.T) {
 	var hostReads atomic.Int32
 
@@ -182,7 +217,7 @@ func TestBuilderPreflightFollowsRBAC(t *testing.T) {
 		[]string{"configs", "scenarios", "topologies", "experiments"}, []string{"*", "*/*"}, []string{"list", "get"},
 	))
 
-	report := preflightReport(t, harness, postBuilderPreflight(harness, draft, builderTestOwner, &reader,
+	report := preflightReport(t, harness, postBuilderPreflight(harness, draft, &reader,
 		`{"checks":["capacity","network","disks","apps"]}`))
 
 	if !slices.Equal(report.Unavailable, bapi.PreflightChecks()) {
@@ -207,20 +242,6 @@ func TestBuilderPreflightFollowsRBAC(t *testing.T) {
 
 	if got := hostReads.Load(); got != 0 {
 		t.Fatalf("the cluster hosts were read %d times for a role that may not list them", got)
-	}
-
-	noConfigs := builderRole(builderPolicy([]string{"hosts", "disks", "applications"}, []string{"*"}, []string{"list"}))
-
-	recorder := postBuilderPreflight(harness, draft, builderTestOwner, &noConfigs, `{"checks":["capacity"]}`)
-	if recorder.Code != http.StatusForbidden {
-		t.Fatalf("preflight without configs get: status = %d, want 403", recorder.Code)
-	}
-
-	stranger := builderOwnerRole()
-
-	recorder = postBuilderPreflight(harness, draft, builderTestPeer, &stranger, `{"checks":["capacity"]}`)
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("preflight of another user's draft: status = %d, want 404", recorder.Code)
 	}
 }
 
@@ -269,7 +290,7 @@ func TestBuilderPreflightAppsNeedScenarioRead(t *testing.T) {
 			builderPolicy([]string{"scenarios", "topologies"}, []string{"*"}, []string{"list", "get"}),
 		),
 	} {
-		report := preflightReport(t, harness, postBuilderPreflight(harness, draft, builderTestOwner, &role,
+		report := preflightReport(t, harness, postBuilderPreflight(harness, draft, &role,
 			`{"checks":["apps"]}`))
 
 		apps := preflightResultOf(t, report, bapi.PreflightApps)
@@ -294,7 +315,7 @@ func TestBuilderPreflightAppsScenarioMissing(t *testing.T) {
 	document.Scenarios = []string{"sc", "gone"}
 	draft := createBuilderPublishDraft(t, harness, document)
 
-	apps := preflightResultOf(t, preflightReport(t, harness, postBuilderPreflight(harness, draft, builderTestOwner, nil,
+	apps := preflightResultOf(t, preflightReport(t, harness, postBuilderPreflight(harness, draft, nil,
 		`{"checks":["apps"]}`)), bapi.PreflightApps)
 
 	issue := preflightIssue(t, apps, bdoc.CodePreflightScenarioMissing)
@@ -342,7 +363,7 @@ func TestBuilderPreflightExperimentNeedsRead(t *testing.T) {
 		},
 		{name: "an experiment that does not exist", role: builderFullRole(), experiment: "nope"},
 	} {
-		network := preflightResultOf(t, preflightReport(t, harness, postBuilderPreflight(harness, draft, builderTestOwner,
+		network := preflightResultOf(t, preflightReport(t, harness, postBuilderPreflight(harness, draft,
 			&test.role, `{"checks":["network"],"experiment":"`+test.experiment+`"}`)), bapi.PreflightNetwork)
 
 		reason := "experiment " + test.experiment + " does not exist, or your role may not read it, " +
@@ -378,7 +399,7 @@ func TestBuilderPreflightAliasesNeedExperimentsList(t *testing.T) {
 		builderPolicy([]string{"configs", "topologies", "scenarios"}, []string{"*", "*/*"}, []string{"list", "get"}),
 	)
 
-	network := preflightResultOf(t, preflightReport(t, harness, postBuilderPreflight(harness, draft, builderTestOwner,
+	network := preflightResultOf(t, preflightReport(t, harness, postBuilderPreflight(harness, draft,
 		&role, `{"checks":["network"]}`)), bapi.PreflightNetwork)
 
 	reason := "your role may not list experiments, so VLAN aliases were not checked"
@@ -414,7 +435,7 @@ func TestBuilderPreflightRefusesBadRequests(t *testing.T) {
 		`{"checks":["apps"],"more":true}`,
 		`{"checks":["network"],"experiment":"two words"}`,
 	} {
-		recorder := postBuilderPreflight(harness, draft, builderTestOwner, nil, body)
+		recorder := postBuilderPreflight(harness, draft, nil, body)
 
 		var refusal struct {
 			Code string `json:"code"`
@@ -455,7 +476,7 @@ func TestBuilderPreflightNetworkReadsExperiments(t *testing.T) {
 	document.Networks[0].Alias = &alias
 	draft := createBuilderPublishDraft(t, harness, document)
 
-	result := preflightResultOf(t, preflightReport(t, harness, postBuilderPreflight(harness, draft, builderTestOwner, nil,
+	result := preflightResultOf(t, preflightReport(t, harness, postBuilderPreflight(harness, draft, nil,
 		`{"checks":["network"],"experiment":"exp"}`)), bapi.PreflightNetwork)
 
 	codes := make([]bdoc.Code, len(result.Issues))

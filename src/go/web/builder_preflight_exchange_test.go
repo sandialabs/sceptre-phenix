@@ -70,7 +70,7 @@ func TestBuilderPreflightAnswersAsRecorded(t *testing.T) {
 	document.Scenarios = []string{"ops"}
 	draft := createBuilderPublishDraft(t, harness, document)
 
-	recorder := postBuilderPreflight(harness, draft, builderTestOwner, nil, request.String())
+	recorder := postBuilderPreflight(harness, draft, nil, request.String())
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("preflight status = %d: %s", recorder.Code, recorder.Body.String())
 	}

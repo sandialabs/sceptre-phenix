@@ -51,18 +51,6 @@ func builderTemplateContentOf(name, icon string) builderTemplateContent {
 	}
 }
 
-// builderJSON encodes a request body.
-func builderJSON(t *testing.T, value any) string {
-	t.Helper()
-
-	body, err := json.Marshal(value)
-	if err != nil {
-		t.Fatalf("encoding the request: %v", err)
-	}
-
-	return string(body)
-}
-
 // builderTemplateIconName is the custom icon the template PLC of the fixture
 // names: a name the icon library resolves.
 const builderTemplateIconName = "plc-icon"
@@ -535,23 +523,20 @@ func TestBuilderTemplatePermissions(t *testing.T) {
 		return builderShareRole(verbs)
 	}
 
-	// Every permission there is but on configs.
-	noConfigs := builderRole(builderPolicy(
-		[]string{builderDraftsResource, "builder-templates", "schemas", "topologies", "experiments", "scenarios"},
-		[]string{"*", "*/*"},
-		append(slices.Clone(builderShareConfigVerbs), "publish"),
-	))
-
 	const (
 		ok        = http.StatusOK
 		made      = http.StatusCreated
 		forbidden = http.StatusForbidden
 	)
 
-	// none refuses every request; allow returns want with the given
-	// requests, by index, answered with the given statuses.
-	none := [9]int{forbidden, forbidden, forbidden, forbidden, forbidden, forbidden, forbidden, forbidden, forbidden}
-	allow := func(want [9]int, pairs ...int) [9]int {
+	// The statuses of list, add items, replace an item, add a collection,
+	// replace a collection, delete, share candidates, share, and take back
+	// from every user: none refuses every request; allow returns none with
+	// the given requests, by index, answered with the given statuses.
+	none := slices.Repeat([]int{forbidden}, 9)
+	allow := func(pairs ...int) []int {
+		want := slices.Clone(none)
+
 		for i := 0; i+1 < len(pairs); i += 2 {
 			want[pairs[i]] = pairs[i+1]
 		}
@@ -559,90 +544,71 @@ func TestBuilderTemplatePermissions(t *testing.T) {
 		return want
 	}
 
-	tests := []struct {
-		name      string
-		role      *rbac.Role
-		anonymous bool
-		// list, add items, replace an item, add a collection, replace a
-		// collection, delete, share candidates, share, take back from
-		// every user.
-		want [9]int
-	}{
+	// Every permission there is but on configs, also to publish templates.
+	everything := append(slices.Clone(builderShareConfigVerbs), "publish")
+
+	runBuilderVerbMatrix(t, []builderVerbCaller{
 		{name: "no identity", anonymous: true, want: none},
 		{name: "no permission", role: role(), want: none},
-		{name: "everything but configs", role: &noConfigs, want: none},
-		{name: "configs list", role: role("list"), want: allow(none, 0, ok)},
+		{name: "everything but configs", role: builderAllButConfigsRole("builder-templates", everything), want: none},
+		{name: "configs list", role: role("list"), want: allow(0, ok)},
 		{name: "configs get", role: role("get"), want: none},
-		{name: "configs create", role: role("create"), want: allow(none, 1, made, 3, made)},
-		{name: "configs update", role: role("update"), want: allow(none, 2, ok, 4, ok, 6, ok, 7, ok, 8, ok)},
-		{name: "configs delete", role: role("delete"), want: allow(none, 5, ok)},
-		{name: "every config verb", role: role(builderShareConfigVerbs...), want: [9]int{ok, made, ok, made, ok, ok, ok, ok, ok}},
+		{name: "configs create", role: role("create"), want: allow(1, made, 3, made)},
+		{name: "configs update", role: role("update"), want: allow(2, ok, 4, ok, 6, ok, 7, ok, 8, ok)},
+		{name: "configs delete", role: role("delete"), want: allow(5, ok)},
+		{name: "every config verb", role: role(builderShareConfigVerbs...), want: []int{ok, made, ok, made, ok, ok, ok, ok, ok}},
+	}, builderTemplatePermissionRequests, assertTemplateHeaders)
+}
+
+// builderTemplatePermissionRequests returns a harness where alice and bob
+// have accounts and alice's library holds a collection, so a replacement
+// that is allowed finds it, and the requests of
+// TestBuilderTemplatePermissions, in its order.
+func builderTemplatePermissionRequests(t *testing.T) (*builderHarness, []builderRequest) {
+	t.Helper()
+
+	harness := newBuilderHarness(t)
+
+	harness.setUser(builderTestOwner, builderShareCreated)
+	harness.setUser(builderTestPeer, builderShareCreated)
+
+	var collection string
+
+	_, err := harness.service.UpdateLibrary(context.Background(), builderTestOwner, builderTestOwner,
+		func(library *bapi.TemplateLibrary) error {
+			var err error
+
+			collection, err = library.AddCollection(
+				bapi.CollectionContent{Name: "Floor", Description: "", TemplateIDs: nil}, harness.service.NewID,
+			)
+
+			return err
+		})
+	if err != nil {
+		t.Fatalf("adding the collection: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			harness := newBuilderHarness(t)
+	item := builderJSON(t, builderTemplateContentOf("Changed", ""))
+	items := builderJSON(t, builderTemplateCreateRequest{
+		Templates: []builderTemplateContent{builderTemplateContentOf("New", "")}, Collection: nil,
+	})
 
-			harness.setUser(builderTestOwner, builderShareCreated)
-			harness.setUser(builderTestPeer, builderShareCreated)
-
-			// The library holds a collection, so a replacement that is
-			// allowed finds it.
-			var collection string
-
-			_, err := harness.service.UpdateLibrary(context.Background(), builderTestOwner, builderTestOwner,
-				func(library *bapi.TemplateLibrary) error {
-					var err error
-
-					collection, err = library.AddCollection(
-						bapi.CollectionContent{Name: "Floor", Description: "", TemplateIDs: nil}, harness.service.NewID,
-					)
-
-					return err
-				})
-			if err != nil {
-				t.Fatalf("adding the collection: %v", err)
-			}
-
-			user := builderTestOwner
-			if tt.anonymous {
-				user = ""
-			}
-
-			item := builderJSON(t, builderTemplateContentOf("Changed", ""))
-			items := builderJSON(t, builderTemplateCreateRequest{
-				Templates: []builderTemplateContent{builderTemplateContentOf("New", "")}, Collection: nil,
-			})
-
-			for i, request := range []builderRequest{
-				{method: http.MethodGet, path: builderTemplatesRoute},
-				{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/items"), body: items},
-				{method: http.MethodPut, path: builderLibraryPath(builderTestOwner, "/items/server"), body: item, ifMatch: `"1"`},
-				{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/collections"), body: `{"name":"More"}`},
-				{
-					method: http.MethodPut, path: builderLibraryPath(builderTestOwner, "/collections/"+collection),
-					body: `{"name":"Floor two"}`, ifMatch: `"1"`,
-				},
-				{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/delete"), body: `{"templates":["router"]}`},
-				{method: http.MethodGet, path: builderTemplatesRoute + "/candidates"},
-				{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/share"), body: `{"templates":["server"],"add":["bob"]}`},
-				{
-					method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/publish"),
-					body: `{"templates":["server"],"serverWide":false}`,
-				},
-			} {
-				request.user = user
-				request.role = tt.role
-
-				recorder := harness.do(request)
-
-				assertTemplateHeaders(t, request.method, recorder)
-
-				if recorder.Code != tt.want[i] {
-					t.Errorf("%s %s: status = %d, want %d: %s", request.method, request.path, recorder.Code, tt.want[i], recorder.Body)
-				}
-			}
-		})
+	return harness, []builderRequest{
+		{method: http.MethodGet, path: builderTemplatesRoute},
+		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/items"), body: items},
+		{method: http.MethodPut, path: builderLibraryPath(builderTestOwner, "/items/server"), body: item, ifMatch: `"1"`},
+		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/collections"), body: `{"name":"More"}`},
+		{
+			method: http.MethodPut, path: builderLibraryPath(builderTestOwner, "/collections/"+collection),
+			body: `{"name":"Floor two"}`, ifMatch: `"1"`,
+		},
+		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/delete"), body: `{"templates":["router"]}`},
+		{method: http.MethodGet, path: builderTemplatesRoute + "/candidates"},
+		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/share"), body: `{"templates":["server"],"add":["bob"]}`},
+		{
+			method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/publish"),
+			body: `{"templates":["server"],"serverWide":false}`,
+		},
 	}
 }
 

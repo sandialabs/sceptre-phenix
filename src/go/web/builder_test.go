@@ -443,80 +443,6 @@ func (h *builderHarness) decode(recorder *httptest.ResponseRecorder, target any)
 	}
 }
 
-// createDraft creates a draft owned by the given user and returns it.
-func (h *builderHarness) createDraft(user, name string) builderDraftResponse {
-	h.t.Helper()
-
-	recorder := h.do(builderRequest{
-		method: http.MethodPost,
-		path:   "/builder/drafts",
-		body:   `{"title":"` + name + `","document":` + string(builderDocument(h.t, name)) + `}`,
-		user:   user,
-	})
-
-	if recorder.Code != http.StatusCreated {
-		h.t.Fatalf("creating draft: status = %d, want %d", recorder.Code, http.StatusCreated)
-	}
-
-	var draft builderDraftResponse
-
-	h.decode(recorder, &draft)
-
-	return draft
-}
-
-// builderRole returns a role holding exactly the given policies.
-func builderRole(policies ...*v1.PolicySpec) rbac.Role {
-	return rbac.Role{Spec: &v1.RoleSpec{Name: "test", Policies: policies}}
-}
-
-// builderPolicy returns one policy.
-func builderPolicy(resources, names, verbs []string) *v1.PolicySpec {
-	return &v1.PolicySpec{Resources: resources, ResourceNames: names, Verbs: verbs}
-}
-
-// builderFullRole may do everything, including operating on the drafts of
-// other users. It mirrors the wildcards the global-admin role config uses.
-func builderFullRole() rbac.Role {
-	return builderRole(builderPolicy(
-		[]string{"*", "*/*"},
-		[]string{"*", "*/*"},
-		[]string{"list", "get", "create", "update", "delete"},
-	))
-}
-
-// builderOwnerRole may do everything with its own drafts and configs, but
-// holds no cross-user draft permission at all. The resources are enumerated so
-// no wildcard can grant "builder-drafts" by accident.
-func builderOwnerRole() rbac.Role {
-	return builderRole(builderPolicy(
-		[]string{"configs", "schemas", "topologies", "experiments", "scenarios"},
-		[]string{"*", "*/*"},
-		[]string{"list", "get", "create", "update", "delete"},
-	))
-}
-
-// builderDocument returns a small, valid builder document.
-func builderDocument(t *testing.T, name string) []byte {
-	t.Helper()
-
-	document := bdoc.NewDocument(name)
-
-	document.Nodes = append(document.Nodes, bdoc.Node{
-		ID:       bdoc.NoteNodeID(name),
-		Kind:     bdoc.NodeKindNote,
-		Position: bdoc.Position{X: 0, Y: 0},
-		Note:     &bdoc.Note{Text: name, Color: ""},
-	})
-
-	data, err := bapi.EncodeDocument(document)
-	if err != nil {
-		t.Fatalf("EncodeDocument returned error: %v", err)
-	}
-
-	return data
-}
-
 // TestBuilderUnknownAPIRoutesAnswerJSON asserts a request under /api/v1 that
 // matches no route is answered by [apiNotFoundHandler], never by the SPA
 // index: a client would read 200 HTML as a working route.
@@ -695,20 +621,21 @@ func TestBuilderPublishTopology(t *testing.T) {
 		t.Fatalf("published document = %+v, want snapshot %q of draft %q", published, draft.SnapshotID, draft.ID)
 	}
 
-	meta, err := harness.service.GetDraft(context.Background(), draft.ID)
-	if err != nil {
-		t.Fatalf("GetDraft returned error: %v", err)
-	}
-
-	if meta.Dirty() || meta.Publication == nil || meta.Publication.DocumentID != reference.ID {
+	if meta := mustDraftMeta(t, harness, draft.ID); meta.Dirty() || meta.Publication == nil ||
+		meta.Publication.DocumentID != reference.ID {
 		t.Fatalf("draft publication = %#v", meta.Publication)
 	}
 }
 
-func TestBuilderUnauthenticated(t *testing.T) {
+// TestBuilderDraftRoutePermissions asks the schema, draft, source and
+// document routes as callers that may not use them: with no identity, with a
+// role that holds no config permission, and, for a draft of another user,
+// with every permission. Each is refused with 403 and the code of a refusal,
+// and no draft is stored.
+func TestBuilderDraftRoutePermissions(t *testing.T) {
 	harness := newBuilderHarness(t)
 
-	requests := []builderRequest{
+	anonymous := []builderRequest{
 		{method: http.MethodGet, path: "/schemas/builder/v1"},
 		{method: http.MethodGet, path: "/builder/drafts"},
 		{method: http.MethodPost, path: "/builder/drafts", body: `{}`},
@@ -727,23 +654,7 @@ func TestBuilderUnauthenticated(t *testing.T) {
 		{method: http.MethodGet, path: "/builder/documents"},
 	}
 
-	for _, request := range requests {
-		recorder := harness.do(request)
-
-		if recorder.Code != http.StatusForbidden {
-			t.Errorf("%s %s: status = %d, want %d without an identity",
-				request.method, request.path, recorder.Code, http.StatusForbidden)
-		}
-	}
-}
-
-func TestBuilderUnauthorized(t *testing.T) {
-	harness := newBuilderHarness(t)
-
-	// A role holding no config permission at all.
-	empty := builderRole()
-
-	requests := []builderRequest{
+	noConfigs := []builderRequest{
 		{method: http.MethodGet, path: "/builder/drafts"},
 		{method: http.MethodPost, path: "/builder/drafts", body: `{}`},
 		{method: http.MethodGet, path: "/builder/drafts/alice/id-1"},
@@ -753,16 +664,38 @@ func TestBuilderUnauthorized(t *testing.T) {
 		{method: http.MethodGet, path: "/builder/documents"},
 	}
 
-	for _, request := range requests {
-		request.user = builderTestOwner
-		request.role = &empty
+	// A role holding no config permission at all.
+	empty := builderRole()
 
-		recorder := harness.do(request)
+	cases := make([]builderAccessCase, 0, len(anonymous)+len(noConfigs)+1)
 
-		if recorder.Code != http.StatusForbidden {
-			t.Errorf("%s %s: status = %d, want %d without config permission",
-				request.method, request.path, recorder.Code, http.StatusForbidden)
-		}
+	for _, request := range anonymous {
+		cases = append(cases, builderAccessCase{
+			name: "no identity " + request.method + " " + request.path, user: "", role: nil,
+			request: request, status: http.StatusForbidden, code: bdoc.CodeRequestForbidden,
+		})
+	}
+
+	for _, request := range noConfigs {
+		cases = append(cases, builderAccessCase{
+			name: "no config permission " + request.method + " " + request.path, user: builderTestOwner, role: &empty,
+			request: request, status: http.StatusForbidden, code: bdoc.CodeRequestForbidden,
+		})
+	}
+
+	cases = append(cases, builderAccessCase{
+		name: "a draft for another user", user: builderTestOwner, role: nil,
+		request: builderRequest{
+			method: http.MethodPost, path: "/builder/drafts",
+			body: `{"owner":"` + builderTestPeer + `","document":` + string(builderDocument(t, "topo")) + `}`,
+		},
+		status: http.StatusForbidden, code: bdoc.CodeRequestForbidden,
+	})
+
+	runBuilderAccessCases(t, harness, cases)
+
+	if count := harness.store.Count(bapi.NamespaceDrafts); count != 0 {
+		t.Errorf("stored drafts = %d, want 0", count)
 	}
 }
 
@@ -806,27 +739,6 @@ func TestBuilderCreateDraft(t *testing.T) {
 	want := "/api/v1/builder/drafts/" + builderTestOwner + "/" + draft.ID
 	if location := recorder.Header().Get("Location"); location != want {
 		t.Errorf("Location = %q, want %q", location, want)
-	}
-}
-
-func TestBuilderCreateDraftForOtherUser(t *testing.T) {
-	harness := newBuilderHarness(t)
-
-	document := builderDocument(t, "topo")
-
-	recorder := harness.do(builderRequest{
-		method: http.MethodPost,
-		path:   "/builder/drafts",
-		body:   `{"owner":"` + builderTestPeer + `","document":` + string(document) + `}`,
-		user:   builderTestOwner,
-	})
-
-	if recorder.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
-	}
-
-	if count := harness.store.Count(bapi.NamespaceDrafts); count != 0 {
-		t.Errorf("stored drafts = %d, want 0", count)
 	}
 }
 
@@ -998,13 +910,11 @@ func TestBuilderListDrafts(t *testing.T) {
 		Shared []builderDraftResponse `json:"shared"`
 	}
 
-	owner := builderOwnerRole()
-
 	recorder := harness.do(builderRequest{
 		method: http.MethodGet,
 		path:   "/builder/drafts",
 		user:   builderTestOwner,
-		role:   &owner,
+		role:   builderConfigsRole(),
 	})
 
 	if recorder.Code != http.StatusOK {
@@ -2175,7 +2085,7 @@ func TestBuilderUnreadableDraft(t *testing.T) {
 		builderPolicy([]string{"configs"}, []string{"*"}, []string{"list", "get", "delete"}),
 		builderPolicy([]string{"builder-drafts"}, []string{"*", "*/*"}, []string{"list", "get"}),
 	)
-	owner := builderOwnerRole()
+	owner := builderConfigsRole()
 
 	for _, peer := range []struct {
 		name      string
@@ -2183,7 +2093,7 @@ func TestBuilderUnreadableDraft(t *testing.T) {
 		damaged   int
 		canDelete bool
 	}{
-		{name: "no cross-user permission", role: &owner, damaged: 0, canDelete: false},
+		{name: "no cross-user permission", role: owner, damaged: 0, canDelete: false},
 		{name: "cross-user list", role: &listOnly, damaged: 1, canDelete: false},
 		{name: "cross-user delete", role: nil, damaged: 1, canDelete: true},
 	} {
@@ -2206,7 +2116,7 @@ func TestBuilderUnreadableDraft(t *testing.T) {
 
 	// Another user without cross-user permission still cannot see it.
 	recorder = harness.do(builderRequest{
-		method: http.MethodDelete, path: path, user: builderTestPeer, role: &owner, ifMatch: bad.ETag,
+		method: http.MethodDelete, path: path, user: builderTestPeer, role: owner, ifMatch: bad.ETag,
 	})
 
 	if recorder.Code != http.StatusNotFound {

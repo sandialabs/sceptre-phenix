@@ -109,17 +109,6 @@ func builderYAML(t *testing.T, data []byte) []byte {
 	return text
 }
 
-// builderFileRefusal is what the server says of a request it refused.
-func builderFileRefusal(t *testing.T, harness *builderHarness, recorder *httptest.ResponseRecorder) builderPublishRefusal {
-	t.Helper()
-
-	var refusal builderPublishRefusal
-
-	harness.decode(recorder, &refusal)
-
-	return refusal
-}
-
 // TestBuilderTopologyDocument reads the Builder document a topology
 // references by the topology's name: the stored document when the reference
 // names one, and otherwise the Builder file at its path, read from the
@@ -189,8 +178,8 @@ func TestBuilderTopologyDocument(t *testing.T) {
 				}
 			}
 
-			if got, _ := json.Marshal(response); !bytes.Equal(got, mustBuilderJSON(t, want)) {
-				t.Fatalf("response = %s, want %s", got, mustBuilderJSON(t, want))
+			if got, _ := json.Marshal(response); string(got) != builderJSON(t, want) {
+				t.Fatalf("response = %s, want %s", got, builderJSON(t, want))
 			}
 
 			// A file has no ID, author or time, and says so by leaving them out.
@@ -228,22 +217,10 @@ func TestBuilderTopologyDocument(t *testing.T) {
 
 	// The pinned file no longer has the digest its topology records.
 	recorder := harness.getTopologyDocument("copied")
-	if said := builderFileRefusal(t, harness, recorder); recorder.Code != http.StatusUnprocessableEntity ||
+	if said := builderRefusal(t, recorder); recorder.Code != http.StatusUnprocessableEntity ||
 		said.Message != "Builder file "+asJSON+" does not match the digest topology copied records for it." || said.Cause != "" {
 		t.Fatalf("a pinned file that changed: status = %d, said %+v", recorder.Code, said)
 	}
-}
-
-// mustBuilderJSON returns value as JSON.
-func mustBuilderJSON(t *testing.T, value any) []byte {
-	t.Helper()
-
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatalf("encoding %T: %v", value, err)
-	}
-
-	return data
 }
 
 // TestBuilderTopologyDocumentRefusals asks for the document of topologies
@@ -334,7 +311,7 @@ func TestBuilderTopologyDocumentRefusals(t *testing.T) {
 			logs.Take(t, nil)
 
 			recorder := harness.getTopologyDocument(name)
-			said := builderFileRefusal(t, harness, recorder)
+			said := builderRefusal(t, recorder)
 
 			if recorder.Code != test.status || said.Message != strings.ReplaceAll(test.said, "%s", test.path) || said.Cause != "" {
 				t.Fatalf("status = %d, said %+v; want %d and %q", recorder.Code, said, test.status, test.said)
@@ -400,7 +377,7 @@ func TestBuilderTopologyDocumentNoLeak(t *testing.T) {
 	missing := func(name string, recorder *httptest.ResponseRecorder) {
 		t.Helper()
 
-		said := builderFileRefusal(t, harness, recorder)
+		said := builderRefusal(t, recorder)
 
 		if recorder.Code != http.StatusNotFound || said.Message != "builder document of topology "+name+" not found" || said.Cause != "" {
 			t.Fatalf("topology %s: status = %d, said %+v; want it not found", name, recorder.Code, said)
@@ -658,7 +635,7 @@ func createBuilderFileDraft(
 
 	recorder := harness.do(builderRequest{
 		method: http.MethodPost, path: "/builder/drafts", user: builderTestOwner,
-		body: string(mustBuilderJSON(t, map[string]any{"document": json.RawMessage(data), "sourceToken": token})),
+		body: builderJSON(t, map[string]any{"document": json.RawMessage(data), "sourceToken": token}),
 	})
 
 	var draft builderDraftResponse
@@ -744,7 +721,7 @@ func TestBuilderCreateDraftFromBuilderFile(t *testing.T) {
 		},
 	} {
 		recorder, _ := createBuilderFileDraft(t, harness, opened.document, test.token)
-		said := builderFileRefusal(t, harness, recorder)
+		said := builderRefusal(t, recorder)
 
 		if recorder.Code != test.status || said.Message != test.said || said.Cause != "" {
 			t.Errorf("%s: status = %d, said %+v; want %d and %q", name, recorder.Code, said, test.status, test.said)
@@ -763,10 +740,10 @@ func TestBuilderCreateDraftFromBuilderFile(t *testing.T) {
 
 	recorder = harness.do(builderRequest{
 		method: http.MethodPost, path: "/builder/drafts", user: builderTestPeer, role: &role,
-		body: string(mustBuilderJSON(t, map[string]any{"document": json.RawMessage(data), "sourceToken": opened.token})),
+		body: builderJSON(t, map[string]any{"document": json.RawMessage(data), "sourceToken": opened.token}),
 	})
 
-	if said := builderFileRefusal(t, harness, recorder); recorder.Code != http.StatusNotFound ||
+	if said := builderRefusal(t, recorder); recorder.Code != http.StatusNotFound ||
 		said.Message != "builder document of topology site not found" || harness.fileReads != 0 {
 		t.Fatalf("a caller who may not get the topology: status = %d, said %+v, %d file reads", recorder.Code, said, harness.fileReads)
 	}
@@ -781,7 +758,7 @@ func TestBuilderCreateDraftFromBuilderFile(t *testing.T) {
 	harness.writeBuilderFile(otherData, "topologies", "site", "site.builder.yaml")
 
 	recorder, _ = createBuilderFileDraft(t, harness, opened.document, opened.token)
-	if said := builderFileRefusal(t, harness, recorder); recorder.Code != http.StatusConflict ||
+	if said := builderRefusal(t, recorder); recorder.Code != http.StatusConflict ||
 		said.Message != "The Builder file of topology site changed since it was opened. Open its diagram again." {
 		t.Fatalf("after the file changed: status = %d, said %+v", recorder.Code, said)
 	}

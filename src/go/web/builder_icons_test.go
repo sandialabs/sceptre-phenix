@@ -24,7 +24,6 @@ import (
 	bdoc "phenix/types/builder"
 	"phenix/util/plog/plogtest"
 	"phenix/web/rbac"
-	"phenix/web/weberror"
 )
 
 const (
@@ -68,31 +67,14 @@ func builderIconBody(t *testing.T, name string, data []byte) string {
 	return string(body)
 }
 
-// builderIconUser returns a role holding every configs permission the
-// Builder checks and no builder-icons permission: one that renames and
-// deletes only the icons its user uploaded.
-func builderIconUser() *rbac.Role {
-	return builderShareRole(builderShareConfigVerbs)
-}
-
-// builderIconAdmin returns builderIconUser with builder-icons update and
-// delete, which rename and delete any user's icon.
-func builderIconAdmin() *rbac.Role {
-	role := builderRole(append(
-		slices.Clone(builderIconUser().Spec.Policies),
-		builderPolicy([]string{"builder-icons"}, nil, []string{"update", "delete"}),
-	)...)
-
-	return &role
-}
-
-// postIcon adds an icon, as the user with builderIconUser.
+// postIcon adds an icon, as the user with builderConfigsRole, which renames
+// and deletes only the icons its user uploaded.
 func (h *builderHarness) postIcon(user, name string, data []byte) *httptest.ResponseRecorder {
 	h.t.Helper()
 
 	return h.do(builderRequest{
 		method: http.MethodPost, path: builderIconsRoute, body: builderIconBody(h.t, name, data), user: user,
-		role: builderIconUser(),
+		role: builderConfigsRole(),
 	})
 }
 
@@ -125,19 +107,6 @@ func (h *builderHarness) icons(user string, role *rbac.Role) builderIconListResp
 	return list
 }
 
-// builderMessage returns the message of an error response.
-func builderMessage(t *testing.T, recorder *httptest.ResponseRecorder) string {
-	t.Helper()
-
-	var body weberror.WebError
-
-	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decoding the error: %v: %s", err, recorder.Body)
-	}
-
-	return body.Message
-}
-
 // assertIconHeaders asserts a response of the icon library carries both
 // security headers, and is JSON whenever it has a body.
 func assertIconHeaders(t *testing.T, what string, recorder *httptest.ResponseRecorder) {
@@ -162,7 +131,7 @@ func assertIconHeaders(t *testing.T, what string, recorder *httptest.ResponseRec
 	}
 }
 
-// addBuilderIcon adds an icon as alice, with builderIconUser, asserts it was
+// addBuilderIcon adds an icon as alice, with builderConfigsRole, asserts it was
 // created, and returns it as the answer gives it.
 func addBuilderIcon(t *testing.T, harness *builderHarness, name string, upload []byte) builderIconResponse {
 	t.Helper()
@@ -183,7 +152,7 @@ func addBuilderIcon(t *testing.T, harness *builderHarness, name string, upload [
 
 func TestBuilderIconLibrary(t *testing.T) {
 	harness := newBuilderHarness(t)
-	user := builderIconUser()
+	user := builderConfigsRole()
 
 	// A raw read, so an empty library is seen to be a list and not null.
 	empty := harness.do(builderRequest{method: http.MethodGet, path: builderIconsRoute, user: builderTestOwner, role: user})
@@ -218,7 +187,7 @@ func TestBuilderIconLibrary(t *testing.T) {
 // naming who has the name.
 func TestBuilderIconNameIsTaken(t *testing.T) {
 	harness := newBuilderHarness(t)
-	user := builderIconUser()
+	user := builderConfigsRole()
 	upload := builderIconPNG(t, 3, 2, 1)
 
 	addBuilderIcon(t, harness, "PLC", upload)
@@ -253,7 +222,7 @@ func TestBuilderIconNameIsTaken(t *testing.T) {
 func TestBuilderIconRenameAndDelete(t *testing.T) {
 	harness := newBuilderHarness(t)
 	logs := plogtest.Capture(t)
-	user := builderIconUser()
+	user := builderConfigsRole()
 	upload := builderIconPNG(t, 3, 2, 1)
 	data := base64.StdEncoding.EncodeToString(upload)
 	icon := addBuilderIcon(t, harness, "PLC", upload)
@@ -330,7 +299,7 @@ func assertIconChangesLogged(t *testing.T, logs *plogtest.Logs, data string) {
 // builder-icons permissions renames or deletes it.
 func TestBuilderIconLibraryIsShared(t *testing.T) {
 	harness := newBuilderHarness(t)
-	user, admin := builderIconUser(), builderIconAdmin()
+	user, admin := builderConfigsRole(), builderIconAdmin()
 
 	if recorder := harness.postIcon(builderTestOwner, "mine", builderIconPNG(t, 2, 2, 9)); recorder.Code != http.StatusCreated {
 		t.Fatalf("adding an icon: status = %d, want %d", recorder.Code, http.StatusCreated)
@@ -572,7 +541,7 @@ func TestBuilderIconRequests(t *testing.T) {
 // not one.
 func TestBuilderIconRename(t *testing.T) {
 	harness := newBuilderHarness(t)
-	user := builderIconUser()
+	user := builderConfigsRole()
 
 	for name, seed := range map[string]int{"plc": 1, "hmi": 2} {
 		if recorder := harness.postIcon(builderTestOwner, name, builderIconPNG(t, 1, 1, seed)); recorder.Code != http.StatusCreated {
@@ -641,7 +610,7 @@ func TestBuilderIconLibraryIsBounded(t *testing.T) {
 		t.Fatalf("the 65th icon = %d %s, want 422 and the library full for alice", recorder.Code, recorder.Body)
 	}
 
-	if list := harness.icons(builderTestOwner, builderIconUser()); len(list.Icons) != bapi.MaxLibraryIcons ||
+	if list := harness.icons(builderTestOwner, builderConfigsRole()); len(list.Icons) != bapi.MaxLibraryIcons ||
 		list.UsedIcons != bapi.MaxLibraryIcons {
 		t.Fatalf("the library lists %d icons, %d of alice's, want %d", len(list.Icons), list.UsedIcons, bapi.MaxLibraryIcons)
 	}
@@ -687,7 +656,7 @@ func TestBuilderIconLibraryIsBounded(t *testing.T) {
 		refused = true
 	}
 
-	list := bytesHarness.icons(builderTestOwner, builderIconUser())
+	list := bytesHarness.icons(builderTestOwner, builderConfigsRole())
 
 	if !refused || len(list.Icons) >= bapi.MaxLibraryIcons || list.UsedBytes > list.MaxBytes ||
 		list.UsedBytes+len(large) <= list.MaxBytes {
@@ -728,114 +697,60 @@ func TestBuilderIconNotFound(t *testing.T) {
 		}
 	}
 
-	if list := harness.icons(builderTestOwner, builderIconUser()); len(list.Icons) != 1 || list.Icons[0].Name != "kept" {
+	if list := harness.icons(builderTestOwner, builderConfigsRole()); len(list.Icons) != 1 || list.Icons[0].Name != "kept" {
 		t.Fatalf("the library lists %+v, want the one that was kept", list.Icons)
 	}
 }
 
+// TestBuilderIconPermissions asks each route of the icon library as each
+// caller of a permission matrix: each route takes the configs permission of
+// its verb, and nothing else does.
 func TestBuilderIconPermissions(t *testing.T) {
 	upload := builderIconPNG(t, 1, 1, 6)
+	other := builderIconPNG(t, 1, 1, 7)
 
 	role := func(verbs ...string) *rbac.Role {
 		return builderShareRole(verbs)
 	}
 
-	// Every permission there is but on configs.
-	noConfigs := builderRole(builderPolicy(
-		[]string{builderDraftsResource, "builder-icons", "schemas", "topologies", "experiments", "scenarios"},
-		[]string{"*", "*/*"},
-		builderShareConfigVerbs,
-	))
+	// The statuses of list, get, create, rename and delete: none allows no
+	// request, and only allows the one at index with status.
+	none := slices.Repeat([]int{http.StatusForbidden}, 5)
+	only := func(index, status int) []int {
+		want := slices.Clone(none)
+		want[index] = status
 
-	tests := []struct {
-		name                                 string
-		role                                 *rbac.Role
-		anonymous                            bool
-		list, get, create, rename, deleteOne int
-	}{
-		{
-			name: "no identity", anonymous: true,
-			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusForbidden,
-			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
-		},
-		{
-			name: "no permission", role: role(),
-			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusForbidden,
-			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
-		},
-		{
-			name: "everything but configs", role: &noConfigs,
-			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusForbidden,
-			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
-		},
-		{
-			name: "configs list", role: role("list"),
-			list: http.StatusOK, get: http.StatusForbidden, create: http.StatusForbidden,
-			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
-		},
-		{
-			name: "configs get", role: role("get"),
-			list: http.StatusForbidden, get: http.StatusOK, create: http.StatusForbidden,
-			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
-		},
-		{
-			name: "configs create", role: role("create"),
-			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusCreated,
-			rename: http.StatusForbidden, deleteOne: http.StatusForbidden,
-		},
-		{
-			name: "configs update", role: role("update"),
-			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusForbidden,
-			rename: http.StatusOK, deleteOne: http.StatusForbidden,
-		},
-		{
-			name: "configs delete", role: role("delete"),
-			list: http.StatusForbidden, get: http.StatusForbidden, create: http.StatusForbidden,
-			rename: http.StatusForbidden, deleteOne: http.StatusNoContent,
-		},
+		return want
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			harness := newBuilderHarness(t)
+	runBuilderVerbMatrix(t, []builderVerbCaller{
+		{name: "no identity", anonymous: true, want: none},
+		{name: "no permission", role: role(), want: none},
+		{name: "everything but configs", role: builderAllButConfigsRole("builder-icons", builderShareConfigVerbs), want: none},
+		{name: "configs list", role: role("list"), want: only(0, http.StatusOK)},
+		{name: "configs get", role: role("get"), want: only(1, http.StatusOK)},
+		{name: "configs create", role: role("create"), want: only(2, http.StatusCreated)},
+		{name: "configs update", role: role("update"), want: only(3, http.StatusOK)},
+		{name: "configs delete", role: role("delete"), want: only(4, http.StatusNoContent)},
+	}, func(t *testing.T) (*builderHarness, []builderRequest) {
+		t.Helper()
 
-			// The library holds the caller's icon, so a request that is
-			// allowed finds one the caller may change.
-			if _, _, err := harness.service.AddIcon(context.Background(), builderTestOwner, "plc", upload); err != nil {
-				t.Fatalf("adding the icon: %v", err)
-			}
+		harness := newBuilderHarness(t)
 
-			user := builderTestOwner
-			if tt.anonymous {
-				user = ""
-			}
+		// The library holds the caller's icon, so a request that is allowed
+		// finds one the caller may change.
+		if _, _, err := harness.service.AddIcon(context.Background(), builderTestOwner, "plc", upload); err != nil {
+			t.Fatalf("adding the icon: %v", err)
+		}
 
-			other := builderIconPNG(t, 1, 1, 7)
-
-			for _, request := range []struct {
-				builderRequest
-
-				want int
-			}{
-				{builderRequest{method: http.MethodGet, path: builderIconsRoute}, tt.list},
-				{builderRequest{method: http.MethodGet, path: builderIconsRoute + "/plc"}, tt.get},
-				{builderRequest{method: http.MethodPost, path: builderIconsRoute, body: builderIconBody(t, "other", other)}, tt.create},
-				{builderRequest{method: http.MethodPut, path: builderIconsRoute + "/plc", body: `{"name":"plc-2"}`}, tt.rename},
-				{builderRequest{method: http.MethodDelete, path: builderIconsRoute + "/plc"}, tt.deleteOne},
-			} {
-				request.user = user
-				request.role = tt.role
-
-				recorder := harness.do(request.builderRequest)
-
-				assertIconHeaders(t, request.method, recorder)
-
-				if recorder.Code != request.want {
-					t.Errorf("%s %s: status = %d, want %d: %s", request.method, request.path, recorder.Code, request.want, recorder.Body)
-				}
-			}
-		})
-	}
+		return harness, []builderRequest{
+			{method: http.MethodGet, path: builderIconsRoute},
+			{method: http.MethodGet, path: builderIconsRoute + "/plc"},
+			{method: http.MethodPost, path: builderIconsRoute, body: builderIconBody(t, "other", other)},
+			{method: http.MethodPut, path: builderIconsRoute + "/plc", body: `{"name":"plc-2"}`},
+			{method: http.MethodDelete, path: builderIconsRoute + "/plc"},
+		}
+	}, assertIconHeaders)
 }
 
 // TestBuilderIconOutOfSpace asserts adding or renaming an icon etcd refused
@@ -864,7 +779,7 @@ func TestBuilderIconOutOfSpace(t *testing.T) {
 		return fmt.Errorf("creating record %s/%s in Etcd: %w", namespace, key, store.ErrNoSpace)
 	}
 
-	renamed := harness.iconRequest(http.MethodPut, "plc", `{"name":"plc-2"}`, builderTestOwner, builderIconUser())
+	renamed := harness.iconRequest(http.MethodPut, "plc", `{"name":"plc-2"}`, builderTestOwner, builderConfigsRole())
 
 	if renamed.Code != http.StatusInsufficientStorage || builderMessage(t, renamed) != store.ErrNoSpace.Error() {
 		t.Fatalf("renaming an icon = %d %s, want 507 and the store's message", renamed.Code, renamed.Body)

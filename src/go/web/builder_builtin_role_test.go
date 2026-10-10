@@ -3,45 +3,12 @@ package web
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
-	"path/filepath"
 	"slices"
 	"testing"
 
 	bapi "phenix/api/builder"
-	"phenix/api/config"
-	"phenix/store"
 	bdoc "phenix/types/builder"
-	"phenix/web/rbac"
 )
-
-// builtinBuilderRole returns the built-in Builder role, as a new store
-// holds it. The store, which holds nothing else, stays the config store
-// until the test ends.
-func builtinBuilderRole(t *testing.T) *rbac.Role {
-	t.Helper()
-
-	db := store.NewBoltDB()
-	if err := db.Init(store.Endpoint("bolt://" + filepath.Join(t.TempDir(), "phenix.bdb"))); err != nil {
-		t.Fatalf("initializing BoltDB returned error: %v", err)
-	}
-
-	previous := store.DefaultStore
-	store.DefaultStore = db //nolint:reassign // the test's own store
-
-	t.Cleanup(func() { store.DefaultStore = previous }) //nolint:reassign // restore the store
-
-	if _, err := config.CreateDefault("Role", "builder"); err != nil {
-		t.Fatalf("creating the built-in Builder role: %v", err)
-	}
-
-	role, err := rbac.RoleFromConfig("Builder")
-	if err != nil {
-		t.Fatalf("RoleFromConfig returned error: %v", err)
-	}
-
-	return role
-}
 
 // TestBuiltinBuilderRoleUsesTheBuilder asserts a user with the built-in
 // Builder role can use every part of the Builder although the role holds
@@ -61,26 +28,16 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 		harness.setUser(user, builderShareCreated)
 	}
 
-	// do sends request as alice with the Builder role, and fails the test
-	// unless it is answered with status.
-	do := func(what string, request builderRequest, status int) *httptest.ResponseRecorder {
-		t.Helper()
+	// Every request is alice's, with the Builder role.
+	alice := harness.as(builderTestOwner, role)
 
-		request.user, request.role = builderTestOwner, role
-
-		recorder := harness.do(request)
-		if recorder.Code != status {
-			t.Fatalf("%s: status = %d, want %d: %s", what, recorder.Code, status, recorder.Body)
-		}
-
-		return recorder
-	}
-
-	do("getting the schema", builderRequest{method: http.MethodGet, path: "/schemas/builder/v1"}, http.StatusOK)
+	alice.expect("getting the schema", builderRequest{method: http.MethodGet, path: "/schemas/builder/v1"}, http.StatusOK)
 
 	var sources map[string][]builderSourceResponse
 
-	harness.decode(do("listing sources", builderRequest{method: http.MethodGet, path: "/builder/sources"}, http.StatusOK), &sources)
+	harness.decode(alice.expect("listing sources", builderRequest{
+		method: http.MethodGet, path: "/builder/sources",
+	}, http.StatusOK), &sources)
 
 	for key, want := range map[string]string{"topologies": "lab", "experiments": "exp", "scenarios": "sc"} {
 		if !slices.ContainsFunc(sources[key], func(source builderSourceResponse) bool { return source.Name == want }) {
@@ -89,19 +46,19 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 	}
 
 	for _, source := range []string{"Topology/lab", "Experiment/exp"} {
-		do("importing "+source, builderRequest{
+		alice.expect("importing "+source, builderRequest{
 			method: http.MethodPost, path: "/builder/generate", body: `{"source":"` + source + `"}`,
 		}, http.StatusOK)
 	}
 
-	do("uploading a topology", builderRequest{
+	alice.expect("uploading a topology", builderRequest{
 		method: http.MethodPost, path: "/builder/generate",
 		body: `{"content":"apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: upload\nspec:\n  nodes: []\n"}`,
 	}, http.StatusOK)
 
-	do("converting a legacy diagram", builderRequest{
+	alice.expect("converting a legacy diagram", builderRequest{
 		method: http.MethodPost, path: "/builder/legacy",
-		body: asBuilderJSON(t, map[string]string{"content": string(legacySampleFile(t, "sample.xml"))}),
+		body: builderJSON(t, map[string]string{"content": string(legacySampleFile(t, "sample.xml"))}),
 	}, http.StatusOK)
 
 	// A new diagram, or an uploaded one, that uses the stored scenario.
@@ -115,7 +72,7 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 
 	var draft builderDraftResponse
 
-	harness.decode(do("creating a draft", builderRequest{
+	harness.decode(alice.expect("creating a draft", builderRequest{
 		method: http.MethodPost, path: "/builder/drafts", body: `{"document":` + string(data) + `}`,
 	}, http.StatusCreated), &draft)
 
@@ -123,7 +80,7 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 
 	var published builderPublishResponse
 
-	harness.decode(do("publishing a topology, a scenario and an experiment", builderRequest{
+	harness.decode(alice.expect("publishing a topology, a scenario and an experiment", builderRequest{
 		method: http.MethodPost, path: path + "/publish", ifMatch: draft.ETag,
 		body: `{"mode":"topology-experiment","topology":{"name":"plant","action":"create"},` +
 			`"scenario":{"name":"sc"},"experiment":{"name":"plant-exp","action":"create"}}`,
@@ -137,11 +94,13 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 		t.Fatalf("publishing left scenario sc as %+v (%v), want topology plant added", annotated, err)
 	}
 
-	do("listing published diagrams", builderRequest{method: http.MethodGet, path: "/builder/documents"}, http.StatusOK)
+	alice.expect("listing published diagrams", builderRequest{method: http.MethodGet, path: "/builder/documents"}, http.StatusOK)
 
-	shares := do("reading who the draft is shared with", builderRequest{method: http.MethodGet, path: path + "/shares"}, http.StatusOK)
+	shares := alice.expect("reading who the draft is shared with", builderRequest{
+		method: http.MethodGet, path: path + "/shares",
+	}, http.StatusOK)
 
-	do("sharing the draft", builderRequest{
+	alice.expect("sharing the draft", builderRequest{
 		method: http.MethodPut, path: path + "/shares", body: builderShareBody(t, builderTestPeer+":edit"),
 		ifMatch: shares.Header().Get("ETag"),
 	}, http.StatusOK)
@@ -154,13 +113,15 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 		Shared []builderDraftResponse `json:"shared"`
 	}
 
-	harness.decode(do("listing drafts", builderRequest{method: http.MethodGet, path: "/builder/drafts"}, http.StatusOK), &drafts)
+	harness.decode(alice.expect("listing drafts", builderRequest{
+		method: http.MethodGet, path: "/builder/drafts",
+	}, http.StatusOK), &drafts)
 
 	if !slices.ContainsFunc(drafts.Shared, func(listed builderDraftResponse) bool { return listed.ID == other.ID }) {
 		t.Errorf("the listing does not hold bob's draft: %+v", drafts.Shared)
 	}
 
-	do("opening another user's draft", builderRequest{
+	alice.expect("opening another user's draft", builderRequest{
 		method: http.MethodGet, path: "/builder/drafts/" + builderTestPeer + "/" + other.ID,
 	}, http.StatusOK)
 
@@ -168,7 +129,7 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 	// published server-wide.
 	var made builderTemplateCreateResponse
 
-	harness.decode(do("adding a template", builderRequest{
+	harness.decode(alice.expect("adding a template", builderRequest{
 		method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/items"),
 		body: builderJSON(t, builderTemplateCreateRequest{
 			Templates:  []builderTemplateContent{builderTemplateContentOf("PLC", "plc")},
@@ -192,15 +153,16 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 			body: `{"templates":["` + id + `"],"serverWide":true}`,
 		},
 	} {
-		if recorder := do(what, request, http.StatusOK); recorder.Body.String() != `{"failed":[]}` {
+		if recorder := alice.expect(what, request, http.StatusOK); recorder.Body.String() != `{"failed":[]}` {
 			t.Fatalf("%s answered %s", what, recorder.Body)
 		}
 	}
 
 	var library builderTemplateLibraryResponse
 
-	listing := do("listing the templates", builderRequest{method: http.MethodGet, path: builderTemplatesRoute}, http.StatusOK)
-	harness.decode(listing, &library)
+	harness.decode(alice.expect("listing the templates", builderRequest{
+		method: http.MethodGet, path: builderTemplatesRoute,
+	}, http.StatusOK), &library)
 
 	if !library.CanShare || !library.CanPublish {
 		t.Errorf("the library says canShare %t and canPublish %t, want both", library.CanShare, library.CanPublish)
@@ -212,19 +174,21 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 		t.Errorf("bob does not list alice's template: %+v", peer.Templates)
 	}
 
-	do("adding an icon", builderRequest{
+	alice.expect("adding an icon", builderRequest{
 		method: http.MethodPost, path: builderIconsRoute, body: builderIconBody(t, "plc", builderIconPNG(t, 1, 1, 31)),
 	}, http.StatusCreated)
-	do("listing the icons", builderRequest{method: http.MethodGet, path: builderIconsRoute}, http.StatusOK)
-	do("reading the icon", builderRequest{method: http.MethodGet, path: builderIconsRoute + "/PLC"}, http.StatusOK)
+	alice.expect("listing the icons", builderRequest{method: http.MethodGet, path: builderIconsRoute}, http.StatusOK)
+	alice.expect("reading the icon", builderRequest{method: http.MethodGet, path: builderIconsRoute + "/PLC"}, http.StatusOK)
 
 	// Any user's icon, through builder-icons update and delete.
 	if _, _, err := harness.service.AddIcon(context.Background(), builderTestPeer, "hmi", builderIconPNG(t, 1, 1, 32)); err != nil {
 		t.Fatalf("adding bob's icon: %v", err)
 	}
 
-	do("renaming another user's icon", builderRequest{
+	alice.expect("renaming another user's icon", builderRequest{
 		method: http.MethodPut, path: builderIconsRoute + "/hmi", body: `{"name":"hmi-2"}`,
 	}, http.StatusOK)
-	do("deleting another user's icon", builderRequest{method: http.MethodDelete, path: builderIconsRoute + "/hmi"}, http.StatusNoContent)
+	alice.expect("deleting another user's icon", builderRequest{
+		method: http.MethodDelete, path: builderIconsRoute + "/hmi",
+	}, http.StatusNoContent)
 }

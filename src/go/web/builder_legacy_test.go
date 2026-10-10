@@ -539,7 +539,7 @@ func TestBuilderConvertLegacyRequests(t *testing.T) {
 
 			assertLegacyHeaders(t, recorder)
 
-			var refusal builderPublishRefusal
+			var refusal builderErrorBody
 
 			harness.decode(recorder, &refusal)
 
@@ -700,7 +700,7 @@ func TestBuilderGenerateConvertsLegacyTopology(t *testing.T) {
 	}
 
 	stored := `{"source":"Topology/sample"}`
-	uploaded := asBuilderJSON(t, map[string]string{"content": string(content)})
+	uploaded := builderJSON(t, map[string]string{"content": string(content)})
 
 	for name, body := range map[string]string{"stored": stored, "a config file": uploaded} {
 		recorder := harness.do(builderRequest{

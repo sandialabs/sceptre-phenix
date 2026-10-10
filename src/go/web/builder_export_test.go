@@ -79,7 +79,7 @@ func asJSONValue(t *testing.T, value any) any {
 	t.Helper()
 
 	var decoded any
-	if err := json.Unmarshal([]byte(asBuilderJSON(t, value)), &decoded); err != nil {
+	if err := json.Unmarshal([]byte(builderJSON(t, value)), &decoded); err != nil {
 		t.Fatalf("decoding %T: %v", value, err)
 	}
 
@@ -96,7 +96,7 @@ func TestBuilderExportTopologyMatchesPublish(t *testing.T) {
 	document.Metadata.Name = " Lab topology (2) "
 
 	if included := document.FindDevice("inc-host"); included == nil || included.Device.IncludedFrom != "shared" {
-		t.Fatalf("inc-host is not marked as included: %s", asBuilderJSON(t, document))
+		t.Fatalf("inc-host is not marked as included: %s", builderJSON(t, document))
 	}
 
 	draft := createBuilderPublishDraft(t, harness, document)
@@ -127,7 +127,7 @@ func TestBuilderExportTopologyMatchesPublish(t *testing.T) {
 	}
 
 	if got, want := asJSONValue(t, exported.Spec), asJSONValue(t, stored.Spec); !reflect.DeepEqual(got, want) {
-		t.Fatalf("exported spec = %s, want the published %s", asBuilderJSON(t, got), asBuilderJSON(t, want))
+		t.Fatalf("exported spec = %s, want the published %s", builderJSON(t, got), builderJSON(t, want))
 	}
 
 	exportedSpec, err := (&bdoc.Topology{Spec: exported.Spec, VLANAliases: nil, Warnings: nil}).SpecV1()
@@ -141,12 +141,12 @@ func TestBuilderExportTopologyMatchesPublish(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(exportedSpec, storedSpec) {
-		t.Fatalf("exported v1 topology = %s, want %s", asBuilderJSON(t, exportedSpec), asBuilderJSON(t, storedSpec))
+		t.Fatalf("exported v1 topology = %s, want %s", builderJSON(t, exportedSpec), builderJSON(t, storedSpec))
 	}
 
 	if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"web"}) ||
 		!reflect.DeepEqual(exported.Spec["includeTopologies"], []any{"shared"}) {
-		t.Fatalf("exported spec = %s, want web and the shared include", asBuilderJSON(t, exported.Spec))
+		t.Fatalf("exported spec = %s, want web and the shared include", builderJSON(t, exported.Spec))
 	}
 
 	if harness.configWrites != writes || harness.store.Count(bapi.NamespacePublished) != documents ||
@@ -348,7 +348,7 @@ func TestBuilderExportTopologyRefusesAsPublishDoes(t *testing.T) {
 			}
 
 			if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"host"}) {
-				t.Fatalf("exported spec = %s, want the host", asBuilderJSON(t, exported.Spec))
+				t.Fatalf("exported spec = %s, want the host", builderJSON(t, exported.Spec))
 			}
 		})
 	}
@@ -438,7 +438,7 @@ func TestBuilderExportTopologyNamesSharedAddresses(t *testing.T) {
 			}
 
 			if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"aa", "bb"}) {
-				t.Fatalf("exported spec = %s, want hosts aa and bb", asBuilderJSON(t, exported.Spec))
+				t.Fatalf("exported spec = %s, want hosts aa and bb", builderJSON(t, exported.Spec))
 			}
 
 			if harness.configWrites != 0 {
@@ -541,7 +541,7 @@ func TestBuilderExportTopologyKeepsStrings(t *testing.T) {
 
 	if got, want := asJSONValue(t, loaded.Spec), asJSONValue(t, published.Spec); !reflect.DeepEqual(got, want) {
 		t.Fatalf("exported spec = %s, want the published %s\n%s",
-			asBuilderJSON(t, got), asBuilderJSON(t, want), response.YAML)
+			builderJSON(t, got), builderJSON(t, want), response.YAML)
 	}
 
 	for _, want := range []string{"- |\n", "plain: |-\n"} {

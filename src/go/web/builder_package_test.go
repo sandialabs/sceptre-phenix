@@ -138,16 +138,53 @@ func TestBuilderPackageSchemaRoute(t *testing.T) {
 	if recorder.Body.String() != string(want) {
 		t.Fatal("the route does not serve the package schema")
 	}
+}
 
-	// The permission of the document schema: schemas get on builder.
-	role := builderRole(builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"list", "get"}))
+// TestBuilderPackageRoutePermissions asks the package routes as callers
+// with and without the permission each takes: the schema takes that of the
+// document schema, schemas get on builder, and building and resolving a
+// package take configs get, without which nothing is read or checked.
+func TestBuilderPackageRoutePermissions(t *testing.T) {
+	harness := newBuilderResolveHarness(t, nil)
 
-	recorder = harness.do(builderRequest{
-		method: http.MethodGet, path: builderPackageSchemaPath, user: builderTestOwner, role: &role,
-	})
-	if recorder.Code != http.StatusForbidden {
-		t.Fatalf("without schemas get: status = %d, want %d", recorder.Code, http.StatusForbidden)
+	resolveBody, err := json.Marshal(builderResolvePackage(t, harness))
+	if err != nil {
+		t.Fatalf("encoding the package: %v", err)
 	}
+
+	buildBody, err := json.Marshal(map[string]any{"document": builderPackageDocument(t, nil, nil), "include": []string{}})
+	if err != nil {
+		t.Fatalf("encoding the request: %v", err)
+	}
+
+	var (
+		configsOnly = builderRole(builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"list", "get"}))
+		schemasOnly = builderRole(builderPolicy([]string{"schemas"}, []string{"*"}, []string{"get"}))
+		schema      = builderRequest{method: http.MethodGet, path: builderPackageSchemaPath}
+		build       = builderRequest{method: http.MethodPost, path: "/builder/package", body: string(buildBody)}
+		resolve     = builderRequest{method: http.MethodPost, path: "/builder/package/resolve", body: string(resolveBody)}
+	)
+
+	runBuilderAccessCases(t, harness, []builderAccessCase{
+		{name: "the schema with every permission", user: builderTestOwner, request: schema, status: http.StatusOK},
+		{
+			name: "the schema without schemas get", user: builderTestOwner, role: &configsOnly,
+			request: schema, status: http.StatusForbidden, code: bdoc.CodeRequestForbidden,
+		},
+		{name: "the schema with no identity", request: schema, status: http.StatusForbidden, code: bdoc.CodeRequestForbidden},
+		{name: "a build with every permission", user: builderTestOwner, request: build, status: http.StatusOK},
+		{
+			name: "a build without configs get", user: builderTestOwner, role: &schemasOnly,
+			request: build, status: http.StatusForbidden, code: bdoc.CodeRequestForbidden,
+		},
+		{name: "a build with no identity", request: build, status: http.StatusForbidden, code: bdoc.CodeRequestForbidden},
+		{name: "a resolve with every permission", user: builderTestOwner, request: resolve, status: http.StatusOK},
+		{
+			name: "a resolve without configs get", user: builderTestOwner, role: &schemasOnly,
+			request: resolve, status: http.StatusForbidden, code: bdoc.CodeRequestForbidden,
+		},
+		{name: "a resolve with no identity", request: resolve, status: http.StatusForbidden, code: bdoc.CodeRequestForbidden},
+	})
 }
 
 // newBuilderPackageHarness returns a harness with the Scenario config
@@ -311,11 +348,6 @@ func TestBuilderBuildPackageHidesUnreadableScenarios(t *testing.T) {
 
 func TestBuilderBuildPackageRefusals(t *testing.T) {
 	harness, document := newBuilderPackageHarness(t)
-	noConfigs := builderRole(builderPolicy([]string{"schemas"}, []string{"*"}, []string{"get"}))
-
-	if status, _ := buildBuilderPackage(t, harness, &noConfigs, document); status != http.StatusForbidden {
-		t.Errorf("without configs get: status = %d, want %d", status, http.StatusForbidden)
-	}
 
 	for _, include := range [][]string{{"nodes"}, {"icons", "icons"}} {
 		if status, _ := buildBuilderPackage(t, harness, nil, document, include...); status != http.StatusBadRequest {
@@ -719,13 +751,6 @@ func TestBuilderResolvePackageWithoutPermission(t *testing.T) {
 
 	if got := dependencies["image/gone.qc2"].Detail; !strings.HasPrefix(got, "Your role cannot list disk images.") {
 		t.Errorf("the image's detail = %q, want why it is not checked", got)
-	}
-
-	// Without configs get at all, nothing is checked.
-	noConfigs := builderRole(builderPolicy([]string{"schemas"}, []string{"*"}, []string{"get"}))
-
-	if status, _ := resolveBuilderPackage(t, harness, &noConfigs, pkg); status != http.StatusForbidden {
-		t.Errorf("without configs get: status = %d, want %d", status, http.StatusForbidden)
 	}
 }
 

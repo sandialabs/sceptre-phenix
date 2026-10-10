@@ -17,20 +17,6 @@ import (
 	"phenix/web/rbac"
 )
 
-// builderPublisherRole may do everything, also publish templates to every
-// user: the wildcards of the global-admin role config.
-func builderPublisherRole() *rbac.Role {
-	role := builderRole(builderPolicy([]string{"*", "*/*"}, []string{"*", "*/*"}, []string{"*"}))
-
-	return &role
-}
-
-// builderEditorRole holds every config verb and nothing else: it may share
-// its templates, given an account, but not publish them.
-func builderEditorRole() *rbac.Role {
-	return builderShareRole(builderShareConfigVerbs)
-}
-
 // shareTemplates sends a share request of the user's own library, as that
 // user.
 func (h *builderHarness) shareTemplates(user string, request builderTemplateShareRequest) *httptest.ResponseRecorder {
@@ -652,10 +638,10 @@ func TestBuilderTemplatePublish(t *testing.T) {
 		role   *rbac.Role
 		status int
 	}{
-		"the owner without the permission":    {user: builderTestOwner, role: builderEditorRole(), status: http.StatusForbidden},
+		"the owner without the permission":    {user: builderTestOwner, role: builderConfigsRole(), status: http.StatusForbidden},
 		"the owner without config update":     {user: builderTestOwner, role: builderShareRole([]string{"list"}), status: http.StatusForbidden},
 		"another user with the permission":    {user: builderTestPeer, role: publisher, status: http.StatusNotFound},
-		"another user without the permission": {user: builderTestPeer, role: builderEditorRole(), status: http.StatusNotFound},
+		"another user without the permission": {user: builderTestPeer, role: builderConfigsRole(), status: http.StatusNotFound},
 		"another user without anything":       {user: builderTestPeer, role: builderShareRole(nil), status: http.StatusForbidden},
 		"the owner with only the permission":  {user: builderTestOwner, role: publisherOnly(), status: http.StatusForbidden},
 	} {
@@ -734,7 +720,7 @@ func TestBuilderTemplatePublish(t *testing.T) {
 	}
 
 	// The owner takes her own back with config update alone.
-	recorder = harness.publishTemplates(builderTestOwner, builderTestOwner, builderEditorRole(), body(false, nil, []string{fixture.floor}))
+	recorder = harness.publishTemplates(builderTestOwner, builderTestOwner, builderConfigsRole(), body(false, nil, []string{fixture.floor}))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("alice taking her collection back = %d %s", recorder.Code, recorder.Body)
 	}
@@ -757,13 +743,6 @@ func TestBuilderTemplatePublish(t *testing.T) {
 	if got := records[1]; got["user"] != builderTestPeer || got["owner"] != builderTestOwner {
 		t.Errorf("taking alice's item back is logged as %v", got)
 	}
-}
-
-// publisherOnly holds the permission to publish templates and nothing else.
-func publisherOnly() *rbac.Role {
-	role := builderRole(builderPolicy([]string{"builder-templates"}, nil, []string{"publish"}))
-
-	return &role
 }
 
 // TestBuilderTemplatePublishRequests asserts what is wrong with a publish
@@ -852,7 +831,7 @@ func TestBuilderTemplateFlags(t *testing.T) {
 		role                 *rbac.Role
 		canShare, canPublish bool
 	}{
-		{name: "every config verb", user: builderTestOwner, role: builderEditorRole(), canShare: true},
+		{name: "every config verb", user: builderTestOwner, role: builderConfigsRole(), canShare: true},
 		{name: "list only", user: builderTestOwner, role: builderShareRole([]string{"list"})},
 		{name: "publish and update", user: builderTestOwner, role: withPublish("list", "update"), canShare: true, canPublish: true},
 		{name: "publish without update", user: builderTestOwner, role: withPublish("list")},
@@ -926,7 +905,7 @@ func TestBuilderTemplatesPublishPermissionIsKnown(t *testing.T) {
 
 	// The check is the role's: the role of global-admin holds it, an
 	// editor's does not.
-	if !builderTemplatesPublishAllowed(*builderPublisherRole()) || builderTemplatesPublishAllowed(*builderEditorRole()) {
+	if !builderTemplatesPublishAllowed(*builderPublisherRole()) || builderTemplatesPublishAllowed(*builderConfigsRole()) {
 		t.Fatal("builderTemplatesPublishAllowed does not follow the role")
 	}
 }

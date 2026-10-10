@@ -14,23 +14,6 @@ import (
 	"phenix/web/rbac"
 )
 
-// experimentRole may do everything with configs and may get only the named
-// experiments, or every experiment when none is named.
-func experimentRole(names ...string) rbac.Role {
-	if len(names) == 0 {
-		names = []string{"*"}
-	}
-
-	return builderRole(
-		builderPolicy(
-			[]string{"configs", "topologies", "scenarios"},
-			[]string{"*", "*/*"},
-			[]string{"list", "get", "create", "update", "delete"},
-		),
-		builderPolicy([]string{"experiments"}, names, []string{"get"}),
-	)
-}
-
 // linkedExperiment returns an Experiment config that records the Builder
 // publication of the draft and the document, built from the topology.
 func linkedExperiment(t *testing.T, name, topology, draftID, documentID string) store.Config {
@@ -528,35 +511,6 @@ func TestBuilderListDocumentsWithoutExperiment(t *testing.T) {
 	}
 }
 
-// readBuilderDraftAs reads one draft as the user with the role (the full role
-// when nil), as the JSON object the answer is and as its typed view.
-func readBuilderDraftAs(
-	t *testing.T,
-	harness *builderHarness,
-	user string,
-	role *rbac.Role,
-	owner, id string,
-) (builderDraftResponse, map[string]any) {
-	t.Helper()
-
-	recorder := harness.do(builderRequest{
-		method: http.MethodGet, path: "/builder/drafts/" + owner + "/" + id, user: user, role: role,
-	})
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("getting draft %s/%s as %s: status = %d: %s", owner, id, user, recorder.Code, recorder.Body)
-	}
-
-	var (
-		draft builderDraftResponse
-		raw   map[string]any
-	)
-
-	harness.decode(recorder, &draft)
-	harness.decode(recorder, &raw)
-
-	return draft, raw
-}
-
 // TestBuilderPublishAnswersNameExperiment checks the draft of every publish
 // answer names the experiment the draft published: a completed publication,
 // one repeated with the same If-Match, and one that failed part way.
@@ -614,18 +568,6 @@ func TestBuilderPublishAnswersNameExperiment(t *testing.T) {
 		t.Fatalf("experiments not listed: status %q and draft experiment %q, want a publication that names none",
 			quiet.Status, quiet.Draft.Experiment)
 	}
-}
-
-// mustDraftMeta returns a draft as stored.
-func mustDraftMeta(t *testing.T, harness *builderHarness, id string) *bapi.DraftMetadata {
-	t.Helper()
-
-	meta, err := harness.service.GetDraft(t.Context(), id)
-	if err != nil {
-		t.Fatalf("GetDraft returned error: %v", err)
-	}
-
-	return meta
 }
 
 // TestBuilderDraftAnswersNameExperiment checks GET of a draft and the answer
