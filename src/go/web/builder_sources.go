@@ -188,14 +188,7 @@ func newBuilderSourceResponse(cfg *store.Config, stored bool) (builderSourceResp
 		Stored:      stored,
 	}
 
-	if cfg.Kind == builderKindScenario {
-		digest, err := bdoc.ContentDigest(cfg.Spec)
-		if err != nil {
-			return builderSourceResponse{}, fmt.Errorf("digesting scenario %s: %w", cfg.FullName(), err)
-		}
-
-		source.Digest = digest
-	} else if entry.generatable {
+	if entry.generatable {
 		// The digest an import of the config records (see [bdoc.ImportDigest]).
 		digest, err := bdoc.ImportDigest(*cfg)
 		if err != nil {
@@ -341,7 +334,10 @@ func (b *builderAPI) generateDocument(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 
-	options := []bdoc.GenerateOption{bdoc.WithTopologyLoader(b.includedTopologyLoader(actor))}
+	options := []bdoc.GenerateOption{
+		bdoc.WithTopologyLoader(b.includedTopologyLoader(actor)),
+		bdoc.WithScenarioResolver(b.storedScenarioResolver(actor)),
+	}
 	if request.combine() {
 		options = append(options, bdoc.WithCombinedIncludes())
 	}
@@ -354,6 +350,9 @@ func (b *builderAPI) generateDocument(w http.ResponseWriter, r *http.Request) er
 				SetStatus(http.StatusUnprocessableEntity)
 		case errors.Is(err, bdoc.ErrCombineExperiment):
 			return builderGenerateOnlyTopology()
+		case errors.Is(err, errBuilderScenarioLookup):
+			return weberror.NewWebError(err, "unable to read the scenario of %s", config.FullName()).
+				SetStatus(http.StatusInternalServerError)
 		}
 
 		return builderGenerateFailure(err, config)
@@ -367,9 +366,8 @@ func (b *builderAPI) generateDocument(w http.ResponseWriter, r *http.Request) er
 		}
 	}
 
-	warnings, err = b.bindGeneratedScenario(actor, document, warnings, request.Source != "")
-	if err != nil {
-		return err
+	if request.Source == "" && len(document.Scenarios) > 0 {
+		warnings = uploadedExperimentScenarioWarning(document, warnings)
 	}
 
 	// FromConfig leaves the time out, so it generates the same document from
@@ -514,86 +512,45 @@ func (b *builderAPI) generationSource(
 	return builderUploadedSource(request.Content)
 }
 
-// bindGeneratedScenario binds the scenario an experiment names to the stored
-// config. [bdoc.FromConfig] cannot read the store, so it marks that scenario
-// stored with the digest of the experiment's embedded copy, which phenix
-// merges and filters from the stored config and so never matches it: publish
-// would refuse the reference as changed. For a stored experiment, a scenario
-// the caller may list is referenced the way the Scenario dialog attaches one,
-// by the stored apiVersion and digest without content. An uploaded experiment
-// was not built from this server's scenario of that name, which may differ, so
-// its own copy is kept, as is the copy of a stored experiment whose scenario is
-// missing or hidden from the caller: either is attached as an uploaded
-// scenario, with a warning.
-func (b *builderAPI) bindGeneratedScenario(
-	actor builderActor,
-	document *bdoc.Document,
-	warnings []string,
-	storedSource bool,
-) ([]string, error) {
-	ref := document.Scenario
-	if ref == nil || ref.Kind != bdoc.ScenarioRefStored {
-		return warnings, nil
-	}
+// errBuilderScenarioLookup wraps a failure to read the scenario an imported
+// experiment names, which is the server's fault and not the config's.
+var errBuilderScenarioLookup = errors.New("reading the scenario failed")
 
-	if !storedSource {
-		return keepEmbeddedScenario(document, warnings, fmt.Sprintf(
-			"the experiment file's copy of scenario %q is attached as an uploaded scenario, "+
-				"not this server's stored scenario of that name",
-			ref.Name,
-		)), nil
-	}
-
-	var stored *store.Config
-
-	// The name is an annotation, which an experiment can set to anything, so
-	// only a plausible config name is looked up.
-	name := store.ConfigFullName(builderKindScenario, ref.Name)
-	plausible := ref.Name != "" && strings.TrimSpace(ref.Name) == ref.Name && !strings.Contains(ref.Name, "/")
-
-	if plausible &&
-		builderBaseAllowed(actor.role, builderVerbList, name) &&
-		builderKindAllowed(actor.role, builderScenarios, ref.Name) {
-		config, err := b.getConfig(name)
-		if err != nil && !errors.Is(err, store.ErrNotExist) {
-			return nil, weberror.NewWebError(err, "unable to get config %s", name).
-				SetStatus(http.StatusInternalServerError)
+// storedScenarioResolver tells generation whether the Scenario config an
+// experiment names is one the caller may list on this server: the config
+// permission and the scenarios permission, as GET /builder/sources lists
+// scenarios, and the config is stored. A scenario the caller may not list is
+// answered as one that does not exist, so its existence is not disclosed.
+func (b *builderAPI) storedScenarioResolver(actor builderActor) bdoc.ScenarioResolver {
+	return func(name string) (bool, error) {
+		full := store.ConfigFullName(builderKindScenario, name)
+		if full == "" ||
+			!builderBaseAllowed(actor.role, builderVerbList, full) ||
+			!builderKindAllowed(actor.role, builderScenarios, name) {
+			return false, nil
 		}
 
-		if err == nil {
-			stored = config
+		_, err := b.getConfig(full)
+
+		switch {
+		case err == nil:
+			return true, nil
+		case errors.Is(err, store.ErrNotExist):
+			return false, nil
 		}
-	}
 
-	if stored == nil {
-		return keepEmbeddedScenario(document, warnings, fmt.Sprintf(
-			"scenario %q is not available on this server, so the experiment's copy of it is attached as an uploaded scenario",
-			ref.Name,
-		)), nil
+		return false, fmt.Errorf("%w: %w", errBuilderScenarioLookup, err)
 	}
-
-	digest, err := bdoc.ContentDigest(stored.Spec)
-	if err != nil {
-		return nil, weberror.NewWebError(err, "unable to digest scenario %s", name).
-			SetStatus(http.StatusInternalServerError)
-	}
-
-	document.Scenario = &bdoc.ScenarioRef{
-		Kind:       bdoc.ScenarioRefStored,
-		Name:       stored.Metadata.Name,
-		Content:    nil,
-		APIVersion: stored.Version,
-		Digest:     digest,
-	}
-
-	return warnings, nil
 }
 
-// keepEmbeddedScenario attaches the experiment's embedded copy of its scenario
-// as an uploaded scenario of the same name, and reports it with warning.
-func keepEmbeddedScenario(document *bdoc.Document, warnings []string, warning string) []string {
-	document.Scenario.Kind = bdoc.ScenarioRefUploaded
-	warnings = append(warnings, warning)
+// uploadedExperimentScenarioWarning says that the scenario an imported
+// experiment file names is listed as this server's Scenario config of that
+// name: the scenario the file holds is not imported, and may differ.
+func uploadedExperimentScenarioWarning(document *bdoc.Document, warnings []string) []string {
+	warnings = append(warnings, fmt.Sprintf(
+		"scenario %q is this server's Scenario config of that name, not the copy the experiment file holds",
+		document.Scenarios[0],
+	))
 	document.Source.Warnings = warnings
 
 	return warnings

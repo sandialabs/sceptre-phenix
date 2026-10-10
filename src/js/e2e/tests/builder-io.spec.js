@@ -1562,9 +1562,9 @@ test.describe('import', () => {
     expect(aliases).toEqual({ EXP: 101, MGMT: 102 });
     // Publishing writes the include, never the included devices again.
     expect.soft(doc.source.includeTopologies).toEqual([child]);
-    // The stored scenario is referenced, not copied.
-    expect.soft(doc.scenario).toMatchObject({ kind: 'stored', name: scenario });
-    expect.soft(doc.scenario.content).toBeUndefined();
+    // The stored scenario is listed by name, and nothing of it copied.
+    expect.soft(doc.scenarios).toEqual([scenario]);
+    expect.soft(doc).not.toHaveProperty('scenario');
     expect
       .soft(
         Object.fromEntries(
@@ -1590,7 +1590,7 @@ test.describe('import', () => {
       const saved = `Saved ${fileName}: 4 devices, 2 networks and 5 connections.`;
       const isRead = (url) =>
         url.pathname.endsWith(`${API}/configs/Scenario/${scenario}`);
-      // The reference carries no content: each download reads the scenario.
+      // The document names the scenario only: each download reads it.
       const reads = [];
       const onResponse = (response) => {
         if (isRead(new URL(response.url()))) {
@@ -1686,11 +1686,11 @@ test.describe('import', () => {
         .soft(annotations.locator('dd'))
         .toHaveText([scenario, topology]);
 
-      // A stored scenario's apps are read from its config.
+      // A listed scenario's apps are read from its config.
       const section = inspector.getByTestId('inspector-scenario');
       await expect
         .soft(section.getByTestId('inspector-scenario-name'))
-        .toHaveText(`Stored scenario ${scenario}`);
+        .toHaveText(`Scenario ${scenario}`);
       const apps = section.getByTestId('inspector-scenario-apps');
       await expect
         .soft(apps.locator('dt'))
@@ -1699,24 +1699,28 @@ test.describe('import', () => {
         .soft(apps.locator('dd'))
         .toHaveText(['host-a, host-b', 'No hosts']);
 
-      // Edit scenario opens the toolbar's Scenario dialog. Removing the
+      // Edit scenarios opens the toolbar's Scenarios dialog. Removing the
       // scenario there leaves focus on the same button, now Add scenario.
-      const edit = section.getByRole('button', { name: 'Edit scenario' });
+      const edit = section.getByRole('button', { name: 'Edit scenarios' });
       await edit.click();
-      const dialog = page.getByRole('dialog', { name: 'Scenario' });
+      const dialog = page.getByRole('dialog', { name: 'Scenarios' });
       await expect(dialog).toBeVisible();
-      await expect.soft(dialog.getByLabel('Stored scenario')).toBeChecked();
       await expect
-        .soft(dialog.getByTestId('scenario-name'))
-        .toHaveValue(scenario);
-      await dialog.getByLabel('No scenario').check();
+        .soft(dialog.getByTestId('scenario-row-1'))
+        .toContainText(scenario);
+      await dialog
+        .getByRole('button', { name: `Remove scenario ${scenario}` })
+        .click();
+      // Focus stays in the dialog, on the scenario picker, as the row went.
+      await expect.soft(dialog.getByTestId('scenario-name')).toBeFocused();
+      await expect.soft(dialog.getByTestId('scenario-none')).toBeVisible();
       await dialog.getByTestId('scenario-submit').click();
       await expect(dialog).toBeHidden();
-      await expect.soft(section).toContainText('No scenario.');
+      await expect.soft(section).toContainText('No scenarios.');
       await expect
         .soft(section.getByRole('button', { name: 'Add scenario' }))
         .toBeFocused();
-      await expect.soft(builder).toHaveAnnounced('Removed scenario');
+      await expect.soft(builder).toHaveAnnounced('Removed scenarios');
     });
 
     await test.step('devices of included topologies are shown read only', async () => {

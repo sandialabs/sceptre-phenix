@@ -3,9 +3,6 @@ package builder
 import (
 	"strings"
 	"time"
-
-	"phenix/store"
-	"phenix/types/version"
 )
 
 const (
@@ -40,6 +37,15 @@ const (
 	// MaxDiagramNoteBytes bounds one of those notes, and one note of a
 	// switch.
 	MaxDiagramNoteBytes = 4096
+
+	// MaxScenarios is the most Scenario configs a document may name (see
+	// [Document.Scenarios]).
+	MaxScenarios = 20
+
+	// MaxScenarioNameBytes bounds the name of one of those configs. It is the
+	// bound the draft service puts on the names a publication records, so the
+	// scenario an experiment is published with can always be recorded.
+	MaxScenarioNameBytes = 256
 )
 
 // NodeKind enumerates the kinds of nodes a builder document can contain.
@@ -72,18 +78,6 @@ const (
 	SourceKindExperiment SourceKind = "experiment"
 )
 
-// ScenarioRefKind describes how a scenario is referenced by a document.
-type ScenarioRefKind string
-
-const (
-	// ScenarioRefStored references a scenario config held in the phenix store by
-	// name. The content may additionally be cached in the document.
-	ScenarioRefStored ScenarioRefKind = "stored"
-	// ScenarioRefUploaded references scenario content uploaded (or embedded from
-	// an experiment) and carried inside the document.
-	ScenarioRefUploaded ScenarioRefKind = "uploaded"
-)
-
 // Document is the root of the builder model. It is versioned by [Document.Schema]
 // and [Document.Revision] and is safe to persist verbatim.
 type Document struct {
@@ -91,14 +85,20 @@ type Document struct {
 	Revision int    `json:"revision"`
 	// Metadata is what the document says of itself: its identity, name and
 	// description, who made and last saved it and when, and its notes.
-	Metadata Metadata     `json:"metadata"`
-	Nodes    []Node       `json:"nodes"`
-	Networks []Network    `json:"networks"`
-	Edges    []Edge       `json:"edges"`
-	Viewport Viewport     `json:"viewport"`
-	Grid     Grid         `json:"grid"`
-	Scenario *ScenarioRef `json:"scenario,omitempty"`
-	Source   *Source      `json:"source,omitempty"`
+	Metadata Metadata  `json:"metadata"`
+	Nodes    []Node    `json:"nodes"`
+	Networks []Network `json:"networks"`
+	Edges    []Edge    `json:"edges"`
+	Viewport Viewport  `json:"viewport"`
+	Grid     Grid      `json:"grid"`
+	// Scenarios names the Scenario configs of the phenix store the diagram is
+	// used with: at most [MaxScenarios], each a config name of at most
+	// [MaxScenarioNameBytes], none named twice ignoring case. The document
+	// carries no scenario content. Publishing adds the topology to the
+	// "topology" annotation of each, and an experiment published with the
+	// topology uses one of them.
+	Scenarios []string `json:"scenarios,omitempty"`
+	Source    *Source  `json:"source,omitempty"`
 	// Layout is the id of the automatic layout that last laid this document
 	// out, which the editor names in its layout menu. Empty, or an id the
 	// editor does not know, means the positions were not made by a layout. It
@@ -301,25 +301,6 @@ type Grid struct {
 	Snap    bool    `json:"snap"`
 }
 
-// ScenarioRef optionally binds a scenario to the document.
-type ScenarioRef struct {
-	Kind ScenarioRefKind `json:"kind"`
-	// Name is the stored config name for [ScenarioRefStored], and the original
-	// file name (optional) for [ScenarioRefUploaded].
-	Name string `json:"name,omitempty"`
-	// Content is the scenario spec. Required for [ScenarioRefUploaded], optional
-	// (cached) for [ScenarioRefStored]. Whenever it is present, Document.Validate
-	// validates it against the phenix scenario schema for [ScenarioAPIVersion].
-	Content map[string]any `json:"content,omitempty"`
-	// APIVersion is the scenario config apiVersion the reference was taken
-	// from. It is required for both reference kinds; see [ScenarioAPIVersion].
-	APIVersion string `json:"apiVersion,omitempty"`
-	// Digest is the content digest, as produced by [ContentDigest]. It is
-	// required for both reference kinds, and must match Content whenever
-	// Content is present.
-	Digest string `json:"digest,omitempty"`
-}
-
 // Source records document provenance and any warnings raised while generating
 // it.
 type Source struct {
@@ -458,12 +439,4 @@ func (dev *Device) InterfaceHandle(id string) *InterfaceHandle {
 	}
 
 	return nil
-}
-
-// ScenarioAPIVersion returns the config apiVersion of scenario content carried
-// by a [ScenarioRef]. Scenario content is always imported from a config spec in
-// the latest stored representation, so it matches the latest stored scenario
-// version.
-func ScenarioAPIVersion() string {
-	return store.APIGroup + "/" + version.StoredVersion[kindScenario]
 }

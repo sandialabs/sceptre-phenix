@@ -1,10 +1,11 @@
 <!--
   The rest of the Inspector's Diagram section, below the diagram's Name and
   Description: who made the diagram and who saved it last, the annotations
-  of the config the diagram was imported from, its scenario, with the hosts
-  each app runs on, and the notes of the diagram. All but the notes are
-  read only here. Edit scenario opens the Scenario dialog the toolbar's
-  Scenario button opens, and like it, not in a read-only draft.
+  of the config the diagram was imported from, its scenarios, each with the
+  hosts each of its apps runs on, and the notes of the diagram. All but the
+  notes are read only here. Edit scenarios (Add scenario when there is
+  none) opens the Scenario dialog the toolbar's Scenarios button opens, and
+  like it, not in a read-only draft.
 
   Details shows what the server wrote into the document's metadata when it
   stored it: who made it and when, and the user and time of the save that
@@ -14,9 +15,9 @@
   text, not a live region: the values change with every save, which the
   save state announces already.
 
-  A stored scenario reference carries no content (see ScenarioDialog), so
-  the apps of a stored scenario are read from its config (see the store's
-  fetchScenario), when the role may read it.
+  A document names its scenarios and holds none of their content, so the
+  apps of each are read from its config (see the store's fetchScenario),
+  when the role may read it.
 
   Notes are the metadata's notes, one text box each. A note is written
   into the diagram when its box changes and loses focus, as one undo step
@@ -85,36 +86,47 @@
   </div>
 
   <div class="inspector-diagram" data-testid="inspector-scenario">
-    <h3>Scenario</h3>
-    <p v-if="!scenario" class="inspector-diagram__none">No scenario.</p>
-    <template v-else>
-      <p class="inspector-diagram__from" data-testid="inspector-scenario-name">
-        {{ scenario.kind === 'stored' ? 'Stored' : 'Uploaded' }} scenario
-        <strong v-if="scenario.name">{{ scenario.name }}</strong>
-      </p>
-      <p v-if="apps.note" class="inspector-diagram__none">{{ apps.note }}</p>
-      <template v-else-if="apps.list.length">
-        <p class="inspector-diagram__label">Apps and their hosts</p>
-        <dl
-          class="inspector-diagram__list"
-          data-testid="inspector-scenario-apps">
-          <div v-for="(app, index) in apps.list" :key="`${index}-${app.name}`">
-            <dt>
-              {{ app.name }}
-              <span v-if="app.disabled" class="inspector-diagram__muted"
-                >(disabled)</span
-              >
-            </dt>
-            <dd class="inspector-diagram__hosts">
-              {{ app.hosts.length ? app.hosts.join(', ') : 'No hosts' }}
-            </dd>
-          </div>
-        </dl>
-      </template>
-      <p v-else class="inspector-diagram__none">No apps.</p>
-    </template>
-    <!-- One button, whose name follows the scenario, so focus stays on it
-         when the dialog closes after adding or removing one. -->
+    <h3>Scenarios</h3>
+    <p v-if="!scenarioRows.length" class="inspector-diagram__none">
+      No scenarios.
+    </p>
+    <ul
+      v-else
+      class="inspector-diagram__scenarios"
+      data-testid="inspector-scenarios">
+      <li
+        v-for="(row, index) in scenarioRows"
+        :key="row.name"
+        :data-testid="`inspector-scenario-${index + 1}`">
+        <p
+          class="inspector-diagram__from"
+          data-testid="inspector-scenario-name">
+          Scenario <strong>{{ row.name }}</strong>
+        </p>
+        <p v-if="row.note" class="inspector-diagram__none">{{ row.note }}</p>
+        <template v-else-if="row.apps.length">
+          <p class="inspector-diagram__label">Apps and their hosts</p>
+          <dl
+            class="inspector-diagram__list"
+            data-testid="inspector-scenario-apps">
+            <div v-for="(app, at) in row.apps" :key="`${at}-${app.name}`">
+              <dt>
+                {{ app.name }}
+                <span v-if="app.disabled" class="inspector-diagram__muted"
+                  >(disabled)</span
+                >
+              </dt>
+              <dd class="inspector-diagram__hosts">
+                {{ app.hosts.length ? app.hosts.join(', ') : 'No hosts' }}
+              </dd>
+            </div>
+          </dl>
+        </template>
+        <p v-else class="inspector-diagram__none">No apps.</p>
+      </li>
+    </ul>
+    <!-- One button, whose name follows the list, so focus stays on it when
+         the dialog closes after adding or removing scenarios. -->
     <button
       v-if="!store.readOnly"
       type="button"
@@ -123,7 +135,7 @@
       data-testid="inspector-scenario-edit"
       @click="$emit('scenario')">
       <builder-icon name="document" :size="14" />
-      {{ scenario ? 'Edit scenario' : 'Add scenario' }}
+      {{ scenarioRows.length ? 'Edit scenarios' : 'Add scenario' }}
     </button>
   </div>
 
@@ -218,10 +230,10 @@
   import {
     diagramNoteProblem,
     MAX_DIAGRAM_NOTES,
+    documentScenarios,
     metadataOf,
     scenarioApps,
     sourceAnnotations,
-    storedScenarioName,
   } from '@/builder/model.js';
   import { useBuilderStore } from '@/builder/store.js';
   import { isBlank } from '@/builder/text.js';
@@ -278,18 +290,19 @@
 
   const annotations = computed(() => sourceAnnotations(store.doc));
 
-  const scenario = computed(() => store.doc.scenario || null);
+  // The Scenario configs the diagram lists, which it names but does not
+  // hold: their apps are read from the server.
+  const scenarioNames = computed(() => documentScenarios(store.doc));
 
-  // A stored reference without content names the scenario to read.
-  const storedName = computed(() => storedScenarioName(scenario.value));
+  // Those whose apps have not been read, also one whose reading was dropped
+  // since, as storing a scenario again drops it (see saveScenarioConfig).
+  const unread = computed(() =>
+    scenarioNames.value.filter((name) => !store.storedScenarios[name]),
+  );
 
   watch(
-    storedName,
-    (name) => {
-      if (name) {
-        store.fetchScenario(name);
-      }
-    },
+    () => unread.value.join('\n'),
+    () => unread.value.forEach((name) => store.fetchScenario(name)),
     { immediate: true },
   );
 
@@ -300,27 +313,27 @@
     invalid: 'The server has no scenario of this name.',
   };
 
-  // The apps to list, or what to say instead of them.
-  const apps = computed(() => {
-    if (!storedName.value) {
-      return { list: scenarioApps(scenario.value?.content), note: '' };
-    }
+  // Each listed scenario with the apps to list, or what to say instead of
+  // them.
+  const scenarioRows = computed(() =>
+    scenarioNames.value.map((name) => {
+      const read = store.storedScenarios[name];
 
-    const read = store.storedScenarios[storedName.value];
+      if (read?.content) {
+        return { name, apps: scenarioApps(read.content), note: '' };
+      }
 
-    if (read?.content) {
-      return { list: scenarioApps(read.content), note: '' };
-    }
+      if (!read || read.loading) {
+        return { name, apps: [], note: 'Reading its apps…' };
+      }
 
-    if (!read || read.loading) {
-      return { list: [], note: 'Reading its apps…' };
-    }
-
-    return {
-      list: [],
-      note: PROBLEMS[read.problem] || 'Its apps could not be read.',
-    };
-  });
+      return {
+        name,
+        apps: [],
+        note: PROBLEMS[read.problem] || 'Its apps could not be read.',
+      };
+    }),
+  );
 
   // --- notes -----------------------------------------------------------
 
@@ -575,6 +588,16 @@
   .inspector-diagram__hosts,
   .inspector-diagram__detail {
     overflow-wrap: anywhere;
+  }
+
+  .inspector-diagram__scenarios {
+    margin: 0 0 0.4rem;
+    padding: 0;
+    list-style: none;
+  }
+
+  .inspector-diagram__scenarios > li + li {
+    margin-top: 0.5rem;
   }
 
   /* A note is its text box over its Delete button; its text keeps its line

@@ -7,7 +7,7 @@
 // Wire shape (see src/go/types/builder/document.go):
 //
 //   { $schema, revision, metadata, nodes[], networks[], edges[], viewport,
-//     grid, scenario?, source?, layout?, templates?, icons? }
+//     grid, scenarios?, source?, layout?, templates?, icons? }
 //
 // where metadata is { id, name?, description?, createdBy?, createdAt?,
 // updatedBy?, updatedAt?, notes? }.
@@ -3070,22 +3070,37 @@ export function setDiagramNotes(doc, notes) {
 }
 
 /**
- * Sets or clears the document's scenario reference.
+ * The names of the Scenario configs the document lists, in its order: the
+ * text entries of `scenarios`, or none.
+ *
+ * @param {object} [doc]
+ * @returns {string[]}
+ */
+export function documentScenarios(doc) {
+  return (Array.isArray(doc?.scenarios) ? doc.scenarios : []).filter(
+    (name) => typeof name === 'string' && name !== '',
+  );
+}
+
+/**
+ * Replaces the Scenario configs the document lists; an empty list removes
+ * `scenarios`, which the document then leaves out, as the server encodes
+ * it.
  *
  * @param {object} doc
- * @param {object|null} scenario
+ * @param {string[]} names
  * @returns {object} document
  */
-export function setScenario(doc, scenario) {
+export function setScenarios(doc, names = []) {
   const next = { ...doc };
 
-  if (!scenario) {
-    delete next.scenario;
+  if (names.length === 0) {
+    delete next.scenarios;
 
     return next;
   }
 
-  next.scenario = scenario;
+  next.scenarios = [...names];
 
   return next;
 }
@@ -3133,20 +3148,6 @@ export function scenarioApps(content) {
         .filter(named),
       disabled: app.disabled === true,
     }));
-}
-
-/**
- * The name of the stored scenario whose content must be read from its
- * config, since a stored reference carries none (see ScenarioDialog); ''
- * for any other scenario, and for none.
- *
- * @param {object} [scenario] a document's scenario
- * @returns {string}
- */
-export function storedScenarioName(scenario) {
-  return scenario?.kind === 'stored' && !scenario.content
-    ? scenario.name || ''
-    : '';
 }
 
 /**

@@ -2,8 +2,10 @@ package builder_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -321,179 +323,180 @@ func TestValidateAcceptsSourceDigestAndUpdatedAt(t *testing.T) {
 	}
 }
 
-func TestFromConfigRecordsScenarioAPIVersion(t *testing.T) {
-	doc, _ := documentFromConfig(t, loadConfig(t, "experiment.json"))
+// scenarioResolver returns a resolver that finds the scenarios named in
+// stored, and records every name it is asked about in asked.
+func scenarioResolver(asked *[]string, stored ...string) builder.ScenarioResolver {
+	return func(name string) (bool, error) {
+		*asked = append(*asked, name)
 
-	if doc.Scenario == nil {
-		t.Fatal("generated document has no scenario reference")
-	}
+		if slices.Contains(stored, name) {
+			return true, nil
+		}
 
-	if doc.Scenario.APIVersion != builder.ScenarioAPIVersion() {
-		t.Fatalf("scenario apiVersion = %q, want %q",
-			doc.Scenario.APIVersion, builder.ScenarioAPIVersion())
-	}
-
-	if !strings.HasPrefix(doc.Scenario.Digest, "sha256:") {
-		t.Fatalf("scenario digest = %q", doc.Scenario.Digest)
-	}
-
-	if builder.ScenarioAPIVersion() == "" ||
-		!strings.HasPrefix(builder.ScenarioAPIVersion(), "phenix.sandia.gov/") {
-		t.Fatalf("unexpected scenario apiVersion %q", builder.ScenarioAPIVersion())
+		return false, nil
 	}
 }
 
-func TestValidateAcceptsCompleteScenarioReferences(t *testing.T) {
-	doc := loadDocumentFixture(t, "document.json")
+// TestFromExperimentListsStoredScenario checks that an experiment whose
+// scenario annotation names a stored Scenario config lists it, and holds
+// nothing of the scenario content the experiment carries.
+func TestFromExperimentListsStoredScenario(t *testing.T) {
+	var asked []string
 
-	if doc.Scenario.Kind != builder.ScenarioRefStored {
-		t.Fatalf("fixture scenario kind = %q", doc.Scenario.Kind)
-	}
-
-	if err := doc.Validate(); err != nil {
-		t.Fatalf("stored scenario reference is invalid: %v", err)
-	}
-
-	// A stored reference may cache its content, as long as the digest matches.
-	content := map[string]any{"apps": []any{map[string]any{"name": "ntp"}}}
-
-	digest, err := builder.ContentDigest(content)
+	doc, warnings, err := builder.FromConfig(
+		loadConfig(t, "experiment.json"),
+		builder.WithScenarioResolver(scenarioResolver(&asked, "builder-scenario")),
+	)
 	if err != nil {
-		t.Fatalf("ContentDigest: %v", err)
+		t.Fatalf("FromConfig: %v", err)
 	}
 
-	doc.Scenario.Content = content
-	doc.Scenario.Digest = digest
-
-	if err := doc.Validate(); err != nil {
-		t.Fatalf("stored scenario reference with content is invalid: %v", err)
+	if !reflect.DeepEqual(doc.Scenarios, []string{"builder-scenario"}) {
+		t.Fatalf("scenarios = %q, want [builder-scenario]", doc.Scenarios)
 	}
 
-	doc.Scenario = uploadedScenario(content)
-
-	if err := doc.Validate(); err != nil {
-		t.Fatalf("uploaded scenario reference is invalid: %v", err)
-	}
-}
-
-func TestValidateChecksScenarioContentAgainstPhenixSchema(t *testing.T) {
-	valid := map[string]any{
-		"apps": []any{
-			map[string]any{
-				"name":     "ntp",
-				"assetDir": "/phenix/topologies/example/assets",
-				"disabled": false,
-				"metadata": map[string]any{"setting0": true, "setting1": 42},
-				"hosts": []any{
-					map[string]any{
-						"hostname": "router",
-						"metadata": map[string]any{"server": true},
-					},
-				},
-			},
-		},
+	if !reflect.DeepEqual(asked, []string{"builder-scenario"}) {
+		t.Fatalf("resolver asked about %q, want only builder-scenario", asked)
 	}
 
-	doc := loadDocumentFixture(t, "document.json")
-	doc.Scenario = uploadedScenario(valid)
-
-	if err := doc.Validate(); err != nil {
-		t.Fatalf("complete v2 scenario content was rejected: %v", err)
+	if containsSubstring(warnings, "scenario") {
+		t.Fatalf("warnings = %q, want none about the scenario", warnings)
 	}
 
-	// A cached stored reference is validated the same way.
-	cached := loadDocumentFixture(t, "document.json")
-	cached.Scenario.Content = valid
-
-	digest, err := builder.ContentDigest(valid)
+	data, err := builder.Encode(doc)
 	if err != nil {
-		t.Fatalf("ContentDigest: %v", err)
+		t.Fatalf("Encode: %v", err)
 	}
 
-	cached.Scenario.Digest = digest
-
-	if err := cached.Validate(); err != nil {
-		t.Fatalf("cached stored scenario content was rejected: %v", err)
+	if strings.Contains(string(data), `"apps"`) {
+		t.Fatalf("document holds scenario content:\n%s", data)
 	}
 }
 
-func TestValidateRejectsInvalidScenarioContent(t *testing.T) {
-	tests := []struct {
-		name    string
-		content map[string]any
-		wantMsg string
+// TestFromExperimentWarnsOfScenarioNotStored checks that an experiment whose
+// scenario is not a stored Scenario config the caller may list, or that
+// generation cannot look up, lists none and says so.
+func TestFromExperimentWarnsOfScenarioNotStored(t *testing.T) {
+	const want = `the experiment's scenario "builder-scenario" is not a stored Scenario config and was not attached`
+
+	var asked []string
+
+	for name, options := range map[string][]builder.GenerateOption{
+		"not found":   {builder.WithScenarioResolver(scenarioResolver(&asked, "other"))},
+		"no resolver": nil,
+	} {
+		doc, warnings, err := builder.FromConfig(loadConfig(t, "experiment.json"), options...)
+		if err != nil {
+			t.Fatalf("%s: FromConfig: %v", name, err)
+		}
+
+		if len(doc.Scenarios) != 0 {
+			t.Errorf("%s: scenarios = %q, want none", name, doc.Scenarios)
+		}
+
+		if !containsSubstring(warnings, want) || !containsSubstring(doc.Source.Warnings, want) {
+			t.Errorf("%s: warnings = %q, source warnings = %q, want %q", name, warnings, doc.Source.Warnings, want)
+		}
+	}
+}
+
+// TestFromExperimentScenarioLookups checks which scenario names generation
+// looks up: only a config name, and only for an experiment that names one.
+func TestFromExperimentScenarioLookups(t *testing.T) {
+	for name, test := range map[string]struct {
+		annotation string
+		// warning is the scenario warning generation gives, "" for none.
+		warning string
 	}{
-		{
-			name:    "missing apps",
-			content: map[string]any{"nope": true},
-			wantMsg: "invalid scenario content",
+		"a name that is not a config name": {
+			annotation: "two words",
+			warning:    `the experiment's scenario "two words" is not a stored Scenario config and was not attached`,
 		},
-		{
-			name:    "app without a name",
-			content: map[string]any{"apps": []any{map[string]any{"assetDir": "/tmp"}}},
-			wantMsg: "invalid scenario content",
+		"scenario content and no name": {
+			annotation: "",
+			warning:    "the experiment's scenario is not a stored Scenario config and was not attached",
 		},
-		{
-			name: "host without a hostname",
-			content: map[string]any{"apps": []any{map[string]any{
-				"name":  "ntp",
-				"hosts": []any{map[string]any{"metadata": map[string]any{"a": 1}}},
-			}}},
-			wantMsg: "invalid scenario content",
-		},
-		{
-			name:    "app is not an object",
-			content: map[string]any{"apps": []any{"ntp"}},
-			wantMsg: "invalid scenario content",
-		},
-	}
+	} {
+		config := loadConfig(t, "experiment.json")
+		config.Metadata.Annotations["scenario"] = test.annotation
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			doc := loadDocumentFixture(t, "document.json")
-			doc.Scenario = uploadedScenario(test.content)
+		if test.annotation == "" {
+			delete(config.Metadata.Annotations, "scenario")
+		}
 
-			err := doc.Validate()
-			if err == nil {
-				t.Fatal("expected an error, got nil")
-			}
+		var asked []string
 
-			if !strings.Contains(err.Error(), test.wantMsg) {
-				t.Fatalf("error %q does not contain %q", err.Error(), test.wantMsg)
-			}
-		})
+		doc, warnings, err := builder.FromConfig(
+			config, builder.WithScenarioResolver(scenarioResolver(&asked, test.annotation)),
+		)
+		if err != nil {
+			t.Fatalf("%s: FromConfig: %v", name, err)
+		}
+
+		if len(asked) != 0 || len(doc.Scenarios) != 0 {
+			t.Errorf("%s: asked about %q and listed %q, want neither", name, asked, doc.Scenarios)
+		}
+
+		if !containsSubstring(warnings, test.warning) {
+			t.Errorf("%s: warnings = %q, want %q", name, warnings, test.warning)
+		}
 	}
 }
 
-func TestValidateRejectsUnsupportedScenarioAPIVersion(t *testing.T) {
-	doc := loadDocumentFixture(t, "document.json")
+// TestFromExperimentFailsWhenScenarioLookupFails checks that a resolver's
+// error fails generation rather than leaving the scenario out.
+func TestFromExperimentFailsWhenScenarioLookupFails(t *testing.T) {
+	failure := errors.New("store unavailable")
 
-	ref := uploadedScenario(map[string]any{"apps": []any{map[string]any{"name": "ntp"}}})
-	ref.APIVersion = "phenix.sandia.gov/v1"
-	doc.Scenario = ref
-
-	err := doc.Validate()
-	if err == nil {
-		t.Fatal("expected an error, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "unsupported scenario apiVersion") {
-		t.Fatalf("error %q does not report an unsupported apiVersion", err.Error())
+	_, _, err := builder.FromConfig(
+		loadConfig(t, "experiment.json"),
+		builder.WithScenarioResolver(func(string) (bool, error) { return false, failure }),
+	)
+	if !errors.Is(err, failure) {
+		t.Fatalf("FromConfig error = %v, want the resolver's", err)
 	}
 }
 
-func TestValidateSkipsContentChecksForStoredReferenceWithoutContent(t *testing.T) {
-	doc := loadDocumentFixture(t, "document.json")
+// TestFromTopologyListsNoScenario checks that a topology, which names no
+// scenario, never asks the resolver.
+func TestFromTopologyListsNoScenario(t *testing.T) {
+	var asked []string
 
-	if len(doc.Scenario.Content) != 0 {
-		t.Fatal("fixture scenario unexpectedly carries content")
+	doc, _, err := builder.FromConfig(
+		loadConfig(t, "topology.json"),
+		builder.WithScenarioResolver(scenarioResolver(&asked, "builder-scenario")),
+	)
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
 	}
 
-	// An arbitrary apiVersion is tolerated while the content is not cached; the
-	// referenced config is validated when it is loaded at publish time.
-	doc.Scenario.APIVersion = "phenix.sandia.gov/v1"
+	if len(asked) != 0 || len(doc.Scenarios) != 0 {
+		t.Fatalf("asked about %q and listed %q, want neither", asked, doc.Scenarios)
+	}
+}
 
-	if err := doc.Validate(); err != nil {
-		t.Fatalf("content-less stored reference was rejected: %v", err)
+// TestDecodeRefusesScenarioObject checks that the scenario object documents
+// once held is an unknown field, as every other key the schema lacks.
+func TestDecodeRefusesScenarioObject(t *testing.T) {
+	data, err := builder.Encode(loadDocumentFixture(t, "document.json"))
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("decoding the fixture: %v", err)
+	}
+
+	delete(raw, "scenarios")
+	raw["scenario"] = map[string]any{"kind": "stored", "name": "builder-scenario"}
+
+	old, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("encoding: %v", err)
+	}
+
+	if _, err := builder.Decode(old); err == nil || !strings.Contains(err.Error(), `unknown field "scenario"`) {
+		t.Fatalf("Decode error = %v, want the scenario key refused as unknown", err)
 	}
 }

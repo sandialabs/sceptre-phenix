@@ -167,7 +167,8 @@ describe('the Publish dialog in the editor', () => {
 
 describe('the topology name’s hints', () => {
   // The diagram imported from topology lab, which the server has, so the
-  // dialog offers to update it.
+  // dialog offers to update it. The topology name proposed is the diagram's,
+  // which its metadata holds.
   const imported = (store) => {
     store.doc = {
       ...store.doc,
@@ -308,37 +309,70 @@ describe('the experiment name’s hints', () => {
   });
 });
 
-describe('the scenario name’s rule', () => {
-  // A diagram that carries an uploaded scenario, which the dialog writes to
-  // the config the Scenario name field names.
-  const uploaded = (store) => {
-    store.doc = {
-      ...store.doc,
-      scenario: { kind: 'uploaded', name: 'sc.yaml', content: {} },
-    };
+describe('the scenarios', () => {
+  // A diagram that lists two scenarios.
+  const listed = (store) => {
+    store.doc = { ...store.doc, scenarios: ['plant-ntp', 'plant-attack'] };
   };
+  const withExperiment = { mode: 'topology-experiment', experimentName: 'exp' };
 
-  test('an invalid name shows why with the rule, and a valid one neither', async () => {
-    const bad = await render(
+  // The options of the Experiment scenario select: their values, labels,
+  // and which is selected.
+  function options(html) {
+    const select = element(html, 'publish-scenario');
+
+    return tags(select, 'option').map((tag) => ({
+      value: tag.match(/value="([^"]*)"/)?.[1],
+      selected: /\sselected\b/.test(tag),
+    }));
+  }
+
+  test('an experiment uses the first listed unless another or none is chosen', async () => {
+    const html = await render({}, { setup: listed, form: withExperiment });
+    const select = element(html, 'publish-scenario');
+
+    expect(html).toMatch(
+      /<label for="publish-scenario"[^>]*>Experiment scenario<\/label>/,
+    );
+    expect(options(html)).toEqual([
+      { value: 'plant-ntp', selected: true },
+      { value: 'plant-attack', selected: false },
+      { value: '', selected: false },
+    ]);
+    expect(text(select)).toContain('No scenario');
+    expect(tags(select, 'select')[0]).toContain(
+      'aria-describedby="publish-scenario-hint"',
+    );
+
+    const none = await render(
       {},
-      { setup: uploaded, form: { scenarioName: 'plant#2' } },
+      { setup: listed, form: { ...withExperiment, scenarioName: '' } },
     );
 
-    expect(text(element(bad, 'publish-scenario-rule'))).toBe(
-      `This name is not allowed: it contains characters that are not allowed: "#". ${CONFIG_NAME_RULE}`,
-    );
-    expect(input(bad, 'publish-scenario-name')).toContain(
-      'aria-describedby="publish-scenario-rule"',
-    );
+    expect(options(none).find((option) => option.selected)?.value).toBe('');
+  });
 
-    // The uploaded scenario's name starts the field as a valid name.
-    const good = await render({}, { setup: uploaded });
+  test('either mode says the topology is added to each listed scenario', async () => {
+    for (const form of [null, withExperiment]) {
+      const html = await render({}, { setup: listed, form });
 
-    expect(input(good, 'publish-scenario-name')).toContain('value="sc.yaml"');
-    expect(good).not.toContain('publish-scenario-rule');
-    expect(good).not.toContain('Names can use only');
-    expect(input(good, 'publish-scenario-name')).not.toContain(
-      'aria-describedby',
-    );
+      expect(text(element(html, 'publish-scenario-hint'))).toBe(
+        'Publishing adds this topology to the topology annotation of each of ' +
+          'the scenarios plant-ntp and plant-attack, so experiments of the ' +
+          'topology can use it.',
+      );
+    }
+
+    // A topology alone picks no scenario.
+    const html = await render({}, { setup: listed });
+
+    expect(html).not.toContain('<select');
+    expect(html).toMatch(/<h3[^>]*>Scenarios<\/h3>/);
+  });
+
+  test('a diagram that lists none has no scenario section', async () => {
+    const html = await render({}, { form: withExperiment });
+
+    expect(html).not.toContain('publish-scenario');
   });
 });

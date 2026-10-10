@@ -61,11 +61,17 @@ func TestTopologyRoundTrip(t *testing.T) {
 }
 
 // TestExperimentRoundTrip covers the experiment import path, including VLAN
-// aliases and the scenario reference.
+// aliases and the scenario the experiment names.
 func TestExperimentRoundTrip(t *testing.T) {
 	config := loadConfig(t, "experiment.json")
+	stored := builder.WithScenarioResolver(func(name string) (bool, error) {
+		return name == "builder-scenario", nil
+	})
 
-	first, _ := documentFromConfig(t, config)
+	first, _, err := builder.FromConfig(config, stored)
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
+	}
 
 	topology, err := first.ToTopology()
 	if err != nil {
@@ -93,13 +99,16 @@ func TestExperimentRoundTrip(t *testing.T) {
 		},
 	}
 
-	second, _ := documentFromConfig(t, republished)
+	second, _, err := builder.FromConfig(republished, stored)
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
+	}
 
 	assertSameCanvas(t, first, second)
 
-	if !reflect.DeepEqual(first.Scenario, second.Scenario) {
-		t.Fatalf("scenario reference changed:\nfirst:  %s\nsecond: %s",
-			asJSON(t, first.Scenario), asJSON(t, second.Scenario))
+	if !reflect.DeepEqual(first.Scenarios, []string{"builder-scenario"}) ||
+		!reflect.DeepEqual(first.Scenarios, second.Scenarios) {
+		t.Fatalf("scenarios changed: first %q, second %q", first.Scenarios, second.Scenarios)
 	}
 
 	wantAliases := map[string]int{"EXP": 101, "RESERVED": 250}
@@ -258,7 +267,7 @@ func TestFixtureEncodingsArePinned(t *testing.T) {
 		size   int
 		digest string
 	}{
-		"document.json":        {4856, "sha256:6fce9d0ee40a109453ddf587c8a1b302ab77449362f1b29f575e504f4f55810c"},
+		"document.json":        {4696, "sha256:9934fdca85f47e1127b06792887317b4d309fa6e73bf275e33f135bed46273d7"},
 		"strict-document.json": {3743, "sha256:891f1ec9c5695582dec1ffcfe6f1d79dcb5bd58341af1ce38f9af45045a0a8aa"},
 	} {
 		t.Run(name, func(t *testing.T) {

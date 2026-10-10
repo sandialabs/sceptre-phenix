@@ -54,11 +54,6 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 
 	scenario := scenarioConfig(t, map[string]any{"apps": []any{}})
 
-	digest, err := bdoc.ContentDigest(scenario.Spec)
-	if err != nil {
-		t.Fatalf("ContentDigest returned error: %v", err)
-	}
-
 	harness := newBuilderHarness(t, append(labExperimentFixture(t), *scenario)...)
 
 	for _, user := range []string{builderTestOwner, builderTestPeer} {
@@ -110,9 +105,7 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 
 	// A new diagram, or an uploaded one, that uses the stored scenario.
 	document := bdoc.NewDocument("plant")
-	document.Scenario = &bdoc.ScenarioRef{
-		Kind: bdoc.ScenarioRefStored, Name: "sc", Content: nil, APIVersion: scenario.Version, Digest: digest,
-	}
+	document.Scenarios = []string{"sc"}
 
 	data, err := bapi.EncodeDocument(document)
 	if err != nil {
@@ -132,11 +125,15 @@ func TestBuiltinBuilderRoleUsesTheBuilder(t *testing.T) {
 	harness.decode(do("publishing a topology, a scenario and an experiment", builderRequest{
 		method: http.MethodPost, path: path + "/publish", ifMatch: draft.ETag,
 		body: `{"mode":"topology-experiment","topology":{"name":"plant","action":"create"},` +
-			`"scenario":{"name":"sc","action":"use"},"experiment":{"name":"plant-exp","action":"create"}}`,
+			`"scenario":{"name":"sc"},"experiment":{"name":"plant-exp","action":"create"}}`,
 	}, http.StatusOK), &published)
 
 	if _, err := harness.getConfig("Topology/plant"); err != nil || harness.experimentWrites != 1 || published.Experiment == nil {
 		t.Fatalf("publishing stored the topology (%v) and %d experiments: %+v", err, harness.experimentWrites, published)
+	}
+
+	if annotated, err := harness.getConfig("Scenario/sc"); err != nil || annotated.Metadata.Annotations["topology"] != "plant" {
+		t.Fatalf("publishing left scenario sc as %+v (%v), want topology plant added", annotated, err)
 	}
 
 	do("listing published diagrams", builderRequest{method: http.MethodGet, path: "/builder/documents"}, http.StatusOK)

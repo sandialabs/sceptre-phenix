@@ -65,6 +65,24 @@ func WithTopologyLoader(load TopologyLoader) GenerateOption {
 	}
 }
 
+// ScenarioResolver reports whether the Scenario config named name is stored
+// on this server for the caller: it exists, and the caller may list it. It
+// returns an error only when that cannot be told, such as when the store
+// cannot be read; generation then fails with that error.
+type ScenarioResolver func(name string) (bool, error)
+
+// WithScenarioResolver makes [FromConfig] list in [Document.Scenarios] the
+// Scenario config an Experiment config names in its "scenario" annotation,
+// when resolve finds it stored. Without a resolver, or for a scenario resolve
+// does not find, no scenario is listed and generation warns. The scenario
+// content an experiment holds is never taken into the document, which names
+// scenarios but holds none.
+func WithScenarioResolver(resolve ScenarioResolver) GenerateOption {
+	return func(g *generator) {
+		g.resolveScenario = resolve
+	}
+}
+
 // WithCombinedIncludes makes [FromConfig] copy the devices of a topology's
 // included topologies into the document as its own (no [Device.IncludedFrom])
 // and keep only the unresolved includes in [Source.IncludeTopologies] (see
@@ -94,7 +112,9 @@ func WithCombinedIncludes() GenerateOption {
 //     single attached interface,
 //   - every interface declaring a VLAN is connected to that VLAN's switch,
 //   - interfaces without a VLAN are preserved unconnected,
-//   - experiment VLAN aliases and scenarios are imported when available,
+//   - experiment VLAN aliases are imported, and the Scenario config an
+//     experiment names is listed when it is stored (see
+//     [WithScenarioResolver]),
 //   - the config's annotations are kept on [Source.Annotations], without the
 //     Builders' own (see [IsBuilderAnnotation]) and within the bounds
 //     [Document.Validate] puts on them,
@@ -203,7 +223,6 @@ func FromConfig(config store.Config, options ...GenerateOption) (*Document, []st
 const (
 	kindTopology   = "Topology"
 	kindExperiment = "Experiment"
-	kindScenario   = "Scenario"
 )
 
 type generator struct {
@@ -224,6 +243,9 @@ type generator struct {
 
 	// load resolves included topologies; nil leaves them unresolved.
 	load TopologyLoader
+	// resolveScenario tells whether the scenario an experiment names is
+	// stored; nil lists none.
+	resolveScenario ScenarioResolver
 	// combine makes the devices of included topologies the document's own
 	// once it is generated (see [WithCombinedIncludes]).
 	combine bool
@@ -1263,33 +1285,41 @@ func (g *generator) importVLANs(value any) {
 	}
 }
 
+// importScenario lists the Scenario config an experiment names in its
+// "scenario" annotation, name, when the resolver finds it stored. The
+// annotation is text an experiment can set to anything, so only a config
+// name is looked up. An experiment that names no stored scenario, or holds
+// scenario content without naming one, gets a warning instead: the content
+// is the copy phenix merged into the experiment, which the document never
+// holds.
 func (g *generator) importScenario(value any, name string) error {
 	content, err := normalizeSpecMap(value)
 	if err != nil {
 		return fmt.Errorf("reading experiment scenario: %w", err)
 	}
 
-	if len(content) == 0 {
+	if name == "" {
+		if len(content) > 0 {
+			g.warnf("the experiment's scenario is not a stored Scenario config and was not attached")
+		}
+
 		return nil
 	}
 
-	digest, err := ContentDigest(content)
-	if err != nil {
-		return fmt.Errorf("digesting experiment scenario: %w", err)
+	if g.resolveScenario != nil && IsConfigName(name) {
+		stored, lookupErr := g.resolveScenario(name)
+		if lookupErr != nil {
+			return fmt.Errorf("looking up scenario %s: %w", name, lookupErr)
+		}
+
+		if stored {
+			g.doc.Scenarios = []string{name}
+
+			return nil
+		}
 	}
 
-	kind := ScenarioRefUploaded
-	if name != "" {
-		kind = ScenarioRefStored
-	}
-
-	g.doc.Scenario = &ScenarioRef{
-		Kind:       kind,
-		Name:       name,
-		Content:    content,
-		APIVersion: ScenarioAPIVersion(),
-		Digest:     digest,
-	}
+	g.warnf("the experiment's scenario %q is not a stored Scenario config and was not attached", truncate(name))
 
 	return nil
 }

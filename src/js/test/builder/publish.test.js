@@ -14,11 +14,14 @@ import {
   hasLegacyDiagram,
   keptIncludesText,
   legacyDiagramUpdate,
+  mergeTopologyAnnotation,
   overwriteConfirmation,
   publishChecks,
   publishLabel,
   publishRefusal,
+  replacedScenarioConfig,
   scenarioNames,
+  scenarioStageHint,
   stageFailed,
   targetHint,
   updateBlocker,
@@ -173,107 +176,59 @@ describe('publish intent', () => {
     expect(error).toMatch(/experiment/i);
   });
 
-  test('a stored scenario is used, not rewritten', () => {
-    const { intent } = buildPublishIntent(
-      {
-        mode: 'topology-experiment',
-        topologyName: 'core',
-        experimentName: 'exp',
-      },
-      { scenario: { kind: 'stored', name: 'sc' } },
-    );
-
-    expect(intent.scenario).toEqual({ name: 'sc', action: 'use' });
-    expect(overwriteConfirmation(intent)).toBeNull();
-  });
-
-  test('an uploaded scenario needs an explicit target', () => {
-    const context = {
-      scenario: { kind: 'uploaded', name: 'sc.yaml' },
-      scenarios: [{ name: 'sc', digest: `sha256:${'a'.repeat(64)}` }],
+  test('an experiment uses the scenario picked among those listed, by name', () => {
+    const form = {
+      mode: 'topology-experiment',
+      topologyName: 'core',
+      experimentName: 'exp',
     };
-    const refused = buildPublishIntent(
-      {
-        mode: 'topology-experiment',
-        topologyName: 'core',
-        experimentName: 'exp',
-        scenarioName: 'sc',
-      },
-      context,
+    const listed = { scenarios: ['sc-a', 'sc-b'] };
+
+    const picked = buildPublishIntent(
+      { ...form, scenarioName: 'sc-b' },
+      listed,
     );
 
-    expect(refused.intent).toBeNull();
-    expect(refused.error).toMatch(/uploaded scenario/i);
+    expect(picked.intent.scenario).toEqual({ name: 'sc-b' });
+    // Publishing adds the topology to every listed scenario, which replaces
+    // nothing: there is nothing to confirm.
+    expect(overwriteConfirmation(picked.intent)).toBeNull();
 
-    const chosen = buildPublishIntent(
-      {
-        topologyName: 'core',
-        mode: 'topology-experiment',
-        experimentName: 'exp',
-        scenarioName: 'sc',
-        scenarioAction: 'update',
-      },
-      context,
-    );
+    // No scenario is no scenario key.
+    const none = buildPublishIntent({ ...form, scenarioName: '' }, listed);
 
-    expect(chosen.intent.scenario).toEqual({
-      name: 'sc',
-      action: 'update',
-      expectedDigest: `sha256:${'a'.repeat(64)}`,
-    });
-    expect(overwriteConfirmation(chosen.intent)).toMatchObject({
-      title: 'Replace scenario sc?',
-      confirmLabel: 'Create topology and experiment, replace scenario',
-    });
+    expect(none.intent).not.toHaveProperty('scenario');
+    expect(none.error).toBe('');
+
+    // A topology alone picks none, whatever the form holds.
+    expect(
+      buildPublishIntent({ topologyName: 'core', scenarioName: 'sc-a' }, listed)
+        .intent,
+    ).not.toHaveProperty('scenario');
   });
 
   test('refusals name the field they are about', () => {
     const field = (form, context = {}) =>
       buildPublishIntent(form, context).field;
     const experiment = { mode: 'topology-experiment', topologyName: 'core' };
-    const uploaded = { scenario: { kind: 'uploaded', name: 'sc.yaml' } };
 
     expect(field({ topologyName: '' })).toBe('topologyName');
     expect(field(experiment)).toBe('experimentName');
-    expect(field({ ...experiment, experimentName: 'exp' }, uploaded)).toBe(
-      'scenarioName',
-    );
-    expect(
-      field(
-        { ...experiment, experimentName: 'exp', scenarioName: 'sc' },
-        uploaded,
-      ),
-    ).toBe('scenarioAction');
     expect(field({ topologyName: 'core' })).toBe('');
 
-    // The message is about the field it is reported on: an empty scenario
-    // name is reported as missing, even with the action chosen.
+    // A scenario the diagram does not list, as a list read before an edit
+    // could leave it, is refused on the scenario's field.
     expect(
       buildPublishIntent(
-        { ...experiment, experimentName: 'exp', scenarioAction: 'create' },
-        uploaded,
-      ),
-    ).toEqual({
-      intent: null,
-      error: 'Enter a name for the scenario.',
-      field: 'scenarioName',
-    });
-    // Updating a scenario the server does not have is refused on the action.
-    expect(
-      buildPublishIntent(
-        {
-          ...experiment,
-          experimentName: 'exp',
-          scenarioName: 'sc',
-          scenarioAction: 'update',
-        },
-        { ...uploaded, scenarios: [] },
+        { ...experiment, experimentName: 'exp', scenarioName: 'gone' },
+        { scenarios: ['sc-a'] },
       ),
     ).toEqual({
       intent: null,
       error:
-        'There is no scenario named "sc" to update. Choose "Create a new scenario", or enter the name of an existing scenario.',
-      field: 'scenarioAction',
+        'The scenario "gone" is not one of this diagram\'s scenarios. ' +
+        'Choose one of them, or No scenario.',
+      field: 'scenarioName',
     });
   });
 
@@ -300,20 +255,18 @@ describe('publish intent', () => {
     expect(experiment.error).toMatch(
       /^The experiment name "bad name" is not allowed: it contains a space\. /,
     );
+  });
 
-    const scenario = buildPublishIntent(
-      {
-        mode: 'topology-experiment',
-        topologyName: 'core',
-        experimentName: 'exp',
-        scenarioName: 'my scenario!',
-        scenarioAction: 'create',
-      },
-      { scenario: { kind: 'uploaded', name: 'sc.yaml' } },
+  test('says publishing adds the topology to each listed scenario', () => {
+    expect(scenarioStageHint([])).toBe('');
+    expect(scenarioStageHint(['sc-a'])).toBe(
+      'Publishing adds this topology to the topology annotation of the ' +
+        'scenario sc-a, so experiments of the topology can use it.',
     );
-    expect(scenario.field).toBe('scenarioName');
-    expect(scenario.error).toMatch(
-      /^The scenario name "my scenario!" is not allowed: it contains a space and characters that are not allowed: "!"\. /,
+    expect(scenarioStageHint(['sc-a', 'sc-b', 'sc-c'])).toBe(
+      'Publishing adds this topology to the topology annotation of each of ' +
+        'the scenarios sc-a, sc-b and sc-c, so experiments of the topology ' +
+        'can use it.',
     );
   });
 
@@ -877,7 +830,7 @@ describe('publish refusals', () => {
   const intent = {
     mode: 'topology-experiment',
     topology: { name: 'lab', action: 'create' },
-    scenario: { name: 'lab', action: 'create' },
+    scenario: { name: 'lab' },
     experiment: { name: 'lab', action: 'update' },
   };
 
@@ -906,7 +859,7 @@ describe('publish refusals', () => {
         'A topology named "lab" already exists. Publish again to update it, or enter another name to create a new topology.',
       field: 'topologyName',
     });
-    // The server checks the topology, scenario and experiment in turn; the
+    // The server checks the topology and the experiment in turn; the
     // refusal is about the first one with that name and action.
     expect(
       publishRefusal(
@@ -920,22 +873,29 @@ describe('publish refusals', () => {
     });
   });
 
-  test('an uploaded scenario refusal points at the action to choose', () => {
+  test('a scenario refusal points at the scenario field only for the experiment’s', () => {
+    const picked = { ...intent, scenario: { name: 'lab' } };
+
+    expect(publishRefusal('Scenario lab does not exist.', picked)).toEqual({
+      message: 'Scenario lab does not exist.',
+      field: 'scenarioName',
+    });
+    expect(
+      publishRefusal(
+        'Scenario lab is not one of the scenarios this draft lists.',
+        picked,
+      ).field,
+    ).toBe('scenarioName');
+    // Another listed scenario has no field in the Publish form.
+    expect(publishRefusal('Scenario other does not exist.', picked).field).toBe(
+      '',
+    );
+    // A scenario is never created or updated as a whole, so a refusal of a
+    // config's create or update is never about it.
     expect(
       publishRefusal('config lab already exists; choose update explicitly', {
-        ...intent,
+        ...picked,
         topology: { name: 'core', action: 'update' },
-      }),
-    ).toEqual({
-      message:
-        'A scenario named "lab" already exists. Choose "Update the existing scenario", or enter another name.',
-      field: 'scenarioAction',
-    });
-    // A stored scenario has no field in the Publish form.
-    expect(
-      publishRefusal('config sc does not exist; choose create explicitly', {
-        topology: { name: 'core', action: 'create' },
-        scenario: { name: 'sc', action: 'use' },
       }).field,
     ).toBe('');
   });
@@ -1193,5 +1153,63 @@ describe('sources', () => {
     expect(actionFor(' core ', ['core'])).toBe('update');
     expect(actionFor('other', ['core'])).toBe('create');
     expect(actionFor('other')).toBe('create');
+  });
+});
+
+describe('replacing a stored scenario', () => {
+  test('topology annotations merge with no stored topology lost', () => {
+    // The stored annotation stays as it is; each name of the uploaded one
+    // it does not name follows after a comma.
+    expect(mergeTopologyAnnotation('plant , mill', 'mill,dock, yard')).toBe(
+      'plant , mill,dock,yard',
+    );
+    expect(mergeTopologyAnnotation('', 'plant')).toBe('plant');
+    expect(mergeTopologyAnnotation('plant', '')).toBe('plant');
+    // A name that only contains another is not it.
+    expect(mergeTopologyAnnotation('xplant', 'plant,plant')).toBe(
+      'xplant,plant',
+    );
+  });
+
+  const uploaded = (annotations) => ({
+    apiVersion: 'phenix.sandia.gov/v2',
+    kind: 'Scenario',
+    metadata: annotations ? { name: 'ntp', annotations } : { name: 'ntp' },
+    spec: { apps: [{ name: 'new' }] },
+  });
+  const stored = (annotations) => ({
+    apiVersion: 'phenix.sandia.gov/v2',
+    kind: 'Scenario',
+    metadata: {
+      name: 'ntp',
+      created: '2026-01-01T00:00:00Z',
+      ...(annotations ? { annotations } : {}),
+    },
+    spec: { apps: [{ name: 'old' }] },
+  });
+
+  const replace = (kept, given) =>
+    replacedScenarioConfig(stored(kept), uploaded(given));
+
+  test('the uploaded spec replaces the stored one, which keeps its annotations', () => {
+    const replaced = replace(
+      { topology: 'plant', owner: 'ops', keep: 'yes' },
+      { topology: 'dock', owner: 'lab' },
+    );
+
+    expect(replaced).toEqual(
+      uploaded({ topology: 'plant,dock', owner: 'lab', keep: 'yes' }),
+    );
+
+    // Only one of them has a topology annotation: it is kept as it is.
+    expect(replace({ topology: 'plant' })).toEqual(
+      uploaded({ topology: 'plant' }),
+    );
+    expect(replace(null, { topology: 'dock' })).toEqual(
+      uploaded({ topology: 'dock' }),
+    );
+
+    // Neither has annotations: none are sent.
+    expect(replace()).toEqual(uploaded());
   });
 });

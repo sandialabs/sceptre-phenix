@@ -2,7 +2,7 @@
 
 This page shows how to draw and change a diagram: devices, switches and the
 connections between them, device settings, groups, notes, colors, line
-styles, custom icons, layouts and the scenario. For the parts of the editor that these tasks use, see
+styles, custom icons, layouts and the scenarios. For the parts of the editor that these tasks use, see
 [The Editor](editor.md).
 
 The examples on this page use the Riverside Water draft of the
@@ -683,39 +683,51 @@ on Windows and Linux. Each change is a snapshot of the draft on the server,
 so undo moves the draft itself back. To go back further than this tab's
 changes, use **Draft History** (see [Draft History](drafts.md#draft-history)).
 
-## Attaching a scenario
+## Scenarios
 
-A diagram can carry a Scenario config, which says which apps run on which
-devices. Publishing with an experiment uses it (see
-[The scenario](publishing.md#the-scenario)).
+A diagram lists the Scenario configs it is used with, which say which apps
+run on which devices: up to 20, by name. The diagram holds only their names;
+the scenarios themselves are configs on the server. Publishing adds the
+topology to each one's `topology` annotation, and an experiment published
+with the topology uses one of them (see
+[Scenarios](publishing.md#scenarios)).
 
-To attach the stored scenario riverside-water:
+The Riverside Water draft lists the stored scenario riverside-water. To add
+it to another diagram, such as your
+[quick start](index.md#quick-start) draft:
 
-1. Select **Scenario** in the toolbar. With nothing selected, **Add
-   scenario** (or **Edit scenario**) in the Inspector does the same.
-2. Under **Scenario reference**, choose **Stored scenario**.
-3. In **Scenario**, choose `riverside-water`.
-4. Select **Save scenario**.
+1. Select **Scenarios** in the toolbar. With nothing selected, **Add
+   scenario** (or **Edit scenarios**) in the Inspector does the same.
+2. In **Add a stored scenario**, choose `riverside-water`, and select
+   **Add**. It is listed under **Scenarios of this diagram**.
+3. Select **Save scenarios**.
 
-The dialog before step 4:
+With nothing selected, the Inspector now lists "Scenario riverside-water",
+with each app and its hosts under **Apps and their hosts**: vrouter on
+edge-rtr, and ntp on ntp-01, ws-01, ws-02, hmi-01 and historian-01 (see
+[With nothing selected](editor.md#with-nothing-selected)).
 
-![The Scenario dialog with Scenario reference set to Stored scenario, riverside-water chosen in the Scenario list, and the Cancel and Save scenario buttons.](../images/builder/scenario-dialog.png)
+To add a scenario you have as a file, choose it in **Upload a scenario
+file**: a `phenix.sandia.gov/v2` Scenario config in JSON or YAML, up to
+5 MiB. The dialog proposes the file's `metadata.name` as **Scenario name**,
+or the file name made a config name, which you can change. **Store and add**
+stores it on the server as a Scenario config and lists it. When the server
+already has a scenario of that name, the hint under the name says storing
+replaces its spec and keeps its annotations, and Builder asks "Replace
+scenario NAME?" first. The replaced scenario takes the file's spec and keeps
+its own annotations, with those of the file added: its `topology`
+annotation keeps every topology it named and gains those the file names, so
+experiments of those topologies can still use it. Storing needs `configs`
+`create` for a new scenario, and `configs` `get` and `update` to replace
+one; the dialog shows what the server says when it refuses. A name the list
+already has in another letter case, such as `Riverside-Water` for
+`riverside-water`, is not listed twice: the list takes the stored
+scenario's spelling.
 
-With nothing selected, the Inspector now says "Stored scenario
-riverside-water", and lists each app with its hosts under **Apps and their
-hosts**: vrouter on edge-rtr, and ntp on ntp-01, ws-01, ws-02, hmi-01 and
-historian-01 (see [With nothing selected](editor.md#with-nothing-selected)).
-
-The other choices:
-
-- **Upload scenario**: choose a file in **Scenario config file (JSON or
-  YAML)**, up to 5 MiB. The dialog shows its "Content digest". The diagram
-  keeps a copy of the file, and publishing writes it as a Scenario config.
-- **No scenario**: detaches the scenario. The configs on the server do not
-  change.
-
-A stored scenario is only named in the diagram: publishing uses it as it is
-on the server.
+**Remove** takes a scenario off the list; the scenario on the server does
+not change. **Save scenarios** writes the list into the diagram, as one step
+that **Undo** reverts. **Cancel** leaves the list as it was, but a scenario
+stored meanwhile stays on the server.
 
 ## Included topologies
 

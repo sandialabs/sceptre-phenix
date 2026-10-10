@@ -92,6 +92,17 @@ const api = vi.hoisted(() => ({
   getSchema: vi.fn(async () => ({ $defs: { device: { type: 'object' } } })),
   listDisks: vi.fn(async () => ['ubuntu.qc2']),
   getScenario: vi.fn(async () => ({ apps: [{ name: 'ntp' }] })),
+  getConfig: vi.fn(async (kind, name) => ({
+    apiVersion: 'phenix.sandia.gov/v2',
+    kind,
+    metadata: {
+      name,
+      annotations: { topology: 'plant, mill', owner: 'ops' },
+    },
+    spec: { apps: [{ name: 'ntp' }] },
+  })),
+  createConfig: vi.fn(async () => {}),
+  updateConfig: vi.fn(async () => {}),
   getShares: vi.fn(async () => ({
     shares: [],
     sharesEtag: '"shares-0"',
@@ -294,11 +305,94 @@ describe('editing commits', () => {
     store.copy();
     expect(store.announcement).toBe('Nothing is selected to copy.');
 
-    // Removing a scenario that is not there changes nothing.
+    // Listing the scenarios the diagram lists already changes nothing.
     const entries = store.history.size;
-    store.setScenario(null);
+    expect(store.setScenarios([])).toBeNull();
     expect(store.history.size).toBe(entries);
-    expect(store.announcement).toBe('No scenario is attached.');
+    expect(store.announcement).toBe('Nothing is selected to copy.');
+  });
+
+  test('the scenarios are replaced in one undo step, and stored scenarios read again', async () => {
+    await withDraft();
+
+    const entries = store.history.size;
+
+    store.setScenarios(['plant-ntp', 'plant-attack']);
+    expect(store.doc.scenarios).toEqual(['plant-ntp', 'plant-attack']);
+    expect(store.history.size).toBe(entries + 1);
+    expect(store.announcement).toMatch(/^Updated scenarios/);
+
+    store.setScenarios([]);
+    expect(store.doc).not.toHaveProperty('scenarios');
+    expect(store.history.size).toBe(entries + 2);
+
+    // A scenario stored from the dialog is created, or replaced, and the
+    // reading of its apps the Inspector had is dropped.
+    const config = {
+      apiVersion: 'phenix.sandia.gov/v2',
+      kind: 'Scenario',
+      metadata: { name: 'plant-ntp' },
+      spec: { apps: [] },
+    };
+
+    store.storedScenarios['plant-ntp'] = { content: { apps: [] } };
+    api.getSources.mockClear();
+
+    await store.saveScenarioConfig(config);
+    expect(api.createConfig).toHaveBeenCalledWith(config);
+    expect(store.storedScenarios).not.toHaveProperty('plant-ntp');
+    expect(api.getSources).toHaveBeenCalled();
+
+    // A replacement reads the stored scenario first and keeps its
+    // annotations, with the config's over them, and every topology of
+    // both: a PUT would drop them.
+    store.storedScenarios['plant-ntp'] = { content: { apps: [] } };
+
+    await store.saveScenarioConfig(
+      {
+        ...config,
+        metadata: {
+          name: 'plant-ntp',
+          annotations: { topology: 'mill,dock', owner: 'lab', note: 'new' },
+        },
+      },
+      { replace: true },
+    );
+    expect(api.getConfig).toHaveBeenCalledWith('Scenario', 'plant-ntp');
+    expect(api.updateConfig).toHaveBeenCalledWith({
+      ...config,
+      metadata: {
+        name: 'plant-ntp',
+        annotations: {
+          topology: 'plant, mill,dock',
+          owner: 'lab',
+          note: 'new',
+        },
+      },
+    });
+    expect(store.storedScenarios).not.toHaveProperty('plant-ntp');
+
+    // A file without annotations keeps the stored ones as they are.
+    await store.saveScenarioConfig(config, { replace: true });
+    expect(api.updateConfig).toHaveBeenLastCalledWith({
+      ...config,
+      metadata: {
+        name: 'plant-ntp',
+        annotations: { topology: 'plant, mill', owner: 'ops' },
+      },
+    });
+
+    // A stored scenario that cannot be read is not replaced.
+    api.updateConfig.mockClear();
+    api.getConfig.mockRejectedValueOnce(new Error('not found'));
+    await expect(
+      store.saveScenarioConfig(config, { replace: true }),
+    ).rejects.toThrow('not found');
+    expect(api.updateConfig).not.toHaveBeenCalled();
+
+    // The server's refusal reaches the dialog.
+    api.createConfig.mockRejectedValueOnce(new Error('refused'));
+    await expect(store.saveScenarioConfig(config)).rejects.toThrow('refused');
   });
 
   test('an edit made during a conflict says it is not saved', async () => {

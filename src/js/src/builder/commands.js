@@ -1804,7 +1804,7 @@ export const COMMANDS = [
   },
   {
     id: 'draft.scenario',
-    title: 'Scenario…',
+    title: 'Scenarios…',
     group: 'Draft',
     keywords: ['apps'],
     when: editable,

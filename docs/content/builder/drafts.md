@@ -2,8 +2,8 @@
 
 Every diagram in Builder is a draft. A draft lives on the phenix server,
 apart from the phenix configs. Builder saves each change to the draft as
-you make it. Only **Publish** writes Topology, Scenario and Experiment configs
-(see [Publishing](publishing.md)).
+you make it. Only **Publish** writes Topology and Experiment configs and adds
+the topology to the diagram's scenarios (see [Publishing](publishing.md)).
 
 ## The drafts page
 

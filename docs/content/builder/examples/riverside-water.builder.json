@@ -1229,12 +1229,9 @@
     "size": 16,
     "snap": true
   },
-  "scenario": {
-    "kind": "stored",
-    "name": "riverside-water",
-    "apiVersion": "phenix.sandia.gov/v2",
-    "digest": "sha256:1a473af28fafebbe1562bc5ffc8613f7dbca3dbf6dfc5097680b3d2eee9a8ce4"
-  },
+  "scenarios": [
+    "riverside-water"
+  ],
   "source": {
     "kind": "topology",
     "name": "riverside-water",

@@ -87,13 +87,12 @@ The warnings in step 3:
 
 An imported experiment differs from an imported topology in these ways:
 
-- The draft keeps the experiment's scenario. When your role can list the
-  stored Scenario that the experiment names, the draft refers to it: the
-  Inspector says "Stored scenario riverside-water". Otherwise the draft
-  keeps the experiment's own copy of the scenario, as an uploaded scenario,
-  and the import warns: "scenario "riverside-water" is not available on this
-  server, so the experiment's copy of it is attached as an uploaded
-  scenario".
+- When your role can list the stored Scenario that the experiment names,
+  the draft lists it: the Inspector says "Scenario riverside-water".
+  Otherwise the draft lists no scenario, and the import warns: "the
+  experiment's scenario "riverside-water" is not a stored Scenario config
+  and was not attached". The copy of the scenario the experiment holds is
+  never kept: a diagram names its scenarios and holds none.
 - The experiment's VLAN aliases become the **VLAN alias** of each network.
 - Some experiment fields have no place in a diagram. The import names them,
   for example "experiment fields not represented in the builder document:
@@ -129,10 +128,11 @@ file, but it offers **Included topologies** when the file's topology
 includes others (see [Import options](#import-options)). The file must name
 its config in `metadata.name`.
 
-An Experiment config file always keeps its own copy of its scenario, and
-the import says so: "the experiment file's copy of scenario
-"riverside-water" is attached as an uploaded scenario, not this server's
-stored scenario of that name".
+An Experiment config file's scenario is found the same way, by name, among
+the stored Scenarios your role can list. When the draft lists it, the import
+says so, as the file's own copy may differ: "scenario "riverside-water" is
+this server's Scenario config of that name, not the copy the experiment
+file holds".
 
 phenix reads a config file as it reads one created with
 `phenix config create`. That includes `${NAME}` and `${NAME:default}`, which
@@ -262,7 +262,8 @@ Importing a stored config also needs permission to read it. See
 ## Uploading a Builder document
 
 A Builder document is Builder's own file: the diagram with all its
-settings, positions, groups, notes and scenario. **Download** saves one as
+settings, positions, groups, notes and the names of its scenarios.
+**Download** saves one as
 **Builder JSON** or **Builder YAML** (see
 [Builder JSON and YAML](#builder-json-and-yaml)).
 **Upload** opens a Builder document as a new draft. The draft you have open,
@@ -317,7 +318,8 @@ The dialog has three other sources:
 A Builder document keeps everything, so a download and an upload give the
 same diagram. For example, download Riverside Water as **Builder YAML**, then
 upload `riverside-water.yaml`: the new draft has the same 12 devices,
-4 groups and note, the same **ELK layered** layout, and the same scenario.
+4 groups and note, the same **ELK layered** layout, and the same scenario
+`riverside-water` listed.
 
 A Builder document also says who made the diagram and who saved it last
 (see [Who made and last saved a diagram](#who-made-and-last-saved-a-diagram)).
@@ -380,7 +382,8 @@ first.", and no file is saved.
 
 Builder JSON and Builder YAML hold the whole Builder document: every node
 with its settings and position, the networks, the connections, the groups
-and notes, the layout, the scenario, where the diagram was imported from,
+and notes, the layout, the names of its scenarios (`scenarios`), where the
+diagram was imported from,
 and under `metadata` the diagram's name, description and notes and who made
 and last saved it. They also hold how the diagram looks: the
 colors and line styles of nodes and connections, the description, border
@@ -643,10 +646,10 @@ file only when some node or edge has a value for it. For Riverside Water:
 Other diagrams can have more, such as **MAC addresses**, **VLAN alias** and
 **Disabled scenario apps**.
 
-The **Scenario apps** columns list the apps of the diagram's scenario that
-run on each device: historian-01 has `ntp`. For a stored scenario, Download
-reads the scenario from the server first. When it cannot, the file has no
-app columns, and the dialog says why, for example "It lists no scenario
+The **Scenario apps** columns list the apps of the diagram's scenarios that
+run on each device: historian-01 has `ntp`. Download reads each scenario the
+diagram lists from the server first. When it cannot read one, the file has
+no app columns, and the dialog says why, for example "It lists no scenario
 apps: your role cannot read scenario riverside-water."
 
 The dialog counts what it saved: "Saved riverside-water.gexf: 12 devices, 4
@@ -776,7 +779,7 @@ Document ID:  0dff463189b8e26b702884a420105cf01fb91130338892a98feb45b3786e8583
 Topology:     Riverside-Water (would be created)
 Nodes:        10
 Warnings:
-  - The document's scenario is not published: only the topology is.
+  - The document's scenario is not changed: only the topology is published.
 Nothing was written.
 ```
 
@@ -814,7 +817,7 @@ in two cases only:
 
     ```console
     $ phenix builder publish riverside-water.builder.json --name riverside-water --update
-    2026-10-01 21:51:07.132 WRN The document's scenario is not published: only the topology is. type=SYSTEM topology=riverside-water
+    2026-10-01 21:51:07.132 WRN The document's scenario is not changed: only the topology is published. type=SYSTEM topology=riverside-water
     2026-10-01 21:51:07.132 INF topology updated type=SYSTEM name=riverside-water document=9b8b4b74fb6835c64b543443ad341b21c4812e185c40e7221f292995fead6761 digest=sha256:a3c6569728e1ea77cc3519c48c904cf2e300f2ed535821cb50d05963c17cc1f5
     ```
 
@@ -872,11 +875,13 @@ environment.
 
 ### What the command does not do
 
-- **Scenarios and experiments.** It writes a Topology config only. A
-  document with a scenario publishes its topology, with the warning "The
-  document's scenario is not published: only the topology is." To publish
-  an experiment and its scenario, use **Publish** in Builder, or create
-  the experiment from the topology with `phenix experiment create`.
+- **Scenarios and experiments.** It writes a Topology config only, and does
+  not add the topology to the scenarios the document lists. A document that
+  lists scenarios publishes its topology, with the warning "The document's
+  scenario is not changed: only the topology is published." ("The
+  document's 2 scenarios are not changed: …" for more than one). To publish
+  an experiment with a scenario, use **Publish** in Builder, or create the
+  experiment from the topology with `phenix experiment create`.
 - **VLAN aliases.** A topology holds none, so a network's **VLAN alias** is
   not written: "The document's VLAN alias is not published: a topology
   holds none."

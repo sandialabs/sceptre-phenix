@@ -94,8 +94,8 @@ func (b *builderAPI) exportTopology(w http.ResponseWriter, r *http.Request) erro
 	}
 
 	// The name is checked as a publish checks its topology target.
-	target := builderPublishTarget{Name: name, Action: builderPublishActionCreate, ExpectedDigest: ""}
-	if err := validatePublishTarget(builderSourceTopology, target, false); err != nil {
+	target := builderPublishTarget{Name: name, Action: builderPublishActionCreate}
+	if err := validatePublishTarget(builderSourceTopology, target); err != nil {
 		return err
 	}
 

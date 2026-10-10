@@ -176,12 +176,14 @@ instead.
 | Share your own draft | `configs` `update`, and authentication enabled |
 | Publish from a draft's card on the drafts page | As **Publish** in the editor |
 | See **Exp**, which opens the experiment a publication made | `experiments` `get` on that experiment |
-| Choose a stored scenario | `configs` `list` and `scenarios` `list` |
+| Add a stored scenario to a diagram | `configs` `list` and `scenarios` `list` |
+| Store a scenario file from the **Scenarios** dialog | `configs` `create` on `Scenario/<name>`; to replace a scenario of that name, `configs` `update` on it |
+| See the apps of a diagram's scenario in the Inspector | `configs` `get` on `Scenario/<name>` |
 | Download **Topology YAML** | `configs` `get` |
 | Use the **Publish** button | `configs` `update` |
 | Publish a topology | `configs` `create` on `Topology/<name>` for a new topology, `configs` `update` to update one. For a draft imported from a stored config, also `configs` `get` and `topologies` `get` (or `experiments` `get`) on that config |
 | Publish an experiment | `experiments` `create` and `configs` `create` on `Experiment/<name>`; `update` of both to update one |
-| Publish a scenario with an experiment | `configs` `create` on `Scenario/<name>` for a new scenario, `configs` `update` to update one. A stored scenario, which Publish uses as it is, also needs `configs` `update` on `Scenario/<name>` |
+| Publish a diagram that lists scenarios | `configs` `get` and `scenarios` `list` on each `Scenario/<name>` it lists, and `configs` `update` on each whose `topology` annotation does not name the topology yet |
 | Delete a published topology | `configs` `delete` on `Topology/<name>` |
 | Get the Inspector's fields from the server | `schemas` `get` on `builder` |
 | Get drive image suggestions and missing-image checks | `disks` `list` |
@@ -211,12 +213,16 @@ also needs `configs` `update` to save changes and the publish permissions to
 publish.
 
 !!! note
-    A stored scenario needs `configs` `update` on the scenario even though
-    publishing does not change it. When a role may create topologies and
-    experiments but not update `Scenario/riverside-water`, publishing the
-    Riverside Water diagram as a topology and an experiment fails, and the
-    Publish dialog says "Could not publish the diagram. Publishing scenario
-    riverside-water not allowed for", followed by the user's name.
+    Publishing adds the topology to the `topology` annotation of each
+    scenario the diagram lists, in either mode, which needs `configs`
+    `update` on a scenario that does not name the topology yet. When a role
+    may create topologies but not update `Scenario/riverside-water`,
+    publishing the Riverside Water diagram as `riverside-water-b` fails, and
+    the Publish dialog says "Could not publish the diagram. Adding topology
+    riverside-water-b to scenario riverside-water not allowed for", followed
+    by the user's name. A scenario that names the topology already needs no
+    update. A listed scenario the role cannot read is refused as one that
+    does not exist: "Scenario NAME does not exist."
 
 ### Other users' drafts
 
@@ -921,7 +927,7 @@ for Import and Publish.
 | `GET /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Read one snapshot's document (`current` for the current one) | `get` |
 | `DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Delete a snapshot other than the current one | `update` |
 | `PATCH` or `PUT /builder/drafts/{owner}/{draft}/cursor` | Undo and redo: choose the current snapshot | `update` |
-| `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the Topology, Scenario and Experiment configs | `update`, and each config's own |
+| `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the Topology and Experiment configs, and add the topology to the `topology` annotation of each scenario the document lists | `update`, and each config's own |
 | `GET`, `PUT /builder/drafts/{owner}/{draft}/shares` | Read or replace who a draft is shared with (owner only) | `get`, `update` |
 | `GET /builder/drafts/{owner}/{draft}/shares/candidates` | The users a draft can be shared with | `update` |
 | `GET /builder/sources` | The configs a document can be made from or published with | `list` |
@@ -1146,7 +1152,8 @@ when (`createdBy`, `createdAt`) instead of a `path`.
 | No **Builder** tab | The user's role has no `configs` `list` | Give the role `configs` `list` |
 | "Your role can open drafts and published diagrams, but not create drafts." | The role has no `configs` `create` | Give the role `configs` `create`, or leave it as a reviewer role |
 | **Publish** is unavailable | The role has no `configs` `update`, or the draft is read only (shared with **Can view**, or a published diagram) | Give the role `configs` `update`; for a read-only draft, see [Drafts](drafts.md) |
-| "Could not publish the diagram. Publishing scenario riverside-water not allowed for …" | The role cannot update that scenario config | Give the role `configs` `update` on `Scenario/riverside-water` (see [What each task needs](#what-each-task-needs)) |
+| "Could not publish the diagram. Adding topology riverside-water-b to scenario riverside-water not allowed for …" | The diagram lists that scenario, and the role cannot update it to add the topology | Give the role `configs` `update` on `Scenario/riverside-water`, or remove the scenario from the diagram (see [What each task needs](#what-each-task-needs)) |
+| "Could not publish the diagram. Scenario riverside-water does not exist." | The diagram lists a scenario the server does not have, or the role cannot read it | Store the scenario, give the role `configs` `get` and `scenarios` `list` on it, or remove it from the diagram (see [Scenarios](diagrams.md#scenarios)) |
 | "Could not load this server's form fields. …" in the Inspector | The role has no `schemas` `get` on `builder` | Give the role `schemas` `get` |
 | "Drive images are not checked: the server did not list its disk images." | The role has no `disks` `list`, or the server lists no images (minimega not running) | Give the role `disks` `list`, or start minimega |
 | The Publish dialog says the topology "already exists, and this diagram cannot update it" | The draft was not imported from that topology, opened from its published diagram, or published to it | Publish under another name, or import the topology and make your changes in that draft (see [Publishing](publishing.md)) |

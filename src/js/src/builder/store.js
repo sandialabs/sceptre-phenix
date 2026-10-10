@@ -76,6 +76,7 @@ import {
   PUBLISHED_TOKEN,
   configName,
   publishRefusal,
+  replacedScenarioConfig,
 } from './publish.js';
 import {
   builderSchemaV1,
@@ -104,6 +105,7 @@ import {
   connect,
   connectNodes,
   createDocument,
+  documentScenarios,
   documentSummary,
   findNetwork,
   findNode,
@@ -127,7 +129,7 @@ import {
   setGrid,
   setParent,
   setDocumentInfo,
-  setScenario,
+  setScenarios,
   setViewport,
   ungroup,
   updateEdge,
@@ -2639,9 +2641,9 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Reads a stored scenario's content, whose apps the Inspector lists: a
-     * stored reference carries none. The content read before stays until
-     * this read answers. A read that answers after a later one, or after
-     * the session ended, is dropped.
+     * document names its scenarios and holds none. The content read before
+     * stays until this read answers. A read that answers after a later one,
+     * or after the session ended, is dropped.
      *
      * @param {string} name
      * @returns {Promise<void>}
@@ -4370,18 +4372,65 @@ export const useBuilderStore = defineStore('builder', {
       this.commit(setGrid(this.doc, patch), 'Changed grid');
     },
 
-    setScenario(scenario) {
-      // Nothing to remove: no snapshot, and no claim that one was removed.
-      if (!scenario && !this.doc.scenario) {
-        this.announce('No scenario is attached.');
+    /**
+     * Replaces the Scenario configs the diagram lists, in one undo step (see
+     * setScenarios in model.js). The list the diagram has already takes no
+     * step.
+     *
+     * @param {string[]} names
+     * @returns {object|null} the history entry, or null when nothing changed
+     *   or the draft is read only
+     */
+    setScenarios(names) {
+      const current = documentScenarios(this.doc);
 
-        return;
+      if (
+        names.length === current.length &&
+        names.every((name, index) => name === current[index])
+      ) {
+        return null;
       }
 
-      this.commit(
-        setScenario(this.doc, scenario),
-        scenario ? 'Attached scenario' : 'Removed scenario',
+      return this.commit(
+        setScenarios(this.doc, names),
+        names.length ? 'Updated scenarios' : 'Removed scenarios',
       );
+    },
+
+    /**
+     * Stores a Scenario config on the server for the Scenario dialog: a new
+     * one (POST /configs), or with `replace` in place of the one of its name
+     * (PUT /configs/Scenario/<name>). A replacement takes the config's spec
+     * and keeps the stored config's annotations, which it reads first (GET
+     * /configs/Scenario/<name>), with the config's own over them and no
+     * topology of the stored topology annotation lost
+     * (replacedScenarioConfig): a PUT replaces the annotations too, and
+     * phenix creates an experiment from a scenario only while that
+     * annotation names the experiment's topology. The server checks the
+     * caller's `configs` permission and the config, and its refusal is
+     * thrown. The scenarios offered are then read again, and the content
+     * read before of a scenario of that name is dropped, so the Inspector
+     * reads it again.
+     *
+     * @param {object} config apiVersion, kind Scenario, metadata, spec
+     * @param {{replace?: boolean}} [options]
+     * @returns {Promise<void>}
+     */
+    async saveScenarioConfig(config, { replace = false } = {}) {
+      if (replace) {
+        const stored = await builderApi.getConfig(
+          'Scenario',
+          config.metadata.name,
+        );
+
+        await builderApi.updateConfig(replacedScenarioConfig(stored, config));
+      } else {
+        await builderApi.createConfig(config);
+      }
+
+      delete this.storedScenarios[config.metadata.name];
+
+      await this.fetchSources();
     },
 
     copy() {

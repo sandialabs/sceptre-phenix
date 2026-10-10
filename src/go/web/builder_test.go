@@ -59,6 +59,9 @@ type builderHarness struct {
 	failExperiment    bool
 	configWrites      int
 	experimentWrites  int
+	// failConfigName fails the writes of the one config of this full name
+	// ("Scenario/sc"), as failConfigKind fails those of a kind.
+	failConfigName string
 	// failReconfigure fails the configure stage of an experiment update,
 	// reconfigured lists the experiments it ran for, and lockedExperiment,
 	// when set, runs once the experiment lock is held.
@@ -143,6 +146,7 @@ func newBuilderHarness(t *testing.T, configs ...store.Config) *builderHarness {
 		configs:           configs,
 		failConfigKind:    "",
 		failConfigErr:     nil,
+		failConfigName:    "",
 		failBroadcastKind: "",
 		failExperiment:    false,
 		configWrites:      0,
@@ -177,8 +181,14 @@ func newBuilderHarness(t *testing.T, configs ...store.Config) *builderHarness {
 	return harness
 }
 
-// configWriteFailure is what a config write of failConfigKind fails with:
-// failConfigErr, when set.
+// failsConfigWrite reports whether a write of config fails: one of
+// failConfigKind, or the one named failConfigName.
+func (h *builderHarness) failsConfigWrite(config *store.Config) bool {
+	return config.Kind == h.failConfigKind || (h.failConfigName != "" && config.FullName() == h.failConfigName)
+}
+
+// configWriteFailure is what a config write that failsConfigWrite reports
+// fails with: failConfigErr, when set.
 func (h *builderHarness) configWriteFailure() error {
 	if h.failConfigErr != nil {
 		return h.failConfigErr
@@ -190,7 +200,7 @@ func (h *builderHarness) configWriteFailure() error {
 func (h *builderHarness) publishOps() builderPublishOps {
 	return builderPublishOps{
 		createConfig: func(config *store.Config) (*store.Config, error) {
-			if config.Kind == h.failConfigKind {
+			if h.failsConfigWrite(config) {
 				return nil, h.configWriteFailure()
 			}
 
@@ -204,7 +214,7 @@ func (h *builderHarness) publishOps() builderPublishOps {
 			return config, nil
 		},
 		updateConfig: func(name string, config *store.Config) error {
-			if config.Kind == h.failConfigKind {
+			if h.failsConfigWrite(config) {
 				return h.configWriteFailure()
 			}
 
@@ -300,7 +310,7 @@ func (h *builderHarness) publishOps() builderPublishOps {
 
 // decodeTopology merges included topologies from the harness configs, the
 // way types.DecodeTopologyFromConfig merges them from the phenix store.
-func (h *builderHarness) decodeTopology( //nolint:ireturn // stands in for types.DecodeTopologyFromConfig
+func (h *builderHarness) decodeTopology(
 	config store.Config,
 ) (ifaces.TopologySpec, error) {
 	var spec v1.TopologySpec

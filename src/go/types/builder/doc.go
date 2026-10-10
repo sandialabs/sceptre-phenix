@@ -20,12 +20,13 @@
 //     them; and device templates ([Template]) saved with the diagram. None
 //     of it is ever written to a config.
 //   - phenix semantics: the complete node spec of every device, canonical
-//     networks (VLANs) with optional integer aliases, and the edges that bind
-//     device interfaces to networks.
+//     networks (VLANs) with optional integer aliases, the edges that bind
+//     device interfaces to networks, and the names of the Scenario configs
+//     the diagram is used with ([Document.Scenarios]), which the document
+//     names but does not hold.
 //   - Provenance: who made the document and who last saved it, and when
-//     ([Provenance], kept in the metadata), where the document came from
-//     ([Source]) and an optional reference to a stored or uploaded scenario
-//     ([ScenarioRef]).
+//     ([Provenance], kept in the metadata), and where the document came from
+//     ([Source]).
 //
 // Two authoritative transformations are provided:
 //
@@ -89,11 +90,8 @@
 //
 //   - [Document.Validate] validates the draft working copy. It is intentionally
 //     tolerant of work in progress, for example interfaces that are not yet
-//     connected to a network. Scenario content, however, is complete by
-//     construction, so cached or uploaded content is validated against the
-//     existing phenix scenario schema for [ScenarioAPIVersion]. A stored
-//     scenario reference without cached content is validated when the
-//     referenced config is loaded at publish time.
+//     connected to a network. It checks the form of the scenario names; that
+//     the Scenario configs exist is checked when the document is published.
 //   - [Document.PublishTopologyConfig] (and [Document.PublishTopology])
 //     run the existing phenix topology schema validation against the projected
 //     config, so publishing authoritatively validates complete node specs.
@@ -101,12 +99,11 @@
 //     config that only publishing refuses, with the reasons.
 //
 // [Schema] and [SchemaJSON] return a standalone JSON Schema bundle describing
-// the persisted document, with the phenix v1 and v2 OpenAPI component schemas
-// embedded under $defs so device spec forms and scenario content resolve every
-// field without a second fetch. Device specs reference the v1 node schemas;
-// scenario content references the v2 Scenario schema, matching
-// [ScenarioAPIVersion]. Every definition and property the Builder owns in
-// the bundle has a title, a description and examples.
+// the persisted document, with the phenix v1 OpenAPI component schemas
+// embedded under $defs so device spec forms resolve every field without a
+// second fetch. Device specs reference the v1 node schemas. Every definition
+// and property the Builder owns in the bundle has a title, a description and
+// examples.
 //
 // Size limits (node counts, payload sizes, etc.) are deliberately *not*
 // enforced here; they belong to the API/transport layer. This package enforces
@@ -114,7 +111,8 @@
 // name, which the draft service records as a title, on the users the
 // metadata names, which are bounded like the owner of a draft, on the
 // notes of the diagram and of switches ([MaxDiagramNotes],
-// [MaxDiagramNoteBytes]), on the source
+// [MaxDiagramNoteBytes]), on the scenarios ([MaxScenarios],
+// [MaxScenarioNameBytes]), on the source
 // config annotations a document carries only to show them, and on the custom
 // icons and the templates the editor adds ([MaxDocumentIcons],
 // [MaxIconBytes], [MaxIconPixels], [MaxTemplates],

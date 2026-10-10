@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 
@@ -35,7 +36,6 @@ import (
 const (
 	builderPublishActionCreate    = "create"
 	builderPublishActionUpdate    = "update"
-	builderPublishActionUse       = "use"
 	builderPublishStageDocument   = "document"
 	builderPublishStageTopology   = "topology"
 	builderPublishStageScenario   = "scenario"
@@ -85,16 +85,34 @@ type builderExperimentPublication struct {
 }
 
 type builderPublishTarget struct {
-	Name           string `json:"name"`
-	Action         string `json:"action"`
-	ExpectedDigest string `json:"expectedDigest,omitempty"`
+	Name   string `json:"name"`
+	Action string `json:"action"`
+}
+
+// builderPublishScenario names the scenario a topology-and-experiment
+// publication gives its experiment: one of the Scenario configs the draft's
+// document lists. Publishing never creates or replaces a scenario; it adds
+// the topology to the "topology" annotation of each one the document lists.
+type builderPublishScenario struct {
+	Name string `json:"name"`
 }
 
 type builderPublishRequest struct {
-	Mode       bapi.PublishMode      `json:"mode"`
-	Topology   builderPublishTarget  `json:"topology"`
-	Scenario   *builderPublishTarget `json:"scenario,omitempty"`
-	Experiment *builderPublishTarget `json:"experiment,omitempty"`
+	Mode     bapi.PublishMode     `json:"mode"`
+	Topology builderPublishTarget `json:"topology"`
+	// Scenario is the experiment's scenario; nil publishes the experiment
+	// without one.
+	Scenario   *builderPublishScenario `json:"scenario,omitempty"`
+	Experiment *builderPublishTarget   `json:"experiment,omitempty"`
+}
+
+// scenarioName is the name of the experiment's scenario, or "" for none.
+func (r builderPublishRequest) scenarioName() string {
+	if r.Scenario == nil {
+		return ""
+	}
+
+	return r.Scenario.Name
 }
 
 type builderPublishStage struct {
@@ -105,14 +123,14 @@ type builderPublishStage struct {
 }
 
 type builderPublishResponse struct {
-	Status     bapi.PublishStatus    `json:"status"`
-	Stages     []builderPublishStage `json:"stages"`
-	Warnings   []string              `json:"warnings"`
-	Errors     []string              `json:"errors"`
-	Topology   *builderPublishTarget `json:"topology,omitempty"`
-	Scenario   *builderPublishTarget `json:"scenario,omitempty"`
-	Experiment *builderPublishTarget `json:"experiment,omitempty"`
-	Draft      builderDraftResponse  `json:"draft"`
+	Status     bapi.PublishStatus      `json:"status"`
+	Stages     []builderPublishStage   `json:"stages"`
+	Warnings   []string                `json:"warnings"`
+	Errors     []string                `json:"errors"`
+	Topology   *builderPublishTarget   `json:"topology,omitempty"`
+	Scenario   *builderPublishScenario `json:"scenario,omitempty"`
+	Experiment *builderPublishTarget   `json:"experiment,omitempty"`
+	Draft      builderDraftResponse    `json:"draft"`
 }
 
 type builderPublishOps struct {
@@ -242,7 +260,7 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 
 	if ifMatch != meta.ETag() {
 		if builderPublishRetry(meta, request, ifMatch) {
-			return b.writePublishRetry(w, actor, meta, request)
+			return b.writePublishRetry(r.Context(), w, actor, meta, request)
 		}
 
 		return builderCheckIfMatch(ifMatch, meta)
@@ -333,12 +351,8 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 		return b.writePublishPartial(w, actor, meta, &response, builderPublishStageTopology, err)
 	}
 
-	var scenarioName string
-	if plan.scenario != nil {
-		scenarioName = plan.scenario.config.Metadata.Name
-
-		_, err := b.publishConfigStage(builderPublishStageScenario, *plan.scenario, plan.scenario.config, &response)
-		if err != nil {
+	if plan.scenarios != nil {
+		if err := b.publishScenarioStage(request.Topology.Name, *plan.scenarios, &response); err != nil {
 			return b.writePublishPartial(w, actor, meta, &response, builderPublishStageScenario, err)
 		}
 	}
@@ -347,7 +361,7 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 		publication := builderExperimentPublication{DraftID: meta.ID, DocumentID: published.ID, Digest: ""}
 
 		if err := b.publishExperimentStage(
-			r.Context(), *plan.experiment, topology, projection.VLANAliases, scenarioName, publication, &response,
+			r.Context(), *plan.experiment, topology, projection.VLANAliases, request.scenarioName(), publication, &response,
 		); err != nil {
 			return b.writePublishPartial(w, actor, meta, &response, builderPublishStageExperiment, err)
 		}
@@ -362,7 +376,7 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 		TopologyTarget:   request.Topology.Name,
 		TopologyAction:   bapi.TopologyAction(request.Topology.Action),
 		ExperimentTarget: targetName(request.Experiment),
-		ScenarioTarget:   targetName(request.Scenario),
+		ScenarioTarget:   request.scenarioName(),
 		DocumentID:       published.ID,
 	})
 	if err != nil {
@@ -462,9 +476,88 @@ func builderPublishStatus(action string, applied bool) bapi.PublishStatus {
 	return bapi.PublishStatus(action + "d")
 }
 
+// builderPublishScenarioPlan is what a publication's scenario stage does
+// with the Scenario configs the draft's document lists: it adds the topology
+// to the "topology" annotation of those that do not name it yet (changed,
+// each an update of the stored config) and leaves the others (unchanged) as
+// they are.
+type builderPublishScenarioPlan struct {
+	changed   []builderPublishConfigPlan
+	unchanged []string
+	// listed is every scenario the document lists, in its order.
+	listed []string
+	// picked is the experiment's scenario as it is once the stage ran, or
+	// nil when the experiment has none or no experiment is published.
+	picked *store.Config
+}
+
+// applied reports whether the stage has nothing to write: every listed
+// scenario already names the topology.
+func (p builderPublishScenarioPlan) applied() bool {
+	return len(p.changed) == 0
+}
+
+// status is the scenario stage's status: updated when it writes a scenario,
+// skipped otherwise.
+func (p builderPublishScenarioPlan) status() bapi.PublishStatus {
+	return builderPublishStatus(builderPublishActionUpdate, p.applied())
+}
+
+// message says what the scenario stage did to the listed scenarios: which
+// it added the topology to, and which already named it.
+func (p builderPublishScenarioPlan) message(topologyName string) string {
+	changed := make([]string, len(p.changed))
+	for i, change := range p.changed {
+		changed[i] = change.config.Metadata.Name
+	}
+
+	switch {
+	case len(changed) == 0:
+		return fmt.Sprintf("%s already %s topology %s",
+			builderScenarioList(p.unchanged), builderNameVerb(len(p.unchanged)), topologyName)
+	case len(p.unchanged) == 0:
+		return fmt.Sprintf("added topology %s to %s", topologyName, builderScenarioList(changed))
+	}
+
+	return fmt.Sprintf("added topology %s to %s; %s already %s it",
+		topologyName, builderScenarioList(changed),
+		builderScenarioList(p.unchanged), builderNameVerb(len(p.unchanged)))
+}
+
+// builderScenarioList names scenarios in a stage message: "scenario a" or
+// "scenarios a, b".
+func builderScenarioList(names []string) string {
+	if len(names) == 1 {
+		return "scenario " + names[0]
+	}
+
+	return "scenarios " + strings.Join(names, ", ")
+}
+
+// builderNameVerb is "names" for one scenario and "name" for several.
+func builderNameVerb(count int) string {
+	if count == 1 {
+		return "names"
+	}
+
+	return "name"
+}
+
+// builderScenarioStageConfig is the config a scenario stage reports: the
+// one scenario a document lists, or none when it lists several, which the
+// stage's message names.
+func builderScenarioStageConfig(listed []string) string {
+	if len(listed) != 1 {
+		return ""
+	}
+
+	return store.ConfigFullName(builderKindScenario, listed[0])
+}
+
 type builderPublishPlan struct {
-	topology   builderPublishConfigPlan
-	scenario   *builderPublishConfigPlan
+	topology builderPublishConfigPlan
+	// scenarios is nil when the draft's document lists no scenario.
+	scenarios  *builderPublishScenarioPlan
 	experiment *builderPublishExperimentPlan
 }
 
@@ -501,15 +594,15 @@ func (b *builderAPI) preflightPublish(
 		return nil, err
 	}
 
-	plan := &builderPublishPlan{topology: topologyPlan, scenario: nil, experiment: nil}
+	plan := &builderPublishPlan{topology: topologyPlan, scenarios: nil, experiment: nil}
 
-	if request.Scenario != nil {
-		scenario, scenarioErr := b.preflightScenario(document, request.Topology.Name, *request.Scenario)
-		if scenarioErr != nil {
-			return nil, scenarioErr
-		}
+	scenarios, err := b.preflightScenarios(actor, document, request)
+	if err != nil {
+		return nil, err
+	}
 
-		plan.scenario = scenario
+	if len(scenarios.listed) > 0 {
+		plan.scenarios = scenarios
 	}
 
 	if request.Experiment != nil {
@@ -528,8 +621,8 @@ func (b *builderAPI) preflightPublish(
 			document,
 			projection,
 			request.Topology.Name,
-			targetName(request.Scenario),
-			plan.scenario,
+			request.scenarioName(),
+			scenarios.picked,
 			*request.Experiment,
 		)
 		if experimentErr != nil {
@@ -540,7 +633,7 @@ func (b *builderAPI) preflightPublish(
 	}
 
 	resuming := plan.topology.applied &&
-		(plan.scenario == nil || plan.scenario.applied) &&
+		(plan.scenarios == nil || plan.scenarios.applied()) &&
 		(plan.experiment == nil || plan.experiment.applied)
 	if !resuming {
 		if err := b.checkSourceFreshness(ctx, actor, meta, snapshot, document); err != nil {
@@ -705,7 +798,7 @@ func includeClashRefusal(topologyName string, includes bdoc.IncludeReport) error
 }
 
 // builderPublishVerb is the configs verb a publish action needs: create
-// for a create, and update for an update or a scenario's use.
+// for a create, and update for an update.
 func builderPublishVerb(action string) builderVerb {
 	if action == builderPublishActionCreate {
 		return builderVerbCreate
@@ -721,16 +814,6 @@ func (b *builderAPI) authorizePublishTargets(actor builderActor, request builder
 		store.ConfigFullName(builderKindTopology, request.Topology.Name),
 	) {
 		return builderForbidden(actor, "publishing topology "+request.Topology.Name)
-	}
-
-	if request.Scenario != nil {
-		if !builderBaseAllowed(
-			actor.role,
-			builderPublishVerb(request.Scenario.Action),
-			store.ConfigFullName(builderKindScenario, request.Scenario.Name),
-		) {
-			return builderForbidden(actor, "publishing scenario "+request.Scenario.Name)
-		}
 	}
 
 	if request.Experiment != nil &&
@@ -1355,130 +1438,139 @@ func existingBuilderDocumentReference(existing *store.Config, digest string) (ba
 	return ref, ref.Publishes(existing.Metadata.Name, digest)
 }
 
-//nolint:funlen // ordered validation prevents any write before every scenario check passes
-func (b *builderAPI) preflightScenario(
+// preflightScenarios plans the scenario stage of a publication, which runs
+// whenever the draft's document lists scenarios, in either mode: each listed
+// Scenario config must exist, and one whose "topology" annotation does not
+// name the topology yet gets it added, which needs the configs update
+// permission for it. A scenario the caller may not read is refused as one
+// that does not exist, so its existence is not disclosed. The experiment's
+// scenario must be one of those listed. For a document that lists none, the
+// plan lists none either, and the publication has no scenario stage.
+func (b *builderAPI) preflightScenarios(
+	actor builderActor,
 	document *bdoc.Document,
-	topologyName string,
-	target builderPublishTarget,
-) (*builderPublishConfigPlan, error) {
-	ref := document.Scenario
-	if ref == nil {
-		return nil, weberror.NewWebError(nil, "publish intent names a scenario but the document does not").
+	request builderPublishRequest,
+) (*builderPublishScenarioPlan, error) {
+	picked := request.scenarioName()
+	if picked != "" && !slices.Contains(document.Scenarios, picked) {
+		return nil, weberror.NewWebError(nil, "scenario %s is not one of the scenarios this draft lists", picked).
 			SetStatus(http.StatusUnprocessableEntity)
 	}
 
-	if ref.Kind == bdoc.ScenarioRefStored {
-		if target.Action != builderPublishActionUse || target.Name != ref.Name {
-			return nil, weberror.NewWebError(nil, "stored scenario must be published with action use and its original name").
-				SetStatus(http.StatusUnprocessableEntity)
-		}
-	} else if target.Action == builderPublishActionUse {
-		return nil, weberror.NewWebError(nil, "uploaded scenario requires an explicit create or update action").
-			SetStatus(http.StatusUnprocessableEntity)
+	topologyName := request.Topology.Name
+	plan := &builderPublishScenarioPlan{
+		changed: nil, unchanged: nil, listed: slices.Clone(document.Scenarios), picked: nil,
 	}
 
-	existing, exists, err := b.configIfExists(builderKindScenario, target.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	action := target.Action
-	if action == builderPublishActionUse {
-		action = builderPublishActionUpdate
-	}
-
-	if err := requirePublishAction(
-		builderPublishTarget{Name: target.Name, Action: action, ExpectedDigest: target.ExpectedDigest},
-		exists,
-		false,
-	); err != nil {
-		return nil, err
-	}
-
-	// The stored scenario's digest, which every check below compares.
-	var existingDigest string
-
-	var existingDigestErr error
-
-	if exists {
-		existingDigest, existingDigestErr = bdoc.ContentDigest(existing.Spec)
-	}
-
-	var scenario *store.Config
-
-	if ref.Kind == bdoc.ScenarioRefStored {
-		if existingDigestErr != nil {
-			return nil, weberror.NewWebError(existingDigestErr, "unable to digest stored scenario %s", target.Name).
-				SetStatus(http.StatusInternalServerError)
-		}
-
-		if existing.Version != ref.APIVersion || existingDigest != ref.Digest {
-			return nil, weberror.NewWebError(nil, "stored scenario %s changed after it was selected", target.Name).
-				SetStatus(http.StatusConflict)
-		}
-
-		scenario = cloneBuilderConfig(existing)
-	} else {
-		if target.Action == builderPublishActionUpdate {
-			if existingDigestErr != nil {
-				return nil, weberror.NewWebError(existingDigestErr, "unable to digest scenario %s", target.Name).
-					SetStatus(http.StatusInternalServerError)
-			}
-
-			if target.ExpectedDigest == "" {
-				return nil, weberror.NewWebError(
-					nil,
-					"updating uploaded scenario %s requires its expected digest",
-					target.Name,
-				).SetStatus(http.StatusBadRequest)
-			}
-
-			if target.ExpectedDigest != existingDigest {
-				return nil, weberror.NewWebError(
-					nil,
-					"scenario %s changed after publication was prepared",
-					target.Name,
-				).SetStatus(http.StatusConflict)
-			}
-		}
-
-		scenario, err = store.NewConfig("Scenario/" + target.Name)
+	for _, name := range document.Scenarios {
+		existing, err := b.listedScenario(actor, name)
 		if err != nil {
-			return nil, invalidPublishTarget(builderSourceScenario, target.Name)
+			return nil, err
 		}
 
-		scenario.Version = ref.APIVersion
-		scenario.Spec = maps.Clone(ref.Content)
+		scenario := existing
 
-		if exists {
-			keepStoredMetadata(scenario, existing)
+		if hasTopologyAnnotation(existing.Metadata.Annotations["topology"], topologyName) {
+			plan.unchanged = append(plan.unchanged, name)
+		} else {
+			if !builderBaseAllowed(actor.role, builderVerbUpdate, existing.FullName()) {
+				return nil, builderForbidden(actor, fmt.Sprintf("adding topology %s to scenario %s", topologyName, name))
+			}
+
+			scenario = cloneBuilderConfig(existing)
+			if scenario.Metadata.Annotations == nil {
+				scenario.Metadata.Annotations = store.Annotations{}
+			}
+
+			scenario.Metadata.Annotations["topology"] = addTopologyAnnotation(
+				scenario.Metadata.Annotations["topology"],
+				topologyName,
+			)
+
+			if err := types.ValidateConfigSpec(*scenario); err != nil {
+				return nil, weberror.NewWebError(err, "scenario %s is not valid", name).
+					SetStatus(http.StatusUnprocessableEntity)
+			}
+
+			plan.changed = append(plan.changed, builderPublishConfigPlan{
+				action: builderPublishActionUpdate, existing: existing, config: scenario, applied: false,
+			})
+		}
+
+		if name == picked {
+			plan.picked = scenario
 		}
 	}
 
-	if scenario.Metadata.Annotations == nil {
-		scenario.Metadata.Annotations = store.Annotations{}
+	return plan, nil
+}
+
+// listedScenario reads a Scenario config the draft's document lists. One
+// that does not exist, and one the caller may not read (the configs get and
+// the scenarios list permissions), are refused alike, with 422.
+func (b *builderAPI) listedScenario(actor builderActor, name string) (*store.Config, error) {
+	missing := weberror.NewWebError(nil, "scenario %s does not exist", name).
+		SetStatus(http.StatusUnprocessableEntity)
+
+	full := store.ConfigFullName(builderKindScenario, name)
+	if full == "" ||
+		!builderBaseAllowed(actor.role, builderVerbGet, full) ||
+		!builderKindAllowed(actor.role, builderScenarios, name) {
+		return nil, missing
 	}
 
-	scenario.Metadata.Annotations["topology"] = addTopologyAnnotation(
-		scenario.Metadata.Annotations["topology"],
-		topologyName,
-	)
+	existing, exists, err := b.configIfExists(builderKindScenario, name)
 
-	applied := false
-	if exists {
-		applied = existingDigestErr == nil &&
-			existingDigest == ref.Digest &&
-			hasTopologyAnnotation(existing.Metadata.Annotations["topology"], topologyName)
+	switch {
+	case err != nil:
+		return nil, err
+	case !exists:
+		return nil, missing
 	}
 
-	if err := types.ValidateConfigSpec(*scenario); err != nil {
-		return nil, weberror.NewWebError(err, "scenario %s is not valid", target.Name).
-			SetStatus(http.StatusUnprocessableEntity)
+	return existing, nil
+}
+
+// publishScenarioStage writes a publication's scenario stage: each listed
+// scenario that does not name the topology yet is stored with it added and
+// broadcast. It adds the stage to the response, with a message saying what
+// it did, and returns the error of a write that failed, after a warning
+// naming the scenarios it already updated.
+func (b *builderAPI) publishScenarioStage(
+	topologyName string,
+	plan builderPublishScenarioPlan,
+	response *builderPublishResponse,
+) error {
+	written := make([]string, 0, len(plan.changed))
+
+	for _, change := range plan.changed {
+		stored, err := b.writePublishedConfig(change, change.config)
+		if err != nil {
+			if len(written) > 0 {
+				response.Warnings = append(response.Warnings, fmt.Sprintf(
+					"topology %s was added to %s before the scenario stage failed",
+					topologyName, builderScenarioList(written),
+				))
+			}
+
+			return err
+		}
+
+		written = append(written, stored.Metadata.Name)
+
+		if err := b.publish.broadcastConfig(stored, change.action); err != nil {
+			response.Warnings = append(response.Warnings,
+				fmt.Sprintf("scenario %s was stored but its live update could not be broadcast", stored.Metadata.Name))
+			plog.Error(plog.TypeSystem, "broadcasting published scenario", "scenario", stored.Metadata.Name, "err", err)
+		}
 	}
 
-	return &builderPublishConfigPlan{
-		action: action, existing: existing, config: scenario, applied: applied,
-	}, nil
+	response.Stages = append(response.Stages, builderPublishStage{
+		Name: builderPublishStageScenario, Status: plan.status(), Message: plan.message(topologyName),
+		Config: builderScenarioStageConfig(plan.listed),
+	})
+
+	return nil
 }
 
 func (b *builderAPI) preflightExperiment(
@@ -1486,7 +1578,7 @@ func (b *builderAPI) preflightExperiment(
 	document *bdoc.Document,
 	projection *bdoc.Topology,
 	topologyName, scenarioName string,
-	scenarioPlan *builderPublishConfigPlan,
+	scenarioConfig *store.Config,
 	target builderPublishTarget,
 ) (*builderPublishExperimentPlan, error) {
 	existing, exists, err := b.configIfExists(kindExperiment, target.Name)
@@ -1537,11 +1629,6 @@ func (b *builderAPI) preflightExperiment(
 			SetStatus(http.StatusUnprocessableEntity)
 	}
 
-	var scenarioConfig *store.Config
-	if scenarioPlan != nil {
-		scenarioConfig = scenarioPlan.config
-	}
-
 	plan.rebuild = func(current *store.Config) (*store.Config, error) {
 		return updatedExperimentConfig(
 			current,
@@ -1549,7 +1636,6 @@ func (b *builderAPI) preflightExperiment(
 			projection,
 			topologyName,
 			scenarioName,
-			document.Scenario,
 			scenarioConfig,
 		)
 	}
@@ -1655,7 +1741,7 @@ func experimentUpdateMatchesSource(
 // and names those topologies instead (see [bdoc.Document.ToTopology]); phenix
 // merges them into an experiment when it creates one, so an update merges
 // them the same way, once mergedIncludesRefusal has checked it may.
-func (b *builderAPI) experimentTopology( //nolint:ireturn // phenix decodes topologies to the interface
+func (b *builderAPI) experimentTopology(
 	projection *bdoc.Topology,
 	topologyName string,
 ) (ifaces.TopologySpec, error) {
@@ -1679,12 +1765,16 @@ func (b *builderAPI) experimentTopology( //nolint:ireturn // phenix decodes topo
 	return b.publish.decodeTopology(*config)
 }
 
+// updatedExperimentConfig is the experiment config an update writes: the
+// existing one with the projection's topology and VLAN aliases, and the
+// scenario of scenarioConfig, as it is once the scenario stage ran, merged
+// for the topology the way phenix merges one when it creates an experiment.
+// A nil scenarioConfig leaves the experiment without a scenario.
 func updatedExperimentConfig(
 	existing *store.Config,
 	topologySpec ifaces.TopologySpec,
 	projection *bdoc.Topology,
 	topologyName, scenarioName string,
-	scenarioRef *bdoc.ScenarioRef,
 	scenarioConfig *store.Config,
 ) (*store.Config, error) {
 	exp, err := types.DecodeExperimentFromConfig(*existing)
@@ -1695,13 +1785,9 @@ func updatedExperimentConfig(
 	exp.Spec.SetTopology(topologySpec)
 	exp.Spec.VLANs().SetAliases(projection.VLANAliases)
 
-	if scenarioRef == nil {
+	if scenarioConfig == nil {
 		exp.Spec.SetScenario(nil)
 	} else {
-		if scenarioConfig == nil {
-			return nil, errors.New("scenario config was not prepared")
-		}
-
 		scenario, scenarioErr := types.MakeCustomScenarioFromConfig(*scenarioConfig, nil)
 		if scenarioErr != nil {
 			return nil, scenarioErr
@@ -1731,10 +1817,9 @@ func updatedExperimentConfig(
 	return updated, nil
 }
 
-// publishConfigStage writes the topology or scenario config cfg as plan
-// says, adds its stage to the response and, unless an earlier attempt
-// already applied it, broadcasts the change. It returns the config as
-// written.
+// publishConfigStage writes the topology config cfg as plan says, adds its
+// stage to the response and, unless an earlier attempt already applied it,
+// broadcasts the change. It returns the config as written.
 func (b *builderAPI) publishConfigStage(
 	stage string,
 	plan builderPublishConfigPlan,
@@ -1979,7 +2064,7 @@ func validateBuilderPublishRequest(request builderPublishRequest) error {
 			SetStatus(http.StatusBadRequest)
 	}
 
-	if err := validatePublishTarget(builderSourceTopology, request.Topology, false); err != nil {
+	if err := validatePublishTarget(builderSourceTopology, request.Topology); err != nil {
 		return err
 	}
 
@@ -1995,41 +2080,31 @@ func validateBuilderPublishRequest(request builderPublishRequest) error {
 				SetStatus(http.StatusBadRequest)
 		}
 
-		if err := validatePublishTarget(builderSourceExperiment, *request.Experiment, false); err != nil {
+		if err := validatePublishTarget(builderSourceExperiment, *request.Experiment); err != nil {
 			return err
 		}
 
-		if request.Scenario != nil {
-			if err := validatePublishTarget(builderSourceScenario, *request.Scenario, true); err != nil {
-				return err
-			}
+		if request.Scenario != nil && !validPublishName(builderSourceScenario, request.Scenario.Name) {
+			return invalidPublishTarget(builderSourceScenario, request.Scenario.Name)
 		}
 	}
 
 	return nil
 }
 
-func validatePublishTarget(kind string, target builderPublishTarget, allowUse bool) error {
-	if target.Name == "" || !config.NameRegex.MatchString(target.Name) ||
-		store.ConfigFullName(kind, target.Name) == "" {
+// validPublishName reports whether name is a config name a publication may
+// name a config of kind by.
+func validPublishName(kind, name string) bool {
+	return name != "" && config.NameRegex.MatchString(name) && store.ConfigFullName(kind, name) != ""
+}
+
+func validatePublishTarget(kind string, target builderPublishTarget) error {
+	if !validPublishName(kind, target.Name) {
 		return invalidPublishTarget(kind, target.Name)
 	}
 
-	valid := target.Action == builderPublishActionCreate || target.Action == builderPublishActionUpdate
-	if allowUse {
-		valid = valid || target.Action == builderPublishActionUse
-	}
-
-	if !valid {
+	if target.Action != builderPublishActionCreate && target.Action != builderPublishActionUpdate {
 		return weberror.NewWebError(nil, "unknown %s publish action %q", kind, target.Action).
-			SetStatus(http.StatusBadRequest)
-	}
-
-	if target.ExpectedDigest != "" &&
-		(kind != builderSourceScenario ||
-			target.Action != builderPublishActionUpdate ||
-			!bdoc.IsDigest(target.ExpectedDigest)) {
-		return weberror.NewWebError(nil, "%s target has an invalid expected digest", kind).
 			SetStatus(http.StatusBadRequest)
 	}
 
@@ -2042,29 +2117,25 @@ func invalidPublishTarget(kind, name string) error {
 }
 
 // addTopologyAnnotation adds topology to value, a scenario's comma-separated
-// "topology" annotation, trimming each name and dropping blank and repeated
-// ones.
+// "topology" annotation, when value does not name it yet (see
+// [hasTopologyAnnotation]). The value is otherwise kept byte for byte: the
+// name is appended after a comma, or is the whole annotation when value is
+// empty, and the names value already has are not trimmed, reordered or
+// de-duplicated.
 func addTopologyAnnotation(value, topology string) string {
-	seen := make(map[string]bool)
-	names := make([]string, 0)
-
-	for name := range strings.SplitSeq(value, ",") {
-		name = strings.TrimSpace(name)
-		if name == "" || seen[name] {
-			continue
-		}
-
-		seen[name] = true
-		names = append(names, name)
+	switch {
+	case hasTopologyAnnotation(value, topology):
+		return value
+	case value == "":
+		return topology
 	}
 
-	if !seen[topology] {
-		names = append(names, topology)
-	}
-
-	return strings.Join(names, ",")
+	return value + "," + topology
 }
 
+// hasTopologyAnnotation reports whether value, a scenario's comma-separated
+// "topology" annotation, names topology: one of its names, trimmed, is
+// exactly topology. A name that only contains it does not count.
 func hasTopologyAnnotation(value, topology string) bool {
 	for name := range strings.SplitSeq(value, ",") {
 		if strings.TrimSpace(name) == topology {
@@ -2128,17 +2199,32 @@ func builderPublishRetry(
 		state.TopologyTarget == request.Topology.Name &&
 		state.TopologyAction == bapi.TopologyAction(request.Topology.Action) &&
 		state.ExperimentTarget == targetName(request.Experiment) &&
-		state.ScenarioTarget == targetName(request.Scenario) &&
+		state.ScenarioTarget == request.scenarioName() &&
 		state.SnapshotID == current.ID &&
 		state.Digest == current.Digest
 }
 
+// writePublishRetry answers a publication the draft already completed, with
+// every stage skipped. The draft's current snapshot is the one it published
+// (see [builderPublishRetry]), so its document says whether the publication
+// had a scenario stage.
 func (b *builderAPI) writePublishRetry(
+	ctx context.Context,
 	w http.ResponseWriter,
 	actor builderActor,
 	meta *bapi.DraftMetadata,
 	request builderPublishRequest,
 ) error {
+	snapshot, err := b.drafts.GetCurrentDocument(ctx, meta.ID)
+	if err != nil {
+		return builderWebError(err, "unable to load the current draft snapshot")
+	}
+
+	document, err := snapshot.Decode()
+	if err != nil {
+		return builderWebError(err, "unable to decode the current draft snapshot")
+	}
+
 	stages := []builderPublishStage{
 		{Name: builderPublishStageDocument, Status: bapi.PublishSkipped, Message: "", Config: ""},
 		{
@@ -2147,10 +2233,10 @@ func (b *builderAPI) writePublishRetry(
 		},
 	}
 
-	if request.Scenario != nil {
+	if len(document.Scenarios) > 0 {
 		stages = append(stages, builderPublishStage{
 			Name: builderPublishStageScenario, Status: bapi.PublishSkipped, Message: "",
-			Config: builderKindScenario + "/" + request.Scenario.Name,
+			Config: builderScenarioStageConfig(document.Scenarios),
 		})
 	}
 

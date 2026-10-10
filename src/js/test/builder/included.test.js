@@ -433,7 +433,7 @@ describe('combining included devices into a new diagram', () => {
     const marked = {
       ...doc,
       metadata: { ...doc.metadata, description: 'Plant floor' },
-      scenario: { kind: 'stored', name: 'plant-apps' },
+      scenarios: ['plant-apps'],
       templates: [{ id: alpha.id, name: 'PLC', device: { spec: {} } }],
       icons: { abc: { name: 'plc.png', data: 'AAAA' } },
     };

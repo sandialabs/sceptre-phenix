@@ -1,10 +1,8 @@
-// Content digests for scenario references.
-//
-// The server requires every ScenarioRef to carry a digest of the form
-// `sha256:<64 hex>` over the scenario content, produced by Go's
-// `json.Marshal` + SHA-256. Go marshals maps with sorted keys and HTML-escapes
-// `<`, `>` and `&`, so the canonical form below reproduces that byte for byte;
-// otherwise the server would reject a document the user cannot fix.
+// Content digests, as the server computes them (ContentDigest in
+// types/builder/ids.go): `sha256:<64 hex>` over Go's `json.Marshal` of the
+// content. Go marshals maps with sorted keys and HTML-escapes `<`, `>` and
+// `&`, so the canonical form below reproduces that byte for byte, and a
+// digest computed here equals the server's.
 
 import { toRaw } from 'vue';
 
@@ -183,16 +181,15 @@ export function sha256Hex(bytes) {
   );
 }
 
-// Digests by content object. Validation runs on every edit and content can be
-// megabytes, so an unchanged object is neither serialized nor hashed again.
-// This relies on the document model never changing content in place: an edit
-// replaces the object (see setScenario in model.js), and history snapshots
-// share it. Keys are raw objects, so a reactive proxy and its target share an
-// entry.
+// Digests by content object. Content can be megabytes, so an unchanged
+// object is neither serialized nor hashed again. This relies on content
+// never changing in place: an edit replaces the object, and history
+// snapshots share it. Keys are raw objects, so a reactive proxy and its
+// target share an entry.
 const digests = new WeakMap();
 
 /**
- * Computes the content digest of a scenario spec synchronously. The result is
+ * Computes the content digest of a JSON value synchronously. The result is
  * cached by content object, which must be treated as immutable.
  *
  * @param {object} content
@@ -221,7 +218,7 @@ export function contentDigestSync(content) {
 }
 
 /**
- * Computes the content digest of a scenario spec.
+ * Computes the content digest of a JSON value.
  *
  * @param {object} content
  * @returns {Promise<string>} `sha256:<hex>`, or '' when content is empty

@@ -2125,6 +2125,14 @@ paths:
         target. A draft imported from a stored Topology or Experiment also
         needs `configs` `get` on it and `topologies` `get` (or `experiments`
         `get`) on its name, to check it has not changed since.
+        In either mode, a draft whose document lists `scenarios` has a
+        `scenario` stage before the experiment's: each listed Scenario config
+        must exist and be readable (`configs` `get` and `scenarios` `list`),
+        else 422 naming it, and the topology is added to the `topology`
+        annotation of each that does not name it yet, which needs `configs`
+        `update` on it (else 403). A scenario that names it already is not
+        written. The stage's message says which scenarios it changed.
+        Publishing never creates or replaces a scenario's spec.
         Repeating a publication that already completed, with the If-Match it
         was sent with, answers 200 with every stage
         skipped. A draft updates an existing topology or experiment only when
@@ -2201,7 +2209,10 @@ paths:
             refuses, such as an interface of a device that is not external
             with no VLAN, interfaces that share an IP or MAC address, or a
             hostname phenix refuses (one character long, `all`, all digits, or
-            `phenix` on a Windows node). The message names them.
+            `phenix` on a Windows node). The message names them. Also a
+            scenario the document lists that does not exist or that the caller
+            may not read, and an experiment scenario the document does not
+            list.
           content:
             application/json:
               schema:
@@ -3897,18 +3908,26 @@ components:
             enabled: true
             size: 16
             snap: true
-        scenario:
-          title: Scenario
+        scenarios:
+          title: Scenarios
           description: >
-            the scenario the document publishes with, when it has one: a
-            stored scenario by name and digest, or uploaded scenario content
-          type: object
-          additionalProperties: true
+            the names of the Scenario configs on the server the diagram is
+            used with, at most 20, each a config name of at most 256 bytes and
+            none twice ignoring case; the document holds no scenario content.
+            Publishing adds the topology to the `topology` annotation of each,
+            and an experiment published with the topology uses the one the
+            publish request names.
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+            pattern: "^[A-Za-z0-9_@.-]+$"
           example:
-            kind: stored
-            name: pump-station-ntp
-            apiVersion: phenix.sandia.gov/v2
-            digest: sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4
+            - pump-station-ntp
+            - pump-station-attack
         source:
           title: Source
           description: >
@@ -4411,32 +4430,35 @@ components:
           description: config name
           type: string
         action:
-          description: >
-            create a new config or update an existing one. A scenario target
-            the document references as stored uses `use`: the stored spec is
-            kept and the topology is added to its `topology` annotation, which
-            needs `configs` `update`.
+          description: create a new config or update an existing one
           type: string
           enum:
             - create
             - update
-            - use
-        expectedDigest:
-          description: >
-            Scenario targets with action `update` only, and required when the
-            document's own scenario replaces a stored one: the `sha256:` digest
-            of the stored scenario the update was prepared against. A scenario
-            that changed since is refused with 409.
-          type: string
-          pattern: "^sha256:[0-9a-f]{64}$"
       required:
         - name
         - action
+    BuilderPublishScenario:
+      description: >
+        the scenario the experiment of a `topology-experiment` publication is
+        created or updated with: one of the scenarios the draft's document
+        lists, by name
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          description: Scenario config name
+          type: string
+      required:
+        - name
     BuilderPublishRequest:
       description: >
         `topology` mode publishes the topology only. `topology-experiment`
-        mode also requires an experiment target and may name a scenario
-        target.
+        mode also requires an experiment target and may name the
+        experiment's scenario, which must be one of the scenarios the
+        document lists; without one, the experiment has no scenario. In
+        both modes the topology is added to the `topology` annotation of
+        every scenario the document lists.
       type: object
       additionalProperties: false
       properties:
@@ -4448,7 +4470,7 @@ components:
         topology:
           $ref: "#/components/schemas/BuilderPublishTarget"
         scenario:
-          $ref: "#/components/schemas/BuilderPublishTarget"
+          $ref: "#/components/schemas/BuilderPublishScenario"
         experiment:
           $ref: "#/components/schemas/BuilderPublishTarget"
       required:
@@ -4466,7 +4488,11 @@ components:
         message:
           type: string
         config:
-          description: the config the stage wrote, as `<Kind>/<name>`
+          description: >
+            the config the stage wrote, as `<Kind>/<name>`. The scenario
+            stage, which covers every scenario the document lists, names one
+            only when the document lists one, and its message says which it
+            changed.
           type: string
     BuilderPublishResult:
       type: object
@@ -4491,7 +4517,7 @@ components:
         topology:
           $ref: "#/components/schemas/BuilderPublishTarget"
         scenario:
-          $ref: "#/components/schemas/BuilderPublishTarget"
+          $ref: "#/components/schemas/BuilderPublishScenario"
         experiment:
           $ref: "#/components/schemas/BuilderPublishTarget"
         draft:
@@ -4516,8 +4542,7 @@ components:
             for a Topology or an Experiment, the digest a document imported
             from it records as its `source.digest`: of the config's
             apiVersion, kind, name and spec, and of the `builder-xml` diagram
-            of a Topology that has one. For a Scenario, the digest of its
-            spec
+            of a Topology that has one. Left out for a Scenario or an Image
           type: string
         stored:
           description: false for a config generated from uploaded content

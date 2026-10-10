@@ -631,16 +631,30 @@ describe('the diagram section', () => {
       notes: 'two\nlines',
     },
   };
-  const scenario = {
-    kind: 'uploaded',
-    name: 'ntp.yaml',
-    apiVersion: 'phenix.sandia.gov/v2',
-    digest: `sha256:${'a'.repeat(64)}`,
-    content: {
-      apps: [
-        { name: 'ntp', hosts: [{ hostname: 'alpha' }, { hostname: 'bravo' }] },
-        { name: 'soh', disabled: true },
-      ],
+  // The scenarios the server was read for: one with its apps, one the role
+  // may not read. A document names its scenarios and holds none of them.
+  const reads = {
+    storedScenarios: {
+      'ntp-scn': {
+        content: {
+          apps: [
+            {
+              name: 'ntp',
+              hosts: [{ hostname: 'alpha' }, { hostname: 'bravo' }],
+            },
+            { name: 'soh', disabled: true },
+          ],
+        },
+        problem: '',
+        loading: false,
+        read: 1,
+      },
+      'secret-scn': {
+        content: null,
+        problem: 'forbidden',
+        loading: false,
+        read: 1,
+      },
     },
   };
 
@@ -729,7 +743,7 @@ describe('the diagram section', () => {
 
       expect(html).not.toContain('inspector-details');
       expect(text(html)).not.toContain('Details');
-      expect(text(html)).toContain('Scenario No scenario.');
+      expect(text(html)).toContain('Scenarios No scenarios.');
     });
 
     test('a draft made from an uploaded file names the file', async () => {
@@ -913,7 +927,7 @@ describe('the diagram section', () => {
 
     expect(shown).toContain('Annotations From Topology core, imported');
     expect(html).toContain('datetime="2026-09-28T19:07:00Z"');
-    expect(shown).toContain('notes two lines owner alice Scenario');
+    expect(shown).toContain('notes two lines owner alice Scenarios');
     expect(html).toContain('>two\nlines<');
     expect(html).not.toContain('builder-xml');
     // Only a value that scrolls takes focus, which a page rendered on the
@@ -932,36 +946,38 @@ describe('the diagram section', () => {
       'Annotations From Experiment exp No annotations.',
     );
     expect(drawn).not.toContain('inspector-annotations');
-    expect(text(drawn)).toContain('Scenario No scenario. Add scenario');
+    expect(text(drawn)).toContain('Scenarios No scenarios. Add scenario');
   });
 
-  test('lists the apps of the scenario with their hosts, and offers to edit it', async () => {
-    const html = await renderInspector({ document: true, patch: { scenario } });
+  test('lists each scenario with the apps it was read with, and offers to edit them', async () => {
+    const html = await renderInspector({
+      document: true,
+      schema: reads,
+      patch: { scenarios: ['ntp-scn', 'secret-scn'] },
+    });
     const button = tags(html, 'button').find((tag) =>
       tag.includes('inspector-scenario-edit'),
     );
 
     expect(text(html)).toContain(
-      'Scenario Uploaded scenario ntp.yaml Apps and their hosts ntp alpha, bravo soh (disabled) No hosts Edit scenario',
+      'Scenarios Scenario ntp-scn Apps and their hosts ntp alpha, bravo soh (disabled) No hosts ' +
+        'Scenario secret-scn Your role cannot read this scenario, so its apps are not listed. ' +
+        'Edit scenarios',
     );
+    expect(html).toContain('data-testid="inspector-scenario-1"');
+    expect(html).toContain('data-testid="inspector-scenario-2"');
     expect(button).toContain('aria-haspopup="dialog"');
   });
 
-  test('a stored scenario reads its apps from the server', async () => {
+  test('a scenario not read yet reads its apps from the server', async () => {
     const html = await renderInspector({
       document: true,
-      patch: {
-        scenario: {
-          ...scenario,
-          kind: 'stored',
-          name: 'ntp-scn',
-          content: undefined,
-        },
-      },
+      schema: reads,
+      patch: { scenarios: ['other-scn'] },
     });
 
     expect(text(html)).toContain(
-      'Scenario Stored scenario ntp-scn Reading its apps…',
+      'Scenarios Scenario other-scn Reading its apps…',
     );
   });
 
@@ -969,7 +985,8 @@ describe('the diagram section', () => {
     const html = await renderInspector({
       document: true,
       readOnly: true,
-      patch: { scenario },
+      schema: reads,
+      patch: { scenarios: ['ntp-scn'] },
     });
 
     expect(text(html)).toContain('ntp alpha, bravo');

@@ -264,6 +264,17 @@ func TestBuilderPublishValidatesIntentBeforeWriting(t *testing.T) {
 		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
 			`"experiment":{"name":"my exp","action":"create"}}`,
 		`{"mode":"topology","topology":{"name":"topo/x","action":"create"}}`,
+		// A scenario is named only for the experiment of a
+		// topology-and-experiment publication, by its name alone.
+		`{"mode":"topology","topology":{"name":"topo","action":"create"},"scenario":{"name":"sc"}}`,
+		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+			`"scenario":{"name":"sc","action":"use"},"experiment":{"name":"exp","action":"create"}}`,
+		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+			`"scenario":{"name":"my sc"},"experiment":{"name":"exp","action":"create"}}`,
+		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+			`"scenario":{"name":""},"experiment":{"name":"exp","action":"create"}}`,
+		`{"mode":"topology","topology":{"name":"topo","action":"update","expectedDigest":"sha256:` +
+			strings.Repeat("0", 64) + `"}}`,
 	}
 
 	for _, body := range tests {
@@ -416,79 +427,246 @@ func TestBuilderPublishRejectsStaleSource(t *testing.T) {
 	}
 }
 
-func TestBuilderPublishUploadedScenarioCreateAndUpdate(t *testing.T) {
-	tests := []struct {
-		name         string
-		existing     *store.Config
-		action       string
-		expected     string
-		expectedCode int
-	}{
-		{name: "create", existing: nil, action: builderPublishActionCreate, expected: "", expectedCode: http.StatusOK},
-		{name: "update", existing: scenarioConfig(t, map[string]any{"apps": []any{}}),
-			action: builderPublishActionUpdate, expectedCode: http.StatusOK},
-		{name: "stale update", existing: scenarioConfig(t, map[string]any{"apps": []any{}}),
-			action: builderPublishActionUpdate, expected: "sha256:" + strings.Repeat("0", 64), expectedCode: http.StatusConflict},
-	}
+// TestBuilderPublishAnnotatesListedScenarios publishes a draft listing four
+// scenarios, in either mode: the topology is added to the "topology"
+// annotation of each that does not name it exactly (a name that only
+// contains it does not count), after the names it has, which are kept as
+// they are, and one that already names it is not written. The scenario
+// stage says which it changed.
+func TestBuilderPublishAnnotatesListedScenarios(t *testing.T) {
+	for mode, body := range map[string]string{
+		"topology": `{"mode":"topology","topology":{"name":"topo","action":"create"}}`,
+		"topology-experiment": `{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+			`"experiment":{"name":"exp","action":"create"}}`,
+	} {
+		t.Run(mode, func(t *testing.T) {
+			harness := newBuilderHarness(t,
+				namedScenario(t, "sc-a", "other , other"),
+				namedScenario(t, "sc-b", ""),
+				namedScenario(t, "sc-c", "topo-old, topo"),
+				namedScenario(t, "sc-d", "topology2,xtopo"),
+			)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			content := map[string]any{"apps": []any{map[string]any{"name": "ntp"}}}
-			contentDigest, err := bdoc.ContentDigest(content)
-			if err != nil {
-				t.Fatalf("ContentDigest returned error: %v", err)
-			}
-
-			configs := []store.Config{}
-			expected := tt.expected
-			if tt.existing != nil {
-				configs = append(configs, *tt.existing)
-				if expected == "" {
-					expected, err = bdoc.ContentDigest(tt.existing.Spec)
-					if err != nil {
-						t.Fatalf("ContentDigest returned error: %v", err)
-					}
-				}
-			}
-
-			document := bdoc.NewDocument("with-upload")
-			document.Scenario = &bdoc.ScenarioRef{
-				Kind: bdoc.ScenarioRefUploaded, Name: "sc", Content: content,
-				APIVersion: bdoc.ScenarioAPIVersion(), Digest: contentDigest,
-			}
-
-			harness := newBuilderHarness(t, configs...)
+			document := bdoc.NewDocument("annotated")
+			document.Scenarios = []string{"sc-a", "sc-b", "sc-c", "sc-d"}
 			draft := createBuilderPublishDraft(t, harness, document)
-			expectedField := ""
-			if expected != "" {
-				expectedField = `,"expectedDigest":"` + expected + `"`
-			}
 
-			publishBuilderDraft(t, harness, draft,
-				`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},`+
-					`"scenario":{"name":"sc","action":"`+tt.action+`"`+expectedField+`},`+
-					`"experiment":{"name":"exp","action":"create"}}`, tt.expectedCode)
+			response, _ := publishBuilderDraft(t, harness, draft, body, http.StatusOK)
 
-			if tt.expectedCode != http.StatusOK {
-				if harness.configWrites != 0 {
-					t.Fatalf("stale update wrote %d configs", harness.configWrites)
+			for name, want := range map[string]string{
+				"sc-a": "other , other,topo", "sc-b": "topo", "sc-c": "topo-old, topo", "sc-d": "topology2,xtopo,topo",
+			} {
+				scenario, err := harness.getConfig("Scenario/" + name)
+				if err != nil {
+					t.Fatalf("scenario %s missing: %v", name, err)
 				}
 
-				return
+				if got := scenario.Metadata.Annotations["topology"]; got != want {
+					t.Errorf("scenario %s topology annotation = %q, want %q", name, got, want)
+				}
+
+				if scenario.Metadata.Annotations["keep"] != "yes" {
+					t.Errorf("scenario %s lost its other annotations: %v", name, scenario.Metadata.Annotations)
+				}
 			}
 
-			scenario, getErr := harness.getConfig("Scenario/sc")
-			if getErr != nil {
-				t.Fatalf("published scenario missing: %v", getErr)
+			// The topology and the three scenarios that changed.
+			if harness.configWrites != 4 {
+				t.Fatalf("config writes = %d, want 4", harness.configWrites)
 			}
-			if scenario.Metadata.Annotations["topology"] != "topo" {
-				t.Fatalf("scenario topology annotation = %q", scenario.Metadata.Annotations["topology"])
+
+			stage := builderStageNamed(t, response, builderPublishStageScenario)
+			want := builderPublishStage{
+				Name: builderPublishStageScenario, Status: "updated", Config: "",
+				Message: "added topology topo to scenarios sc-a, sc-b, sc-d; scenario sc-c already names it",
 			}
-			if digest, digestErr := bdoc.ContentDigest(scenario.Spec); digestErr != nil || digest != contentDigest {
-				t.Fatalf("published scenario digest = %q, want %q (err: %v)", digest, contentDigest, digestErr)
+			if stage != want {
+				t.Fatalf("scenario stage = %+v, want %+v", stage, want)
+			}
+
+			if response.Scenario != nil {
+				t.Fatalf("response scenario = %+v, want none: no experiment scenario was picked", response.Scenario)
 			}
 		})
 	}
+}
+
+// TestBuilderPublishScenarioStageReports checks the scenario stage of a
+// draft that lists one scenario, which it names as its config, and of one
+// whose scenarios all name the topology already, which it skips.
+func TestBuilderPublishScenarioStageReports(t *testing.T) {
+	for name, test := range map[string]struct {
+		configs []store.Config
+		listed  []string
+		want    builderPublishStage
+	}{
+		"one scenario": {
+			configs: []store.Config{namedScenario(t, "sc", "")},
+			listed:  []string{"sc"},
+			want: builderPublishStage{
+				Name: builderPublishStageScenario, Status: "updated", Config: "Scenario/sc",
+				Message: "added topology topo to scenario sc",
+			},
+		},
+		"every scenario names the topology": {
+			configs: []store.Config{namedScenario(t, "sc-a", "topo"), namedScenario(t, "sc-b", "a,topo")},
+			listed:  []string{"sc-a", "sc-b"},
+			want: builderPublishStage{
+				Name: builderPublishStageScenario, Status: bapi.PublishSkipped, Config: "",
+				Message: "scenarios sc-a, sc-b already name topology topo",
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			harness := newBuilderHarness(t, test.configs...)
+
+			document := bdoc.NewDocument("reported")
+			document.Scenarios = test.listed
+			draft := createBuilderPublishDraft(t, harness, document)
+
+			response, _ := publishBuilderDraft(t, harness, draft,
+				`{"mode":"topology","topology":{"name":"topo","action":"create"}}`, http.StatusOK)
+
+			if stage := builderStageNamed(t, response, builderPublishStageScenario); stage != test.want {
+				t.Fatalf("scenario stage = %+v, want %+v", stage, test.want)
+			}
+		})
+	}
+
+	// A draft that lists no scenario has no scenario stage.
+	harness := newBuilderHarness(t, namedScenario(t, "sc", ""))
+	draft := harness.createDraft(builderTestOwner, "plain")
+
+	response, _ := publishBuilderDraft(t, harness, draft,
+		`{"mode":"topology","topology":{"name":"plain","action":"create"}}`, http.StatusOK)
+
+	for _, stage := range response.Stages {
+		if stage.Name == builderPublishStageScenario {
+			t.Fatalf("stages = %+v, want no scenario stage", response.Stages)
+		}
+	}
+
+	if scenario, err := harness.getConfig("Scenario/sc"); err != nil || scenario.Metadata.Annotations["topology"] != "" {
+		t.Fatalf("an unlisted scenario was changed: %+v (%v)", scenario, err)
+	}
+}
+
+// TestBuilderPublishRefusesScenarioProblems refuses, before anything is
+// written, a listed scenario that does not exist or that the caller may not
+// read (alike, so its existence is not disclosed), one the caller may not
+// update whose annotation must change, and an experiment scenario the draft
+// does not list.
+func TestBuilderPublishRefusesScenarioProblems(t *testing.T) {
+	everything := []string{"list", "get", "create", "update", "delete"}
+	others := builderPolicy([]string{"topologies", "experiments", "scenarios", "schemas"}, []string{"*"}, everything)
+	allTargets := builderPolicy([]string{"configs"}, []string{"*", "Topology/*", "Experiment/*"}, everything)
+
+	hidden := builderRole(
+		allTargets, others,
+		builderPolicy([]string{"configs"}, []string{"Scenario/sc"}, everything),
+	)
+	readOnly := builderRole(
+		allTargets, others,
+		builderPolicy([]string{"configs"}, []string{"Scenario/*"}, []string{"list", "get"}),
+	)
+
+	experiment := `{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+		`"scenario":{"name":"%s"},"experiment":{"name":"exp","action":"create"}}`
+
+	for name, test := range map[string]struct {
+		listed []string
+		role   *rbac.Role
+		body   string
+		status int
+		want   string
+	}{
+		"missing": {
+			listed: []string{"sc", "gone"}, body: fmt.Sprintf(experiment, "sc"),
+			status: http.StatusUnprocessableEntity, want: "scenario gone does not exist",
+		},
+		"hidden": {
+			listed: []string{"sc", "secret"}, role: &hidden, body: fmt.Sprintf(experiment, "sc"),
+			status: http.StatusUnprocessableEntity, want: "scenario secret does not exist",
+		},
+		"not updatable": {
+			listed: []string{"sc"}, role: &readOnly,
+			body:   `{"mode":"topology","topology":{"name":"topo","action":"create"}}`,
+			status: http.StatusForbidden, want: "adding topology topo to scenario sc not allowed",
+		},
+		"not listed": {
+			listed: []string{"sc"}, body: fmt.Sprintf(experiment, "secret"),
+			status: http.StatusUnprocessableEntity, want: "scenario secret is not one of the scenarios this draft lists",
+		},
+		"listed by none": {
+			listed: nil, body: fmt.Sprintf(experiment, "sc"),
+			status: http.StatusUnprocessableEntity, want: "scenario sc is not one of the scenarios this draft lists",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			harness := newBuilderHarness(t, namedScenario(t, "sc", "other"), namedScenario(t, "secret", ""))
+
+			document := bdoc.NewDocument("refused")
+			document.Scenarios = test.listed
+			draft := createBuilderPublishDraft(t, harness, document)
+
+			_, refusal := publishBuilderDraftAs(t, harness, draft, test.role, test.body, test.status)
+			if !strings.Contains(refusal.Message, test.want) {
+				t.Fatalf("refusal = %q, want %q", refusal.Message, test.want)
+			}
+
+			if harness.configWrites != 0 || harness.experimentWrites != 0 ||
+				harness.store.Count(bapi.NamespacePublished) != 0 {
+				t.Fatal("a refused publication had side effects")
+			}
+		})
+	}
+
+	// A scenario that names the topology already needs no update permission.
+	harness := newBuilderHarness(t, namedScenario(t, "sc", "topo"))
+
+	document := bdoc.NewDocument("annotated")
+	document.Scenarios = []string{"sc"}
+	draft := createBuilderPublishDraft(t, harness, document)
+
+	publishBuilderDraftAs(t, harness, draft, &readOnly,
+		`{"mode":"topology","topology":{"name":"topo","action":"create"}}`, http.StatusOK)
+}
+
+// namedScenario returns a Scenario config named name with one app, the
+// comma-separated topology annotation topologies (left out when empty) and
+// another annotation, keep.
+func namedScenario(t *testing.T, name, topologies string) store.Config {
+	t.Helper()
+
+	scenario, err := store.NewConfig("Scenario/" + name)
+	if err != nil {
+		t.Fatalf("NewConfig returned error: %v", err)
+	}
+
+	scenario.Version = builderScenarioVersion
+	scenario.Spec = map[string]any{"apps": []any{map[string]any{"name": name + "-app"}}}
+	scenario.Metadata.Annotations = store.Annotations{"keep": "yes"}
+
+	if topologies != "" {
+		scenario.Metadata.Annotations["topology"] = topologies
+	}
+
+	return *scenario
+}
+
+// builderStageNamed returns the stage of a publish response named name.
+func builderStageNamed(t *testing.T, response builderPublishResponse, name string) builderPublishStage {
+	t.Helper()
+
+	for _, stage := range response.Stages {
+		if stage.Name == name {
+			return stage
+		}
+	}
+
+	t.Fatalf("stages = %+v, want a %s stage", response.Stages, name)
+
+	return builderPublishStage{Name: "", Status: "", Message: "", Config: ""}
 }
 
 func TestBuilderPublishRejectsUnrelatedExperimentUpdate(t *testing.T) {
@@ -591,6 +769,10 @@ func TestBuilderPublishUpdatesSourceExperiment(t *testing.T) {
 	}
 }
 
+// builderScenarioVersion is the apiVersion of the Scenario configs the tests
+// store, the latest phenix stores scenarios at.
+const builderScenarioVersion = "phenix.sandia.gov/v2"
+
 // scenarioConfig returns a Scenario config named "sc" with the given spec.
 func scenarioConfig(t *testing.T, spec map[string]any) *store.Config {
 	t.Helper()
@@ -600,60 +782,66 @@ func scenarioConfig(t *testing.T, spec map[string]any) *store.Config {
 		t.Fatalf("NewConfig returned error: %v", err)
 	}
 
-	scenario.Version = bdoc.ScenarioAPIVersion()
+	scenario.Version = builderScenarioVersion
 	scenario.Spec = spec
 
 	return scenario
 }
 
-func TestBuilderPublishStoredScenarioAndExperiment(t *testing.T) {
-	scenario, err := store.NewConfig("Scenario/sc")
-	if err != nil {
-		t.Fatalf("NewConfig returned error: %v", err)
-	}
-	scenario.Version = bdoc.ScenarioAPIVersion()
-	scenario.Spec = map[string]any{"apps": []any{}}
-	scenario.Metadata.Annotations = store.Annotations{"topology": "other, other", "keep": "yes"}
+// TestBuilderPublishExperimentUsesPickedScenario publishes a draft listing
+// two scenarios with an experiment created with the second: the experiment
+// is created with that scenario, after the topology was added to both.
+func TestBuilderPublishExperimentUsesPickedScenario(t *testing.T) {
+	harness := newBuilderHarness(t, namedScenario(t, "sc-a", ""), namedScenario(t, "sc-b", "other"))
 
-	digest, err := bdoc.ContentDigest(scenario.Spec)
-	if err != nil {
-		t.Fatalf("ContentDigest returned error: %v", err)
-	}
-
-	document := bdoc.NewDocument("with-scenario")
-	document.Scenario = &bdoc.ScenarioRef{
-		Kind: bdoc.ScenarioRefStored, Name: "sc", Content: nil,
-		APIVersion: scenario.Version, Digest: digest,
-	}
-
-	harness := newBuilderHarness(t, *scenario)
+	document := bdoc.NewDocument("picked")
+	document.Scenarios = []string{"sc-a", "sc-b"}
 	draft := createBuilderPublishDraft(t, harness, document)
 
-	publishBuilderDraft(t, harness, draft,
+	response, _ := publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},`+
-			`"scenario":{"name":"sc","action":"use"},`+
-			`"experiment":{"name":"exp","action":"create"}}`, http.StatusOK)
+			`"scenario":{"name":"sc-b"},"experiment":{"name":"exp","action":"create"}}`, http.StatusOK)
 
-	updated, err := harness.getConfig("Scenario/sc")
+	created, err := harness.getConfig("Experiment/exp")
 	if err != nil {
-		t.Fatalf("scenario missing: %v", err)
+		t.Fatalf("experiment missing: %v", err)
 	}
-	if got := updated.Metadata.Annotations["topology"]; got != "other,topo" {
-		t.Fatalf("topology annotation = %q, want %q", got, "other,topo")
+
+	if created.Metadata.Annotations["scenario"] != "sc-b" || harness.experimentWrites != 1 {
+		t.Fatalf("experiment annotations = %v after %d writes, want scenario sc-b",
+			created.Metadata.Annotations, harness.experimentWrites)
 	}
-	if updated.Metadata.Annotations["keep"] != "yes" {
-		t.Fatal("scenario annotation was not preserved")
+
+	if response.Scenario == nil || response.Scenario.Name != "sc-b" {
+		t.Fatalf("response scenario = %+v, want sc-b", response.Scenario)
 	}
-	if harness.experimentWrites != 1 {
-		t.Fatalf("experiment writes = %d, want 1", harness.experimentWrites)
+
+	meta, err := harness.service.GetDraft(context.Background(), draft.ID)
+	if err != nil {
+		t.Fatalf("GetDraft returned error: %v", err)
+	}
+
+	if meta.Publication == nil || meta.Publication.ScenarioTarget != "sc-b" {
+		t.Fatalf("publication = %+v, want scenario target sc-b", meta.Publication)
+	}
+
+	// The stages run in order: the scenarios are annotated before the
+	// experiment, which phenix creates only with a scenario that names its
+	// topology.
+	names := make([]string, len(response.Stages))
+	for i, stage := range response.Stages {
+		names[i] = stage.Name
+	}
+
+	if want := []string{"document", "topology", "scenario", "experiment", "draft"}; !slices.Equal(names, want) {
+		t.Fatalf("stages = %q, want %q", names, want)
 	}
 }
 
 // TestBuilderExperimentScenarioRoundTrip generates a draft from an
-// experiment whose scenario is stored, then publishes it back. The experiment
-// embeds its own merged copy of the scenario, which never matches the stored
-// config, so generation must reference the stored config instead. An uploaded
-// experiment keeps its own copy.
+// experiment whose scenario is stored, which lists it, then publishes it
+// back with that scenario and then with none. The experiment holds the
+// stored scenario, as phenix merges it, and then none.
 func TestBuilderExperimentScenarioRoundTrip(t *testing.T) {
 	stored := scenarioConfig(t, map[string]any{
 		"apps": []any{map[string]any{"name": "app", "metadata": map[string]any{"k": "v"}}},
@@ -664,152 +852,173 @@ func TestBuilderExperimentScenarioRoundTrip(t *testing.T) {
 		"topology": map[string]any{"nodes": []any{}},
 		"vlans":    map[string]any{"aliases": map[string]any{}},
 		"scenario": map[string]any{"apps": []any{map[string]any{
-			"name": "app", "disabled": false, "metadata": map[string]any{"k": "v"},
+			"name": "old-app", "disabled": false,
 		}}},
 	}
 	experiment.Metadata.Annotations = store.Annotations{"topology": "topo", "scenario": "sc"}
 
-	t.Run("stored scenario", func(t *testing.T) {
-		harness := newBuilderHarness(t, experiment, *stored)
-		document, _ := postBuilderGenerate(t, harness, nil, `{"source":"Experiment/exp"}`)
+	harness := newBuilderHarness(t, experiment, *stored)
+	document, warnings := postBuilderGenerate(t, harness, nil, `{"source":"Experiment/exp"}`)
 
-		digest, err := bdoc.ContentDigest(stored.Spec)
-		if err != nil {
-			t.Fatalf("ContentDigest returned error: %v", err)
-		}
+	if !reflect.DeepEqual(document.Scenarios, []string{"sc"}) {
+		t.Fatalf("scenarios = %q with warnings %q, want [sc]", document.Scenarios, warnings)
+	}
 
-		want := bdoc.ScenarioRef{
-			Kind: bdoc.ScenarioRefStored, Name: "sc", Content: nil,
-			APIVersion: stored.Version, Digest: digest,
-		}
-		if document.Scenario == nil || !reflect.DeepEqual(*document.Scenario, want) {
-			t.Fatalf("scenario = %+v, want %+v", document.Scenario, want)
-		}
-
-		draft := createBuilderPublishDraft(t, harness, document, "Experiment/exp")
-		publishBuilderDraft(t, harness, draft,
-			`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},`+
-				`"scenario":{"name":"sc","action":"use"},`+
-				`"experiment":{"name":"exp","action":"update"}}`, http.StatusOK)
-
-		updated, err := harness.getConfig("Experiment/exp")
-		if err != nil {
-			t.Fatalf("experiment missing: %v", err)
-		}
-		if updated.Metadata.Annotations["scenario"] != "sc" {
-			t.Fatalf("experiment annotations = %#v", updated.Metadata.Annotations)
-		}
+	// A device added in the editor, so the update has a topology to write:
+	// an experiment that already holds the topology and names the scenario
+	// is left as it is.
+	document.Nodes = append(document.Nodes, bdoc.Node{
+		ID: bdoc.DeviceNodeID("host"), Kind: bdoc.NodeKindDevice, Label: "host",
+		Device: &bdoc.Device{Hostname: "host", Spec: includeNode("host"), Interfaces: []bdoc.InterfaceHandle{}},
 	})
 
-	// Without the stored config, or without permission to list it, the
-	// experiment's copy is all there is: it is attached as an uploaded scenario
-	// under the same name, and a warning says so.
+	draft := createBuilderPublishDraft(t, harness, document, "Experiment/exp")
+	response, _ := publishBuilderDraft(t, harness, draft,
+		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},`+
+			`"scenario":{"name":"sc"},"experiment":{"name":"exp","action":"update"}}`, http.StatusOK)
+
+	updated, err := harness.getConfig("Experiment/exp")
+	if err != nil {
+		t.Fatalf("experiment missing: %v", err)
+	}
+
+	if updated.Metadata.Annotations["scenario"] != "sc" {
+		t.Fatalf("experiment annotations = %#v", updated.Metadata.Annotations)
+	}
+
+	if apps := experimentAppNames(t, updated); !slices.Equal(apps, []string{"app"}) {
+		t.Fatalf("experiment apps = %q, want the stored scenario's", apps)
+	}
+
+	if scenario, err := harness.getConfig("Scenario/sc"); err != nil || scenario.Metadata.Annotations["topology"] != "topo" {
+		t.Fatalf("scenario = %+v (%v), want topology topo added", scenario, err)
+	}
+
+	// Published again without a scenario, the experiment has none.
+	publishBuilderDraft(t, harness, response.Draft,
+		`{"mode":"topology-experiment","topology":{"name":"topo","action":"update"},`+
+			`"experiment":{"name":"exp","action":"update"}}`, http.StatusOK)
+
+	cleared, err := harness.getConfig("Experiment/exp")
+	if err != nil {
+		t.Fatalf("experiment missing: %v", err)
+	}
+
+	if _, ok := cleared.Metadata.Annotations["scenario"]; ok || len(experimentAppNames(t, cleared)) != 0 {
+		t.Fatalf("experiment = %v with apps %q, want no scenario", cleared.Metadata.Annotations, experimentAppNames(t, cleared))
+	}
+}
+
+// experimentAppNames returns the names of the scenario apps an experiment
+// config holds.
+func experimentAppNames(t *testing.T, config *store.Config) []string {
+	t.Helper()
+
+	exp, err := types.DecodeExperimentFromConfig(*config)
+	if err != nil {
+		t.Fatalf("DecodeExperimentFromConfig returned error: %v", err)
+	}
+
+	var names []string
+
+	if exp.Spec.Scenario() != nil {
+		for _, app := range exp.Spec.Scenario().Apps() {
+			names = append(names, app.Name())
+		}
+	}
+
+	return names
+}
+
+// TestBuilderGenerateExperimentScenario imports experiments: one whose
+// scenario is a Scenario config the caller may list lists it; one whose
+// scenario is missing or hidden from the caller lists none, with a warning,
+// and holds nothing of the scenario content the experiment carries. An
+// experiment file is held to the same rule, and a warning says that the
+// scenario listed is this server's, not the file's copy.
+func TestBuilderGenerateExperimentScenario(t *testing.T) {
+	stored := scenarioConfig(t, map[string]any{"apps": []any{map[string]any{"name": "app"}}})
+
+	experiment := builderConfig(t, kindExperiment, "exp")
+	experiment.Spec = map[string]any{
+		"topology": map[string]any{"nodes": []any{}},
+		"vlans":    map[string]any{"aliases": map[string]any{}},
+		"scenario": map[string]any{"apps": []any{map[string]any{"name": "embedded-app"}}},
+	}
+	experiment.Metadata.Annotations = store.Annotations{"topology": "topo", "scenario": "sc"}
+
+	content, err := json.Marshal(experiment)
+	if err != nil {
+		t.Fatalf("encoding the experiment file: %v", err)
+	}
+
+	upload := asBuilderJSON(t, map[string]string{"content": string(content)})
+
 	hidden := builderRole(
-		builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"list", "get"}),
+		builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"list", "get", "create"}),
 		builderPolicy([]string{"experiments"}, []string{"*"}, []string{"list"}),
 	)
 
-	for name, setup := range map[string]struct {
+	const notStored = `the experiment's scenario "sc" is not a stored Scenario config and was not attached`
+
+	for name, test := range map[string]struct {
 		configs []store.Config
 		role    *rbac.Role
+		body    string
+		listed  []string
+		warning string
 	}{
-		"missing scenario": {configs: []store.Config{experiment}, role: nil},
-		"hidden scenario":  {configs: []store.Config{experiment, *stored}, role: &hidden},
+		"stored": {
+			configs: []store.Config{experiment, *stored}, body: `{"source":"Experiment/exp"}`,
+			listed: []string{"sc"},
+		},
+		"missing": {
+			configs: []store.Config{experiment}, body: `{"source":"Experiment/exp"}`, warning: notStored,
+		},
+		"hidden": {
+			configs: []store.Config{experiment, *stored}, role: &hidden, body: `{"source":"Experiment/exp"}`,
+			warning: notStored,
+		},
+		"file with a stored scenario": {
+			configs: []store.Config{*stored}, body: upload, listed: []string{"sc"},
+			warning: `scenario "sc" is this server's Scenario config of that name, not the copy the experiment file holds`,
+		},
+		"file without one": {
+			configs: nil, body: upload, warning: notStored,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			harness := newBuilderHarness(t, setup.configs...)
-			document, warnings := postBuilderGenerate(t, harness, setup.role, `{"source":"Experiment/exp"}`)
+			harness := newBuilderHarness(t, test.configs...)
+			document, warnings := postBuilderGenerate(t, harness, test.role, test.body)
 
-			ref := document.Scenario
-			if ref == nil || ref.Kind != bdoc.ScenarioRefUploaded || ref.Name != "sc" || len(ref.Content) == 0 {
-				t.Fatalf("scenario = %+v, want the experiment's copy as uploaded scenario sc", ref)
+			if !slices.Equal(document.Scenarios, test.listed) {
+				t.Fatalf("scenarios = %q, want %q", document.Scenarios, test.listed)
 			}
 
-			if !slices.ContainsFunc(warnings, func(warning string) bool {
-				return strings.Contains(warning, `scenario "sc" is not available`)
+			if test.warning == "" && slices.ContainsFunc(warnings, func(warning string) bool {
+				return strings.Contains(warning, "scenario")
 			}) {
-				t.Fatalf("warnings = %v, want one about scenario sc", warnings)
+				t.Fatalf("warnings = %q, want none about the scenario", warnings)
 			}
 
-			if !reflect.DeepEqual(document.Source.Warnings, warnings) {
-				t.Fatalf("source warnings = %v, want %v", document.Source.Warnings, warnings)
+			if test.warning != "" && !slices.Contains(warnings, test.warning) {
+				t.Fatalf("warnings = %q, want %q", warnings, test.warning)
+			}
+
+			// The document leaves out warnings it has none of.
+			if !slices.Equal(document.Source.Warnings, warnings) {
+				t.Fatalf("source warnings = %q, want %q", document.Source.Warnings, warnings)
+			}
+
+			data, err := bapi.EncodeDocument(document)
+			if err != nil {
+				t.Fatalf("EncodeDocument returned error: %v", err)
+			}
+
+			if strings.Contains(string(data), "embedded-app") {
+				t.Fatalf("the document holds the experiment's scenario content:\n%s", data)
 			}
 		})
-	}
-
-	// An uploaded experiment was not built from this server's scenario of the
-	// same name, which here differs, so its own copy is kept even though the
-	// stored scenario is listable, and publishing writes that copy.
-	t.Run("uploaded experiment", func(t *testing.T) {
-		checkUploadedExperimentScenario(t, experiment, stored)
-	})
-}
-
-// checkUploadedExperimentScenario generates a draft from an upload of
-// experiment carrying a scenario that differs from stored, then publishes it.
-func checkUploadedExperimentScenario(t *testing.T, experiment store.Config, stored *store.Config) {
-	t.Helper()
-
-	uploadedScenario := map[string]any{"apps": []any{map[string]any{"name": "uploaded-app"}}}
-
-	upload := experiment
-	upload.Spec = map[string]any{
-		"topology": experiment.Spec["topology"],
-		"vlans":    experiment.Spec["vlans"],
-		"scenario": uploadedScenario,
-	}
-
-	content, err := json.Marshal(upload)
-	if err != nil {
-		t.Fatalf("encoding uploaded experiment: %v", err)
-	}
-
-	body, err := json.Marshal(map[string]string{"content": string(content)})
-	if err != nil {
-		t.Fatalf("encoding generate request: %v", err)
-	}
-
-	harness := newBuilderHarness(t, *stored)
-	document, warnings := postBuilderGenerate(t, harness, nil, string(body))
-
-	uploadedDigest, err := bdoc.ContentDigest(uploadedScenario)
-	if err != nil {
-		t.Fatalf("ContentDigest returned error: %v", err)
-	}
-
-	ref := document.Scenario
-	if ref == nil || ref.Kind != bdoc.ScenarioRefUploaded || ref.Name != "sc" || ref.Digest != uploadedDigest {
-		t.Fatalf("scenario = %+v, want the uploaded experiment's copy as uploaded scenario sc", ref)
-	}
-
-	if !slices.ContainsFunc(warnings, func(warning string) bool {
-		return strings.Contains(warning, `the experiment file's copy of scenario "sc" is attached as an uploaded scenario`)
-	}) {
-		t.Fatalf("warnings = %v, want one about scenario sc", warnings)
-	}
-
-	if !reflect.DeepEqual(document.Source.Warnings, warnings) {
-		t.Fatalf("source warnings = %v, want %v", document.Source.Warnings, warnings)
-	}
-
-	storedDigest, err := bdoc.ContentDigest(stored.Spec)
-	if err != nil {
-		t.Fatalf("ContentDigest returned error: %v", err)
-	}
-
-	draft := createBuilderPublishDraft(t, harness, document, "uploaded/exp")
-	publishBuilderDraft(t, harness, draft,
-		`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},`+
-			`"scenario":{"name":"sc","action":"update","expectedDigest":"`+storedDigest+`"},`+
-			`"experiment":{"name":"exp","action":"create"}}`, http.StatusOK)
-
-	published, err := harness.getConfig("Scenario/sc")
-	if err != nil {
-		t.Fatalf("scenario missing: %v", err)
-	}
-
-	if digest, err := bdoc.ContentDigest(published.Spec); err != nil || digest != uploadedDigest {
-		t.Fatalf("published scenario = %#v, want the uploaded experiment's copy", published.Spec)
 	}
 }
 
@@ -842,29 +1051,55 @@ func postBuilderGenerate(
 	return document, response.Warnings
 }
 
+// TestBuilderPublishResumesAfterScenarioFailure fails the scenario stage,
+// which leaves the topology written and the draft unpublished, then
+// publishes again, which skips the topology, annotates the scenarios and
+// creates the experiment. A retry of the publication that completed answers
+// with every stage skipped, the scenario stage among them.
 func TestBuilderPublishResumesAfterScenarioFailure(t *testing.T) {
-	scenario := scenarioConfig(t, map[string]any{"apps": []any{}})
-	digest, err := bdoc.ContentDigest(scenario.Spec)
-	if err != nil {
-		t.Fatalf("ContentDigest returned error: %v", err)
-	}
+	harness := newBuilderHarness(t, namedScenario(t, "sc-a", ""), namedScenario(t, "sc-b", ""))
 
 	document := bdoc.NewDocument("resume")
-	document.Scenario = &bdoc.ScenarioRef{
-		Kind: bdoc.ScenarioRefStored, Name: "sc", Content: nil,
-		APIVersion: scenario.Version, Digest: digest,
-	}
-
-	harness := newBuilderHarness(t, *scenario)
+	document.Scenarios = []string{"sc-a", "sc-b"}
 	draft := createBuilderPublishDraft(t, harness, document)
 	body := `{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
-		`"scenario":{"name":"sc","action":"use"},"experiment":{"name":"exp","action":"create"}}`
+		`"scenario":{"name":"sc-a"},"experiment":{"name":"exp","action":"create"}}`
 
 	harness.failConfigKind = builderKindScenario
-	publishBuilderDraft(t, harness, draft, body, http.StatusInternalServerError)
+	failed, _ := publishBuilderDraft(t, harness, draft, body, http.StatusInternalServerError)
+
+	if stage := failed.Stages[len(failed.Stages)-1]; failed.Status != bapi.PublishPartial ||
+		stage.Name != builderPublishStageScenario || stage.Status != bapi.PublishFailed ||
+		stage.Message != "scenario publication failed" {
+		t.Fatalf("failed publication = %+v, want the scenario stage failed last", failed)
+	}
+
+	if harness.experimentWrites != 0 {
+		t.Fatalf("experiment writes = %d after the scenario stage failed, want none", harness.experimentWrites)
+	}
 
 	harness.failConfigKind = ""
-	publishBuilderDraft(t, harness, draft, body, http.StatusOK)
+	published, _ := publishBuilderDraft(t, harness, draft, body, http.StatusOK)
+
+	if stage := builderStageNamed(t, published, builderPublishStageTopology); stage.Status != bapi.PublishSkipped {
+		t.Fatalf("topology stage = %+v, want it skipped", stage)
+	}
+
+	if stage := builderStageNamed(t, published, builderPublishStageScenario); stage.Status != "updated" {
+		t.Fatalf("scenario stage = %+v, want it updated", stage)
+	}
+
+	retried, _ := publishBuilderDraft(t, harness, draft, body, http.StatusOK)
+
+	for _, stage := range retried.Stages {
+		if stage.Status != bapi.PublishSkipped {
+			t.Fatalf("retry stages = %+v, want every stage skipped", retried.Stages)
+		}
+	}
+
+	if stage := builderStageNamed(t, retried, builderPublishStageScenario); stage.Config != "" {
+		t.Fatalf("retried scenario stage = %+v, want no one config named for two scenarios", stage)
+	}
 
 	topology, err := harness.getConfig("Topology/topo")
 	if err != nil {
@@ -881,8 +1116,176 @@ func TestBuilderPublishResumesAfterScenarioFailure(t *testing.T) {
 	if count := harness.store.Count(bapi.NamespacePublished); count != 1 {
 		t.Fatalf("published document count = %d, want 1", count)
 	}
-	if harness.configWrites != 2 || harness.experimentWrites != 1 {
+	// The topology once, then each scenario once.
+	if harness.configWrites != 3 || harness.experimentWrites != 1 {
 		t.Fatalf("writes after retry = configs %d, experiments %d", harness.configWrites, harness.experimentWrites)
+	}
+
+	for _, name := range []string{"sc-a", "sc-b"} {
+		if scenario, err := harness.getConfig("Scenario/" + name); err != nil || scenario.Metadata.Annotations["topology"] != "topo" {
+			t.Fatalf("scenario %s = %+v (%v), want topology topo added", name, scenario, err)
+		}
+	}
+}
+
+// TestBuilderPublishReportsScenariosWrittenBeforeFailure fails the write of
+// the second of two listed scenarios that both need the topology: the first
+// is written, a warning names it, and the scenario stage fails before the
+// experiment. Publishing again leaves the first as it is, writes the second,
+// and creates the experiment.
+func TestBuilderPublishReportsScenariosWrittenBeforeFailure(t *testing.T) {
+	harness := newBuilderHarness(t, namedScenario(t, "sc-a", "other"), namedScenario(t, "sc-b", ""))
+
+	document := bdoc.NewDocument("partway")
+	document.Scenarios = []string{"sc-a", "sc-b"}
+	draft := createBuilderPublishDraft(t, harness, document)
+	body := `{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+		`"scenario":{"name":"sc-b"},"experiment":{"name":"exp","action":"create"}}`
+
+	annotations := func() []string {
+		t.Helper()
+
+		values := make([]string, 0, len(document.Scenarios))
+
+		for _, name := range document.Scenarios {
+			scenario, err := harness.getConfig("Scenario/" + name)
+			if err != nil {
+				t.Fatalf("scenario %s missing: %v", name, err)
+			}
+
+			values = append(values, scenario.Metadata.Annotations["topology"])
+		}
+
+		return values
+	}
+
+	harness.failConfigName = "Scenario/sc-b"
+	failed, _ := publishBuilderDraft(t, harness, draft, body, http.StatusInternalServerError)
+
+	if stage := failed.Stages[len(failed.Stages)-1]; failed.Status != bapi.PublishPartial ||
+		stage.Name != builderPublishStageScenario || stage.Status != bapi.PublishFailed {
+		t.Fatalf("failed publication = %+v, want the scenario stage failed last", failed)
+	}
+
+	const warning = "topology topo was added to scenario sc-a before the scenario stage failed"
+	if !slices.Contains(failed.Warnings, warning) {
+		t.Fatalf("warnings = %q, want %q", failed.Warnings, warning)
+	}
+
+	if got, want := annotations(), []string{"other,topo", ""}; !slices.Equal(got, want) || harness.experimentWrites != 0 {
+		t.Fatalf("topology annotations = %q with %d experiment writes after the failure, want %q and none",
+			got, harness.experimentWrites, want)
+	}
+
+	harness.failConfigName = ""
+	published, _ := publishBuilderDraft(t, harness, draft, body, http.StatusOK)
+
+	stage := builderStageNamed(t, published, builderPublishStageScenario)
+	want := builderPublishStage{
+		Name: builderPublishStageScenario, Status: "updated", Config: "",
+		Message: "added topology topo to scenario sc-b; scenario sc-a already names it",
+	}
+	if stage != want {
+		t.Fatalf("scenario stage = %+v, want %+v", stage, want)
+	}
+
+	if got, want := annotations(), []string{"other,topo", "topo"}; !slices.Equal(got, want) {
+		t.Fatalf("topology annotations = %q after the retry, want %q", got, want)
+	}
+
+	// The topology and each scenario once, then the experiment.
+	if harness.configWrites != 3 || harness.experimentWrites != 1 {
+		t.Fatalf("writes after retry = configs %d, experiments %d", harness.configWrites, harness.experimentWrites)
+	}
+
+	if created, err := harness.getConfig("Experiment/exp"); err != nil || created.Metadata.Annotations["scenario"] != "sc-b" {
+		t.Fatalf("experiment = %+v (%v), want scenario sc-b", created, err)
+	}
+}
+
+// TestBuilderPublishSwitchesExperimentScenario publishes a draft listing two
+// scenarios with the experiment it was imported from, picking the first, then
+// again picking the second: the experiment then names the second scenario and
+// holds its apps in place of the first's.
+func TestBuilderPublishSwitchesExperimentScenario(t *testing.T) {
+	experiment := builderConfig(t, kindExperiment, "exp")
+	experiment.Spec = map[string]any{
+		"topology": map[string]any{"nodes": []any{}},
+		"vlans":    map[string]any{"aliases": map[string]any{}},
+	}
+	experiment.Metadata.Annotations = store.Annotations{"topology": "topo", "scenario": "sc-a"}
+
+	harness := newBuilderHarness(t, experiment, namedScenario(t, "sc-a", "topo"), namedScenario(t, "sc-b", ""))
+	document, warnings := postBuilderGenerate(t, harness, nil, `{"source":"Experiment/exp"}`)
+
+	if !slices.Equal(document.Scenarios, []string{"sc-a"}) {
+		t.Fatalf("scenarios = %q with warnings %q, want [sc-a]", document.Scenarios, warnings)
+	}
+
+	document.Scenarios = append(document.Scenarios, "sc-b")
+	document.Nodes = append(document.Nodes, bdoc.Node{
+		ID: bdoc.DeviceNodeID("host"), Kind: bdoc.NodeKindDevice, Label: "host",
+		Device: &bdoc.Device{Hostname: "host", Spec: includeNode("host"), Interfaces: []bdoc.InterfaceHandle{}},
+	})
+
+	draft := createBuilderPublishDraft(t, harness, document, "Experiment/exp")
+	body := `{"mode":"topology-experiment","topology":{"name":"topo","action":"%s"},` +
+		`"scenario":{"name":"%s"},"experiment":{"name":"exp","action":"update"}}`
+
+	// The experiment's scenario as the experiment config holds it: the name
+	// it is annotated with, and the apps it holds.
+	scenarioOf := func() (string, []string) {
+		t.Helper()
+
+		updated, err := harness.getConfig("Experiment/exp")
+		if err != nil {
+			t.Fatalf("experiment missing: %v", err)
+		}
+
+		return updated.Metadata.Annotations["scenario"], experimentAppNames(t, updated)
+	}
+
+	first, _ := publishBuilderDraft(t, harness, draft, fmt.Sprintf(body, "create", "sc-a"), http.StatusOK)
+
+	if name, apps := scenarioOf(); name != "sc-a" || !slices.Equal(apps, []string{"sc-a-app"}) {
+		t.Fatalf("experiment scenario = %s with apps %q, want sc-a with its app", name, apps)
+	}
+
+	second, _ := publishBuilderDraft(t, harness, first.Draft, fmt.Sprintf(body, "update", "sc-b"), http.StatusOK)
+
+	if name, apps := scenarioOf(); name != "sc-b" || !slices.Equal(apps, []string{"sc-b-app"}) {
+		t.Fatalf("experiment scenario = %s with apps %q, want sc-b with its app", name, apps)
+	}
+
+	if stage := builderStageNamed(t, second, builderPublishStageExperiment); stage.Status != "updated" {
+		t.Fatalf("experiment stage = %+v, want it updated", stage)
+	}
+
+	// Both scenarios named the topology since the first publication.
+	if stage := builderStageNamed(t, second, builderPublishStageScenario); stage.Status != bapi.PublishSkipped {
+		t.Fatalf("scenario stage = %+v, want it skipped", stage)
+	}
+
+	if second.Scenario == nil || second.Scenario.Name != "sc-b" {
+		t.Fatalf("response scenario = %+v, want sc-b", second.Scenario)
+	}
+}
+
+// TestAddTopologyAnnotation adds a topology to a scenario's topology
+// annotation only when no name of it is the topology, after the names it
+// has, which are kept byte for byte.
+func TestAddTopologyAnnotation(t *testing.T) {
+	for _, test := range []struct{ value, want string }{
+		{"", "topo"},
+		{"other", "other,topo"},
+		{" a , ,a,", " a , ,a,,topo"},
+		{"xtopo,topology", "xtopo,topology,topo"},
+		{"a, topo ,b", "a, topo ,b"},
+		{"topo", "topo"},
+	} {
+		if got := addTopologyAnnotation(test.value, "topo"); got != test.want {
+			t.Errorf("addTopologyAnnotation(%q, %q) = %q, want %q", test.value, "topo", got, test.want)
+		}
 	}
 }
 

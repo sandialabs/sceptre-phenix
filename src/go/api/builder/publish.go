@@ -588,14 +588,20 @@ func storedTopology(name string) (*store.Config, bool, error) {
 	return nil, false, fmt.Errorf("reading topology %s: %w", name, err)
 }
 
-// unpublishedParts says what of the document a topology has no place for:
-// its scenario, and the VLAN aliases of its networks, which only an
+// unpublishedParts says what of the document a topology publication leaves
+// alone: its scenarios, whose topology annotation only Publish in the web UI
+// adds the topology to, and the VLAN aliases of its networks, which only an
 // experiment holds.
 func unpublishedParts(document *builder.Document, export *builder.TopologyExport) []string {
 	var notices []string
 
-	if document.Scenario != nil {
-		notices = append(notices, "The document's scenario is not published: only the topology is.")
+	switch scenarios := len(document.Scenarios); {
+	case scenarios == 1:
+		notices = append(notices, "The document's scenario is not changed: only the topology is published.")
+	case scenarios > 1:
+		notices = append(notices, fmt.Sprintf(
+			"The document's %d scenarios are not changed: only the topology is published.", scenarios,
+		))
 	}
 
 	switch aliases := len(export.VLANAliases); {

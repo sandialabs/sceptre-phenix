@@ -11,10 +11,10 @@
   currently visible on screen.
 
   Gephi (GEXF) is the network as a graph for analysis in Gephi, built here
-  from the diagram (see gexf.js). It is not a format the Builder imports. A
-  stored scenario is read from the server first, for the apps each device
-  runs; when it cannot be read, the file leaves the apps out and the status
-  says why.
+  from the diagram (see gexf.js). It is not a format the Builder imports. The
+  scenarios the diagram lists are read from the server first, for the apps
+  each device runs; when one cannot be read, the file leaves the apps out
+  and the status says why.
 
   The buttons are in two rows: the documents and the config (Builder JSON,
   Builder YAML, Topology YAML), then the pictures and the graph (PNG, SVG,
@@ -180,7 +180,7 @@
   import { count, listOf } from '@/builder/announce.js';
   import { GEXF_MIME, lastModified, toGEXF } from '@/builder/gexf.js';
   import { unappliedBlock } from '@/builder/leave.js';
-  import { storedScenarioName } from '@/builder/model.js';
+  import { documentScenarios } from '@/builder/model.js';
   import { builderSettings } from '@/builder/settings.js';
   import { useBuilderStore } from '@/builder/store.js';
 
@@ -305,8 +305,9 @@
   }
 
   // The network as a GEXF graph (see gexf.js), dated by the diagram's last
-  // change (see lastModified). A stored scenario is read again first, for
-  // the apps each device runs.
+  // change (see lastModified). The scenarios the diagram lists are read
+  // again first, for the apps each device runs; when one of them cannot be
+  // read, the file lists no apps rather than some of them.
   async function downloadGEXF() {
     // A busy button keeps focus, so it can still be pressed.
     if (busy.value) {
@@ -322,22 +323,33 @@
       updated: store.draftRecord.updated,
     });
     const fileName = exportFileName(doc, 'gexf');
-    const stored = storedScenarioName(doc.scenario);
-    let scenario = { content: doc.scenario?.content ?? null, problem: '' };
+    const names = documentScenarios(doc);
+    let reads = [];
 
-    if (stored) {
+    if (names.length) {
       status.set('Downloading GEXF…');
       busy.value = true;
 
       try {
-        scenario = await store.readScenario(stored);
+        reads = await Promise.all(
+          names.map((name) => store.readScenario(name)),
+        );
       } finally {
         busy.value = false;
       }
     }
 
+    const unread = reads.findIndex((read) => read.problem);
+    const scenario =
+      unread >= 0
+        ? { name: names[unread], problem: reads[unread].problem }
+        : { name: '', problem: '' };
+
     try {
-      const graph = toGEXF(doc, { modified, scenario: scenario.content });
+      const graph = toGEXF(doc, {
+        modified,
+        scenarios: scenario.problem ? [] : reads.map((read) => read.content),
+      });
 
       saveText({ text: graph.text, mime: GEXF_MIME, fileName, saveAs });
 
@@ -349,7 +361,7 @@
 
       status.set(
         scenario.problem
-          ? `${saved} It lists no scenario apps: ${scenarioProblem(stored, scenario.problem)}.`
+          ? `${saved} It lists no scenario apps: ${scenarioProblem(scenario.name, scenario.problem)}.`
           : saved,
       );
     } catch (err) {

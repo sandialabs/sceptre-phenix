@@ -21,13 +21,15 @@ import {
   MAX_DIAGRAM_NOTE_BYTES,
   MAX_DIAGRAM_NOTES,
   MAX_NAME_BYTES,
+  MAX_SCENARIO_NAME_BYTES,
+  MAX_SCENARIOS,
   MAX_TEMPLATE_DESCRIPTION_BYTES,
   MAX_TEMPLATE_DEVICE_BYTES,
   MAX_TEMPLATE_NAME_BYTES,
   MAX_TEMPLATES,
   MAX_USER_BYTES,
   MAX_VLAN_ALIAS,
-  SCENARIO_API_VERSION,
+  scenarioNameProblem,
   templateIssues,
   validateDocument,
   validateIcons,
@@ -1208,101 +1210,50 @@ describe('IP and MAC addresses that two interfaces use', () => {
   });
 });
 
-describe('scenario references', () => {
-  // A scenario spec and the digest ContentDigest (ids.go) computes for it.
-  const content = {
-    apps: [
-      {
-        name: 'a<b&c',
-        disabled: true,
-        metadata: { z: 1.5, y: 'é', x: [1, 2] },
-      },
-    ],
-  };
-  const digest =
-    'sha256:f19af28402bc72df46242888d480096bb8be566101e5992953f3f3ac195505e2';
-  const other = `sha256:${'0'.repeat(64)}`;
-
-  function withScenario(scenario) {
-    return { ...sampleDocument().doc, scenario };
+// The rules are in the corpus below, which the server runs too. These are
+// the editor's side of them: its limits against the schema bundle, the
+// check the Scenario dialog makes of a name, and a document's round trip.
+describe('scenarios', () => {
+  function withScenarios(scenarios) {
+    return { ...sampleDocument().doc, scenarios };
   }
 
-  function scenarioErrors(scenario) {
-    return errorsFor(withScenario(scenario)).filter((issue) =>
-      issue.path.startsWith('scenario'),
+  test('the limits are the schema bundle’s', () => {
+    const scenarios = bundle.properties.scenarios;
+
+    expect(scenarios.maxItems).toBe(MAX_SCENARIOS);
+    expect(scenarios.items.maxLength).toBe(MAX_SCENARIO_NAME_BYTES);
+    expect(scenarios.items.pattern).toBe('^[A-Za-z0-9_@.-]+$');
+  });
+
+  test('a name the dialog would add is checked as validation checks it', () => {
+    expect(scenarioNameProblem('plant-ntp')).toBe('');
+    expect(scenarioNameProblem('')).toBe('scenario name is required');
+    expect(scenarioNameProblem('a'.repeat(MAX_SCENARIO_NAME_BYTES + 1))).toBe(
+      `scenario name must be at most ${MAX_SCENARIO_NAME_BYTES} bytes`,
     );
-  }
-
-  test('a stored reference without content is valid and reopens', () => {
-    // What the Scenario dialog attaches: GET /builder/sources lists stored
-    // scenarios by apiVersion and digest, never with their content.
-    const stored = {
-      kind: 'stored',
-      name: 'my-scenario',
-      apiVersion: 'phenix.sandia.gov/v1',
-      digest: other,
-    };
-
-    expect(scenarioErrors(stored)).toEqual([]);
-    expect(parseDocument(withScenario(stored)).scenario).toEqual(stored);
+    expect(scenarioNameProblem('plant ntp')).toBe(
+      'scenario name "plant ntp" may use only letters, numbers, ' +
+        'underscores, at signs, periods and hyphens',
+    );
   });
 
-  test('every reference requires an apiVersion and a well formed digest', () => {
-    for (const kind of ['stored', 'uploaded']) {
-      const ref = { kind, name: 'my-scenario', content };
+  test('a document that lists scenarios reopens with them', () => {
+    const doc = withScenarios(['plant-ntp', 'plant-attack']);
 
-      expect(scenarioErrors(ref), kind).toEqual([
-        expect.objectContaining({ path: 'scenario.apiVersion' }),
-        expect.objectContaining({
-          path: 'scenario.digest',
-          message: 'scenario reference requires a content digest',
-        }),
-      ]);
-      expect(
-        scenarioErrors({
-          ...ref,
-          apiVersion: SCENARIO_API_VERSION,
-          digest: 'sha256:short',
-        }).map((issue) => issue.message),
-        kind,
-      ).toEqual([
-        'malformed scenario digest "sha256:short" (expected sha256:<64 hex>)',
-      ]);
-    }
-
-    expect(
-      scenarioErrors({ kind: 'stored', name: 'my-scenario', digest: other }),
-    ).toEqual([expect.objectContaining({ path: 'scenario.apiVersion' })]);
+    expect(errorsFor(doc)).toEqual([]);
+    expect(parseDocument(doc).scenarios).toEqual(['plant-ntp', 'plant-attack']);
   });
 
-  test('the digest must match content when the reference carries it', () => {
-    const uploaded = {
-      kind: 'uploaded',
-      name: 'scenario.yaml',
-      apiVersion: SCENARIO_API_VERSION,
-      content,
-      digest,
+  test('a scenario reference of the old form is an unknown key', () => {
+    const { scenarios, ...rest } = withScenarios([]);
+    const old = {
+      ...rest,
+      scenario: { kind: 'stored', name: 'plant-ntp' },
     };
 
-    expect(scenarioErrors(uploaded)).toEqual([]);
-    expect(scenarioErrors({ ...uploaded, kind: 'stored' })).toEqual([]);
-    expect(scenarioErrors({ ...uploaded, digest: other })).toEqual([
-      {
-        path: 'scenario.digest',
-        message: `content digest mismatch (expected ${digest})`,
-        level: 'error',
-      },
-    ]);
-    // Content is checked as the latest scenario version; a reference without
-    // content names a stored config of any version.
-    expect(
-      scenarioErrors({ ...uploaded, apiVersion: 'phenix.sandia.gov/v1' }),
-    ).toEqual([
-      expect.objectContaining({
-        path: 'scenario.apiVersion',
-        message: `unsupported scenario apiVersion "phenix.sandia.gov/v1" (expected "${SCENARIO_API_VERSION}")`,
-      }),
-    ]);
+    expect(scenarios).toEqual([]);
+    expect(() => parseDocument(old)).toThrow(/scenario/);
   });
 });
 

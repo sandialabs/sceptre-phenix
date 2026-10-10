@@ -104,9 +104,8 @@ describe('content digests', () => {
   });
 
   test('an unchanged content object, or its reactive proxy, is not read again', () => {
-    // Validation digests the scenario on every edit, and content can be
-    // megabytes; counting reads of one member shows whether it was
-    // serialized again.
+    // Content can be megabytes; counting reads of one member shows whether
+    // it was serialized again.
     let reads = 0;
     const content = { apps: [] };
     Object.defineProperty(content, 'name', {

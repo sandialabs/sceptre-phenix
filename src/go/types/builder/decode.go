@@ -62,9 +62,8 @@ func DecodeReader(reader io.Reader) (*Document, error) {
 }
 
 // normalizeDocument canonicalizes free-form content (the specs of devices and
-// templates, and scenario content) so decoded documents compare equal to
-// generated ones. JSON decodes every number as a float; integral values are
-// restored to int.
+// templates) so decoded documents compare equal to generated ones. JSON
+// decodes every number as a float; integral values are restored to int.
 func normalizeDocument(doc *Document) error {
 	for i := range doc.Nodes {
 		device := doc.Nodes[i].Device
@@ -84,15 +83,6 @@ func normalizeDocument(doc *Document) error {
 		if err := doc.Templates[i].normalize(); err != nil {
 			return fmt.Errorf("%s[%d].device.spec: %w", keyTemplates, i, err)
 		}
-	}
-
-	if doc.Scenario != nil && doc.Scenario.Content != nil {
-		content, err := normalizeSpecMap(doc.Scenario.Content)
-		if err != nil {
-			return fmt.Errorf("scenario.content: %w", err)
-		}
-
-		doc.Scenario.Content = content
 	}
 
 	return nil

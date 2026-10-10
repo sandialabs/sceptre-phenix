@@ -426,7 +426,7 @@
   import { useBuilderStore } from '@/builder/store.js';
   import { deviceFieldWarnings } from '@/builder/validate.js';
 
-  // Edit scenario, in the Diagram section, asks for the Scenario dialog;
+  // Edit scenarios, in the Diagram section, asks for the Scenario dialog;
   // Combine into a new draft, under an included device's note, for the
   // draft the view makes (see combineIncluded in Builder.vue).
   defineEmits(['scenario', 'combine']);

@@ -761,53 +761,45 @@ export function readEnvelope(response) {
 
 const PUBLISH_MODES = ['topology', 'topology-experiment'];
 const CONFIG_ACTIONS = ['create', 'update'];
-const SCENARIO_ACTIONS = ['use', 'create', 'update'];
 
 /**
  * Builds the publish request body. Publish is an *intent*: the server loads the
  * snapshot the draft cursor points at and re-runs its own checks, so document
  * bytes are never sent here. Anything that is not part of the intent is
- * dropped rather than forwarded.
+ * dropped rather than forwarded. The experiment's scenario is sent by name
+ * alone, and only with an experiment: the server adds the topology to every
+ * scenario the document lists whatever the request says.
  *
- * @param {object} intent mode, topology, scenario, experiment
+ * @param {object} intent mode, topology, scenario ({name}), experiment
  * @returns {object} request body
  */
 export function publishIntent(intent = {}) {
   const mode = PUBLISH_MODES.includes(intent.mode) ? intent.mode : 'topology';
-  const target = (value, actions, includeDigest = false) => {
-    const name = typeof value?.name === 'string' ? value.name.trim() : '';
-    const action = actions.includes(value?.action) ? value.action : null;
+  const name = (value) =>
+    typeof value?.name === 'string' ? value.name.trim() : '';
+  const target = (value) => {
+    const action = CONFIG_ACTIONS.includes(value?.action) ? value.action : null;
 
-    if (!name || !action) {
-      return null;
-    }
-
-    const result = { name, action };
-    if (includeDigest && typeof value.expectedDigest === 'string') {
-      result.expectedDigest = value.expectedDigest;
-    }
-
-    return result;
+    return name(value) && action ? { name: name(value), action } : null;
   };
 
-  const topology = target(intent.topology, CONFIG_ACTIONS);
+  const topology = target(intent.topology);
 
   if (!topology) {
     throw new Error('A topology name and action are required to publish.');
   }
 
   const body = { mode, topology };
-  const scenario = target(intent.scenario, SCENARIO_ACTIONS, true);
-
-  if (scenario) {
-    body.scenario = scenario;
-  }
 
   if (mode === 'topology-experiment') {
-    const experiment = target(intent.experiment, CONFIG_ACTIONS);
+    const experiment = target(intent.experiment);
 
     if (!experiment) {
       throw new Error('An experiment name and action are required.');
+    }
+
+    if (name(intent.scenario)) {
+      body.scenario = { name: name(intent.scenario) };
     }
 
     body.experiment = experiment;
@@ -1198,8 +1190,73 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Reads a stored scenario's spec, which a stored scenario reference
-     * does not carry (see ScenarioDialog), to list its apps.
+     * Stores a new config, as the Configs page does (POST /configs). The
+     * server checks `configs` `create` for its kind and name, and the
+     * config itself.
+     *
+     * @param {object} config apiVersion, kind, metadata and spec
+     * @returns {Promise<void>}
+     */
+    async createConfig(config) {
+      const payload = JSON.stringify(config);
+
+      checkUploadSize({ content: payload }, `The ${config.kind}`);
+
+      await http.post('configs', payload, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
+
+    /**
+     * Replaces a stored config of the same kind and name, as the Configs
+     * page does (PUT /configs/<kind>/<name>), which needs `configs`
+     * `update` on it.
+     *
+     * @param {object} config apiVersion, kind, metadata and spec
+     * @returns {Promise<void>}
+     */
+    async updateConfig(config) {
+      const payload = JSON.stringify(config);
+
+      checkUploadSize({ content: payload }, `The ${config.kind}`);
+
+      await http.put(configPath(config.kind, config.metadata.name), payload, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
+
+    /**
+     * Reads a stored config whole, metadata and annotations included (GET
+     * /configs/<kind>/<name>), which needs `configs` `get` on it.
+     *
+     * @param {string} kind
+     * @param {string} name
+     * @returns {Promise<object>} apiVersion, kind, metadata, spec
+     */
+    async getConfig(kind, name) {
+      // The route refuses axios's default Accept, a list of types.
+      const response = await http.get(configPath(kind, name), {
+        headers: { Accept: 'application/json' },
+      });
+      const config = response.data;
+      const metadata = config?.metadata;
+
+      if (
+        !config ||
+        typeof config !== 'object' ||
+        !metadata ||
+        typeof metadata !== 'object' ||
+        Array.isArray(metadata)
+      ) {
+        throw new TypeError(`The server sent an unexpected ${kind} config.`);
+      }
+
+      return config;
+    },
+
+    /**
+     * Reads a stored scenario's spec, which a document that lists the
+     * scenario does not hold, to list its apps.
      *
      * @param {string} name
      * @returns {Promise<object>} the spec, upgraded to the latest version

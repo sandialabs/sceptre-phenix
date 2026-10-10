@@ -23,13 +23,6 @@ const (
 	// against these definitions.
 	PhenixDefPrefix = "phenix.v1."
 
-	// PhenixV2DefPrefix namespaces the phenix v2 OpenAPI component schemas
-	// bundled into the builder schema's $defs. Scenario content is validated
-	// against these definitions, because the latest stored scenario version is
-	// v2 (see [ScenarioAPIVersion]); the v1 Scenario schema only models
-	// experiment app names and cannot validate current scenario content.
-	PhenixV2DefPrefix = "phenix.v2."
-
 	// openAPIRefPrefix is the reference prefix used by the phenix OpenAPI
 	// documents, rewritten to local $defs references during bundling.
 	openAPIRefPrefix = "#/components/schemas/"
@@ -40,16 +33,15 @@ const (
 
 // Schema returns the standalone Builder v1 JSON Schema as a freshly built map.
 //
-// The bundle is self contained: the phenix v1 and v2 OpenAPI component schemas
-// are embedded under $defs (namespaced with [PhenixDefPrefix] and
-// [PhenixV2DefPrefix]) and every "#/components/schemas/..." reference is
-// rewritten to a local "#/$defs/..." reference, so device specs, property
-// forms, and scenario content resolve without a network fetch. It is suitable
-// for a web schema endpoint and for JSON Forms.
+// The bundle is self contained: the phenix v1 OpenAPI component schemas are
+// embedded under $defs (namespaced with [PhenixDefPrefix]) and every
+// "#/components/schemas/..." reference is rewritten to a local "#/$defs/..."
+// reference, so device specs and property forms resolve without a network
+// fetch. It is suitable for a web schema endpoint and for JSON Forms.
 //
 // Object shapes that [Decode] rejects unknown fields for are marked
-// "additionalProperties": false. Free-form phenix payloads (device specs,
-// scenario content) keep their own schemas.
+// "additionalProperties": false. Free-form phenix payloads (device specs)
+// keep their own schemas.
 //
 // Referential integrity between edges, handles, nodes, and networks cannot be
 // expressed in JSON Schema; it is structurally represented (typed identifier
@@ -64,12 +56,6 @@ func Schema() (map[string]any, error) {
 		return nil, err
 	}
 
-	v2Defs, err := PhenixV2Defs()
-	if err != nil {
-		return nil, err
-	}
-
-	maps.Copy(defs, v2Defs)
 	maps.Copy(defs, builderDefs())
 
 	root := objectDef(
@@ -132,11 +118,7 @@ func rootProperties() map[string]any {
 			"Grid the canvas draws and snaps nodes to.",
 			[]any{exampleGrid()},
 		),
-		keyScenario: documented(
-			ref(keyScenario), "Scenario",
-			"Optional stored or uploaded scenario the document publishes with.",
-			[]any{exampleScenario()},
-		),
+		keyScenarios: scenariosDef(),
 		keySource: documented(
 			ref(keySource), "Source",
 			"Where the document came from, and the warnings raised while generating it.",
@@ -181,17 +163,6 @@ func PhenixDefs() (map[string]any, error) {
 	}
 
 	return BundleOpenAPIDefs(doc, PhenixDefPrefix)
-}
-
-// PhenixV2Defs returns the phenix v2 OpenAPI component schemas prepared for
-// inclusion in a JSON Schema $defs map, namespaced with [PhenixV2DefPrefix].
-func PhenixV2Defs() (map[string]any, error) {
-	doc, err := version.ReadSchemaFile("v2")
-	if err != nil {
-		return nil, err
-	}
-
-	return BundleOpenAPIDefs(doc, PhenixV2DefPrefix)
 }
 
 // BundleOpenAPIDefs converts the component schemas of an OpenAPI document into
@@ -312,7 +283,7 @@ const (
 	keyEdges       = "edges"
 	keyGrid        = "grid"
 	keyViewport    = "viewport"
-	keyScenario    = "scenario"
+	keyScenarios   = "scenarios"
 	keySource      = "source"
 	keyLayout      = "layout"
 	keySpec        = "spec"
@@ -374,6 +345,11 @@ const (
 	// [\t\n\f\r ]. Go's regexp and ECMAScript's with the u flag JSON Schema
 	// asks for read this one alike.
 	notePattern = `^[^\x00-\x08\x0b-\x1f\x7f]*[^\x00-\x20\x7f\x85\p{Z}][^\x00-\x08\x0b-\x1f\x7f]*$`
+
+	// configNamePattern matches a name phenix gives a config: at least one
+	// letter, number, underscore, at sign, period or hyphen, and nothing else
+	// (see phenix/api/config.NameRegex).
+	configNamePattern = `^[A-Za-z0-9_@.-]+$`
 
 	// timePattern matches a time in [TimeLayout].
 	timePattern = `^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$`
@@ -553,7 +529,6 @@ func builderDefs() map[string]any {
 		"node":            nodeDef(),
 		"network":         networkDef(),
 		"edge":            edgeDef(),
-		keyScenario:       scenarioDef(),
 		keySource:         sourceDef(),
 	}
 
@@ -1231,56 +1206,31 @@ func routeDef() map[string]any {
 	)
 }
 
-func scenarioDef() map[string]any {
-	def := objectDef(
-		[]string{keyKind, keyAPIVersion, keyDigest},
-		map[string]any{
-			keyKind: documented(
-				enumDef([]any{string(ScenarioRefStored), string(ScenarioRefUploaded)}), "Kind",
-				"How the scenario is referenced: stored names a config on the server, and uploaded carries its content.",
-				[]any{string(ScenarioRefStored)},
-			),
-			keyName: documented(
-				stringDef(), "Name", "Name of the stored scenario config, or of the uploaded file.",
-				[]any{exampleScenarioName},
-			),
-			"content": documentedRef(
-				PhenixV2DefPrefix+"Scenario", "Content",
-				"Scenario spec, which an uploaded scenario requires and which must pass the phenix scenario schema.",
-				[]any{exampleScenarioContent()},
-			),
-			keyAPIVersion: documented(
-				stringDef(), "API Version", "Config apiVersion of the scenario the reference was taken from.",
-				[]any{"phenix.sandia.gov/v2"},
-			),
-			keyDigest: documented(
-				digestDef(), "Digest",
-				"Digest of the scenario content, which every reference carries and which must match the content when present.",
-				[]any{exampleDigest},
-			),
-		},
-	)
+// scenariosDef builds the schema of the Scenario configs a document names,
+// bounded the way [Document.Validate] bounds them. uniqueItems compares the
+// names exactly; that no two differ only by case, JSON Schema cannot
+// express. maxLength counts characters, which a config name holds only one
+// byte each of.
+func scenariosDef() map[string]any {
+	name := stringDef()
+	name["minLength"] = 1
+	name["maxLength"] = MaxScenarioNameBytes
+	name["pattern"] = configNamePattern
 
-	def["allOf"] = []any{
-		scenarioKindBranch(ScenarioRefStored, []string{keyName, keyAPIVersion, keyDigest}),
-		scenarioKindBranch(ScenarioRefUploaded, []string{"content", keyAPIVersion, keyDigest}),
-	}
+	def := arrayDef(name)
+	def["maxItems"] = MaxScenarios
+	def["uniqueItems"] = true
 
 	return documented(
-		def, "Scenario Reference", "Stored or uploaded scenario the document publishes with.",
-		[]any{exampleScenario()},
+		def, "Scenarios",
+		fmt.Sprintf(
+			"Names of the Scenario configs on the server the diagram is used with, at most %d, each a config name "+
+				"of at most %d bytes and none twice ignoring case; publishing adds the topology to the topology "+
+				"annotation of each, and an experiment published with it uses one of them.",
+			MaxScenarios, MaxScenarioNameBytes,
+		),
+		[]any{[]any{exampleScenarioName, exampleScenarioName + "-attack"}},
 	)
-}
-
-// scenarioKindBranch requires additional fields for one scenario reference kind.
-func scenarioKindBranch(kind ScenarioRefKind, required []string) map[string]any {
-	return map[string]any{
-		"if": map[string]any{
-			keyRequired:   []any{keyKind},
-			keyProperties: map[string]any{keyKind: constDef(string(kind))},
-		},
-		"then": map[string]any{keyRequired: anyStrings(required)},
-	}
 }
 
 func sourceDef() map[string]any {

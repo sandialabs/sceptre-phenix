@@ -1107,7 +1107,8 @@ func TestPublishTopologyDryRun(t *testing.T) { //nolint:paralleltest // replaces
 }
 
 // TestPublishTopologyWarnsOfWhatIsNotPublished publishes documents with a
-// scenario and VLAN aliases, which a topology has no place for.
+// scenario, which a topology publication leaves alone, and VLAN aliases,
+// which a topology has no place for.
 func TestPublishTopologyWarnsOfWhatIsNotPublished(t *testing.T) { //nolint:paralleltest // replaces the phenix store
 	p := newPublishTest(t)
 
@@ -1142,7 +1143,7 @@ func TestPublishTopologyWarnsOfWhatIsNotPublished(t *testing.T) { //nolint:paral
 	// stored here.
 	riverside := publish(read(examples, "riverside-water.builder.json"), "")
 	if riverside.Name != "Riverside-Water" ||
-		!slices.Contains(riverside.Warnings, "The document's scenario is not published: only the topology is.") ||
+		!slices.Contains(riverside.Warnings, "The document's scenario is not changed: only the topology is published.") ||
 		!slices.ContainsFunc(riverside.Warnings, func(warning string) bool {
 			return strings.HasPrefix(warning, "Included topology corp-services was not checked")
 		}) {

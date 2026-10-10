@@ -133,12 +133,7 @@
   ],
   "viewport": { "x": 0, "y": 0, "zoom": 1 },
   "grid": { "enabled": true, "size": 16, "snap": true },
-  "scenario": {
-    "kind": "stored",
-    "name": "builder-scenario",
-    "apiVersion": "phenix.sandia.gov/v2",
-    "digest": "sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4"
-  },
+  "scenarios": ["builder-scenario"],
   "source": {
     "kind": "manual",
     "name": "hand-authored"

@@ -15,6 +15,7 @@ import {
   deviceHandles,
   deviceTypeLabel,
   diagramNoteProblem,
+  documentScenarios,
   documentSummary,
   edgeEndpoints,
   findEdge,
@@ -44,14 +45,13 @@ import {
   setDiagramNotes,
   setDocumentInfo,
   setParent,
-  setScenario,
+  setScenarios,
   setViewport,
   sizeOf,
   sourceAnnotations,
   specInterfaceFor,
   specInterfaces,
   STAMP_KEYS,
-  storedScenarioName,
   syncInterfaceVLANs,
   ungroup,
   updateEdge,
@@ -1620,17 +1620,26 @@ describe('grouping and deletion', () => {
   });
 });
 
-describe('scenario', () => {
-  test('a scenario reference is stored on the document', () => {
-    const doc = setScenario(createDocument(), {
-      kind: 'stored',
-      name: 'foo',
-      apiVersion: 'phenix.sandia.gov/v1',
-      digest: `sha256:${'a'.repeat(64)}`,
-    });
+describe('scenarios', () => {
+  test('the scenarios a document lists are replaced, and none is left out', () => {
+    const empty = createDocument();
+    const names = ['foo', 'bar'];
+    const doc = setScenarios(empty, names);
 
-    expect(doc.scenario).toMatchObject({ kind: 'stored', name: 'foo' });
-    expect(setScenario(doc, null).scenario).toBeUndefined();
+    expect(doc.scenarios).toEqual(['foo', 'bar']);
+    // The list is the document's own: changing the one given changes
+    // nothing.
+    names.push('baz');
+    expect(doc.scenarios).toEqual(['foo', 'bar']);
+    expect(empty).not.toHaveProperty('scenarios');
+    expect(setScenarios(doc, [])).not.toHaveProperty('scenarios');
+  });
+
+  test('the names a document lists are its text entries, in order', () => {
+    expect(documentScenarios({ scenarios: ['b', 'a'] })).toEqual(['b', 'a']);
+    expect(documentScenarios({ scenarios: ['a', '', null, 5] })).toEqual(['a']);
+    expect(documentScenarios(createDocument())).toEqual([]);
+    expect(documentScenarios(undefined)).toEqual([]);
   });
 
   test('the apps of a scenario are listed in its order, with their hosts', () => {
@@ -1656,17 +1665,6 @@ describe('scenario', () => {
     ]);
     expect(scenarioApps(undefined)).toEqual([]);
     expect(scenarioApps({ apps: null })).toEqual([]);
-  });
-
-  test('only a stored scenario without content is read from its config', () => {
-    const stored = { kind: 'stored', name: 'plant', digest: 'sha256:1' };
-
-    expect(storedScenarioName(stored)).toBe('plant');
-    expect(storedScenarioName({ ...stored, content: { apps: [] } })).toBe('');
-    expect(
-      storedScenarioName({ kind: 'uploaded', name: 'plant', content: {} }),
-    ).toBe('');
-    expect(storedScenarioName(undefined)).toBe('');
   });
 });
 

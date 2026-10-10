@@ -117,6 +117,253 @@
       ]
     },
     {
+      "name": "no scenarios",
+      "set": [
+        {
+          "path": [
+            "scenarios"
+          ],
+          "delete": true
+        }
+      ]
+    },
+    {
+      "name": "an empty list of scenarios",
+      "set": [
+        {
+          "path": [
+            "scenarios"
+          ],
+          "value": []
+        }
+      ]
+    },
+    {
+      "name": "the most scenarios",
+      "set": [
+        {
+          "path": [
+            "scenarios"
+          ],
+          "value": [
+            "s1",
+            "s2",
+            "s3",
+            "s4",
+            "s5",
+            "s6",
+            "s7",
+            "s8",
+            "s9",
+            "s10",
+            "s11",
+            "s12",
+            "s13",
+            "s14",
+            "s15",
+            "s16",
+            "s17",
+            "s18",
+            "s19",
+            "s20"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "more scenarios than a document names",
+      "set": [
+        {
+          "path": [
+            "scenarios"
+          ],
+          "value": [
+            "s1",
+            "s2",
+            "s3",
+            "s4",
+            "s5",
+            "s6",
+            "s7",
+            "s8",
+            "s9",
+            "s10",
+            "s11",
+            "s12",
+            "s13",
+            "s14",
+            "s15",
+            "s16",
+            "s17",
+            "s18",
+            "s19",
+            "s20",
+            "s21"
+          ]
+        }
+      ],
+      "error": "scenarios",
+      "message": "at most 20 scenarios are allowed, not 21"
+    },
+    {
+      "name": "scenario name with every character a config name may use",
+      "set": [
+        {
+          "path": [
+            "scenarios",
+            0
+          ],
+          "value": "Ab_9@x.y-z"
+        }
+      ]
+    },
+    {
+      "name": "blank scenario name",
+      "set": [
+        {
+          "path": [
+            "scenarios"
+          ],
+          "value": [
+            "ntp",
+            ""
+          ]
+        }
+      ],
+      "error": "scenarios[1]",
+      "message": "scenario name is required"
+    },
+    {
+      "name": "scenario name of 256 bytes",
+      "set": [
+        {
+          "path": [
+            "scenarios",
+            0
+          ],
+          "join": [
+            [
+              "a",
+              256
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "scenario name of 257 bytes",
+      "set": [
+        {
+          "path": [
+            "scenarios",
+            0
+          ],
+          "join": [
+            [
+              "a",
+              257
+            ]
+          ]
+        }
+      ],
+      "error": "scenarios[0]",
+      "message": "scenario name must be at most 256 bytes"
+    },
+    {
+      "name": "scenario name with a space",
+      "set": [
+        {
+          "path": [
+            "scenarios",
+            0
+          ],
+          "value": "two words"
+        }
+      ],
+      "error": "scenarios[0]",
+      "message": "scenario name \"two words\" may use only letters, numbers, underscores, at signs, periods and hyphens"
+    },
+    {
+      "name": "scenario name that is the full name of a config",
+      "set": [
+        {
+          "path": [
+            "scenarios",
+            0
+          ],
+          "value": "Scenario/ntp"
+        }
+      ],
+      "error": "scenarios[0]",
+      "message": "scenario name \"Scenario/ntp\" may use only letters, numbers, underscores, at signs, periods and hyphens"
+    },
+    {
+      "name": "scenario name with a letter outside ASCII",
+      "set": [
+        {
+          "path": [
+            "scenarios",
+            0
+          ],
+          "value": "ntpé"
+        }
+      ],
+      "error": "scenarios[0]",
+      "message": "scenario name \"ntpé\" may use only letters, numbers, underscores, at signs, periods and hyphens"
+    },
+    {
+      "name": "scenario name of 70 characters with a space, cut in the message",
+      "set": [
+        {
+          "path": [
+            "scenarios",
+            0
+          ],
+          "join": [
+            [
+              "a",
+              69
+            ],
+            " "
+          ]
+        }
+      ],
+      "error": "scenarios[0]",
+      "message": "scenario name \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...\" may use only letters, numbers, underscores, at signs, periods and hyphens"
+    },
+    {
+      "name": "scenario named twice ignoring case",
+      "set": [
+        {
+          "path": [
+            "scenarios"
+          ],
+          "value": [
+            "ntp",
+            "attack",
+            "NTP"
+          ]
+        }
+      ],
+      "error": "scenarios[2]",
+      "message": "duplicate scenario \"NTP\" (also scenarios[0])"
+    },
+    {
+      "name": "scenario reference of the old form, an unknown key",
+      "set": [
+        {
+          "path": [
+            "scenario"
+          ],
+          "value": {
+            "kind": "stored",
+            "name": "ntp"
+          }
+        }
+      ],
+      "error": "scenario"
+    },
+    {
       "name": "interface handle ID that is not a UUID",
       "set": [
         {

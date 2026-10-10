@@ -45,7 +45,7 @@ describe('newId', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  test('documents are created and scenario digests computed outside a secure context', async () => {
+  test('documents are created and content digests computed outside a secure context', async () => {
     insecureContext();
 
     const doc = createDocument({ name: 'Plain HTTP' });

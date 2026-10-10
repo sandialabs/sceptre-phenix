@@ -3,8 +3,9 @@
 Builder is the phenix web editor for drawing topologies as diagrams. You
 place devices and switches on a canvas, connect them, and fill in each
 device's settings in a form. Your work is saved as a draft on the phenix
-server, apart from the phenix configs. Only **Publish** writes Topology,
-Scenario and Experiment configs.
+server, apart from the phenix configs. Only **Publish** writes Topology and
+Experiment configs and adds a topology to its scenarios, and only the
+**Scenarios** dialog stores a Scenario config, from a file you upload.
 
 ![The Builder editor showing the Riverside Water diagram: the header and toolbar at the top, Add nodes and Outline on the left, the canvas with the DMZ, INTERNET, OT and CORP groups in the middle, and the Inspector with the diagram's details, annotations and scenario on the right.](../images/builder/overview-editor.png)
 
@@ -31,8 +32,8 @@ Scenario and Experiment configs.
 - Check the diagram for problems before you publish, such as an interface
   with no network or two interfaces with the same address. See
   [Checks and warnings](editor.md#checks-and-warnings).
-- Publish a Topology config, or a Topology and an Experiment config with its
-  scenario, from the editor or from the drafts page. See
+- Publish a Topology config, or a Topology and an Experiment config with one
+  of the diagram's scenarios, from the editor or from the drafts page. See
   [Publishing](publishing.md).
 - Download the diagram as Builder JSON or YAML, as the Topology YAML that
   Publish would write, as a PNG or SVG picture, or as a Gephi (GEXF) graph.
@@ -141,7 +142,7 @@ Most pages show drafts made from the example lab:
 
 - **Riverside Water**: the import of `riverside-water`, renamed, laid out with
   **ELK layered**, grouped with **Auto-group** > **By network**, with a note
-  and the scenario `riverside-water` attached. To get the same draft, select
+  and the scenario `riverside-water` listed. To get the same draft, select
   **Upload** on the drafts page and upload `riverside-water.builder.json`
   (see [Uploading a Builder document](import-upload-download.md#uploading-a-builder-document)).
 - **Riverside Water expansion**: a second copy of Riverside Water with a

@@ -9,9 +9,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"phenix/store"
-	"phenix/types"
 )
 
 // maxVLANAlias is the largest 802.1Q VLAN ID an alias may take.
@@ -46,6 +43,10 @@ const hexColorPattern = `#[0-9a-fA-F]{6}`
 
 var (
 	hexColor = regexp.MustCompile(`^` + hexColorPattern + `$`)
+
+	// configName matches the names phenix gives configs, which a document
+	// names its scenarios by (see [IsConfigName]).
+	configNameRegexp = regexp.MustCompile(configNamePattern)
 
 	// lineStyles are the dash patterns a network or an edge may name, and
 	// borderStyles the border patterns a group may. In each, none (the empty
@@ -114,8 +115,8 @@ type validator struct {
 // Size limits (counts, lengths, payload sizes) are intentionally not checked
 // here; they belong to the API layer. The exceptions are bounds the editor
 // checks too, by the same rules, before it saves: those on the metadata's
-// names and notes, the source annotations, the templates and the custom
-// icons. Validate rejects:
+// names and notes, the scenarios, the source annotations, the templates and
+// the custom icons. Validate rejects:
 //
 //   - wrong schema URI or revision,
 //   - a document name longer than [MaxNameBytes] or containing control
@@ -139,9 +140,9 @@ type validator struct {
 //   - interfaces attached to more than one network,
 //   - conflicting network names (compared exactly, as minimega compares
 //     VLAN names) or VLAN aliases,
-//   - inconsistent scenario references (missing name, content, apiVersion, or
-//     a missing, malformed, or mismatched digest), and scenario content that
-//     fails the existing phenix scenario schema,
+//   - more than [MaxScenarios] scenarios, a scenario name that is not a
+//     config name of at most [MaxScenarioNameBytes], and a scenario named
+//     twice (case-insensitive),
 //   - icon keys outside the bounded icon key registry (see [IsIconKey]), on
 //     a device or a group,
 //   - an outline or fill color of a device or a switch that is not
@@ -178,7 +179,7 @@ func (d *Document) Validate() error {
 	val.validateNodes()
 	val.validateParents()
 	val.validateEdges()
-	val.validateScenario()
+	val.validateScenarios()
 	val.validateSource()
 	val.validateTemplates()
 
@@ -857,114 +858,51 @@ func (v *validator) validateRoute(path string, route []Position) {
 	}
 }
 
-func (v *validator) validateScenario() {
-	ref := v.doc.Scenario
-	if ref == nil {
-		return
-	}
-
-	switch ref.Kind {
-	case ScenarioRefStored:
-		if strings.TrimSpace(ref.Name) == "" {
-			v.addf("scenario.name", "stored scenario reference requires a name")
-		}
-	case ScenarioRefUploaded:
-		if len(ref.Content) == 0 {
-			v.addf("scenario.content", "uploaded scenario reference requires content")
-		}
-	default:
-		v.addf("scenario.kind", "unknown scenario reference kind %q", ref.Kind)
-
-		return
-	}
-
-	if strings.TrimSpace(ref.APIVersion) == "" {
-		v.addf("scenario.apiVersion", "scenario reference requires an apiVersion")
-	}
-
-	if v.validateScenarioDigest(ref) {
-		v.validateScenarioContent(ref)
-	}
+// IsConfigName reports whether name is a name phenix gives a config (see
+// phenix/api/config.NameRegex), and one a document may name a Scenario config
+// by: not empty, and at most [MaxScenarioNameBytes].
+func IsConfigName(name string) bool {
+	return name != "" && len(name) <= MaxScenarioNameBytes && configNameRegexp.MatchString(name)
 }
 
-// scenarioValidationName is the placeholder config name used when validating
-// scenario content. A reference's name is a stored config name or an uploaded
-// file name, neither of which is guaranteed to satisfy the config metadata name
-// pattern, so it is deliberately not used here.
-const scenarioValidationName = "scenario"
-
-// validateScenarioContent validates cached or uploaded scenario content against
-// the existing phenix scenario schema, so a complete scenario is rejected here
-// rather than at publish time. Content-less stored references are validated
-// when the referenced config is loaded.
-//
-// It runs types.ValidateConfigSpec, which never re-enters this package.
-func (v *validator) validateScenarioContent(ref *ScenarioRef) {
-	if len(ref.Content) == 0 {
-		return
+// validateScenarios checks the Scenario configs the document names: at most
+// [MaxScenarios], each by a config name of at most [MaxScenarioNameBytes],
+// and none twice, ignoring case as the editor compares them.
+func (v *validator) validateScenarios() {
+	if len(v.doc.Scenarios) > MaxScenarios {
+		v.addf(keyScenarios, "at most %d scenarios are allowed, not %d", MaxScenarios, len(v.doc.Scenarios))
 	}
 
-	if ref.APIVersion != ScenarioAPIVersion() {
-		v.addf(
-			"scenario.apiVersion",
-			"unsupported scenario apiVersion %q (expected %q)",
-			ref.APIVersion, ScenarioAPIVersion(),
-		)
+	seen := map[string]int{}
 
-		return
+	for i, name := range v.doc.Scenarios {
+		path := fmt.Sprintf("%s[%d]", keyScenarios, i)
+
+		switch {
+		case name == "":
+			v.addf(path, "scenario name is required")
+
+			continue
+		case len(name) > MaxScenarioNameBytes:
+			v.addf(path, "scenario name must be at most %d bytes", MaxScenarioNameBytes)
+
+			continue
+		case !configNameRegexp.MatchString(name):
+			v.addf(
+				path,
+				"scenario name %q may use only letters, numbers, underscores, at signs, periods and hyphens",
+				truncate(name),
+			)
+
+			continue
+		}
+
+		if prev, ok := seen[foldKey(name)]; ok {
+			v.addf(path, "duplicate scenario %q (also %s[%d])", name, keyScenarios, prev)
+		} else {
+			seen[foldKey(name)] = i
+		}
 	}
-
-	config, err := store.NewConfig(kindScenario + "/" + scenarioValidationName)
-	if err != nil {
-		v.addf("scenario.content", "building scenario config: %v", err)
-
-		return
-	}
-
-	config.Version = ref.APIVersion
-	config.Spec = ref.Content
-
-	if err := types.ValidateConfigSpec(*config); err != nil {
-		v.addf("scenario.content", "invalid scenario content: %v", err)
-	}
-}
-
-// validateScenarioDigest requires a well-formed content digest on every
-// scenario reference, and requires it to match any cached content. It reports
-// whether the digest is trustworthy, so content validation can be skipped when
-// it is not.
-func (v *validator) validateScenarioDigest(ref *ScenarioRef) bool {
-	switch {
-	case strings.TrimSpace(ref.Digest) == "":
-		v.addf("scenario.digest", "scenario reference requires a content digest")
-
-		return false
-	case !IsDigest(ref.Digest):
-		v.addf(
-			"scenario.digest",
-			"malformed scenario digest %q (expected sha256:<64 hex>)",
-			ref.Digest,
-		)
-
-		return false
-	case len(ref.Content) == 0:
-		return true
-	}
-
-	digest, err := ContentDigest(ref.Content)
-	if err != nil {
-		v.addf("scenario.content", "content is not encodable: %v", err)
-
-		return false
-	}
-
-	if ref.Digest != digest {
-		v.addf("scenario.digest", "content digest mismatch (expected %s)", digest)
-
-		return false
-	}
-
-	return true
 }
 
 func (v *validator) validateSource() {

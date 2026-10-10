@@ -85,13 +85,10 @@ async function fillPublish(page, { topology, experiment }) {
 // Submits the Publish dialog, expects the publish call to answer `status` and
 // returns the response body. The body is the assertion message, so a wrong
 // status shows the server's reason. An update is confirmed first: Publish
-// asks before it replaces a config, an uploaded scenario's too.
+// asks before it replaces a config.
 async function expectPublish(page, status) {
   const submit = page.getByTestId('publish-submit');
-  const scenarioUpdate = page.getByTestId('publish-scenario-update');
-  const updates =
-    /update/i.test(await submit.textContent()) ||
-    ((await scenarioUpdate.count()) > 0 && (await scenarioUpdate.isChecked()));
+  const updates = /update/i.test(await submit.textContent());
   const pending = page.waitForResponse(
     (candidate) =>
       candidate.request().method() === 'POST' &&
@@ -230,26 +227,35 @@ function scenarioConfig(name, app) {
   };
 }
 
-// Attaches `yaml` as the draft's uploaded scenario through the Scenario dialog.
-async function attachUploadedScenario(builder, draft, name, yaml) {
+// Opens the Scenarios dialog from the toolbar.
+async function openScenarios(builder) {
   const dialog = await builder.openDialog('scenario');
-  await dialog.getByTestId('scenario-kind-uploaded').check();
+  await expect(
+    dialog.getByRole('heading', { name: 'Scenarios', exact: true }),
+  ).toBeVisible();
+
+  return dialog;
+}
+
+// Chooses `yaml` as the scenario file of the Scenarios dialog.
+async function chooseScenarioFile(dialog, yaml, name = 'scenario.yaml') {
   await dialog.getByTestId('scenario-file').setInputFiles({
-    name: 'scenario.yaml',
+    name,
     mimeType: 'application/yaml',
     buffer: Buffer.from(yaml),
   });
-  await expect(dialog.getByTestId('scenario-digest')).toContainText(
-    /Content digest: sha256:[0-9a-f]{64}/,
-  );
-  await dialog.getByTestId('scenario-submit').click();
+}
+
+// Saves the Scenarios dialog's list, and waits until the server copy of the
+// draft lists `names`.
+async function saveScenarios(builder, draft, names) {
+  await builder.dialog.getByTestId('scenario-submit').click();
   await expect(builder.dialog).toHaveCount(0);
   await synced(
     builder,
     draft,
     (document) =>
-      document.scenario?.kind === 'uploaded' &&
-      document.scenario?.name === name,
+      JSON.stringify(document.scenarios || []) === JSON.stringify(names),
   );
 }
 
@@ -739,15 +745,19 @@ test('a published topology names its document in a builder-doc map, in JSON and 
 // --- topology and experiment ---------------------------------------------------
 
 test(
-  'topology and experiment publish carries the VLAN alias and creates the uploaded scenario',
+  'topology and experiment publish carries the VLAN alias, adds the topology to each listed scenario and uses the one picked',
   { tag: '@cross-browser' },
   async ({ page, builder, tracker, issues }, testInfo) => {
     const topology = uniqueName(testInfo, 'exp-topo');
     const experiment = uniqueName(testInfo, 'exp-exp');
-    const scenario = uniqueName(testInfo, 'exp-scn');
+    const uploaded = uniqueName(testInfo, 'exp-scn');
+    const stored = uniqueName(testInfo, 'exp-stored');
     tracker.config('Topology', topology);
     tracker.config('Experiment', experiment);
-    tracker.config('Scenario', scenario);
+    // Stored from the Builder, so deleted by name.
+    tracker.config('Scenario', uploaded);
+    // Seeded before the draft opens: the Scenarios dialog lists it.
+    await builder.seedConfig(scenarioConfig(stored, 'builder-e2e-stored'));
 
     const draft = await openLab(builder, topology);
 
@@ -770,63 +780,85 @@ test(
       );
     });
 
-    await test.step('attach an uploaded scenario', async () => {
-      await attachUploadedScenario(
-        builder,
-        draft,
-        scenario,
-        scenarioYaml(scenario, 'builder-e2e-upload'),
+    await test.step('a scenario file uploaded in the Builder is stored on the server and listed', async () => {
+      const dialog = await openScenarios(builder);
+      await expect
+        .soft(dialog.getByTestId('scenario-none'))
+        .toHaveText('No scenarios.');
+      await chooseScenarioFile(
+        dialog,
+        scenarioYaml(uploaded, 'builder-e2e-upload'),
       );
+      // The file names its scenario, which is new to the server.
+      await expect
+        .soft(dialog.getByTestId('scenario-upload-name'))
+        .toHaveValue(uploaded);
+      await expect
+        .soft(dialog.getByTestId('scenario-upload-hint'))
+        .toHaveText('A new scenario will be stored on the server.');
+      await dialog.getByTestId('scenario-upload').click();
+      await expect(dialog.getByTestId('scenario-row-1')).toContainText(
+        uploaded,
+      );
+      await expect
+        .soft(dialog.getByTestId('scenario-status'))
+        .toContainText(`Stored scenario ${uploaded} on the server`);
+      // Focus goes back to the file field, as the name field is gone.
+      await expect.soft(dialog.getByTestId('scenario-file')).toBeFocused();
+
+      const config = await builder.config('Scenario', uploaded);
+      expect
+        .soft(
+          config?.spec?.apps?.map((app) => app.name),
+          'stored scenario apps',
+        )
+        .toEqual(['builder-e2e-upload']);
     });
 
-    await test.step('the dialog requires a create or update choice for the scenario', async () => {
+    await test.step('a stored scenario is added, and the list saved', async () => {
+      const dialog = builder.dialog;
+      await dialog.getByTestId('scenario-name').selectOption(stored);
+      await dialog.getByTestId('scenario-add').click();
+      await expect(dialog.getByTestId('scenario-row-2')).toContainText(stored);
+      await expect
+        .soft(
+          dialog.getByRole('button', {
+            name: `Remove scenario ${stored}`,
+            exact: true,
+          }),
+        )
+        .toBeVisible();
+      await expectAccessible(page, {
+        include: '[data-testid="builder-dialog"]',
+        soft: true,
+        label: 'Scenarios dialog with two scenarios',
+      });
+      await saveScenarios(builder, draft, [uploaded, stored]);
+    });
+
+    await test.step('the experiment uses the first listed scenario unless another is picked', async () => {
       await openPublish(builder);
       await fillPublish(page, { topology, experiment });
       await expect
         .soft(page.locator('#publish-experiment-hint'))
         .toHaveText('A new experiment will be created.');
+      const select = page.getByTestId('publish-scenario-select');
+      await expect.soft(select).toHaveValue(uploaded);
       await expect
-        .soft(page.getByTestId('publish-scenario'))
-        .toContainText('This diagram carries an uploaded scenario');
-      await expect
-        .soft(page.getByTestId('publish-scenario-name'))
-        .toHaveValue(scenario);
-
-      // No create/update choice yet: the dialog refuses before calling the
-      // server.
-      let publishCalls = 0;
-      page.on('request', (request) => {
-        if (request.method() === 'POST' && request.url().endsWith('/publish')) {
-          publishCalls += 1;
-        }
-      });
-      await page.getByTestId('publish-submit').click();
-      await expect
-        .soft(page.getByTestId('publish-error'))
+        .soft(page.getByTestId('publish-scenario-hint'))
         .toHaveText(
-          'Choose whether the uploaded scenario creates a new config or updates an existing one.',
+          'Publishing adds this topology to the topology annotation of each of ' +
+            `the scenarios ${uploaded} and ${stored}, so experiments of the ` +
+            'topology can use it.',
         );
-      expect.soft(publishCalls, 'publish requests sent').toBe(0);
       await expect
-        .soft(page.getByTestId('publish-scenario-create'))
-        .toHaveAttribute('aria-invalid', 'true');
-
-      // A missing scenario name is reported as missing, on its own field.
-      const scenarioName = page.getByTestId('publish-scenario-name');
-      await scenarioName.fill('');
-      await page.getByTestId('publish-scenario-create').check();
-      await page.getByTestId('publish-submit').click();
-      await expect
-        .soft(page.getByTestId('publish-error'))
-        .toHaveText('Enter a name for the scenario.');
-      await expect.soft(scenarioName).toHaveAttribute('aria-invalid', 'true');
-      await expect.soft(scenarioName).toBeFocused();
-      expect.soft(publishCalls, 'publish requests sent').toBe(0);
-      await scenarioName.fill(scenario);
+        .soft(page.getByLabel('Experiment scenario'))
+        .toHaveAccessibleDescription(/Publishing adds this topology/);
+      await select.selectOption(stored);
       await expectAccessible(page, {
         include: '[data-testid="builder-dialog"]',
         soft: true,
-        label: 'Publish dialog with an uploaded scenario',
+        label: 'Publish dialog with an experiment scenario',
       });
     });
 
@@ -851,43 +883,54 @@ test(
       await name.fill(experiment);
     });
 
-    await test.step('publish creates the topology, scenario and experiment', async () => {
-      await page.getByTestId('publish-scenario-create').check();
-      await expectPublish(page, 200);
+    await test.step('publish adds the topology to both scenarios and creates the experiment', async () => {
+      const body = JSON.parse(await expectPublish(page, 200));
       await expect
         .soft(page.getByTestId('publish-result'))
         .toContainText('Every stage succeeded');
       expect.soft(await stageStatuses(page)).toEqual({
         document: 'created',
         topology: 'created',
-        scenario: 'created',
+        scenario: 'updated',
         experiment: 'created',
         draft: 'ok',
+      });
+      await expect
+        .soft(page.getByTestId('publish-result'))
+        .toContainText(
+          `added topology ${topology} to scenarios ${uploaded}, ${stored}`,
+        );
+      expect.soft(body.scenario, 'the experiment scenario').toEqual({
+        name: stored,
       });
     });
 
     // The config checks are soft and null-safe, so a missing or wrong scenario
     // config does not hide whether the VLAN alias reached the experiment.
-    await test.step('the scenario config holds the uploaded apps and names the topology', async () => {
-      const stored = await builder.config('Scenario', scenario);
-      expect.soft(stored, 'published scenario config').toBeTruthy();
-      expect
-        .soft(
-          stored?.spec?.apps?.map((app) => app.name),
-          'scenario apps',
-        )
-        .toEqual(['builder-e2e-upload']);
-      expect
-        .soft(stored?.metadata?.annotations?.topology, 'scenario topology')
-        .toContain(topology);
+    await test.step('both scenarios name the topology, and keep their apps', async () => {
+      for (const [name, app] of [
+        [uploaded, 'builder-e2e-upload'],
+        [stored, 'builder-e2e-stored'],
+      ]) {
+        const config = await builder.config('Scenario', name);
+        expect
+          .soft(config?.metadata?.annotations?.topology, `${name} topology`)
+          .toBe(topology);
+        expect
+          .soft(
+            config?.spec?.apps?.map((entry) => entry.name),
+            `${name} apps`,
+          )
+          .toEqual([app]);
+      }
     });
 
-    await test.step('the experiment config names the topology, scenario and VLAN alias', async () => {
+    await test.step('the experiment config names the topology, the picked scenario and the VLAN alias', async () => {
       const exp = await builder.config('Experiment', experiment);
       expect.soft(exp, 'published experiment config').toBeTruthy();
       expect
         .soft(exp?.metadata?.annotations, 'experiment annotations')
-        .toMatchObject({ topology, scenario });
+        .toMatchObject({ topology, scenario: stored });
       expect
         .soft(exp?.spec?.vlans?.aliases, 'experiment VLAN aliases')
         .toMatchObject({ EXP: 101 });
@@ -911,88 +954,142 @@ test(
   },
 );
 
-test('uploaded scenario can update an existing scenario config', async ({
+test('a scenario file replaces a stored scenario only once confirmed, and a topology publish adds the topology to it', async ({
   page,
   builder,
   tracker,
   issues,
 }, testInfo) => {
   const topology = uniqueName(testInfo, 'upd-topo');
-  const experiment = uniqueName(testInfo, 'upd-exp');
   const scenario = uniqueName(testInfo, 'upd-scn');
   tracker.config('Topology', topology);
-  tracker.config('Experiment', experiment);
   // Seeded before open: the editor reads the scenario list when it mounts.
-  await builder.seedConfig(scenarioConfig(scenario, 'builder-e2e-seeded'));
+  // Its annotation is one a replacement keeps.
+  const seeded = scenarioConfig(scenario, 'builder-e2e-seeded');
+  seeded.metadata.annotations = { purpose: 'builder-e2e-kept' };
+  await builder.seedConfig(seeded);
 
   const draft = await openLab(builder, topology);
+  const apps = async () =>
+    (await builder.config('Scenario', scenario))?.spec?.apps?.map(
+      (app) => app.name,
+    );
 
-  await test.step('a v1 scenario upload is refused, on its field', async () => {
-    const dialog = await builder.openDialog('scenario');
-    await dialog.getByTestId('scenario-kind-uploaded').check();
+  await test.step('a v1 scenario file is refused, on its field', async () => {
+    const dialog = await openScenarios(builder);
     const file = dialog.getByTestId('scenario-file');
-    await file.setInputFiles({
-      name: 'scenario-v1.yaml',
-      mimeType: 'application/yaml',
-      buffer: Buffer.from(
-        scenarioYaml(scenario, 'builder-e2e-v1').replace(
-          V2,
-          'phenix.sandia.gov/v1',
-        ),
+    await chooseScenarioFile(
+      dialog,
+      scenarioYaml(scenario, 'builder-e2e-v1').replace(
+        V2,
+        'phenix.sandia.gov/v1',
       ),
-    });
+      'scenario-v1.yaml',
+    );
     const error = dialog.getByTestId('scenario-error');
     await expect
       .soft(error)
       .toHaveText(
-        'This scenario is phenix.sandia.gov/v1, and the Builder attaches ' +
+        'This scenario is phenix.sandia.gov/v1, and the Builder stores ' +
           `only ${V2} scenarios. Upgrade it to ${V2}, then upload it again.`,
       );
     await expect.soft(file).toHaveAttribute('aria-invalid', 'true');
     await expect
       .soft(file)
       .toHaveAttribute('aria-describedby', /\bscenario-error\b/);
-    await expect.soft(dialog.getByTestId('scenario-digest')).toHaveCount(0);
+    await expect
+      .soft(dialog.getByTestId('scenario-upload-name'))
+      .toHaveCount(0);
+  });
 
-    // Nothing was attached: saving asks for a file, on the file field.
-    await dialog.getByTestId('scenario-submit').click();
-    await expect.soft(error).toHaveText('Choose a scenario file to upload.');
-    await expect.soft(file).toBeFocused();
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await test.step('a file named as a stored scenario replaces it only once confirmed', async () => {
+    const dialog = builder.dialog;
+    await chooseScenarioFile(
+      dialog,
+      scenarioYaml(scenario, 'builder-e2e-replaced'),
+    );
+    // The file field's error went with the file it was about.
+    await expect.soft(dialog.getByTestId('scenario-error')).toHaveCount(0);
+    const hint = dialog.getByTestId('scenario-upload-hint');
+    // A replacement warns: the words, and a sign on a yellow ground.
+    await expect
+      .soft(hint)
+      .toHaveText(
+        `The server has a scenario named ${scenario}: storing replaces its spec and keeps its annotations.`,
+      );
+    await expect.soft(hint).toHaveClass(/\bbuilder-hint--warning\b/);
+
+    await dialog.getByTestId('scenario-upload').click();
+    const confirm = page.getByRole('alertdialog', {
+      name: `Replace scenario ${scenario}?`,
+    });
+    await expect(confirm).toBeVisible();
+    // Focus starts on the button that keeps everything.
+    await expect.soft(page.getByTestId('confirm-cancel')).toBeFocused();
+    await page.getByTestId('confirm-cancel').click();
+    await expect(confirm).toHaveCount(0);
+    expect
+      .soft(await apps(), 'apps after Cancel')
+      .toEqual(['builder-e2e-seeded']);
+
+    await dialog.getByTestId('scenario-upload').click();
+    await page.getByTestId('confirm-accept').click();
+    await expect(dialog.getByTestId('scenario-row-1')).toContainText(scenario);
+    await expect
+      .soft(dialog.getByTestId('scenario-status'))
+      .toContainText(`Replaced scenario ${scenario} on the server`);
+    expect
+      .soft(await apps(), 'apps after the replacement')
+      .toEqual(['builder-e2e-replaced']);
+    // The file's spec, and the stored scenario's annotations.
+    const replaced = await builder.config('Scenario', scenario);
+    expect
+      .soft(replaced?.metadata?.annotations, 'annotations kept')
+      .toMatchObject({ purpose: 'builder-e2e-kept' });
+  });
+
+  await test.step('Cancel keeps the list out of the diagram, and Save writes it', async () => {
+    await builder.dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(builder.dialog).toHaveCount(0);
     await expect.soft(builder.toolbar('scenario')).toBeFocused();
+    expect
+      .soft((await builder.serverDocument(draft))?.scenarios)
+      .toBeUndefined();
+
+    const dialog = await openScenarios(builder);
+    await dialog.getByTestId('scenario-name').selectOption(scenario);
+    await dialog.getByTestId('scenario-add').click();
+    await saveScenarios(builder, draft, [scenario]);
+    await expect.soft(builder).toHaveAnnounced('Updated scenarios');
   });
 
-  await attachUploadedScenario(
-    builder,
-    draft,
-    scenario,
-    scenarioYaml(scenario, 'builder-e2e-replaced'),
-  );
+  await test.step('a topology publish adds the topology to the listed scenario', async () => {
+    await openPublish(builder);
+    await fillPublish(page, { topology });
+    await expect
+      .soft(page.getByTestId('publish-scenario-hint'))
+      .toHaveText(
+        `Publishing adds this topology to the topology annotation of the scenario ${scenario}, ` +
+          'so experiments of the topology can use it.',
+      );
+    await expect
+      .soft(page.getByTestId('publish-scenario-select'))
+      .toHaveCount(0);
+    await expectPublish(page, 200);
+    expect.soft(await stageStatuses(page)).toMatchObject({
+      topology: 'created',
+      scenario: 'updated',
+    });
 
-  await openPublish(builder);
-  await fillPublish(page, { topology, experiment });
-  await expect(page.getByTestId('publish-scenario-name')).toHaveValue(scenario);
-  await page.getByTestId('publish-scenario-update').check();
-  await expectPublish(page, 200);
-  await expect(page.getByTestId('publish-result')).toContainText(
-    'Every stage succeeded',
-  );
-  expect(await stageStatuses(page)).toMatchObject({
-    topology: 'created',
-    scenario: 'updated',
-    experiment: 'created',
+    const stored = await builder.config('Scenario', scenario);
+    expect.soft(stored?.metadata?.annotations?.topology).toBe(topology);
+    expect.soft(await apps()).toEqual(['builder-e2e-replaced']);
   });
 
-  const stored = await builder.config('Scenario', scenario);
-  expect(stored.spec.apps.map((app) => app.name)).toEqual([
-    'builder-e2e-replaced',
-  ]);
-  expect(stored.metadata.annotations.topology).toContain(topology);
   expectNoFatal(issues);
 });
 
-test('stored scenario can be attached and published with an experiment', async ({
+test('a stored scenario is listed and published with an experiment, and a draft generated from the experiment lists it', async ({
   page,
   builder,
   tracker,
@@ -1008,22 +1105,16 @@ test('stored scenario can be attached and published with an experiment', async (
   // Nothing was published from the draft yet: no experiment to open.
   await expect(builder.toolbar('experiment')).toHaveCount(0);
 
-  const dialog = await builder.openDialog('scenario');
-  await dialog.getByTestId('scenario-kind-stored').check();
+  const dialog = await openScenarios(builder);
   await dialog.getByTestId('scenario-name').selectOption(scenario);
-  await dialog.getByTestId('scenario-submit').click();
-  await expect(builder.dialog).toHaveCount(0);
-  await synced(
-    builder,
-    draft,
-    (document) => document.scenario?.kind === 'stored',
-  );
+  await dialog.getByTestId('scenario-add').click();
+  await saveScenarios(builder, draft, [scenario]);
 
   await openPublish(builder);
-  await expect(page.getByTestId('publish-scenario')).toContainText(
-    `The stored scenario ${scenario} will be used as it is on the server.`,
-  );
   await fillPublish(page, { topology, experiment });
+  await expect(page.getByTestId('publish-scenario-select')).toHaveValue(
+    scenario,
+  );
   // The dialog has rendered and the diagram's validation errors are computed
   // synchronously, so the button's state is final: no need to retry.
   expect(
@@ -1048,25 +1139,16 @@ test('stored scenario can be attached and published with an experiment', async (
     );
   });
 
-  await test.step('a draft generated from the experiment publishes back to it', async () => {
-    // The experiment embeds its own merged copy of the scenario, so the
-    // generated draft references the stored scenario by the digest the
-    // sources list reports, which is what publishing with "use" checks.
+  await test.step('a draft generated from the experiment lists the scenario and publishes back to it', async () => {
+    // The experiment embeds its own merged copy of the scenario, which the
+    // generated draft does not hold: it lists the stored scenario by name.
     const generated = await builder.request.post(`${API}/builder/generate`, {
       data: { source: `experiment/${experiment}` },
     });
     expect(generated.ok(), await generated.text()).toBeTruthy();
     const { document } = await generated.json();
-    const sources = await (
-      await builder.request.get(`${API}/builder/sources`)
-    ).json();
-    const listed = sources.scenarios.find((entry) => entry.name === scenario);
-    expect(document.scenario).toEqual({
-      kind: 'stored',
-      name: scenario,
-      apiVersion: V2,
-      digest: listed.digest,
-    });
+    expect(document.scenarios).toEqual([scenario]);
+    expect(document).not.toHaveProperty('scenario');
 
     const source = await builder.seedDraft(document, {
       sourceToken: `Experiment/${experiment}`,
@@ -1074,7 +1156,7 @@ test('stored scenario can be attached and published with an experiment', async (
     const intent = {
       mode: 'topology-experiment',
       topology: { name: topology, action: 'update' },
-      scenario: { name: scenario, action: 'use' },
+      scenario: { name: scenario },
       experiment: { name: experiment, action: 'update' },
     };
     const published = await builder.request.post(

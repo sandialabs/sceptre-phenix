@@ -15,7 +15,6 @@ import {
   NOTE_KEYS,
   parseDocument,
   parseImport,
-  SCENARIO_KEYS,
   SOURCE_KEYS,
   SWITCH_KEYS,
   TEMPLATE_DEVICE_KEYS,
@@ -206,7 +205,6 @@ describe('strict decoding', () => {
     ['edge', EDGE_KEYS],
     ['viewport', VIEWPORT_KEYS],
     ['grid', GRID_KEYS],
-    ['scenario', SCENARIO_KEYS],
     ['source', SOURCE_KEYS],
     ['template', TEMPLATE_KEYS],
     ['templateDevice', TEMPLATE_DEVICE_KEYS],
@@ -214,6 +212,25 @@ describe('strict decoding', () => {
   ])('the %s keys are the properties of its definition', (name, keys) => {
     expect([...keys].sort()).toEqual(
       Object.keys(bundle.$defs[name].properties).sort(),
+    );
+  });
+
+  // The server decodes scenarios as a list of text: anything else is no
+  // document, and a null entry is an empty name, which validation refuses.
+  test('scenarios are a list of names', () => {
+    const { doc } = sampleDocument();
+
+    for (const scenarios of ['plant-ntp', { name: 'plant-ntp' }, [1], [{}]]) {
+      expect(() => decodeDocument({ ...doc, scenarios })).toThrowError(
+        /"scenarios" must be an array of scenario names/,
+      );
+    }
+
+    expect(
+      decodeDocument({ ...doc, scenarios: ['plant-ntp'] }).scenarios,
+    ).toEqual(['plant-ntp']);
+    expect(() => parseDocument({ ...doc, scenarios: [null] })).toThrowError(
+      /scenario name is required/,
     );
   });
 

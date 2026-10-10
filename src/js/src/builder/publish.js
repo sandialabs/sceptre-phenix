@@ -476,15 +476,16 @@ export function keptIncludesText(includes = []) {
 /**
  * The confirmation Publish asks for before it replaces configs on the
  * server, which no one can undo: phenix keeps no earlier version of a
- * config. It names each config replaced; an intent that only creates, or
- * uses a stored scenario as it is, needs none. Its button repeats the
- * publish label, adding the scenario when that is replaced too.
+ * config. It names each config replaced; an intent that only creates needs
+ * none. The scenarios the diagram lists are never replaced: publishing only
+ * adds the topology to their topology annotation. Its button repeats the
+ * publish label.
  *
  * @param {object} intent as buildPublishIntent() builds it
  * @returns {{title: string, message: string, confirmLabel: string}|null}
  */
 export function overwriteConfirmation(intent) {
-  const replaced = ['topology', 'scenario', 'experiment']
+  const replaced = ['topology', 'experiment']
     .filter((kind) => intent?.[kind]?.action === 'update')
     .map((kind) => ({ kind, name: intent[kind].name }));
 
@@ -497,10 +498,31 @@ export function overwriteConfirmation(intent) {
     message:
       `Publishing replaces ${listOf(replaced.map(({ kind, name }) => `the ${kind} "${name}"`))} ` +
       'on the server with this diagram. This cannot be undone.',
-    confirmLabel:
-      publishLabel(intent.topology.action, intent.experiment?.action) +
-      (intent.scenario?.action === 'update' ? ', replace scenario' : ''),
+    confirmLabel: publishLabel(
+      intent.topology.action,
+      intent.experiment?.action,
+    ),
   };
+}
+
+/**
+ * What the Publish dialog says of the scenarios the diagram lists: that
+ * publishing adds the topology to each, in either mode.
+ *
+ * @param {string[]} [names] the scenarios the document lists
+ * @returns {string} '' when it lists none
+ */
+export function scenarioStageHint(names = []) {
+  if (names.length === 0) {
+    return '';
+  }
+
+  const which =
+    names.length === 1
+      ? `the scenario ${names[0]}`
+      : `each of the scenarios ${listOf(names)}`;
+
+  return `Publishing adds this topology to the topology annotation of ${which}, so experiments of the topology can use it.`;
 }
 
 /**
@@ -530,26 +552,102 @@ export function scenarioNames(scenarios = []) {
     .filter(Boolean);
 }
 
+// The names of a comma-separated topology annotation, trimmed, as the
+// server compares them (hasTopologyAnnotation in builder_publish.go).
+function topologyNames(value) {
+  const names = value.split(',').map((name) => name.trim());
+
+  return names.filter(Boolean);
+}
+
+/**
+ * Merges two topology annotations of a scenario (comma-separated topology
+ * names): the stored one byte for byte, then each name of the uploaded one
+ * the stored one does not name, after a comma, as the server adds a
+ * topology on publish (addTopologyAnnotation in builder_publish.go). No
+ * topology the stored annotation names is lost.
+ *
+ * @param {string} stored
+ * @param {string} uploaded
+ * @returns {string}
+ */
+export function mergeTopologyAnnotation(stored, uploaded) {
+  const named = new Set(topologyNames(stored));
+  let merged = stored;
+
+  topologyNames(uploaded).forEach((name) => {
+    if (named.has(name)) {
+      return;
+    }
+
+    named.add(name);
+    merged = merged === '' ? name : `${merged},${name}`;
+  });
+
+  return merged;
+}
+
+// The annotations of a config's metadata, or none when it has no object
+// of them.
+function annotationsOf(config) {
+  const annotations = config?.metadata?.annotations;
+  const object =
+    Boolean(annotations) &&
+    typeof annotations === 'object' &&
+    !Array.isArray(annotations);
+
+  return object ? annotations : {};
+}
+
+/**
+ * The Scenario config that replaces a stored one with an uploaded one: the
+ * uploaded config's apiVersion, kind, name and spec, and the stored
+ * config's annotations with the uploaded config's over them. The topology
+ * annotations merge (mergeTopologyAnnotation), since phenix creates an
+ * experiment from a scenario only while that annotation names the
+ * experiment's topology.
+ *
+ * @param {object} stored the config the server holds (GET /configs)
+ * @param {object} uploaded the config read from the file
+ * @returns {object}
+ */
+export function replacedScenarioConfig(stored, uploaded) {
+  const kept = annotationsOf(stored);
+  const given = annotationsOf(uploaded);
+  const annotations = { ...kept, ...given };
+  const { topology } = kept;
+
+  if (typeof topology === 'string' && typeof given.topology === 'string') {
+    annotations.topology = mergeTopologyAnnotation(topology, given.topology);
+  }
+
+  const { name } = uploaded.metadata;
+
+  return {
+    ...uploaded,
+    metadata: Object.keys(annotations).length
+      ? { name, annotations }
+      : { name },
+  };
+}
+
 /**
  * Builds the publish intent for a form.
  *
- * A stored scenario is used as it is on the server (`use`). An uploaded
- * scenario has no config yet, so the user has to say explicitly whether it
- * creates a new config or updates an existing one; there is no default.
- *
- * @param {object} form mode, topologyName, experimentName, scenarioName,
- *   scenarioAction
  * An existing topology or experiment is updated, which the server allows only
  * when updateBlocker() finds nothing in the way; any other existing name is
- * refused here, before anything is sent.
+ * refused here, before anything is sent. With an experiment, the scenario it
+ * is published with is one of the scenarios the document lists, by name, or
+ * none; the server adds the topology to every listed scenario either way.
  *
- * @param {object} form mode, topologyName, experimentName, scenarioName,
- *   scenarioAction
- * @param {object} context scenario (document ref), topologies, experiments,
- *   scenarios, and draft: what draftCanUpdate() needs to know about the draft
+ * @param {object} form mode, topologyName, experimentName, scenarioName (''
+ *   for no scenario)
+ * @param {object} context scenarios (the names the document lists),
+ *   topologies, experiments, and draft: what draftCanUpdate() needs to know
+ *   about the draft
  * @returns {{intent: object|null, error: string, field: string}} `field` is
  *   the form field the error is about: topologyName, experimentName,
- *   scenarioName, scenarioAction, or '' for none
+ *   scenarioName, or '' for none
  */
 export function buildPublishIntent(form = {}, context = {}) {
   const fail = (error, field = '') => ({ intent: null, error, field });
@@ -587,48 +685,18 @@ export function buildPublishIntent(form = {}, context = {}) {
   }
 
   if (mode === 'topology-experiment') {
-    const scenario = context.scenario;
+    const scenarioName = String(form.scenarioName || '').trim();
 
-    if (scenario?.kind === 'stored') {
-      intent.scenario = { name: scenario.name, action: 'use' };
-    } else if (scenario) {
-      const scenarioName = String(form.scenarioName || '').trim();
-      const scenarioAction = form.scenarioAction;
-      const scenarioProblem = configNameProblem('scenario', scenarioName);
-
-      if (scenarioProblem) {
-        return fail(scenarioProblem, 'scenarioName');
-      }
-
-      if (!['create', 'update'].includes(scenarioAction)) {
+    if (scenarioName) {
+      if (!(context.scenarios || []).includes(scenarioName)) {
         return fail(
-          'Choose whether the uploaded scenario creates a new config or updates an existing one.',
-          'scenarioAction',
+          `The scenario "${scenarioName}" is not one of this diagram's scenarios. ` +
+            'Choose one of them, or No scenario.',
+          'scenarioName',
         );
       }
 
-      intent.scenario = { name: scenarioName, action: scenarioAction };
-
-      if (scenarioAction === 'update') {
-        const existing = (context.scenarios || []).find(
-          (entry) =>
-            (typeof entry === 'string' ? entry : entry?.name) === scenarioName,
-        );
-        const expectedDigest =
-          typeof existing === 'string' ? '' : existing?.digest;
-
-        // The server lists every scenario with its digest, so a missing
-        // digest means there is no scenario of that name to update.
-        if (!expectedDigest) {
-          return fail(
-            `There is no scenario named "${scenarioName}" to update. ` +
-              'Choose "Create a new scenario", or enter the name of an existing scenario.',
-            'scenarioAction',
-          );
-        }
-
-        intent.scenario.expectedDigest = expectedDigest;
-      }
+      intent.scenario = { name: scenarioName };
     }
 
     const name = String(form.experimentName || '').trim();
@@ -680,16 +748,18 @@ const CHANGED_SINCE =
   /^(topology|experiment) (\S+) changed after this draft published it\.?$/i;
 
 // A refusal that names its config ("running experiment lab cannot be
-// updated", "experiment lab is not valid").
-const NAMED_TARGET =
-  /^(?:(?:stored|uploaded|running) )?(topology|scenario|experiment) (\S+) /i;
+// updated", "experiment lab is not valid", "scenario ntp does not exist").
+const NAMED_TARGET = /^(?:running )?(topology|scenario|experiment) (\S+) /i;
 
-// The server checks the targets in this order and reports the first refusal.
-const TARGET_KINDS = ['topology', 'scenario', 'experiment'];
+// The targets a publish creates or updates, in the order the server checks
+// them; it reports the first refusal. Scenarios are never created or
+// updated as a whole: their topology annotation is.
+const TARGET_KINDS = ['topology', 'experiment'];
 
-// The form field of each target, in buildPublishIntent's terms. A stored
-// scenario has no field in the Publish form.
-function targetField(kind, intent = {}) {
+// The form field a refusal of a config of kind named name is about, in
+// buildPublishIntent's terms: a scenario has one only when it is the
+// experiment's scenario, which the form picks.
+function targetField(kind, intent = {}, name = '') {
   if (kind === 'topology') {
     return 'topologyName';
   }
@@ -698,30 +768,13 @@ function targetField(kind, intent = {}) {
     return 'experimentName';
   }
 
-  return kind === 'scenario' && intent.scenario?.action !== 'use'
+  return kind === 'scenario' && name && intent.scenario?.name === name
     ? 'scenarioName'
     : '';
 }
 
 function staleActionRefusal(kind, intent, exists, context) {
-  const { name, action } = intent[kind];
-
-  if (kind === 'scenario' && action === 'use') {
-    return {
-      message: `The stored scenario "${name}" no longer exists. Choose another one in the Scenario dialog.`,
-      field: '',
-    };
-  }
-
-  // An uploaded scenario's action is chosen in the form, not from the list.
-  if (kind === 'scenario') {
-    return {
-      message: exists
-        ? `A scenario named "${name}" already exists. Choose "Update the existing scenario", or enter another name.`
-        : `There is no scenario named "${name}" to update. Choose "Create a new scenario", or enter another name.`,
-      field: 'scenarioAction',
-    };
-  }
+  const { name } = intent[kind];
 
   if (!exists) {
     return {
@@ -807,13 +860,18 @@ export function publishRefusal(reason, intent = {}, context = {}) {
 
   const named = NAMED_TARGET.exec(text);
   const kind = named?.[1].toLowerCase();
+  const field =
+    kind === 'scenario'
+      ? targetField(kind, intent, named[2])
+      : kind && intent[kind]?.name === named[2]
+        ? targetField(kind, intent)
+        : '';
 
   return {
     message:
       sentence(text) ||
       'A config this publish would write has changed on the server. Try again.',
-    field:
-      kind && intent[kind]?.name === named[2] ? targetField(kind, intent) : '',
+    field,
   };
 }
 

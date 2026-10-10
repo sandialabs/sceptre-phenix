@@ -1042,65 +1042,70 @@ describe('GEXF', () => {
         Object.entries(values).filter(([id]) => /app/.test(id)),
       );
 
-    // An uploaded scenario carries its content.
-    doc.scenario = {
-      kind: 'uploaded',
-      name: 'scn.yaml',
-      apiVersion: 'phenix.sandia.gov/v2',
-      content,
-    };
+    // The document names its scenarios and holds none of their content,
+    // which Download reads from the server for the file.
+    doc.scenarios = ['scn', 'other'];
 
-    const uploaded = devices(toGEXF(doc, { modified }).text);
+    const read = devices(toGEXF(doc, { modified, scenarios: [content] }).text);
 
-    expect(uploaded.columns).toMatchObject({
+    expect(read.columns).toMatchObject({
       apps: { title: 'Scenario apps', type: 'liststring' },
       apps_text: { title: 'Scenario apps (text)', type: 'string' },
       app_count: { title: 'Scenario app count', type: 'integer' },
       disabled_apps: { title: 'Disabled scenario apps', type: 'liststring' },
     });
-    expect(appValues(uploaded.byLabel.web)).toEqual({
+    expect(appValues(read.byLabel.web)).toEqual({
       apps: '[scada, protonuke]',
       apps_text: 'scada|protonuke',
       app_count: '2',
       disabled_apps: '[wireshark]',
     });
-    expect(appValues(uploaded.byLabel.rtr)).toEqual({
+    expect(appValues(read.byLabel.rtr)).toEqual({
       apps: '[scada]',
       apps_text: 'scada',
       app_count: '1',
     });
     // Networks run no apps.
-    expect(appValues(uploaded.byLabel.EXP)).toEqual({});
+    expect(appValues(read.byLabel.EXP)).toEqual({});
 
-    // A stored scenario's content is read for the file: without it, the
-    // file says nothing of apps rather than that there are none.
-    doc.scenario = {
-      kind: 'stored',
-      name: 'scn',
-      apiVersion: 'phenix.sandia.gov/v2',
-      digest: `sha256:${'0'.repeat(64)}`,
-    };
-
+    // Without the content, the file says nothing of apps rather than that
+    // there are none.
     const unread = devices(toGEXF(doc, { modified }).text);
 
     expect(Object.keys(unread.columns).filter((id) => /app/.test(id))).toEqual(
       [],
     );
-    expect(toGEXF(doc, { modified, scenario: content }).text).toBe(
-      toGEXF({ ...doc, scenario: { ...doc.scenario, content } }, { modified })
-        .text,
+
+    // Each scenario's apps, an app two of them run on a host once.
+    const second = {
+      apps: [
+        { name: 'scada', hosts: [{ hostname: 'web' }] },
+        { name: 'historian', hosts: [{ hostname: 'rtr' }] },
+      ],
+    };
+    const both = devices(
+      toGEXF(doc, { modified, scenarios: [content, second] }).text,
     );
-    expect(
-      appValues(
-        devices(toGEXF(doc, { modified, scenario: content }).text).byLabel.web,
-      ),
-    ).toMatchObject({ apps: '[scada, protonuke]', app_count: '2' });
+
+    expect(appValues(both.byLabel.web)).toMatchObject({
+      apps: '[scada, protonuke]',
+      app_count: '2',
+    });
+    expect(appValues(both.byLabel.rtr)).toMatchObject({
+      apps: '[scada, historian]',
+      app_count: '2',
+    });
 
     // A scenario of no apps: every device runs none.
-    const none = devices(toGEXF(doc, { modified, scenario: {} }).text);
+    const none = devices(toGEXF(doc, { modified, scenarios: [{}] }).text);
 
     expect(appValues(none.byLabel.web)).toEqual({ app_count: '0' });
     expect(appValues(none.byLabel.rtr)).toEqual({ app_count: '0' });
+
+    // The scenarios are among the file's keywords.
+    expect(toGEXF(doc, { modified }).text).toMatch(
+      /<keywords>[^<]*scn, other[^<]*<\/keywords>/,
+    );
   });
 
   test('escapes what it writes, and writes nothing XML 1.0 does not allow', () => {

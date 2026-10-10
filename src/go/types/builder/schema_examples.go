@@ -192,30 +192,6 @@ func exampleRoute() []any {
 	}
 }
 
-// exampleScenarioContent returns scenario content that runs one app on the
-// router.
-func exampleScenarioContent() map[string]any {
-	return map[string]any{
-		"apps": []any{map[string]any{
-			keyName: "ntp",
-			"hosts": []any{map[string]any{
-				"hostname": exampleHostname,
-				"metadata": map[string]any{"server": exampleAddress},
-			}},
-		}},
-	}
-}
-
-// exampleScenario returns a reference to a stored scenario.
-func exampleScenario() map[string]any {
-	return map[string]any{
-		keyKind:       string(ScenarioRefStored),
-		keyName:       exampleScenarioName,
-		keyAPIVersion: "phenix.sandia.gov/v2",
-		keyDigest:     exampleDigest,
-	}
-}
-
 // exampleSource returns the source of a document generated from topology
 // pump-station.
 func exampleSource() map[string]any {

@@ -764,13 +764,13 @@ describe('client', () => {
     expect(response.etag).toBe('"4"');
   });
 
-  test('a publish intent keeps the scenario and experiment targets', () => {
+  test('a publish intent keeps the experiment and its scenario, by name alone', () => {
     expect(
       publishIntent({
         mode: 'topology-experiment',
         topology: { name: ' core ', action: 'update' },
         scenario: {
-          name: 'sc',
+          name: ' sc ',
           action: 'update',
           expectedDigest: `sha256:${'a'.repeat(64)}`,
         },
@@ -779,13 +779,19 @@ describe('client', () => {
     ).toEqual({
       mode: 'topology-experiment',
       topology: { name: 'core', action: 'update' },
-      scenario: {
-        name: 'sc',
-        action: 'update',
-        expectedDigest: `sha256:${'a'.repeat(64)}`,
-      },
+      scenario: { name: 'sc' },
       experiment: { name: 'exp', action: 'create' },
     });
+
+    // No scenario is no scenario key: the experiment then has none.
+    expect(
+      publishIntent({
+        mode: 'topology-experiment',
+        topology: { name: 'core', action: 'create' },
+        scenario: { name: '' },
+        experiment: { name: 'exp', action: 'create' },
+      }),
+    ).not.toHaveProperty('scenario');
   });
 
   test('a publish intent refuses missing or unusable targets', () => {
@@ -799,11 +805,12 @@ describe('client', () => {
         topology: { name: 'core', action: 'create' },
       }),
     ).toThrow(/experiment name/i);
+    // A topology alone names no scenario: the server refuses one there.
     expect(
       publishIntent({
         mode: 'topology',
         topology: { name: 'core', action: 'create' },
-        scenario: { name: 'sc', action: 'launch' },
+        scenario: { name: 'sc' },
       }).scenario,
     ).toBeUndefined();
   });
@@ -1197,6 +1204,61 @@ describe('client', () => {
     await expect(createBuilderApi(http).getScenario('other')).rejects.toThrow(
       /unexpected scenario/,
     );
+  });
+
+  test('a stored config is read whole, its annotations with it', async () => {
+    const config = {
+      apiVersion: 'phenix.sandia.gov/v2',
+      kind: 'Scenario',
+      metadata: { name: 'ntp scn', annotations: { topology: 'plant' } },
+      spec: { apps: [] },
+    };
+    const http = fakeHttp({
+      'get configs/Scenario/ntp%20scn': { data: config, headers: {} },
+      'get configs/Scenario/other': { data: { spec: {} }, headers: {} },
+    });
+    const api = createBuilderApi(http);
+
+    await expect(api.getConfig('Scenario', 'ntp scn')).resolves.toBe(config);
+    expect(http.calls[0].config).toEqual({
+      headers: { Accept: 'application/json' },
+    });
+    await expect(api.getConfig('Scenario', 'other')).rejects.toThrow(
+      'The server sent an unexpected Scenario config.',
+    );
+  });
+
+  // As the Configs page stores a config: JSON text, typed as JSON.
+  test('a config is created with POST configs and replaced with PUT', async () => {
+    const config = {
+      apiVersion: 'phenix.sandia.gov/v2',
+      kind: 'Scenario',
+      metadata: { name: 'ntp scn' },
+      spec: { apps: [] },
+    };
+    const http = fakeHttp({
+      'post configs': { data: {}, headers: {} },
+      'put configs/Scenario/ntp%20scn': { data: {}, headers: {} },
+    });
+    const api = createBuilderApi(http);
+
+    await api.createConfig(config);
+    await api.updateConfig(config);
+
+    expect(http.calls).toEqual([
+      expect.objectContaining({
+        method: 'post',
+        url: 'configs',
+        body: JSON.stringify(config),
+        config: { headers: { 'Content-Type': 'application/json' } },
+      }),
+      expect.objectContaining({
+        method: 'put',
+        url: 'configs/Scenario/ntp%20scn',
+        body: JSON.stringify(config),
+        config: { headers: { 'Content-Type': 'application/json' } },
+      }),
+    ]);
   });
 
   test('a disk listing of another shape is refused', async () => {

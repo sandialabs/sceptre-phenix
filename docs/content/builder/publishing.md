@@ -1,18 +1,20 @@
 # Publishing
 
 A draft is not a phenix config. **Publish** writes the configs: a Topology
-config, and optionally an Experiment config with its scenario. Nothing else
-in Builder writes configs. Publish sends no diagram: the server reads
-the draft's last saved snapshot, checks it again, and writes the configs from
-it.
+config, the topology's name in the `topology` annotation of each scenario
+the diagram lists, and optionally an Experiment config with one of those
+scenarios. Apart from storing a scenario file from the
+[Scenarios](diagrams.md#scenarios) dialog, nothing else in Builder writes
+configs. Publish sends no diagram: the server reads the draft's last saved
+snapshot, checks it again, and writes the configs from it.
 
 Without the web UI, the `phenix builder publish` command writes a Topology
 config from a Builder file (see
 [From the command line](import-upload-download.md#from-the-command-line)).
 
 The examples on this page publish the Riverside Water draft (see
-[The drafts on these pages](index.md#the-drafts-on-these-pages)). It has the
-scenario `riverside-water` attached.
+[The drafts on these pages](index.md#the-drafts-on-these-pages)). It lists
+the scenario `riverside-water`.
 
 !!! note
     A draft made from a config can publish only while that config is
@@ -21,9 +23,9 @@ scenario `riverside-water` attached.
     Riverside Water draft comes from `riverside-water` as the example file
     loads it. If you published `riverside-water` in the
     [quick start](index.md#quick-start), use your quick start draft for these
-    examples instead, after you attach the scenario `riverside-water` to it
-    (see [Attaching a scenario](diagrams.md#attaching-a-scenario)). Its counts
-    are one device and one connection higher.
+    examples instead, after you add the scenario `riverside-water` to it
+    (see [Scenarios](diagrams.md#scenarios)). Its counts are one device and
+    one connection higher.
 
 ## Before you publish
 
@@ -85,8 +87,8 @@ quoted, up to five: "it contains characters that are not allowed: "/",
 "#"". A valid name shows no rule. Publishing a name that breaks the rule is
 refused on its field with the reason and a valid form of the name, for
 example "The topology name "Riverside Water" is not allowed: it contains a
-space. … For example: Riverside-Water". The experiment and scenario names,
-and the new topology name of an [import](import-upload-download.md#import-options),
+space. … For example: Riverside-Water". The experiment name, and the new
+topology name of an [import](import-upload-download.md#import-options),
 work the same way.
 
 !!! tip
@@ -194,6 +196,7 @@ The dialog lists each stage and how it went, for example:
 Published. Every stage succeeded.
 document: created — immutable builder document stored
 topology: updated
+scenario: skipped — scenario riverside-water already names topology riverside-water
 draft: ok
 ```
 
@@ -201,9 +204,11 @@ draft: ok
   **Published Diagrams** tab lists. It is the draft's last saved snapshot as
   it is, so it keeps who made the diagram and who edited it last (see
   [Who made and last saved a diagram](import-upload-download.md#who-made-and-last-saved-a-diagram)).
-- **topology**, **scenario**, **experiment**: `created`, `updated`, or
-  `skipped` when the config already holds this snapshot, so nothing was
-  written.
+- **topology**, **experiment**: `created`, `updated`, or `skipped` when the
+  config already holds this snapshot, so nothing was written.
+- **scenario**, for a diagram that lists scenarios: `updated`, with the
+  scenarios the topology was added to, or `skipped` when each already names
+  it (see [Scenarios](#scenarios)).
 - **draft**: the draft records what it published.
 
 The topology holds each device's notes as its node's `general.notes`, and an
@@ -229,9 +234,9 @@ To update `riverside-water` and create the experiment `riverside-lab` from it:
    exists and will be updated.").
 4. Enter `riverside-lab` in **Experiment name**. The hint says "A new
    experiment will be created."
-5. Under **Scenario**, the dialog says "The stored scenario riverside-water
-   will be used as it is on the server." The button now says **Update
-   topology and create experiment**.
+5. **Experiment scenario** is `riverside-water`, the first scenario the
+   diagram lists. The button now says **Update topology and create
+   experiment**.
 6. Select **Update topology and create experiment**. Builder asks
    "Replace topology riverside-water?". Select **Update topology and create
    experiment** again.
@@ -244,7 +249,7 @@ To update `riverside-water` and create the experiment `riverside-lab` from it:
     ```text
     document: created — immutable builder document stored
     topology: skipped
-    scenario: skipped
+    scenario: skipped — scenario riverside-water already names topology riverside-water
     experiment: created
     draft: ok
     ```
@@ -284,28 +289,33 @@ spec:
     min: 0
 ```
 
-### The scenario
+### Scenarios
 
-The **Scenario** part of the dialog depends on the scenario attached to the
-diagram (see [Attaching a scenario](diagrams.md#attaching-a-scenario)):
+A diagram lists the Scenario configs it is used with (see
+[Scenarios](diagrams.md#scenarios)). Publishing, in either mode, adds the
+topology to the `topology` annotation of each one that does not name it
+yet, and changes nothing else in them; the dialog says so under its
+**Scenarios** part. The scenario stage of the result covers them all: it
+says `updated` and which scenarios it changed, or `skipped` when each
+already names the topology. For example, after publishing Riverside Water
+with the topology name `riverside-water-b`, the annotation of
+`riverside-water` is `topology: riverside-water,riverside-water-b`, and the
+stage says "added topology riverside-water-b to scenario riverside-water".
+The annotation names topologies separated by commas, and only a name equal
+to the topology's counts: `riverside-water-old` does not name the topology
+`riverside-water`.
 
-- No scenario: the experiment has none, and the part is not shown.
-- A stored scenario: "The stored scenario riverside-water will be used as it
-  is on the server." Its content is not changed. When its `topology`
-  annotation does not name the topology yet, Publish adds the name, and the
-  scenario stage says `updated`. For example, after publishing Riverside
-  Water with the topology name `riverside-water-b`, the annotation of
-  `riverside-water` is `topology: riverside-water,riverside-water-b`.
-- An uploaded scenario: "This diagram carries an uploaded scenario. Choose
-  the config it should be written to." Enter **Scenario name**, and choose a
-  **Scenario action**: **Create a new scenario** or **Update the existing
-  scenario**. There is no default. Updating asks for confirmation, and its
-  button adds ", replace scenario", for example **Update topology and create
-  experiment, replace scenario**.
+With an experiment, **Experiment scenario** picks the scenario it uses:
+one of those the diagram lists, the first unless you choose another, or
+**No scenario**. A diagram that lists none has no **Scenarios** part, and
+its experiment has no scenario.
 
-A scenario action that does not fit the name is refused, for example "Could
-not publish the diagram. A scenario named "riverside-water" already exists.
-Choose "Update the existing scenario", or enter another name."
+Publish is refused before anything is written when a listed scenario does
+not exist on the server, or your role cannot read it ("Scenario NAME does
+not exist."), and when your role cannot update a listed scenario whose
+annotation needs the topology (see
+[What each task needs](administration.md#what-each-task-needs)).
+Remove such a scenario from the list, or store it again from the dialog.
 
 ### Experiment names
 

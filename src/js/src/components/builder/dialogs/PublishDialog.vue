@@ -24,6 +24,10 @@
   (see overwriteConfirmation). Nothing is sent until the user confirms;
   Cancel, Escape or a click outside return to the form, focus with them.
 
+  Publishing adds the topology to every scenario the diagram lists, which
+  the dialog says; with an experiment, Experiment scenario picks the one it
+  uses, the first listed unless another or No scenario is chosen.
+
   The Inspector's unapplied edits are saved before the dialog opens (see
   leave.js). Edits it cannot apply keep Publish from sending, rather than
   being left out, and the dialog says so as it opens.
@@ -155,72 +159,36 @@
         </p>
       </div>
 
-      <div v-if="scenario" class="builder-field" data-testid="publish-scenario">
-        <h3>Scenario</h3>
-        <p v-if="scenario.kind === 'stored'">
-          The stored scenario
-          <strong>{{ scenario.name }}</strong>
-          will be used as it is on the server.
-        </p>
-        <template v-else>
-          <p>
-            This diagram carries an uploaded scenario. Choose the config it
-            should be written to.
-          </p>
-          <label for="publish-scenario-name">Scenario name</label>
-          <input
-            id="publish-scenario-name"
+      <!-- The scenarios the diagram lists, which publishing adds the
+           topology to in either mode; an experiment uses one of them, or
+           none. -->
+      <div
+        v-if="scenarios.length"
+        class="builder-field"
+        data-testid="publish-scenario">
+        <template v-if="form.mode === 'topology-experiment'">
+          <label for="publish-scenario">Experiment scenario</label>
+          <select
+            id="publish-scenario"
             v-model="form.scenarioName"
-            type="text"
-            required
-            list="publish-scenario-names"
             :aria-invalid="invalid('scenarioName')"
             :aria-describedby="
-              describedBy(
-                'scenarioName',
-                nameHintIds('scenarioName', '', 'publish-scenario-rule'),
-              )
+              describedBy('scenarioName', 'publish-scenario-hint')
             "
-            data-testid="publish-scenario-name" />
-          <datalist id="publish-scenario-names">
-            <option
-              v-for="name in scenarioNames"
-              :key="name"
-              :value="name"></option>
-          </datalist>
-          <p
-            v-if="nameHints.scenarioName"
-            id="publish-scenario-rule"
-            class="builder-hint"
-            data-testid="publish-scenario-rule">
-            {{ nameHints.scenarioName }}
-          </p>
-
-          <fieldset :aria-describedby="describedBy('scenarioAction')">
-            <legend>Scenario action</legend>
-            <label class="builder-choice">
-              <input
-                id="publish-scenario-create"
-                v-model="form.scenarioAction"
-                type="radio"
-                name="publish-scenario-action"
-                value="create"
-                :aria-invalid="invalid('scenarioAction')"
-                data-testid="publish-scenario-create" />
-              Create a new scenario
-            </label>
-            <label class="builder-choice">
-              <input
-                v-model="form.scenarioAction"
-                type="radio"
-                name="publish-scenario-action"
-                value="update"
-                :aria-invalid="invalid('scenarioAction')"
-                data-testid="publish-scenario-update" />
-              Update the existing scenario
-            </label>
-          </fieldset>
+            data-testid="publish-scenario-select">
+            <option v-for="name in scenarios" :key="name" :value="name">
+              {{ name }}
+            </option>
+            <option value="">No scenario</option>
+          </select>
         </template>
+        <h3 v-else>Scenarios</h3>
+        <p
+          id="publish-scenario-hint"
+          class="builder-hint"
+          data-testid="publish-scenario-hint">
+          {{ scenarioHint }}
+        </p>
       </div>
 
       <div class="builder-field">
@@ -370,6 +338,7 @@
 
   import { count, listOf } from '@/builder/announce.js';
   import { unappliedBlock } from '@/builder/leave.js';
+  import { documentScenarios } from '@/builder/model.js';
   import {
     buildPublishIntent,
     configName,
@@ -381,6 +350,7 @@
     publishChecks,
     publishLabel,
     scenarioNames as readScenarioNames,
+    scenarioStageHint,
     stageFailed,
     targetHint,
     updateBlocker,
@@ -404,8 +374,7 @@
   const { error, invalid, describedBy, fail } = useFieldError('publish-error', {
     topologyName: 'publish-name',
     experimentName: 'publish-experiment',
-    scenarioName: 'publish-scenario-name',
-    scenarioAction: 'publish-scenario-create',
+    scenarioName: 'publish-scenario',
   });
   const status = useMessage();
   const result = ref(null);
@@ -414,11 +383,10 @@
   // The confirmation shown before an update, with the intent it sends.
   const confirming = ref(null);
 
-  const scenario = computed(() => store.doc.scenario || null);
+  // The Scenario configs the diagram lists.
+  const scenarios = computed(() => documentScenarios(store.doc));
+  const scenarioHint = computed(() => scenarioStageHint(scenarios.value));
 
-  const scenarioNames = computed(() =>
-    readScenarioNames(store.sources.scenarios),
-  );
   const topologyNames = computed(() =>
     readScenarioNames(store.sources.topologies),
   );
@@ -426,14 +394,15 @@
     readScenarioNames(store.sources.experiments),
   );
 
-  // The diagram and uploaded scenario names are free text; config names must
-  // follow the server's naming rule, so each starts as a valid form of it.
+  // The diagram name is free text; config names must follow the server's
+  // naming rule, so the topology's starts as a valid form of it. An
+  // experiment uses the first scenario the diagram lists unless another, or
+  // none, is chosen.
   const form = reactive({
     mode: 'topology',
     topologyName: configName(store.doc.metadata?.name),
     experimentName: '',
-    scenarioName: configName(scenario.value?.name),
-    scenarioAction: '',
+    scenarioName: scenarios.value[0] || '',
   });
 
   // Configs may have been written since the list was last read, by this
@@ -503,12 +472,7 @@
       {
         ...store.publishDraft,
         topologyName: form.topologyName.trim(),
-        scenarioName:
-          scenario.value?.kind === 'stored'
-            ? scenario.value.name
-            : scenario.value
-              ? form.scenarioName.trim()
-              : '',
+        scenarioName: form.scenarioName,
       },
     ),
   );
@@ -538,7 +502,6 @@
   const nameHints = computed(() => ({
     topologyName: configNameHint(form.topologyName),
     experimentName: configNameHint(form.experimentName),
-    scenarioName: configNameHint(form.scenarioName),
   }));
 
   // The ids that describe a name field: its hint, when it has one, then its
@@ -629,10 +592,9 @@
    */
   function buildIntent() {
     return buildPublishIntent(form, {
-      scenario: scenario.value,
+      scenarios: scenarios.value,
       topologies: store.sources.topologies,
       experiments: store.sources.experiments,
-      scenarios: store.sources.scenarios,
       draft: store.publishDraft,
     });
   }

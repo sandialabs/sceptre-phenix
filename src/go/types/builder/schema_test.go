@@ -91,7 +91,7 @@ func TestSchemaDocumentsEveryProperty(t *testing.T) {
 	}
 
 	for name, def := range mapAt(t, schema, "$defs") {
-		if strings.HasPrefix(name, builder.PhenixDefPrefix) || strings.HasPrefix(name, builder.PhenixV2DefPrefix) {
+		if strings.HasPrefix(name, builder.PhenixDefPrefix) {
 			continue
 		}
 
@@ -147,7 +147,7 @@ func TestSchemaDefinesBuilderStructures(t *testing.T) {
 	for _, name := range []string{
 		"identifier", "iconKey", "position", "size", "viewport", "grid",
 		"interfaceHandle", "device", "switch", "note", "group", "node",
-		"network", "edge", "scenario", "source",
+		"network", "edge", "source",
 		"hexColor", "lineStyle", "borderStyle", "iconRef", "icon", "template", "templateDevice",
 	} {
 		def := mapAt(t, defs, name)
@@ -220,7 +220,6 @@ func TestSchemaPropertiesMatchDocument(t *testing.T) {
 		"node":           builder.Node{},
 		"network":        builder.Network{},
 		"edge":           builder.Edge{},
-		"scenario":       builder.ScenarioRef{},
 		"source":         builder.Source{},
 		"icon":           builder.Icon{},
 		"template":       builder.Template{},
@@ -656,14 +655,6 @@ func containsAny(list any, want string) bool {
 	return false
 }
 
-func hasSchemaType(value any, want string) bool {
-	if value == want {
-		return true
-	}
-
-	return containsAny(value, want)
-}
-
 // collectRefs gathers every $ref string found in a schema tree.
 func collectRefs(value any) []string {
 	var refs []string
@@ -783,60 +774,51 @@ func TestSchemaSourceCarriesDigestAndUpdatedAt(t *testing.T) {
 	}
 }
 
-func TestSchemaScenarioRequiresAPIVersionAndDigest(t *testing.T) {
-	defs := mapAt(t, mustSchema(t), "$defs")
-	scenario := mapAt(t, defs, "scenario")
+// TestSchemaScenarios pins the schema of the document's scenarios: an
+// optional list of config names, bounded the way Document.Validate bounds
+// it.
+func TestSchemaScenarios(t *testing.T) {
+	schema := mustSchema(t)
+	scenarios := mapAt(t, mapAt(t, schema, "properties"), "scenarios")
 
-	for _, required := range []string{"kind", "apiVersion", "digest"} {
-		if !containsAny(scenario["required"], required) {
-			t.Fatalf("scenario schema does not require %q: %v", required, scenario["required"])
+	if containsAny(schema["required"], "scenarios") {
+		t.Fatal("scenarios is required")
+	}
+
+	if scenarios["type"] != "array" || scenarios["maxItems"] != builder.MaxScenarios || scenarios["uniqueItems"] != true {
+		t.Fatalf("scenarios is not a list of at most %d distinct items: %v", builder.MaxScenarios, scenarios)
+	}
+
+	name := mapAt(t, scenarios, "items")
+	if name["type"] != "string" || name["minLength"] != 1 || name["maxLength"] != builder.MaxScenarioNameBytes {
+		t.Fatalf("a scenario name is not a string of 1 to %d characters: %v", builder.MaxScenarioNameBytes, name)
+	}
+
+	pattern, ok := name["pattern"].(string)
+	if !ok {
+		t.Fatalf("a scenario name has no pattern: %v", name)
+	}
+
+	matcher := regexp.MustCompile(pattern)
+
+	for _, valid := range []string{"ntp", "Ab_9@x.y-z"} {
+		if !matcher.MatchString(valid) || !builder.IsConfigName(valid) {
+			t.Errorf("scenario name %q is refused", valid)
 		}
 	}
 
-	branches, ok := scenario["allOf"].([]any)
-	if !ok || len(branches) != 2 {
-		t.Fatalf("scenario schema has no per-kind branches: %v", scenario["allOf"])
+	for _, invalid := range []string{"", "two words", "Scenario/ntp", "ntp\n"} {
+		if matcher.MatchString(invalid) || builder.IsConfigName(invalid) {
+			t.Errorf("scenario name %q is accepted", invalid)
+		}
 	}
 
-	want := map[string][]string{
-		"stored":   {"name", "apiVersion", "digest"},
-		"uploaded": {"content", "apiVersion", "digest"},
-	}
-
-	seen := map[string]bool{}
-
-	for _, entry := range branches {
-		branch, ok := entry.(map[string]any)
-		if !ok {
-			t.Fatalf("branch is not an object: %v", entry)
-		}
-
-		condition := mapAt(t, mapAt(t, branch, "if"), "properties")
-		kind, _ := mapAt(t, condition, "kind")["const"].(string)
-
-		then := mapAt(t, branch, "then")
-
-		for _, required := range want[kind] {
-			if !containsAny(then["required"], required) {
-				t.Fatalf("%s scenario branch does not require %q: %v", kind, required, then)
-			}
-		}
-
-		if kind == "uploaded" && containsAny(then["required"], "name") {
-			t.Fatal("uploaded scenario branch must keep name optional")
-		}
-
-		seen[kind] = true
-	}
-
-	for kind := range want {
-		if !seen[kind] {
-			t.Fatalf("scenario schema does not discriminate kind %q", kind)
-		}
+	if _, ok := mapAt(t, schema, "$defs")["scenario"]; ok {
+		t.Fatal("$defs still defines the scenario reference documents no longer hold")
 	}
 }
 
-func TestSchemaBundlesBothPhenixVersions(t *testing.T) {
+func TestSchemaBundlesPhenixV1(t *testing.T) {
 	defs := mapAt(t, mustSchema(t), "$defs")
 
 	components := []string{
@@ -845,16 +827,18 @@ func TestSchemaBundlesBothPhenixVersions(t *testing.T) {
 		"serial_iface", "Image", "Role", "User",
 	}
 
-	for _, prefix := range []string{builder.PhenixDefPrefix, builder.PhenixV2DefPrefix} {
-		for _, name := range components {
-			if _, ok := defs[prefix+name]; !ok {
-				t.Fatalf("$defs is missing %s%s", prefix, name)
-			}
+	for _, name := range components {
+		if _, ok := defs[builder.PhenixDefPrefix+name]; !ok {
+			t.Fatalf("$defs is missing %s%s", builder.PhenixDefPrefix, name)
 		}
 	}
 
-	if builder.PhenixDefPrefix == builder.PhenixV2DefPrefix {
-		t.Fatal("phenix definition prefixes collide")
+	// A document holds no scenario content, which the v2 schemas were
+	// bundled for.
+	for name := range defs {
+		if strings.HasPrefix(name, "phenix.v2.") {
+			t.Fatalf("$defs bundles %s, which no part of a document refers to", name)
+		}
 	}
 
 	// Device specs stay on the v1 node schemas.
@@ -878,64 +862,12 @@ func TestSchemaBundlesBothPhenixVersions(t *testing.T) {
 	}
 }
 
-func TestSchemaScenarioContentUsesCurrentScenarioVersion(t *testing.T) {
-	defs := mapAt(t, mustSchema(t), "$defs")
-	scenario := mapAt(t, defs, "scenario")
-	content := mapAt(t, mapAt(t, scenario, "properties"), "content")
-
-	wantRef := "#/$defs/" + builder.PhenixV2DefPrefix + "Scenario"
-	if got := content["$ref"]; got != wantRef {
-		t.Fatalf("scenario content $ref = %v, want %q", got, wantRef)
-	}
-
-	if !strings.HasSuffix(builder.ScenarioAPIVersion(), "/v2") {
-		t.Fatalf("ScenarioAPIVersion() = %q; the bundled scenario schema must follow it",
-			builder.ScenarioAPIVersion())
-	}
-
-	// The bundled scenario schema must cover complete scenario content, not
-	// just the v1 experiment app name list.
-	scenarioDef := mapAt(t, defs, builder.PhenixV2DefPrefix+"Scenario")
-	apps := mapAt(t, mapAt(t, scenarioDef, "properties"), "apps")
-
-	if !hasSchemaType(apps["type"], "array") {
-		t.Fatalf("v2 scenario apps is not an array: %v", apps)
-	}
-
-	app := mapAt(t, mapAt(t, apps, "items"), "properties")
-
-	for _, field := range []string{"name", "hosts", "metadata", "assetDir", "disabled"} {
-		if _, ok := app[field]; !ok {
-			t.Fatalf("v2 scenario app has no %q property: %v", field, app)
-		}
-	}
-
-	host := mapAt(t, mapAt(t, mapAt(t, app, "hosts"), "items"), "properties")
-
-	for _, field := range []string{"hostname", "metadata"} {
-		if _, ok := host[field]; !ok {
-			t.Fatalf("v2 scenario app host has no %q property: %v", field, host)
-		}
-	}
-
-	if settings := mapAt(t, host, "metadata"); settings["additionalProperties"] != true {
-		t.Fatalf("v2 scenario host metadata does not accept free-form settings: %v", settings)
-	}
-
-	// The v1 scenario schema is retained but must not be what content points at.
-	v1Apps := mapAt(t, mapAt(t, mapAt(t, defs, builder.PhenixDefPrefix+"Scenario"), "properties"), "apps")
-	if v1Apps["type"] != "object" {
-		t.Fatalf("unexpected v1 scenario apps shape: %v", v1Apps)
-	}
-}
-
 func TestPhenixDefsRewritesReferences(t *testing.T) {
 	for _, bundle := range []struct {
 		prefix string
 		defs   func() (map[string]any, error)
 	}{
 		{prefix: builder.PhenixDefPrefix, defs: builder.PhenixDefs},
-		{prefix: builder.PhenixV2DefPrefix, defs: builder.PhenixV2Defs},
 	} {
 		t.Run(bundle.prefix, func(t *testing.T) {
 			defs, err := bundle.defs()

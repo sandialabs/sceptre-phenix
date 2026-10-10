@@ -326,7 +326,7 @@ func TestBuilderPublishDryRun(t *testing.T) { //nolint:paralleltest // replaces 
 		"Document ID:  " + builder.PublishedDocumentID("riverside", parsed.Digest) + "\n",
 		"Topology:     riverside (would be created)\n",
 		"Warnings:\n",
-		"  - The document's scenario is not published: only the topology is.\n",
+		"  - The document's scenario is not changed: only the topology is published.\n",
 		"  - Included topology corp-services was not checked for duplicate hostnames: no stored topology has that name.\n",
 		"Nothing was written.\n",
 	} {

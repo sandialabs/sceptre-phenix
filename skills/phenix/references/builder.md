@@ -33,8 +33,10 @@ a Builder document file and needs no running server
 (see [CLI: phenix builder publish](#cli-phenix-builder-publish)); drafts,
 sharing and everything else are in the REST API and the web UI only.
 Drafts autosave separately from phenix configs; in the web UI and REST API
-only the explicit Publish action creates or updates topology, scenario, or
-experiment configs. The five built-in device templates (`server`,
+only the explicit Publish action creates or updates topology or experiment
+configs and adds the topology to the `topology` annotation of the
+document's scenarios, and only the Scenario dialog stores a Scenario
+config (from an uploaded file, with `POST`/`PUT /configs`). The five built-in device templates (`server`,
 `workstation`, `router`, `firewall`, `external`; fixture
 `types/builder/testdata/builtin-templates.json`, `BuiltinTemplates()` in Go,
 `BUILTIN_TEMPLATES` in `catalog.js`) write no description into the node.
@@ -100,13 +102,14 @@ it scrolls. Above Annotations, a read-only Details block shows the document's
 provenance (see [Document provenance](#document-provenance)): "Created
 <time> by <createdBy>", "Last edited <time> by <updatedBy>", and "Source file
 <name>" when the draft record has `sourceFile`; a row without a value is
-left out, and the block when no row is left. Scenario says whether the
-scenario is stored or uploaded and lists
-each of its apps with the hosts it runs on. A stored scenario's apps are read
-with `GET /configs/Scenario/<name>`, which needs `configs` `get`; otherwise the
-Inspector says it cannot read them. Edit scenario (Add scenario when there is
-none) opens the same Scenario dialog as the toolbar's Scenario button; a
-read-only draft shows neither. Leaving a draft,
+left out, and the block when no row is left. Scenarios lists each scenario
+the document names ("Scenario <name>", testids `inspector-scenario-N`) with
+each of its apps and the hosts it runs on, or "No scenarios.". The apps are
+read with `GET /configs/Scenario/<name>` (`store.fetchScenario`, once per
+name until `saveScenarioConfig` drops the reading), which needs `configs`
+`get`; otherwise the Inspector says it cannot read them. Edit scenarios
+(Add scenario when there is none) opens the same Scenario dialog as the
+toolbar's Scenarios button; a read-only draft shows neither. Leaving a draft,
 publishing, or downloading first saves Inspector changes that were not applied,
 as a draft snapshot with the summary `Saved unapplied changes to <node>`.
 Logging out removes Builder's local drafts (IndexedDB `phenix-builder`)
@@ -368,7 +371,7 @@ Failing such a request would only make the client retry with a stale tag.
 
 `GET /builder/sources` groups configs by kind: `topologies` and `experiments`
 (what a document can be generated from, reported as `generatable: true`),
-`scenarios` (selectable when publishing) and `images` (node property editing;
+`scenarios` (what the Scenario dialog offers; no `digest`) and `images` (node property editing;
 empty for the built-in Builder role, which has no `configs` on `Image/*`).
 Each config is filtered through the `configs` permission *and* the kind specific
 `list` permission that already gates the kind elsewhere (`topologies`,
@@ -455,19 +458,84 @@ not a stored topology.
 
 ## Scenarios and publishing
 
-A stored scenario reference carries the config's `apiVersion` and content
-`digest` as `GET /builder/sources` lists them, never its content. Generating
-from a stored Experiment whose `scenario` annotation names a Scenario the
-caller may list produces such a reference, so the draft publishes back with
-scenario action `use`. If that Scenario is missing or hidden from the caller,
-or the Experiment was uploaded, the Experiment's embedded copy is attached as
-an uploaded scenario of the same name, with a warning: an uploaded Experiment
-is never bound to this server's Scenario of that name, which may differ.
+A document names the Scenario configs it is used with in root `scenarios`
+(`bdoc.Document.Scenarios`): at most 20 (`MaxScenarios`, `MAX_SCENARIOS`),
+each a config name (`^[A-Za-z0-9_@.-]+$`) of at most 256 bytes
+(`MaxScenarioNameBytes`, the bound on a publication's targets), none twice
+ignoring case, left out when empty. It holds no scenario content: there is
+no `scenario` object (strict decoding refuses that key, with no shim), no
+uploaded kind and no digest. Go (`validateScenarios`) and JS
+(`validate.js`, `scenarioNameProblem`; `decode.js` refuses a non-list or a
+non-text entry, and validation an empty one) check it alike through the
+shared corpus.
 
-Publishing an uploaded Scenario with action `update` requires
-`scenario.expectedDigest`, copied from a fresh matching entry returned by
-`GET /builder/sources`. A digest mismatch is a conflict; never retry it with a
-guessed digest. Topology and Experiment updates likewise require a draft tied
+Generating from an Experiment (stored or a file) lists its `scenario`
+annotation when that names a Scenario config the caller may list on this
+server (`configs` `list` and `scenarios` `list`;
+`bdoc.WithScenarioResolver`, `storedScenarioResolver` in
+`web/builder_sources.go`); otherwise it lists none and warns `the
+experiment's scenario "<name>" is not a stored Scenario config and was not
+attached` (`the experiment's scenario is not ...` when it names none but
+holds content). The experiment's embedded copy is never attached. For a
+file it also warns `scenario "<name>" is this server's Scenario config of
+that name, not the copy the experiment file holds`. A store error answers
+500.
+
+The Scenario dialog (`dialogs/ScenarioDialog.vue`, title "Scenarios",
+testids `scenario-…`) edits the list: Remove, Add a stored scenario (the
+sources not listed), and Upload a scenario file (`phenix.sandia.gov/v2`
+only; name from `metadata.name`, else the file name through `configName`,
+editable). Store and add creates the config with `api.createConfig` (`POST
+/configs`, JSON `{apiVersion, kind: Scenario, metadata: {name,
+annotations?}, spec}`), or, for a name the sources list, after the
+confirmation "Replace scenario <name>?" (it says the spec is replaced and
+the annotations kept), replaces it with `api.updateConfig` (`PUT
+/configs/Scenario/<name>`). A PUT replaces the annotations too, so
+`store.saveScenarioConfig` first reads the stored config
+(`api.getConfig`, `GET /configs/Scenario/<name>`) and sends
+`replacedScenarioConfig(stored, file)` (`builder/publish.js`): the stored
+annotations with the file's over them, and the `topology` annotations
+merged by `mergeTopologyAnnotation` (the stored value byte for byte, then
+each file name it lacks, after a comma), so no topology is taken off a
+scenario. The server's refusal, of the read or the write, shows in the
+dialog's alert (`serverReason`). `store.saveScenarioConfig` then reads the
+sources again. A stored name the list already has in another letter case
+replaces that entry with the stored config's spelling (the status says
+"the list names it <name> in place of <old>"); one listed exactly is left
+("The list already names it."). Save writes the list with
+`store.setScenarios` (one undo step "Updated scenarios"); Cancel keeps a
+stored scenario on the server but not in the list.
+
+Publish (`preflightScenarios`, `publishScenarioStage` in
+`web/builder_publish.go`), in either mode, runs a `scenario` stage after the
+topology and before the experiment whenever the draft's document lists
+scenarios: each must exist and be readable (`configs` `get`, `scenarios`
+`list`), else 422 `scenario <name> does not exist` (a hidden one alike);
+one whose `topology` annotation does not name the topology exactly
+(comma-separated, trimmed; `hasTopologyAnnotation`) gets it added
+(`addTopologyAnnotation`: appended after a comma, the rest of the value
+kept byte for byte, or the whole value when it was empty), which needs `configs` `update` on it (else 403
+`adding topology <t> to scenario <s> not allowed`); others are not written.
+The one stage reports `updated` or `skipped`, a message such as `added
+topology t to scenarios a, b; scenario c already names it`, and `config`
+only when one scenario is listed. A failed write leaves the earlier ones
+written (a warning names them); publishing again resumes. The request's
+`scenario` is `{name}` only, allowed only in `topology-experiment` mode
+(400 otherwise, and for a name outside the config rule or any other key),
+and must be one of the document's `scenarios` (422 `scenario <name> is not
+one of the scenarios this draft lists`); the experiment is created with it
+(`CreateWithScenario`, after the stage annotated it) or updated with it
+(`MakeCustomScenarioFromConfig`, `MergeScenariosForTopology`, the
+`scenario` annotation); none leaves the experiment without one. The
+publication records it as `scenarioTarget`. The Publish dialog's
+Experiment scenario select (`publish-scenario`) lists the document's
+scenarios and No scenario, the first by default, and its hint
+(`scenarioStageHint`) says the topology is added to each listed scenario.
+`phenix builder publish` changes no scenario and notes `The document's
+scenario is not changed: only the topology is published.` (`The
+document's N scenarios are not changed: …`).
+
+Topology and Experiment updates require a draft tied
 to that exact stored source: one imported from it, or one that published it (or
 was opened from the published diagram that did), with nothing else having
 changed it since. Otherwise the update gets 409, for example `topology <name>
@@ -553,8 +621,9 @@ The Download dialog's Gephi (GEXF) saves `<diagram name>.gexf`, a GEXF 1.3
 graph for Gephi that Builder cannot open, made in the browser. Devices
 and networks are its nodes, each connection an edge from a device to its
 network, and their settings are columns; notes and groups are not nodes. It
-lists each device's scenario apps (`apps`, `disabled_apps`), reading a stored
-scenario as the Inspector does; when it cannot, it leaves the apps out and
+lists each device's scenario apps (`apps`, `disabled_apps`) of every listed
+scenario, reading each as the Inspector does; when it cannot read one, it
+leaves the apps out and
 the dialog says why. The file names gexf.xsd in `xsi:schemaLocation`, as
 Gephi writes it. The official RelaxNG grammar, gexf.rng, rejects that
 attribute (gexf.net says to remove it before using xmllint), so to check a
@@ -821,7 +890,7 @@ server.", plus a sentence when `topologyDiffers`.
 
 A Builder document's root keys are, in this order, `$schema`, `revision`,
 `metadata`, then the content: `nodes`, `networks`, `edges`, `viewport`,
-`grid`, and the optional `scenario`, `source`, `layout`, `templates` and
+`grid`, and the optional `scenarios`, `source`, `layout`, `templates` and
 `icons`. `metadata` (`bdoc.Metadata`) is required and holds only `id`
 (required, the document ID), `name`, `description`, the four provenance
 fields below, and `notes`. Strict decoding refuses any other key there, and
@@ -836,7 +905,7 @@ check it alike through the shared corpus.
 (`MaxDiagramNotes`, `MAX_DIAGRAM_NOTES`), each not blank after trimming, at
 most 4096 bytes (`MaxDiagramNoteBytes`) and free of control characters but
 newline and tab. They are document content (in the digest) and never
-written to a config. The Inspector's Diagram view lists them after Scenario
+written to a config. The Inspector's Diagram view lists them after Scenarios
 under Notes (`InspectorDiagram.vue`, testids `inspector-notes`,
 `inspector-note-N`, `inspector-note-add`): a textarea "Note N" and a
 "Delete note N" button each, "No notes." when there are none, and Add note,
@@ -1177,7 +1246,7 @@ All routes are relative to `/api/v1`.
 | `GET /builder/drafts/{owner}/{draft}/snapshots/{snapshot\|current}` | Read one snapshot's document |
 | `DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Delete a version other than the current one (needs `If-Match`) |
 | `PATCH/PUT /builder/drafts/{owner}/{draft}/cursor` | Undo and redo: move the draft's current snapshot |
-| `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the topology, scenario and experiment configs |
+| `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the topology and experiment configs, and add the topology to the document's scenarios |
 | `GET/PUT /builder/drafts/{owner}/{draft}/shares` | Read or replace who a draft is shared with (owner only) |
 | `GET /builder/drafts/{owner}/{draft}/shares/candidates` | Every account that can receive a share of the draft |
 | `GET /builder/sources` | Configs a document can be generated from or publish to; topology rows have `includeCount` |

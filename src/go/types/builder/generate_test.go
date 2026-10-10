@@ -268,21 +268,10 @@ func TestFromExperimentConfig(t *testing.T) {
 		t.Fatalf("switch count = %d, want 2 (EXP and SENSOR)", got)
 	}
 
-	if doc.Scenario == nil {
-		t.Fatal("scenario was not imported")
-	}
-
-	if doc.Scenario.Kind != builder.ScenarioRefStored || doc.Scenario.Name != "builder-scenario" {
-		t.Fatalf("unexpected scenario reference: %s", asJSON(t, doc.Scenario))
-	}
-
-	digest, err := builder.ContentDigest(doc.Scenario.Content)
-	if err != nil {
-		t.Fatalf("ContentDigest: %v", err)
-	}
-
-	if doc.Scenario.Digest != digest {
-		t.Fatalf("scenario digest = %q, want %q", doc.Scenario.Digest, digest)
+	// Without a resolver, nothing tells that the scenario is stored.
+	if len(doc.Scenarios) != 0 ||
+		!containsSubstring(warnings, `scenario "builder-scenario" is not a stored Scenario config`) {
+		t.Fatalf("scenarios = %q with warnings %v, want none listed and a warning", doc.Scenarios, warnings)
 	}
 
 	if !containsSubstring(warnings, "VLAN range minimum") {
@@ -326,14 +315,11 @@ func TestFromStoredExperiment(t *testing.T) {
 		t.Fatalf("EXP alias was not imported: %s", asJSON(t, doc.Networks))
 	}
 
-	ref := doc.Scenario
-	if ref == nil || ref.Kind != builder.ScenarioRefStored || ref.Name != "builder-scenario" ||
-		ref.APIVersion != builder.ScenarioAPIVersion() {
-		t.Fatalf("unexpected scenario reference: %s", asJSON(t, ref))
-	}
-
-	if digest, err := builder.ContentDigest(ref.Content); err != nil || ref.Digest != digest {
-		t.Fatalf("scenario digest = %q, want the digest of its content (%q, %v)", ref.Digest, digest, err)
+	listed, _, err := builder.FromConfig(storedExperiment(t), builder.WithScenarioResolver(
+		func(name string) (bool, error) { return name == "builder-scenario", nil },
+	))
+	if err != nil || !reflect.DeepEqual(listed.Scenarios, []string{"builder-scenario"}) {
+		t.Fatalf("scenarios = %v (%v), want the stored scenario the experiment names", listed, err)
 	}
 
 	// The projected topology is one phenix can read back.
@@ -443,18 +429,20 @@ func TestFromExperimentSkipsBlankZeroVLANAlias(t *testing.T) {
 	}
 }
 
+// TestFromExperimentWithoutScenarioName checks that the scenario content of
+// an experiment that names no scenario is not attached, with a warning.
 func TestFromExperimentWithoutScenarioName(t *testing.T) {
 	config := loadConfig(t, "experiment.json")
 	delete(config.Metadata.Annotations, "scenario")
 
-	doc, _ := documentFromConfig(t, config)
+	doc, warnings := documentFromConfig(t, config)
 
-	if doc.Scenario == nil || doc.Scenario.Kind != builder.ScenarioRefUploaded {
-		t.Fatalf("expected an uploaded scenario reference: %s", asJSON(t, doc.Scenario))
+	if len(doc.Scenarios) != 0 {
+		t.Fatalf("scenarios = %q, want none", doc.Scenarios)
 	}
 
-	if doc.Scenario.Digest == "" {
-		t.Fatal("uploaded scenario reference must carry a content digest")
+	if !containsSubstring(warnings, "the experiment's scenario is not a stored Scenario config and was not attached") {
+		t.Fatalf("warnings = %v, want one about the scenario", warnings)
 	}
 }
 

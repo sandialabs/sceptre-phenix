@@ -17,7 +17,7 @@
 
 import { count } from './announce.js';
 import { isIconKey } from './catalog.js';
-import { canonicalJSON, contentDigestSync, isDigest } from './digest.js';
+import { canonicalJSON, isDigest } from './digest.js';
 import {
   ICON_ID,
   MAX_DOCUMENT_ICONS,
@@ -73,9 +73,20 @@ export const MAX_TEMPLATE_NAME_BYTES = 128;
 export const MAX_TEMPLATE_DESCRIPTION_BYTES = 1024;
 export const MAX_TEMPLATE_DEVICE_BYTES = 16 * 1024;
 
-// The apiVersion of scenario content a reference carries: the latest stored
-// scenario version (ScenarioAPIVersion in document.go).
+// The apiVersion of the Scenario configs the Scenario dialog uploads: the
+// latest phenix stores scenarios at. The server stores a scenario of
+// another version too, but the dialog reads the apps of this one only.
 export const SCENARIO_API_VERSION = 'phenix.sandia.gov/v2';
+
+// The most Scenario configs a document may list, and the longest name of
+// one in UTF-8 bytes (MaxScenarios and MaxScenarioNameBytes in
+// document.go).
+export const MAX_SCENARIOS = 20;
+export const MAX_SCENARIO_NAME_BYTES = 256;
+
+// A name phenix gives a config (configNamePattern in schema.go, NameRegex
+// in api/config).
+const CONFIG_NAME = /^[A-Za-z0-9_@.-]+$/;
 
 // The characters a name must not contain: those validate.go refuses with
 // strings.ContainsAny(name, " \t\n").
@@ -1239,110 +1250,69 @@ function validateEdges(doc, issues, nodesById, networksById) {
   });
 }
 
-function validateScenario(doc, issues) {
-  const ref = doc.scenario;
+/**
+ * Why a Scenario config name is one a document may not list, or '': it must
+ * be a config name of at most MAX_SCENARIO_NAME_BYTES (validateScenarios in
+ * validate.go). The Scenario dialog checks a name it is about to add with it.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+export function scenarioNameProblem(name) {
+  const text = typeof name === 'string' ? name : '';
 
-  if (!ref) {
-    return;
+  if (text === '') {
+    return 'scenario name is required';
   }
 
-  if (ref.kind === 'stored') {
-    if (!trimSpace(String(ref.name || ''))) {
+  if (utf8Length(text) > MAX_SCENARIO_NAME_BYTES) {
+    return `scenario name must be at most ${MAX_SCENARIO_NAME_BYTES} bytes`;
+  }
+
+  if (!CONFIG_NAME.test(text)) {
+    return `scenario name ${quoted(text)} may use only letters, numbers, underscores, at signs, periods and hyphens`;
+  }
+
+  return '';
+}
+
+// The Scenario configs a document lists (validateScenarios in validate.go):
+// at most MAX_SCENARIOS, each a config name, none twice ignoring case.
+function validateScenarios(doc, issues) {
+  const scenarios = Array.isArray(doc.scenarios) ? doc.scenarios : [];
+
+  if (scenarios.length > MAX_SCENARIOS) {
+    issue(
+      issues,
+      'scenarios',
+      `at most ${MAX_SCENARIOS} scenarios are allowed, not ${scenarios.length}`,
+    );
+  }
+
+  const seen = new Map();
+
+  scenarios.forEach((name, index) => {
+    const path = `scenarios[${index}]`;
+    const problem = scenarioNameProblem(name);
+
+    if (problem) {
+      issue(issues, path, problem);
+
+      return;
+    }
+
+    const key = fold(name);
+
+    if (seen.has(key)) {
       issue(
         issues,
-        'scenario.name',
-        'stored scenario reference requires a name',
+        path,
+        `duplicate scenario ${goQuoted(name)} (also scenarios[${seen.get(key)}])`,
       );
+    } else {
+      seen.set(key, index);
     }
-  } else if (ref.kind === 'uploaded') {
-    if (!ref.content || Object.keys(ref.content).length === 0) {
-      issue(
-        issues,
-        'scenario.content',
-        'uploaded scenario reference requires content',
-      );
-    }
-  } else {
-    issue(
-      issues,
-      'scenario.kind',
-      `unknown scenario reference kind "${ref.kind ?? ''}"`,
-    );
-
-    return;
-  }
-
-  if (!trimSpace(String(ref.apiVersion || ''))) {
-    issue(
-      issues,
-      'scenario.apiVersion',
-      'scenario reference requires an apiVersion',
-    );
-  }
-
-  if (validateScenarioDigest(ref, issues)) {
-    validateScenarioContent(ref, issues);
-  }
-}
-
-function hasScenarioContent(ref) {
-  return Boolean(ref.content) && Object.keys(ref.content).length > 0;
-}
-
-// Every reference carries a well-formed digest, including a stored reference
-// without content: GET /builder/sources lists stored scenarios by apiVersion
-// and digest, never by content. The digest must match content only when the
-// reference carries some. Returns whether the digest can be trusted.
-function validateScenarioDigest(ref, issues) {
-  if (!trimSpace(String(ref.digest || ''))) {
-    issue(
-      issues,
-      'scenario.digest',
-      'scenario reference requires a content digest',
-    );
-
-    return false;
-  }
-
-  if (!isDigest(ref.digest)) {
-    issue(
-      issues,
-      'scenario.digest',
-      `malformed scenario digest "${ref.digest}" (expected sha256:<64 hex>)`,
-    );
-
-    return false;
-  }
-
-  if (!hasScenarioContent(ref)) {
-    return true;
-  }
-
-  const digest = contentDigestSync(ref.content);
-
-  if (ref.digest !== digest) {
-    issue(
-      issues,
-      'scenario.digest',
-      `content digest mismatch (expected ${digest})`,
-    );
-
-    return false;
-  }
-
-  return true;
-}
-
-// The server also validates the content against the phenix scenario schema,
-// which the editor does not carry; a schema failure is reported on save.
-function validateScenarioContent(ref, issues) {
-  if (hasScenarioContent(ref) && ref.apiVersion !== SCENARIO_API_VERSION) {
-    issue(
-      issues,
-      'scenario.apiVersion',
-      `unsupported scenario apiVersion "${ref.apiVersion ?? ''}" (expected "${SCENARIO_API_VERSION}")`,
-    );
-  }
+  });
 }
 
 function validateSource(doc, issues) {
@@ -2239,7 +2209,7 @@ export function validateDocument(doc, { disks = null } = {}) {
   validateNodes(doc, issues, nodesById, networksById, handleOwner);
   validateParents(doc, issues, nodesById);
   validateEdges(doc, issues, nodesById, networksById);
-  validateScenario(doc, issues);
+  validateScenarios(doc, issues);
   validateSource(doc, issues);
   validateTemplates(doc, issues);
   issues.push(...validateIcons(doc.icons));

@@ -265,87 +265,42 @@ func TestValidateRejects(t *testing.T) {
 			wantMsg: "out of range",
 		},
 		{
-			name:    "stored scenario without name",
-			mutate:  func(d *builder.Document) { d.Scenario.Name = "" },
-			wantMsg: "stored scenario reference requires a name",
-		},
-		{
-			name: "stored scenario without api version",
+			name: "more scenarios than a document names",
 			mutate: func(d *builder.Document) {
-				d.Scenario.APIVersion = ""
+				d.Scenarios = make([]string, builder.MaxScenarios+1)
+				for i := range d.Scenarios {
+					d.Scenarios[i] = "scenario-" + strconv.Itoa(i)
+				}
 			},
-			wantMsg: "scenario reference requires an apiVersion",
+			wantMsg: "scenarios: at most 20 scenarios are allowed, not 21",
 		},
 		{
-			name:    "stored scenario without digest",
-			mutate:  func(d *builder.Document) { d.Scenario.Digest = "" },
-			wantMsg: "scenario reference requires a content digest",
+			name:    "a blank scenario name",
+			mutate:  func(d *builder.Document) { d.Scenarios = []string{"ntp", ""} },
+			wantMsg: "scenarios[1]: scenario name is required",
 		},
 		{
-			name:    "stored scenario with malformed digest",
-			mutate:  func(d *builder.Document) { d.Scenario.Digest = "sha256:deadbeef" },
-			wantMsg: "malformed scenario digest",
-		},
-		{
-			// The schema requires lowercase hex, and publish compares
-			// digests as strings, so an uppercase one could never match.
-			name: "stored scenario with uppercase digest",
+			// The draft service records the experiment's scenario by name.
+			name: "a scenario name longer than a publication records",
 			mutate: func(d *builder.Document) {
-				d.Scenario.Digest = "sha256:" + strings.Repeat("AB", 32)
+				d.Scenarios = []string{strings.Repeat("a", builder.MaxScenarioNameBytes+1)}
 			},
-			wantMsg: "malformed scenario digest",
+			wantMsg: "scenarios[0]: scenario name must be at most 256 bytes",
 		},
 		{
-			name: "uploaded scenario without content",
-			mutate: func(d *builder.Document) {
-				d.Scenario = uploadedScenario(nil)
-			},
-			wantMsg: "uploaded scenario reference requires content",
+			name:    "a scenario name phenix does not give a config",
+			mutate:  func(d *builder.Document) { d.Scenarios = []string{"two words"} },
+			wantMsg: `scenarios[0]: scenario name "two words" may use only letters, numbers,`,
 		},
 		{
-			name: "uploaded scenario without api version",
-			mutate: func(d *builder.Document) {
-				ref := uploadedScenario(map[string]any{"apps": []any{}})
-				ref.APIVersion = ""
-				d.Scenario = ref
-			},
-			wantMsg: "scenario reference requires an apiVersion",
+			name:    "a scenario name with a slash",
+			mutate:  func(d *builder.Document) { d.Scenarios = []string{"Scenario/ntp"} },
+			wantMsg: `scenarios[0]: scenario name "Scenario/ntp" may use only`,
 		},
 		{
-			// The Scenario dialog refuses such an upload; a document that
-			// carries one anyway is refused here, rather than upgraded.
-			name: "uploaded v1 scenario",
-			mutate: func(d *builder.Document) {
-				ref := uploadedScenario(map[string]any{"apps": map[string]any{"experiment": []any{}}})
-				ref.APIVersion = "phenix.sandia.gov/v1"
-				d.Scenario = ref
-			},
-			wantMsg: `unsupported scenario apiVersion "phenix.sandia.gov/v1" (expected "phenix.sandia.gov/v2")`,
-		},
-		{
-			name: "scenario content without digest",
-			mutate: func(d *builder.Document) {
-				ref := uploadedScenario(map[string]any{"apps": []any{}})
-				ref.Digest = ""
-				d.Scenario = ref
-			},
-			wantMsg: "scenario reference requires a content digest",
-		},
-		{
-			name: "scenario digest mismatch",
-			mutate: func(d *builder.Document) {
-				ref := uploadedScenario(map[string]any{"apps": []any{}})
-				ref.Content = map[string]any{"apps": []any{"changed"}}
-				d.Scenario = ref
-			},
-			wantMsg: "content digest mismatch",
-		},
-		{
-			name: "unknown scenario kind",
-			mutate: func(d *builder.Document) {
-				d.Scenario.Kind = "linked"
-			},
-			wantMsg: "unknown scenario reference kind",
+			name:    "a scenario named twice ignoring case",
+			mutate:  func(d *builder.Document) { d.Scenarios = []string{"ntp", "attack", "NTP"} },
+			wantMsg: `scenarios[2]: duplicate scenario "NTP" (also scenarios[0])`,
 		},
 		{
 			name: "unknown source kind",
@@ -665,6 +620,33 @@ func TestValidateAcceptsDiagramNotes(t *testing.T) {
 	} {
 		doc := loadDocumentFixture(t, "document.json")
 		doc.Metadata.Notes = notes
+
+		if err := doc.Validate(); err != nil {
+			t.Errorf("%s: refused: %v", name, err)
+		}
+	}
+}
+
+// TestValidateAcceptsScenarios checks the scenarios a document may name: as
+// many as MaxScenarios, each by any config name up to MaxScenarioNameBytes,
+// names that differ only in more than case.
+func TestValidateAcceptsScenarios(t *testing.T) {
+	most := make([]string, builder.MaxScenarios)
+	for i := range most {
+		most[i] = "scenario-" + strconv.Itoa(i)
+	}
+
+	for name, scenarios := range map[string][]string{
+		"none":              nil,
+		"an empty list":     {},
+		"one":               {"ntp"},
+		"every character":   {"Ab_9@x.y-z"},
+		"the most":          most,
+		"the longest name":  {strings.Repeat("a", builder.MaxScenarioNameBytes)},
+		"names that differ": {"ntp", "ntp-attack"},
+	} {
+		doc := loadDocumentFixture(t, "document.json")
+		doc.Scenarios = scenarios
 
 		if err := doc.Validate(); err != nil {
 			t.Errorf("%s: refused: %v", name, err)

@@ -61,7 +61,7 @@ export const DOCUMENT_KEYS = new Set([
   'edges',
   'viewport',
   'grid',
-  'scenario',
+  'scenarios',
   'source',
   'layout',
   'templates',
@@ -135,13 +135,6 @@ export const EDGE_KEYS = new Set([
 const POINT_KEYS = new Set(['x', 'y']);
 export const VIEWPORT_KEYS = new Set(['x', 'y', 'zoom']);
 export const GRID_KEYS = new Set(['enabled', 'size', 'snap']);
-export const SCENARIO_KEYS = new Set([
-  'kind',
-  'name',
-  'content',
-  'apiVersion',
-  'digest',
-]);
 export const SOURCE_KEYS = new Set([
   'kind',
   'name',
@@ -320,8 +313,17 @@ export function decodeDocument(value) {
     rejectUnknown(value.grid, GRID_KEYS, 'grid');
   }
 
-  if (value.scenario !== undefined && value.scenario !== null) {
-    rejectUnknown(value.scenario, SCENARIO_KEYS, 'scenario');
+  // The server decodes scenarios as a list of text, a null entry as empty
+  // text, which validation then refuses as a missing name.
+  if (
+    value.scenarios !== undefined &&
+    value.scenarios !== null &&
+    (!Array.isArray(value.scenarios) ||
+      value.scenarios.some((name) => name !== null && typeof name !== 'string'))
+  ) {
+    throw new DocumentError(
+      'document: "scenarios" must be an array of scenario names',
+    );
   }
 
   if (value.source !== undefined && value.source !== null) {

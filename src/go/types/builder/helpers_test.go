@@ -51,7 +51,7 @@ func storedExperiment(t *testing.T) store.Config {
 	}
 
 	scenario, err := types.DecodeScenarioFromConfig(store.Config{
-		Version: builder.ScenarioAPIVersion(),
+		Version: "phenix.sandia.gov/v2",
 		Kind:    "Scenario",
 		Metadata: store.ConfigMetadata{
 			Name:        "builder-scenario",
@@ -289,27 +289,6 @@ const (
 	idNoteFree    = "a74971fd-94b9-545e-ae5d-353d4ec5236e" // note-free
 	idSwExp       = "dee6bc70-8103-581e-8b31-6c95cda798a0" // sw-exp
 )
-
-// uploadedScenario builds an uploaded scenario reference whose digest matches
-// its content.
-func uploadedScenario(content map[string]any) *builder.ScenarioRef {
-	digest, err := builder.ContentDigest(content)
-	if err != nil {
-		panic(err)
-	}
-
-	if content == nil {
-		digest = "sha256:" + strings.Repeat("0", 64)
-	}
-
-	return &builder.ScenarioRef{
-		Kind:       builder.ScenarioRefUploaded,
-		Name:       "scenario.yaml",
-		Content:    content,
-		APIVersion: builder.ScenarioAPIVersion(),
-		Digest:     digest,
-	}
-}
 
 // decorationKeys are the JSON keys of what decorates a document and is left
 // out when not set: custom icons, colors, line and border styles, templates,

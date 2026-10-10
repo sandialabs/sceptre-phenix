@@ -1259,7 +1259,7 @@ const DIALOGS = [
   { action: 'publish', title: 'Publish diagram' },
   { action: 'upload', title: 'Upload diagram' },
   { action: 'download', title: 'Download diagram' },
-  { action: 'scenario', title: 'Scenario' },
+  { action: 'scenario', title: 'Scenarios' },
   { action: 'connect', title: 'Add a connection' },
   { action: 'regroup', title: 'Move to a group' },
   { action: 'history', title: 'Draft History' },
@@ -1274,8 +1274,10 @@ async function scanDialog(page, builder, opener, surface, title) {
   await opener.press('Enter');
   await expect(builder.dialog).toBeVisible();
   if (title) {
+    // Exact: a dialog's title may begin the name of a heading inside it,
+    // as "Scenarios" does "Scenarios of this diagram".
     await expect
-      .soft(builder.dialog.getByRole('heading', { name: title }))
+      .soft(builder.dialog.getByRole('heading', { name: title, exact: true }))
       .toBeVisible();
     await expect.soft(builder.dialog).toHaveAttribute('aria-modal', 'true');
   }
@@ -1913,20 +1915,27 @@ for (const scheme of ['light', 'dark']) {
           const opener = builder.toolbar('scenario');
           await opener.press('Enter');
           await expect(builder.dialog).toBeVisible();
-          for (const name of [
-            'No scenario',
-            'Stored scenario',
-            'Upload scenario',
-          ]) {
-            await expect
-              .soft(builder.dialog.getByRole('radio', { name, exact: true }))
-              .toBeVisible();
-          }
+          // The Scenarios dialog's controls are named by their labels.
+          await expect
+            .soft(builder.dialog.getByLabel('Add a stored scenario'))
+            .toBeVisible();
+          await expect
+            .soft(
+              builder.dialog.getByLabel('Scenario config file (JSON or YAML)'),
+            )
+            .toBeVisible();
+          await expect
+            .soft(
+              builder.dialog.getByRole('group', {
+                name: 'Upload a scenario file',
+              }),
+            )
+            .toBeVisible();
 
           // The drag ends in a click on the dialog, outside its box.
           const outside = await backdropPoint(builder.dialog);
           const legend = await builder.dialog
-            .getByText('Scenario reference')
+            .getByRole('heading', { name: 'Scenarios of this diagram' })
             .boundingBox();
           const inside = { x: legend.x + 2, y: legend.y + legend.height / 2 };
           await page.mouse.move(inside.x, inside.y);

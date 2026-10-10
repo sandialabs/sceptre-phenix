@@ -205,7 +205,7 @@
         :aria-disabled="off.scenario || undefined"
         @click="run('scenario', () => $emit('scenario'))">
         <builder-icon name="document" :size="14" />
-        Scenario
+        Scenarios
       </button>
     </div>
 
@@ -627,7 +627,7 @@
     history: { command: 'draft.history', name: 'Draft History' },
     download: { command: 'draft.download', name: 'Download' },
     upload: { command: 'draft.upload', name: 'Upload' },
-    scenario: { command: 'draft.scenario', name: 'Scenario' },
+    scenario: { command: 'draft.scenario', name: 'Scenarios' },
     publish: { command: 'draft.publish', name: 'Publish' },
     connect: {
       command: 'dialog.connect',

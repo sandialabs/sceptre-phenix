@@ -115,10 +115,10 @@ The toolbar's buttons, from left to right:
 | **Group**, **Ungroup** | Put the selected nodes in a new group, or take a selected group apart. | [Groups](diagrams.md#groups) |
 | **Auto-group** | A menu: **By network**, **By name** or **By name pattern…**. | [Auto-group](diagrams.md#auto-group) |
 | Layout menu | Lays the diagram out. It shows the draft's layout, or **Default** when no layout has run. | [Layouts](diagrams.md#layouts) |
-| **Scenario** | Attach a scenario to the diagram. | [Attaching a scenario](diagrams.md#attaching-a-scenario) |
+| **Scenarios** | List the scenarios the diagram is used with: stored ones, or a scenario file stored on the server from here. | [Scenarios](diagrams.md#scenarios) |
 | **Download** | Save the diagram as a file. | [Downloading](import-upload-download.md#downloading) |
 | **Upload** | Open a diagram you have as a new draft: a Builder document, a published diagram, or a legacy Builder diagram. | [Import, Upload and Download](import-upload-download.md) |
-| **Publish** | Write Topology, Scenario and Experiment configs. | [Publishing](publishing.md) |
+| **Publish** | Write Topology and Experiment configs, and add the topology to the diagram's scenarios. | [Publishing](publishing.md) |
 | **Share** | Choose who can open the draft. Shown to the owner when phenix has sign-in enabled and their role has `configs` `update`. Shown, unavailable, to the people the draft is shared with. | [Sharing a draft](drafts.md#sharing-a-draft) |
 | **Exp** | Open the experiment the diagram was published with. Shown only while that experiment exists and your role can read it. | [Opening the experiment](drafts.md#opening-the-experiment) |
 | **Add connection** | Open the **Add a connection** dialog, which connects a device to a switch without dragging. | [Add a connection without dragging](diagrams.md#add-a-connection-without-dragging) |
@@ -330,12 +330,14 @@ The **Diagram** section has:
   date. They are shown only: publishing does not write them. A diagram
   drawn in the editor has no such list. See
   [What an import keeps](import-upload-download.md#what-an-import-keeps).
-- **Scenario**: "No scenario." and **Add scenario**, or the attached scenario
-  ("Stored scenario riverside-water"). Under **Apps and their hosts**, each
-  app of the scenario is listed with the hosts it runs on: vrouter on
-  edge-rtr, and ntp on ntp-01, ws-01, ws-02, hmi-01 and historian-01.
-  **Edit scenario** opens the **Scenario** dialog (see
-  [Attaching a scenario](diagrams.md#attaching-a-scenario)).
+- **Scenarios**: "No scenarios." and **Add scenario**, or each scenario the
+  diagram lists ("Scenario riverside-water"). Under **Apps and their
+  hosts**, each app of the scenario is listed with the hosts it runs on:
+  vrouter on edge-rtr, and ntp on ntp-01, ws-01, ws-02, hmi-01 and
+  historian-01. The apps are read from the server, which needs `configs`
+  `get` on the scenario; otherwise the Inspector says it cannot read them.
+  **Edit scenarios** opens the **Scenarios** dialog (see
+  [Scenarios](diagrams.md#scenarios)).
 - **Notes**: free text about the diagram as a whole, one box for each note,
   or "No notes.". **Add note** adds an empty box and moves the focus to it.
   A note is saved when you leave its box, as one step that **Undo** takes

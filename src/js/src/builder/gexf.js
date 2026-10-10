@@ -9,9 +9,10 @@
 // statistics. A node's groups are columns instead (group, groups).
 //
 // A device's scenario apps are columns too (apps, disabled_apps): the apps
-// of the scenario that list its hostname among their hosts. They are written
-// only when the scenario's content is known: an uploaded scenario carries it,
-// and Download reads a stored one's from the server first.
+// of the scenarios the diagram lists that list its hostname among their
+// hosts. The document names its scenarios and holds none of their content,
+// so they are written only when Download has read every one of them from
+// the server first.
 //
 // What the file uses of GEXF 1.3:
 // - the 1.3 namespaces, and the schema's location, as the 1.3 primer and
@@ -60,6 +61,7 @@ import { colorChannels, nodeColors } from './colors.js';
 import {
   DEFAULT_NETWORK_COLORS,
   deviceHandles,
+  documentScenarios,
   LINE_STYLES,
   nodeLabel,
   scenarioApps,
@@ -535,20 +537,31 @@ function deviceLook(device) {
 }
 
 // The scenario apps of each host, by hostname, as {apps, disabled}, from
-// scenario content (a v2 Scenario spec); null when there is no content.
-function appsByHost(content) {
-  if (!content || typeof content !== 'object') {
+// the content of scenarios (v2 Scenario specs), in their order; an app two
+// scenarios run on a host is named once. null when there is no content.
+function appsByHost(contents) {
+  const known = (Array.isArray(contents) ? contents : []).filter(
+    (content) => content && typeof content === 'object',
+  );
+
+  if (known.length === 0) {
     return null;
   }
 
   const hosts = new Map();
 
-  for (const app of scenarioApps(content)) {
-    for (const hostname of app.hosts) {
-      const host = hosts.get(hostname) || { apps: [], disabled: [] };
+  for (const content of known) {
+    for (const app of scenarioApps(content)) {
+      for (const hostname of app.hosts) {
+        const host = hosts.get(hostname) || { apps: [], disabled: [] };
+        const list = app.disabled ? host.disabled : host.apps;
 
-      (app.disabled ? host.disabled : host.apps).push(app.name);
-      hosts.set(hostname, host);
+        if (!list.includes(app.name)) {
+          list.push(app.name);
+        }
+
+        hosts.set(hostname, host);
+      }
     }
   }
 
@@ -935,7 +948,7 @@ function metaElement(doc, lastChange) {
     source.kind,
     source.name,
     source.topology,
-    doc?.scenario?.name,
+    ...documentScenarios(doc),
   ]);
   const description = doc?.metadata?.description || doc?.metadata?.name;
 
@@ -952,17 +965,17 @@ function metaElement(doc, lastChange) {
  *
  * @param {object} doc
  * @param {object} [options] modified: when the diagram last changed (a date
- *   or its text; today when not given); scenario: the content (a v2 Scenario
- *   spec) of the diagram's scenario, whose apps each device lists (the
- *   document's own when not given, which a stored scenario does not carry);
- *   now: the clock, for tests
+ *   or its text; today when not given); scenarios: the content (v2 Scenario
+ *   specs) of the scenarios the diagram lists, whose apps each device lists
+ *   (none when not given: the document holds no scenario content); now: the
+ *   clock, for tests
  * @returns {{text: string, devices: number, networks: number,
  *   connections: number}} the file, and how many devices, networks and
  *   connections it holds
  */
 export function toGEXF(doc, options = {}) {
   const { modified, now = () => new Date() } = options;
-  const hostApps = appsByHost(options.scenario ?? doc?.scenario?.content);
+  const hostApps = appsByHost(options.scenarios);
   const nodes = doc?.nodes || [];
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const hubs = networkHubs(doc);
