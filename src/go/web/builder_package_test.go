@@ -773,10 +773,11 @@ func TestBuilderResolvePackageIconsWithoutConfigsList(t *testing.T) {
 }
 
 // TestBuilderResolvePackageByNamePermissions asserts disk images and apps
-// are checked under the permission for their own names: a disk image the
-// caller may not list reads missing, as GET /disks leaves it out, and an
-// app the caller may not list is not checked. A drive matched by file name
-// alone says which image of this server it is.
+// are checked under the permission for their own names: a disk image or an
+// app the caller may not list reads missing, exactly as an absent one does,
+// as GET /disks and GET /applications leave it out, so the answer does not
+// disclose that it exists. A drive matched by file name alone says which
+// image of this server it is.
 func TestBuilderResolvePackageByNamePermissions(t *testing.T) {
 	harness := newBuilderResolveHarness(t, nil)
 	pkg := builderResolvePackage(t, harness)
@@ -789,6 +790,7 @@ func TestBuilderResolvePackageByNamePermissions(t *testing.T) {
 	stored := "/phenix/images/" + builderPackageImage
 	used := "Used by " + builderPackageHost + "."
 	absent := "This server has no disk image of this name. " + used
+	noApp := "This server has no app of this name."
 	matched := "Matched by file name " + builderPackageImage + "; this server's image is " + stored + ". " + used
 
 	hidden := builderRole(configs, kinds,
@@ -807,8 +809,8 @@ func TestBuilderResolvePackageByNamePermissions(t *testing.T) {
 		"names not allowed": {role: &hidden, want: map[string]builderPackageDependency{
 			"image/" + stored:    {Status: builderDependencyMissing, Detail: absent},
 			"image/" + elsewhere: {Status: builderDependencyMissing, Detail: absent},
-			"app/pkg-app":        {Status: builderDependencyUnknown, Detail: "Your role cannot list this app."},
-			"app/ghost-app":      {Status: builderDependencyMissing, Detail: "This server has no app of this name."},
+			"app/pkg-app":        {Status: builderDependencyMissing, Detail: noApp},
+			"app/ghost-app":      {Status: builderDependencyMissing, Detail: noApp},
 		}},
 		"names allowed": {role: &allowed, want: map[string]builderPackageDependency{
 			"image/" + stored:    {Status: builderDependencyPresent, Detail: used},

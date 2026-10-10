@@ -12,7 +12,8 @@
   top of the server's version; when the strict check refuses it, the
   dialog stays open and lists why, so the user can choose otherwise, or
   cancel to save their history as a new draft or discard it from the
-  conflict panel.
+  conflict panel. When the save itself fails, the dialog stays open with
+  the choices made and says why, so the user can try again or cancel.
 -->
 <template>
   <builder-dialog
@@ -94,8 +95,9 @@
         {{ chosen }} of {{ clashes.length }} chosen
       </p>
 
-      <!-- Why Save merged did not save: a field without a choice, or what
-           the strict check refuses in the merged diagram. -->
+      <!-- Why Save merged did not save: a field without a choice, what
+           the strict check refuses in the merged diagram, or why the save
+           failed. -->
       <div
         id="merge-error"
         role="alert"
@@ -136,7 +138,7 @@
   import BuilderDialog from '../BuilderDialog.vue';
   import { useMessage } from './message.js';
 
-  import { useBuilderStore } from '@/builder/store.js';
+  import { mergeSaveFailure, useBuilderStore } from '@/builder/store.js';
 
   const emit = defineEmits(['close', 'merged']);
 
@@ -199,9 +201,18 @@
     issues.value = [];
     busy.value = true;
 
-    const result = await store.saveMergeChoices({ ...choices });
+    let result;
 
-    busy.value = false;
+    // Whatever happens, the dialog leaves Saving…, keeps the choices, and
+    // Cancel goes back to the conflict panel, which still offers saving the
+    // history as a new draft and discarding it.
+    try {
+      result = await store.saveMergeChoices({ ...choices });
+    } catch (failure) {
+      result = { saved: false, issues: [], error: mergeSaveFailure(failure) };
+    } finally {
+      busy.value = false;
+    }
 
     if (result.saved) {
       emit('merged');
@@ -214,6 +225,16 @@
     // shows is no longer offered (see mergeReview in Builder.vue).
     if (result.busy) {
       error.set('Another change arrived; the merge is being redone.');
+
+      return;
+    }
+
+    // The merge could not be stored: nothing was saved, and the same
+    // choices can be saved again.
+    if (result.error) {
+      error.set(
+        `${result.error} Try again, or cancel to save your history as a new draft or discard it.`,
+      );
 
       return;
     }

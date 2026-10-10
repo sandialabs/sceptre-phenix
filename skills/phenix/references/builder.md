@@ -468,7 +468,12 @@ changes with yours.` (`another tab` when the server names the user,
 theirs, Keep all mine, Keep all theirs, Save merged aria-disabled until each
 has a choice, `store.saveMergeChoices`, which answers
 `{saved: false, busy: true}` while another merge runs and the dialog then says
-"Another change arrived; the merge is being redone.") or `unavailable` (no base, the base read
+"Another change arrived; the merge is being redone.", and `{saved: false,
+error}` when `autosave.rebase` throws: `saveMerged` then puts back the
+diagram, history, selection and ETag it replaced and rethrows, the review
+stays, and the dialog shows `The merged diagram could not be saved:
+<message>. Try again, or cancel …` (`mergeSaveFailure`) with the choices
+kept) or `unavailable` (no base, the base read
 timed out, or the merge threw: `Merging failed: <message>`; one more sentence,
 `conflict-merge-note`). Fork and discard stay. Edits are refused
 while a merge runs (`refuseWhileResolving`). A conflict on the merged save
@@ -880,8 +885,11 @@ caller may not see is `missing` like an absent one; matched by name or full
 path, else by file name (`builderFindDisk`), and then the detail says so
 (`Matched by file name pkg.qc2; this server's image is
 /phenix/images/pkg.qc2.`, `builderDiskMatch`); a listing error is
-`unknown`. Apps: `applications` `list` and by name
-(`appNames`, default `app.List()` plus `app.DefaultApps()`). Templates are
+`unknown`. Apps: `applications` `list`, then the listing (`appNames`,
+default `app.List()` plus `app.DefaultApps()`) filtered by `applications`
+`list` on each name (`listedAppNames`), so an app the caller may not see is
+`missing` like an absent one; `unknown` only without `applications` `list`
+at all. Templates are
 `present`; files always `unknown`. Nothing is written; the tests inject
 `withBuilderDiskImages` and `withBuilderApps`.
 
@@ -2164,6 +2172,14 @@ Read this section before changing any file listed below.
   `store.exportTopology` (`POST /builder/export/topology`). Import and
   Upload both have a file, an error and a submit control, so a test finds
   the dialog by its title before it uses an id.
+- The canvas draws every node where the document puts it, also on opening:
+  while Vue Flow's `snapToGrid` is on, its NodeWrapper snaps each node it
+  mounts. `BuilderCanvas.vue` therefore never binds the prop; it sets Vue
+  Flow's state from a node or selection drag's start to its end, and only
+  while `grid.snap` is on (`snapWhileDragging`, `stopSnapping`), and a
+  palette drop snaps itself (`onGrid`). Shift and an arrow key move 10 px
+  without snapping, so a draft holds positions off the grid, as layouts
+  give too (`builder-editing.spec.js` reloads one).
 - Keep this file current when Builder behavior changes.
 
 ### Tests

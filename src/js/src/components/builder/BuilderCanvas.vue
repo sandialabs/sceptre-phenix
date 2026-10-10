@@ -89,7 +89,9 @@
          (see syncNodes), not bound here. A selected node is lifted over the
          rest by its zIndex (see nodeZIndex in adapters/vueflow.js), not by
          Vue Flow, which would lift a selected shape or line over the
-         devices it is drawn around. -->
+         devices it is drawn around. Vue Flow snaps to the grid only while
+         nodes are dragged (see snapWhileDragging), so no snap-to-grid
+         here. -->
     <VueFlow
       class="builder-canvas__flow"
       :node-types="nodeTypes"
@@ -97,7 +99,6 @@
       :default-viewport="openViewport"
       :min-zoom="minZoom"
       :max-zoom="MAX_ZOOM"
-      :snap-to-grid="snapToGrid"
       :snap-grid="snapGrid"
       :nodes-draggable="!store.readOnly"
       :nodes-connectable="!store.readOnly"
@@ -114,8 +115,10 @@
       @connect="onConnect"
       @connect-start="onConnectStart"
       @connect-end="onConnectEnd"
-      @node-drag-start="hideNodeTip"
+      @node-drag-start="onNodeDragStart"
       @node-drag-stop="onNodeDragStop"
+      @selection-drag-start="snapWhileDragging"
+      @selection-drag-stop="stopSnapping"
       @nodes-change="onNodesChange"
       @edges-change="onEdgesChange"
       @node-click="onNodeClick"
@@ -333,6 +336,7 @@
     setEdges,
     setNodes,
     setViewport,
+    snapToGrid: flowSnapToGrid,
     updateNode: updateFlowNode,
     viewport,
     vueFlowRef,
@@ -828,6 +832,33 @@
   const snapToGrid = computed(() => store.doc.grid?.snap !== false);
   const snapGrid = computed(() => [gridSize.value, gridSize.value]);
 
+  // The grid snaps what the pointer drags, never what the document places.
+  // While its own snapToGrid is on, Vue Flow snaps every node it mounts to
+  // the grid (its NodeWrapper clamps the position then), so a node the
+  // document places off the grid, as a keyboard nudge or a layout does,
+  // would be drawn on the nearest grid point once the diagram opens again.
+  // Vue Flow therefore snaps only from the start of a drag to its end, and
+  // only while the document snaps. It is set on Vue Flow's state rather
+  // than through the prop, so the drag's first move already snaps.
+  function snapWhileDragging() {
+    flowSnapToGrid.value = snapToGrid.value;
+  }
+
+  function stopSnapping() {
+    flowSnapToGrid.value = false;
+  }
+
+  // A point of the canvas on the grid while the document snaps, as Vue Flow
+  // snaps a dragged node, else to the whole pixel.
+  function onGrid(point) {
+    const size = snapToGrid.value ? gridSize.value : 1;
+
+    return {
+      x: size * Math.round(point.x / size),
+      y: size * Math.round(point.y / size),
+    };
+  }
+
   const gridColor = computed(() =>
     store.resolvedTheme === 'dark' ? '#27303c' : '#dfe4ec',
   );
@@ -955,12 +986,20 @@
     return null;
   }
 
+  // A drag of nodes snaps to the grid until it ends (see snapWhileDragging).
+  function onNodeDragStart() {
+    hideNodeTip();
+    snapWhileDragging();
+  }
+
   // A drag of several nodes is one edit: it becomes a single history commit and
   // therefore a single server snapshot. A drag that moved nothing is no edit
   // (the store drops it); when it also ended where it began, it was a click
   // whose pointer wobbled less than a grid step. Vue Flow reports that as a
   // drag and the browser drops its click, so it is handled as a click here.
   function onNodeDragStop(event) {
+    stopSnapping();
+
     if (store.readOnly) {
       return;
     }
@@ -1048,8 +1087,9 @@
   // so the selection is noted when the pointer goes down, or when a click
   // comes without one (from assistive technology).
   //
-  // With snap to grid on, Vue Flow can report one click on a node twice: on
-  // mouseup, then on the click that follows. Only the first report counts,
+  // Vue Flow can report one click on a node twice: on mouseup, when the
+  // pointer moved less than its drag threshold but not nowhere, then on the
+  // click that follows. Only the first report counts,
   // and the click is kept from Vue Flow, which would otherwise select the
   // node again right after a click deselected it.
   const REPEAT_CLICK_MS = 500;
@@ -1169,13 +1209,14 @@
         })
       : { x: event.clientX, y: event.clientY };
 
+    // A drop lands on the grid while the document snaps, as a drag does.
     store.addNode({
       ...paletteNode(
         store,
         kind,
         event.dataTransfer.getData(PALETTE_TEMPLATE_MIME),
       ),
-      position: { x: Math.round(position.x), y: Math.round(position.y) },
+      position: onGrid(position),
     });
   }
 

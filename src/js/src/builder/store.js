@@ -658,10 +658,20 @@ function withTimeout(promise, ms) {
 // error's own: nothing of the diagram or the request is added to it, and
 // nothing is logged.
 function mergeFailure(error) {
-  const message =
-    error instanceof Error && error.message ? error.message : 'unknown error';
+  return `Merging failed: ${failureMessage(error)}`;
+}
 
-  return `Merging failed: ${message}`;
+// Why the merge the user reviewed was not saved, in words, for the merge
+// dialog's alert (see saveMergeChoices). As mergeFailure, the message is the
+// error's own.
+export function mergeSaveFailure(error) {
+  return `The merged diagram could not be saved: ${failureMessage(error).replace(/\.$/, '')}.`;
+}
+
+function failureMessage(error) {
+  return error instanceof Error && error.message
+    ? error.message
+    : 'unknown error';
 }
 
 // The source token of a draft made from a published diagram as it was read
@@ -2192,6 +2202,12 @@ export const useBuilderStore = defineStore('builder', {
      * move of the draft's cursor to one could not be saved. The merged
      * document holds every one of those edits.
      *
+     * When the queue cannot take the merge (rebase throws), the editor
+     * gets back the diagram, history, selection and ETag it held before,
+     * the merge stays as it was, and the error is thrown: the review can
+     * be saved again, and saving the history as a new draft or discarding
+     * it still act on the user's own history.
+     *
      * @param {object} merged the merged document, checked
      * @param {object} server the server copy, its document checked
      * @param {string} from who saved the server's version (see changesFrom)
@@ -2209,6 +2225,15 @@ export const useBuilderStore = defineStore('builder', {
         },
         { id: newId(), label: `Merged changes from ${from}`, snapshot: doc },
       ];
+      const before = {
+        entries: this.history.entries,
+        index: this.history.index,
+        doc: this.doc,
+        layoutRestore: this.layoutRestore,
+        selection: this.selection,
+        etag: this.etag,
+        serverHistory: this.serverHistory,
+      };
 
       this.history.restore(entries, 1);
       this.historyChanged();
@@ -2223,11 +2248,24 @@ export const useBuilderStore = defineStore('builder', {
         this.serverHistory = server.history;
       }
 
-      await autosave.rebase({
-        etag: server.etag,
-        head: server.head,
-        entries,
-      });
+      try {
+        await autosave.rebase({
+          etag: server.etag,
+          head: server.head,
+          entries,
+        });
+      } catch (error) {
+        this.history.restore(before.entries, before.index);
+        this.historyChanged();
+        this.doc = before.doc;
+        this.layoutRestore = before.layoutRestore;
+        this.selection = before.selection;
+        this.etag = before.etag;
+        this.serverHistory = before.serverHistory;
+
+        throw error;
+      }
+
       // The queue holds the merge now and the conflict has ended, so the
       // merge dialog closes with the conflict panel already gone (see
       // mergeReview in Builder.vue), and an edit goes after the merge.
@@ -2287,10 +2325,14 @@ export const useBuilderStore = defineStore('builder', {
      * each clashing field (see saveMerged). A merged diagram the strict
      * check refuses is not saved: the issues say why. Nothing is saved
      * either while another merge runs (another change arrived, and the
-     * merge is made again with it): busy says so.
+     * merge is made again with it): busy says so. A save that fails
+     * leaves the review as it was, so the same choices can be saved
+     * again, and saving the history as a new draft or discarding it stay
+     * offered: error says why it failed (see mergeSaveFailure).
      *
      * @param {Object<string, 'mine'|'theirs'>} choices by clash key
-     * @returns {Promise<{saved: boolean, issues: string[], busy?: boolean}>}
+     * @returns {Promise<{saved: boolean, issues: string[], busy?: boolean,
+     *   error?: string}>}
      */
     async saveMergeChoices(choices = {}) {
       const { merge, autosave } = this;
@@ -2322,6 +2364,8 @@ export const useBuilderStore = defineStore('builder', {
 
       try {
         await this.saveMerged(checked.doc, merge.server, merge.from);
+      } catch (error) {
+        return { saved: false, issues: [], error: mergeSaveFailure(error) };
       } finally {
         if (run === mergeRuns) {
           this.resolvingConflict = false;

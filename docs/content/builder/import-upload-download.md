@@ -791,8 +791,9 @@ requirements:
       role cannot read that config, or cannot list disk images or apps.
       Files on the server are never checked.
 
-    A disk image is looked for among the images your role can list, so one
-    your role cannot see reads Missing. A drive whose image has the same
+    A disk image or an app is looked for among the images or apps your role
+    can list, so one your role cannot see reads Missing. A drive whose image
+    has the same
     file name as one of the server's, but another path, counts as present,
     and the entry says which image matched, for example "Matched by file
     name ubuntu.qc2; this server's image is /phenix/images/ubuntu.qc2."

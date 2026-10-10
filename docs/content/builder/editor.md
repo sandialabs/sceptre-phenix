@@ -152,8 +152,10 @@ never hide a device or its connection points.
 
 - **Select** a node or connection: click it. Shift-click adds a node to the
   selection or takes it out. Click an empty spot to clear the selection.
-- **Move** a node: drag it. Nodes snap to a 16-pixel grid. Dragging a group
-  moves the nodes in it.
+- **Move** a node: drag it. A drag puts nodes on a 16-pixel grid. Dragging
+  a group moves the nodes in it. Shift and an arrow key move the selected
+  nodes 10 pixels and do not snap them to the grid. The canvas draws every
+  node where the diagram puts it, also when the diagram opens again.
 - **Pan**: drag an empty spot of the canvas.
 - **Zoom**: use the mouse wheel, or the zoom controls at the bottom left:
   **Zoom in**, **Zoom out** and **Fit diagram to view**. After a fit, the

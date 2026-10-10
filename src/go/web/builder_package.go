@@ -468,7 +468,9 @@ func (b *builderAPI) packageIcons(ctx context.Context, document *bdoc.Document) 
 // those GET /disks lists the caller (disks list, then by name), so one the
 // caller may not see reads missing, as an absent one does; without disks
 // list, or when the disk images cannot be listed, they are unknown. Apps
-// need applications list, by name too. Templates travel in the document and
+// are looked for the same way among those GET /applications lists the
+// caller (applications list, then by name), and are unknown only without
+// applications list. Templates travel in the document and
 // are present. Files are never checked. Nothing is written. A body larger
 // than the bound is answered 413 with the code package.too-large, and a
 // package that does not decode or validate 422 with the code
@@ -775,16 +777,19 @@ func builderDiskMatch(name string, found disk.Details) string {
 }
 
 // appDependencies reports whether this server runs each app a package's
-// diagram needs, as GET /applications lists them: applications list, and
-// the app's own name allowed too.
+// diagram needs, among the apps GET /applications lists the caller: with
+// applications list, those whose own name the role allows. One the caller
+// may not see reads missing, as one this server lacks does, so its
+// existence is not disclosed. Without applications list at all, apps are
+// unknown.
 func (b *builderAPI) appDependencies(actor builderActor, names []string) []builderPackageDependency {
 	dependencies := make([]builderPackageDependency, 0, len(names))
 	listable := actor.role.Allowed("applications", "list")
 
-	var known []string
+	var listed []string
 
 	if listable && len(names) > 0 {
-		known = b.appNames()
+		listed = b.listedAppNames(actor)
 	}
 
 	for _, name := range names {
@@ -793,10 +798,8 @@ func (b *builderAPI) appDependencies(actor builderActor, names []string) []build
 		switch {
 		case !listable:
 			dependency = dependency.with(builderDependencyUnknown, "Your role cannot list apps.")
-		case !slices.Contains(known, name):
+		case !slices.Contains(listed, name):
 			dependency = dependency.with(builderDependencyMissing, "This server has no app of this name.")
-		case !actor.role.Allowed("applications", "list", name):
-			dependency = dependency.with(builderDependencyUnknown, "Your role cannot list this app.")
 		default:
 			dependency = dependency.with(builderDependencyPresent, "")
 		}
@@ -805,4 +808,19 @@ func (b *builderAPI) appDependencies(actor builderActor, names []string) []build
 	}
 
 	return dependencies
+}
+
+// listedAppNames returns the apps of this server GET /applications lists
+// the caller: each whose name the role allows applications list on.
+func (b *builderAPI) listedAppNames(actor builderActor) []string {
+	names := b.appNames()
+	allowed := make([]string, 0, len(names))
+
+	for _, name := range names {
+		if actor.role.Allowed("applications", "list", name) {
+			allowed = append(allowed, name)
+		}
+	}
+
+	return allowed
 }

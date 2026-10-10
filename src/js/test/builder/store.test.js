@@ -2057,6 +2057,87 @@ describe('merging a conflict', () => {
     expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
   });
 
+  test('a reviewed merge that cannot be saved keeps the review, the history and the other ways out, and saves on a retry', async () => {
+    const { base, alpha } = await opened();
+
+    savedFirst(rename(base, alpha.id, 'theirs'), { saved: false });
+    store.commit(rename(toRaw(store.doc), alpha.id, 'mine'), 'Renamed alpha');
+    await vi.waitFor(() => expect(store.merge?.status).toBe('review'));
+
+    const key = store.mergeReview().clashes[0].key;
+    const etag = store.etag;
+    const entries = store.history.entries.map((entry) => entry.id);
+    const rebase = vi
+      .spyOn(store.autosave, 'rebase')
+      .mockRejectedValueOnce(new Error('The queue is full.'));
+
+    expect(await store.saveMergeChoices({ [key]: 'mine' })).toEqual({
+      saved: false,
+      issues: [],
+      error: 'The merged diagram could not be saved: The queue is full.',
+    });
+    expect(rebase).toHaveBeenCalledTimes(1);
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
+
+    // Nothing of the merge is kept: the review, the conflict panel and its
+    // other ways out stay, over the user's own diagram and history.
+    expect(store.merge).toMatchObject({ status: 'review', clashes: 1 });
+    expect(store.hasConflict).toBe(true);
+    expect(store.conflictShown).toBe(true);
+    expect(store.resolvingConflict).toBe(false);
+    expect(store.etag).toBe(etag);
+    expect(store.history.entries.map((entry) => entry.id)).toEqual(entries);
+    expect(store.history.undoLabel()).toBe('Renamed alpha');
+    expect(findNode(store.doc, alpha.id).device.hostname).toBe('mine');
+    expect(store.mergeReview().clashes.map((clash) => clash.key)).toEqual([
+      key,
+    ]);
+
+    // The same choices save once the queue takes them.
+    api.appendSnapshot.mockResolvedValueOnce(stored('s3', 2, '"3"'));
+    expect(await store.saveMergeChoices({ [key]: 'mine' })).toEqual({
+      saved: true,
+      issues: [],
+    });
+    await vi.waitFor(() => expect(store.saveState.status).toBe('saved'));
+    expect(api.appendSnapshot).toHaveBeenLastCalledWith(
+      'alice',
+      'd1',
+      expect.objectContaining({
+        summary: expect.stringMatching(/^Merged changes from /),
+      }),
+      '"2"',
+    );
+    expect(findNode(store.doc, alpha.id).device.hostname).toBe('mine');
+    expect(store.merge).toBeNull();
+  });
+
+  test('a reviewed merge that cannot be saved can still be saved as a new draft', async () => {
+    const { base, alpha } = await opened();
+
+    savedFirst(rename(base, alpha.id, 'theirs'), { saved: false });
+    store.commit(rename(toRaw(store.doc), alpha.id, 'mine'), 'Renamed alpha');
+    await vi.waitFor(() => expect(store.merge?.status).toBe('review'));
+
+    const key = store.mergeReview().clashes[0].key;
+
+    vi.spyOn(store.autosave, 'rebase').mockRejectedValueOnce(
+      new Error('The queue is full.'),
+    );
+    expect(await store.saveMergeChoices({ [key]: 'mine' })).toMatchObject({
+      saved: false,
+    });
+
+    await store.resolveConflict('fork', { title: 'Mine' });
+
+    expect(api.createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Mine' }),
+    );
+    expect(store.merge).toBeNull();
+    expect(store.hasConflict).toBe(false);
+    expect(findNode(store.doc, alpha.id).device.hostname).toBe('mine');
+  });
+
   test('a recovered queue based on an older ETag is merged with the draft as read', async () => {
     vi.stubEnv('VITE_AUTH', 'enabled');
 

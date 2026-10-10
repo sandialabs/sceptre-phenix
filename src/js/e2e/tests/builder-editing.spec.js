@@ -1875,6 +1875,66 @@ test.describe('Builder canvas editing', () => {
     expectNoFatal(issues);
   });
 
+  test('a node nudged off the grid is drawn where the draft keeps it after a reload, and a drag puts it back on the grid', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    const draft = await blankDraft(builder);
+    await builder.palette('device').click();
+    const id = await onlyNodeId(builder, 'device');
+    await builder.persisted(draft, (doc) => doc.nodes.length, 1);
+    const doc = await builder.serverDocument(draft);
+    // A new document snaps to the default grid.
+    expect(doc.grid).toMatchObject({ snap: true, size: GRID });
+    const drawnAt = (point) => `matrix(1, 0, 0, 1, ${point.x}, ${point.y})`;
+    const offGrid = (point) => ({
+      x: Math.abs(point.x % GRID),
+      y: Math.abs(point.y % GRID),
+    });
+    // Drags the node and returns where it was saved, which is on the grid
+    // and where the canvas draws it.
+    const dragNode = async (from) => {
+      const saved = builder.nextSnapshot();
+      await dragBy(page, canvasNode(page, id), 64, 48);
+      expect((await saved).ok(), 'the drag is saved').toBe(true);
+      const dragged = positions(await builder.serverDocument(draft))[id];
+      expect(dragged, 'the drag moves the node').not.toEqual(from);
+      expect(offGrid(dragged), 'the drag lands on the grid').toEqual({
+        x: 0,
+        y: 0,
+      });
+      await expect(flowNode(page, id)).toHaveCSS('transform', drawnAt(dragged));
+      await builder.waitSaved();
+
+      return dragged;
+    };
+
+    const placed = await dragNode(positions(doc)[id]);
+
+    // Shift and an arrow key move it 10px, off the 16px grid. The drag
+    // selected it.
+    const nudged = { x: placed.x + 10, y: placed.y };
+    await focusNode(page, id);
+    await expect(flowNode(page, id)).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Shift+ArrowRight');
+    await expect(flowNode(page, id)).toHaveCSS('transform', drawnAt(nudged));
+    await builder.persisted(draft, (saved) => positions(saved)[id], nudged);
+    await builder.waitSaved();
+
+    // Opened again, the canvas draws the node where the draft keeps it, not
+    // at the nearest grid point.
+    await page.reload();
+    await builder.openDraft(draft);
+    await expect(flowNode(page, id)).toHaveCSS('transform', drawnAt(nudged));
+    await builder.persisted(draft, (saved) => positions(saved)[id], nudged);
+
+    // A drag still snaps it to the grid.
+    await dragNode(nudged);
+
+    expectNoFatal(issues);
+  });
+
   test(
     'the layout menu lays out, keeps the choice with the draft, undoes in one step and can put it back; Auto-group groups',
     { tag: '@cross-browser' },
