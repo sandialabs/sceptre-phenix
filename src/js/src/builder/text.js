@@ -74,3 +74,26 @@ const GO_SPACE = new Set([
 export function isBlank(text) {
   return [...String(text ?? '')].every((ch) => GO_SPACE.has(ch.codePointAt(0)));
 }
+
+/**
+ * @param {string} text
+ * @returns {string} the text without the white space around it, as the
+ *   server's strings.TrimSpace gives it: U+0085 around the text goes, and
+ *   U+FEFF stays (see GO_SPACE)
+ */
+export function trimSpace(text) {
+  const characters = [...String(text ?? '')];
+  const space = (ch) => GO_SPACE.has(ch.codePointAt(0));
+  let start = 0;
+  let end = characters.length;
+
+  while (start < end && space(characters[start])) {
+    start += 1;
+  }
+
+  while (end > start && space(characters[end - 1])) {
+    end -= 1;
+  }
+
+  return characters.slice(start, end).join('');
+}

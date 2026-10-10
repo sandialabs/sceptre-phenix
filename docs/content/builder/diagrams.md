@@ -129,6 +129,9 @@ The Inspector of a switch, for example "Network CORP", has these fields:
 - **Edge Color**, the network's color, and **Line style**, the pattern of
   its connections (see [Colors](#colors) and [Line styles](#line-styles)).
 - **Outline Color** and **Fill Color** of this switch.
+- **Icon size** of this switch (see [Icon size](#icon-size)).
+- **Notes** of this switch, which stay in the diagram (see
+  [Notes on devices and switches](#notes-on-devices-and-switches)).
 - **Position**.
 
 For example, to give CORP the VLAN alias 120, select the CORP switch, type
@@ -358,8 +361,10 @@ the topology, and a new experiment copies them to the VM's notes (see
 notes stay in the diagram. A device or a switch holds at most 100 notes of at
 most 4096 bytes each. **Show node notes** in the Settings, or **Show or hide
 node notes** in the command palette, hides the cards (see
-[Settings](editor.md#settings)); a layout leaves room for them while they
-show.
+[Settings](editor.md#settings)). While they show, a layout leaves room for
+them, a group holds the cards of its members (when you group nodes, move one
+into a group or resize a group), and **Fit diagram to view** keeps them in
+view.
 
 ## Groups
 
@@ -386,6 +391,8 @@ taken. Select the group to change its fields in the Inspector, then select
   is the container icon.
 - **Custom icon**: an image of your own, drawn in place of the icon (see
   [Custom icons](#custom-icons)).
+- **Icon size**: the size of the icon beside the title (see
+  [Icon size](#icon-size)).
 
 To take a group apart, select it and select **Ungroup**
 (<kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>G</kbd> or
@@ -397,7 +404,9 @@ instead, or **Move to a group…** in the
 [command palette](editor.md#command-palette). The **Move to a group**
 dialog opens on the selected node, and **Group** shows the group it is in:
 
-1. In **Node**, choose the node, for example `web-01 (device)`.
+1. In **Node**, choose the node, for example `web-01 (device)`. Nodes that
+   would read alike, such as two lines without a label, add where they
+   are, for example `Line (line) at 320, 400`.
 2. In **Group**, choose the group, or **No group** to take the node out of
    its group.
 3. Select **Move**. The dialog closes and focus returns to **Move to
@@ -405,8 +414,8 @@ dialog opens on the selected node, and **Group** shows the group it is in:
 
 To resize a selected group, drag the handles on its corners and sides, or
 press <kbd>⌥</kbd>+<kbd>⇧</kbd> (<kbd>Alt</kbd>+<kbd>Shift</kbd>) with an
-arrow key. A group never gets smaller than its members need. Notes resize
-the same way.
+arrow key. A group never gets smaller than its members need, with the notes
+cards below them while they show. Notes resize the same way.
 
 ## Shapes, icons and lines
 

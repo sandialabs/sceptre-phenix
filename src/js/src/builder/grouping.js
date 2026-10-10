@@ -31,12 +31,8 @@ import {
 } from './groupingPattern.js';
 import { uniqueName } from './ids.js';
 import { collator, prefixOf } from './layouts/common.js';
-import {
-  DEFAULT_NETWORK_COLORS,
-  addNode,
-  boundsOf,
-  nodeLabel,
-} from './model.js';
+import { DEFAULT_NETWORK_COLORS, addNode, nodeLabel } from './model.js';
+import { footprintBounds } from './nodeNotes.js';
 import { pageStorage } from './storage.js';
 
 // Each rule: `phrase` ends what its commit says ("Created 2 groups by
@@ -274,17 +270,20 @@ export function planGroups(doc, strategy, { selection = [] } = {}) {
 }
 
 /**
- * Makes the planned groups: a group node for each, around its members,
- * named after it (numbered past a group of the same name), and its members
- * put in it. Where the groups go is left to a layout.
+ * Makes the planned groups: a group node for each, around its members and
+ * their notes while the canvas shows them (see footprintBounds), named after
+ * it (numbered past a group of the same name), and its members put in it.
+ * Where the groups go is left to a layout.
  *
  * @param {object} doc
  * @param {{title: string, color: string, members: string[]}[]} planned
  *   from planGroups
+ * @param {{showNotes?: boolean}} [options] whether the canvas shows node
+ *   notes, true by default
  * @returns {{doc: object, groups: object[]}} the document, and the group
  *   nodes made
  */
-export function applyGroups(doc, planned) {
+export function applyGroups(doc, planned, options = {}) {
   let next = doc;
   const groups = [];
   const titles = (doc.nodes || [])
@@ -294,7 +293,10 @@ export function applyGroups(doc, planned) {
   for (const plan of planned) {
     const ids = new Set(plan.members);
     const members = next.nodes.filter((node) => ids.has(node.id));
-    const bounds = boundsOf(members, GROUP_PADDING);
+    const bounds = footprintBounds(members, {
+      showNotes: options.showNotes,
+      padding: GROUP_PADDING,
+    });
     const title = uniqueName(plan.title || 'Group', titles, (v) => v, ' ');
     const created = addNode(next, {
       kind: 'group',

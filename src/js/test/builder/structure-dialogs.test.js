@@ -17,6 +17,7 @@ import BuilderToolbar from '@/components/builder/BuilderToolbar.vue';
 import ConnectDialog from '@/components/builder/dialogs/ConnectDialog.vue';
 import RegroupDialog from '@/components/builder/dialogs/RegroupDialog.vue';
 import {
+  optionNames,
   useConnectForm,
   useRegroupForm,
 } from '@/components/builder/dialogs/structureForms.js';
@@ -393,6 +394,81 @@ describe('the Move to a group form', () => {
     expect(submit()).toEqual({ done: false, focus: '' });
     expect(store.setParent).not.toHaveBeenCalled();
   });
+
+  test('tells apart nodes that would read alike, by where they are', () => {
+    const sample = groupedDocument();
+    let { doc } = sample;
+    const add = (options) => {
+      const added = addNode(doc, options);
+
+      doc = added.doc;
+
+      return added.node;
+    };
+    const first = add({ kind: 'line', position: { x: 0, y: 400 } });
+    const second = add({ kind: 'line', position: { x: 320, y: 400 } });
+    const circle = add({
+      kind: 'shape',
+      shape: 'circle',
+      position: { x: 640, y: 400 },
+    });
+    // Two groups given the same title.
+    const zone = add({
+      kind: 'group',
+      title: 'Zone',
+      position: { x: 0, y: 800 },
+    });
+    const twin = add({
+      kind: 'group',
+      title: 'Zone',
+      position: { x: 480, y: 800 },
+    });
+    const { nodeNames, groupNames } = useRegroupForm(formStore(doc));
+    const at = (node) => `at ${node.position.x}, ${node.position.y}`;
+
+    expect(nodeNames.value.get(first.id)).toBe(`Line (line) ${at(first)}`);
+    expect(nodeNames.value.get(second.id)).toBe(`Line (line) ${at(second)}`);
+    // A name no other node has stays as it is.
+    expect(nodeNames.value.get(circle.id)).toBe('Circle (shape)');
+    expect(nodeNames.value.get(sample.alpha.id)).toBe('alpha (device)');
+    expect(groupNames.value.get(zone.id)).toBe(`Zone ${at(zone)}`);
+    expect(groupNames.value.get(twin.id)).toBe(`Zone ${at(twin)}`);
+    expect(groupNames.value.get(sample.group.id)).toBe('Lab');
+
+    // Every option reads differently.
+    const names = [...nodeNames.value.values()];
+
+    expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe('the names of a list of nodes', () => {
+  const at = (id, x, y) => ({ id, position: { x, y } });
+  const plain = () => 'Line';
+
+  test('add where a node is only to names that others share', () => {
+    expect([
+      ...optionNames(
+        [at('a', 0, 0), at('b', 10.4, 20.6), { id: 'c', position: null }],
+        (node) => (node.id === 'c' ? 'Circle' : 'Line'),
+      ),
+    ]).toEqual([
+      ['a', 'Line at 0, 0'],
+      ['b', 'Line at 10, 21'],
+      ['c', 'Circle'],
+    ]);
+  });
+
+  test('add a place among those that share a position too', () => {
+    expect([
+      ...optionNames([at('a', 5, 5), at('b', 5, 5), at('c', 9, 9)], plain),
+    ]).toEqual([
+      ['a', 'Line at 5, 5, 1 of 2'],
+      ['b', 'Line at 5, 5, 2 of 2'],
+      ['c', 'Line at 9, 9'],
+    ]);
+    expect([...optionNames([], plain)]).toEqual([]);
+  });
 });
 
 describe('an edit the Builder store refuses', () => {
@@ -633,6 +709,28 @@ describe('the dialogs, as rendered', () => {
     expect(options(html, 'regroup-group')).toEqual(['No group']);
     expect(html).toContain('data-testid="regroup-dialog-submit"');
     expect(html).toMatch(/<p id="regroup-error"[^>]*role="alert"[^>]*>\s*<!--/);
+  });
+
+  test('Move to a group names two unlabelled lines apart', async () => {
+    const one = addNode(groupedDocument().doc, {
+      kind: 'line',
+      position: { x: 0, y: 400 },
+    });
+    const two = addNode(one.doc, {
+      kind: 'line',
+      position: { x: 320, y: 400 },
+    });
+    const html = await render(RegroupDialog, (store) => {
+      store.doc = two.doc;
+    });
+    const lines = options(html, 'regroup-node').filter((text) =>
+      text.startsWith('Line (line)'),
+    );
+
+    expect(lines).toEqual([
+      `Line (line) at ${one.node.position.x}, ${one.node.position.y}`,
+      `Line (line) at ${two.node.position.x}, ${two.node.position.y}`,
+    ]);
   });
 
   test('in a read-only diagram, every field and the submit are disabled', async () => {

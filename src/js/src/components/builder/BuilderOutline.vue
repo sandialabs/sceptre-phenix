@@ -128,7 +128,12 @@
   import { nodeIconKey } from '@/builder/catalog.js';
   import { iconLibrary } from '@/builder/iconLibrary.js';
   import { iconSrc } from '@/builder/icons.js';
-  import { findNode, includedReason, networkRefusal } from '@/builder/model.js';
+  import {
+    findNode,
+    includedReason,
+    networkRefusal,
+    renamePatch,
+  } from '@/builder/model.js';
   import { outlineHint, textFieldCommand } from '@/builder/commands.js';
   import {
     buildOutline,
@@ -444,7 +449,9 @@
   }
 
   // Renaming a node means different things per kind: a device is renamed by its
-  // hostname, a switch by the name of the network it publishes. Enter returns
+  // hostname, a switch by the name of the network it publishes, a group by
+  // its title, and a drawing by its payload's label (see renamePatch), which
+  // the canvas and the Inspector show. Enter returns
   // focus to the row, which may have moved as rows sort by label; leaving the
   // field (blur) commits without taking focus back.
   function commitRename(item, refocus) {
@@ -492,7 +499,7 @@
       return;
     }
 
-    store.updateNode(item.id, { label }, 'Renamed node');
+    store.updateNode(item.id, renamePatch(node, label), 'Renamed node');
   }
 
   // Focus moves to the next network's Remove button, or the previous one, or

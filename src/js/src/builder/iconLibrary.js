@@ -299,3 +299,56 @@ export async function ingestTemplateIcons(icons, library = iconLibrary) {
 
   return warnings;
 }
+
+/**
+ * The copy of the custom icon a template of the diagram names, when the
+ * diagram carries one (its `icons`), by name: what saving the template to
+ * the user's library puts into the icon library first (see
+ * ingestSavedTemplateIcons). A template of a library carries no icon.
+ *
+ * @param {object} template
+ * @param {object|null|undefined} icons the diagram's copies, by name
+ * @returns {object} the copy by its name, or no entry
+ */
+export function savedTemplateIcons(template, icons) {
+  const name = template?.device?.icon;
+
+  return name &&
+    icons &&
+    typeof icons === 'object' &&
+    !Array.isArray(icons) &&
+    Object.hasOwn(icons, name)
+    ? { [name]: icons[name] }
+    : {};
+}
+
+/**
+ * Puts the copies of custom icons a template of the diagram names into the
+ * icon library before the template is saved to the user's library, by the
+ * rules of an upload (see ingestIcons): a library icon of that name with the
+ * same bytes is the icon; no icon of that name means the copy is uploaded
+ * under it, as the user. A library icon of that name with other bytes, and a
+ * refused upload, each give a warning: the saved template carries no icon,
+ * so it shows the server's icon, or its built-in one. The diagram keeps its
+ * copies.
+ *
+ * @param {object} icons the copies, by icon name (see savedTemplateIcons)
+ * @param {object} [library] the icon library (see createIconLibrary)
+ * @returns {Promise<string[]>} the warnings
+ */
+export async function ingestSavedTemplateIcons(icons, library = iconLibrary) {
+  if (!icons || !Object.keys(icons).length) {
+    return [];
+  }
+
+  const { warnings } = await ingestCopies(icons, library, {
+    unreadable: (count, reason) =>
+      `The server's icon library could not be read, so ${count === 1 ? 'the custom icon' : `the ${count} custom icons`} of this diagram ${count === 1 ? 'was' : 'were'} not added to it: the saved template shows its built-in icon until the server has ${count === 1 ? 'it' : 'them'}. ${reason}`,
+    differs: (name) =>
+      `The server already has an icon named ${name} that differs from this diagram's. The saved template shows the server's icon.`,
+    refused: (name, reason) =>
+      `Custom icon ${name} could not be added to the server's icon library: ${reason} The saved template shows its built-in icon.`,
+  });
+
+  return warnings;
+}

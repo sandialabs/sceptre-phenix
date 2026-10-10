@@ -22,7 +22,12 @@ import {
 import { saveText } from './exporters.js';
 import { MAX_DOCUMENT_ICONS, embedIcons } from './icons.js';
 import { templateContent } from './templates.js';
-import { hasControlCharacters, isBlank, utf8Length } from './text.js';
+import {
+  hasControlCharacters,
+  isBlank,
+  trimSpace,
+  utf8Length,
+} from './text.js';
 import {
   MAX_TEMPLATE_DESCRIPTION_BYTES,
   MAX_TEMPLATE_NAME_BYTES,
@@ -76,11 +81,9 @@ function isPlainObject(value) {
 
 // The key two template names of a file are compared by, as
 // templateFileIssues and the server compare them: without the white space
-// around it and ignoring case.
+// the server trims around it (see trimSpace), and ignoring case.
 function templateNameKey(name) {
-  return String(name ?? '')
-    .trim()
-    .toLowerCase();
+  return trimSpace(name).toLowerCase();
 }
 
 // name followed by " (n)", shortened to stay within MAX_TEMPLATE_NAME_BYTES.
@@ -132,11 +135,11 @@ export function uniqueTemplateNames(templates) {
       used.has(templateNameKey(candidate)) ||
       given.has(templateNameKey(candidate));
     let n = 2;
-    let name = numberedName(template.name.trim(), n);
+    let name = numberedName(trimSpace(template.name), n);
 
     while (taken(name)) {
       n += 1;
-      name = numberedName(template.name.trim(), n);
+      name = numberedName(trimSpace(template.name), n);
     }
 
     used.add(templateNameKey(name));
@@ -442,9 +445,7 @@ export function templateFileIssues(file) {
     );
 
     const key =
-      typeof template.name === 'string'
-        ? template.name.trim().toLowerCase()
-        : '';
+      typeof template.name === 'string' ? templateNameKey(template.name) : '';
 
     if (!key) {
       return;

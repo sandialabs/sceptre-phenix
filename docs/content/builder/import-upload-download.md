@@ -558,8 +558,10 @@ What to note in the file:
   `nodes`. `includeTopologies` names corp-services instead, as publishing
   does.
 - Each interface's `vlan` is the name of the network it is connected to.
-- Notes, groups, drawings (rectangles, circles, icons and lines), colors,
-  line styles, icons, device templates and positions are not in the file.
+- A device's notes are its node's `general.notes`, as publishing writes
+  them. Note nodes on the canvas, a switch's notes, groups, drawings
+  (rectangles, circles, icons and lines), colors, line styles, icons and
+  icon sizes, device templates and positions are not in the file.
 
 To store the file in phenix as a Topology config named `Riverside-Water`:
 

@@ -19,10 +19,13 @@ import (
 	"strings"
 )
 
-// Bounds on custom icons. An icon is drawn at 16 CSS pixels, which is 96
-// device pixels at the editor's largest zoom on the densest screens, and a
-// 96 by 96 image that does not compress at all still fits in
-// [MaxIconBytes].
+// Bounds on custom icons. A node draws its icon at 16, 24 or 32 CSS pixels
+// (its icon size), and an icon node at the size of its box. 96 pixels on a
+// side keep an icon sharp at the Small size up to the editor's largest zoom
+// on the densest screens; a larger size or box scales the image up and
+// draws it softer, which the Builder accepts to keep icons and the
+// documents that carry them small. A 96 by 96 image that does not compress
+// at all still fits in [MaxIconBytes].
 const (
 	// MaxIconPixels is the most pixels an icon has on a side.
 	MaxIconPixels = 96

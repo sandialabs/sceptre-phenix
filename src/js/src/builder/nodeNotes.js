@@ -1,8 +1,10 @@
 // The notes block of a device or a switch: the node's notes (nodeNotes in
 // model.js), drawn below its box on the canvas (nodes/NodeNotes.vue), and
 // the room the block takes there, which the layouts leave free below the
-// node (layouts/common.js and standard.js) and image downloads take in
-// (documentBounds in exporters.js).
+// node (layouts/common.js and standard.js), groups hold (fitGroups and
+// groupNodes in model.js, applyGroups in grouping.js), Fit keeps in view
+// (BuilderCanvas.vue) and image downloads take in (documentBounds in
+// exporters.js).
 //
 // The block is part of the node but not of its box: the document's size of
 // the node, which its handles sit on, leaves it out. Its height here is an
@@ -176,17 +178,24 @@ export function nodeFootprint(node, { showNotes = true } = {}) {
 }
 
 /**
- * The box around nodes' footprints (see nodeFootprint).
+ * The box around nodes' footprints (see nodeFootprint), with `padding` to
+ * spare on every side. Fit, the canvas's least zoom, bringing nodes into
+ * view, the sizes groups take around their members (see fitGroups and
+ * groupNodes in model.js) and image downloads go by it, so the notes below
+ * a node stay in view and inside its group.
  *
  * @param {object[]} nodes
- * @param {{showNotes?: boolean}} [options]
- * @returns {{x: number, y: number, width: number, height: number}}
+ * @param {{showNotes?: boolean, padding?: number}} [options] showNotes, see
+ *   nodeFootprint; padding in CSS pixels, 0 by default
+ * @returns {{x: number, y: number, width: number, height: number}} all 0
+ *   for no nodes
  */
-export function footprintBounds(nodes, options) {
+export function footprintBounds(nodes, options = {}) {
   if (!nodes?.length) {
     return { x: 0, y: 0, width: 0, height: 0 };
   }
 
+  const padding = options.padding ?? 0;
   let left = Infinity;
   let top = Infinity;
   let right = -Infinity;
@@ -201,5 +210,10 @@ export function footprintBounds(nodes, options) {
     bottom = Math.max(bottom, node.position.y + height);
   }
 
-  return { x: left, y: top, width: right - left, height: bottom - top };
+  return {
+    x: left - padding,
+    y: top - padding,
+    width: right - left + padding * 2,
+    height: bottom - top + padding * 2,
+  };
 }

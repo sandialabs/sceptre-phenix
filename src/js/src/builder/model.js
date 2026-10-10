@@ -24,6 +24,9 @@
 import { iconKeyForSpec, isIconKey, kindMeta } from './catalog.js';
 import { isBuilderAnnotation } from './configs.js';
 import { newId, uniqueName } from './ids.js';
+// nodeNotes.js reads nodes with this module's helpers, and is read here only
+// inside functions, so the two may import each other.
+import { footprintBounds, nodeFootprint } from './nodeNotes.js';
 import { hasControlCharactersInLines, isBlank, utf8Length } from './text.js';
 
 export const SCHEMA_URI = 'https://phenix.sandia.gov/schemas/builder/v1';
@@ -1913,10 +1916,11 @@ function slotsFor(box, origin, columns) {
 
 // Where a node moving to group `target` (null for none) goes so that its box
 // says which group it is in, and whether that group must grow to hold it:
-// a free spot inside the new group, or else below its members, which the
-// group grows to hold; outside the groups it leaves, in a free spot beside
-// the outermost. Position null when it can stay where it is.
-function regroupedPosition(doc, node, target) {
+// a free spot inside the new group, or else below its members and their
+// notes (see nodeFootprint, which takes `options`), which the group grows
+// to hold; outside the groups it leaves, in a free spot beside the
+// outermost. Position null when it can stay where it is.
+function regroupedPosition(doc, node, target, options = {}) {
   const box = boxOf(node);
   const group = target ? findNode(doc, target) : null;
   const staying = new Set(group ? [group, ...ancestorsOf(doc, group)] : []);
@@ -1966,7 +1970,8 @@ function regroupedPosition(doc, node, target) {
         y: members.length
           ? Math.max(
               ...members.map(
-                (entry) => entry.position.y + sizeOf(entry).height,
+                (entry) =>
+                  entry.position.y + nodeFootprint(entry, options).height,
               ),
             ) + GROUP_GAP
           : group.position.y + GROUP_PADDING,
@@ -1994,8 +1999,9 @@ function regroupedPosition(doc, node, target) {
 
 // Moves the nodes a group, grown, now covers out of its way, each to the
 // first free spot below it, with what they hold. A node in a group the grown
-// one is in may stay in that group, which grows to hold it in turn.
-function clearGroup(doc, id) {
+// one is in may stay in that group, which grows to hold it in turn (see
+// fitGroups, which takes `options`).
+function clearGroup(doc, id, options = {}) {
   const group = findNode(doc, id);
 
   if (!group) {
@@ -2025,7 +2031,7 @@ function clearGroup(doc, id) {
       next = moveNodes(next, [{ id: entry.id, position }]);
 
       if (current.parentId) {
-        next = fitGroups(next, [current.parentId]);
+        next = fitGroups(next, [current.parentId], options);
       }
     }
   }
@@ -2036,12 +2042,16 @@ function clearGroup(doc, id) {
 /**
  * Grows each group, and the groups it is in, to hold its members with room
  * to spare. A group never shrinks here, and its members stay where they are.
+ * A member takes its footprint (see footprintBounds in nodeNotes.js): its
+ * box, and its notes below it while the canvas shows them.
  *
  * @param {object} doc
  * @param {string[]} ids group ids
+ * @param {{showNotes?: boolean}} [options] whether the canvas shows node
+ *   notes, true by default
  * @returns {object} document
  */
-export function fitGroups(doc, ids = []) {
+export function fitGroups(doc, ids = [], options = {}) {
   let next = doc;
   const queue = [...ids];
   const seen = new Set();
@@ -2059,7 +2069,10 @@ export function fitGroups(doc, ids = []) {
     const members = next.nodes.filter((entry) => entry.parentId === id);
 
     if (members.length) {
-      const need = boundsOf(members, GROUP_PADDING);
+      const need = footprintBounds(members, {
+        showNotes: options.showNotes,
+        padding: GROUP_PADDING,
+      });
       const has = boxOf(group);
       const x = Math.min(has.x, need.x);
       const y = Math.min(has.y, need.y);
@@ -2093,13 +2106,16 @@ export function fitGroups(doc, ids = []) {
 
 /**
  * The smallest size a group can be resized to: its members stay inside it,
- * with a grid step to spare, and its title stays readable.
+ * with their notes while the canvas shows them (see fitGroups), with a grid
+ * step to spare, and its title stays readable.
  *
  * @param {object} doc
  * @param {string} id group id
+ * @param {{showNotes?: boolean}} [options] whether the canvas shows node
+ *   notes, true by default
  * @returns {{width: number, height: number}}
  */
-export function groupMinimumSize(doc, id) {
+export function groupMinimumSize(doc, id, options = {}) {
   const group = findNode(doc, id);
   const members = (doc?.nodes || []).filter((entry) => entry.parentId === id);
   const spare = doc?.grid?.size || DEFAULT_GRID_SIZE;
@@ -2108,7 +2124,7 @@ export function groupMinimumSize(doc, id) {
     return { ...GROUP_MIN_SIZE };
   }
 
-  const bounds = boundsOf(members);
+  const bounds = footprintBounds(members, { showNotes: options.showNotes });
 
   return {
     width: Math.max(
@@ -2139,13 +2155,14 @@ export const MINIMUM_SIZES = {
  *
  * @param {object} doc
  * @param {string} id
+ * @param {{showNotes?: boolean}} [options] see groupMinimumSize
  * @returns {{width: number, height: number}}
  */
-export function minimumSize(doc, id) {
+export function minimumSize(doc, id, options = {}) {
   const node = findNode(doc, id);
 
   if (node?.kind === 'group') {
-    return groupMinimumSize(doc, id);
+    return groupMinimumSize(doc, id, options);
   }
 
   return { ...(MINIMUM_SIZES[node?.kind] || MINIMUM_SIZES.shape) };
@@ -2169,10 +2186,11 @@ const RESIZE_ARROWS = {
  * @param {string} id
  * @param {string} key ArrowRight, ArrowLeft, ArrowDown or ArrowUp
  * @param {number} step pixels
+ * @param {{showNotes?: boolean}} [options] see groupMinimumSize
  * @returns {{width: number, height: number}|null} null when the node is
  *   none of RESIZABLE_KINDS, or the key is no arrow
  */
-export function keyResizedSize(doc, id, key, step) {
+export function keyResizedSize(doc, id, key, step, options = {}) {
   const node = findNode(doc, id);
   const arrow = RESIZE_ARROWS[key];
 
@@ -2181,7 +2199,7 @@ export function keyResizedSize(doc, id, key, step) {
   }
 
   const size = sizeOf(node);
-  const least = minimumSize(doc, id);
+  const least = minimumSize(doc, id, options);
   const resized = (now, delta, min) =>
     delta < 0 ? Math.min(now, Math.max(min, now + delta)) : now + delta;
 
@@ -2194,17 +2212,20 @@ export function keyResizedSize(doc, id, key, step) {
 /**
  * The box a node resized with the mouse takes: the box it was dragged to,
  * at least its least size, and for a group as large as its members need,
- * with a grid step to spare, from whichever corner or side it was dragged.
+ * their notes included while the canvas shows them (see fitGroups), with a
+ * grid step to spare, from whichever corner or side it was dragged.
  * Positions and sizes are whole pixels.
  *
  * @param {object} doc
  * @param {string} id
  * @param {{x: number, y: number, width: number, height: number}} box
  *   absolute
+ * @param {{showNotes?: boolean}} [options] whether the canvas shows node
+ *   notes, true by default
  * @returns {{position: {x: number, y: number}, size: {width: number,
  *   height: number}}}
  */
-export function resizedBox(doc, id, box) {
+export function resizedBox(doc, id, box, options = {}) {
   const node = findNode(doc, id);
   const least = MINIMUM_SIZES[node?.kind] || GROUP_MIN_SIZE;
   let left = Math.round(box.x);
@@ -2215,7 +2236,10 @@ export function resizedBox(doc, id, box) {
 
   if (node?.kind === 'group' && members.length) {
     const spare = doc?.grid?.size || DEFAULT_GRID_SIZE;
-    const need = boundsOf(members, spare);
+    const need = footprintBounds(members, {
+      showNotes: options.showNotes,
+      padding: spare,
+    });
 
     left = Math.min(left, need.x);
     top = Math.min(top, need.y);
@@ -2242,9 +2266,12 @@ export function resizedBox(doc, id, box) {
  * @param {object} doc
  * @param {string} id
  * @param {string|null} parentId
+ * @param {{showNotes?: boolean}} [options] whether the canvas shows node
+ *   notes, true by default: a group that grows holds its members' notes
+ *   too (see fitGroups)
  * @returns {object} document; the same one when nothing changes
  */
-export function setParent(doc, id, parentId) {
+export function setParent(doc, id, parentId, options = {}) {
   const node = findNode(doc, id);
   const target = parentId || null;
 
@@ -2265,7 +2292,7 @@ export function setParent(doc, id, parentId) {
     }
   }
 
-  const { position, grow } = regroupedPosition(doc, node, target);
+  const { position, grow } = regroupedPosition(doc, node, target, options);
   const regrouped = {
     ...doc,
     nodes: doc.nodes.map((entry) => {
@@ -2295,7 +2322,7 @@ export function setParent(doc, id, parentId) {
   const joined = findNode(next, target);
 
   for (const group of [joined, ...ancestorsOf(next, joined)]) {
-    next = clearGroup(fitGroups(next, [group.id]), group.id);
+    next = clearGroup(fitGroups(next, [group.id], options), group.id, options);
   }
 
   return dropStaleRoutes(doc, next);
@@ -2356,11 +2383,13 @@ export function boundsOf(nodes, padding = 0) {
 }
 
 /**
- * Wraps nodes in a new group node.
+ * Wraps nodes in a new group node, around their footprints (see fitGroups):
+ * their boxes, and their notes while the canvas shows them.
  *
  * @param {object} doc
  * @param {string[]} ids
- * @param {object} [options] title, padding
+ * @param {object} [options] title, padding, and showNotes: whether the
+ *   canvas shows node notes, true by default
  * @returns {{doc: object, group: object|null}}
  */
 export function groupNodes(doc, ids, options = {}) {
@@ -2373,7 +2402,10 @@ export function groupNodes(doc, ids, options = {}) {
   }
 
   const padding = options.padding ?? 40;
-  const bounds = boundsOf(members, padding);
+  const bounds = footprintBounds(members, {
+    showNotes: options.showNotes,
+    padding,
+  });
 
   const created = addNode(doc, {
     kind: 'group',
@@ -3970,6 +4002,31 @@ export function nodeLabel(node) {
       return node.line?.label || 'Line';
     default:
       return kindMeta(node.kind).label;
+  }
+}
+
+/**
+ * The updateNode patch that gives a node of a kind other than a switch (whose
+ * name is its network's) the label `label`, in the field the canvas and the
+ * Inspector read it from: a device's hostname, a group's title, a shape's,
+ * an icon's or a line's payload label, and a note's own label.
+ *
+ * @param {object} node
+ * @param {string} label
+ * @returns {object} the patch
+ */
+export function renamePatch(node, label) {
+  switch (node?.kind) {
+    case 'device':
+      return { device: { hostname: label } };
+    case 'group':
+      return { group: { title: label } };
+    case 'shape':
+    case 'icon':
+    case 'line':
+      return { [node.kind]: { label } };
+    default:
+      return { label };
   }
 }
 

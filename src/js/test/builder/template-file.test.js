@@ -1,6 +1,8 @@
 // Template files: what Export writes, what Import reads, and the store's
 // import of a file into the user's library.
 
+import { readFileSync } from 'node:fs';
+
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
@@ -23,6 +25,7 @@ vi.mock('@/builder/api.js', async (importOriginal) => {
 
 import { createBuilderApi } from '@/builder/api.js';
 import { toYAMLString } from '@/builder/exporters.js';
+import { savedTemplateIcons } from '@/builder/iconLibrary.js';
 import { createDocument } from '@/builder/model.js';
 import { LibraryError, useBuilderStore } from '@/builder/store.js';
 import {
@@ -32,6 +35,7 @@ import {
   importProblem,
   importedMessage,
   parseTemplateFile,
+  templateFileIssues,
   templateFileName,
   templateFileOf,
   uniqueCollectionName,
@@ -385,6 +389,57 @@ describe('exporting templates', () => {
       templates: [{ name: 'A' }, { name: 'B' }],
       renamed: [],
     });
+  });
+
+  // The names the server compares alike (TestTemplateFileNamesCorpus in
+  // types/builder): the import refuses what the server refuses, and the
+  // export numbers apart what the server would refuse.
+  describe('the template names corpus shared with the server', () => {
+    const corpus = JSON.parse(
+      readFileSync(
+        new URL(
+          '../../../go/types/builder/testdata/template-file-names.json',
+          import.meta.url,
+        ),
+      ),
+    );
+
+    // A template file of templates with these names.
+    const fileOf = (names) => ({
+      $schema: TEMPLATE_FILE_SCHEMA_URI,
+      name: 'Names',
+      templates: names.map((name) => ({
+        name,
+        device: { spec: { general: { hostname: 'h' } } },
+      })),
+    });
+
+    test('holds cases', () => {
+      expect(corpus.cases.length).toBeGreaterThan(0);
+    });
+
+    test.each(corpus.cases.map((entry) => [entry.name, entry]))(
+      '%s',
+      (_, { names, duplicate }) => {
+        const last = names.length - 1;
+        const refusal = `template name "${names[last]}" is also the name of`;
+        const issues = templateFileIssues(fileOf(names)).filter(
+          (issue) =>
+            issue.path === `templates[${last}].name` &&
+            issue.message.startsWith(refusal),
+        );
+
+        expect(issues).toHaveLength(duplicate ? 1 : 0);
+
+        const { renamed } = uniqueTemplateNames(
+          names.map((name) => ({ name })),
+        );
+
+        expect(renamed.map(({ from }) => from)).toEqual(
+          duplicate ? [names[last]] : [],
+        );
+      },
+    );
   });
 
   test('a template’s icon size goes into the file and reads back', () => {
@@ -750,5 +805,124 @@ describe('importing a template file in the store', () => {
       store.importTemplateFile(read.file, { library: fakeLibrary() }),
     ).rejects.toBeInstanceOf(LibraryError);
     expect(api.createTemplates).not.toHaveBeenCalled();
+  });
+});
+
+// Save to library on a template of the diagram: a library's templates carry
+// no icons, so the copy of the custom icon the diagram carries goes to the
+// icon library first, under its name.
+describe('saving a template of the diagram to the library', () => {
+  let store;
+
+  // A template of the diagram naming the custom icon `icon`.
+  const diagramTemplate = (icon) => ({
+    id: 'd1',
+    name: 'PLC',
+    device: { icon, spec: { general: { hostname: 'plc' } } },
+  });
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    store = useBuilderStore();
+    store.doc = {
+      ...createDocument(),
+      icons: { 'plc-icon': { data: ICON_DATA }, other: { data: ICON_DATA } },
+    };
+    api.listTemplates.mockReset();
+    api.createTemplates.mockReset();
+    api.listTemplates.mockResolvedValue({
+      owner: 'alice',
+      templates: [],
+      collections: [],
+      limits: {},
+    });
+    api.createTemplates.mockResolvedValue({ created: [], collection: null });
+  });
+
+  test('adds the diagram’s copy of its icon to the icon library first', async () => {
+    const library = fakeLibrary();
+    const warnings = await store.saveTemplateToLibrary(
+      diagramTemplate('plc-icon'),
+      { library },
+    );
+
+    expect(warnings).toEqual([]);
+    // Only the icon the template names, under its name.
+    expect(library.upload).toHaveBeenCalledExactlyOnceWith(
+      { name: 'plc-icon', data: ICON_DATA },
+      { refresh: false },
+    );
+    expect(library.upload.mock.invocationCallOrder[0]).toBeLessThan(
+      api.createTemplates.mock.invocationCallOrder[0],
+    );
+    expect(api.createTemplates).toHaveBeenCalledExactlyOnceWith('alice', {
+      templates: [
+        {
+          name: 'PLC',
+          device: {
+            icon: 'plc-icon',
+            spec: { general: { hostname: 'plc' } },
+          },
+        },
+      ],
+      collection: null,
+    });
+    // The diagram keeps its copies.
+    expect(Object.keys(store.doc.icons)).toEqual(['plc-icon', 'other']);
+  });
+
+  test('an icon the library has, or one the diagram has no copy of, uploads nothing', async () => {
+    const library = fakeLibrary({ 'plc-icon': ICON_DATA });
+
+    expect(
+      await store.saveTemplateToLibrary(diagramTemplate('plc-icon'), {
+        library,
+      }),
+    ).toEqual([]);
+    expect(
+      await store.saveTemplateToLibrary(diagramTemplate('elsewhere'), {
+        library,
+      }),
+    ).toEqual([]);
+    expect(
+      await store.saveTemplateToLibrary(diagramTemplate(undefined), {
+        library,
+      }),
+    ).toEqual([]);
+    expect(library.upload).not.toHaveBeenCalled();
+    expect(api.createTemplates).toHaveBeenCalledTimes(3);
+  });
+
+  test('an icon the library refuses, or has other bytes for, is a warning, and the template is saved', async () => {
+    const refusing = fakeLibrary();
+
+    refusing.upload.mockRejectedValue(new Error('the icon library is full'));
+
+    expect(
+      await store.saveTemplateToLibrary(diagramTemplate('plc-icon'), {
+        library: refusing,
+      }),
+    ).toEqual([
+      "Custom icon plc-icon could not be added to the server's icon library: the icon library is full. The saved template shows its built-in icon.",
+    ]);
+    expect(
+      await store.saveTemplateToLibrary(diagramTemplate('plc-icon'), {
+        library: fakeLibrary({ 'plc-icon': 'other bytes' }),
+      }),
+    ).toEqual([
+      "The server already has an icon named plc-icon that differs from this diagram's. The saved template shows the server's icon.",
+    ]);
+    expect(api.createTemplates).toHaveBeenCalledTimes(2);
+  });
+
+  test('the copy is found by the name the template gives', () => {
+    const icons = { 'plc-icon': { data: ICON_DATA } };
+
+    expect(savedTemplateIcons(diagramTemplate('plc-icon'), icons)).toEqual({
+      'plc-icon': { data: ICON_DATA },
+    });
+    expect(savedTemplateIcons(diagramTemplate('PLC-icon'), icons)).toEqual({});
+    expect(savedTemplateIcons(diagramTemplate('plc-icon'), null)).toEqual({});
+    expect(savedTemplateIcons(diagramTemplate(''), icons)).toEqual({});
   });
 });

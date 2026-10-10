@@ -1,8 +1,8 @@
 # Node Templates
 
 A device template is a set of fields filled in ahead, for a new device: its
-icon, custom icon, outline and fill colors, and its whole node spec (type,
-hardware, interfaces and the rest). **Add nodes** lists the templates under
+icon, custom icon, icon size, outline and fill colors, and its whole node
+spec (type, hardware, interfaces and the rest). **Add nodes** lists the templates under
 **Device templates**: select one, or drag it onto the canvas, to add a
 device made from it (see [Adding devices](diagrams.md#adding-devices)).
 
@@ -68,7 +68,9 @@ A device made from a template:
   connected to nothing: a VLAN that names a network of the diagram is
   emptied, and other VLAN text is kept;
 - names the template's custom icon, which the server's icon library holds
-  (see [Custom icons](diagrams.md#custom-icons)).
+  (see [Custom icons](diagrams.md#custom-icons));
+- draws its icon at the template's icon size, or at the diagram's when the
+  template names none (see [Icon size](diagrams.md#icon-size)).
 
 In the command palette, **Add device** lists **Device**, then every template
 by group, with its group and image on the second line, for example "My
@@ -141,11 +143,15 @@ becomes a space. A name another template already has shows "Another template
 has this name." under **Name**, but is allowed.
 
 On the right, **Node fields** has the fields of the Inspector, laid out in
-columns: **Hostname**, **Icon**, **Custom icon**, **Outline Color**, **Fill
-Color** and the node spec. They have the same checks as on the canvas (see
-[Editing a node](editor.md#editing-a-node)). **Hostname** is the name new
-devices start from. There is no **Apply**, no **Position** and no
-**Connection points**: **Save** keeps everything.
+columns: **Hostname**, **Icon**, **Custom icon**, **Icon size**, **Outline
+Color**, **Fill Color** and the node spec. They have the same checks as on
+the canvas (see [Editing a node](editor.md#editing-a-node)). **Hostname** is
+the name new devices start from. **Icon size** left at **Diagram default**
+draws the icon at the size of the diagram the device is in: for a template
+of the diagram, the choice names that diagram's size, for example "Diagram
+default (Large)"; for a template of your library it names none, since the
+device can go into any diagram. There is no **Apply**, no **Position** and
+no **Connection points**: **Save** keeps everything.
 
 **Save** (or **Save to diagram** for a new template) first checks the
 fields. When a field has an error, focus moves to the list of fields that
@@ -166,8 +172,14 @@ and its name):
 - **Edit** opens the template editor, titled "Edit template" and the name.
 - **Save to library** copies the template, which names its custom icon as
   the diagram's does, into your library: "Saved Engineering workstation to
-  your library." The two are
-  separate from then on. Your role needs `configs` `create`.
+  your library." The two are separate from then on. Your role needs
+  `configs` `create`. When the diagram carries its own copy of that icon
+  (see [Custom icons](diagrams.md#custom-icons)), the copy goes to the
+  server's icon library first, under its name, as when you upload a
+  diagram. When the icon library cannot take it, or holds another picture
+  under that name, the template is saved all the same and Builder says so,
+  for example "The server already has an icon named plc-icon that differs
+  from this diagram's. The saved template shows the server's icon."
 - **Delete** removes the template from the diagram, without asking. It is
   one change: **Undo** brings it back.
 

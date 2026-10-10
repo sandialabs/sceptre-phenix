@@ -521,7 +521,9 @@
   const ifacesTip = ref();
 
   const selection = computed(() => host.inspectorSelection);
-  const target = computed(() => inspectorTarget(host.doc, selection.value));
+  const target = computed(() =>
+    inspectorTarget(host.doc, selection.value, { template }),
+  );
   const formKey = computed(
     () => `${selection.value.type}-${selection.value.id || 'document'}`,
   );

@@ -308,11 +308,24 @@
   }
 
   // A copy of a template of the diagram, naming the custom icon it names,
-  // goes to the user's library. The template stays in the diagram.
+  // goes to the user's library; the diagram's copy of that icon goes to the
+  // icon library first (see saveTemplateToLibrary). The template stays in
+  // the diagram. A warning that the icon could not be added is announced
+  // with the save, and stays on the canvas until it is dismissed.
   async function saveToLibrary(entry) {
     try {
-      await store.createLibraryTemplates([entry.template]);
-      store.announce(`Saved ${entry.name} to your library.`);
+      const warnings = await store.saveTemplateToLibrary(entry.template);
+
+      store.announce(
+        [`Saved ${entry.name} to your library.`, ...warnings].join(' '),
+      );
+
+      if (warnings.length > 0) {
+        store.notice = {
+          text: warnings.join(' '),
+          seq: store.announcementSeq,
+        };
+      }
     } catch (error) {
       store.setError(
         store.describeLibraryError(error, `save ${entry.name} to your library`),

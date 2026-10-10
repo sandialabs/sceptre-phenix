@@ -617,6 +617,8 @@ metadata:
 spec:
   roleName: Builder
   policies:
+  # Only the config kinds the Builder reads and publishes: User and Role
+  # configs hold accounts and permissions.
   - resources:
     - configs
     resourceNames:
@@ -643,6 +645,7 @@ spec:
     - builder-templates
     verbs:
     - publish
+  # Rename and delete any icon of the icon library, whoever uploaded it.
   - resources:
     - builder-icons
     verbs:

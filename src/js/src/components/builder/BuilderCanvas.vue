@@ -245,7 +245,6 @@
   import { iconLibrary } from '@/builder/iconLibrary.js';
   import { nodeIssueSummaries } from '@/builder/issues.js';
   import {
-    boundsOf,
     canConnect,
     findEdge,
     findNode,
@@ -253,6 +252,7 @@
     nodeLabel,
     sizeOf,
   } from '@/builder/model.js';
+  import { footprintBounds, nodeFootprint } from '@/builder/nodeNotes.js';
   import {
     MINIMAP_DEFAULT_WIDTH,
     clampPane,
@@ -550,11 +550,25 @@
     announceMinimap();
   }
 
+  // Whether the canvas shows node notes (the showNodeNotes setting): while
+  // it does, the room a node takes holds its notes (see nodeFootprint).
+  function notesShown() {
+    return { showNotes: builderSettings.showNodeNotes };
+  }
+
+  // The box the nodes take on the canvas: their boxes, and the notes below
+  // devices and switches while the canvas shows them (see footprintBounds).
+  // Fit, the least zoom and bringing nodes into view go by it, so no notes
+  // are left out of view.
+  function diagramBounds(nodes = store.doc.nodes || []) {
+    return footprintBounds(nodes, notesShown());
+  }
+
   // Below MIN_ZOOM when that is what it takes to show the whole diagram in
   // the pane, clear of the minimap, as Fit does.
   const diagramFloor = computed(() =>
     zoomFloor(
-      boundsOf(store.doc.nodes || []),
+      diagramBounds(),
       dimensions.value,
       MIN_ZOOM,
       props.showMinimap ? [minimapBox.value] : [],
@@ -1479,7 +1493,9 @@
       nodes.length === 1 && edges.length === 0
         ? findNode(store.doc, nodes[0])
         : null;
-    const next = group && keyResizedSize(store.doc, group.id, key, RESIZE_STEP);
+    const next =
+      group &&
+      keyResizedSize(store.doc, group.id, key, RESIZE_STEP, notesShown());
 
     if (!next) {
       store.announce('Select one group, note, shape or icon to resize it.');
@@ -1627,7 +1643,7 @@
     const { x, y, zoom } = viewport.value;
     const overlays = overlayBoxes();
     const onScreen = (node) => {
-      const { width, height } = sizeOf(node);
+      const { width, height } = nodeFootprint(node, notesShown());
       const left = pane.left + x + node.position.x * zoom;
       const top = pane.top + y + node.position.y * zoom;
 
@@ -1645,7 +1661,7 @@
       return;
     }
 
-    const bounds = boundsOf(nodes);
+    const bounds = diagramBounds(nodes);
     const width = bounds.width * zoom + 2 * REVEAL_MARGIN;
     const height = bounds.height * zoom + 2 * REVEAL_MARGIN;
     const duration = props.reducedMotion ? 0 : 200;
@@ -1741,19 +1757,35 @@
     }
   }
 
-  // Fit: the whole diagram in view, at whatever zoom that takes, and clear
-  // of the minimap and the zoom controls (see fitPadding). The least zoom is
-  // given as well, in case Vue Flow has not had it yet, or less when that is
-  // what the room takes.
+  // Fit: the whole diagram in view, its notes included (see diagramBounds),
+  // at whatever zoom that takes, and clear of the minimap and the zoom
+  // controls (see fitPadding). Vue Flow's own fit knows only the nodes'
+  // boxes, so the view is set from the diagram's bounds; before the pane
+  // has a size, or with no nodes, Vue Flow's fit stands in. The least zoom
+  // is the canvas's, or less when that is what the room takes.
   function fitDiagram(options = {}) {
-    const bounds = boundsOf(store.doc.nodes || []);
+    const bounds = diagramBounds();
     const fit = fitRoom(bounds, overlayBoxes(CORNER_OVERLAYS));
 
-    return fitView({
-      ...options,
-      ...(fit && { padding: fit.padding }),
-      minZoom: Math.min(diagramFloor.value, fit?.zoom ?? Infinity),
-    });
+    if (!fit || !bounds.width || !bounds.height) {
+      return fitView({
+        ...options,
+        ...(fit && { padding: fit.padding }),
+        minZoom: Math.min(diagramFloor.value, fit?.zoom ?? Infinity),
+      });
+    }
+
+    return setViewport(
+      getTransformForBounds(
+        bounds,
+        fit.pane.width,
+        fit.pane.height,
+        Math.min(diagramFloor.value, fit.zoom),
+        MAX_ZOOM,
+        fit.padding,
+      ),
+      options,
+    );
   }
 
   // --- Fit, and back to the view before it ----------------------------------

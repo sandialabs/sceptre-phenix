@@ -267,8 +267,9 @@ publish the diagram as a topology and an experiment (see
 - [Import, Upload and Download](import-upload-download.md): starting from a
   config or a Builder document, every download format, and the
   `phenix builder publish` command.
-- [Publishing](publishing.md): writing Topology, Scenario and Experiment
-  configs, and what blocks publishing.
+- [Publishing](publishing.md): writing Topology and Experiment configs,
+  adding the topology to the diagram's scenarios, and what blocks
+  publishing.
 - [Administration](administration.md): permissions and the Builder role,
   storage, the `builder-doc` annotation, Builder documents in files, the
   REST API and troubleshooting.

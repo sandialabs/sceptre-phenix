@@ -28,6 +28,61 @@ function firstSelected(store, list) {
   return list.find((node) => ids.has(node.id))?.id || '';
 }
 
+// How many times each text is in `texts`.
+function tally(texts) {
+  const counts = new Map();
+
+  texts.forEach((text) => counts.set(text, (counts.get(text) || 0) + 1));
+
+  return counts;
+}
+
+/**
+ * The names nodes are offered under in a dialog's list, which tell every
+ * option apart for a keyboard or screen reader user: each node's own
+ * `name(node)`, and where two or more share one, as unlabelled drawings of a
+ * kind do ("Line (line)"), each of those followed by the node's position as
+ * the Inspector shows it ("Line (line) at 120, 48"), and by its place among
+ * those that share that too ("…, 2 of 3").
+ *
+ * @param {object[]} nodes
+ * @param {(node: object) => string} name
+ * @returns {Map<string, string>} each node's id, and its name in the list
+ */
+export function optionNames(nodes, name) {
+  const plain = nodes.map((node) => name(node));
+  const plainCounts = tally(plain);
+  const placed = nodes.map((node, index) => {
+    if (plainCounts.get(plain[index]) < 2) {
+      return plain[index];
+    }
+
+    const x = Math.round(node.position?.x ?? 0);
+    const y = Math.round(node.position?.y ?? 0);
+
+    return `${plain[index]} at ${x}, ${y}`;
+  });
+  const placedCounts = tally(placed);
+  const seen = new Map();
+
+  return new Map(
+    nodes.map((node, index) => {
+      const text = placed[index];
+      const total = placedCounts.get(text);
+
+      if (total < 2) {
+        return [node.id, text];
+      }
+
+      const place = (seen.get(text) || 0) + 1;
+
+      seen.set(text, place);
+
+      return [node.id, `${text}, ${place} of ${total}`];
+    }),
+  );
+}
+
 /**
  * The form of Add a connection: a device, one of its free interfaces or a
  * new one, and a switch. A selected device fills Device, and a selected
@@ -218,7 +273,7 @@ export function useConnectForm(store) {
  * @param {object} store the Builder store: doc, selection, readOnly,
  *   editRefusal and setParent(id, parentId, {announce})
  * @returns {object} form (nodeId, groupId), error, and the computed
- *   movable, groupChoices and missingNode; submit()
+ *   movable, groupChoices, nodeNames, groupNames and missingNode; submit()
  */
 export function useRegroupForm(store) {
   // Every node can move to a group or out of one.
@@ -244,6 +299,16 @@ export function useRegroupForm(store) {
         node.id !== form.nodeId &&
         !isDescendant(store.doc, node.id, form.nodeId),
     ),
+  );
+
+  // What each option of Node and of Group reads: a node by its label and
+  // kind, a group by its title, told apart where they read alike (see
+  // optionNames).
+  const nodeNames = computed(() =>
+    optionNames(movable.value, (node) => `${nodeLabel(node)} (${node.kind})`),
+  );
+  const groupNames = computed(() =>
+    optionNames(groupChoices.value, (node) => nodeLabel(node)),
   );
 
   const missingNode = computed(() => error.missing && !form.nodeId);
@@ -325,5 +390,14 @@ export function useRegroupForm(store) {
     return { done: true, focus: '' };
   }
 
-  return { form, error, movable, groupChoices, missingNode, submit };
+  return {
+    form,
+    error,
+    movable,
+    groupChoices,
+    nodeNames,
+    groupNames,
+    missingNode,
+    submit,
+  };
 }

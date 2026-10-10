@@ -327,7 +327,9 @@ export function fieldDefault(target, path, schema) {
     return { value: kindMeta('group').iconKey, note: 'The group icon' };
   }
 
-  // A node without an icon size of its own draws the diagram's.
+  // A node without an icon size of its own draws the diagram's. The device
+  // of a library's template is in no diagram, so its target names none (see
+  // inspectorTarget).
   if (path === 'iconSize' && target?.diagramIconSize) {
     return { value: target.diagramIconSize, note: "The diagram's icon size" };
   }
@@ -660,14 +662,25 @@ export function lookChangeLabel(title, before, after) {
  * A selected switch edits its network, and with it what is the switch
  * node's own: its outline and fill colors, and its notes.
  *
+ * A device, a switch or a group names the diagram's icon size, which its
+ * Icon size comes to while it has none (see fieldDefault). In the template
+ * editor the document names one only for a template of a diagram (see
+ * templateDocument): a device made from a template of a library draws at
+ * the size of whichever diagram it is added to, so none is named.
+ *
  * @param {object} doc
  * @param {{type: 'node'|'edge'|'document', id?: string}} selection
+ * @param {{template?: boolean}} [options] template: the document is the
+ *   template editor's
  * @returns {{kind: string, title: string, target: object|null, data: object}|null}
  */
-export function inspectorTarget(doc, selection) {
+export function inspectorTarget(doc, selection, { template = false } = {}) {
   if (!doc || !selection) {
     return null;
   }
+
+  const diagramIconSize =
+    template && !doc.iconSize ? undefined : documentIconSize(doc);
 
   if (selection.type === 'document') {
     return {
@@ -726,7 +739,7 @@ export function inspectorTarget(doc, selection) {
         },
         interfaces: deviceHandles(node),
         // What its Icon size comes to while it has none (see fieldDefault).
-        diagramIconSize: documentIconSize(doc),
+        diagramIconSize,
       };
     case 'switch': {
       const network = networkOfSwitch(doc, node);
@@ -737,7 +750,7 @@ export function inspectorTarget(doc, selection) {
         target: node,
         network,
         networkStyle: network ? networkStyle(doc, network.id) : undefined,
-        diagramIconSize: documentIconSize(doc),
+        diagramIconSize,
         // The network's fields, then the colors, icon size and notes of
         // this switch node itself. A switch without notes has no `notes`
         // here, so its form starts with no list; applying an emptied list
@@ -769,7 +782,7 @@ export function inspectorTarget(doc, selection) {
         kind: 'group',
         title: 'Group',
         target: node,
-        diagramIconSize: documentIconSize(doc),
+        diagramIconSize,
         data: {
           title: node.group?.title || '',
           description: node.group?.description || '',

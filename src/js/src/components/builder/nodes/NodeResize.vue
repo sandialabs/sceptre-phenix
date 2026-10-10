@@ -51,6 +51,7 @@
   import { useCanvasEditing } from './canvasEditing.js';
 
   import { minimumSize, sizeOf } from '@/builder/model.js';
+  import { builderSettings } from '@/builder/settings.js';
 
   const props = defineProps({
     id: { type: String, required: true },
@@ -88,9 +89,12 @@
 
   // The least size, but never more than the node has: NodeResizer grows a
   // node smaller than its least size as soon as it is shown, which would
-  // draw the node at a size the document does not have.
+  // draw the node at a size the document does not have. A group's holds its
+  // members' notes while the canvas shows them.
   const least = computed(() => {
-    const min = minimumSize(canvas?.store.doc, props.id);
+    const min = minimumSize(canvas?.store.doc, props.id, {
+      showNotes: builderSettings.showNodeNotes,
+    });
     const size = sizeOf(props.node);
 
     return {

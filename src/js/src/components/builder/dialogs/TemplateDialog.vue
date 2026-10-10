@@ -274,6 +274,11 @@
     // diagram's. The library keeps none: its templates' icons are the icon
     // library's.
     icons: { type: Object, default: null },
+    // The icon size of the diagram the template is in, which its device
+    // draws at while it names none of its own: empty for a template of the
+    // library, whose devices draw at the size of the diagram they are added
+    // to (see templateDocument).
+    iconSize: { type: String, default: '' },
   });
 
   const emit = defineEmits(['close']);
@@ -306,7 +311,9 @@
   // the dialog's own.
   const host = reactive(
     templateEditorHost({
-      doc: templateDocument(props.template, props.icons),
+      doc: templateDocument(props.template, props.icons, {
+        iconSize: props.iconSize,
+      }),
       source: store,
       announce: (message) => status.set(message),
       readOnly: viewing,

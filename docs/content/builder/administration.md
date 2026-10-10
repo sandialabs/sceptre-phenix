@@ -185,7 +185,7 @@ instead.
 | Publish from a draft's card on the drafts page | As **Publish** in the editor |
 | See **Exp**, which opens the experiment a publication made | `experiments` `get` on that experiment |
 | Add a stored scenario to a diagram | `configs` `list` and `scenarios` `list` |
-| Store a scenario file from the **Scenarios** dialog | `configs` `create` on `Scenario/<name>`; to replace a scenario of that name, `configs` `update` on it |
+| Store a scenario file from the **Scenarios** dialog | `configs` `create` on `Scenario/<name>`; to replace a scenario of that name, `configs` `get` and `configs` `update` on it |
 | See the apps of a diagram's scenario in the Inspector | `configs` `get` on `Scenario/<name>` |
 | Download **Topology YAML** | `configs` `get` |
 | Use the **Publish** button | `configs` `update` |
@@ -201,8 +201,8 @@ instead.
 | Rename an icon you uploaded | `configs` `update` |
 | Delete an icon you uploaded | `configs` `delete` |
 | Rename or delete another user's icon | Also `builder-icons` `update` or `delete` (see [Icons of other users](#icons-of-other-users)) |
-| See the **Node Templates** tab, and use templates | `configs` `list` |
-| Add templates and collections, **Save to library**, **Copy to my library** | `configs` `create` |
+| See the **Node Templates** tab, use templates, and **Export** them | `configs` `list` |
+| Add templates and collections, **Save to library**, **Copy to my library**, **Import templates** | `configs` `create` |
 | Edit templates and collections, add to and remove from a collection | `configs` `update` |
 | Delete templates and collections | `configs` `delete` |
 | Share templates and collections with users | `configs` `update`, and authentication enabled |

@@ -526,6 +526,7 @@
       :mode="templateRequest.mode"
       :template="templateRequest.template"
       :icons="templateRequest.icons"
+      :icon-size="templateRequest.iconSize"
       @close="dialog = ''" />
     <!-- A collection of the user's library, from the Node Templates tab. -->
     <collection-dialog
@@ -688,6 +689,7 @@
     unappliedText,
   } from '@/builder/leave.js';
   import { stopLayoutEngine } from '@/builder/layouts/index.js';
+  import { documentIconSize } from '@/builder/model.js';
   import { PUBLISHED_TOKEN } from '@/builder/publish.js';
   // Not builderSettings: <builder-settings> would name it as well as the
   // dialog.
@@ -1906,8 +1908,8 @@
   const downloadStart = ref('');
 
   // What the template editor opens on: its mode, the template it starts
-  // from, and the custom icons kept where that template is (see
-  // TemplateDialog.vue).
+  // from, and the custom icons kept where that template is and the icon
+  // size of the diagram it is in (see TemplateDialog.vue).
   const templateRequest = ref(null);
 
   // The template editor on a template of the user's library, from the
@@ -1926,8 +1928,11 @@
     }[mode]?.();
 
     // A template of a library names its custom icon, which the icon
-    // library resolves: it comes with no copies of icons.
-    templateRequest.value = template ? { mode, template, icons: null } : null;
+    // library resolves: it comes with no copies of icons. It is in no
+    // diagram, so it has no diagram's icon size.
+    templateRequest.value = template
+      ? { mode, template, icons: null, iconSize: '' }
+      : null;
 
     return Boolean(template);
   }
@@ -1955,7 +1960,12 @@
       );
 
       templateRequest.value = template
-        ? { mode, template, icons: store.doc.icons || null }
+        ? {
+            mode,
+            template,
+            icons: store.doc.icons || null,
+            iconSize: documentIconSize(store.doc),
+          }
         : null;
 
       return Boolean(template);
@@ -1977,6 +1987,7 @@
             })
           : blankTemplate(),
       icons: store.doc.icons || null,
+      iconSize: documentIconSize(store.doc),
     };
 
     return true;

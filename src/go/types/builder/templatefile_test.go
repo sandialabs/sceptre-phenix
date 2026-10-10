@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -323,6 +325,69 @@ func TestParseTemplateFileValidates(t *testing.T) {
 
 			if !slices.ContainsFunc(issues, func(issue string) bool { return strings.HasPrefix(issue, tt.want) }) {
 				t.Fatalf("issues = %q, want one starting %q", issues, tt.want)
+			}
+		})
+	}
+}
+
+// TestTemplateFileNamesCorpus checks the template names a template file may
+// not hold twice against testdata/template-file-names.json, which the front
+// end's template-file.test.js reads too, so both compare names alike.
+func TestTemplateFileNamesCorpus(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "template-file-names.json"))
+	if err != nil {
+		t.Fatalf("reading the corpus: %v", err)
+	}
+
+	var corpus struct {
+		Cases []struct {
+			Name      string   `json:"name"`
+			Names     []string `json:"names"`
+			Duplicate bool     `json:"duplicate"`
+		} `json:"cases"`
+	}
+
+	if err := json.Unmarshal(data, &corpus); err != nil {
+		t.Fatalf("decoding the corpus: %v", err)
+	}
+
+	if len(corpus.Cases) == 0 {
+		t.Fatal("the corpus holds no case")
+	}
+
+	for _, tt := range corpus.Cases {
+		t.Run(tt.Name, func(t *testing.T) {
+			templates := make([]any, 0, len(tt.Names))
+
+			for _, name := range tt.Names {
+				templates = append(templates, map[string]any{
+					"name": name,
+					"device": map[string]any{
+						"spec": map[string]any{"general": map[string]any{"hostname": "h"}},
+					},
+				})
+			}
+
+			value := templateFileValue()
+			value["templates"] = templates
+
+			last := len(tt.Names) - 1
+			want := fmt.Sprintf("templates[%d].name: template name %q is also the name of", last, tt.Names[last])
+
+			_, err := builder.ParseTemplateFile(templateFileJSON(t, value))
+
+			if !tt.Duplicate {
+				if err != nil {
+					t.Fatalf("ParseTemplateFile returned error: %v, want the names taken as different", err)
+				}
+
+				return
+			}
+
+			issues := templateFileIssues(t, templateFileJSON(t, value))
+
+			if !slices.ContainsFunc(issues, func(issue string) bool { return strings.HasPrefix(issue, want) }) {
+				t.Fatalf("issues = %q, want one starting %q", issues, want)
 			}
 		})
 	}

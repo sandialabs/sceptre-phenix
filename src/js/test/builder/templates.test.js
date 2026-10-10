@@ -11,6 +11,7 @@ vi.mock('@/store.js', () => ({
   usePhenixStore: () => ({ username: 'alice' }),
 }));
 
+import { fieldDefault, inspectorTarget } from '@/builder/adapters/forms.js';
 import { BUILTIN_TEMPLATES } from '@/builder/catalog.js';
 import { parseDocument } from '@/builder/decode.js';
 import {
@@ -359,6 +360,45 @@ describe('the template editor’s document', () => {
         rest,
       );
     }
+  });
+
+  // A device draws at its diagram's icon size while it names none: the
+  // Icon size field's Diagram default names the size of the template's
+  // diagram, and none for a template of a library, which can go into any.
+  test('names the icon size of the template’s diagram, and none for a library’s', () => {
+    const template = plcTemplate();
+    const select = (doc) => ({ type: 'node', id: doc.nodes[0].id });
+    const defaultOf = (doc) =>
+      fieldDefault(
+        inspectorTarget(doc, select(doc), { template: true }),
+        'iconSize',
+      );
+
+    const large = templateDocument(template, null, { iconSize: 'large' });
+    const small = templateDocument(template, null, { iconSize: 'small' });
+    const library = templateDocument(template);
+
+    expect(large.iconSize).toBe('large');
+    expect(defaultOf(large)).toEqual({
+      value: 'large',
+      note: "The diagram's icon size",
+    });
+    expect(defaultOf(small)?.value).toBe('small');
+    expect(library).not.toHaveProperty('iconSize');
+    expect(defaultOf(library)).toBeUndefined();
+    expect(
+      templateDocument(template, null, { iconSize: 'huge' }),
+    ).not.toHaveProperty('iconSize');
+
+    // The diagram's own document names its size, Small by default.
+    expect(
+      fieldDefault(inspectorTarget(library, select(library)), 'iconSize')
+        ?.value,
+    ).toBe('small');
+
+    // The template read back is the same, whatever the editor's document
+    // names.
+    expect(templateFromDocument(large)).toEqual({ template });
   });
 });
 

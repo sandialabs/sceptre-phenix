@@ -183,7 +183,13 @@ connection" (`dialogs/ConnectDialog.vue`: Device, Interface, Switch) and
 "Move to a group" (`dialogs/RegroupDialog.vue`: Node, Group), whose rules
 are in `dialogs/structureForms.js`; the palette's `dialog.connect` and
 `dialog.regroup` open them too. They start from the selection, and the
-Outline has no such forms. In the Publish dialog the hint of a config that
+Outline has no such forms. Options that would read alike, such as
+unlabelled drawings ("Line (line)") or untitled groups, add the node's
+position and, if that is shared too, "n of m" (`optionNames`). F2 in the
+Outline renames a node in the field the canvas and the Inspector read
+(`renamePatch` in `model.js`): a device's hostname, a switch's network
+name, a group's title, a shape's, icon's or line's payload `label`, and a
+note's own `label`. In the Publish dialog the hint of a config that
 will be updated is a warning (`.builder-hint--warning`, a warning icon and
 `--bx-warning-bg`), and the naming rule shows under a name field only while
 the name breaks it, after the reason (`configNameReason`, `configNameHint`
@@ -222,6 +228,13 @@ same. The minimap keeps its 4:3 shape, from 120px wide up to half the canvas
 (at most 600px, never below the default 200px unless the canvas is too small
 to hold it). Its width is kept in `phenix.builder.minimap` (`{"width": 280}`).
 Reset view shows both columns again and restores the minimap's default size.
+Fit, the canvas's least zoom and bringing nodes into view go by the
+diagram's footprint (`footprintBounds` in `nodeNotes.js`): node boxes and,
+while Show node notes is on, the notes below devices and switches; Fit sets
+the view from it with `getTransformForBounds`, since Vue Flow's own fit
+measures only the boxes. Groups hold their members' notes the same way
+(`groupNodes`, `fitGroups`, `groupMinimumSize`, `resizedBox`, `setParent`
+in `model.js` and `applyGroups` in `grouping.js` take `{showNotes}`).
 After a Fit that changes the view (the zoom controls' Fit button, Shift+1 on
 the canvas or the palette's `view.fit`), the same button, key and command
 restore the zoom and position from before it, and the button is named Restore
@@ -1311,8 +1324,8 @@ Files: `icons.js`, `iconLibrary.js`, `dialogs/IconDialog.vue`,
 ## Node templates
 
 Two stores. Diagram templates live in the document (`templates`: `{id,
-name, description, device: {iconKey?, icon?, outlineColor?, fillColor?,
-spec}}`; name 1 to 128 bytes, description at most 1024, both one line;
+name, description, device: {iconKey?, icon?, iconSize?, outlineColor?,
+fillColor?, spec}}`; name 1 to 128 bytes, description at most 1024, both one line;
 device at most 16384 bytes as JSON; `bdoc.Template`, `template.go`); they
 travel with downloads, shares and publishes, and are never written to a
 config. The palette's "+" (New device template) and the template editor
@@ -1321,7 +1334,15 @@ config. The palette's "+" (New device template) and the template editor
 hold every `Device` field but `hostname`, `interfaces` and `includedFrom`
 (a reflection test pins it), so a new device field is a template field too.
 A device made from a template (`nodeOptionsFromTemplate`) keeps no link to
-it.
+it. The template editor's document (`templateDocument`) has the root
+`iconSize` of the template's diagram, so Icon size's Diagram default names
+that size; a library template's has none, and `inspectorTarget(doc,
+selection, {template: true})` then names no default size. Save to library
+on a diagram template (`store.saveTemplateToLibrary`) first puts the
+diagram's copy of the icon it names into the icon library
+(`savedTemplateIcons`, `ingestSavedTemplateIcons`: an upload's rules; a
+refused or differing icon is a warning announced with the save and shown as
+the canvas notice).
 
 The per-user library (`api/builder/templates.go`, `web/builder_templates.go`):
 one record per user in `builder.templates` under `lib/<OwnerScope(user)>`
@@ -1363,7 +1384,9 @@ name, description?, templates: [{name, description?, device}], icons?}`,
 strict (unknown keys refused), YAML read by `JSONFromYAML` (no anchors,
 aliases, merge keys), at most 8 MiB (`MaxTemplateFileBytes`), 1 to 200
 templates (`MaxTemplateFileTemplates` = `MaxCollectionTemplates`), names
-unique ignoring case, each template as `Template.Issues` checks it, icons
+unique ignoring case and the white space `strings.TrimSpace` trims around
+them (`trimSpace` in `text.js`; shared cases in
+`testdata/template-file-names.json`), each template as `Template.Issues` checks it, icons
 as `ValidateIcons` checks a document's; a template may name an icon the
 file does not carry. Schema: `TemplateFileSchema()`
 (`templatefile_schema.go`, same title/description/examples rule, checked by
@@ -1498,7 +1521,7 @@ Read this section before changing any file listed below.
 |---|---|
 | Document model, generation, publishing to configs, validation, JSON Schema, YAML reading | `src/go/types/builder/` (`document.go`, `generate.go`, `detach.go` (combine, copy), `topology.go`, `validate.go`, `schema.go`, `yaml.go`, `customicons.go`, `template.go`, `templatefile.go` and `templatefile_schema.go` (template files), `legacy_xml.go` and `legacy.go` (legacy conversion)) |
 | Drafts, snapshots, sharing, published documents, libraries, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`, `icons.go`, `templates.go`, `templatefiles.go` (the server collections read at start), `scope.go`; `config_hook.go` checks a topology's `builder-doc` and removes a deleted or renamed topology's documents; `file.go` reads Builder files; `publish.go` publishes a document as a topology for the CLI, and `ReplaceLegacyDiagram`) |
-| Built-in Builder role and its start-up check | `src/go/api/config/default/builder.yml`, `src/go/web/rbac/migrations.go` (`EnsureBuilderTemplatesPublishPermission`), `src/go/web/init.go` |
+| Built-in Builder role and its start-up check | `src/go/api/config/default/builder.yml`, `src/go/web/rbac/migrations.go` (`EnsureBuilderRolePermissions`), `src/go/web/init.go` |
 | `builder-doc` codec (nested in JSON and YAML, a string in memory and in the store) | `src/go/store/types.go` |
 | `phenix builder publish`, and `phenix config create` recognizing Builder documents | `src/go/cmd/builder.go`, `src/go/cmd/config.go` |
 | Record store for drafts (BoltDB and etcd, etcd compaction) | `src/go/store/*record*.go`, `src/go/store/etcd_record_compact.go` |

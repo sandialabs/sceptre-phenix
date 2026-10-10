@@ -30,7 +30,7 @@
           :disabled="store.readOnly">
           <option value="">Select a node</option>
           <option v-for="node in movable" :key="node.id" :value="node.id">
-            {{ nodeLabel(node) }} ({{ node.kind }})
+            {{ nodeNames.get(node.id) }}
           </option>
         </select>
       </div>
@@ -43,7 +43,7 @@
           :disabled="store.readOnly">
           <option value="">No group</option>
           <option v-for="node in groupChoices" :key="node.id" :value="node.id">
-            {{ nodeLabel(node) }}
+            {{ groupNames.get(node.id) }}
           </option>
         </select>
       </div>
@@ -87,7 +87,6 @@
   import BuilderIcon from '../BuilderIcon.vue';
   import { useRegroupForm } from './structureForms.js';
 
-  import { nodeLabel } from '@/builder/model.js';
   import { useBuilderStore } from '@/builder/store.js';
 
   const ERROR_ID = 'regroup-error';
@@ -95,8 +94,16 @@
   const emit = defineEmits(['close']);
 
   const store = useBuilderStore();
-  const { form, error, movable, groupChoices, missingNode, submit } =
-    useRegroupForm(store);
+  const {
+    form,
+    error,
+    movable,
+    groupChoices,
+    nodeNames,
+    groupNames,
+    missingNode,
+    submit,
+  } = useRegroupForm(store);
 
   async function moveToGroup() {
     const { done, focus } = submit();

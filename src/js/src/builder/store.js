@@ -57,7 +57,9 @@ import { History, DEFAULT_HISTORY_LIMIT } from './history.js';
 import {
   iconLibrary,
   ingestIcons,
+  ingestSavedTemplateIcons,
   ingestTemplateIcons,
+  savedTemplateIcons,
 } from './iconLibrary.js';
 import { settleIcons } from './icons.js';
 import { createDraftStore } from './idb.js';
@@ -304,10 +306,7 @@ async function layOut(store, doc, id, options, task) {
 
   try {
     // Nodes leave room for their notes while the canvas shows them.
-    laid = await runLayout(id, doc, {
-      showNotes: builderSettings.showNodeNotes,
-      ...options,
-    });
+    laid = await runLayout(id, doc, { ...notesShown(), ...options });
   } catch (error) {
     // Stopped as the Builder closed or the session ended (see
     // stopLayoutEngine): there is no one to tell.
@@ -344,6 +343,13 @@ async function layOut(store, doc, id, options, task) {
   return laid;
 }
 
+// Whether the canvas shows node notes, as the layouts and the model's group
+// sizes take it (see nodeFootprint): nodes leave room for their notes, and
+// a group holds its members' notes, while they are shown.
+function notesShown() {
+  return { showNotes: builderSettings.showNodeNotes };
+}
+
 // Makes the planned groups (see applyGroups) for autoGroup and
 // autoGroupByPattern, lays the diagram out with its layout, or the Settings
 // default, so the groups do not overlap, and commits both as one edit that
@@ -351,7 +357,7 @@ async function layOut(store, doc, id, options, task) {
 // were grouped ("by network"). Resolves to the groups made, or to null when
 // the layout was not applied (see layOut).
 async function makeGroups(store, planned, phrase, options) {
-  const grouped = applyGroups(store.doc, planned);
+  const grouped = applyGroups(store.doc, planned, notesShown());
   const id = store.layoutToRun;
   const laid = await layOut(store, grouped.doc, id, options, 'group');
 
@@ -3454,7 +3460,7 @@ export const useBuilderStore = defineStore('builder', {
         return null;
       }
 
-      const { position, size } = resizedBox(this.doc, id, box);
+      const { position, size } = resizedBox(this.doc, id, box, notesShown());
       const current = sizeOf(node);
 
       if (
@@ -3574,7 +3580,7 @@ export const useBuilderStore = defineStore('builder', {
      *   refused
      */
     setParent(id, parentId, { announce = true } = {}) {
-      const next = setParent(this.doc, id, parentId);
+      const next = setParent(this.doc, id, parentId, notesShown());
 
       if (next === this.doc || (!announce && this.editRefusal)) {
         return null;
@@ -3787,7 +3793,7 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     group() {
-      const result = groupNodes(this.doc, this.selection.nodes);
+      const result = groupNodes(this.doc, this.selection.nodes, notesShown());
 
       if (!result.group) {
         this.announce('Select at least one node to group.');
@@ -4208,6 +4214,32 @@ export const useBuilderStore = defineStore('builder', {
       await this.fetchTemplates();
 
       return result;
+    },
+
+    /**
+     * Saves a copy of a template of the diagram to the user's library (see
+     * createLibraryTemplates); the template stays in the diagram. A template
+     * of a library carries no icon, so the copy of the custom icon it names
+     * that the diagram carries goes to the icon library first, under its
+     * name, by the rules of an upload (see ingestSavedTemplateIcons): the
+     * saved template then shows it. It rejects with the failure to save,
+     * which the caller reports (see describeLibraryError).
+     *
+     * @param {object} template a template of the diagram
+     * @param {object} [options]
+     * @param {object} [options.library] the icon library
+     * @returns {Promise<string[]>} what became of an icon that could not be
+     *   added to the icon library
+     */
+    async saveTemplateToLibrary(template, { library = iconLibrary } = {}) {
+      const warnings = await ingestSavedTemplateIcons(
+        savedTemplateIcons(template, this.doc?.icons),
+        library,
+      );
+
+      await this.createLibraryTemplates([template]);
+
+      return warnings;
     },
 
     /**

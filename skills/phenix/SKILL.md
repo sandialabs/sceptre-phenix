@@ -144,8 +144,11 @@ through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
 ## Builder
 
 The Builder is the web topology editor at `/builder`. Drafts save on the
-server apart from configs; only Publish writes Topology, Scenario and
-Experiment configs. A topology names its Builder document in the
+server apart from configs; only Publish writes Topology and Experiment
+configs (it also adds the topology to the `topology` annotation of each
+Scenario config the diagram lists), and only the Scenarios dialog stores a
+Scenario config, from an uploaded file. A topology names its Builder
+document in the
 `builder-doc` annotation, the one annotation that is a map: `digest` and `id`
 name a published document in the store, and `path` names a Builder file on
 the phenix server. Topologies the removed legacy Builder saved carry

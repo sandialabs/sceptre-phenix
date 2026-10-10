@@ -27,6 +27,7 @@ import { BUILTIN_TEMPLATES } from './catalog.js';
 import { settleIcons } from './icons.js';
 import { MAX_SHARES } from './limits.js';
 import {
+  ICON_SIZES,
   addNode,
   createDocument,
   networkByName,
@@ -157,12 +158,25 @@ export function blankTemplate() {
  * is in carries one, so the editor shows it. It has no networks, so no VLAN
  * is emptied. Its name and description are the template's.
  *
+ * A device draws its icon at the icon size of the diagram it is in while it
+ * names none of its own. The document of a template of a diagram has that
+ * diagram's icon size, so the Inspector names the size its devices draw at
+ * there; that of a template of a library has none, as its devices draw at
+ * the size of whichever diagram they are added to (see inspectorTarget).
+ *
  * @param {object} template
  * @param {object|null} [icons] the copies of icons the template's diagram
  *   carries (its `icons`), by name
+ * @param {object} [options]
+ * @param {string} [options.iconSize] the icon size of the template's
+ *   diagram (see documentIconSize); empty for a template of a library
  * @returns {object} document
  */
-export function templateDocument(template, icons = null) {
+export function templateDocument(
+  template,
+  icons = null,
+  { iconSize = '' } = {},
+) {
   const base = createDocument();
   const empty = {
     ...base,
@@ -171,6 +185,7 @@ export function templateDocument(template, icons = null) {
       name: template?.name || '',
       description: template?.description || '',
     },
+    ...(ICON_SIZES.includes(iconSize) ? { iconSize } : {}),
   };
   const { doc } = addNode(empty, nodeOptionsFromTemplate(template, empty));
   const name = template?.device?.icon;
