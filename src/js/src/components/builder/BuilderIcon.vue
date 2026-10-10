@@ -79,8 +79,11 @@
       '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3L6.3 17.7"/>',
     container:
       '<rect x="3" y="8" width="18" height="11" rx="1.5"/><path d="M7 8V5h10v3M7 12h4v4H7z"/>',
+    // A monitor drawn in dashes: a device outside the experiment. Each
+    // corner of the screen is one dash, so the screen keeps its shape at
+    // 12px.
     external:
-      '<rect x="3" y="6" width="12" height="12" rx="1.5"/><path d="M17 7h4v4M21 7l-6 6"/>',
+      '<path d="M3 7V5.5A1.5 1.5 0 0 1 4.5 4H7M9.5 4h5M17 4h2.5A1.5 1.5 0 0 1 21 5.5V7M21 9v2M21 13v1.5A1.5 1.5 0 0 1 19.5 16H17M14.5 16h-5M7 16H4.5A1.5 1.5 0 0 1 3 14.5V13M3 11V9"/><path d="M12 16v4M8 20h8"/>',
     firewall:
       '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 11h6M12 8v6"/>',
     linux:
@@ -112,6 +115,9 @@
       '<path d="M5 4h14v10l-5 6H5z"/><path d="M19 14h-5v6"/><path d="M8 8h8M8 11h5"/>',
     'object-group':
       '<rect x="3" y="4" width="18" height="16" rx="2" stroke-dasharray="4 3"/><rect x="6" y="7" width="5" height="5" rx="1"/><rect x="13" y="12" width="5" height="5" rx="1"/>',
+    // A box with an arrow out of it: a link that opens in a new tab.
+    'external-link':
+      '<rect x="3" y="6" width="12" height="12" rx="1.5"/><path d="M17 7h4v4M21 7l-6 6"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     'arrow-up': '<path d="M12 19V5M6 11l6-6 6 6"/>',
     'arrow-down': '<path d="M12 5v14M6 13l6 6 6-6"/>',

@@ -247,6 +247,29 @@ describe('BuilderIcon', () => {
     expect(html).toContain('<path d="M5 13l4 4 10-10"');
     expect(tags(html, 'img')).toEqual([]);
   });
+
+  // The external device is a monitor in dashes, with a stand. The box
+  // with an arrow out of it is the mark of a link that opens a new tab.
+  test('external is a dashed monitor, and external-link the new-tab mark', async () => {
+    const external = await render(BuilderIcon, { name: 'external' });
+    const link = await render(BuilderIcon, { name: 'external-link' });
+    const arrow = '<path d="M17 7h4v4M21 7l-6 6"/>';
+
+    expect(external).toContain('class="builder-icon builder-icon--external"');
+    // The screen is in parts, a dash each, and the stand is whole.
+    const [screen, stand] = [...external.matchAll(/<path d="([^"]*)"/g)].map(
+      ([, d]) => d,
+    );
+
+    expect(screen.match(/M/g)).toHaveLength(8);
+    expect(stand).toBe('M12 16v4M8 20h8');
+    expect(external).not.toContain(arrow);
+
+    expect(link).toContain('class="builder-icon builder-icon--external-link"');
+    expect(link).toContain(arrow);
+    // Not the server icon an unknown name falls back to.
+    expect(link).not.toContain('<circle');
+  });
 });
 
 describe('a custom icon on the canvas and in the outline', () => {

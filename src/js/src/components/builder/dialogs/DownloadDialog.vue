@@ -148,7 +148,7 @@
         rel="noopener noreferrer"
         data-testid="download-gephi-link"
         >Gephi<span class="builder-visually-hidden"> (opens in a new tab)</span
-        ><builder-icon name="external" :size="12" /></a
+        ><builder-icon name="external-link" :size="12" /></a
       >. The Builder cannot open it.
     </p>
 

@@ -140,7 +140,9 @@ describe('the Download dialog', () => {
     expect(inner).toMatch(
       /<span class="builder-visually-hidden"[^>]*> \(opens in a new tab\)<\/span>/,
     );
-    expect(inner).toMatch(/<svg\b[^>]*builder-icon--external[^>]*>/);
+    // The new-tab mark, not the external device's monitor.
+    expect(inner).toMatch(/<svg\b[^>]*builder-icon--external-link\b[^>]*>/);
+    expect(inner).not.toMatch(/builder-icon--external"/);
     expect(inner).toMatch(/<svg\b[^>]*aria-hidden="true"/);
 
     // The hint reads as one sentence around the link, and still describes
