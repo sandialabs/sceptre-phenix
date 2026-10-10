@@ -36,16 +36,17 @@ async function settle() {
   }
 }
 
-// The channel the tabs of one browser share: each message reaches every
-// other tab, a task later, as a copy. A muted member's messages go nowhere,
-// as a page's do once it has crashed.
+// The channels the tabs of one browser share, one per name: each message
+// reaches every other member of the channel, a task later, as a copy. One
+// opened without a name hears, and is heard on, every channel. A muted
+// member's messages go nowhere, as a page's do once it has crashed.
 function channelHub() {
   const members = new Set();
 
   return {
-    open() {
+    open(name = '') {
       const listeners = new Set();
-      const member = { listeners, muted: false };
+      const member = { listeners, muted: false, name };
 
       members.add(member);
 
@@ -62,7 +63,10 @@ function channelHub() {
           const copy = structuredClone(message);
 
           members.forEach((other) => {
-            if (other !== member) {
+            if (
+              other !== member &&
+              (!name || !other.name || other.name === name)
+            ) {
               setTimeout(() => other.listeners.forEach((fn) => fn(copy)), 0);
             }
           });
@@ -157,9 +161,9 @@ function fakeApi() {
   };
 }
 
-// A browser: one device store, one channel, one set of locks, and whether
-// it is online, or, by tab id, whether that tab's requests get through.
-// Each tab has its own id and save queue.
+// A browser: one device store, a channel per draft, one set of locks, and
+// whether it is online, or, by tab id, whether that tab's requests get
+// through. Each tab has its own id and save queue.
 function browser() {
   const env = {
     api: fakeApi(),
@@ -185,7 +189,9 @@ function browser() {
       tabs: {
         tab: async () => id,
         open: (draft) => {
-          env.channels[id] = env.hub.open();
+          env.channels[id] = env.hub.open(
+            draftKey(draft.actor, draft.owner, draft.draftId),
+          );
 
           return createTabCoordinator({
             ...draft,
@@ -411,6 +417,28 @@ describe('two tabs with one draft open', () => {
       }),
     );
     expect(b.state.status).toBe('saved');
+  });
+
+  test('a tab whose changes go to a new draft leaves none behind as a closed tab’s', async () => {
+    const { env, a, b } = await twoTabsWaiting();
+    const remove = env.device.remove;
+
+    // The device store takes a while to delete the tab's record, as
+    // IndexedDB may in another page.
+    env.device.remove = async (key) => {
+      await settle();
+
+      return remove(key);
+    };
+
+    a.chooseVersion('tab:A');
+    await settle();
+    await b.forkLocalHistory({ title: 'Lab (local copy)' });
+    await settle();
+
+    expect(await env.device.all()).toEqual([]);
+    expect(a.state).toMatchObject({ status: 'saved', tabs: [], versions: [] });
+    expect(tabsNotice(a.state)).toBe('');
   });
 
   test("a tab that opens the draft with changes of its own waits for an open tab's, which it hears first", async () => {

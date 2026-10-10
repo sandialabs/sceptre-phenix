@@ -1836,7 +1836,6 @@ export function createAutosave(options = {}) {
 
       const previous = record.key;
 
-      connect(owner, draftId);
       record = {
         key: ownKey(owner, draftId),
         tab,
@@ -1867,10 +1866,14 @@ export function createAutosave(options = {}) {
 
       // The conflicting draft's queue lives on in the new draft. Should its
       // record stay behind, reopening that draft offers the same choice again.
+      // It is removed before this tab leaves the other tabs with that draft
+      // open: they read the records again when a tab leaves (see left in
+      // tabs.js), and would list one still there as a closed tab's changes.
       try {
         await store?.remove(previous);
       } catch {}
 
+      connect(owner, draftId);
       emit({ status: 'saved', etag, message: '', accessLost: '' });
 
       return {
