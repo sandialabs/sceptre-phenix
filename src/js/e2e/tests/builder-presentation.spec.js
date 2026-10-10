@@ -34,6 +34,10 @@ const {
   waitForApi,
 } = require('./builder-support');
 
+// How many custom icons one document may carry: MAX_DOCUMENT_ICONS in
+// src/builder/icons.js and MaxDocumentIcons in customicons.go.
+const MAX_DOCUMENT_ICONS = 50;
+
 // The path of an icon of the library: the server names it by the hex
 // digits of its id.
 function iconPath(id) {
@@ -2243,7 +2247,7 @@ test('a custom icon a diagram carries is removed and undone, copied with its nod
 
 // A device for each of `icons`, in rows of eight, each with its icon, which
 // the document carries: as many custom icons as a diagram holds, when there
-// are 50.
+// are MAX_DOCUMENT_ICONS.
 function iconsDocument(name, icons) {
   return {
     ...blankDocument(name, {
@@ -2287,7 +2291,7 @@ for (const scheme of ['light', 'dark']) {
     async ({ page, builder, issues }, testInfo) => {
       await page.emulateMedia({ colorScheme: scheme });
 
-      const icons = Array.from({ length: 50 }, (_, index) =>
+      const icons = Array.from({ length: MAX_DOCUMENT_ICONS }, (_, index) =>
         iconOf(
           pngOf(4, 4, ownColor()),
           `icon ${String(index).padStart(2, '0')}`,
@@ -2330,10 +2334,12 @@ for (const scheme of ['light', 'dark']) {
         'data-builder-theme',
         scheme,
       );
-      await expect(customIcon(builder.nodes('device'))).toHaveCount(50);
+      await expect(customIcon(builder.nodes('device'))).toHaveCount(
+        MAX_DOCUMENT_ICONS,
+      );
       await expect
         .soft(customIcon(page.getByTestId('builder-outline')))
-        .toHaveCount(50);
+        .toHaveCount(MAX_DOCUMENT_ICONS);
 
       await builder.selectInOutline('plc-01');
       await expect(field.name).toHaveText('icon 01');
@@ -2344,7 +2350,9 @@ for (const scheme of ['light', 'dark']) {
 
       await field.choose.click();
       await expect(
-        field.dialog.getByRole('heading', { name: 'In this diagram (50)' }),
+        field.dialog.getByRole('heading', {
+          name: `In this diagram (${MAX_DOCUMENT_ICONS})`,
+        }),
       ).toBeVisible();
       await expect(field.heading).toHaveText(
         /^My library \(2 of 64, [\d.]+ KiB of 1 MiB\)$/,
@@ -2352,12 +2360,16 @@ for (const scheme of ['light', 'dark']) {
       await expect
         .soft(field.inDiagram(icons[0].id))
         .toContainText('In my library');
-      await expect.soft(field.dialog.getByTestId('icon-save')).toHaveCount(49);
+      // Every icon of the diagram but the one the library has can be saved
+      // to it.
+      await expect
+        .soft(field.dialog.getByTestId('icon-save'))
+        .toHaveCount(MAX_DOCUMENT_ICONS - 1);
 
       // The diagram is full for an icon it does not carry yet.
       await field.inLibrary(spare.id).getByTestId('icon-use').click();
       await expect(field.error).toHaveText(
-        'This diagram already has 50 custom icons. Remove one from a node first.',
+        `This diagram already has ${MAX_DOCUMENT_ICONS} custom icons. Remove one from a node first.`,
       );
       await expect(field.dialog).toBeVisible();
       await expectAccessible(page, {
@@ -2387,12 +2399,13 @@ for (const scheme of ['light', 'dark']) {
         .soft(builder)
         .toHaveAnnounced('Changed the custom icon of Device plc-01 to icon 00');
       await expect.soft(field.name).toHaveText('icon 00');
-      // The icon it had is no longer used, and leaves the diagram.
+      // The icon it had is no longer used, and leaves the diagram: the
+      // diagram keeps one icon fewer than it holds.
       await builder.waitSaved();
       await builder.persisted(
         draft,
         (doc) => [Object.keys(doc.icons).length, icons[1].id in doc.icons],
-        [31, false],
+        [MAX_DOCUMENT_ICONS - 1, false],
         { soft: true },
       );
 
