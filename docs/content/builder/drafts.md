@@ -204,7 +204,7 @@ where your changes are:
 | Offline: 2 changes not stored anywhere yet. Keep this tab open; saving retries automatically. | The server cannot be reached, and the browser could not store the changes either. | Keep the tab open until the save state says All changes saved. |
 | Offline: no unsaved changes | The server cannot be reached, and nothing is waiting. | Nothing. |
 | 1 change not saved yet. Choose which changes to save. | Another tab of this browser also has changes to this draft. | See [One draft in several tabs](#one-draft-in-several-tabs). |
-| This draft changed on the server | Someone saved a newer version first. | See [When the draft changed on the server](#when-the-draft-changed-on-the-server). |
+| This draft changed on the server | Someone saved a newer version first, and Builder is merging it with your changes, or some of your changes clash with theirs. | See [When the draft changed on the server](#when-the-draft-changed-on-the-server). |
 | Not saved: you chose another tab's changes | You chose to save another tab's changes. | Builder keeps this tab's changes as a new draft. |
 | You cannot save changes to this draft | You lost access to the draft. | See [When access changes](#when-access-changes). |
 | Not saved: your session has ended. Sign in again to save your changes. | Your sign-in expired. | See [Signing in again](#signing-in-again). |
@@ -265,10 +265,34 @@ choose, and **Choose which to save** opens the dialog again.
 
 ### When the draft changed on the server
 
-When someone else saves a newer version of the draft before your changes
-reach the server, your changes cannot be saved over it. This happens, for
-example, when you work offline on a draft you shared with **Can edit**, and
-the other person edits it meanwhile. A panel opens under the header:
+Someone else can save a newer version of the draft before your changes reach
+the server. This happens, for example, when two people edit a draft shared
+with **Can edit** at the same time, or when you work offline and the other
+person edits it meanwhile. Builder then merges their changes with yours,
+field by field:
+
+- A change only one of you made is kept. Changes to different devices, or to
+  different fields of one device, are both kept: if alice moves router-1 and
+  you rename it, router-1 is moved and renamed.
+- Devices, switches, connections and other items one of you added are kept.
+  An item one of you deleted is deleted, unless the other changed it.
+- Scenarios either of you added are added, and scenarios either of you
+  removed are removed.
+- Your view of the canvas (its zoom and position) stays as it is.
+
+When nothing clashes, Builder saves the merged diagram on top of the newer
+version and announces "Merged alice's changes with yours." The changes made
+in another tab of yours are named "another tab's changes". Draft History
+lists the save as "Merged changes from alice". Undo goes back to alice's
+version, without your changes, and Redo brings the merged diagram back.
+
+A field you both changed to different values clashes, and so does an item
+one of you deleted while the other changed it. A device's name, its
+hostname and the hostname in its settings are one choice: when any of them
+clashes, **Keep mine** or **Keep theirs** keeps all three as that version
+has them. When something clashes, or the merged diagram would have an error
+(two devices with the same hostname, for example), a panel opens under the
+header:
 
 > **This draft changed on the server**
 >
@@ -277,9 +301,23 @@ the other person edits it meanwhile. A panel opens under the header:
 >
 > Your 1 unsaved change is kept on this device. Choose how to keep your work:
 > edits you make now are not saved until you choose.
+>
+> 1 change of yours clashes with alice's. Review and merge to choose which
+> to keep.
 
 Choose one:
 
+- **Review and merge**: opens the **Merge changes from alice** dialog, which
+  lists each clash, for example "router-1 name", with **Keep mine** and
+  **Keep theirs** and the value each keeps. Choose one for every clash, or
+  select **Keep all mine** or **Keep all theirs**; the count, for example
+  "2 of 3 chosen", says how many have a choice. **Save merged** saves the
+  merged diagram on top of the newer version, with every change that does not
+  clash. If the merged diagram has an error, such as two devices with the same
+  hostname, the dialog lists it and stays open. If Builder is already merging
+  again with a newer version when you select **Save merged**, nothing is saved
+  and the dialog says "Another change arrived; the merge is being redone."
+  **Cancel** goes back to the panel.
 - **Save my history as a new draft**: saves your version as a new draft of
   your own, named for example "Riverside Water (local copy)", and opens it.
   The draft that changed on the server stays as it is.
@@ -290,6 +328,14 @@ Choose one:
 A role that cannot create drafts gets **Download** instead of **Save my
 history as a new draft**: download a copy of your work before you load the
 server version.
+
+Merging needs the version your changes started from. When the server no
+longer keeps it (a draft keeps its last 50 snapshots), it cannot be read, or
+the server does not send it within 15 seconds, the panel says "Merging is
+not available" and offers only the other choices. If the merge itself fails,
+the panel says "Merging failed" with the reason, and offers the same
+choices. If a third person saves while the merged diagram is being saved,
+Builder merges again with their version.
 
 ### When the server is out of space
 

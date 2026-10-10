@@ -6,10 +6,13 @@
 // the user can step through locally, so collapsing two edits into one snapshot
 // would silently lose an undo step.
 //
-// Concurrency is handled with ETags only. A conflict stops the queue and is
-// surfaced to the user, who may either reload the server copy or save their
-// local history as a new draft. There is no code path that overwrites a draft
-// whose ETag we no longer hold.
+// Concurrency is handled with ETags only. A conflict stops the queue and
+// hands the store the server copy it read (see onConflict), which the store
+// merges with the unsaved changes (see merge.js): the queue then holds one
+// snapshot of the merged document, sent with the ETag of that server copy
+// (see rebase). The user may also reload the server copy or save their local
+// history as a new draft. There is no code path that overwrites a draft whose
+// ETag we no longer hold.
 //
 // Some changes to a draft leave its content as it was: a change to who it is
 // shared with, or someone else's publish. The queue keeps the head the server
@@ -17,13 +20,15 @@
 // snapshots it keeps), and on a conflict reads the draft again. When the head
 // is the same, the content is what this device last saw, so the queue takes
 // the new ETag and sends again; otherwise the conflict stands, naming who
-// saved last. The read also finds a draft that is no longer shared with the
-// user, or that they may now only view (accessLost).
+// saved last and carrying the draft as read. The read also finds a draft
+// that is no longer shared with the user, or that they may now only view
+// (accessLost).
 //
-// This queue is single-editor by design. There is no presence, no live
-// collaboration, no heartbeat and no polling: the only requests it makes are
-// the draft snapshot append and the draft history cursor move, both of which
-// are ordered, awaited and carry If-Match. "Cursor" here means the position in
+// There is no presence, no live collaboration, no heartbeat and no polling:
+// another editor's changes reach this queue only through a conflict. The
+// only requests it makes are the draft read after a conflict, the draft
+// snapshot append and the draft history cursor move; the last two are
+// ordered, awaited and carry If-Match. "Cursor" here means the position in
 // the draft's own undo history, not a collaborator's caret.
 //
 // A save stores the document with the creator, creation time, last editor
@@ -409,13 +414,40 @@ export function staleSaveMessage(announced, current) {
 const OTHER_TAB_CHOSEN = 'You chose to save the changes made in another tab.';
 
 /**
+ * The server copy a conflict carries: the draft as the read after the
+ * conflict found it (see sendChecked), which the store merges with the
+ * unsaved changes.
+ *
+ * @param {object} envelope readEnvelope() result of a draft read
+ * @returns {{document: object, etag: string, head: object|null,
+ *   lastModifiedBy: string, draft: object, history: object[]|null}|null}
+ *   null when the read holds no document or no ETag
+ */
+export function serverCopyOf(envelope) {
+  if (!envelope?.etag || !envelope.document) {
+    return null;
+  }
+
+  return {
+    document: envelope.document,
+    etag: envelope.etag,
+    head: headOf(envelope),
+    lastModifiedBy: envelope.draft?.lastModifiedBy || '',
+    draft: envelope.draft || null,
+    history: Array.isArray(envelope.history) ? envelope.history : null,
+  };
+}
+
+/**
  * Creates the autosave queue.
  *
  * @param {object} options api, store, actor, onState, onDraft, now, setTimeout,
- *   clearTimeout, isOnline, addOnlineListener, historyLimit; tabs: the
- *   other tabs of this browser (builderTabs in tabs.js), which a queue
- *   without one ignores; signInHere: () => whether the Builder can ask
- *   for the password again once the session has ended (see signin.js)
+ *   clearTimeout, isOnline, addOnlineListener, historyLimit; onConflict:
+ *   called with the server copy (see serverCopyOf) when a save meets a
+ *   draft someone else saved since; tabs: the other tabs of this browser
+ *   (builderTabs in tabs.js), which a queue without one ignores;
+ *   signInHere: () => whether the Builder can ask for the password again
+ *   once the session has ended (see signin.js)
  * @returns {object} queue
  */
 export function createAutosave(options = {}) {
@@ -432,6 +464,10 @@ export function createAutosave(options = {}) {
   // observe).
   let onState = options.onState || (() => {});
   let onDraft = options.onDraft || (() => {});
+  let onConflict = options.onConflict || (() => {});
+  // The server copy the conflict in force carries (see serverCopyOf), or
+  // null.
+  let serverCopy = null;
 
   const timer = {
     set: options.setTimeout || ((fn, ms) => setTimeout(fn, ms)),
@@ -568,6 +604,7 @@ export function createAutosave(options = {}) {
     ) {
       cancelRetry();
       waitingForTabs = false;
+      serverCopy = null;
       emit({
         status: 'conflict',
         message: OTHER_TAB_CHOSEN,
@@ -1010,12 +1047,20 @@ export function createAutosave(options = {}) {
 
       if (kind === 'conflict' || kind === 'forbidden') {
         cancelRetry();
+        serverCopy = kind === 'conflict' ? error?.server || null : null;
 
-        return emit({
+        const blocked = emit({
           status: kind,
           message,
           lastModifiedBy: error?.lastModifiedBy || '',
         });
+
+        // The store merges the server copy with what is queued here.
+        if (serverCopy) {
+          onConflict(serverCopy);
+        }
+
+        return blocked;
       }
 
       // The session ended (401). Sending again succeeds once the user is
@@ -1134,6 +1179,8 @@ export function createAutosave(options = {}) {
           throw Object.assign(new Error(error?.message || 'conflict'), {
             response: error?.response,
             lastModifiedBy: fresh?.draft?.lastModifiedBy || '',
+            // The draft as read, for the store to merge (see onConflict).
+            server: serverCopyOf(fresh),
           });
         }
 
@@ -1286,6 +1333,7 @@ export function createAutosave(options = {}) {
         ),
       };
       hasRecord = Boolean(existing);
+      serverCopy = null;
 
       await persist();
 
@@ -1424,15 +1472,88 @@ export function createAutosave(options = {}) {
       return flush();
     },
 
-    /** Blocks replay when locally queued work was based on another ETag. */
+    /**
+     * Blocks replay when locally queued work was based on another ETag.
+     *
+     * @param {string} [message]
+     * @param {object} [options] server: the draft as the server holds it
+     *   now (see serverCopyOf), which the store then merges with the queue
+     *   (see onConflict)
+     * @returns {object} state
+     */
     conflict(
       message = 'This draft changed on the server since your local edits.',
+      { server = null } = {},
     ) {
       cancelRetry();
+      serverCopy = server;
 
-      return emit({
+      const blocked = emit({
         status: 'conflict',
         message,
+        lastModifiedBy: server?.lastModifiedBy || '',
+        otherTab: false,
+      });
+
+      if (serverCopy) {
+        onConflict(serverCopy);
+      }
+
+      return blocked;
+    },
+
+    /** @returns {object|null} the server copy the conflict carries */
+    get serverCopy() {
+      return serverCopy;
+    },
+
+    /**
+     * Puts the merge of the queue's changes with the server copy of a
+     * conflict in place of the queue: the record goes on from that copy's
+     * ETag and head, its entries are the history given (the server copy,
+     * then the merged document), and its queue is one snapshot of the last
+     * entry, sent on the next flush. The conflict ends.
+     *
+     * @param {object} merged etag and head of the server copy; entries: the
+     *   history entries ({id, label, snapshot, serverSnapshotId}), the last
+     *   one the merged document
+     * @returns {Promise<object>} state
+     */
+    async rebase({ etag, head, entries }) {
+      const last = entries?.at(-1);
+
+      if (!record || disposed || !etag || !last) {
+        return state;
+      }
+
+      cancelRetry();
+      serverCopy = null;
+      record.etag = etag;
+      record.serverHead = head || null;
+      record.entries = entries.map((entry) => ({
+        id: entry.id,
+        label: entry.label,
+        snapshot: entry.snapshot,
+        serverSnapshotId: entry.serverSnapshotId,
+      }));
+      record.cursor = record.entries.length - 1;
+      record.queue = [
+        {
+          opId: last.id,
+          kind: 'snapshot',
+          commitId: last.id,
+          label: last.label,
+        },
+      ];
+      record.changedAt = now();
+      retries = 0;
+
+      await persist();
+
+      return emit({
+        status: 'idle',
+        etag,
+        message: '',
         lastModifiedBy: '',
         otherTab: false,
       });
@@ -1525,6 +1646,7 @@ export function createAutosave(options = {}) {
 
       record.queue = [];
       record.entries = [];
+      serverCopy = null;
       await persist();
 
       return emit({ status: 'saved', message: '', accessLost: '' });
@@ -1649,6 +1771,7 @@ export function createAutosave(options = {}) {
       hasRecord = false;
       held = { entries: new Set(), ops: new Set() };
       copiedOps = null;
+      serverCopy = null;
 
       // The conflicting draft's queue lives on in the new draft. Should its
       // record stay behind, reopening that draft offers the same choice again.
@@ -1688,6 +1811,7 @@ export function createAutosave(options = {}) {
       }
 
       if (['conflict', 'forbidden', 'error'].includes(state.status)) {
+        serverCopy = null;
         emit({ status: 'idle', message: '', accessLost: '' });
       }
 
@@ -1740,12 +1864,13 @@ export function createAutosave(options = {}) {
      * the drafts goes on sending in the background (see
      * createBackgroundSaves in leave.js).
      *
-     * @param {object} callbacks onState, onDraft
+     * @param {object} callbacks onState, onDraft, onConflict
      * @param {object} [options] open: whether the draft is open in the editor
      */
     observe(callbacks = {}, { open = true } = {}) {
       onState = callbacks.onState || (() => {});
       onDraft = callbacks.onDraft || (() => {});
+      onConflict = callbacks.onConflict || (() => {});
       coordinator?.setOpen(open);
     },
 

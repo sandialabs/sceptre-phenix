@@ -36,6 +36,7 @@ import {
   initialState,
   replayHistory,
   saveAnnouncement,
+  serverCopyOf,
   snapshotIdOf,
   stampOf,
 } from './autosave.js';
@@ -67,7 +68,7 @@ import {
 } from './iconLibrary.js';
 import { settleIcons } from './icons.js';
 import { createDraftStore } from './idb.js';
-import { uniqueName } from './ids.js';
+import { newId, uniqueName } from './ids.js';
 import { issueTarget, responseIssues, toIssue } from './issues.js';
 import {
   layoutChanges,
@@ -82,6 +83,7 @@ import {
   ownLayout,
   runLayout,
 } from './layouts/index.js';
+import { changesFrom, mergeDocuments, possessive } from './merge.js';
 import {
   FILE_TOKEN,
   LEGACY_TOKEN,
@@ -386,6 +388,11 @@ let sessionEpoch = 0;
 // for fills the History dialog (see fetchHistory).
 let historyRequest = 0;
 
+// Bumped by every merge of a conflict (see mergeConflict), so only the last
+// one lets edits through again: a save of a merged diagram can meet another
+// conflict, whose merge starts before the first one has ended.
+let mergeRuns = 0;
+
 // Empties the store of what the user had here, after stopping the queue.
 // The theme stays: it is a preference of this browser, which logout keeps
 // (see session.js).
@@ -521,6 +528,88 @@ function openableDocument(payload) {
           : 'The document could not be read.',
     };
   }
+}
+
+// A merged document as setDocument takes it (see parseDocument), with its
+// switches named after their networks, or why the strict check refuses it:
+// each issue as "path: message".
+function checkedMerge(doc) {
+  try {
+    return { doc: namedSwitches(parseDocument(doc)), issues: [] };
+  } catch (error) {
+    const listed =
+      error instanceof DocumentError && Array.isArray(error.issues)
+        ? error.issues.map((issue) => `${issue.path}: ${issue.message}`)
+        : [];
+
+    return {
+      doc: null,
+      issues: listed.length
+        ? listed
+        : [
+            error instanceof DocumentError && error.message
+              ? error.message
+              : 'The merged diagram could not be read.',
+          ],
+    };
+  }
+}
+
+// The selection with only what `doc` still holds.
+function keptSelection(selection, doc) {
+  const nodes = new Set((doc.nodes || []).map((node) => node.id));
+  const edges = new Set((doc.edges || []).map((edge) => edge.id));
+
+  return {
+    nodes: selection.nodes.filter((id) => nodes.has(id)),
+    edges: selection.edges.filter((id) => edges.has(id)),
+  };
+}
+
+// Whether the UI was built with sign-in. Without it everyone is the same
+// user, so a merge names no one, as the conflict panel does.
+function signedIn() {
+  const mode = import.meta.env.VITE_AUTH;
+
+  return Boolean(mode) && mode !== 'disabled';
+}
+
+// Why merging a conflict is not available (see mergeConflict).
+const MERGE_NO_BASE =
+  'Merging is not available: the version your changes started from is no longer kept on the server, or could not be read.';
+const MERGE_SLOW_BASE =
+  'Merging is not available: the server took too long to send the version your changes started from.';
+const MERGE_NO_THEIRS =
+  'Merging is not available: the version on the server could not be read.';
+
+// How long a merge waits for the server to send the version the unsaved
+// changes started from (see mergeBase). The conflict panel stays hidden
+// while it waits, so the wait is bounded: after it, merging is not
+// available and the panel offers the other ways out.
+export const MERGE_BASE_TIMEOUT_MS = 15000;
+
+// What withTimeout resolves to when the time ran out first.
+const TIMED_OUT = Symbol('timed out');
+
+// Settles as `promise` does, or resolves to TIMED_OUT once `ms` have passed
+// without it settling.
+function withTimeout(promise, ms) {
+  let timer;
+  const expired = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ms);
+  });
+
+  return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
+}
+
+// Why a merge that threw is not available, in words. The message is the
+// error's own: nothing of the diagram or the request is added to it, and
+// nothing is logged.
+function mergeFailure(error) {
+  const message =
+    error instanceof Error && error.message ? error.message : 'unknown error';
+
+  return `Merging failed: ${message}`;
 }
 
 // The source token of a draft made from a published diagram as it was read
@@ -734,8 +823,19 @@ export const useBuilderStore = defineStore('builder', {
     // number that changes with every request, and `taken` once the
     // Inspector has acted on it (see takeFocusRequest).
     focusRequest: null,
-    // Whether resolveConflict is under way (see refuseWhileResolving).
+    // Whether resolveConflict or a merge is under way (see
+    // refuseWhileResolving).
     resolvingConflict: false,
+    // The merge of a conflict's server version with the unsaved changes
+    // (see mergeConflict), or null when none is under way: status is
+    // 'merging' while it runs, 'review' when the user chooses (some fields
+    // clash, or the merged diagram is refused), and 'unavailable' with why
+    // (reason) when the version the changes started from cannot be read in
+    // time, or the merge failed.
+    // from names who saved the server's version (see changesFrom), clashes
+    // says how many fields clash; base and server (the server copy, its
+    // document checked) are what a review merges.
+    merge: null,
     // The configs ("<kind>/<name>") the server refused to let this draft
     // update because someone else changed them since it published them (see
     // updateBlocker in publish.js).
@@ -796,6 +896,11 @@ export const useBuilderStore = defineStore('builder', {
     errors: (state) =>
       validateDocument(state.doc).filter((issue) => issue.level === 'error'),
     hasConflict: (state) => state.saveState.status === 'conflict',
+    // Whether the conflict panel shows: a conflict, unless a merge that may
+    // end it without asking is under way (see mergeConflict).
+    conflictShown: (state) =>
+      state.saveState.status === 'conflict' &&
+      state.merge?.status !== 'merging',
     // Why commit would refuse an edit now, or '' when it would not. A form
     // that shows a refusal itself reads it before it changes the diagram.
     editRefusal: (state) => {
@@ -1101,6 +1206,7 @@ export const useBuilderStore = defineStore('builder', {
       // draft's problem (see announceSaveState).
       this.queueWork = null;
       this.saveAnnounced = null;
+      this.merge = null;
       this.autosave = markRaw(
         createAutosave({
           api: builderApi,
@@ -1109,6 +1215,9 @@ export const useBuilderStore = defineStore('builder', {
           // Other tabs with the draft open (see tabs.js).
           tabs: builderTabs,
           signInHere: signInAvailable,
+          // Someone else saved the draft first: their version is merged
+          // with the changes queued here.
+          onConflict: (server) => this.mergeConflict(server),
           onState: (state) => {
             this.saveState = state;
 
@@ -1304,6 +1413,7 @@ export const useBuilderStore = defineStore('builder', {
       this.experiment = '';
       this.saveState = initialState();
       this.saveAnnounced = null;
+      this.merge = null;
 
       return doc;
     },
@@ -1505,7 +1615,11 @@ export const useBuilderStore = defineStore('builder', {
           return null;
         }
 
-        await this.recoverLocalHistory(serverETag, serverHead);
+        await this.recoverLocalHistory(
+          serverETag,
+          serverHead,
+          serverCopyOf(envelope),
+        );
 
         if (this.sessionEndedSince(epoch)) {
           return null;
@@ -1557,9 +1671,15 @@ export const useBuilderStore = defineStore('builder', {
      * @param {string} [serverETag] the ETag the draft was read with, whose
      *   history is serverHistory
      * @param {object} [serverHead] headOf() the draft as read
+     * @param {object} [server] the draft as read (see serverCopyOf): a
+     *   queue based on an older ETag is merged with it (see mergeConflict)
      * @returns {Promise<boolean>} whether unsaved work was recovered
      */
-    async recoverLocalHistory(serverETag = this.etag, serverHead = null) {
+    async recoverLocalHistory(
+      serverETag = this.etag,
+      serverHead = null,
+      server = null,
+    ) {
       if (!this.autosave) {
         return false;
       }
@@ -1649,7 +1769,7 @@ export const useBuilderStore = defineStore('builder', {
       );
 
       if (etag !== serverETag) {
-        this.autosave.conflict();
+        this.autosave.conflict(undefined, { server });
 
         return true;
       }
@@ -1798,6 +1918,7 @@ export const useBuilderStore = defineStore('builder', {
 
           this.owner = envelope.draft?.owner || this.owner;
           this.draftId = envelope.draft?.id || this.draftId;
+          this.merge = null;
           this.rememberDraft(envelope.draft);
           this.experiment = envelope.draft?.experiment || '';
           // The new draft is the user's own, even when the one it leaves
@@ -1851,6 +1972,311 @@ export const useBuilderStore = defineStore('builder', {
       }
 
       return loaded;
+    },
+
+    /**
+     * Merges the server's version of the open draft, which a save found
+     * someone else saved first (see onConflict in autosave.js), with the
+     * changes not saved yet (see merge.js). The base is the server snapshot
+     * those changes started from (the head the queue last confirmed): an
+     * entry of the undo history holds it, or the server is asked for it.
+     * When no field clashes and the strict check takes the merged diagram,
+     * it is saved on top of the server's version (see saveMerged).
+     * Otherwise the conflict panel offers Review and merge (status
+     * 'review'), or says why merging is not available (status
+     * 'unavailable'); saving the history as a new draft and discarding it
+     * stay offered. Edits are refused while the merge runs, as they are
+     * while a conflict is resolved, since the queue is replaced.
+     *
+     * @param {object} server the draft as the server holds it now (see
+     *   serverCopyOf in autosave.js)
+     * @returns {Promise<object|null>} the merged document once saved, or
+     *   null
+     */
+    async mergeConflict(server) {
+      const { autosave } = this;
+
+      if (!autosave || !server || this.readOnly) {
+        return null;
+      }
+
+      const run = (mergeRuns += 1);
+      const epoch = sessionEpoch;
+      const current = () =>
+        !this.sessionEndedSince(epoch) && this.autosave === autosave;
+      const from = changesFrom(
+        signedIn() ? server.lastModifiedBy : '',
+        usePhenixStore().username || '',
+      );
+      const blocked = (status, reason = '', more = {}) => {
+        this.merge = markRaw({
+          status,
+          from,
+          reason,
+          clashes: 0,
+          base: null,
+          server,
+          ...more,
+        });
+      };
+
+      blocked('merging');
+      this.resolvingConflict = true;
+
+      try {
+        const { doc: base, reason } = await this.mergeBase(autosave);
+
+        if (!current()) {
+          return null;
+        }
+
+        if (!base) {
+          blocked('unavailable', reason);
+
+          return null;
+        }
+
+        let theirs = null;
+
+        try {
+          theirs = namedSwitches(serverDocument(server.document));
+        } catch {}
+
+        if (!theirs) {
+          blocked('unavailable', MERGE_NO_THEIRS);
+
+          return null;
+        }
+
+        const checked = { ...server, document: theirs };
+        const result = mergeDocuments(base, toRaw(this.doc), theirs);
+        const merged =
+          result.clashes.length === 0 ? checkedMerge(result.doc).doc : null;
+
+        if (merged) {
+          return await this.saveMerged(merged, checked, from);
+        }
+
+        blocked('review', '', {
+          clashes: result.clashes.length,
+          base,
+          server: checked,
+        });
+
+        return null;
+      } catch (error) {
+        // Whatever failed, the merge ends: the conflict panel shows again,
+        // with why, and saving the history as a new draft and discarding it
+        // stay offered. A later merge has the panel to itself.
+        if (run === mergeRuns && current()) {
+          blocked('unavailable', mergeFailure(error));
+        }
+
+        return null;
+      } finally {
+        if (run === mergeRuns) {
+          this.resolvingConflict = false;
+        }
+      }
+    },
+
+    /**
+     * The document the unsaved changes started from: the server snapshot
+     * the queue last confirmed, from the undo history or the queue's
+     * entries when one holds it, else read from the server, which has
+     * MERGE_BASE_TIMEOUT_MS to send it.
+     *
+     * @param {object} autosave the queue
+     * @returns {Promise<{doc: object|null, reason: string}>} doc is null,
+     *   with why merging is not available, when it cannot be read: the
+     *   server no longer keeps it, cannot be reached, or took too long
+     */
+    async mergeBase(autosave) {
+      const record = autosave.record;
+      const id = record?.serverHead?.snapshotId;
+      const missing = { doc: null, reason: MERGE_NO_BASE };
+
+      if (!id) {
+        return missing;
+      }
+
+      const held = [...this.history.entries, ...(record.entries || [])].find(
+        (entry) => entry.serverSnapshotId === id && entry.snapshot,
+      );
+
+      if (held) {
+        return { doc: toRaw(held.snapshot), reason: '' };
+      }
+
+      try {
+        const read = await withTimeout(
+          builderApi.getSnapshot(record.owner, record.draftId, id),
+          MERGE_BASE_TIMEOUT_MS,
+        );
+
+        if (read === TIMED_OUT) {
+          return { doc: null, reason: MERGE_SLOW_BASE };
+        }
+
+        return read?.document
+          ? { doc: namedSwitches(serverDocument(read.document)), reason: '' }
+          : missing;
+      } catch {
+        return missing;
+      }
+    },
+
+    /**
+     * Saves a merged document on top of the server's version: the queue
+     * goes on from that version's ETag and holds one snapshot of the merged
+     * document, named "Merged changes from <user>" (see rebase in
+     * autosave.js), and the merge is announced.
+     *
+     * The undo history becomes the server's version, then the merged
+     * document, one step apart. The entries of the edits that were not
+     * saved are dropped rather than rebased: each holds the diagram as it
+     * was before the other editor's changes, so undoing to one would take
+     * those changes out again, and the server holds none of them, so a
+     * move of the draft's cursor to one could not be saved. The merged
+     * document holds every one of those edits.
+     *
+     * @param {object} merged the merged document, checked
+     * @param {object} server the server copy, its document checked
+     * @param {string} from who saved the server's version (see changesFrom)
+     * @returns {Promise<object>} the document
+     */
+    async saveMerged(merged, server, from) {
+      const { autosave } = this;
+      const doc = settleIcons(merged, iconLibrary);
+      const entries = [
+        {
+          id: newId(),
+          label: 'initial',
+          snapshot: server.document,
+          serverSnapshotId: server.head?.snapshotId,
+        },
+        { id: newId(), label: `Merged changes from ${from}`, snapshot: doc },
+      ];
+
+      this.history.restore(entries, 1);
+      this.historyChanged();
+      this.doc = doc;
+      this.layoutRestore = null;
+      this.selection = keptSelection(this.selection, doc);
+      this.etag = server.etag;
+      this.rememberDraft(server.draft);
+      this.rememberAccess(server.draft);
+
+      if (Array.isArray(server.history)) {
+        this.serverHistory = server.history;
+      }
+
+      await autosave.rebase({
+        etag: server.etag,
+        head: server.head,
+        entries,
+      });
+      // The queue holds the merge now and the conflict has ended, so the
+      // merge dialog closes with the conflict panel already gone (see
+      // mergeReview in Builder.vue), and an edit goes after the merge.
+      this.merge = null;
+      this.resolvingConflict = false;
+      this.announce(`Merged ${possessive(from)} changes with yours.`);
+      this.trackQueue(autosave.flush());
+
+      return doc;
+    },
+
+    /**
+     * The merge the merge dialog reviews: the conflict's base and server
+     * version with the diagram as it is now.
+     *
+     * @returns {object|null} mergeDocuments() result, or null when no
+     *   review is offered
+     */
+    mergeReview() {
+      const { merge } = this;
+
+      if (merge?.status !== 'review') {
+        return null;
+      }
+
+      return markRaw(
+        mergeDocuments(merge.base, toRaw(this.doc), merge.server.document),
+      );
+    },
+
+    /**
+     * Why the merge with `choices` would be refused, as the strict check
+     * says it (see parseDocument): each issue as "path: message".
+     *
+     * @param {Object<string, 'mine'|'theirs'>} choices by clash key
+     * @returns {string[]} none when it would be saved
+     */
+    mergeProblems(choices = {}) {
+      const { merge } = this;
+
+      if (merge?.status !== 'review') {
+        return [];
+      }
+
+      return checkedMerge(
+        mergeDocuments(
+          merge.base,
+          toRaw(this.doc),
+          merge.server.document,
+          choices,
+        ).doc,
+      ).issues;
+    },
+
+    /**
+     * Saves the merge the user reviewed, with the version they chose for
+     * each clashing field (see saveMerged). A merged diagram the strict
+     * check refuses is not saved: the issues say why. Nothing is saved
+     * either while another merge runs (another change arrived, and the
+     * merge is made again with it): busy says so.
+     *
+     * @param {Object<string, 'mine'|'theirs'>} choices by clash key
+     * @returns {Promise<{saved: boolean, issues: string[], busy?: boolean}>}
+     */
+    async saveMergeChoices(choices = {}) {
+      const { merge, autosave } = this;
+
+      if (merge?.status === 'merging' || this.resolvingConflict) {
+        return { saved: false, busy: true, issues: [] };
+      }
+
+      if (merge?.status !== 'review' || !autosave) {
+        return { saved: false, issues: [] };
+      }
+
+      const checked = checkedMerge(
+        mergeDocuments(
+          merge.base,
+          toRaw(this.doc),
+          merge.server.document,
+          choices,
+        ).doc,
+      );
+
+      if (!checked.doc) {
+        return { saved: false, issues: checked.issues };
+      }
+
+      const run = (mergeRuns += 1);
+
+      this.resolvingConflict = true;
+
+      try {
+        await this.saveMerged(checked.doc, merge.server, merge.from);
+      } finally {
+        if (run === mergeRuns) {
+          this.resolvingConflict = false;
+        }
+      }
+
+      return { saved: true, issues: [] };
     },
 
     /**

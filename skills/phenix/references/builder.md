@@ -425,6 +425,40 @@ other open tabs to those tabs. It finds them by their Web Locks or, without Web
 Locks, by the tabs that answer within 500 ms over the BroadcastChannel
 `phenix-builder:tabs` (localStorage events without one).
 
+A save refused with `412` reads the draft again; when its head (current
+snapshot, cursor, snapshot count) is the one the queue last confirmed, the
+queue takes the new ETag and sends again, else the conflict carries the draft
+as read (`serverCopyOf` in `autosave.js`) to `store.mergeConflict`, as does a
+recovered queue based on an older ETag. The store merges three ways
+(`mergeDocuments(base, mine, theirs)` in `merge.js`): the base is the snapshot
+of the queue's `serverHead`, from the undo history or the queue's entries, else
+`GET .../snapshots/{snapshot}` (given `MERGE_BASE_TIMEOUT_MS`, 15 s, while the
+panel stays hidden); mine is the diagram on screen; theirs the server copy. Nodes, networks, edges and templates match by id, icons by name, other
+lists by a unique `id` or else `name` (device interface handles, spec
+interfaces) and otherwise are one value, as are a node's `position` and `size`;
+objects merge key by key; `scenarios` merge as a set; `viewport` is mine;
+`$schema`, `revision`, `metadata.id` and the four stamps are theirs; order is
+theirs, then mine's additions. A device's `label`, `hostname` and
+`spec.general.hostname` are one choice: when any of them clashes, one clash
+covers all three and the chosen side's values are kept for all three
+(`settleDeviceName`); a switch's label never clashes. Without
+clashes, and when `parseDocument` takes the result, `saveMerged` replaces the
+queue with one snapshot `Merged changes from <user>` sent with the server
+copy's ETag (`rebase` in `autosave.js`), the undo history becomes the server
+copy then the merged document, and the store announces `Merged <user>'s
+changes with yours.` (`another tab` when the server names the user,
+`another editor` without sign-in; `changesFrom`). Otherwise `store.merge` is
+`review` (the panel's Review and merge, `conflict-merge`, opens
+`dialogs/MergeDialog.vue`: one fieldset per clash with Keep mine / Keep
+theirs, Keep all mine, Keep all theirs, Save merged aria-disabled until each
+has a choice, `store.saveMergeChoices`, which answers
+`{saved: false, busy: true}` while another merge runs and the dialog then says
+"Another change arrived; the merge is being redone.") or `unavailable` (no base, the base read
+timed out, or the merge threw: `Merging failed: <message>`; one more sentence,
+`conflict-merge-note`). Fork and discard stay. Edits are refused
+while a merge runs (`refuseWhileResolving`). A conflict on the merged save
+merges again with the new server copy, from the head the merge was based on.
+
 `GET .../snapshots` returns `{"cursor": <index>, "snapshots": [...]}`, oldest
 first; each snapshot has `id`, `digest`, `size`, `createdAt`, `createdBy`,
 `current`, and `summary` and `opId` when set.

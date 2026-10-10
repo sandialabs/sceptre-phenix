@@ -46,10 +46,16 @@ test.skip(
   'set E2E_SHARING=1 (see file header)',
 );
 
-// Makes a draft of `owner`'s through the API and shares it with `shares`.
-async function seedDraft(owner, name, shares = []) {
+// Makes a draft of `owner`'s through the API, holding `document`, and
+// shares it with `shares`.
+async function seedDraft(
+  owner,
+  name,
+  shares = [],
+  document = blankDocument(name),
+) {
   const created = await owner.api.post(`${API}/builder/drafts`, {
-    data: { title: name, document: blankDocument(name) },
+    data: { title: name, document },
   });
   expect(created.ok(), await created.text()).toBeTruthy();
   const draft = await created.json();
@@ -127,6 +133,101 @@ async function rename(page, name) {
 
 function editorHeading(page) {
   return page.getByRole('heading', { level: 1, name: /Builder$/ });
+}
+
+// labDocument with a third device, server-3, connected as the others are.
+function threeServers(name) {
+  const doc = labDocument(name);
+  const [first] = doc.nodes;
+  const sw = doc.nodes.find((node) => node.kind === 'switch');
+  const handle = { id: crypto.randomUUID(), name: 'eth0', index: 0 };
+  const hostname = 'server-3';
+  const third = {
+    ...first,
+    id: crypto.randomUUID(),
+    label: hostname,
+    position: { x: 640, y: 0 },
+    device: {
+      ...first.device,
+      hostname,
+      spec: {
+        ...first.device.spec,
+        general: { ...first.device.spec.general, hostname },
+      },
+      interfaces: [handle],
+    },
+  };
+
+  return {
+    ...doc,
+    nodes: [...doc.nodes, third],
+    edges: [
+      ...doc.edges,
+      {
+        id: crypto.randomUUID(),
+        sourceNodeId: third.id,
+        sourceHandleId: handle.id,
+        targetNodeId: sw.id,
+        networkId: doc.networks[0].id,
+      },
+    ],
+  };
+}
+
+// Vue Flow's wrapper around the device with this hostname: the node's one
+// focusable element, which takes the canvas keys.
+function deviceNode(page, hostname) {
+  return page.locator('.vue-flow__node-builderDevice').filter({
+    has: page.locator('.builder-node__label', {
+      hasText: new RegExp(`^${hostname}$`),
+    }),
+  });
+}
+
+// The response to the page's next snapshot upload, whatever its status.
+function nextSave(page) {
+  return page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname.endsWith('/snapshots'),
+  );
+}
+
+// Renames the device `id` from its Outline row: F2, then the new name, which
+// replaces the selected old one. Resolves with the response to its save.
+async function renameDevice(page, id, from, to) {
+  const saved = nextSave(page);
+  const field = page.locator(`#rename-${id}`);
+
+  await page.getByTestId(`outline-item-${id}`).focus();
+  await page.keyboard.press('F2');
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue(from);
+  await expect(field).toHaveAccessibleName(new RegExp(`^Rename ${from}\\b`));
+  await page.keyboard.type(to);
+  await page.keyboard.press('Enter');
+
+  return saved;
+}
+
+// The id of the node of the device `hostname` in `doc`.
+function deviceId(doc, hostname) {
+  return doc.nodes.find((node) => node.device?.hostname === hostname).id;
+}
+
+// The draft's current document, as the server holds it.
+async function serverDocument(user, draft) {
+  const read = await user.api.get(draftPath(draft));
+  expect(read.ok(), await read.text()).toBeTruthy();
+
+  return (await read.json()).document;
+}
+
+function hostnamesOf(doc) {
+  return doc.nodes
+    .filter((node) => node.kind === 'device')
+    .map((node) => node.device.hostname)
+    .sort();
 }
 
 // The editor header in a window `width` wide: how wide the name's box is,
@@ -684,6 +785,172 @@ test('access that changes while the draft is open', async ({
     expect((listed.shared || []).map((entry) => entry.id)).not.toContain(
       draft.id,
     );
+  });
+});
+
+// Two editors of one draft each save a change made to the draft as they
+// opened it. Changes to different devices are merged without asking; a
+// device both renamed asks the second to save which name to keep.
+test("two editors' changes are merged, and only a name both changed asks which to keep", async ({
+  sharingUsers,
+}) => {
+  test.setTimeout(150000);
+  const { owner, editor } = sharingUsers;
+  const name = 'Merge lab';
+  // Snapping is off: the editor's 10-pixel move leaves server-2 off the
+  // grid, and a canvas that snaps draws a node opened off the grid at the
+  // nearest grid point, not where the document puts it.
+  const seeded = {
+    ...threeServers(name),
+    grid: { enabled: true, size: 16, snap: false },
+  };
+  const ids = Object.fromEntries(
+    ['server', 'server-2', 'server-3'].map((hostname) => [
+      hostname,
+      deviceId(seeded, hostname),
+    ]),
+  );
+  const draft = await seedDraft(
+    owner,
+    name,
+    [{ user: editor.username, access: 'edit' }],
+    seeded,
+  );
+  const { page } = owner;
+  const { page: theirs } = editor;
+  // Who the merge names: the UI these tests use is built without sign-in,
+  // and names no one.
+  const from = `(${owner.username}|another editor)`;
+  let moved;
+
+  await test.step('both open it', async () => {
+    await openShared(editor, draft);
+    await expect(theirs.getByTestId('builder-save-state')).toContainText(SAVED);
+    await openOwn(owner, draft);
+  });
+
+  await test.step("the owner renames server; the editor's move of server-2 is merged with it", async () => {
+    await renameDevice(page, ids.server, 'server', 'web');
+    await expect(page.getByTestId('builder-save-state')).toContainText(SAVED);
+
+    const before = (await serverDocument(owner, draft)).nodes.find(
+      (node) => node.id === ids['server-2'],
+    );
+    moved = { x: before.position.x + 10, y: before.position.y };
+
+    // The editor opened the draft before the owner's save: theirs meets it.
+    const refused = nextSave(theirs);
+    await deviceNode(theirs, 'server-2').click();
+    await theirs.keyboard.press('Shift+ArrowRight');
+    expect((await refused).status()).toBe(412);
+
+    await expect(theirs).toHaveAnnounced(
+      new RegExp(`Merged ${from}'s changes with yours\\.`),
+    );
+    await expect(theirs.getByTestId('builder-save-state')).toContainText(SAVED);
+    await expect(theirs.getByTestId('builder-conflict')).toHaveCount(0);
+
+    const doc = await serverDocument(owner, draft);
+    expect(hostnamesOf(doc)).toEqual(['server-2', 'server-3', 'web']);
+    expect(
+      doc.nodes.find((node) => node.id === ids['server-2']).position,
+    ).toEqual(moved);
+  });
+
+  await test.step("both sessions show the rename and the move once they open the draft's link again", async () => {
+    const link = encodeURIComponent(`${draft.owner}/${draft.id}`);
+
+    for (const user of [owner, editor]) {
+      await visit(user.page, `/builder?draft=${link}`);
+      await expect(user.page.getByTestId('builder-canvas')).toBeVisible({
+        timeout: 20000,
+      });
+      await expect(user.page.getByTestId('builder-save-state')).toContainText(
+        SAVED,
+      );
+      await expect(deviceNode(user.page, 'web')).toHaveCount(1);
+      await expect(deviceNode(user.page, 'server')).toHaveCount(0);
+      await expect(deviceNode(user.page, 'server-2')).toHaveCSS(
+        'transform',
+        `matrix(1, 0, 0, 1, ${moved.x}, ${moved.y})`,
+      );
+    }
+  });
+
+  await test.step('both rename server-3: the second to save chooses which name to keep', async () => {
+    await renameDevice(page, ids['server-3'], 'server-3', 'db-owner');
+    await expect(page.getByTestId('builder-save-state')).toContainText(SAVED);
+
+    // The editor opened the draft before the owner's save.
+    expect(
+      (
+        await renameDevice(theirs, ids['server-3'], 'server-3', 'db-editor')
+      ).status(),
+    ).toBe(412);
+    const panel = theirs.getByTestId('builder-conflict');
+    await expect(panel).toBeVisible();
+    await expect(panel.getByTestId('conflict-merge-note')).toHaveText(
+      new RegExp(
+        `^1 change of yours clashes with ${from}'s\\. Review and merge to choose which to keep\\.$`,
+      ),
+    );
+    await expect(panel.getByTestId('conflict-fork')).toBeVisible();
+    await expect(panel.getByTestId('conflict-reload')).toBeVisible();
+    await expectAccessible(theirs, {
+      include: '[data-testid="builder-conflict"]',
+      label: 'Conflict panel with Review and merge',
+    });
+
+    await panel.getByTestId('conflict-merge').click();
+    const dialog = theirs.getByTestId('merge-dialog');
+    const save = dialog.getByTestId('merge-save');
+    const count = dialog.getByTestId('merge-count');
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByRole('heading', {
+        name: new RegExp(`^Merge changes from ${from}$`),
+      }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole('group', { name: 'server-3 name' }),
+    ).toBeVisible();
+    // Neither is chosen, and focus is on the first.
+    await expect(dialog.getByTestId('merge-clash-0-mine')).toBeFocused();
+    await expect(dialog.getByTestId('merge-clash-0-mine')).not.toBeChecked();
+    await expect(dialog.getByTestId('merge-clash-0-theirs')).not.toBeChecked();
+    await expect(count).toHaveText('0 of 1 chosen');
+    await expect(save).toHaveAttribute('aria-disabled', 'true');
+    await expectAccessible(theirs, {
+      include: '[data-testid="merge-dialog"]',
+      label: 'Merge dialog',
+    });
+
+    // Save merged says what is missing, and the dialog stays. Playwright
+    // waits for an aria-disabled control to be enabled before it clicks;
+    // the button still takes the click.
+    await save.click({ force: true });
+    await expect(dialog.getByTestId('merge-error')).toHaveText(
+      'Choose which version to keep of every field: 0 of 1 chosen.',
+    );
+    await expect(dialog.getByTestId('merge-clash-0-mine')).toBeFocused();
+
+    await dialog.getByRole('radio', { name: 'Keep mine: db-editor' }).check();
+    await expect(count).toHaveText('1 of 1 chosen');
+    await expect(save).not.toHaveAttribute('aria-disabled');
+
+    const saved = nextSave(theirs);
+    await save.click();
+    expect((await saved).ok()).toBeTruthy();
+    await expect(dialog).toHaveCount(0);
+    await expect(panel).toHaveCount(0);
+    await expect(editorHeading(theirs)).toBeFocused();
+    await expect(theirs.getByTestId('builder-save-state')).toContainText(SAVED);
+
+    expect(hostnamesOf(await serverDocument(owner, draft))).toEqual([
+      'db-editor',
+      'server-2',
+      'web',
+    ]);
   });
 });
 

@@ -114,6 +114,41 @@ function withMetadata(doc, fields) {
   return { ...doc, metadata: { ...doc.metadata, ...fields } };
 }
 
+// The document with its first device renamed, as another editor might, to
+// the hostname the page gives the next device it adds (see addDevices). The
+// page's next device then has the same hostname: the two versions cannot be
+// merged as they are, so the page's save meets a conflict that stands. A
+// change elsewhere that does not clash is merged without asking.
+function withNextHostname(doc) {
+  const devices = doc.nodes.filter((node) => node.kind === 'device');
+  const taken = new Set(devices.map((node) => node.device.hostname));
+  let hostname = 'node';
+
+  for (let index = 2; taken.has(hostname); index += 1) {
+    hostname = `node-${index}`;
+  }
+
+  return {
+    ...doc,
+    nodes: doc.nodes.map((node) =>
+      node === devices[0]
+        ? {
+            ...node,
+            label: hostname,
+            device: {
+              ...node.device,
+              hostname,
+              spec: {
+                ...node.device.spec,
+                general: { ...node.device.spec.general, hostname },
+              },
+            },
+          }
+        : node,
+    ),
+  };
+}
+
 // Freezes page timers so the autosave retry backoff never fires on its own:
 // anything sent after this point was sent because the test asked for it.
 // Requires page.clock.install() before the page was opened.
@@ -136,7 +171,7 @@ async function forkAfterConflict(builder, testInfo) {
   await builder.waitSaved();
 
   await writeElsewhere(builder.request, draft, (doc) =>
-    withMetadata(doc, { description: 'Changed elsewhere' }),
+    withNextHostname(withMetadata(doc, { description: 'Changed elsewhere' })),
   );
   builder.tracker.config('Topology', title);
   const current = await builder.request.get(draftPath(draft));
@@ -595,7 +630,9 @@ test.describe('Builder persistence', () => {
         await builder.toolbar('retry').focus();
 
         await writeElsewhere(builder.request, draft, (doc) =>
-          withMetadata(doc, { description: 'Changed elsewhere' }),
+          withNextHostname(
+            withMetadata(doc, { description: 'Changed elsewhere' }),
+          ),
         );
         await page.unroute(DRAFT_ROUTES);
         // Past the first retry delay: the automatic retry, not a press,
@@ -634,7 +671,7 @@ test.describe('Builder persistence', () => {
 
     const elsewhere = uniqueName(testInfo, 'elsewhere');
     await writeElsewhere(builder.request, draft, (doc) =>
-      withMetadata(doc, { name: elsewhere }),
+      withNextHostname(withMetadata(doc, { name: elsewhere })),
     );
 
     await addDevices(builder, 1);
@@ -696,7 +733,7 @@ test.describe('Builder persistence', () => {
     await test.step('a conflict raised while typing leaves focus and text in the name field', async () => {
       const { page } = builder;
       await writeElsewhere(builder.request, draft, (doc) =>
-        withMetadata(doc, { description: 'Changed again' }),
+        withNextHostname(withMetadata(doc, { description: 'Changed again' })),
       );
       // An edit's save, held until the name is being typed, meets the
       // conflict; typing goes on.
@@ -724,6 +761,88 @@ test.describe('Builder persistence', () => {
 
     expectNoFatal(issues);
   });
+
+  test(
+    'a name both editors changed is reviewed in the merge dialog, which passes an axe scan',
+    { tag: '@axe' },
+    async ({ builder, issues }, testInfo) => {
+      const { page } = builder;
+
+      await builder.open();
+      const draft = await builder.createBlank();
+      const first = uniqueName(testInfo, 'merge');
+      await builder.rename(first);
+      // The save state can say all is saved before the rename's save
+      // starts: the server holds the rename once it says so.
+      await builder.persisted(draft, (doc) => doc.metadata.name, first);
+      await builder.waitSaved();
+
+      // Another editor renames the diagram too, and adds a note, which
+      // clashes with nothing.
+      const theirs = uniqueName(testInfo, 'theirs');
+      await writeElsewhere(builder.request, draft, (doc) => ({
+        ...withMetadata(doc, { name: theirs }),
+        nodes: [
+          ...doc.nodes,
+          {
+            id: crypto.randomUUID(),
+            kind: 'note',
+            position: { x: 0, y: 320 },
+            note: { text: 'From elsewhere' },
+          },
+        ],
+      }));
+      await builder.rename(uniqueName(testInfo, 'mine'));
+
+      const panel = page.getByTestId('builder-conflict');
+      await expect(panel).toBeVisible();
+      await expect(
+        panel.getByRole('heading', {
+          name: 'This draft changed on the server',
+        }),
+      ).toBeFocused();
+      await expect(panel.getByTestId('conflict-merge-note')).toHaveText(
+        "1 change of yours clashes with another editor's. Review and merge to choose which to keep.",
+      );
+      await expectAccessible(page, {
+        include: '[data-testid="builder-conflict"]',
+        label: 'Conflict panel with Review and merge',
+      });
+
+      await panel.getByTestId('conflict-merge').click();
+      const dialog = page.getByTestId('merge-dialog');
+      await expect(dialog).toBeVisible();
+      await expect(
+        dialog.getByRole('group', { name: 'Diagram name' }),
+      ).toBeVisible();
+      await expectAccessible(page, {
+        include: '[data-testid="merge-dialog"]',
+        label: 'Merge dialog',
+      });
+
+      // Cancel goes back to the panel; Keep all theirs then chooses for
+      // every field.
+      await dialog.getByTestId('merge-cancel').click();
+      await expect(dialog).toHaveCount(0);
+      await expect(panel.getByTestId('conflict-merge')).toBeFocused();
+      await panel.getByTestId('conflict-merge').click();
+      await dialog.getByTestId('merge-all-theirs').click();
+      await expect(dialog.getByTestId('merge-count')).toHaveText(
+        '1 of 1 chosen',
+      );
+      await dialog.getByTestId('merge-save').click();
+      await expect(dialog).toHaveCount(0);
+      await expect(panel).toHaveCount(0);
+      await builder.waitSaved();
+
+      const server = await builder.serverDocument(draft);
+      expect(server.metadata.name).toBe(theirs);
+      expect(countKind(server, 'note')).toBe(1);
+      await expect(page.getByTestId('builder-name')).toHaveText(theirs);
+
+      expectNoFatal(issues);
+    },
+  );
 
   test('Save my history as a new draft forks the local history', async ({
     builder,

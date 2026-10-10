@@ -1310,6 +1310,148 @@ async function attachedTo(shared, { actor = 'alice', store } = {}) {
   return { queue, onDraft };
 }
 
+describe('a conflict with another save', () => {
+  const base = sampleDocument().doc;
+  const theirs = named(base, 'Theirs');
+  const merged = named(base, 'Merged');
+  const read = {
+    draft: {
+      id: 'd1',
+      owner: 'alice',
+      snapshotId: 's2',
+      cursor: 1,
+      snapshots: 2,
+      lastModifiedBy: 'bob',
+    },
+    document: theirs,
+    history: [{ id: 's1' }, { id: 's2' }],
+    cursor: 1,
+    etag: '"2"',
+  };
+
+  async function conflicted() {
+    const api = fakeApi({
+      appendSnapshot: vi
+        .fn()
+        .mockRejectedValueOnce(conflict())
+        .mockResolvedValueOnce({
+          draft: {
+            id: 'd1',
+            owner: 'alice',
+            snapshotId: 's3',
+            cursor: 2,
+            snapshots: 3,
+          },
+          history: null,
+          etag: '"3"',
+        }),
+      getDraft: vi.fn(async () => read),
+    });
+    const onConflict = vi.fn();
+    const queue = createAutosave({
+      api,
+      store: memoryStore(),
+      actor: 'alice',
+      onConflict,
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+      isOnline: () => true,
+    });
+
+    await queue.attach({
+      owner: 'alice',
+      draftId: 'd1',
+      etag: '"1"',
+      serverHead: { snapshotId: 's1', cursor: 0, snapshots: 1 },
+    });
+
+    const state = await queue.commit({
+      id: 'c1',
+      label: 'one',
+      snapshot: named(base, 'Mine'),
+    });
+
+    return { api, onConflict, queue, state };
+  }
+
+  test('hands the store the draft as read, which a merge goes on from', async () => {
+    const { api, onConflict, queue, state } = await conflicted();
+    const copy = {
+      document: theirs,
+      etag: '"2"',
+      head: { snapshotId: 's2', cursor: 1, snapshots: 2 },
+      lastModifiedBy: 'bob',
+      draft: read.draft,
+      history: read.history,
+    };
+
+    expect(state).toMatchObject({ status: 'conflict', lastModifiedBy: 'bob' });
+    expect(onConflict).toHaveBeenCalledTimes(1);
+    expect(onConflict).toHaveBeenCalledWith(copy);
+    expect(queue.serverCopy).toEqual(copy);
+
+    // The merge takes the queue's place, on top of the draft as read.
+    expect(
+      await queue.rebase({
+        etag: copy.etag,
+        head: copy.head,
+        entries: [
+          {
+            id: 't',
+            label: 'initial',
+            snapshot: theirs,
+            serverSnapshotId: 's2',
+          },
+          { id: 'm', label: 'Merged changes from bob', snapshot: merged },
+        ],
+      }),
+    ).toMatchObject({ status: 'idle', pending: 1, lastModifiedBy: '' });
+    expect(queue.serverCopy).toBeNull();
+    expect(queue.record.queue).toEqual([
+      {
+        opId: 'm',
+        kind: 'snapshot',
+        commitId: 'm',
+        label: 'Merged changes from bob',
+      },
+    ]);
+
+    expect((await queue.flush()).status).toBe('saved');
+    expect(api.appendSnapshot).toHaveBeenLastCalledWith(
+      'alice',
+      'd1',
+      { document: merged, summary: 'Merged changes from bob', opId: 'm' },
+      '"2"',
+    );
+    expect(queue.record.serverHead).toEqual({
+      snapshotId: 's3',
+      cursor: 2,
+      snapshots: 3,
+    });
+  });
+
+  test('ends with a discard, and hands nothing over without a server copy', async () => {
+    const { queue } = await conflicted();
+
+    await queue.discardLocal();
+    expect(queue.serverCopy).toBeNull();
+
+    const onConflict = vi.fn();
+    const plain = createAutosave({
+      api: fakeApi(),
+      store: memoryStore(),
+      actor: 'alice',
+      onConflict,
+      isOnline: () => true,
+    });
+
+    await plain.attach({ owner: 'alice', draftId: 'd1', etag: '"1"' });
+    expect(plain.conflict().status).toBe('conflict');
+    expect(onConflict).not.toHaveBeenCalled();
+    expect(plain.serverCopy).toBeNull();
+  });
+});
+
 describe('changes that leave the content as it was', () => {
   test('a conflict over the same content takes the new ETag and sends again', async () => {
     const shared = sharedDraft();

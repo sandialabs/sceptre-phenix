@@ -252,11 +252,13 @@
 
       <!-- Not modal: the diagram stays readable (and downloadable) while the
            user decides. The explanation is an alert, and focus moves to the
-           heading, so the two choices are the next Tab stops. A conflict
-           can be the user's choice of another tab's changes too (see
-           builder/tabs.js). -->
+           heading, so the choices are the next Tab stops. A conflict can be
+           the user's choice of another tab's changes too (see
+           builder/tabs.js). While the store merges the server's version
+           with the user's changes, which can end the conflict without
+           asking, the panel waits (see mergeConflict in the store). -->
       <section
-        v-if="store.hasConflict"
+        v-if="store.conflictShown"
         class="builder-panel builder-conflict"
         aria-labelledby="conflict-title"
         data-testid="builder-conflict">
@@ -281,13 +283,30 @@
             your work before you load the server version.
           </template>
         </p>
+        <!-- Why the changes were not merged on their own: some fields
+             clash, or merging is not available. -->
+        <p v-if="mergeNote" data-testid="conflict-merge-note">
+          {{ mergeNote }}
+        </p>
         <div class="builder-conflict__actions">
+          <!-- The merge dialog: a choice for each clashing field. -->
+          <button
+            v-if="mergeReview"
+            type="button"
+            class="builder-button builder-button--primary"
+            data-testid="conflict-merge"
+            aria-haspopup="dialog"
+            :aria-disabled="resolving || undefined"
+            @click="resolving || (dialog = 'merge')">
+            Review and merge
+          </button>
           <!-- Saving a new draft needs a role that may create one; without
                it, Download keeps a copy. -->
           <button
             v-if="store.canCreateDrafts"
             type="button"
-            class="builder-button builder-button--primary"
+            class="builder-button"
+            :class="{ 'builder-button--primary': !mergeReview }"
             data-testid="conflict-fork"
             :aria-disabled="resolving || undefined"
             @click="resolveConflict('fork')">
@@ -296,7 +315,8 @@
           <button
             v-else
             type="button"
-            class="builder-button builder-button--primary"
+            class="builder-button"
+            :class="{ 'builder-button--primary': !mergeReview }"
             data-testid="conflict-download"
             aria-haspopup="dialog"
             @click="openDialog('download')">
@@ -543,6 +563,13 @@
 
     <history-dialog v-if="dialog === 'history'" @close="dialog = ''" />
 
+    <!-- Review and merge, from the conflict panel: the user chooses which
+         version of each clashing field to keep. -->
+    <merge-dialog
+      v-if="dialog === 'merge' && mergeReview"
+      @merged="afterMerge"
+      @close="dialog = ''" />
+
     <!-- Which tab's changes to save, when more than one holds some (see
          builder/tabs.js). -->
     <builder-tabs-dialog
@@ -638,6 +665,7 @@
   import GroupPatternDialog from '@/components/builder/dialogs/GroupPatternDialog.vue';
   import HistoryDialog from '@/components/builder/dialogs/HistoryDialog.vue';
   import ImportDialog from '@/components/builder/dialogs/ImportDialog.vue';
+  import MergeDialog from '@/components/builder/dialogs/MergeDialog.vue';
   import PublishDialog from '@/components/builder/dialogs/PublishDialog.vue';
   import RegroupDialog from '@/components/builder/dialogs/RegroupDialog.vue';
   import ScenarioDialog from '@/components/builder/dialogs/ScenarioDialog.vue';
@@ -689,6 +717,7 @@
     unappliedText,
   } from '@/builder/leave.js';
   import { stopLayoutEngine } from '@/builder/layouts/index.js';
+  import { possessive } from '@/builder/merge.js';
   import { documentIconSize } from '@/builder/model.js';
   import { PUBLISHED_TOKEN } from '@/builder/publish.js';
   import { selectionItemName } from '@/builder/selection.js';
@@ -748,7 +777,8 @@
   // Also template, the template editor (see openTemplate), collection,
   // the dialog of a collection of the template library (see
   // openCollection), and template-share, the Share dialog of templates and
-  // collections of the library (see openTemplateShare).
+  // collections of the library (see openTemplateShare). Also merge, the
+  // merge dialog of a conflict (see mergeReview).
   const dialog = ref('');
   // What the command palette shows first: a query ('@' for Go to node) or
   // the choices of one command (its id), as commandView.openPalette asked.
@@ -947,7 +977,7 @@
   // field being typed into, though: the keys that follow would be lost, and
   // the panel's alert announces the conflict anyway.
   watch(
-    () => store.hasConflict,
+    () => store.conflictShown,
     (now) => {
       if (now && !document.activeElement?.matches?.(TYPING)) {
         conflictHeading.value?.focus();
@@ -955,6 +985,45 @@
     },
     { flush: 'post' },
   );
+
+  // Whether the conflict panel offers Review and merge (see mergeConflict
+  // in the store).
+  const mergeReview = computed(
+    () => store.merge?.status === 'review' && !store.saveState.otherTab,
+  );
+
+  // Why the changes were not merged without asking: how many fields clash,
+  // that the merged diagram would be refused, or why merging is not
+  // available.
+  const mergeNote = computed(() => {
+    const { merge } = store;
+
+    if (!merge || store.saveState.otherTab) {
+      return '';
+    }
+
+    if (merge.status === 'unavailable') {
+      return merge.reason;
+    }
+
+    if (merge.status !== 'review') {
+      return '';
+    }
+
+    return merge.clashes > 0
+      ? `${count(merge.clashes, 'change')} of yours ${merge.clashes === 1 ? 'clashes' : 'clash'} with ${possessive(merge.from)}. Review and merge to choose which to keep.`
+      : `Your changes and ${possessive(merge.from)} cannot be merged as they are. Review and merge shows why.`;
+  });
+
+  // The merge dialog closes once the review is no longer offered: the merged
+  // diagram was saved, or the conflict ended another way. The dialog is gone
+  // before its own merged event could arrive, so focus moves on from here
+  // (see afterMerge).
+  watch(mergeReview, (offered) => {
+    if (!offered && dialog.value === 'merge') {
+      afterMerge();
+    }
+  });
 
   // Access lost takes focus as a conflict does, and for the same reason.
   watch(
@@ -1675,11 +1744,15 @@
       resolving.value = false;
     }
 
-    // The panel and its buttons are gone once resolved; focus goes to the
-    // editor heading instead of falling to <body>. A failed attempt keeps
-    // the panel, and focus returns to its heading.
     await nextTick();
-    (store.hasConflict
+    focusAfterConflict();
+  }
+
+  // The panel and its buttons are gone once a conflict is resolved; focus
+  // goes to the editor heading instead of falling to <body>. A failed
+  // attempt keeps the panel, and focus returns to its heading.
+  function focusAfterConflict() {
+    (store.conflictShown
       ? conflictHeading.value
       : store.accessLost
         ? accessLostHeading.value
@@ -1691,6 +1764,15 @@
     confirmingDiscard.value = false;
 
     return resolveConflict('reload');
+  }
+
+  // The merge dialog closed with the review: once the merged diagram is
+  // saved the conflict panel is gone too, and focus goes to the editor's
+  // heading rather than to <body>.
+  async function afterMerge() {
+    dialog.value = '';
+    await nextTick();
+    focusAfterConflict();
   }
 
   // The dialog opens at once and reads the draft's snapshots itself.

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { computed, createSSRApp, effectScope, h, nextTick } from 'vue';
+import { computed, createSSRApp, effectScope, h, nextTick, toRaw } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 
 vi.mock('@/utils/axios.js', () => ({ default: {} }));
@@ -129,6 +129,13 @@ vi.mock('@/builder/api.js', async (importOriginal) => {
   return { ...actual, builderApi: api };
 });
 
+// The merge as merge.js makes it, which a test can make fail.
+vi.mock('@/builder/merge.js', async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return { ...actual, mergeDocuments: vi.fn(actual.mergeDocuments) };
+});
+
 // The digest of what the Builder file of the mocked topologies holds.
 const FILE_DIGEST = vi.hoisted(() => `sha256:${'f'.repeat(64)}`);
 
@@ -144,8 +151,10 @@ vi.mock('@/builder/idb.js', async (importOriginal) => {
 
 import ImportDialog from '@/components/builder/dialogs/ImportDialog.vue';
 
+import { serverCopyOf } from '@/builder/autosave.js';
 import { DUPLICATE_NEEDS_NODES } from '@/builder/clipboard.js';
 import { createMemoryStore } from '@/builder/idb.js';
+import { mergeDocuments } from '@/builder/merge.js';
 import {
   addNode,
   createDocument,
@@ -156,7 +165,11 @@ import {
   withStamp,
 } from '@/builder/model.js';
 import { builderSchemaV1 } from '@/builder/schema.js';
-import { draftForPublished, useBuilderStore } from '@/builder/store.js';
+import {
+  draftForPublished,
+  MERGE_BASE_TIMEOUT_MS,
+  useBuilderStore,
+} from '@/builder/store.js';
 import { useRefusalIssues } from '@/components/builder/dialogs/message.js';
 
 import { sampleDocument } from './fixtures.js';
@@ -1621,6 +1634,533 @@ describe('conflicts', () => {
     await store.resolveConflict('reload');
 
     expect(api.getDraft).toHaveBeenCalledWith('alice', 'd1');
+  });
+});
+
+describe('merging a conflict', () => {
+  const head = (snapshotId, cursor) => ({
+    snapshotId,
+    cursor,
+    snapshots: cursor + 1,
+  });
+  const refused = () =>
+    Object.assign(new Error('conflict'), { response: { status: 412 } });
+
+  function changeNode(doc, id, change) {
+    return {
+      ...doc,
+      nodes: doc.nodes.map((node) => (node.id === id ? change(node) : node)),
+    };
+  }
+
+  function rename(doc, id, name) {
+    return changeNode(doc, id, (node) => ({
+      ...node,
+      label: name,
+      device: {
+        ...node.device,
+        hostname: name,
+        spec: {
+          ...node.device.spec,
+          general: { ...node.device.spec.general, hostname: name },
+        },
+      },
+    }));
+  }
+
+  function move(doc, id, position) {
+    return changeNode(doc, id, (node) => ({ ...node, position }));
+  }
+
+  // The sample diagram open as draft d1, at snapshot s1 with ETag "1".
+  async function opened() {
+    const { doc, alpha, bravo } = sampleDocument();
+
+    store.setDocument(doc, { label: 'Draft loaded', announce: false });
+    await store.initAutosave({
+      owner: 'alice',
+      draftId: 'd1',
+      etag: '"1"',
+      serverHead: head('s1', 0),
+    });
+    store.history.currentEntry().serverSnapshotId = 's1';
+
+    return { base: toRaw(store.doc), alpha, bravo };
+  }
+
+  // The draft as a read finds it, saved last by `by` at snapshot `id`.
+  function read(document, { id = 's2', cursor = 1, etag = '"2"', by = 'bob' }) {
+    return {
+      draft: {
+        id: 'd1',
+        owner: 'alice',
+        access: 'owner',
+        snapshotId: id,
+        cursor,
+        snapshots: cursor + 1,
+        lastModifiedBy: by,
+      },
+      document,
+      history: [{ id: 's1' }, { id }],
+      cursor,
+      etag,
+    };
+  }
+
+  // The answer to a save stored as snapshot `id`.
+  function stored(id, cursor, etag) {
+    return {
+      draft: {
+        id: 'd1',
+        owner: 'alice',
+        snapshotId: id,
+        cursor,
+        snapshots: cursor + 1,
+      },
+      history: null,
+      cursor,
+      etag,
+    };
+  }
+
+  // The next save meets bob's version `theirs`, which the read after it
+  // finds; the save after that is stored when `saved`.
+  function savedFirst(theirs, { saved = true } = {}) {
+    api.appendSnapshot.mockRejectedValueOnce(refused());
+    api.getDraft.mockResolvedValueOnce(read(theirs, {}));
+
+    if (saved) {
+      api.appendSnapshot.mockResolvedValueOnce(stored('s3', 2, '"3"'));
+    }
+  }
+
+  test('changes that do not clash are merged and saved as one snapshot with the server ETag', async () => {
+    vi.stubEnv('VITE_AUTH', 'enabled');
+
+    try {
+      const { base, alpha, bravo } = await opened();
+
+      savedFirst(rename(base, alpha.id, 'alpha-2'));
+      store.commit(
+        move(toRaw(store.doc), bravo.id, { x: 96, y: 240 }),
+        'Moved bravo',
+      );
+
+      await vi.waitFor(() => {
+        expect(api.appendSnapshot).toHaveBeenCalledTimes(2);
+        expect(store.saveState.status).toBe('saved');
+      });
+
+      const [owner, id, payload, etag] = api.appendSnapshot.mock.lastCall;
+
+      expect([owner, id, etag]).toEqual(['alice', 'd1', '"2"']);
+      expect(payload.summary).toBe('Merged changes from bob');
+      expect(findNode(payload.document, alpha.id).device.hostname).toBe(
+        'alpha-2',
+      );
+      expect(findNode(payload.document, bravo.id).position).toEqual({
+        x: 96,
+        y: 240,
+      });
+      expect(findNode(store.doc, alpha.id).device.hostname).toBe('alpha-2');
+      expect(findNode(store.doc, bravo.id).position).toEqual({ x: 96, y: 240 });
+      expect(store.announcement).toBe("Merged bob's changes with yours.");
+      expect(store.merge).toBeNull();
+      expect(store.hasConflict).toBe(false);
+      expect(store.etag).toBe('"3"');
+
+      // Undo goes back to bob's version, without the move.
+      expect(store.history.entries).toHaveLength(2);
+      expect(store.history.undoLabel()).toBe('Merged changes from bob');
+      expect(store.history.entries[0].serverSnapshotId).toBe('s2');
+      expect(store.history.entries[1].serverSnapshotId).toBe('s3');
+      store.undo();
+      expect(findNode(store.doc, alpha.id).device.hostname).toBe('alpha-2');
+      expect(findNode(store.doc, bravo.id).position).toEqual({ x: 0, y: 200 });
+      await store.saveNow();
+      expect(api.moveCursor).toHaveBeenLastCalledWith(
+        'alice',
+        'd1',
+        { snapshotId: 's2' },
+        '"3"',
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test('a field both changed is reviewed: nothing is sent until the user chooses', async () => {
+    // Without sign-in, everyone is the same user: the merge names no one.
+    vi.stubEnv('VITE_AUTH', 'disabled');
+
+    const { base, alpha } = await opened();
+
+    savedFirst(rename(base, alpha.id, 'theirs'));
+    store.commit(rename(toRaw(store.doc), alpha.id, 'mine'), 'Renamed alpha');
+
+    await vi.waitFor(() => expect(store.merge?.status).toBe('review'));
+    vi.unstubAllEnvs();
+    expect(store.merge).toMatchObject({ from: 'another editor', clashes: 1 });
+    expect(store.hasConflict).toBe(true);
+    expect(store.conflictShown).toBe(true);
+    expect(store.resolvingConflict).toBe(false);
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
+
+    const review = store.mergeReview();
+
+    expect(review.clashes.map((clash) => clash.label)).toEqual(['alpha name']);
+    expect(store.mergeProblems({ [review.clashes[0].key]: 'mine' })).toEqual(
+      [],
+    );
+
+    expect(
+      await store.saveMergeChoices({ [review.clashes[0].key]: 'mine' }),
+    ).toEqual({ saved: true, issues: [] });
+    await vi.waitFor(() => expect(store.saveState.status).toBe('saved'));
+
+    expect(api.appendSnapshot).toHaveBeenLastCalledWith(
+      'alice',
+      'd1',
+      expect.objectContaining({
+        summary: 'Merged changes from another editor',
+      }),
+      '"2"',
+    );
+    expect(findNode(store.doc, alpha.id).device.hostname).toBe('mine');
+    expect(store.merge).toBeNull();
+    expect(store.conflictShown).toBe(false);
+  });
+
+  test('a merged diagram the strict check refuses is reviewed, never saved', async () => {
+    const { base } = await opened();
+
+    savedFirst(addNode(base, { kind: 'device', hostname: 'charlie' }).doc, {
+      saved: false,
+    });
+    store.commit(
+      addNode(toRaw(store.doc), { kind: 'device', hostname: 'charlie' }).doc,
+      'Added charlie',
+    );
+
+    await vi.waitFor(() => expect(store.merge?.status).toBe('review'));
+    expect(store.merge.clashes).toBe(0);
+
+    const problems = store.mergeProblems();
+
+    expect(problems.join('\n')).toMatch(/duplicate hostname "charlie"/);
+    expect(await store.saveMergeChoices({})).toEqual({
+      saved: false,
+      issues: problems,
+    });
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
+    expect(store.hasConflict).toBe(true);
+  });
+
+  test('without the version the changes started from, merging is unavailable and saving a new draft still works', async () => {
+    const { base, alpha, bravo } = await opened();
+
+    // The editor no longer holds snapshot s1, and the server no longer
+    // keeps it.
+    store.history.currentEntry().serverSnapshotId = 's0';
+    api.getSnapshot.mockRejectedValueOnce(
+      Object.assign(new Error('gone'), { response: { status: 404 } }),
+    );
+    savedFirst(rename(base, alpha.id, 'alpha-2'), { saved: false });
+    store.commit(
+      move(toRaw(store.doc), bravo.id, { x: 96, y: 240 }),
+      'Moved bravo',
+    );
+
+    await vi.waitFor(() => expect(store.merge?.status).toBe('unavailable'));
+    expect(api.getSnapshot).toHaveBeenCalledWith('alice', 'd1', 's1');
+    expect(store.merge.reason).toBe(
+      'Merging is not available: the version your changes started from is no longer kept on the server, or could not be read.',
+    );
+    expect(store.conflictShown).toBe(true);
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
+
+    await store.resolveConflict('fork', { title: 'Mine' });
+
+    expect(api.createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Mine' }),
+    );
+    expect(store.merge).toBeNull();
+    expect(store.hasConflict).toBe(false);
+  });
+
+  test('a third editor saving first merges again, from the version the merge was saved on', async () => {
+    const { base, alpha, bravo } = await opened();
+    const theirs = rename(base, alpha.id, 'alpha-2');
+    const third = setDocumentInfo(theirs, { description: 'From carol' });
+
+    savedFirst(theirs, { saved: false });
+    api.appendSnapshot.mockRejectedValueOnce(refused());
+    api.getDraft.mockResolvedValueOnce(
+      read(third, { id: 's3', cursor: 2, etag: '"4"', by: 'carol' }),
+    );
+    api.appendSnapshot.mockResolvedValueOnce(stored('s4', 3, '"5"'));
+
+    store.commit(
+      move(toRaw(store.doc), bravo.id, { x: 96, y: 240 }),
+      'Moved bravo',
+    );
+
+    await vi.waitFor(() => {
+      expect(api.appendSnapshot).toHaveBeenCalledTimes(3);
+      expect(store.saveState.status).toBe('saved');
+    });
+
+    const [, , payload, etag] = api.appendSnapshot.mock.lastCall;
+
+    expect(etag).toBe('"4"');
+    expect(payload.document.metadata.description).toBe('From carol');
+    expect(findNode(payload.document, alpha.id).device.hostname).toBe(
+      'alpha-2',
+    );
+    expect(findNode(payload.document, bravo.id).position).toEqual({
+      x: 96,
+      y: 240,
+    });
+    // Bob's version, which the history holds, is the base of the second
+    // merge: nothing is read for it.
+    expect(api.getSnapshot).not.toHaveBeenCalled();
+    expect(store.etag).toBe('"5"');
+  });
+
+  test('an edit made while the base is read is refused, not lost', async () => {
+    const { base, alpha, bravo } = await opened();
+    let answer;
+
+    store.history.currentEntry().serverSnapshotId = 's0';
+    api.getSnapshot.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = () => resolve({ document: base });
+        }),
+    );
+    savedFirst(rename(base, alpha.id, 'alpha-2'));
+    store.commit(
+      move(toRaw(store.doc), bravo.id, { x: 96, y: 240 }),
+      'Moved bravo',
+    );
+
+    await vi.waitFor(() => expect(answer).toBeTypeOf('function'));
+    expect(store.merge?.status).toBe('merging');
+    expect(store.conflictShown).toBe(false);
+    store.addNode({ kind: 'device', hostname: 'charlie' });
+    expect(store.summary.devices).toBe(2);
+    expect(store.announcement).toBe(
+      'Not changed: the conflict is being resolved. Edit again once it is.',
+    );
+
+    answer();
+    await vi.waitFor(() => expect(store.saveState.status).toBe('saved'));
+    expect(findNode(store.doc, alpha.id).device.hostname).toBe('alpha-2');
+    expect(store.summary.devices).toBe(2);
+  });
+
+  test('a merge that fails is unavailable, with why, and the other ways out stay offered', async () => {
+    const { base, alpha, bravo } = await opened();
+
+    mergeDocuments.mockImplementationOnce(() => {
+      throw new Error('out of memory');
+    });
+    savedFirst(rename(base, alpha.id, 'alpha-2'), { saved: false });
+    store.commit(
+      move(toRaw(store.doc), bravo.id, { x: 96, y: 240 }),
+      'Moved bravo',
+    );
+
+    await vi.waitFor(() => expect(store.merge?.status).toBe('unavailable'));
+    expect(store.merge.reason).toBe('Merging failed: out of memory');
+    expect(store.conflictShown).toBe(true);
+    expect(store.resolvingConflict).toBe(false);
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
+
+    await store.resolveConflict('fork', { title: 'Mine' });
+
+    expect(api.createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Mine' }),
+    );
+    expect(store.merge).toBeNull();
+    expect(store.hasConflict).toBe(false);
+  });
+
+  test('a base the server does not send in time leaves merging unavailable, and the panel shows', async () => {
+    const { base, alpha } = await opened();
+
+    // The editor no longer holds snapshot s1, and the server never answers.
+    store.history.currentEntry().serverSnapshotId = 's0';
+    api.getSnapshot.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+
+    try {
+      store.autosave.conflict(undefined, {
+        server: serverCopyOf(read(rename(base, alpha.id, 'alpha-2'), {})),
+      });
+
+      expect(api.getSnapshot).toHaveBeenCalledWith('alice', 'd1', 's1');
+      expect(store.merge.status).toBe('merging');
+      expect(store.conflictShown).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(MERGE_BASE_TIMEOUT_MS - 1);
+      expect(store.merge.status).toBe('merging');
+
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.waitFor(() => expect(store.merge.status).toBe('unavailable'));
+      expect(store.merge.reason).toBe(
+        'Merging is not available: the server took too long to send the version your changes started from.',
+      );
+      expect(store.conflictShown).toBe(true);
+      expect(store.resolvingConflict).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('saving the reviewed merge while another merge runs saves nothing, and says so', async () => {
+    const { base, alpha } = await opened();
+
+    savedFirst(rename(base, alpha.id, 'theirs'), { saved: false });
+    store.commit(rename(toRaw(store.doc), alpha.id, 'mine'), 'Renamed alpha');
+    await vi.waitFor(() => expect(store.merge?.status).toBe('review'));
+
+    const key = store.mergeReview().clashes[0].key;
+
+    // Carol saves too: the merge is made again with her version.
+    store.autosave.conflict(undefined, {
+      server: serverCopyOf(
+        read(rename(base, alpha.id, 'carol'), {
+          id: 's3',
+          cursor: 2,
+          etag: '"3"',
+          by: 'carol',
+        }),
+      ),
+    });
+    expect(store.merge.status).toBe('merging');
+
+    expect(await store.saveMergeChoices({ [key]: 'mine' })).toEqual({
+      saved: false,
+      busy: true,
+      issues: [],
+    });
+
+    await vi.waitFor(() => expect(store.merge?.status).toBe('review'));
+    expect(store.mergeReview().clashes[0].theirs).toBe('carol');
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  test('a recovered queue based on an older ETag is merged with the draft as read', async () => {
+    vi.stubEnv('VITE_AUTH', 'enabled');
+
+    try {
+      const { doc: base, alpha, bravo } = sampleDocument();
+      const moved = move(base, bravo.id, { x: 96, y: 240 });
+
+      // A previous session on this device left an edit of snapshot s1
+      // unsaved; bob has saved s2 since.
+      await device.store.put(
+        {
+          key: 'alice::alice::d1',
+          actor: 'alice',
+          owner: 'alice',
+          draftId: 'd1',
+          etag: '"1"',
+          serverHead: head('s1', 0),
+          entries: [{ id: 'c1', label: 'Moved bravo' }],
+          cursor: 0,
+          queue: [
+            {
+              opId: 'c1',
+              kind: 'snapshot',
+              commitId: 'c1',
+              label: 'Moved bravo',
+            },
+          ],
+        },
+        { write: [{ id: 'c1', snapshot: moved }] },
+      );
+      api.getDraft.mockResolvedValueOnce(
+        read(rename(base, alpha.id, 'alpha-2'), {}),
+      );
+      api.getSnapshot.mockResolvedValueOnce({ document: base });
+      api.appendSnapshot.mockResolvedValueOnce(stored('s3', 2, '"3"'));
+
+      await store.loadDraft('alice', 'd1');
+      await vi.waitFor(() => {
+        expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
+        expect(store.saveState.status).toBe('saved');
+      });
+
+      const [owner, id, payload, etag] = api.appendSnapshot.mock.lastCall;
+
+      expect([owner, id, etag]).toEqual(['alice', 'd1', '"2"']);
+      expect(api.getSnapshot).toHaveBeenCalledWith('alice', 'd1', 's1');
+      expect(payload.summary).toBe('Merged changes from bob');
+      expect(findNode(payload.document, alpha.id).device.hostname).toBe(
+        'alpha-2',
+      );
+      expect(findNode(payload.document, bravo.id).position).toEqual({
+        x: 96,
+        y: 240,
+      });
+      expect(store.announcement).toBe("Merged bob's changes with yours.");
+      expect(store.merge).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("changes the signed-in user saved elsewhere are another tab's", async () => {
+    vi.stubEnv('VITE_AUTH', 'enabled');
+
+    try {
+      const { base, alpha, bravo } = await opened();
+
+      api.appendSnapshot.mockRejectedValueOnce(refused());
+      api.getDraft.mockResolvedValueOnce(
+        read(rename(base, alpha.id, 'alpha-2'), { by: 'alice' }),
+      );
+      api.appendSnapshot.mockResolvedValueOnce(stored('s3', 2, '"3"'));
+      store.commit(
+        move(toRaw(store.doc), bravo.id, { x: 96, y: 240 }),
+        'Moved bravo',
+      );
+
+      await vi.waitFor(() => {
+        expect(api.appendSnapshot).toHaveBeenCalledTimes(2);
+        expect(store.saveState.status).toBe('saved');
+      });
+
+      expect(api.appendSnapshot.mock.lastCall[2].summary).toBe(
+        'Merged changes from another tab',
+      );
+      expect(store.announcement).toBe(
+        "Merged another tab's changes with yours.",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test('discarding from the review clears the merge and loads the server version', async () => {
+    const { base, alpha } = await opened();
+    const theirs = rename(base, alpha.id, 'theirs');
+
+    savedFirst(theirs, { saved: false });
+    store.commit(rename(toRaw(store.doc), alpha.id, 'mine'), 'Renamed alpha');
+    await vi.waitFor(() => expect(store.merge?.status).toBe('review'));
+
+    api.getDraft.mockResolvedValueOnce(read(theirs, {}));
+    await store.resolveConflict('reload');
+
+    expect(api.getDraft).toHaveBeenLastCalledWith('alice', 'd1');
+    expect(store.merge).toBeNull();
+    expect(store.hasConflict).toBe(false);
+    expect(store.conflictShown).toBe(false);
+    expect(findNode(store.doc, alpha.id).device.hostname).toBe('theirs');
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
   });
 });
 
