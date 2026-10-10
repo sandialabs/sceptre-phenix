@@ -1092,6 +1092,65 @@ unavailable:
 	}
 }
 
+// TestBuilderDraftsPreflightMatchesRoute runs drafts preflight against the
+// preflight route's recorded answer: the request and the answer that
+// TestBuilderPreflightAnswersAsRecorded in phenix/web checks the route
+// against. The command must send the recorded request and write every field
+// of the answer, with the same values.
+func TestBuilderDraftsPreflightMatchesRoute(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("..", "web", "testdata", "builder-preflight-exchange.json")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+
+	var exchange struct {
+		Request json.RawMessage `json:"request"`
+		Answer  json.RawMessage `json:"answer"`
+	}
+
+	if err := json.Unmarshal(data, &exchange); err != nil {
+		t.Fatalf("decoding %s: %v", path, err)
+	}
+
+	var request bytes.Buffer
+	if err := json.Compact(&request, exchange.Request); err != nil {
+		t.Fatalf("compacting the recorded request: %v", err)
+	}
+
+	fake := newBuilderFake(t, map[string][]builderFakeAnswer{routePreflight: builderOK(string(exchange.Answer))})
+
+	stdout, _, err := runBuilderRemote(fake.remote(
+		"drafts", "preflight", "alice/riverside", "--check", "disks,apps", "-o", FormatJSON,
+	)...)
+	wantExit(t, err, exitFindings)
+
+	if !strings.Contains(err.Error(), "failed: apps") {
+		t.Errorf("error = %q, want it to name the failed check", err)
+	}
+
+	if requests := fake.recorded(); len(requests) != 1 || requests[0].body != request.String() {
+		t.Errorf("requests = %+v, want one with the recorded request %s", requests, request.String())
+	}
+
+	var got, want any
+
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("decoding %s: %v", stdout, err)
+	}
+
+	if err := json.Unmarshal(exchange.Answer, &want); err != nil {
+		t.Fatalf("decoding the recorded answer: %v", err)
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("drafts preflight -o json did not write the route's answer recorded in %s; it wrote\n%s", path, stdout)
+	}
+}
+
 func TestBuilderDraftsPreflightStrict(t *testing.T) {
 	t.Parallel()
 

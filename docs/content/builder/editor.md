@@ -532,6 +532,45 @@ When the server lists no disk images, the dialog says "Drive images are not
 checked: the server did not list its disk images." Otherwise a drive image
 the server does not have is a warning.
 
+### Preflight
+
+The **Preflight** section of the **Diagram checks** dialog asks the phenix
+server to check the saved draft against the server and its cluster before
+you start an experiment from it. The checks only read: they write nothing
+and start no VM or experiment. No check is ticked at first. The dialog
+remembers the checks you last ticked in this browser until you log out.
+
+| Check | What it looks at |
+|---|---|
+| **Host capacity** | The CPUs and memory of every device but an external one (`hardware.vcpus` and `hardware.memory`; 1 vCPU and 512 MB when unset), against what the schedulable cluster hosts have free. Each device must fit on one host, with its vCPUs and its memory both within that host's CPUs and memory: a device that fits on no single host fails the check, as does too little free memory. Too few free CPUs is a warning, since VMs can share CPUs. |
+| **Networks** | The VLANs the devices use, and the networks' VLAN aliases, against the VLAN range of the experiment you name (no range applies without one, or when the experiment sets none); the aliases against the VLANs running experiments use; and the bridges the interfaces name, and the experiment's default bridge (`phenix` without an experiment), against the bridges of the schedulable hosts. A bridge a host does not have yet is a warning: minimega creates it when the experiment starts. |
+| **Disk images** | Each drive image, by file name, against the server's disk images, and its kind: a VM or ISO image for a kvm device, a container image for a container. |
+| **Scenario apps** | Each app the diagram's scenarios run (apps a scenario disables are left out), against the default apps, the built-in apps and the user apps on the server's `PATH`. |
+
+To check the Riverside Water expansion draft before starting it as the
+`riverside` experiment:
+
+1. Open the draft and select the checks button in the header.
+2. Under **Preflight**, tick **Host capacity**, **Networks**, **Disk
+   images** and **Scenario apps**.
+3. Type `riverside` in **Experiment (optional)**. The field suggests the
+   experiments the server lists.
+4. Select **Run**. Builder saves your latest changes first, as **Publish**
+   does. When the checks are done, the dialog says, for example,
+   "Preflight: 3 passed, 1 unavailable", and lists each check with
+   **Passed**, **Failed** or **Unavailable** and a summary, such as
+   "Needed: 6 vCPUs and 6144 MB of memory for 4 devices. Free: 30 vCPUs and
+   57344 MB on 2 schedulable hosts."
+5. Each issue of a check has its code and, when it is about a device or a
+   network, **Go to**, as the other issues do.
+
+A check is **Unavailable** when it, or a part of it, could not be made, and
+an issue says why: your role lacks the permission it needs (see
+[Administration](administration.md#what-each-task-needs)), minimega cannot
+be reached, the server lists no disk images, or the check took longer than
+20 seconds. The other checks are still made. The report stays when the
+dialog closes and opens again, and is cleared when the diagram changes.
+
 ## Command palette
 
 The command palette runs any command by name, and finds nodes and networks.

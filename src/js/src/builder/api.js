@@ -98,6 +98,15 @@ export function publishPath(owner, id) {
 /**
  * @param {string} owner
  * @param {string} id
+ * @returns {string} where the draft's preflight checks are run
+ */
+export function preflightPath(owner, id) {
+  return `${draftPath(owner, id)}/preflight`;
+}
+
+/**
+ * @param {string} owner
+ * @param {string} id
  * @returns {string} the draft's share list, which only its owner reads
  */
 export function sharesPath(owner, id) {
@@ -590,6 +599,53 @@ export function readIssues(list, severity = 'error') {
       },
     ];
   });
+}
+
+// The statuses of a preflight check (BuilderPreflightResult in openapi.yml).
+const PREFLIGHT_STATUSES = ['passed', 'failed', 'unavailable'];
+
+/**
+ * A preflight report as the server sends it (BuilderPreflightReport in
+ * openapi.yml): each check in the order asked, with its status, its summary
+ * and its issues (see readIssues; an issue that states no severity is a
+ * warning), and the names of the checks by status, in the same order. A
+ * check of a status this client does not know counts as unavailable.
+ *
+ * @param {object} [data] the body of the answer
+ * @returns {{checks: {name: string, status: string, summary: string,
+ *   issues: object[]}[], passed: string[], failed: string[],
+ *   unavailable: string[]}}
+ */
+export function readPreflightReport(data) {
+  if (!Array.isArray(data?.checks)) {
+    throw new TypeError('The server sent an unexpected preflight report.');
+  }
+
+  const checks = data.checks.flatMap((entry) =>
+    entry && typeof entry.name === 'string'
+      ? [
+          {
+            name: entry.name,
+            status: PREFLIGHT_STATUSES.includes(entry.status)
+              ? entry.status
+              : 'unavailable',
+            summary: typeof entry.summary === 'string' ? entry.summary : '',
+            issues: readIssues(entry.issues, 'warning'),
+          },
+        ]
+      : [],
+  );
+  const named = (status) =>
+    checks
+      .filter((check) => check.status === status)
+      .map((check) => check.name);
+
+  return {
+    checks,
+    passed: named('passed'),
+    failed: named('failed'),
+    unavailable: named('unavailable'),
+  };
 }
 
 /**
@@ -1249,6 +1305,28 @@ export function createBuilderApi(http = axiosInstance) {
       });
 
       return readPublishPreview(response);
+    },
+
+    /**
+     * Puts the snapshot the draft cursor points at through the preflight
+     * checks named, which the server makes against its cluster and itself.
+     * Nothing is written, and the draft's ETag stays as it is.
+     *
+     * @param {string} owner
+     * @param {string} id
+     * @param {{checks: string[], experiment?: string}} request checks: ids
+     *   of the checks (capacity, network, disks, apps), in the order they
+     *   are reported; experiment: the experiment whose VLAN range and
+     *   default bridge the network check goes by, sent only when named
+     * @returns {Promise<object>} see readPreflightReport
+     */
+    async preflight(owner, id, { checks, experiment = '' }) {
+      const response = await http.post(
+        preflightPath(owner, id),
+        experiment ? { checks, experiment } : { checks },
+      );
+
+      return readPreflightReport(response.data);
     },
 
     async getSources() {

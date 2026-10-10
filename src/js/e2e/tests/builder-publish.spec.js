@@ -2161,6 +2161,172 @@ test('a refused publish lists the issues the server names, with Go to their node
   expectNoFatal(issues);
 });
 
+// The preflight report as the dialog says it once the checks are done.
+function preflightOutcome(report) {
+  const parts = ['passed', 'failed', 'unavailable'].flatMap((status) => {
+    const n = report.checks.filter((check) => check.status === status).length;
+
+    return n ? [`${n} ${status}`] : [];
+  });
+
+  return `Preflight: ${parts.join(', ')}`;
+}
+
+// Ticks the preflight checks given in the open Checks dialog, runs them and
+// returns the report the server answered with.
+async function runPreflight(page, labels) {
+  const preflight = page.getByTestId('preflight');
+
+  for (const label of labels) {
+    await preflight.getByRole('checkbox', { name: label }).check();
+  }
+
+  const answered = page.waitForResponse(
+    (candidate) =>
+      candidate.request().method() === 'POST' &&
+      /\/builder\/drafts\/[^/]+\/[^/]+\/preflight$/.test(
+        new URL(candidate.url()).pathname,
+      ),
+  );
+  await preflight.getByTestId('preflight-run').click();
+  const response = await answered;
+  const body = await response.text();
+  expect(response.status(), body).toBe(200);
+
+  return JSON.parse(body);
+}
+
+test('the Checks dialog runs the preflight checks ticked and reports each one once', async ({
+  page,
+  builder,
+  issues,
+}, testInfo) => {
+  const draft = await openLab(builder, uniqueName(testInfo, 'preflight'));
+
+  await page.getByTestId('builder-checks').click();
+  const preflight = page.getByTestId('checks-dialog').getByTestId('preflight');
+  const run = preflight.getByTestId('preflight-run');
+  const results = preflight.getByTestId('preflight-result');
+
+  await test.step('no check is ticked at first, and Run says why it does nothing', async () => {
+    for (const id of ['capacity', 'network', 'disks', 'apps']) {
+      await expect(
+        preflight.getByTestId(`preflight-check-${id}`),
+      ).not.toBeChecked();
+    }
+    await expect(run).toHaveAttribute('aria-disabled', 'true');
+    await expect(run).toHaveAccessibleDescription(
+      'Tick at least one check to run.',
+    );
+    // Playwright waits for an aria-disabled button to be enabled.
+    await run.click({ force: true });
+    await expect(results).toHaveCount(0);
+  });
+
+  const before = await builder.request.get(draftPath(draft));
+  const report = await runPreflight(page, ['Disk images', 'Scenario apps']);
+
+  await test.step('each check ticked is reported once, with its status and a summary', async () => {
+    expect(report.checks.map((check) => check.name)).toEqual(['disks', 'apps']);
+    expect(
+      [...report.passed, ...report.failed, ...report.unavailable].sort(),
+    ).toEqual(['apps', 'disks']);
+
+    await expect(results).toHaveCount(2);
+    await expect(results.getByRole('heading', { level: 4 })).toHaveText([
+      /^Disk images: (Passed|Failed|Unavailable)$/,
+      'Scenario apps: Passed',
+    ]);
+    await expect(results.nth(1).getByTestId('preflight-summary')).toHaveText(
+      'The diagram lists no scenarios, so it needs no apps.',
+    );
+
+    // Without minimega the server lists no disk images, and the check says
+    // so in an issue of its own: whatever its status, each issue is listed.
+    const [disks] = report.checks;
+    expect(disks.summary).not.toBe('');
+    await expect(results.first().getByTestId('preflight-summary')).toHaveText(
+      disks.summary,
+    );
+    await expect(results.first().getByTestId('issue-code')).toHaveCount(
+      disks.issues.length,
+    );
+    expect(disks.status === 'passed' || disks.issues.length > 0).toBe(true);
+
+    // Said in the dialog's own status region: the page behind is inert.
+    await expect(preflight).toHaveAttribute('aria-busy', 'false');
+    const outcome = preflight.getByTestId('preflight-outcome');
+    await expect(outcome).toHaveAttribute('role', 'status');
+    await expect(outcome).toHaveText(preflightOutcome(report));
+  });
+
+  await test.step('nothing is written, and an unknown check is refused', async () => {
+    const after = await builder.request.get(draftPath(draft));
+    expect(after.headers().etag).toBe(before.headers().etag);
+
+    const refused = await builder.request.post(
+      `${draftPath(draft)}/preflight`,
+      {
+        data: { checks: ['everything'] },
+      },
+    );
+    expect(refused.status(), await refused.text()).toBe(400);
+    expect((await refused.json()).code).toBe('request.invalid');
+  });
+
+  await test.step('the report and the choice stay when the dialog opens again, until the diagram changes', async () => {
+    await page.keyboard.press('Escape');
+    await page.getByTestId('builder-checks').click();
+    await expect(preflight.getByTestId('preflight-check-disks')).toBeChecked();
+    await expect(preflight.getByTestId('preflight-check-apps')).toBeChecked();
+    await expect(results).toHaveCount(2);
+    await page.keyboard.press('Escape');
+
+    await builder.palette('switch').click();
+    await page.getByTestId('builder-checks').click();
+    await expect(results).toHaveCount(0);
+    await expect(preflight.getByTestId('preflight-check-disks')).toBeChecked();
+    await page.keyboard.press('Escape');
+  });
+
+  expectNoFatal(issues);
+});
+
+test(
+  'axe finds no serious violations in the Checks dialog with a preflight report',
+  { tag: ['@axe'] },
+  async ({ page, builder, issues }, testInfo) => {
+    const draft = await builder.seedDraft(
+      labDocument(uniqueName(testInfo, 'axe-preflight')),
+    );
+    await builder.openDraft(draft);
+
+    await page.getByTestId('builder-checks').click();
+    await runPreflight(page, [
+      'Host capacity',
+      'Networks',
+      'Disk images',
+      'Scenario apps',
+    ]);
+
+    for (const scheme of ['light', 'dark']) {
+      await test.step(`the ${scheme} theme`, async () => {
+        await page.emulateMedia({ colorScheme: scheme });
+        await expect(page.getByTestId('preflight-result')).toHaveCount(4);
+        await expectAccessible(page, {
+          include: '[data-testid="checks-dialog"]',
+          soft: true,
+          label: `axe on the Checks dialog's preflight report (${scheme})`,
+        });
+      });
+    }
+
+    await page.keyboard.press('Escape');
+    await expect(builder.dialog).toHaveCount(0);
+    expectNoFatal(issues);
+  },
+);
+
 test(
   'axe finds no serious violations in the Publish and Checks dialogs listing errors and warnings',
   { tag: ['@axe'] },

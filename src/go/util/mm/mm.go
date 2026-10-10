@@ -25,6 +25,7 @@ type MM interface { //nolint:interfacebloat // legacy interface
 	DisconnectVMInterface(...Option) error
 
 	CreateBridge(...Option) error
+	GetBridges(...string) (map[string][]string, error)
 
 	CreateTunnel(...Option) error
 	GetTunnels(...Option) []map[string]string

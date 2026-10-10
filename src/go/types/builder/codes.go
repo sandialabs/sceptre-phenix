@@ -354,6 +354,24 @@ const (
 	CodePublishChangesUnknown       Code = "publish.changes.unknown"
 )
 
+// Codes of the preflight checks a draft can be put through before an
+// experiment is started from it: host capacity, networks, disk images and
+// scenario apps.
+const (
+	CodePreflightCapacityCPU       Code = "preflight.capacity.cpu"
+	CodePreflightCapacityMemory    Code = "preflight.capacity.memory"
+	CodePreflightCapacityVMTooBig  Code = "preflight.capacity.vm-too-large"
+	CodePreflightNetworkVLANRange  Code = "preflight.network.vlan-range"
+	CodePreflightNetworkAliasInUse Code = "preflight.network.alias-in-use"
+	CodePreflightNetworkBridge     Code = "preflight.network.bridge-missing"
+	CodePreflightDiskMissing       Code = "preflight.disk.missing"
+	CodePreflightDiskKind          Code = "preflight.disk.kind"
+	CodePreflightAppMissing        Code = "preflight.app.missing"
+	CodePreflightScenarioMissing   Code = "preflight.app.scenario-missing"
+	CodePreflightScenarioUnread    Code = "preflight.app.scenario-unreadable"
+	CodePreflightUnavailable       Code = "preflight.unavailable"
+)
+
 // Codes of sharing drafts and templates.
 const (
 	CodeShareUsersRefused Code = "share.users.refused"
@@ -654,6 +672,19 @@ var codeRegistry = []CodeInfo{
 	{CodePublishIncludeUnchecked, SeverityWarning, "An included topology could not be read to check for duplicate hostnames."},
 	{CodePublishRetryComplete, SeverityWarning, "The same publication was already complete; nothing was written."},
 	{CodePublishChangesUnknown, SeverityWarning, "A stored config could not be read to say what publishing changes."},
+
+	{CodePreflightCapacityCPU, SeverityWarning, "The schedulable hosts have fewer free CPUs than the devices take; VMs would share CPUs."},
+	{CodePreflightCapacityMemory, SeverityError, "The schedulable hosts have less free memory than the diagram's devices take."},
+	{CodePreflightCapacityVMTooBig, SeverityError, "A device fits on no single schedulable host: none has both its CPUs and its memory."},
+	{CodePreflightNetworkVLANRange, SeverityError, "The experiment's VLAN range is too small for the diagram, or leaves out a VLAN alias."},
+	{CodePreflightNetworkAliasInUse, SeverityError, "A network's VLAN alias is a VLAN a running experiment already uses."},
+	{CodePreflightNetworkBridge, SeverityWarning, "A bridge the diagram's interfaces or the experiment use does not exist on a host yet."},
+	{CodePreflightDiskMissing, SeverityError, "A drive image is not one of the server's disk images."},
+	{CodePreflightDiskKind, SeverityError, "A drive image is not of the kind its device needs: VM or ISO for kvm, container otherwise."},
+	{CodePreflightAppMissing, SeverityError, "A scenario names an app that is not a default, built-in or user app of this server."},
+	{CodePreflightScenarioMissing, SeverityError, "A scenario the diagram lists does not exist."},
+	{CodePreflightScenarioUnread, SeverityWarning, "The caller may not read a scenario the diagram lists, or it cannot be read now."},
+	{CodePreflightUnavailable, SeverityWarning, "A preflight check, or part of one, could not be made; the message says why."},
 
 	{CodeShareUsersRefused, SeverityError, "Some users of a share list were refused; errors names each and why."},
 

@@ -820,7 +820,7 @@ warning then says "You will be logged out" and counts down, and its button
 is **Log out now**.
 
 Logging out, or signing in as another user in the same browser, deletes
-Builder's unsent changes, recent commands and last Auto-group name pattern
-from the browser. Your
+Builder's unsent changes, recent commands, last Auto-group name pattern and
+the Preflight checks you last ticked from the browser. Your
 preferences stay: the theme, column widths, minimap size, keyboard shortcuts
 and settings (see [Storage](administration.md#storage)).

@@ -353,6 +353,18 @@ The warnings of an import or of a legacy diagram's conversion
 | `publish.include.unchecked` | warning | An included topology could not be read to check for duplicate hostnames. |
 | `publish.retry.complete` | warning | The same publication was already complete; nothing was written. |
 | `publish.changes.unknown` | warning | A stored config could not be read to say what publishing changes. |
+| `preflight.capacity.cpu` | warning | The schedulable hosts have fewer free CPUs than the devices take; VMs would share CPUs. |
+| `preflight.capacity.memory` | error | The schedulable hosts have less free memory than the diagram's devices take. |
+| `preflight.capacity.vm-too-large` | error | A device fits on no single schedulable host: none has both its CPUs and its memory. |
+| `preflight.network.vlan-range` | error | The experiment's VLAN range is too small for the diagram, or leaves out a VLAN alias. |
+| `preflight.network.alias-in-use` | error | A network's VLAN alias is a VLAN a running experiment already uses. |
+| `preflight.network.bridge-missing` | warning | A bridge the diagram's interfaces or the experiment use does not exist on a host yet. |
+| `preflight.disk.missing` | error | A drive image is not one of the server's disk images. |
+| `preflight.disk.kind` | error | A drive image is not of the kind its device needs: VM or ISO for kvm, container otherwise. |
+| `preflight.app.missing` | error | A scenario names an app that is not a default, built-in or user app of this server. |
+| `preflight.app.scenario-missing` | error | A scenario the diagram lists does not exist. |
+| `preflight.app.scenario-unreadable` | warning | The caller may not read a scenario the diagram lists, or it cannot be read now. |
+| `preflight.unavailable` | warning | A preflight check, or part of one, could not be made; the message says why. |
 | `share.users.refused` | error | Some users of a share list were refused; errors names each and why. |
 | `draft.stale` | error | The If-Match entity tag names a version of the draft that is no longer current. |
 | `draft.conflict` | error | The draft changed while the request was handled; read it again and retry. |

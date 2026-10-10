@@ -3258,6 +3258,51 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
+     * Asks the server to put the open draft through the preflight checks
+     * named (see preflight.js). The server checks the draft's current
+     * snapshot, so the changes still queued are saved first, as Publish
+     * saves them; a view-only draft has none. Nothing is written.
+     *
+     * @param {{checks: string[], experiment?: string}} request checks: ids
+     *   of the checks, in order; experiment: the experiment whose VLAN range
+     *   and default bridge the network check goes by
+     * @returns {Promise<{report?: object, error?: string}>} the report (see
+     *   readPreflightReport in api.js), or why there is none
+     */
+    async runPreflight({ checks, experiment = '' }) {
+      const { owner, draftId } = this;
+
+      if (!owner || !draftId) {
+        return {
+          error:
+            'Preflight checks run on a saved draft. Save this diagram as a draft first.',
+        };
+      }
+
+      if (!this.readOnly && this.autosave) {
+        const state = await this.saveNow().catch(() => null);
+
+        if (!state || state.status !== 'saved' || state.pending > 0) {
+          return {
+            error:
+              'Your latest changes are not saved on the server yet, so the checks would not see them. Wait for the save to finish or retry it.',
+          };
+        }
+      }
+
+      try {
+        return {
+          report: await builderApi.preflight(owner, draftId, {
+            checks,
+            experiment,
+          }),
+        };
+      } catch (error) {
+        return { error: this.describeError(error, 'run the preflight checks') };
+      }
+    },
+
+    /**
      * Reads a stored scenario's content, whose apps the Inspector lists: a
      * document names its scenarios and holds none. The content read before
      * stays until this read answers. A read that answers after a later one,

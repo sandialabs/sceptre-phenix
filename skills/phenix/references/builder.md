@@ -127,8 +127,10 @@ name until `saveScenarioConfig` drops the reading), which needs `configs`
 toolbar's Scenarios button; a read-only draft shows neither. Leaving a draft,
 publishing, or downloading first saves Inspector changes that were not applied,
 as a draft snapshot with the summary `Saved unapplied changes to <node>`.
-Logging out removes Builder's local drafts (IndexedDB `phenix-builder`)
-and recent commands from the browser, as does signing in as a different user
+Logging out removes Builder's local drafts (IndexedDB `phenix-builder`),
+recent commands, the last Auto-group name pattern and the remembered
+Preflight checks (`phenix.builder.preflight`) from the browser, as does
+signing in as a different user
 (`phenix.builder.user` names whose data the browser holds), and keeps its
 preferences (`phenix.builder.theme`, `phenix.builder.panes`,
 `phenix.builder.minimap`, `phenix.builder.shortcuts` and
@@ -315,6 +317,90 @@ mounted is acted on. In landing mode the Publish dialog's Go to emits
 `goToIssue` at once; `Builder.vue`'s watcher runs `post`, once the editor
 is drawn. The Inspector's own Checks list gives an issue about one of its
 fields a Go to (`inspector-check-go-to`, "Go to <field>: <message>").
+
+## Preflight checks
+
+`POST /builder/drafts/{owner}/{draft}/preflight` with `{"checks":
+["capacity","network","disks","apps"], "experiment"?: "<name>"}` (strict;
+at least one check, none twice, an unknown one, an unknown key or an
+experiment name outside the config rule is 400 `request.invalid`) puts the
+draft's current snapshot through those checks (`bapi.RunPreflight` in
+`api/builder/preflight.go`; route `preflightDraft` in
+`web/builder_preflight.go`), all at once, each for at most 20 s
+(`PreflightTimeout`), and answers 200 `{checks: [{name, status, summary,
+issues}], passed, failed, unavailable}` in request order. Access is
+`readDraft`'s (`configs` `get` first, then the draft as GET reads it: 404
+for a stranger). Nothing is written and nothing is started. Status:
+`failed` when an issue is an error, else `unavailable` when the check or a
+part of it could not be made (a `preflight.unavailable` warning says why;
+an unreadable scenario is a `preflight.app.scenario-unreadable` warning),
+else `passed`. Every source is behind `bapi.PreflightEnvironment`; the web
+one (`builderPreflightEnvironment`) applies the caller's RBAC as the listing
+routes do and reads through `builderPreflightSources` (tests set them with
+`withBuilderPreflightSources`, so no test needs minimega):
+
+- `capacity`: devices that are not external (included ones too), vcpus
+  and memory (number or text; 1 and 512 MB when unset) against
+  `mm.GetClusterHosts(true)` filtered by `hosts` `list` (also per name):
+  summed free `CPUs-CPUCommit` (short is the warning
+  `preflight.capacity.cpu`) and `MemTotal-MemCommit` (short is the error
+  `preflight.capacity.memory`), and each device against each host: it must
+  fit on one host with both `vcpus <= CPUs` and `memory <= MemTotal`
+  (`deviceFit`; `preflight.capacity.vm-too-large` at field
+  `spec.hardware.vcpus` or `.memory` when one exceeds every host, else one
+  issue at `spec.hardware.vcpus`). The hosts are read once per request
+  (`sync.OnceValues`).
+- `network`: distinct VLANs (a connected handle's network, else the spec's
+  `vlan`) and network aliases against the named experiment's
+  `vlans.min`/`max` (only when both are set, as `minimega_script.tmpl`
+  applies them; `configs` `get` and `experiments` `get`, else that part is
+  unavailable with "experiment X does not exist, or your role may not read
+  it"; `preflight.network.vlan-range`); aliases against the status VLANs of
+  running experiments but the named one (`experiments` `list`; the holder
+  is named only for a role that may list it;
+  `preflight.network.alias-in-use`); bridges the interfaces name and the
+  default bridge (the experiment's `defaultBridge`, else `phenix`) against
+  `mm.GetBridges(hosts...)` (`util/mm/bridges.go`: `shell ovs-vsctl
+  --timeout=5 list-br` on the head node, `mesh send <host> shell ...`
+  elsewhere, and nothing else; never minimega's `bridge` command, which
+  creates the default bridge and rewrites minimega's `bridges` file when it
+  lists; any error fails the listing), a missing one the warning
+  `preflight.network.bridge-missing` at the first interface naming it
+  (minimega creates a missing bridge when a VM starts on it).
+- `disks`: each drive image by file name against `disk.GetImages("")`
+  (`disks` `list`, also per name); an empty listing (no minimega) is
+  unavailable, as the editor's own check then checks nothing. kvm needs
+  VM or ISO, container needs Container, Unknown fits either
+  (`preflight.disk.missing`, `preflight.disk.kind`, field
+  `spec.hardware.drives.<i>.image`).
+- `apps`: no scenarios passes without reading anything; else
+  `applications` `list` (default apps always, others per name), then each
+  listed scenario (`configs` `get` and `scenarios` `list`, checked before
+  the store is read, so a forbidden one is not disclosed): missing is the
+  error `preflight.app.scenario-missing`, forbidden or unreadable the
+  warning `preflight.app.scenario-unreadable`; each app it does not disable
+  (`preflight.app.missing`, path `scenarios[<i>]`).
+
+UI: the Diagram checks dialog's Preflight section (`BuilderChecks.vue`,
+`builder/preflight.js`, `store.runPreflight`, `builderApi.preflight`,
+`readPreflightReport`): four checkboxes, none ticked until the user ticks
+one, then the last choice kept in `phenix.builder.preflight`
+(`{"checks": [...]}`; not a listed preference, so logout removes it), an
+Experiment field suggesting the source experiments, Run (`aria-disabled`
+with none ticked, "Running…" and
+`aria-busy` while it runs). `store.runPreflight` saves queued changes first
+as Publish does (a view-only draft skips that). The report, kept in the
+component outside the dialog, lists each check (testids `preflight`,
+`preflight-check-<id>`, `preflight-experiment`, `preflight-run`,
+`preflight-error`, `preflight-outcome`, `preflight-result` with
+`data-status`/`data-check`, `preflight-summary`, issues
+`preflight-issues-<id>`) with a heading "<label>: Passed|Failed|Unavailable"
+and its issues through `BuilderIssueList` with Go to; it says
+`Preflight: 2 passed, 1 failed, 1 unavailable` (`preflightOutcome`) in the
+dialog's own `role="status"` region (`preflight-outcome`; the page behind a
+modal dialog is inert), or through the editor's live region when the dialog
+was closed before the answer came, and is dropped when `store.doc` changes
+other than its stamp (`sameButStamp`).
 
 ## Access, sharing and RBAC
 
@@ -1959,6 +2045,7 @@ All routes are relative to `/api/v1`.
 | `DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Delete a version other than the current one (needs `If-Match`) |
 | `PATCH/PUT /builder/drafts/{owner}/{draft}/cursor` | Undo and redo: move the draft's current snapshot |
 | `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the topology and experiment configs, and add the topology to the document's scenarios; with `dryRun`, say what that would change and write nothing |
+| `POST /builder/drafts/{owner}/{draft}/preflight` | Check the current snapshot's host capacity, networks, disk images and scenario apps against the server and its cluster; nothing is written (see [Preflight checks](#preflight-checks)) |
 | `GET/PUT /builder/drafts/{owner}/{draft}/shares` | Read or replace who a draft is shared with (owner only) |
 | `GET /builder/drafts/{owner}/{draft}/shares/candidates` | Every account that can receive a share of the draft |
 | `GET /builder/sources` | Configs a document can be generated from or publish to; topology rows have `includeCount` |
@@ -2093,13 +2180,13 @@ Read this section before changing any file listed below.
 | Area | Files |
 |---|---|
 | Document model, generation, publishing to configs, validation, JSON Schema, YAML reading | `src/go/types/builder/` (`document.go`, `generate.go`, `detach.go` (combine, copy), `topology.go`, `validate.go`, `schema.go`, `yaml.go`, `customicons.go`, `template.go`, `templatefile.go` and `templatefile_schema.go` (template files), `legacy_xml.go` and `legacy.go` (legacy conversion)) |
-| Drafts, snapshots, sharing, published documents, libraries, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`, `icons.go`, `templates.go`, `templatefiles.go` (the server collections read at start), `scope.go`; `config_hook.go` checks a topology's `builder-doc` and removes a deleted or renamed topology's documents; `file.go` reads Builder files; `publish.go` publishes a document as a topology for the CLI, and `ReplaceLegacyDiagram`; `changes.go` says what a publication changes, `DescribePublishChanges`) |
+| Drafts, snapshots, sharing, published documents, libraries, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`, `icons.go`, `templates.go`, `templatefiles.go` (the server collections read at start), `scope.go`; `config_hook.go` checks a topology's `builder-doc` and removes a deleted or renamed topology's documents; `file.go` reads Builder files; `publish.go` publishes a document as a topology for the CLI, and `ReplaceLegacyDiagram`; `changes.go` says what a publication changes, `DescribePublishChanges`; `preflight.go` makes the preflight checks) |
 | Built-in Builder role and its start-up check | `src/go/api/config/default/builder.yml`, `src/go/web/rbac/migrations.go` (`EnsureBuilderRolePermissions`), `src/go/web/init.go` |
 | `builder-doc` codec (nested in JSON and YAML, a string in memory and in the store) | `src/go/store/types.go` |
 | `phenix builder publish`, and `phenix config create` recognizing Builder documents | `src/go/cmd/builder.go`, `src/go/cmd/config.go` |
 | `phenix builder drafts` and `phenix builder templates`, the REST client they share | `src/go/cmd/builder_drafts.go`, `src/go/cmd/builder_templates.go`, `src/go/cmd/builder_client.go` |
 | Record store for drafts (BoltDB and etcd, etcd compaction) | `src/go/store/*record*.go`, `src/go/store/etcd_record_compact.go` |
-| HTTP routes, authorization and RBAC | `src/go/web/builder*.go` (`builder.go` holds the authorization model, the routes and the response headers; `builder_legacy.go`, `builder_icons.go`, `builder_templates.go`, `builder_experiments.go` (the `experiment` link); `builder_preview.go` (the dry run of a publication); `builder_assets.go` serves the editor's files, which `src/js/plugins/builder-assets.js` compresses in the UI build) |
+| HTTP routes, authorization and RBAC | `src/go/web/builder*.go` (`builder.go` holds the authorization model, the routes and the response headers; `builder_legacy.go`, `builder_icons.go`, `builder_templates.go`, `builder_experiments.go` (the `experiment` link); `builder_preview.go` (the dry run of a publication); `builder_preflight.go` (the preflight route and what it reads); `builder_assets.go` serves the editor's files, which `src/js/plugins/builder-assets.js` compresses in the UI build) |
 | Editor page and drafts landing | `src/js/src/views/Builder.vue`, `src/js/src/components/builder/BuilderDrafts.vue`, `BuilderTemplates.vue` (the Node Templates tab), `BuilderBulkBar.vue`, `BuilderBulkSummary.vue`, `BuilderHeaderButtons.vue` (the buttons both headers share) |
 | Configs page links | `src/js/src/components/configs/ConfigsList.vue`, `ConfigsEditor.vue`, `src/js/src/builder/configs.js` |
 | Editor components | `src/js/src/components/builder/` (canvas, Inspector, outline, toolbar, side columns, `BuilderSignIn.vue`, dialogs, nodes, edges) |

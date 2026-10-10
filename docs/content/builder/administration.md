@@ -195,6 +195,7 @@ instead.
 | Delete a published topology | `configs` `delete` on `Topology/<name>` |
 | Get the Inspector's fields from the server | `schemas` `get` on `builder` |
 | Get drive image suggestions and missing-image checks | `disks` `list` |
+| Run **Preflight** checks on a draft | As opening the draft. Each check also needs: **Host capacity** `hosts` `list`; **Networks** `hosts` `list` for the bridges, `experiments` `list` for the VLANs running experiments use, and `configs` `get` and `experiments` `get` on the experiment named; **Disk images** `disks` `list`; **Scenario apps** `applications` `list`, and `configs` `get` and `scenarios` `list` on each `Scenario/<name>` the diagram lists. A check, or part of one, that its permission is missing for is reported as unavailable |
 | List, open, change or delete other users' drafts | `builder-drafts` (see [Other users' drafts](#other-users-drafts)) |
 | See and use the server's icons | `configs` `list` |
 | Upload an icon, and add a diagram's icons to the server with **Upload** | `configs` `create` |
@@ -591,8 +592,9 @@ The browser keeps some Builder data too:
 - Preferences stay in localStorage: `phenix.builder.theme`,
   `phenix.builder.panes`, `phenix.builder.minimap`,
   `phenix.builder.shortcuts` and `phenix.builder.settings`.
-- Logging out clears the rest: the unsaved changes, the recent commands and
-  the last **Auto-group** name pattern.
+- Logging out clears the rest: the unsaved changes, the recent commands,
+  the last **Auto-group** name pattern and the **Preflight** checks last
+  ticked (`phenix.builder.preflight`).
   Signing in as another user on the same browser clears them as well. Before
   it clears unsaved changes, logging out tries to send them, and warns when
   some remain (see [Logging out](drafts.md#logging-out)).
@@ -1066,6 +1068,7 @@ for Import and Publish.
 | `DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Delete a snapshot other than the current one | `update` |
 | `PATCH` or `PUT /builder/drafts/{owner}/{draft}/cursor` | Undo and redo: choose the current snapshot | `update` |
 | `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the Topology and Experiment configs, and add the topology to the `topology` annotation of each scenario the document lists. With `"dryRun": true`, say what publishing would change and write nothing; a dry run needs no `If-Match` | `update`, and each config's own |
+| `POST /builder/drafts/{owner}/{draft}/preflight` | Run the [preflight checks](editor.md#preflight) named in `checks` (`capacity`, `network`, `disks`, `apps`) on the draft's current document, against the `experiment` named, if any (writes nothing) | `get`, and each check's own (see [What each task needs](#what-each-task-needs)) |
 | `GET`, `PUT /builder/drafts/{owner}/{draft}/shares` | Read or replace who a draft is shared with (owner only) | `get`, `update` |
 | `GET /builder/drafts/{owner}/{draft}/shares/candidates` | The users a draft can be shared with | `update` |
 | `GET /builder/sources` | The configs a document can be made from or published with | `list` |

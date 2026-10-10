@@ -33,6 +33,7 @@ All notable changes to this project will be documented in this file.
 - **Builder error codes**: Builder REST errors, validation issues, publish blockers and package warnings carry stable error codes.
 - **Builder error codes**: Builder REST errors, validation issues and publish blockers carry stable error codes.
 - **Builder publish preview**: The Publish dialog previews what publishing changes: Topology, included topologies, Scenario annotations, disk images and experiment VLAN aliases, with the warnings publishing would give. The publish route takes `dryRun`, and `phenix builder publish --dry-run` lists the same changes.
+- **Builder preflight**: The Diagram checks dialog and `POST /builder/drafts/{owner}/{draft}/preflight` check a draft's host capacity, VLANs and bridges, disk images and scenario apps against the server and its cluster, and say which checks passed, failed or could not be made.
 
 ### Changed
 

@@ -2327,6 +2327,70 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/WebError"
                   - $ref: "#/components/schemas/BuilderPublishResult"
+  "/builder/drafts/{owner}/{draft}/preflight":
+    parameters:
+      - $ref: "#/components/parameters/BuilderDraftOwner"
+      - $ref: "#/components/parameters/BuilderDraftID"
+    post:
+      tags:
+        - Builder
+      summary: Run preflight checks on a Builder draft
+      description: >
+        Puts the draft's current document through the checks the request
+        names, in its order and all at once, and reports each as `passed`,
+        `failed` or `unavailable`, with a summary and its issues. `capacity`
+        compares the CPUs and memory of the devices phenix starts (every
+        device but an external one; `hardware.vcpus` and `hardware.memory`,
+        1 and 512 MB when unset) with what the schedulable cluster hosts have
+        free, and checks that each device fits on one host, with its vCPUs
+        and memory both within that host's CPUs and memory; `network` compares the
+        VLANs the devices use and the networks' VLAN aliases with the VLAN
+        range of the `experiment` named (none applies without one, or when
+        the experiment sets no range), the aliases with the VLANs running
+        experiments hold, and the bridges the interfaces name (and the
+        experiment's default bridge, `phenix` without one) with the Open
+        vSwitch bridges of the schedulable hosts, listed with `ovs-vsctl
+        list-br` through minimega's `shell` command, which changes nothing;
+        `disks` looks up each drive image by file
+        name among the server's disk images and checks its kind (a VM or ISO
+        image for a kvm device, a container image for a container); `apps`
+        reads each Scenario config the document lists and looks up each app
+        it does not disable among the default, built-in and user apps (a
+        listed scenario that does not exist is the error
+        `preflight.app.scenario-missing`). A
+        check fails when one of its issues is an error. It is `unavailable`
+        when it, or a part of it, could not be made and nothing failed: the
+        caller's role lacks `hosts` `list` (capacity and bridges), `disks`
+        `list`, `applications` `list`, `experiments` `list` (VLANs in use),
+        read access to the experiment (`configs` `get` and `experiments`
+        `get`) or to a scenario (`configs` `get` and `scenarios` `list`);
+        minimega cannot be reached; the server lists no disk images; or the
+        check took longer than 20 seconds. An issue says why (code
+        `preflight.unavailable`, or `preflight.app.scenario-unreadable` as a
+        warning for a scenario), and one check never keeps the others from
+        being made. Needs what reading the draft needs (`configs` `get`, and
+        for another user's draft a share or `builder-drafts` `get`). Nothing
+        is written, and no VM or experiment is started.
+      operationId: postBuilderDraftPreflight
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderPreflightRequest"
+      responses:
+        "200":
+          description: each check named, in the request's order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderPreflightReport"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
   "/builder/drafts/{owner}/{draft}/shares":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -5416,6 +5480,84 @@ components:
                   why the status is what it is, such as the devices that use
                   a disk image, when that needs saying
                 type: string
+    BuilderPreflightCheckName:
+      description: a preflight check
+      type: string
+      enum:
+        - capacity
+        - network
+        - disks
+        - apps
+    BuilderPreflightRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        checks:
+          description: the checks to make, in the order they are reported; each at most once
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/BuilderPreflightCheckName"
+          example:
+            - disks
+            - apps
+        experiment:
+          description: >
+            the experiment whose VLAN range and default bridge the network
+            check goes by; empty or left out for none
+          type: string
+          example: lab-exp
+      required:
+        - checks
+    BuilderPreflightResult:
+      type: object
+      properties:
+        name:
+          $ref: "#/components/schemas/BuilderPreflightCheckName"
+        status:
+          description: >
+            `failed` when an issue is an error; `unavailable` when the check, or
+            a part of it, could not be made and nothing failed; otherwise
+            `passed`, with any warnings among the issues
+          type: string
+          enum:
+            - passed
+            - failed
+            - unavailable
+        summary:
+          description: what the check compared, in one line, and what it could not check
+          type: string
+          example: "Found: 3 of 3 drive images, among the server's 12 disk images."
+        issues:
+          description: >
+            what the check found, each with its `preflight.` code and, when it
+            is about one, the device, network and field
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderIssue"
+    BuilderPreflightReport:
+      type: object
+      properties:
+        checks:
+          description: the result of each check asked for, in the request's order
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderPreflightResult"
+        passed:
+          description: the checks that passed, in the request's order
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderPreflightCheckName"
+        failed:
+          description: the checks that failed, in the request's order
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderPreflightCheckName"
+        unavailable:
+          description: the checks that could not be made, in the request's order
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderPreflightCheckName"
     BuilderPublishedDocument:
       description: >
         The Builder document a config references: a stored published

@@ -144,6 +144,9 @@ type builderAPI struct {
 	// them, for a dry run of a publication to say whether the server has
 	// each image the topology's devices use.
 	listDisks func() ([]disk.Details, error)
+	// preflight is where the preflight checks of a draft read the cluster
+	// and the server from (see [builderAPI.preflightDraft]).
+	preflight builderPreflightSources
 }
 
 // builderOption configures a [builderAPI].
@@ -173,6 +176,7 @@ func newBuilderAPI(opts ...builderOption) (*builderAPI, error) {
 		diskImages:    builderDiskImages,
 		appNames:      builderAppNames,
 		listDisks:     func() ([]disk.Details, error) { return disk.GetImages("") },
+		preflight:     defaultBuilderPreflightSources(),
 	}
 
 	for _, opt := range opts {
@@ -1113,16 +1117,15 @@ func mirrorBuilderRoutes(src, dst *mux.Router) {
 	})
 }
 
-// routes registers every Builder route on the given router. Each route
-// is also described in web/public/docs/openapi.yml, which
-// TestBuilderRoutesDocumented checks.
-func (b *builderAPI) routes(router *mux.Router) {
-	const (
-		draftPath     = "/builder/drafts/{owner}/{draft}"
-		snapshotsPath = draftPath + "/snapshots"
-		libraryPath   = builderTemplatesPath + "/{owner}"
-	)
+// builderDraftPath is the path of one draft, and the start of the paths of
+// what belongs to it: its snapshots, cursor, shares, publication and
+// preflight checks.
+const builderDraftPath = "/builder/drafts/{owner}/{draft}"
 
+// routes registers every Builder route on the given router, one family of
+// routes at a time. Each route is also described in
+// web/public/docs/openapi.yml, which TestBuilderRoutesDocumented checks.
+func (b *builderAPI) routes(router *mux.Router) {
 	router.Use(builderResponseHeaders)
 
 	// The router answers a request that matches no route, or no method of
@@ -1138,19 +1141,39 @@ func (b *builderAPI) routes(router *mux.Router) {
 
 	router.MethodNotAllowedHandler = builderResponseHeaders(notAllowed)
 
+	b.schemaRoutes(router)
+	b.draftRoutes(router)
+	b.publishingRoutes(router)
+	b.shareRoutes(router)
+	b.sourceRoutes(router)
+	b.documentRoutes(router)
+	b.iconRoutes(router)
+	b.templateRoutes(router)
+}
+
+// schemaRoutes registers the schema routes of the document, template file
+// and package formats.
+func (b *builderAPI) schemaRoutes(router *mux.Router) {
 	router.Handle(builderSchemaPath, builderHandler(b.getSchema)).
 		Methods("GET", "OPTIONS")
 	router.Handle(builderTemplateSchemaPath, builderHandler(b.getTemplateSchema)).
 		Methods("GET", "OPTIONS")
 	router.Handle(builderPackageSchemaPath, builderHandler(b.getPackageSchema)).
 		Methods("GET", "OPTIONS")
+}
+
+// draftRoutes registers the routes of drafts, their snapshots and their
+// cursor.
+func (b *builderAPI) draftRoutes(router *mux.Router) {
+	const snapshotsPath = builderDraftPath + "/snapshots"
+
 	router.Handle("/builder/drafts", builderHandler(b.listDrafts)).
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder/drafts", builderHandler(b.createDraft)).
 		Methods("POST", "OPTIONS")
-	router.Handle(draftPath, builderHandler(b.getDraft)).
+	router.Handle(builderDraftPath, builderHandler(b.getDraft)).
 		Methods("GET", "OPTIONS")
-	router.Handle(draftPath, builderHandler(b.deleteDraft)).
+	router.Handle(builderDraftPath, builderHandler(b.deleteDraft)).
 		Methods("DELETE", "OPTIONS")
 	router.Handle(snapshotsPath, builderHandler(b.listSnapshots)).
 		Methods("GET", "OPTIONS")
@@ -1162,16 +1185,34 @@ func (b *builderAPI) routes(router *mux.Router) {
 		Methods("DELETE", "OPTIONS")
 	// PUT is accepted alongside PATCH so a client that models the cursor as a
 	// replaceable sub-resource reaches the same handler.
-	router.Handle(draftPath+"/cursor", builderHandler(b.updateCursor)).
+	router.Handle(builderDraftPath+"/cursor", builderHandler(b.updateCursor)).
 		Methods("PATCH", "PUT", "OPTIONS")
-	router.Handle(draftPath+"/publish", builderHandler(b.publishDraft)).
+}
+
+// publishingRoutes registers the routes that publish a draft, or preview
+// what publishing it changes (the same route, with dryRun), and that run the
+// preflight checks of a draft.
+func (b *builderAPI) publishingRoutes(router *mux.Router) {
+	router.Handle(builderDraftPath+"/publish", builderHandler(b.publishDraft)).
 		Methods("POST", "OPTIONS")
-	router.Handle(draftPath+"/shares", builderHandler(b.getShares)).
+	router.Handle(builderDraftPath+"/preflight", builderHandler(b.preflightDraft)).
+		Methods("POST", "OPTIONS")
+}
+
+// shareRoutes registers the routes of who a draft is shared with.
+func (b *builderAPI) shareRoutes(router *mux.Router) {
+	router.Handle(builderDraftPath+"/shares", builderHandler(b.getShares)).
 		Methods("GET", "OPTIONS")
-	router.Handle(draftPath+"/shares", builderHandler(b.putShares)).
+	router.Handle(builderDraftPath+"/shares", builderHandler(b.putShares)).
 		Methods("PUT", "OPTIONS")
-	router.Handle(draftPath+"/shares/candidates", builderHandler(b.getShareCandidates)).
+	router.Handle(builderDraftPath+"/shares/candidates", builderHandler(b.getShareCandidates)).
 		Methods("GET", "OPTIONS")
+}
+
+// sourceRoutes registers the routes that list the configs a document can be
+// generated from, generate one, convert a legacy diagram, export a topology,
+// and build or resolve a package.
+func (b *builderAPI) sourceRoutes(router *mux.Router) {
 	router.Handle("/builder/sources", builderHandler(b.listSources)).
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder/generate", builderHandler(b.generateDocument)).
@@ -1184,6 +1225,10 @@ func (b *builderAPI) routes(router *mux.Router) {
 		Methods("POST", "OPTIONS")
 	router.Handle("/builder/package/resolve", builderHandler(b.resolvePackage)).
 		Methods("POST", "OPTIONS")
+}
+
+// documentRoutes registers the routes of published documents.
+func (b *builderAPI) documentRoutes(router *mux.Router) {
 	router.Handle("/builder/documents", builderHandler(b.listDocuments)).
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder/documents/{document}", builderHandler(b.getDocument)).
@@ -1192,6 +1237,10 @@ func (b *builderAPI) routes(router *mux.Router) {
 		Methods("DELETE", "OPTIONS")
 	router.Handle("/builder/topologies/{topology}/document", builderHandler(b.getTopologyDocument)).
 		Methods("GET", "OPTIONS")
+}
+
+// iconRoutes registers the routes of the icon library.
+func (b *builderAPI) iconRoutes(router *mux.Router) {
 	router.Handle(builderIconsPath, builderHandler(b.listIcons)).
 		Methods("GET", "OPTIONS")
 	router.Handle(builderIconsPath, builderHandler(b.createIcon)).
@@ -1202,6 +1251,12 @@ func (b *builderAPI) routes(router *mux.Router) {
 		Methods("PUT", "OPTIONS")
 	router.Handle(builderIconsPath+"/{icon}", builderHandler(b.deleteIcon)).
 		Methods("DELETE", "OPTIONS")
+}
+
+// templateRoutes registers the routes of the template library.
+func (b *builderAPI) templateRoutes(router *mux.Router) {
+	const libraryPath = builderTemplatesPath + "/{owner}"
+
 	router.Handle(builderTemplatesPath, builderHandler(b.listTemplates)).
 		Methods("GET", "OPTIONS")
 	router.Handle(builderTemplatesPath+"/candidates", builderHandler(b.getTemplateShareCandidates)).

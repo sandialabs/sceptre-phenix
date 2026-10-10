@@ -1,0 +1,31 @@
+{
+  "request": {
+    "checks": ["disks", "apps"]
+  },
+  "answer": {
+    "checks": [
+      {
+        "name": "disks",
+        "status": "passed",
+        "summary": "Found: 1 of 1 drive image, among the server's 1 disk image.",
+        "issues": []
+      },
+      {
+        "name": "apps",
+        "status": "failed",
+        "summary": "Found: 1 of 2 apps, named by 1 scenario.",
+        "issues": [
+          {
+            "code": "preflight.app.missing",
+            "severity": "error",
+            "message": "scenario \"ops\" names app \"historian\", which is not a default app, a built-in app or a user app (phenix-app-historian on the server's PATH) of this server",
+            "path": "scenarios[0]"
+          }
+        ]
+      }
+    ],
+    "passed": ["disks"],
+    "failed": ["apps"],
+    "unavailable": []
+  }
+}
