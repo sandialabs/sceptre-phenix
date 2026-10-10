@@ -213,9 +213,10 @@ The tab holds:
 - A row for selecting several templates (see
   [Selecting several templates](#selecting-several-templates)).
 - A card for each template, with the template's icon and name, a checkbox
-  at the top right, when it was last updated (a built-in template you never changed has no
-  time), the collections it is in ("In" and their names), who it is shared
-  with, its description, and **Edit**, **Share**, **Delete** and **Export**.
+  at the top right, when it was last updated (a built-in template you never
+  changed has no time), the collections it is in ("In" and their names), who
+  it is shared with, its description, and **Edit**, **Share**, **Delete** and
+  **Export**.
 
 Until the first read answers, the tab says "Loading…". When the library
 cannot be read, the tab says "Could not load your templates." and why, with
@@ -265,8 +266,9 @@ it out of its collections.
 
 ### Selecting several templates
 
-Each card has a checkbox at its top right. The row above the cards has **Select all**, how
-many are selected ("2 of 5 selected"), and the actions your role allows:
+Each card has a checkbox at its top right. The row above the cards has
+**Select all**, how many are selected ("2 of 5 selected"), and the actions
+your role allows:
 
 - **Add to collection** and, while a collection is shown, **Remove from
   collection**.
