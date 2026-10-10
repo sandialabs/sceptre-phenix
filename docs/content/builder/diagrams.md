@@ -766,8 +766,8 @@ attempted." **Filter icons** narrows what the server icons' row selects:
 icons it hides are not selected.
 
 Each user may upload at most 64 icons and 1 MiB of them, and the server
-holds at most 2,000 icons. There is no `phenix` command for the icon
-library: use the editor or the REST API.
+holds at most 2,000 icons. Use the editor or the REST API to manage the
+icon library.
 
 ## Layouts
 

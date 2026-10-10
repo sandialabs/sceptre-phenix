@@ -460,7 +460,7 @@ func builderFileRefusal(kind, path string) error {
 	case builderFileTemplateFile:
 		return fmt.Errorf(
 			"%s is a Builder template file, not a configuration: use Import templates in the Builder, "+
-				"or the Builder REST API (/api/v1/builder/templates), to add its Node Templates", path,
+				"or the Builder REST API (POST /api/v1/builder/templates/{owner}/items), to add its Node Templates", path,
 		)
 	case builderFilePackage:
 		return fmt.Errorf(

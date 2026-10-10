@@ -39,7 +39,7 @@ legacy diagram through `POST /builder/legacy`), or a published diagram;
 
 The Builder, the Vue Flow topology editor, is on in every `phenix ui`, at
 `/builder`, with its draft and document APIs under `/api/v1/builder`.
-The Builder has no CLI: everything is in the REST API and the web UI only.
+Scripts use the REST API, and people use the web UI.
 The unix socket of `phenix ui` does not serve the Builder routes.
 Drafts autosave separately from phenix configs; in the web UI and REST API
 only the explicit Publish action creates or updates topology or experiment

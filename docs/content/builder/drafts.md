@@ -566,8 +566,8 @@ To keep changes that were not saved:
 The **Published Diagrams** tab lists each topology that has a Builder
 diagram, by topology name:
 
-- A topology published from Builder, with when it was published, for example riverside-water with "Published
-  Oct 10, 2026, 5:45 AM".
+- A topology published from Builder, with when it was published, for
+  example riverside-water with "Published Oct 10, 2026, 5:45 AM".
 - A topology whose diagram is read from a file on the phenix server, with
   the tag **File** and where the file is (see
   [Diagrams read from a file](#diagrams-read-from-a-file)).

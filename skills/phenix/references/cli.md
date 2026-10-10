@@ -44,8 +44,8 @@ VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/
 disabled by default and requires restarting `phenix ui` to take effect. The CLI
 equivalents (`phenix vm mount`/`unmount`) are always available.
 
-The Builder, the web topology editor at `/builder`, has no CLI. Scripts use
-its REST API below `/api/v1/builder/`. See [`builder.md`](builder.md).
+Scripts use the REST API below `/api/v1/builder/` for the Builder, the web
+topology editor at `/builder`. See [`builder.md`](builder.md).
 
 ## `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 

@@ -143,10 +143,10 @@ first and lay the XML over it.
   Topology file `uploaded/Topology/<name>`; Upload of a bare diagram
   `uploaded/legacy-xml` (`LEGACY_TOKEN`). Only the first can update the
   topology.
-- Publish of that draft to the topology calls `bapi.ReplaceLegacyDiagram`: deletes `builder-xml`, keeps
-  the other annotations, and warns `The legacy Builder diagram of topology
-  <name> was replaced by this diagram.` (or `… could not be read and was
-  removed.` when `DecodeLegacy` refuses it). While a topology has
+- Publish of that draft to the topology calls `bapi.ReplaceLegacyDiagram`:
+  deletes `builder-xml`, keeps the other annotations, and warns `The legacy
+  Builder diagram of topology <name> was replaced by this diagram.` (or `…
+  could not be read and was removed.` when `DecodeLegacy` refuses it). While a topology has
   `builder-xml`, `topologyUpdateMatchesSource` accepts only a draft whose
   document source is that topology (not one imported from an experiment);
   the client mirrors it (`updateBlocker`, `legacyDiagramUpdate` and
@@ -161,4 +161,4 @@ first and lay the XML over it.
   Builder diagram)" with the hint `import-legacy-hint`. Warnings show in the
   shared `dialogs/ImportWarnings.vue`. The palette finds Upload and Import
   by `legacy`.
-- No CLI, no bulk conversion, nothing at server start.
+- No bulk conversion, nothing at server start.

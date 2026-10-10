@@ -154,7 +154,7 @@ name a published document in the store, and `path` names a Builder file on
 the phenix server. Topologies the removed legacy Builder saved carry
 `builder-xml`; Import (or Upload of the file) converts that diagram, and
 publishing the draft imported from the topology replaces `builder-xml` with
-`builder-doc`. The Builder has no CLI: scripts use its REST API below
+`builder-doc`. Scripts use the Builder REST API below
 `/api/v1/builder/`. `phenix config create` skips or refuses Builder
 documents, template files and packages. The icon library is
 one server-wide set of custom icons with unique names, which nodes and

@@ -856,7 +856,7 @@ refuses one named on the command line:
 
 ```console
 $ phenix config create node-templates.yaml
-Error: node-templates.yaml is a Builder template file, not a configuration: use Import templates in the Builder, or the Builder REST API (/api/v1/builder/templates), to add its Node Templates
+Error: node-templates.yaml is a Builder template file, not a configuration: use Import templates in the Builder, or the Builder REST API (POST /api/v1/builder/templates/{owner}/items), to add its Node Templates
 $ phenix config create pump-station.package.yaml
 Error: pump-station.package.yaml is a Builder package, not a configuration: upload it in the Builder to open its diagram
 ```

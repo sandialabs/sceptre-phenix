@@ -151,8 +151,3 @@ every caller; every write route that names one of their ids answers 409
 (`preloaded:<id>`, labelled `Server: <name>` by `preloadedGroupLabel`, its
 entries' tooltips saying the collection is read only, entries
 `palette-template-preloaded-<id>`, key `preloaded:<id>`).
-
-## Command line
-
-The Builder has no CLI. Templates, the icon library, Import and legacy
-conversion are in the web UI and the REST API only.

@@ -70,6 +70,6 @@
 //
 // Authorization is deliberately *not* implemented here. Owner and actor are
 // explicit, trusted arguments supplied by the caller: the web layer, which is
-// responsible for authenticating and authorizing them. The service records the actor of every mutation
-// (including cross-user actors) for audit purposes.
+// responsible for authenticating and authorizing them. The service records the
+// actor of every mutation (including cross-user actors) for audit purposes.
 package builder

@@ -258,19 +258,19 @@ server.", plus a sentence when `topologyDiffers`.
 
 ## phenix config create and Builder files
 
-The Builder has no CLI. `phenix config create` recognizes a Builder
-document (`bdoc.IsDocumentText`). Found in a directory, it is skipped with
-the log line `skipped Builder document; upload it in the Builder to
-publish it`. Named on the command line, it is refused with `<file> is a
-Builder document, not a configuration: upload it in the Builder, or send it
-to the Builder REST API (/api/v1/builder/drafts), and publish it to create
-its topology`. A template file (`bdoc.IsTemplateFileText`) and a package
-(`bdoc.IsPackageText`) are recognized by their `$schema` and no `kind`, as
-a document is. They are skipped the same way, with the debug line `skipped
+`phenix config create` recognizes a Builder document
+(`bdoc.IsDocumentText`). Found in a directory, it is skipped with the log
+line `skipped Builder document; upload it in the Builder to publish it`.
+Named on the command line, it is refused with `<file> is a Builder document,
+not a configuration: upload it in the Builder, or send it to the Builder
+REST API (/api/v1/builder/drafts), and publish it to create its topology`. A
+template file (`bdoc.IsTemplateFileText`) and a package
+(`bdoc.IsPackageText`) are recognized by their `$schema` and no `kind`, as a
+document is. They are skipped the same way, with the debug line `skipped
 Builder file, which is not a configuration` (`kind`, `path`). Named on the
 command line, they are refused with `<file> is a Builder template file, not
 a configuration: use Import templates in the Builder, or the Builder REST
-API (/api/v1/builder/templates), to add its Node Templates` or `<file> is a
-Builder package, not a configuration: upload it in the Builder to open its
-diagram` (`builderFileKind`, `skipBuilderFile`, `builderFileRefusal` in
-`cmd/config.go`).
+API (POST /api/v1/builder/templates/{owner}/items), to add its Node
+Templates` or `<file> is a Builder package, not a configuration: upload it
+in the Builder to open its diagram` (`builderFileKind`, `skipBuilderFile`,
+`builderFileRefusal` in `cmd/config.go`).

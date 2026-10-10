@@ -1013,9 +1013,8 @@ are under `/api/v1`. The interactive API docs of a running server, at
 `/docs/`, describe every request and response under the **Builder** tag (see
 [Interactive API Docs](../api.md#interactive-api-docs-swaggeropenapi)).
 
-The `phenix` command has no Builder subcommand. The REST API has no single
-request that publishes a Builder file: create a draft from the document,
-then publish the draft.
+The REST API has no single request that publishes a Builder file: create a
+draft from the document, then publish the draft.
 
 Each route needs the `configs` permission its column names, and the
 checks of [Permissions](#permissions) on top of it: a share or

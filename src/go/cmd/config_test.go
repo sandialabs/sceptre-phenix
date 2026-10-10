@@ -463,7 +463,7 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) { //nolint:paralleltest // 
 		want := path + ` is a Builder package, not a configuration: upload it in the Builder to open its diagram`
 		if kind == builderFileTemplateFile {
 			want = path + ` is a Builder template file, not a configuration: use Import templates in the Builder, ` +
-				`or the Builder REST API (/api/v1/builder/templates), to add its Node Templates`
+				`or the Builder REST API (POST /api/v1/builder/templates/{owner}/items), to add its Node Templates`
 		}
 
 		if err := run(path); err == nil || err.Error() != want {
