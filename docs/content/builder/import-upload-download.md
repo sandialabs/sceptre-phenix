@@ -203,10 +203,12 @@ from, for example "Copied from riverside-water". For a config file, the
 note gives the name in the file's `metadata`. The Inspector shows the note
 under **Notes** when nothing is selected (see
 [With nothing selected](editor.md#with-nothing-selected)). You can change or
-delete it as any other note. **Publish** proposes the new name and creates a new topology
-("A new topology will be created."). It cannot update the topology it came
-from, and later changes to that topology, or to the topologies combined
-into it, do not reach the draft.
+delete it like any other note.
+
+**Publish** proposes the new name and creates a new topology ("A new
+topology will be created."). It cannot update the topology it came from,
+and later changes to that topology, or to the topologies combined into it,
+do not reach the draft.
 
 To make the included nodes of a draft you already have editable, without
 importing again, use **Combine included nodes into a new draft** (see

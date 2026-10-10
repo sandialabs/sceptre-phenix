@@ -3249,8 +3249,9 @@ describe('server data', () => {
   });
 
   // The server adds the note that names the config a copy was made from.
-  // The editor opens the copy with its notes as the server sent them.
-  test('a copy opens with the note the server added, once', async () => {
+  // The store passes the server's notes through unchanged. The Go tests
+  // check that the server adds the note only once.
+  test('a copy opens with the notes the server sent, unchanged', async () => {
     const { doc } = sampleDocument();
     const copied = {
       ...doc,
