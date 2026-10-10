@@ -736,7 +736,11 @@
   max-height: 100%;
 }
 
+/* The label keeps its line, and the icon takes the room that is left. With
+   overflow hidden, a flex item can shrink to nothing, so the label does
+   not shrink. */
 .builder-node--icon .builder-node__label {
+  flex: none;
   max-width: 100%;
   font-size: 0.75rem;
 }
