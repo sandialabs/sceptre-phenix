@@ -117,6 +117,7 @@ import { pageStorage } from './storage.js';
 import { builderTabs } from './tabs.js';
 import { importProblem, uniqueCollectionName } from './templateFile.js';
 import {
+  missingBuiltinTemplates,
   paletteTemplateGroups,
   templateByKey,
   templateContent,
@@ -1074,6 +1075,10 @@ export const useBuilderStore = defineStore('builder', {
       state.templates.collections.filter(
         (collection) => collection.source === 'own',
       ),
+    // The built-in templates the user's library does not hold, once it was
+    // read: the ones restoreBuiltinTemplates can add back.
+    missingBuiltinTemplates: (state) =>
+      missingBuiltinTemplates(state.templates),
     // What the signed-in role may do to its library (see configsAllowed):
     // add templates and collections, change them, delete them.
     templateRights: () => ({
@@ -5219,6 +5224,26 @@ export const useBuilderStore = defineStore('builder', {
       await this.fetchTemplates();
 
       return deleted;
+    },
+
+    /**
+     * Restores deleted built-in templates to the user's library in one
+     * request, with their original ids, and reads the library again. With
+     * no ids it restores every built-in template the library lacks. A
+     * restored template is in no collection. It rejects with the failure.
+     *
+     * @param {string[]} [ids] built-in template ids
+     * @returns {Promise<string[]>} the ids the server restored
+     */
+    async restoreBuiltinTemplates(ids = []) {
+      const owner = await this.libraryOwner();
+      const restored = await libraryWrite(() =>
+        builderApi.restoreTemplates(owner, { templates: ids }),
+      );
+
+      await this.fetchTemplates();
+
+      return restored;
     },
 
     /**

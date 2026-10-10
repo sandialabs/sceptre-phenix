@@ -181,6 +181,15 @@ export function templateDeletePath(owner) {
   return `${TEMPLATES_PATH}/${encodeURIComponent(owner)}/delete`;
 }
 
+/**
+ * @param {string} owner
+ * @returns {string} where deleted built-in templates of that library are
+ *   restored
+ */
+export function templateRestorePath(owner) {
+  return `${TEMPLATES_PATH}/${encodeURIComponent(owner)}/restore`;
+}
+
 // The users the caller may share the templates of their library with.
 export const TEMPLATE_CANDIDATES_PATH = `${TEMPLATES_PATH}/candidates`;
 
@@ -1903,6 +1912,25 @@ export function createBuilderApi(http = axiosInstance) {
         templates: Number(deleted.templates) || 0,
         collections: Number(deleted.collections) || 0,
       };
+    },
+
+    /**
+     * Restores deleted built-in templates of a library, with their original
+     * ids. With no ids, every missing built-in template is restored. An id
+     * that is not a built-in id, or one the library holds, is ignored.
+     *
+     * @param {string} owner
+     * @param {{templates?: string[]}} [selection] built-in template ids
+     * @returns {Promise<string[]>} the ids of the restored templates
+     */
+    async restoreTemplates(owner, { templates = [] } = {}) {
+      const response = await http.post(
+        templateRestorePath(owner),
+        templates.length ? { templates } : {},
+      );
+      const restored = response.data?.restored;
+
+      return Array.isArray(restored) ? restored : [];
     },
 
     /**

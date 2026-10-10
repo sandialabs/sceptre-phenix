@@ -282,7 +282,8 @@ func TestLibraryFirstChangeStoresTheBuiltins(t *testing.T) {
 
 // TestLibraryDeletedBuiltinStaysDeleted asserts deleting a built-in is an
 // ordinary delete: it is gone from the next read and after every later
-// write, also when the delete was the library's first change.
+// write, also when the delete was the library's first change. Only a
+// restore adds it back.
 func TestLibraryDeletedBuiltinStaysDeleted(t *testing.T) {
 	h := newHarness(t)
 
@@ -328,6 +329,195 @@ func TestLibraryDeletedBuiltinStaysDeleted(t *testing.T) {
 
 	if library := mustLibrary(t, h, testOwner); len(library.Templates) != 0 || library.Templates == nil {
 		t.Fatalf("an emptied library holds %q, want an empty list", templateIDs(library))
+	}
+
+	// A restore adds the five back.
+	mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
+		_, err := library.RestoreBuiltins(nil)
+
+		return err
+	})
+
+	if got := templateIDs(mustLibrary(t, h, testOwner)); !slices.Equal(got, builtinIDs) {
+		t.Fatalf("after a restore the library holds %q, want %q", got, builtinIDs)
+	}
+}
+
+// TestLibraryRestoreBuiltins asserts a restore adds back the built-in
+// templates a library lacks, as they were, and nothing else.
+func TestLibraryRestoreBuiltins(t *testing.T) {
+	h := newHarness(t)
+	ids := mustAddTemplates(t, h, testOwner, testTemplate("PLC"))
+
+	var collection string
+
+	mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
+		var err error
+
+		collection, err = library.AddCollection(
+			CollectionContent{Name: "Floor", Description: "", TemplateIDs: []string{"router", "server", ids[0]}}, h.service.NewID,
+		)
+		if err != nil {
+			return err
+		}
+
+		if err := library.ReplaceTemplate("workstation", testTemplate("Changed workstation")); err != nil {
+			return err
+		}
+
+		library.Delete([]string{"router", "server", "firewall"}, nil)
+
+		return nil
+	})
+
+	restore := func(requested []string) []string {
+		t.Helper()
+
+		var restored []string
+
+		mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
+			var err error
+
+			restored, err = library.RestoreBuiltins(requested)
+
+			return err
+		})
+
+		return restored
+	}
+
+	// Only the named built-ins that are missing come back, in the order of
+	// the built-ins. An unknown ID, an ID of another template and a
+	// built-in the library holds are ignored.
+	requested := []string{"firewall", "no-such", ids[0], "workstation", "router"}
+
+	if got := restore(requested); !slices.Equal(got, []string{"router", "firewall"}) {
+		t.Fatalf("restoring router and firewall restored %q", got)
+	}
+
+	library := mustLibrary(t, h, testOwner)
+	want := []string{"workstation", "external", ids[0], "router", "firewall"}
+
+	if got := templateIDs(library); !slices.Equal(got, want) {
+		t.Fatalf("after the restore the library holds %q, want %q", got, want)
+	}
+
+	builtins := builder.BuiltinTemplates()
+
+	for _, id := range []string{"router", "firewall"} {
+		template := library.Template(id)
+		original := builtins[slices.IndexFunc(builtins, func(b builder.Template) bool { return b.ID == id })]
+
+		if !reflect.DeepEqual(template.Template, original) {
+			t.Errorf("the restored %s = %+v, want the built-in %+v", id, template.Template, original)
+		}
+
+		if template.Version != 1 || template.Created.IsZero() || !template.Created.Equal(template.Updated) ||
+			template.Shares != nil || template.Public != nil {
+			t.Errorf("the restored %s = %+v, want version 1, the time of the restore, not shared or published", id, template)
+		}
+	}
+
+	// A changed built-in keeps its change.
+	if workstation := library.Template("workstation"); workstation.Name != "Changed workstation" || workstation.Version != 2 {
+		t.Errorf("the changed workstation = %+v, want it as changed", workstation)
+	}
+
+	// Collections are not restored.
+	if got := library.Collection(collection).TemplateIDs; !slices.Equal(got, []string{ids[0]}) {
+		t.Errorf("after the restore the collection holds %q, want %q", got, []string{ids[0]})
+	}
+
+	// With none named, every missing built-in comes back.
+	if got := restore(nil); !slices.Equal(got, []string{"server"}) {
+		t.Fatalf("restoring every missing built-in restored %q", got)
+	}
+
+	// A repeat restores nothing and writes nothing.
+	revision := mustLibrary(t, h, testOwner).Revision
+
+	if got := restore(nil); len(got) != 0 || got == nil {
+		t.Fatalf("restoring again restored %q, want an empty list", got)
+	}
+
+	if after := mustLibrary(t, h, testOwner); after.Revision != revision {
+		t.Fatalf("a restore of nothing wrote revision %d over %d", after.Revision, revision)
+	}
+
+	// A user with no record holds all five: a restore writes nothing.
+	peer, err := h.service.UpdateLibrary(context.Background(), testPeer, testPeer, func(library *TemplateLibrary) error {
+		restored, err := library.RestoreBuiltins(nil)
+		if err == nil && len(restored) != 0 {
+			t.Errorf("a library with no record restored %q", restored)
+		}
+
+		return err
+	})
+	if err != nil || peer.Revision != 0 || h.store.Count(NamespaceTemplates) != 1 {
+		t.Fatalf("a restore for a user with no record = revision %d, %v; %d records", peer.Revision, err, h.store.Count(NamespaceTemplates))
+	}
+}
+
+// TestLibraryRestoreBuiltinsLimit asserts a restore that would take a
+// library past its templates limit is refused, and changes nothing.
+func TestLibraryRestoreBuiltinsLimit(t *testing.T) {
+	h := newHarness(t)
+
+	fill := make([]builder.Template, 0, MaxLibraryTemplates)
+	for i := range MaxLibraryTemplates - len(builtinIDs) + 1 {
+		fill = append(fill, testTemplate(fmt.Sprintf("T%d", i)))
+	}
+
+	mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
+		library.Delete([]string{"router", "external"}, nil)
+
+		_, err := library.AddTemplates(fill, h.service.NewID)
+
+		return err
+	})
+
+	before := mustLibrary(t, h, testOwner)
+	if len(before.Templates) != MaxLibraryTemplates-1 {
+		t.Fatalf("the library holds %d templates, want %d", len(before.Templates), MaxLibraryTemplates-1)
+	}
+
+	_, err := h.service.UpdateLibrary(context.Background(), testOwner, testOwner, func(library *TemplateLibrary) error {
+		_, err := library.RestoreBuiltins(nil)
+
+		return err
+	})
+
+	if reason, limit := refusal(t, err); reason != "a library holds at most 200 templates" || !limit {
+		t.Fatalf("restoring two built-ins into 199 templates is refused with %q (limit %v)", reason, limit)
+	}
+
+	if after := mustLibrary(t, h, testOwner); after.Revision != before.Revision {
+		t.Fatal("a refused restore changed the library")
+	}
+
+	// One fits.
+	mustUpdate(t, h, testOwner, func(library *TemplateLibrary) error {
+		_, err := library.RestoreBuiltins([]string{"external"})
+
+		return err
+	})
+
+	if after := mustLibrary(t, h, testOwner); len(after.Templates) != MaxLibraryTemplates || after.Template("external") == nil {
+		t.Fatalf("restoring one built-in into 199 templates left %d", len(after.Templates))
+	}
+}
+
+// TestBuiltinIDsAreNotServerIDs asserts no built-in ID can be the ID of an
+// item read from a template file, so a restore never names one.
+func TestBuiltinIDsAreNotServerIDs(t *testing.T) {
+	for _, template := range builder.BuiltinTemplates() {
+		if strings.HasPrefix(template.ID, serverIDPrefix) {
+			t.Errorf("the built-in ID %q starts as the IDs of the server's items do", template.ID)
+		}
+	}
+
+	if id := serverID("template", "server.yaml", "server"); !strings.HasPrefix(id, serverIDPrefix) {
+		t.Fatalf("serverID returned %q, want the prefix %q", id, serverIDPrefix)
 	}
 }
 

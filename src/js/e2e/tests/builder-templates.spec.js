@@ -17,7 +17,10 @@
 // the library just then, and no test counts the library's templates. A test
 // changes and deletes only the templates and collections it made, which the
 // `tracker` deletes afterwards, and never the five built-in templates the
-// library starts with. It never presses Select all and then Delete on the
+// library starts with: other tests find them there, in their order. The
+// test of Restore built-in templates hides built-in templates from what its
+// page reads instead, and its restores find nothing to restore on the
+// server. It never presses Select all and then Delete on the
 // list of every template: only on the list of a collection it made. The one
 // test that opens the Custom icons dialog answers the icon library's route
 // itself.
@@ -1286,6 +1289,132 @@ test(
     expectNoFatal(issues);
   },
 );
+
+test('Restore built-in templates adds back a deleted built-in template, one by name or all from a menu', async ({
+  page,
+  builder,
+  request,
+  issues,
+}) => {
+  const library = templateLibrary(page);
+  const restore = page.getByTestId('templates-restore');
+  // The built-in templates the page is told are not in the library. The
+  // tests share one library, so this test deletes no built-in template:
+  // it takes them out of what the page reads. The restore goes to the
+  // server, which finds nothing to restore, and the page is told what a
+  // library without them would answer.
+  let hidden = [];
+  const sent = [];
+
+  await page.route(`**${LIBRARY}`, async (route) => {
+    if (route.request().method() !== 'GET' || !hidden.length) {
+      await route.fallback();
+
+      return;
+    }
+
+    const response = await route.fetch();
+    const json = await response.json();
+
+    json.templates = json.templates.filter(
+      (template) =>
+        !(template.source === 'own' && hidden.includes(template.id)),
+    );
+    await route.fulfill({ response, json });
+  });
+  await page.route(`**${LIBRARY}/*/restore`, async (route) => {
+    const body = route.request().postDataJSON();
+    const response = await route.fetch();
+
+    sent.push({ body, status: response.status(), real: await response.json() });
+
+    const named = body.templates?.length ? body.templates : hidden;
+    const restored = BUILTIN_TEMPLATE_IDS.filter(
+      (id) => hidden.includes(id) && named.includes(id),
+    );
+
+    hidden = hidden.filter((id) => !restored.includes(id));
+    await route.fulfill({ response, json: { restored } });
+  });
+
+  await test.step('with every built-in template there is no Restore', async () => {
+    await builder.open();
+    await library.tab.click();
+    await expect(library.card('external')).toBeVisible();
+    await expect(restore).toHaveCount(0);
+  });
+
+  await test.step('one missing built-in template is restored by a button that names it', async () => {
+    hidden = ['external'];
+    await builder.open();
+    await library.tab.click();
+    await expect(library.card('server')).toBeVisible();
+    await expect(library.card('external')).toHaveCount(0);
+    await expect(restore).toHaveAccessibleName(
+      'Restore built-in template External device',
+    );
+
+    await restore.click();
+    await expect(builder).toHaveAnnounced('Restored template External device.');
+    await expect(library.card('external')).toBeVisible();
+    await expect(restore).toHaveCount(0);
+    await expect(library.all).toBeFocused();
+    expect(sent.at(-1).body).toEqual({ templates: ['external'] });
+  });
+
+  await test.step('several missing are restored from a menu, one or all', async () => {
+    hidden = ['router', 'external'];
+    await builder.open();
+    await library.tab.click();
+    await expect(restore).toHaveAccessibleName('Restore built-in templates');
+    await expect(restore).toHaveAttribute('aria-haspopup', 'menu');
+
+    await restore.click();
+    await expect(
+      page.getByTestId('templates-restore-menu').getByRole('menuitem'),
+    ).toHaveText(['Router', 'External device', 'Restore all']);
+    await page.getByTestId('templates-restore-item-router').click();
+    await expect(builder).toHaveAnnounced('Restored template Router.');
+    await expect(library.card('router')).toBeVisible();
+    await expect(library.all).toBeFocused();
+    expect(sent.at(-1).body).toEqual({ templates: ['router'] });
+
+    // One left: the button names it.
+    await expect(restore).toHaveAccessibleName(
+      'Restore built-in template External device',
+    );
+
+    hidden = ['router', 'external'];
+    await builder.open();
+    await library.tab.click();
+    await restore.click();
+    await page.getByTestId('templates-restore-item-restore-all').click();
+    await expect(builder).toHaveAnnounced('Restored 2 templates.');
+    await expect(restore).toHaveCount(0);
+    await expect(library.all).toBeFocused();
+    expect(sent.at(-1).body).toEqual({});
+  });
+
+  await test.step('the server took each restore, and the library holds the five built-in templates', async () => {
+    // The library held every built-in template, so the server restored
+    // none.
+    for (const { status, real } of sent) {
+      expect.soft(status).toBe(200);
+      expect.soft(real).toEqual({ restored: [] });
+    }
+
+    const { templates } = await readLibrary(request);
+    const ids = templates
+      .filter((template) => template.source === 'own')
+      .map((template) => template.id);
+
+    for (const id of BUILTIN_TEMPLATE_IDS) {
+      expect.soft(ids, id).toContain(id);
+    }
+  });
+
+  expectNoFatal(issues);
+});
 
 test(
   'a template of the library is made and changed in the large editor, which keeps what is typed when the server refuses it',

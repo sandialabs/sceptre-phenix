@@ -739,6 +739,47 @@ export function templatesDeletedMessage(templates) {
 }
 
 /**
+ * The built-in templates the user's library does not hold, in the order
+ * of BUILTIN_TEMPLATES: the ones a restore can add back. It is empty
+ * until the library was read, and while the server cannot read it
+ * (see libraryUse). A built-in template the user changed keeps its id,
+ * so it is never missing.
+ *
+ * @param {object|null} library the user's library, as the store keeps it
+ * @returns {object[]} built-in templates
+ */
+export function missingBuiltinTemplates(library) {
+  if (libraryUse(library) !== 'ready') {
+    return [];
+  }
+
+  const own = new Set(
+    (library.items || [])
+      .filter((item) => item?.source === 'own')
+      .map((item) => item.id),
+  );
+
+  return BUILTIN_TEMPLATES.filter((template) => !own.has(template.id));
+}
+
+/**
+ * What the page says once built-in templates were restored.
+ *
+ * @param {object[]} templates the restored templates
+ * @returns {string} "Restored template Router.", "Restored 3 templates.",
+ *   or what it means when there was none to restore
+ */
+export function templatesRestoredMessage(templates) {
+  if (!templates.length) {
+    return 'Your library already holds these built-in templates.';
+  }
+
+  return templates.length === 1
+    ? `Restored template ${templates[0].name}.`
+    : `Restored ${count(templates.length, 'template')}.`;
+}
+
+/**
  * What the page says once templates joined or left a collection.
  *
  * @param {'add'|'remove'} change

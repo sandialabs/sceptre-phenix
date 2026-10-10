@@ -190,6 +190,18 @@ type builderTemplateDeleteResponse struct {
 	} `json:"deleted"`
 }
 
+// builderTemplateRestoreRequest names the built-in templates to restore.
+// With none named, every built-in template the library lacks is restored.
+type builderTemplateRestoreRequest struct {
+	Templates []string `json:"templates"`
+}
+
+// builderTemplateRestoreResponse names the built-in templates a request
+// restored: always a list.
+type builderTemplateRestoreResponse struct {
+	Restored []string `json:"restored"`
+}
+
 // builderTemplateShareRequest adds users to, and removes users from, who
 // templates and collections of the caller's library are shared with.
 type builderTemplateShareRequest struct {
@@ -1002,6 +1014,52 @@ func (b *builderAPI) deleteTemplates(w http.ResponseWriter, r *http.Request) err
 	plog.Info(
 		plog.TypeAction, "deleted builder templates",
 		"user", actor.user, "templates", response.Deleted.Templates, "collections", response.Deleted.Collections,
+	)
+
+	return builderWriteJSON(w, http.StatusOK, "", response)
+}
+
+// restoreTemplates - POST /builder/templates/{owner}/restore.
+//
+// Adds back built-in templates the library does not hold, with their
+// original IDs and content, in one write (see
+// [bapi.TemplateLibrary.RestoreBuiltins]). A built-in template the library
+// holds, and an ID that is not a built-in ID, is ignored, so a repeat is
+// harmless. The built-in IDs are never IDs of a server collection, so no
+// request here names a template of a template file.
+func (b *builderAPI) restoreTemplates(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderRestoreTemplates")
+
+	actor, err := b.templateOwner(r, builderVerbCreate, "restoring builder templates")
+	if err != nil {
+		return err
+	}
+
+	var request builderTemplateRestoreRequest
+
+	if err := builderDecodeLimit(w, r, &request, builderTemplateRequestBytes); err != nil {
+		return err
+	}
+
+	response := builderTemplateRestoreResponse{Restored: []string{}}
+
+	_, err = b.changeOwnLibrary(r, actor, func(library *bapi.TemplateLibrary) error {
+		restored, err := library.RestoreBuiltins(request.Templates)
+		if err != nil {
+			return err
+		}
+
+		response.Restored = restored
+
+		return nil
+	})
+	if err != nil {
+		return builderTemplateError(w, err, "unable to restore the templates")
+	}
+
+	plog.Info(
+		plog.TypeAction, "restored builder templates",
+		"user", actor.user, "templates", strings.Join(response.Restored, ","),
 	)
 
 	return builderWriteJSON(w, http.StatusOK, "", response)

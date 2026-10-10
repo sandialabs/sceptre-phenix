@@ -3505,9 +3505,10 @@ paths:
         templates and collections in one write. An ID the library does not
         hold is ignored, so repeating the request is harmless. A deleted
         template leaves every collection that held it; a deleted collection
-        leaves its templates. A built-in template is deleted like
-        any other and does not come back. Diagrams are not changed: a device
-        made from a template keeps no link to it.
+        leaves its templates. A built-in template is deleted like any
+        other. It stays deleted until you restore it (see
+        `POST /builder/templates/{owner}/restore`). Diagrams are not
+        changed: a device made from a template keeps no link to it.
       operationId: deleteBuilderTemplates
       requestBody:
         required: true
@@ -3543,6 +3544,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WebError"
+        "503":
+          $ref: "#/components/responses/BuilderTemplateBusy"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
+  "/builder/templates/{owner}/restore":
+    parameters:
+      - $ref: "#/components/parameters/BuilderTemplateOwner"
+    post:
+      tags:
+        - Builder
+      summary: Restore deleted built-in templates to your template library
+      description: >
+        Requires `configs` `create`, and being `{owner}`. Adds back the
+        built-in templates (`server`, `workstation`, `router`, `firewall`,
+        `external`) that the library does not hold, in one write. Each one
+        gets its original ID and content at version 1, and goes last. It is
+        in no collection, and it is not shared or published. With
+        `templates`, only the built-in templates it names are restored.
+        Without `templates`, or with an empty list, every missing built-in
+        template is restored. An ID that is not a built-in ID is ignored. A
+        built-in template that the library holds is ignored, also when it
+        was changed. So repeating the request is harmless.
+      operationId: restoreBuilderTemplates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTemplateRestore"
+      responses:
+        "200":
+          description: the built-in templates that were restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderTemplateRestoreResult"
+        "400":
+          description: >
+            The request is malformed: its body is not a single JSON value of
+            the expected shape (unknown fields are rejected).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderTemplateNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderTemplateDamaged"
+        "413":
+          $ref: "#/components/responses/BuilderTemplateTooLarge"
         "503":
           $ref: "#/components/responses/BuilderTemplateBusy"
         "507":
@@ -6258,6 +6311,24 @@ components:
               type: integer
             collections:
               type: integer
+    BuilderTemplateRestore:
+      description: the built-in templates to restore; none names every missing one
+      type: object
+      additionalProperties: false
+      properties:
+        templates:
+          description: built-in template IDs; other IDs are ignored
+          type: array
+          items:
+            type: string
+    BuilderTemplateRestoreResult:
+      type: object
+      properties:
+        restored:
+          description: the IDs of the restored templates, in built-in order; empty when none was missing
+          type: array
+          items:
+            type: string
     BuilderTemplateShareUpdate:
       description: at least one template or collection, and at least one user
       type: object

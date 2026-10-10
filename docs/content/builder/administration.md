@@ -554,7 +554,7 @@ a user name, as drafts do: deleting a user account removes nothing, and a new
 account with the same name gets the library. With authentication disabled,
 the one library belongs to `global-admin`. A user who never changed their
 template library has the five built-in templates; the first change stores
-them as ordinary templates, which the user can edit and delete.
+them as ordinary templates, which the user can edit, delete and restore.
 
 Publishing stores a copy of the diagram that never changes, the published
 document, and names it in the topology's `builder-doc` annotation (see
@@ -1061,6 +1061,7 @@ for Import and Publish.
 | `POST /builder/templates/{owner}/collections` | Add a collection to your library | `create` |
 | `PUT /builder/templates/{owner}/collections/{collection}` | Replace a collection of your library | `update` |
 | `POST /builder/templates/{owner}/delete` | Delete templates and collections of your library | `delete` |
+| `POST /builder/templates/{owner}/restore` | Restore deleted built-in templates to your library | `create` |
 | `POST /builder/templates/{owner}/share` | Add or remove users your templates and collections are shared with | `update`, and authentication enabled |
 | `POST /builder/templates/{owner}/publish` | Publish templates and collections server-wide, or take them back | `update`; to publish, and to take back another user's, also `builder-templates` `publish` |
 

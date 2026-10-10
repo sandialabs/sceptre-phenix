@@ -29,8 +29,10 @@
 //     library resolves. A user who never changed
 //     the library has no record and is given the built-in templates; the
 //     first change stores them with the record, so one that was deleted
-//     stays deleted. Every change is one compare-and-swap of that record
-//     (see [Service.UpdateLibrary]). An owner may share items, read only,
+//     stays deleted until the owner restores it (see
+//     [TemplateLibrary.RestoreBuiltins]). Every change is one
+//     compare-and-swap of that record (see [Service.UpdateLibrary]). An
+//     owner may share items, read only,
 //     with other users, or publish them to every user; small hint records
 //     in the same namespace say whose libraries hold items a user may see
 //     (see [Service.LibrarySources]), so no listing reads every library.

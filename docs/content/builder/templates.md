@@ -189,9 +189,10 @@ Each user has one template library, kept on the phenix server under their
 user name. It starts with the five built-in templates (**Server**,
 **Workstation**, **Router**, **Firewall** and **External device**, see
 [Adding devices](diagrams.md#adding-devices)). They are ordinary templates:
-you can change and delete them. A deleted built-in template does not come
-back; there is no way to restore it. Another user, or a new phenix server,
-starts with all five.
+you can change and delete them. A deleted built-in template stays deleted
+until you restore it with **Restore built-in templates** (see
+[Restoring built-in templates](#restoring-built-in-templates)). Another
+user, or a new phenix server, starts with all five.
 
 ### The Node Templates tab
 
@@ -206,6 +207,9 @@ The tab holds:
 
 - **New template**, **New collection** and **Import templates** (see
   [Exporting and importing templates](#exporting-and-importing-templates)).
+  When you deleted a built-in template, **Restore built-in templates** is
+  also there (see
+  [Restoring built-in templates](#restoring-built-in-templates)).
 - **Show**, which chooses the list: **My templates**, one of your
   collections, and, when there are any, **Shared with me** and
   **Server-wide** with their collections, and under **Server** the server
@@ -238,6 +242,26 @@ workstation?": "It is removed from your library and its collections.
 Diagrams that used it are not changed. This cannot be undone." Select
 **Delete template**. When the template is shared, the question also names
 who loses it.
+
+### Restoring built-in templates
+
+When your library does not have one or more of the five built-in
+templates, the Node Templates tab shows a control to add them back:
+
+- When one built-in template is missing, a button names it, for example
+  **Restore built-in template Router**. Select it to add the template
+  back.
+- When more than one is missing, select **Restore built-in templates**.
+  A menu lists each missing template and **Restore all**. Select one
+  template, or select **Restore all** to add back every missing template.
+
+A restored template has its original name, description and device. It is
+added at the end of **My templates**, and it is in no collection. It is not
+shared or published. The page says what it restored, for example "Restored
+template Router." A built-in template that you changed is not missing, so a
+restore does not replace your changes. When your library already has 200
+templates, the restore fails and the page says why, for example "Could not
+restore the built-in template. A library holds at most 200 templates."
 
 ### Collections
 
@@ -529,7 +553,7 @@ the action, on any name:
 | Action | Permission |
 |---|---|
 | See the library, the shared and server-wide templates and the server collections, and **Export** | `configs` `list` |
-| **New template**, **New collection**, **Save to library**, **Copy to my library**, **Import templates** | `configs` `create` |
+| **New template**, **New collection**, **Save to library**, **Copy to my library**, **Import templates**, **Restore built-in templates** | `configs` `create` |
 | **Edit**, **Edit collection**, **Add to collection**, **Remove from collection**, **Share** | `configs` `update` |
 | **Delete**, **Delete collection**, **Delete selected** | `configs` `delete` |
 | Publish server-wide, and take back any user's server-wide item | `builder-templates` `publish`, with `configs` `update` |

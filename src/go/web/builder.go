@@ -1235,6 +1235,8 @@ func (b *builderAPI) templateRoutes(router *mux.Router) {
 		Methods("PUT", "OPTIONS")
 	router.Handle(libraryPath+"/delete", builderHandler(b.deleteTemplates)).
 		Methods("POST", "OPTIONS")
+	router.Handle(libraryPath+"/restore", builderHandler(b.restoreTemplates)).
+		Methods("POST", "OPTIONS")
 	router.Handle(libraryPath+"/share", builderHandler(b.shareTemplates)).
 		Methods("POST", "OPTIONS")
 	router.Handle(libraryPath+"/publish", builderHandler(b.publishTemplates)).

@@ -18,6 +18,7 @@ const api = vi.hoisted(() => ({
   createTemplateCollection: vi.fn(),
   updateTemplateCollection: vi.fn(),
   deleteTemplates: vi.fn(),
+  restoreTemplates: vi.fn(),
 }));
 
 vi.mock('@/builder/api.js', async (importOriginal) => {
@@ -35,6 +36,7 @@ import {
   templateDeletePath,
   templateItemPath,
   templateItemsPath,
+  templateRestorePath,
 } from '@/builder/api.js';
 import { BUILTIN_TEMPLATES } from '@/builder/catalog.js';
 import { createDocument, findNode } from '@/builder/model.js';
@@ -50,12 +52,14 @@ import {
   diagramTemplateActions,
   libraryUse,
   membersMessage,
+  missingBuiltinTemplates,
   paletteTemplateGroups,
   templateByKey,
   templateContent,
   templateKey,
   templatesDeleteQuestion,
   templatesDeletedMessage,
+  templatesRestoredMessage,
 } from '@/builder/templates.js';
 import { paletteNode } from '@/components/builder/paletteDnd.js';
 
@@ -318,6 +322,42 @@ describe('the library calls of the API client', () => {
         templates: ['a'],
       }),
     ).toEqual({ templates: 0, collections: 0 });
+  });
+
+  test('a restore names the built-in templates, or none for every missing one', async () => {
+    const http = fakeHttp({
+      'post builder/templates/alice/restore': {
+        data: { restored: ['router'] },
+      },
+    });
+    const client = createBuilderApi(http);
+
+    expect(templateRestorePath('al ice')).toBe(
+      `${TEMPLATES_PATH}/al%20ice/restore`,
+    );
+    expect(
+      await client.restoreTemplates('alice', { templates: ['router'] }),
+    ).toEqual(['router']);
+    await client.restoreTemplates('alice');
+
+    expect(http.calls).toEqual([
+      {
+        method: 'post',
+        url: 'builder/templates/alice/restore',
+        body: { templates: ['router'] },
+        config: undefined,
+      },
+      {
+        method: 'post',
+        url: 'builder/templates/alice/restore',
+        body: {},
+        config: undefined,
+      },
+    ]);
+    // An answer without a list restored nothing.
+    expect(
+      await createBuilderApi(fakeHttp()).restoreTemplates('alice'),
+    ).toEqual([]);
   });
 
   test('why a library request failed', () => {
@@ -635,6 +675,11 @@ describe('what the Node Templates tab says', () => {
 
     expect(templatesDeletedMessage([plc])).toBe('Deleted template PLC.');
     expect(templatesDeletedMessage([plc, hmi])).toBe('Deleted 2 templates.');
+    expect(templatesRestoredMessage([plc])).toBe('Restored template PLC.');
+    expect(templatesRestoredMessage([plc, hmi])).toBe('Restored 2 templates.');
+    expect(templatesRestoredMessage([])).toBe(
+      'Your library already holds these built-in templates.',
+    );
     expect(membersMessage('add', [plc], 'Plant')).toBe('Added PLC to Plant.');
     expect(membersMessage('add', [plc, hmi], 'Plant')).toBe(
       'Added 2 templates to Plant.',
@@ -645,6 +690,68 @@ describe('what the Node Templates tab says', () => {
     expect(membersMessage('remove', [plc, hmi], 'Plant')).toBe(
       'Removed 2 templates from Plant.',
     );
+  });
+});
+
+describe('the built-in templates a library is missing', () => {
+  const builtins = BUILTIN_TEMPLATES.map((template) =>
+    listed(template.id, { name: template.name }),
+  );
+  const library = (items, init = {}) => ({
+    loaded: true,
+    damaged: false,
+    error: '',
+    status: 'ready',
+    items,
+    ...init,
+  });
+
+  test('none while every one is there, also a changed one', () => {
+    expect(missingBuiltinTemplates(library(builtins))).toEqual([]);
+    expect(
+      missingBuiltinTemplates(
+        library([
+          ...builtins.slice(1),
+          { ...builtins[0], name: 'My server', version: 4 },
+        ]),
+      ),
+    ).toEqual([]);
+  });
+
+  test('the deleted ones, in the built-in order', () => {
+    const kept = builtins.filter(
+      (template) => !['router', 'server'].includes(template.id),
+    );
+
+    expect(
+      missingBuiltinTemplates(library(kept)).map((template) => template.id),
+    ).toEqual(['server', 'router']);
+    expect(missingBuiltinTemplates(library([]))).toEqual(BUILTIN_TEMPLATES);
+  });
+
+  test('another user’s template with a built-in id does not count', () => {
+    const shared = builtins.map((template) => ({
+      ...template,
+      owner: 'bob',
+      source: 'shared',
+    }));
+
+    expect(missingBuiltinTemplates(library(shared))).toHaveLength(5);
+  });
+
+  test('none until the library was read, or when it cannot be read', () => {
+    expect(missingBuiltinTemplates(null)).toEqual([]);
+    expect(
+      missingBuiltinTemplates(
+        library([], { loaded: false, status: 'loading' }),
+      ),
+    ).toEqual([]);
+    expect(
+      missingBuiltinTemplates(
+        library([], { loaded: false, status: 'error', error: 'x' }),
+      ),
+    ).toEqual([]);
+    expect(missingBuiltinTemplates(library([], { damaged: true }))).toEqual([]);
   });
 });
 
@@ -1135,6 +1242,68 @@ describe('the template library in the store', () => {
       collections: ['c1'],
     });
     expect(api.listTemplates).toHaveBeenCalledTimes(1);
+  });
+
+  test('built-in templates are restored in one request, and the library is read again', async () => {
+    api.listTemplates.mockResolvedValue(
+      answer({
+        templates: BUILTIN_TEMPLATES.filter(
+          (template) => template.id !== 'router',
+        ).map((template) => listed(template.id)),
+      }),
+    );
+    expect(store.missingBuiltinTemplates).toEqual([]);
+
+    await store.fetchTemplates();
+    expect(
+      store.missingBuiltinTemplates.map((template) => template.id),
+    ).toEqual(['router']);
+
+    api.listTemplates.mockClear();
+    api.listTemplates.mockResolvedValue(
+      answer({
+        templates: BUILTIN_TEMPLATES.map((template) => listed(template.id)),
+      }),
+    );
+    api.restoreTemplates.mockResolvedValue(['router']);
+
+    expect(await store.restoreBuiltinTemplates(['router'])).toEqual(['router']);
+    expect(api.restoreTemplates).toHaveBeenCalledExactlyOnceWith('alice', {
+      templates: ['router'],
+    });
+    expect(api.listTemplates).toHaveBeenCalledTimes(1);
+    expect(store.missingBuiltinTemplates).toEqual([]);
+
+    // None named: every missing one.
+    api.restoreTemplates.mockResolvedValue([]);
+    expect(await store.restoreBuiltinTemplates()).toEqual([]);
+    expect(api.restoreTemplates).toHaveBeenLastCalledWith('alice', {
+      templates: [],
+    });
+  });
+
+  test('a restore the server was too busy for is sent again', async () => {
+    await store.fetchTemplates();
+    vi.useFakeTimers();
+    api.restoreTemplates
+      .mockRejectedValueOnce(failure(503))
+      .mockResolvedValueOnce(['server']);
+
+    const restoring = store.restoreBuiltinTemplates(['server']);
+
+    await vi.advanceTimersByTimeAsync(LIBRARY_RETRY_MS);
+    expect(await restoring).toEqual(['server']);
+    expect(api.restoreTemplates).toHaveBeenCalledTimes(2);
+
+    api.restoreTemplates.mockReset();
+    api.restoreTemplates.mockRejectedValue(failure(413, 'too many'));
+
+    const refused = await store
+      .restoreBuiltinTemplates(['server'])
+      .catch((error) => error);
+
+    expect(refused.response.status).toBe(413);
+    expect(api.restoreTemplates).toHaveBeenCalledTimes(1);
   });
 
   test('a change the server was too busy for is sent again, a moment later, twice at most', async () => {

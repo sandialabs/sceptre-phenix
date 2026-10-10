@@ -53,6 +53,12 @@
   everyone, as other users' items are: View, Copy to my library and
   Export, no Edit, Delete or Share.
 
+  A deleted built-in template can be restored, for a role that may add
+  templates. Restore built-in templates is in the row of New template while
+  one or more are missing from the library: a button that names the one
+  missing, or a menu with each missing one and Restore all. A restored
+  template has its original content and is in no collection.
+
   Export, on a card, on the selection and on a collection shown, saves a
   YAML template file (see templateFile.js) that carries the custom icons
   its templates name; templates of every source export. Import templates
@@ -92,6 +98,25 @@
         <builder-icon name="upload" :size="14" />
         Import templates
       </button>
+      <!-- A deleted built-in template can come back: one by name, or, with
+           several missing, each from a menu or all at once. -->
+      <button
+        v-if="missingBuiltins.length === 1"
+        type="button"
+        class="builder-button"
+        data-testid="templates-restore"
+        :aria-disabled="busy || undefined"
+        @click="busy || restore([missingBuiltins[0].id])">
+        Restore built-in template {{ missingBuiltins[0].name }}
+      </button>
+      <builder-menu-button
+        v-else-if="missingBuiltins.length"
+        :items="restoreMenu"
+        :disabled="busy"
+        testid="templates-restore"
+        @select="restoreChosen">
+        Restore built-in templates
+      </builder-menu-button>
     </div>
     <p v-else class="builder-templates__note" data-testid="templates-view-only">
       Your role can view templates, but not create them.
@@ -603,6 +628,7 @@
   import TemplateImportDialog from './dialogs/TemplateImportDialog.vue';
 
   import { count, listOf } from '@/builder/announce.js';
+  import { BUILTIN_TEMPLATES } from '@/builder/catalog.js';
   import { focusLost } from '@/builder/commands.js';
   import { formatTimestamp } from '@/builder/format.js';
   import { iconLibrary } from '@/builder/iconLibrary.js';
@@ -630,11 +656,15 @@
     showChoices,
     templatesDeleteQuestion,
     templatesDeletedMessage,
+    templatesRestoredMessage,
     unpublishQuestion,
   } from '@/builder/templates.js';
 
   // The menu item that starts a new collection with the selected templates.
   const NEW_COLLECTION = 'new-collection';
+  // The menu item that restores every missing built-in template. No
+  // built-in template has this id.
+  const RESTORE_ALL = 'restore-all';
   // What the row above a whole list calls it, by whose templates it holds.
   const LIST_LABELS = {
     own: 'My templates',
@@ -904,6 +934,46 @@
       all.focus();
     } else {
       document.getElementById('tab-templates')?.focus();
+    }
+  }
+
+  // The built-in templates the library does not hold, once it was read.
+  const missingBuiltins = computed(() => store.missingBuiltinTemplates);
+  // Each missing built-in template, then all of them.
+  const restoreMenu = computed(() => [
+    ...missingBuiltins.value.map((template) => ({
+      id: template.id,
+      label: template.name,
+    })),
+    { id: RESTORE_ALL, label: 'Restore all', separator: true },
+  ]);
+
+  function restoreChosen(item) {
+    restore(item.id === RESTORE_ALL ? [] : [item.id]);
+  }
+
+  // Restores built-in templates (none named: every missing one). The
+  // control goes once nothing is missing, so focus moves to the list.
+  async function restore(ids) {
+    const done = await change(
+      ids.length === 1
+        ? 'restore the built-in template'
+        : 'restore the built-in templates',
+      async () => {
+        const restored = await store.restoreBuiltinTemplates(ids);
+
+        store.announce(
+          templatesRestoredMessage(
+            BUILTIN_TEMPLATES.filter((template) =>
+              restored.includes(template.id),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (done) {
+      await focusList();
     }
   }
 

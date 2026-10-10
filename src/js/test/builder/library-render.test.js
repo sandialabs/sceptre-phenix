@@ -32,6 +32,7 @@ import {
 } from '@/builder/commands.js';
 import { iconLibrary } from '@/builder/iconLibrary.js';
 import { indexIcons } from '@/builder/icons.js';
+import { BUILTIN_TEMPLATES } from '@/builder/catalog.js';
 import { addTemplate, createDocument } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 import { blankTemplate } from '@/builder/templates.js';
@@ -304,6 +305,50 @@ describe('the Node Templates tab', () => {
     expect(remove).toContain('aria-describedby="bulk-count-templates"');
     expect(remove).toContain('builder-button--danger');
     expect(html).not.toContain('bulk-uncollect-templates');
+  });
+
+  test('Restore built-in templates is there only while one is missing', async () => {
+    const builtins = BUILTIN_TEMPLATES.map((entry) =>
+      template(entry.id, { name: entry.name }),
+    );
+    const restore = async (templates, init = {}) =>
+      element(
+        (
+          await render(BuilderTemplates, {}, (store) => {
+            store.templates = { ...libraryOf({ templates }), ...init };
+          })
+        ).html,
+        'templates-restore',
+      );
+
+    // Every one is there, a changed one too.
+    expect(
+      await restore([
+        { ...builtins[0], name: 'My server', version: 3 },
+        ...builtins.slice(1),
+      ]),
+    ).toBe('');
+
+    // One is missing: a button names it.
+    const one = await restore(
+      builtins.filter((entry) => entry.id !== 'router'),
+    );
+
+    expect(textOf(one)).toBe('Restore built-in template Router');
+    expect(one).not.toContain('aria-haspopup');
+
+    // Several are missing: a menu of them, and Restore all.
+    const several = await restore(builtins.slice(2));
+
+    expect(textOf(several)).toBe('Restore built-in templates');
+    expect(several).toContain('aria-haspopup="menu"');
+
+    // A library the server cannot read offers none.
+    expect(await restore([], { damaged: true })).toBe('');
+
+    // Nor does a role that may not add templates.
+    phenix.role = roleWith('list', 'update', 'delete');
+    expect(await restore([])).toBe('');
   });
 
   test('a role is offered only what it may do', async () => {

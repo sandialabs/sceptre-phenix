@@ -78,8 +78,9 @@ const maxShownIDBytes = 80
 //
 // A user who never changed the library has no record: [Service.GetLibrary]
 // then returns the built-in templates, and the first change stores them with
-// the record. Nothing adds a built-in template to a record afterwards, so
-// one that was deleted stays deleted.
+// the record. Only [TemplateLibrary.RestoreBuiltins] adds a built-in
+// template to a record afterwards, so one that was deleted stays deleted
+// until the owner restores it.
 type TemplateLibrary struct {
 	// Owner is the user whose library this is. The record key holds the
 	// owner's scope, so a record cannot claim to be another user's library.
@@ -334,6 +335,48 @@ func (l *TemplateLibrary) Delete(templateIDs, collectionIDs []string) (int, int)
 	}
 
 	return templates - len(l.Templates), collections - len(l.Collections)
+}
+
+// RestoreBuiltins adds back built-in templates that the library does not
+// hold, and returns their IDs in the order of [builder.BuiltinTemplates].
+// With ids, it restores only the built-in templates that ids names. With no
+// ids, it restores every built-in template the library does not hold.
+//
+// A restored template has its original ID and content, and goes last. It
+// is in no collection, and it is not shared or published. An ID that is not
+// a built-in ID is ignored. A built-in ID the library holds is ignored, so
+// a changed built-in template stays as it is and a repeat is harmless.
+//
+// A library that would hold more than [MaxLibraryTemplates] is refused with
+// a [LibraryError] that is a limit. A refusal leaves the library as it was.
+func (l *TemplateLibrary) RestoreBuiltins(ids []string) ([]string, error) {
+	builtins := builder.BuiltinTemplates()
+	restored := make([]LibraryTemplate, 0, len(builtins))
+	restoredIDs := make([]string, 0, len(builtins))
+
+	for _, template := range builtins {
+		if l.Template(template.ID) != nil || (len(ids) > 0 && !slices.Contains(ids, template.ID)) {
+			continue
+		}
+
+		restoredIDs = append(restoredIDs, template.ID)
+		restored = append(restored, LibraryTemplate{
+			Template: template,
+			Version:  0,
+			Created:  time.Time{},
+			Updated:  time.Time{},
+			Shares:   nil,
+			Public:   nil,
+		})
+	}
+
+	if len(l.Templates)+len(restored) > MaxLibraryTemplates {
+		return nil, newLibraryLimitErrorf("a library holds at most %d templates", MaxLibraryTemplates)
+	}
+
+	l.Templates = append(l.Templates, restored...)
+
+	return restoredIDs, nil
 }
 
 // AddCollection adds a collection under a new ID from newID, and returns

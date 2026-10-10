@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - **Builder**: New topology editor at `/builder`. See the [Builder documentation](https://phenix.sceptre.dev/latest/builder/).
   - The toolbar's **Add connection** and **Move to group** open dialogs that connect a device to a switch and move a node into or out of a group without dragging. The Publish dialog marks an update as a warning, and says why a config name is not allowed.
   - Checks listed errors first, each with **Go to** its node and field.
+  - **Restore built-in templates** on the Node Templates tab adds back deleted built-in templates.
   - Keyboard multi-select and bulk actions in the drafts lists, the Node Templates library and the Custom icons dialog.
   - **N** on the canvas adds a Device.
 - **Node Notes**: Topology nodes take `general.notes`; a new experiment copies them to each VM's notes.

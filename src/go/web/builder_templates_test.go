@@ -488,9 +488,11 @@ func TestBuilderTemplateDelete(t *testing.T) {
 }
 
 // TestBuilderDeletedBuiltinTemplateStaysDeleted asserts a built-in template
-// a user deleted is not added again, by a read or by any later write.
+// a user deleted is not added again by a read or by an ordinary write, and
+// that a restore adds it back.
 func TestBuilderDeletedBuiltinTemplateStaysDeleted(t *testing.T) {
 	harness := newBuilderHarness(t)
+	logs := plogtest.Capture(t)
 
 	if deleted := harness.post("/delete", `{"templates":["server","external"]}`); deleted.Code != http.StatusOK {
 		t.Fatalf("deleting two built-in templates = %d %s", deleted.Code, deleted.Body)
@@ -512,6 +514,50 @@ func TestBuilderDeletedBuiltinTemplateStaysDeleted(t *testing.T) {
 	if got := builderTemplateIDs(harness.templates(builderTestPeer)); !slices.Equal(got, builderBuiltinIDs) {
 		t.Fatalf("another user's listing holds %q, want %q", got, builderBuiltinIDs)
 	}
+
+	// A restore of one named built-in adds it back last, at version 1. An
+	// ID that is not a built-in ID, or one the library holds, is ignored.
+	restored := harness.post("/restore", `{"templates":["external","router","no-such","`+added[0].ID+`"]}`)
+	if got := strings.TrimSpace(restored.Body.String()); restored.Code != http.StatusOK || got != `{"restored":["external"]}` {
+		t.Fatalf("restoring external = %d %s", restored.Code, got)
+	}
+
+	list := harness.templates(builderTestOwner)
+
+	if got := builderTemplateIDs(list); !slices.Equal(got, append(slices.Clone(want), added[0].ID, "external")) {
+		t.Fatalf("after restoring external the listing holds %q", got)
+	}
+
+	if external := list.Templates[len(list.Templates)-1]; external.ETag != `"1"` || external.Name != "External device" {
+		t.Fatalf("the restored template = %+v, want the built-in at version 1", external)
+	}
+
+	// With none named, every missing built-in comes back.
+	if all := harness.post("/restore", `{}`); all.Code != http.StatusOK ||
+		strings.TrimSpace(all.Body.String()) != `{"restored":["server"]}` {
+		t.Fatalf("restoring every missing built-in = %d %s", all.Code, all.Body)
+	}
+
+	// A repeat restores nothing and is harmless.
+	if again := harness.post("/restore", `{}`); again.Code != http.StatusOK ||
+		strings.TrimSpace(again.Body.String()) != `{"restored":[]}` {
+		t.Fatalf("restoring again = %d %s", again.Code, again.Body)
+	}
+
+	if got := len(logs.Records(t, plogtest.Message("restored builder templates"))); got != 3 {
+		t.Errorf("%d restores are logged, want 3", got)
+	}
+
+	// A user with no record holds all five, so a restore writes nothing.
+	if none := harness.do(builderRequest{
+		method: http.MethodPost, path: builderLibraryPath(builderTestPeer, "/restore"), body: `{}`, user: builderTestPeer,
+	}); none.Code != http.StatusOK || strings.TrimSpace(none.Body.String()) != `{"restored":[]}` {
+		t.Fatalf("restoring for a user with no record = %d %s", none.Code, none.Body)
+	}
+
+	if _, err := harness.store.GetRecord(bapi.NamespaceTemplates, bapi.LibraryKey(builderTestPeer)); err == nil {
+		t.Fatal("a restore that restored nothing wrote a library record")
+	}
 }
 
 // TestBuilderTemplatePermissions asserts each route needs the base config
@@ -530,10 +576,11 @@ func TestBuilderTemplatePermissions(t *testing.T) {
 	)
 
 	// The statuses of list, add items, replace an item, add a collection,
-	// replace a collection, delete, share candidates, share, and take back
-	// from every user: none refuses every request; allow returns none with
-	// the given requests, by index, answered with the given statuses.
-	none := slices.Repeat([]int{forbidden}, 9)
+	// replace a collection, delete, share candidates, share, take back
+	// from every user, and restore built-in templates: none refuses every
+	// request; allow returns none with the given requests, by index,
+	// answered with the given statuses.
+	none := slices.Repeat([]int{forbidden}, 10)
 	allow := func(pairs ...int) []int {
 		want := slices.Clone(none)
 
@@ -553,10 +600,10 @@ func TestBuilderTemplatePermissions(t *testing.T) {
 		{name: "everything but configs", role: builderAllButConfigsRole("builder-templates", everything), want: none},
 		{name: "configs list", role: role("list"), want: allow(0, ok)},
 		{name: "configs get", role: role("get"), want: none},
-		{name: "configs create", role: role("create"), want: allow(1, made, 3, made)},
+		{name: "configs create", role: role("create"), want: allow(1, made, 3, made, 9, ok)},
 		{name: "configs update", role: role("update"), want: allow(2, ok, 4, ok, 6, ok, 7, ok, 8, ok)},
 		{name: "configs delete", role: role("delete"), want: allow(5, ok)},
-		{name: "every config verb", role: role(builderShareConfigVerbs...), want: []int{ok, made, ok, made, ok, ok, ok, ok, ok}},
+		{name: "every config verb", role: role(builderShareConfigVerbs...), want: []int{ok, made, ok, made, ok, ok, ok, ok, ok, ok}},
 	}, builderTemplatePermissionRequests, assertTemplateHeaders)
 }
 
@@ -609,6 +656,7 @@ func builderTemplatePermissionRequests(t *testing.T) (*builderHarness, []builder
 			method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/publish"),
 			body: `{"templates":["server"],"serverWide":false}`,
 		},
+		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/restore"), body: `{"templates":["router"]}`},
 	}
 }
 
@@ -668,6 +716,7 @@ func TestBuilderTemplateLibraryIsTheCallersOwn(t *testing.T) {
 			{method: http.MethodPost, path: builderLibraryPath(owner, "/delete"), body: `{"templates":["server"]}`},
 			// Refused before the body is read.
 			{method: http.MethodPost, path: builderLibraryPath(owner, "/delete"), body: `not JSON`},
+			{method: http.MethodPost, path: builderLibraryPath(owner, "/restore"), body: `{}`},
 		} {
 			request.user = builderTestPeer
 
@@ -687,8 +736,8 @@ func TestBuilderTemplateLibraryIsTheCallersOwn(t *testing.T) {
 	}
 
 	// Each refusal is logged as a possible probe.
-	if got := len(logs.Records(t, plogtest.Message("builder template library request for another user not allowed"))); got != 16 {
-		t.Errorf("%d refusals are logged, want 16", got)
+	if got := len(logs.Records(t, plogtest.Message("builder template library request for another user not allowed"))); got != 18 {
+		t.Errorf("%d refusals are logged, want 18", got)
 	}
 
 	// The peer's listing is its own library: nothing of the owner's.
@@ -1034,6 +1083,18 @@ func TestBuilderTemplateLibraryLimits(t *testing.T) {
 		t.Fatalf("the 201st template = %d %s", recorder.Code, recorder.Body)
 	}
 
+	// A restore into a full library is refused the same way.
+	if deleted := harness.post("/delete", `{"templates":["router"]}`); deleted.Code != http.StatusOK {
+		t.Fatalf("deleting router = %d %s", deleted.Code, deleted.Body)
+	}
+
+	harness.addTemplates(builderTestOwner, "Router's place")
+
+	recorder = harness.post("/restore", `{}`)
+	if recorder.Code != http.StatusRequestEntityTooLarge || builderMessage(t, recorder) != "a library holds at most 200 templates" {
+		t.Fatalf("restoring into a full library = %d %s", recorder.Code, recorder.Body)
+	}
+
 	for i := range bapi.MaxLibraryCollections {
 		if added := harness.post("/collections", `{"name":"C`+strconv.Itoa(i)+`"}`); added.Code != http.StatusCreated {
 			t.Fatalf("collection %d = %d %s", i, added.Code, added.Body)
@@ -1293,6 +1354,7 @@ func TestBuilderTemplateDamagedLibrary(t *testing.T) {
 		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/collections"), body: `{"name":"X"}`},
 		{method: http.MethodPut, path: builderLibraryPath(builderTestOwner, "/collections/x"), body: `{"name":"X"}`, ifMatch: `"1"`},
 		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/delete"), body: `{"templates":["server"]}`},
+		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/restore"), body: `{}`},
 	} {
 		recorder := harness.library(request.method, request.path, builderTestOwner, request.body, request.ifMatch)
 
@@ -1451,6 +1513,9 @@ func TestBuilderTemplateOutOfSpace(t *testing.T) {
 				harness.service.NewID,
 			)
 
+			// A built-in to restore.
+			library.Delete([]string{"external"}, nil)
+
 			return err
 		}); err != nil {
 		t.Fatalf("adding the collection: %v", err)
@@ -1472,6 +1537,7 @@ func TestBuilderTemplateOutOfSpace(t *testing.T) {
 			ifMatch: `"1"`,
 		},
 		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/delete"), body: `{"templates":["server"]}`},
+		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/restore"), body: `{"templates":["external"]}`},
 	}
 
 	// What the Etcd store returns once etcd is out of space.

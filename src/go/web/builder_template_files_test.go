@@ -315,6 +315,38 @@ func TestBuilderTemplatesRefuseChangingPreloadedItems(t *testing.T) {
 	}
 }
 
+// TestBuilderTemplateRestoreBesidePreloadedItems asserts a restore needs no
+// check against the server's collections: no built-in ID is the ID of a
+// template or a collection read from a template file, so a server that
+// read template files restores a deleted built-in template as any other.
+func TestBuilderTemplateRestoreBesidePreloadedItems(t *testing.T) {
+	harness := newBuilderTemplateFilesHarness(t)
+	list := harness.templates(builderTestOwner)
+
+	if len(list.Preloaded) == 0 {
+		t.Fatal("the server read no template files")
+	}
+
+	for _, preloaded := range list.Preloaded {
+		ids := append([]string{preloaded.Collection.ID}, preloaded.Collection.TemplateIDs...)
+
+		for _, id := range ids {
+			if slices.Contains(builderBuiltinIDs, id) {
+				t.Errorf("the server's item %q has a built-in ID", id)
+			}
+		}
+	}
+
+	if deleted := harness.post("/delete", `{"templates":["server"]}`); deleted.Code != http.StatusOK {
+		t.Fatalf("deleting a built-in template = %d %s", deleted.Code, deleted.Body)
+	}
+
+	restored := harness.post("/restore", `{"templates":["server"]}`)
+	if got := strings.TrimSpace(restored.Body.String()); restored.Code != http.StatusOK || got != `{"restored":["server"]}` {
+		t.Fatalf("restoring beside the server's collections = %d %s", restored.Code, got)
+	}
+}
+
 // TestBuilderTemplateFileSchemaRoute asserts the template file schema is
 // served under the permission of the document schema, with the Builder's
 // response headers.

@@ -68,8 +68,8 @@ templates of this table:
 
 A template's description is its tooltip in **Add nodes** only: the device it
 makes has no description. You can change and delete the built-in templates,
-and make templates of your own, in a diagram or in your library (see
-[Node Templates](templates.md)). The templates of **Add nodes** are in
+restore a deleted one, and make templates of your own, in a diagram or in
+your library (see [Node Templates](templates.md)). The templates of **Add nodes** are in
 groups: **This diagram**, **My library**, **Shared with me** and
 **Server-wide**.
 

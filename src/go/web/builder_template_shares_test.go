@@ -237,6 +237,7 @@ func TestBuilderTemplateSharedIsReadOnly(t *testing.T) {
 		{method: http.MethodPut, path: builderLibraryPath(builderTestOwner, "/items/"+fixture.plc), body: edited, ifMatch: `"1"`},
 		{method: http.MethodPut, path: builderLibraryPath(builderTestOwner, "/collections/"+fixture.floor), body: `{"name":"X"}`, ifMatch: `"1"`},
 		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/delete"), body: plc + `}`},
+		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/restore"), body: `{}`},
 		{method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/share"), body: plc + `,"add":["` + builderShareDave + `"]}`},
 		{
 			method: http.MethodPost, path: builderLibraryPath(builderTestOwner, "/publish"),
