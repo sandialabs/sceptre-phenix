@@ -47,6 +47,7 @@ import { nextTick, toRaw } from 'vue';
 
 import { count } from './announce.js';
 import { PALETTE, kindMeta, nodeIconKey } from './catalog.js';
+import { DUPLICATE_NEEDS_NODES } from './clipboard.js';
 import { GROUPING_STRATEGIES } from './grouping.js';
 import { HELP_URL } from './help.js';
 import { LAYOUT_ALGORITHMS, layoutAlgorithm } from './layouts/index.js';
@@ -1112,11 +1113,21 @@ export const COMMANDS = [
     keywords: ['clone', 'copy'],
     keys: ['Mod+D'],
     scope: 'editor',
-    when: (ctx) =>
-      editable(ctx) === true
-        ? hasSelection(ctx.store) || 'Nothing is selected to duplicate.'
-        : READ_ONLY,
-    detail: () => 'Copies the selection and pastes it beside the original',
+    // A connection is copied with both of its nodes, so connections alone
+    // have nothing to duplicate.
+    when: (ctx) => {
+      if (editable(ctx) !== true) {
+        return READ_ONLY;
+      }
+
+      if (!hasSelection(ctx.store)) {
+        return 'Nothing is selected to duplicate.';
+      }
+
+      return ctx.store.selection.nodes.length > 0 || DUPLICATE_NEEDS_NODES;
+    },
+    detail: () =>
+      'Pastes a copy of the selected nodes beside them, leaving the clipboard as it is',
     run: ({ store }) => store.duplicate(),
   },
   {

@@ -12,7 +12,9 @@ import {
   exportFileName,
   exportImage,
   IMAGE_PADDING,
+  imagePixelRatio,
   inlineSvgPaint,
+  MAX_IMAGE_SIZE,
   saveText,
   saveTopologyYAML,
   toJSONString,
@@ -426,6 +428,167 @@ describe('image geometry', () => {
     expect(viewport.width).toBeLessThanOrEqual(4096);
     expect(viewport.zoom).toBeLessThan(1);
   });
+
+  // The canvas cannot zoom out past 0.2, but an image can: at 0.2, bounds
+  // wider or higher than 20,480 pixels would make an image larger than the
+  // largest size.
+  test('an image is never larger than the largest size, however large the diagram', () => {
+    expect(MAX_IMAGE_SIZE).toBe(4096);
+
+    for (const [width, height] of [
+      [50000, 25000],
+      [30000, 30000],
+      [25000, 50000],
+      [20481, 300],
+      [1e7, 1e7],
+      [1e8, 2.5e7],
+    ]) {
+      const viewport = computeExportViewport({ x: 0, y: 0, width, height });
+      const label = `${width} x ${height}`;
+
+      expect(viewport.width, label).toBeLessThanOrEqual(MAX_IMAGE_SIZE);
+      expect(viewport.height, label).toBeLessThanOrEqual(MAX_IMAGE_SIZE);
+      expect(viewport.zoom, label).toBeGreaterThan(0);
+      // The whole diagram fits, none of it cut off (allowing for floating
+      // point rounding), and its aspect is kept: each side of the image is
+      // its side of the bounds at the one zoom, to the whole pixel.
+      expect(width * viewport.zoom, label).toBeLessThanOrEqual(
+        viewport.width + 1e-6,
+      );
+      expect(height * viewport.zoom, label).toBeLessThanOrEqual(
+        viewport.height + 1e-6,
+      );
+      expect(viewport.width - width * viewport.zoom, label).toBeLessThan(1);
+      expect(viewport.height - height * viewport.zoom, label).toBeLessThan(1);
+    }
+
+    // Bounds 4,096,000 pixels across or more are drawn below a zoom of
+    // 0.001, as small as the fit makes them.
+    const huge = computeExportViewport({ x: 0, y: 0, width: 1e7, height: 1e7 });
+
+    expect(huge.zoom).toBeCloseTo(MAX_IMAGE_SIZE / 1e7, 15);
+    expect(huge).toMatchObject({ width: 4096, height: 4096 });
+
+    const flat = computeExportViewport({
+      x: 0,
+      y: 0,
+      width: 1e8,
+      height: 2.5e7,
+    });
+
+    expect(flat.width).toBe(4096);
+    expect(Math.abs(flat.height - 1024)).toBeLessThanOrEqual(1);
+
+    const wide = computeExportViewport({
+      x: 0,
+      y: 0,
+      width: 50000,
+      height: 25000,
+    });
+
+    expect(wide.zoom).toBeLessThan(0.2);
+    expect(wide.width).toBe(4096);
+    // The aspect is kept, to the pixel.
+    expect(Math.abs(wide.height - 2048)).toBeLessThanOrEqual(1);
+
+    const square = computeExportViewport({
+      x: 0,
+      y: 0,
+      width: 30000,
+      height: 30000,
+    });
+
+    expect(square.width).toBe(4096);
+    expect(square.height).toBe(4096);
+
+    // A smaller largest size holds as well.
+    const capped = computeExportViewport(
+      { x: 0, y: 0, width: 50000, height: 25000 },
+      { maxWidth: 1000, maxHeight: 800 },
+    );
+
+    expect(capped.width).toBeLessThanOrEqual(1000);
+    expect(capped.height).toBeLessThanOrEqual(800);
+    expect(Math.abs(capped.width / capped.height - 2)).toBeLessThan(0.01);
+  });
+
+  test('bounds with nothing to fit are drawn at zoom 1 in the smallest image', () => {
+    for (const [width, height] of [
+      [0, 400],
+      [400, 0],
+      [-20, 400],
+      [400, -20],
+      [Number.NaN, 400],
+      [400, Number.NaN],
+      [Infinity, 400],
+      [400, -Infinity],
+    ]) {
+      expect(
+        computeExportViewport({ x: 0, y: 0, width, height }),
+        `${width} x ${height}`,
+      ).toMatchObject({ zoom: 1, width: 1, height: 1 });
+    }
+  });
+});
+
+// html-to-image draws a PNG at the pixel ratio it is given, else at the
+// screen's devicePixelRatio, so a PNG of the largest size would be twice as
+// large each way on a 2x screen.
+describe('the pixel ratio of a PNG', () => {
+  // A canvas's width and height are whole pixels, the fraction dropped.
+  const pixels = (side, ratio) => Math.floor(side * ratio);
+
+  test("is the screen's for an image that stays within the largest size", () => {
+    const small = { width: 800, height: 400 };
+
+    expect(imagePixelRatio(small, 1)).toBe(1);
+    expect(imagePixelRatio(small, 2)).toBe(2);
+    expect(imagePixelRatio(small, 3)).toBe(3);
+    expect(imagePixelRatio({ width: 2048, height: 2048 }, 2)).toBe(2);
+    // A screen zoomed out keeps its own ratio, as html-to-image would.
+    expect(imagePixelRatio(small, 0.5)).toBe(0.5);
+    // Without a ratio above zero, 1.
+    for (const screen of [undefined, 0, -2, Number.NaN]) {
+      expect(imagePixelRatio(small, screen), String(screen)).toBe(1);
+    }
+  });
+
+  test('keeps a large image within the largest size on a HiDPI screen', () => {
+    for (const viewport of [
+      { width: 4096, height: 4096 },
+      { width: 4096, height: 1024 },
+      { width: 1024, height: 4096 },
+      { width: 3000, height: 1500 },
+      { width: 2049, height: 10 },
+    ]) {
+      for (const screen of [1, 1.5, 2, 3]) {
+        const ratio = imagePixelRatio(viewport, screen);
+        const label = `${viewport.width} x ${viewport.height} at ${screen}x`;
+
+        expect(ratio, label).toBeGreaterThan(0);
+        expect(ratio, label).toBeLessThanOrEqual(screen);
+        expect(pixels(viewport.width, ratio), label).toBeLessThanOrEqual(
+          MAX_IMAGE_SIZE,
+        );
+        expect(pixels(viewport.height, ratio), label).toBeLessThanOrEqual(
+          MAX_IMAGE_SIZE,
+        );
+      }
+    }
+
+    // The largest image is drawn at 1x on a 2x screen, and one that has
+    // room at the most that fits.
+    expect(imagePixelRatio({ width: 4096, height: 4096 }, 2)).toBe(1);
+    expect(imagePixelRatio({ width: 1024, height: 4096 }, 2)).toBe(1);
+
+    const between = imagePixelRatio({ width: 3000, height: 1500 }, 2);
+
+    expect(between).toBeCloseTo(4096 / 3000, 12);
+    expect(pixels(3000, between)).toBeGreaterThanOrEqual(4095);
+
+    // A smaller largest size holds as well.
+    expect(imagePixelRatio({ width: 500, height: 250 }, 2, 800)).toBe(1.6);
+  });
 });
 
 describe('image content', () => {
@@ -667,6 +830,78 @@ describe('savers', () => {
       computeExportViewport(documentBounds(doc)).width,
     );
     expect(saveAs).toHaveBeenCalledWith(url, 'sample.png');
+  });
+
+  // On a 2x screen a small PNG is drawn at 2x, and a large one at most at
+  // the largest size each way, though html-to-image would double it.
+  test("a PNG is drawn at the screen's pixel ratio only while it stays within the largest size", async () => {
+    let wide = createDocument({ id: 'wide', name: 'Wide' });
+
+    for (const [hostname, x] of [
+      ['west', 0],
+      ['east', 100000],
+    ]) {
+      wide = addNode(wide, {
+        kind: 'device',
+        hostname,
+        position: { x, y: 0 },
+      }).doc;
+    }
+
+    for (const doc of [sampleDocument().doc, wide]) {
+      const { pane } = fakeCanvas();
+      const toPng = vi.fn(async () => 'data:image/png;base64,x');
+
+      // The screen's ratio is the canvas window's.
+      pane.ownerDocument = {
+        ...fakeDocument,
+        defaultView: { devicePixelRatio: 2 },
+      };
+      await exportImage({
+        element: pane,
+        doc,
+        format: 'png',
+        toPng,
+        computedStyle,
+      });
+
+      const [, options] = toPng.mock.calls[0];
+      const viewport = computeExportViewport(documentBounds(doc));
+      const label = doc.metadata.name;
+
+      expect(options.pixelRatio, label).toBe(imagePixelRatio(viewport, 2));
+      expect(
+        Math.floor(options.width * options.pixelRatio),
+        label,
+      ).toBeLessThanOrEqual(MAX_IMAGE_SIZE);
+      expect(
+        Math.floor(options.height * options.pixelRatio),
+        label,
+      ).toBeLessThanOrEqual(MAX_IMAGE_SIZE);
+    }
+
+    // The sample is small enough for 2x; the wide diagram fills the
+    // largest width at 1x.
+    const ratioOf = async (doc) => {
+      const toPng = vi.fn(async () => 'data:image/png;base64,x');
+
+      await exportImage({
+        element: fakeCanvas().pane,
+        doc,
+        format: 'png',
+        toPng,
+        computedStyle,
+        devicePixelRatio: 2,
+      });
+
+      return toPng.mock.calls[0][1];
+    };
+
+    expect((await ratioOf(sampleDocument().doc)).pixelRatio).toBe(2);
+    expect(await ratioOf(wide)).toMatchObject({
+      width: MAX_IMAGE_SIZE,
+      pixelRatio: 1,
+    });
   });
 
   test('an image is refused without a canvas element', async () => {

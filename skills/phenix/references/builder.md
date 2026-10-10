@@ -88,7 +88,12 @@ at most, each cut after three lines, then "+N more"), in the info tooltip and
 the node's description (`nodeInfo.js`; the card is `aria-hidden`, so the
 description says the five notes it shows, each whole up to `noteCharacters`,
 then "and N more notes"), and in PNG and SVG downloads (`documentBounds` in
-`exporters.js`). Copy, paste and duplicate keep them (`clipboard.js`). The
+`exporters.js`). Copy, paste and duplicate keep them (`clipboard.js`).
+Duplicate (`store.duplicate`) pastes `copySelection` of the selection as it
+is, through `pasteClipboard`, and never reads or writes `store.clipboard`;
+with no node selected it does nothing and says why (`DUPLICATE_NEEDS_NODES`,
+also the reason `edit.duplicate`'s `when` gives), since a connection is
+copied only with both of its nodes. The
 setting `showNodeNotes` ("Show node notes", palette `view.nodeNotes`, which
 announces "Node notes shown." or "Node notes hidden.") hides the cards. Every
 layout places a node by `nodeFootprint` (`nodeNotes.js`): its box plus the
@@ -1077,6 +1082,17 @@ it into its document (`withStamp` in `model.js`). No other response has
 `stamp`. Copying it replaces `store.doc`, so the Inspector's watch on the
 document skips a change of the stamp alone (`sameButStamp`): a reset there
 drops text being typed in a field (`builder-inspector.spec.js` checks it).
+Any other change (a layout landing from ELK's worker, an edit on the canvas)
+reloads the form only while `keepsWorkingCopy` (`adapters/forms.js`) is
+false: no unapplied edits, no text typed and not committed (`typing`), no
+focus on Apply or Cancel (`held`), no look held, no change JSON Forms has
+not sent, no rows a renderer holds back. Otherwise `rebasedWorkingCopy`
+moves the working copy onto the element as it is now (`mergeFormData`), so
+a field changed elsewhere shows and Apply keeps it. Apply, and a save of
+unapplied edits (`settle`, `saveUnapplied`), reload the form once the store
+takes their commit, as every field has committed its text by then: a field
+shows the value the document took, such as a VLAN typed as `exp` that
+names network `EXP` (`builder-publish.spec.js` checks it).
 
 `sourceFile` on `POST /builder/drafts` records the name of the uploaded
 file a draft came from (the UI sends it for Upload of a file and Import of
@@ -1327,7 +1343,13 @@ provides (`nodes/canvasEditing.js`), so a node rendered alone imports no
 store. PNG and SVG downloads keep a line's arrowheads: `exportCopy` in
 `exporters.js` removes the copy's IDs but renames each one an SVG
 `marker-start`, `marker-mid` or `marker-end` points at (`<id>-image-<n>`),
-with the references.
+with the references. A PNG or SVG is at most `MAX_IMAGE_SIZE` (4096)
+pixels wide and high however large the diagram: `computeExportViewport`
+scales it down to fit whole, below the canvas's least zoom (0.2) when it
+must. html-to-image multiplies a PNG's size by its `pixelRatio`, the
+screen's `devicePixelRatio` when none is given, so `exportImage` passes
+`imagePixelRatio`: the screen's ratio while the PNG stays within
+`MAX_IMAGE_SIZE` each way, less otherwise.
 
 A device node shows `spec.type` as stored ("External" when `spec.external`,
 "Device" without a type). Devices and switches have an info tooltip on
@@ -1648,7 +1670,16 @@ Read this section before changing any file listed below.
   the server's word. Import (a draft from a Topology or Experiment config,
   stored or in a config file) is `dialogs/ImportDialog.vue`, dialog key
   `import`, ids and test ids `import-…`; it calls `store.generate`
-  (`POST /builder/generate`). Upload (a Builder document you have, a
+  (`POST /builder/generate`), which only checks the diagram, and then
+  `store.openImported`, which detaches the open draft and opens the
+  diagram, once the user accepts it: at once, or on Continue after
+  warnings. `openImported` decodes the diagram as `setDocument` does
+  (`openableDocument`) before it detaches anything, so a diagram it
+  refuses leaves the open draft, its autosave, owner and ETag as they
+  are. An answer that arrives after the dialog closed (a `closed` flag,
+  set by Cancel and, through `onScopeDispose`, when the dialog unmounts)
+  or after a later submit is dropped, as Upload drops a conversion.
+  Upload (a Builder document you have, a
   published diagram, or a legacy diagram, which `store.convertLegacy` sends
   to `POST /builder/legacy`) is `dialogs/UploadDialog.vue`, `upload`,
   `upload-…`. Download (the open

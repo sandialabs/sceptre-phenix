@@ -108,26 +108,47 @@ export function documentBounds(doc, padding = IMAGE_PADDING, options = {}) {
   };
 }
 
+// The largest width and height of a PNG or SVG download, in pixels.
+export const MAX_IMAGE_SIZE = 4096;
+
+// The least pixel ratio of a PNG, which only keeps the ratio above zero.
+const MIN_PIXEL_RATIO = 0.01;
+
+// Whether a side of the bounds can be fitted: finite and above zero.
+function fittable(side) {
+  return Number.isFinite(side) && side > 0;
+}
+
 /**
  * Viewport transform that fits `bounds` into an image of the returned size.
+ * The image is never wider than maxWidth or higher than maxHeight, however
+ * large the bounds: a large diagram is scaled down to fit whole, with its
+ * aspect kept, below the canvas's least zoom (0.2) when it must.
  *
  * @param {{x: number, y: number, width: number, height: number}} bounds
- * @param {object} [options] maxWidth, maxHeight, minZoom, maxZoom
+ * @param {object} [options] maxWidth and maxHeight (MAX_IMAGE_SIZE by
+ *   default), and maxZoom (2 by default)
  * @returns {{width: number, height: number, zoom: number, x: number, y: number, transform: string}}
  */
 export function computeExportViewport(bounds, options = {}) {
-  const maxWidth = options.maxWidth ?? 4096;
-  const maxHeight = options.maxHeight ?? 4096;
-  const minZoom = options.minZoom ?? 0.2;
+  const maxWidth = Math.max(1, options.maxWidth ?? MAX_IMAGE_SIZE);
+  const maxHeight = Math.max(1, options.maxHeight ?? MAX_IMAGE_SIZE);
   const maxZoom = options.maxZoom ?? 2;
 
-  const width = Math.max(1, bounds.width);
-  const height = Math.max(1, bounds.height);
-  const fit = Math.min(maxWidth / width, maxHeight / height, maxZoom);
-  const zoom = Math.max(minZoom, Math.min(maxZoom, fit));
+  // Bounds with a side that is zero, negative or not finite have nothing to
+  // fit: they are drawn at zoom 1 in the smallest image. The fit of any
+  // other bounds is above zero, however large they are.
+  const drawable = fittable(bounds.width) && fittable(bounds.height);
+  const width = drawable ? Math.max(1, bounds.width) : 1;
+  const height = drawable ? Math.max(1, bounds.height) : 1;
+  const zoom = drawable
+    ? Math.min(maxWidth / width, maxHeight / height, maxZoom)
+    : 1;
 
-  const outWidth = Math.ceil(width * zoom);
-  const outHeight = Math.ceil(height * zoom);
+  // Rounding up to whole pixels never takes the image past its largest
+  // size: the fit's product may come out a hair above it.
+  const outWidth = Math.min(maxWidth, Math.ceil(width * zoom));
+  const outHeight = Math.min(maxHeight, Math.ceil(height * zoom));
   const x = -bounds.x * zoom;
   const y = -bounds.y * zoom;
 
@@ -139,6 +160,38 @@ export function computeExportViewport(bounds, options = {}) {
     y,
     transform: `translate(${x}px, ${y}px) scale(${zoom})`,
   };
+}
+
+/**
+ * The pixel ratio a PNG of `viewport` is drawn at. html-to-image multiplies
+ * the image's width and height by it, and takes the screen's
+ * devicePixelRatio without one, which would make a 4096-pixel image 8192
+ * pixels wide on a 2x screen. The ratio is the screen's while the PNG stays
+ * within maxSize pixels each way, so a small image is as sharp as the
+ * screen, and smaller otherwise.
+ *
+ * @param {{width: number, height: number}} viewport the image's size in CSS
+ *   pixels (see computeExportViewport)
+ * @param {number} [devicePixelRatio] the screen's; 1 when it is not a
+ *   number above zero
+ * @param {number} [maxSize] the largest width and height of the PNG
+ * @returns {number}
+ */
+export function imagePixelRatio(
+  viewport,
+  devicePixelRatio = 1,
+  maxSize = MAX_IMAGE_SIZE,
+) {
+  const screen = devicePixelRatio > 0 ? devicePixelRatio : 1;
+
+  return Math.max(
+    Math.min(
+      screen,
+      maxSize / Math.max(1, viewport.width),
+      maxSize / Math.max(1, viewport.height),
+    ),
+    MIN_PIXEL_RATIO,
+  );
 }
 
 /**
@@ -350,7 +403,8 @@ export function inlineSvgPaint(element, computedStyle) {
  * @param {object} params element, doc, format ('png'|'svg'), toPng, toSvg,
  *   saveAs, backgroundColor, computedStyle (defaults to the element's
  *   window.getComputedStyle), showNotes (whether the canvas shows node
- *   notes, which the image then holds; true by default)
+ *   notes, which the image then holds; true by default), devicePixelRatio
+ *   (defaults to the element's window's; see imagePixelRatio)
  * @returns {Promise<string>} data url
  */
 export async function exportImage(params) {
@@ -364,6 +418,7 @@ export async function exportImage(params) {
     backgroundColor,
     computedStyle = (el) => el.ownerDocument.defaultView.getComputedStyle(el),
     showNotes = true,
+    devicePixelRatio = element?.ownerDocument?.defaultView?.devicePixelRatio,
   } = params;
 
   if (!element) {
@@ -383,6 +438,8 @@ export async function exportImage(params) {
       backgroundColor,
       width: viewport.width,
       height: viewport.height,
+      // A PNG's pixels are its size times this ratio; an SVG ignores it.
+      pixelRatio: imagePixelRatio(viewport, devicePixelRatio),
       style: {
         width: `${viewport.width}px`,
         height: `${viewport.height}px`,

@@ -5,9 +5,14 @@
   topology or experiment; the server owns the conversion, so the client only
   picks the source and reports the warnings that come back. A generation with
   warnings keeps the dialog open on them, because each one names something
-  the draft left out or changed: the draft is created only when the user
-  continues, and Cancel or closing the dialog instead creates nothing.
-  Nothing says the diagram was imported until its draft exists.
+  the draft left out or changed: the diagram is opened and its draft created
+  only when the user continues, and Cancel or closing the dialog instead
+  leaves the open draft as it is. Nothing says the diagram was imported until
+  its draft exists.
+
+  An answer that arrives once the dialog is closed, or after another Import
+  was asked for, is dropped: the diagram open by then, and its autosave, stay
+  as they are.
 
   The stored configs offered are read again every time the dialog opens, and
   again when the chosen one turns out to have been removed since.
@@ -34,7 +39,7 @@
     title="Import topology or experiment"
     title-id="import-dialog-title"
     :describedby="intro ? 'import-intro' : ''"
-    @close="$emit('close')">
+    @close="close">
     <p
       v-if="intro"
       id="import-intro"
@@ -49,7 +54,7 @@
       prefix="import"
       :summary="warningSummary"
       :warnings="warnings"
-      @cancel="$emit('close')"
+      @cancel="close"
       @continue="proceed" />
 
     <!-- novalidate: the dialog checks the new topology name itself, and
@@ -226,7 +231,7 @@
       </p>
 
       <div class="builder-dialog__actions">
-        <button type="button" class="builder-button" @click="$emit('close')">
+        <button type="button" class="builder-button" @click="close">
           Cancel
         </button>
         <button
@@ -250,7 +255,15 @@
 </template>
 
 <script setup>
-  import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+  import {
+    computed,
+    nextTick,
+    onMounted,
+    onScopeDispose,
+    reactive,
+    ref,
+    watch,
+  } from 'vue';
 
   import BuilderDialog from '../BuilderDialog.vue';
   import ImportWarnings from './ImportWarnings.vue';
@@ -291,6 +304,18 @@
   const warningsView = ref(null);
   // A result with warnings, held until the user continues.
   let pending = null;
+
+  // Whether the dialog was closed, or unmounted without a close (leaving
+  // the page): unmounting stops the dialog's effect scope. What a submit
+  // was still waiting for then changes nothing: the editor keeps the draft
+  // it has open.
+  let closed = false;
+  onScopeDispose(() => {
+    closed = true;
+  });
+  // Counts the submits, so an answer knows whether it is still the one the
+  // dialog waits for.
+  let submits = 0;
 
   // `fileName` is the name of the config file whose text is `content`.
   const form = reactive({
@@ -446,11 +471,26 @@
     error.clear();
     status.set('Importing…');
     warnings.value = [];
+    pending = null;
 
     const { mode } = options;
     // Only a config file has a file name to record.
     const sourceFile = form.source === 'file' ? form.fileName : '';
+    const asked = ++submits;
+    const errors = store.errorSeq;
     const generated = await store.generate(options.request());
+
+    // Nobody waits for this answer any more: the dialog was closed, or
+    // another import was asked for meanwhile. It is dropped, so the open
+    // draft stays as it is, and a failure of it is not reported.
+    if (closed || asked !== submits) {
+      if (!generated && store.errorSeq === errors + 1) {
+        store.clearError();
+      }
+
+      return;
+    }
+
     const result = generated && { ...generated, sourceFile, mode };
 
     busy.value = false;
@@ -480,8 +520,7 @@
 
     if (!result.warnings?.length) {
       status.clear();
-      emit('imported', imported(result));
-      emit('close');
+      accept(result);
 
       return;
     }
@@ -495,11 +534,42 @@
     warningsView.value?.continueButton?.focus();
   }
 
-  // Opens the draft once the user has seen the warnings. It is created as
-  // the dialog closes, so focus returns to the page first and then moves on
-  // to the editor as it opens.
+  // Opens the diagram once the user has seen the warnings.
   function proceed() {
-    emit('imported', imported(pending));
+    if (pending) {
+      accept(pending);
+    }
+  }
+
+  // Opens the imported diagram in place of the open one, and has its draft
+  // made. The draft is created as the dialog closes, so focus returns to
+  // the page first and then moves on to the editor as it opens.
+  function accept(result) {
+    if (closed) {
+      return;
+    }
+
+    const opened = store.openImported(result);
+
+    pending = null;
+
+    if (!opened) {
+      warnings.value = [];
+      status.clear();
+      error.set(store.error);
+
+      return;
+    }
+
+    emit('imported', imported({ ...result, document: opened }));
+    close();
+  }
+
+  // Closes the dialog. An answer it was still waiting for is dropped (see
+  // submit), and a result held on its warnings is never opened.
+  function close() {
+    closed = true;
+    pending = null;
     emit('close');
   }
 </script>

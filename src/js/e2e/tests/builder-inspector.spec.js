@@ -2454,6 +2454,78 @@ test.describe('Builder inspector', () => {
     expectNoFatal(issues);
   });
 
+  // A layout runs in ELK's worker and lands in the document when it is
+  // done, which moves nodes and changes nothing the form shows. The
+  // Inspector must not load its form again then: that would drop the text
+  // being typed in a field, which the form has not taken yet. Apply then
+  // records the text as an Undo step of its own, after the layout's.
+  test('text being typed in a field is kept when a layout lands', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    const draft = await newDraft(builder, 'device', 'switch');
+    await connectFirst(builder, draft);
+    await builder.selectInOutline('node');
+    await expect(subject(builder)).toHaveText(/^\s*Device node\b/);
+    await builder.waitSaved();
+
+    // ELK loads as the first layout runs. Held back, the layout is under
+    // way until the test lets it go.
+    let release = () => {};
+    const released = new Promise((resolve) => {
+      release = resolve;
+    });
+    const elk = /elk-(api|worker)/;
+    await page.route(elk, async (route) => {
+      await released;
+      await route.continue();
+    });
+
+    const layoutButton = builder.toolbar('layout');
+    await layoutButton.click();
+    await page
+      .getByRole('menuitemradio', { name: 'ELK layered', exact: true })
+      .click();
+    await expect(layoutButton).toHaveAttribute('aria-busy', 'true');
+
+    // Typed and not left: the field commits its text when it loses focus.
+    const description = specGroup(builder, 'General').getByLabel('Description');
+    await description.click();
+    await description.pressSequentially('typed during the layout');
+
+    release();
+    await expect(builder).toHaveAnnounced('Applied ELK layered layout');
+    await page.unroute(elk);
+    await expect(layoutButton).not.toHaveAttribute('aria-busy');
+
+    await expect(description).toHaveValue('typed during the layout');
+    await expect(description).toBeFocused();
+    await expect(subject(builder)).toHaveText(/^\s*Device node\b/);
+
+    // Apply keeps the layout, and adds the text as its own step.
+    const described = (doc) => ({
+      description: nodeOf(doc, 'device').device.spec.general?.description || '',
+      layout: doc.layout,
+    });
+
+    await applyEdits(builder);
+    await expect(builder).toHaveAnnounced('Updated device node');
+    await builder.persisted(draft, described, {
+      description: 'typed during the layout',
+      layout: 'elk',
+    });
+
+    await builder.toolbar('undo').click();
+    await expect(builder).toHaveAnnounced('Undid Updated device node');
+    await builder.persisted(draft, described, {
+      description: '',
+      layout: 'elk',
+    });
+
+    expectNoFatal(issues);
+  });
+
   // The diagram's notes, in its metadata: a note is written when its box is
   // left, the draft keeps it, and Delete takes one away for good, as does
   // clearing its box. A note too long to save is never written.

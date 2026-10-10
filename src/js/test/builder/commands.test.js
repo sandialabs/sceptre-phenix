@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { DUPLICATE_NEEDS_NODES } from '@/builder/clipboard.js';
 import {
   COMMANDS,
   GROUPS,
@@ -525,6 +526,30 @@ describe('availability', () => {
     for (const id of ['drafts.blank', 'drafts.import', 'drafts.upload']) {
       expect(availability(id, landing), id).toBe(
         'Your role cannot create drafts.',
+      );
+    }
+  });
+
+  // A connection is copied only with both of its nodes, so connections
+  // alone have nothing to duplicate, and Duplicate says what to select.
+  test('Duplicate needs a selected node, and says so for connections alone', () => {
+    const { doc } = sampleDocument();
+    const node = doc.nodes.find((item) => item.kind === 'device').id;
+    const edge = doc.edges[0].id;
+    const duplicate = getCommand('edit.duplicate');
+    const selecting = (selection) => context({ store: { selection } });
+
+    for (const [selection, expected] of [
+      [{ nodes: [], edges: [] }, 'Nothing is selected to duplicate.'],
+      [{ nodes: [], edges: [edge] }, DUPLICATE_NEEDS_NODES],
+      [{ nodes: [node], edges: [] }, true],
+      [{ nodes: [node], edges: [edge] }, true],
+    ]) {
+      const label = JSON.stringify(selection);
+
+      expect(duplicate.when(selecting(selection)), label).toBe(expected);
+      expect(availability(duplicate, selecting(selection)), label).toBe(
+        expected,
       );
     }
   });

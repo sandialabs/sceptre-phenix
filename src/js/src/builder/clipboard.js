@@ -26,6 +26,11 @@ import {
 
 const PASTE_OFFSET = { x: 40, y: 40 };
 
+// Why Duplicate does nothing for a selection with no node in it: a copy
+// holds a connection only with both of its nodes (see copySelection).
+export const DUPLICATE_NEEDS_NODES =
+  'Select the nodes to duplicate; a connection is copied with both of its nodes.';
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }

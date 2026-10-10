@@ -14,10 +14,12 @@ import {
   inspectorName,
   inspectorTarget,
   issueText,
+  keepsWorkingCopy,
   lookChangeLabel,
   mergeFormData,
   newListItem,
   PHENIX_DEFAULTS,
+  rebasedWorkingCopy,
   relevantErrors,
   uiSchemaForKind,
 } from '@/builder/adapters/forms.js';
@@ -1268,5 +1270,73 @@ describe('a list item added in the Inspector', () => {
     expect(
       newListItem(doc, selectionOf(sw), 'spec.network.interfaces'),
     ).toBeUndefined();
+  });
+});
+
+// What the Inspector does when the document changes underneath its form,
+// as a layout landing from its worker does (see BuilderInspector).
+describe('a document change under the Inspector', () => {
+  test('keeps the working copy while the form holds anything of the user’s', () => {
+    expect(keepsWorkingCopy({})).toBe(false);
+    expect(keepsWorkingCopy()).toBe(false);
+
+    for (const state of [
+      { dirty: true },
+      // Text typed in a field and not committed yet: dirty is still false.
+      { typing: true },
+      { held: true },
+      { holding: true },
+      { unsent: true },
+      { problems: 1 },
+    ]) {
+      expect(keepsWorkingCopy(state), JSON.stringify(state)).toBe(true);
+    }
+
+    expect(keepsWorkingCopy({ problems: 0, dirty: false })).toBe(false);
+  });
+
+  test('moves the working copy onto the element as it is now', () => {
+    const loaded = {
+      hostname: 'alpha',
+      iconKey: 'server',
+      labels: { site: 'a' },
+      spec: { general: { description: '' } },
+    };
+    const draft = {
+      ...loaded,
+      spec: { general: { description: 'Typed' } },
+    };
+    // Changed elsewhere meanwhile: the icon and a label.
+    const current = { ...loaded, iconKey: 'router', labels: { site: 'b' } };
+    const rebased = rebasedWorkingCopy(loaded, draft, current);
+
+    expect(rebased).toEqual({
+      loaded: current,
+      draft: { ...current, spec: { general: { description: 'Typed' } } },
+    });
+    // What the working copy holds as it was stays the same object, so the
+    // fields that show it keep what they hold. What comes from the element
+    // is a copy, which an edit of the form does not reach it through.
+    expect(rebased.draft.spec).toBe(draft.spec);
+    expect(rebased.draft.labels).not.toBe(current.labels);
+    expect(rebased.loaded).not.toBe(current);
+    expect(rebased.loaded.labels).not.toBe(current.labels);
+    // Where both changed a field, the working copy's value wins.
+    expect(
+      rebasedWorkingCopy(loaded, draft, {
+        ...current,
+        spec: { general: { description: 'Elsewhere' } },
+      }).draft.spec.general.description,
+    ).toBe('Typed');
+  });
+
+  test('leaves the working copy as it is when the element did not change', () => {
+    const loaded = { hostname: 'alpha', spec: { general: {} } };
+    const draft = { hostname: 'alpha-2', spec: { general: {} } };
+
+    // A layout moves nodes, which no field of the form shows.
+    expect(rebasedWorkingCopy(loaded, draft, { ...loaded })).toBeNull();
+    // The element is gone: the selection's watch opens another form.
+    expect(rebasedWorkingCopy(loaded, draft, undefined)).toBeNull();
   });
 });

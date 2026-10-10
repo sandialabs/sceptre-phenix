@@ -65,6 +65,10 @@ All notable changes to this project will be documented in this file.
 - **Users**: Signing in as the same user from parallel requests no longer loses a token. Creating a user or signing up with a name already in use returns 409, and the Users page and the Create Account dialog say the user exists. Creating a user with an unknown role no longer leaves a user without a role. A `ui.users` entry without a role is skipped and logged instead of crashing phenix.
 - **etcd store**: Crash at startup with an empty etcd; wrong errors for missing or existing configs, and for writes to a full etcd.
 - **Builder**: Builder no longer refuses the same IP or MAC address on two different networks.
+- **Builder Import**: An Import closed before the server answers no longer replaces the diagram opened since, and an Import with warnings opens nothing until Continue.
+- **Builder Inspector**: Text being typed in a field is kept when a layout or another change reaches the diagram.
+- **Builder Duplicate**: Duplicate copies only the selected nodes, never what the clipboard holds, and with only connections selected it does nothing and says why.
+- **Builder downloads**: PNG and SVG downloads are at most 4096 pixels wide and high, however large the diagram.
 
 ### Security
 

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { computed, effectScope, nextTick } from 'vue';
+import { computed, createSSRApp, effectScope, h, nextTick } from 'vue';
+import { renderToString } from 'vue/server-renderer';
 
 vi.mock('@/utils/axios.js', () => ({ default: {} }));
 
@@ -141,8 +142,12 @@ vi.mock('@/builder/idb.js', async (importOriginal) => {
   return { ...actual, createDraftStore: () => device.store };
 });
 
+import ImportDialog from '@/components/builder/dialogs/ImportDialog.vue';
+
+import { DUPLICATE_NEEDS_NODES } from '@/builder/clipboard.js';
 import { createMemoryStore } from '@/builder/idb.js';
 import {
+  addNode,
   createDocument,
   findNode,
   setDocumentInfo,
@@ -2367,11 +2372,22 @@ describe('server data', () => {
     expect(api.publish).not.toHaveBeenCalled();
   });
 
-  test('generation starts a separate draft and detaches the previous queue', async () => {
+  // Import opens the diagram only once the user accepts it (see
+  // ImportDialog): generating it leaves the open draft and its queue as
+  // they are, and opening it starts a separate draft, which never reuses
+  // the prior draft's queue.
+  test('generation leaves the open draft alone, and opening the import starts a separate draft', async () => {
     const { doc } = sampleDocument();
 
     await withDraft();
 
+    const before = {
+      doc: store.doc,
+      autosave: store.autosave,
+      owner: store.owner,
+      draftId: store.draftId,
+      etag: store.etag,
+    };
     const dispose = vi.spyOn(store.autosave, 'dispose');
     api.generate.mockResolvedValueOnce({
       document: doc,
@@ -2382,15 +2398,28 @@ describe('server data', () => {
     const result = await store.generate({ kind: 'topology', name: 'core' });
 
     expect(result.document).toEqual(doc);
+    expect(dispose).not.toHaveBeenCalled();
+    expect({
+      doc: store.doc,
+      autosave: store.autosave,
+      owner: store.owner,
+      draftId: store.draftId,
+      etag: store.etag,
+    }).toEqual(before);
+    expect(store.doc).toBe(before.doc);
+
+    expect(store.openImported(result)).toEqual(doc);
+    expect(store.doc).toEqual(doc);
     expect(dispose).toHaveBeenCalledOnce();
     expect(store.autosave).toBeNull();
     expect(store.owner).toBe('');
     expect(store.etag).toBeNull();
+    expect(store.canUndo).toBe(false);
   });
 
   // store.generate serves Import. The user may still cancel on its
-  // warnings, so nothing says it imported anything: ImportDialog has the
-  // import announced once the draft exists.
+  // warnings, so nothing says it imported anything, not even once it is
+  // opened: ImportDialog has the import announced once the draft exists.
   test('an import announces nothing before its draft exists', async () => {
     const { doc } = sampleDocument();
 
@@ -2403,11 +2432,47 @@ describe('server data', () => {
         source: { fullName: 'Topology/core', stored: true },
       });
 
-      await expect(
-        store.generate({ kind: 'topology', name: 'core' }),
-      ).resolves.toMatchObject({ warnings });
+      const result = await store.generate({ kind: 'topology', name: 'core' });
+
+      expect(result).toMatchObject({ warnings });
+      expect(store.announcement).toBe('Before.');
+
+      store.openImported(result);
       expect(store.announcement).toBe('Before.');
     }
+  });
+
+  // The diagram is checked as setDocument checks it before the open draft
+  // is detached, so one the editor refuses leaves that draft as it was.
+  test('opening an import the editor refuses leaves the open draft, its queue, owner and ETag as they were', async () => {
+    await withDraft();
+
+    const open = () => ({
+      doc: store.doc,
+      history: store.history,
+      autosave: store.autosave,
+      owner: store.owner,
+      draftId: store.draftId,
+      etag: store.etag,
+    });
+    const before = open();
+    const dispose = vi.spyOn(store.autosave, 'dispose');
+
+    expect(before).toMatchObject({ owner: 'alice', draftId: 'd1' });
+    expect(before.etag).toBeTruthy();
+    expect(before.autosave).toBeTruthy();
+    expect(
+      store.openImported({
+        document: { ...sampleDocument().doc, revision: 99 },
+        warnings: [],
+        source: { fullName: 'Topology/core', stored: true },
+      }),
+    ).toBeNull();
+    expect(store.error).toMatch(/Unsupported builder document revision 99/);
+    expect(dispose).not.toHaveBeenCalled();
+    expect(open()).toEqual(before);
+    expect(store.doc).toBe(before.doc);
+    expect(store.autosave).toBe(before.autosave);
   });
 
   test('generate rejects an unreadable document without changing the current draft', async () => {
@@ -5387,5 +5452,291 @@ describe('bulk actions on listed drafts and published topologies', () => {
       expect(api.getShares).toHaveBeenCalledTimes(4);
       expect(api.updateShares).not.toHaveBeenCalled();
     });
+  });
+});
+
+// Import asks the server for a diagram, which may answer long after the
+// dialog was closed, and after another draft was opened and edited. Such
+// an answer is dropped: only the dialog that asked, still open, opens the
+// diagram, and one with warnings only on Continue. The dialog is rendered
+// on the server, so its watchers and onMounted do not run, and the test
+// works it through what its setup holds. It opens on the stored topology
+// core.
+describe('an Import answer the dialog no longer waits for', () => {
+  const SOURCE = { fullName: 'Topology/core', name: 'core', stored: true };
+
+  async function openImport() {
+    const pinia = createPinia();
+    const onImported = vi.fn();
+    const onClose = vi.fn();
+    const app = createSSRApp({
+      render: () =>
+        h(ImportDialog, {
+          initial: { kind: 'topology', name: 'core' },
+          onImported,
+          onClose,
+        }),
+    });
+    let instance = null;
+
+    app.use(pinia);
+    app.mixin({
+      created() {
+        if (this.$.type === ImportDialog) {
+          instance = this.$;
+        }
+      },
+    });
+    setActivePinia(pinia);
+    store = useBuilderStore(pinia);
+    store.newDocument({ name: 'Test' });
+    await withDraft();
+    await renderToString(app);
+
+    return {
+      dialog: instance.setupState,
+      // Unmounting a component stops its effect scope, as this does to the
+      // dialog rendered here.
+      unmount: () => instance.scope.stop(),
+      onImported,
+      onClose,
+    };
+  }
+
+  // A server answer the test lets go of.
+  function deferred() {
+    let resolve;
+    let reject;
+    const promise = new Promise((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+
+    return { promise, resolve, reject };
+  }
+
+  // What the open draft is, to tell whether anything replaced it.
+  function openDraft() {
+    return {
+      doc: store.doc,
+      nodes: store.doc.nodes.length,
+      owner: store.owner,
+      draftId: store.draftId,
+      etag: store.etag,
+      autosave: store.autosave,
+    };
+  }
+
+  test('an answer after Cancel changes nothing, though another draft was opened and edited since', async () => {
+    const { doc } = sampleDocument();
+    const { dialog, onImported, onClose } = await openImport();
+    const answer = deferred();
+
+    api.generate.mockReturnValueOnce(answer.promise);
+
+    const submitted = dialog.submit();
+
+    expect(api.generate).toHaveBeenCalledOnce();
+    dialog.close();
+    expect(onClose).toHaveBeenCalledOnce();
+
+    // Another draft is opened, and edited, before the answer arrives.
+    store.newDocument({ name: 'Other' });
+    await store.initAutosave({ owner: 'alice', draftId: 'd2', etag: '"7"' });
+    store.commit(
+      addNode(store.doc, { kind: 'device', hostname: 'kept' }).doc,
+      'Added device kept',
+    );
+
+    const before = openDraft();
+
+    expect(before.draftId).toBe('d2');
+    expect(before.nodes).toBe(1);
+
+    answer.resolve({ document: doc, warnings: [], source: SOURCE });
+    await submitted;
+
+    expect(openDraft()).toEqual(before);
+    expect(store.doc).toBe(before.doc);
+    expect(store.autosave).toBe(before.autosave);
+    expect(onImported).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  // Leaving the page unmounts the dialog without a Cancel.
+  test('an answer after the dialog is unmounted changes nothing and emits nothing', async () => {
+    const { doc } = sampleDocument();
+    const { dialog, unmount, onImported, onClose } = await openImport();
+    const answer = deferred();
+    const before = openDraft();
+
+    api.generate.mockReturnValueOnce(answer.promise);
+
+    const submitted = dialog.submit();
+
+    expect(api.generate).toHaveBeenCalledOnce();
+    unmount();
+    answer.resolve({ document: doc, warnings: [], source: SOURCE });
+    await submitted;
+
+    expect(openDraft()).toEqual(before);
+    expect(store.doc).toBe(before.doc);
+    expect(store.autosave).toBe(before.autosave);
+    expect(store.error).toBe('');
+    expect(onImported).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  test('a failure after the dialog is unmounted is not reported', async () => {
+    const { dialog, unmount, onImported, onClose } = await openImport();
+    const answer = deferred();
+    const before = openDraft();
+
+    api.generate.mockReturnValueOnce(answer.promise);
+
+    const submitted = dialog.submit();
+
+    unmount();
+    answer.reject(new Error('offline'));
+    await submitted;
+
+    expect(openDraft()).toEqual(before);
+    expect(store.error).toBe('');
+    expect(onImported).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  test('a failure after Cancel is not reported', async () => {
+    const { dialog, onImported } = await openImport();
+    const answer = deferred();
+
+    api.generate.mockReturnValueOnce(answer.promise);
+
+    const submitted = dialog.submit();
+
+    dialog.close();
+    answer.reject(new Error('offline'));
+    await submitted;
+
+    expect(store.error).toBe('');
+    expect(onImported).not.toHaveBeenCalled();
+  });
+
+  test('an answer with warnings opens nothing until Continue, and Cancel keeps the open draft', async () => {
+    const { doc } = sampleDocument();
+    const answer = {
+      document: doc,
+      warnings: ['Included topology lab was not combined.'],
+      source: SOURCE,
+    };
+    let { dialog, onImported, onClose } = await openImport();
+    const before = openDraft();
+
+    api.generate.mockResolvedValueOnce(structuredClone(answer));
+    await dialog.submit();
+
+    // The warnings show, and the open draft is as it was.
+    expect(dialog.warnings).toEqual(answer.warnings);
+    expect(openDraft()).toEqual(before);
+    expect(onImported).not.toHaveBeenCalled();
+
+    // Cancel on the warnings, then a Continue too late to count.
+    dialog.close();
+    dialog.proceed();
+
+    expect(openDraft()).toEqual(before);
+    expect(store.doc).toBe(before.doc);
+    expect(onImported).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+
+    // Continue opens the diagram in place of the open draft, which is
+    // detached with its queue, and has its draft made.
+    ({ dialog, onImported, onClose } = await openImport());
+    api.generate.mockResolvedValueOnce(structuredClone(answer));
+    await dialog.submit();
+
+    const dispose = vi.spyOn(store.autosave, 'dispose');
+
+    dialog.proceed();
+
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(store.autosave).toBeNull();
+    expect(store.owner).toBe('');
+    expect(store.etag).toBeNull();
+    expect(store.doc).toEqual(doc);
+    expect(onImported).toHaveBeenCalledOnce();
+    expect(onImported.mock.calls[0][0]).toMatchObject({
+      document: store.doc,
+      warnings: answer.warnings,
+      source: SOURCE,
+    });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  test('an answer without warnings opens the diagram at once', async () => {
+    const { doc } = sampleDocument();
+    const { dialog, onImported, onClose } = await openImport();
+
+    api.generate.mockResolvedValueOnce({
+      document: doc,
+      warnings: [],
+      source: SOURCE,
+    });
+    await dialog.submit();
+
+    expect(store.doc).toEqual(doc);
+    expect(store.autosave).toBeNull();
+    expect(onImported).toHaveBeenCalledOnce();
+    expect(onImported.mock.calls[0][0].document).toEqual(store.doc);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+// Duplicate pastes a copy made of the selection as it is, never what the
+// clipboard holds, and leaves the clipboard as it is.
+describe('Duplicate', () => {
+  test('duplicates the selected nodes without reading or changing the clipboard', () => {
+    const { doc, alpha, bravo, edge } = sampleDocument();
+
+    store.setDocument(doc);
+
+    // The clipboard holds alpha.
+    store.select({ nodes: [alpha.id], edges: [] });
+    store.copy();
+
+    const clipboard = store.clipboard;
+    const nodes = store.doc.nodes.length;
+    const steps = store.history.entries.length;
+
+    expect(clipboard.nodes).toHaveLength(1);
+
+    // A connection alone has nothing to duplicate: nothing is pasted from
+    // the clipboard, and the reason is said.
+    store.select({ nodes: [], edges: [edge.id] });
+
+    expect(store.duplicate()).toEqual([]);
+    expect(store.doc.nodes).toHaveLength(nodes);
+    expect(store.history.entries).toHaveLength(steps);
+    expect(store.clipboard).toBe(clipboard);
+    expect(store.announcement).toBe(DUPLICATE_NEEDS_NODES);
+
+    // Selected nodes are duplicated, and the clipboard still holds alpha.
+    store.select({ nodes: [bravo.id], edges: [] });
+
+    const copies = store.duplicate();
+
+    expect(copies).toHaveLength(1);
+    expect(store.doc.nodes).toHaveLength(nodes + 1);
+    expect(findNode(store.doc, copies[0]).device.hostname).toBe('bravo-2');
+    expect(store.clipboard).toBe(clipboard);
+    expect(store.selection).toEqual({ nodes: copies, edges: [] });
+    expect(store.history.undoLabel()).toBe('Duplicated 1 node');
+
+    // Nothing selected.
+    store.select({ nodes: [], edges: [] });
+
+    expect(store.duplicate()).toEqual([]);
+    expect(store.doc.nodes).toHaveLength(nodes + 1);
+    expect(store.announcement).toBe('Nothing is selected to duplicate.');
   });
 });

@@ -257,8 +257,8 @@ it was. So set the kind first, then fill in the other fields.
 
 ### Duplicating a device
 
-**Duplicate** copies the selected nodes and pastes the copy next to them.
-Press <kbd>⌘</kbd>+<kbd>D</kbd> on macOS or <kbd>Ctrl</kbd>+<kbd>D</kbd> on
+**Duplicate** pastes a copy of the selected nodes next to them. Press
+<kbd>⌘</kbd>+<kbd>D</kbd> on macOS or <kbd>Ctrl</kbd>+<kbd>D</kbd> on
 Windows and Linux. The copy keeps every setting, addresses included, but not
 its connections.
 
@@ -799,7 +799,11 @@ macOS, and <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>V</kbd>,
 
 **Copy** and **Paste** use Builder's own clipboard, not the system
 clipboard, so they work between drafts that you open one after the other in
-the same browser tab. **Duplicate** copies and pastes in one step.
+the same browser tab. **Duplicate** copies and pastes the selected nodes in
+one step, and leaves Builder's clipboard as it is. A connection is
+duplicated with both of its nodes, so with only connections selected,
+**Duplicate** does nothing and says "Select the nodes to duplicate; a
+connection is copied with both of its nodes."
 
 - A paste lands 40 pixels down and to the right of the original, and each
   further paste 40 pixels further. The pasted nodes are selected.

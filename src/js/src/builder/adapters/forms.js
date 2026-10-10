@@ -1101,6 +1101,96 @@ export function mergeFormData(base, edited, current) {
 }
 
 /**
+ * Whether the Inspector keeps its working copy when the document changes
+ * underneath it (a layout, an outline edit, an undo), rather than loading
+ * the element's data into the form again: it does while the form holds
+ * something of the user's that a reload would drop or cut short.
+ *
+ * @param {object} state
+ * @param {boolean} [state.dirty] the working copy has edits not applied
+ * @param {boolean} [state.typing] a text field holds text it has not
+ *   committed, or focus has not settled since it was left
+ * @param {boolean} [state.held] focus is on Apply or Cancel
+ * @param {boolean} [state.holding] a device's look stepped to with keys
+ *   waits to be committed
+ * @param {boolean} [state.unsent] JSON Forms holds a change it has not sent
+ * @param {number} [state.problems] how many problems renderers report for
+ *   rows they hold back from the working copy
+ * @returns {boolean}
+ */
+export function keepsWorkingCopy({
+  dirty = false,
+  typing = false,
+  held = false,
+  holding = false,
+  unsent = false,
+  problems = 0,
+} = {}) {
+  return Boolean(dirty || typing || held || holding || unsent || problems > 0);
+}
+
+// A copy of a JSON value, which shares nothing with it.
+function copyOf(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+// `next`, with each part that is the same as in `kept` taken from `kept`,
+// and the others copied. A form's field whose data is the same object it
+// was keeps what it holds, rather than showing its data again.
+function keptWhereSame(kept, next) {
+  if (same(kept, next)) {
+    return kept;
+  }
+
+  if (isRecord(kept) && isRecord(next)) {
+    return Object.fromEntries(
+      Object.entries(next).map(([key, value]) => [
+        key,
+        keptWhereSame(kept[key], value),
+      ]),
+    );
+  }
+
+  if (
+    Array.isArray(kept) &&
+    Array.isArray(next) &&
+    kept.length === next.length
+  ) {
+    return next.map((item, index) => keptWhereSame(kept[index], item));
+  }
+
+  return copyOf(next);
+}
+
+/**
+ * The working copy moved onto the element as it is now, for a document
+ * that changed while the Inspector keeps its working copy (see
+ * keepsWorkingCopy): a change made elsewhere to a field the working copy
+ * did not change shows in the form, and Apply does not put the old value
+ * back, while the working copy's own edits stay (see mergeFormData). The
+ * parts of the working copy that stay as they were are the same objects,
+ * so the fields that show them keep what they hold; the parts that come
+ * from the element are copies, which share nothing with the document.
+ *
+ * @param {object} loaded the element's data the working copy was taken from
+ * @param {object} draft the working copy
+ * @param {object|undefined} current the element's data now
+ * @returns {{loaded: object, draft: object}|null} the data to load and the
+ *   working copy; null when the element's data is as it was, or the
+ *   element is gone
+ */
+export function rebasedWorkingCopy(loaded, draft, current) {
+  if (current === undefined || !formDataChanged(current, loaded)) {
+    return null;
+  }
+
+  return {
+    loaded: copyOf(current),
+    draft: keptWhereSame(draft, mergeFormData(loaded, draft, current)),
+  };
+}
+
+/**
  * Applies an inspector working copy back onto the document.
  *
  * @param {object} doc

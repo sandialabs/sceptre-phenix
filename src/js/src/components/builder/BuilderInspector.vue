@@ -408,9 +408,11 @@
     inspectorRenderers,
     inspectorTarget,
     issueText,
+    keepsWorkingCopy,
     lookChangeLabel,
     mergeFormData,
     newListItem,
+    rebasedWorkingCopy,
     relevantErrors,
     uiSchemaForKind,
   } from '@/builder/adapters/forms.js';
@@ -487,9 +489,10 @@
   provide(INSPECTOR_ANNOUNCE, (message) => host.announce(message));
 
   // Counts the times reset() reloads the form's data from the document
-  // (Cancel, undo, another selection, and after Apply or an outline edit), so
-  // renderers that keep state of their own, such as the oneOf kind picker,
-  // can tell data replaced from outside the form from an edit made in it.
+  // (Cancel, undo, another selection, and after Apply, a save of unapplied
+  // edits or an outline edit), so renderers that keep state of their own,
+  // such as the oneOf kind picker, can tell data replaced from outside the
+  // form from an edit made in it.
   const resets = ref(0);
 
   provide(INSPECTOR_RESETS, readonly(resets));
@@ -958,7 +961,8 @@
       return 'the conflict is being resolved';
     }
 
-    dirty.value = false;
+    // The form shows the element as the document has it (see apply).
+    reset();
 
     return '';
   }
@@ -1015,7 +1019,10 @@
       edited &&
       found.length === 0
     ) {
-      dirty.value = false;
+      // The form shows the element as the document has it (see apply).
+      // The focused field has committed its text (see saveUnapplied in
+      // Builder.vue), and catchUp took it.
+      reset();
     }
 
     return blocked.length > 0
@@ -1084,23 +1091,63 @@
     { immediate: true },
   );
 
-  // Reset when the document changes underneath us (undo, outline edits) unless
-  // the user has unapplied work in progress, which must never be discarded
-  // silently. A save's answer changes only who saved the document and when
-  // (see stampEntry in store.js), which no form shows: a reset then would
-  // drop the text being typed in a field.
-  watch(
-    () => host.doc,
-    (next, previous) => {
-      if (sameButStamp(next, previous)) {
-        return;
-      }
+  // The document changed underneath the form: an undo, an outline edit, a
+  // layout that moved nodes. The form loads the element's data again (see
+  // reset) unless it holds something of the user's that a reload would
+  // drop (see keepsWorkingCopy): unapplied edits, text typed in a field and
+  // not yet committed, focus on Apply or Cancel, a look stepped to and not
+  // yet chosen, a change JSON Forms has not sent, rows a renderer holds
+  // back. Then the working copy is moved onto the element as it is now
+  // (see rebasedWorkingCopy), so a change made elsewhere shows and Apply
+  // keeps it, and the field being typed in keeps its text. A save's answer
+  // changes only who saved the document and when (see stampEntry in
+  // store.js), which no form shows, so it changes nothing here.
+  function onDocumentChange(next, previous) {
+    if (sameButStamp(next, previous)) {
+      return;
+    }
 
-      if (!dirty.value && localErrors.value.length === 0) {
-        reset();
-      }
-    },
-  );
+    if (
+      !keepsWorkingCopy({
+        dirty: dirty.value,
+        typing: typing.value,
+        held: held.value,
+        holding: look.held !== null,
+        unsent: unsent !== null,
+        problems: localErrors.value.length,
+      })
+    ) {
+      reset();
+
+      return;
+    }
+
+    // A change JSON Forms holds is taken first, so the move keeps it.
+    catchUp();
+
+    const element = target.value;
+    const same =
+      editing?.selection.type === selection.value.type &&
+      editing?.selection.id === selection.value.id;
+
+    // Another element's form is opened by the selection's watch.
+    if (!element || !same) {
+      return;
+    }
+
+    const rebased = rebasedWorkingCopy(loaded.value, draft.value, element.data);
+
+    if (rebased) {
+      loaded.value = rebased.loaded;
+      draft.value = rebased.draft;
+      dirty.value = formDataChanged(draft.value, loadedData());
+    }
+
+    // A rename made elsewhere names the element in what settling says.
+    editing = { selection: { ...selection.value }, title: element.title };
+  }
+
+  watch(() => host.doc, onDocumentChange);
 
   // The form's errors come from its validation, not from JSON Forms, which
   // does not validate (see the template).
@@ -1563,12 +1610,23 @@
     const warned = ownWarnings();
 
     // Named after the edit, so a rename says the new name.
-    host.commit(
+    const took = host.commit(
       next,
       appliedLabel(`Updated ${inspectorName(next, selection.value)}`, next, {
         selection: selection.value,
       }),
     );
+
+    // The form then shows the element as the document has it, so each
+    // field the edit committed shows the value the document took: a VLAN
+    // typed as "exp" shows as network EXP, which it names. Every field has
+    // committed its text by now (see commitFocusedField), so no text being
+    // typed is lost; a document change keeps only text still being typed
+    // (see onDocumentChange).
+    if (took) {
+      reset();
+    }
+
     dirty.value = false;
     held.value = false;
 

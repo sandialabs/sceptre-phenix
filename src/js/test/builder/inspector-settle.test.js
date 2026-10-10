@@ -19,7 +19,7 @@ import { inspectorTarget } from '@/builder/adapters/forms.js';
 import { savedAutomatically } from '@/builder/history.js';
 import { iconLibrary } from '@/builder/iconLibrary.js';
 import { indexIcons } from '@/builder/icons.js';
-import { addNode, findNode, updateNode } from '@/builder/model.js';
+import { addNode, findNode, moveNodes, updateNode } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { experimentNodeSpec, sampleDocument } from './fixtures.js';
@@ -752,6 +752,178 @@ describe("a device's look is applied without Apply", () => {
     store.undo();
     expect(findNode(store.doc, sw.id).switch).toEqual(sw.switch);
     expect('lineStyle' in store.doc.networks[0]).toBe(false);
+  });
+});
+
+// The document changes underneath the form: a layout lands from its
+// worker, the canvas changes the element. The form loads the element again
+// only while it holds nothing of the user's. Text typed in a field and not
+// yet committed, or focus on Apply or Cancel, keeps the working copy, which
+// moves onto the element as it is now. A watcher does not run on the
+// server, so the test calls what it runs.
+describe('a document change while the form holds the user’s work', () => {
+  async function typing() {
+    const { doc, alpha } = sampleDocument();
+    const opened = await openInspector(doc, alpha, () => {});
+
+    return { ...opened, alpha, resets: opened.setup.resets };
+  }
+
+  // Commits a change made elsewhere, and has the Inspector see it.
+  function changeElsewhere({ store, setup }, change, label) {
+    const before = store.doc;
+
+    store.commit(change(store.doc), label);
+    setup.onDocumentChange(store.doc, before);
+  }
+
+  test('text being typed is kept when a layout moves the node, and applying records it', async () => {
+    const opened = await typing();
+    const { store, setup, settle, spec, alpha, resets } = opened;
+
+    // A field holds text it has not committed.
+    setup.typing = true;
+    changeElsewhere(
+      opened,
+      (doc) => moveNodes(doc, [{ id: alpha.id, position: { x: 480, y: 320 } }]),
+      'Applied ELK layered layout',
+    );
+
+    // The form was not loaded again, so the field keeps its text.
+    expect(setup.resets).toBe(resets);
+    expect(setup.typing).toBe(true);
+
+    // The field commits its text as focus leaves it.
+    const data = JSON.parse(JSON.stringify(setup.draft));
+
+    data.spec.general = { ...data.spec.general, description: 'Typed' };
+    setup.onChange({ data, errors: [] });
+    setup.typing = false;
+
+    expect(settle()).toBe('');
+    expect(spec().general.description).toBe('Typed');
+    expect(findNode(store.doc, alpha.id).position).toEqual({ x: 480, y: 320 });
+    expect(store.history.undoLabel()).toBe('Applied changes to Device alpha');
+    store.undo();
+    expect(spec().general?.description).not.toBe('Typed');
+    expect(findNode(store.doc, alpha.id).position).toEqual({ x: 480, y: 320 });
+  });
+
+  test('a field changed elsewhere shows in the form, and applying keeps it', async () => {
+    const opened = await typing();
+    const { store, setup, settle, spec, alpha, resets } = opened;
+
+    setup.typing = true;
+    changeElsewhere(
+      opened,
+      (doc) => updateNode(doc, alpha.id, { device: { iconKey: 'router' } }),
+      'Changed the icon of Device alpha to router',
+    );
+
+    expect(setup.resets).toBe(resets);
+    expect(setup.draft.iconKey).toBe('router');
+    expect(setup.dirty).toBe(false);
+
+    const data = JSON.parse(JSON.stringify(setup.draft));
+
+    data.spec.general = { ...data.spec.general, description: 'Typed' };
+    setup.onChange({ data, errors: [] });
+
+    expect(settle()).toBe('');
+    expect(spec().general.description).toBe('Typed');
+    expect(findNode(store.doc, alpha.id).device.iconKey).toBe('router');
+  });
+
+  test('focus on Apply or Cancel keeps the working copy too', async () => {
+    const opened = await typing();
+    const { setup, alpha, resets } = opened;
+
+    setup.held = true;
+    changeElsewhere(
+      opened,
+      (doc) => updateNode(doc, alpha.id, { device: { iconKey: 'router' } }),
+      'Changed the icon of Device alpha to router',
+    );
+
+    expect(setup.resets).toBe(resets);
+    expect(setup.held).toBe(true);
+    expect(setup.draft.iconKey).toBe('router');
+  });
+
+  // Enter in a field applies the edits with focus still in it: the field
+  // has committed its text, and focus has not settled. The document may
+  // take a value other than as typed: a VLAN names a network regardless of
+  // case, and the interface takes the network's name. The form shows the
+  // document's value, also once the document change Apply made reaches it.
+  test('a value Apply commits shows as the document took it, with focus still in its field', async () => {
+    const { doc, bravo } = sampleDocument();
+    const { store, setup, spec } = await openInspector(doc, bravo, (data) => {
+      data.spec.network.interfaces[0].vlan = 'exp';
+    });
+    const before = store.doc;
+    const vlan = () => setup.draft.spec.network.interfaces[0].vlan;
+
+    setup.typing = true;
+    // Apply reads where focus is, which a server render has no document
+    // for.
+    vi.stubGlobal('document', { activeElement: null });
+
+    try {
+      await setup.apply();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(store.history.undoLabel()).toBe(
+      'Updated device bravo and connected eth0 to network EXP',
+    );
+    expect(spec().network.interfaces[0].vlan).toBe('EXP');
+    expect(vlan()).toBe('EXP');
+    expect(setup.dirty).toBe(false);
+
+    // The document change reaches the form while focus is in the field.
+    setup.typing = true;
+    setup.onDocumentChange(store.doc, before);
+
+    expect(vlan()).toBe('EXP');
+    expect(setup.dirty).toBe(false);
+
+    // Undo takes the edit back, VLAN and connection.
+    store.undo();
+
+    expect(spec().network.interfaces[0].vlan ?? '').toBe('');
+  });
+
+  // Save now, and leaving or reading the diagram, apply the edits too.
+  test('a value a save applies shows as the document took it too', async () => {
+    for (const save of ['settle', 'saveUnapplied']) {
+      const { doc, bravo } = sampleDocument();
+      const opened = await openInspector(doc, bravo, (data) => {
+        data.spec.network.interfaces[0].vlan = 'exp';
+      });
+      const { setup, spec } = opened;
+
+      setup.typing = true;
+      opened[save]();
+
+      expect(spec().network.interfaces[0].vlan, save).toBe('EXP');
+      expect(setup.draft.spec.network.interfaces[0].vlan, save).toBe('EXP');
+      expect(setup.dirty, save).toBe(false);
+    }
+  });
+
+  test('with nothing of the user’s in it, the form loads the element again', async () => {
+    const opened = await typing();
+    const { setup, alpha, resets } = opened;
+
+    changeElsewhere(
+      opened,
+      (doc) => updateNode(doc, alpha.id, { device: { iconKey: 'router' } }),
+      'Changed the icon of Device alpha to router',
+    );
+
+    expect(setup.resets).toBe(resets + 1);
+    expect(setup.draft.iconKey).toBe('router');
   });
 });
 

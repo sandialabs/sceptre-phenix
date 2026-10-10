@@ -40,7 +40,11 @@ import {
   stampOf,
 } from './autosave.js';
 import { BulkError, bulkOutcome, mergeShareList, runBulk } from './bulk.js';
-import { copySelection, pasteClipboard } from './clipboard.js';
+import {
+  copySelection,
+  DUPLICATE_NEEDS_NODES,
+  pasteClipboard,
+} from './clipboard.js';
 import { DocumentError, parseDocument } from './decode.js';
 import {
   PatternError,
@@ -498,6 +502,24 @@ function serverDocument(value) {
       : Object.assign(new DocumentError('', { code: 'unreadable' }), {
           cause: error,
         });
+  }
+}
+
+// The document setDocument opens from a payload: decoded strictly, an
+// unsupported or invalid one refused rather than silently repaired. Gives
+// {document}, or {error}, the reason it cannot be opened.
+function openableDocument(payload) {
+  try {
+    // A switch is named after its network, whatever label a document
+    // saved or imported with another name still carries.
+    return { document: namedSwitches(parseDocument(payload)) };
+  } catch (error) {
+    return {
+      error:
+        error instanceof DocumentError
+          ? error.message
+          : 'The document could not be read.',
+    };
   }
 }
 
@@ -1293,26 +1315,18 @@ export const useBuilderStore = defineStore('builder', {
      *
      * @param {object} payload
      * @param {object} [options] label, resetHistory, and announce: false to
-     *   load it with a reset history unannounced (see generate)
+     *   load it with a reset history unannounced (see openImported)
      * @returns {object|null} document, or null when rejected
      */
     setDocument(
       payload,
       { label = 'Document loaded', resetHistory = true, announce = true } = {},
     ) {
-      let document;
+      const { document, error } = openableDocument(payload);
 
-      try {
-        // A switch is named after its network, whatever label a document
-        // saved or imported with another name still carries.
-        document = namedSwitches(parseDocument(payload));
-      } catch (error) {
+      if (!document) {
         // The page alert (or the dialog that called this) reads it.
-        this.setError(
-          error instanceof DocumentError
-            ? error.message
-            : 'The document could not be read.',
-        );
+        this.setError(error);
 
         return null;
       }
@@ -3095,7 +3109,10 @@ export const useBuilderStore = defineStore('builder', {
 
     /**
      * Asks the server to build a diagram from a topology or experiment
-     * config, for Import, and loads it.
+     * config, for Import. The diagram is checked here, and opened by
+     * openImported once the user accepts it: until then the open draft,
+     * its autosave, owner and ETag stay as they are, so an answer nobody
+     * waits for any more changes nothing.
      *
      * @param {{kind?: string, name?: string, content?: string,
      *   includes?: 'keep'|'combine', copy?: boolean, newName?: string}} request
@@ -3115,32 +3132,18 @@ export const useBuilderStore = defineStore('builder', {
 
       try {
         const result = await builderApi.generate(request);
-        // Validate before detaching the current draft. A successful generation
-        // always starts separately; it must never reuse the prior draft's queue.
-        const generated = serverDocument(result.document);
-
-        this.newDocument({ name: metadataOf(generated).name });
-
-        // Nothing is imported yet: the user may still cancel on the
-        // warnings, and the draft may fail to be created. The import is
-        // announced once its draft exists (see ImportDialog).
-        const document = this.setDocument(generated, {
-          label: 'Imported diagram',
-          announce: false,
-        });
+        const document = serverDocument(result.document);
 
         // The server's answer does not tell a copy from a plain import.
         const detached =
           Boolean(request?.copy) || request?.includes === 'combine';
 
-        return document
-          ? {
-              document,
-              warnings: result.warnings,
-              source: result.source,
-              ...(detached ? { detached: true } : {}),
-            }
-          : null;
+        return {
+          document,
+          warnings: result.warnings,
+          source: result.source,
+          ...(detached ? { detached: true } : {}),
+        };
       } catch (error) {
         const kind = classifyError(error);
         const uploaded = typeof request?.content === 'string';
@@ -3198,6 +3201,36 @@ export const useBuilderStore = defineStore('builder', {
 
         return null;
       }
+    },
+
+    /**
+     * Opens a diagram generate() made, once the user has accepted it. An
+     * import always starts a new draft: the open draft is detached first,
+     * with its autosave queue, so a later edit never overwrites it. The
+     * diagram is checked before that, as setDocument checks it, so one
+     * that cannot be opened leaves the open draft, its autosave, owner and
+     * ETag as they are. Nothing is announced: the import is, once its
+     * draft exists (see ImportDialog).
+     *
+     * @param {{document: object}} result what generate() returned
+     * @returns {object|null} the document as opened, or null when it could
+     *   not be, which `error` then says
+     */
+    openImported(result) {
+      const { document, error } = openableDocument(result.document);
+
+      if (!document) {
+        this.setError(error);
+
+        return null;
+      }
+
+      this.newDocument({ name: metadataOf(document).name });
+
+      return this.setDocument(document, {
+        label: 'Imported diagram',
+        announce: false,
+      });
     },
 
     /**
@@ -4686,10 +4719,36 @@ export const useBuilderStore = defineStore('builder', {
       return result.nodeIds;
     },
 
+    /**
+     * Pastes a copy of the selected nodes beside them, as Copy and Paste
+     * would, from a copy made of the selection now: the clipboard is
+     * neither read nor changed. A connection goes with its two nodes, so a
+     * selection of connections alone has nothing to duplicate, and says so.
+     *
+     * @returns {string[]} the ids of the copies, which become the selection
+     */
     duplicate() {
-      this.copy();
+      const payload = copySelection(this.doc, this.selection);
 
-      return this.paste();
+      if (!payload.nodes.length) {
+        this.announce(
+          this.selection.edges.length
+            ? DUPLICATE_NEEDS_NODES
+            : 'Nothing is selected to duplicate.',
+        );
+
+        return [];
+      }
+
+      const result = pasteClipboard(this.doc, payload);
+
+      this.commit(
+        result.doc,
+        `Duplicated ${count(result.nodeIds.length, 'node')}`,
+      );
+      this.selection = { nodes: result.nodeIds, edges: [] };
+
+      return result.nodeIds;
     },
 
     undo() {

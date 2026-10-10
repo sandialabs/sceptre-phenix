@@ -399,6 +399,9 @@ Changes in the Inspector take effect when you apply them:
 
 **Cancel** drops the changes. **Apply** is unavailable while a field you
 changed has an error; the bar then says "Fix the fields marked with errors".
+A change that reaches the diagram while you edit, such as a layout that
+finishes, keeps the text you are typing and your unapplied changes, and
+shows what it changed in the other fields.
 
 For example, to change the description of ws-01:
 

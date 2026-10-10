@@ -64,6 +64,9 @@ them. Choose a layout to arrange them (see [Layouts](diagrams.md#layouts)).
 
 To stop at step 5, select **Cancel**: the dialog closes and no draft is
 made. An import without warnings opens the editor at once, without step 5.
+Until the editor opens, the diagram you had open stays as it is. If you
+close the dialog while it says "Importing…", nothing is imported, even when
+the answer comes later.
 
 A topology that the [legacy Builder](legacy.md) saved is marked
 "(legacy Builder diagram)" in **Source name**. Importing it converts its
@@ -596,8 +599,10 @@ Topology YAML needs the `configs` `get` permission.
 
 **PNG** and **SVG** draw the whole diagram, not only the part in view. The
 picture covers the diagram bounds that the dialog shows, and is scaled to
-at most 4096 pixels on its longer side. The Riverside Water PNG is 4096 ×
-1801 pixels.
+at most 4096 pixels on its longer side, however large the diagram. The
+Riverside Water PNG is 4096 × 1801 pixels. On a high-resolution screen a
+PNG gets the screen's extra pixels, as long as it stays within 4096 pixels
+each way.
 
 The picture shows colors, line styles, group borders, custom icons and the
 drawings (rectangles, circles, icons, and lines with their arrowheads) as
