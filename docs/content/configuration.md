@@ -47,29 +47,17 @@ begin with a capital letter.
 
     `phenix config create` also takes a directory, and creates every
     configuration file below it. A [Builder](builder/index.md) document
-    (a Builder JSON or Builder YAML file) is not a configuration: one found in
-    a directory is skipped with a log line, and one named on the command line
-    is refused. Upload it in the Builder and publish it to create its
-    topology (see
+    (a Builder JSON or Builder YAML file) is not a configuration. The command
+    skips a Builder document in a directory and logs a line. It refuses a
+    Builder document named on the command line. To create its topology,
+    upload the document in the Builder and publish it (see
     [Builder documents and phenix config create](builder/import-upload-download.md#builder-documents-and-phenix-config-create)).
 
 The `metadata` section can also hold `annotations`: text values by key, such
-as the `topology` and `scenario` annotations of an
-[Experiment](#experiment). One annotation is not text but a map:
-`builder-doc`, which names the Builder diagram of a Topology. Its keys are
-`digest`, `id` and `path`:
-
-```yaml
-metadata:
-  name: pump-station
-  annotations:
-    builder-doc:
-      path: /phenix/topologies/pump-station/pump-station.builder.json
-    maintainer: range-team
-```
-
-See
-[The builder-doc annotation](builder/administration.md#the-builder-doc-annotation).
+as the `topology` and `scenario` annotations of an [Experiment](#experiment).
+The one exception is `builder-doc`, a map of `digest`, `id` and `path` that
+names the Builder diagram of a Topology (see
+[The builder-doc annotation](builder/administration.md#the-builder-doc-annotation)).
 
 ## Topology
 
@@ -180,15 +168,16 @@ three options available to set, but on only one option can be set:
 
 #### Node Notes
 
-`general.notes` is a list of notes about a node: at most 100 notes, each 1 to
-4096 characters long, and a note may span several lines. When an experiment is
-created, phēnix copies each note into the node's labels, in the order of the
-list, under a key made of `__notes_` and a time, such as
-`__notes_2026-10-09T11:34:56.789Z`, the key the web UI gives a note added in
-the VM's Labels dialog. minimega sets a node's labels as its VM's tags when the
-experiment starts, so the notes show under Notes in that dialog (the Labels
-column of the experiment's VM table) and in the VM's
-[State of Health](state-of-health.md) details.
+`general.notes` is a list of notes about a node. It holds at most 100 notes,
+each 1 to 4096 characters long. A note can have more than one line.
+
+When phēnix creates an experiment, it copies each note into the node's labels,
+in the order of the list. The key of each note is `__notes_` and a time, such
+as `__notes_2026-10-09T11:34:56.789Z`. The web UI gives the same kind of key to
+a note that you add in the VM's Labels dialog. When the experiment starts,
+minimega sets the node's labels as the VM's tags. The notes then show under
+Notes in that dialog (the Labels column of the experiment's VM table) and in
+the VM's [State of Health](state-of-health.md) details.
 
 ```yaml
 - type: VirtualMachine
@@ -207,10 +196,10 @@ column of the experiment's VM table) and in the VM's
 
 !!! note
     phēnix copies the notes only when it creates an experiment. A later change
-    to the topology's notes does not reach an existing experiment, and notes
-    edited in the Labels dialog stay when the experiment is stopped and
-    started again. A note is not copied when the node already holds a note
-    with the same text, or when a label already has the note's key.
+    to the topology's notes does not change an existing experiment. Notes
+    that you edit in the Labels dialog stay when the experiment stops and
+    starts again. phēnix does not copy a note when the node already has a
+    note with the same text, or a label with the note's key.
 
 #### Network Address Translation (NAT)
 
@@ -758,12 +747,8 @@ There are two ways to view a specific config:
 ### Topologies with a Builder diagram
 
 A topology with a [Builder](builder/index.md) diagram has the tag `builder`
-next to its name, and one the legacy Builder saved has `builder legacy`.
-The tag is a link into the Builder. A topology's viewer also has a button,
-left of `Edit Config`: `Open in Builder` for a topology with a Builder
-diagram, and `Import into Builder` for any other topology. The `Edit`
-button of a `builder` topology opens it in the Builder, not in the editor
-window. See
+next to its name, and its `Edit` button opens the Builder, not the editor
+window. For the tags, the viewer buttons and the permissions they need, see
 [From the Configs page](builder/import-upload-download.md#from-the-configs-page).
 
 ### Create a Config

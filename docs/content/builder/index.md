@@ -1,8 +1,8 @@
 # Builder
 
 Builder is the phenix web editor for drawing topologies as diagrams. You
-place devices and switches on a canvas, connect them, and fill in each
-device's settings in a form. Your work is saved as a draft on the phenix
+put devices and switches on a canvas, connect them, and enter the settings of
+each device in a form. Builder saves your work as a draft on the phenix
 server, apart from the phenix configs. Only **Publish** writes Topology and
 Experiment configs and adds a topology to its scenarios, and only the
 **Scenarios** dialog stores a Scenario config, from a file you upload.
@@ -13,7 +13,7 @@ Experiment configs and adds a topology to its scenarios, and only the
 
 - Draw a topology: devices, switches (one per network), the connections
   between them, notes, groups, and drawings (rectangles, circles, icons and
-  lines). Lay it out with one of four automatic layouts. See
+  lines). Arrange it with one of eight automatic layouts. See
   [Building a Diagram](diagrams.md).
 - Start from a Topology or Experiment config, stored in phenix or in a
   config file, with **Import**, or from a file you have, such as a Builder
@@ -25,7 +25,7 @@ Experiment configs and adds a topology to its scenarios, and only the
   templates in the diagram or in your own **Node Templates** library, which
   you can share. See [Building a Diagram](diagrams.md) and
   [Node Templates](templates.md).
-- Keep your work safe: each edit is saved to the draft on the server, and
+- Keep your work: Builder saves each edit to the draft on the server, and
   **Draft History** lists the earlier versions to restore. See
   [Drafts](drafts.md#how-drafts-save).
 - Share a draft with other users, who can view it or edit it. See
@@ -52,7 +52,7 @@ Experiment configs and adds a topology to its scenarios, and only the
 ## The legacy Builder
 
 Earlier phenix releases had a different graphical editor with the same
-name. It was removed. Topologies it saved keep their `builder-xml`
+name. phenix no longer has it. Topologies it saved keep their `builder-xml`
 annotation and have the tag `builder legacy` on the **Configs** page.
 **Import** converts such a topology into a draft, and **Upload** converts a
 diagram file the legacy Builder saved. See [Legacy Builder](legacy.md).
@@ -77,7 +77,7 @@ Scenario config `riverside-water` configures NAT on the edge router (the
 | Device | What it is |
 |---|---|
 | `edge-rtr` | VyOS edge router (type Router, image `vyos.qc2`), with a route to 10.10.30.0/24 through `ot-fw` |
-| `ot-fw` | Firewall between CORP and OT (type Firewall, image `minirouter.qc2`); its ruleset `corp-to-ot` lets only HTTPS from CORP to `historian-01` through |
+| `ot-fw` | Firewall between CORP and OT (type Firewall, image `minirouter.qc2`). Its ruleset `corp-to-ot` lets only HTTPS from CORP to `historian-01` through |
 | `kali-01` | Red team host on the internet (`kali.qc2`) |
 | `web-01` | Public web server (`ubuntu.qc2`) |
 | `files-01` | Corporate file server (`ubuntu.qc2`) |
@@ -99,12 +99,12 @@ Download the example files:
 - [riverside-water.topology.yaml](examples/riverside-water.topology.yaml)
 - [riverside-water.scenario.yaml](examples/riverside-water.scenario.yaml)
 - [metro-campus.topology.yaml](examples/metro-campus.topology.yaml)
-- [pump-station.topology.yaml](examples/pump-station.topology.yaml) (not
-  stored; used in [Import, Upload and Download](import-upload-download.md))
-- [pump-station.builder.json](examples/pump-station.builder.json) (a Builder
-  document; used in [Import, Upload and Download](import-upload-download.md))
-- [riverside-water.builder.json](examples/riverside-water.builder.json) (a
-  Builder document; see [The drafts on these pages](#the-drafts-on-these-pages))
+- [pump-station.topology.yaml](examples/pump-station.topology.yaml), which
+  you do not store (see [Import, Upload and Download](import-upload-download.md))
+- [pump-station.builder.json](examples/pump-station.builder.json), a Builder
+  document (see [Import, Upload and Download](import-upload-download.md))
+- [riverside-water.builder.json](examples/riverside-water.builder.json), a
+  Builder document (see [The drafts on these pages](#the-drafts-on-these-pages))
 
 Then store the first four configs in phenix and create the experiment
 `riverside` from them.
@@ -161,14 +161,14 @@ Most pages show drafts made from the example lab:
   [Renaming the diagram](editor.md#renaming-the-diagram)), before any layout.
 
 A draft made from `riverside-water` can publish only while `riverside-water`
-is unchanged, apart from that draft's own publications. So once one draft
-publishes `riverside-water`, the drafts made from it before then can no
-longer publish, and neither can a draft uploaded from
-`riverside-water.builder.json` later. The [quick start](#quick-start)
-publishes `riverside-water` from the quick start draft, and
-[Publishing a topology](publishing.md#publishing-a-topology) publishes it from
-Riverside Water. After either, Riverside Water expansion can no longer
-publish (see
+is unchanged, apart from the publications of that draft. After one draft
+publishes `riverside-water`, the drafts made from it before then cannot
+publish. A draft that you upload later from `riverside-water.builder.json`
+cannot publish either. The [quick start](#quick-start) publishes
+`riverside-water` from the quick start draft, and
+[Publishing a topology](publishing.md#publishing-a-topology) publishes it
+from Riverside Water. After either, Riverside Water expansion cannot publish
+(see
 [When the source config changed](publishing.md#when-the-source-config-changed)).
 
 ## Quick start
@@ -192,7 +192,7 @@ first (see [The example lab](#the-example-lab)).
    new draft named riverside-water opens, with its devices in rows on a
    grid.
 4. Open the layout menu in the toolbar, which says **Default**, and choose
-   **ELK layered**. Each network's switch now sits next to its devices.
+   **ELK layered**. Each network's switch is now next to its devices.
 
 The dialog in step 2:
 
@@ -211,9 +211,8 @@ The dialog in step 2:
    kind to Static or OSPF?".
 4. Enter **Name** `eth0`, **VLAN** `CORP`, **Address** `10.10.20.103`,
    **Mask** `24` and **Gateway** `10.10.20.1`.
-5. Select **Apply**. Because you typed the VLAN `CORP`, Builder
-   connects eth0 to the CORP switch, and the canvas shows the new
-   connection.
+5. Select **Apply**. Builder connects eth0 to the CORP switch, because
+   you typed the VLAN `CORP`. The canvas shows the new connection.
 6. Check that the header shows **No issues** and the toolbar shows **All
    changes saved**. The header counts now show 13 devices and 16
    connections.
@@ -245,8 +244,8 @@ page it has the tag `builder`. The tag, its **Edit** button and
 **Open in Builder** in its viewer open it in Builder, in the quick start
 draft (see
 [Editing a published topology](publishing.md#editing-a-published-topology)).
-Experiments made from it before, such as `riverside`, keep the copy of the
-topology they were created with. To run the new topology, create an
+Experiments made from it earlier, such as `riverside`, keep their copy of
+the topology. To run the new topology, create an
 experiment from it (see
 [Create a New Experiment](../experiments.md#create-a-new-experiment)), or
 publish the diagram as a topology and an experiment (see

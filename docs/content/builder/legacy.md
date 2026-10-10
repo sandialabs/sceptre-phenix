@@ -9,8 +9,8 @@ The legacy Builder was removed in
 [sandialabs/sceptre-phenix#442](https://github.com/sandialabs/sceptre-phenix/pull/442).
 The last commit that has it is
 [`a0aeaa4e`](https://github.com/sandialabs/sceptre-phenix/commit/a0aeaa4ee899018196ca4a4aa6e9ce114cf66de4).
-The [Builder](index.md) described in these pages replaces it, and converts
-its diagrams.
+The [Builder](index.md) in these pages replaces it and converts its
+diagrams.
 
 ## What changed
 
@@ -23,9 +23,9 @@ its diagrams.
 | Tag on the **Configs** page | `builder legacy` | `builder` |
 | REST routes | `POST /builder/save`, `/api/v1/builder/topologies`, `/api/v1/experiments/builder` | Removed. See [REST API](administration.md#rest-api) |
 
-Topologies made with the legacy Builder still run as they are. phenix never
-read the diagram to run an experiment. Convert a diagram only when you want
-to edit it as a diagram.
+Topologies made with the legacy Builder still run as they are, because
+phenix never read the diagram to run an experiment. Convert a diagram only
+when you want to edit it as a diagram.
 
 On the **Configs** page, a topology the legacy Builder saved has the tag
 `builder legacy`. The viewer shows its annotation as
@@ -55,8 +55,8 @@ and no `builder-doc`:
    The result lists the warning "The legacy Builder diagram of topology
    NAME was replaced by this diagram."
 
-The topology's own nodes are used. The old diagram only says where each node
-sits, matched by hostname, and adds its notes and groups.
+The draft uses the nodes of the topology. The old diagram gives only the
+position of each node, matched by hostname, and its notes and groups.
 
 Nothing changes on the server until you publish. Publishing to the same
 topology removes `builder-xml`, writes `builder-doc` and keeps the other
@@ -75,15 +75,14 @@ draft that combines the included topologies, publishes a new topology. The
 legacy topology keeps its `builder-xml`.
 
 Only the draft imported from the topology itself can replace its legacy
-diagram. A draft imported from an experiment made from the topology, an
-uploaded file, and any other draft get the hint "A topology with this name
-already exists, and this diagram cannot update it: …". Publish them under
-another name.
+diagram. Other drafts get the hint "A topology with this name already
+exists, and this diagram cannot update it: …". This includes a draft
+imported from an experiment made from the topology, and an uploaded file.
+Publish them under another name.
 
-The topology, its diagram included, must still be what the draft was
-imported from. When it changed since, Publish refuses with "Could not
-publish the diagram. Builder source Topology/NAME changed after this draft
-was imported." Import the topology again.
+The topology, its legacy diagram included, must not change after the
+import. If it changes, Publish refuses (see
+[When the source config changed](publishing.md#when-the-source-config-changed)).
 
 When the import cannot read the diagram, it warns "The legacy diagram of
 topology NAME could not be read (…), so its layout was not used. Nodes were
@@ -106,19 +105,18 @@ removes `builder-xml` in this case too.
 
 ![The Upload diagram dialog with the source Legacy Builder diagram or Topology chosen and sample.xml chosen as the Legacy diagram or Topology file; its hint says the file is a diagram saved by the legacy Builder (XML) or a Topology config that has the builder-xml annotation (YAML or JSON), up to 5 MiB, converted into a new draft; with the Cancel and Convert buttons.](../images/builder/upload-legacy.png)
 
-The file can be:
+The file can be up to 5 MiB, and it must be one of these:
 
-- an XML file that the legacy Builder saved with **Save to Disk**, whose root
-  element is `mxGraphModel` (or a bare `root`), or
-- a Topology config, as YAML or JSON, that has the `builder-xml` annotation,
+- An XML file that the legacy Builder saved with **Save to Disk**. Its root
+  element is `mxGraphModel` (or a bare `root`).
+- A Topology config, as YAML or JSON, that has the `builder-xml` annotation,
   such as one downloaded from the **Configs** page.
 
-The file can be up to 5 MiB. The converter does not read draw.io files
-(`mxfile`), compressed or base64-encoded diagrams, and there is no field to
-paste a diagram into. A legacy diagram given to the **File** or
-**Paste text** source is not converted: the dialog says "This looks like a
-legacy Builder diagram (XML). Choose "Legacy Builder diagram or Topology" to
-convert it."
+The converter does not read draw.io files (`mxfile`), or compressed or
+base64-encoded diagrams. You cannot paste a legacy diagram. The **File** and
+**Paste text** sources do not convert a legacy diagram: the dialog says
+"This looks like a legacy Builder diagram (XML). Choose "Legacy Builder
+diagram or Topology" to convert it."
 
 A file that is neither is refused, for example: "Could not convert the
 legacy diagram. This is not a legacy Builder diagram: expected mxGraph XML,
@@ -127,22 +125,22 @@ without the annotation gives "Could not convert the legacy diagram. Topology
 NAME has no legacy Builder diagram (no builder-xml annotation); use Import
 to make a diagram from it."
 
-A diagram without its topology has only the node settings the diagram itself
-holds. A draft converted from a file always publishes a new topology: it
+A diagram without its topology has only the node settings that the diagram
+holds. A draft converted from a file always publishes a new topology. It
 cannot update a stored topology, even one with the same name.
 
 Converting a file needs the `configs` `get` and `configs` `create`
 permissions. phenix reads a Topology config file as it reads any config
-file, so `${NAME}` in it is filled in from the phenix server's environment
+file, so it fills in `${NAME}` from the environment of the phenix server
 (see [Importing a config file](import-upload-download.md#importing-a-config-file)).
-Closing the dialog while it converts cancels the conversion.
+If you close the dialog while it converts, the conversion stops.
 
 ## What is converted
 
 | In the legacy diagram | In the Builder |
 |---|---|
-| A device | A device. For a topology, its settings come from the topology; for a diagram without one, from the diagram |
-| A router, firewall, desktop or server icon, in any color | The `router`, `firewall`, `desktop` or `server` icon. An external device gets `external`; other icons keep the icon of the device's type |
+| A device | A device. For a topology, its settings come from the topology. For a diagram without a topology, they come from the diagram |
+| A router, firewall, desktop or server icon, in any color | The `router`, `firewall`, `desktop` or `server` icon. An external device gets `external`. Other icons become the icon of the device's type |
 | A switch | The switch of its network, named after the network |
 | A VLAN ID on a switch or a line | The network's **VLAN alias**, when it is a number from 1 to 4094. `0`, `auto` or none give no alias |
 | A line from a device to a switch | A connection |
@@ -154,13 +152,13 @@ Closing the dialog while it converts cancels the conversion.
 | The grid setting | Kept |
 
 Positions are doubled because a node card is about twice the size of the old
-icon. A converted diagram is a diagram like any other: each device shows its
-type, such as `Router` or `External`, and a network's VLAN ID shows as the
-VLAN alias of its switch.
+icon. A converted diagram is the same as any other diagram. Each device
+shows its type, such as `Router` or `External`, and the VLAN ID of a network
+shows as the VLAN alias of its switch.
 
-For a topology, a node that is in the diagram but not in the topology is left
-out, and a node of the topology that is not in the diagram is placed below
-it. Each gives a warning.
+For a topology, the conversion leaves out a node that is in the diagram but
+not in the topology. It places a node of the topology that is not in the
+diagram below the diagram. Each gives a warning.
 
 ### What is left out
 
@@ -181,8 +179,8 @@ it. Each gives a warning.
 
 ## Warnings
 
-The dialog lists every warning before it makes the draft. Lists of names
-show at most 8 names, then how many more.
+The dialog lists every warning before it makes the draft. A list of names
+shows at most 8 names, then how many more there are.
 
 | Warning | What it means |
 |---|---|
@@ -210,6 +208,6 @@ included topologies.
 
 ## Keeping a copy of the old diagram
 
-Download the topology from the **Configs** page before you publish: the file
-still holds the XML, and **Upload** converts it again. To open the old
+Download the topology from the **Configs** page before you publish. The file
+holds the XML, and **Upload** can convert it again. To open the old
 editor itself, use a phenix build at or before `a0aeaa4e`.

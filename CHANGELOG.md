@@ -11,35 +11,34 @@ All notable changes to this project will be documented in this file.
 - **Settings**: Added `base-dir.injects` and `base-dir.topologies`, the directories `phenix workflow apply` stages injects in and looks up topology directories in. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow API**: The workflow endpoints accept `?dryRun=true`, which validates the request and changes nothing, and return a JSON result. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Validation Errors**: Config validation errors from the CLI, the API and the web UI name the list item, its hostname or name, and the line. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
-- **etcd**: Automatic history compaction for every etcd store. It compacts the whole etcd cluster. Set it with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
+- **etcd**: Automatic history compaction for every etcd store. It compacts the whole etcd cluster. Set it with `compaction-retention` on the store endpoint (default 1 hour, `0` turns it off).
+- **Node Notes**: Topology nodes take `general.notes`. A new experiment copies them to each VM's notes.
 - **Builder**: New topology editor at `/builder`. See the [Builder documentation](https://phenix.sceptre.dev/latest/builder/).
-  - The toolbar's **Add connection** and **Move to group** open dialogs that connect a device to a switch and move a node into or out of a group without dragging. The Publish dialog marks an update as a warning, and says why a config name is not allowed.
-  - Checks listed errors first, each with **Go to** its node and field.
-  - **Restore built-in templates** on the Node Templates tab adds back deleted built-in templates.
-  - Keyboard multi-select and bulk actions in the drafts lists, the Node Templates library and the Custom icons dialog.
-  - **N** on the canvas adds a Device.
-- **Node Notes**: Topology nodes take `general.notes`; a new experiment copies them to each VM's notes.
-- **Builder documents**: A Builder document keeps its ID, name, description, up to 100 notes (which the Inspector lists and edits), and who made and last saved it (`createdBy`, `createdAt`, `updatedBy`, `updatedAt`) in a required `metadata` object. Its JSON Schema gives every field a title, a description and examples.
-- **Builder node notes**: Devices and switches show their notes in a card below them on the canvas, in their info tooltips and in PNG and SVG downloads, and layouts leave room for them. A device's notes are its `general.notes`; a switch keeps up to 100 of its own in the diagram. **Show node notes** in the Builder settings hides them.
-- **Builder icons**: One custom icon library for the whole server, in which diagrams and templates name their icons. The uploader, or a role with the new `builder-icons` permissions, renames an icon (the old name keeps working) or deletes it. A downloaded diagram carries copies of up to 50 icons it uses, and uploading it adds those the server lacks.
-- **Builder scenarios**: A diagram lists up to 20 Scenario configs by name (`scenarios`). The Scenarios dialog adds stored scenarios or stores an uploaded scenario file as a Scenario config (replacing one keeps its annotations), Publish adds the topology to each listed scenario's `topology` annotation, and the Publish dialog picks the experiment's scenario.
-- **Builder drawings**: Rectangles, circles, icons and lines (with bends and arrowheads) that are drawn in a diagram and never published. Shapes, icons, notes and groups resize with the mouse.
-- **Builder icon sizes**: Devices, switches and groups draw their icons Small (16 pixels), Medium (24) or Large (32): a size for the whole diagram (`iconSize`), and optionally one of a node's own, both chosen in the Inspector.
-- **Builder template files**: Node Templates export to and import from YAML or JSON template files, one collection per file, with the custom icons they use. `phenix ui` reads the template files in `base-dir.builder-templates` (default `<base-dir.phenix>/builder/templates`) at start as read-only server collections that every user sees and can copy.
-- **Builder merging**: Merging a draft with another editor's changes on a save conflict.
-- **Builder packages**: Diagrams downloaded and uploaded with their configs and icons as one file.
-- **Builder error codes**: Stable error codes on Builder errors and issues.
-- **Builder publish preview**: What publishing changes, in the Publish dialog.
-- **Builder preflight**: Checks of a draft against the server's hosts, VLANs, bridges, images and apps.
-- **Builder Purdue layers**: Devices and switches take an optional Purdue layer (`purdueLevel`), which the Inspector sets and publishing ignores. The **Layered by tier** layout arranges a diagram by it, from top to bottom.
-- **Builder layouts**: The Yifan Hu (Graphviz sfdp), Force (d3-force) and Radial (Graphviz twopi) layouts in the layout menu.
+  - **Documents**: A Builder document keeps its ID, name, description, up to 100 notes and who made and last saved it (`createdBy`, `createdAt`, `updatedBy`, `updatedAt`) in a required `metadata` object. The Inspector lists and edits the notes. The document's JSON Schema gives every field a title, a description and examples.
+  - **Node notes**: Devices and switches show their notes in a card below them on the canvas, in their info tooltips and in PNG and SVG downloads. Layouts leave room for the cards. A device's notes are its `general.notes`. A switch keeps up to 100 notes of its own in the diagram. **Show node notes** in the Builder settings hides them.
+  - **Icons**: One custom icon library for the whole server, in which diagrams and templates name their icons. The uploader, or a role with the new `builder-icons` permissions, renames an icon (the old name keeps working) or deletes it. A downloaded diagram carries copies of up to 50 icons it uses, and uploading it adds those the server lacks.
+  - **Icon sizes**: Devices, switches and groups draw their icons Small (16 pixels), Medium (24) or Large (32). The Inspector sets a size for the whole diagram (`iconSize`) and, optionally, a size for one node.
+  - **Scenarios**: A diagram lists up to 20 Scenario configs by name (`scenarios`). The Scenarios dialog adds stored scenarios, or stores an uploaded scenario file as a Scenario config (replacing one keeps its annotations). Publish adds the topology to each listed scenario's `topology` annotation, and the Publish dialog picks the experiment's scenario.
+  - **Drawings**: Rectangles, circles, icons and lines (with bends and arrowheads) that a diagram shows and Publish ignores. Shapes, icons, notes and groups resize with the mouse.
+  - **Template files**: Node Templates export to and import from YAML or JSON template files, one collection per file, with the custom icons they use. `phenix ui` reads the template files in `base-dir.builder-templates` (default `<base-dir.phenix>/builder/templates`) at start as read-only server collections that every user sees and can copy.
+  - **Merging**: Merge a draft with another editor's changes on a save conflict.
+  - **Packages**: Download and upload a diagram with its configs and icons as one file.
+  - **Error codes**: Stable error codes on Builder errors and issues.
+  - **Publish dialog**: The Publish dialog shows what publishing changes. It marks an update as a warning, and says why a config name is not allowed.
+  - **Preflight**: Checks a draft against the server's hosts, VLANs, bridges, images and apps.
+  - **Checks**: The checks list errors first. Each error has a **Go to** button for its node and field.
+  - **Restore built-in templates**: This button on the Node Templates tab restores deleted built-in templates.
+  - **Purdue layers**: Devices and switches take an optional Purdue layer (`purdueLevel`), which the Inspector sets and publishing ignores. The **Layered by tier** layout arranges a diagram by it, from top to bottom.
+  - **Layouts**: The Yifan Hu, Force and Radial layouts in the layout menu.
+  - **Connect and group without dragging**: **Add connection** and **Move to group** in the toolbar open dialogs that connect a device to a switch and move a node into or out of a group.
+  - **Keyboard use**: **N** on the canvas adds a Device. The drafts lists, the Node Templates library and the Custom icons dialog support keyboard multi-select and bulk actions.
 
 ### Changed
 
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, and form controls, labelled the config selection checkboxes, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, and code colours, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
-- **Config Schemas**: Descriptions for node and interface fields in the v1 schema; defaults shown as phenix applies them (`general.snapshot` `true`, `hardware.memory` 512).
-- **Builds and CI**: Browser tests run in parallel jobs and only for changes that can affect them; `PHENIX_BROTLI_QUALITY` (0 to 11, default 9) sets how hard UI builds compress the Builder's files.
+- **Config Schemas**: Descriptions for node and interface fields in the v1 schema. The schema shows defaults as phenix applies them (`general.snapshot` `true`, `hardware.memory` 512).
+- **Builds and CI**: Browser tests run in parallel jobs, and only for changes that can affect them. `PHENIX_BROTLI_QUALITY` (0 to 11, default 9) sets how hard UI builds compress the Builder's files.
 - **Topology validation**: Reject the node hostnames `all`, all-digit names, and `phenix` on Windows nodes, and warn about hostnames that may cause problems.
 - **Topology schema**: Require node hostnames to be at least 2 characters long.
 - **Workflow API**: A workflow apply is validated before a running experiment is stopped, so an invalid one returns 400 or 409 instead of 500 and leaves the experiment running. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
@@ -72,7 +71,7 @@ All notable changes to this project will be documented in this file.
 - **Config YAML**: Configs written as YAML (`phenix config get -o yaml`, `phenix config edit`, the configs API and downloads) keep strings that start with a line break or a tab.
 - **Configs page**: The viewer opens for topologies saved by the legacy Builder instead of showing an error, is labeled with the config's name, and returns focus to it when closed.
 - **Users**: Signing in as the same user from parallel requests no longer loses a token. Creating a user or signing up with a name already in use returns 409, and the Users page and the Create Account dialog say the user exists. Creating a user with an unknown role no longer leaves a user without a role. A `ui.users` entry without a role is skipped and logged instead of crashing phenix.
-- **etcd store**: Crash at startup with an empty etcd; wrong errors for missing or existing configs, and for writes to a full etcd.
+- **etcd store**: Crash at startup with an empty etcd. Wrong errors for missing or existing configs, and for writes to a full etcd.
 
 ### Security
 

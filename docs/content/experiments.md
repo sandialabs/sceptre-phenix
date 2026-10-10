@@ -112,8 +112,8 @@ Click the `+` button to the right of the filter field.
 Enter `Experiment Name` and `Experiment Topology`, the remaining selection are
 optional. In this example, `bennu` is an example topology and is not included
 by default. You will need to [create](configuration.md) your own topology(ies),
-or draw one and publish it with its experiment in
-[Builder](builder/publishing.md).
+or draw one in the [Builder](builder/publishing.md) and publish it with its
+experiment.
 
 #### Purely via the Web-UI (Uploading Topo/Scenario Files)
 

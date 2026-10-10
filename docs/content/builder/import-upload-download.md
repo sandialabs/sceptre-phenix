@@ -1,20 +1,20 @@
 # Import, Upload and Download
 
-Builder can start a draft from a phenix config or from a file you have, and
-it can save a diagram as a file in seven formats. Three words name these, and
-these pages use them the same way everywhere:
+Builder can start a draft from a phenix config or from a file that you
+have. It can save a diagram as a file in seven formats. These pages use
+three words for these tasks:
 
 - **Import** makes a draft from a phenix config: a Topology or Experiment
   config stored in phenix, or a config file. The phenix server converts the
   config into a diagram.
-- **Upload** opens a file you have that is already a diagram: a Builder
-  document, such as a draft you downloaded, a Builder package, or a diagram
-  of the [legacy Builder](legacy.md). Its **Published diagram** source opens
-  a diagram published on the server.
+- **Upload** opens a file that is already a diagram: a Builder document
+  (such as a draft that you downloaded), a Builder package, or a diagram of
+  the [legacy Builder](legacy.md). Its **Published diagram** source opens a
+  diagram published on the server.
 - **Download** saves the open diagram as a file.
 
-None of this changes a config on the phenix server: in the web UI, only
-**Publish** writes configs (see [Publishing](publishing.md)).
+None of these tasks changes a config on the phenix server. In the web UI,
+only **Publish** writes configs (see [Publishing](publishing.md)).
 
 | To | Use | Where | Result |
 |---|---|---|---|
@@ -61,11 +61,11 @@ devices, 4 switches, 4 networks and 15 connections. The layout menu says
 **Default**: the devices are in rows on a grid, with the switches below
 them. Choose a layout to arrange them (see [Layouts](diagrams.md#layouts)).
 
-To stop at step 5, select **Cancel**: the dialog closes and no draft is
-made. An import without warnings opens the editor at once, without step 5.
-Until the editor opens, the diagram you had open stays as it is. If you
-close the dialog while it says "Importing…", nothing is imported, even when
-the answer comes later.
+To stop at step 5, select **Cancel**. The dialog closes and no draft is
+made. An import without warnings opens the editor immediately, without
+step 5. Until the editor opens, the diagram that was open before does not
+change. If you close the dialog while it says "Importing…", nothing is
+imported, even when the answer comes later.
 
 A topology that the [legacy Builder](legacy.md) saved is marked
 "(legacy Builder diagram)" in **Source name**. Importing it converts its
@@ -90,18 +90,20 @@ The warnings in step 3:
 An imported experiment differs from an imported topology in these ways:
 
 - When your role can list the stored Scenario that the experiment names,
-  the draft lists it: the Inspector says "Scenario riverside-water".
+  the draft lists it. The Inspector says "Scenario riverside-water".
   Otherwise the draft lists no scenario, and the import warns: "the
   experiment's scenario "riverside-water" is not a stored Scenario config
-  and was not attached". The copy of the scenario the experiment holds is
-  never kept: a diagram names its scenarios and holds none.
+  and was not attached". The import never keeps the copy of the scenario
+  that the experiment holds, because a diagram names its scenarios and
+  holds none.
 - The experiment's VLAN aliases become the **VLAN alias** of each network.
 - Some experiment fields have no place in a diagram. The import names them,
   for example "experiment fields not represented in the builder document:
   baseDir, defaultBridge, deployMode". The experiment's VLAN range is not
   kept either.
-- The files that the experiment's apps injected into VMs when it started
-  are left out, without a warning. The topology's own injections are kept.
+- The files that the apps of the experiment injected into VMs when it
+  started are left out, without a warning. The injections of the topology
+  are kept.
 
 ### Importing a config file
 
@@ -115,29 +117,28 @@ the pump station of the example lab from
    The file can be JSON or YAML, up to 5 MiB.
 4. Select **Import**.
 
-This config has no warnings, so the editor opens at once. The new draft is
-named pump-station, after the config. It has 3 devices (station-rtr, rtu-01
+This config has no warnings, so the editor opens immediately. The new draft
+is named pump-station, after the config. It has 3 devices (station-rtr, rtu-01
 and eng-ws-01), 2 switches, 2 networks (WAN and STATION) and 4 connections.
 The draft remembers the name of the file: with nothing selected, the
 Inspector shows "Source file pump-station.topology.yaml" under **Details**
 (see [With nothing selected](editor.md#with-nothing-selected)).
 
-Importing a config file needs the `configs` `create` permission. A
-draft made from a config file can publish a new topology. It cannot
-update a stored config, even one with the same name (see
-[Publishing](publishing.md)). So the dialog offers no copy for a config
-file, but it offers **Included topologies** when the file's topology
-includes others (see [Import options](#import-options)). The file must name
-its config in `metadata.name`.
+A draft made from a config file cannot update a stored config, even one
+with the same name. It can only publish a new topology (see
+[Publishing](publishing.md)). For this reason, the dialog does not offer a
+copy for a config file. It does offer **Included topologies** when the
+topology in the file includes others (see [Import options](#import-options)).
+The file must name its config in `metadata.name`.
 
-An Experiment config file's scenario is found the same way, by name, among
-the stored Scenarios your role can list. When the draft lists it, the import
-says so, as the file's own copy may differ: "scenario "riverside-water" is
-this server's Scenario config of that name, not the copy the experiment
-file holds".
+For an Experiment config file, the import finds the scenario in the same
+way: by name, among the stored Scenarios that your role can list. When the
+draft lists the scenario, the import says so, because the copy in the file
+can be different: "scenario "riverside-water" is this server's Scenario
+config of that name, not the copy the experiment file holds".
 
 phenix reads a config file as it reads one created with
-`phenix config create`. That includes `${NAME}` and `${NAME:default}`, which
+`phenix config create`. This includes `${NAME}` and `${NAME:default}`, which
 phenix fills in from the environment of the phenix server. For example, this
 interface in pump-station.topology.yaml:
 
@@ -161,7 +162,7 @@ imports with the address `198.51.100.20` when the server has no
 
 ### Import options
 
-The dialog shows more choices after the source when they apply. An
+When they apply, the dialog shows more choices after the source. An
 Experiment has none.
 
 **Included topologies** shows when the topology includes other topologies
@@ -178,9 +179,9 @@ topology.":
   riverside-water the import warns: "Copied 2 nodes from included topology
   corp-services (2 nodes). They are ordinary nodes of this diagram now:
   changes here do not reach that topology, and later changes there do not
-  reach this diagram." An included topology that you may not read, or that
-  is not stored in phenix, is not combined: the draft still includes it, and
-  the import warns, for example "Included topology site-b was not combined
+  reach this diagram." The import does not combine an included topology that
+  you may not read, or that is not stored in phenix. The draft still
+  includes it, and the import warns, for example "Included topology site-b was not combined
   and stays in includeTopologies: publishing keeps the reference."
 
 **Create a new topology as a copy** shows for a stored topology, while
@@ -189,10 +190,10 @@ topology already). Its hint says "The draft is not linked to
 riverside-water. Publishing creates a new topology and leaves
 riverside-water as it is." Included nodes stay read only.
 
-With either one, **New topology name** asks for the name of the new
-topology. It proposes the topology's name with `-copy` or `-combined`, such
-as `riverside-water-copy`, with a number added when a topology has that name
-already. The name follows the config name rule (see
+With either option, **New topology name** asks for the name of the new
+topology. It proposes the name of the topology with `-copy` or `-combined`,
+such as `riverside-water-copy`. When a topology already has that name, it
+adds a number. The name follows the config name rule (see
 [Publishing a topology](publishing.md#publishing-a-topology)), can be at most
 512 bytes long, and cannot be the name of an existing topology: "A topology
 named riverside-water already exists. Enter another name."
@@ -200,7 +201,7 @@ named riverside-water already exists. Enter another name."
 A copy, or a combined draft, is named after the new topology and is linked
 to no config. It gets a diagram note that names the config it was copied
 from, for example "Copied from riverside-water". For a config file, the
-note gives the name in the file's `metadata`. The Inspector shows the note
+note gives the name in the `metadata` of the file. The Inspector shows the note
 under **Notes** when nothing is selected (see
 [With nothing selected](editor.md#with-nothing-selected)). You can change or
 delete it like any other note.
@@ -217,9 +218,10 @@ importing again, use **Combine included nodes into a new draft** (see
 ### From the Configs page
 
 The **Configs** page links each topology to the Builder. A topology with a
-Builder diagram has the tag `builder`; one the legacy Builder saved has
-`builder legacy`. The tag is a link, and the viewer that opens when you
-select a topology's name has a button left of **Edit Config**:
+Builder diagram has the tag `builder`. A topology that the legacy Builder
+saved has the tag `builder legacy`. The tag is a link. When you select the
+name of a topology, a viewer opens, with a button to the left of
+**Edit Config**:
 
 | Topology | Tag (its tooltip) | Viewer button | What opens |
 |---|---|---|---|
@@ -231,9 +233,9 @@ The dialog makes nothing until you select **Import**, and offers the
 [import options](#import-options).
 
 The tag is a link for a role with `configs` `list` and `configs` `get` on
-the topology. The import controls also need `configs` `create`; without it,
+the topology. The import controls also need `configs` `create`. Without it,
 the tag is plain text and the viewer has no button. When the Builder cannot
-go on, it says why: "Topology riverside-water does not exist, or you may not
+continue, it gives the reason: "Topology riverside-water does not exist, or you may not
 read it.", or "Topology riverside-water has no Builder diagram, and your
 role cannot create drafts to import it. Select its name in Configs to view
 it."
@@ -246,9 +248,9 @@ in the text editor (see [Legacy Builder](legacy.md#what-changed)).
 
 - Every node, as a device, with all of its settings: hardware, interfaces,
   routes, rulesets, labels, annotations, injections and the rest.
-- One network, and one switch, for each VLAN the interfaces use. Each
-  interface with a VLAN is connected to that network's switch. An interface
-  without a VLAN is kept, but not connected.
+- One network, and one switch, for each VLAN that the interfaces use. Each
+  interface with a VLAN is connected to the switch of that network. An
+  interface without a VLAN is kept, but not connected.
 - The devices of included topologies, read only (see
   [Included topologies](diagrams.md#included-topologies)), unless you
   combine them (see [Import options](#import-options)). For
@@ -256,11 +258,11 @@ in the text editor (see [Legacy Builder](legacy.md#what-changed)).
 - The annotations of the config itself, such as `maintainer: range-team`
   and `purpose: Water utility training range` on riverside-water. The
   Inspector shows them with nothing selected, under "From Topology
-  riverside-water, imported" and the date. They are shown only: publishing
-  does not write them. Annotations whose names start with `builder-` are
-  left out. A draft keeps at most 100 annotations, and 256 KiB of them in
-  all; the import warns about the rest.
-- No positions: an import is always laid out on the **Default** grid.
+  riverside-water, imported" and the date. They are for display only:
+  publishing does not write them. Annotations whose names start with
+  `builder-` are left out. A draft keeps at most 100 annotations, and
+  256 KiB of them in total. The import warns about the others.
+- No positions: an import always uses the **Default** grid layout.
 
 A warning names anything else the import left out or changed.
 
@@ -270,13 +272,12 @@ Importing a stored config also needs permission to read it. See
 
 ## Uploading a Builder document
 
-A Builder document is Builder's own file: the diagram with all its
+A Builder document is the file format of Builder: the diagram with all its
 settings, positions, groups, notes and the names of its scenarios.
-**Download** saves one as
-**Builder JSON** or **Builder YAML** (see
-[Builder JSON and YAML](#builder-json-and-yaml)).
-**Upload** opens a Builder document as a new draft. The draft you have open,
-if any, does not change.
+**Download** saves one as **Builder JSON** or **Builder YAML** (see
+[Builder JSON and YAML](#builder-json-and-yaml)). **Upload** opens a
+Builder document as a new draft. The draft that is open, if any, does not
+change.
 
 To upload the pump station as a Builder document, from
 [pump-station.builder.json](examples/pump-station.builder.json):
@@ -300,12 +301,13 @@ The dialog has three other sources:
 - **Paste text**: paste the document into **Document text (JSON or YAML)**,
   then select **Upload**. A draft made from pasted text has no source file.
 - **Published diagram**: choose a diagram in **Published diagram** ("Select
-  a diagram"), then select **Open**. This opens the draft that published
-  the diagram, when it is yours or shared with you to edit, else your draft
-  of it, or makes one the first time, as **Edit as a draft** does (see
-  [Published diagrams](drafts.md#published-diagrams)). A topology whose
-  diagram is read from a file on the server is listed with "(File)" after
-  its name.
+  a diagram"), then select **Open**. This opens the same draft as
+  **Edit as a draft** (see
+  [Published diagrams](drafts.md#published-diagrams)): the draft that
+  published the diagram, when it is yours or shared with you to edit.
+  Otherwise it opens your draft of the diagram, or makes one the first
+  time. A topology whose diagram is read from a file on the server shows
+  "(File)" after its name.
 - **Legacy Builder diagram or Topology**: choose a diagram file that the
   legacy Builder saved, or a Topology config file that holds one in its
   `builder-xml` annotation, in **Legacy diagram or Topology file**, then
@@ -330,20 +332,16 @@ upload `riverside-water.yaml`: the new draft has the same 12 devices,
 4 groups and note, the same **ELK layered** layout, and the same scenario
 `riverside-water` listed.
 
-A Builder document also says who made the diagram and who saved it last
-(see [Who made and last saved a diagram](#who-made-and-last-saved-a-diagram)).
-An uploaded draft keeps the maker (`createdBy`) and the creation time the
-document names, and you are the one who saved it last. The example file
-names `e2e-admin` as its maker. So after alice uploads it, the Inspector
-shows these **Details**:
+An uploaded draft keeps the maker (`createdBy`) and the creation time that
+the document names, and you become the last editor (see
+[Who made and last saved a diagram](#who-made-and-last-saved-a-diagram)).
+For example, the example file names `e2e-admin` as its maker. After alice
+uploads it, the Inspector shows these **Details**:
 
-- **Created**: "Sep 29, 2026, 12:38 PM by e2e-admin", as the file says. The
-  time is shown in the time zone of your browser, here US Mountain Time.
+- **Created**: "Sep 29, 2026, 12:38 PM by e2e-admin", in the time zone of
+  the browser.
 - **Last edited**: the time of the upload, and "by alice".
 - **Source file**: "pump-station.builder.json".
-
-A document that names no maker gets you as its maker, and the time of the
-upload as its creation time.
 
 Upload makes a draft, which needs the `configs` `create` permission.
 
@@ -357,17 +355,15 @@ To download the Riverside Water diagram:
 3. Select a format. The buttons are in two rows: **Builder JSON**,
    **Builder YAML** and **Topology YAML**, then **PNG**, **SVG** and
    **Gephi (GEXF)**. The browser saves the file, and the dialog says so, for
-   example "Saved riverside-water.json." Below them, **Builder package**
-   saves the diagram with what it needs (see
+   example "Saved riverside-water.json." Below the buttons,
+   **Builder package** saves the diagram with what it needs (see
    [Downloading a package](#downloading-a-package)).
 4. Select **Close**.
 
 ![The Download diagram dialog with the diagram bounds, the Builder JSON, Builder YAML and Topology YAML buttons in one row and the PNG, SVG and Gephi (GEXF) buttons in the next, their hints, the Builder package part with its hint, the Scenario configs, Included topologies, Custom icons and Disk-image requirements checkboxes not ticked, Package format JSON and the Builder package button, and the message that riverside-water.gexf was saved with 12 devices, 4 networks and 15 connections.](../images/builder/download-dialog.png)
 
 The command palette has a command for each format, such as
-**Download PNG** or **Download Topology YAML**: it opens the dialog and
-starts that download. Typing `export` in the palette finds them all (see
-[Command palette](editor.md#command-palette)).
+**Download PNG** (see [Command palette](editor.md#command-palette)).
 
 | Button | File for Riverside Water | What it holds | Open it with |
 |---|---|---|---|
@@ -379,33 +375,36 @@ starts that download. Typing `export` in the palette finds them all (see
 | **Gephi (GEXF)** | `riverside-water.gexf` | The devices, networks and connections as a graph | Gephi |
 | **Builder package** | `riverside-water.package.json` or `.package.yaml` | The Builder document, the configs and icons you tick, and the list of what the diagram needs | **Upload** |
 
-The file name is the diagram name in lower case, with a hyphen for each run
-of other characters than letters, digits, `.`, `_` and `-`. "Riverside Water"
-gives `riverside-water`.
+The file name is the diagram name in lower case. Each run of characters
+other than letters, digits, `.`, `_` and `-` becomes one hyphen.
+"Riverside Water" gives `riverside-water`.
 
-Download works in every draft you can open, including one you can only view,
-and in a published diagram. Before the dialog opens, Builder saves the
-changes you made in the Inspector but did not apply. When it cannot apply
-them, the dialog says why, for example "Your changes to Device ws-01 in the
-Inspector cannot be downloaded until Hostname is fixed. Fix or cancel them
-first.", and no file is saved.
+Download works in every draft that you can open, including one that you can
+only view, and in a published diagram. Before the dialog opens, Builder
+saves the changes that you did not apply in the Inspector (see
+[Automatic snapshots](drafts.md#automatic-snapshots)). When it cannot apply
+them, the dialog gives the reason and saves no file, for example "Your
+changes to Device ws-01 in the Inspector cannot be downloaded until
+Hostname is fixed. Fix or cancel them first."
 
 ### Builder JSON and YAML
 
-Builder JSON and Builder YAML hold the whole Builder document: every node
-with its settings and position, the networks, the connections, the groups
-and notes, the layout, the names of its scenarios (`scenarios`), where the
-diagram was imported from,
-and under `metadata` the diagram's name, description and notes and who made
-and last saved it. They also hold how the diagram looks: the
-colors and line styles of nodes and connections, the description, border
-pattern and icon of each group, the diagram's own device templates
-(`templates`), and a copy of each custom icon the diagram names (`icons`,
-by name, from the server's icon library), so the file opens the same on
-another phenix server. Uploading the file adds the icons that server lacks
-to its icon library (see
-[The diagram and its icons](diagrams.md#the-diagram-and-its-icons)). The example file
-`riverside-water.builder.json` begins like this as YAML:
+Builder JSON and Builder YAML hold the whole Builder document:
+
+- Every node with its settings and position, the networks, the
+  connections, the groups and notes, and the layout.
+- The names of its scenarios (`scenarios`), and where the diagram was
+  imported from.
+- Under `metadata`, the name, description and notes of the diagram, and who
+  made and last saved it.
+- How the diagram looks: the colors and line styles of nodes and
+  connections, and the description, border pattern and icon of each group.
+- The device templates of the diagram (`templates`).
+- A copy of each custom icon that the diagram names (`icons`), so the file
+  opens the same on another phenix server (see
+  [The diagram and its icons](diagrams.md#the-diagram-and-its-icons)).
+
+The example file `riverside-water.builder.json` begins like this as YAML:
 
 ```yaml
 $schema: https://phenix.sandia.gov/schemas/builder/v1
@@ -433,26 +432,26 @@ with a title, a description and examples for every field.
 #### The metadata of a diagram
 
 The `metadata` object at the top of the document holds what the document
-says of itself. It is required, and it holds only these fields:
+says about itself. It is required, and it holds only these fields:
 
 | Field | What it holds |
 |---|---|
-| `id` | The document's identifier, which every document needs |
-| `name` | The diagram name, at most 512 bytes; a draft takes it as its title |
+| `id` | The identifier of the document. Every document needs one |
+| `name` | The diagram name, at most 512 bytes. A draft uses it as its title |
 | `description` | Free text about the diagram |
 | `createdBy`, `createdAt`, `updatedBy`, `updatedAt` | Who made the diagram and who saved it last (see below) |
-| `notes` | The diagram's notes, which the Inspector lists under **Notes**: at most 100, each not blank and at most 4096 bytes, with no control characters but line breaks and tabs |
+| `notes` | The notes of the diagram, which the Inspector lists under **Notes**. At most 100 notes. Each note is not blank, is at most 4096 bytes, and has no control characters other than line breaks and tabs |
 
-A document that still has one of these fields at its top level, outside
-`metadata`, is refused, as is a field `metadata` does not list. None of the
-metadata is written to a config.
+The server refuses a document that has one of these fields at its top
+level, outside `metadata`. It also refuses a field that `metadata` does not
+list. Publish writes none of the metadata to a config.
 
 #### Who made and last saved a diagram
 
 Four fields of the document's `metadata` say who made the diagram and who
-saved it last. The phenix server writes them each time it saves a draft;
-the editor never does. The Inspector shows them under **Details** (see
-[With nothing selected](editor.md#with-nothing-selected)).
+saved it last. The phenix server writes them each time it saves a draft.
+The editor never writes them. The Inspector shows them under **Details**
+(see [With nothing selected](editor.md#with-nothing-selected)).
 
 | Field | What it holds | Set |
 |---|---|---|
@@ -462,9 +461,9 @@ the editor never does. The Inspector shows them under **Details** (see
 | `updatedAt` | When that save was | On every save: the time of the save |
 
 The times are in UTC, to the second, in the form `2026-09-29T18:17:59Z`. A
-user name is at most 256 bytes. All four fields are optional: a document
-written by hand may have none. Opened read only from a file, such a diagram
-shows no **Details**.
+user name is at most 256 bytes. All four fields are optional, so a document
+written by hand can have none. When such a diagram opens read only from a
+file, it shows no **Details**.
 
 What this means for each way of making a draft:
 
@@ -474,26 +473,28 @@ What this means for each way of making a draft:
   the file names none, you made the diagram.
 - **Edit as a draft** on a published diagram or on a diagram read from a
   file: the draft starts as that document, unchanged, so all four fields
-  are the document's. Your first edit makes you the one who saved it last.
+  come from the document. After your first edit, you are the one who saved
+  it last.
 - A draft shared with **Can edit**: `createdBy` stays, and a save by the
   other person names that person in `updatedBy`.
 - **Undo**, **Redo** and **Restore** go back to an earlier snapshot, which
   holds the `updatedBy` and `updatedAt` of the save that made it.
 
-**Publish** stores the document as it is, with the four fields it has.
-They are part of the document, so they count in its digest.
+**Publish** stores the document as it is, with the four fields that it has.
+These fields are part of the document, so they change its digest.
 
 !!! note
-    `createdBy` and `createdAt` are what the document says. Someone who
-    uploads a document can name anyone in it. The server writes `updatedBy` and
-    `updatedAt` on every save it makes. A document that phenix takes
-    unchanged from a file keeps all four fields as the file has them: a
-    diagram read from a Builder file, the draft **Edit as a draft** makes
-    from it, which can be published before its first edit. Those values are
-    only as trustworthy as whoever can write the file.
+    `createdBy` and `createdAt` are what the document says. A person who
+    uploads a document can name anyone in it. The server writes `updatedBy`
+    and `updatedAt` on each save that it makes. A document that phenix takes
+    unchanged from a file keeps all four fields as the file has them. This
+    applies to a diagram read from a Builder file, and to the draft that
+    **Edit as a draft** makes from it, which can be published before its
+    first edit. Those values are only as trustworthy as the people who can
+    write the file.
 
-`source.updatedAt`, further down in a document made by **Import**, is a
-different time: when the imported config was last changed.
+`source.updatedAt`, lower in a document made by **Import**, is a different
+time: when the imported config was last changed.
 
 ### Topology YAML
 
@@ -501,8 +502,8 @@ different time: when the imported config was last changed.
 for the diagram. The phenix server makes it the way **Publish** does, and
 checks it the same way. Nothing is written on the server.
 
-The Riverside Water diagram downloads as this Topology (the first node shown;
-the file has ten):
+The Riverside Water diagram downloads as this Topology. The file has ten
+nodes. Only the first is shown:
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1
@@ -577,48 +578,46 @@ To store the file in phenix as a Topology config named `Riverside-Water`:
 phenix config create riverside-water.topology.yaml
 ```
 
-A topology stored this way is a plain Topology config: Builder did not
-publish it, so editing it from **Configs** does not open Builder. To
-store the topology with its diagram instead, publish the draft (see
+A topology stored this way is a plain Topology config. Builder did not
+publish it, so if you edit it from **Configs**, Builder does not open. To
+store the topology with its diagram, publish the draft (see
 [Publishing](publishing.md)), or name the Builder file in the config (see
 [A Builder file beside a topology](#a-builder-file-beside-a-topology)).
 
-When the diagram cannot be published yet, the file is still saved, and the
-dialog lists every reason. The Riverside Water expansion draft gives:
+When the diagram cannot be published yet, the dialog still saves the file,
+and lists every reason. The Riverside Water expansion draft gives:
 "Saved riverside-water-expansion.topology.yaml. This topology cannot be
 published yet: interface "eth0" of device "historian-01-2" has no VLAN:
 connect it to a network, or type a VLAN for it."
 
 ![The Download diagram dialog of Riverside Water expansion after Topology YAML: riverside-water-expansion.topology.yaml was saved, and the topology cannot be published yet because interface eth0 of device historian-01-2 has no VLAN.](../images/builder/download-topology-blockers.png)
 
-This makes **Topology YAML** a quick way to see every problem that
-publishing would report (see
-[What blocks publishing](publishing.md#what-blocks-publishing)). When
-phenix could not accept the config at all, the dialog shows the error and no
-file is saved.
+**Topology YAML** is a quick way to see every problem that publishing
+would report (see
+[What blocks publishing](publishing.md#what-blocks-publishing)). When phenix
+cannot accept the config at all, the dialog shows the error and saves no
+file.
 
 Topology YAML needs the `configs` `get` permission.
 
 ### PNG and SVG
 
 **PNG** and **SVG** draw the whole diagram, not only the part in view. The
-picture covers the diagram bounds that the dialog shows, and is scaled to
-at most 4096 pixels on its longer side, however large the diagram. The
-Riverside Water PNG is 4096 × 1801 pixels. On a high-resolution screen a
-PNG gets the screen's extra pixels, as long as it stays within 4096 pixels
-each way.
+picture covers the diagram bounds that the dialog shows. Its longer side is
+at most 4096 pixels, for a diagram of any size. The Riverside Water PNG is
+4096 × 1801 pixels. On a high-resolution screen, a PNG gets the extra pixels
+of the screen, but stays within 4096 pixels in each direction.
 
 The picture shows colors, line styles, group borders, custom icons and the
 drawings (rectangles, circles, icons, and lines with their arrowheads) as
-the canvas draws them. It leaves out what is only there for editing: the
-selection, the connection points, the handles that resize a node or move
-the points of a line, the warning marks and the info tooltips. Its
-background follows the theme:
-white in the light theme, dark in the dark theme (see
-[Themes](editor.md#themes)).
+the canvas draws them. It does not show the items that are only for editing.
+These are the selection, the connection points, the handles that resize a
+node or move the points of a line, the warning marks and the info tooltips.
+Its background follows the theme: white in the light theme, dark in the dark
+theme (see [Themes](editor.md#themes)).
 
 The SVG holds the diagram as HTML inside the SVG, and each custom icon as a
-PNG inside it. Web browsers show it; some drawing programs cannot.
+PNG inside it. Web browsers show it. Some drawing programs cannot.
 
 ### Gephi (GEXF)
 
@@ -634,9 +633,9 @@ The graph has:
   label is the interface and its address, for example "eth0
   10.10.30.20/24".
 - The colors and positions of the diagram. A device has its fill color, else
-  its outline color, else the color of its type; a network has its
-  **Edge Color**. Colors written in hex or `rgb()` are kept; a color written
-  as a name, such as `red`, is not.
+  its outline color, else the color of its type. A network has its
+  **Edge Color**. Colors written in hex or `rgb()` are kept. A color written
+  as a name, such as `red`, is not kept.
 
 Notes, groups and drawings (rectangles, circles, icons and lines) are not
 nodes. A node's groups are in its **Group** and **Groups** columns instead.
@@ -662,9 +661,10 @@ Other diagrams can have more, such as **MAC addresses**, **VLAN alias** and
 **Disabled scenario apps**.
 
 The **Scenario apps** columns list the apps of the diagram's scenarios that
-run on each device: historian-01 has `ntp`. Download reads each scenario the
-diagram lists from the server first. When it cannot read one, the file has
-no app columns, and the dialog says why, for example "It lists no scenario
+run on each device. For example, historian-01 has `ntp`. Download first
+reads from the server each scenario that the diagram lists. When it cannot
+read one, the file has no app columns, and the dialog gives the reason, for
+example "It lists no scenario
 apps: your role cannot read scenario riverside-water."
 
 The dialog counts what it saved: "Saved riverside-water.gexf: 12 devices, 4
@@ -703,14 +703,14 @@ devices on OT and the OT network itself.
 
 A Builder document names the scenarios, included topologies, custom icons
 and disk images of its diagram, but another phenix server may not have
-them. A **Builder package** is one file, JSON or YAML, that holds the
-Builder document, the configs and icons you choose to put in, and the list
-of everything the diagram needs. Uploading it on another server shows which
-of those that server has, and creates a missing Scenario or Topology config
-only when you tick it.
+them. A **Builder package** is one file, JSON or YAML. It holds the Builder
+document, the configs and icons that you choose to put in, and the list of
+everything that the diagram needs. When you upload it on another server, it
+shows which of those items that server has. It creates a missing Scenario
+or Topology config only when you tick it.
 
-A package never holds the content of a file, a script or an app. Disk
-images, apps, and files such as injection sources are only listed by name.
+A package never holds the content of a file, a script or an app. It lists
+disk images, apps, and files such as injection sources only by name.
 
 ### Downloading a package
 
@@ -724,27 +724,29 @@ images, apps, and files such as injection sources are only listed by name.
     - **Disk-image requirements**: the disk images the devices boot from,
       each with the devices that use it.
 
-    None is ticked at first. Whatever you tick, the file lists the diagram's
-    scenarios, included topologies, templates, custom icons, the apps of its
-    scenarios and the files its devices and the configs in the package name.
+    None is ticked at first. Whatever you tick, the file lists the
+    scenarios, included topologies, templates and custom icons of the
+    diagram, the apps of its scenarios, and the files that its devices and
+    the configs in the package name.
+
 3. Choose JSON or YAML in **Package format**, then select **Builder
    package**. The file is named after the diagram, for example
    `pump-station.package.json`.
 
-The server reads each config under your permissions. A config that does
-not exist, or that your role cannot read, is listed but not carried, and
-the dialog lists it before the file is saved, for example "Scenario config
+The server reads each config with your permissions. The package lists, but
+does not carry, a config that does not exist or that your role cannot read.
+The dialog lists such a config before it saves the file, for example "Scenario config
 pump-station-ntp does not exist on this server, or your role cannot read
 it: the package names it but does not carry it." Select **Save package** to
 save the file anyway, or **Do not save**. A config is carried without its
 creation and update times and without the Builder's own annotations
 (`builder-*`).
 
-The list of requirements holds at most 1000 entries of each kind, each at
-most 4096 bytes long and without control characters. An entry that does
-not fit, such as an injection source with a line break in it, is left out
-of the list, and the dialog names it the same way before the file is
-saved, for example "The package does not list file "/phenix/injects/a\nb":
+The list of requirements holds at most 1000 entries of each kind. Each
+entry is at most 4096 bytes long and has no control characters. An entry
+that does not obey these limits, such as an injection source with a line
+break in it, is left out of the list. The dialog names it in the same way
+before it saves the file, for example "The package does not list file "/phenix/injects/a\nb":
 it must not contain control characters." Each warning shows its
 [error code](error-codes.md), such as `package.config.unreadable`.
 
@@ -781,35 +783,42 @@ requirements:
    select **Upload**.
 2. The dialog lists what the diagram needs, under **Scenario configs**,
    **Included topologies**, **Templates**, **Custom icons**, **Disk
-   images**, **Apps** and **Files**. Each entry says its status in words,
+   images**, **Apps** and **Files**. Each entry gives its status in words,
    and "in the package" when the file carries it:
     - **Present**: the server has it. A config or icon of that name with the
-      same content as the package's copy is present.
+      same content as the copy in the package is present.
     - **Missing**: the server does not have it.
     - **Different**: the server has a config or icon of that name with other
       content. It is not changed.
     - **Not checked**: the server cannot check it, for example because your
       role cannot read that config, or cannot list disk images or apps.
-      Disk images are not checked either when the server lists none, as it
+      Disk images are also not checked when the server lists none, as it
       does when minimega is not running. Files on the server are never
       checked.
 
-    A disk image or an app is looked for among the images or apps your role
-    can list, so one your role cannot see reads Missing. A drive whose image
-    has the same
-    file name as one of the server's, but another path, counts as present,
-    and the entry says which image matched, for example "Matched by file
-    name ubuntu.qc2; this server's image is /phenix/images/ubuntu.qc2."
+    Builder looks for a disk image or an app among the images or apps that
+    your role can list. An image or an app that your role cannot see shows
+    Missing. A drive whose image has the same file name as an image of the
+    server, but another path, counts as present. The entry says which image
+    matched, for example "Matched by file name ubuntu.qc2; this server's image is
+    /phenix/images/ubuntu.qc2."
+
 3. A Scenario or Topology config that is missing and in the package has a
    **Create on this server** checkbox, which is not ticked. Tick each config
-   to create. No other entry has one: Builder never replaces a config the
-   server has, and disk images, apps and files are only listed.
-4. Select **Continue to editor**. Builder creates the ticked configs, one at
-   a time, which needs the `configs` `create` permission for each; adds the
-   custom icons the server lacks to its icon library, as an upload of a
-   Builder document does; and opens the diagram as a new draft. The diagram
-   still names its scenarios and topologies as the file does, whether or
-   not you created them.
+   to create. No other entry has this checkbox. Builder never replaces a
+   config that the server has, and it only lists disk images, apps and
+   files.
+
+4. Select **Continue to editor**. Builder does these steps:
+
+    - It creates the ticked configs, one at a time. Each needs the
+      `configs` `create` permission.
+    - It adds the custom icons that the server does not have to its icon
+      library, as an upload of a Builder document does.
+    - It opens the diagram as a new draft.
+
+    The diagram still names its scenarios and topologies as the file does,
+    whether or not you created them.
 
 The dialog in step 2, for
 [pump-station.package.yaml](examples/pump-station.package.yaml) on a server
@@ -819,16 +828,17 @@ images:
 ![The Upload diagram dialog after the upload of pump-station.package.yaml: the diagram needs 5 items, 4 of them missing on this server; under Scenario configs, pump-station-ntp is Missing, in the package, with an unticked Create on this server checkbox; under Disk images, bennu.qc2, minirouter.qc2 and windows10.qc2 are Missing, each with the device that uses it; under Apps, ntp is Present; and the Cancel and Continue to editor buttons.](../images/builder/package-upload.png)
 
 While Builder creates the configs and adds the icons, the dialog stays open
-and says what it is doing; **Cancel** and closing the dialog do nothing
+and says what it is doing. **Cancel** and closing the dialog do nothing
 until it is done. When a config cannot be created, or an icon cannot be
-added, the dialog says why before it opens the diagram, and the other
-configs are still created. It names the configs it created first, for
-example "Created Scenario config pump-station-ntp on this server. This
-upload has 1 warning." **Cancel** then opens nothing; configs already
-created stay, which Builder announces again as the dialog closes.
+added, the dialog gives the reason before it opens the diagram. Builder
+still creates the other configs. The dialog first names the configs that it
+created, for example "Created Scenario config pump-station-ntp on this
+server. This upload has 1 warning." **Cancel** then opens nothing. The
+configs that Builder created stay, and Builder says so again when the
+dialog closes.
 
-A package whose configs carry Builder annotations (`builder-*`) is refused,
-since those name records of the server that wrote them.
+The server refuses a package whose configs carry Builder annotations
+(`builder-*`).
 
 The phenix server describes the format as a JSON Schema at
 `/api/v1/schemas/builder/package/v1`.
@@ -857,9 +867,9 @@ Here `examples` is a directory with the example configs and the two Builder
 documents of these pages (see
 [Load the example configs](index.md#load-the-example-configs)). A template
 file or a Builder package, such as `node-templates.yaml` or
-`pump-station.package.yaml`, is not a config either. `phenix config create`
-skips one it finds in a directory, with a debug log line that names it, and
-refuses one named on the command line:
+`pump-station.package.yaml`, is also not a config. `phenix config create`
+skips one that it finds in a directory, with a debug log line that names
+it. It refuses one named on the command line:
 
 ```console
 $ phenix config create node-templates.yaml
@@ -891,8 +901,8 @@ metadata:
 ```
 
 After `phenix config create`, the **Published Diagrams** tab lists the
-topology with the tag **File**, and its diagram opens from the file, with
-nothing published first. The file must be on the phenix server, below
+topology with the tag **File**. Its diagram opens from the file, without a
+publish first. The file must be on the phenix server, below
 `/phenix`. See
 [Builder documents in files](administration.md#builder-documents-in-files)
 for the example in full, the rules, and what **Publish** does with such a

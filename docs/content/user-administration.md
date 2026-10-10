@@ -142,12 +142,12 @@ available roles and their access rights.
 Key: E - experiment resource, V - VM resource, U - user resource
 
 The built-in **Builder** role is for users of the [Builder](builder/index.md),
-the web topology editor. It controls configs rather than experiments or VMs:
-it can list, get, create, update and delete Topology, Scenario and Experiment
-configs, reach every user's Builder drafts, publish Builder templates
-server-wide, rename and delete any user's Builder icons, and list, get,
-create and update experiments. See
-[The Builder role](builder/administration.md#the-builder-role).
+the web topology editor. It controls Topology, Scenario and Experiment
+configs, every user's Builder drafts and icons, and server-wide Builder
+templates. It can also list, get, create and update experiments. Its policies
+are in
+[Builder (`builder`)](#builder-builder), and
+[The Builder role](builder/administration.md#the-builder-role) explains them.
 
 ### Resources
 
@@ -470,11 +470,11 @@ create and update experiments. See
 | Exp. Scoped | no |
 | Res. Scoped | yes |
 
-Resource names are `<Kind>/<name>`, such as `Topology/riverside-water`;
-`Topology/*` covers every topology. Create and update are checked on the
-kind and name of the config in the request body too, so a role scoped to
-`Topology/*` cannot create or overwrite a User or Role config. `*/*` covers
-every config, User and Role configs included.
+Resource names are `<Kind>/<name>`, such as `Topology/riverside-water`.
+`Topology/*` covers every topology, and `*/*` covers every config, User and
+Role configs included. phēnix also checks create and update against the kind
+and name of the config in the request body. So a role scoped to `Topology/*`
+cannot create or overwrite a User or Role config.
 
 #### Resource: `builder-drafts`
 
@@ -603,11 +603,10 @@ spec:
 
 #### Builder (`builder`)
 
-phenix creates this role at start when the store has no role named
-`builder` (or with the role name `Builder`). A role of that name that is
-already stored gains the `builder-templates` `publish` and `builder-icons`
-`update` and `delete` policies it lacks at start, and so do the users
-assigned to it.
+phenix creates this role at start when the store does not have it, and adds
+to a stored `builder` role the `builder-templates` and `builder-icons`
+policies that it lacks (see
+[The Builder role](builder/administration.md#the-builder-role)).
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1

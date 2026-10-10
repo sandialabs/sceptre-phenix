@@ -283,9 +283,8 @@ in schema version `v0`. It is documented, with every field, in
 The `minimega_node` schema contains references to the `interface` schema [described
 here](#interface-schema).
 
-`general.notes` holds up to 100 notes about the node, each from 1 to 4096
-characters. When an experiment is created, phēnix copies them into the node's
-labels as VM notes (see [Node Notes](configuration.md#node-notes)).
+`general.notes` holds up to 100 notes about the node, each 1 to 4096
+characters long (see [Node Notes](configuration.md#node-notes)).
 
 ```yaml
 minimega_node:

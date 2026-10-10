@@ -2,8 +2,8 @@
 
 This page shows how to draw and change a diagram: devices, switches and the
 connections between them, device settings, groups, notes, shapes, icons and
-lines, colors, line styles, custom icons, layouts and the scenarios. For the parts of the editor that these tasks use, see
-[The Editor](editor.md).
+lines, colors, line styles, custom icons, layouts and the scenarios. For the
+parts of the editor that these tasks use, see [The Editor](editor.md).
 
 The examples on this page use the Riverside Water draft of the
 [example lab](index.md#the-drafts-on-these-pages).
@@ -16,7 +16,7 @@ to the topology like this:
 | In the diagram | In the published topology |
 |---|---|
 | A device | A node in `spec.nodes`, with all its settings, its notes in `general.notes` |
-| A switch | A network. The network's name is the VLAN of every interface on it; the switch's notes stay in the diagram |
+| A switch | A network. The network's name is the VLAN of every interface on it. The switch's notes stay in the diagram |
 | A connection from a device to a switch | An interface of the device, whose `vlan` is the network's name |
 | A device from an included topology | Nothing: `includeTopologies` names that topology |
 | A note or a group | Nothing: notes and groups only help people read the diagram |
@@ -38,23 +38,24 @@ network:
       gateway: 10.10.20.1
 ```
 
-A connection always joins a device to a switch. Devices never connect to
-each other directly: drawing a connection from one device to another adds a
-switch between them (see [Connecting interfaces](#connecting-interfaces)).
+A connection always joins a device to a switch. Devices never connect
+directly to each other. When you draw a connection from one device to
+another, Builder adds a switch between them (see
+[Connecting interfaces](#connecting-interfaces)).
 
 ## Adding devices
 
 **Add nodes**, at the top of the left column, lists what you can add. To add
 a device:
 
-- Select the item. The device appears in free space on the canvas, and is
-  selected, so the Inspector shows its fields.
+- Select the item. The device appears in free space on the canvas. Builder
+  selects it, so the Inspector shows its fields.
 - Or drag the item to where you want it on the canvas.
 - Or, in the command palette, choose **Add device**, then a template (see
   [Command palette](editor.md#command-palette)).
 
 **Device** adds a device with default settings. The **Device templates**
-fill in more. Every template library starts with the five built-in
+set more settings. Every template library starts with the five built-in
 templates of this table:
 
 | Item | Hostname | Type | OS type | Image | Description (its tooltip) |
@@ -66,18 +67,14 @@ templates of this table:
 | **Firewall** | firewall | Firewall | vyos | `vyos.qc2` | Perimeter firewall |
 | **External device** | external | HIL (external) | None | None | Hardware in the loop device |
 
-A template's description is its tooltip in **Add nodes** only: the device it
-makes has no description. You can change and delete the built-in templates,
-restore a deleted one, and make templates of your own, in a diagram or in
-your library (see [Node Templates](templates.md)). The templates of **Add
-nodes** are in groups: **This diagram**, **My library**, **Shared with me**
-and **Server-wide**.
+You can change and delete the built-in templates, and restore a deleted
+one. You can also make your own templates, in a diagram or in your library
+(see [Node Templates](templates.md) and
+[Templates in Add nodes](templates.md#templates-in-add-nodes)).
 
 When the hostname is taken, the new device gets a number, for example
 server-2. A new device has no interfaces, so the checks warn "device
-"workstation" has no interfaces" until you add one. A device made from a
-template keeps no link to it: changing or deleting the template later
-changes no device.
+"workstation" has no interfaces" until you add one.
 
 For example, to add an engineering workstation to Riverside Water:
 
@@ -116,7 +113,7 @@ A switch is one network. To add a network:
 2. In the Inspector, set **Name** to the network's name, for example
    `SCADA`, and select **Apply**.
 
-Renaming a network changes the VLAN of every interface on it.
+When you rename a network, the VLAN of every interface on it changes.
 
 The Inspector of a switch, for example "Network CORP", has these fields:
 
@@ -146,14 +143,14 @@ where ntp-01 and dns-01 are.
 **Networks**, at the bottom of the Outline, lists every network with its VLAN
 alias (or "no alias") and the number of devices on it. Each network's
 remove button (**Remove network** and the name) removes the network, its
-switches and their connections. Deleting a switch on the canvas keeps its network in this list.
-A network can have more than one switch on the canvas: a pasted switch, for
-example, is another switch of the same network.
+switches and their connections. When you delete a switch on the canvas, its
+network stays in this list. A network can have more than one switch on the
+canvas. For example, a pasted switch is another switch of the same network.
 
 ## Connecting interfaces
 
-A connection puts a device's interface on a network. There are three ways to
-make one. Each example connects ws-03 (see
+A connection puts a device's interface on a network. You can make one in
+three ways. Each example connects ws-03 (see
 [Adding devices](#adding-devices)) to the CORP network.
 
 ### Drag on the canvas
@@ -164,12 +161,12 @@ make one. Each example connects ws-03 (see
 2. Drag from the **+** handle, or from an unconnected connection point, to
    the CORP switch.
 
-Dragging from **+** adds a new interface to the device. The new connection
+A drag from **+** adds a new interface to the device. The new connection
 appears on the canvas.
 
-Dragging from one device to another adds a new switch between them, with a
+A drag from one device to another adds a new switch between them, with a
 new network named EXP, and connects both devices to it. Rename the network
-in the switch's Inspector. Two switches cannot be connected, because each
+in the switch's Inspector. You cannot connect two switches, because each
 switch is one network.
 
 ### Add a connection without dragging
@@ -189,15 +186,18 @@ The dialog before step 4:
 
 ![The Add a connection dialog with Device ws-03, Interface Add a new interface and Switch CORP (CORP), and the Cancel and Connect buttons.](../images/builder/connect-dialog.png){ width="496" }
 
-The dialog closes and focus returns to **Add connection**. With a field
-empty, **Connect** says which one and moves focus to it, and a connection
-Builder cannot make says why; the dialog stays open. **Cancel** or
-<kbd>Esc</kbd> closes it without a change.
+The dialog closes and focus goes back to **Add connection**. The dialog
+stays open in these cases:
+
+- A field is empty. **Connect** says which one and moves focus to it.
+- Builder cannot make the connection. The dialog says why.
+
+**Cancel** or <kbd>Esc</kbd> closes the dialog without a change.
 
 ### Type the VLAN in the Inspector
 
-Typing a network's name in an interface's **VLAN** field connects the
-interface to that network's switch when you apply it. This is how the
+When you type a network's name in an interface's **VLAN** field and apply
+it, Builder connects the interface to that network's switch. This is how the
 [quick start](index.md#quick-start) connects ws-03:
 
 1. Select ws-03.
@@ -215,9 +215,10 @@ The interface before step 5:
 
 ![Interface eth0 of the new workstation in the Inspector: Name eth0, VLAN CORP, Address 10.10.20.103, Gateway 10.10.20.1 and Mask 24, each marked as changed, and Unapplied changes with Apply and Cancel at the bottom.](../images/builder/quickstart-ws03.png){ width="354" }
 
-The VLAN matches a network's name in any case. Typing another network's name
-moves the connection to that network. A VLAN that names no network of the
-diagram is kept, but the interface stays unconnected.
+The VLAN matches a network's name in any letter case. When you type the name
+of another network, the connection moves to that network. When the VLAN
+names no network of the diagram, Builder keeps it, but the interface stays
+unconnected.
 
 ### Disconnecting
 
@@ -227,10 +228,10 @@ diagram is kept, but the interface stays unconnected.
   <kbd>Delete</kbd> on Windows and Linux.
 
 The interface stays, with no VLAN. An interface with no VLAN blocks
-publishing (see [What blocks publishing](publishing.md#what-blocks-publishing)),
-so connect it again, type a VLAN for it, or remove it: the trash button next
-to it in **Connection points** (**Remove connection point** and its name)
-removes the interface. **Add connection point** adds an interface without a
+publishing (see [What blocks publishing](publishing.md#what-blocks-publishing)).
+Connect it again, type a VLAN for it, or remove it. To remove it, select
+the trash button next to it in **Connection points** (**Remove connection
+point** and its name). **Add connection point** adds an interface without a
 connection. The buttons under **Connection points** take effect at once,
 without **Apply**.
 
@@ -249,18 +250,18 @@ An interface has an **Interface kind**:
   A new interface starts as this kind.
 - **Serial**: a serial link.
 
-Changing the kind asks "Switch Interface kind to Static or OSPF?" (or the
-kind you chose), because "Switching clears the Interface kind values entered
-so far." **Switch and clear** changes the kind and empties that interface's
-fields, **Name** and **VLAN** included. **Keep current value** leaves it as
-it was. So set the kind first, then fill in the other fields.
+When you change the kind, Builder asks "Switch Interface kind to Static or
+OSPF?" (or the kind you chose). The dialog says "Switching clears the
+Interface kind values entered so far." **Switch and clear** changes the kind
+and empties the fields of that interface, **Name** and **VLAN** included.
+**Keep current value** does not change the interface. Set the kind first,
+then enter the other fields.
 
 ### Duplicating a device
 
-**Duplicate** pastes a copy of the selected nodes next to them. Press
-<kbd>⌘</kbd>+<kbd>D</kbd> on macOS or <kbd>Ctrl</kbd>+<kbd>D</kbd> on
-Windows and Linux. The copy keeps every setting, addresses included, but not
-its connections.
+**Duplicate** pastes a copy of the selected nodes next to them (see
+[Copy, paste, duplicate and delete](#copy-paste-duplicate-and-delete)). The
+copy keeps every setting, addresses included, but not its connections.
 
 For example, to add a second historian:
 
@@ -270,8 +271,8 @@ For example, to add a second historian:
    that is not connected.
 3. The header now says **1 warning**: eth0 of historian-01-2 has no VLAN
    (see [Checks and warnings](editor.md#checks-and-warnings)). Both
-   historians use 10.10.30.20, which becomes a warning too once the copy's
-   eth0 is on the network of historian-01.
+   historians use 10.10.30.20. This also becomes a warning when the eth0 of
+   the copy is on the network of historian-01.
 
 The Riverside Water expansion draft is a copy of Riverside Water after
 step 2 (see [The drafts on these pages](index.md#the-drafts-on-these-pages)).
@@ -281,8 +282,8 @@ warning, give the copy its own hostname and address, and connect it: see
 
 ### Drive images
 
-Each drive has an **Image**. When your role can list the server's disk
-images, the field suggests them, and a drive image that the server does not
+Each drive has an **Image**. When your role can list the disk images of the
+server, the field suggests them, and a drive image that the server does not
 have is a warning. The checks do not look at images when the server lists
 none (see [Checks and warnings](editor.md#checks-and-warnings)).
 
@@ -295,8 +296,8 @@ none (see [Checks and warnings](editor.md#checks-and-warnings)).
   **Add route** adds another.
 - ot-fw has **Ruleset 1: corp-to-ot**, with **Default** `drop` and **Rule 1:
   HTTPS to the historian**, which accepts `tcp` from `10.10.20.0/24` to
-  `10.10.30.20` port `443`. The ruleset is used by eth0, whose **Inbound
-  ruleset** is `corp-to-ot`.
+  `10.10.30.20` port `443`. eth0 uses the ruleset: its **Inbound ruleset**
+  is `corp-to-ot`.
 
 The `vrouter` app applies them when the experiment starts (see
 [vrouter App](../apps.md#vrouter-app)).
@@ -319,10 +320,10 @@ To add a label:
 2. Under **Labels**, select **Add label**.
 3. Enter **Name** `team` and **Value** `blue`, and select **Apply**.
 
-**Add annotation** works the same way. An annotation's value is read as
-YAML: `true`, `false` and numbers become those values, and `["8080:80"]` is
-a list. Apps read annotations to configure a node; see
-[Apps](../apps.md).
+**Add annotation** works the same way. Builder reads the value of an
+annotation as YAML: `true`, `false` and numbers become those values, and
+`["8080:80"]` is a list. Apps read annotations to configure a node (see
+[Apps](../apps.md)).
 
 ## Notes
 
@@ -338,16 +339,16 @@ The Outline names a note after its first line. A note also has a **Color**
 
 ### Notes on devices and switches
 
-A device or a switch can carry notes of its own, which the canvas shows in a
-card below the node: one line for each note, each cut off after three lines,
-and at most five notes, then "+N more". The card moves and is selected with
-the node. The node's info tooltip lists the notes, and screen readers read
-them as part of the node's description.
+A device or a switch can have notes of its own. The canvas shows them in a
+card below the node: one line for each note, each cut after three lines,
+and at most five notes, then "+N more". The card moves with the node, and
+Builder selects it with the node. The node's info tooltip lists the notes,
+and screen readers read them as part of the node's description.
 
 1. Select the device or the switch.
 2. In the Inspector, under **Notes** (for a device, in the **General**
    section), select **Add note** and type the note. Each note has a box of
-   its own, and **Remove** takes one away.
+   its own, and **Remove** removes one.
 3. Select **Apply**.
 
 For example, the pump station of
@@ -356,16 +357,19 @@ two notes to rtu-01 and one to the STATION switch:
 
 ![Part of the pump station diagram: below rtu-01, a card with the notes Modbus TCP on port 502 and Firmware 2.4: update it before the exercise; below the STATION switch, a card with the note Field network, no route to the internet.](../images/builder/node-notes.png)
 
-A device's notes are its node's `general.notes`: publishing writes them to
+A device's notes are its node's `general.notes`. Publishing writes them to
 the topology, and a new experiment copies them to the VM's notes (see
-[Publishing](publishing.md)). A switch is not part of the topology, so its
-notes stay in the diagram. A device or a switch holds at most 100 notes of at
-most 4096 bytes each. **Show node notes** in the Settings, or **Show or hide
-node notes** in the command palette, hides the cards (see
-[Settings](editor.md#settings)). While they show, a layout leaves room for
-them, a group holds the cards of its members (when you group nodes, move one
-into a group or resize a group), and **Fit diagram to view** keeps them in
-view.
+[Node notes](../configuration.md#node-notes)). A switch is not part of the
+topology, so its notes stay in the diagram. A device or a switch holds at
+most 100 notes. Each note of a device holds at most 4096 characters, and
+each note of a switch at most 4096 bytes. **Show node notes** in the
+Settings, or **Show or hide node notes** in the command palette, hides the
+cards (see [Settings](editor.md#settings)). While the cards show:
+
+- A layout leaves room for them.
+- A group holds the cards of its members (when you group nodes, move one
+  into a group or resize a group).
+- **Fit diagram to view** keeps them in view.
 
 ## Groups
 
@@ -395,45 +399,46 @@ taken. Select the group to change its fields in the Inspector, then select
 - **Icon size**: the size of the icon beside the title (see
   [Icon size](#icon-size)).
 
-To take a group apart, select it and select **Ungroup**
-(<kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>G</kbd> or
+To remove a group and keep its nodes, select the group and select
+**Ungroup** (<kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>G</kbd> or
 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>). Its nodes stay where they are.
 
-**Group** under **Add nodes** adds an empty group. Dragging a node onto a
-group does not put it in the group. Select **Move to group** in the toolbar
-instead, or **Move to a group…** in the
+**Group** under **Add nodes** adds an empty group. When you drag a node onto
+a group, the node does not go into the group. Select **Move to group** in
+the toolbar, or **Move to a group…** in the
 [command palette](editor.md#command-palette). The **Move to a group**
 dialog opens on the selected node, and **Group** shows the group it is in:
 
-1. In **Node**, choose the node, for example `web-01 (device)`. Nodes that
-   would read alike, such as two lines without a label, add where they
-   are, for example `Line (line) at 320, 400`.
-2. In **Group**, choose the group, or **No group** to take the node out of
+1. In **Node**, choose the node, for example `web-01 (device)`. When two
+   nodes have the same name, such as two lines without a label, the list
+   adds their position, for example `Line (line) at 320, 400`.
+2. In **Group**, choose the group, or **No group** to remove the node from
    its group.
-3. Select **Move**. The dialog closes and focus returns to **Move to
+3. Select **Move**. The dialog closes and focus goes back to **Move to
    group**.
 
 To resize a selected group, drag the handles on its corners and sides, or
 press <kbd>⌥</kbd>+<kbd>⇧</kbd> (<kbd>Alt</kbd>+<kbd>Shift</kbd>) with an
-arrow key. A group never gets smaller than its members need, with the notes
-cards below them while they show. Notes resize the same way.
+arrow key. A group is never smaller than its members need, with the notes
+cards below them while they show. You resize notes the same way.
 
 ## Shapes, icons and lines
 
-Rectangles, circles, icons and lines are drawings: they help people read the
+Rectangles, circles, icons and lines are drawings. They help people read the
 diagram, and publishing ignores them, as it ignores notes and groups. They
 take no connections. Add one under **Add nodes** (**Rectangle**,
-**Circle**, **Icon** or **Line**) or with the command palette's **Add
-rectangle**, **Add circle**, **Add icon** and **Add line**. Like any node,
-a drawing can be moved, put in a group, copied, duplicated and deleted, and
-the layouts leave it where it is: one in a group moves with its group, and
-the group grows to hold it when the layout makes it smaller.
+**Circle**, **Icon** or **Line**), or with **Add rectangle**, **Add
+circle**, **Add icon** and **Add line** in the command palette. As with any
+node, you can move a drawing, put it in a group, copy, duplicate and delete
+it. The layouts do not move a drawing. A drawing in a group moves with its
+group, and the group grows to hold it when the layout makes the group
+smaller.
 
 ![The pump station with drawings: a dashed blue rectangle labelled Pump house behind eng-ws-01 and rtu-01, a green circle labelled Reservoir, the built-in external icon labelled Cell tower, a dashed amber line labelled LTE uplink with an arrowhead at each end between station-rtr and the cell tower, and a gray line labelled Fiber to the reservoir that runs down from the reservoir, bends and ends in an arrowhead beside the WAN switch.](../images/builder/drawings.png)
 
 Select a drawing to change it in the Inspector, then select **Apply**:
 
-- A **rectangle** or a **circle** (**Shape**) fills its box; a circle in a
+- A **rectangle** or a **circle** (**Shape**) fills its box. A circle in a
   box that is not square is an ellipse. It has a **Label** at its center, a
   **Fill Color** (see-through without one), an **Outline Color**, a **Border
   pattern** (**Solid**, the default, **Dashed**, **Dotted** or **Double**),
@@ -457,16 +462,24 @@ corners and sides, or press <kbd>⌥</kbd>+<kbd>⇧</kbd>
 (<kbd>Alt</kbd>+<kbd>Shift</kbd>) with an arrow key. A selected line shows
 a handle on each point: a circle on each end and a square on each bend.
 Drag a handle to move its point, and double-click the line to add a bend
-there. After you click a handle, the arrow keys move its point by a grid
-step (by a pixel with <kbd>⇧</kbd>), <kbd>Delete</kbd> or
-<kbd>Backspace</kbd> removes it, and <kbd>Esc</kbd> returns to the line; a
-line keeps at least two points. Each of these is one step for **Undo**.
+there. After you click a handle:
 
-Without a mouse, edit the points in the Inspector's **Points**: change a
-point's **X** and **Y**, **Add point** adds a new end, **Remove point N**
-removes a point, and **Insert point after point N** adds a bend halfway to
-the next point. Select **Apply** to make the changes, as one step for
-**Undo**.
+- The arrow keys move its point by a grid step (by a pixel with
+  <kbd>⇧</kbd>).
+- <kbd>Delete</kbd> or <kbd>Backspace</kbd> removes the point. A line keeps
+  at least two points.
+- <kbd>Esc</kbd> goes back to the line.
+
+Each of these is one step for **Undo**.
+
+Without a mouse, edit the points in **Points** in the Inspector:
+
+- Change the **X** and **Y** of a point.
+- **Add point** adds a new end.
+- **Remove point N** removes a point.
+- **Insert point after point N** adds a bend halfway to the next point.
+
+Select **Apply** to make the changes, as one step for **Undo**.
 
 ## Auto-group
 
@@ -480,31 +493,30 @@ the next point. Select **Apply** to make the changes, as one step for
   See [Grouping by a name pattern](#grouping-by-a-name-pattern).
 
 Auto-group groups only the devices and switches that are in no group yet,
-and it leaves existing groups as they are. When nodes are selected, it
+and it does not change the groups that exist. When nodes are selected, it
 groups only those. A group needs at least two members. After grouping, it
-lays the diagram out with the draft's layout, or with the Settings layout on
-a draft without one (see [Layouts](#layouts)), so the groups do not overlap.
+arranges the diagram with the draft's layout (see [Layouts](#layouts)), so
+the groups do not overlap.
 
 For example, **By network** on the imported riverside-water makes the groups
 CORP, DMZ, INTERNET and OT, as in the Riverside Water draft. **By name** on
 Metro Campus makes six groups: app, db, dc, dist, web and ws. When there is
 nothing left to group, Auto-group changes nothing.
 
-<kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>G</kbd> on macOS, or
-<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> on Windows and Linux, groups by
-network without opening the menu. The command palette has **Auto-group by
-network**, **Auto-group by name** and **Auto-group by name pattern…**.
+The command palette has **Auto-group by network**, **Auto-group by name**
+and **Auto-group by name pattern…**. Auto-group by network also has a key
+(see [Keyboard shortcuts](editor.md#keyboard-shortcuts)).
 
 **Undo** removes the groups again.
 
 ### Grouping by a name pattern
 
 **By name pattern…** opens the **Auto-group by name pattern** dialog. Type a
-JavaScript regular expression in **Name pattern**, and select **Group**. The
-pattern is matched against each name, ignoring case: a device's hostname and
-a switch's name. Names with the same matched text go in one group, named
-after that text. When the pattern has parentheses, the text of the first
-pair is used.
+JavaScript regular expression in **Name pattern**, and select **Group**.
+Builder matches the pattern against each name, ignoring case: a device's
+hostname and a switch's name. Names with the same matched text go in one
+group, named after that text. When the pattern has parentheses, Builder
+uses the text of the first pair.
 
 For example:
 
@@ -527,12 +539,13 @@ Limits:
 
 When nothing can be grouped, the dialog says why, for example "Nothing to
 group: the pattern matches no ungrouped device or switch." The dialog offers
-the pattern you used last. The browser keeps it until you log out; it is not
-saved in the diagram or sent to the server. The command has no default key.
+the pattern you used last. The browser keeps it until you log out. Builder
+does not save it in the diagram or send it to the server. The command has no
+default key.
 
-The pattern runs in a separate script that phenix serves. When that script
-cannot start, the dialog says "The pattern could not be checked. Reload the
-page to try again."
+When the pattern cannot run, the dialog says "The pattern could not be
+checked. Reload the page to try again." (see
+[Troubleshooting](administration.md#troubleshooting)).
 
 ## Colors
 
@@ -561,34 +574,31 @@ only: no color names, no short form and no transparency. Anything else shows
 "Outline Color must be a hex color, such as #2f6fbf" (or "Fill Color …") and
 is not applied. On a device they take effect at once, without **Apply**. On
 a switch they wait for **Apply**, and they belong to that switch: two
-switches of one network can differ.
+switches of one network can be different.
 
-How the canvas draws them:
-
-- On a fill, the text and the icon are black or white, whichever reads
-  better (a contrast of at least 4.5 to 1).
-- An outline close to the canvas color gets a thin ring, so the node stays
-  visible in both themes.
-- A selected node shows the selection's border in place of its outline.
-- In a Windows contrast theme (forced colors), the system's colors are
-  drawn, not the chosen ones.
+On a fill, the text and the icon are black or white, for a contrast of at
+least 4.5 to 1. An outline near the canvas color gets a thin ring, so the
+node stays visible in both themes. A selected node shows the selection
+border in place of its outline. In a Windows contrast theme (forced colors),
+Builder shows the system colors, not the chosen ones.
 
 A new network gets the suggested color that the fewest networks use. The
 suggested colors keep their contrast in the light and the dark theme.
 
 ## Line styles
 
-A connection is drawn with a line pattern. **Line style** sets it, on a
+Builder draws a connection with a line pattern. **Line style** sets it, on a
 network (in the switch's Inspector, for all its connections) or on one
 connection (in place of its network's):
 
-- **Auto**: the pattern Builder picks from the network's place in the
-  diagram, so that networks differ without color. The choice names that
+- **Auto**: the pattern that Builder selects from the network's place in
+  the diagram, so that networks are different without color. The choice
+  names that
   pattern, for example "Auto (Solid)". On a connection, **Auto** follows
   its network.
 - **Solid**, **Dashed**, **Dotted** or **Dash-dot**.
 
-A chosen pattern may repeat on several networks. The connection's label, the
+A chosen pattern can repeat on several networks. The connection's label, the
 switch it joins and its name for screen readers still name its network.
 **Line style** waits for **Apply**.
 
@@ -600,32 +610,29 @@ the size for the whole diagram under **Icon size** in the Inspector's
 **Diagram** section (select an empty part of the canvas). It takes effect at
 once, as one step of **Undo**. A new diagram draws **Small** icons.
 
-A device, a switch or a group can have a size of its own: **Icon size** in
+A device, a switch or a group can have a size of its own. **Icon size** in
 its Inspector offers **Diagram default**, which names the diagram's size, for
 example "Diagram default (Large)", and the three sizes. On a device it takes
-effect at once, as a device's icon and colors do; on a switch or a group it
+effect at once, as a device's icon and colors do. On a switch or a group it
 waits for **Apply**.
 
-Nodes keep their size on the canvas. A **Small** icon sits before the node's
-name. A **Medium** or **Large** icon stands left of the node's lines, which
-make a column beside it: centered on a device or a switch, and at the top
-left of a group, beside its title and description. Text that no longer fits
-ends with an ellipsis, as before; the Inspector and the node's tooltip show
-it whole. PNG and SVG downloads draw the icons at their sizes. Icon sizes
-stay in the Builder document: publishing writes none of them.
+Nodes keep their size on the canvas. A **Small** icon is before the node's
+name. A **Medium** or **Large** icon is left of the node's lines, which
+make a column beside it. The icon is centered on a device or a switch, and
+at the top left of a group, beside its title and description. Text
+that no longer fits, such as the network name on a switch's second line,
+ends with an ellipsis, and the Inspector and the node's tooltip show all of
+it. PNG and SVG downloads draw the icons at their sizes. Icon sizes stay in
+the Builder document: publishing writes none of them.
 
 ![Three devices of the pump station: eng-ws-01 with a Small icon before its name, rtu-01 with a Medium icon and station-rtr with a Large icon, each left of the node's lines, which end with an ellipsis where they no longer fit.](../images/builder/icon-sizes.png)
-
-At **Medium** and **Large**, a switch's second line, which names its network
-(for example "Network CORP, VLAN alias 120"), shows fewer characters than at
-**Small** before its ellipsis, because the icon takes part of its width. The
-network's name stays in the switch's label, in its tooltip and in the
-Inspector.
 
 ## Custom icons
 
 A device, a group or an icon can show an image of your own in place of its
-built-in icon. To choose one:
+built-in icon. Each user can upload at most 64 icons and 1 MiB of them, and
+the server holds at most 2,000 icons. Use the editor or the REST API to
+manage the icon library. To choose an icon:
 
 1. Select the device, the group or the icon.
 2. Under **Custom icon** in the Inspector, select **Choose…**. The **Custom
@@ -638,24 +645,24 @@ device, the change takes effect at once, without **Apply**, as one step of
 **Undo**. On a group, it waits for **Apply**. A switch and a note have no
 custom icon.
 
-The phenix server keeps one icon library, which every user of the server
-shares. A node names its custom icon, and the node shows the server's icon
+The phenix server keeps one icon library, which all users of the server
+share. A node names its custom icon, and the node shows the server's icon
 of that name. When the server has no icon of that name (it was deleted, or
 the diagram came from another server), the field says "(not found: the
-built-in icon is shown)" after the name, and the node shows its built-in
-icon until an icon of that name is uploaded.
+built-in icon is shown)" after the name. The node then shows its built-in
+icon until someone uploads an icon of that name.
 
 The dialog lists:
 
 - **In this diagram**: copies of icons the diagram carries, from a file it
   was uploaded from (see [The diagram and its icons](#the-diagram-and-its-icons)).
-  Each has **Use**, and **Add to server** when the server lacks it; "On the
-  server" says the server has it as it is.
+  Each has **Use**, and **Add to server** when the server does not have it.
+  "On the server" says that the server has the same icon.
 - **Server icons**: every icon on the server, with who uploaded it, its
   size and its other names, and how many of them you uploaded, for example
   "You uploaded 2 of 64 icons, 3.0 KiB of 1 MiB." **Filter icons** narrows
   the list by name, other name or uploader. Each icon has **Use**, and
-  **Rename** and **Delete** when you may change it.
+  **Rename** and **Delete** when you can change it.
 
 ![The Custom icons dialog: its description, Upload icon…, and Server icons (3) with You uploaded 3 of 64 icons, 1.5 KiB of 1 MiB, the Filter icons field, the row with Select all, 0 of 3 selected and Delete selected, and the icons plc, pump and valve, each with a checkbox, uploaded by global-admin, with its size and the Use, Rename and Delete buttons; and Close.](../images/builder/custom-icons-dialog.png){ width="624" }
 
@@ -663,65 +670,78 @@ The dialog lists:
 
 **Upload icon…** takes a PNG, JPEG, GIF, WebP or SVG file of at most 5 MiB.
 The browser converts it to a PNG of at most 96 by 96 pixels, in the
-picture's own proportions. A small picture is not enlarged; an SVG is drawn
-as large as an icon may be. The dialog then asks for the icon's name,
-proposed from the file's name, and **Add icon** uploads it to the server.
+picture's own proportions. The browser does not enlarge a small picture,
+and draws an SVG as large as an icon can be. The dialog then asks for the
+icon's name, proposed from the file's name, and **Add icon** uploads it to
+the server.
 
-A name is 1 to 64 letters, digits, `_`, `@`, `.` or `-`, and is unique on
-the server, ignoring case: the first upload of a name keeps it. A name the
-server already has for another image is refused with who uploaded that icon,
-for example "icon name "plc" is taken by an icon alice uploaded; choose
-another name". Uploading the same image under its own name again says "The
-server already has this icon as" and its name.
+A name is 1 to 64 letters, digits, `_`, `@`, `.` or `-`. It is unique on
+the server, ignoring case, and the first upload of a name keeps it. The
+server refuses a name that it already has for another image, and names who
+uploaded that icon, for example "icon name "plc" is taken by an icon alice
+uploaded; choose another name". When you upload the same image under its own
+name again, the dialog says "The server already has this icon as" and its
+name.
 
-An SVG is drawn on its own: nothing it refers to outside its own file
-(style sheets, images, fonts) is loaded, so those parts are missing from the
-icon. When nothing of it can be drawn, or (in Chrome) when it embeds HTML,
-the dialog says "This image could not be converted. Save it as a PNG and
-upload it again." Browsers differ on such files: save the picture as a PNG.
+An SVG is drawn alone: Builder does not load what it refers to outside its
+own file (style sheets, images, fonts), so those parts are missing from the
+icon. When the SVG cannot be converted, the dialog says "This image could
+not be converted. Save it as a PNG and upload it again." Then save the
+picture as a PNG.
 
-An icon is drawn at the node's [icon size](#icon-size) on the canvas (16,
-24 or 32 pixels; 14 in the Outline), in its own colors, the same in the light
-and the dark theme. Choose one that reads on both, or give the node a **Fill
-Color**.
+On the canvas, an icon is drawn at the node's [icon size](#icon-size) (16,
+24 or 32 pixels, and 14 in the Outline). It keeps its own colors, the same
+in the light and the dark theme. Choose an icon that is clear on both, or
+give the node a **Fill Color**.
 
 ### The diagram and its icons
 
-A draft names its icons and carries no image of them, so a draft saved on
-the server stays small. A download as Builder JSON or YAML carries a copy
-of each icon the diagram names, at most 50, so the file shows its icons on
-another phenix server; PNG and SVG downloads draw them. A name the server
-has no icon of is left out of the file, and the download says so. The
-**Download** that logging out offers for changes the server does not have
-yet carries the icons too.
+A draft names its icons. Except in the cases that this section gives below,
+it holds no image of them, so a draft saved on the server stays small. A
+download as Builder JSON or YAML holds a copy of each icon that the diagram
+names, at most 50, so the file shows its icons on another phenix server. PNG
+and SVG downloads draw them. When the server has no icon of a name, the file
+does not hold it, and the download says so. The **Download** that logging
+out offers, for changes that the server does not have yet, also holds the
+icons.
 
-Uploading a file that carries icons, or editing as a draft the diagram of a
-topology read from its Builder file, adds each one the server lacks to the
-server's library, as uploaded by you, and the draft names it. A copy the
-server already has under its name, with the same image, is dropped. The
-draft keeps its own copy of an icon when the server has another image under
-that name, or when the server could not take it (your share of the library
-is full, for example), and the Builder says so; the copy is shown in place of
-the server's icon. **Add to server** in the dialog adds a kept copy later.
-An icon that no node or template of the diagram uses any more leaves the
-diagram with the edit that removed its last use; **Undo** brings it back.
+Some actions add icons from a file to the server's library:
 
-Copy and paste carry the copies of the nodes' icons the diagram carries,
-also into another diagram in the same browser tab.
+- Uploading a file that holds icons.
+- **Edit as a draft** on the diagram of a topology read from its Builder
+  file.
+
+Builder adds each icon that the server does not have, as uploaded by you,
+and the draft names it. When the server already has the same image under
+that name, Builder discards the copy. The draft keeps its own copy of an
+icon, and Builder says so, in these cases:
+
+- The server has another image under that name.
+- The server could not take the icon (your share of the library is full,
+  for example).
+
+The draft shows its copy in place of the server's icon. **Add to server** in
+the dialog adds a kept copy later. When no node or template of the diagram
+uses an icon any more, the icon leaves the diagram with the edit that
+removed its last use. **Undo** brings it back.
+
+Copy and paste include the copies of the nodes' icons that the diagram
+holds, also into another diagram in the same browser tab.
 
 ### Renaming and deleting icons
 
-The user who uploaded an icon can rename and delete it. A role with the
-`builder-icons` permissions can rename (`update`) and delete (`delete`)
-every user's icons (see
+The user who uploaded an icon can rename and delete it. A role with
+`builder-icons` `update` and `delete` can rename and delete the icons of
+all users (see
 [Icons of other users](administration.md#icons-of-other-users)). An icon
-the server added from a template file is listed as from "Server": no user
+that the server added from a template file shows as from "Server". No user
 uploaded it, so only those permissions rename or delete it (see
 [Template files on the server](administration.md#template-files-on-the-server)).
 
-**Rename** asks for the new name. The old name keeps naming the icon, so
-diagrams and templates that use it keep showing it: "Renamed OLD to NEW. OLD
-keeps working as another name of it." The icon lists its other names.
+**Rename** asks for the new name. The old name continues to name the icon,
+so diagrams and templates that use it continue to show it: "Renamed OLD to
+NEW. OLD keeps working as another name of it." The icon lists its other
+names.
 
 **Delete** asks "Delete icon?" and says "Delete NAME from the server?
 Diagrams and templates that use it, by any of its names, will show their
@@ -730,44 +750,40 @@ changes no diagram: its nodes keep the name.
 
 ### Several icons at once
 
-In the Custom icons dialog, a copy the diagram carries that the server
-lacks, and a server icon you may delete, has a checkbox. Above each list, a
-row has **Select all**, how many are selected ("2 of 5 selected"), and its
-action:
+In the Custom icons dialog, these icons have a checkbox: a copy in the
+diagram that the server does not have, and a server icon that you can
+delete. Above each list, a row has **Select all**, how many are selected
+("2 of 5 selected"), and its action:
 
 - **Add selected to server**, above **In this diagram**, adds each selected
   copy to the server under its name: "Added 2 icons to the server. The
-  diagram drops its copies with its next edit." A copy someone added to the
-  server since the dialog opened is not counted, and is named instead: "The
-  server already has plc."
+  diagram drops its copies with its next edit." When someone added a copy to
+  the server after the dialog opened, the count does not include it, and the
+  dialog names it: "The server already has plc."
 - **Delete selected**, above **Server icons**, asks once, for example
   "Delete 2 icons?" and "Delete plc and pump from the server? Diagrams and
   templates that use them, by any of their names, will show their built-in
-  icon instead." Select **Delete 2 icons**. One icon alone is asked about as
-  its own **Delete** asks.
+  icon instead." Select **Delete 2 icons**. For one icon, the question is
+  the same as for its own **Delete**.
 
-Here the pump station's rtu-01 and eng-ws-01 use the icons gauge and tank,
-which the diagram carries and the server lacks, and the two copies and the
-server icons plc and pump are selected:
+In this example, rtu-01 and eng-ws-01 of the pump station use the icons
+gauge and tank. The diagram holds them, and the server does not. The two
+copies and the server icons plc and pump are selected:
 
 ![The Custom icons dialog with icons selected: under In this diagram (2), the row with Select all ticked, 2 of 2 selected and Add selected to server, and the copies gauge and tank, both ticked, each with Use and Add to server; under Server icons (3), the row with Select all in a mixed state, 2 of 3 selected and Delete selected, and plc and pump ticked and valve not, each with Use, Rename and Delete; and Close.](../images/builder/icons-selected.png){ width="624" }
 
-The rows of a list are one stop of the Tab key, and take the keys of the
-drafts page (see
-[Selecting with the keyboard](drafts.md#selecting-with-the-keyboard)):
-arrow keys, **Space**, **Shift** for a range, <kbd>⌘</kbd>+<kbd>A</kbd>
-(<kbd>Ctrl</kbd>+<kbd>A</kbd>), and **Delete** on the server icons.
-**Escape** clears the selection, and with nothing selected closes the
-dialog. A checkbox pressed with **Shift** selects or clears the range, as
-on the drafts page. When some icons could not be added or deleted, a
-summary under the row lists each with the reason. When your session ends,
-or the server cannot be reached, Builder stops, and lists the rest as "Not
-attempted." **Filter icons** narrows what the server icons' row selects:
-icons it hides are not selected.
+The rows of a list use the keys of the drafts page (see
+[Selecting with the keyboard](drafts.md#selecting-with-the-keyboard)), with
+these differences:
 
-Each user may upload at most 64 icons and 1 MiB of them, and the server
-holds at most 2,000 icons. Use the editor or the REST API to manage the
-icon library.
+- **Escape** with nothing selected closes the dialog.
+- **Delete** works only on the server icons.
+- **Filter icons** limits what **Select all** of the server icons selects.
+  Icons that the filter hides are not selected.
+
+When some icons could not be added or deleted, a summary under the row lists
+each with the reason. When your session ends, or the server cannot be
+reached, Builder stops and lists the rest as "Not attempted."
 
 ## Purdue layers
 
@@ -798,9 +814,9 @@ of them, and an import sets none.
 ## Layouts
 
 The layout menu in the toolbar arranges the whole diagram. It shows the
-layout that last arranged the draft, or **Default** when none has. An
-imported, uploaded or blank draft starts at **Default**: an import places
-its devices in rows on a grid, with the switches below them.
+layout that last arranged the draft, or **Default** when no layout ran. An
+imported, uploaded or blank draft starts at **Default**. An import puts its
+devices in rows on a grid, with the switches below them.
 
 ![The layout menu listing ELK layered, Layered by tier, Network cards, Dagre, Standard, Yifan Hu, Force and Radial, each with a one-line summary.](../images/builder/layout-menu.png){ width="287" }
 
@@ -811,7 +827,7 @@ its devices in rows on a grid, with the switches below them.
 | **Network cards** | A card per network, on a grid | A card per network, its devices in a column grouped by name with the switch at their head, and the cards on a grid. |
 | **Dagre** | Networks in layers, left to right | Each network's devices in a column beside their switch, and the networks in layers along the connections between them. |
 | **Standard** | Devices above switches, top to bottom | Every device in a row above the switches, from top to bottom. |
-| **Yifan Hu** | Spring model, fast on large diagrams | Graphviz sfdp, the spring model of Yifan Hu. A connection keeps its nodes near each other, and each node keeps a distance from the others. Busy parts of the diagram become clusters. |
+| **Yifan Hu** | Spring model, fast on large diagrams | Graphviz sfdp, the spring model of Yifan Hu. A connection keeps its nodes near each other, and each node keeps a distance from the others. Parts of the diagram with many connections become clusters. |
 | **Force** | Spring model, for small diagrams | A spring model like Yifan Hu. |
 | **Radial** | Rings around one node | Graphviz twopi. One node is at the center, and the other nodes are in rings by how many connections away they are. |
 
@@ -834,7 +850,7 @@ The same diagram and the same selection always get the same layout.
 cannot load, the page shows "Auto layout failed. The layout engine could not
 be loaded. Reload the page to try again."
 
-Layouts keep groups together: a group's members stay inside it, and no other
+Layouts keep groups together. A group's members stay inside it, and no other
 node goes in.
 
 For example, Metro Campus has 42 devices on 7 networks. Imported, it uses
@@ -848,15 +864,14 @@ Open the layout menu and choose **ELK layered**:
 
 The draft keeps the layout, and the menu then shows it. Right after a layout
 runs, the menu also offers **Restore previous layout** ("Put every node back
-where it was"), until you change the diagram some other way. **Undo** puts
-the nodes back too.
+where it was"), until you change the diagram in a different way. **Undo**
+also puts the nodes back.
 
-**Auto layout** in the command palette runs the draft's layout again, or the
-Settings layout on a draft at **Default**. Its keys are
-<kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>L</kbd> on macOS and
-<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> on Windows and Linux.
-**Default layout** in [Settings](editor.md#settings) chooses that layout.
-**ELK layered** is the default.
+**Auto layout** in the command palette, and its key (see
+[Keyboard shortcuts](editor.md#keyboard-shortcuts)), runs the draft's layout
+again. On a draft at **Default**, **Auto layout** and **Auto-group** use the
+**Default layout** of [Settings](editor.md#settings), **ELK layered** by
+default.
 
 Publishing, and a download as Topology YAML, ignore positions and layouts.
 
@@ -879,20 +894,21 @@ from a top node. Each other node goes below the node that leads to it from
 the top node. The top node is the first of these that the diagram has:
 
 1. The selected device or switch.
-2. An external device.
-3. A firewall.
-4. A router.
-5. The switch with the most connections.
+2. A firewall.
+3. A router.
+4. The switch with the most connections.
 
 The layout uses the icon or the node type to find a firewall or a router.
+An [external device](#external-devices) is a top node only when you select
+it, because hardware in the loop, such as a PLC, is at a low Purdue level.
 
 ## Arranging by hand
 
 - Drag a node, or several selected nodes. A drag puts them on a 16-pixel
   grid.
 - Press <kbd>⇧</kbd> (<kbd>Shift</kbd>) with an arrow key to move the
-  selected nodes 10 pixels. They do not snap to the grid, and stay where you
-  put them when the diagram opens again.
+  selected nodes 10 pixels. They do not snap to the grid, and they stay where
+  you put them when the diagram opens again.
 - Type a position: under **Position** in the Inspector, enter **X** and
   **Y**, then select **Move**. For example, move the note of Riverside Water
   to **X** `1248` and **Y** `880`.
@@ -902,49 +918,46 @@ A move by hand does not change the layout that the layout menu shows.
 ## Copy, paste, duplicate and delete
 
 **Copy**, **Paste** and **Delete** are in the toolbar, and **Duplicate** is
-in the command palette. Their keys are <kbd>⌘</kbd>+<kbd>C</kbd>,
-<kbd>⌘</kbd>+<kbd>V</kbd>, <kbd>⌫</kbd> and <kbd>⌘</kbd>+<kbd>D</kbd> on
-macOS, and <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>V</kbd>,
-<kbd>Delete</kbd> and <kbd>Ctrl</kbd>+<kbd>D</kbd> on Windows and Linux (see
+in the command palette. Each also has a key (see
 [Keyboard shortcuts](editor.md#keyboard-shortcuts)).
 
-**Copy** and **Paste** use Builder's own clipboard, not the system
-clipboard, so they work between drafts that you open one after the other in
-the same browser tab. **Duplicate** copies and pastes the selected nodes in
-one step, and leaves Builder's clipboard as it is. A connection is
-duplicated with both of its nodes, so with only connections selected,
+**Copy** and **Paste** use the Builder clipboard, not the system clipboard.
+They work between drafts that you open one after the other in the same
+browser tab. **Duplicate** copies and pastes the selected nodes in one step,
+and does not change the Builder clipboard. Builder duplicates a connection
+only with both of its nodes. With only connections selected,
 **Duplicate** does nothing and says "Select the nodes to duplicate; a
 connection is copied with both of its nodes."
 
-- A paste lands 40 pixels down and to the right of the original, and each
-  further paste 40 pixels further. The pasted nodes are selected.
+- A paste goes 40 pixels down and to the right of the original, and each
+  further paste 40 pixels further. Builder selects the pasted nodes.
 - A pasted device gets a free hostname, such as server-2, and keeps its
-  settings. Connections are pasted only when both ends are copied: copy a
-  device with its switch to keep the connection. A pasted device without
-  its connection has interfaces with no VLAN.
+  settings. Builder pastes a connection only when you copy both of its ends.
+  Copy a device with its switch to keep the connection. A pasted device
+  without its connection has interfaces with no VLAN.
 - Copying a group copies the nodes in it.
 
-**Delete** deletes the selected nodes and connections. Deleting a device
-deletes its connections too. Devices from included topologies and their
-connections cannot be deleted: Builder says, for example, "dns-01 comes
+**Delete** deletes the selected nodes and connections. When you delete a
+device, Builder also deletes its connections. You cannot delete devices from
+included topologies or their connections. Builder says, for example, "dns-01 comes
 from included topology corp-services, so it is read only here. Change it in
 corp-services."
 
 ## Undo and redo
 
-**Undo** and **Redo** in the toolbar step back and forward through your
-changes: <kbd>⌘</kbd>+<kbd>Z</kbd> and <kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>Z</kbd>
-on macOS, <kbd>Ctrl</kbd>+<kbd>Z</kbd> and
-<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> (or <kbd>Ctrl</kbd>+<kbd>Y</kbd>)
-on Windows and Linux. Each change is a snapshot of the draft on the server,
-so undo moves the draft itself back. To go back further than this tab's
-changes, use **Draft History** (see [Draft History](drafts.md#draft-history)).
+**Undo** and **Redo** in the toolbar, and their keys (see
+[Keyboard shortcuts](editor.md#keyboard-shortcuts)), go back and forward
+through your changes. Each change is a snapshot of the draft on the server,
+so **Undo** moves the draft itself back. **Undo** and **Redo** reach only
+the changes since you opened the draft in this tab, or since your last
+restore. To go back further, use **Draft History** (see
+[Draft History](drafts.md#draft-history)).
 
 ## Scenarios
 
-A diagram lists the Scenario configs it is used with, which say which apps
-run on which devices: up to 20, by name. The diagram holds only their names;
-the scenarios themselves are configs on the server. Publishing adds the
+A diagram lists the Scenario configs it is used with, up to 20, by name. A
+scenario says which apps run on which devices. The diagram holds only their
+names. The scenarios are configs on the server. Publishing adds the
 topology to each one's `topology` annotation, and an experiment published
 with the topology uses one of them (see
 [Scenarios](publishing.md#scenarios)).
@@ -968,27 +981,29 @@ with each app and its hosts under **Apps and their hosts**: vrouter on
 edge-rtr, and ntp on ntp-01, ws-01, ws-02, hmi-01 and historian-01 (see
 [With nothing selected](editor.md#with-nothing-selected)).
 
-To add a scenario you have as a file, choose it in **Upload a scenario
+To add a scenario that you have as a file, choose it in **Upload a scenario
 file**: a `phenix.sandia.gov/v2` Scenario config in JSON or YAML, up to
-5 MiB. The dialog proposes the file's `metadata.name` as **Scenario name**,
-or the file name made a config name, which you can change. **Store and add**
-stores it on the server as a Scenario config and lists it. When the server
-already has a scenario of that name, the hint under the name says storing
-replaces its spec and keeps its annotations, and Builder asks "Replace
-scenario NAME?" first. The replaced scenario takes the file's spec and keeps
-its own annotations, with those of the file added: its `topology`
-annotation keeps every topology it named and gains those the file names, so
-experiments of those topologies can still use it. Storing needs `configs`
-`create` for a new scenario, and `configs` `get` and `update` to replace
-one; the dialog shows what the server says when it refuses. A name the list
-already has in another letter case, such as `Riverside-Water` for
-`riverside-water`, is not listed twice: the list takes the stored
-scenario's spelling.
+5 MiB. As **Scenario name**, the dialog proposes the file's `metadata.name`,
+or the file name made into a config name. You can change it. **Store and
+add** stores the file on the server as a Scenario config and lists it.
 
-**Remove** takes a scenario off the list; the scenario on the server does
+When the server already has a scenario of that name, the hint under the name
+says that storing replaces its spec and keeps its annotations. Builder asks
+"Replace scenario NAME?" first. The replaced scenario gets the file's spec.
+It keeps its own annotations and adds those of the file. Its `topology`
+annotation keeps every topology it named and adds those that the file names,
+so experiments of those topologies can still use it.
+
+To store a new scenario, your role needs `configs` `create`. To replace one,
+it needs `configs` `get` and `update`. When the server refuses, the dialog
+shows what the server says. A name that the list already has in another
+letter case, such as `Riverside-Water` for `riverside-water`, does not show
+twice. The list uses the spelling of the stored scenario.
+
+**Remove** removes a scenario from the list. The scenario on the server does
 not change. **Save scenarios** writes the list into the diagram, as one step
-that **Undo** reverts. **Cancel** leaves the list as it was, but a scenario
-stored meanwhile stays on the server.
+of **Undo**. **Cancel** does not change the list, but a scenario that you
+stored stays on the server.
 
 ## Included topologies
 
@@ -1003,9 +1018,8 @@ are in the diagram:
 - They cannot be deleted or connected, and their connections cannot be
   deleted.
 - The networks they are on (CORP) cannot be renamed or removed.
-- The checks give them no warnings, but a device of this diagram that reuses
-  their hostname is an error, and one that reuses one of their addresses gets
-  a warning.
+- The checks give them no warnings, but they check this diagram's devices
+  against them (see [Checks and warnings](editor.md#checks-and-warnings)).
 
 To change dns-01, change the topology corp-services, then import
 riverside-water again (see
@@ -1028,17 +1042,18 @@ in which they are its own nodes:
   from the command palette, or select an included device and select
   **Combine into a new draft** in the Inspector.
 
-The command makes a new draft and opens it. The draft you had open stays as
-it is. The new draft is named after the diagram, with "-combined" at the
-end, for example Riverside-Water-combined, and gets a number when a topology
+The command makes a new draft and opens it. The draft you had open does not
+change. The new draft is named after the diagram, with "-combined" at the
+end, for example Riverside-Water-combined. It gets a number when a topology
 or one of your drafts already has that name. Builder says, for example,
 "Combined 2 included nodes into new draft Riverside-Water-combined. Draft
 Riverside Water is unchanged."
 
-In the new draft, the included devices are ordinary devices: you can change,
-delete and connect them, and the checks look at them too. The draft is not
-linked to riverside-water, so publishing it makes a new topology. An
-included topology whose nodes the diagram never had stays named in
-`includeTopologies`, and Builder says so: "It still includes", the
-topology's name, and "whose nodes are not in the diagram." A role that
-cannot create drafts cannot combine.
+In the new draft, the included devices are normal devices (they are not
+read only). You can change, delete and connect them, and the checks include
+them. The draft has no link to riverside-water, so publishing it makes a
+new topology. When the diagram
+never had the nodes of an included topology, `includeTopologies` still names
+it, and Builder says so: "It still includes", the topology's name, and
+"whose nodes are not in the diagram." A role that cannot create drafts
+cannot combine.
