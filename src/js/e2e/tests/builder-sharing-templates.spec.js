@@ -341,7 +341,7 @@ test(
       // Nothing that changes it.
       await expect
         .soft(card.getByRole('button'))
-        .toHaveText(['View', 'Copy to my library']);
+        .toHaveText(['View', 'Copy to my library', 'Export']);
       await expect.soft(library.bulkCopy).toHaveText('Copy to my library');
       await expect.soft(library.bulkDelete).toHaveCount(0);
       await expect.soft(library.bulkShare).toHaveCount(0);

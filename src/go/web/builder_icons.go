@@ -40,10 +40,12 @@ type builderIconRename struct {
 
 // builderIconResponse is one icon of the icon library. Data is the stored
 // PNG as base64: the image is only ever sent as text inside JSON, never as
-// an image a browser could be pointed at. CanRename and CanDelete say
-// whether the caller may rename or delete it: its uploader, or a holder of
-// the builder-icons permission of that verb, with the configs permission of
-// the same verb.
+// an image a browser could be pointed at. Owner is empty for an icon the
+// server added from its template files (see [bapi.ServerIconOwner]).
+// CanRename and CanDelete say whether the caller may rename or delete it:
+// its uploader, or a holder of the builder-icons permission of that verb,
+// with the configs permission of the same verb; only the latter for an icon
+// the server added.
 type builderIconResponse struct {
 	Name      string    `json:"name"`
 	ID        string    `json:"id"`
@@ -73,7 +75,8 @@ type builderIconListResponse struct {
 // newBuilderIconResponse returns an icon as the caller is answered with it.
 func newBuilderIconResponse(actor builderActor, icon *bapi.LibraryIcon) builderIconResponse {
 	aliases := append([]string{}, icon.Aliases...)
-	own := icon.Owner == actor.user
+	// No user owns an icon the server added from its template files.
+	own := icon.Owner != bapi.ServerIconOwner && icon.Owner == actor.user
 
 	return builderIconResponse{
 		Name:    icon.Name,

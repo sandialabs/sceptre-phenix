@@ -249,6 +249,8 @@ describe('what the Node Templates tab lists of other users', () => {
       sharedCollections: [{ value: 'shared:bob/kit', label: 'Kit (bob)' }],
       server: true,
       serverCollections: [{ value: 'server:c/d/edge', label: 'Edge (c/d)' }],
+      // The server read no template file.
+      preloadedCollections: [],
     });
 
     // Nothing of other users: only the user's own collections.

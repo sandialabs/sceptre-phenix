@@ -23,7 +23,7 @@ import GroupNode from '@/components/builder/nodes/GroupNode.vue';
 
 import { toFlowNodes } from '@/builder/adapters/vueflow.js';
 import { nodeIcon } from '@/builder/catalog.js';
-import { iconSrc } from '@/builder/icons.js';
+import { SERVER_ICON_OWNER, iconOwnerText, iconSrc } from '@/builder/icons.js';
 import { addNode, updateNode } from '@/builder/model.js';
 import { buildOutline } from '@/builder/outline.js';
 import { keepUnchanged } from '@/builder/stable.js';
@@ -486,6 +486,46 @@ describe('the Custom icons dialog', () => {
 
     expect(copies).toContain('aria-label="Add aaa to the server"');
     expect(copies).toContain('aria-label="Add plc to the server"');
+  });
+
+  test('an icon the server added from its template files is listed as the server’s', async () => {
+    // As the server lists it to an account named phenix without the
+    // builder-icons permissions: no owner, and neither Rename nor Delete.
+    const html = await render(
+      IconDialog,
+      {},
+      provides({
+        library: {
+          status: 'ready',
+          icons: [
+            {
+              name: 'rtu',
+              owner: '',
+              width: 1,
+              height: 1,
+              bytes: 70,
+              aliases: [],
+              data: ICON_DATA,
+              canRename: false,
+              canDelete: false,
+            },
+          ],
+        },
+      }),
+    );
+    const list = html.slice(html.indexOf('data-testid="icon-library-list"'));
+    const rows = list
+      .split('<li')
+      .slice(1)
+      .map((row) => row.slice(0, row.indexOf('</li>')));
+
+    expect(textOf(`<li${rows[0]}`)).toBe(
+      'rtu Server · 1 × 1 pixels, 0.1 KiB Use',
+    );
+    expect(rows[0]).not.toContain('icon-rename');
+    expect(rows[0]).not.toContain('icon-delete');
+    expect(iconOwnerText({ owner: 'phenix' })).toBe('Uploaded by phenix');
+    expect(iconOwnerText({ owner: '' })).toBe(SERVER_ICON_OWNER);
   });
 
   test('a copy the server has as it is is on the server', async () => {

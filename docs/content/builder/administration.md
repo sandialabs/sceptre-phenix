@@ -543,6 +543,10 @@ records an earlier version kept per user, under the SHA-256 of the user
 name, and logs how many it removed; diagrams that named them by their old
 keys show their built-in icons.
 
+The server collections that phenix reads from its template files are not in
+the store: phenix holds them in memory, and reads the directory again at its
+next start (see [Template files on the server](#template-files-on-the-server)).
+
 Sharing and server-wide publishing also write small records under `in/` and
 `pub/` in `builder.templates`, which are never removed. A library belongs to
 a user name, as drafts do: deleting a user account removes nothing, and a new
@@ -621,6 +625,75 @@ changes.", gives the message, and says "Saving retries automatically."
 Publish reports the stages that failed. To recover, compact and defragment
 etcd, then clear its `NOSPACE` alarm (see
 [etcd maintenance](https://etcd.io/docs/latest/op-guide/maintenance/)).
+
+## Template files on the server
+
+To give everyone on a server the same node templates, put template files in
+the server's template directory. When `phenix ui` starts, it reads every
+file there as one collection of templates, which every user with `configs`
+`list` sees under its name, read only (see
+[Server collections](templates.md#server-collections)). A file is the
+format the Node Templates tab exports, so an exported file can go in the
+directory as it is (see
+[Exporting and importing templates](templates.md#exporting-and-importing-templates)
+for the format, and the example
+[node-templates.yaml](examples/node-templates.yaml)).
+
+The directory is `<base-dir.phenix>/builder/templates` (by default
+`/phenix/builder/templates`). The setting `base-dir.builder-templates`
+changes it: the root flag `--base-dir.builder-templates`, the environment
+variable `PHENIX_BASE_DIR_BUILDER_TEMPLATES`, or the key in the phenix
+config file (see [Settings](../settings.md)). For example, in the config
+file:
+
+```yaml
+base-dir:
+  builder-templates: /etc/phenix/builder-templates
+```
+
+phenix reads:
+
+- the files directly in the directory whose names end in `.yaml`, `.yml`
+  or `.json` (in any case), at most 50, in the order of their names;
+  subdirectories and files whose names start with `.` are not read;
+- each file as JSON or YAML, by its content, at most 8 MiB. It must be a
+  regular file: a symbolic link is followed only when it stays in the
+  directory, as for [Builder files](#which-files-phenix-reads);
+- each file whole: a file that is not valid is skipped, and the others are
+  read.
+
+A skipped file is logged as a warning, `skipping builder template file`,
+with the `directory`, the `file` and the `reason`, for example `is not a
+valid template file: templates[1].name: template name "plc" is also the
+name of templates[0], ignoring case`. A directory that does not exist is no
+error: phenix logs it at debug level only and has no server collections. A
+path that cannot be opened as a directory, such as a regular file, is logged
+as a warning, `builder template directory cannot be read`, and phenix has no
+server collections; the Builder starts either way. At the end, phenix logs
+`read builder template files` with how many collections it read and how
+many files it skipped.
+
+The custom icons a file carries are added to the server's icon library when
+the library lacks them, under their names. They have no owner, so no
+account, whatever its name, owns them: the icon dialog lists them as from
+"Server", and only holders of the `builder-icons` permissions rename or
+delete them. They do not count towards what a user may upload. They fill
+the library to at most 1000 of its 2000 icons, leaving the rest to users;
+the icons past that are skipped, and phenix logs one warning, `builder icon
+library has no room for more template file icons`, with how many it
+skipped. An icon whose name the library holds with another picture keeps
+the library's picture, and phenix logs `builder template file icon differs
+from the icon library's, which is kept` with the `file`, the `icon` and the
+`owner` of the library's icon (`the server` for one added from a template
+file).
+
+phenix reads the directory only when it starts: restart `phenix ui` after
+adding, changing or removing a file. The collections are held in memory and
+never written to the store; only the icons the library lacked are. Each
+collection and template has an id made from the file's name and the
+template's name, so it stays the same from one start to the next. Renaming
+a file gives its collection a new id. No route changes or deletes a server
+collection or its templates: a request that names one answers 409.
 
 ## The builder-doc annotation
 
@@ -970,6 +1043,7 @@ for Import and Publish.
 | Route | What it does | `configs` permission |
 |---|---|---|
 | `GET /schemas/builder/v1` | The JSON Schema of the Builder document | None: `schemas` `get` on `builder` |
+| `GET /schemas/builder/templates/v1` | The JSON Schema of a template file | None: `schemas` `get` on `builder` |
 | `GET /builder/drafts` | List your drafts (`drafts`), other users' drafts you can see (`shared`), and drafts this server cannot read (`damaged`) | `list` |
 | `POST /builder/drafts` | Create a draft | `create` |
 | `GET /builder/drafts/{owner}/{draft}` | Read a draft, with its current document | `get` |
@@ -995,7 +1069,7 @@ for Import and Publish.
 | `GET /builder/icons/{icon}` | Read an icon, by its name or another name of it | `get` |
 | `PUT /builder/icons/{icon}` | Rename an icon; its old name keeps naming it | `update`; for another user's icon, also `builder-icons` `update` |
 | `DELETE /builder/icons/{icon}` | Delete an icon and all its names | `delete`; for another user's icon, also `builder-icons` `delete` |
-| `GET /builder/templates` | List the templates and collections you can use: yours, those shared with you, and the server-wide ones | `list` |
+| `GET /builder/templates` | List the templates and collections you can use: yours, those shared with you, the server-wide ones, and the server collections (`preloaded`) | `list` |
 | `GET /builder/templates/candidates` | The users your templates can be shared with | `update`, and authentication enabled |
 | `POST /builder/templates/{owner}/items` | Add templates to your library | `create` |
 | `PUT /builder/templates/{owner}/items/{template}` | Replace a template of your library | `update` |
@@ -1007,7 +1081,9 @@ for Import and Publish.
 
 `{owner}` in a template route is your own user name: a library is changed by
 its owner only, and any other name answers 404. The one exception is taking
-back another user's server-wide item, with `builder-templates` `publish`.
+back another user's server-wide item, with `builder-templates` `publish`. A
+template route that names a template or a collection of a server collection
+answers 409: they are read only.
 
 With authentication enabled, send a token in the `X-Phenix-Auth-Token`
 header, as `Bearer <token>` (see
@@ -1023,8 +1099,9 @@ with its new ETag. Draft responses also have the ETag in their body, as
 
 ### Response headers
 
-Every response of a Builder route, `/api/v1/schemas/builder/v1` included,
-has the header `X-Content-Type-Options: nosniff`: each is JSON, and says so.
+Every response of a Builder route, `/api/v1/schemas/builder/v1` and
+`/api/v1/schemas/builder/templates/v1` included, has the header
+`X-Content-Type-Options: nosniff`: each is JSON, and says so.
 The responses of the icon routes, which carry the images users uploaded as
 base64 inside the JSON, also have
 `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`. A

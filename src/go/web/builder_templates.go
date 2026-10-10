@@ -32,6 +32,15 @@ const (
 	// builderTemplateOwn is the source of a template or a collection of the
 	// caller's own library.
 	builderTemplateOwn = "own"
+
+	// builderTemplatePreloaded is the source of a template or a collection
+	// the server read from one of its template files at start.
+	builderTemplatePreloaded = "preloaded"
+
+	// builderTemplatePreloadedVersion is the version of every template and
+	// collection the server read from a template file: it never changes
+	// while the server runs.
+	builderTemplatePreloadedVersion = 1
 )
 
 // Kinds a refused library request names.
@@ -44,15 +53,25 @@ const (
 // caller can use: the caller's own templates and collections first. A
 // template names its custom icon, which the icon library resolves. Damaged
 // is set when the caller's own library record cannot be read: the lists
-// then hold nothing of it.
+// then hold nothing of it. Preloaded are the collections the server read from
+// its template files at start, read only for everyone.
 type builderTemplateLibraryResponse struct {
 	Owner       string                              `json:"owner"`
 	Templates   []builderTemplateResponse           `json:"templates"`
 	Collections []builderTemplateCollectionResponse `json:"collections"`
+	Preloaded   []builderPreloadedCollection        `json:"preloaded"`
 	CanShare    bool                                `json:"canShare"`
 	CanPublish  bool                                `json:"canPublish"`
 	Damaged     bool                                `json:"damaged"`
 	Limits      builderTemplateLimits               `json:"limits"`
+}
+
+// builderPreloadedCollection is one collection the server read from a
+// template file, with its templates, each as the listing gives any other:
+// source "preloaded", no owner, version 1.
+type builderPreloadedCollection struct {
+	Collection builderTemplateCollectionResponse `json:"collection"`
+	Templates  []builderTemplateResponse         `json:"templates"`
 }
 
 // builderTemplateLimits is what a library and its items may hold.
@@ -435,6 +454,103 @@ func (b *builderAPI) ownCollection(
 	return response, nil
 }
 
+// preloadedCollections returns the collections the server read from its
+// template files at start (see [bapi.Service.LoadServerTemplates]), as the
+// listing gives them: each with its templates, of source "preloaded", with no
+// owner and at version 1.
+func (b *builderAPI) preloadedCollections() []builderPreloadedCollection {
+	collections := b.drafts.ServerCollections()
+	listed := make([]builderPreloadedCollection, 0, len(collections))
+	etag := bapi.RevisionETag(builderTemplatePreloadedVersion)
+
+	for i := range collections {
+		collection := &collections[i]
+		ids := make([]string, 0, len(collection.Templates))
+		templates := make([]builderTemplateResponse, 0, len(collection.Templates))
+
+		for j := range collection.Templates {
+			template := &collection.Templates[j]
+
+			ids = append(ids, template.ID)
+			templates = append(templates, builderTemplateResponse{
+				ID:          template.ID,
+				Owner:       "",
+				Source:      builderTemplatePreloaded,
+				Name:        template.Name,
+				Description: template.Description,
+				Device:      template.Device,
+				Version:     builderTemplatePreloadedVersion,
+				ETag:        etag,
+				Created:     time.Time{},
+				Updated:     time.Time{},
+				ServerWide:  false,
+				PublishedAt: time.Time{},
+				PublishedBy: "",
+				Collections: []string{collection.ID},
+				Shares:      nil,
+			})
+		}
+
+		listed = append(listed, builderPreloadedCollection{
+			Collection: builderTemplateCollectionResponse{
+				ID:          collection.ID,
+				Owner:       "",
+				Source:      builderTemplatePreloaded,
+				Name:        collection.Name,
+				Description: collection.Description,
+				TemplateIDs: ids,
+				Version:     builderTemplatePreloadedVersion,
+				ETag:        etag,
+				Created:     time.Time{},
+				Updated:     time.Time{},
+				ServerWide:  false,
+				PublishedAt: time.Time{},
+				PublishedBy: "",
+				Shares:      nil,
+			},
+			Templates: templates,
+		})
+	}
+
+	return listed
+}
+
+// refusePreloaded fails a change of a library that names a template or a
+// collection the server read from one of its template files: those are read
+// only for everyone, and are changed by changing the file. The refusal is a
+// 409 that names the item and says how to get a copy that can be changed.
+func (b *builderAPI) refusePreloaded(templateIDs, collectionIDs []string) error {
+	collections := b.drafts.ServerCollections()
+
+	for i := range collections {
+		collection := &collections[i]
+
+		if slices.Contains(collectionIDs, collection.ID) {
+			return weberror.NewWebError(
+				nil,
+				"collection %s (%q) is read from a template file of the phenix server and cannot be changed; "+
+					"copy it to your library to change it",
+				collection.ID, collection.Name,
+			).SetStatus(http.StatusConflict)
+		}
+
+		for j := range collection.Templates {
+			template := &collection.Templates[j]
+
+			if slices.Contains(templateIDs, template.ID) {
+				return weberror.NewWebError(
+					nil,
+					"template %s (%q) is read from a template file of the phenix server and cannot be changed; "+
+						"copy it to your library to change it",
+					template.ID, template.Name,
+				).SetStatus(http.StatusConflict)
+			}
+		}
+	}
+
+	return nil
+}
+
 // listTemplates - GET /builder/templates.
 //
 // The answer holds the caller's own library first, which is the built-in
@@ -443,7 +559,8 @@ func (b *builderAPI) ownCollection(
 // published to every user, read only. A library is read only when a hint
 // record names it (see [bapi.Service.LibrarySources]): no listing reads every
 // user's library. A record of the caller's this server cannot read is
-// reported as damaged, with none of its items.
+// reported as damaged, with none of its items. The collections the server
+// read from its template files are in "preloaded", for every caller.
 func (b *builderAPI) listTemplates(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderListTemplates")
 
@@ -463,6 +580,7 @@ func (b *builderAPI) listTemplates(w http.ResponseWriter, r *http.Request) error
 		Owner:       actor.user,
 		Templates:   []builderTemplateResponse{},
 		Collections: []builderTemplateCollectionResponse{},
+		Preloaded:   b.preloadedCollections(),
 		CanShare:    canShare,
 		CanPublish:  builderBaseAllowed(actor.role, builderVerbUpdate) && builderTemplatesPublishAllowed(actor.role),
 		Damaged:     false,
@@ -696,6 +814,10 @@ func (b *builderAPI) putTemplate(w http.ResponseWriter, r *http.Request) error {
 		return builderNotFound(builderKindTemplate, id)
 	}
 
+	if err := b.refusePreloaded([]string{id}, nil); err != nil {
+		return err
+	}
+
 	var request builderTemplateUpdateRequest
 
 	if err := builderDecodeLimit(w, r, &request, builderTemplateItemBytes); err != nil {
@@ -747,6 +869,10 @@ func (b *builderAPI) createTemplateCollection(w http.ResponseWriter, r *http.Req
 		return err
 	}
 
+	if err := b.refusePreloaded(request.TemplateIDs, nil); err != nil {
+		return err
+	}
+
 	var id string
 
 	library, err := b.changeOwnLibrary(r, actor, func(library *bapi.TemplateLibrary) error {
@@ -791,6 +917,10 @@ func (b *builderAPI) putTemplateCollection(w http.ResponseWriter, r *http.Reques
 	var request builderTemplateCollectionContent
 
 	if err := builderDecodeLimit(w, r, &request, builderTemplateRequestBytes); err != nil {
+		return err
+	}
+
+	if err := b.refusePreloaded(request.TemplateIDs, []string{id}); err != nil {
 		return err
 	}
 
@@ -851,6 +981,10 @@ func (b *builderAPI) deleteTemplates(w http.ResponseWriter, r *http.Request) err
 	if len(request.Templates)+len(request.Collections) == 0 {
 		return weberror.NewWebError(nil, "at least one template or collection is required").
 			SetStatus(http.StatusBadRequest)
+	}
+
+	if err := b.refusePreloaded(request.Templates, request.Collections); err != nil {
+		return err
 	}
 
 	var response builderTemplateDeleteResponse
@@ -1074,6 +1208,10 @@ func (b *builderAPI) shareTemplates(w http.ResponseWriter, r *http.Request) erro
 			SetStatus(http.StatusBadRequest)
 	}
 
+	if err := b.refusePreloaded(request.Templates, request.Collections); err != nil {
+		return err
+	}
+
 	if problems := builderTemplateShareErrors(actor.user, request.Add, request.Remove); len(problems) != 0 {
 		return builderWriteShareErrors(w, problems)
 	}
@@ -1158,6 +1296,10 @@ func (b *builderAPI) publishTemplates(w http.ResponseWriter, r *http.Request) er
 	case len(request.Templates)+len(request.Collections) == 0:
 		return weberror.NewWebError(nil, "at least one template or collection is required").
 			SetStatus(http.StatusBadRequest)
+	}
+
+	if err := b.refusePreloaded(request.Templates, request.Collections); err != nil {
+		return err
 	}
 
 	var (

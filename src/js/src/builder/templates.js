@@ -273,10 +273,11 @@ const OTHERS = ['shared', 'server'];
  * store.templateByKey: "diagram:<id>" for one of the diagram, "own:<id>"
  * for one of the user's library, "shared:<owner>/<id>" and
  * "server:<owner>/<id>" for one of another user's library that is shared
- * with the user or published server-wide, and "builtin:<id>" for a
- * built-in one.
+ * with the user or published server-wide, "preloaded:<id>" for one the
+ * server read from a template file, and "builtin:<id>" for a built-in one.
  *
- * @param {string} source 'diagram', 'own', 'shared', 'server' or 'builtin'
+ * @param {string} source 'diagram', 'own', 'shared', 'server', 'preloaded'
+ *   or 'builtin'
  * @param {string} id the template's id
  * @param {string} [owner] the owner of another user's template
  * @returns {string}
@@ -306,8 +307,9 @@ export function templateByKey(doc, key, library = null) {
     case 'diagram':
       return (doc?.templates || []).find((template) => template.id === id);
     case 'own':
+    case 'preloaded':
       return items.find(
-        (template) => template.source === 'own' && template.id === id,
+        (template) => template.source === source && template.id === id,
       );
     case 'shared':
     case 'server': {
@@ -330,7 +332,9 @@ export function templateByKey(doc, key, library = null) {
 
 // --- the palette -----------------------------------------------------------
 
-// The palette's groups of templates, in the order it lists them.
+// The palette's groups of templates, in the order it lists them. The
+// server's collections each have a group of their own, after the
+// server-wide templates (see preloadedGroupLabel).
 export const TEMPLATE_GROUP_LABELS = {
   diagram: 'This diagram',
   own: 'My library',
@@ -338,6 +342,22 @@ export const TEMPLATE_GROUP_LABELS = {
   server: 'Server-wide',
   builtin: 'Built-in',
 };
+
+// What the Node Templates tab calls the source of the server's collections,
+// which every group of one starts with.
+export const PRELOADED_GROUP_LABEL = 'Server';
+
+/**
+ * The palette group of a server collection: "Server: <collection>", or
+ * "Server" alone for a collection with no name to show, so it reads as the
+ * server's, as the Node Templates tab lists it, and not as the user's.
+ *
+ * @param {string} [name] the collection's name
+ * @returns {string}
+ */
+export function preloadedGroupLabel(name = '') {
+  return name ? `${PRELOADED_GROUP_LABEL}: ${name}` : PRELOADED_GROUP_LABEL;
+}
 
 // The first drive image of a template's device, which its command names.
 function templateImage(template) {
@@ -347,11 +367,15 @@ function templateImage(template) {
 }
 
 // What a palette entry's tooltip says: the template's description, and for
-// another user's template, whose it is.
-function entryDescription(source, template) {
+// another user's template, whose it is; for one of the server's
+// collections, which one.
+function entryDescription(source, template, collection = '') {
   const whose = {
     shared: `Shared by ${template.owner}.`,
     server: `Published by ${template.owner}.`,
+    preloaded: collection
+      ? `From the server collection ${collection}, which is read only.`
+      : 'From a server collection, which is read only.',
   }[source];
 
   return [template.description, whose].filter(Boolean).join(' ');
@@ -368,19 +392,21 @@ function entryTestId(source, template) {
     case 'shared':
     case 'server':
       return `palette-template-${source}-${template.owner}-${template.id}`;
+    case 'preloaded':
+      return `palette-template-preloaded-${template.id}`;
     default:
       return `palette-template-${template.id}`;
   }
 }
 
-function paletteEntry(source, template) {
+function paletteEntry(source, template, collection = '') {
   return {
     key: templateKey(source, template.id, template.owner),
     source,
     id: template.id,
     testid: entryTestId(source, template),
     name: template.name,
-    description: entryDescription(source, template),
+    description: entryDescription(source, template, collection),
     iconKey: template.device?.iconKey || '',
     icon: template.device?.icon || '',
     image: templateImage(template),
@@ -412,12 +438,15 @@ export function libraryUse(library) {
 /**
  * The device templates the palette offers, in groups: those saved in the
  * diagram, then those of the user's library (their own, those shared with
- * them, and those published server-wide). While there is no library to
- * show (see libraryUse), the built-in templates stand in for it, so a
- * diagram can still be built; while its first read is under way, nothing
- * does. A library the server cannot read (damaged) lists none of the
- * user's own, but still other users' templates. A group with no template
- * is left out, and a template of the library is listed once.
+ * them, and those published server-wide), then each collection the server
+ * read from a template file, in a group of its own ("preloaded:<id>") whose
+ * label says it is the server's (see preloadedGroupLabel).
+ * While there is no library to show (see libraryUse), the built-in
+ * templates stand in for it, so a diagram can still be built; while its
+ * first read is under way, nothing does. A library the server cannot read
+ * (damaged) lists none of the user's own, but still other users' templates
+ * and the server's. A group with no template is left out, and a template of
+ * the library is listed once.
  *
  * @param {object} doc
  * @param {object} [library] the user's library, as the store keeps it
@@ -443,21 +472,40 @@ export function paletteTemplateGroups(doc, library = null) {
 
       return true;
     });
+  // The server's collections, each with its templates in its order.
+  const preloaded = (
+    library?.loaded && Array.isArray(library.collections)
+      ? library.collections
+      : []
+  )
+    .filter((collection) => collection?.source === 'preloaded')
+    .map((collection) => ({
+      id: `preloaded:${collection.id}`,
+      source: 'preloaded',
+      label: preloadedGroupLabel(collection.name),
+      collection: collection.name || '',
+      templates: (collection.templateIds || []).map((id) =>
+        items.find(
+          (template) => template?.source === 'preloaded' && template.id === id,
+        ),
+      ),
+    }));
   const groups = [
     { id: 'diagram', templates: doc?.templates },
     { id: 'own', templates: from('own') },
     { id: 'shared', templates: from('shared') },
     { id: 'server', templates: from('server') },
+    ...preloaded,
     { id: 'builtin', templates: use === 'missing' ? BUILTIN_TEMPLATES : [] },
   ];
 
   return groups
-    .map(({ id, templates }) => ({
+    .map(({ id, source = id, label, collection, templates }) => ({
       id,
-      label: TEMPLATE_GROUP_LABELS[id],
+      label: label || TEMPLATE_GROUP_LABELS[id],
       entries: (Array.isArray(templates) ? templates : [])
         .filter((template) => template && typeof template === 'object')
-        .map((template) => paletteEntry(id, template)),
+        .map((template) => paletteEntry(source, template, collection)),
     }))
     .filter((group) => group.entries.length > 0);
 }
@@ -706,31 +754,40 @@ export const SHOW_SERVER = 'server:';
 /**
  * What the Node Templates tab's Show field offers beside "My templates":
  * the user's collections; then, when other users share some with the user,
- * "Shared with me" and the collections shared; and, when some are published
- * server-wide, "Server-wide" and those collections. Another user's
- * collection is named with its owner.
+ * "Shared with me" and the collections shared; when some are published
+ * server-wide, "Server-wide" and those collections; and the collections the
+ * server read from its template files, under Server. Another user's
+ * collection is named with its owner, and one of the server's by its name.
  *
  * @param {object|null} library the library, as the store keeps it
  * @returns {{own: object[], shared: boolean, sharedCollections: object[],
- *   server: boolean, serverCollections: object[]}} each collection as
- *   {value, label}
+ *   server: boolean, serverCollections: object[], preloadedCollections:
+ *   object[]}} each collection as {value, label}
  */
 export function showChoices(library) {
   const items = Array.isArray(library?.items) ? library.items : [];
   const collections = Array.isArray(library?.collections)
     ? library.collections
     : [];
+  const label = (source, collection) => {
+    switch (source) {
+      case 'own':
+      case 'preloaded':
+        return collection.name;
+      default:
+        return `${collection.name} (${collection.owner})`;
+    }
+  };
   const of = (source) =>
     collections
       .filter((collection) => collection?.source === source)
-      .map((collection) =>
-        source === 'own'
-          ? { value: collection.id, label: collection.name }
-          : {
-              value: templateKey(source, collection.id, collection.owner),
-              label: `${collection.name} (${collection.owner})`,
-            },
-      );
+      .map((collection) => ({
+        value:
+          source === 'own'
+            ? collection.id
+            : templateKey(source, collection.id, collection.owner),
+        label: label(source, collection),
+      }));
   const has = (source) =>
     [...items, ...collections].some((item) => item?.source === source);
 
@@ -740,6 +797,7 @@ export function showChoices(library) {
     sharedCollections: of('shared'),
     server: has('server'),
     serverCollections: of('server'),
+    preloadedCollections: of('preloaded'),
   };
 }
 
@@ -752,7 +810,7 @@ export function showChoices(library) {
  * @param {object|null} library the library, as the store keeps it
  * @param {string} value '' for every template of the user's, the id of
  *   one of the user's collections, SHOW_SHARED, SHOW_SERVER, or the key of
- *   another user's collection (see templateKey)
+ *   another user's collection or of one of the server's (see templateKey)
  * @returns {{source: string, collection: object|null, templates:
  *   object[]}|null} null for a collection the library no longer lists
  */
@@ -780,6 +838,11 @@ export function shownList(library, value) {
     collection = collections.find(
       (entry) => entry?.source === 'own' && entry.id === text,
     );
+  } else if (text.slice(0, at) === 'preloaded') {
+    collection = collections.find(
+      (entry) =>
+        entry?.source === 'preloaded' && entry.id === text.slice(at + 1),
+    );
   } else {
     // An id holds no "/", and a user name may.
     const rest = text.slice(at + 1);
@@ -797,17 +860,23 @@ export function shownList(library, value) {
     return null;
   }
 
-  const own = collection.source === 'own';
   // The templates of the collection's library: another user's are listed
-  // as shared or server-wide, as each one is reached.
+  // as shared or server-wide, as each one is reached; the server's are its
+  // own.
+  const ofLibrary = (template) => {
+    switch (collection.source) {
+      case 'own':
+      case 'preloaded':
+        return template?.source === collection.source;
+      default:
+        return (
+          !['own', 'preloaded'].includes(template?.source) &&
+          template?.owner === collection.owner
+        );
+    }
+  };
   const byId = new Map(
-    items
-      .filter((template) =>
-        own
-          ? template?.source === 'own'
-          : template?.source !== 'own' && template?.owner === collection.owner,
-      )
-      .map((template) => [template.id, template]),
+    items.filter(ofLibrary).map((template) => [template.id, template]),
   );
 
   return {
@@ -845,8 +914,8 @@ export function collectionNames(library, template) {
  * editor.
  *
  * @param {object} template as listed
- * @returns {string} "Shared by bob", "Published by bob", or '' for one of
- *   the user's own
+ * @returns {string} "Shared by bob", "Published by bob", "Read from a
+ *   template file on the phenix server", or '' for one of the user's own
  */
 export function templateOrigin(template) {
   switch (template?.source) {
@@ -854,6 +923,8 @@ export function templateOrigin(template) {
       return `Shared by ${template.owner}`;
     case 'server':
       return `Published by ${template.owner}`;
+    case 'preloaded':
+      return 'Read from a template file on the phenix server';
     default:
       return '';
   }

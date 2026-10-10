@@ -1690,6 +1690,34 @@ paths:
           $ref: "#/components/responses/BuilderForbidden"
         "404":
           $ref: "#/components/responses/BuilderNotFound"
+  "/schemas/builder/templates/v1":
+    get:
+      tags:
+        - Builder
+        - Schemas
+      summary: Get the JSON Schema of Builder template files
+      description: >
+        Requires the `schemas` `get` permission for `builder`, as the
+        document schema does. A template file holds one collection of device
+        templates, YAML or JSON: what the Node Templates tab exports and
+        imports, and what phenix reads at start from its template directory
+        (`--base-dir.builder-templates`) as read-only server collections.
+      operationId: getBuilderTemplateFileSchema
+      responses:
+        "200":
+          description: >
+            the complete JSON Schema (draft 2020-12) of a template file
+            (`$id` `https://phenix.sandia.gov/schemas/builder/templates/v1`),
+            with a title, a description and examples for each of its
+            properties; that template names differ even ignoring case, and
+            that icons are accepted PNGs, phenix checks beside it
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
   "/builder/drafts":
     get:
       tags:
@@ -2968,7 +2996,12 @@ paths:
         A library record of the caller's that this server cannot read is
         reported with `damaged` true and none of its items; every change of
         it is then refused with 409. Another user's library that cannot be
-        read is left out.
+        read is left out. `preloaded` lists, for every caller, the
+        collections the server read at start from the template files of its
+        template directory (`--base-dir.builder-templates`), one collection
+        per file, with its templates (`source` `preloaded`, no owner,
+        version 1). They are read only: a write route that names one answers
+        409, and a copy in the caller's library can be changed.
       operationId: getBuilderTemplates
       responses:
         "200":
@@ -5074,7 +5107,10 @@ components:
           type: string
           pattern: "^sha256:[0-9a-f]{64}$"
         owner:
-          description: the user who uploaded the icon
+          description: >
+            the user who uploaded the icon, or empty for an icon phenix added
+            from a template file of its template directory, which no user
+            owns: only holders of `builder-icons` rename or delete it
           type: string
         width:
           description: width in pixels, 1 to 96
@@ -5188,22 +5224,29 @@ components:
         id:
           description: >
             unique in the owner's library only: the built-in templates keep
-            their short names in every library, any other is a UUID
+            their short names in every library, any other is a UUID. A
+            template the server read from a template file has an ID that
+            starts with `server-`, made from the file's name and the
+            template's name, the same at every start.
           type: string
           pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
         owner:
-          description: the user whose library holds the template
+          description: >
+            the user whose library holds the template; empty for one the
+            server read from a template file
           type: string
         source:
           description: >
             `own` for a template of the caller's library, `shared` for one
             another user shared with the caller, `server` for one published
-            to every user
+            to every user, `preloaded` for one the server read from a template
+            file
           type: string
           enum:
             - own
             - shared
             - server
+            - preloaded
         name:
           type: string
         description:
@@ -5259,22 +5302,29 @@ components:
       type: object
       properties:
         id:
-          description: unique among the collections of the owner's library
+          description: >
+            unique among the collections of the owner's library; for a
+            collection the server read from a template file, `server-` and a
+            digest of the file's name
           type: string
           pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
         owner:
-          description: the user whose library holds the collection
+          description: >
+            the user whose library holds the collection; empty for one the
+            server read from a template file
           type: string
         source:
           description: >
             `own` for a collection of the caller's library, `shared` for one
             another user shared with the caller, `server` for one published
-            to every user
+            to every user, `preloaded` for one the server read from a template
+            file
           type: string
           enum:
             - own
             - shared
             - server
+            - preloaded
         name:
           type: string
         description:
@@ -5340,6 +5390,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BuilderTemplateCollection"
+        preloaded:
+          description: >
+            the collections the server read from its template files at start,
+            in the order of the files' names, each with its templates; read
+            only, and the same for every caller
+          type: array
+          items:
+            type: object
+            properties:
+              collection:
+                $ref: "#/components/schemas/BuilderTemplateCollection"
+              templates:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BuilderTemplate"
         canShare:
           description: >
             the caller may share its templates and collections: it has
@@ -5955,7 +6020,10 @@ components:
     BuilderTemplateDamaged:
       description: >
         The library record cannot be read by this version of phenix, so it
-        cannot be changed.
+        cannot be changed. Or the request names a template or a collection
+        the server read from one of its template files (`source`
+        `preloaded`), which no one can change: `message` names it and says
+        to copy it to the library instead.
       content:
         application/json:
           schema:

@@ -113,8 +113,17 @@ type builderRequest struct {
 	contentType string
 }
 
-// newBuilderHarness returns a harness with the Builder routes registered.
+// newBuilderHarness returns a harness with the Builder routes registered. It
+// reads no template files.
 func newBuilderHarness(t *testing.T, configs ...store.Config) *builderHarness {
+	t.Helper()
+
+	return newBuilderHarnessWith(t, nil, configs...)
+}
+
+// newBuilderHarnessWith is [newBuilderHarness] with more options, applied
+// after the harness's own.
+func newBuilderHarnessWith(t *testing.T, extra []builderOption, configs ...store.Config) *builderHarness {
 	t.Helper()
 
 	var (
@@ -161,7 +170,8 @@ func newBuilderHarness(t *testing.T, configs ...store.Config) *builderHarness {
 		fileReads:         0,
 	}
 
-	options := []builderOption{
+	// The harness's own options, then extra, which may replace them.
+	options := slices.Concat([]builderOption{
 		withBuilderService(service),
 		withBuilderConfigs(harness.listConfigs, harness.getConfig),
 		withBuilderPublishOps(harness.publishOps()),
@@ -172,7 +182,8 @@ func newBuilderHarness(t *testing.T, configs ...store.Config) *builderHarness {
 				return harness.files, []string{filepath.Join(harness.files, "mounts")}
 			}
 		},
-	}
+		withBuilderTemplateFiles(""),
+	}, extra)
 
 	if err := registerBuilderRoutes(harness.api, options...); err != nil {
 		t.Fatalf("registerBuilderRoutes returned error: %v", err)
@@ -310,9 +321,9 @@ func (h *builderHarness) publishOps() builderPublishOps {
 
 // decodeTopology merges included topologies from the harness configs, the
 // way types.DecodeTopologyFromConfig merges them from the phenix store.
-func (h *builderHarness) decodeTopology( //nolint:ireturn // matches the decodeTopology field's signature
-	config store.Config,
-) (ifaces.TopologySpec, error) {
+//
+//nolint:ireturn // matches the decodeTopology field's signature
+func (h *builderHarness) decodeTopology(config store.Config) (ifaces.TopologySpec, error) {
 	var spec v1.TopologySpec
 
 	if err := mapstructure.WeakDecode(config.Spec, &spec); err != nil {

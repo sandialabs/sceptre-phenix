@@ -69,16 +69,32 @@ func JSONFromText(data []byte) ([]byte, error) {
 // Builder document schema (see [SchemaURI]).
 const documentSchemaPrefix = "https://phenix.sandia.gov/schemas/builder/"
 
+// templateFileSchemaPrefix starts the schema URI of every revision of the
+// template file format (see [TemplateFileSchemaURI]), which is below
+// [documentSchemaPrefix] but names no Builder document.
+const templateFileSchemaPrefix = documentSchemaPrefix + "templates/"
+
 // IsDocumentText reports whether text, the content of a JSON or YAML file,
 // is a Builder document and not a phenix config: a map whose "$schema" is a
 // Builder document schema URI, of any revision, and that has no "kind". The
 // two share no key, so the content tells them apart where the name of the
-// file does not: the Builder exports a document as plain .json or .yaml.
+// file does not: the Builder exports a document as plain .json or .yaml. A
+// template file (see [TemplateFileSchemaURI]) is not a Builder document.
 //
 // Only those two keys are looked at, and YAML is read leniently, so a
 // document that is not valid, or that uses YAML [JSONFromYAML] refuses, is
 // still recognized as one.
 func IsDocumentText(text []byte) bool {
+	schema, kind, ok := textHead(text)
+
+	return ok && !kind && strings.HasPrefix(schema, documentSchemaPrefix) &&
+		!strings.HasPrefix(schema, templateFileSchemaPrefix)
+}
+
+// textHead returns the "$schema" of text, the content of a JSON or YAML
+// file, and whether it has a "kind". The last result is false for text that
+// is not a map, or whose "$schema" is not text.
+func textHead(text []byte) (string, bool, bool) {
 	if json.Valid(text) {
 		var (
 			keys   map[string]json.RawMessage
@@ -86,12 +102,12 @@ func IsDocumentText(text []byte) bool {
 		)
 
 		if json.Unmarshal(text, &keys) != nil || json.Unmarshal(keys["$schema"], &schema) != nil {
-			return false
+			return "", false, false
 		}
 
 		_, kind := keys["kind"]
 
-		return !kind && strings.HasPrefix(schema, documentSchemaPrefix)
+		return schema, kind, true
 	}
 
 	var head struct {
@@ -100,10 +116,10 @@ func IsDocumentText(text []byte) bool {
 	}
 
 	if yaml.Unmarshal(text, &head) != nil {
-		return false
+		return "", false, false
 	}
 
-	return head.Kind.IsZero() && strings.HasPrefix(head.Schema, documentSchemaPrefix)
+	return head.Schema, !head.Kind.IsZero(), true
 }
 
 // JSONFromYAML converts the YAML text of a Builder document to JSON, reading

@@ -222,9 +222,13 @@ describe('the Node Templates tab', () => {
     expect(buttonIds(card)).toEqual([
       'template-edit-plc',
       'template-delete-plc',
+      'template-export-plc',
     ]);
     expect(element(card, 'template-edit-plc')).toContain(
       'aria-label="Edit template PLC"',
+    );
+    expect(element(card, 'template-export-plc')).toContain(
+      'aria-label="Export template PLC"',
     );
     expect(element(card, 'template-delete-plc')).toContain(
       'aria-label="Delete template PLC"',
@@ -276,6 +280,7 @@ describe('the Node Templates tab', () => {
     expect(buttonIds(bar)).toEqual([
       'bulk-collect-templates',
       'bulk-delete-templates',
+      'bulk-export-templates',
     ]);
 
     const collect = element(bar, 'bulk-collect-templates');
@@ -304,7 +309,13 @@ describe('the Node Templates tab', () => {
     expect(textOf(element(viewer, 'templates-view-only'))).toBe(
       'Your role can view templates, but not create them.',
     );
-    expect(buttonIds(viewer)).toEqual([]);
+    // Reading the library is all it takes to export a template.
+    expect(buttonIds(viewer)).toEqual([
+      'template-export-plc',
+      'template-export-hmi',
+      'template-export-rtu',
+    ]);
+    expect(viewer).not.toContain('templates-import');
     // Nothing can be done to several, so nothing can be selected.
     expect(viewer).not.toContain('type="checkbox"');
     expect(viewer).toContain('data-testid="template-card-plc"');
@@ -315,9 +326,11 @@ describe('the Node Templates tab', () => {
 
     expect(buttonIds(element(deleter, 'bulk-bar-templates'))).toEqual([
       'bulk-delete-templates',
+      'bulk-export-templates',
     ]);
     expect(buttonIds(deleter.split('<li ')[1])).toEqual([
       'template-delete-plc',
+      'template-export-plc',
     ]);
 
     phenix.role = roleWith('list', 'update');
@@ -326,8 +339,12 @@ describe('the Node Templates tab', () => {
 
     expect(buttonIds(element(editor, 'bulk-bar-templates'))).toEqual([
       'bulk-collect-templates',
+      'bulk-export-templates',
     ]);
-    expect(buttonIds(editor.split('<li ')[1])).toEqual(['template-edit-plc']);
+    expect(buttonIds(editor.split('<li ')[1])).toEqual([
+      'template-edit-plc',
+      'template-export-plc',
+    ]);
 
     // With no collection to add to and none to make, there is no menu.
     const none = (
@@ -337,7 +354,9 @@ describe('the Node Templates tab', () => {
     ).html;
 
     expect(none).toContain('bulk-bar-templates');
-    expect(buttonIds(element(none, 'bulk-bar-templates'))).toEqual([]);
+    expect(buttonIds(element(none, 'bulk-bar-templates'))).toEqual([
+      'bulk-export-templates',
+    ]);
   });
 
   test('what it says before the library is read, when it cannot be, and when it holds nothing', async () => {
@@ -919,6 +938,7 @@ describe('sharing on the Node Templates tab', () => {
       'template-edit-plc',
       'template-share-plc',
       'template-delete-plc',
+      'template-export-plc',
     ]);
 
     const share = element(card, 'template-share-plc');
@@ -946,6 +966,7 @@ describe('sharing on the Node Templates tab', () => {
       'bulk-collect-templates',
       'bulk-share-templates',
       'bulk-delete-templates',
+      'bulk-export-templates',
     ]);
 
     const bulk = element(html, 'bulk-share-templates');

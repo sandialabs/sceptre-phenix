@@ -68,7 +68,8 @@ const (
 
 // LibraryIcon is one icon of the icon library, and the value of its record.
 // Every user who may list the library sees it; only the user who uploaded it
-// and the holders of the builder-icons permissions rename or delete it.
+// and the holders of the builder-icons permissions rename or delete it, and
+// only the latter one the server added (see [ServerIconOwner]).
 type LibraryIcon struct {
 	// Kind is "icon": the record is an icon and not an alias.
 	Kind string `json:"kind"`
@@ -79,7 +80,8 @@ type LibraryIcon struct {
 	// ID is "sha256:" and the SHA-256 of the PNG (see [builder.IconID]), so
 	// two icons hold the same image exactly when their IDs are equal.
 	ID string `json:"id"`
-	// Owner is the user who uploaded the icon.
+	// Owner is the user who uploaded the icon, or [ServerIconOwner] for one
+	// the server added from its template files, which no user owns.
 	Owner string `json:"owner"`
 	// Width and Height are the size of the image in pixels, and Bytes the
 	// length of its PNG.
@@ -231,22 +233,12 @@ func (s *Service) AddIcon(ctx context.Context, owner, name string, upload []byte
 		return nil, false, err
 	}
 
-	if err := iconNameError(name); err != nil {
-		return nil, false, err
-	}
-
-	if len(upload) > MaxIconUploadBytes {
-		return nil, false, newTooLargeError(kindIcon, int64(len(upload)), MaxIconUploadBytes)
-	}
-
-	data, width, height, err := iconPNG(upload)
+	data, width, height, err := iconUpload(name, upload)
 	if err != nil {
 		return nil, false, err
 	}
 
-	id := builder.IconID(data)
-
-	if existing, found, err := s.iconOfName(name, id); found || err != nil {
+	if existing, found, err := s.iconOfName(name, builder.IconID(data)); found || err != nil {
 		return existing, false, err
 	}
 
@@ -259,6 +251,28 @@ func (s *Service) AddIcon(ctx context.Context, owner, name string, upload []byte
 		return nil, false, err
 	}
 
+	return s.createIcon(owner, name, data, width, height)
+}
+
+// iconUpload checks the name and the image of an icon being added, and
+// returns the PNG it is stored as and its width and height (see iconPNG).
+func iconUpload(name string, upload []byte) ([]byte, int, int, error) {
+	if err := iconNameError(name); err != nil {
+		return nil, 0, 0, err
+	}
+
+	if len(upload) > MaxIconUploadBytes {
+		return nil, 0, 0, newTooLargeError(kindIcon, int64(len(upload)), MaxIconUploadBytes)
+	}
+
+	return iconPNG(upload)
+}
+
+// createIcon stores a new icon of the given owner under a name no icon has,
+// or under an alias whose icon is gone. The second result is false when
+// another request stored the same image under the name first.
+func (s *Service) createIcon(owner, name string, data []byte, width, height int) (*LibraryIcon, bool, error) {
+	id := builder.IconID(data)
 	now := s.clock().UTC()
 	icon := LibraryIcon{
 		Kind:     iconRecordKind,
@@ -395,8 +409,8 @@ func (s *Service) RenameIcon(ctx context.Context, caller, name, newName string, 
 		return nil, err
 	}
 
-	if icon.Owner != caller && !anyOwner {
-		return nil, fmt.Errorf("renaming icon %q of %s: %w", icon.Name, icon.Owner, ErrForbidden)
+	if !mayChangeIcon(icon, caller, anyOwner) {
+		return nil, fmt.Errorf("renaming icon %q of %s: %w", icon.Name, iconOwnerText(icon.Owner), ErrForbidden)
 	}
 
 	if err := iconNameError(newName); err != nil {
@@ -588,6 +602,24 @@ func (s *Service) reclaimAlias(icon, renamed *LibraryIcon, value []byte) (store.
 	return written, taken, nil
 }
 
+// mayChangeIcon reports whether caller may rename or delete the icon: its
+// uploader may, and with anyOwner (the caller holds the builder-icons
+// permission of that verb) anyone may. An icon the server added has no
+// uploader (see [ServerIconOwner]), so only anyOwner allows it.
+func mayChangeIcon(icon *LibraryIcon, caller string, anyOwner bool) bool {
+	return anyOwner || (icon.Owner != ServerIconOwner && icon.Owner == caller)
+}
+
+// iconOwnerText names who holds an icon in an error: the user who uploaded
+// it, or "the server" for one the server added.
+func iconOwnerText(owner string) string {
+	if owner == ServerIconOwner {
+		return "the server"
+	}
+
+	return owner
+}
+
 // withoutName returns names without the one equal to name ignoring case.
 func withoutName(names []string, name string) []string {
 	kept := make([]string, 0, len(names))
@@ -628,8 +660,8 @@ func (s *Service) DeleteIcon(ctx context.Context, caller, name string, anyOwner 
 		return s.deleteUnreadableIcon(name, err)
 	case err != nil:
 		return err
-	case icon.Owner != caller && !anyOwner:
-		return fmt.Errorf("deleting icon %q of %s: %w", icon.Name, icon.Owner, ErrForbidden)
+	case !mayChangeIcon(icon, caller, anyOwner):
+		return fmt.Errorf("deleting icon %q of %s: %w", icon.Name, iconOwnerText(icon.Owner), ErrForbidden)
 	}
 
 	records, err := s.store.ListRecords(NamespaceIcons, iconKeyPrefix)
@@ -875,10 +907,11 @@ func readIconRecord(record store.Record) (*LibraryIcon, *iconAlias, error) {
 }
 
 // readIcon returns the icon a record holds. The record is an icon only when
-// it decodes strictly, has the name its key does, names an uploader and the
-// ID of an image, lists aliases that are icon names other than its own, and
-// holds a PNG a document accepts whose ID is that ID. Its size and its
-// base64 are taken from that PNG, never from the record.
+// it decodes strictly, has the name its key does, names an uploader (or
+// [ServerIconOwner]) and the ID of an image, lists aliases that are icon
+// names other than its own, and holds a PNG a document accepts whose ID is
+// that ID. Its size and its base64 are taken from that PNG, never from the
+// record.
 func readIcon(record store.Record) (*LibraryIcon, error) {
 	var icon LibraryIcon
 
@@ -889,7 +922,7 @@ func readIcon(record store.Record) (*LibraryIcon, error) {
 	switch {
 	case builder.IconNameProblem(icon.Name) != "" || iconKey(icon.Name) != record.Key:
 		return nil, newCorruptError(kindIcon, record.Key, "the record names another icon")
-	case validateText("owner", icon.Owner, MaxOwnerLength, true) != nil:
+	case icon.Owner != ServerIconOwner && validateText("owner", icon.Owner, MaxOwnerLength, true) != nil:
 		return nil, newCorruptError(kindIcon, record.Key, "the record names no usable owner")
 	case !builder.IsDigest(icon.ID):
 		return nil, newCorruptError(kindIcon, record.Key, "the record has no image ID")

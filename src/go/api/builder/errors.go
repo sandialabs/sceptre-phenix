@@ -100,7 +100,8 @@ type (
 	// IconNameTakenError reports that an icon name, or one that differs from
 	// it only in case, already names an icon of the icon library: the icon
 	// itself (Name), or another name it keeps as an alias. Owner is the user
-	// who uploaded that icon. It unwraps to [ErrConflict].
+	// who uploaded that icon, or [ServerIconOwner]. It unwraps to
+	// [ErrConflict].
 	IconNameTakenError struct {
 		Name  string
 		Icon  string
@@ -180,16 +181,22 @@ func (e *IconNameTakenError) Error() string {
 }
 
 // Sentence says which icon has the name, in words a person is shown. It
-// names the icon and the user who uploaded it, which every user who may
-// list the icon library sees anyway.
+// names the icon and the user who uploaded it, or the server for one it
+// added from its template files, which every user who may list the icon
+// library sees anyway.
 func (e *IconNameTakenError) Sentence() string {
+	uploaded := e.Owner + " uploaded"
+	if e.Owner == ServerIconOwner {
+		uploaded = "the server added from its template files"
+	}
+
 	if strings.EqualFold(e.Name, e.Icon) {
-		return fmt.Sprintf("icon name %q is taken by an icon %s uploaded; choose another name", e.Name, e.Owner)
+		return fmt.Sprintf("icon name %q is taken by an icon %s; choose another name", e.Name, uploaded)
 	}
 
 	return fmt.Sprintf(
-		"icon name %q is taken: it is another name of icon %q, which %s uploaded; choose another name",
-		e.Name, e.Icon, e.Owner,
+		"icon name %q is taken: it is another name of icon %q, which %s; choose another name",
+		e.Name, e.Icon, uploaded,
 	)
 }
 

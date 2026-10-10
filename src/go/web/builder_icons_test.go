@@ -972,7 +972,8 @@ func TestBuilderResponseHeaders(t *testing.T) {
 				icons++
 
 				assertIconHeaders(t, what, recorder)
-			case strings.HasPrefix(op.template, "/builder/"), op.template == "/schemas/builder/v1":
+			case strings.HasPrefix(op.template, "/builder/"), op.template == "/schemas/builder/v1",
+				op.template == "/schemas/builder/templates/v1":
 				builder++
 
 				if got := header.Get("X-Content-Type-Options"); got != builderNoSniff {
@@ -1028,6 +1029,7 @@ func TestBuilderResponseHeaders(t *testing.T) {
 		{http.MethodPost, "/builder/published", http.StatusNotFound, true, false},
 		{http.MethodPatch, "/builder/drafts", http.StatusMethodNotAllowed, true, false},
 		{http.MethodPut, "/schemas/builder/v1", http.StatusMethodNotAllowed, true, false},
+		{http.MethodPut, "/schemas/builder/templates/v1", http.StatusMethodNotAllowed, true, false},
 		{http.MethodPatch, builderIconsRoute, http.StatusMethodNotAllowed, true, true},
 		{http.MethodPost, builderIconsRoute + "/x", http.StatusMethodNotAllowed, true, true},
 		{http.MethodGet, builderIconsRoute + "/x/y", http.StatusNotFound, true, true},

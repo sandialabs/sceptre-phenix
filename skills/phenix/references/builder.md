@@ -5,8 +5,11 @@ holds everything about it that the main phenix skill leaves out.
 
 **Read this file when** a task involves Builder: its drafts, sharing,
 publishing, import, upload, download or generation, the conversion of legacy
-diagrams, custom icons, node templates and their libraries, its
-`/api/v1/builder/*` or `/schemas/builder/v1` routes, the `builder-drafts` and
+diagrams, custom icons, node templates and their libraries, template files
+(export, import, and the server collections read from
+`--base-dir.builder-templates`), its `/api/v1/builder/*`,
+`/schemas/builder/v1` or `/schemas/builder/templates/v1` routes, the
+`builder-drafts` and
 `builder-templates` RBAC resources or the built-in Builder role, the Builder
 document format (`builder/v1`), the `builder-doc` annotation, Builder files
 named by `builder-doc.path`, `phenix builder publish`, or any Builder code
@@ -1353,6 +1356,78 @@ with two groups or more), the library button "Node Templates library",
 `updateCollection`, `deleteLibraryItems`, `shareLibraryItems`,
 `publishLibraryItems`).
 
+Template files (`TemplateFile`, `ParseTemplateFile` in
+`types/builder/templatefile.go`; `templateFile.js`): one collection as YAML
+or JSON, `{$schema: "https://phenix.sandia.gov/schemas/builder/templates/v1",
+name, description?, templates: [{name, description?, device}], icons?}`,
+strict (unknown keys refused), YAML read by `JSONFromYAML` (no anchors,
+aliases, merge keys), at most 8 MiB (`MaxTemplateFileBytes`), 1 to 200
+templates (`MaxTemplateFileTemplates` = `MaxCollectionTemplates`), names
+unique ignoring case, each template as `Template.Issues` checks it, icons
+as `ValidateIcons` checks a document's; a template may name an icon the
+file does not carry. Schema: `TemplateFileSchema()`
+(`templatefile_schema.go`, same title/description/examples rule, checked by
+`TestTemplateFileSchemaDocumentsEveryProperty`), served by `GET
+/schemas/builder/templates/v1` (`schemas` `get` on `builder`). The docs
+example `docs/content/builder/examples/node-templates.yaml` must load
+(`TestDocsTemplateFileExampleLoads`). `IsDocumentText` is false for a
+template file.
+
+Export (Node Templates tab: a card's Export, Export selected, Export
+collection; `exportTemplateFile`) saves `<sanitized name>.templates.yaml`
+(`templateFileName`, never a dotfile) as `templateFileText` writes it
+(`YAML.dump` with `lineWidth: -1`, so an icon's base64 stays on one line),
+embedding each icon the templates name from the icon library (`embedIcons`,
+at most 50); every source exports. Template names that differ only in case
+(a library may hold them) are numbered apart (`uniqueTemplateNames`, " (2)",
+" (3)" … ignoring case and surrounding space, within 128 bytes), and the
+export notice names each renamed template. Import (`templates-import`,
+`dialogs/TemplateImportDialog.vue`, rendered by `BuilderTemplates.vue`)
+reads the file with `parseTemplateFile` (issues listed as `path: message`),
+then `store.importTemplateFile`: `importProblem` (200 templates, 50
+collections), `ingestTemplateIcons` (an upload's rules; a differing or
+refused icon is a warning, and the dialog stays open listing them), and
+`createLibraryTemplates` with a new collection named by
+`uniqueCollectionName` (" (2)", " (3)", ignoring case, among own
+collections).
+
+Server collections: the root flag `--base-dir.builder-templates` (env
+`PHENIX_BASE_DIR_BUILDER_TEMPLATES`, config key, default
+`<base-dir.phenix>/builder/templates`; `common.BuilderTemplatesBase`,
+`common.BuilderTemplatesDir()`) names a directory that `newBuilderAPI`
+reads once at start (`Service.LoadServerTemplates`, `ReadTemplateDirectory`
+in `api/builder/templatefiles.go`; option `withBuilderTemplateFiles`, ""
+reads nothing, as the web test harness does): files directly in it named
+`*.yaml`, `*.yml`, `*.json` (any case), not starting with `.`, at most 50
+(`MaxServerTemplateFiles`), through `os.Root` (a link leaving the directory
+is refused), regular files only. A bad file is logged (`skipping builder
+template file`, `file`, `reason`) and skipped; a missing directory is a
+debug log, and a path that cannot be opened as a directory (a regular file
+there) a warning (`builder template directory cannot be read`); the Builder
+starts either way. Each file is a `ServerCollection` held in memory
+(`Service.ServerCollections`), with ids `server-` + 24 hex of a SHA-256 of
+the file name (and the template's lower-case name). Icons the files carry
+that the icon library lacks are added (`addServerIcons`, which lists the
+library once per load) with owner "" (`ServerIconOwner`: no phenix user
+name is empty, and the service refuses an empty caller, so no account owns
+them and only `builder-icons` holders rename or delete them; `readIcon`
+accepts the empty owner, and the UI shows it as "Server", `iconOwnerText`)
+without per-user limits, only while the library holds fewer than
+`MaxIcons - ServerIconReserve` (1000) icons; the rest are skipped with one
+warning (`builder icon library has no room for more template file icons`).
+A name
+held with other bytes keeps the library's and is logged. `GET
+/builder/templates` lists them in `preloaded: [{collection,
+templates}]` (`source` `preloaded`, `owner` "", version 1, etag `"1"`) for
+every caller; every write route that names one of their ids answers 409
+(`refusePreloaded`). The UI flattens them into `store.templates` with source
+`preloaded`: Show's `Server` optgroup (`preloaded:<id>`, `showChoices`
+`preloadedCollections`), cards with View, Copy to my library and Export
+(testids `…-preloaded-<id>`), one palette group per collection
+(`preloaded:<id>`, labelled `Server: <name>` by `preloadedGroupLabel`, its
+entries' tooltips saying the collection is read only, entries
+`palette-template-preloaded-<id>`, key `preloaded:<id>`).
+
 No `phenix` command converts legacy diagrams, imports configs, or manages
 the icon or template library; they are web UI and REST only.
 
@@ -1363,6 +1438,7 @@ All routes are relative to `/api/v1`.
 | Route | Purpose |
 |---|---|
 | `GET /schemas/builder/v1` | JSON Schema of the Builder document (`builder/v1`); needs `schemas` `get` on the resource name `builder` |
+| `GET /schemas/builder/templates/v1` | JSON Schema of a template file; same permission |
 | `GET/POST /builder/drafts` | List the caller's drafts (`drafts`), other users' drafts the caller may see (`shared`) and unreadable drafts (`damaged`); create a draft (optionally `forkOf` or `sourceToken`) |
 | `GET/DELETE /builder/drafts/{owner}/{draft}` | Read a draft with its current document; delete it |
 | `GET/POST /builder/drafts/{owner}/{draft}/snapshots` | List or append snapshots (append needs `If-Match`) |
@@ -1381,7 +1457,7 @@ All routes are relative to `/api/v1`.
 | `GET /builder/topologies/{topology}/document` | The document a topology's `builder-doc` names, stored or read from its Builder file: the listing row plus `digest`, `size`, `document`, and for a file `topologyDiffers` |
 | `GET/POST /builder/icons` | The server's icon library: list every icon, upload one under a name (`configs` `list`, `create`) |
 | `GET/PUT/DELETE /builder/icons/{icon}` | Read, rename (the old name stays an alias), delete an icon by name or alias (`configs` `get`, `update`, `delete`; another user's icon also needs `builder-icons` `update` or `delete`) |
-| `GET /builder/templates` | Templates and collections the caller can use: own (`source` `own`), shared (`shared`), server-wide (`server`), with `canShare`, `canPublish`, `damaged`, `limits` (`configs` `list`) |
+| `GET /builder/templates` | Templates and collections the caller can use: own (`source` `own`), shared (`shared`), server-wide (`server`), with `canShare`, `canPublish`, `damaged`, `limits`, and the server collections in `preloaded` (`configs` `list`) |
 | `GET /builder/templates/candidates` | Accounts the caller's items can be shared with (`configs` `update`, a user account) |
 | `POST /builder/templates/{owner}/items`, `PUT …/items/{template}` | Add templates (optionally as a new `collection`), replace one (`If-Match`) (`configs` `create`, `update`; owner only) |
 | `POST /builder/templates/{owner}/collections`, `PUT …/collections/{collection}` | Add, replace a collection (`If-Match` on PUT) (`configs` `create`, `update`; owner only) |
@@ -1420,8 +1496,8 @@ Read this section before changing any file listed below.
 
 | Area | Files |
 |---|---|
-| Document model, generation, publishing to configs, validation, JSON Schema, YAML reading | `src/go/types/builder/` (`document.go`, `generate.go`, `detach.go` (combine, copy), `topology.go`, `validate.go`, `schema.go`, `yaml.go`, `customicons.go`, `template.go`, `legacy_xml.go` and `legacy.go` (legacy conversion)) |
-| Drafts, snapshots, sharing, published documents, libraries, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`, `icons.go`, `templates.go`, `scope.go`; `config_hook.go` checks a topology's `builder-doc` and removes a deleted or renamed topology's documents; `file.go` reads Builder files; `publish.go` publishes a document as a topology for the CLI, and `ReplaceLegacyDiagram`) |
+| Document model, generation, publishing to configs, validation, JSON Schema, YAML reading | `src/go/types/builder/` (`document.go`, `generate.go`, `detach.go` (combine, copy), `topology.go`, `validate.go`, `schema.go`, `yaml.go`, `customicons.go`, `template.go`, `templatefile.go` and `templatefile_schema.go` (template files), `legacy_xml.go` and `legacy.go` (legacy conversion)) |
+| Drafts, snapshots, sharing, published documents, libraries, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`, `icons.go`, `templates.go`, `templatefiles.go` (the server collections read at start), `scope.go`; `config_hook.go` checks a topology's `builder-doc` and removes a deleted or renamed topology's documents; `file.go` reads Builder files; `publish.go` publishes a document as a topology for the CLI, and `ReplaceLegacyDiagram`) |
 | Built-in Builder role and its start-up check | `src/go/api/config/default/builder.yml`, `src/go/web/rbac/migrations.go` (`EnsureBuilderTemplatesPublishPermission`), `src/go/web/init.go` |
 | `builder-doc` codec (nested in JSON and YAML, a string in memory and in the store) | `src/go/store/types.go` |
 | `phenix builder publish`, and `phenix config create` recognizing Builder documents | `src/go/cmd/builder.go`, `src/go/cmd/config.go` |
@@ -1430,7 +1506,7 @@ Read this section before changing any file listed below.
 | Editor page and drafts landing | `src/js/src/views/Builder.vue`, `src/js/src/components/builder/BuilderDrafts.vue`, `BuilderTemplates.vue` (the Node Templates tab), `BuilderBulkBar.vue`, `BuilderBulkSummary.vue`, `BuilderHeaderButtons.vue` (the buttons both headers share) |
 | Configs page links | `src/js/src/components/configs/ConfigsList.vue`, `ConfigsEditor.vue`, `src/js/src/builder/configs.js` |
 | Editor components | `src/js/src/components/builder/` (canvas, Inspector, outline, toolbar, side columns, `BuilderSignIn.vue`, dialogs, nodes, edges) |
-| Editor state and logic | `src/js/src/builder/` (`store.js`, `model.js`, `autosave.js`, `idb.js`, `tabs.js`, `session.js`, `signin.js`, `panes.js`, `commands.js`, `keymap.js`, `layouts/`, `adapters/`, `publish.js`, `templates.js`, `icons.js`, `iconLibrary.js`, `bulk.js`, `listSelection.js`, `nodeInfo.js`, `nodeNotes.js`, `grouping.js`, `groupingWorker.js`) |
+| Editor state and logic | `src/js/src/builder/` (`store.js`, `model.js`, `autosave.js`, `idb.js`, `tabs.js`, `session.js`, `signin.js`, `panes.js`, `commands.js`, `keymap.js`, `layouts/`, `adapters/`, `publish.js`, `templates.js`, `templateFile.js`, `icons.js`, `iconLibrary.js`, `bulk.js`, `listSelection.js`, `nodeInfo.js`, `nodeNotes.js`, `grouping.js`, `groupingWorker.js`) |
 | Generated schema bundle | `src/js/src/builder/schema/builder-v1.schema.json` |
 
 ### Rules

@@ -1263,7 +1263,13 @@ func TestListIconsSkipsDamagedRecords(t *testing.T) {
 	}{
 		{name: "another name", value: record(func(i *LibraryIcon) { i.Name = "other" }), reason: "names another icon"},
 		{name: "a name that is none", value: record(func(i *LibraryIcon) { i.Name = "plan ted" }), reason: "names another icon"},
-		{name: "no owner", value: record(func(i *LibraryIcon) { i.Owner = "" }), reason: "names no usable owner"},
+		// No owner at all is the server's (ServerIconOwner); an owner no
+		// user name can be is damage.
+		{
+			name:   "an owner on two lines",
+			value:  record(func(i *LibraryIcon) { i.Owner = "alice\nbob" }),
+			reason: "names no usable owner",
+		},
 		{name: "an ID that is not one", value: record(func(i *LibraryIcon) { i.ID = "plc" }), reason: "has no image ID"},
 		{
 			name:   "the ID of another image",

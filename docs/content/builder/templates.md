@@ -17,6 +17,14 @@ Templates are kept in two places:
   on the **Node Templates** tab of the drafts page. You can share them with
   other users, and publish them for everyone on the server. See
   [The template library](#the-template-library).
+- **On the phenix server.** An administrator can put template files in the
+  server's template directory. phenix reads each one at start as a
+  collection everyone sees, read only. See
+  [Server collections](#server-collections).
+
+Templates move between places as template files: **Export** saves templates
+as a YAML file, and **Import templates** reads one into your library. See
+[Exporting and importing templates](#exporting-and-importing-templates).
 
 A template's description is only its tooltip in **Add nodes**: a device made
 from a template gets no description. A device keeps no link to the template
@@ -34,12 +42,15 @@ it was made from: changing or deleting a template later changes no device.
 | **My library** | Your own templates. A new library holds the five built-in templates. |
 | **Shared with me** | Templates other users share with you. |
 | **Server-wide** | Templates published for everyone on the server. |
+| **Server:** *and each server collection's name* | The templates of a collection the phenix server read from its template directory, read only, for example **Server: NLR Node Templates** (see [Server collections](#server-collections)). |
 | **Built-in** | The five built-in templates, only while your library cannot be loaded. |
 
 A group's name shows only when two groups or more have templates, so a
 diagram without templates of its own looks as it always did. Point at a
 template to see its description. A template of another user adds "Shared
 by" or "Published by" and the owner's name, for example "Shared by alice."
+A template of a server collection adds "From the server collection", the
+collection's name, and "which is read only".
 
 Two buttons follow the **Device templates** heading:
 
@@ -181,16 +192,18 @@ Templates** on the drafts page.
 
 The tab holds:
 
-- **New template** and **New collection**.
+- **New template**, **New collection** and **Import templates** (see
+  [Exporting and importing templates](#exporting-and-importing-templates)).
 - **Show**, which chooses the list: **My templates**, one of your
   collections, and, when there are any, **Shared with me** and
-  **Server-wide** with their collections.
+  **Server-wide** with their collections, and under **Server** the server
+  collections.
 - A row for selecting several templates (see
   [Selecting several templates](#selecting-several-templates)).
 - A card for each template, with a checkbox, the template's icon and name,
   when it was last updated (a built-in template you never changed has no
   time), the collections it is in ("In" and their names), who it is shared
-  with, its description, and **Edit**, **Share** and **Delete**.
+  with, its description, and **Edit**, **Share**, **Delete** and **Export**.
 
 Until the first read answers, the tab says "Loading…". When the library
 cannot be read, the tab says "Could not load your templates." and why, with
@@ -248,8 +261,138 @@ many are selected ("2 of 5 selected"), and the actions your role allows:
 - **Share selected** (see [Sharing templates](#sharing-templates)).
 - **Delete selected**, which asks once: "Delete 2 templates?". Select
   **Delete templates**. Devices already made from them do not change.
+- **Export selected** (see
+  [Exporting and importing templates](#exporting-and-importing-templates)).
 
 Choosing another list in **Show** clears the selection.
+
+## Exporting and importing templates
+
+A template file holds one collection of templates, as YAML or JSON. Export
+writes exactly what Import and the phenix server read, so a file you export
+can be imported on another phenix server, or put in a server's template
+directory as it is (see [Server collections](#server-collections)).
+
+### Exporting
+
+**Export** saves a YAML file:
+
+- on a card, the one template, as a collection of its name;
+- in the selection row, **Export selected** saves the selected templates,
+  as a collection named after the list shown (a collection's name, or for
+  example "My templates");
+- on a collection you show, **Export collection** saves the collection
+  with its name and description.
+
+The file is named after the collection or template, for example
+`plant-floor.templates.yaml`. Templates of every source export: your own,
+shared, server-wide, built-in and server collections. The file carries a
+copy of every custom icon its templates name, from the server's icon
+library, at most 50. Builder says what it saved, for example "Exported 2
+templates to plant-floor.templates.yaml.", and names an icon the icon
+library does not have, which the file then does not carry.
+
+The templates of a file need names that differ even ignoring case, and a
+library may hold two that do not, for example your own "PLC" and a "plc"
+shared with you. Export keeps the first name and numbers the others, "plc
+(2)", "plc (3)" and so on, and says so: "The templates of a file need names
+that differ even ignoring case, so it holds "plc" as "plc (2)"."
+
+A file looks like this
+([download the example](examples/node-templates.yaml)):
+
+```yaml
+$schema: https://phenix.sandia.gov/schemas/builder/templates/v1
+name: Plant floor
+description: Devices of the plant's control network.
+templates:
+  - name: PLC
+    description: Programmable logic controller
+    device:
+      iconKey: server
+      icon: plc-icon
+      spec:
+        type: VirtualMachine
+        general:
+          hostname: plc
+          vm_type: kvm
+        hardware:
+          os_type: linux
+          drives:
+            - image: ubuntu.qc2
+icons:
+  plc-icon:
+    data: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==
+```
+
+- `$schema` (required) names the format. The server serves its JSON
+  Schema at `/api/v1/schemas/builder/templates/v1`.
+- `name` (required) is the collection's name, and `description` its
+  description: one line each, at most 128 and 1024 bytes.
+- `templates` (required) holds 1 to 200 templates, each with a `name`, an
+  optional `description` and a `device`, the fields a template fills in,
+  as a library template has them. No two names may differ only in case.
+  Templates have no ids: where a template is kept gives it one.
+- `icons` (optional) holds copies of custom icons, by icon name, each a
+  PNG in base64 as a downloaded diagram carries them (see
+  [Custom icons](diagrams.md#custom-icons)). A template may also name an
+  icon the file does not carry, which the server's icon library is
+  expected to hold.
+
+YAML anchors and aliases (`&name`, `*name`) are not allowed. A file holds
+at most 8 MiB.
+
+### Importing
+
+To import a template file into your library:
+
+1. Select **Import templates** on the **Node Templates** tab.
+2. Choose the file. Builder reads it at once. A file it cannot import says
+   why, each problem with where it is in the file, for example
+   `templates[1].name: template name "plc" is also the name of templates[0],
+   ignoring case`. A file it can import is described, for example "Plant
+   floor: 2 templates and 1 custom icon."
+3. Select **Import**.
+
+The templates are added to your library as copies, in a new collection with
+the file's name and description. When one of your collections already has
+that name, the new one gets a number, for example "Plant floor (2)", which
+the dialog says before you import. Builder says "Imported 2 templates as
+collection Plant floor (2)."
+
+The custom icons the file carries go to the server's icon library first, as
+when you upload a diagram: an icon the library lacks is added under its
+name, as yours, and an icon the library holds with the same picture is that
+icon. When the library holds another picture under that name, or cannot
+take the icon (it is full, say), the import goes on, and the dialog lists
+what happened, for example "The server already has an icon named plc-icon
+that differs from this file's. The imported templates show the server's
+icon." Select **Close**.
+
+Importing needs `configs` `create`, and room in your library: at most 200
+templates and 50 collections.
+
+## Server collections
+
+An administrator can give everyone on a phenix server the same templates:
+each template file in the server's template directory becomes one
+collection, for example "NLR Node Templates" or "Sandia Node Templates".
+phenix reads the directory when it starts (see
+[Template files on the server](administration.md#template-files-on-the-server)).
+
+Server collections show:
+
+- in **Add nodes**, each in a group named **Server:** and its name, for
+  example **Server: NLR Node Templates**;
+- on the **Node Templates** tab, under **Server** in **Show**, each by its
+  name.
+
+They are read only for everyone, administrators included: a card has
+**View**, **Copy to my library** and **Export**, and a collection **Copy
+collection to my library** and **Export collection**. To change a template,
+copy it to your library and change the copy. The collection says "Read from
+a template file on the phenix server. To change a template, copy it to your
+library."
 
 ## Sharing templates
 
@@ -350,8 +493,8 @@ the action, on any name:
 
 | Action | Permission |
 |---|---|
-| See the library, and the shared and server-wide templates | `configs` `list` |
-| **New template**, **New collection**, **Save to library**, **Copy to my library** | `configs` `create` |
+| See the library, the shared and server-wide templates and the server collections, and **Export** | `configs` `list` |
+| **New template**, **New collection**, **Save to library**, **Copy to my library**, **Import templates** | `configs` `create` |
 | **Edit**, **Edit collection**, **Add to collection**, **Remove from collection**, **Share** | `configs` `update` |
 | **Delete**, **Delete collection**, **Delete selected** | `configs` `delete` |
 | Publish server-wide, and take back any user's server-wide item | `builder-templates` `publish`, with `configs` `update` |
@@ -375,6 +518,8 @@ storage.
 | Template description | 1024 bytes, one line |
 | A template's device, as JSON | 16 KiB |
 | People a template or a collection is shared with | 25 |
+| Template file | 8 MiB, 1 to 200 templates, 50 custom icons |
+| Template files the server reads | 50 |
 
 A library is kept by user name, as drafts are: deleting a user's account
 does not delete their library, and a new account of the same name owns it.
@@ -383,6 +528,9 @@ does not delete their library, and a new account of the same name owns it.
 
 There is no `phenix` command for the template library: use the
 **Node Templates** tab or the REST API (see [REST API](administration.md#rest-api)).
+The server collections come from the template directory, which
+`--base-dir.builder-templates` names (see
+[Template files on the server](administration.md#template-files-on-the-server)).
 Diagram templates are part of the Builder document, so a Builder file that
 `phenix builder publish` reads may hold them; publishing never writes them
 into a Topology config.

@@ -54,7 +54,11 @@ import {
 } from './grouping.js';
 import { patternProblem } from './groupingPattern.js';
 import { History, DEFAULT_HISTORY_LIMIT } from './history.js';
-import { iconLibrary, ingestIcons } from './iconLibrary.js';
+import {
+  iconLibrary,
+  ingestIcons,
+  ingestTemplateIcons,
+} from './iconLibrary.js';
 import { settleIcons } from './icons.js';
 import { createDraftStore } from './idb.js';
 import { uniqueName } from './ids.js';
@@ -91,6 +95,7 @@ import { newestFirst, reasonMessage } from './share.js';
 import { requestSignIn, signIn, signInAvailable } from './signin.js';
 import { pageStorage } from './storage.js';
 import { builderTabs } from './tabs.js';
+import { importProblem, uniqueCollectionName } from './templateFile.js';
 import {
   paletteTemplateGroups,
   templateByKey,
@@ -4203,6 +4208,45 @@ export const useBuilderStore = defineStore('builder', {
       await this.fetchTemplates();
 
       return result;
+    },
+
+    /**
+     * Imports a template file (see parseTemplateFile in templateFile.js)
+     * into the user's library: its templates, each a copy under an id the
+     * server gives it, as a new collection named as the file names it, or
+     * with " (2)" and so on when one of the user's collections has that
+     * name. The custom icons the file carries go to the icon library first,
+     * by the rules of an upload (see ingestTemplateIcons). It rejects with
+     * the failure, which the caller reports (see describeLibraryError).
+     *
+     * @param {object} file the file, as parseTemplateFile reads it
+     * @param {object} [options]
+     * @param {object} [options.library] the icon library
+     * @returns {Promise<{collection: string, templates: number, warnings:
+     *   string[]}>} the new collection's name, how many templates it holds,
+     *   and what became of icons that could not be added
+     */
+    async importTemplateFile(file, { library = iconLibrary } = {}) {
+      const full = importProblem(this.templates, file.templates.length);
+
+      if (full) {
+        throw new LibraryError(full);
+      }
+
+      const warnings = await ingestTemplateIcons(file.icons, library);
+      const name = uniqueCollectionName(
+        file.name,
+        this.ownCollections.map((collection) => collection.name),
+      );
+
+      await this.createLibraryTemplates(file.templates, {
+        collection: {
+          name,
+          ...(file.description ? { description: file.description } : {}),
+        },
+      });
+
+      return { collection: name, templates: file.templates.length, warnings };
     },
 
     /**

@@ -1434,7 +1434,9 @@ export function createBuilderApi(http = axiosInstance) {
      * collections, then those of other users that are shared with them or
      * published server-wide (each item's source says which: own, shared or
      * server), with what they may do and the library's limits. A user who
-     * never changed theirs has the built-in templates.
+     * never changed theirs has the built-in templates. The collections the
+     * server read from its template files come after them, each with its
+     * templates (source preloaded, no owner), read only for everyone.
      *
      * @returns {Promise<object>} owner, templates and collections (lists),
      *   canShare, canPublish, damaged (the stored library cannot be read,
@@ -1450,11 +1452,33 @@ export function createBuilderApi(http = axiosInstance) {
         value && typeof value === 'object' && !Array.isArray(value)
           ? value
           : {};
+      // A server collection and its templates, as the other sources list
+      // theirs: source preloaded, owned by no one.
+      const preloaded = (Array.isArray(data.preloaded) ? data.preloaded : [])
+        .map((entry) => ({
+          collection: list([object(entry).collection])[0],
+          templates: list(object(entry).templates),
+        }))
+        .filter((entry) => entry.collection)
+        .map(({ collection, templates }) => ({
+          collection: { ...collection, source: 'preloaded', owner: '' },
+          templates: templates.map((template) => ({
+            ...template,
+            source: 'preloaded',
+            owner: '',
+          })),
+        }));
 
       return {
         owner: typeof data.owner === 'string' ? data.owner : '',
-        templates: list(data.templates),
-        collections: list(data.collections),
+        templates: [
+          ...list(data.templates),
+          ...preloaded.flatMap((entry) => entry.templates),
+        ],
+        collections: [
+          ...list(data.collections),
+          ...preloaded.map((entry) => entry.collection),
+        ],
         canShare: data.canShare === true,
         canPublish: data.canPublish === true,
         damaged: data.damaged === true,

@@ -1212,13 +1212,16 @@ test(
       for (const control of [
         library.newTemplate,
         library.newCollection,
+        page.getByTestId('templates-import'),
         library.show,
         library.all,
         library.collect,
         library.bulkDelete,
+        page.getByTestId('bulk-export-templates'),
         library.select('server'),
         library.edit('server'),
         library.remove('server'),
+        page.getByTestId('template-export-server'),
         library.select('workstation'),
       ]) {
         await page.keyboard.press('Tab');
@@ -1630,6 +1633,24 @@ test('collections group templates of the library, and several templates are adde
   await test.step('Add to collection lists the collections, and adds the selected templates to the one chosen', async () => {
     await library.collect.focus();
     await page.keyboard.press('Enter');
+    // The menu opens on its first item. Collections other tests made in the
+    // shared library may come before this one: the arrow keys reach it.
+    await expect(
+      page
+        .getByTestId('bulk-collect-templates-menu')
+        .getByRole('menuitem')
+        .first(),
+    ).toBeFocused();
+    for (
+      let step = 0;
+      step < 50 &&
+      !(await library
+        .collectItem(one)
+        .evaluate((item) => item === document.activeElement));
+      step += 1
+    ) {
+      await page.keyboard.press('ArrowDown');
+    }
     await expect(library.collectItem(one)).toBeFocused();
     await expect.soft(library.collectItem(one)).toHaveText(first);
     await expect
@@ -2297,3 +2318,178 @@ for (const scheme of ['light', 'dark']) {
     },
   );
 }
+
+test('a collection is exported as a template file, which Import reads back into the library as a new collection that makes devices', async ({
+  page,
+  builder,
+  request,
+  tracker,
+  issues,
+}, testInfo) => {
+  const names = ['file-alfa', 'file-bravo'].map((part) =>
+    uniqueName(testInfo, part),
+  );
+  const set = uniqueName(testInfo, 'file-set');
+  const icon = iconOf(pngOf(8, 8, ownColor()), iconName('file'));
+
+  await seedIcon(request, tracker, icon);
+
+  const seeded = await seedTemplates(
+    request,
+    tracker,
+    [
+      {
+        name: names[0],
+        description: 'Carries its icon',
+        device: unitDevice('file-alfa', { icon: icon.name }),
+      },
+      { name: names[1], description: '', device: unitDevice('file-bravo') },
+    ],
+    { collection: { name: set, description: 'Exported by a test' } },
+  );
+  const draft = await builder.seedDraft(
+    plantDocument(uniqueName(testInfo, 'template-file')),
+  );
+  const library = templateLibrary(page);
+  const palette = templatePalette(page);
+  const dialog = page.getByTestId('template-import-dialog');
+  let exported;
+  let imported;
+
+  await builder.open();
+  await library.tab.click();
+
+  await test.step('Export collection saves a YAML template file that carries the icon its templates name', async () => {
+    await library.show.selectOption(seeded.collection);
+    await expect(library.block).toBeVisible();
+
+    exported = await download(page, () =>
+      page.getByTestId('collection-export').click(),
+    );
+
+    const fileName = `${set.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}.templates.yaml`;
+    const text = exported.buffer.toString('utf8');
+
+    expect(exported.name).toBe(fileName);
+    expect(text).toContain(
+      '$schema: https://phenix.sandia.gov/schemas/builder/templates/v1\n',
+    );
+    expect(text).toContain(`name: ${set}\n`);
+    expect(text).toContain('description: Exported by a test\n');
+    expect(text).toContain(`  - name: ${names[0]}\n`);
+    expect(text).toContain(`  - name: ${names[1]}\n`);
+    // No ids: where a template is kept gives it one.
+    expect(text).not.toContain(seeded.ids[0]);
+    expect(text).toContain(`icons:\n  ${icon.name}:\n    data: ${icon.data}\n`);
+    await expect(builder).toHaveAnnounced(
+      `Exported 2 templates to ${fileName}.`,
+    );
+  });
+
+  await test.step('a file that is not valid is refused, each problem with where it is', async () => {
+    await page.getByTestId('templates-import').click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId('template-import-file')).toBeFocused();
+
+    const twins = exported.buffer
+      .toString('utf8')
+      .replace(
+        `  - name: ${names[1]}\n`,
+        `  - name: ${names[0].toUpperCase()}\n`,
+      );
+
+    await dialog.getByTestId('template-import-file').setInputFiles({
+      name: 'twins.templates.yaml',
+      mimeType: 'text/yaml',
+      buffer: Buffer.from(twins),
+    });
+    await expect(dialog.getByTestId('template-import-error')).toHaveText(
+      'This template file cannot be imported:',
+    );
+    await expect(dialog.getByTestId('template-import-issue')).toHaveText([
+      `templates[1].name: template name "${names[0].toUpperCase()}" is also the name of templates[0], ignoring case`,
+    ]);
+    await expect
+      .soft(dialog.getByTestId('template-import-file'))
+      .toHaveAttribute('aria-invalid', 'true');
+  });
+
+  await test.step('Import reads the exported file into the library as a new collection, under a name of its own', async () => {
+    await dialog.getByTestId('template-import-file').setInputFiles({
+      name: exported.name,
+      mimeType: 'text/yaml',
+      buffer: exported.buffer,
+    });
+    await expect(dialog.getByTestId('template-import-error')).toHaveCount(0);
+    await expect(dialog.getByTestId('template-import-summary')).toHaveText(
+      `${set}: 2 templates and 1 custom icon. Your library has a collection of that name, so it is added as ${set} (2).`,
+    );
+
+    const added = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        /\/builder\/templates\/[^/]+\/items$/.test(
+          new URL(response.url()).pathname,
+        ),
+    );
+
+    await dialog.getByTestId('template-import-submit').click();
+
+    const answer = await added;
+
+    expect(answer.status()).toBe(201);
+    expect(answer.request().postDataJSON()).toMatchObject({
+      templates: [
+        { name: names[0], description: 'Carries its icon' },
+        { name: names[1] },
+      ],
+      collection: { name: `${set} (2)`, description: 'Exported by a test' },
+    });
+    imported = await answer.json();
+    await expect(dialog).toHaveCount(0);
+    await expect(builder).toHaveAnnounced(
+      `Imported 2 templates as collection ${set} (2).`,
+    );
+    // The icon library held the icon with the same bytes: nothing was
+    // uploaded, nothing warned, and the dialog gave focus back.
+    await expect.soft(page.getByTestId('templates-import')).toBeFocused();
+
+    const stored = await readLibrary(request);
+    const collection = stored.collections.find(
+      (entry) => entry.id === imported.collection.id,
+    );
+
+    expect(collection).toMatchObject({ name: `${set} (2)`, source: 'own' });
+    expect(collection.templateIds).toEqual(
+      imported.created.map((entry) => entry.id),
+    );
+    expect(
+      stored.templates.find((entry) => entry.id === imported.created[0].id)
+        .device,
+    ).toMatchObject({
+      icon: icon.name,
+      spec: { general: { hostname: 'file-alfa' } },
+    });
+
+    await library.show.selectOption(imported.collection.id);
+    await expect(library.card(imported.created[0].id)).toBeVisible();
+    await expect(library.card(imported.created[1].id)).toBeVisible();
+  });
+
+  await test.step('a template of the imported collection makes a device', async () => {
+    await page.getByTestId('drafts-tab-mine').click();
+    await page.getByTestId(`draft-open-${draft.id}`).click();
+    await expect(builder.canvas).toBeVisible();
+    await palette.own(imported.created[0].id).click();
+    await builder.persisted(draft, hostnames, ['plc-01', 'file-alfa']);
+
+    const doc = await builder.serverDocument(draft);
+
+    expect.soft(byHostname(doc, 'file-alfa').device).toMatchObject({
+      icon: icon.name,
+    });
+    await builder.waitSaved();
+  });
+
+  expectNoFatal(issues);
+});

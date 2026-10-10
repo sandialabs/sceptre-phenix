@@ -10,7 +10,9 @@
   types (proposed from the file's name). A copy the diagram carries can be
   added to the server under its name. A server icon is renamed or deleted
   only by the user who uploaded it, or with the builder-icons permissions:
-  Rename and Delete show only when the server says the user may. A renamed
+  Rename and Delete show only when the server says the user may. An icon the
+  server added from its template files has no owner, is listed as from
+  "Server", and needs those permissions to be changed. A renamed
   icon keeps its old name as another name, so diagrams that use it keep
   showing it; a deleted one leaves them showing their built-in icon.
 
@@ -351,6 +353,8 @@
   import {
     ICON_NAME_HINT,
     IconFileError,
+    SERVER_ICON_OWNER,
+    iconOwnerText,
     iconSizeText,
     iconSrc,
     isIconName,
@@ -417,7 +421,11 @@
     }
 
     return library.state.icons.filter((icon) =>
-      [icon.name, icon.owner, ...(icon.aliases || [])].some((text) =>
+      [
+        icon.name,
+        icon.owner || SERVER_ICON_OWNER,
+        ...(icon.aliases || []),
+      ].some((text) =>
         String(text || '')
           .toLowerCase()
           .includes(words),
@@ -439,7 +447,7 @@
 
   function detailsOf(icon) {
     const parts = [
-      icon.owner ? `Uploaded by ${icon.owner}` : '',
+      iconOwnerText(icon),
       iconSizeText(icon),
       icon.aliases?.length ? `also named ${icon.aliases.join(', ')}` : '',
     ];

@@ -688,7 +688,10 @@ also into another diagram in the same browser tab.
 The user who uploaded an icon can rename and delete it. A role with the
 `builder-icons` permissions can rename (`update`) and delete (`delete`)
 every user's icons (see
-[Icons of other users](administration.md#icons-of-other-users)).
+[Icons of other users](administration.md#icons-of-other-users)). An icon
+the server added from a template file is listed as from "Server": no user
+uploaded it, so only those permissions rename or delete it (see
+[Template files on the server](administration.md#template-files-on-the-server)).
 
 **Rename** asks for the new name. The old name keeps naming the icon, so
 diagrams and templates that use it keep showing it: "Renamed OLD to NEW. OLD

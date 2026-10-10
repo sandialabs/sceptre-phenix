@@ -608,6 +608,7 @@ func TestBuilderCleanupKeepsOnlyATopologysOwnDocument(t *testing.T) {
 		getConfig:     func(string) (*store.Config, error) { return nil, store.ErrNotExist },
 		publish:       builderPublishOps{},
 		documentFiles: func() (string, []string) { return "", nil },
+		templateFiles: "",
 	}
 
 	stored := func(document *bapi.PublishedDocument) bool {

@@ -42,6 +42,18 @@
   A library that could not be read says why, with Retry, above whatever an
   earlier read listed. One the server cannot read (damaged) lists none of
   the user's own templates, but still other users'.
+
+  The collections the server read from its template files at start are
+  listed under Server in Show, each by its name. They are read only for
+  everyone, as other users' items are: View, Copy to my library and
+  Export, no Edit, Delete or Share.
+
+  Export, on a card, on the selection and on a collection shown, saves a
+  YAML template file (see templateFile.js) that carries the custom icons
+  its templates name; templates of every source export. Import templates
+  opens a dialog that reads such a file into the user's library as a new
+  collection (dialogs/TemplateImportDialog.vue), for a role that may add
+  templates.
 -->
 <template>
   <div ref="rootEl" class="builder-templates">
@@ -64,6 +76,16 @@
         :aria-disabled="busy || undefined"
         @click="busy || $emit('collection', {})">
         New collection
+      </button>
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="templates-import"
+        aria-haspopup="dialog"
+        :aria-disabled="busy || undefined"
+        @click="busy || (importing = true)">
+        <builder-icon name="upload" :size="14" />
+        Import templates
       </button>
     </div>
     <p v-else class="builder-templates__note" data-testid="templates-view-only">
@@ -98,7 +120,12 @@
         it.
       </p>
       <div
-        v-if="!library.damaged || choices.shared || choices.server"
+        v-if="
+          !library.damaged ||
+          choices.shared ||
+          choices.server ||
+          choices.preloadedCollections.length
+        "
         class="builder-field builder-templates__show">
         <label for="templates-show">Show</label>
         <select
@@ -140,6 +167,18 @@
               {{ entry.label }}
             </option>
           </optgroup>
+          <!-- The collections the server read from its template files. -->
+          <optgroup
+            v-if="choices.preloadedCollections.length"
+            label="Server"
+            data-testid="templates-show-preloaded">
+            <option
+              v-for="entry in choices.preloadedCollections"
+              :key="entry.value"
+              :value="entry.value">
+              {{ entry.label }}
+            </option>
+          </optgroup>
         </select>
       </div>
 
@@ -161,7 +200,14 @@
           {{ count(items.length, 'template') }}
         </p>
         <p
-          v-if="!mine"
+          v-if="preloaded"
+          class="builder-card__meta"
+          data-testid="collection-preloaded">
+          Read from a template file on the phenix server. To change a template,
+          copy it to your library.
+        </p>
+        <p
+          v-else-if="!mine"
           class="builder-card__meta"
           data-testid="collection-owner">
           Owner: {{ collection.owner }}
@@ -207,6 +253,15 @@
             @click="busy || askDeleteCollection()">
             Delete collection
           </button>
+          <button
+            type="button"
+            class="builder-button"
+            data-testid="collection-export"
+            :aria-disabled="busy || !items.length || undefined"
+            @click="exportCollection">
+            <builder-icon name="download" :size="14" />
+            Export collection
+          </button>
         </div>
         <div v-else class="builder-templates__collection-actions">
           <button
@@ -217,6 +272,15 @@
             :aria-disabled="busy || !items.length || undefined"
             @click="copyCollection">
             Copy collection to my library
+          </button>
+          <button
+            type="button"
+            class="builder-button"
+            data-testid="collection-export"
+            :aria-disabled="busy || !items.length || undefined"
+            @click="exportCollection">
+            <builder-icon name="download" :size="14" />
+            Export collection
           </button>
           <button
             v-if="library.canPublish && collection.serverWide"
@@ -306,6 +370,15 @@
           @click="askUnpublishSelected">
           Remove from server-wide
         </button>
+        <button
+          type="button"
+          class="builder-button"
+          data-testid="bulk-export-templates"
+          aria-describedby="bulk-count-templates"
+          :aria-disabled="!selection.count || busy || undefined"
+          @click="exportSelected">
+          Export selected
+        </button>
       </builder-bulk-bar>
 
       <p v-if="!items.length && !unreadable" data-testid="templates-empty">
@@ -356,7 +429,7 @@
           <!-- One line each: whose it is, when it changed, the collections
                that hold it, and who it is shared with. -->
           <p
-            v-if="!mine"
+            v-if="!mine && template.owner"
             class="builder-card__meta"
             :data-testid="testid('template-owner', template)">
             Owner: {{ template.owner }}
@@ -414,6 +487,15 @@
               @click="copyTemplates([template])">
               Copy to my library
             </button>
+            <button
+              type="button"
+              class="builder-button"
+              :data-testid="testid('template-export', template)"
+              :aria-label="`Export template ${cardName(template)}`"
+              :aria-disabled="busy || undefined"
+              @click="exportTemplate(template)">
+              Export
+            </button>
           </div>
           <div v-else class="builder-card__actions">
             <button
@@ -454,10 +536,22 @@
               @click="busy || askDelete([template])">
               Delete
             </button>
+            <button
+              type="button"
+              class="builder-button"
+              :data-testid="`template-export-${template.id}`"
+              :aria-label="`Export template ${cardName(template)}`"
+              :aria-disabled="busy || undefined"
+              @click="exportTemplate(template)">
+              Export
+            </button>
           </div>
         </li>
       </ul>
     </template>
+
+    <!-- Reads a template file into the library as a new collection. -->
+    <template-import-dialog v-if="importing" @close="importing = false" />
 
     <!-- A deleted template or collection cannot be brought back, so Delete
          asks first (WCAG 3.3.4): once, whatever is selected. So does taking
@@ -475,12 +569,14 @@
 </template>
 
 <script setup>
+  import { saveAs } from 'file-saver';
   import { computed, nextTick, reactive, ref, watch } from 'vue';
 
   import BuilderBulkBar from './BuilderBulkBar.vue';
   import BuilderConfirm from './BuilderConfirm.vue';
   import BuilderIcon from './BuilderIcon.vue';
   import BuilderMenuButton from './BuilderMenuButton.vue';
+  import TemplateImportDialog from './dialogs/TemplateImportDialog.vue';
 
   import { count, listOf } from '@/builder/announce.js';
   import { focusLost } from '@/builder/commands.js';
@@ -490,6 +586,7 @@
   import { useListSelection } from '@/builder/listSelection.js';
   import { describeShares } from '@/builder/share.js';
   import { LibraryError, useBuilderStore } from '@/builder/store.js';
+  import { exportTemplateFile } from '@/builder/templateFile.js';
   import {
     SHOW_SERVER,
     SHOW_SHARED,
@@ -514,6 +611,7 @@
     own: 'My templates',
     shared: 'Shared with me',
     server: 'Server-wide',
+    preloaded: 'Server',
   };
 
   const emit = defineEmits([
@@ -538,6 +636,8 @@
   const loading = computed(() => library.value.status === 'loading');
   // The library is taking a change: nothing else is changed meanwhile.
   const busy = ref(false);
+  // The Import templates dialog is open.
+  const importing = ref(false);
   // Share is offered to a user who may share with people, which changes
   // configs. Publishing server-wide is part of the Share dialog, so a user
   // without an account, as with sign-in off, publishes nothing either: no
@@ -559,6 +659,8 @@
   // The list holds the user's own templates; which the server could not
   // read, for a damaged library.
   const mine = computed(() => list.value.source === 'own');
+  // The list is a collection the server read from a template file.
+  const preloaded = computed(() => list.value.source === 'preloaded');
   const unreadable = computed(() => mine.value && library.value.damaged);
 
   watch([list, choices], () => {
@@ -631,11 +733,17 @@
   }
 
   // A card's test ids: the user's own templates by id, other users' by
-  // owner and id, since every library starts with the same built-in ids.
+  // owner and id, since every library starts with the same built-in ids,
+  // and the server's by id after "preloaded".
   function testid(prefix, template) {
-    return template.source === 'own'
-      ? `${prefix}-${template.id}`
-      : `${prefix}-${template.owner}-${template.id}`;
+    switch (template.source) {
+      case 'own':
+        return `${prefix}-${template.id}`;
+      case 'preloaded':
+        return `${prefix}-preloaded-${template.id}`;
+      default:
+        return `${prefix}-${template.owner}-${template.id}`;
+    }
   }
 
   // --- selection ---------------------------------------------------------
@@ -850,6 +958,59 @@
 
   function copyCollection() {
     copyTemplates(items.value, collection.value);
+  }
+
+  // --- exporting ---------------------------------------------------------
+
+  // Saves templates as a template file of a collection named `name`, which
+  // carries the custom icons they name from the icon library, read first
+  // when it was not. What was saved is said by the page's live region, and
+  // why it could not be by the page's alert.
+  async function exportTemplates(name, templates, description = '') {
+    if (!templates.length || busy.value) {
+      return;
+    }
+
+    store.clearError();
+
+    try {
+      await iconLibrary.ensure().catch(() => {});
+
+      const { message } = exportTemplateFile(
+        { name, description, templates },
+        { library: iconLibrary, saveAs },
+      );
+
+      store.announce(message);
+    } catch (error) {
+      store.setError(
+        `Could not export the templates. ${error?.message || ''}`.trim(),
+      );
+    }
+  }
+
+  // One template, as a collection of its own name.
+  function exportTemplate(template) {
+    exportTemplates(template.name, [template], template.description || '');
+  }
+
+  // The selection, as a collection named after the list shown.
+  function exportSelected() {
+    if (selection.count) {
+      exportTemplates(
+        collection.value?.name || LIST_LABELS[list.value.source],
+        selection.selected,
+      );
+    }
+  }
+
+  // The collection shown, as it is.
+  function exportCollection() {
+    exportTemplates(
+      collection.value.name,
+      items.value,
+      collection.value.description || '',
+    );
   }
 
   function askUnpublish(targets) {

@@ -471,7 +471,10 @@ export function withArticle(kind) {
   return `${/^[aeio]/i.test(kind) ? 'an' : 'a'} ${kind}`;
 }
 
-class AliasError extends Error {}
+/**
+ * Thrown by parseText for YAML that holds an alias (*name).
+ */
+export class AliasError extends Error {}
 
 // Stops a YAML parse at its first alias (*name). js-yaml resolves an alias to
 // its anchor's value itself, which every copy of the document then expands
@@ -486,6 +489,27 @@ function refuseAliases(event, state) {
     state.result !== null
   ) {
     throw new AliasError();
+  }
+}
+
+/**
+ * The value of text a file holds: JSON, or else YAML read with js-yaml's
+ * JSON schema, as the server reads it (JSONFromText in yaml.go). The content
+ * decides, never the file's name.
+ *
+ * @param {string} text
+ * @returns {*}
+ * @throws {AliasError} for YAML that holds an alias
+ * @throws {Error} for text that is neither, with js-yaml's reason
+ */
+export function parseText(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return YAML.load(text, {
+      schema: YAML.JSON_SCHEMA,
+      listener: refuseAliases,
+    });
   }
 }
 
@@ -521,29 +545,22 @@ export function parseImport(text, options = {}) {
   let parsed;
 
   try {
-    parsed = JSON.parse(input);
-  } catch {
-    try {
-      parsed = YAML.load(input, {
-        schema: YAML.JSON_SCHEMA,
-        listener: refuseAliases,
-      });
-    } catch (error) {
-      if (error instanceof AliasError) {
-        return {
-          ok: false,
-          code: 'aliases',
-          error:
-            'YAML aliases (*name) are not supported. Write out each value an alias repeats and upload the document again.',
-        };
-      }
-
+    parsed = parseText(input);
+  } catch (error) {
+    if (error instanceof AliasError) {
       return {
         ok: false,
-        code: 'parse',
-        error: `Could not parse the document: ${error.message}`,
+        code: 'aliases',
+        error:
+          'YAML aliases (*name) are not supported. Write out each value an alias repeats and upload the document again.',
       };
     }
+
+    return {
+      ok: false,
+      code: 'parse',
+      error: `Could not parse the document: ${error.message}`,
+    };
   }
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {

@@ -159,6 +159,63 @@ export function createIconLibrary(api = builderApi) {
 
 export const iconLibrary = createIconLibrary();
 
+// What ingestIcons and ingestTemplateIcons share: each copy whose name the
+// library lacks is uploaded, and words say what became of the others.
+// Returns the copies to keep, the warnings, and whether the library could
+// not be read at all (then nothing was uploaded, and every copy is kept).
+async function ingestCopies(carried, library, words) {
+  try {
+    await library.load();
+  } catch (error) {
+    return {
+      kept: carried,
+      warnings: [
+        words.unreadable(Object.keys(carried).length, library.failure(error)),
+      ],
+      unread: true,
+    };
+  }
+
+  const kept = {};
+  const warnings = [];
+  let uploaded = false;
+
+  for (const [name, entry] of Object.entries(carried)) {
+    const shared = library.lookup(name);
+
+    if (shared) {
+      if (shared.data !== entry?.data) {
+        kept[name] = entry;
+        warnings.push(words.differs(name));
+      }
+
+      continue;
+    }
+
+    try {
+      const { icon } = await library.upload(
+        { name, data: entry?.data },
+        { refresh: false },
+      );
+
+      uploaded = true;
+
+      if (icon?.data !== entry?.data) {
+        kept[name] = entry;
+      }
+    } catch (error) {
+      kept[name] = entry;
+      warnings.push(words.refused(name, library.failure(error)));
+    }
+  }
+
+  if (uploaded) {
+    await library.load().catch(() => {});
+  }
+
+  return { kept, warnings, unread: false };
+}
+
 /**
  * Puts the custom icons an uploaded document carries into the icon library,
  * so the draft made from it carries none it need not: for each copy, a
@@ -184,58 +241,17 @@ export async function ingestIcons(doc, library = iconLibrary) {
     return { doc, warnings: [] };
   }
 
-  try {
-    await library.load();
-  } catch (error) {
-    const count = Object.keys(carried).length;
+  const { kept, warnings, unread } = await ingestCopies(carried, library, {
+    unreadable: (count, reason) =>
+      `The server's icon library could not be read, so the diagram keeps its ${count === 1 ? 'custom icon' : `${count} custom icons`}. ${reason}`,
+    differs: (name) =>
+      `The server already has an icon named ${name} that differs from this diagram's. The diagram keeps its own copy, which it shows in place of the server's.`,
+    refused: (name, reason) =>
+      `Custom icon ${name} could not be added to the server's icon library: ${reason} The diagram keeps its own copy.`,
+  });
 
-    return {
-      doc,
-      warnings: [
-        `The server's icon library could not be read, so the diagram keeps its ${count === 1 ? 'custom icon' : `${count} custom icons`}. ${library.failure(error)}`,
-      ],
-    };
-  }
-
-  const kept = {};
-  const warnings = [];
-  let uploaded = false;
-
-  for (const [name, entry] of Object.entries(carried)) {
-    const shared = library.lookup(name);
-
-    if (shared) {
-      if (shared.data !== entry?.data) {
-        kept[name] = entry;
-        warnings.push(
-          `The server already has an icon named ${name} that differs from this diagram's. The diagram keeps its own copy, which it shows in place of the server's.`,
-        );
-      }
-
-      continue;
-    }
-
-    try {
-      const { icon } = await library.upload(
-        { name, data: entry?.data },
-        { refresh: false },
-      );
-
-      uploaded = true;
-
-      if (icon?.data !== entry?.data) {
-        kept[name] = entry;
-      }
-    } catch (error) {
-      kept[name] = entry;
-      warnings.push(
-        `Custom icon ${name} could not be added to the server's icon library: ${library.failure(error)} The diagram keeps its own copy.`,
-      );
-    }
-  }
-
-  if (uploaded) {
-    await library.load().catch(() => {});
+  if (unread) {
+    return { doc, warnings };
   }
 
   const next = { ...doc };
@@ -247,4 +263,39 @@ export async function ingestIcons(doc, library = iconLibrary) {
   }
 
   return { doc: next, warnings };
+}
+
+/**
+ * Puts the custom icons a template file carries into the icon library, by
+ * the rules of an upload (see ingestIcons): a library icon of that name with
+ * the same bytes is the icon; no icon of that name means the copy is
+ * uploaded under it, as the user. A library icon of that name with other
+ * bytes, and a refused upload, each give a warning: templates of a library
+ * carry no icons, so the imported templates show the server's icon, or their
+ * built-in one.
+ *
+ * @param {object|null|undefined} icons the file's copies, by icon name
+ * @param {object} [library] the icon library (see createIconLibrary)
+ * @returns {Promise<string[]>} the warnings
+ */
+export async function ingestTemplateIcons(icons, library = iconLibrary) {
+  if (
+    !icons ||
+    typeof icons !== 'object' ||
+    Array.isArray(icons) ||
+    !Object.keys(icons).length
+  ) {
+    return [];
+  }
+
+  const { warnings } = await ingestCopies(icons, library, {
+    unreadable: (count, reason) =>
+      `The server's icon library could not be read, so ${count === 1 ? 'the custom icon' : `the ${count} custom icons`} of this file ${count === 1 ? 'was' : 'were'} not added to it: the templates that name ${count === 1 ? 'it' : 'them'} show their built-in icon until the server has ${count === 1 ? 'it' : 'them'}. ${reason}`,
+    differs: (name) =>
+      `The server already has an icon named ${name} that differs from this file's. The imported templates show the server's icon.`,
+    refused: (name, reason) =>
+      `Custom icon ${name} could not be added to the server's icon library: ${reason} The imported templates that name it show their built-in icon.`,
+  });
+
+  return warnings;
 }

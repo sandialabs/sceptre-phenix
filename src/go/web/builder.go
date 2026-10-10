@@ -129,6 +129,10 @@ type builderAPI struct {
 	// references name are read from, and the directories below it they are
 	// never read from (see [bapi.ReadDocumentFile]).
 	documentFiles func() (string, []string)
+	// templateFiles is the directory whose template files are read once, at
+	// start, as the server's collections of templates (see
+	// [bapi.Service.LoadServerTemplates]); "" reads none.
+	templateFiles string
 }
 
 // builderOption configures a [builderAPI].
@@ -154,6 +158,7 @@ func newBuilderAPI(opts ...builderOption) (*builderAPI, error) {
 		getConfig:     func(name string) (*store.Config, error) { return config.Get(name, false) },
 		publish:       newBuilderPublishOps(),
 		documentFiles: builderDocumentFiles,
+		templateFiles: common.BuilderTemplatesDir(),
 	}
 
 	for _, opt := range opts {
@@ -161,6 +166,10 @@ func newBuilderAPI(opts ...builderOption) (*builderAPI, error) {
 	}
 
 	api.cleanupStorage()
+
+	// The server's template collections are read here, once: the directory
+	// is where they are kept, and a change to it shows at the next start.
+	api.drafts.LoadServerTemplates(context.Background(), api.templateFiles)
 
 	return api, nil
 }
@@ -257,6 +266,12 @@ func withBuilderPublishOps(ops builderPublishOps) builderOption {
 // the server was started with.
 func builderDocumentFiles() (string, []string) {
 	return common.PhenixBase, []string{common.MountDir()}
+}
+
+// withBuilderTemplateFiles sets the directory whose template files are read
+// at start as the server's template collections; "" reads none.
+func withBuilderTemplateFiles(directory string) builderOption {
+	return func(api *builderAPI) { api.templateFiles = directory }
 }
 
 // withBuilderDocumentFiles sets the directory Builder files are read from,
@@ -851,6 +866,10 @@ const (
 	// builderSchemaPath is the path of the Builder's schema route.
 	builderSchemaPath = "/schemas/builder/v1"
 
+	// builderTemplateSchemaPath is the path of the schema route of the
+	// template file format.
+	builderTemplateSchemaPath = "/schemas/builder/templates/v1"
+
 	// builderIconsPath is the path of the icon library, whose routes are
 	// this path and the paths below it.
 	builderIconsPath = builderRoutePrefix + "icons"
@@ -862,7 +881,7 @@ const (
 
 // builderResponseHeaders sets the security headers of the responses to
 // requests under the Builder's paths: every path below /api/v1/builder/, and
-// the schema route. It goes by the request's path, not by the route it
+// the two schema routes. It goes by the request's path, not by the route it
 // matched, and leaves every other path alone. [builderAPI.routes] makes it a
 // middleware of the API router, so it also covers what the middleware after
 // it answers, and wraps the router's handlers of a request that matches no
@@ -876,7 +895,8 @@ const (
 func builderResponseHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if path, ok := strings.CutPrefix(r.URL.Path, builderAPIPrefix); ok {
-			if strings.HasPrefix(path, builderRoutePrefix) || path == builderSchemaPath {
+			if strings.HasPrefix(path, builderRoutePrefix) || path == builderSchemaPath ||
+				path == builderTemplateSchemaPath {
 				w.Header().Set("X-Content-Type-Options", "nosniff")
 			}
 
@@ -921,6 +941,8 @@ func (b *builderAPI) routes(router *mux.Router) {
 	router.MethodNotAllowedHandler = builderResponseHeaders(notAllowed)
 
 	router.Handle(builderSchemaPath, weberror.ErrorHandler(b.getSchema)).
+		Methods("GET", "OPTIONS")
+	router.Handle(builderTemplateSchemaPath, weberror.ErrorHandler(b.getTemplateSchema)).
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder/drafts", weberror.ErrorHandler(b.listDrafts)).
 		Methods("GET", "OPTIONS")
@@ -1012,6 +1034,33 @@ func (b *builderAPI) getSchema(w http.ResponseWriter, r *http.Request) error {
 	body, err := bdoc.SchemaJSON()
 	if err != nil {
 		return weberror.NewWebError(err, "unable to build the builder schema").
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	w.Header().Set("Content-Type", mimeJSON)
+
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
+	return nil
+}
+
+// getTemplateSchema - GET /schemas/builder/templates/v1.
+//
+// The JSON Schema of a template file, under the permission of the document
+// schema: schemas get on the resource name builder.
+func (b *builderAPI) getTemplateSchema(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderGetTemplateSchema")
+
+	const action = "getting the builder template file schema"
+
+	actor, ok := builderRequestActor(r)
+	if !ok || !actor.role.Allowed("schemas", "get", "builder") {
+		return builderForbidden(actor, action)
+	}
+
+	body, err := bdoc.TemplateFileSchemaJSON()
+	if err != nil {
+		return weberror.NewWebError(err, "unable to build the builder template file schema").
 			SetStatus(http.StatusInternalServerError)
 	}
 

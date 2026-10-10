@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -49,6 +50,10 @@ type Service struct {
 	clock     Clock
 	newID     IDSource
 	chunkSize int
+	// serverTemplates holds the collections the server read from its
+	// template files, which it keeps in memory only (see
+	// [Service.LoadServerTemplates]).
+	serverTemplates atomic.Pointer[[]ServerCollection]
 }
 
 // DocumentOrigin is a document the caller read itself, from the store or from
@@ -199,10 +204,11 @@ func New(opts ...Option) (*Service, error) {
 	}
 
 	return &Service{
-		store:     options.Store,
-		clock:     options.Clock,
-		newID:     options.IDs,
-		chunkSize: options.ChunkSize,
+		store:           options.Store,
+		clock:           options.Clock,
+		newID:           options.IDs,
+		chunkSize:       options.ChunkSize,
+		serverTemplates: atomic.Pointer[[]ServerCollection]{},
 	}, nil
 }
 

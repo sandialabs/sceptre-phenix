@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - **Builder scenarios**: A diagram lists up to 20 Scenario configs by name (`scenarios`). The Scenarios dialog adds stored scenarios or stores an uploaded scenario file as a Scenario config (replacing one keeps its annotations), Publish adds the topology to each listed scenario's `topology` annotation, and the Publish dialog picks the experiment's scenario.
 - **Builder drawings**: Rectangles, circles, icons and lines (with bends and arrowheads) that are drawn in a diagram and never published. Shapes, icons, notes and groups resize with the mouse.
 - **Builder icon sizes**: Devices, switches and groups draw their icons Small (16 pixels), Medium (24) or Large (32): a size for the whole diagram (`iconSize`), and optionally one of a node's own, both chosen in the Inspector.
+- **Builder template files**: Node Templates export to and import from YAML or JSON template files, one collection per file, with the custom icons they use. `phenix ui` reads the template files in `base-dir.builder-templates` (default `<base-dir.phenix>/builder/templates`) at start as read-only server collections that every user sees and can copy.
 
 ### Changed
 

@@ -471,6 +471,23 @@ export function sortIcons(icons) {
   });
 }
 
+// What the icon library lists an icon the server added from its template
+// files as from: no user owns one, and the library lists it with no owner
+// (ServerIconOwner in api/builder/templatefiles.go).
+export const SERVER_ICON_OWNER = 'Server';
+
+/**
+ * Who a list says an icon of the icon library is from: "Uploaded by
+ * <user>", or SERVER_ICON_OWNER for one the server added, which only the
+ * holders of the builder-icons permissions rename or delete.
+ *
+ * @param {{owner?: string}} icon as the library lists it
+ * @returns {string}
+ */
+export function iconOwnerText(icon) {
+  return icon?.owner ? `Uploaded by ${icon.owner}` : SERVER_ICON_OWNER;
+}
+
 /**
  * What a list says of an icon's size: "96 × 64 pixels, 5.0 KiB". A
  * library's icon says its size itself; a document's has it in its data.
