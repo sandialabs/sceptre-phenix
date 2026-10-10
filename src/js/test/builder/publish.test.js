@@ -23,7 +23,6 @@ import {
   mergeTopologyAnnotation,
   overwriteConfirmation,
   publishChangeGroups,
-  publishChangeLines,
   publishChangesSummary,
   publishChecks,
   publishLabel,
@@ -1260,10 +1259,10 @@ describe('what publishing changes', () => {
     );
   });
 
-  test('words every line as phenix builder publish --dry-run does', () => {
-    // The same lines as PublishChanges.Lines in api/builder/changes.go
-    // (TestPublishChangesLines).
-    expect(publishChangeLines(changes)).toEqual([
+  test('words every line of every group', () => {
+    expect(
+      publishChangeGroups(changes).flatMap((group) => group.lines),
+    ).toEqual([
       'Creates Topology config riverside',
       'Updates Experiment config lab',
       'Removes included topology plant-a',
@@ -1342,10 +1341,6 @@ describe('what publishing changes', () => {
       },
     ]);
     expect(changedItems(topologyOnly)).toBe(0);
-    expect(publishChangeLines(topologyOnly)).toEqual([
-      'Topology config riverside is unchanged: it already holds this diagram',
-      'Nothing outside the Topology changes',
-    ]);
     expect(publishChangeGroups(null)).toEqual([]);
   });
 

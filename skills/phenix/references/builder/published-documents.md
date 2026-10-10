@@ -129,8 +129,8 @@ pin); else no document (`?topology=<name>` then says "No published Builder
 document exists for topology <name>."). A store error or corrupt record
 is an error and does not fall through to the file.
 
-Publish and `phenix builder publish` write `digest` and `id` and keep an
-existing `path`. Nothing writes a Builder file.
+Publish writes `digest` and `id` and keeps an existing `path`. Nothing
+writes a Builder file. You write `path` by hand.
 
 The Topology config hook (`api/builder/config_hook.go`, registered in every
 phenix process, `--skip-validation` included)
@@ -171,7 +171,7 @@ document file named by `builder-doc.path`, read by
 `bapi.ReadDocumentFile(root, excluded, path)` only when a diagram is
 opened (`GET /builder/topologies/{topology}/document`), when a draft is
 created from it, and when such a draft updates the topology. The listing,
-the hooks and the CLI never read it. Nothing is cached.
+the hooks and the `phenix` commands do not read it. Nothing is cached.
 
 Rules (all checked at read time, by `phenix ui`):
 
@@ -255,3 +255,22 @@ In the UI a file row has the local id `file/<topology>`, a text tag File,
 "Read from <path>", and no Delete; the read-only banner says "You are
 viewing the diagram of topology <t>, read from <path> on the phenix
 server.", plus a sentence when `topologyDiffers`.
+
+## phenix config create and Builder files
+
+The Builder has no CLI. `phenix config create` recognizes a Builder
+document (`bdoc.IsDocumentText`). Found in a directory, it is skipped with
+the log line `skipped Builder document; upload it in the Builder to
+publish it`. Named on the command line, it is refused with `<file> is a
+Builder document, not a configuration: upload it in the Builder, or send it
+to the Builder REST API (/api/v1/builder/drafts), and publish it to create
+its topology`. A template file (`bdoc.IsTemplateFileText`) and a package
+(`bdoc.IsPackageText`) are recognized by their `$schema` and no `kind`, as
+a document is. They are skipped the same way, with the debug line `skipped
+Builder file, which is not a configuration` (`kind`, `path`). Named on the
+command line, they are refused with `<file> is a Builder template file, not
+a configuration: use Import templates in the Builder, or the Builder REST
+API (/api/v1/builder/templates), to add its Node Templates` or `<file> is a
+Builder package, not a configuration: upload it in the Builder to open its
+diagram` (`builderFileKind`, `skipBuilderFile`, `builderFileRefusal` in
+`cmd/config.go`).

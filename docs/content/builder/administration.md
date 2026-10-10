@@ -721,9 +721,8 @@ metadata:
 | `path` | The absolute path of a Builder file on the phenix server (see [Builder documents in files](#builder-documents-in-files)). |
 
 Each key is optional, but the map must have at least one, and no other key.
-**Publish** and `phenix builder publish` write `digest` and `id`. You write
-`path` yourself, or `phenix builder publish --record-path` writes it. A
-publish keeps a `path` the topology already has.
+**Publish** writes `digest` and `id`. You write `path` yourself. A publish
+keeps a `path` the topology already has.
 
 `builder-doc` is the only annotation that is a map: every other annotation
 of a config is text. In the JSON of a config it is an object:
@@ -897,8 +896,7 @@ The file is read when someone opens the diagram, makes a draft from it, or
 publishes such a draft to the topology. Listing the **Published Diagrams**
 tab reads no file, so a card is listed even when its file is missing or not
 valid. Creating, editing, renaming and deleting the config read no file
-either, and neither does any `phenix` command: `phenix builder publish`
-reads only the file you give it.
+either, and neither does any `phenix` command.
 
 ### Who can read a Builder file
 
@@ -943,29 +941,9 @@ match the digest topology pump-station records for it."
 The digest is the SHA-256 of the document as phenix writes it, not of the
 file. `sha256sum pump-station.builder.yaml` gives another value: a YAML
 file, or a JSON file with other spacing, key order or a final line break,
-has other bytes than the document phenix writes. To get the digest, use
-either of these:
-
-- `phenix builder publish --dry-run`, which writes nothing:
-
-    ```console
-    $ phenix builder publish /phenix/topologies/pump-station/pump-station.builder.json --dry-run
-    Document:     Pump station
-    File:         /phenix/topologies/pump-station/pump-station.builder.json
-    Digest:       sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
-    Document ID:  730b1f91c47dfcecd644e07b61dd22896d34381a505426652b826e94423347fd
-    Topology:     Pump-station (would be created)
-    Nodes:        3
-    Changes:
-      - Creates Topology config Pump-station
-      - Disk image bennu.qc2 is new (used by rtu-01)
-      - Disk image minirouter.qc2 is new (used by station-rtr)
-      - Disk image windows10.qc2 is new (used by eng-ws-01)
-    Nothing was written.
-    ```
-
-- The REST API, for a topology that already names the file (see
-  [Examples](#examples)).
+has other bytes than the document phenix writes. To get the digest, use the
+REST API for a topology that already names the file (see
+[Examples](#examples)).
 
 ### When the file cannot be used
 
@@ -1035,18 +1013,9 @@ are under `/api/v1`. The interactive API docs of a running server, at
 `/docs/`, describe every request and response under the **Builder** tag (see
 [Interactive API Docs](../api.md#interactive-api-docs-swaggeropenapi)).
 
-`phenix builder publish` makes a topology from a Builder file (see
-[From the command line](import-upload-download.md#from-the-command-line)),
-and `phenix builder drafts` and `phenix builder templates` list, export,
-check and import drafts and Node Templates through this API (see
-[Command Line](cli.md)). Sharing, publishing a draft and everything else
-are in the web UI and the REST API only. The REST API has no single
+The `phenix` command has no Builder subcommand. The REST API has no single
 request that publishes a Builder file: create a draft from the document,
 then publish the draft.
-
-The unix socket of `phenix ui` (`--unix-socket`) serves the Builder routes
-too, besides the workflow routes. Every request on it acts as
-`global-admin`; the socket's file mode decides who may connect.
 
 Each route needs the `configs` permission its column names, and the
 checks of [Permissions](#permissions) on top of it: a share or
@@ -1317,8 +1286,7 @@ when (`createdBy`, `createdAt`) instead of a `path`.
 | "Could not open the diagram of topology pump-station. Builder file … " | The topology names a Builder file that phenix cannot use | See [When the file cannot be used](#when-the-file-cannot-be-used) |
 | "Topology … has no Builder diagram, and your role cannot create drafts to import it. Select its name in Configs to view it." | A link from the **Configs** page named a topology without a diagram, and the role has no `configs` `create` | Give the role `configs` `create`, or view the topology on the **Configs** page (see [Which diagram a topology shows](#which-diagram-a-topology-shows)) |
 | "Topology … does not exist, or you may not read it." | The topology was deleted, or the role cannot list it | Give the role `configs` `list` and `topologies` `list` on the topology |
-| `phenix config create` skips a file with "skipped Builder document; use phenix builder publish", or refuses it as "a Builder document, not a configuration" | The file is a Builder document, not a config | Publish it with `phenix builder publish` (see [From the command line](import-upload-download.md#from-the-command-line)) |
-| `phenix builder publish --update` says the topology "was changed after it was published" | Someone changed the topology after its diagram was published | See [Updating a topology](import-upload-download.md#updating-a-topology) |
+| `phenix config create` skips a file with "skipped Builder document; upload it in the Builder to publish it", or refuses it as "a Builder document, not a configuration" | The file is a Builder document, not a config | Upload it in the Builder and publish the draft (see [Builder documents and phenix config create](import-upload-download.md#builder-documents-and-phenix-config-create)) |
 | **Copy link** shows a **Link to this draft** field and "Press ⌘C to copy the link." ("Press Ctrl+C to copy the link." on Windows and Linux) | The page is served over plain HTTP, where the browser does not allow the clipboard | Copy the selected link with <kbd>⌘</kbd>+<kbd>C</kbd> on macOS or <kbd>Ctrl</kbd>+<kbd>C</kbd> on Windows and Linux, or serve phenix over HTTPS |
 | The save state says "Offline: …" | The browser cannot reach the server | Keep the tab open: saving retries when the server answers (see [Working offline](drafts.md#working-offline)) |
 | "This draft changed on the server" | Someone saved a newer version of the draft before your changes reached the server | Builder merges the changes that do not clash and asks only about the fields you both changed: choose which version to keep of each, or another way to keep your changes (see [When the draft changed on the server](drafts.md#when-the-draft-changed-on-the-server)) |

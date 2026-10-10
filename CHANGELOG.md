@@ -12,12 +12,11 @@ All notable changes to this project will be documented in this file.
 - **Workflow API**: The workflow endpoints accept `?dryRun=true`, which validates the request and changes nothing, and return a JSON result. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Validation Errors**: Config validation errors from the CLI, the API and the web UI name the list item, its hostname or name, and the line. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **etcd**: Automatic history compaction for every etcd store. It compacts the whole etcd cluster. Set it with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
-- **Builder**: New topology editor at `/builder`, with `phenix builder publish` to create a topology from a Builder file. See the [Builder documentation](https://phenix.sceptre.dev/latest/builder/).
+- **Builder**: New topology editor at `/builder`. See the [Builder documentation](https://phenix.sceptre.dev/latest/builder/).
   - The toolbar's **Add connection** and **Move to group** open dialogs that connect a device to a switch and move a node into or out of a group without dragging. The Publish dialog marks an update as a warning, and says why a config name is not allowed.
   - Checks listed errors first, each with **Go to** its node and field.
   - Keyboard multi-select and bulk actions in the drafts lists, the Node Templates library and the Custom icons dialog.
   - **N** on the canvas adds a Device.
-  - The `phenix builder drafts` and `phenix builder templates` commands.
 - **Node Notes**: Topology nodes take `general.notes`; a new experiment copies them to each VM's notes.
 - **Builder documents**: A Builder document keeps its ID, name, description, up to 100 notes (which the Inspector lists and edits), and who made and last saved it (`createdBy`, `createdAt`, `updatedBy`, `updatedAt`) in a required `metadata` object. Its JSON Schema gives every field a title, a description and examples.
 - **Builder node notes**: Devices and switches show their notes in a card below them on the canvas, in their info tooltips and in PNG and SVG downloads, and layouts leave room for them. A device's notes are its `general.notes`; a switch keeps up to 100 of its own in the diagram. **Show node notes** in the Builder settings hides them.
@@ -29,7 +28,7 @@ All notable changes to this project will be documented in this file.
 - **Builder merging**: Merging a draft with another editor's changes on a save conflict.
 - **Builder packages**: Diagrams downloaded and uploaded with their configs and icons as one file.
 - **Builder error codes**: Stable error codes on Builder errors and issues.
-- **Builder publish preview**: What publishing changes, in the Publish dialog and `phenix builder publish --dry-run`.
+- **Builder publish preview**: What publishing changes, in the Publish dialog.
 - **Builder preflight**: Checks of a draft against the server's hosts, VLANs, bridges, images and apps.
 
 ### Changed

@@ -6,7 +6,6 @@ import (
 	"maps"
 	"path"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
@@ -153,8 +152,8 @@ type PublishState struct {
 	TopologyHeld bool
 	// Scenarios are the Scenario configs the document lists, as they are
 	// stored, each of which the publication adds the topology to unless its
-	// annotation names it already. A publication that changes no scenario,
-	// as `phenix builder publish`, names none.
+	// annotation names it already. A publication that changes no scenario
+	// names none.
 	Scenarios []*store.Config
 	// Experiment is the experiment the publication writes, nil for a
 	// topology-only publication.
@@ -236,40 +235,6 @@ func HasTopologyAnnotation(value, topology string) bool {
 	}
 
 	return false
-}
-
-// Lines says what publishing changes, one sentence for each change, as the
-// Publish dialog words them (publishChangeLines in
-// src/js/src/builder/publish.js): the topology, the experiment, then each
-// included topology, scenario, disk image and VLAN alias.
-func (c *PublishChanges) Lines() []string {
-	lines := []string{configChangeLine("Topology", c.Topology)}
-
-	if c.Experiment != nil {
-		lines = append(lines, configChangeLine("Experiment", *c.Experiment))
-	}
-
-	for _, include := range c.Includes {
-		lines = append(lines, includeChangeLine(include))
-	}
-
-	for _, scenario := range c.Scenarios {
-		lines = append(lines, scenarioChangeLine(scenario, c.Topology.Name))
-	}
-
-	for _, image := range c.Images {
-		lines = append(lines, imageChangeLine(image))
-	}
-
-	for _, alias := range c.VLANAliases {
-		lines = append(lines, aliasChangeLine(alias))
-	}
-
-	if len(c.Includes)+len(c.Scenarios)+len(c.Images)+len(c.VLANAliases) == 0 {
-		lines = append(lines, "Nothing outside the Topology changes")
-	}
-
-	return lines
 }
 
 // configAction is what a publication does to a config: creates one that is
@@ -485,113 +450,4 @@ func aliasChanges(current, published map[string]int) []VLANAliasChange {
 	}
 
 	return changes
-}
-
-// configChangeLine says what publishing does to a config of kind.
-func configChangeLine(kind string, change ConfigChange) string {
-	switch change.Action {
-	case ChangeCreate:
-		return fmt.Sprintf("Creates %s config %s", kind, change.Name)
-	case ChangeUpdate:
-		return fmt.Sprintf("Updates %s config %s", kind, change.Name)
-	case ChangeUnchanged:
-	}
-
-	return fmt.Sprintf("%s config %s is unchanged: it already holds this diagram", kind, change.Name)
-}
-
-// includeChangeLine says what publishing does to an included topology.
-func includeChangeLine(change IncludeChange) string {
-	switch change.Change {
-	case ItemAdded:
-		return "Adds included topology " + change.Name
-	case ItemRemoved:
-		return "Removes included topology " + change.Name
-	case ItemKept, ItemChanged:
-	}
-
-	return "Keeps included topology " + change.Name
-}
-
-// scenarioChangeLine says what publishing does to a listed scenario.
-func scenarioChangeLine(change ScenarioAnnotation, topology string) string {
-	if change.Change == ScenarioAnnotate {
-		return fmt.Sprintf("Adds topology %s to Scenario %s", topology, change.Name)
-	}
-
-	return fmt.Sprintf("Scenario %s already names topology %s", change.Name, topology)
-}
-
-// maxNamedDevices is how many devices a disk image's line names before it
-// counts the rest.
-const maxNamedDevices = 5
-
-// devicesText names the devices of a disk image's line: "web-1, web-2 and 3
-// more".
-func devicesText(devices []string) string {
-	named := devices
-
-	if more := len(devices) - maxNamedDevices; more > 0 {
-		named = append(slices.Clone(devices[:maxNamedDevices]), strconv.Itoa(more)+" more")
-	}
-
-	switch len(named) {
-	case 0:
-		return ""
-	case 1:
-		return named[0]
-	}
-
-	return strings.Join(named[:len(named)-1], ", ") + " and " + named[len(named)-1]
-}
-
-// imageChangeLine says what publishing does to a disk image, and whether the
-// server has it when that is known.
-func imageChangeLine(change ImageChange) string {
-	devices := devicesText(change.Devices)
-
-	var line string
-
-	switch change.Change {
-	case ItemAdded:
-		line = fmt.Sprintf("Disk image %s is new (used by %s)", change.Name, devices)
-	case ItemRemoved:
-		line = fmt.Sprintf("Disk image %s is no longer used (was used by %s)", change.Name, devices)
-	case ItemKept, ItemChanged:
-		line = fmt.Sprintf("Disk image %s is still used (by %s)", change.Name, devices)
-	}
-
-	switch {
-	case change.OnServer == nil || change.Change == ItemRemoved:
-		return line
-	case *change.OnServer:
-		return line + "; the server has it"
-	}
-
-	return line + "; the server does not have it"
-}
-
-// aliasChangeLine says what publishing does to a network's VLAN alias.
-func aliasChangeLine(change VLANAliasChange) string {
-	value := func(alias *int) string {
-		if alias == nil {
-			return ""
-		}
-
-		return strconv.Itoa(*alias)
-	}
-
-	switch change.Change {
-	case ItemAdded:
-		return fmt.Sprintf("VLAN alias for network %s is set to %s", change.Name, value(change.To))
-	case ItemRemoved:
-		return fmt.Sprintf("VLAN alias %s for network %s is removed", value(change.From), change.Name)
-	case ItemChanged:
-		return fmt.Sprintf(
-			"VLAN alias for network %s changes from %s to %s", change.Name, value(change.From), value(change.To),
-		)
-	case ItemKept:
-	}
-
-	return fmt.Sprintf("VLAN alias for network %s stays %s", change.Name, value(change.To))
 }

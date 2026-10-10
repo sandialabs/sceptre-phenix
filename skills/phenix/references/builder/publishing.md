@@ -86,9 +86,6 @@ publication records it as `scenarioTarget`. The Publish dialog's
 Experiment scenario select (`publish-scenario`) lists the document's
 scenarios and No scenario, the first by default, and its hint
 (`scenarioStageHint`) says the topology is added to each listed scenario.
-`phenix builder publish` changes no scenario and notes `The document's
-scenario is not changed: only the topology is published.` (`The
-document's N scenarios are not changed: …`).
 
 ### Updating a topology or experiment
 
@@ -217,12 +214,10 @@ null without `disks` `list`, when the listing fails, when it lists none
 list (`hideUnlistedImages`, as `GET /disks` leaves it out), whether the
 server has it or not. A dry run whose projection names no drive image
 (`bapi.NamesDiskImage`) lists nothing, so every `onServer` is then null; the
-Publish dialog sends a dry run after each 300 ms editing pause. `PublishChanges.Lines()`
-words each change as the dialog does (`publishChangeLines` in
-`publish.js`), ending "Nothing outside the Topology changes" when the four
-lists are empty. `planTopology` never fails on it: when a stored topology
-cannot be decoded for it, `TopologyPublication.Changes` is nil and only a
-dry run warns (`publish.changes.unknown`).
+Publish dialog sends a dry run after each 300 ms editing pause. The dialog
+words each change with `publishChangeGroups` in `publish.js`. When
+`DescribePublishChanges` fails, the dry run answers 500 "unable to describe
+what publishing changes".
 
 The Publish dialog's What publishing changes (testids `publish-preview`,
 lists `publish-preview-configs`, `-includes`, `-scenarios`, `-images`,

@@ -45,8 +45,7 @@ const (
 
 // Config storage does not expose compare-and-swap. This lock prevents two
 // publications in this process from passing the same preflight concurrently;
-// multi-process deployments, and a `phenix builder publish` run beside this
-// server, still rely on source digests and explicit actions.
+// multi-process deployments still rely on source digests and explicit actions.
 var builderPublishLock sync.Mutex //nolint:gochecknoglobals // process-wide publication transaction boundary
 
 // lockBuilderPublishing holds [builderPublishLock] while a Topology config is

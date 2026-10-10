@@ -143,8 +143,7 @@ first and lay the XML over it.
   Topology file `uploaded/Topology/<name>`; Upload of a bare diagram
   `uploaded/legacy-xml` (`LEGACY_TOKEN`). Only the first can update the
   topology.
-- Publish of that draft to the topology (web, and `phenix builder publish
-  --update`) calls `bapi.ReplaceLegacyDiagram`: deletes `builder-xml`, keeps
+- Publish of that draft to the topology calls `bapi.ReplaceLegacyDiagram`: deletes `builder-xml`, keeps
   the other annotations, and warns `The legacy Builder diagram of topology
   <name> was replaced by this diagram.` (or `… could not be read and was
   removed.` when `DecodeLegacy` refuses it). While a topology has

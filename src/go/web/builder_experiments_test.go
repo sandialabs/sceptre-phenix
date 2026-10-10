@@ -107,7 +107,7 @@ func TestBuilderDocumentExperiment(t *testing.T) {
 			links: []builderExperimentLink{{name: "exp", topology: "lab", draftID: "d9", documentID: "doc9"}},
 		},
 		{
-			name: "a document the CLI published has no draft", role: experimentRole(), document: fromFile,
+			name: "a published document without a draft", role: experimentRole(), document: fromFile,
 			links: []builderExperimentLink{{name: "exp", topology: "lab", draftID: "", documentID: "doc9"}},
 		},
 		{

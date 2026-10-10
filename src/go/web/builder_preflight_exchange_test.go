@@ -4,34 +4,22 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"reflect"
-	"slices"
-	"strings"
 	"sync/atomic"
 	"testing"
-
-	bapi "phenix/api/builder"
 )
 
 // builderPreflightExchangeFile holds a request of the preflight route and
 // the route's answer to it, for the draft TestBuilderPreflightAnswersAsRecorded
-// makes. The test of phenix builder drafts preflight in phenix/cmd reads the
-// same file, so the command is tested against what the route answers.
+// makes.
 const builderPreflightExchangeFile = "testdata/builder-preflight-exchange.json"
 
 // TestBuilderPreflightAnswersAsRecorded runs the disks and apps checks of a
 // draft whose drive image the server has and whose scenario names an app the
 // server lacks, with the request of builderPreflightExchangeFile, and
-// compares the answer with the answer recorded there. The same request
-// answers on the unix socket's router, which phenix builder drafts preflight
-// uses without --url.
+// compares the answer with the answer recorded there.
 func TestBuilderPreflightAnswersAsRecorded(t *testing.T) {
-	// The socket's NoAuth middleware reads the global-admin role from the
-	// config store.
-	useUsersTestStore(t)
-
 	data, err := os.ReadFile(builderPreflightExchangeFile)
 	if err != nil {
 		t.Fatalf("reading %s: %v", builderPreflightExchangeFile, err)
@@ -86,30 +74,5 @@ func TestBuilderPreflightAnswersAsRecorded(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("the preflight route's answer is not the answer recorded in %s; it answered\n%s",
 			builderPreflightExchangeFile, recorder.Body.String())
-	}
-
-	own := harness.createDraft("global-admin", "socket-plant")
-	socket := newSocketRouter(harness.api)
-
-	onSocket := httptest.NewRecorder()
-	socket.ServeHTTP(onSocket, httptest.NewRequest(
-		http.MethodPost, "/api/v1/builder/drafts/global-admin/"+own.ID+"/preflight", strings.NewReader(request.String()),
-	))
-
-	if onSocket.Code != http.StatusOK {
-		t.Fatalf("preflight on the socket: status = %d: %s", onSocket.Code, onSocket.Body.String())
-	}
-
-	var report bapi.PreflightReport
-
-	harness.decode(onSocket, &report)
-
-	names := make([]bapi.PreflightCheck, 0, len(report.Checks))
-	for _, result := range report.Checks {
-		names = append(names, result.Name)
-	}
-
-	if asked := []bapi.PreflightCheck{bapi.PreflightDisks, bapi.PreflightApps}; !slices.Equal(names, asked) {
-		t.Errorf("the socket reported checks %v, want %v", names, asked)
 	}
 }

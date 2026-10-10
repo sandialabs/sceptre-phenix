@@ -21,7 +21,7 @@ Detailed references and examples, loaded only when needed:
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
-| The Builder, the web topology editor: drafts, sharing, publishing, import options, legacy diagram conversion, icon and template libraries, the Builder role, the `builder-doc` annotation, Builder files, `phenix builder publish`, routes, its code | [`references/builder.md`](references/builder.md), an index that names the reference under `references/builder/` to read for the task |
+| The Builder, the web topology editor: drafts, sharing, publishing, import options, legacy diagram conversion, icon and template libraries, the Builder role, the `builder-doc` annotation, Builder files, routes, its code | [`references/builder.md`](references/builder.md), an index that names the reference under `references/builder/` to read for the task |
 | Deploying a topology directory with `phenix workflow apply`: layout, steps, workflow config, endpoints, gotchas, troubleshooting | [`references/workflow.md`](references/workflow.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
@@ -154,15 +154,9 @@ name a published document in the store, and `path` names a Builder file on
 the phenix server. Topologies the removed legacy Builder saved carry
 `builder-xml`; Import (or Upload of the file) converts that diagram, and
 publishing the draft imported from the topology replaces `builder-xml` with
-`builder-doc`. `phenix builder publish <file>` makes a topology from a
-Builder document file, in the store; `phenix builder drafts`
-(`list|export|validate|preflight`) and `phenix builder templates`
-(`list|export|import`) call the REST API of a running server, at `--url`
-with `--token` (`PHENIX_URL`, `PHENIX_TOKEN`) or over the unix socket as
-global-admin. `phenix config create` skips or refuses Builder documents,
-template files and packages.
-There is no CLI for import, the legacy conversion, sharing, publishing a
-draft or managing the icon library. The icon library is
+`builder-doc`. The Builder has no CLI: scripts use its REST API below
+`/api/v1/builder/`. `phenix config create` skips or refuses Builder
+documents, template files and packages. The icon library is
 one server-wide set of custom icons with unique names, which nodes and
 templates name; drafts carry no image data, and a downloaded file embeds the
 icons it uses. The built-in role `Builder` holds every Builder permission,

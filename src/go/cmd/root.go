@@ -251,12 +251,10 @@ func argsWithUsage(validate cobra.PositionalArgs) cobra.PositionalArgs {
 	}
 }
 
-// Execute runs the command the arguments name. An error ends phenix with the
-// exit status it names (see [exitCode]), 1 for most.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
-		os.Exit(exitCode(err))
+		os.Exit(1)
 	}
 }
 

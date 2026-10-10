@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -485,7 +484,15 @@ func Start(opts ...ServerOption) error {
 	}
 
 	if common.UnixSocket != "" {
-		router := newSocketRouter(api, slices.Concat(workflowRoutes, optionRoutes)...)
+		var (
+			router = mux.NewRouter().StrictSlash(true)
+			api    = router.PathPrefix("/api/v1").Subrouter()
+		)
+
+		addRoutesToRouter(api, workflowRoutes...)
+		addRoutesToRouter(api, optionRoutes...)
+
+		api.Use(middleware.NoAuth)
 
 		_ = os.Remove(common.UnixSocket)
 
@@ -552,24 +559,6 @@ func addRoutesToRouter(router *mux.Router, routes ...route) {
 	for _, r := range routes {
 		router.Handle(r.path, r.handler).Methods(r.methods...)
 	}
-}
-
-// newSocketRouter returns the router of the unix socket's server: routes,
-// and every Builder route api serves, with api's handlers (see
-// [mirrorBuilderRoutes]). Every request on it acts as global-admin (see
-// [middleware.NoAuth]): the socket's file mode decides who may connect.
-func newSocketRouter(api *mux.Router, routes ...route) *mux.Router {
-	var (
-		router = mux.NewRouter().StrictSlash(true)
-		socket = router.PathPrefix("/api/v1").Subrouter()
-	)
-
-	addRoutesToRouter(socket, routes...)
-	mirrorBuilderRoutes(api, socket)
-
-	socket.Use(middleware.NoAuth)
-
-	return router
 }
 
 // apiNotFoundHandler answers a request that reached the API router but matched

@@ -154,8 +154,5 @@ entries' tooltips saying the collection is read only, entries
 
 ## Command line
 
-No `phenix` command converts legacy diagrams, imports configs, manages the
-icon library, or shares, publishes or edits library templates; they are web
-UI and REST only. `phenix builder templates` lists, exports and imports
-templates (see
-[CLI: phenix builder drafts and templates](cli.md#cli-phenix-builder-drafts-and-templates)).
+The Builder has no CLI. Templates, the icon library, Import and legacy
+conversion are in the web UI and the REST API only.

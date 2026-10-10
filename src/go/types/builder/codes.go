@@ -337,21 +337,15 @@ const (
 	CodePublishIncludeClash         Code = "publish.include.clash"
 	CodePublishIncludeHostname      Code = "publish.include.hostname"
 	CodePublishTargetInvalid        Code = "publish.target.invalid"
-	CodePublishPathInvalid          Code = "publish.path.invalid"
 	CodePublishStageFailed          Code = "publish.stage.failed"
 	CodePublishCleanupFailed        Code = "publish.cleanup.failed"
 	CodePublishBroadcastFailed      Code = "publish.broadcast.failed"
 	CodePublishFileUnchanged        Code = "publish.file.unchanged"
-	CodePublishFileUnserved         Code = "publish.file.unserved"
 	CodePublishLegacyReplaced       Code = "publish.legacy.replaced"
 	CodePublishLegacyRemoved        Code = "publish.legacy.removed"
 	CodePublishExperimentUnrecorded Code = "publish.experiment.unrecorded"
 	CodePublishScenarioPartial      Code = "publish.scenario.partial"
-	CodePublishScenarioUnchanged    Code = "publish.scenario.unchanged"
-	CodePublishAliasUnpublished     Code = "publish.alias.unpublished"
-	CodePublishIncludeUnchecked     Code = "publish.include.unchecked"
 	CodePublishRetryComplete        Code = "publish.retry.complete"
-	CodePublishChangesUnknown       Code = "publish.changes.unknown"
 )
 
 // Codes of the preflight checks a draft can be put through before an
@@ -657,21 +651,15 @@ var codeRegistry = []CodeInfo{
 	{CodePublishIncludeClash, SeverityError, "A hostname is defined both in the topology and in a topology it includes."},
 	{CodePublishIncludeHostname, SeverityError, "An included topology has a hostname phenix refuses in an experiment."},
 	{CodePublishTargetInvalid, SeverityError, "A topology, experiment or scenario name is not a config name."},
-	{CodePublishPathInvalid, SeverityError, "A Builder file path cannot be recorded on the topology."},
 	{CodePublishStageFailed, SeverityError, "A publish stage failed after earlier stages were written."},
 	{CodePublishCleanupFailed, SeverityWarning, "The publication went through, but content it replaces could not be removed."},
 	{CodePublishBroadcastFailed, SeverityWarning, "A config was stored, but its live update could not be broadcast."},
 	{CodePublishFileUnchanged, SeverityWarning, "The topology names a Builder file that publishing does not change."},
-	{CodePublishFileUnserved, SeverityWarning, "The recorded Builder file is in a directory the phenix server does not read."},
 	{CodePublishLegacyReplaced, SeverityWarning, "The topology's legacy Builder diagram was replaced by this diagram."},
 	{CodePublishLegacyRemoved, SeverityWarning, "The topology's legacy Builder diagram could not be read and was removed."},
 	{CodePublishExperimentUnrecorded, SeverityWarning, "The experiment was stored, but not which draft published it."},
 	{CodePublishScenarioPartial, SeverityWarning, "Some scenarios were updated before the scenario stage failed."},
-	{CodePublishScenarioUnchanged, SeverityWarning, "phenix builder publish changes none of the document's scenarios."},
-	{CodePublishAliasUnpublished, SeverityWarning, "The document's VLAN aliases are not published: a topology holds none."},
-	{CodePublishIncludeUnchecked, SeverityWarning, "An included topology could not be read to check for duplicate hostnames."},
 	{CodePublishRetryComplete, SeverityWarning, "The same publication was already complete; nothing was written."},
-	{CodePublishChangesUnknown, SeverityWarning, "A stored config could not be read to say what publishing changes."},
 
 	{CodePreflightCapacityCPU, SeverityWarning, "The schedulable hosts have fewer free CPUs than the devices take; VMs would share CPUs."},
 	{CodePreflightCapacityMemory, SeverityError, "The schedulable hosts have less free memory than the diagram's devices take."},

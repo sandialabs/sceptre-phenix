@@ -566,9 +566,7 @@ To keep changes that were not saved:
 The **Published Diagrams** tab lists each topology that has a Builder
 diagram, by topology name:
 
-- A topology published from Builder, or with `phenix builder publish`
-  (see [From the command line](import-upload-download.md#from-the-command-line)),
-  with when it was published, for example riverside-water with "Published
+- A topology published from Builder, with when it was published, for example riverside-water with "Published
   Oct 10, 2026, 5:45 AM".
 - A topology whose diagram is read from a file on the phenix server, with
   the tag **File** and where the file is (see
@@ -610,8 +608,8 @@ command palette has the same command, **Open experiment**.
 
 **Exp** shows only while the experiment exists and your role has
 `experiments` `get` on it. It follows a renamed experiment. An experiment
-made by hand from the topology, or a topology published with
-`phenix builder publish`, has none. When one publication made several
+made by hand from the topology, or a topology published without an
+experiment, has none. When one publication made several
 experiments, **Exp** opens one of them; the others are on the
 **Experiments** page.
 

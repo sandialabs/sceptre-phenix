@@ -44,13 +44,8 @@ VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/
 disabled by default and requires restarting `phenix ui` to take effect. The CLI
 equivalents (`phenix vm mount`/`unmount`) are always available.
 
-The Builder, the web topology editor at `/builder`, has no CLI equivalent
-for sharing, Import, publishing a draft, legacy diagram conversion or
-managing the icon library. Its CLI commands are
-[`phenix builder publish`](#phenix-builder--builder-documents-drafts-and-node-templates)
-(a topology from a Builder document file, in the store) and `phenix builder
-drafts` and `phenix builder templates` (drafts and Node Templates on a
-running server, through its REST API). See [`builder.md`](builder.md).
+The Builder, the web topology editor at `/builder`, has no CLI. Scripts use
+its REST API below `/api/v1/builder/`. See [`builder.md`](builder.md).
 
 ## `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
@@ -79,102 +74,15 @@ one (annotation maps merge).
 
 `config create` takes files and directories (walked recursively). A Builder
 document (a Builder JSON or YAML download) is not a config: one found in
-a directory is skipped with the log line `skipped Builder document; use
-phenix builder publish`, and one named on the command line is refused with
-`<file> is a Builder document, not a configuration: use "phenix builder
-publish <file>" to create its topology`. A template file or a package is
+a directory is skipped with the log line `skipped Builder document; upload
+it in the Builder to publish it`, and one named on the command line is
+refused with `<file> is a Builder document, not a configuration: upload it
+in the Builder, or send it to the Builder REST API (/api/v1/builder/drafts),
+and publish it to create its topology`. A template file or a package is
 not a config either: skipped in a directory with a debug log line, refused
 on the command line (`<file> is a Builder template file, not a
 configuration: ...`, `<file> is a Builder package, not a configuration:
 ...`).
-
-## `phenix builder` — Builder documents, drafts and Node Templates
-
-`publish` works on the store; `drafts` and `templates` call the REST API of
-a running server (see [below](#drafts-and-templates-through-the-rest-api)).
-
-```bash
-phenix builder publish </path/to/document> [-n|--name <topology>] [--update] [--dry-run] \
-  [--user <user>] [--record-path]
-```
-
-`publish` reads one Builder document file (Builder
-JSON or Builder YAML, decided by content; at most 5 MiB; no `${NAME}`
-expansion), checks it as Builder's Publish does, and stores the Topology
-config it describes, with the document stored as the topology's published
-diagram and named in its `builder-doc` annotation (`digest` and `id`). It
-writes to the store from the CLI process: it needs no running `phenix ui`.
-Topology only: no scenario, no experiment, no VLAN aliases (each is a warning
-when the document has one).
-
-| Flag | Meaning |
-|---|---|
-| `-n`, `--name` | Topology name. Default: the document's name as the Publish dialog proposes it (`Pump station` gives `Pump-station`). Must be a config name. |
-| `--update` | Replace an existing topology of that name. Allowed only when the topology is unchanged since its stored document was published, or the document was imported from the topology as it is now. A `builder-xml` (legacy Builder) topology is replaced only in the second case; the update deletes `builder-xml` and warns `The legacy Builder diagram of topology X was replaced by this diagram.` No force flag. |
-| `--dry-run` | Run every check and print a report on stdout (document, file, digest, document ID, what would happen, node count, warnings). Writes nothing. |
-| `--user` | User to record as the publisher of the stored document. Default: the sudo caller, else the OS account. |
-| `--record-path` | Also write the file's absolute path as `builder-doc.path`. The file name must end in `.json`, `.yaml` or `.yml`. A path the server would not read (outside `base-dir.phenix`, or below the mount directory) is a warning, not an error. |
-
-```bash
-phenix builder publish pump-station.builder.json              # creates Topology Pump-station
-phenix builder publish pump-station.builder.json              # again: "topology already up to date", exit 0
-phenix builder publish pump-station.builder.yaml -n pump-lab  # another name
-phenix builder publish pump-station.builder.json --update     # after the file changed
-phenix builder publish pump-station.builder.json --dry-run    # check only; prints the digest
-```
-
-Exit status is 0 when the topology was created, updated or already up to
-date, and 1 otherwise. Success and warnings are log lines on stderr
-(`topology created`, `topology updated`, `topology already up to date`, with
-`name`, `document` and `digest`); only `--dry-run` writes to stdout. A
-document that cannot be published is an error that lists every blocker on
-its own line. Common refusals: `topology X already exists; use --update to
-replace it`; `topology X was changed after it was published, and replacing
-it would discard that change`; `<file> is not a valid Builder document:
-...`.
-
-A running `phenix ui` on the same store sees the topology after a page
-reload; nothing serializes a CLI publish with a UI publish of the same
-topology. The Configs page opens the published topology in the Builder, not
-as text (it has `builder-doc`); `phenix config edit` edits it as text.
-Details and the full rules are in
-[`builder/cli.md`](builder/cli.md#cli-phenix-builder-publish).
-
-### Drafts and templates through the REST API
-
-```bash
-phenix builder drafts list [--shared] [--owner <user>] [-o table|json|yaml]
-phenix builder drafts export <owner>/<draft> [--format json|yaml] [--output <file>] \
-  [--package [--include scenarios,topologies,icons,images]]
-phenix builder drafts validate <owner>/<draft> [-o table|json|yaml]
-phenix builder drafts preflight <owner>/<draft> [--check capacity,network,disks,apps] \
-  [--experiment <name>] [--strict] [-o table|json|yaml]
-phenix builder templates list [--owner <user>] [-o table|json|yaml]
-phenix builder templates export [--collection <name|id>] [--owner <user>] [--format yaml|json] [--output <file>]
-phenix builder templates import <file> [--name <collection>]
-```
-
-`--url` (`PHENIX_URL`) names the server and `--token` (`PHENIX_TOKEN`) the
-API token sent as `X-Phenix-Auth-Token: Bearer <token>`: the requests have
-the token user's permissions; a server with auth off needs none. A token
-sent to an `http` URL of a host other than localhost or a loopback address
-is a warning on stderr, not a refusal. Without `--url` they go to the unix
-socket (`--unix-socket`, default `/tmp/phenix.sock`) as global-admin, after
-checking it is a socket owned by the caller or root and not writable by
-others (else exit 2); a token without a URL is refused, and `drafts list`
-lists every draft without `--shared`. A flag given an empty value counts as
-not given. Redirects are refused, not followed. `drafts export --package`
-writes the package alone and prints the server's warnings on stderr. `-o`
-defaults to `table`. Exit status: 0 success, 1 findings
-(validate errors, a failed preflight check, or with `--strict` an
-unavailable one), 2 refused or no answer (connection, redirect, 401/403,
-404, unknown subcommand, invalid arguments or file). The report
-is written before exit 1. JSON shapes and the rules are in
-[`builder/cli.md`](builder/cli.md#cli-phenix-builder-drafts-and-templates).
-
-```bash
-phenix builder drafts validate alice/riverside --url https://phenix.example --token "$PHENIX_TOKEN" -o json
-```
 
 ## `phenix experiment` — experiment lifecycle
 

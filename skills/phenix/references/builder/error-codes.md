@@ -50,8 +50,7 @@ Forms path of a device field (`spec.network.interfaces.0.vlan`, `hostname`).
 the path; the publish blockers (`InterfaceVLANError`,
 `InterfaceAddressError`, `NodeHostnameError`) list located issues through
 `Issues()`, and `bdoc.ErrorIssues(err)` finds the issues of any error.
-`Topology.Warnings`, `TopologyExport.Warnings` and
-`bapi.TopologyPublication.Warnings` are issues. JS issues keep `level` and
+`Topology.Warnings` and `TopologyExport.Warnings` are issues. JS issues keep `level` and
 add `code` and `severity` (the same value), and so do the issues
 `templateFileIssues` (`templateFile.js`) finds in a template file, with the
 codes `TemplateFile.Issues` gives them.
@@ -87,10 +86,6 @@ are issues; `readIssues` in `api.js` reads them, and `readPublishResult` and
 `exportTopology` keep `warnings`, `errors` and `publishBlockers` as the
 messages beside `warningIssues`, `errorIssues` and `publishBlockerIssues`.
 `publishRefusal(serverRefusal(error), intent, context)` in `publish.js`
-picks the form field by the code (`REFUSAL_RULES`). `phenix builder
-publish` prints each refusal line and warning with `[code]` after it, and a
-file that is not a valid document as `<file> is not a valid Builder
-document [document.invalid]:` with each issue (`path: message [code]`) on a
-line of its own (`builderInvalidDocument` in `cmd/builder.go`).
+picks the form field by the code (`REFUSAL_RULES`).
 Generation and legacy conversion warnings (`source.warnings`, the generate
 and legacy responses) are plain text.

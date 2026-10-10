@@ -1081,34 +1081,6 @@ func builderAllowedMethods(router *mux.Router, r *http.Request) []string {
 	return allowed
 }
 
-// mirrorBuilderRoutes registers on dst every Builder route src has, with the
-// handler and the methods it has there, and the Builder's response headers
-// (see [builderResponseHeaders]) and refusal of a method a path does not take
-// (see [builderMethodNotAllowed]). Both are routers below [builderAPIPrefix].
-// The unix socket's router serves the Builder API [registerBuilderRoutes]
-// made for the API router this way, so one API answers both: its startup
-// cleanup runs once, and the server's template collections are read once.
-func mirrorBuilderRoutes(src, dst *mux.Router) {
-	dst.Use(builderResponseHeaders)
-
-	if dst.MethodNotAllowedHandler == nil {
-		dst.MethodNotAllowedHandler = builderResponseHeaders(builderMethodNotAllowed(dst))
-	}
-
-	// The function returns no error, so neither does the walk.
-	_ = src.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		template, templateErr := route.GetPathTemplate()
-		methods, methodsErr := route.GetMethods()
-		path, below := strings.CutPrefix(template, builderAPIPrefix)
-
-		if templateErr == nil && methodsErr == nil && below && builderPath(template) {
-			dst.Handle(path, route.GetHandler()).Methods(methods...)
-		}
-
-		return nil
-	})
-}
-
 // builderDraftPath is the path of one draft, and the start of the paths of
 // what belongs to it: its snapshots, cursor, shares, publication and
 // preflight checks.

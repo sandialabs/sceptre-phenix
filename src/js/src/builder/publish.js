@@ -939,12 +939,10 @@ export function stageFailed(stage) {
 //
 // The Publish dialog asks the server what publishing would change (a dry
 // run; see DescribePublishChanges in api/builder/changes.go) and says it in
-// these words, which `phenix builder publish --dry-run` uses too
-// (PublishChanges.Lines). Text carries the meaning: what is added, removed
-// or kept is in the words, not in a color.
+// these words. Text carries the meaning: what is added, removed or kept is
+// in the words, not in a color.
 
-// How many devices a disk image's line names before it counts the rest, as
-// the server's lines do (maxNamedDevices in api/builder/changes.go).
+// How many devices a disk image's line names before it counts the rest.
 const NAMED_DEVICES = 5;
 
 /**
@@ -1131,27 +1129,6 @@ export function publishChangeGroups(changes) {
   ];
 
   return groups.filter((group) => group.lines.length > 0);
-}
-
-/**
- * Every line of what publishing changes, in the order the dialog lists
- * them, with "Nothing outside the Topology changes" when the lists outside
- * the configs are empty: what `phenix builder publish --dry-run` prints
- * (PublishChanges.Lines in api/builder/changes.go).
- *
- * @param {object} [changes] as readPublishPreview in api.js reads them
- * @returns {string[]}
- */
-export function publishChangeLines(changes) {
-  if (!changes) {
-    return [];
-  }
-
-  const lines = publishChangeGroups(changes).flatMap((group) => group.lines);
-
-  return changedItems(changes) === 0
-    ? [...lines, 'Nothing outside the Topology changes']
-    : lines;
 }
 
 /**

@@ -267,65 +267,6 @@ func TestDescribePublishChangesOfAnExperiment(t *testing.T) {
 	}
 }
 
-// TestPublishChangesLines words each change as the Publish dialog does.
-func TestPublishChangesLines(t *testing.T) {
-	t.Parallel()
-
-	changes := &PublishChanges{
-		Topology:  ConfigChange{Name: "riverside", Action: ChangeCreate},
-		Includes:  []IncludeChange{{Name: "plant-a", Change: ItemRemoved}, {Name: "plant-b", Change: ItemAdded}},
-		Scenarios: []ScenarioAnnotation{{Name: "water-ops", Change: ScenarioAnnotate}, {Name: "drill", Change: ScenarioUnchanged}},
-		Images: []ImageChange{
-			{Name: "ubuntu.qc2", Change: ItemAdded, Devices: []string{"web-1", "web-2"}, OnServer: boolPointer(false)},
-			{
-				Name: "centos.qc2", Change: ItemKept, Devices: []string{"a", "b", "c", "d", "e", "f", "g"},
-				OnServer: boolPointer(true),
-			},
-			{Name: "old.qc2", Change: ItemRemoved, Devices: []string{"db"}, OnServer: nil},
-		},
-		Experiment: &ConfigChange{Name: "lab", Action: ChangeUpdate},
-		VLANAliases: []VLANAliasChange{
-			{Name: "ot", From: intPointer(101), To: intPointer(120), Change: ItemChanged},
-			{Name: "it", From: nil, To: intPointer(7), Change: ItemAdded},
-			{Name: "dmz", From: intPointer(5), To: nil, Change: ItemRemoved},
-			{Name: "corp", From: intPointer(9), To: intPointer(9), Change: ItemKept},
-		},
-	}
-
-	want := []string{
-		"Creates Topology config riverside",
-		"Updates Experiment config lab",
-		"Removes included topology plant-a",
-		"Adds included topology plant-b",
-		"Adds topology riverside to Scenario water-ops",
-		"Scenario drill already names topology riverside",
-		"Disk image ubuntu.qc2 is new (used by web-1 and web-2); the server does not have it",
-		"Disk image centos.qc2 is still used (by a, b, c, d, e and 2 more); the server has it",
-		"Disk image old.qc2 is no longer used (was used by db)",
-		"VLAN alias for network ot changes from 101 to 120",
-		"VLAN alias for network it is set to 7",
-		"VLAN alias 5 for network dmz is removed",
-		"VLAN alias for network corp stays 9",
-	}
-
-	if got := changes.Lines(); !slices.Equal(got, want) {
-		t.Fatalf("lines =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
-	}
-
-	unchanged := &PublishChanges{
-		Topology: ConfigChange{Name: "riverside", Action: ChangeUnchanged}, Includes: nil, Scenarios: nil,
-		Images: nil, Experiment: nil, VLANAliases: nil,
-	}
-
-	wantUnchanged := []string{
-		"Topology config riverside is unchanged: it already holds this diagram",
-		"Nothing outside the Topology changes",
-	}
-	if got := unchanged.Lines(); !slices.Equal(got, wantUnchanged) {
-		t.Fatalf("lines = %q, want %q", got, wantUnchanged)
-	}
-}
-
 func asJSON(t *testing.T, value any) string {
 	t.Helper()
 

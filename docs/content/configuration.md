@@ -49,8 +49,9 @@ begin with a capital letter.
     configuration file below it. A [Builder](builder/index.md) document
     (a Builder JSON or Builder YAML file) is not a configuration: one found in
     a directory is skipped with a log line, and one named on the command line
-    is refused. Use `phenix builder publish` to create its topology (see
-    [From the command line](builder/import-upload-download.md#from-the-command-line)).
+    is refused. Upload it in the Builder and publish it to create its
+    topology (see
+    [Builder documents and phenix config create](builder/import-upload-download.md#builder-documents-and-phenix-config-create)).
 
 The `metadata` section can also hold `annotations`: text values by key, such
 as the `topology` and `scenario` annotations of an

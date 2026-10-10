@@ -8,10 +8,6 @@ scenarios. Apart from storing a scenario file from the
 configs. Publish sends no diagram: the server reads the draft's last saved
 snapshot, checks it again, and writes the configs from it.
 
-Without the web UI, the `phenix builder publish` command writes a Topology
-config from a Builder file (see
-[From the command line](import-upload-download.md#from-the-command-line)).
-
 The examples on this page publish the Riverside Water draft (see
 [The drafts on these pages](index.md#the-drafts-on-these-pages)). It lists
 the scenario `riverside-water`.
@@ -644,8 +640,8 @@ is written to the topology.
 ## Editing a published topology
 
 A topology with a Builder diagram has the tag `builder` on the
-**Configs** page: one published from Builder or with
-`phenix builder publish`, or one that names a Builder file. The tag is a
+**Configs** page: one published from Builder, or one that names a Builder
+file. The tag is a
 link that opens the topology in Builder. So do its edit button and, in the
 viewer that opens when you select its name, **Open in Builder** and
 **Edit Config**:

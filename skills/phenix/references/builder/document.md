@@ -81,16 +81,15 @@ the editor never sets them:
   equals the document's and an unchanged publish answers topology
   `skipped`. A client must send the document exactly as `GET` returned it.
   For a `builder-file/` token all four fields are then whatever the file
-  says, also in what the draft publishes before its first save, as in a
-  document `phenix builder publish` stores: they are only as trustworthy as
-  whoever can write the file.
+  says, also in what the draft publishes before its first save: they are
+  only as trustworthy as whoever can write the file.
 - `POST .../snapshots` (`AppendSnapshot`): `createdBy` and `createdAt` come from
   the draft record (left out when it has none); `updatedBy` and `updatedAt`
   are the caller and now, equal to the snapshot's `createdBy` and its
   `createdAt` cut to seconds. Every save is an edit, also one that changes
   nothing.
 - Nothing else writes a document: cursor moves (undo, redo, restore),
-  snapshot delete, shares, publish, a file read and the CLI never stamp. A
+  snapshot delete, shares, publish and a file read never stamp. A
   published document holds the fields of the snapshot it was published from.
 - A value that is not valid in any of the four fields answers 422 on create
   and save.

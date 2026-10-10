@@ -92,11 +92,6 @@ could not be read and is removed.", and the result warns "The legacy Builder
 diagram of topology NAME could not be read and was removed." Publishing
 removes `builder-xml` in this case too.
 
-`phenix builder publish FILE --update` follows the same rules: it replaces a
-legacy topology only when the file's document was imported from the
-topology as it is now (see
-[Updating a topology](import-upload-download.md#updating-a-topology)).
-
 ## Converting a file
 
 **Upload** converts a legacy diagram in a file:
@@ -218,10 +213,3 @@ included topologies.
 Download the topology from the **Configs** page before you publish: the file
 still holds the XML, and **Upload** converts it again. To open the old
 editor itself, use a phenix build at or before `a0aeaa4e`.
-
-## From the command line
-
-There is no command that converts a legacy diagram. Convert it in the
-Builder, then download it as **Builder JSON** and use
-`phenix builder publish`, as for any Builder document (see
-[From the command line](import-upload-download.md#from-the-command-line)).

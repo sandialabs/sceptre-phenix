@@ -157,45 +157,6 @@ func ParseDocumentText(text []byte) (*DocumentFile, error) {
 // directory, a named pipe, a device or anything else but a regular file.
 const notRegular = "is not a regular file"
 
-// LoadDocumentFile reads the Builder document in the file at path for a
-// caller that chose the file itself, as the phenix CLI does. The file may be
-// anywhere, a symbolic link to it is followed, and the error says what is
-// wrong with the file, quoting it where that helps: a missing file and a
-// permission are the operating system's error, a path that is not a regular
-// file and a file that is not a valid document match [ErrInvalid], and one
-// of more than [MaxDocumentBytes] matches [ErrTooLarge]. The text is read as
-// [ParseDocumentText] reads it: JSON or YAML by its content, with nothing
-// expanded.
-func LoadDocumentFile(path string) (*DocumentFile, error) {
-	// Opening a named pipe for reading waits for a writer unless the open is
-	// non-blocking.
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0) //nolint:gosec // the file the caller named
-	if err != nil {
-		return nil, fmt.Errorf("reading builder document: %w", err)
-	}
-
-	defer func() { _ = file.Close() }()
-
-	info, err := file.Stat()
-
-	switch {
-	case err != nil:
-		return nil, fmt.Errorf("reading builder document: %w", err)
-	case !info.Mode().IsRegular():
-		return nil, newValidationError("document", notRegular)
-	case info.Size() > MaxDocumentBytes:
-		return nil, newTooLargeError("document", info.Size(), MaxDocumentBytes)
-	}
-
-	// The file can grow after its size was read.
-	data, err := io.ReadAll(io.LimitReader(file, MaxDocumentBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("reading builder document: %w", err)
-	}
-
-	return ParseDocumentText(data)
-}
-
 // ReadDocumentFile reads the Builder document in the file at path, which a
 // document reference names (see [ValidateDocumentPath]), for a caller that
 // did not choose the path and so must learn nothing else about the file.
@@ -252,18 +213,6 @@ func ReadDocumentFile(root string, excluded []string, path string) (*DocumentFil
 	}
 
 	return file, nil
-}
-
-// DocumentPathServed reports whether [ReadDocumentFile] reads a Builder file
-// at path at all: the path is below root, the directory Builder files are
-// read from, and below none of the excluded directories, itself or through
-// the symbolic links in place now. It says nothing of the file. A caller
-// about to record a path in a document reference uses it to warn of a path
-// the server will refuse.
-func DocumentPathServed(root string, excluded []string, path string) bool {
-	_, _, served := servedDocumentPath(root, excluded, path)
-
-	return served
 }
 
 // servedDocumentPath returns the directory [ReadDocumentFile] opens for

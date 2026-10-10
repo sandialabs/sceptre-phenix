@@ -40,12 +40,6 @@ Experiment configs and adds a topology to its scenarios, and only the
 - Download the diagram as Builder JSON or YAML, as the Topology YAML that
   Publish would write, as a PNG or SVG picture, or as a Gephi (GEXF) graph.
   See [Downloading](import-upload-download.md#downloading).
-- Make a topology from a Builder JSON or YAML file on the command line,
-  with `phenix builder publish`. See
-  [From the command line](import-upload-download.md#from-the-command-line).
-- List, export and check drafts, and list, export and import Node
-  Templates, from scripts and CI, with `phenix builder drafts` and
-  `phenix builder templates`. See [Command Line](cli.md).
 - Keep a diagram as a file next to its topology, for example in a
   repository checked out on the phenix server. See
   [Builder documents in files](administration.md#builder-documents-in-files).
@@ -269,13 +263,11 @@ publish the diagram as a topology and an experiment (see
 - [Node Templates](templates.md): device templates in a diagram, your
   template library, collections, sharing and server-wide templates.
 - [Import, Upload and Download](import-upload-download.md): starting from a
-  config or a Builder document, every download format, and the
-  `phenix builder publish` command.
+  config or a Builder document, every download format, and Builder
+  packages.
 - [Publishing](publishing.md): writing Topology and Experiment configs,
   adding the topology to the diagram's scenarios, and what blocks
   publishing.
-- [Command Line](cli.md): `phenix builder drafts` and
-  `phenix builder templates`, for scripts and CI.
 - [Administration](administration.md): permissions and the Builder role,
   storage, the `builder-doc` annotation, Builder documents in files, the
   REST API and troubleshooting.

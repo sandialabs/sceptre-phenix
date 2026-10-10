@@ -269,9 +269,9 @@ func TestConfigCommandsShowBuilderDocumentAsMap(t *testing.T) {
 // TestConfigCreateRecognizesBuilderDocuments runs `phenix config create` on
 // a directory that holds a config and Builder documents, as a topology
 // repository does: the config is created and each document is skipped with a
-// log line that names `phenix builder publish`. A Builder document named on
-// the command line is refused with an error that names it too. Neither
-// publishes the document.
+// log line that says to upload it in the Builder. A Builder document named on
+// the command line is refused with an error that names it. Neither publishes
+// the document.
 func TestConfigCreateRecognizesBuilderDocuments(t *testing.T) { //nolint:paralleltest // replaces the phenix store
 	useBoltStore(t)
 
@@ -328,7 +328,7 @@ func TestConfigCreateRecognizesBuilderDocuments(t *testing.T) { //nolint:paralle
 		t.Error("the topology names a Builder document, which config create never publishes")
 	}
 
-	skipped := logs.Records(t, plogtest.Message("skipped Builder document; use phenix builder publish"))
+	skipped := logs.Records(t, plogtest.Message("skipped Builder document; upload it in the Builder to publish it"))
 
 	paths := make([]string, 0, len(skipped))
 	for _, record := range skipped {
@@ -349,8 +349,8 @@ func TestConfigCreateRecognizesBuilderDocuments(t *testing.T) { //nolint:paralle
 	for _, args := range [][]string{{documents[0]}, {documents[1], "--skip-validation"}, {documents[0], directory}} {
 		err := run(args...)
 
-		want := args[0] + ` is a Builder document, not a configuration: use "phenix builder publish ` + args[0] +
-			`" to create its topology`
+		want := args[0] + ` is a Builder document, not a configuration: upload it in the Builder, ` +
+			`or send it to the Builder REST API (/api/v1/builder/drafts), and publish it to create its topology`
 		if err == nil || err.Error() != want {
 			t.Errorf("config create %v: error = %v, want %q", args, err, want)
 		}
@@ -438,7 +438,7 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) { //nolint:paralleltest // 
 		t.Errorf("scenarios = %v, %v, want none: a package's Scenario config is not created", scenarios, err)
 	}
 
-	documents := logs.Records(t, plogtest.Message("skipped Builder document; use phenix builder publish"))
+	documents := logs.Records(t, plogtest.Message("skipped Builder document; upload it in the Builder to publish it"))
 	if len(documents) != 1 || documents[0]["path"] != document {
 		t.Errorf("document log lines = %v, want one for %s", documents, document)
 	}
@@ -462,8 +462,8 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) { //nolint:paralleltest // 
 	for path, kind := range skipped {
 		want := path + ` is a Builder package, not a configuration: upload it in the Builder to open its diagram`
 		if kind == builderFileTemplateFile {
-			want = path + ` is a Builder template file, not a configuration: use "phenix builder templates import ` +
-				path + `" to add its Node Templates`
+			want = path + ` is a Builder template file, not a configuration: use Import templates in the Builder, ` +
+				`or the Builder REST API (/api/v1/builder/templates), to add its Node Templates`
 		}
 
 		if err := run(path); err == nil || err.Error() != want {
@@ -474,4 +474,49 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) { //nolint:paralleltest // 
 	if topologies, err := config.List("topology"); err != nil || len(topologies) != 1 {
 		t.Errorf("topologies = %v, %v, want still only pump-station", topologies, err)
 	}
+}
+
+// builderExample is the Builder document the docs ship, which names itself
+// "Pump station".
+const builderExample = "pump-station.builder.json"
+
+// useBoltStore makes a BoltDB of the test's own the phenix store.
+func useBoltStore(t *testing.T) {
+	t.Helper()
+
+	db := store.NewBoltDB()
+	if err := db.Init(store.Endpoint("bolt://" + filepath.Join(t.TempDir(), "phenix.bdb"))); err != nil {
+		t.Fatalf("initializing BoltDB returned error: %v", err)
+	}
+
+	previous := store.DefaultStore
+	store.DefaultStore = db //nolint:reassign // the test's own store
+
+	t.Cleanup(func() { store.DefaultStore = previous }) //nolint:reassign // restore the store
+}
+
+// docsExample returns the content of a file of the Builder docs' examples.
+func docsExample(t *testing.T, name string) []byte {
+	t.Helper()
+
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "content", "builder", "examples", name))
+	if err != nil {
+		t.Fatalf("reading the docs example: %v", err)
+	}
+
+	return data
+}
+
+// writeTestFile writes content to the file name of a directory of the
+// test's own, and returns its path.
+func writeTestFile(t *testing.T, directory, name string, content []byte) string {
+	t.Helper()
+
+	path := filepath.Join(directory, name)
+
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("writing %s: %v", path, err)
+	}
+
+	return path
 }

@@ -303,10 +303,11 @@ func newConfigCreateCmd() *cobra.Command {
 
   A Builder document (the Builder's JSON or YAML export), a Builder
   template file and a Builder package are not configurations. One found in
-  a directory is skipped, and one named on the command line is refused:
-  "phenix builder publish" creates the topology of a document, "phenix
-  builder templates import" adds the templates of a template file, and the
-  Builder's Upload opens a package.`
+  a directory is skipped, and one named on the command line is refused.
+  Use the Builder in the web UI, or the Builder REST API below
+  /api/v1/builder/, for these files. Upload a document and publish it to
+  create its topology. Use Import templates to add the templates of a
+  template file. Use Upload to open a package.`
 
 	cmd := &cobra.Command{
 		Use:   "create </path/to/filename> ...",
@@ -439,11 +440,11 @@ func builderFileKind(path string) string {
 
 // skipBuilderFile logs that config create skipped the Builder-owned file at
 // path, of kind, found in a directory it was given. The line of a Builder
-// document names the command that publishes it; the other kinds are logged
-// at debug level.
+// document says where to publish it. The other kinds are logged at debug
+// level.
 func skipBuilderFile(kind, path string) {
 	if kind == builderFileDocument {
-		plog.Info(plog.TypeSystem, "skipped Builder document; use phenix builder publish", "path", path)
+		plog.Info(plog.TypeSystem, "skipped Builder document; upload it in the Builder to publish it", "path", path)
 
 		return
 	}
@@ -458,8 +459,8 @@ func builderFileRefusal(kind, path string) error {
 	switch kind {
 	case builderFileTemplateFile:
 		return fmt.Errorf(
-			"%s is a Builder template file, not a configuration: "+
-				"use \"phenix builder templates import %s\" to add its Node Templates", path, path,
+			"%s is a Builder template file, not a configuration: use Import templates in the Builder, "+
+				"or the Builder REST API (/api/v1/builder/templates), to add its Node Templates", path,
 		)
 	case builderFilePackage:
 		return fmt.Errorf(
@@ -468,8 +469,8 @@ func builderFileRefusal(kind, path string) error {
 	}
 
 	return fmt.Errorf(
-		"%s is a Builder document, not a configuration: "+
-			"use \"phenix builder publish %s\" to create its topology", path, path,
+		"%s is a Builder document, not a configuration: upload it in the Builder, "+
+			"or send it to the Builder REST API (/api/v1/builder/drafts), and publish it to create its topology", path,
 	)
 }
 

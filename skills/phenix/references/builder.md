@@ -16,7 +16,7 @@ its `/api/v1/builder/*`,
 `builder-drafts` and
 `builder-templates` RBAC resources or the built-in Builder role, the Builder
 document format (`builder/v1`), the `builder-doc` annotation, Builder files
-named by `builder-doc.path`, `phenix builder publish`, or any Builder code
+named by `builder-doc.path`, or any Builder code
 (see
 [Working on Builder code](builder/code-and-tests.md)). The legacy
 Builder of earlier releases (mxGraph, `builder-xml` topologies) was removed
@@ -39,15 +39,8 @@ legacy diagram through `POST /builder/legacy`), or a published diagram;
 
 The Builder, the Vue Flow topology editor, is on in every `phenix ui`, at
 `/builder`, with its draft and document APIs under `/api/v1/builder`.
-`phenix builder publish` makes a Topology from a Builder document file and
-needs no running server
-(see [CLI: phenix builder publish](builder/cli.md#cli-phenix-builder-publish));
-`phenix builder drafts` and `phenix builder templates` list, export and
-check drafts and list, export and import Node Templates through the REST
-API of a running server (see
-[CLI: phenix builder drafts and templates](builder/cli.md#cli-phenix-builder-drafts-and-templates));
-sharing, publishing a draft and everything else are in the REST API and
-the web UI only.
+The Builder has no CLI: everything is in the REST API and the web UI only.
+The unix socket of `phenix ui` does not serve the Builder routes.
 Drafts autosave separately from phenix configs; in the web UI and REST API
 only the explicit Publish action creates or updates topology or experiment
 configs and adds the topology to the `topology` annotation of the
@@ -63,8 +56,8 @@ config (from an uploaded file, with `POST`/`PUT /configs`).
 - **REST:** `src/go/web/builder*.go` serves `/api/v1/builder` and the three
   Builder schemas; `web/builder.go` holds the authorization model.
 - **Service:** `src/go/api/builder/` owns drafts, snapshots, shares,
-  published documents, the icon and template libraries, the CLI's publish
-  and the preflight checks.
+  published documents, the icon and template libraries and the preflight
+  checks.
 - **Document:** `src/go/types/builder/` defines the `builder/v1` document,
   its validation, generation from configs, legacy conversion, the Topology a
   document publishes as, and the JSON Schema committed as
@@ -116,6 +109,6 @@ Code paths are relative to `src/go/` (Go) and `src/js/src/` (JS).
 | Root keys, `metadata`, diagram notes, the generated schema, provenance | [document.md](builder/document.md) | `types/builder/document.go`, `validate.go`, `schema.go`, `builder/validate.js`, `decode.js` |
 | Error codes, decoding refusals, issues, error bodies | [error-codes.md](builder/error-codes.md) | `types/builder/codes.go`, `decodeissues.go` |
 | Topology YAML and GEXF downloads, Builder packages | [downloads-and-packages.md](builder/downloads-and-packages.md) | `types/builder/package.go`, `web/builder_package.go`, `builder/package.js`, `gexf.js` |
-| `phenix builder` commands, `phenix config create`, the unix socket | [cli.md](builder/cli.md) | `cmd/builder*.go`, `cmd/config.go` |
+| `phenix config create` skipping or refusing Builder files | [published-documents.md](builder/published-documents.md#phenix-config-create-and-builder-files) | `cmd/config.go` |
 | Every route and its permissions | [routes.md](builder/routes.md) | `web/builder*.go`, `web/public/docs/openapi.yml` |
 | Where the code is, the rules in full, tests | [code-and-tests.md](builder/code-and-tests.md) | |

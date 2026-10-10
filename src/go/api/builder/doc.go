@@ -2,7 +2,7 @@
 //
 // Four kinds of data are persisted, all through the generic
 // [phenix/store.RecordStore] primitives. No broker events are created by this
-// package, and it stores a phenix config in one place only (see below):
+// package, and it stores no phenix config:
 //
 //   - Drafts: mutable, per-user working documents. A draft is a metadata record
 //     (owner, title, provenance, publication state, and an ordered history of
@@ -38,11 +38,6 @@
 //
 // The web layer publishes a draft itself: it stores the document here and
 // writes the configs, with its own locks, stages and broadcasts.
-// [Service.PublishTopology] publishes a document for a caller that holds no
-// draft, the phenix CLI, which reads it from a file with [LoadDocumentFile]:
-// it makes the checks a topology publication makes, stores the document, and
-// creates or updates the Topology config through phenix/api/config. That is
-// the only config this package stores.
 //
 // A document's metadata names who made it and who last saved it, and when
 // (see [phenix/types/builder.Provenance]). This package sets those four
@@ -60,9 +55,8 @@
 // A reference may also name a Builder file by its path on the phenix server.
 // [ReadDocumentFile] reads one for a caller that did not choose the path:
 // nothing it reads is stored, and its errors say nothing of what a file
-// holds. [LoadDocumentFile] reads a file its caller chose, and says what is
-// wrong with it. These two are the only times this package touches the file
-// system.
+// holds. It and the reads of template files are the only times this package
+// touches the file system.
 //
 // Concurrency is handled with optimistic concurrency control: every draft
 // mutation takes the record revision the caller observed and performs a
@@ -76,7 +70,6 @@
 //
 // Authorization is deliberately *not* implemented here. Owner and actor are
 // explicit, trusted arguments supplied by the caller: the web layer, which is
-// responsible for authenticating and authorizing them, or the CLI, whose
-// user holds the store. The service records the actor of every mutation
+// responsible for authenticating and authorizing them. The service records the actor of every mutation
 // (including cross-user actors) for audit purposes.
 package builder

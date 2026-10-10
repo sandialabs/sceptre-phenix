@@ -643,10 +643,6 @@
     "severity": "warning",
     "description": "A preflight check, or part of one, could not be made; the message says why."
   },
-  "publish.alias.unpublished": {
-    "severity": "warning",
-    "description": "The document's VLAN aliases are not published: a topology holds none."
-  },
   "publish.blocked": {
     "severity": "error",
     "description": "Only publishing refuses the topology; issues lists each interface, address or hostname to fix."
@@ -654,10 +650,6 @@
   "publish.broadcast.failed": {
     "severity": "warning",
     "description": "A config was stored, but its live update could not be broadcast."
-  },
-  "publish.changes.unknown": {
-    "severity": "warning",
-    "description": "A stored config could not be read to say what publishing changes."
   },
   "publish.cleanup.failed": {
     "severity": "warning",
@@ -707,10 +699,6 @@
     "severity": "warning",
     "description": "The topology names a Builder file that publishing does not change."
   },
-  "publish.file.unserved": {
-    "severity": "warning",
-    "description": "The recorded Builder file is in a directory the phenix server does not read."
-  },
   "publish.include.clash": {
     "severity": "error",
     "description": "A hostname is defined both in the topology and in a topology it includes."
@@ -719,10 +707,6 @@
     "severity": "error",
     "description": "An included topology has a hostname phenix refuses in an experiment."
   },
-  "publish.include.unchecked": {
-    "severity": "warning",
-    "description": "An included topology could not be read to check for duplicate hostnames."
-  },
   "publish.legacy.removed": {
     "severity": "warning",
     "description": "The topology's legacy Builder diagram could not be read and was removed."
@@ -730,10 +714,6 @@
   "publish.legacy.replaced": {
     "severity": "warning",
     "description": "The topology's legacy Builder diagram was replaced by this diagram."
-  },
-  "publish.path.invalid": {
-    "severity": "error",
-    "description": "A Builder file path cannot be recorded on the topology."
   },
   "publish.retry.complete": {
     "severity": "warning",
@@ -754,10 +734,6 @@
   "publish.scenario.partial": {
     "severity": "warning",
     "description": "Some scenarios were updated before the scenario stage failed."
-  },
-  "publish.scenario.unchanged": {
-    "severity": "warning",
-    "description": "phenix builder publish changes none of the document's scenarios."
   },
   "publish.source.changed": {
     "severity": "error",

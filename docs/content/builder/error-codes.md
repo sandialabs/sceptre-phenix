@@ -2,9 +2,9 @@
 
 Every problem Builder reports has a code: a stable, machine-readable name
 of the rule it breaks, such as `node.hostname.duplicate`. The diagram
-checks in the editor, the Builder REST API and `phenix builder publish`
-use the same codes for the same rules, so a script can act on a code
-without reading the message, whose words may change.
+checks in the editor and the Builder REST API use the same codes for the
+same rules, so a script can act on a code without reading the message,
+whose words may change.
 
 A code is lowercase words joined by dots. The first word names what the
 rule is about: `document`, `metadata`, `node`, `device`, `interface`,
@@ -338,21 +338,15 @@ The warnings of an import or of a legacy diagram's conversion
 | `publish.include.clash` | error | A hostname is defined both in the topology and in a topology it includes. |
 | `publish.include.hostname` | error | An included topology has a hostname phenix refuses in an experiment. |
 | `publish.target.invalid` | error | A topology, experiment or scenario name is not a config name. |
-| `publish.path.invalid` | error | A Builder file path cannot be recorded on the topology. |
 | `publish.stage.failed` | error | A publish stage failed after earlier stages were written. |
 | `publish.cleanup.failed` | warning | The publication went through, but content it replaces could not be removed. |
 | `publish.broadcast.failed` | warning | A config was stored, but its live update could not be broadcast. |
 | `publish.file.unchanged` | warning | The topology names a Builder file that publishing does not change. |
-| `publish.file.unserved` | warning | The recorded Builder file is in a directory the phenix server does not read. |
 | `publish.legacy.replaced` | warning | The topology's legacy Builder diagram was replaced by this diagram. |
 | `publish.legacy.removed` | warning | The topology's legacy Builder diagram could not be read and was removed. |
 | `publish.experiment.unrecorded` | warning | The experiment was stored, but not which draft published it. |
 | `publish.scenario.partial` | warning | Some scenarios were updated before the scenario stage failed. |
-| `publish.scenario.unchanged` | warning | phenix builder publish changes none of the document's scenarios. |
-| `publish.alias.unpublished` | warning | The document's VLAN aliases are not published: a topology holds none. |
-| `publish.include.unchecked` | warning | An included topology could not be read to check for duplicate hostnames. |
 | `publish.retry.complete` | warning | The same publication was already complete; nothing was written. |
-| `publish.changes.unknown` | warning | A stored config could not be read to say what publishing changes. |
 | `preflight.capacity.cpu` | warning | The schedulable hosts have fewer free CPUs than the devices take; VMs would share CPUs. |
 | `preflight.capacity.memory` | error | The schedulable hosts have less free memory than the diagram's devices take. |
 | `preflight.capacity.vm-too-large` | error | A device fits on no single schedulable host: none has both its CPUs and its memory. |

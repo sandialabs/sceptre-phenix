@@ -5561,9 +5561,8 @@ components:
     BuilderPublishedDocument:
       description: >
         The Builder document a config references: a stored published
-        document (`source` `store`), which Publish or the
-        `phenix builder publish` command stored, or the Builder file a
-        topology's `builder-doc` annotation names (`source` `file`). A file
+        document (`source` `store`), which Publish stored, or the Builder
+        file a topology's `builder-doc` annotation names (`source` `file`). A file
         has no `id`,
         `draftId`, `snapshotId`, `createdAt` or `createdBy`. In a listing a
         file also has no `digest` and no `size`, since a listing reads no
@@ -5599,8 +5598,7 @@ components:
         draftId:
           description: >
             stored documents only; the draft that first published the
-            document. Absent for a document that `phenix builder publish`
-            stored from a file.
+            document.
           type: string
         snapshotId:
           description: >
@@ -5614,9 +5612,6 @@ components:
         createdBy:
           description: >
             stored documents only; the user who first published the document.
-            For a document `phenix builder publish` stored, the user that
-            command recorded: its `--user`, or the operating system account
-            that ran it.
           type: string
         topologyDiffers:
           description: >

@@ -89,7 +89,6 @@ nav:
     - Node Templates: builder/templates.md
     - Import, Upload and Download: builder/import-upload-download.md
     - Publishing: builder/publishing.md
-    - Command Line: builder/cli.md
     - Administration: builder/administration.md
     - Error Codes: builder/error-codes.md
     - Legacy Builder: builder/legacy.md
