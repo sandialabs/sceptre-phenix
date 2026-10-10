@@ -1812,6 +1812,14 @@ function axeScans(scheme) {
           .soft(page.getByTestId('header-tooltip'))
           .toHaveText(`Switch to ${next} theme`);
         await page.setViewportSize(initial);
+        // The narrower window leaves the pointer outside it, where the theme
+        // button was in the wide one. It comes back into the page, and the
+        // theme's tooltip goes, before it moves onto Settings: in Firefox a
+        // pointer that enters the page straight onto a control need not
+        // bring the pointermove with the mouseenter that a tooltip waits
+        // for (see whenPointed in fixedTooltip.js).
+        await page.mouse.move(0, 0);
+        await expect(page.getByTestId('header-tooltip')).toHaveCount(0);
         // Settings' and Help's tooltips name them too, and Settings' gives
         // its key.
         const settingsKeys =
