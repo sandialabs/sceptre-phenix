@@ -273,6 +273,10 @@ describe('the template editor', () => {
     expect(section).toContain('aria-labelledby="template-fields-title"');
     expect(html).toContain('id="template-fields-title"');
     expect(html).toContain('Hostname');
+    // The Purdue layer, under Node fields.
+    expect(html).toMatch(
+      /<h4[^>]*><label for="template-purdue-level"[^>]*>Purdue layer<\/label><\/h4>/,
+    );
     expect(html).toContain('Fill Color');
     expect(html).not.toContain('data-testid="inspector-actions"');
     expect(html).not.toContain('Connection points');

@@ -19,6 +19,7 @@ import {
   addTemplate,
   createDocument,
   findNode,
+  purdueLevel,
   removeTemplate,
   templateDevice,
   updateNode,
@@ -438,6 +439,38 @@ describe('the template editor’s host', () => {
     source.schemaError = 'bundled';
     expect(host.disks).toBeNull();
     expect(host.schemaError).toBe('bundled');
+  });
+
+  // The Inspector sets it at once; the template takes it at Save.
+  test('sets the Purdue layer of the template’s device', () => {
+    const { host } = hosted();
+    const id = host.doc.nodes[0].id;
+
+    expect(host.setPurdueLevel(id, '2')).toBe(true);
+    expect(templateFromDocument(host.doc).template.device.purdueLevel).toBe(
+      '2',
+    );
+    // The level it has already, and an unknown one, change nothing.
+    expect(host.setPurdueLevel(id, '2')).toBe(false);
+    expect(host.setPurdueLevel(id, '9')).toBe(false);
+    expect(host.setPurdueLevel(id, '')).toBe(true);
+    expect(purdueLevel(host.doc.nodes[0])).toBe('');
+    expect(templateFromDocument(host.doc).template.device).not.toHaveProperty(
+      'purdueLevel',
+    );
+  });
+
+  test('a read-only host keeps the Purdue layer', () => {
+    const doc = templateDocument(plcTemplate());
+    const host = templateEditorHost({
+      doc,
+      source: { schema: { $defs: {} }, schemaError: '', disks: null },
+      announce: () => {},
+      readOnly: true,
+    });
+
+    expect(host.setPurdueLevel(doc.nodes[0].id, '2')).toBe(false);
+    expect(host.doc).toBe(doc);
   });
 
   test('a commit replaces the document, which names the icon and carries no copy of it', () => {

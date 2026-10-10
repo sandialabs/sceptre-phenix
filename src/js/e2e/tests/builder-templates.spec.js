@@ -397,6 +397,19 @@ test(
       await expect
         .soft(form.getByRole('heading', { name: 'Inspector' }))
         .toHaveCount(0);
+      // A template keeps the Purdue layer, so the form shows it, as its own
+      // field beside the canvas Inspector's.
+      const layer = form.getByLabel('Purdue layer', { exact: true });
+
+      await expect.soft(layer).toHaveValue('');
+      await expect
+        .soft(layer)
+        .toHaveAccessibleDescription(
+          /^The level of the Purdue model this device/,
+        );
+      await expect
+        .soft(form.getByRole('heading', { level: 4, name: 'Purdue layer' }))
+        .toHaveCount(1);
       // The canvas Inspector behind the dialog still shows the device.
       await expect
         .soft(builder.inspector.getByTestId('inspector-position'))

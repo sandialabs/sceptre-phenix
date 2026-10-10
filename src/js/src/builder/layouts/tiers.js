@@ -12,13 +12,18 @@
 // Purdue tier, and nodes that join no network (notes, devices without a
 // connection) go below that. A group takes the highest tier of its members.
 //
-// Inside a tier, and in a diagram without any Purdue layer, the order comes
-// from the kind of each node: an external device, then a firewall, then a
-// router, then a switch, then any other device. Each connection runs from
-// the node nearer a root to the one farther from it, by breadth-first
-// distance. The roots of a set of connected nodes are the selected devices
-// and switches in it; else its external devices, else its firewalls, else
-// its routers; else the switch with the most connections.
+// Inside a tier, and in a diagram without any Purdue layer, each connection
+// runs from the node nearer a root to the one farther from it, by
+// breadth-first distance. The roots of a set of connected nodes are the
+// selected devices and switches in it; else its external devices, else its
+// firewalls, else its routers; else the switch with the most connections.
+// The kind of each node (an external device, then a firewall, then a
+// router, then a switch, then any other device) decides only between two
+// nodes as far from a root. The distance comes first because every
+// connection joins a device and a switch, which are never of one kind: by
+// kind first, every switch would sit above its devices, a router behind a
+// firewall's switch beside the firewall, and the selection would decide
+// nothing.
 //
 // The result depends on the document alone (and on the selection, for the
 // roots): ELK takes the nodes and the connections in the document's order,

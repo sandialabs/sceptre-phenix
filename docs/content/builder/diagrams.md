@@ -802,7 +802,7 @@ layout that last arranged the draft, or **Default** when none has. An
 imported, uploaded or blank draft starts at **Default**: an import places
 its devices in rows on a grid, with the switches below them.
 
-![The layout menu listing ELK layered, Network cards, Dagre and Standard, each with a one-line summary.](../images/builder/layout-menu.png){ width="287" }
+![The layout menu listing ELK layered, Layered by tier, Network cards, Dagre and Standard, each with a one-line summary.](../images/builder/layout-menu.png){ width="287" }
 
 | Layout | Menu summary | What it does |
 |---|---|---|
@@ -855,13 +855,17 @@ bottom. Each connection goes down from the higher layer to the lower one.
 - A group is at the layer of its highest member. Inside the group, its
   members are in the order of their layers.
 
-In one layer, and in a diagram without Purdue layers, the layout starts
-from a root and puts each node below the node that leads to it. The root is
-the selected node. With no selection, the root is an external device, else
-a firewall, else a router, else the switch with the most connections. A
-firewall or a router is known by its icon or its node type. So in a diagram
-without Purdue layers, firewalls and routers are above their switches, and
-switches are above their other devices.
+In a diagram without Purdue layers, and inside one layer, the layout starts
+from a top node. Each other node goes below the node that leads to it from
+the top node. The top node is the first of these that the diagram has:
+
+1. The selected device or switch.
+2. An external device.
+3. A firewall.
+4. A router.
+5. The switch with the most connections.
+
+The layout uses the icon or the node type to find a firewall or a router.
 
 ## Arranging by hand
 

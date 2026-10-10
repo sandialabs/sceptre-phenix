@@ -1038,9 +1038,14 @@ export function addNode(doc, options = {}) {
       }
 
       for (const key of SWITCH_OPTIONAL_KEYS) {
-        if (options[key]) {
+        if (options[key] && key !== 'purdueLevel') {
           node.switch[key] = options[key];
         }
+      }
+
+      // As for a device, an unknown Purdue level is none.
+      if (PURDUE_LEVELS.includes(options.purdueLevel)) {
+        node.switch.purdueLevel = options.purdueLevel;
       }
 
       if (Array.isArray(options.notes) && options.notes.length > 0) {

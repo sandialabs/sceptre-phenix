@@ -120,10 +120,15 @@ describe('the Purdue layer of a node', () => {
     const device = addNode(doc, { kind: 'device', purdueLevel: '1' });
     const hub = addNode(device.doc, { kind: 'switch', purdueLevel: '3' });
     const other = addNode(hub.doc, { kind: 'device', purdueLevel: '9' });
+    const otherHub = addNode(other.doc, { kind: 'switch', purdueLevel: '9' });
 
     expect(device.node.device.purdueLevel).toBe('1');
     expect(hub.node.switch.purdueLevel).toBe('3');
     expect('purdueLevel' in other.node.device).toBe(false);
+    expect('purdueLevel' in otherHub.node.switch).toBe(false);
+    expect(
+      validateDocument(otherHub.doc).map((issue) => issue.code),
+    ).not.toContain('switch.purdue-level.unknown');
   });
 
   test('a copy keeps it', () => {

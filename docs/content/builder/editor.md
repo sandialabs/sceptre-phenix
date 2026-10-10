@@ -585,7 +585,7 @@ dialog closes and opens again, and is cleared when the diagram changes.
 
 The command palette runs any command by name, and finds nodes and networks.
 
-![The command palette filtered by layout, listing the Layout: ELK layered, Network cards, Dagre and Standard commands, with ELK layered marked as the current layout, and Auto layout with its keys ⌥⇧L.](../images/builder/command-palette.png)
+![The command palette filtered by layout, listing the Layout: ELK layered, Layered by tier, Network cards, Dagre and Standard commands, with ELK layered marked as the current layout, and Auto layout with its keys ⌥⇧L.](../images/builder/command-palette.png)
 
 To open it, select **Commands** in the header, or press
 <kbd>⌘</kbd>+<kbd>K</kbd> on macOS or <kbd>Ctrl</kbd>+<kbd>K</kbd> on Windows

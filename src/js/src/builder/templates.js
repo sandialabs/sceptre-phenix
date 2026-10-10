@@ -31,6 +31,7 @@ import {
   addNode,
   createDocument,
   networkByName,
+  setPurdueLevel,
   templateDevice,
 } from './model.js';
 import { reasonMessage, validUsername } from './share.js';
@@ -224,7 +225,8 @@ export function templateFromDocument(doc) {
  * template's one device, which is always the selection. A commit replaces
  * the document, dropping copies of icons it need not carry, as a commit of
  * the store does (see settleIcons). The schema and the disk images are the
- * Builder store's; the actions of a canvas do nothing.
+ * Builder store's; the actions of a canvas do nothing. The Purdue layer
+ * changes the document at once, as on the canvas.
  *
  * The template editor makes it reactive.
  *
@@ -276,6 +278,13 @@ export function templateEditorHost({
     remove() {},
     moveNodes() {
       return false;
+    },
+    // The Purdue layer of the template's device, which waits for the
+    // editor's Save like the other fields.
+    setPurdueLevel(nodeId, level) {
+      const next = setPurdueLevel(this.doc, nodeId, level);
+
+      return !this.readOnly && next !== this.doc && this.commit(next);
     },
   };
 }

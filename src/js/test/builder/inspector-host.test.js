@@ -385,6 +385,24 @@ describe('the template variant', () => {
     ).toBe(false);
   });
 
+  // A template keeps the Purdue layer, so the template editor shows it,
+  // under ids of its own: the canvas's Inspector is on the page too.
+  test('shows the Purdue layer of the template’s device', async () => {
+    const { doc, node } = oneDevice({ purdueLevel: '1' });
+    const { html } = await openInspector(props(fakeHost(doc, node.id)));
+    const select = tags(html, 'select').find((tag) =>
+      tag.includes('id="template-purdue-level"'),
+    );
+
+    expect(html).toContain('data-testid="inspector-purdue"');
+    expect(html).not.toContain(' id="inspector-purdue-level"');
+    expect(html).toMatch(
+      /<label for="template-purdue-level"[^>]*>Purdue layer<\/label>/,
+    );
+    expect(select).toContain('aria-describedby="template-purdue-hint"');
+    expect(select).toContain('value="1"');
+  });
+
   test('a read-only host locks every field', async () => {
     const { doc, node } = oneDevice();
     const { html } = await openInspector(

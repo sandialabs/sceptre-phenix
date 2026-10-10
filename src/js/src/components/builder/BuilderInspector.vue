@@ -244,35 +244,39 @@
            reads it, and publishing never writes it to a config. A locked
            node or a read-only draft shows a read-only text field in place
            of the select, as a locked field of the form does (see
-           InspectorEnumControl.vue). -->
+           InspectorEnumControl.vue). The template editor shows it too: a
+           template keeps the Purdue layer, and its choice waits for the
+           editor's Save. -->
       <div
-        v-if="!template && PURDUE_KINDS.includes(target.kind)"
+        v-if="PURDUE_KINDS.includes(target.kind)"
         class="builder-inspector__purdue"
         data-testid="inspector-purdue">
-        <h3>
-          <label for="inspector-purdue-level">Purdue layer</label>
-        </h3>
-        <p id="inspector-purdue-hint" class="builder-inspector__hint">
+        <!-- Under the template editor's "Node fields" heading, one level
+             down. -->
+        <component :is="template ? 'h4' : 'h3'">
+          <label :for="purdueIds.level">Purdue layer</label>
+        </component>
+        <p :id="purdueIds.hint" class="builder-inspector__hint">
           The level of the Purdue model this
           {{ target.kind === 'switch' ? 'network' : 'device' }} is at. The
           Layered by tier layout puts higher levels above lower ones.
         </p>
         <input
           v-if="host.readOnly || lock.all"
-          id="inspector-purdue-level"
+          :id="purdueIds.level"
           type="text"
           readonly
           aria-readonly="true"
           autocomplete="off"
-          aria-describedby="inspector-purdue-hint"
+          :aria-describedby="purdueIds.hint"
           data-testid="inspector-purdue-level"
           :value="
             PURDUE_LEVEL_TITLES[purdueLevel(target.target)] || PURDUE_NONE
           " />
         <select
           v-else
-          id="inspector-purdue-level"
-          aria-describedby="inspector-purdue-hint"
+          :id="purdueIds.level"
+          :aria-describedby="purdueIds.hint"
           data-testid="inspector-purdue-level"
           :value="purdueLevel(target.target)"
           @change="choosePurdueLevel($event.target.value)">
@@ -1834,6 +1838,13 @@
   // What the Purdue layer says of a node at no level.
   const PURDUE_NONE = 'None';
 
+  // The ids of the Purdue layer's select and hint: the template editor's
+  // Inspector is on the page with the canvas's.
+  const purdueIds = {
+    level: template ? 'template-purdue-level' : 'inspector-purdue-level',
+    hint: template ? 'template-purdue-hint' : 'inspector-purdue-hint',
+  };
+
   // Puts the selected device or switch at the level chosen, at once. The
   // select shows the node's level again when the change is refused, such
   // as while a conflict is resolved.
@@ -1846,7 +1857,7 @@
 
     host.setPurdueLevel(node.id, level);
 
-    const select = panel.value?.querySelector('#inspector-purdue-level');
+    const select = panel.value?.querySelector(`#${purdueIds.level}`);
 
     if (select) {
       select.value = purdueLevel(findNode(host.doc, node.id));
@@ -2169,11 +2180,16 @@
   }
 
   .builder-inspector__ifaces h3,
-  .builder-inspector__purdue h3,
+  .builder-inspector__purdue :is(h3, h4),
   .builder-inspector__position h3 {
     font-weight: 700;
     font-size: 0.85rem;
     margin: 0.75rem 0 0.25rem;
+  }
+
+  /* In the template editor, as wide as a column of its fields. */
+  .builder-inspector--template .builder-inspector__purdue {
+    max-width: 17rem;
   }
 
   /* Marked by a bar in the color of its worst issue, and each issue by its

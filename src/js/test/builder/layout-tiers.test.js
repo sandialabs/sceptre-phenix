@@ -260,11 +260,73 @@ describe('the Layered by tier layout', () => {
 
   test('a Purdue layer set on a switch wins over the one it would take', async () => {
     const { doc, sw, dev } = plant();
-    const lowered = setPurdueLevel(doc, sw.CONTROL.id, '1');
-    const { top, bottom } = rows(await laidOut(lowered));
+    const partition = (graph) =>
+      graph.children.find((child) => child.id === sw.CONTROL.id).layoutOptions[
+        'elk.partitioning.partition'
+      ];
 
-    expect(bottom(dev.HMI)).toBeLessThanOrEqual(top(sw.CONTROL));
-    expect(top(sw.CONTROL)).toBeGreaterThanOrEqual(bottom(dev.HMI));
+    // Without one, CONTROL takes level 2 from the HMI, and is above the
+    // PLCs at level 1.
+    const before = rows(await laidOut(doc));
+
+    expect(partition(tierGraph(doc))).toBe(4);
+    expect(before.bottom(sw.CONTROL)).toBeLessThanOrEqual(
+      before.top(dev['PLC-1']),
+    );
+
+    // At level 0, it is in that tier, below the PLCs.
+    const lowered = setPurdueLevel(doc, sw.CONTROL.id, '0');
+    const after = rows(await laidOut(lowered));
+
+    expect(partition(tierGraph(lowered))).toBe(6);
+    expect(after.top(sw.CONTROL)).toBeGreaterThanOrEqual(
+      after.bottom(dev['PLC-1']),
+    );
+    expect(after.top(sw.CONTROL)).toBeGreaterThanOrEqual(
+      after.bottom(dev['PLC-2']),
+    );
+  });
+
+  // Every connection joins a device and a switch, so the kind of a node
+  // decides no connection that the distance from the root does not.
+  test('puts a router below the switch that leads to it from the firewall', async () => {
+    let doc = createDocument({ name: 'chain' });
+    const make = (options) => {
+      const added = addNode(doc, options);
+
+      doc = added.doc;
+
+      return added.node;
+    };
+    const firewall = make({
+      kind: 'device',
+      hostname: 'FW',
+      look: { iconKey: 'firewall' },
+    });
+    const dmz = make({ kind: 'switch', networkName: 'DMZ' });
+    const router = make({
+      kind: 'device',
+      hostname: 'RTR',
+      look: { iconKey: 'router' },
+    });
+    const lan = make({ kind: 'switch', networkName: 'LAN' });
+    const host = make({ kind: 'device', hostname: 'PC' });
+
+    for (const [a, b] of [
+      [firewall, dmz],
+      [router, dmz],
+      [router, lan],
+      [host, lan],
+    ]) {
+      doc = connect(doc, { sourceNodeId: a.id, targetNodeId: b.id }).doc;
+    }
+
+    const { top, bottom } = rows(await laidOut(doc));
+
+    expect(bottom(firewall)).toBeLessThanOrEqual(top(dmz));
+    expect(bottom(dmz)).toBeLessThanOrEqual(top(router));
+    expect(bottom(router)).toBeLessThanOrEqual(top(lan));
+    expect(bottom(lan)).toBeLessThanOrEqual(top(host));
   });
 
   test('knows a node by its icon or its type', () => {
