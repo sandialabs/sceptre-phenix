@@ -34,6 +34,13 @@ part of the suite:
 | Axe scans        | no flags          | the `@axe` tests                            |
 | Builder sharing  | authentication on | `builder-sharing*.spec.js`                  |
 
+The build runs, and the five jobs run their tests, only for a change that
+can affect the browser: `src/js/` outside its unit tests in `src/js/test/`,
+`src/go/web/`, `src/go/api/builder/`, `src/go/types/builder/`,
+`src/go/types/version/`, the `Makefile`, `docker/` or the workflow itself.
+For any other change the build is skipped and the five jobs report success
+without running a test.
+
 Every job runs all three projects (below) on its part. The sharing specs make
 and sign in users of their own, and the roles they need (`userMaker` in
 `tests/builder-support.js`). Builder checks include axe accessibility scans.

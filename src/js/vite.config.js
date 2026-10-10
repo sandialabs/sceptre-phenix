@@ -6,6 +6,53 @@ import vueDevTools from 'vite-plugin-vue-devtools';
 
 import builderAssets from './plugins/builder-assets.js';
 
+// Vitest leaves out the Playwright suite in e2e/, which has its own runner.
+const TEST_EXCLUDE = ['e2e/**', 'node_modules/**', 'dist/**'];
+
+// The contract tests: suites of pure functions (the document model and its
+// schema, validation, layout math, codecs, the build's compression plugin)
+// that mock no module, stub no global, and leave no storage, timer or module
+// state behind. They run in shared workers, without a fresh one per file,
+// and in any order (`npx vitest run --project contract --sequence.shuffle`
+// checks that). `npm run test:contract` runs them alone. A suite that mocks,
+// stubs or keeps state belongs in the unit project.
+const CONTRACT_TESTS = [
+  'test/builder/announce.test.js',
+  'test/builder/catalog.test.js',
+  'test/builder/command-search.test.js',
+  'test/builder/configs.test.js',
+  'test/builder/decode.test.js',
+  'test/builder/dialog-message.test.js',
+  'test/builder/digest.test.js',
+  'test/builder/drawings.test.js',
+  'test/builder/form-validator.test.js',
+  'test/builder/format.test.js',
+  'test/builder/forms.test.js',
+  'test/builder/fuzzy.test.js',
+  'test/builder/group-notes.test.js',
+  'test/builder/history.test.js',
+  'test/builder/icons.test.js',
+  'test/builder/inspector-notes.test.js',
+  'test/builder/issues.test.js',
+  'test/builder/large-diagram.test.js',
+  'test/builder/layout.test.js',
+  'test/builder/list-selection.test.js',
+  'test/builder/model.test.js',
+  'test/builder/node-info.test.js',
+  'test/builder/outline.test.js',
+  'test/builder/panes.test.js',
+  'test/builder/rename.test.js',
+  'test/builder/routes.test.js',
+  'test/builder/schema-examples.test.js',
+  'test/builder/schema.test.js',
+  'test/builder/selection.test.js',
+  'test/builder/stable.test.js',
+  'test/builder/theme.test.js',
+  'test/builder/validate.test.js',
+  'test/builder/vueflow.test.js',
+  'test/plugins/builder-assets.test.js',
+];
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   process.env = {
@@ -67,9 +114,26 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    // vitest: the Playwright suite in e2e/ has its own runner
+    // vitest: `npm test` runs both projects. The contract tests share
+    // workers; every other test file starts in a fresh worker of its own, so
+    // its module mocks, global stubs and state never reach another file.
+    // The contract project sets no maxWorkers of its own: Vitest requires a
+    // project with its own limit to have its own sequence.groupOrder, and it
+    // runs the groups one after another, so the contract tests would run
+    // after the unit tests instead of beside them. A limit of 4 workers made
+    // `npm test` 0.45 s slower, and a limit of 1, 1.6 s slower.
     test: {
-      exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+      exclude: TEST_EXCLUDE,
+      projects: [
+        {
+          extends: true,
+          test: { name: 'contract', include: CONTRACT_TESTS, isolate: false },
+        },
+        {
+          extends: true,
+          test: { name: 'unit', exclude: [...TEST_EXCLUDE, ...CONTRACT_TESTS] },
+        },
+      ],
     },
   };
 });

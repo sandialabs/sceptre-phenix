@@ -5,13 +5,26 @@ import { describe, expect, test } from 'vitest';
 
 import builderAssets, {
   BUILDER_ASSET_LIST,
+  DEFAULT_BROTLI_QUALITY,
+  brotliQuality,
   builderFiles,
+  encodings,
 } from '../../plugins/builder-assets.js';
 
 const VIEW = '/app/src/views/Builder.vue';
 
 // Script that compresses well.
 const SCRIPT = "postMessage({ layout: 'layered' });\n".repeat(200);
+
+// Script varied enough that each Brotli quality compresses it differently.
+function variedScript() {
+  const lines = [];
+  for (let i = 0; i < 400; i += 1) {
+    lines.push(`const v${i} = '${((i * 7919) % 104729).toString(36)}';\n`);
+  }
+
+  return lines.join('');
+}
 
 function chunk(fileName, fields = {}) {
   const { css = [], assets = [], ...rest } = fields;
@@ -109,8 +122,9 @@ const BUILDER_FILES = [
   'assets/sampler-A.js',
 ];
 
-// Runs the plugin on a bundle, and returns what it emitted, by name.
-function generate(input, view = VIEW) {
+// Runs the plugin on a bundle, as a build does, in the environment env, and
+// returns what it emitted, by name.
+function generate(input, { view = VIEW, env = {} } = {}) {
   const emitted = {};
   const context = {
     emitFile({ type, fileName, source }) {
@@ -123,7 +137,10 @@ function generate(input, view = VIEW) {
     },
   };
 
-  builderAssets({ view }).generateBundle.handler.call(context, {}, input);
+  const plugin = builderAssets({ view, env });
+
+  plugin.buildStart.call(context);
+  plugin.generateBundle.handler.call(context, {}, input);
 
   return emitted;
 }
@@ -213,8 +230,47 @@ describe('the builder-assets plugin', () => {
   });
 
   test('fails the build without a chunk for the view', () => {
-    expect(() => generate(bundle(), '/app/src/views/Build.vue')).toThrow(
-      /no chunk for \/app\/src\/views\/Build\.vue/,
-    );
+    expect(() =>
+      generate(bundle(), { view: '/app/src/views/Build.vue' }),
+    ).toThrow(/no chunk for \/app\/src\/views\/Build\.vue/);
+  });
+});
+
+describe('the Brotli quality', () => {
+  test('is 9 without PHENIX_BROTLI_QUALITY, else the whole number from 0 to 11 it names', () => {
+    expect(DEFAULT_BROTLI_QUALITY).toBe(9);
+    expect(brotliQuality({})).toBe(9);
+    for (const quality of [0, 9, 10, 11]) {
+      const env = { PHENIX_BROTLI_QUALITY: `${quality}` };
+
+      expect(brotliQuality(env)).toBe(quality);
+    }
+    for (const value of ['', ' 9', '09', '9.5', '-1', '12', 'max']) {
+      expect(brotliQuality({ PHENIX_BROTLI_QUALITY: value })).toBeNull();
+    }
+  });
+
+  test('compresses at 9 by default, and at the quality PHENIX_BROTLI_QUALITY sets', () => {
+    const input = bundle();
+    input['assets/Builder-A.js'].code = variedScript();
+    const content = contentOf(input['assets/Builder-A.js']);
+    const at = (quality) => encodings(quality)['.br'](content);
+
+    expect(at(11)).not.toEqual(at(9));
+    expect(generate(input)['assets/Builder-A.js.br']).toEqual(at(9));
+
+    const emitted = generate(input, { env: { PHENIX_BROTLI_QUALITY: '11' } });
+
+    expect(emitted['assets/Builder-A.js.br']).toEqual(at(11));
+    expect(brotliDecompressSync(at(11))).toEqual(content);
+  });
+
+  test('fails the build on any other PHENIX_BROTLI_QUALITY', () => {
+    for (const value of ['', '12', 'max']) {
+      const env = { PHENIX_BROTLI_QUALITY: value };
+      const message = `PHENIX_BROTLI_QUALITY must be a whole number from 0 to 11, not "${value}".`;
+
+      expect(() => generate(bundle(), { env })).toThrow(message);
+    }
   });
 });

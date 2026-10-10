@@ -7,23 +7,50 @@
 // builder-assets.json, beside index.html.
 import { Buffer } from 'node:buffer';
 import path from 'node:path';
+import process from 'node:process';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 
 export const BUILDER_ASSET_LIST = 'builder-assets.json';
 
-// The copies the server can send, by the suffix of their file.
-export const ENCODINGS = {
-  '.br': (content) =>
-    brotliCompressSync(content, {
-      params: {
-        [constants.BROTLI_PARAM_MODE]: constants.BROTLI_MODE_TEXT,
-        [constants.BROTLI_PARAM_QUALITY]: constants.BROTLI_MAX_QUALITY,
-        [constants.BROTLI_PARAM_SIZE_HINT]: content.length,
-      },
-    }),
-  '.gz': (content) =>
-    gzipSync(content, { level: constants.Z_BEST_COMPRESSION }),
-};
+// The environment variable that sets the Brotli quality, 0 to 11.
+export const BROTLI_QUALITY_VARIABLE = 'PHENIX_BROTLI_QUALITY';
+
+// The Brotli quality without PHENIX_BROTLI_QUALITY. Measured on Builder's
+// files (7 files, 3.1 MB), quality 9 takes 74 ms and writes 786 kB of
+// copies, 10 takes 1.3 s for 725 kB, and 11, the most, 3.0 s for 711 kB.
+// The server sends the files with a one-year immutable cache, so a browser
+// downloads the 74 kB that 11 saves once per release: local and CI builds
+// use 9, and the Docker, Podman and Debian package builds set 11.
+export const DEFAULT_BROTLI_QUALITY = 9;
+
+// The Brotli quality PHENIX_BROTLI_QUALITY in env names, a whole number from
+// 0 to 11, or DEFAULT_BROTLI_QUALITY when it is not set; null for any other
+// value.
+export function brotliQuality(env) {
+  const value = env[BROTLI_QUALITY_VARIABLE];
+  if (value === undefined) {
+    return DEFAULT_BROTLI_QUALITY;
+  }
+
+  return /^(?:\d|1[01])$/.test(value) ? Number(value) : null;
+}
+
+// The copies the server can send, by the suffix of their file, with Brotli
+// at the given quality.
+export function encodings(quality) {
+  return {
+    '.br': (content) =>
+      brotliCompressSync(content, {
+        params: {
+          [constants.BROTLI_PARAM_MODE]: constants.BROTLI_MODE_TEXT,
+          [constants.BROTLI_PARAM_QUALITY]: quality,
+          [constants.BROTLI_PARAM_SIZE_HINT]: content.length,
+        },
+      }),
+    '.gz': (content) =>
+      gzipSync(content, { level: constants.Z_BEST_COMPRESSION }),
+  };
+}
 
 // The files, by name, that the given chunks load, statically or lazily, with
 // their styles and assets, without passing through the chunk named skip.
@@ -93,11 +120,24 @@ export function builderFiles(bundle, view) {
     .sort();
 }
 
-// The plugin. view is the path of Builder's view, src/views/Builder.vue.
-export default function builderAssets({ view }) {
+// The plugin. view is the path of Builder's view, src/views/Builder.vue;
+// env holds PHENIX_BROTLI_QUALITY, and is the process's environment unless
+// given.
+export default function builderAssets({ view, env = process.env }) {
+  let quality = DEFAULT_BROTLI_QUALITY;
+
   return {
     name: 'phenix:builder-assets',
     apply: 'build',
+    // Refuses a quality it cannot use before anything is built.
+    buildStart() {
+      quality = brotliQuality(env);
+      if (quality === null) {
+        this.error(
+          `${BROTLI_QUALITY_VARIABLE} must be a whole number from 0 to 11, not "${env[BROTLI_QUALITY_VARIABLE]}".`,
+        );
+      }
+    },
     generateBundle: {
       // After Vite's own hooks, which still change the chunks' code.
       order: 'post',
@@ -109,13 +149,14 @@ export default function builderAssets({ view }) {
           );
         }
 
+        const copies = Object.entries(encodings(quality));
         for (const file of files) {
           const out = bundle[file];
           const content = Buffer.from(
             out.type === 'chunk' ? out.code : out.source,
           );
 
-          for (const [suffix, compress] of Object.entries(ENCODINGS)) {
+          for (const [suffix, compress] of copies) {
             const compressed = compress(content);
             if (compressed.length < content.length) {
               this.emitFile({

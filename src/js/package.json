@@ -10,7 +10,8 @@
     "format:check": "prettier . --check",
     "lint": "eslint . --fix",
     "lint:check": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:contract": "vitest run --project contract"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.1.1",

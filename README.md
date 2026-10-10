@@ -196,6 +196,27 @@ cd sceptre-phenix
 make build
 ```
 
+The UI build writes Brotli and gzip copies of the files only the Builder
+loads, which the server sends to browsers that accept them, with a one-year
+cache. Brotli runs at quality 9 unless `PHENIX_BROTLI_QUALITY` is set to
+another whole number from 0 to 11; `make docker`, `make deb` and the Podman
+image set it to 11. Measured on the Builder's files (7 files, 3.1 MB):
+
+| Brotli quality | Copies | Time to compress |
+|---|---|---|
+| 9 (default) | 786 kB | 0.07 s |
+| 10 | 725 kB | 1.3 s |
+| 11 (packages) | 711 kB | 3.0 s |
+
+A browser downloads the 74 kB that quality 11 saves once per release, so
+everyday builds use the faster quality 9. To build the UI with the smallest
+copies, as the packages do:
+
+```bash
+cd src/js
+PHENIX_BROTLI_QUALITY=11 npm run build
+```
+
 ## Logging & Configuration
 
 phēnix features a centralized, structured, and dynamic logging system. This system aggregates logs from the core daemon, internal Go services, and external Python/Go user applications into a unified stream that can be routed to files, the console, and the web UI.

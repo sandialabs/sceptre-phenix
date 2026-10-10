@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
 - **Config Schemas**: Descriptions for node and interface fields in the v1 schema; defaults shown as phenix applies them (`general.snapshot` `true`, `hardware.memory` 512).
 - **CI**: The Frontend workflow runs the browser tests in parallel jobs.
+- **Builds and CI**: UI builds compress the Builder's files faster, at Brotli quality 9 unless `PHENIX_BROTLI_QUALITY` sets another (0 to 11); the Docker, Podman and Debian packages use 11. The Frontend workflow runs the browser tests only for changes that can affect them.
 - **Topology validation**: Reject the node hostnames `all`, all-digit names, and `phenix` on Windows nodes, and warn about hostnames that may cause problems.
 - **Topology schema**: Require node hostnames to be at least 2 characters long.
 - **Workflow API**: A workflow apply is validated before a running experiment is stopped, so an invalid one returns 400 or 409 instead of 500 and leaves the experiment running. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))

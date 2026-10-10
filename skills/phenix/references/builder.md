@@ -1568,7 +1568,22 @@ Read this section before changing any file listed below.
   request for a copy itself with 404. Renaming or moving `Builder.vue`
   means updating the `view` passed to the plugin in `src/js/vite.config.js`;
   the build fails when it finds no chunk for it. Without the list, every file
-  is served uncompressed and the server logs a warning at startup.
+  is served uncompressed and the server logs a warning at startup. gzip runs
+  at level 9, and Brotli at quality 9 unless `PHENIX_BROTLI_QUALITY` names
+  another whole number from 0 to 11; any other value fails the build. The
+  Docker image, the Podman image and the Debian package (built from the
+  Docker image) set it to 11 in their UI build stage; local builds and the
+  CI e2e build use 9. Measured on Builder's files (7 files, 3.1 MB):
+
+  | Brotli quality | Copies | Time to compress |
+  |---|---|---|
+  | 9 (default) | 786 kB | 0.07 s |
+  | 10 | 725 kB | 1.3 s |
+  | 11 (packages) | 711 kB | 3.0 s |
+
+  The files are cached for a year and renamed when they change, so a browser
+  downloads the 74 kB that quality 11 saves once per release, while 11 adds
+  about 3 s to every build.
 - The rest of the UI loads `src/builder/api.js` to send saves left unsent, so
   what it imports from `src/builder/` lands in a chunk the server sends
   uncompressed. Keep the decoder and validator out of it: the document size
@@ -1601,7 +1616,14 @@ Read this section before changing any file listed below.
   Tests that edit stored records use its methods (`Count`, `Keys`,
   `SetValue`, `Drop`, `RewriteLocked`), not its fields. It is a package of its
   own because the `store` tests import `recordtest`.
-- Unit: `npx vitest run test/builder` from `src/js`.
+- Unit: `npx vitest run test/builder` from `src/js`. `npm test` runs two
+  Vitest projects (`src/js/vite.config.js`): `contract`, the suites of pure
+  functions (model, schema, validation, layout, codecs, the compression
+  plugin), in shared workers, which `npm run test:contract` runs alone; and
+  `unit`, every other file, each in a fresh worker. A suite that mocks a
+  module, stubs a global, or leaves storage, timers or module state behind
+  goes in `unit`. The contract suites pass in any order:
+  `npx vitest run --project contract --sequence.shuffle` checks it.
 - Browser: the `builder*.spec.js` Playwright specs in `src/js/e2e/tests/` need a
   running server. `builder-legacy.spec.js` (conversion, with
   `fixtures/legacy-sample.xml`), `builder-drafts.spec.js` (cards, card

@@ -27,6 +27,12 @@ ARG PHENIX_BASE_PATH=/
 ENV VITE_AUTH=${PHENIX_WEB_AUTH}
 ENV VITE_BASE_PATH=${PHENIX_BASE_PATH}
 
+# Packages get the smallest Brotli copies of Builder's files, which the
+# server sends with a one-year cache; other UI builds use the faster quality
+# 9 (see src/js/plugins/builder-assets.js).
+ARG PHENIX_BROTLI_QUALITY=11
+ENV PHENIX_BROTLI_QUALITY=${PHENIX_BROTLI_QUALITY}
+
 RUN make dist/index.html
 
 COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi.yml

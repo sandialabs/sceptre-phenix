@@ -27,10 +27,22 @@ npm ci
 | Development server       | `npm run dev`                   |
 | Focused Vitest           | `npm test -- test/rbac.test.js` |
 | All Vitest               | `npm test`                      |
+| Contract tests only      | `npm run test:contract`         |
 | Production build         | `npm run build`                 |
 | Format, then review diff | `npm run format`                |
 
 The development server needs a backend on `localhost:3000`.
+
+`npm test` runs two Vitest projects, set in `vite.config.js`: `contract`,
+the suites of pure functions listed there, in shared workers without
+per-file isolation, and `unit`, every other test file, each in a fresh
+worker. A suite that mocks a module, stubs a global, or leaves storage,
+timers or module state behind goes in `unit`. The contract suites must pass
+in any order: `npx vitest run --project contract --sequence.shuffle`.
+
+The build compresses Builder's files with Brotli quality 9;
+`PHENIX_BROTLI_QUALITY` (a whole number from 0 to 11) changes it, and the
+Docker and Podman builds set 11 (see `plugins/builder-assets.js`).
 
 ## UI Conventions
 
@@ -73,5 +85,8 @@ Before changing the Builder (`src/builder/`, `src/components/builder/`,
 
 `.github/workflows/frontend.yml` runs Vitest, builds the UI and a real backend
 once, then runs the Playwright tests in parallel jobs, each against its own
-server (see `e2e/README.md`). Keep Node versions, npm cache lockfiles, auth
-build mode, backend startup, and path filters aligned with local commands.
+server (see `e2e/README.md`). It builds and runs the Playwright tests only
+for a change that can affect the browser, as its `changes` job decides; a
+change to unit tests under `test/` alone runs Vitest only. Keep Node
+versions, npm cache lockfiles, auth build mode, backend startup, path
+filters, and that job's path list aligned with local commands.

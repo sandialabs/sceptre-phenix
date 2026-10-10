@@ -16,6 +16,7 @@ on:
       - 'docker/**'
       - 'Makefile'
       - '.github/workflows/frontend.yml'
+  workflow_dispatch:
 
 env:
   GO_VERSION: '1.24'
@@ -25,6 +26,72 @@ permissions:
   contents: read
 
 jobs:
+  # Whether the change can affect what the browser tests see: the UI
+  # (src/js/, except its unit tests in src/js/test/), the server's web and
+  # Builder code, the config schemas, the Makefile, docker/ and this
+  # workflow. Only then do the e2e build and the Playwright tests run; any
+  # other Go change runs the Go tests and lint (ci.yml, lint.yml) and the
+  # unit tests below. A manual run, a new branch, or commits git cannot
+  # compare run everything.
+  changes:
+    name: Detect browser changes
+    runs-on: ubuntu-latest
+    outputs:
+      browser: ${{ steps.diff.outputs.browser }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compare with the base
+        id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          browser_path() {
+            case "$1" in
+              # A path git quotes (it holds a quote, a backslash or a
+              # control character) is not matched below: count it.
+              \"*) return 0 ;;
+              src/js/test/*) return 1 ;;
+              src/js/* | src/go/web/* | src/go/api/builder/* | \
+                src/go/types/builder/* | src/go/types/version/* | \
+                Makefile | docker/* | .github/workflows/frontend.yml)
+                return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          case "$EVENT" in
+            pull_request) base=$PR_BASE ;;
+            push) base=$BEFORE ;;
+            *) base= ;;
+          esac
+
+          browser=true
+          # The push of a new branch has no commit before it (all zeros).
+          if [ -z "$base" ] || [ -z "${base//0/}" ]; then
+            echo "No commit to compare with ($EVENT): running the browser tests."
+          elif ! files=$(git -c core.quotePath=false diff --name-only --no-renames "$base" "$SHA"); then
+            echo "Cannot compare $base with $SHA: running the browser tests."
+          else
+            browser=false
+            while IFS= read -r file; do
+              if [ -n "$file" ] && browser_path "$file"; then
+                echo "Browser change: $file"
+                browser=true
+                break
+              fi
+            done <<< "$files"
+            if [ "$browser" = false ]; then
+              echo "No browser change between $base and $SHA."
+            fi
+          fi
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+
   test-js:
     name: Unit Tests (JS)
     runs-on: ubuntu-latest
@@ -47,6 +114,10 @@ jobs:
 
   build-e2e:
     name: Build phenix (E2E)
+    needs: changes
+    # Skipped without a browser change. GitHub reports a job skipped by its
+    # `if` as successful, so a required check on it does not block merging.
+    if: needs.changes.outputs.browser == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,8 +155,16 @@ jobs:
     # one part of the e2e suite, all in parallel. The default set is split
     # into shards, except the full axe scans (@axe), the longest tests, which
     # run on their own.
+    #
+    # Without a browser change every step is skipped, not the job: GitHub
+    # reports a matrix job skipped by its `if` once, under its unexpanded
+    # name, so a required check on one entry (such as "E2E Smoke 1/3") would
+    # wait forever and block merging. Each entry instead reports success
+    # under its own name.
     name: E2E ${{ matrix.name }}
-    needs: build-e2e
+    needs: [changes, build-e2e]
+    # Runs after the build, or after it was skipped, unless something failed.
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     env:
       # The server's base directory, which the tests can write: the Builder
@@ -116,18 +195,22 @@ jobs:
             sharing: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.changes.outputs.browser == 'true'
         with:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: needs.changes.outputs.browser == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: src/js/e2e/package-lock.json
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.changes.outputs.browser == 'true'
         with:
           name: phenix-e2e
           path: bin
       - name: Start phenix UI
+        if: needs.changes.outputs.browser == 'true'
         run: |
           chmod +x bin/phenix
           mkdir -p "$E2E_BASE_DIR"
@@ -138,11 +221,13 @@ jobs:
           timeout 30 bash -c \
             'until curl -s -o /dev/null http://127.0.0.1:3000/api/v1/experiments; do sleep 1; done'
       - name: Install e2e dependencies
+        if: needs.changes.outputs.browser == 'true'
         working-directory: src/js/e2e
         run: |
           npm ci
           npx playwright install --with-deps chromium firefox
       - name: Run e2e tests
+        if: needs.changes.outputs.browser == 'true'
         working-directory: src/js/e2e
         env:
           E2E_SHARING: ${{ matrix.sharing }}
