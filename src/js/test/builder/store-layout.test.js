@@ -100,6 +100,7 @@ describe('automatic layout in the store', () => {
     await store.layout({ algorithm: 'radial' });
     expect(runLayout).toHaveBeenLastCalledWith('radial', expect.anything(), {
       showNotes: true,
+      selected: [first.id],
       root: first.id,
     });
 
@@ -108,6 +109,7 @@ describe('automatic layout in the store', () => {
     await store.layout({ algorithm: 'radial' });
     expect(runLayout).toHaveBeenLastCalledWith('radial', expect.anything(), {
       showNotes: true,
+      selected: [first.id, second.id],
     });
 
     // Another layout takes no root.
@@ -115,6 +117,7 @@ describe('automatic layout in the store', () => {
     await store.layout({ algorithm: 'dagre' });
     expect(runLayout).toHaveBeenLastCalledWith('dagre', expect.anything(), {
       showNotes: true,
+      selected: [first.id],
     });
   });
 

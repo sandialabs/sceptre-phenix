@@ -329,6 +329,91 @@ describe('the Layered by tier layout', () => {
     expect(bottom(lan)).toBeLessThanOrEqual(top(host));
   });
 
+  // An external device is hardware in the loop, such as a PLC or a relay:
+  // it goes at the bottom, below the hosts.
+  describe('an external device', () => {
+    // EXT first in the document, so the document's order does not put it
+    // at the top.
+    function field() {
+      let doc = createDocument({ name: 'field' });
+      const make = (options) => {
+        const added = addNode(doc, options);
+
+        doc = added.doc;
+
+        return added.node;
+      };
+      const ext = make({
+        kind: 'device',
+        hostname: 'EXT',
+        spec: { external: true, type: 'HIL' },
+      });
+      const fieldSw = make({ kind: 'switch', networkName: 'FIELD' });
+      const plc = make({ kind: 'device', hostname: 'PLC' });
+      const controlSw = make({ kind: 'switch', networkName: 'CONTROL' });
+      const firewall = make({
+        kind: 'device',
+        hostname: 'FW',
+        look: { iconKey: 'firewall' },
+      });
+      const connectAll = (pairs) => {
+        for (const [a, b] of pairs) {
+          doc = connect(doc, { sourceNodeId: a.id, targetNodeId: b.id }).doc;
+        }
+      };
+
+      connectAll([
+        [ext, fieldSw],
+        [plc, fieldSw],
+        [plc, controlSw],
+        [firewall, controlSw],
+      ]);
+
+      return { doc, ext, fieldSw, plc, controlSw, firewall };
+    }
+
+    test('is not a root ahead of a firewall', async () => {
+      const { doc, ext, fieldSw, plc, controlSw, firewall } = field();
+      const { top, bottom } = rows(await laidOut(doc));
+
+      expect(bottom(firewall)).toBeLessThanOrEqual(top(controlSw));
+      expect(bottom(controlSw)).toBeLessThanOrEqual(top(plc));
+      expect(bottom(plc)).toBeLessThanOrEqual(top(fieldSw));
+      expect(bottom(fieldSw)).toBeLessThanOrEqual(top(ext));
+    });
+
+    test('is not a root without a firewall or a router', async () => {
+      const { doc, ext, fieldSw, plc } = field();
+      const lone = {
+        ...doc,
+        nodes: doc.nodes.filter((node) =>
+          [ext.id, fieldSw.id, plc.id].includes(node.id),
+        ),
+        edges: doc.edges.filter((edge) =>
+          [edge.sourceNodeId, edge.targetNodeId].every((id) =>
+            [ext.id, fieldSw.id, plc.id].includes(id),
+          ),
+        ),
+      };
+      const { top, bottom } = rows(await laidOut(lone));
+
+      // The root is the switch, with both devices below it.
+      expect(bottom(fieldSw)).toBeLessThanOrEqual(top(ext));
+      expect(bottom(fieldSw)).toBeLessThanOrEqual(top(plc));
+    });
+
+    test('is below a switch as far from a root', () => {
+      const { doc, ext, fieldSw } = field();
+      const graph = tierGraph(doc, { selected: [ext.id, fieldSw.id] });
+      const ends = graph.edges.map((edge) => [
+        edge.sources[0],
+        edge.targets[0],
+      ]);
+
+      expect(ends).toContainEqual([fieldSw.id, ext.id]);
+    });
+  });
+
   test('knows a node by its icon or its type', () => {
     const device = (fields) => ({
       kind: 'device',
@@ -338,6 +423,7 @@ describe('the Layered by tier layout', () => {
     expect(tierKind({ kind: 'switch', switch: {} })).toBe('switch');
     expect(tierKind(device({ iconKey: 'external' }))).toBe('external');
     expect(tierKind(device({ spec: { external: true } }))).toBe('external');
+    expect(tierKind(device({ spec: { type: 'HIL' } }))).toBe('external');
     expect(tierKind(device({ iconKey: 'firewall' }))).toBe('firewall');
     expect(tierKind(device({ spec: { type: 'Firewall' } }))).toBe('firewall');
     expect(tierKind(device({ spec: { type: 'Router' } }))).toBe('router');

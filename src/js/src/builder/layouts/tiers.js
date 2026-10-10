@@ -1,5 +1,5 @@
-// Layered by tier: ELK layered from top to bottom, with every connection
-// run from a higher tier down to a lower one, and the groups laid out with
+// Layered by tier: ELK layered from top to bottom. Every connection runs
+// from a higher tier down to a lower one. The groups are laid out with
 // their members in one graph (INCLUDE_CHILDREN), so a connection into a
 // group takes part in the layering like any other.
 //
@@ -7,27 +7,30 @@
 // level 5 at the top, level 0 at the bottom. Each tier is an ELK partition,
 // so no node of a lower tier is laid out above a node of a higher one in
 // the same graph. A device or a switch without a Purdue layer takes the
-// tier of the nearest node that has one, through the connections, the
-// higher tier when two are as near. With no such node, it goes below every
-// Purdue tier, and nodes that join no network (notes, devices without a
-// connection) go below that. A group takes the highest tier of its members.
+// tier of the nearest node that has one, through the connections. When two
+// are equally near, it takes the higher tier. With no such node, it goes
+// below every Purdue tier. Nodes that join no network (notes, devices
+// without a connection) go below that. A group takes the highest tier of
+// its members.
 //
 // Inside a tier, and in a diagram without any Purdue layer, each connection
 // runs from the node nearer a root to the one farther from it, by
-// breadth-first distance. The roots of a set of connected nodes are the
-// selected devices and switches in it; else its external devices, else its
-// firewalls, else its routers; else the switch with the most connections.
-// The kind of each node (an external device, then a firewall, then a
-// router, then a switch, then any other device) decides only between two
-// nodes as far from a root. The distance comes first because every
-// connection joins a device and a switch, which are never of one kind: by
+// breadth-first distance. The roots of a set of connected nodes are its
+// selected devices and switches. With no selection in it, the roots are its
+// firewalls, else its routers, else the switch with the most connections.
+// An external device is a root only when the user selects it: it is
+// hardware in the loop, such as a PLC or a relay, low in Purdue terms. The
+// kind of each node (a firewall, then a router, then a switch, then any
+// other device, then an external device) decides only between two nodes at
+// the same distance from a root. The distance comes first because every
+// connection joins a device and a switch, which are never of one kind. With
 // kind first, every switch would sit above its devices, a router behind a
-// firewall's switch beside the firewall, and the selection would decide
-// nothing.
+// firewall's switch would sit beside the firewall, and the selection would
+// decide nothing.
 //
 // The result depends on the document alone (and on the selection, for the
-// roots): ELK takes the nodes and the connections in the document's order,
-// with a fixed seed. ELK draws no route the canvas keeps.
+// roots). ELK takes the nodes and the connections in the document's order,
+// with a fixed seed. The canvas keeps no route that ELK draws.
 
 import { PURDUE_LEVELS, purdueLevel } from '../model.js';
 import { nodeFootprint } from '../nodeNotes.js';
@@ -43,9 +46,10 @@ const ORIGIN = 32;
 const UNTIERED = PURDUE_LEVELS.length;
 const LOOSE = UNTIERED + 1;
 
-// The order of the kinds of nodes inside a tier (see kindRank).
-const KIND_RANKS = { external: 0, firewall: 1, router: 2, switch: 3, host: 4 };
-const ROOT_KINDS = ['external', 'firewall', 'router'];
+// The order of the kinds of nodes inside a tier (see tierKind), and the
+// kinds that are roots when nothing is selected (see distances).
+const KIND_RANKS = { firewall: 0, router: 1, switch: 2, host: 3, external: 4 };
+const ROOT_KINDS = ['firewall', 'router'];
 
 // The points that keep the tiers in order inside a group (see tierGraph).
 const TIER_BREAK = 'tier:';
@@ -62,7 +66,7 @@ const GRAPH_OPTIONS = {
   'elk.direction': 'DOWN',
   'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
   'elk.partitioning.activate': true,
-  // One drawing, so the tiers line up across sets of connected nodes.
+  // One drawing, so the tiers align across sets of connected nodes.
   'elk.separateConnectedComponents': false,
   'elk.spacing.nodeNode': GAP,
   'elk.layered.spacing.nodeNodeBetweenLayers': GAP_BETWEEN_LAYERS,
@@ -71,7 +75,8 @@ const GRAPH_OPTIONS = {
 
 /**
  * What kind of node a device or a switch is, for its order inside a tier:
- * by its built-in icon, else by its spec's node type.
+ * by its built-in icon, else by its spec's node type. A device with
+ * spec.external or the node type HIL is always 'external'.
  *
  * @param {object} node
  * @returns {string} a KIND_RANKS key
@@ -85,7 +90,7 @@ export function tierKind(node) {
   const type = String(spec.type || '').toLowerCase();
   const icon = node.device?.iconKey;
 
-  if (spec.external === true || icon === 'external') {
+  if (spec.external === true || type === 'hil' || icon === 'external') {
     return 'external';
   }
 
@@ -193,8 +198,8 @@ function distances(connected, neighbors, selected) {
 
 // Each device's and switch's tier: its Purdue layer's place in
 // PURDUE_LEVELS, else that of the nearest node with one (the higher when
-// two are as near), else UNTIERED for a connected node and LOOSE for one
-// with no connection.
+// two are equally near). Else UNTIERED for a connected node, and LOOSE for
+// a node with no connection.
 function tiersOf(connectable, neighbors) {
   const tier = new Map();
   let frontier = [];
@@ -245,8 +250,9 @@ function tiersOf(connectable, neighbors) {
  * held by the innermost graph that holds both ends.
  *
  * @param {object} doc builder document, without drawings (see runLayout)
- * @param {object} [options] showNotes, see nodeFootprint; selected: the ids
- *   of the selected nodes, the roots when devices or switches
+ * @param {object} [options] showNotes: see nodeFootprint. selected: the ids
+ *   of the selected nodes, which are the roots when they are devices or
+ *   switches
  * @returns {object} ELK JSON graph
  */
 export function tierGraph(doc, options = {}) {
@@ -332,11 +338,12 @@ export function tierGraph(doc, options = {}) {
     });
   }
 
-  // ELK 0.12 reads the partitions of the root graph only, when it lays
-  // out the groups in the same graph (INCLUDE_CHILDREN). So in a group, a
-  // point between two tiers keeps them in order: an edge from every member
-  // of the higher tier to it, and from it to every member of the next tier
-  // down. The canvas draws neither the points nor their edges.
+  // ELK 0.12 reads only the partitions of the root graph when it lays out
+  // the groups in the same graph (INCLUDE_CHILDREN). So in a group, a point
+  // between two tiers keeps them in order. An edge goes from every member
+  // of the higher tier to the point, and from the point to every member of
+  // the next tier down. The canvas draws neither the points nor their
+  // edges.
   const tierBreaks = (group, inside) => {
     const byTier = new Map();
 
@@ -410,7 +417,7 @@ export function tierGraph(doc, options = {}) {
 }
 
 // Each node's top-left corner, snapped, from the top-left corner of the
-// whole; and the size of each group with members, on the grid.
+// whole. Also the size of each group with members, on the grid.
 function placed(graph) {
   const positions = {};
   const sizes = {};
@@ -450,7 +457,7 @@ function placed(graph) {
 /**
  * @param {object} doc builder document
  * @param {object} [options] elk: an ELK instance to lay out with, in place
- *   of the worker; showNotes, see nodeFootprint; selected, see tierGraph
+ *   of the worker. showNotes: see nodeFootprint. selected: see tierGraph
  * @returns {Promise<{positions: object, sizes: object}>} each node's
  *   top-left corner, and the size of each group with members, by node id
  */
