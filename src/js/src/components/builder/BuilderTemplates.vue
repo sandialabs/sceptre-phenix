@@ -412,21 +412,6 @@
           @focusin="selection.focused(template)"
           @keydown="onCardKeydown($event, index)">
           <div class="builder-card__head">
-            <!-- The checkbox is named for the card, as its buttons are. -->
-            <label v-if="selectable" class="builder-card__select">
-              <input
-                type="checkbox"
-                :checked="selection.has(template)"
-                :disabled="busy"
-                :data-testid="testid('template-select', template)"
-                @pointerdown="shift.pointerdown"
-                @keydown="shift.keydown"
-                @click="shift.click"
-                @change="select(template, $event)" />
-              <span class="builder-visually-hidden">
-                Select {{ cardName(template) }}
-              </span>
-            </label>
             <!-- The icon devices made from it are drawn with; the name
                  says what the template is. -->
             <h2 :id="`template-name-${index}`">
@@ -444,6 +429,22 @@
                 >
               </span>
             </h2>
+            <!-- The checkbox, at the card's top right, is named for the card,
+                 as its buttons are. -->
+            <label v-if="selectable" class="builder-card__select">
+              <input
+                type="checkbox"
+                :checked="selection.has(template)"
+                :disabled="busy"
+                :data-testid="testid('template-select', template)"
+                @pointerdown="shift.pointerdown"
+                @keydown="shift.keydown"
+                @click="shift.click"
+                @change="select(template, $event)" />
+              <span class="builder-visually-hidden">
+                Select {{ cardName(template) }}
+              </span>
+            </label>
           </div>
           <!-- One line each: whose it is, when it changed, the collections
                that hold it, and who it is shared with. -->

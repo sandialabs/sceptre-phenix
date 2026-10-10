@@ -212,8 +212,8 @@ The tab holds:
   collections.
 - A row for selecting several templates (see
   [Selecting several templates](#selecting-several-templates)).
-- A card for each template, with a checkbox, the template's icon and name,
-  when it was last updated (a built-in template you never changed has no
+- A card for each template, with the template's icon and name, a checkbox
+  at the top right, when it was last updated (a built-in template you never changed has no
   time), the collections it is in ("In" and their names), who it is shared
   with, its description, and **Edit**, **Share**, **Delete** and **Export**.
 
@@ -265,7 +265,7 @@ it out of its collections.
 
 ### Selecting several templates
 
-Each card has a checkbox. The row above the cards has **Select all**, how
+Each card has a checkbox at its top right. The row above the cards has **Select all**, how
 many are selected ("2 of 5 selected"), and the actions your role allows:
 
 - **Add to collection** and, while a collection is shown, **Remove from

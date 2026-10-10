@@ -240,7 +240,17 @@
           @focusin="tab.selection?.focused(item)"
           @keydown="onCardKeydown($event, tab, index)">
           <div class="builder-card__head">
-            <!-- The checkbox is named for the card, as its buttons are. -->
+            <h2 :id="`card-name-${tab.id}-${index}`">
+              {{ itemLabel(item) }}
+              <span
+                v-if="isFile(item)"
+                class="builder-drafts__tag"
+                :data-testid="`published-file-${item.id}`"
+                >File</span
+              >
+            </h2>
+            <!-- The checkbox, at the card's top right, is named for the card,
+                 as its buttons are. -->
             <label
               v-if="tab.selection && selectable(tab.id, item)"
               class="builder-card__select">
@@ -257,15 +267,6 @@
                 Select {{ cardName(item) }}
               </span>
             </label>
-            <h2 :id="`card-name-${tab.id}-${index}`">
-              {{ itemLabel(item) }}
-              <span
-                v-if="isFile(item)"
-                class="builder-drafts__tag"
-                :data-testid="`published-file-${item.id}`"
-                >File</span
-              >
-            </h2>
           </div>
           <!-- One line each: the owner, with what the user may do with
                another user's draft; then when it changed. -->

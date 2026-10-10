@@ -2499,15 +2499,28 @@ div.builder-outline__item {
   color: var(--bx-text-muted);
 }
 
-/* A card's first row: its name, after whatever stands before it. */
+/* A card's first row: its name, then its checkbox at the top right. The
+   name takes the free width and wraps, so a long name does not push the
+   checkbox off the card. The DOM has the same order, so focus and a
+   screen reader get the name first. */
 .builder-card__head {
   display: flex;
   align-items: flex-start;
   gap: 0.4rem;
 }
 
-/* The checkbox that selects a card, before its name: a target of at least
-   24px (WCAG 2.5.8) around a box the size of the Inspector's. */
+.builder-card__head > h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.builder-card__head > .builder-card__select {
+  margin-left: auto;
+}
+
+/* The checkbox that selects a card or a row of the Custom icons dialog:
+   a target of at least 24px (WCAG 2.5.8) around a box the size of the
+   Inspector's. */
 .builder-card__select {
   display: inline-flex;
   flex: none;

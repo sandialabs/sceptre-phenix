@@ -216,6 +216,11 @@ describe('the Node Templates tab', () => {
 
     expect(select).toContain('type="checkbox"');
     expect(card).toContain('class="builder-card__select"');
+    // At the card's top right: after the name, in the DOM as on the
+    // screen.
+    expect(card.indexOf('class="builder-card__select"')).toBeGreaterThan(
+      card.indexOf('</h2>'),
+    );
     expect(card).toMatch(
       /<span class="builder-visually-hidden"[^>]*>\s*Select PLC\s*<\/span>/,
     );

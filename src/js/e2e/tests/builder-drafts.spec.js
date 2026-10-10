@@ -810,6 +810,30 @@ test(
       await expect(box).toHaveAccessibleName(
         new RegExp(`^Select ${first.title}, updated .+$`),
       );
+      // The checkbox is at the card's top right, after the name, also on a
+      // narrow screen.
+      const viewport = page.viewportSize();
+      for (const width of [viewport.width, 360]) {
+        await page.setViewportSize({ width, height: viewport.height });
+        const frame = await card.boundingBox();
+        const name = await card.locator('h2').boundingBox();
+        const target = await card
+          .locator('.builder-card__select')
+          .boundingBox();
+        expect
+          .soft(target.x, `${width}px: right of the name`)
+          .toBeGreaterThanOrEqual(name.x + name.width);
+        expect
+          .soft(
+            frame.x + frame.width - (target.x + target.width),
+            `${width}px: at the right edge`,
+          )
+          .toBeLessThan(20);
+        expect
+          .soft(target.y - frame.y, `${width}px: at the top`)
+          .toBeLessThan(20);
+      }
+      await page.setViewportSize(viewport);
       // Without sign-in nothing is shared with the user, so that tab has no
       // row.
       await expect(page.locator('#panel-shared .builder-bulk')).toHaveCount(0);

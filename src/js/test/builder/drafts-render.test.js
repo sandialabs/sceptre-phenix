@@ -150,12 +150,11 @@ describe('a draft card', () => {
     expect(card.indexOf('builder-card__head')).toBeLessThan(
       card.indexOf('builder-card__meta'),
     );
-    // Its checkbox stands before the name, and nothing else does.
-    expect(
-      card
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(/<label\b[\s\S]*?<\/label>/, ''),
-    ).toMatch(/class="builder-card__head"[^>]*>\s*<h2[^>]*>\s*Network lab/);
+    // The name starts the head row, and its checkbox follows it, at the
+    // top right: nothing else is in the row.
+    expect(card.replace(/<!--[\s\S]*?-->/g, '')).toMatch(
+      /class="builder-card__head"[^>]*>\s*<h2[^>]*>\s*Network lab[\s\S]*?<\/h2>\s*<label class="builder-card__select"[\s\S]*?<\/label>\s*<\/div>/,
+    );
   });
 
   test('has Open, Share, Delete and Publish, in that order, in one grid', async () => {
@@ -472,7 +471,7 @@ describe('selecting cards', () => {
       ([, id]) => id,
     );
 
-  test('a card the user may delete or share has a checkbox, named for the card, before its name', async () => {
+  test('a card the user may delete or share has a checkbox, named for the card, after its name', async () => {
     const panel = panelOf(await render({ mine }), 'mine');
     const card = cardOf(panel, 'd1');
     const box = tag(card, 'data-testid="card-select-d1"');
@@ -486,8 +485,9 @@ describe('selecting cards', () => {
     expect(card).toMatch(
       /<label class="builder-card__select"[^>]*><input[^>]*><span class="builder-visually-hidden"[^>]*>\s*Select Network lab, updated [^<]+<\/span><\/label>/,
     );
-    expect(card.indexOf('builder-card__select')).toBeLessThan(
-      card.indexOf('<h2'),
+    // At the top right: after the name, in the DOM as on the screen.
+    expect(card.indexOf('builder-card__select')).toBeGreaterThan(
+      card.indexOf('</h2>'),
     );
     // Nothing is selected yet, so no card is framed.
     expect(card).toMatch(/^class="builder-card builder-panel"/);

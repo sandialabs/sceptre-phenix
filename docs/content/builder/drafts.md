@@ -57,8 +57,8 @@ Each draft is a card with, one line each:
   phenix has user sign-in) and **Delete**; and **Publish** on a draft you may
   change (see [Publishing from the drafts page](#publishing-from-the-drafts-page)).
 
-A card you may delete, or on **My Drafts** share, also has a checkbox, for
-acting on several drafts at once (see
+A card you may delete, or on **My Drafts** share, also has a checkbox at
+its top right, for acting on several drafts at once (see
 [Selecting several drafts](#selecting-several-drafts)).
 
 "Updated" on a card is the last activity on the draft: an edit, but also an
