@@ -638,9 +638,9 @@ func TestLoadDocumentFileRefusals(t *testing.T) {
 		says string
 	}{
 		"a missing file": {path: filepath.Join(directory, "missing.json"), is: os.ErrNotExist, says: "missing.json"},
-		"a directory":    {path: directory, is: ErrInvalid, says: "is not a regular file"},
+		"a directory":    {path: directory, is: ErrInvalid, says: notRegular},
 		// Opening it for reading would wait for a writer.
-		"a named pipe":  {path: pipe, is: ErrInvalid, says: "is not a regular file"},
+		"a named pipe":  {path: pipe, is: ErrInvalid, says: notRegular},
 		"an empty file": {path: write("empty.json", nil), is: ErrInvalid, says: "must not be empty"},
 		"a file that is too large": {
 			path: write("large.json", append(bytes.Clone(valid), bytes.Repeat([]byte(" "), MaxDocumentBytes)...)),

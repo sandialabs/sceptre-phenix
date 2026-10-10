@@ -153,6 +153,10 @@ func ParseDocumentText(text []byte) (*DocumentFile, error) {
 	return &DocumentFile{Data: canonical, Digest: digestOf(canonical), Document: doc}, nil
 }
 
+// notRegular is why a file this package reads is refused when it is a
+// directory, a named pipe, a device or anything else but a regular file.
+const notRegular = "is not a regular file"
+
 // LoadDocumentFile reads the Builder document in the file at path for a
 // caller that chose the file itself, as the phenix CLI does. The file may be
 // anywhere, a symbolic link to it is followed, and the error says what is
@@ -178,7 +182,7 @@ func LoadDocumentFile(path string) (*DocumentFile, error) {
 	case err != nil:
 		return nil, fmt.Errorf("reading builder document: %w", err)
 	case !info.Mode().IsRegular():
-		return nil, newValidationError("document", "is not a regular file")
+		return nil, newValidationError("document", notRegular)
 	case info.Size() > MaxDocumentBytes:
 		return nil, newTooLargeError("document", info.Size(), MaxDocumentBytes)
 	}

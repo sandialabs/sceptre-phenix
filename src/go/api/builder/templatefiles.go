@@ -175,7 +175,7 @@ func readTemplateFile(root *os.Root, name string) (*builder.TemplateFile, string
 	case err != nil:
 		return nil, fmt.Sprintf("cannot be read: %v", err)
 	case !info.Mode().IsRegular():
-		return nil, "is not a regular file"
+		return nil, notRegular
 	case info.Size() > builder.MaxTemplateFileBytes:
 		return nil, fmt.Sprintf("is larger than %d bytes", builder.MaxTemplateFileBytes)
 	}

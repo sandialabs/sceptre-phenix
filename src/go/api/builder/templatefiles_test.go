@@ -129,7 +129,7 @@ func TestLoadServerTemplates(t *testing.T) {
 		t.Errorf("the bad file was skipped for %q, want the duplicate named", problems[0].Reason)
 	}
 
-	if problems[2].Reason != "is not a regular file" || problems[3].Reason != "is not a regular file" {
+	if problems[2].Reason != notRegular || problems[3].Reason != notRegular {
 		t.Errorf("a directory and a pipe were skipped for %q and %q", problems[2].Reason, problems[3].Reason)
 	}
 
