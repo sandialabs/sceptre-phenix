@@ -97,33 +97,6 @@ docker exec phenix phenix workflow apply /phenix/topologies/helloworld -f
 
 See [Workflow](https://phenix.sceptre.dev/latest/workflow/) for the directory layout, the `phenix.yml` reference, more examples and the REST API.
 
-### Builder Diagrams
-
-The [Builder](https://phenix.sceptre.dev/latest/builder/) is a web editor that draws topologies as diagrams. A diagram downloaded from it (Builder JSON or Builder YAML) can also be published as a Topology config from the command line:
-
-```bash
-# Check the document and report what would be written
-phenix builder publish pump-station.builder.json --dry-run
-
-# Create the topology, or update it after the file changed
-phenix builder publish pump-station.builder.json
-phenix builder publish pump-station.builder.json --update
-```
-
-The command writes a topology only: scenarios and experiments are published from the web editor. See [From the command line](https://phenix.sceptre.dev/latest/builder/import-upload-download/#from-the-command-line).
-
-Drafts and Node Templates on a running phenix server can be listed, exported and checked from scripts and CI, through its REST API:
-
-```bash
-# Fail the job when draft alice/riverside cannot be published
-phenix builder drafts validate alice/riverside --url https://phenix.example --token "$PHENIX_TOKEN" -o json
-
-# Export a collection of Node Templates as a template file
-phenix builder templates export --collection Substation --output substation.templates.yaml
-```
-
-See [Command Line](https://phenix.sceptre.dev/latest/builder/cli/). Diagrams of the legacy Builder are converted in the web editor, with Import or Upload (see [Legacy Builder](https://phenix.sceptre.dev/latest/builder/legacy/)).
-
 ## 🛠️ Local Development
 
 If you wish to build and run the services locally without Docker, follow these steps.
@@ -204,27 +177,6 @@ To build the phēnix core services locally:
 git clone https://github.com/sandialabs/sceptre-phenix.git
 cd sceptre-phenix
 make build
-```
-
-The UI build writes Brotli and gzip copies of the files only the Builder
-loads, which the server sends to browsers that accept them, with a one-year
-cache. Brotli runs at quality 9 unless `PHENIX_BROTLI_QUALITY` is set to
-another whole number from 0 to 11; `make docker`, `make deb` and the Podman
-image set it to 11. Measured on the Builder's files (7 files, 3.1 MB):
-
-| Brotli quality | Copies | Time to compress |
-|---|---|---|
-| 9 (default) | 786 kB | 0.07 s |
-| 10 | 725 kB | 1.3 s |
-| 11 (packages) | 711 kB | 3.0 s |
-
-A browser downloads the 74 kB that quality 11 saves once per release, so
-everyday builds use the faster quality 9. To build the UI with the smallest
-copies, as the packages do:
-
-```bash
-cd src/js
-PHENIX_BROTLI_QUALITY=11 npm run build
 ```
 
 ## Logging & Configuration

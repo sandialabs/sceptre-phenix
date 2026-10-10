@@ -3,8 +3,8 @@
 This page is for phenix administrators. It covers the permissions the
 Builder's users need, the built-in Builder role, where it keeps drafts,
 published diagrams and libraries, the `builder-doc` annotation, Builder
-documents kept in files, its REST API, and what to do when something goes
-wrong.
+documents kept in files, its REST API, how a build compresses its files,
+and what to do when something goes wrong.
 
 ## Availability
 
@@ -1266,6 +1266,52 @@ file, the answer also has `"topologyDiffers": true` when the stored topology
 is not what the document publishes. For a published document, `source` is
 `store`, and the answer has the document's `id` and who published it and
 when (`createdBy`, `createdAt`) instead of a `path`.
+
+## Compressed files
+
+The Builder page loads large script files that the other pages do not
+load. The UI build writes a Brotli copy and a gzip copy of each of these
+files. phenix sends the copy that the browser accepts, and tells the
+browser to keep the file for one year. Each release gives the files new
+names, so browsers download them again after an upgrade.
+
+The environment variable `PHENIX_BROTLI_QUALITY` sets the Brotli quality of
+the UI build. Use a whole number from 0 to 11. The default is 9. A higher
+quality makes smaller copies, but the build takes more time. The build
+stops with an error when the value is not a whole number from 0 to 11.
+
+These builds set quality 11:
+
+- `make docker`
+- `make deb`
+- the Podman image (`podman/Containerfile`)
+
+All other builds use quality 9, for example `make build` and
+`npm run build`.
+
+The table shows the results for the Builder's files (7 files, 3.1 MB):
+
+| Brotli quality | Size of the Brotli copies | Time to compress |
+|---|---|---|
+| 9 (default) | 786 kB | 0.07 s |
+| 10 | 725 kB | 1.3 s |
+| 11 (packages) | 711 kB | 3.0 s |
+
+Quality 11 saves 74 kB, and a browser downloads the files only one time for
+each release. Thus quality 9 is the default, because it is faster for
+frequent builds. To build the UI with quality 11, as the packages do:
+
+```bash
+cd src/js
+PHENIX_BROTLI_QUALITY=11 npm run build
+```
+
+To build the Docker image with a different quality, give it as a build
+argument:
+
+```bash
+docker build --build-arg PHENIX_BROTLI_QUALITY=9 -t phenix -f docker/Dockerfile .
+```
 
 ## Troubleshooting
 
