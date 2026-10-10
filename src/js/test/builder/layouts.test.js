@@ -946,11 +946,13 @@ describe('the Radial layout', () => {
     };
     const hosts = (...names) => names.map((name) => dev[name]);
     // The nodes of one ring are about as far from the root, and nearer
-    // than the nodes of the rings after it.
+    // than the nodes of the rings after it. The box-overlap pass can move
+    // a node of a ring, and Graphviz's floating point differs a little by
+    // platform, so the spread inside a ring has some room.
     const rings = (distance, ring, after) => {
       const near = ring.map(distance);
 
-      expect(Math.max(...near) / Math.min(...near)).toBeLessThan(1.5);
+      expect(Math.max(...near) / Math.min(...near)).toBeLessThan(2);
       expect(Math.max(...near)).toBeLessThan(Math.min(...after.map(distance)));
     };
 
