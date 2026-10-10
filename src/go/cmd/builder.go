@@ -22,7 +22,9 @@ func newBuilderCmd() *cobra.Command {
 	desc := `Builder document management
 
   This subcommand works with Builder documents: the diagram files the
-  Builder saves as Builder JSON or Builder YAML.`
+  Builder saves as Builder JSON or Builder YAML. "publish" works on the
+  phenix store directly; "drafts" and "templates" call the REST API of a
+  running phenix server, at --url or over the unix socket of phenix ui.`
 
 	cmd := &cobra.Command{
 		Use:   "builder",
@@ -330,7 +332,7 @@ func writeBuilderDryRun(out io.Writer, path string, publication *bapi.TopologyPu
 
 func init() { //nolint:gochecknoinits // cobra command
 	builderCmd := newBuilderCmd()
-	builderCmd.AddCommand(newBuilderPublishCmd())
+	builderCmd.AddCommand(newBuilderPublishCmd(), newBuilderDraftsCmd(), newBuilderTemplatesCmd())
 
 	addCommandToRoot(builderCmd, true)
 }

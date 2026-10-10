@@ -559,9 +559,12 @@ does not delete their library, and a new account of the same name owns it.
 
 ## From the command line
 
-There is no `phenix` command for the template library: use the
-**Node Templates** tab or the REST API (see [REST API](administration.md#rest-api)).
-The server collections come from the template directory, which
+`phenix builder templates list`, `export` and `import` list the templates
+you can use, export them as a template file and import a template file
+into your library, through a running phenix server (see
+[Command Line](cli.md#node-templates)). Sharing, publishing and editing
+templates are on the **Node Templates** tab and in the REST API (see
+[REST API](administration.md#rest-api)). The server collections come from the template directory, which
 `--base-dir.builder-templates` names (see
 [Template files on the server](administration.md#template-files-on-the-server)).
 Diagram templates are part of the Builder document, so a Builder file that

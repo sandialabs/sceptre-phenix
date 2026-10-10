@@ -33,10 +33,15 @@ legacy diagram through `POST /builder/legacy`), or a published diagram;
 
 The Builder, the Vue Flow topology editor, is on in every `phenix ui`, at
 `/builder`, with its draft and document APIs under `/api/v1/builder`.
-Its one CLI command is `phenix builder publish`, which makes a Topology from
-a Builder document file and needs no running server
-(see [CLI: phenix builder publish](#cli-phenix-builder-publish)); drafts,
-sharing and everything else are in the REST API and the web UI only.
+`phenix builder publish` makes a Topology from a Builder document file and
+needs no running server
+(see [CLI: phenix builder publish](#cli-phenix-builder-publish));
+`phenix builder drafts` and `phenix builder templates` list, export and
+check drafts and list, export and import Node Templates through the REST
+API of a running server (see
+[CLI: phenix builder drafts and templates](#cli-phenix-builder-drafts-and-templates));
+sharing, publishing a draft and everything else are in the REST API and
+the web UI only.
 Drafts autosave separately from phenix configs; in the web UI and REST API
 only the explicit Publish action creates or updates topology or experiment
 configs and adds the topology to the `topology` annotation of the
@@ -1321,6 +1326,96 @@ document; use phenix builder publish`, and named on the command line it is
 refused with `<file> is a Builder document, not a configuration: use
 "phenix builder publish <file>" to create its topology`.
 
+## CLI: phenix builder drafts and templates
+
+```bash
+phenix builder drafts list|export|validate|preflight ...   # cmd/builder_drafts.go
+phenix builder templates list|export|import ...            # cmd/builder_templates.go
+```
+
+Both groups call the REST API (`cmd/builder_client.go`, `builderClient`).
+`--url` and `--token` are flags of each subcommand, not inherited ones, so
+its help lists them (`phenix builder` help hides inherited flags). With
+`--url` (`PHENIX_URL`; `http`/`https`, a proxy path kept, no user
+info, query or fragment) they send `--token` (`PHENIX_TOKEN`; flag wins) as
+`X-Phenix-Auth-Token: Bearer <token>` and act as that user; without it they
+dial `common.UnixSocket` (`--unix-socket`) and act as global-admin, sending
+no token. A flag given an empty value counts as not given
+(`builderSetting`), and a token without a URL is refused with exit 2
+(`builderClientFor`: "--token needs --url; ..."). Redirects are not
+followed (`CheckRedirect` returns `http.ErrUseLastResponse`): a 3xx is
+refused with exit 2 and names its `Location` (`redirectRefusal`), so the
+token header never reaches another host and a POST is never replayed as a
+GET. Requests time out after 5 minutes, connecting after 30 s; answers
+above 256 MiB are refused, and of an error answer at most 64 KiB is read.
+The token is never printed. A non-2xx answer is a `*builderAPIError`
+(`message`, `cause`, `code`, and `errors` and `issues` as issues, strings
+or objects; `reason()` is the message plus the cause when it differs), with
+a hint for 401 and for a 403 sent without a token; a body that is not JSON
+shows only its first line, at most 1 KiB (`builderErrorText`). Exit status
+(`exitError`, `exitCode` in `Execute`): 0 success; 1 findings
+(`exitFindings`); 2 refused or no answer, flag and argument errors
+included (`exitRefused`, `refused`, `builderFlagError`, `refusedArgs`),
+and an unknown subcommand of `drafts` or `templates` (`unknownSubcommand`,
+with cobra's suggestions). A report is written before exit 1.
+
+`-o table|json|yaml` (default `table`; JSON indented by two spaces, HTML
+not escaped; YAML converted from that JSON by `builderYAML`, keys in the
+JSON's order, block style, indent 2). Issues print as `{code?, severity,
+message, path?, nodeId?, edgeId?, networkId?, field?}`; a string issue
+becomes `{severity, message}` (`builderIssues`).
+
+- `drafts list [--shared] [--owner U]`: `GET /builder/drafts`; own rows,
+  plus `shared` with `--shared` or `--owner`; sorted by owner then ID;
+  `{"drafts": [{owner, id, name?, updatedAt?, updatedBy?, access?}]}` from
+  `title`, `updated`, `lastModifiedBy`, `access`. Damaged drafts are left
+  out.
+- `drafts export O/D [--format json|yaml] [--output F]`: the `document` of
+  `GET /builder/drafts/{owner}/{draft}`, JSON indented by two spaces in the
+  server's key order plus a newline, or YAML; byte-stable. `--package
+  [--include scenarios,topologies,icons,images]` posts `{document,
+  include}` to `POST /builder/package` and writes its answer instead.
+- `drafts validate O/D`: posts the document to `POST
+  /builder/export/topology`; `{"draft": {owner, id, name?}, "valid",
+  "errors", "warnings"}` from `publishBlockers` and `warnings`. A 422
+  answer is invalid: its issues are the errors and warnings by severity,
+  and when none is an error, its message and cause (the publish refusal
+  puts the reason in `cause`) are the one error. Exit 1 with errors.
+- `drafts preflight O/D [--check capacity,network,disks,apps]
+  [--experiment E] [--strict]`: posts `{checks, experiment?}` to `POST
+  /builder/drafts/{owner}/{draft}/preflight` and prints its answer
+  `{checks: [{name, status, summary, issues}], passed, failed,
+  unavailable}` (lists never null). Exit 1 when a check failed, and with
+  `--strict` when one is unavailable.
+- `templates list [--owner U]`: `GET /builder/templates` with the
+  `preloaded` collections flattened in; `{"user", "collections": [{id,
+  name, description?, owner?, source, templates}], "templates": [{id,
+  name, description?, owner?, source, collections}]}`; `source` is `mine`,
+  `built-in` (an own template whose ID is a `BuiltinTemplates()` ID),
+  `shared`, `server-wide` (listing `server`) or `server` (`preloaded`).
+- `templates export [--collection NAME|ID] [--owner U] [--format yaml|json]
+  [--output F]`: a template file (collection name `Node templates` without
+  `--collection`; two collections of one name is exit 2), names numbered
+  apart as `uniqueTemplateNames` does (a warning each), icons the templates
+  name embedded from `GET /builder/icons` (name or alias, ignoring case;
+  at most 50; each left out is a warning), decoded and validated by
+  `DecodeTemplateFile` and `Validate` before it is written.
+- `templates import FILE [--name N]`: `ParseTemplateFile` (refused before
+  any request), the library limits checked as `importProblem` does, each
+  icon posted to `POST /builder/icons` (409 or another refusal is a
+  warning), then one `POST /builder/templates/{owner}/items` with
+  `collection` named as `uniqueCollectionName` does among the caller's own
+  collections.
+
+The unix socket's router (`newSocketRouter` in `web/server.go`) serves the
+Builder routes besides the workflow and option routes: `mirrorBuilderRoutes`
+(`web/builder.go`) registers every route of the API router whose path
+`isBuilderPath` accepts, with the same handlers, so one `builderAPI` (one
+startup cleanup, one read of the template files) answers both, under
+`middleware.NoAuth` (global-admin). `TestBuilderRoutesAnswerOnUnixSocket`
+and `TestBuilderSocketPostKeepsHandlersAndLimits` (a POST answered, 413
+past the body limit, 405 for a method the route lacks) check it.
+
 ## Legacy import
 
 The converter is pure Go in `src/go/types/builder/` (`legacy_xml.go` reads,
@@ -1762,8 +1857,11 @@ every caller; every write route that names one of their ids answers 409
 entries' tooltips saying the collection is read only, entries
 `palette-template-preloaded-<id>`, key `preloaded:<id>`).
 
-No `phenix` command converts legacy diagrams, imports configs, or manages
-the icon or template library; they are web UI and REST only.
+No `phenix` command converts legacy diagrams, imports configs, manages the
+icon library, or shares, publishes or edits library templates; they are web
+UI and REST only. `phenix builder templates` lists, exports and imports
+templates (see
+[CLI: phenix builder drafts and templates](#cli-phenix-builder-drafts-and-templates)).
 
 ## Routes
 
@@ -1919,6 +2017,7 @@ Read this section before changing any file listed below.
 | Built-in Builder role and its start-up check | `src/go/api/config/default/builder.yml`, `src/go/web/rbac/migrations.go` (`EnsureBuilderRolePermissions`), `src/go/web/init.go` |
 | `builder-doc` codec (nested in JSON and YAML, a string in memory and in the store) | `src/go/store/types.go` |
 | `phenix builder publish`, and `phenix config create` recognizing Builder documents | `src/go/cmd/builder.go`, `src/go/cmd/config.go` |
+| `phenix builder drafts` and `phenix builder templates`, the REST client they share | `src/go/cmd/builder_drafts.go`, `src/go/cmd/builder_templates.go`, `src/go/cmd/builder_client.go` |
 | Record store for drafts (BoltDB and etcd, etcd compaction) | `src/go/store/*record*.go`, `src/go/store/etcd_record_compact.go` |
 | HTTP routes, authorization and RBAC | `src/go/web/builder*.go` (`builder.go` holds the authorization model, the routes and the response headers; `builder_legacy.go`, `builder_icons.go`, `builder_templates.go`, `builder_experiments.go` (the `experiment` link); `builder_assets.go` serves the editor's files, which `src/js/plugins/builder-assets.js` compresses in the UI build) |
 | Editor page and drafts landing | `src/js/src/views/Builder.vue`, `src/js/src/components/builder/BuilderDrafts.vue`, `BuilderTemplates.vue` (the Node Templates tab), `BuilderBulkBar.vue`, `BuilderBulkSummary.vue`, `BuilderHeaderButtons.vue` (the buttons both headers share) |

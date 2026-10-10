@@ -1028,12 +1028,18 @@ are under `/api/v1`. The interactive API docs of a running server, at
 `/docs/`, describe every request and response under the **Builder** tag (see
 [Interactive API Docs](../api.md#interactive-api-docs-swaggeropenapi)).
 
-Builder has one `phenix` command, `phenix builder publish`, which makes
-a topology from a Builder file (see
-[From the command line](import-upload-download.md#from-the-command-line)). Drafts,
-sharing and everything else are in the web UI and the REST API only. The
-REST API has no single request that publishes a Builder file: create a
-draft from the document, then publish the draft.
+`phenix builder publish` makes a topology from a Builder file (see
+[From the command line](import-upload-download.md#from-the-command-line)),
+and `phenix builder drafts` and `phenix builder templates` list, export,
+check and import drafts and Node Templates through this API (see
+[Command Line](cli.md)). Sharing, publishing a draft and everything else
+are in the web UI and the REST API only. The REST API has no single
+request that publishes a Builder file: create a draft from the document,
+then publish the draft.
+
+The unix socket of `phenix ui` (`--unix-socket`) serves the Builder routes
+too, besides the workflow routes. Every request on it acts as
+`global-admin`; the socket's file mode decides who may connect.
 
 Each route needs the `configs` permission its column names, and the
 checks of [Permissions](#permissions) on top of it: a share or

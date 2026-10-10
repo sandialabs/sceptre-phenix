@@ -24,6 +24,7 @@ line, `phenix builder publish` makes a topology from a Builder file.
 | Move a diagram to another phenix server with what it needs | **Download** a **Builder package**, then **Upload** it there | Editor toolbar, then the drafts page | A file, then a new draft (see [Moving a diagram with a Builder package](#moving-a-diagram-with-a-builder-package)) |
 | Save the diagram as a file | **Download** | Editor toolbar | A file |
 | Make a topology from a Builder file | `phenix builder publish` | Command line | A Topology config (see [From the command line](#from-the-command-line)) |
+| Save a draft as a file, without the browser | `phenix builder drafts export` | Command line | A file (see [Command Line](cli.md#exporting-a-draft)) |
 | Show the diagram of a topology kept in files | A `builder-doc` annotation with a `path` | The Topology config | A card under **Published Diagrams** (see [A Builder file beside a topology](#a-builder-file-beside-a-topology)) |
 
 The examples on this page use the [example lab](index.md#the-example-lab).
@@ -1032,10 +1033,11 @@ environment.
   checked for duplicate hostnames: no stored topology has that name."
 - **Drafts.** The command makes no draft. To edit the diagram, open the
   topology in Builder and select **Edit as a draft**.
-- **Import, Upload and the libraries.** No `phenix` command imports a
+- **Import, Upload and the icon library.** No `phenix` command imports a
   config, converts a [legacy Builder](legacy.md) diagram, or manages the
-  icon library or the template library. Use the web UI, or the REST API
-  (see [REST API](administration.md#rest-api)).
+  icon library. Use the web UI, or the REST API (see
+  [REST API](administration.md#rest-api)). The template library has
+  `phenix builder templates` (see [Command Line](cli.md#node-templates)).
 
 The document is stored as the file holds it. The command does not change
 who made or last saved the diagram (see

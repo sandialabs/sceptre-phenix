@@ -154,10 +154,14 @@ name a published document in the store, and `path` names a Builder file on
 the phenix server. Topologies the removed legacy Builder saved carry
 `builder-xml`; Import (or Upload of the file) converts that diagram, and
 publishing the draft imported from the topology replaces `builder-xml` with
-`builder-doc`. Its one CLI command is `phenix builder publish <file>`, which
-makes a topology from a Builder document file; `phenix config create` skips
-or refuses Builder documents. There is no CLI for import, the legacy
-conversion, the icon library or the template library. The icon library is
+`builder-doc`. `phenix builder publish <file>` makes a topology from a
+Builder document file, in the store; `phenix builder drafts`
+(`list|export|validate|preflight`) and `phenix builder templates`
+(`list|export|import`) call the REST API of a running server, at `--url`
+with `--token` (`PHENIX_URL`, `PHENIX_TOKEN`) or over the unix socket as
+global-admin. `phenix config create` skips or refuses Builder documents.
+There is no CLI for import, the legacy conversion, sharing, publishing a
+draft or managing the icon library. The icon library is
 one server-wide set of custom icons with unique names, which nodes and
 templates name; drafts carry no image data, and a downloaded file embeds the
 icons it uses. The built-in role `Builder` holds every Builder permission,
@@ -174,7 +178,8 @@ its code),
 ## CLI Overview
 
 Command groups: `config` (stored configs), `builder` (publish a Builder
-document as a topology), `experiment` (lifecycle), `vm`
+document as a topology; list, export and check drafts and Node Templates on
+a running server), `experiment` (lifecycle), `vm`
 (running VMs), `image` (vmdb2 disk images), `vlan` (per-experiment VLAN
 aliases/ranges), `workflow` (topology directory deployment), plus `mm`,
 `settings`, `ui`, `util`, `completion`, and `version`. Every subcommand

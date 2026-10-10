@@ -45,10 +45,12 @@ disabled by default and requires restarting `phenix ui` to take effect. The CLI
 equivalents (`phenix vm mount`/`unmount`) are always available.
 
 The Builder, the web topology editor at `/builder`, has no CLI equivalent
-for its drafts, sharing, Import, Publish, legacy diagram conversion, icon
-library or template library; the one CLI command for its documents is
-[`phenix builder publish`](#phenix-builder--publish-a-builder-document-as-a-topology).
-See [`builder.md`](builder.md).
+for sharing, Import, publishing a draft, legacy diagram conversion or
+managing the icon library. Its CLI commands are
+[`phenix builder publish`](#phenix-builder--builder-documents-drafts-and-node-templates)
+(a topology from a Builder document file, in the store) and `phenix builder
+drafts` and `phenix builder templates` (drafts and Node Templates on a
+running server, through its REST API). See [`builder.md`](builder.md).
 
 ## `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
@@ -82,14 +84,17 @@ phenix builder publish`, and one named on the command line is refused with
 `<file> is a Builder document, not a configuration: use "phenix builder
 publish <file>" to create its topology`.
 
-## `phenix builder` — publish a Builder document as a topology
+## `phenix builder` — Builder documents, drafts and Node Templates
+
+`publish` works on the store; `drafts` and `templates` call the REST API of
+a running server (see [below](#drafts-and-templates-through-the-rest-api)).
 
 ```bash
 phenix builder publish </path/to/document> [-n|--name <topology>] [--update] [--dry-run] \
   [--user <user>] [--record-path]
 ```
 
-`publish` is the only subcommand. It reads one Builder document file (Builder
+`publish` reads one Builder document file (Builder
 JSON or Builder YAML, decided by content; at most 5 MiB; no `${NAME}`
 expansion), checks it as Builder's Publish does, and stores the Topology
 config it describes, with the document stored as the topology's published
@@ -130,6 +135,37 @@ topology. The Configs page opens the published topology in the Builder, not
 as text (it has `builder-doc`); `phenix config edit` edits it as text.
 Details and the full rules are in
 [`builder.md`](builder.md#cli-phenix-builder-publish).
+
+### Drafts and templates through the REST API
+
+```bash
+phenix builder drafts list [--shared] [--owner <user>] [-o table|json|yaml]
+phenix builder drafts export <owner>/<draft> [--format json|yaml] [--output <file>] \
+  [--package [--include scenarios,topologies,icons,images]]
+phenix builder drafts validate <owner>/<draft> [-o table|json|yaml]
+phenix builder drafts preflight <owner>/<draft> [--check capacity,network,disks,apps] \
+  [--experiment <name>] [--strict] [-o table|json|yaml]
+phenix builder templates list [--owner <user>] [-o table|json|yaml]
+phenix builder templates export [--collection <name|id>] [--owner <user>] [--format yaml|json] [--output <file>]
+phenix builder templates import <file> [--name <collection>]
+```
+
+`--url` (`PHENIX_URL`) names the server and `--token` (`PHENIX_TOKEN`) the
+API token sent as `X-Phenix-Auth-Token: Bearer <token>`: the requests have
+the token user's permissions; a server with auth off needs none. Without
+`--url` they go to the unix socket (`--unix-socket`, default
+`/tmp/phenix.sock`) as global-admin; a token without a URL is refused. A
+flag given an empty value counts as not given. Redirects are refused, not
+followed. `-o` defaults to `table`. Exit status: 0 success, 1 findings
+(validate errors, a failed preflight check, or with `--strict` an
+unavailable one), 2 refused or no answer (connection, redirect, 401/403,
+404, unknown subcommand, invalid arguments or file). The report
+is written before exit 1. JSON shapes and the rules are in
+[`builder.md`](builder.md#cli-phenix-builder-drafts-and-templates).
+
+```bash
+phenix builder drafts validate alice/riverside --url https://phenix.example --token "$PHENIX_TOKEN" -o json
+```
 
 ## `phenix experiment` — experiment lifecycle
 

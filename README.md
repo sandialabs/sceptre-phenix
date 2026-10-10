@@ -112,7 +112,17 @@ phenix builder publish pump-station.builder.json --update
 
 The command writes a topology only: scenarios and experiments are published from the web editor. See [From the command line](https://phenix.sceptre.dev/latest/builder/import-upload-download/#from-the-command-line).
 
-Diagrams of the legacy Builder are converted in the web editor, with Import or Upload (see [Legacy Builder](https://phenix.sceptre.dev/latest/builder/legacy/)), and device templates are kept in a per-user library on the Node Templates tab (see [Node Templates](https://phenix.sceptre.dev/latest/builder/templates/)). Neither has a CLI command.
+Drafts and Node Templates on a running phenix server can be listed, exported and checked from scripts and CI, through its REST API:
+
+```bash
+# Fail the job when draft alice/riverside cannot be published
+phenix builder drafts validate alice/riverside --url https://phenix.example --token "$PHENIX_TOKEN" -o json
+
+# Export a collection of Node Templates as a template file
+phenix builder templates export --collection Substation --output substation.templates.yaml
+```
+
+See [Command Line](https://phenix.sceptre.dev/latest/builder/cli/). Diagrams of the legacy Builder are converted in the web editor, with Import or Upload (see [Legacy Builder](https://phenix.sceptre.dev/latest/builder/legacy/)).
 
 ## 🛠️ Local Development
 

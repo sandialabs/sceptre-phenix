@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
   - **Download selected** saves the selected drafts or published diagrams as Builder files, one each.
   - The Custom icons dialog adds the selected diagram icons to the server, or deletes the selected server icons, at once.
   - **N** on the canvas adds a Device.
+  - `phenix builder drafts list|export|validate|preflight` and `phenix builder templates list|export|import` work with drafts and Node Templates on a phenix server from scripts and CI, at `--url` with an API token or over the `phenix ui` unix socket, which now serves the Builder API too.
 - **Node Notes**: Topology nodes take `general.notes`; a new experiment copies them to each VM's notes.
 - **Builder documents**: A Builder document keeps its ID, name, description, up to 100 notes (which the Inspector lists and edits), and who made and last saved it (`createdBy`, `createdAt`, `updatedBy`, `updatedAt`) in a required `metadata` object. Its JSON Schema gives every field a title, a description and examples.
 - **Builder node notes**: Devices and switches show their notes in a card below them on the canvas, in their info tooltips and in PNG and SVG downloads, and layouts leave room for them. A device's notes are its `general.notes`; a switch keeps up to 100 of its own in the diagram. **Show node notes** in the Builder settings hides them.
