@@ -134,7 +134,7 @@ The Inspector of a switch, for example "Network CORP", has these fields:
 For example, to give CORP the VLAN alias 120, select the CORP switch, type
 `120` in **VLAN alias**, and select **Apply**.
 
-![The Inspector for network CORP: a note that CORP cannot be renamed because ntp-01 from the included topology corp-services is on it, Name CORP (read only), VLAN alias 120 marked as changed, Description, Edge Color, Line style, Outline Color, Fill Color, Icon size Diagram default (Small), Notes with No notes. and Add note, Unapplied changes with Apply and Cancel, and Position.](../images/builder/inspector-network.png){ width="352" }
+![The Inspector for network CORP: a note that CORP cannot be renamed because ntp-01 from the included topology corp-services is on it, Name CORP (read only), VLAN alias 120 marked as changed, Description, Edge Color, Line style, Outline Color, Fill Color, Icon size Diagram default (Small), Notes with No notes. and Add note, Unapplied changes with Apply and Cancel, Purdue layer None with its hint, and Position.](../images/builder/inspector-network.png){ width="352" }
 
 A network that a device from an included topology is on cannot be renamed or
 removed. Its other fields can still change. In Riverside Water, that is CORP,
@@ -434,7 +434,7 @@ it. The layouts do not move a drawing. A drawing in a group moves with its
 group, and the group grows to hold it when the layout makes the group
 smaller.
 
-![The pump station with drawings: a dashed blue rectangle labelled Pump house behind eng-ws-01 and rtu-01, a green circle labelled Reservoir, the built-in external icon labelled Cell tower, a dashed amber line labelled LTE uplink with an arrowhead at each end between station-rtr and the cell tower, and a gray line labelled Fiber to the reservoir that runs down from the reservoir, bends and ends in an arrowhead beside the WAN switch.](../images/builder/drawings.png)
+![The pump station with drawings: a dashed blue rectangle labelled Pump house behind eng-ws-01 and rtu-01, a green circle labelled Reservoir, the built-in external icon, a dashed monitor, labelled Cell tower, a dashed amber line labelled LTE uplink with an arrowhead at each end between station-rtr and the cell tower, and a gray line labelled Fiber to the reservoir that runs down from the reservoir, bends and ends in an arrowhead beside the WAN switch.](../images/builder/drawings.png)
 
 Select a drawing to change it in the Inspector, then select **Apply**:
 
@@ -818,7 +818,7 @@ layout that last arranged the draft, or **Default** when no layout ran. An
 imported, uploaded or blank draft starts at **Default**. An import puts its
 devices in rows on a grid, with the switches below them.
 
-![The layout menu listing ELK layered, Layered by tier, Network cards, Dagre, Standard, Yifan Hu, Force and Radial, each with a one-line summary.](../images/builder/layout-menu.png){ width="287" }
+![The layout menu listing ELK layered, Layered by tier, Network cards, Dagre, Standard, Yifan Hu, Force and Radial, each with a one-line summary, and a check mark at ELK layered, the current layout.](../images/builder/layout-menu.png){ width="288" }
 
 | Layout | Menu summary | What it does |
 |---|---|---|

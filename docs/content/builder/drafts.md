@@ -8,7 +8,7 @@ Only **Publish** writes configs from a draft (see [Publishing](publishing.md)).
 
 Select **Builder** in the phenix navigation bar. The drafts page opens.
 
-![The Builder drafts page with the Blank diagram, Import, Upload and Commands buttons, the My Drafts, Shared Drafts, Published Diagrams and Node Templates tabs, the row with Select all, 0 of 3 selected, Share selected, Download selected, Delete selected and the note that Download selected saves a file for each, and cards for Riverside Water, shared with alice and bob, Metro Campus and Riverside Water expansion, each with a checkbox and the Open, Share, Delete and Publish buttons.](../images/builder/drafts-page.png)
+![The Builder drafts page with the Blank diagram, Import, Upload and Commands buttons, the My Drafts, Shared Drafts, Published Diagrams and Node Templates tabs, the row with Select all, 0 of 3 selected, Share selected, Download selected, Delete selected and the note that Download selected saves a file for each, and cards for Riverside Water, shared with alice and bob, Riverside Water expansion and Metro Campus, each with a checkbox at its top right and the Open, Share, Delete and Publish buttons.](../images/builder/drafts-page.png)
 
 The buttons at the top right are:
 

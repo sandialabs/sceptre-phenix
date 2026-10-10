@@ -559,7 +559,7 @@ closes and opens again. Builder clears it when the diagram changes.
 
 The command palette runs any command by name, and finds nodes and networks.
 
-![The command palette filtered by layout, listing the Layout: ELK layered, Layered by tier, Network cards, Dagre, Standard, Yifan Hu, Force and Radial commands, with ELK layered marked as the current layout, and Auto layout with its keys ⌥⇧L.](../images/builder/command-palette.png)
+![The command palette with the filter layout: and its 8 results, Layout: ELK layered, Layered by tier, Network cards, Dagre, Standard, Yifan Hu, Force and Radial, with ELK layered marked as the current layout.](../images/builder/command-palette.png)
 
 To open it, select **Commands** in the header, or press
 <kbd>⌘</kbd>+<kbd>K</kbd> on macOS or <kbd>Ctrl</kbd>+<kbd>K</kbd> on Windows
