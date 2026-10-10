@@ -45,6 +45,12 @@ var (
 	// setting is empty.
 	TopologiesBase string //nolint:gochecknoglobals // global config
 
+	// BuilderTemplatesBase is the directory whose template files phenix ui
+	// reads at start as read-only collections of Builder node templates. The
+	// root command sets it from base-dir.builder-templates, or to
+	// PhenixBase + "/builder/templates" when that setting is empty.
+	BuilderTemplatesBase string //nolint:gochecknoglobals // global config
+
 	BridgeMode = BridgeModeManual     //nolint:gochecknoglobals // global config
 	DeployMode = DeployModeNoHeadnode //nolint:gochecknoglobals // global config
 
@@ -65,6 +71,17 @@ func MountDir() string {
 	}
 
 	return MountBase
+}
+
+// BuilderTemplatesDir returns the directory of the template files of the
+// Builder: BuilderTemplatesBase, or PhenixBase + "/builder/templates" when
+// BuilderTemplatesBase is not set.
+func BuilderTemplatesDir() string {
+	if BuilderTemplatesBase == "" {
+		return filepath.Join(PhenixBase, "builder", "templates")
+	}
+
+	return BuilderTemplatesBase
 }
 
 func TrimHostnameSuffixes(str string) string {

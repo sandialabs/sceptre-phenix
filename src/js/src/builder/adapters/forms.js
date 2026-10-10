@@ -1,0 +1,1448 @@
+// JSON Forms adapter.
+//
+// The Inspector never hard codes fields. The UI schema is generated from the
+// (server or bundled) JSON Schema, so fields that the server adds appear
+// automatically. The adapter also owns the mapping between an element and
+// the *working copy* that the Inspector edits. This mapping makes
+// Apply/Cancel possible without a change to the document on every
+// keystroke.
+
+import {
+  and,
+  Generate,
+  isBooleanControl,
+  isDateControl,
+  isDateTimeControl,
+  isEnumControl,
+  isIntegerControl,
+  isNumberControl,
+  isOneOfControl,
+  isOneOfEnumControl,
+  isStringControl,
+  isTimeControl,
+  not,
+  optionIs,
+  or,
+  rankWith,
+  schemaMatches,
+  schemaTypeIs,
+  scopeEndIs,
+  uiTypeIs,
+} from '@jsonforms/core';
+import { vanillaRenderers } from '@jsonforms/vue-vanilla';
+import { markRaw } from 'vue';
+
+import InspectorArrayRenderer from '../../components/builder/inspector/InspectorArrayRenderer.vue';
+import InspectorColorControl from '../../components/builder/inspector/InspectorColorControl.vue';
+import InspectorComboboxControl from '../../components/builder/inspector/InspectorComboboxControl.vue';
+import InspectorEnumControl from '../../components/builder/inspector/InspectorEnumControl.vue';
+import InspectorIconControl from '../../components/builder/inspector/InspectorIconControl.vue';
+import InspectorInputControl from '../../components/builder/inspector/InspectorInputControl.vue';
+import InspectorMapRenderer from '../../components/builder/inspector/InspectorMapRenderer.vue';
+import InspectorOneOfRenderer from '../../components/builder/inspector/InspectorOneOfRenderer.vue';
+import InspectorSectionRenderer from '../../components/builder/inspector/InspectorSectionRenderer.vue';
+import {
+  isTextOrList,
+  numberBranch,
+} from '../../components/builder/inspector/control.js';
+import { kindMeta } from '../catalog.js';
+import {
+  COMBINATORS,
+  errorMessage,
+  errorPath,
+  errorRelevance,
+} from '../form-validator.js';
+import {
+  connectionEndLabel,
+  deviceHandles,
+  documentIconSize,
+  findNetwork,
+  findNode,
+  includedFrom,
+  kindLabel,
+  LOOK_KEYS,
+  lookOf,
+  networkOfSwitch,
+  networkRefusal,
+  nextInterfaceName,
+  setDocumentInfo,
+  sizeOf,
+  updateEdge,
+  updateNetwork,
+  updateNode,
+} from '../model.js';
+import {
+  ICON_SIZE_TITLES,
+  MAP_KEYWORD,
+  normalizeSchemaBundle,
+  schemaForKind,
+  SUGGESTIONS_KEYWORD,
+} from '../schema.js';
+
+import { networkStyle } from './vueflow.js';
+
+const MULTILINE_KEYS = ['description', 'text', 'comment'];
+
+// The Inspector's renderers outrank their vanilla counterparts, which stay
+// registered for everything else (layouts, groups, objects, dates). See
+// components/builder/inspector/ for what each one fixes.
+const isPlainInputControl = or(
+  and(
+    isStringControl,
+    not(or(isDateControl, isTimeControl, isDateTimeControl)),
+  ),
+  isIntegerControl,
+  isNumberControl,
+  isBooleanControl,
+);
+
+// Components are marked raw. JSON Forms keeps its renderer list in reactive
+// state, and Vue warns about components made reactive (and they cost
+// performance).
+export const inspectorRenderers = Object.freeze(
+  [
+    ...vanillaRenderers,
+    {
+      renderer: InspectorInputControl,
+      tester: rankWith(11, isPlainInputControl),
+    },
+    { renderer: InspectorEnumControl, tester: rankWith(12, isEnumControl) },
+    { renderer: InspectorOneOfRenderer, tester: rankWith(13, isOneOfControl) },
+    // A number or text is a number field, and one value or a list is a
+    // text field, in place of a picker for their kind.
+    {
+      renderer: InspectorInputControl,
+      tester: rankWith(
+        14,
+        and(
+          uiTypeIs('Control'),
+          schemaMatches(
+            (schema) =>
+              numberBranch(schema) !== undefined || isTextOrList(schema),
+          ),
+        ),
+      ),
+    },
+    {
+      renderer: InspectorEnumControl,
+      tester: rankWith(15, isOneOfEnumControl),
+    },
+    // The color of a network, note, group or connection, and the outline
+    // and the fill of a device or a switch: a text field with a color
+    // picker.
+    {
+      renderer: InspectorColorControl,
+      tester: rankWith(
+        14,
+        and(
+          isStringControl,
+          or(
+            scopeEndIs('color'),
+            scopeEndIs('outlineColor'),
+            scopeEndIs('fillColor'),
+          ),
+        ),
+      ),
+    },
+    // The custom icon of a device or a group: what it is, and a dialog to
+    // choose one.
+    {
+      renderer: InspectorIconControl,
+      tester: rankWith(14, and(isStringControl, scopeEndIs('icon'))),
+    },
+    // A text field that suggests values: a drive's image.
+    {
+      renderer: InspectorComboboxControl,
+      tester: rankWith(
+        14,
+        and(
+          isStringControl,
+          schemaMatches((schema) => Boolean(schema?.[SUGGESTIONS_KEYWORD])),
+        ),
+      ),
+    },
+    // Below the vanilla enum-array renderer (5), which the builder schema
+    // does not use.
+    {
+      renderer: InspectorArrayRenderer,
+      tester: rankWith(4, schemaTypeIs('array')),
+    },
+    // Keys and values: advanced settings, labels, annotations.
+    {
+      renderer: InspectorMapRenderer,
+      tester: rankWith(
+        16,
+        and(
+          uiTypeIs('Control'),
+          schemaMatches((schema) => Boolean(schema?.[MAP_KEYWORD])),
+        ),
+      ),
+    },
+    // The node's rarely used fields, in a section that opens and closes.
+    {
+      renderer: InspectorSectionRenderer,
+      tester: rankWith(16, and(uiTypeIs('Group'), optionIs('section', true))),
+    },
+  ].map((entry) => ({ ...entry, renderer: markRaw(entry.renderer) })),
+);
+
+/**
+ * JSON Forms i18n settings that phrase the Inspector's validation errors in
+ * plain language, naming the field (see form-validator.js).
+ *
+ * @param {object} schema the form's schema, for field titles
+ * @returns {{translateError: Function}}
+ */
+export function inspectorI18n(schema) {
+  return { translateError: (error) => errorMessage(error, schema) };
+}
+
+/**
+ * The errors a field shows, one per field. Of the errors that one value
+ * causes in one schema, only the most relevant is kept (see
+ * errorRelevance). The errors of a oneOf or anyOf, which say which
+ * alternatives failed, are kept. The errors of each alternative are also
+ * kept, because JSON Forms shows a field the errors of the alternative that
+ * it renders.
+ *
+ * @param {object[]} errors ajv errors
+ * @returns {object[]} the errors kept, in their order
+ */
+export function relevantErrors(errors) {
+  const best = new Map();
+
+  for (const error of errors || []) {
+    if (COMBINATORS.includes(error.keyword)) {
+      continue;
+    }
+
+    const key = JSON.stringify([
+      errorPath(error),
+      String(error.schemaPath || '').replace(/\/[^/]*$/, ''),
+    ]);
+    const kept = best.get(key);
+
+    if (!kept || errorRelevance(error) < errorRelevance(kept)) {
+      best.set(key, error);
+    }
+  }
+
+  const keep = new Set(best.values());
+
+  return (errors || []).filter(
+    (error) => COMBINATORS.includes(error.keyword) || keep.has(error),
+  );
+}
+
+// The border a group is drawn with when it names none (see builder.css).
+const GROUP_BORDER = 'dashed';
+
+// How far past a line's end the Inspector puts a new point, on a diagram
+// without a grid size.
+const NEW_POINT_STEP = 16;
+
+// What phenix itself puts in a node spec's unset fields when it runs an
+// experiment (setDefaults in src/go/types/version/v1/node.go, and
+// Drive.InjectPartition), keyed like SPEC_BOUNDS in schema.js. A device
+// that phenix does not deploy (external) gets none. These are the values
+// that an unset field gets, so they win over the schema's `default`. The
+// field says that phenix uses them.
+export const PHENIX_DEFAULTS = {
+  'general.vm_type': 'kvm',
+  'general.snapshot': true,
+  'general.do_not_boot': false,
+  'hardware.cpu': 'Broadwell',
+  'hardware.vcpus': 1,
+  'hardware.memory': 512,
+  'hardware.os_type': 'linux',
+  'drives.inject_partition': 1,
+};
+
+// The entry of a table keyed like SPEC_BOUNDS for the field at a spec data
+// path ("hardware.drives.0.inject_partition"), the longest key first.
+function specEntry(table, path) {
+  const keys = path.split('.').filter((key) => !/^\d+$/.test(key));
+
+  for (let start = 0; start < keys.length; start += 1) {
+    const entry = table[keys.slice(start).join('.')];
+
+    if (entry !== undefined) {
+      return entry;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * What an Inspector field shows while it is not set: the value that it gets
+ * all the same. This value is not written into the document until the
+ * field is changed.
+ * - A connection's label is its network's name, which the canvas draws for
+ *   it.
+ * - A line style is the pattern the canvas picks: a network's by its place
+ *   in the diagram, a connection's from its network, a line's solid.
+ * - A group's border is dashed and its icon is the group icon. A shape's
+ *   border is solid.
+ * - The icon size of a device, a switch or a group is the diagram's.
+ * - A device's spec field is the value phenix gives it (see
+ *   PHENIX_DEFAULTS), else its schema's `default`.
+ *
+ * @param {object|null} target the Inspector's target (see inspectorTarget)
+ * @param {string} path the field's data path
+ * @param {object} [schema] the field's schema
+ * @returns {{value: unknown, note: string}|undefined} note says where the
+ *   value comes from. undefined for a field with no such value
+ */
+export function fieldDefault(target, path, schema) {
+  if (target?.kind === 'edge' && path === 'label') {
+    return target.network?.name
+      ? { value: target.network.name, note: "The network's name" }
+      : undefined;
+  }
+
+  if (path === 'lineStyle' && target?.networkStyle) {
+    return target.kind === 'edge'
+      ? {
+          value: target.networkStyle.pattern,
+          note: "Auto: its network's line style",
+        }
+      : {
+          value: target.networkStyle.autoPattern,
+          note: "Auto: chosen by the network's place in the diagram",
+        };
+  }
+
+  if (target?.kind === 'group' && path === 'borderStyle') {
+    return { value: GROUP_BORDER, note: 'The default border' };
+  }
+
+  // A shape's border and a line are solid while they name no pattern.
+  if (
+    (target?.kind === 'shape' && path === 'borderStyle') ||
+    (target?.kind === 'line' && path === 'lineStyle')
+  ) {
+    return {
+      value: 'solid',
+      note: path === 'borderStyle' ? 'The default border' : 'The default line',
+    };
+  }
+
+  if (target?.kind === 'group' && path === 'iconKey') {
+    return { value: kindMeta('group').iconKey, note: 'The group icon' };
+  }
+
+  // A node without an icon size of its own draws the diagram's. The device
+  // of a library's template is in no diagram, so its target names none (see
+  // inspectorTarget).
+  if (path === 'iconSize' && target?.diagramIconSize) {
+    return { value: target.diagramIconSize, note: "The diagram's icon size" };
+  }
+
+  const spec = target?.kind === 'device' ? target.data?.spec : undefined;
+  const fromPhenix =
+    spec && spec.external !== true && path.startsWith('spec.')
+      ? specEntry(PHENIX_DEFAULTS, path.slice('spec.'.length))
+      : undefined;
+
+  if (fromPhenix !== undefined) {
+    return {
+      value: fromPhenix,
+      note: 'phenix uses this value while the field is empty',
+    };
+  }
+
+  const value = schema?.default;
+
+  return value === undefined || value === null || value === ''
+    ? undefined
+    : { value, note: 'The default, used while the field is empty' };
+}
+
+// Top-level controls named in `readonly` are shown but cannot be changed.
+function decorate(element, readonly = []) {
+  if (element.type === 'Control' && typeof element.scope === 'string') {
+    const key = element.scope.split('/').pop();
+    const options = { ...element.options };
+
+    if (MULTILINE_KEYS.includes(key)) {
+      options.multi = true;
+    }
+
+    if (readonly.includes(element.scope.replace(/^#\/properties\//, ''))) {
+      options.readonly = true;
+    }
+
+    return Object.keys(options).length ? { ...element, options } : element;
+  }
+
+  if (Array.isArray(element.elements)) {
+    return {
+      ...element,
+      elements: element.elements.map((child) => decorate(child, readonly)),
+    };
+  }
+
+  return element;
+}
+
+// A node spec's fields in the order users look for them. The other fields
+// come after them in the schema's order. The fields that users seldom set
+// go in a section of their own that starts closed (see
+// InspectorSectionRenderer).
+const SPEC_FIRST = ['type', 'external', 'general', 'hardware', 'network'];
+const SPEC_MORE = [
+  'commands',
+  'delay',
+  'injections',
+  'advanced',
+  'labels',
+  'annotations',
+];
+
+// The UI schema of a device's spec, which its control renders in place of
+// one generated in the schema's order.
+function specLayout(spec, root) {
+  const generated = Generate.uiSchema(spec, 'Group', undefined, root);
+  const byKey = new Map(
+    (generated.elements || []).map((element) => [
+      String(element.scope || '')
+        .split('/')
+        .pop(),
+      element,
+    ]),
+  );
+  const first = SPEC_FIRST.filter((key) => byKey.has(key));
+  const more = SPEC_MORE.filter((key) => byKey.has(key));
+  const rest = [...byKey.keys()].filter(
+    (key) => !first.includes(key) && !more.includes(key),
+  );
+
+  return {
+    type: 'Group',
+    label: spec.title || 'Node',
+    elements: [
+      ...[...first, ...rest].map((key) => byKey.get(key)),
+      ...(more.length
+        ? [
+            {
+              type: 'Group',
+              label: 'More settings',
+              options: { section: true },
+              elements: more.map((key) => byKey.get(key)),
+            },
+          ]
+        : []),
+    ],
+  };
+}
+
+// UI schemas by Inspector schema (the same object for the same element
+// kind, see schemaForKind), then by the fields they lock. Each call gives
+// the same object, so JSON Forms does not render it again.
+const uiSchemas = new WeakMap();
+
+/**
+ * Generates a JSON Forms UI schema for an element kind.
+ *
+ * @param {object} bundle schema bundle
+ * @param {string} kind device|switch|network|note|group|edge|document
+ * @param {object} [context] element context. spec: selects the phenix spec
+ *   variant. readonly: lists top-level fields that cannot be changed
+ * @returns {object} UI schema, shared. Do not change it
+ */
+export function uiSchemaForKind(bundle, kind, context = {}) {
+  const schema = schemaForKind(normalizeSchemaBundle(bundle), kind, context);
+  const readonly = context.readonly || [];
+  const key = readonly.join(' ');
+  let byLock = uiSchemas.get(schema);
+
+  if (!byLock) {
+    byLock = new Map();
+    uiSchemas.set(schema, byLock);
+  }
+
+  if (!byLock.has(key)) {
+    const ui = decorate(
+      Generate.uiSchema(schema, undefined, undefined, schema),
+      readonly,
+    );
+    const spec = schema.properties?.spec;
+
+    byLock.set(
+      key,
+      kind === 'device' && spec
+        ? {
+            ...ui,
+            elements: ui.elements.map((element) =>
+              element.scope === '#/properties/spec'
+                ? {
+                    ...element,
+                    options: {
+                      ...element.options,
+                      detail: specLayout(spec, schema),
+                    },
+                  }
+                : element,
+            ),
+          }
+        : ui,
+    );
+  }
+
+  return byLock.get(key);
+}
+
+/**
+ * What the Inspector must not change about an element because a device from
+ * an included topology depends on it (see model.js): all of such a device,
+ * and the name of a network that such a device is on.
+ *
+ * @param {object} doc
+ * @param {{type: string, id?: string}} selection
+ * @returns {{all: boolean, fields: string[], note: string}} note says why.
+ *   It is '' when nothing is locked
+ */
+export function inspectorLock(doc, selection) {
+  const target = inspectorTarget(doc, selection);
+  const from = target?.kind === 'device' ? includedFrom(target.target) : '';
+
+  if (from) {
+    return {
+      all: true,
+      fields: [],
+      note:
+        `Defined by included topology ${from}, so it is read only here. ` +
+        `Change it in ${from} and import again, or combine the included ` +
+        'nodes into a new draft to edit them here. It can still be moved.',
+    };
+  }
+
+  const reason =
+    target?.kind === 'switch' && target.network
+      ? networkRefusal(doc, target.network.id)
+      : '';
+
+  return reason
+    ? {
+        all: false,
+        fields: ['name'],
+        note: `${reason} Its other fields can still change.`,
+      }
+    : { all: false, fields: [], note: '' };
+}
+
+/**
+ * The item that the Inspector's Add button appends to a list, for a list
+ * whose new items need more than their schema's defaults. undefined for
+ * the schema's default item. A line's new point goes a grid step past its
+ * end. A device's new interface gets its name as a connection drawn on the
+ * canvas names one (see nextInterfaceName). The count includes the
+ * interfaces of the working copy and of the device. The new interface is an
+ * Ethernet interface with no address (proto manual) until it gets one.
+ *
+ * @param {object} doc
+ * @param {{type: string, id?: string}} selection
+ * @param {string} path the list's JSON Forms data path
+ * @param {object} [data] the working copy
+ * @returns {object|undefined}
+ */
+export function newListItem(doc, selection, path, data) {
+  const target = inspectorTarget(doc, selection);
+
+  // A line's new point is its new end, a grid step on from the last one.
+  if (target?.kind === 'line' && path === 'points') {
+    const points = data?.points ?? target.data.points;
+    const last = points[points.length - 1] || target.target.position;
+    const step = doc.grid?.size || NEW_POINT_STEP;
+
+    return { x: Number(last.x) + step, y: Number(last.y) };
+  }
+
+  if (target?.kind !== 'device' || path !== 'spec.network.interfaces') {
+    return undefined;
+  }
+
+  const spec = data?.spec ?? target.data.spec;
+  const name = nextInterfaceName({
+    ...target.target,
+    device: { ...target.target.device, spec },
+  });
+
+  // An external device's interfaces have no type.
+  return spec?.external === true
+    ? { name, proto: 'manual' }
+    : { name, type: 'ethernet', proto: 'manual' };
+}
+
+/**
+ * The item that the Inspector's "Insert … after" button of a list puts
+ * after item `index`, for a list that takes an item between two others.
+ * undefined for a list that does not. A line's new point is a bend halfway
+ * along the segment from point `index` to the next one, as for a bend added
+ * on the canvas without a place (see insertLinePoint). The last point has
+ * no segment after it. When the list has its most items (the schema's
+ * maxItems), the button is unavailable, as Add is.
+ *
+ * @param {object} doc
+ * @param {{type: string, id?: string}} selection
+ * @param {string} path the list's JSON Forms data path
+ * @param {number} index the item the new one follows
+ * @param {object} [data] the working copy
+ * @returns {{x: number, y: number}|undefined}
+ */
+export function insertedListItem(doc, selection, path, index, data) {
+  const target = inspectorTarget(doc, selection);
+
+  if (target?.kind !== 'line' || path !== 'points') {
+    return undefined;
+  }
+
+  const points = data?.points ?? target.data.points;
+  const from = points?.[index];
+  const to = points?.[index + 1];
+
+  if (!from || !to) {
+    return undefined;
+  }
+
+  return {
+    x: (Number(from.x) + Number(to.x)) / 2,
+    y: (Number(from.y) + Number(to.y)) / 2,
+  };
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value ?? {}));
+}
+
+// What each of a device's presentation fields is called in the
+// announcement of its change (see LOOK_KEYS in model.js).
+const LOOK_NAMES = {
+  iconKey: 'icon',
+  icon: 'custom icon',
+  iconSize: 'icon size',
+  outlineColor: 'outline color',
+  fillColor: 'fill color',
+};
+
+/**
+ * The label of a change of a device's presentation fields, which also
+ * names its Undo. The first field that differs names the change, for
+ * example:
+ * - "Changed the fill color of Device web-01 to #2f6fbf"
+ * - "Removed the fill color of Device web-01"
+ * - "Changed the icon of Device web-01 to the default"
+ * - "Changed the icon size of Device web-01 to Large"
+ * - "Changed the icon size of Device web-01 to the diagram default"
+ * - "Changed the custom icon of Device web-01 to plc"
+ * A custom icon is named by its name, which is what the field holds.
+ *
+ * @param {string} title the device's title, from inspectorTarget
+ * @param {object} before its look (see lookOf)
+ * @param {object} after the look it is given
+ * @returns {string} '' when they are the same
+ */
+export function lookChangeLabel(title, before, after) {
+  const key = LOOK_KEYS.find((name) => before[name] !== after[name]);
+
+  if (!key) {
+    return '';
+  }
+
+  if (key === 'iconKey') {
+    return `Changed the icon of ${title} to ${after.iconKey || 'the default'}`;
+  }
+
+  if (key === 'iconSize') {
+    return `Changed the icon size of ${title} to ${ICON_SIZE_TITLES[after.iconSize] || 'the diagram default'}`;
+  }
+
+  if (!after[key]) {
+    return `Removed the ${LOOK_NAMES[key]} of ${title}`;
+  }
+
+  return `Changed the ${LOOK_NAMES[key]} of ${title} to ${after[key]}`;
+}
+
+/**
+ * Describes what the Inspector is editing.
+ *
+ * A selected switch edits its network, and with it the switch node's own
+ * fields: its outline and fill colors, and its notes.
+ *
+ * A device, a switch or a group names the diagram's icon size, which its
+ * Icon size gets while it has none (see fieldDefault). In the template
+ * editor, the document names one only for a template of a diagram (see
+ * templateDocument). A device made from a template of a library draws at
+ * the size of the diagram it is added to, so no size is named.
+ *
+ * @param {object} doc
+ * @param {{type: 'node'|'edge'|'document', id?: string}} selection
+ * @param {{template?: boolean}} [options] template: the document is the
+ *   template editor's
+ * @returns {{kind: string, title: string, target: object|null, data: object}|null}
+ */
+export function inspectorTarget(doc, selection, { template = false } = {}) {
+  if (!doc || !selection) {
+    return null;
+  }
+
+  const diagramIconSize =
+    template && !doc.iconSize ? undefined : documentIconSize(doc);
+
+  if (selection.type === 'document') {
+    return {
+      kind: 'document',
+      title: 'Diagram',
+      target: null,
+      data: {
+        name: doc.metadata?.name || '',
+        description: doc.metadata?.description || '',
+      },
+    };
+  }
+
+  if (selection.type === 'edge') {
+    const edge = (doc.edges || []).find((entry) => entry.id === selection.id);
+
+    if (!edge) {
+      return null;
+    }
+
+    // Named by its ends and the interfaces there, as the canvas names it.
+    const end = (nodeId, handleId) =>
+      connectionEndLabel(findNode(doc, nodeId), handleId) || 'a node';
+
+    return {
+      kind: 'edge',
+      title: `Connection from ${end(edge.sourceNodeId, edge.sourceHandleId)} to ${end(edge.targetNodeId, edge.targetHandleId)}`,
+      target: edge,
+      network: findNetwork(doc, edge.networkId),
+      // The value its Line style gets while it has none (see fieldDefault).
+      networkStyle: networkStyle(doc, edge.networkId),
+      data: {
+        label: edge.label || '',
+        color: edge.color || '',
+        lineStyle: edge.lineStyle || '',
+      },
+    };
+  }
+
+  const node = (doc.nodes || []).find((entry) => entry.id === selection.id);
+
+  if (!node) {
+    return null;
+  }
+
+  switch (node.kind) {
+    case 'device':
+      return {
+        kind: 'device',
+        title: `Device ${node.device.hostname}`,
+        target: node,
+        data: {
+          hostname: node.device.hostname,
+          ...lookOf(node.device),
+          spec: clone(node.device.spec),
+        },
+        interfaces: deviceHandles(node),
+        // The value its Icon size gets while it has none (see fieldDefault).
+        diagramIconSize,
+      };
+    case 'switch': {
+      const network = networkOfSwitch(doc, node);
+
+      return {
+        kind: 'switch',
+        title: `Network ${network ? network.name : ''}`.trim(),
+        target: node,
+        network,
+        networkStyle: network ? networkStyle(doc, network.id) : undefined,
+        diagramIconSize,
+        // The network's fields, then the colors, icon size and notes of
+        // this switch node itself. A switch without notes has no `notes`
+        // here, so its form starts with no list. When an emptied list is
+        // applied, the notes are removed.
+        data: {
+          name: network?.name || '',
+          ...(Number.isInteger(network?.alias) ? { alias: network.alias } : {}),
+          description: network?.description || '',
+          color: network?.color || '',
+          lineStyle: network?.lineStyle || '',
+          outlineColor: node.switch?.outlineColor || '',
+          fillColor: node.switch?.fillColor || '',
+          iconSize: node.switch?.iconSize || '',
+          ...(Array.isArray(node.switch?.notes) && node.switch.notes.length
+            ? { notes: [...node.switch.notes] }
+            : {}),
+        },
+      };
+    }
+    case 'note':
+      return {
+        kind: 'note',
+        title: 'Note',
+        target: node,
+        data: { text: node.note?.text || '', color: node.note?.color || '' },
+      };
+    case 'group':
+      return {
+        kind: 'group',
+        title: 'Group',
+        target: node,
+        diagramIconSize,
+        data: {
+          title: node.group?.title || '',
+          description: node.group?.description || '',
+          color: node.group?.color || '',
+          borderStyle: node.group?.borderStyle || '',
+          iconKey: node.group?.iconKey || '',
+          icon: node.group?.icon || '',
+          iconSize: node.group?.iconSize || '',
+        },
+      };
+    case 'shape': {
+      const size = sizeOf(node);
+
+      return {
+        kind: 'shape',
+        title: kindLabel(node),
+        target: node,
+        data: {
+          shape: node.shape?.shape || 'rectangle',
+          label: node.shape?.label || '',
+          fillColor: node.shape?.fillColor || '',
+          outlineColor: node.shape?.outlineColor || '',
+          borderStyle: node.shape?.borderStyle || '',
+          width: size.width,
+          height: size.height,
+        },
+      };
+    }
+    case 'icon': {
+      const size = sizeOf(node);
+
+      return {
+        kind: 'icon',
+        title: 'Icon',
+        target: node,
+        data: {
+          iconKey: node.icon?.iconKey || '',
+          icon: node.icon?.icon || '',
+          label: node.icon?.label || '',
+          width: size.width,
+          height: size.height,
+        },
+      };
+    }
+    case 'line':
+      // Its points where they are on the canvas, not relative to the line.
+      return {
+        kind: 'line',
+        title: 'Line',
+        target: node,
+        data: {
+          label: node.line?.label || '',
+          color: node.line?.color || '',
+          lineStyle: node.line?.lineStyle || '',
+          startArrow: node.line?.startArrow === true,
+          endArrow: node.line?.endArrow === true,
+          points: (node.line?.points || []).map((point) => ({
+            x: node.position.x + point.x,
+            y: node.position.y + point.y,
+          })),
+        },
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Names what the Inspector edits, for announcements: "device web-01",
+ * "network MGMT", "diagram Lab", "connection from web-01 (eth0) to MGMT".
+ *
+ * @param {object} doc
+ * @param {{type: string, id?: string}} selection
+ * @returns {string}
+ */
+export function inspectorName(doc, selection) {
+  const target = inspectorTarget(doc, selection);
+  const named = (kind, name) => (name ? `${kind} ${name}` : kind);
+
+  switch (target?.kind) {
+    case 'document':
+      return named('diagram', target.data.name);
+    case 'edge':
+      return elementName(doc, 'edges', doc.edges.indexOf(target.target));
+    case 'device':
+      return named('device', target.data.hostname);
+    case 'switch':
+      return named('network', target.data.name);
+    case 'group':
+      return named('group', target.data.title);
+    case 'note':
+      return 'note';
+    case 'shape':
+    case 'icon':
+    case 'line':
+      return named(target.title.toLowerCase(), target.data.label);
+    default:
+      return 'element';
+  }
+}
+
+// A value as it compares for formDataChanged(): object keys in one order,
+// and without the keys of empty and unset fields.
+function comparable(value) {
+  if (Array.isArray(value)) {
+    return value.map(comparable);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value)
+        .filter((key) => value[key] !== undefined && value[key] !== '')
+        .sort()
+        .map((key) => [key, comparable(value[key])]),
+    );
+  }
+
+  return value;
+}
+
+/**
+ * Whether an Inspector working copy differs from the element's data, so
+ * that Apply has something to change. inspectorTarget shows an unset text
+ * field as '', but a field emptied in the form loses its key. So the two
+ * count as the same. Key order does not count either: a field emptied and
+ * filled again comes back as the last key.
+ *
+ * @param {object} data working copy
+ * @param {object} base the element's data, from inspectorTarget
+ * @returns {boolean}
+ */
+export function formDataChanged(data, base) {
+  return (
+    JSON.stringify(comparable(data ?? {})) !==
+    JSON.stringify(comparable(base ?? {}))
+  );
+}
+
+// Whether two values are the same edit. As in formDataChanged, an unset
+// text field is the same as an empty one.
+function same(a, b) {
+  return !formDataChanged({ value: a }, { value: b });
+}
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+// The value at a JSON Forms data path ("spec.hardware.memory").
+function valueAt(data, path) {
+  return String(path)
+    .split('.')
+    .reduce(
+      (value, key) =>
+        value !== null && typeof value === 'object' ? value[key] : undefined,
+      data,
+    );
+}
+
+/**
+ * Whether a working copy changed a field from the element's data, for the
+ * mark on the field. Lists and groups are not marked, but the fields in
+ * them are. An unset field is the same as an empty one. With a key, the
+ * field is a map (advanced settings, labels, annotations), and its entry
+ * of that key is marked: added, removed or given another value.
+ *
+ * @param {object} data working copy
+ * @param {object} base the element's data, from inspectorTarget
+ * @param {string} path the field's data path
+ * @param {string} [key] an entry's key, which may hold dots
+ * @returns {boolean}
+ */
+export function fieldChanged(data, base, path, key) {
+  const [edited, was] = [valueAt(data, path), valueAt(base, path)];
+
+  if (key !== undefined) {
+    const has = (map) => isRecord(map) && Object.hasOwn(map, key);
+
+    return (
+      has(edited) !== has(was) ||
+      !same(
+        has(edited) ? edited[key] : undefined,
+        has(was) ? was[key] : undefined,
+      )
+    );
+  }
+
+  const container = (value) => value !== null && typeof value === 'object';
+
+  return !container(edited) && !container(was) && !same(edited, was);
+}
+
+// A list whose items each have a name that no other item has: interfaces,
+// rulesets. The name identifies each such item.
+function isNamedList(list) {
+  const names = list.map((item) => (isRecord(item) ? item.name : undefined));
+
+  return (
+    names.every((name) => typeof name === 'string' && name !== '') &&
+    new Set(names).size === names.length
+  );
+}
+
+// Merges a named list:
+// - The working copy's edits of each item go to the current item of that
+//   name.
+// - An item that it renamed keeps its place.
+// - An item that it added is appended.
+// - An item that it removed is removed.
+// Items added after the working copy was taken stay, and items removed
+// after it stay removed. While the element's list still has the items it
+// had, the working copy's order wins.
+function mergeNamedLists(base, edited, current) {
+  const baseNames = base.map((item) => item.name);
+  const editedNames = edited.map((item) => item.name);
+  const currentNames = current.map((item) => item.name);
+  const now = new Map(current.map((item) => [item.name, item]));
+  // The item of `base` that each edited item was, by name. When its name
+  // is new and the name of the item at its place is gone, it is that item
+  // (a rename).
+  const origin = edited.map((item, index) => {
+    if (baseNames.includes(item.name)) {
+      return base[baseNames.indexOf(item.name)];
+    }
+
+    const there = base[index];
+
+    return there && !editedNames.includes(there.name) ? there : undefined;
+  });
+  const merge = (index) => {
+    const was = origin[index];
+
+    return was
+      ? mergeFormData(was, edited[index], now.get(was.name) ?? was)
+      : mergeFormData(undefined, edited[index], now.get(edited[index].name));
+  };
+
+  if (same(currentNames, baseNames)) {
+    return edited.map((_, index) => merge(index));
+  }
+
+  // Each edited item is merged once, with the first current item that it
+  // matches.
+  const used = new Set();
+  const mergeOnce = (index, item) => {
+    if (index === -1 || used.has(index)) {
+      return item;
+    }
+
+    used.add(index);
+
+    return merge(index);
+  };
+  const kept = current.flatMap((item) => {
+    if (!baseNames.includes(item.name)) {
+      return [mergeOnce(editedNames.indexOf(item.name), item)];
+    }
+
+    const index = origin.findIndex((was) => was?.name === item.name);
+
+    return index === -1 ? [] : [mergeOnce(index, item)];
+  });
+  const added = edited
+    .map((_, index) => index)
+    .filter((index) => !used.has(index) && !origin[index])
+    .map((index) => merge(index));
+
+  return [...kept, ...added];
+}
+
+/**
+ * The Inspector's edits merged into the element as it is now: what the
+ * working copy changed from the data it was taken from, each field
+ * separately, over the element's current data. Thus an edit made elsewhere
+ * while the form had unapplied edits (an interface added and connected on
+ * the canvas, a rename in the outline) stays when they are applied. The
+ * working copy does not replace it. Where both changed a field, the
+ * working copy's value wins. Named list items (interfaces) are matched by
+ * name, and other list items by place while no list changed length.
+ *
+ * @param {unknown} base the element's data when the working copy was taken
+ * @param {unknown} edited the working copy
+ * @param {unknown} current the element's data now
+ * @returns {unknown} the data to apply
+ */
+export function mergeFormData(base, edited, current) {
+  if (same(edited, base)) {
+    return current;
+  }
+
+  if (same(current, base)) {
+    return edited;
+  }
+
+  if (isRecord(edited) && isRecord(current)) {
+    const was = isRecord(base) ? base : {};
+    const keys = [
+      ...Object.keys(current),
+      ...Object.keys(edited).filter((key) => !(key in current)),
+    ];
+
+    return Object.fromEntries(
+      keys
+        .map((key) => [key, mergeFormData(was[key], edited[key], current[key])])
+        .filter(([, value]) => value !== undefined),
+    );
+  }
+
+  if (Array.isArray(base) && Array.isArray(edited) && Array.isArray(current)) {
+    if (isNamedList(base) && isNamedList(edited) && isNamedList(current)) {
+      return mergeNamedLists(base, edited, current);
+    }
+
+    if (base.length === edited.length && base.length === current.length) {
+      return edited.map((item, index) =>
+        mergeFormData(base[index], item, current[index]),
+      );
+    }
+  }
+
+  return edited;
+}
+
+/**
+ * Whether the Inspector keeps its working copy when the document changes
+ * below it (a layout, an outline edit, an undo), instead of a new load of
+ * the element's data into the form. It keeps the copy while the form holds
+ * user input that a reload would lose or cut short.
+ *
+ * @param {object} state
+ * @param {boolean} [state.dirty] the working copy has edits not applied
+ * @param {boolean} [state.typing] a text field holds text it has not
+ *   committed, or focus has not settled since it was left
+ * @param {boolean} [state.held] focus is on Apply or Cancel
+ * @param {boolean} [state.holding] a device's look stepped to with keys
+ *   waits to be committed
+ * @param {boolean} [state.unsent] JSON Forms holds a change it has not sent
+ * @param {number} [state.problems] how many problems renderers report for
+ *   rows they hold back from the working copy
+ * @returns {boolean}
+ */
+export function keepsWorkingCopy({
+  dirty = false,
+  typing = false,
+  held = false,
+  holding = false,
+  unsent = false,
+  problems = 0,
+} = {}) {
+  return Boolean(dirty || typing || held || holding || unsent || problems > 0);
+}
+
+// A copy of a JSON value, which shares nothing with it.
+function copyOf(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+// `next`, with each part that is the same as in `kept` taken from `kept`,
+// and the other parts copied. A form's field whose data is the same object
+// as before keeps what it holds, and does not show its data again.
+function keptWhereSame(kept, next) {
+  if (same(kept, next)) {
+    return kept;
+  }
+
+  if (isRecord(kept) && isRecord(next)) {
+    return Object.fromEntries(
+      Object.entries(next).map(([key, value]) => [
+        key,
+        keptWhereSame(kept[key], value),
+      ]),
+    );
+  }
+
+  if (
+    Array.isArray(kept) &&
+    Array.isArray(next) &&
+    kept.length === next.length
+  ) {
+    return next.map((item, index) => keptWhereSame(kept[index], item));
+  }
+
+  return copyOf(next);
+}
+
+/**
+ * The working copy moved onto the element as it is now, for a document
+ * that changed while the Inspector keeps its working copy (see
+ * keepsWorkingCopy). A change made elsewhere to a field that the working
+ * copy did not change shows in the form, and Apply does not restore the
+ * old value. The working copy's own edits stay (see mergeFormData). The
+ * parts of the working copy that do not change are the same objects, so
+ * the fields that show them keep what they hold. The parts that come from
+ * the element are copies, which share nothing with the document.
+ *
+ * @param {object} loaded the element's data the working copy was taken from
+ * @param {object} draft the working copy
+ * @param {object|undefined} current the element's data now
+ * @returns {{loaded: object, draft: object}|null} the data to load and the
+ *   working copy. null when the element's data is as it was, or the
+ *   element is gone
+ */
+export function rebasedWorkingCopy(loaded, draft, current) {
+  if (current === undefined || !formDataChanged(current, loaded)) {
+    return null;
+  }
+
+  return {
+    loaded: copyOf(current),
+    draft: keptWhereSame(draft, mergeFormData(loaded, draft, current)),
+  };
+}
+
+/**
+ * Applies an Inspector working copy to the document.
+ *
+ * @param {object} doc
+ * @param {{type: string, id?: string}} selection
+ * @param {object} data working copy
+ * @returns {object} document
+ */
+export function applyFormData(doc, selection, data) {
+  const target = inspectorTarget(doc, selection);
+
+  if (!target) {
+    return doc;
+  }
+
+  switch (target.kind) {
+    case 'document':
+      // An emptied Description has no key in the form, and clears it.
+      return setDocumentInfo(doc, {
+        name: data.name,
+        description: data.description ?? '',
+      });
+    case 'edge':
+      // An emptied field has no key in the form, and removes its value.
+      return updateEdge(doc, target.target.id, {
+        label: data.label ?? '',
+        color: data.color ?? '',
+        lineStyle: data.lineStyle ?? '',
+      });
+    case 'device':
+      return updateNode(doc, target.target.id, {
+        device: {
+          hostname: data.hostname,
+          ...lookOf(data),
+          spec: clone(data.spec),
+        },
+      });
+    case 'switch': {
+      const network =
+        target.network || findNetwork(doc, target.target.switch?.networkId);
+
+      if (!network) {
+        return doc;
+      }
+
+      // The network's fields, then the switch node's own colors, icon size
+      // and notes, as one document and so one Undo step. Notes that the
+      // form emptied are removed. An icon size that the form emptied is the
+      // diagram's.
+      return updateNode(
+        updateNetwork(doc, network.id, {
+          name: data.name,
+          alias: data.alias === undefined ? null : data.alias,
+          description: data.description ?? '',
+          color: data.color ?? '',
+          lineStyle: data.lineStyle ?? '',
+        }),
+        target.target.id,
+        {
+          switch: {
+            outlineColor: data.outlineColor ?? '',
+            fillColor: data.fillColor ?? '',
+            iconSize: data.iconSize ?? '',
+            notes: Array.isArray(data.notes) ? data.notes : [],
+          },
+        },
+      );
+    }
+    case 'note':
+      return updateNode(doc, target.target.id, {
+        note: { text: data.text ?? '', color: data.color ?? '' },
+      });
+    case 'group':
+      // updateNode keeps the group's other fields, such as `collapsed`.
+      return updateNode(doc, target.target.id, {
+        group: {
+          title: data.title ?? '',
+          description: data.description ?? '',
+          color: data.color ?? '',
+          borderStyle: data.borderStyle ?? '',
+          iconKey: data.iconKey ?? '',
+          icon: data.icon ?? '',
+          iconSize: data.iconSize ?? '',
+        },
+      });
+    case 'shape':
+      return updateNode(doc, target.target.id, {
+        shape: {
+          shape: data.shape,
+          label: data.label ?? '',
+          fillColor: data.fillColor ?? '',
+          outlineColor: data.outlineColor ?? '',
+          borderStyle: data.borderStyle ?? '',
+        },
+        ...formSize(target, data),
+      });
+    case 'icon':
+      // A custom icon is drawn in place of the built-in one, which the node
+      // then no longer names (see drawnIcon in model.js).
+      return updateNode(doc, target.target.id, {
+        icon: {
+          iconKey: data.icon ? '' : data.iconKey || '',
+          icon: data.icon ?? '',
+          label: data.label ?? '',
+        },
+        ...formSize(target, data),
+      });
+    case 'line': {
+      const { position } = target.target;
+
+      // The points back relative to the line, which then moves to their
+      // top left corner (see placedLine in model.js).
+      return updateNode(doc, target.target.id, {
+        line: {
+          label: data.label ?? '',
+          color: data.color ?? '',
+          lineStyle: data.lineStyle ?? '',
+          startArrow: data.startArrow === true,
+          endArrow: data.endArrow === true,
+          points: (data.points || []).map((point) => ({
+            x: Number(point?.x) - position.x,
+            y: Number(point?.y) - position.y,
+          })),
+        },
+      });
+    }
+    default:
+      return doc;
+  }
+}
+
+// The size that a form for a shape or an icon sets, when its Width and
+// Height hold one. An emptied field keeps the node's value.
+function formSize(target, data) {
+  const size = sizeOf(target.target);
+  const width = Number.isFinite(data.width) && data.width > 0;
+  const height = Number.isFinite(data.height) && data.height > 0;
+
+  return {
+    size: {
+      width: width ? data.width : size.width,
+      height: height ? data.height : size.height,
+    },
+  };
+}
+
+// The name that an issue message uses for a document element: "device
+// web-01", not the validator's nodes[3].
+function elementName(doc, collection, index) {
+  if (collection === 'networks') {
+    const network = doc.networks?.[index];
+
+    return network?.name ? `network ${network.name}` : `network #${index + 1}`;
+  }
+
+  if (collection === 'edges') {
+    const edge = doc.edges?.[index];
+    const device = (doc.nodes || []).find(
+      (node) => node.id === edge?.sourceNodeId,
+    );
+    const network = findNetwork(doc, edge?.networkId);
+    const handle = deviceHandles(device).find(
+      (entry) => entry.id === edge?.sourceHandleId,
+    );
+    const hostname = device?.device?.hostname || 'a device';
+    const from = handle?.name ? `${hostname} (${handle.name})` : hostname;
+
+    return device && network
+      ? `connection from ${from} to ${network.name}`
+      : `connection #${index + 1}`;
+  }
+
+  const nodes = doc.nodes || [];
+  const node = nodes[index];
+
+  switch (node?.kind) {
+    case 'device': {
+      // Devices are numbered among devices. The number shows when the
+      // hostname alone does not identify the device.
+      const devices = nodes.filter((entry) => entry.kind === 'device');
+      const number = `#${devices.indexOf(node) + 1}`;
+      const hostname = String(node.device?.hostname || '').trim();
+      const shared = devices.some(
+        (entry) =>
+          entry !== node &&
+          String(entry.device?.hostname || '')
+            .trim()
+            .toLowerCase() === hostname.toLowerCase(),
+      );
+
+      if (!hostname) {
+        return `device ${number}`;
+      }
+
+      return shared ? `device ${hostname} ${number}` : `device ${hostname}`;
+    }
+    case 'switch':
+      return `switch ${networkOfSwitch(doc, node)?.name || `#${index + 1}`}`;
+    case 'group':
+      return node.group?.title ? `group ${node.group.title}` : 'a group';
+    case 'note':
+      return 'a note';
+    case 'shape':
+    case 'icon':
+    case 'line': {
+      const kind = kindLabel(node).toLowerCase();
+      const label = node[node.kind]?.label;
+
+      return label ? `${kind} ${label}` : `a ${kind}`;
+    }
+    default:
+      return `node #${index + 1}`;
+  }
+}
+
+/**
+ * The text the Inspector shows for a document issue. validate.js reports
+ * elements by index, in the server's path form, so this names them.
+ *
+ * @param {object} doc
+ * @param {{path: string, message: string}} issue
+ * @returns {string} for example 'Device web #2: duplicate hostname "web"
+ *   (also device web #1)'
+ */
+export function issueText(doc, issue) {
+  const refer = (_, collection, index) =>
+    elementName(doc, collection, Number(index));
+  const message = String(issue.message || '').replace(
+    /\b(nodes|networks|edges)\[(\d+)\]/g,
+    refer,
+  );
+  const subject = /^(nodes|networks|edges)\[(\d+)\]/.exec(issue.path || '');
+
+  if (!subject) {
+    return message;
+  }
+
+  const name = refer('', subject[1], subject[2]);
+
+  return `${name[0].toUpperCase()}${name.slice(1)}: ${message}`;
+}

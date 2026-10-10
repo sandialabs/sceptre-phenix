@@ -1,0 +1,47 @@
+<!--
+  Icon node: a built-in or custom icon drawn on the canvas, with no phenix
+  semantics and never published. The icon scales to fit the node's box,
+  less a line under it for the label when the node has one. Vue Flow's
+  wrapper is the focusable, named element (see DeviceNode.vue). A custom
+  icon is drawn as BuilderIcon draws one: from the document's copy of it,
+  or from the icon library's icon of that name (data.iconSrc, see
+  toFlowNodes). When neither source resolves it, the node shows the
+  built-in icon of the kind.
+-->
+<template>
+  <div
+    class="builder-node builder-node--icon"
+    :class="{ 'is-selected': selected, 'has-resize-frame': framed }"
+    :data-node-id="id"
+    data-node-kind="icon"
+    data-testid="builder-node">
+    <span class="builder-node__figure">
+      <builder-icon :name="data.iconKey" :src="data.iconSrc" size="100%" />
+    </span>
+    <span v-if="label" class="builder-node__label">{{ label }}</span>
+    <node-issue-mark v-if="data.issue" :node-id="id" :issue="data.issue" />
+    <node-resize :id="id" :node="data.node" :selected="selected" />
+  </div>
+</template>
+
+<script setup>
+  import { computed } from 'vue';
+
+  import BuilderIcon from '../BuilderIcon.vue';
+  import NodeIssueMark from './NodeIssueMark.vue';
+  import { useResizeFrame } from './canvasEditing.js';
+  import NodeResize from './NodeResize.vue';
+
+  // Vue Flow also passes its node state as attributes. None of them belong
+  // on the node's element.
+  defineOptions({ inheritAttrs: false });
+
+  const props = defineProps({
+    id: { type: String, required: true },
+    data: { type: Object, required: true },
+    selected: { type: Boolean, default: false },
+  });
+
+  const label = computed(() => props.data.node.icon?.label || '');
+  const framed = useResizeFrame(() => props.selected);
+</script>

@@ -430,6 +430,28 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		scope   = vars["branch"]
 	)
 
+	// The parse replaces ${NAME} references with the environment variables of
+	// the server, and a parse error quotes the text it failed on. Thus only a
+	// caller who may create or update configs gets to the parse. The checks for
+	// the named config below still apply.
+	if !role.Allowed("configs", "create") && !role.Allowed("configs", "update") {
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"creating or updating config not allowed",
+			"user",
+			user,
+		)
+
+		err := weberror.NewWebError(
+			nil,
+			"creating or updating configs not allowed for %s",
+			user,
+		)
+
+		return err.SetStatus(http.StatusForbidden)
+	}
+
 	dryRun, err := parseDryRun(r.URL.Query())
 	if err != nil {
 		return err
@@ -541,15 +563,8 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to update config %s", name)
 		}
 	} else {
-		if !role.Allowed("configs", "create") {
-			user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-			err := weberror.NewWebError(
-				nil,
-				"creating configs not allowed for %s",
-				user,
-			)
-
-			return err.SetStatus(http.StatusForbidden)
+		if !role.Allowed("configs", "create", name) {
+			return configForbidden(ctx, "creating", name)
 		}
 
 		cfg, err = createOrValidate(cfg, dryRun)

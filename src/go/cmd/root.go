@@ -32,6 +32,11 @@ const (
 	defaultMaxLogSize    = 100
 	defaultMaxLogBackups = 3
 	defaultMaxLogAge     = 90
+
+	// builderTemplatesSubdir is the directory below base-dir.phenix that holds
+	// the template files of the Builder, unless base-dir.builder-templates
+	// sets another directory.
+	builderTemplatesSubdir = "builder/templates"
 )
 
 var (
@@ -151,6 +156,11 @@ var rootCmd = &cobra.Command{
 			getEffectiveString("base-dir.topologies", cmd.Flags().Changed("base-dir.topologies")),
 			common.PhenixBase,
 			"topologies",
+		)
+		common.BuilderTemplatesBase = derivedBaseDir( //nolint:reassign // configuration injection
+			getEffectiveString("base-dir.builder-templates", cmd.Flags().Changed("base-dir.builder-templates")),
+			common.PhenixBase,
+			builderTemplatesSubdir,
 		)
 		common.MinimegaBase = getEffectiveString( //nolint:reassign // configuration injection
 			"base-dir.minimega",
@@ -413,6 +423,12 @@ func init() {
 		)
 	rootCmd.PersistentFlags().
 		String("base-dir.topologies", "", "base directory for topology directories (default: <base-dir.phenix>/topologies)")
+	rootCmd.PersistentFlags().
+		String(
+			"base-dir.builder-templates", "",
+			"directory of the Builder template files phenix ui reads at start "+
+				"(default: <base-dir.phenix>/builder/templates)",
+		)
 	rootCmd.PersistentFlags().
 		StringVar(&mountDir, "mount-dir", "", "base directory for VM filesystem mounts (default: <base-dir.phenix>/mounts)")
 	rootCmd.PersistentFlags().

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "metadata": {
+    "id": "64e9b47e-52ea-5933-8c84-f07e03777abe",
+    "name": "variables"
+  },
+  "nodes": [
+    {
+      "id": "e4083fd4-b36a-513b-b3e1-0d23d221c37e",
+      "kind": "device",
+      "label": "vars-1",
+      "position": {
+        "x": 80,
+        "y": 112
+      },
+      "device": {
+        "hostname": "vars-1",
+        "iconKey": "server",
+        "spec": {
+          "$DEFAULT_VCPU": "a key is left alone",
+          "advanced": {
+            "nested": [
+              "$OTHER_UNKNOWN",
+              {
+                "deep": "vyos.qc2"
+              }
+            ]
+          },
+          "commands": [
+            "cd $HOME \u0026\u0026 ls",
+            "$UNKNOWN",
+            "$also_not_one",
+            "${DEFAULT_VCPU}",
+            "3"
+          ],
+          "general": {
+            "description": "4 cores of custom.qc2",
+            "hostname": "vars-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "custom.qc2"
+              },
+              {
+                "image": "ubuntu.qc2"
+              },
+              {
+                "image": "prefix-only"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "4"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    }
+  ],
+  "networks": [],
+  "edges": [],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": true,
+    "size": 16,
+    "snap": true
+  },
+  "source": {
+    "kind": "manual",
+    "warnings": [
+      "Used the legacy defaults for variables the diagram does not define: $DEFAULT_MEMORY = 2048, $DEFAULT_ROUTER_IMAGE = vyos.qc2 and $DEFAULT_VM_IMAGE = ubuntu.qc2.",
+      "2 placeholders have no value in the diagram and were kept as text: $OTHER_UNKNOWN and $UNKNOWN."
+    ]
+  }
+}

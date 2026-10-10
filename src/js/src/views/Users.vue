@@ -12,6 +12,7 @@
             :type="{ 'is-danger': userExists }"
             :message="{ 'User already exists': userExists }">
             <b-input
+              ref="createUsername"
               type="text"
               v-model="user.username"
               minlength="4"
@@ -455,7 +456,7 @@
       createUser() {
         for (let i = 0; i < this.users.length; i++) {
           if (this.users[i].username == this.user.username) {
-            this.userExists = true;
+            this.showUserExists();
             return;
           }
         }
@@ -530,8 +531,6 @@
           return;
         }
 
-        delete this.user.confirmPassword;
-
         if (!this.user.role_name) {
           this.$buefy.toast.open({
             message: 'You must select a role',
@@ -542,22 +541,35 @@
           return;
         }
 
-        if (this.user.resource_names) {
-          this.user.resource_names = this.user.resource_names.split(' ');
+        // The request is a copy, so the dialog keeps what was typed when
+        // the server refuses it.
+        const user = { ...this.user };
+        delete user.confirmPassword;
+
+        if (user.resource_names) {
+          user.resource_names = user.resource_names.split(' ');
         }
 
         this.isWaiting = true;
 
         axiosInstance
-          .post('users', this.user)
+          .post('users', user)
           .then((_) => {
             this.isWaiting = false;
             this.resetLocalUser();
             this.isCreateActive = false;
           })
           .catch((err) => {
-            useErrorNotification(err);
             this.isWaiting = false;
+
+            // A user the list did not show yet has the name.
+            if (err.response?.status === 409) {
+              this.showUserExists();
+
+              return;
+            }
+
+            useErrorNotification(err);
           });
       },
       editUser(username) {
@@ -725,6 +737,17 @@
       resetLocalUser() {
         this.user = {};
       },
+      // Another user has the name: the User Name field says so, a toast
+      // announces it, and focus goes back to the field.
+      showUserExists() {
+        this.userExists = true;
+        this.$buefy.toast.open({
+          message: 'User already exists',
+          type: 'is-warning',
+          duration: 4000,
+        });
+        this.$refs.createUsername?.focus();
+      },
       check_password_validity() {
         const password = this.user.password;
         if (password == undefined) {
@@ -777,6 +800,14 @@
         axiosInstance.get('settings/password').then((response) => {
           this.passwordReqs = response.data;
         });
+      },
+    },
+
+    watch: {
+      // After the user changes the name, the form does not know if it is
+      // taken.
+      'user.username'() {
+        this.userExists = false;
       },
     },
 

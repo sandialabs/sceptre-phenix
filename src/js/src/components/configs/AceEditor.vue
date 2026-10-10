@@ -44,6 +44,7 @@
         editor: null,
         ace: null,
         isLoading: false,
+        disposed: false,
       };
     },
     async mounted() {
@@ -83,11 +84,19 @@
       );
       this.ace.config.setModuleUrl('ace/mode/yaml', modeYamlUrl.default);
 
+      if (this.disposed || !this.$refs.editor) {
+        return;
+      }
+
+      // Keyboard accessibility: Tab reaches the editor as one stop. Enter
+      // starts typing in it and Escape stops typing, so Tab moves to the
+      // next stop and does not indent (WCAG 2.1.2).
       this.editor = this.ace.edit(this.$refs.editor, {
         theme: 'ace/theme/dracula',
         mode: 'ace/mode/' + this.lang,
         useWorker: false,
         tabSize: 2,
+        enableKeyboardAccessibility: true,
       });
       if (this.vim) {
         this.editor.setKeyboardHandler('ace/keyboard/vim');
@@ -129,7 +138,9 @@
     //   this.ace.config.set('basePath', 'ace-builds/src-noconflict/');
     // },
     beforeUnmount() {
-      this.editor.destroy();
+      this.disposed = true;
+      this.editor?.destroy();
+      this.editor = null;
     },
     methods: {
       loadVimCommands() {

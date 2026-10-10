@@ -1,0 +1,564 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "metadata": {
+    "id": "c6b33e7a-a681-5522-8fd7-cbe73b75d5cc",
+    "name": "switches"
+  },
+  "nodes": [
+    {
+      "id": "86076cff-3aa1-5f66-bb80-1e3826d77ac3",
+      "kind": "device",
+      "label": "host-a",
+      "position": {
+        "x": 80,
+        "y": 112
+      },
+      "device": {
+        "hostname": "host-a",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "host-a"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "v0"
+              },
+              {
+                "name": "eth1",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "v101"
+              },
+              {
+                "name": "eth2",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "vauto"
+              },
+              {
+                "name": "eth3",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "vtext"
+              },
+              {
+                "name": "eth4",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "v5000"
+              },
+              {
+                "name": "eth5",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "vneg"
+              },
+              {
+                "name": "eth6",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "vfrac"
+              },
+              {
+                "name": "eth7",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "dupid"
+              },
+              {
+                "name": "eth8",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "my-lan"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "e304cf75-9474-57f7-a95c-5cf0c4c38513",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "2a9b3ee7-06ee-50d8-b94f-0f775427f428",
+            "name": "eth1",
+            "index": 1
+          },
+          {
+            "id": "bc502bc2-81f4-566b-81bc-c49176b2c167",
+            "name": "eth2",
+            "index": 2
+          },
+          {
+            "id": "3ef671a1-5a43-569e-b82a-4c161919141f",
+            "name": "eth3",
+            "index": 3
+          },
+          {
+            "id": "a1cea244-0e60-5ab4-92cd-b93c20cc9d20",
+            "name": "eth4",
+            "index": 4
+          },
+          {
+            "id": "ad87bbcf-3f77-556d-b233-7393a92d6c70",
+            "name": "eth5",
+            "index": 5
+          },
+          {
+            "id": "959955d7-c929-5c5e-a62f-074c4dae4f5d",
+            "name": "eth6",
+            "index": 6
+          },
+          {
+            "id": "e5619c9c-90d4-5c68-aa94-3e7546920f7c",
+            "name": "eth7",
+            "index": 7
+          },
+          {
+            "id": "5017bf3b-92c9-5e38-8bc8-90dfca166e75",
+            "name": "eth8",
+            "index": 8
+          }
+        ]
+      }
+    },
+    {
+      "id": "4aec70c0-6c9f-54ff-a13c-70006678d335",
+      "kind": "device",
+      "label": "host-b",
+      "position": {
+        "x": 80,
+        "y": 832
+      },
+      "device": {
+        "hostname": "host-b",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "host-b"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "twin"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "d7879159-1c1e-512a-832a-1bef99c158fe",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "6504e02b-1ae0-5efa-870b-b169ed9371a5",
+      "kind": "device",
+      "label": "host-c",
+      "position": {
+        "x": 800,
+        "y": 832
+      },
+      "device": {
+        "hostname": "host-c",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "host-c"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "twin"
+              },
+              {
+                "name": "eth1",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "twin"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "a8d1bde9-0e80-5db3-9763-90b810563642",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "f891f152-8a80-57d0-b8c1-ab050d00f1de",
+            "name": "eth1",
+            "index": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "95cda30b-30ce-5971-9bf9-d29a1080512b",
+      "kind": "switch",
+      "label": "dupid",
+      "position": {
+        "x": 1792,
+        "y": 128
+      },
+      "switch": {
+        "networkId": "43bd59fd-0468-57fb-8297-cbcf94f895b3"
+      }
+    },
+    {
+      "id": "11f4835f-c058-5592-848e-9b3e2fb3a5ed",
+      "kind": "switch",
+      "label": "my-lan",
+      "position": {
+        "x": 1984,
+        "y": 128
+      },
+      "switch": {
+        "networkId": "47deeafa-78c4-57e3-92c0-f7dc6ac31ecd"
+      }
+    },
+    {
+      "id": "2940e10a-63f4-5cc7-9133-fa52d1568e32",
+      "kind": "switch",
+      "label": "twin",
+      "position": {
+        "x": 384,
+        "y": 848
+      },
+      "switch": {
+        "networkId": "76c772ef-4b3b-5175-9a81-269d1f2ce534"
+      }
+    },
+    {
+      "id": "1b982404-d16c-58ec-81ec-bbb711affdb9",
+      "kind": "switch",
+      "label": "v0",
+      "position": {
+        "x": 384,
+        "y": 128
+      },
+      "switch": {
+        "networkId": "78577517-2f4e-52a2-ad2b-05cbc7bf313e"
+      }
+    },
+    {
+      "id": "d77dc638-29e8-5884-8e80-5fde43589cbc",
+      "kind": "switch",
+      "label": "v101",
+      "position": {
+        "x": 592,
+        "y": 128
+      },
+      "switch": {
+        "networkId": "ee547655-2ed4-53e2-a175-f00c1e5d61c4"
+      }
+    },
+    {
+      "id": "6814e781-f6f4-576a-bf20-344c2bee40f2",
+      "kind": "switch",
+      "label": "v5000",
+      "position": {
+        "x": 1184,
+        "y": 128
+      },
+      "switch": {
+        "networkId": "e2a6a51d-32a4-532a-9f47-f9a10e29681c"
+      }
+    },
+    {
+      "id": "ae126cd5-2ae6-5777-9bc5-7c61aca3c18e",
+      "kind": "switch",
+      "label": "vauto",
+      "position": {
+        "x": 784,
+        "y": 128
+      },
+      "switch": {
+        "networkId": "1a8bd115-e9e7-59ea-a5f0-368721c99b24"
+      }
+    },
+    {
+      "id": "13410748-0645-5379-9382-a3ee7dbeb052",
+      "kind": "switch",
+      "label": "vfrac",
+      "position": {
+        "x": 1584,
+        "y": 128
+      },
+      "switch": {
+        "networkId": "67de21a2-1b17-504c-842c-f00c953aed57"
+      }
+    },
+    {
+      "id": "ea1a6b40-05da-5c01-9302-eb24d9d0e778",
+      "kind": "switch",
+      "label": "vneg",
+      "position": {
+        "x": 1392,
+        "y": 128
+      },
+      "switch": {
+        "networkId": "3214e931-7b87-5432-a4a6-da9ec031e568"
+      }
+    },
+    {
+      "id": "69a58e62-89ed-5c37-a9fa-bf842c11159d",
+      "kind": "switch",
+      "label": "vtext",
+      "position": {
+        "x": 992,
+        "y": 128
+      },
+      "switch": {
+        "networkId": "049b2dec-d709-5e4b-8021-fed95b40ee24"
+      }
+    },
+    {
+      "id": "acd1db43-43b0-5215-94bb-9e026c74e285",
+      "kind": "switch",
+      "label": "twin",
+      "position": {
+        "x": 1104,
+        "y": 848
+      },
+      "switch": {
+        "networkId": "76c772ef-4b3b-5175-9a81-269d1f2ce534"
+      }
+    },
+    {
+      "id": "a05ee819-9a09-5bdf-b1f5-dc0d423ea912",
+      "kind": "switch",
+      "label": "lonely",
+      "position": {
+        "x": 384,
+        "y": 1248
+      },
+      "switch": {
+        "networkId": "c2d95470-07a1-5746-9438-19b79125bc6f"
+      }
+    },
+    {
+      "id": "1000949d-91d5-5928-a25c-a64052cd71a9",
+      "kind": "switch",
+      "label": "labelled",
+      "position": {
+        "x": 784,
+        "y": 1248
+      },
+      "switch": {
+        "networkId": "d23986c8-4bc1-57a8-9677-da2aef010b85"
+      }
+    }
+  ],
+  "networks": [
+    {
+      "id": "43bd59fd-0468-57fb-8297-cbcf94f895b3",
+      "name": "dupid"
+    },
+    {
+      "id": "d23986c8-4bc1-57a8-9677-da2aef010b85",
+      "name": "labelled"
+    },
+    {
+      "id": "c2d95470-07a1-5746-9438-19b79125bc6f",
+      "name": "lonely"
+    },
+    {
+      "id": "47deeafa-78c4-57e3-92c0-f7dc6ac31ecd",
+      "name": "my-lan"
+    },
+    {
+      "id": "76c772ef-4b3b-5175-9a81-269d1f2ce534",
+      "name": "twin",
+      "alias": 300
+    },
+    {
+      "id": "78577517-2f4e-52a2-ad2b-05cbc7bf313e",
+      "name": "v0"
+    },
+    {
+      "id": "ee547655-2ed4-53e2-a175-f00c1e5d61c4",
+      "name": "v101",
+      "alias": 101
+    },
+    {
+      "id": "e2a6a51d-32a4-532a-9f47-f9a10e29681c",
+      "name": "v5000"
+    },
+    {
+      "id": "1a8bd115-e9e7-59ea-a5f0-368721c99b24",
+      "name": "vauto"
+    },
+    {
+      "id": "67de21a2-1b17-504c-842c-f00c953aed57",
+      "name": "vfrac"
+    },
+    {
+      "id": "3214e931-7b87-5432-a4a6-da9ec031e568",
+      "name": "vneg"
+    },
+    {
+      "id": "049b2dec-d709-5e4b-8021-fed95b40ee24",
+      "name": "vtext",
+      "alias": 102
+    }
+  ],
+  "edges": [
+    {
+      "id": "02f045d6-8831-577b-b8d1-c920b1567fd4",
+      "sourceNodeId": "6504e02b-1ae0-5efa-870b-b169ed9371a5",
+      "sourceHandleId": "a8d1bde9-0e80-5db3-9763-90b810563642",
+      "targetNodeId": "2940e10a-63f4-5cc7-9133-fa52d1568e32",
+      "networkId": "76c772ef-4b3b-5175-9a81-269d1f2ce534"
+    },
+    {
+      "id": "115ef92e-2653-5b98-866c-b6b54be3884d",
+      "sourceNodeId": "86076cff-3aa1-5f66-bb80-1e3826d77ac3",
+      "sourceHandleId": "e304cf75-9474-57f7-a95c-5cf0c4c38513",
+      "targetNodeId": "1b982404-d16c-58ec-81ec-bbb711affdb9",
+      "networkId": "78577517-2f4e-52a2-ad2b-05cbc7bf313e"
+    },
+    {
+      "id": "4101fc10-265b-5736-a3a8-18b65865ecb3",
+      "sourceNodeId": "86076cff-3aa1-5f66-bb80-1e3826d77ac3",
+      "sourceHandleId": "2a9b3ee7-06ee-50d8-b94f-0f775427f428",
+      "targetNodeId": "d77dc638-29e8-5884-8e80-5fde43589cbc",
+      "networkId": "ee547655-2ed4-53e2-a175-f00c1e5d61c4"
+    },
+    {
+      "id": "4e6c38a6-082a-5143-ace8-a64f61c01286",
+      "sourceNodeId": "4aec70c0-6c9f-54ff-a13c-70006678d335",
+      "sourceHandleId": "d7879159-1c1e-512a-832a-1bef99c158fe",
+      "targetNodeId": "2940e10a-63f4-5cc7-9133-fa52d1568e32",
+      "networkId": "76c772ef-4b3b-5175-9a81-269d1f2ce534"
+    },
+    {
+      "id": "57950275-5f8f-5a27-a006-edb0dc8142b6",
+      "sourceNodeId": "86076cff-3aa1-5f66-bb80-1e3826d77ac3",
+      "sourceHandleId": "e5619c9c-90d4-5c68-aa94-3e7546920f7c",
+      "targetNodeId": "95cda30b-30ce-5971-9bf9-d29a1080512b",
+      "networkId": "43bd59fd-0468-57fb-8297-cbcf94f895b3"
+    },
+    {
+      "id": "77af753f-b43d-57ae-b864-2cd75c6d3496",
+      "sourceNodeId": "86076cff-3aa1-5f66-bb80-1e3826d77ac3",
+      "sourceHandleId": "ad87bbcf-3f77-556d-b233-7393a92d6c70",
+      "targetNodeId": "ea1a6b40-05da-5c01-9302-eb24d9d0e778",
+      "networkId": "3214e931-7b87-5432-a4a6-da9ec031e568"
+    },
+    {
+      "id": "95c7a8a8-99a3-5c38-8cca-9d87281ca736",
+      "sourceNodeId": "86076cff-3aa1-5f66-bb80-1e3826d77ac3",
+      "sourceHandleId": "5017bf3b-92c9-5e38-8bc8-90dfca166e75",
+      "targetNodeId": "11f4835f-c058-5592-848e-9b3e2fb3a5ed",
+      "networkId": "47deeafa-78c4-57e3-92c0-f7dc6ac31ecd"
+    },
+    {
+      "id": "a3883542-8847-556a-a2b4-373cd62f94cc",
+      "sourceNodeId": "6504e02b-1ae0-5efa-870b-b169ed9371a5",
+      "sourceHandleId": "f891f152-8a80-57d0-b8c1-ab050d00f1de",
+      "targetNodeId": "acd1db43-43b0-5215-94bb-9e026c74e285",
+      "networkId": "76c772ef-4b3b-5175-9a81-269d1f2ce534"
+    },
+    {
+      "id": "abd7a0cb-b3e1-59d2-b41f-1e28835a9b02",
+      "sourceNodeId": "86076cff-3aa1-5f66-bb80-1e3826d77ac3",
+      "sourceHandleId": "959955d7-c929-5c5e-a62f-074c4dae4f5d",
+      "targetNodeId": "13410748-0645-5379-9382-a3ee7dbeb052",
+      "networkId": "67de21a2-1b17-504c-842c-f00c953aed57"
+    },
+    {
+      "id": "bd2abbfc-ce4c-5ca0-88a9-6cecdd5fae8c",
+      "sourceNodeId": "86076cff-3aa1-5f66-bb80-1e3826d77ac3",
+      "sourceHandleId": "a1cea244-0e60-5ab4-92cd-b93c20cc9d20",
+      "targetNodeId": "6814e781-f6f4-576a-bf20-344c2bee40f2",
+      "networkId": "e2a6a51d-32a4-532a-9f47-f9a10e29681c"
+    },
+    {
+      "id": "dc52acc0-5e1c-5677-b111-1054e56e1e00",
+      "sourceNodeId": "86076cff-3aa1-5f66-bb80-1e3826d77ac3",
+      "sourceHandleId": "bc502bc2-81f4-566b-81bc-c49176b2c167",
+      "targetNodeId": "ae126cd5-2ae6-5777-9bc5-7c61aca3c18e",
+      "networkId": "1a8bd115-e9e7-59ea-a5f0-368721c99b24"
+    },
+    {
+      "id": "ec198cbe-e178-5563-81b4-d5ce20e128b6",
+      "sourceNodeId": "86076cff-3aa1-5f66-bb80-1e3826d77ac3",
+      "sourceHandleId": "3ef671a1-5a43-569e-b82a-4c161919141f",
+      "targetNodeId": "69a58e62-89ed-5c37-a9fa-bf842c11159d",
+      "networkId": "049b2dec-d709-5e4b-8021-fed95b40ee24"
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": true,
+    "size": 16,
+    "snap": true
+  },
+  "source": {
+    "kind": "manual",
+    "warnings": [
+      "VLAN ID 5000 of network v5000 is not a number from 1 to 4094 and was left out.",
+      "VLAN ID -1 of network vneg is not a number from 1 to 4094 and was left out.",
+      "VLAN ID 1.5 of network vfrac is not a number from 1 to 4094 and was left out.",
+      "Network twin has more than one VLAN ID in the legacy diagram. The first, 300, was kept.",
+      "VLAN ID 101 is used by networks v101 and dupid. It was kept for v101 only.",
+      "1 item has settings that could not be read and was left out: cell 23.",
+      "Renamed network \"my lan\" to \"my-lan\": a network name cannot hold spaces."
+    ]
+  }
+}

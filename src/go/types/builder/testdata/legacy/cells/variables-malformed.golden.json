@@ -1,0 +1,82 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "metadata": {
+    "id": "23756020-7f3b-5590-955e-8f0bd4d6b639",
+    "name": "variables-malformed"
+  },
+  "nodes": [
+    {
+      "id": "e4083fd4-b36a-513b-b3e1-0d23d221c37e",
+      "kind": "device",
+      "label": "vars-1",
+      "position": {
+        "x": 80,
+        "y": 112
+      },
+      "device": {
+        "hostname": "vars-1",
+        "iconKey": "server",
+        "spec": {
+          "$DEFAULT_VCPU": "a key is left alone",
+          "advanced": {
+            "nested": [
+              "$OTHER_UNKNOWN",
+              {
+                "deep": "vyos.qc2"
+              }
+            ]
+          },
+          "commands": [
+            "cd $HOME \u0026\u0026 ls",
+            "$UNKNOWN",
+            "$also_not_one",
+            "${DEFAULT_VCPU}",
+            "$COUNT"
+          ],
+          "general": {
+            "description": "1 cores of $MY_IMAGE",
+            "hostname": "vars-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "$MY_IMAGE"
+              },
+              {
+                "image": "ubuntu.qc2"
+              },
+              {
+                "image": "$DEFAULT_VM"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    }
+  ],
+  "networks": [],
+  "edges": [],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": true,
+    "size": 16,
+    "snap": true
+  },
+  "source": {
+    "kind": "manual",
+    "warnings": [
+      "Used the legacy defaults for variables the diagram does not define: $DEFAULT_MEMORY = 2048, $DEFAULT_ROUTER_IMAGE = vyos.qc2, $DEFAULT_VCPU = 1 and $DEFAULT_VM_IMAGE = ubuntu.qc2.",
+      "5 placeholders have no value in the diagram and were kept as text: $COUNT, $DEFAULT_VM, $MY_IMAGE, $OTHER_UNKNOWN and $UNKNOWN."
+    ]
+  }
+}

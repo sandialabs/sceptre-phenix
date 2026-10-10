@@ -83,6 +83,8 @@ function render(error, warnings) {
   for (const name of otherBuefyComponents) {
     app.component(name, { render: () => null });
   }
+  // A row's Builder tag is a router-link, and the test has no router.
+  app.component('router-link', { render: () => null });
   return renderToString(app);
 }
 
@@ -138,8 +140,8 @@ describe('ConfigsList upload errors', () => {
     const html = await render(openDialog, warnings);
     const closedHtml = await render(closedDialog, warnings);
 
-    // Every Buefy tag has a stub, so Vue warned about nothing, not even
-    // "Failed to resolve component".
+    // Every Buefy tag and router-link has a stub, so Vue warned about
+    // nothing, not even "Failed to resolve component".
     expect(warnings).toEqual([]);
     // Each render ran created(), which only fetches the config list.
     expect(axiosInstance.get.mock.calls).toEqual([['configs'], ['configs']]);

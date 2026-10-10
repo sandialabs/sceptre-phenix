@@ -13,6 +13,8 @@ export class TimeoutTool {
 
     this.logoutTimer = null;
     this.warnToast = null;
+    // Set while the idle logout waits on its warning (see logoutUser).
+    this.loggingOut = false;
   }
 
   fetchAndStart() {
@@ -80,20 +82,40 @@ export class TimeoutTool {
       1000 * 60 * timeLeft,
     );
   }
+  // Logs out, or first warns for a minute when Builder holds changes
+  // the server does not have (see utils/logout.js). Activity during the
+  // warning does not restart the timer. The warning's Stay signed in does.
   logoutUser() {
     if (this.warnToast) {
       this.warnToast.close();
       this.warnToast = null;
     }
-    axiosInstance.get('logout').then((resp) => {
-      if (resp.status == 204) {
-        const store = usePhenixStore();
-        store.logout();
-      }
-    });
+
+    const store = usePhenixStore();
+
+    if (!store.auth) {
+      return;
+    }
+
+    clearTimeout(this.logoutTimer);
+    this.loggingOut = true;
+    store
+      .requestLogout('idle')
+      .then((outcome) => {
+        this.loggingOut = false;
+
+        // Still signed in: the user stayed, or the server did not answer
+        // the logout. The next timeout tries the logout again.
+        if (outcome === 'stayed' || outcome === 'failed') {
+          this.resetTimer();
+        }
+      })
+      .catch(() => {
+        this.loggingOut = false;
+      });
   }
   resetTimer() {
-    if (!this.data.enabled) {
+    if (!this.data.enabled || this.loggingOut) {
       return;
     }
     if (this.warnToast) {

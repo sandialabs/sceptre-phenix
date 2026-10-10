@@ -10,11 +10,12 @@ has a matching config-file key and `PHENIX_*` env var):
 
 | Flag | Config key / Env var | Default | Description |
 |---|---|---|---|
-| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://...` or `etcd://host:port`) |
+| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://...` or `etcd://host:port`; etcd accepts `?compaction-retention=<duration>`, default `1h`, `0` disables phenix's cluster-wide history compaction) |
 | `--base-dir.phenix` | `base-dir.phenix` / `PHENIX_BASE_DIR_PHENIX` | `/phenix` | Base phēnix data directory |
 | `--base-dir.minimega` | `base-dir.minimega` / `PHENIX_BASE_DIR_MINIMEGA` | `/tmp/minimega` | Base minimega directory |
 | `--base-dir.injects` | `base-dir.injects` / `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Where `phenix workflow apply` stages `phenix-injects/` (as `<base-dir.injects>/<name>`). The server's value wins over the CLI's own unless the flag is given; see the `injects` step in [`workflow.md`](workflow.md). Use an absolute path |
 | `--base-dir.topologies` | `base-dir.topologies` / `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Where `phenix workflow apply NAME` looks up a bare topology directory name. Use an absolute path |
+| `--base-dir.builder-templates` | `base-dir.builder-templates` / `PHENIX_BASE_DIR_BUILDER_TEMPLATES` | `<base-dir.phenix>/builder/templates` | Template files `phenix ui` reads at start as read-only Builder server collections (see [`builder/templates-and-icons.md`](builder/templates-and-icons.md#server-collections)). Use an absolute path |
 | `--mount-dir` | `mount-dir` / `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts (`phenix vm mount`, UI `vm-mount` feature) |
 | `--hostname-suffixes` | `hostname-suffixes` / `PHENIX_HOSTNAME_SUFFIXES` | `-minimega,-phenix` | Hostname suffixes to strip |
 | `--log.level` | `log.level` / `PHENIX_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` — use `--log.level=debug` for verbose troubleshooting output |
@@ -43,6 +44,9 @@ VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/
 disabled by default and requires restarting `phenix ui` to take effect. The CLI
 equivalents (`phenix vm mount`/`unmount`) are always available.
 
+Scripts use the REST API below `/api/v1/builder/` for the Builder, the web
+topology editor at `/builder`. See [`builder.md`](builder.md).
+
 ## `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
 ```bash
@@ -54,6 +58,25 @@ phenix config edit <kind>/<name> [--force]          # open in $EDITOR
 phenix config delete <kind>/<name> ...              # delete one or more specific configs by kind/name
 phenix config delete all [kind]                     # delete every stored config, or every config of one kind
 ```
+
+A config written as YAML (`phenix config get -o yaml`, `phenix config edit`,
+`GET /configs/{kind}/{name}` with `Accept: application/x-yaml`, and
+`POST /configs/download`) loads as the stored config: a string yaml.v3 could
+not read back (one starting with a line break, or whose first line starts with
+a tab) is written double quoted.
+
+Annotations are text, except `builder-doc` on a Topology, which every JSON
+and YAML form of a config shows as a map of `digest`, `id` and `path` (see
+[`builder/published-documents.md`](builder/published-documents.md#the-builder-doc-reference)). A Topology
+whose `builder-doc` is not valid is refused on create and update, also with
+`--skip-validation`. `config edit` can change an annotation but not remove
+one (annotation maps merge).
+
+`config create` takes files and directories (walked recursively). A Builder
+document, template file or package is not a config. `config create` skips
+one that it finds in a directory, and refuses one named on the command line
+(see
+[Builder documents and phenix config create](https://phenix.sceptre.dev/latest/builder/import-upload-download/#builder-documents-and-phenix-config-create)).
 
 ## `phenix experiment` — experiment lifecycle
 

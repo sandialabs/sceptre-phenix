@@ -1,0 +1,1254 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "metadata": {
+    "id": "35923065-de11-56bc-9e1d-a307308716a7",
+    "name": "Riverside Water",
+    "description": "Water utility training range: internet edge, DMZ, corporate and OT networks.",
+    "createdBy": "e2e-admin",
+    "createdAt": "2026-09-29T18:17:59Z",
+    "updatedBy": "e2e-admin",
+    "updatedAt": "2026-09-29T18:31:44Z"
+  },
+  "nodes": [
+    {
+      "id": "017b57e6-1d23-5555-a576-d0cdc682109a",
+      "kind": "device",
+      "label": "edge-rtr",
+      "position": {
+        "x": 80,
+        "y": 112
+      },
+      "parentId": "1e9e77bb-ee9f-4170-af40-4f9728766fad",
+      "device": {
+        "hostname": "edge-rtr",
+        "iconKey": "router",
+        "spec": {
+          "annotations": {
+            "vrouter/enable-ssh": "eth2"
+          },
+          "general": {
+            "description": "VyOS edge router",
+            "hostname": "edge-rtr"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "vyos.qc2"
+              }
+            ],
+            "memory": 2048,
+            "os_type": "vyos",
+            "vcpus": 2
+          },
+          "labels": {
+            "zone": "edge"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "203.0.113.2",
+                "gateway": "203.0.113.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "INTERNET"
+              },
+              {
+                "address": "172.16.10.1",
+                "mask": 24,
+                "name": "eth1",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "DMZ"
+              },
+              {
+                "address": "10.10.20.1",
+                "mask": 24,
+                "name": "eth2",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CORP"
+              }
+            ],
+            "routes": [
+              {
+                "cost": 1,
+                "destination": "10.10.30.0/24",
+                "next": "10.10.20.254"
+              }
+            ]
+          },
+          "type": "Router"
+        },
+        "interfaces": [
+          {
+            "id": "eef6859b-e966-509f-ae2f-a0b7808ebd5b",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "53fe0465-90aa-5183-a04d-4ea11d5c3a47",
+            "name": "eth1",
+            "index": 1
+          },
+          {
+            "id": "255c62d3-4a76-5af2-ae04-fef96a750224",
+            "name": "eth2",
+            "index": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "6bd88f1c-f7a3-5709-817a-d4a5f96414ba",
+      "kind": "device",
+      "label": "files-01",
+      "position": {
+        "x": 1872,
+        "y": 448
+      },
+      "parentId": "813aa586-37df-43de-9cd3-ac200769ed24",
+      "device": {
+        "hostname": "files-01",
+        "iconKey": "linux",
+        "spec": {
+          "general": {
+            "description": "Corporate file server",
+            "hostname": "files-01"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": 4096,
+            "os_type": "linux",
+            "vcpus": 2
+          },
+          "labels": {
+            "role": "files",
+            "zone": "corp"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.10.20.10",
+                "dns": "10.10.20.53",
+                "gateway": "10.10.20.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CORP"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "96c09f17-a925-5789-9805-549d35e50061",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "566d4a37-ea85-5dbf-a0b0-b0355e486c07",
+      "kind": "device",
+      "label": "historian-01",
+      "position": {
+        "x": 1296,
+        "y": 464
+      },
+      "parentId": "6642f001-12ef-46e3-bee3-20d4556f172f",
+      "device": {
+        "hostname": "historian-01",
+        "iconKey": "linux",
+        "spec": {
+          "general": {
+            "description": "Process historian",
+            "hostname": "historian-01"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": 4096,
+            "os_type": "linux",
+            "vcpus": 2
+          },
+          "labels": {
+            "role": "historian",
+            "zone": "ot"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.10.30.20",
+                "gateway": "10.10.30.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "OT"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "4724ac57-cc56-5f34-96ec-d75a014ef883",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "fc15fefd-d5c3-5d03-b1d6-002f64e273ed",
+      "kind": "device",
+      "label": "hmi-01",
+      "position": {
+        "x": 1296,
+        "y": 576
+      },
+      "parentId": "6642f001-12ef-46e3-bee3-20d4556f172f",
+      "device": {
+        "hostname": "hmi-01",
+        "iconKey": "windows",
+        "spec": {
+          "general": {
+            "description": "Operator HMI for the pump controls",
+            "hostname": "hmi-01"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "windows10.qc2"
+              }
+            ],
+            "memory": 4096,
+            "os_type": "windows",
+            "vcpus": 2
+          },
+          "labels": {
+            "role": "hmi",
+            "zone": "ot"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.10.30.10",
+                "gateway": "10.10.30.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "OT"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "70df8106-e3af-571a-b874-57dc0644c531",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "06a80c1a-3d45-5646-94a3-498dfa3b05e4",
+      "kind": "device",
+      "label": "kali-01",
+      "position": {
+        "x": 656,
+        "y": 80
+      },
+      "parentId": "b59a13e0-5ca8-4b86-80cd-9316dcf82c70",
+      "device": {
+        "hostname": "kali-01",
+        "iconKey": "linux",
+        "spec": {
+          "general": {
+            "description": "Red team host on the internet",
+            "hostname": "kali-01"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "kali.qc2"
+              }
+            ],
+            "memory": 4096,
+            "os_type": "linux",
+            "vcpus": 2
+          },
+          "labels": {
+            "team": "red",
+            "zone": "internet"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "203.0.113.50",
+                "gateway": "203.0.113.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "INTERNET"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "73794150-7eaa-507d-8f88-34a024977838",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "e17c844d-1f78-5461-9b23-72ad49957bf4",
+      "kind": "device",
+      "label": "ot-fw",
+      "position": {
+        "x": 1296,
+        "y": 336
+      },
+      "parentId": "6642f001-12ef-46e3-bee3-20d4556f172f",
+      "device": {
+        "hostname": "ot-fw",
+        "iconKey": "firewall",
+        "spec": {
+          "general": {
+            "description": "Firewall between the corporate and OT networks",
+            "hostname": "ot-fw"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "minirouter.qc2"
+              }
+            ],
+            "memory": 1024,
+            "os_type": "minirouter",
+            "vcpus": 1
+          },
+          "labels": {
+            "zone": "ot"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.10.20.254",
+                "gateway": "10.10.20.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "ruleset_in": "corp-to-ot",
+                "type": "ethernet",
+                "vlan": "CORP"
+              },
+              {
+                "address": "10.10.30.1",
+                "mask": 24,
+                "name": "eth1",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "OT"
+              }
+            ],
+            "rulesets": [
+              {
+                "default": "drop",
+                "description": "Only the historian's web interface is reachable from CORP",
+                "name": "corp-to-ot",
+                "rules": [
+                  {
+                    "action": "accept",
+                    "description": "HTTPS to the historian",
+                    "destination": {
+                      "address": "10.10.30.20",
+                      "port": 443
+                    },
+                    "id": 10,
+                    "protocol": "tcp",
+                    "source": {
+                      "address": "10.10.20.0/24"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "type": "Firewall"
+        },
+        "interfaces": [
+          {
+            "id": "4283a971-0bed-5595-85d5-af6b0d206ebc",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "0beac467-e1d1-5825-ada7-edce9bb39da6",
+            "name": "eth1",
+            "index": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cf269d99-1264-5fbe-b4a9-8c5733d44ef9",
+      "kind": "device",
+      "label": "plc-01",
+      "position": {
+        "x": 1296,
+        "y": 704
+      },
+      "parentId": "6642f001-12ef-46e3-bee3-20d4556f172f",
+      "device": {
+        "hostname": "plc-01",
+        "iconKey": "external",
+        "spec": {
+          "external": true,
+          "general": {
+            "description": "Pump station PLC (hardware in the loop)",
+            "hostname": "plc-01"
+          },
+          "hardware": {
+            "os_type": "other"
+          },
+          "labels": {
+            "role": "plc",
+            "zone": "ot"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.10.30.50",
+                "gateway": "10.10.30.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "OT"
+              }
+            ]
+          },
+          "type": "HIL"
+        },
+        "interfaces": [
+          {
+            "id": "5b8355ef-1eb1-5756-86bb-b867a87016c0",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "11313636-26fc-5af4-a404-9bc8cf833e31",
+      "kind": "device",
+      "label": "web-01",
+      "position": {
+        "x": 80,
+        "y": 240
+      },
+      "parentId": "1e9e77bb-ee9f-4170-af40-4f9728766fad",
+      "device": {
+        "hostname": "web-01",
+        "iconKey": "linux",
+        "spec": {
+          "annotations": {
+            "phenix/startup-autotunnel": [
+              "8080:80"
+            ]
+          },
+          "general": {
+            "description": "Public web server",
+            "hostname": "web-01"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": 2048,
+            "os_type": "linux",
+            "vcpus": 2
+          },
+          "labels": {
+            "role": "web",
+            "zone": "dmz"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "172.16.10.10",
+                "dns": "10.10.20.53",
+                "gateway": "172.16.10.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "DMZ"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "20c0a19f-0467-5be9-b96a-bc3bbcd3e7d5",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "87a4716a-7c0c-5d84-b04b-4ac7ab51c3bc",
+      "kind": "device",
+      "label": "ws-01",
+      "position": {
+        "x": 1872,
+        "y": 80
+      },
+      "parentId": "813aa586-37df-43de-9cd3-ac200769ed24",
+      "device": {
+        "hostname": "ws-01",
+        "iconKey": "windows",
+        "spec": {
+          "general": {
+            "description": "Engineering workstation",
+            "hostname": "ws-01"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "windows10.qc2"
+              }
+            ],
+            "memory": 4096,
+            "os_type": "windows",
+            "vcpus": 2
+          },
+          "labels": {
+            "role": "workstation",
+            "zone": "corp"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.10.20.101",
+                "dns": "10.10.20.53",
+                "gateway": "10.10.20.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CORP"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "86cce936-04a9-5509-9273-6bf3eb65e1f4",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "7e588134-4e92-53af-9138-7565110ee06d",
+      "kind": "device",
+      "label": "ws-02",
+      "position": {
+        "x": 1872,
+        "y": 208
+      },
+      "parentId": "813aa586-37df-43de-9cd3-ac200769ed24",
+      "device": {
+        "hostname": "ws-02",
+        "iconKey": "windows",
+        "spec": {
+          "general": {
+            "description": "Office workstation",
+            "hostname": "ws-02"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "windows10.qc2"
+              }
+            ],
+            "memory": 4096,
+            "os_type": "windows",
+            "vcpus": 2
+          },
+          "labels": {
+            "role": "workstation",
+            "zone": "corp"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.10.20.102",
+                "dns": "10.10.20.53",
+                "gateway": "10.10.20.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CORP"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "1f65fe61-b744-51f8-a3a5-34bae6c588f7",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "8ce19627-3418-5d84-8060-4df4c86ab6dc",
+      "kind": "device",
+      "label": "dns-01",
+      "position": {
+        "x": 1872,
+        "y": 320
+      },
+      "parentId": "813aa586-37df-43de-9cd3-ac200769ed24",
+      "device": {
+        "hostname": "dns-01",
+        "iconKey": "linux",
+        "spec": {
+          "general": {
+            "description": "Internal DNS server",
+            "hostname": "dns-01"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": 1024,
+            "os_type": "linux",
+            "vcpus": 1
+          },
+          "labels": {
+            "role": "dns",
+            "zone": "corp"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.10.20.53",
+                "gateway": "10.10.20.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CORP"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "2d8cbcc6-2363-55c0-a415-83cde5e65db8",
+            "name": "eth0",
+            "index": 0
+          }
+        ],
+        "includedFrom": "corp-services"
+      }
+    },
+    {
+      "id": "3e55777d-3fa3-5f73-9bb7-a59ff9c6b8d0",
+      "kind": "device",
+      "label": "ntp-01",
+      "position": {
+        "x": 1872,
+        "y": 560
+      },
+      "parentId": "813aa586-37df-43de-9cd3-ac200769ed24",
+      "device": {
+        "hostname": "ntp-01",
+        "iconKey": "linux",
+        "spec": {
+          "general": {
+            "description": "Time server for the corporate and OT networks",
+            "hostname": "ntp-01"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": 1024,
+            "os_type": "linux",
+            "vcpus": 1
+          },
+          "labels": {
+            "role": "ntp",
+            "zone": "corp"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "address": "10.10.20.123",
+                "gateway": "10.10.20.1",
+                "mask": 24,
+                "name": "eth0",
+                "proto": "static",
+                "type": "ethernet",
+                "vlan": "CORP"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "f15d5352-db1c-50ca-acf0-d4a49f772b24",
+            "name": "eth0",
+            "index": 0
+          }
+        ],
+        "includedFrom": "corp-services"
+      }
+    },
+    {
+      "id": "febae525-2c3c-5e50-8081-82055d556fa1",
+      "kind": "switch",
+      "label": "CORP",
+      "position": {
+        "x": 2096,
+        "y": 336
+      },
+      "parentId": "813aa586-37df-43de-9cd3-ac200769ed24",
+      "switch": {
+        "networkId": "3398605c-1628-577c-a18a-328b1a4f9f08"
+      }
+    },
+    {
+      "id": "11a96457-0a58-5b38-b354-ac8877bf4b9e",
+      "kind": "switch",
+      "label": "DMZ",
+      "position": {
+        "x": 304,
+        "y": 128
+      },
+      "parentId": "1e9e77bb-ee9f-4170-af40-4f9728766fad",
+      "switch": {
+        "networkId": "ea2094b2-d1b6-52c7-8e5a-5cc6fc14a387"
+      }
+    },
+    {
+      "id": "4b5ccb81-c00b-5560-8454-9e9020e2ac4f",
+      "kind": "switch",
+      "label": "INTERNET",
+      "position": {
+        "x": 880,
+        "y": 96
+      },
+      "parentId": "b59a13e0-5ca8-4b86-80cd-9316dcf82c70",
+      "switch": {
+        "networkId": "9c69857c-0fac-53ef-93c9-da60d702e5c9"
+      }
+    },
+    {
+      "id": "ad4a8591-608d-5d26-8fbd-5dfea116f8cf",
+      "kind": "switch",
+      "label": "OT",
+      "position": {
+        "x": 1520,
+        "y": 464
+      },
+      "parentId": "6642f001-12ef-46e3-bee3-20d4556f172f",
+      "switch": {
+        "networkId": "6b3da6d4-2a13-5140-a395-852a06b83868"
+      }
+    },
+    {
+      "id": "813aa586-37df-43de-9cd3-ac200769ed24",
+      "kind": "group",
+      "label": "CORP",
+      "position": {
+        "x": 1824,
+        "y": 32
+      },
+      "size": {
+        "width": 512,
+        "height": 672
+      },
+      "group": {
+        "title": "CORP",
+        "color": "#2f6fbf"
+      }
+    },
+    {
+      "id": "1e9e77bb-ee9f-4170-af40-4f9728766fad",
+      "kind": "group",
+      "label": "DMZ",
+      "position": {
+        "x": 32,
+        "y": 64
+      },
+      "size": {
+        "width": 512,
+        "height": 320
+      },
+      "group": {
+        "title": "DMZ",
+        "color": "#b05c17"
+      }
+    },
+    {
+      "id": "b59a13e0-5ca8-4b86-80cd-9316dcf82c70",
+      "kind": "group",
+      "label": "INTERNET",
+      "position": {
+        "x": 608,
+        "y": 32
+      },
+      "size": {
+        "width": 512,
+        "height": 192
+      },
+      "group": {
+        "title": "INTERNET",
+        "color": "#1f7a5a"
+      }
+    },
+    {
+      "id": "6642f001-12ef-46e3-bee3-20d4556f172f",
+      "kind": "group",
+      "label": "OT",
+      "position": {
+        "x": 1248,
+        "y": 288
+      },
+      "size": {
+        "width": 512,
+        "height": 560
+      },
+      "group": {
+        "title": "OT",
+        "color": "#7a3fb0"
+      }
+    },
+    {
+      "id": "54884477-b750-43c8-ad2c-ef80dbbc5135",
+      "kind": "note",
+      "position": {
+        "x": 1248,
+        "y": 880
+      },
+      "note": {
+        "text": "OT has no route to the internet. From CORP, only HTTPS to historian-01 passes ot-fw."
+      }
+    }
+  ],
+  "networks": [
+    {
+      "id": "3398605c-1628-577c-a18a-328b1a4f9f08",
+      "name": "CORP"
+    },
+    {
+      "id": "ea2094b2-d1b6-52c7-8e5a-5cc6fc14a387",
+      "name": "DMZ"
+    },
+    {
+      "id": "9c69857c-0fac-53ef-93c9-da60d702e5c9",
+      "name": "INTERNET"
+    },
+    {
+      "id": "6b3da6d4-2a13-5140-a395-852a06b83868",
+      "name": "OT"
+    }
+  ],
+  "edges": [
+    {
+      "id": "079f6027-2e25-5da6-82d9-234360272c80",
+      "sourceNodeId": "3e55777d-3fa3-5f73-9bb7-a59ff9c6b8d0",
+      "sourceHandleId": "f15d5352-db1c-50ca-acf0-d4a49f772b24",
+      "targetNodeId": "febae525-2c3c-5e50-8081-82055d556fa1",
+      "networkId": "3398605c-1628-577c-a18a-328b1a4f9f08",
+      "route": [
+        {
+          "x": 2032,
+          "y": 608
+        },
+        {
+          "x": 2057,
+          "y": 608
+        },
+        {
+          "x": 2057,
+          "y": 372
+        },
+        {
+          "x": 2096,
+          "y": 372
+        }
+      ]
+    },
+    {
+      "id": "13c6adc3-7680-5eb9-b728-8d3ecc29084f",
+      "sourceNodeId": "017b57e6-1d23-5555-a576-d0cdc682109a",
+      "sourceHandleId": "255c62d3-4a76-5af2-ae04-fef96a750224",
+      "targetNodeId": "febae525-2c3c-5e50-8081-82055d556fa1",
+      "networkId": "3398605c-1628-577c-a18a-328b1a4f9f08"
+    },
+    {
+      "id": "1bfaca3e-0280-55b8-960e-408a95e86814",
+      "sourceNodeId": "e17c844d-1f78-5461-9b23-72ad49957bf4",
+      "sourceHandleId": "0beac467-e1d1-5825-ada7-edce9bb39da6",
+      "targetNodeId": "ad4a8591-608d-5d26-8fbd-5dfea116f8cf",
+      "networkId": "6b3da6d4-2a13-5140-a395-852a06b83868",
+      "route": [
+        {
+          "x": 1456,
+          "y": 400
+        },
+        {
+          "x": 1481,
+          "y": 400
+        },
+        {
+          "x": 1481,
+          "y": 500
+        },
+        {
+          "x": 1520,
+          "y": 500
+        }
+      ]
+    },
+    {
+      "id": "1f0ec4cc-dfb1-5d88-a807-e1bb4638f1fc",
+      "sourceNodeId": "7e588134-4e92-53af-9138-7565110ee06d",
+      "sourceHandleId": "1f65fe61-b744-51f8-a3a5-34bae6c588f7",
+      "targetNodeId": "febae525-2c3c-5e50-8081-82055d556fa1",
+      "networkId": "3398605c-1628-577c-a18a-328b1a4f9f08",
+      "route": [
+        {
+          "x": 2032,
+          "y": 256
+        },
+        {
+          "x": 2057,
+          "y": 256
+        },
+        {
+          "x": 2057,
+          "y": 372
+        },
+        {
+          "x": 2096,
+          "y": 372
+        }
+      ]
+    },
+    {
+      "id": "3ce02c56-26be-5514-ad23-6715a5b230aa",
+      "sourceNodeId": "566d4a37-ea85-5dbf-a0b0-b0355e486c07",
+      "sourceHandleId": "4724ac57-cc56-5f34-96ec-d75a014ef883",
+      "targetNodeId": "ad4a8591-608d-5d26-8fbd-5dfea116f8cf",
+      "networkId": "6b3da6d4-2a13-5140-a395-852a06b83868",
+      "route": [
+        {
+          "x": 1456,
+          "y": 512
+        },
+        {
+          "x": 1488,
+          "y": 512
+        },
+        {
+          "x": 1488,
+          "y": 500
+        },
+        {
+          "x": 1520,
+          "y": 500
+        }
+      ]
+    },
+    {
+      "id": "3f057f11-772d-5a76-94f7-3539d76eafa0",
+      "sourceNodeId": "11313636-26fc-5af4-a404-9bc8cf833e31",
+      "sourceHandleId": "20c0a19f-0467-5be9-b96a-bc3bbcd3e7d5",
+      "targetNodeId": "11a96457-0a58-5b38-b354-ac8877bf4b9e",
+      "networkId": "ea2094b2-d1b6-52c7-8e5a-5cc6fc14a387",
+      "route": [
+        {
+          "x": 240,
+          "y": 288
+        },
+        {
+          "x": 265,
+          "y": 288
+        },
+        {
+          "x": 265,
+          "y": 164
+        },
+        {
+          "x": 304,
+          "y": 164
+        }
+      ]
+    },
+    {
+      "id": "55783083-a930-54ff-82a8-f97f3adb4146",
+      "sourceNodeId": "e17c844d-1f78-5461-9b23-72ad49957bf4",
+      "sourceHandleId": "4283a971-0bed-5595-85d5-af6b0d206ebc",
+      "targetNodeId": "febae525-2c3c-5e50-8081-82055d556fa1",
+      "networkId": "3398605c-1628-577c-a18a-328b1a4f9f08"
+    },
+    {
+      "id": "68cac974-7868-5745-8707-b4a99fd2640d",
+      "sourceNodeId": "cf269d99-1264-5fbe-b4a9-8c5733d44ef9",
+      "sourceHandleId": "5b8355ef-1eb1-5756-86bb-b867a87016c0",
+      "targetNodeId": "ad4a8591-608d-5d26-8fbd-5dfea116f8cf",
+      "networkId": "6b3da6d4-2a13-5140-a395-852a06b83868",
+      "route": [
+        {
+          "x": 1456,
+          "y": 752
+        },
+        {
+          "x": 1481,
+          "y": 752
+        },
+        {
+          "x": 1481,
+          "y": 500
+        },
+        {
+          "x": 1520,
+          "y": 500
+        }
+      ]
+    },
+    {
+      "id": "7e3f1d23-8464-571f-90a2-abb87fe3373f",
+      "sourceNodeId": "017b57e6-1d23-5555-a576-d0cdc682109a",
+      "sourceHandleId": "53fe0465-90aa-5183-a04d-4ea11d5c3a47",
+      "targetNodeId": "11a96457-0a58-5b38-b354-ac8877bf4b9e",
+      "networkId": "ea2094b2-d1b6-52c7-8e5a-5cc6fc14a387",
+      "route": [
+        {
+          "x": 240,
+          "y": 160
+        },
+        {
+          "x": 272,
+          "y": 160
+        },
+        {
+          "x": 272,
+          "y": 164
+        },
+        {
+          "x": 304,
+          "y": 164
+        }
+      ]
+    },
+    {
+      "id": "a7ca6a41-c9e5-599a-ad22-2c6c45b9fb4d",
+      "sourceNodeId": "6bd88f1c-f7a3-5709-817a-d4a5f96414ba",
+      "sourceHandleId": "96c09f17-a925-5789-9805-549d35e50061",
+      "targetNodeId": "febae525-2c3c-5e50-8081-82055d556fa1",
+      "networkId": "3398605c-1628-577c-a18a-328b1a4f9f08",
+      "route": [
+        {
+          "x": 2032,
+          "y": 496
+        },
+        {
+          "x": 2057,
+          "y": 496
+        },
+        {
+          "x": 2057,
+          "y": 372
+        },
+        {
+          "x": 2096,
+          "y": 372
+        }
+      ]
+    },
+    {
+      "id": "b68afb8f-da8b-533c-a1fa-04fbb103d089",
+      "sourceNodeId": "fc15fefd-d5c3-5d03-b1d6-002f64e273ed",
+      "sourceHandleId": "70df8106-e3af-571a-b874-57dc0644c531",
+      "targetNodeId": "ad4a8591-608d-5d26-8fbd-5dfea116f8cf",
+      "networkId": "6b3da6d4-2a13-5140-a395-852a06b83868",
+      "route": [
+        {
+          "x": 1456,
+          "y": 624
+        },
+        {
+          "x": 1481,
+          "y": 624
+        },
+        {
+          "x": 1481,
+          "y": 500
+        },
+        {
+          "x": 1520,
+          "y": 500
+        }
+      ]
+    },
+    {
+      "id": "babd07ed-6828-5813-b14a-2f082ad2bb68",
+      "sourceNodeId": "06a80c1a-3d45-5646-94a3-498dfa3b05e4",
+      "sourceHandleId": "73794150-7eaa-507d-8f88-34a024977838",
+      "targetNodeId": "4b5ccb81-c00b-5560-8454-9e9020e2ac4f",
+      "networkId": "9c69857c-0fac-53ef-93c9-da60d702e5c9",
+      "route": [
+        {
+          "x": 816,
+          "y": 128
+        },
+        {
+          "x": 848,
+          "y": 128
+        },
+        {
+          "x": 848,
+          "y": 132
+        },
+        {
+          "x": 880,
+          "y": 132
+        }
+      ]
+    },
+    {
+      "id": "e006b77e-74c4-5afa-aa49-8e8baadb1b92",
+      "sourceNodeId": "8ce19627-3418-5d84-8060-4df4c86ab6dc",
+      "sourceHandleId": "2d8cbcc6-2363-55c0-a415-83cde5e65db8",
+      "targetNodeId": "febae525-2c3c-5e50-8081-82055d556fa1",
+      "networkId": "3398605c-1628-577c-a18a-328b1a4f9f08",
+      "route": [
+        {
+          "x": 2032,
+          "y": 368
+        },
+        {
+          "x": 2064,
+          "y": 368
+        },
+        {
+          "x": 2064,
+          "y": 372
+        },
+        {
+          "x": 2096,
+          "y": 372
+        }
+      ]
+    },
+    {
+      "id": "e66a5608-776c-5f5c-a3e8-0d79358baaf5",
+      "sourceNodeId": "017b57e6-1d23-5555-a576-d0cdc682109a",
+      "sourceHandleId": "eef6859b-e966-509f-ae2f-a0b7808ebd5b",
+      "targetNodeId": "4b5ccb81-c00b-5560-8454-9e9020e2ac4f",
+      "networkId": "9c69857c-0fac-53ef-93c9-da60d702e5c9"
+    },
+    {
+      "id": "f8aebda2-7fed-5119-8020-be9734c39c70",
+      "sourceNodeId": "87a4716a-7c0c-5d84-b04b-4ac7ab51c3bc",
+      "sourceHandleId": "86cce936-04a9-5509-9273-6bf3eb65e1f4",
+      "targetNodeId": "febae525-2c3c-5e50-8081-82055d556fa1",
+      "networkId": "3398605c-1628-577c-a18a-328b1a4f9f08",
+      "route": [
+        {
+          "x": 2032,
+          "y": 128
+        },
+        {
+          "x": 2057,
+          "y": 128
+        },
+        {
+          "x": 2057,
+          "y": 372
+        },
+        {
+          "x": 2096,
+          "y": 372
+        }
+      ]
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": true,
+    "size": 16,
+    "snap": true
+  },
+  "scenarios": [
+    "riverside-water"
+  ],
+  "source": {
+    "kind": "topology",
+    "name": "riverside-water",
+    "apiVersion": "phenix.sandia.gov/v1",
+    "importedAt": "2026-09-29T18:17:58Z",
+    "digest": "sha256:b9bf89edacfb5450bdbf90fa5d9083d3d9ccbf01742335b6f1bea4fbb2454d41",
+    "updatedAt": "2026-09-29T12:11:59-06:00",
+    "includeTopologies": [
+      "corp-services"
+    ],
+    "annotations": {
+      "maintainer": "range-team",
+      "purpose": "Water utility training range"
+    },
+    "warnings": [
+      "Added 2 nodes from included topology corp-services (2 nodes). They are shown read only: edit them in their own topology. Publishing keeps includeTopologies instead of copying them."
+    ]
+  },
+  "layout": "elk"
+}

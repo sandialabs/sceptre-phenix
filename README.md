@@ -244,6 +244,7 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI. **(Restart Required)** |
 | `base-dir.injects` | `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Directory that `phenix workflow apply` stages a topology directory's `phenix-injects/` into, as `<base-dir.injects>/<name>`. The `phenix ui` server's value is used unless `--base-dir.injects` is given. Use an absolute path. **(Restart Required)** |
 | `base-dir.topologies` | `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Directory where `phenix workflow apply NAME` looks for `NAME` when it isn't an existing path. Use an absolute path. |
+| `base-dir.builder-templates` | `PHENIX_BASE_DIR_BUILDER_TEMPLATES` | `<base-dir.phenix>/builder/templates` | Directory of the Builder template files that `phenix ui` reads at start as read-only server collections of node templates. Use an absolute path. **(Restart Required)** |
 
 #### Configuration Precedence
 

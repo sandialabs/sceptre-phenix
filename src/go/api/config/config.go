@@ -35,6 +35,11 @@ var NameRegex = regexp.MustCompile(`^[a-zA-Z0-9_@.-]*$`)
 // of a config. The passed config can be updated by the hook functions as
 // necessary, and an error can be returned if the lifecycle stage should be
 // halted.
+//
+// The stages are "startup", "create", "update", "delete" and "rename". The
+// "rename" stage follows an update that changed the name of the config. Its
+// hook gets the config as it was under its old name, after the store holds it
+// under the new name only. No "delete" stage runs for the old name.
 type ConfigHook func(string, *store.Config) error
 
 var hooks = make(map[string][]ConfigHook) //nolint:gochecknoglobals // global hooks
@@ -58,10 +63,10 @@ func init() { //nolint:gochecknoinits // config hook
 	}
 }
 
-//nolint:cyclop,funlen,gocyclo // complex init logic
-func Init() error {
-	// Ensure all built-in, default configs are present in the store.
-	err := fs.WalkDir(defaultFS, "default", func(path string, d fs.DirEntry, walkErr error) error {
+// walkDefaults calls fn with the path and the content of every built-in,
+// default config, and the config it holds.
+func walkDefaults(fn func(path string, content []byte, c store.Config) error) error {
+	return fs.WalkDir(defaultFS, "default", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -85,6 +90,45 @@ func Init() error {
 			return fmt.Errorf("unmarshaling default config %s: %w", path, err)
 		}
 
+		return fn(path, content, c)
+	})
+}
+
+// CreateDefault stores the built-in, default config of the given kind and
+// name, as [Init] does for a new store, and returns it. It is for a default
+// config added after a store was initialized, because phenix runs [Init] only
+// for a store that was never initialized. A kind and name that no default
+// config has is an error.
+func CreateDefault(kind, name string) (*store.Config, error) {
+	var found []byte
+
+	err := walkDefaults(func(_ string, content []byte, c store.Config) error {
+		if found == nil && strings.EqualFold(c.Kind, kind) && c.Metadata.Name == name {
+			found = content
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reading default configs: %w", err)
+	}
+
+	if found == nil {
+		return nil, fmt.Errorf("there is no default config %s/%s", kind, name)
+	}
+
+	c, err := Create(CreateFromYAML(found))
+	if err != nil {
+		return nil, fmt.Errorf("storing default config %s/%s: %w", kind, name, err)
+	}
+
+	return c, nil
+}
+
+//nolint:funlen // complex init logic
+func Init() error {
+	// Ensure all built-in, default configs are present in the store.
+	err := walkDefaults(func(path string, content []byte, c store.Config) error {
 		name := strings.ToLower(c.Kind) + "/" + c.Metadata.Name
 
 		// Don't attempt to create this default config again if it already exists in
@@ -498,13 +542,33 @@ func Update(name string, c *store.Config) error {
 				return fmt.Errorf("renaming updated config in store: %w", deleteErr)
 			}
 
-			return nil
+			return renamed(name, old)
 		}
 
 		return fmt.Errorf("updating config in store: %w", err)
 	}
 
 	return nil
+}
+
+// renamed runs the "rename" stage of the config hooks for old: the config an
+// update just stored under a new name, as it was under its old name. Like the
+// "delete" stage, it runs after the store changed, so an error it returns does
+// not undo the rename.
+func renamed(name string, old *store.Config) error {
+	var errs error
+
+	for _, hook := range hooks[old.Kind] {
+		hookErr := hook("rename", old)
+		if hookErr != nil {
+			errs = multierror.Append(
+				errs,
+				fmt.Errorf("executing rename hook for config %s: %w", name, hookErr),
+			)
+		}
+	}
+
+	return errs
 }
 
 // Delete removes the config with the given name from the store. The given name

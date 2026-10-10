@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams and drafts, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, the Builder (the web topology editor), or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
 license: GPL-3.0-only
 ---
 
@@ -21,7 +21,7 @@ Detailed references and examples, loaded only when needed:
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
-| Graphical topology Builder: diagram model, translation to configs, endpoints, gotchas | [`references/builder.md`](references/builder.md) |
+| The Builder, the web topology editor: its routes, RBAC, formats, `builder-doc`, code and tests | [`references/builder.md`](references/builder.md), an index of the references under `references/builder/` and of the user docs |
 | Deploying a topology directory with `phenix workflow apply`: layout, steps, workflow config, endpoints, gotchas, troubleshooting | [`references/workflow.md`](references/workflow.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
@@ -51,9 +51,14 @@ external/physical nodes) and their hardware, network interfaces, and boot
 behavior. Key node fields (see [`examples/topology.yaml`](examples/topology.yaml)
 for a complete, copyable two-node topology):
 
-- `type`: `VirtualMachine | Firewall | Router | Switch`
+- `type`: `VirtualMachine | Firewall | Router | Switch`. The `vrouter` app
+  configures routing and rulesets only on `Router` and `Firewall` nodes whose
+  `hardware.os_type` is `minirouter`, `vyatta`, or `vyos` (`linux` there is
+  deprecated: it writes a Vyatta config into the image)
 - `general.hostname`, `general.vm_type` (`kvm` or `container`, default `kvm`),
-  `general.do_not_boot`, `general.snapshot`
+  `general.do_not_boot`, `general.snapshot`, `general.notes` (up to 100 strings;
+  creating an experiment copies them into the node's labels as `__notes_<time>`
+  keys, which minimega sets as VM tags and the UI shows as the VM's notes)
 - `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos | other`
 - `hardware.vcpus`, `hardware.memory`, `hardware.drives[].image` (disk image name/path)
 - `network.interfaces[]`: `name`, `vlan`, `type: ethernet`, `proto: static|dhcp|manual`
@@ -136,15 +141,22 @@ An experiment also tracks runtime `status` (start time, per-VM schedule,
 per-app state, allocated VLANs) once started. The same fields are editable
 through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
 
-## Topology Builder
+## Builder
 
-Builder is the graphical topology editor at `/builder`, backed by an mxGraph
-XML model stored on the topology config in the `builder-xml` annotation.
+The Builder is the web topology editor at `/builder`. Its REST API is below
+`/api/v1/builder/`, and scripts use it: there is no `phenix builder`
+command. Drafts save on the server apart from configs. Only Publish writes
+Topology and Experiment configs, and it adds the topology to the `topology`
+annotation of each Scenario the diagram lists. A topology names its
+diagram in the `builder-doc` annotation, the one annotation that is a map
+(`digest`, `id`, `path`). Import converts the `builder-xml` diagrams of the
+removed legacy Builder.
 
-**Read [`references/builder.md`](references/builder.md)** before creating,
-editing, or translating a diagram. It carries the task routing table, the
-endpoints and payloads, the diagram-to-config translation rules, and the
-gotchas.
+The user docs are in `docs/content/builder/`. The site
+[phenix.sceptre.dev/latest/builder](https://phenix.sceptre.dev/latest/builder/)
+shows them only after a release that includes them. For any Builder task, **read [`references/builder.md`](references/builder.md)**
+first. It maps the docs pages, the code and the rules, and its routing
+table names the reference under `references/builder/` to read next.
 
 ## CLI Overview
 
@@ -220,7 +232,11 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
   unless the topology explicitly sets `general.vm_type: container`.
 - **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
-  "no configs found" rather than an obvious connection error.
+  "no configs found" rather than an obvious connection error. Every etcd store is compacted by
+  phenix, cluster-wide, every retention/10 unless
+  `compaction-retention=0`; then the operator must run etcd with auto-compaction. When etcd
+  reaches its space quota it refuses writes (`mvcc: database space exceeded`); compact and
+  defragment etcd, then `etcdctl alarm disarm`.
 - **Deleting `config.yaml` while phenix is running breaks the file watcher** (hot-reload of
   log level, deploy-mode, etc. stops working). `phenix settings unset <key>` rewrites the
   file in place and leaves the watcher intact; `phenix settings unset --all` deletes the

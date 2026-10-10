@@ -45,6 +45,20 @@ begin with a capital letter.
     When we say this, we mean passing a YAML or JSON configuration file of any
     type to the `phenix config create` command.
 
+    `phenix config create` also takes a directory, and creates every
+    configuration file below it. A [Builder](builder/index.md) document
+    (a Builder JSON or Builder YAML file) is not a configuration. The command
+    skips a Builder document in a directory and logs a line. It refuses a
+    Builder document named on the command line. To create its topology,
+    upload the document in the Builder and publish it (see
+    [Builder documents and phenix config create](builder/import-upload-download.md#builder-documents-and-phenix-config-create)).
+
+The `metadata` section can also hold `annotations`: text values by key, such
+as the `topology` and `scenario` annotations of an [Experiment](#experiment).
+The one exception is `builder-doc`, a map of `digest`, `id` and `path` that
+names the Builder diagram of a Topology (see
+[The builder-doc annotation](builder/administration.md#the-builder-doc-annotation)).
+
 ## Topology
 
 The `Topology` configuration is one of the core configuration types for
@@ -113,6 +127,8 @@ Optional values for a node in the topology configuration can include:
 - additional disk storage
 - file injections (and main disk inject partition)
 - labels, which are typically used by phēnix apps
+- notes (`general.notes`), which become the VM's notes (see
+  [Node Notes](#node-notes))
 - routing ruleset(s)
 - delay triggered by `user`, `timer`, or `c2` (command and control)
 
@@ -149,6 +165,41 @@ three options available to set, but on only one option can be set:
     tag in the Delay column next to the Screenshot column. The tag will indicate
     what type of dealy was set. Once all the delayed VMs have started, the Delay
     column will no longer be visible.
+
+#### Node Notes
+
+`general.notes` is a list of notes about a node. It holds at most 100 notes,
+each 1 to 4096 characters long. A note can have more than one line.
+
+When phēnix creates an experiment, it copies each note into the node's labels,
+in the order of the list. The key of each note is `__notes_` and a time, such
+as `__notes_2026-10-09T11:34:56.789Z`. The web UI gives the same kind of key to
+a note that you add in the VM's Labels dialog. When the experiment starts,
+minimega sets the node's labels as the VM's tags. The notes then show under
+Notes in that dialog (the Labels column of the experiment's VM table) and in
+the VM's [State of Health](state-of-health.md) details.
+
+```yaml
+- type: VirtualMachine
+  general:
+    hostname: AD1
+    notes:
+    - Domain controller for the corporate network.
+    - |-
+      Reset the administrator password
+      before each run.
+  hardware:
+    os_type: windows
+    drives:
+    - image: win-svr-2019.qc2
+```
+
+!!! note
+    phēnix copies the notes only when it creates an experiment. A later change
+    to the topology's notes does not change an existing experiment. Notes
+    that you edit in the Labels dialog stay when the experiment stops and
+    starts again. phēnix does not copy a note when the node already has a
+    note with the same text, or a label with the note's key.
 
 #### Network Address Translation (NAT)
 
@@ -532,7 +583,7 @@ metadata:
 Once created, either manually or automatically, the experiment configuration
 will be expanded to have the topology and scenario configurations embedded in
 it, as well as additional details like cluster host schedules for VMs, VLAN
-ranges, Builder XML, etc. The advantage of embedding the topology and scenario
+ranges, etc. The advantage of embedding the topology and scenario
 into the experiment is that they can be modified in the experiment without
 modifying the originals.
 
@@ -693,6 +744,13 @@ There are two ways to view a specific config:
    invalid, an error will be presented.
   ![screenshot](images/view_edit.png){: width=800 .center}
 
+### Topologies with a Builder diagram
+
+A topology with a [Builder](builder/index.md) diagram has the tag `builder`
+next to its name, and its `Edit` button opens the Builder, not the editor
+window. For the tags, the viewer buttons and the permissions they need, see
+[From the Configs page](builder/import-upload-download.md#from-the-configs-page).
+
 ### Create a Config
 
 There are two ways to create a new config:
@@ -759,61 +817,6 @@ restored to the store. If an experiment config is deleted, the corresponding
 experiment will not longer be presented in the `Experiments` tab.
 
   ![screenshot](images/actions.png){: width=150 .center}
-
-## Builder
-
-The Builder app is an external app that allows users to generate either topology
-or experiment configuration using a graphical interface. It is based on the
-`minibuilder` app in `minimega`. Users can access the Builder app via the
-`Builder` tab in the phēnix UI.
-
-### Creating or Editing a Topology
-
-When Builder opens, it does so in a new configuration. If a user wanted to open
-an existing configuration, they are available in the File menu through the
-Import from phēnix or Import from Disk selections.
-
-A user can add VM hosts or networking components by selecting the relevant image
-on the left side of the Builder canvas.
-
-  ![screenshot](images/components.png){: width=150 .center}
-
-Each time a configuration is saved to phēnix, it is available to select from
-Import from phēnix in the File menu. A configuration created in Builder can only
-be edited while in the Builder app. There are two options for editing an
-existing configuration created in Builder.
-
-  ![screenshot](images/file.png){: width=150 .center}
-
-1. Select Import from phēnix in Builder &mdash; make any changes and then add to
-   phēnix with a **new** name
-
-1. Select Import from phēnix in Builder &mdash; make any changes and then add to
-   phēnix with the same name; this will overwrite the configuration that was
-   selected to import
-
-    !!! note
-        Any hosts added to a topology will not have a drive image name; this is a
-        requirement and will need to be included in each node added to the Builder
-        canvas.
-        ![screenshot](images/drive.png){: width=150 .center}
-
-Other values will be auto-generated but can be customized by clicking on a
-target node and making changes in the dialogue presented in the Builder UI. It
-is worth noting that a user can set a single node value and then copy and paste
-that node multiple times; the customized values will be extended to each node
-that is pasted in the Builder canvas.
-
-While scenarios are not a part of the Builder environment, a user can add them
-to a topology. When a user selects Save to phēnix, a pulldown will be presented
-with available scenarios from the phēnix store.
-
-  ![screenshot](images/save.png){: width=150 .center}
-
-When a scenario is selected, Builder will write the topology configuration to
-the phēnix store and an experiment configuration. When a scenario is not
-specified, the Builder app will save the topology configuration only. The user
-will then need to create an experiment in the phēnix UI.
 
 ## Environment Variables
 

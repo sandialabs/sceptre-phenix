@@ -1,0 +1,88 @@
+<mxGraphModel dx="786" dy="589" grid="0" gridSize="10" page="1" experimentVars="[{&quot;name&quot;:&quot;DEFAULT_MEMORY&quot;,&quot;value&quot;:&quot;2048&quot;},{&quot;name&quot;:&quot;DEFAULT_VCPU&quot;,&quot;value&quot;:&quot;1&quot;},{&quot;name&quot;:&quot;DEFAULT_VM_IMAGE&quot;,&quot;value&quot;:&quot;ubuntu.qc2&quot;},{&quot;name&quot;:&quot;DEFAULT_ROUTER_IMAGE&quot;,&quot;value&quot;:&quot;vyos.qc2&quot;}]">
+  <root>
+    <mxCell id="0"/>
+    <mxCell id="1" parent="0"/>
+    <mxCell id="2" parent="0"/>
+    <object label="on-layer-two" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;on-layer-two&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="3">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="2">
+        <mxGeometry x="40" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <mxCell id="4" value="plain cell" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+      <mxGeometry x="200" y="40" width="80" height="20" as="geometry"/>
+    </mxCell>
+    <UserObject label="user object" tooltip="a tip" link="https://example.com/never-read" id="5">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+        <mxGeometry x="300" y="40" width="80" height="20" as="geometry"/>
+      </mxCell>
+    </UserObject>
+    <object label="first" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;first&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="6">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="400" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="second" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;second&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="6">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="1">
+        <mxGeometry x="500" y="40" width="80" height="80" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="no id">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+        <mxGeometry x="600" y="40" width="80" height="20" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="cycle a" id="8">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="9">
+        <mxGeometry x="10" y="200" width="80" height="20" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="cycle b" id="9">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="8">
+        <mxGeometry x="10" y="240" width="80" height="20" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="leads into the cycle" id="10">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="8">
+        <mxGeometry x="10" y="280" width="80" height="20" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="own parent" id="11">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="11">
+        <mxGeometry x="10" y="320" width="80" height="20" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="orphan" id="12">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="nowhere">
+        <mxGeometry x="200" y="200" width="80" height="20" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="no-geometry" schemaVars="{&quot;type&quot;:&quot;VirtualMachine&quot;,&quot;general&quot;:{&quot;hostname&quot;:&quot;no-geometry&quot;},&quot;hardware&quot;:{&quot;vcpus&quot;:&quot;1&quot;,&quot;memory&quot;:&quot;2048&quot;,&quot;os_type&quot;:&quot;linux&quot;,&quot;drives&quot;:[{&quot;image&quot;:&quot;ubuntu.qc2&quot;}]},&quot;device&quot;:&quot;server&quot;,&quot;schema&quot;:&quot;kvm&quot;}" id="13">
+      <mxCell style="image;html=1;image=/server_blue_vm.png" vertex="1" parent="1"/>
+    </object>
+    <object label="odd numbers" id="14">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+        <mxGeometry x="NaN" y="Infinity" width="abc" height="-5" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="far away" id="15">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+        <mxGeometry x="1e12" y="-1e12" width="1e12" height="20" as="geometry"/>
+      </mxCell>
+    </object>
+    <object label="other geometry" id="16">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+        <mxGeometry x="5" y="5" as="alternateBounds"/>
+      </mxCell>
+    </object>
+    <object label="no cell inside" id="17"/>
+    <mxCell id="18" value="neither vertex nor edge" parent="1"/>
+    <object label="two cells" id="19">
+      <mxCell style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+        <mxGeometry x="400" y="200" width="80" height="20" as="geometry">
+          <mxPoint x="1" y="2" as="offset"/>
+        </mxGeometry>
+      </mxCell>
+      <mxCell edge="1" parent="1"/>
+    </object>
+  </root>
+</mxGraphModel>

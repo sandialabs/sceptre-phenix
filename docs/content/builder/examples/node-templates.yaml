@@ -1,0 +1,67 @@
+# A Builder template file: one collection of node templates. Export from
+# the Node Templates tab writes this format; Import reads it into your
+# library, and phenix ui reads every such file in its template directory
+# (--base-dir.builder-templates) at start as a read-only collection.
+$schema: https://phenix.sandia.gov/schemas/builder/templates/v1
+name: Example Plant Templates
+description: Devices of a small water treatment plant.
+templates:
+  - name: PLC
+    description: Programmable logic controller on the control network
+    device:
+      iconKey: server
+      spec:
+        type: VirtualMachine
+        general:
+          hostname: plc
+          description: ''
+          vm_type: kvm
+        hardware:
+          os_type: linux
+          vcpus: 1
+          memory: 1024
+          drives:
+            - image: ubuntu.qc2
+        network:
+          interfaces:
+            - name: eth0
+              vlan: ''
+              type: ethernet
+              proto: static
+              address: 10.1.1.10
+              mask: 24
+              gateway: 10.1.1.1
+  - name: HMI
+    description: Operator workstation running the plant HMI
+    device:
+      iconKey: desktop
+      spec:
+        type: VirtualMachine
+        general:
+          hostname: hmi
+          description: ''
+          vm_type: kvm
+        hardware:
+          os_type: windows
+          vcpus: 2
+          memory: 4096
+          drives:
+            - image: windows10.qc2
+        network:
+          interfaces: []
+  - name: Plant router
+    description: Routes between the control and corporate networks
+    device:
+      iconKey: router
+      spec:
+        type: Router
+        general:
+          hostname: plant-router
+          description: ''
+          vm_type: kvm
+        hardware:
+          os_type: minirouter
+          drives:
+            - image: minirouter.qc2
+        network:
+          interfaces: []

@@ -69,3 +69,6 @@ integrations include:
 * [Workflow](workflow.md) - deploy a topology directory with
   `phenix workflow apply`, or drive experiment topology/scenario updates from
   a git-based CI/CD pipeline reacting to push events.
+* [Builder](builder/administration.md#rest-api) - create, edit, share and
+  publish Builder drafts, convert legacy Builder diagrams, and manage Builder
+  packages, icons and templates through the routes under `/api/v1/builder/`.

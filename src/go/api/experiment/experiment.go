@@ -96,6 +96,11 @@ func hookCreate(exp *types.Experiment, c *store.Config) error {
 		return fmt.Errorf("initializing experiment: %w", err)
 	}
 
+	// The notes of the nodes become VM notes here, at creation only. An update
+	// or a start does not change the labels, so notes edited in the VM Labels
+	// dialog stay.
+	seedNodeNotes(exp.Spec.Topology(), time.Now())
+
 	if common.BridgeMode == common.BridgeModeAuto {
 		if len(c.Metadata.Name) > MaxBridgeNameLength {
 			return fmt.Errorf(

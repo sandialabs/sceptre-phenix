@@ -1,0 +1,334 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "metadata": {
+    "id": "c4736b29-168d-58ea-aea8-348f2c25fbfa",
+    "name": "links"
+  },
+  "nodes": [
+    {
+      "id": "24810bf4-f94a-55cc-a077-78d3b7dac271",
+      "kind": "device",
+      "label": "alpha",
+      "position": {
+        "x": 80,
+        "y": 112
+      },
+      "device": {
+        "hostname": "alpha",
+        "iconKey": "router",
+        "spec": {
+          "general": {
+            "hostname": "alpha"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "lan"
+              },
+              {
+                "name": "eth1",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "p2p"
+              },
+              {
+                "name": "eth2",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "quiet"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "43eba494-35d5-59d2-9a1b-619769c5f2df",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "965f6d90-912c-5b07-869e-a6b911be57b1",
+            "name": "eth1",
+            "index": 1
+          },
+          {
+            "id": "482c5bc4-e5d8-577a-be2c-81cc166bd675",
+            "name": "eth2",
+            "index": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "60df40ba-a476-5936-924b-8bc47c9a96f8",
+      "kind": "device",
+      "label": "beta",
+      "position": {
+        "x": 800,
+        "y": 112
+      },
+      "device": {
+        "hostname": "beta",
+        "iconKey": "firewall",
+        "spec": {
+          "general": {
+            "hostname": "beta"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "p2p"
+              },
+              {
+                "name": "eth1",
+                "proto": "dhcp",
+                "type": "ethernet"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "d0415d38-9118-5781-928b-7fdb38ccf094",
+            "name": "eth0",
+            "index": 0
+          },
+          {
+            "id": "f8fc866a-3168-5d2b-9daa-b5f0a0caacdf",
+            "name": "eth1",
+            "index": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "eb1cd6c4-1ca9-5a53-ad36-a1339161cb58",
+      "kind": "device",
+      "label": "gamma",
+      "position": {
+        "x": 80,
+        "y": 832
+      },
+      "device": {
+        "hostname": "gamma",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "gamma"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "proto": "dhcp",
+                "type": "ethernet",
+                "vlan": "lan"
+              }
+            ]
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": [
+          {
+            "id": "f82f86e5-1d29-5594-8ac9-d7dd31d58848",
+            "name": "eth0",
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1b2b740-47af-5877-8284-b050bd46707d",
+      "kind": "switch",
+      "label": "lan",
+      "position": {
+        "x": 384,
+        "y": 448
+      },
+      "switch": {
+        "networkId": "27d375cb-2a76-56b1-9647-76f96fcb8030"
+      }
+    },
+    {
+      "id": "ba84c314-18bd-543d-8e62-cc7319133b54",
+      "kind": "switch",
+      "label": "p2p",
+      "position": {
+        "x": 432,
+        "y": 128
+      },
+      "switch": {
+        "networkId": "05f42462-a22e-5d26-a023-bb9d1e6539f1"
+      }
+    },
+    {
+      "id": "0966a549-f267-556c-813b-3e0d6848870c",
+      "kind": "switch",
+      "label": "quiet",
+      "position": {
+        "x": 64,
+        "y": 256
+      },
+      "switch": {
+        "networkId": "4322b88f-dc73-503c-8d78-8df10835d43c"
+      }
+    },
+    {
+      "id": "e63bfdb5-4497-58ca-be8f-aaf37ec4751b",
+      "kind": "switch",
+      "label": "spare",
+      "position": {
+        "x": 1184,
+        "y": 448
+      },
+      "switch": {
+        "networkId": "3af8ea3f-1fa5-5f9e-b409-13da7e09efce"
+      }
+    },
+    {
+      "id": "1db20cc2-0a91-56ce-9e73-f63ca19050c3",
+      "kind": "note",
+      "position": {
+        "x": 1408,
+        "y": 800
+      },
+      "size": {
+        "width": 240,
+        "height": 120
+      },
+      "note": {
+        "text": "DMZ"
+      }
+    },
+    {
+      "id": "22217de9-a21b-5a1a-a422-cf20061dee64",
+      "kind": "note",
+      "position": {
+        "x": 1808,
+        "y": 800
+      },
+      "size": {
+        "width": 160,
+        "height": 64
+      },
+      "note": {
+        "text": "a note"
+      }
+    }
+  ],
+  "networks": [
+    {
+      "id": "27d375cb-2a76-56b1-9647-76f96fcb8030",
+      "name": "lan",
+      "alias": 200
+    },
+    {
+      "id": "05f42462-a22e-5d26-a023-bb9d1e6539f1",
+      "name": "p2p",
+      "alias": 77
+    },
+    {
+      "id": "4322b88f-dc73-503c-8d78-8df10835d43c",
+      "name": "quiet"
+    },
+    {
+      "id": "3af8ea3f-1fa5-5f9e-b409-13da7e09efce",
+      "name": "spare"
+    }
+  ],
+  "edges": [
+    {
+      "id": "1b7b827a-46c1-5b98-8618-5a5fc97a25c0",
+      "sourceNodeId": "24810bf4-f94a-55cc-a077-78d3b7dac271",
+      "sourceHandleId": "43eba494-35d5-59d2-9a1b-619769c5f2df",
+      "targetNodeId": "c1b2b740-47af-5877-8284-b050bd46707d",
+      "networkId": "27d375cb-2a76-56b1-9647-76f96fcb8030"
+    },
+    {
+      "id": "5446d0e0-c59a-500c-8cc3-efbc9a68c0bc",
+      "sourceNodeId": "24810bf4-f94a-55cc-a077-78d3b7dac271",
+      "sourceHandleId": "482c5bc4-e5d8-577a-be2c-81cc166bd675",
+      "targetNodeId": "0966a549-f267-556c-813b-3e0d6848870c",
+      "networkId": "4322b88f-dc73-503c-8d78-8df10835d43c"
+    },
+    {
+      "id": "72a82095-df7a-54c1-a483-0a1dd083005f",
+      "sourceNodeId": "60df40ba-a476-5936-924b-8bc47c9a96f8",
+      "sourceHandleId": "d0415d38-9118-5781-928b-7fdb38ccf094",
+      "targetNodeId": "ba84c314-18bd-543d-8e62-cc7319133b54",
+      "networkId": "05f42462-a22e-5d26-a023-bb9d1e6539f1"
+    },
+    {
+      "id": "e69648a8-61ca-546b-9777-4f6e251b86fc",
+      "sourceNodeId": "eb1cd6c4-1ca9-5a53-ad36-a1339161cb58",
+      "sourceHandleId": "f82f86e5-1d29-5594-8ac9-d7dd31d58848",
+      "targetNodeId": "c1b2b740-47af-5877-8284-b050bd46707d",
+      "networkId": "27d375cb-2a76-56b1-9647-76f96fcb8030"
+    },
+    {
+      "id": "f1bd1237-1014-5c85-95e5-4bea32182e42",
+      "sourceNodeId": "24810bf4-f94a-55cc-a077-78d3b7dac271",
+      "sourceHandleId": "965f6d90-912c-5b07-869e-a6b911be57b1",
+      "targetNodeId": "ba84c314-18bd-543d-8e62-cc7319133b54",
+      "networkId": "05f42462-a22e-5d26-a023-bb9d1e6539f1"
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": true,
+    "size": 16,
+    "snap": true
+  },
+  "source": {
+    "kind": "manual",
+    "warnings": [
+      "Added a switch for 2 networks that had none in the legacy diagram: p2p and quiet.",
+      "Left out 3 links whose nodes have no interface on that network: beta to nowhere, beta to spare and gamma to nowhere.",
+      "Left out 5 lines that were not network links.",
+      "Text and containers were kept as notes and groups. Their colors, fonts and other formatting were not converted."
+    ]
+  }
+}

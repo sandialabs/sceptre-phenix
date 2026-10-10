@@ -1,0 +1,542 @@
+<!--
+  Semantic outline.
+
+  This is the accessible mirror of the canvas and a first-class editing
+  surface: select, rename and delete work here without a single drag
+  gesture, and the toolbar's Add connection and Move to group dialogs
+  connect nodes and move them between groups the same way. It lists nodes
+  only. To remove a connection, use Delete on the canvas, Disconnect in the
+  Inspector's Connection points, or Disconnect in the command palette. It
+  stays in sync with the canvas because both render the same document.
+-->
+<template>
+  <!-- In a narrow window the outline scrolls. With nothing in it to focus
+       (no nodes, and no networks or only networks a read-only diagram
+       cannot remove), it is focusable itself, so the keyboard can scroll it
+       (WCAG 2.1.1). -->
+  <section
+    class="builder-outline builder-panel"
+    aria-labelledby="outline-title"
+    :tabindex="
+      !outline.length && (store.readOnly || !networks.length) ? 0 : undefined
+    ">
+    <h2
+      id="outline-title"
+      ref="titleEl"
+      class="builder-outline__title"
+      tabindex="-1">
+      Outline
+    </h2>
+    <!-- Describes the list once, not every row on every arrow press. Written
+         from the command registry, with this platform's keys. Not shown,
+         as the shortcut sheet lists these keys. Screen readers still get
+         it, since a list of buttons does not say that arrow keys move
+         between them, F2 renames or Delete removes. Visually hidden rather
+         than hidden, so reading the page reaches it too. -->
+    <p :id="HINT_ID" class="builder-visually-hidden">{{ hint }}</p>
+
+    <!-- A list is rendered only with items: an empty list is a list without
+         the list items ARIA requires it to own. -->
+    <builder-outline-list
+      v-if="outline.length"
+      :items="outline"
+      aria-label="Diagram outline"
+      :aria-describedby="HINT_ID"
+      class="builder-outline__tree"
+      data-testid="builder-outline" />
+    <p
+      v-else
+      class="builder-outline__empty"
+      data-testid="builder-outline-empty">
+      {{
+        store.readOnly
+          ? 'No nodes.'
+          : 'No nodes yet. Add one from the Add nodes panel.'
+      }}
+    </p>
+
+    <section class="builder-outline__networks" aria-labelledby="networks-title">
+      <h3
+        id="networks-title"
+        ref="networksTitleEl"
+        class="builder-outline__subtitle"
+        tabindex="-1">
+        Networks
+      </h3>
+
+      <ul
+        v-if="networks.length"
+        role="list"
+        class="builder-outline__tree"
+        data-testid="builder-networks">
+        <li
+          v-for="network in networks"
+          :key="network.id"
+          class="builder-outline__row">
+          <!-- The name has the row's width, and wraps instead of being
+               cut short. The alias and device count go below it. -->
+          <div
+            class="builder-outline__item builder-outline__item--static builder-outline__network">
+            <builder-icon name="vlan" :size="14" />
+            <span class="builder-outline__label">{{ network.name }}</span>
+            <span class="builder-outline__details">
+              <span class="builder-outline__kind">
+                {{ network.alias ? `VLAN ${network.alias}` : 'no alias' }}
+              </span>
+              <span class="builder-outline__count">{{ network.devices }}</span>
+            </span>
+            <button
+              :id="removeNetworkId(network.id)"
+              type="button"
+              class="builder-button builder-button--danger"
+              :disabled="store.readOnly"
+              :aria-label="`Remove network ${network.name}`"
+              @click="removeNetwork(network)">
+              <builder-icon name="close" :size="12" />
+            </button>
+          </div>
+        </li>
+      </ul>
+      <p
+        v-else
+        class="builder-outline__empty"
+        data-testid="builder-networks-empty">
+        {{
+          store.readOnly
+            ? 'No networks.'
+            : 'No networks yet. Adding a switch creates one.'
+        }}
+      </p>
+    </section>
+  </section>
+</template>
+
+<script setup>
+  import {
+    computed,
+    inject,
+    nextTick,
+    provide,
+    reactive,
+    ref,
+    watch,
+  } from 'vue';
+
+  import BuilderIcon from './BuilderIcon.vue';
+  import BuilderOutlineList from './BuilderOutlineList.vue';
+
+  import { nodeIconKey } from '@/builder/catalog.js';
+  import { iconLibrary } from '@/builder/iconLibrary.js';
+  import { iconSrc } from '@/builder/icons.js';
+  import {
+    findNode,
+    includedReason,
+    networkRefusal,
+    renamePatch,
+  } from '@/builder/model.js';
+  import { outlineHint, textFieldCommand } from '@/builder/commands.js';
+  import {
+    buildOutline,
+    networkOutline,
+    rowNodeIds,
+  } from '@/builder/outline.js';
+  import { pressSelection } from '@/builder/selection.js';
+  import { keepUnchanged } from '@/builder/stable.js';
+  import { useBuilderStore } from '@/builder/store.js';
+
+  const HINT_ID = 'outline-hint';
+
+  const store = useBuilderStore();
+  // The view's command context (Builder.vue), whose view brings nodes
+  // into view on the canvas.
+  const commands = inject('builderCommands', null);
+
+  // Id of the row that holds the outline's single tab stop.
+  const activeId = ref('');
+  const renamingId = ref('');
+  const renameValue = ref('');
+  const titleEl = ref(null);
+  const networksTitleEl = ref(null);
+
+  // Rows an edit leaves as they were stay the same objects, so only the
+  // rows it changed are drawn again (see keepUnchanged).
+  const outline = computed((previous) =>
+    keepUnchanged(buildOutline(store.doc), previous, 'children'),
+  );
+  const hint = computed(() => outlineHint({ readOnly: store.readOnly }));
+  const networks = computed(() => networkOutline(store.doc));
+
+  // Rows in the order they are shown, which is the arrow key order.
+  const flatItems = computed(() => {
+    const flat = [];
+
+    const walk = (items) => {
+      items.forEach((item) => {
+        flat.push(item);
+        walk(item.children || []);
+      });
+    };
+
+    walk(outline.value);
+
+    return flat;
+  });
+
+  // Uses the first row when the active row is gone (deleted here, on the
+  // canvas or from the toolbar), so Tab always reaches the outline.
+  const rovingId = computed(() => {
+    const items = flatItems.value;
+
+    return items.some((item) => item.id === activeId.value)
+      ? activeId.value
+      : items[0]?.id || '';
+  });
+
+  // The rows that are pressed, hold the tab stop and are being renamed, as
+  // sets each row asks about its own id: a click then draws again only the
+  // rows whose answer it changed, rather than every row.
+  const pressedIds = idSet(() => [...store.selection.nodes]);
+  const rovingIds = idSet(() => [rovingId.value]);
+  const renamingIds = idSet(() => [renamingId.value].filter(Boolean));
+
+  function idSet(source) {
+    const set = reactive(new Set());
+
+    watch(
+      source,
+      (ids) => {
+        const next = new Set(ids);
+
+        [...set].filter((id) => !next.has(id)).forEach((id) => set.delete(id));
+        next.forEach((id) => set.add(id));
+      },
+      { immediate: true, flush: 'sync' },
+    );
+
+    return set;
+  }
+
+  provide(
+    'builderOutline',
+    reactive({
+      renameValue,
+      rowId,
+      iconFor,
+      iconSrcFor,
+      isPressed: (id) => pressedIds.has(id),
+      isRoving: (id) => rovingIds.has(id),
+      isRenaming: (id) => renamingIds.has(id),
+      onRowClick,
+      onRowKeydown,
+      onRowFocus,
+      commitRename,
+      cancelRename,
+      onRenameKeydown,
+      onRenameChange,
+    }),
+  );
+
+  function rowId(id) {
+    return `outline-row-${id}`;
+  }
+
+  function removeNetworkId(id) {
+    return `outline-remove-network-${id}`;
+  }
+
+  // Focuses an element by id once the DOM reflects the latest change, or
+  // `fallback` when the element is gone.
+  function focusLater(id, fallback) {
+    nextTick(() => {
+      const element = id ? document.getElementById(id) : null;
+
+      (element || fallback?.())?.focus();
+    });
+  }
+
+  // Each row carries its icon (see buildOutline), so an edit draws again
+  // only the rows it changed.
+  function iconFor(item) {
+    return item.iconKey || nodeIconKey({ kind: item.kind });
+  }
+
+  // The address of the row's custom icon, drawn in place of that icon, or
+  // '' for a row without one or one nothing resolves (see iconSrc).
+  function iconSrcFor(item) {
+    return item.icon ? iconSrc(item.icon, store.doc.icons, iconLibrary) : '';
+  }
+
+  function isSelected(id) {
+    return store.selection.nodes.includes(id);
+  }
+
+  // A plain press selects the row alone, or deselects it when it is already
+  // the only thing selected, so the pressed state always toggles. With
+  // `additive`, it adds the row to the selection or takes it out, so several
+  // nodes can be grouped or deleted together. The canvas presses its nodes
+  // the same way, and says the same.
+  function pressRow(item, additive) {
+    const { selection, message } = pressSelection(
+      store.doc,
+      store.selection,
+      { kind: 'nodes', id: item.id },
+      additive,
+    );
+
+    activeId.value = item.id;
+    store.select(selection);
+    store.announce(message);
+  }
+
+  function focusRow(id) {
+    activeId.value = id;
+    focusLater(rowId(id), () => titleEl.value);
+  }
+
+  function onRowFocus(item) {
+    activeId.value = item.id;
+  }
+
+  // A plain click, Enter or Space selects or deselects the row. With Shift,
+  // Ctrl or Cmd, it toggles the row in the selection. The row takes focus, so
+  // a row activated from screen reader browse mode is the one that F2 and
+  // Delete then act on. The canvas shows the row's nodes, a group's members
+  // and a switch's network with them, when any is out of view. Focus stays
+  // on the row.
+  function onRowClick(item, event) {
+    const row = document.getElementById(rowId(item.id));
+
+    if (row && document.activeElement !== row) {
+      row.focus();
+    }
+
+    pressRow(item, event.shiftKey || event.ctrlKey || event.metaKey);
+    commands?.view?.revealNode?.(rowNodeIds(store.doc, item.id));
+  }
+
+  // Bound to each row rather than the list, so the rename field that takes a
+  // row's place keeps its own Enter, Space and arrow keys.
+  function onRowKeydown(item, event) {
+    const items = flatItems.value;
+    const index = items.findIndex((entry) => entry.id === item.id);
+    const target = {
+      ArrowDown: index + 1,
+      ArrowUp: index - 1,
+      Home: 0,
+      End: items.length - 1,
+    }[event.key];
+
+    if (target !== undefined) {
+      event.preventDefault();
+      focusRow(items[Math.min(items.length - 1, Math.max(0, target))].id);
+      return;
+    }
+
+    // Handled here, not in the button's click, which in Firefox does not
+    // carry the Shift key. preventDefault stops that click.
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onRowClick(item, event);
+      return;
+    }
+
+    if (event.key === 'F2' && !store.readOnly) {
+      event.preventDefault();
+      startRename(item);
+      return;
+    }
+
+    // Backspace too: a Mac keyboard's delete key is Backspace, and it has
+    // no forward delete without Fn.
+    if (
+      (event.key === 'Delete' || event.key === 'Backspace') &&
+      !store.readOnly
+    ) {
+      event.preventDefault();
+      removeItem(item, index);
+    }
+  }
+
+  // Delete or Backspace removes the focused row, or the whole selection when
+  // the row is part of it. Focus moves to the nearest remaining row,
+  // preferring the one above, or to the Outline heading once no rows are
+  // left.
+  function removeItem(item, index) {
+    const order = flatItems.value.map((entry) => entry.id);
+
+    if (isSelected(item.id)) {
+      store.removeSelection();
+    } else {
+      store.remove({ nodes: [item.id], edges: [] });
+    }
+
+    const remaining = new Set(flatItems.value.map((entry) => entry.id));
+
+    // A row that could not be removed (see removalRefusal) keeps focus.
+    if (remaining.has(item.id)) {
+      focusRow(item.id);
+
+      return;
+    }
+    const next =
+      order
+        .slice(0, index)
+        .reverse()
+        .find((id) => remaining.has(id)) ||
+      order.slice(index + 1).find((id) => remaining.has(id));
+
+    if (next) {
+      focusRow(next);
+    } else {
+      focusLater('', () => titleEl.value);
+    }
+  }
+
+  function startRename(item) {
+    if (store.readOnly) {
+      return;
+    }
+
+    // Refused before anything is typed: an included device keeps its name,
+    // and so does a network one is on.
+    const node = findNode(store.doc, item.id);
+    const refusal =
+      includedReason(node) ||
+      (node?.kind === 'switch'
+        ? networkRefusal(store.doc, item.networkId)
+        : '');
+
+    if (refusal) {
+      store.refuse(refusal);
+
+      return;
+    }
+
+    activeId.value = item.id;
+    renamingId.value = item.id;
+    renameValue.value = item.label;
+    nextTick(() => {
+      const input = document.getElementById(`rename-${item.id}`);
+      input?.focus();
+      input?.select();
+    });
+  }
+
+  function cancelRename(item) {
+    if (renamingId.value !== item.id) {
+      return;
+    }
+
+    renamingId.value = '';
+    focusRow(item.id);
+  }
+
+  // The rename field keeps its keys to itself, Enter and Escape above all,
+  // but for the Builder's keys that work in text fields (Command palette,
+  // Save now). These go to its key dispatcher as they do from any field.
+  function onRenameKeydown(event) {
+    if (!textFieldCommand(event)) {
+      event.stopPropagation();
+    }
+  }
+
+  // Save now commits the focused field first by sending it a change (see
+  // settleEdits in Builder.vue), which commits the rename as Enter does,
+  // focus going back to the row. The change the browser sends as focus
+  // leaves, with focus already gone, commits it as leaving does.
+  function onRenameChange(item, event) {
+    commitRename(item, document.activeElement === event.target);
+  }
+
+  // A rename changes a different value for each kind: a device's hostname,
+  // the name of the network a switch publishes, a group's title, and a
+  // drawing's payload label (see renamePatch), which the canvas and the
+  // Inspector show. Enter returns focus to the row, which may have moved
+  // because rows sort by label. Leaving the field (blur) commits without
+  // taking focus back.
+  function commitRename(item, refocus) {
+    if (renamingId.value !== item.id) {
+      return;
+    }
+
+    const label = renameValue.value.trim();
+
+    renamingId.value = '';
+
+    if (refocus) {
+      focusRow(item.id);
+    }
+
+    if (!label || label === item.label) {
+      return;
+    }
+
+    const node = findNode(store.doc, item.id);
+
+    if (!node) {
+      return;
+    }
+
+    if (node.kind === 'device') {
+      store.updateNode(
+        item.id,
+        { device: { hostname: label } },
+        `Renamed device to ${label}`,
+      );
+
+      return;
+    }
+
+    if (node.kind === 'switch') {
+      store.updateNetwork(node.switch.networkId, { name: label });
+
+      return;
+    }
+
+    if (node.kind === 'group') {
+      store.updateNode(item.id, { group: { title: label } }, 'Renamed group');
+
+      return;
+    }
+
+    store.updateNode(item.id, renamePatch(node, label), 'Renamed node');
+  }
+
+  // Focus moves to the next network's Remove button, or the previous one, or
+  // the Networks heading once the list is empty.
+  function removeNetwork(network) {
+    const list = networks.value;
+    const index = list.findIndex((entry) => entry.id === network.id);
+    const neighbour = list[index + 1] || list[index - 1];
+
+    // A refused removal leaves focus on its button.
+    if (!store.removeNetwork(network.id)) {
+      return;
+    }
+
+    focusLater(
+      neighbour ? removeNetworkId(neighbour.id) : '',
+      () => networksTitleEl.value,
+    );
+  }
+</script>
+
+<style scoped>
+  .builder-outline__title,
+  .builder-outline__subtitle {
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin: 0 0 0.35rem;
+  }
+
+  .builder-outline__tree {
+    list-style: none;
+    margin: 0 0 0.75rem;
+    padding: 0;
+  }
+
+  .builder-outline__empty {
+    font-size: 0.78rem;
+    margin: 0 0 0.75rem;
+  }
+</style>

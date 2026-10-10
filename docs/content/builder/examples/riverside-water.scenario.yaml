@@ -1,0 +1,46 @@
+# Scenario for the Riverside Water example lab: NAT and a port forward on the
+# VyOS edge router, and time from ntp-01 (an included device) for the
+# workstations and the OT hosts.
+apiVersion: phenix.sandia.gov/v2
+kind: Scenario
+metadata:
+  name: riverside-water
+  annotations:
+    topology: riverside-water
+spec:
+  apps:
+    - name: vrouter
+      hosts:
+        - hostname: edge-rtr
+          metadata:
+            snat:
+              - interface: eth0
+                srcAddr: 10.10.20.0/24
+                translation: masquerade
+            dnat:
+              - interface: eth0
+                dstAddr: 203.0.113.2
+                dstPort: 80
+                protocol: tcp
+                translation: 172.16.10.10:80
+    - name: ntp
+      metadata:
+        defaultSource:
+          hostname: ntp-01
+          interface: eth0
+      hosts:
+        - hostname: ntp-01
+          metadata:
+            server: chronyd
+        - hostname: ws-01
+          metadata:
+            client: windows
+        - hostname: ws-02
+          metadata:
+            client: windows
+        - hostname: hmi-01
+          metadata:
+            client: windows
+        - hostname: historian-01
+          metadata:
+            client: chrony
