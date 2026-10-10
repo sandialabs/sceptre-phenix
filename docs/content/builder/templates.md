@@ -259,9 +259,10 @@ A restored template has its original name, description and device. It is
 added at the end of **My templates**, and it is in no collection. It is not
 shared or published. The page says what it restored, for example "Restored
 template Router." A built-in template that you changed is not missing, so a
-restore does not replace your changes. When your library already has 200
-templates, the restore fails and the page says why, for example "Could not
-restore the built-in template. A library holds at most 200 templates."
+restore does not replace your changes. When the restore would make your
+library hold more than 200 templates, it restores nothing and the page says
+why, for example "Could not restore the built-in template. A library holds
+at most 200 templates."
 
 ### Collections
 

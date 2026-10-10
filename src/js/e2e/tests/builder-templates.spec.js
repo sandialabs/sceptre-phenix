@@ -17,13 +17,16 @@
 // the library just then, and no test counts the library's templates. A test
 // changes and deletes only the templates and collections it made, which the
 // `tracker` deletes afterwards, and never the five built-in templates the
-// library starts with: other tests find them there, in their order. The
-// test of Restore built-in templates hides built-in templates from what its
-// page reads instead, and its restores find nothing to restore on the
-// server. It never presses Select all and then Delete on the
-// list of every template: only on the list of a collection it made. The one
-// test that opens the Custom icons dialog answers the icon library's route
-// itself.
+// library starts with: other tests find them there, in their order. A
+// restored built-in template goes to the end of the library, so a real
+// delete and restore here changes that order for every later test. The test
+// of Restore built-in templates hides built-in templates from what its page
+// reads instead, and its restores find nothing to restore on the server.
+// builder-sharing-templates.spec.js deletes and restores a built-in template
+// for real, in the library of a user of its own. No test presses Select all
+// and then Delete on the list of every template: only on the list of a
+// collection it made. The one test that opens the Custom icons dialog
+// answers the icon library's route itself.
 //
 // A route a test answers itself stays for the rest of the test, and stops
 // answering when the test says so: taking a route away while the page has a
@@ -1290,7 +1293,7 @@ test(
   },
 );
 
-test('Restore built-in templates adds back a deleted built-in template, one by name or all from a menu', async ({
+test('Restore built-in templates shows for each built-in template the page reads as missing, one by name or all from a menu', async ({
   page,
   builder,
   request,
@@ -1302,7 +1305,8 @@ test('Restore built-in templates adds back a deleted built-in template, one by n
   // tests share one library, so this test deletes no built-in template:
   // it takes them out of what the page reads. The restore goes to the
   // server, which finds nothing to restore, and the page is told what a
-  // library without them would answer.
+  // library without them would answer. A real delete and restore is in
+  // builder-sharing-templates.spec.js.
   let hidden = [];
   const sent = [];
 

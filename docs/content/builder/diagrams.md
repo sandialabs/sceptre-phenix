@@ -69,9 +69,9 @@ templates of this table:
 A template's description is its tooltip in **Add nodes** only: the device it
 makes has no description. You can change and delete the built-in templates,
 restore a deleted one, and make templates of your own, in a diagram or in
-your library (see [Node Templates](templates.md)). The templates of **Add nodes** are in
-groups: **This diagram**, **My library**, **Shared with me** and
-**Server-wide**.
+your library (see [Node Templates](templates.md)). The templates of **Add
+nodes** are in groups: **This diagram**, **My library**, **Shared with me**
+and **Server-wide**.
 
 When the hostname is taken, the new device gets a number, for example
 server-2. A new device has no interfaces, so the checks warn "device

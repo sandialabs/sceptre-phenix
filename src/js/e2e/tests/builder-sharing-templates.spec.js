@@ -4,10 +4,10 @@
 // server-wide, which every user then lists, a Topology Reviewer cannot
 // publish, and another Builder and then the publisher take it back; and a
 // user changes and deletes the built-in templates of a library of their
-// own. Server-wide publishing is offered only here: with authentication off
-// there is no one else, so the Node Templates tab offers no Share. Opt-in, as
-// builder-sharing.spec.js is: the tests need a server with authentication
-// on, e.g.:
+// own, and restores the deleted one. Server-wide publishing is offered only
+// here: with authentication off there is no one else, so the Node Templates
+// tab offers no Share. Opt-in, as builder-sharing.spec.js is: the tests need
+// a server with authentication on, e.g.:
 //
 //   phenix ui --jwt-signing-key e2e-sharing \
 //     --users 'e2e-admin:Testpass1!:Global Admin'
@@ -870,7 +870,7 @@ test('a Builder publishes a template server-wide, which every user lists; a Topo
   });
 });
 
-test('a user changes and deletes built-in templates of their own library, and they stay so', async ({
+test('a user changes and deletes built-in templates of their own library, they stay so, and Restore brings the deleted one back', async ({
   userMaker,
 }) => {
   test.setTimeout(120000);
@@ -881,10 +881,16 @@ test('a user changes and deletes built-in templates of their own library, and th
   const keeper = await userMaker.user('keeper', role.spec.roleName);
   const { page } = keeper;
   const editor = templateEditor(page);
+  const restore = page.getByTestId('templates-restore');
+  // The built-in External device as the new library holds it.
+  const [external] = (await listLibrary(keeper.api)).templates.filter(
+    (item) => item.source === 'own' && item.id === 'external',
+  );
   let library = await openLibrary(keeper);
 
   await test.step('Edit changes the built-in Router, and Delete takes External device away', async () => {
     await expect(library.tab).toHaveText('Node Templates (5)');
+    await expect.soft(restore).toHaveCount(0);
 
     await library.edit('router').click();
     await expect(editor.dialog).toBeVisible();
@@ -924,6 +930,53 @@ test('a user changes and deletes built-in templates of their own library, and th
     expect(
       templates.filter((item) => item.source === 'own').map((item) => item.id),
     ).toEqual(['server', 'workstation', 'router', 'firewall']);
+  });
+
+  await test.step('Restore brings External device back as it was, at the end, and leaves Router as edited', async () => {
+    library = await openLibrary(keeper);
+    await expect(restore).toHaveAccessibleName(
+      'Restore built-in template External device',
+    );
+
+    const answer = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().endsWith('/restore'),
+    );
+
+    await restore.click();
+
+    const response = await answer;
+
+    expect.soft(response.status()).toBe(200);
+    expect.soft(await response.json()).toEqual({ restored: ['external'] });
+    await expect(page).toHaveAnnounced('Restored template External device.');
+    await expect(library.card('external')).toBeVisible();
+    await expect(library.tab).toHaveText('Node Templates (5)');
+    await expect(restore).toHaveCount(0);
+    await expect
+      .soft(library.card('router'))
+      .toContainText('The plant’s edge router');
+
+    const own = (await listLibrary(keeper.api)).templates.filter(
+      (item) => item.source === 'own',
+    );
+
+    expect(own.map((item) => item.id)).toEqual([
+      'server',
+      'workstation',
+      'router',
+      'firewall',
+      'external',
+    ]);
+
+    const restored = own.at(-1);
+
+    expect.soft(restored.name).toBe(external.name);
+    expect.soft(restored.description).toBe(external.description);
+    expect.soft(restored.device).toEqual(external.device);
+    expect.soft(restored.version).toBe(1);
+    expect.soft(restored.collections).toEqual([]);
     expectNoFatal(keeper.issues);
   });
 });
