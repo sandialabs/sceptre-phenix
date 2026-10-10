@@ -1,283 +1,156 @@
-# Builder editor
+# Builder editor and drafts page
 
-Part of the [Builder references](../builder.md). The editor page: opening
-diagrams, the Inspector, notes, layouts, signing in again, the header and
-toolbar, keys and the palette, the side columns and the minimap, and the
-lists of checks with Go to.
+Part of the [Builder references](../builder.md). The code behind the editor
+page and the drafts page: how a diagram opens, the Inspector, notes,
+layouts, the canvas, keys, lists of checks with Go to, bulk actions, and
+what the browser keeps.
 
-## In the browser
+User docs: [The Editor](https://phenix.sceptre.dev/latest/builder/editor/),
+[Building a Diagram](https://phenix.sceptre.dev/latest/builder/diagrams/)
+and [Drafts](https://phenix.sceptre.dev/latest/builder/drafts/). They hold
+the UI text, the keys and the limits. Keep them current when the UI
+changes.
 
-The
-Inspector suggests drive images, and the diagram checks flag a missing one,
-from `GET /disks`; without the `disks` `list` permission it does neither.
+## Opening a diagram
 
-### Opening diagrams, the Inspector, notes and layouts
+- The Configs page links (`builderAction`, `builderLink`,
+  `builderTagLabel` in `builder/configs.js`) go to
+  `/builder?topology=<name>`. `openLinked` in `Builder.vue` then picks a
+  draft with `draftForPublished(drafts, published, token)`, else opens the
+  Import dialog with `initial: {kind: 'topology', name}`. The order is in
+  [Editing a published topology](https://phenix.sceptre.dev/latest/builder/publishing/#editing-a-published-topology).
+- The address names the open draft as `?draft=<owner>/<id>`, so a reload
+  opens it again.
+- Card Publish on the drafts page loads the draft without the editor
+  (`store.loadDraft(owner, id, {quiet: true})`) and opens the editor's
+  Publish dialog over the page.
 
-Builder works over plain HTTP as well as HTTPS. A published diagram
-opens read only; Edit as a draft creates a draft from it (or reopens the draft
-made from it before), which needs `configs` `create`, so a role with only
-`list`/`get` can view drafts and published diagrams but cannot create, import,
-upload, or publish. On the Configs page the Builder tag of a topology
-(`builder` for `builder-doc`, `builder legacy` for `builder-xml`) is a
-`<router-link>`, and the viewer has a button left of Edit Config ("Open in
-Builder" for `builder-doc`, "Import into Builder" for any other topology,
-the latter only with `configs` `create`); both, and the edit button of a
-`builder-doc` topology, go to `builderLink(config)` =
-`/builder?topology=<name>` (`builderAction`, `builderLink`,
-`builderTagLabel` in `builder/configs.js`). `openLinked` in `Builder.vue`
-then opens, for a topology with a current published document,
-`draftForPublished(drafts, published, token)` in this order: the user's
-draft that published it, a draft shared with the user for edit that
-published it, the user's draft made from it (`builder-doc/<id>` token),
-else a new draft (`store.openPublishedDocument`); without `configs`
-`create` and no such draft, the published diagram read only. Any other
-listed topology (plain, legacy, or `builder-doc` naming no document) opens
-the Import dialog with `initial: {kind: 'topology', name}` and nothing is
-made until Import; errors: "Topology <name> does not exist, or you may not
-read it." and "Topology <name> has no Builder diagram, and your role cannot
-create drafts to import it. Select its name in Configs to view it." The
-address then names the draft as `?draft=<owner>/<id>`, so a reload reopens
-that draft. Edit on a `builder-xml` topology opens the text editor with
-`builder-xml: <SNIPPED>`; the diagram is written back unchanged while that
-line stays, and deleting the line removes it. The Inspector also edits a node's labels,
-annotations, and advanced (minimega `vm config`) settings, and its notes
-(`general.notes`), each note in a text area of its own (`isMultilineList` in
-`inspector/control.js`). A switch's form edits the switch's own notes
-(`switch.notes`) the same way, applied with its network's fields in one undo
-step. Device and switch notes (`nodeNotes` in `model.js`; blank ones and
-non-text entries show nothing) show in a card below the node, inside Vue
-Flow's wrapper but outside the node's box (`nodes/NodeNotes.vue`: five notes
-at most, each cut after three lines, then "+N more"), in the info tooltip and
-the node's description (`nodeInfo.js`; the card is `aria-hidden`, so the
-description says the five notes it shows, each whole up to `noteCharacters`,
-then "and N more notes"), and in PNG and SVG downloads (`documentBounds` in
-`exporters.js`). Copy, paste and duplicate keep them (`clipboard.js`).
-Duplicate (`store.duplicate`) pastes `copySelection` of the selection as it
-is, through `pasteClipboard`, and never reads or writes `store.clipboard`;
-with no node selected it does nothing and says why (`DUPLICATE_NEEDS_NODES`,
-also the reason `edit.duplicate`'s `when` gives), since a connection is
-copied only with both of its nodes. The
-setting `showNodeNotes` ("Show node notes", palette `view.nodeNotes`, which
-announces "Node notes shown." or "Node notes hidden.") hides the cards. Every
-layout places a node by `nodeFootprint` (`nodeNotes.js`): its box plus the
-card's height, estimated from the `.builder-node-notes` measures in
-`builder.css`, wrapping each note at spaces as the card does. An interface's kind
-picker offers Static or OSPF, DHCP or manual, and Serial; the Protocol and Type
-fields under it hold the rest. With nothing
-selected, its Diagram section shows two more parts below Name and
-Description. Annotations lists the annotations of the config the diagram was
-imported from, sorted by key and without `builder-` ones, under "From <Kind>
-<name>, imported <time>"; a diagram drawn in the editor has no such part. A
-value too long for its box scrolls in it, and Tab reaches the box only while
-it scrolls. Above Annotations, a read-only Details block shows the document's
-provenance (see [Document provenance](document.md#document-provenance)): "Created
-<time> by <createdBy>", "Last edited <time> by <updatedBy>", and "Source file
-<name>" when the draft record has `sourceFile`; a row without a value is
-left out, and the block when no row is left. Scenarios lists each scenario
-the document names ("Scenario <name>", testids `inspector-scenario-N`) with
-each of its apps and the hosts it runs on, or "No scenarios.". The apps are
-read with `GET /configs/Scenario/<name>` (`store.fetchScenario`, once per
-name until `saveScenarioConfig` drops the reading), which needs `configs`
-`get`; otherwise the Inspector says it cannot read them. Edit scenarios
-(Add scenario when there is none) opens the same Scenario dialog as the
-toolbar's Scenarios button; a read-only draft shows neither. Leaving a draft,
-publishing, or downloading first saves Inspector changes that were not applied,
-as a draft snapshot with the summary `Saved unapplied changes to <node>`.
-Logging out removes Builder's local drafts (IndexedDB `phenix-builder`),
-recent commands, the last Auto-group name pattern and the remembered
-Preflight checks (`phenix.builder.preflight`) from the browser, as does
-signing in as a different user
-(`phenix.builder.user` names whose data the browser holds), and keeps its
-preferences (`phenix.builder.theme`, `phenix.builder.panes`,
-`phenix.builder.minimap`, `phenix.builder.shortcuts` and
-`phenix.builder.settings` in localStorage).
-Logging out first sends changes still queued in the browser; if some remain,
-a warning offers Download (one file per draft), Stay signed in (not once the
-token has expired) and Log out anyway. The idle timeout and an expired token
-show it for one minute (an expired token's only while the tab is visible),
-then log out; for an automatic logout of an expired token on the Builder page
-it also offers Sign in again. A draft keeps in its document's `layout` the
-layout that last laid it out: the one chosen in the toolbar's layout menu, or
-the one Auto layout or Auto-group ran. The layout menu names it, or says
-Default, with no layout checked, for a draft without one (imported, uploaded,
-blank or placed by hand). On such a draft, Auto layout and Auto-group run the
-Settings layout ("Default layout") and the draft then keeps
-it. A run that moves nothing keeps no layout. Undo and Restore previous layout
-bring Default back. A document may also hold each connection's `route` as a
-layout drew it; publishing and Topology YAML ignore both. ELK layered lays each
-network out as a cluster and places the clusters in layers along the
-connections between them, cutting a tall layer into slices that wrap into
-columns, so connections run left to right, except one ELK reverses to break a
-cycle between networks.
+## Inspector
 
-### Signing in again
+- The Inspector builds JSON Forms from the schema (`schema.js`,
+  `adapters/forms.js`, `inspector/`). A list of text such as
+  `general.notes` gets one text area per item (`isMultilineList` in
+  `inspector/control.js`).
+- Gotcha: a change of `store.doc` reloads the form only while
+  `keepsWorkingCopy` (`adapters/forms.js`) is false: no unapplied edits, no
+  uncommitted text, no focus on Apply or Cancel. Otherwise
+  `rebasedWorkingCopy` moves the working copy onto the element as it is
+  now (`mergeFormData`). A change of the stamp alone (`sameButStamp`) never
+  resets the form, because a reset drops typed text
+  (`builder-inspector.spec.js` checks it).
+- Leaving a draft, publishing and downloading first save unapplied
+  Inspector changes as a snapshot (`settle`, `saveUnapplied`).
+- Diagram notes: `store.setDiagramNotes`, `diagramNoteProblem` in
+  `model.js`. A note that breaks a rule is never written.
 
-When the server refuses the session (a `401` on a save, a listing or a
-publish), or the token expires while Builder is open, a Sign in again
-dialog asks for the same user's password; to sign in as someone else, cancel
-and log out. The login is sent without the ended session's token, since the
-JWT middleware refuses an expired token before the login handler reads the
-password. Signing in stores the new token where the last sign-in did
-(sessionStorage, and localStorage with Remember me), then sends at once the
-changes the server refused, from the open draft and from drafts saving in the
-background; it clears nothing. Cancel keeps the changes queued in the browser
-and shows a Sign in again notice; Retry saving and Save then open the dialog.
-While the dialog is open, navigation within the Builder goes ahead and leaving
-it is cancelled. With `VITE_AUTH=proxy`, or a session without a JWT, the save
-state still says to use Download and sign in again.
+## Notes, layouts and the canvas
 
-### Header, toolbar and focus mode
+- Device and switch notes (`nodeNotes` in `model.js`) draw in a card below
+  the node (`nodes/NodeNotes.vue`), outside the node's box. The setting
+  `showNodeNotes` hides the cards.
+- Every layout, Fit, the least zoom and "bring into view" use the
+  footprint: the box plus the notes card (`nodeFootprint`,
+  `footprintBounds` in `nodeNotes.js`). Fit uses `getTransformForBounds`,
+  because Vue Flow's own fit measures only the boxes. For Fit, zoom and
+  view, the card counts only while `showNodeNotes` is on. Group sizing
+  takes `{showNotes}` too.
+- Layouts are registered in `layouts/index.js`: `elk` (ELK layered, the
+  default), `tiers` (Layered by tier, from `purdueLevel`), `cards`,
+  `dagre`, `standard`, `sfdp` (Yifan Hu) and `radial` (Graphviz sfdp and
+  twopi through `@hpcc-js/wasm-graphviz`, `graphviz.js`), and `force`
+  (d3-force, `force.js`). ELK and Graphviz run in Web Workers that load on
+  first use. The Graphviz worker source uses `import`, so it must start as
+  a module worker. The point layouts (`force`, `sfdp`, `radial`) end with
+  the box overlap pass `separateBoxes` (`separate.js`). They take random
+  numbers from a seed (`seedOf`, `seededRandom`), so the same document and
+  selection give the same layout. In `tiers`, the selected devices and
+  switches are the roots. With no selection, the roots are firewalls, then
+  routers, then the switch with the most connections. An external device
+  (`spec.external`, node type `hil` or the `external` icon, see `tierKind`)
+  is a root only when selected. Layouts leave drawings in place and grow groups
+  around them (`growAroundDrawings`). The document's `layout` records the
+  last layout that ran. User docs:
+  [Layouts](https://phenix.sceptre.dev/latest/builder/diagrams/#layouts).
+- Stacking: the canvas turns Vue Flow's `elevateNodesOnSelect` off and
+  sets z-index itself (`nodeZIndex` in `adapters/vueflow.js`). A selected
+  shape or line is never lifted, so it never covers a device or its
+  handles. Resize and line handles are in Vue Flow's edge label layer
+  (z-index 2000), and reach the store through `nodes/canvasEditing.js`, so
+  a node rendered alone imports no store.
+- PNG and SVG downloads (`exporters.js`) are at most `MAX_IMAGE_SIZE`
+  (4096) pixels each way (`computeExportViewport`). `exportImage` passes
+  `imagePixelRatio`, because html-to-image multiplies the size by the
+  screen's `devicePixelRatio`.
+- Icon bytes are drawn only through `BuilderIcon`'s `<img>` with a
+  `data:image/png;base64,` URL, never as markup.
+- Auto-group by name pattern runs the pattern in a same-origin worker
+  (`grouping.js`, `groupingWorker.js`) with a time limit.
 
-Both views share the header buttons at the top right: Commands (⌘K or
-Ctrl+K), the theme button (it cycles System, Light and Dark, the same
-preference as Settings > Theme), Settings, Help and Focus mode. The drafts page
-puts Blank diagram, Import and Upload before them; the editor puts Warnings
-and Reset view before them and Shortcuts after the theme button. Below a 97rem
-header (about a 1585px window) the theme button, Shortcuts, Settings and Help
-show only their icons and Commands drops its key caps; below 77rem (about
-1265px) Commands and Reset view show only their icons too. The editor
-header takes each step sooner when the labels would move its counts off
-center, so in a 1920px window only Reset view and Commands usually keep
-theirs. Warnings, Blank diagram, Import and Upload keep their labels. The
-editor header shows the
-diagram name as text, cut off with an ellipsis when long (whole in its
-tooltip), or a muted Untitled diagram. An Edit diagram name pencil after it
-(not shown to view-only users) opens a field in its place with the name
-selected. Enter or leaving the field renames the diagram, and Escape keeps the
-name. After Enter or Escape, focus returns to the pencil. The diagram's counts
-are in an outlined box, centered on the header when the name and the actions
-leave room; otherwise they move toward the narrower side without covering it.
-The name's box stays at least 8rem wide and "Shared by" on one line: the
-header wraps before either gives way. Below a 64rem header, where the header
-wraps, the counts are centered in the space left on their row. The editor's
-toolbar has Add connection and Move to group right before Minimap, Draft
-History right after it, then the save state, which is text the toolbar's
-arrow keys pass by. Add connection and Move to group open the dialogs "Add a
-connection" (`dialogs/ConnectDialog.vue`: Device, Interface, Switch) and
-"Move to a group" (`dialogs/RegroupDialog.vue`: Node, Group), whose rules
-are in `dialogs/structureForms.js`; the palette's `dialog.connect` and
-`dialog.regroup` open them too. They start from the selection, and the
-Outline has no such forms. Options that would read alike, such as
-unlabelled drawings ("Line (line)") or untitled groups, add the node's
-position and, if that is shared too, "n of m" (`optionNames`). F2 in the
-Outline renames a node in the field the canvas and the Inspector read
-(`renamePatch` in `model.js`): a device's hostname, a switch's network
-name, a group's title, a shape's, icon's or line's payload `label`, and a
-note's own `label`. In the Publish dialog the hint of a config that
-will be updated is a warning (`.builder-hint--warning`, a warning icon and
-`--bx-warning-bg`), and the naming rule shows under a name field only while
-the name breaks it, after the reason (`configNameReason`, `configNameHint`
-in `publish.js`). Focus
-mode (⇧⌘F or Ctrl+Shift+F) works on both views and stays on between them,
-until the user turns it off or leaves Builder.
+## Keys and commands
 
-### Keys, palette commands and settings
-
-Default keys added in this release: Settings… ⌥⇧S / Alt+Shift+S (editor and
-drafts page), Auto layout ⌥⇧L / Alt+Shift+L and Auto-group by network
-⌥⇧G / Alt+Shift+G (editor), none of them in text fields, and `N` (Add
-device, canvas scope: the canvas or a node). `N` runs `add.device` with
-its `keyChoice` (the plain Device; `runCommand` uses a command's
-`keyChoice` for a key press, so the palette still asks for a template),
-adds it with `addInView`, which selects it, and focuses it
-(`view.showNode`). A letter alone is refused as a shortcut
-(`keyRefusal`) except for a command whose keys work only on the canvas
-(`takesLetters`, `keyRefusal(spec, platform, {letters})`); it is a
-single-character key, so the single-key switch turns it off. The Shortcuts
-button shows its key (`?`) and Settings' tooltip its own; the list of the
-canvas keys is in the user docs' editor page, not under the canvas. The
-palette has a command per download format (Download Builder JSON, …,
-Download PNG), all found by `export`; `send` finds Share; `legacy` finds
-Upload and Import. Auto-group has a third rule, By name pattern… (dialog
-"Auto-group by name pattern", a JavaScript regular expression matched
-ignoring case, run in a same-origin worker, `grouping.js` and
-`groupingWorker.js`: at most 200 characters, the first 255 characters of a
-name, 2000 ms; the last pattern is kept in `phenix.builder.groupPattern`
-and removed at logout). Settings: "Default layout", and "Zoom when a
-diagram opens" with 100%, Fit, or Custom (20 to 200 percent, step 5). Each
-header count is a button that selects every item of its kind.
-
-### Side columns, minimap and Fit
-
-Each side column (Add nodes and Outline, the Inspector) has a Hide toggle under
-its Widen toggle, which folds the column into a narrow strip holding a Show
-toggle; the palette's `view.pane.start` and `view.pane.end` do the same. The
-hidden columns are kept with the widths in `phenix.builder.panes`
-(`{"hidden": ["end"]}`). A click, Enter or Space that selects a node or
-connection shows a hidden Inspector, and Focus outline, Focus Inspector and
-Rename show their column first. The stacked narrow layout shows every column
-and has no toggles. A handle at the minimap's top left corner resizes it (a
-separator named Resize minimap: drag it, or Up and Left for larger, Down and
-Right for smaller, Home and End for the smallest and largest, Enter or a
-double-click for the default); the palette's Minimap size commands do the
-same. The minimap keeps its 4:3 shape, from 120px wide up to half the canvas
-(at most 600px, never below the default 200px unless the canvas is too small
-to hold it). Its width is kept in `phenix.builder.minimap` (`{"width": 280}`).
-Reset view shows both columns again and restores the minimap's default size.
-Fit, the canvas's least zoom and bringing nodes into view go by the
-diagram's footprint (`footprintBounds` in `nodeNotes.js`): node boxes and,
-while Show node notes is on, the notes below devices and switches; Fit sets
-the view from it with `getTransformForBounds`, since Vue Flow's own fit
-measures only the boxes. Groups hold their members' notes the same way
-(`groupNodes`, `fitGroups`, `groupMinimumSize`, `resizedBox`, `setParent`
-in `model.js` and `applyGroups` in `grouping.js` take `{showNotes}`).
-After a Fit that changes the view (the zoom controls' Fit button, Shift+1 on
-the canvas or the palette's `view.fit`), the same button, key and command
-restore the zoom and position from before it, and the button is named Restore
-previous view. Any other change to the view, including Reset view, drops the
-saved view.
+- Commands are in `commands.js` and default keys in `keymap.js`. A letter
+  alone is refused as a shortcut (`keyRefusal`), except for a command whose
+  keys work only on the canvas (`takesLetters`), such as `N`. A key press
+  runs a command's `keyChoice`, so `N` adds the plain Device while the
+  palette still asks for a template.
+- Header breakpoints are container queries in rem (`builder/builder.css`,
+  `Builder.vue`). Below a 97rem header some buttons show only their icons,
+  below 77rem more do, and below 64rem the header wraps.
 
 ## Lists of checks and Go to
 
-The Publish dialog (its checks before publishing, the issues a 409 or 422
-refusal lists, and a result's `errorIssues` and `warningIssues`) and the
-Diagram checks dialog list issues through `BuilderIssueList.vue`: grouped by
-severity, errors first (`bySeverity` in `issues.js`; with the document,
-each group in node, then connection, then diagram order), under headings
-that count them ("2 errors block publishing" in the Publish dialog's checks
-and refusal, else "2 errors"; "1 warning"; `severityHeading`). Each item
-says "Error:" or "Warning:", the message with index references named
-(`issueText`), the element (`Device web-01`), the server's `code` in a
-monospace badge, and Go to (testid `issue-go-to`, named "Go to <element>:
-<message>", `goToName`) when the diagram has the element. Testids: list
-`publish-checks`, `publish-refusal`, `publish-result-issues`,
-`checks-issues`; groups `<list>-error`, `<list>-warning`; items `issue`,
-`issue-message`, `issue-element`, `issue-code`.
+`BuilderIssueList.vue` lists the issues of the Publish dialog, the Diagram
+checks dialog and the Preflight report, grouped by severity
+(`bySeverity`, `severityHeading` in `issues.js`).
 
-Every issue goes through `toIssue(entry, defaultSeverity, {publishing})`
-into `{code?, severity, message, path?, nodeId?, edgeId?, networkId?,
-field?, blocksPublish?}`: a string, a `validateDocument()` issue (`level`;
-with `publishing`, a `blocksPublish` warning is an error, as
-`publishChecks` does) or a server issue object; `responseIssues(data)` reads
-a body's `errors` then `warnings` (strings or objects), then `issues`
-(objects, an error unless they state a severity), listing an issue given
-twice once (a message alone that says what an issue object says, as
-`path: message`, gives way to the object), which `store.publish` keeps as
-`store.publishIssues` for a 409 or 422. The Publish dialog's
-`useRefusalIssues` (`dialogs/message.js`) clears them as it opens and
-closes and once `store.doc` changes other than its stamp (`sameButStamp`).
-`issueTarget(doc, issue)` resolves `nodeId`, `edgeId`, `networkId` (the
-network's first switch), else the element the `path` starts at (as
-`locate()` in `validate.js`; JSON pointers and dotted indexes are read
-too), with `issueField`: the issue's `field`, else the path below the
-element, as a JSON Forms data path (`nodes[2].device.spec.network.
-interfaces[0].vlan` is `spec.network.interfaces.0.vlan`; a switch's
-network issue `networks[0].name` is `name`). No element, no Go to.
+- Every issue goes through `toIssue(entry, defaultSeverity, {publishing})`
+  into the issue shape of [api.md](api.md#issues-and-error-bodies). With
+  `publishing`, a `blocksPublish` warning is an error.
+  `responseIssues(data)` reads `errors`, then `warnings`, then `issues`,
+  and lists an issue given twice once.
+- `issueTarget(doc, issue)` resolves `nodeId`, `edgeId`, `networkId`, else
+  the element the `path` starts at, and `issueField` gives the JSON Forms
+  data path. No element, no Go to.
+- `store.goToIssue(issue)` selects the target and sets
+  `store.focusRequest = {kind, id, field, token}`. `BuilderInspector.vue`
+  (`goToField`) focuses the field. It takes a request once
+  (`store.takeFocusRequest(token)`), in a `post` watcher and as it mounts.
+- Testids: lists `publish-checks`, `publish-refusal`,
+  `publish-result-issues`, `checks-issues`. Items `issue`,
+  `issue-message`, `issue-element`, `issue-code`, `issue-go-to`.
 
-`store.goToIssue(issue)` selects the target and sets `store.focusRequest =
-{kind, id, field, token}`. `Builder.vue` shows a hidden Inspector and
-reveals the node (a connection's two ends); without a field it announces
-"Selected <name>" and focuses the canvas element as keyboard focus. With a
-field, `BuilderInspector.vue` (`goToField`) focuses the control whose data
-path is the field (or the first field inside it, opening closed sections,
-falling back as the error summary does) and announces "<field label> in
-<element>", e.g. "Hostname in device web-01"; with no control, the
-Inspector heading takes focus. A dialog closes before the request, so focus
-returns to its opener first. The Inspector takes a request with a field
-once (`store.takeFocusRequest(token)` marks it `taken`): when the token
-changes (a `post` watcher) and as it mounts, so a request made before it
-mounted is acted on. In landing mode the Publish dialog's Go to emits
-`open-draft` with the issue, and `openPublished` opens the editor and calls
-`goToIssue` at once; `Builder.vue`'s watcher runs `post`, once the editor
-is drawn. The Inspector's own Checks list gives an issue about one of its
-fields a Go to (`inspector-check-go-to`, "Go to <field>: <message>").
+## Drafts page and selectable lists
+
+- `BuilderDrafts.vue` holds the tabs. Bulk actions are a client loop over
+  the per-item routes (`runBulk` in `bulk.js`): at most 4 requests at once
+  (topology deletes and downloads 1), and one retry of a 412 with the
+  `ETag` it carries. A session that ends, or a server out of reach, stops
+  the run (`endsBulk` in `api.js`). The rest are "Not attempted."
+- Every selectable list (the card tabs, the Node Templates library, both
+  lists of the Custom icons dialog) uses `useListSelection` in
+  `listSelection.js`: selection by key, a range anchor, and a roving
+  tabindex on the `<li>`. `listKeyAction` and `onListKeydown` map the keys.
+  `matchesKey` finds Mod+A on a layout without Latin letters. User docs:
+  [Selecting with the keyboard](https://phenix.sceptre.dev/latest/builder/drafts/#selecting-with-the-keyboard).
+
+## Session and browser storage
+
+- Sign in again (`BuilderSignIn.vue`, `signin.js`) sends the login without
+  the ended session's token, because the JWT middleware refuses an expired
+  token before the login handler reads the password. It stores the new
+  token where the last sign-in did (sessionStorage, and localStorage with
+  Remember me), then sends the refused changes at once. With
+  `VITE_AUTH=proxy`, or a session without a JWT, the save state says to use
+  Download and sign in again.
+- What the browser keeps: IndexedDB `phenix-builder` (unsaved changes and
+  local drafts), sessionStorage `phenix.builder.tab` (the tab's id), and
+  localStorage `phenix.builder.*`. Logout, and a sign-in as another user
+  (`phenix.builder.user` names whose data the browser holds), remove the
+  IndexedDB data, recent commands, `phenix.builder.preflight` and
+  `phenix.builder.groupPattern`. They keep the preferences `theme`,
+  `panes`, `minimap`, `shortcuts` and `settings`. Logout first sends the
+  changes still queued.
+- The live region (`BuilderLiveRegion.vue`) holds each message 750 ms and
+  joins messages that arrive meanwhile. A modal dialog makes the page
+  inert, so a dialog that must announce has its own `role="status"`
+  region.

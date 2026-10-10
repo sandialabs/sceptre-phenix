@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams and drafts, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, the Builder (the web topology editor), or any `phenix` subcommand (config, builder, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams and drafts, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, the Builder (the web topology editor), or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
 license: GPL-3.0-only
 ---
 
@@ -21,7 +21,7 @@ Detailed references and examples, loaded only when needed:
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
-| The Builder, the web topology editor: drafts, sharing, publishing, import options, legacy diagram conversion, icon and template libraries, the Builder role, the `builder-doc` annotation, Builder files, routes, its code | [`references/builder.md`](references/builder.md), an index that names the reference under `references/builder/` to read for the task |
+| The Builder, the web topology editor: its routes, RBAC, formats, `builder-doc`, code and tests | [`references/builder.md`](references/builder.md), an index of the references under `references/builder/` and of the user docs |
 | Deploying a topology directory with `phenix workflow apply`: layout, steps, workflow config, endpoints, gotchas, troubleshooting | [`references/workflow.md`](references/workflow.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
@@ -143,40 +143,24 @@ through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
 
 ## Builder
 
-The Builder is the web topology editor at `/builder`. Drafts save on the
-server apart from configs; only Publish writes Topology and Experiment
-configs (it also adds the topology to the `topology` annotation of each
-Scenario config the diagram lists), and only the Scenarios dialog stores a
-Scenario config, from an uploaded file. A topology names its Builder
-document in the
-`builder-doc` annotation, the one annotation that is a map: `digest` and `id`
-name a published document in the store, and `path` names a Builder file on
-the phenix server. Topologies the removed legacy Builder saved carry
-`builder-xml`; Import (or Upload of the file) converts that diagram, and
-publishing the draft imported from the topology replaces `builder-xml` with
-`builder-doc`. Scripts use the Builder REST API below
-`/api/v1/builder/`. `phenix config create` skips or refuses Builder
-documents, template files and packages. The icon library is
-one server-wide set of custom icons with unique names, which nodes and
-templates name; drafts carry no image data, and a downloaded file embeds the
-icons it uses. The built-in role `Builder` holds every Builder permission,
-`builder-templates` `publish` and `builder-icons` `update` and `delete`
-included.
+The Builder is the web topology editor at `/builder`. Its REST API is below
+`/api/v1/builder/`, and scripts use it: there is no `phenix builder`
+command. Drafts save on the server apart from configs. Only Publish writes
+Topology and Experiment configs, and it adds the topology to the `topology`
+annotation of each Scenario the diagram lists. A topology names its
+diagram in the `builder-doc` annotation, the one annotation that is a map
+(`digest`, `id`, `path`). Import converts the `builder-xml` diagrams of the
+removed legacy Builder.
 
-For anything about the Builder (its drafts, sharing, publishing, import from
-topologies and experiments, legacy conversion, icons and node templates,
-`/builder/…` routes, the `builder-doc` annotation and Builder files, the
-`builder-drafts`, `builder-templates` and `builder-icons` RBAC resources, or
-its code),
-**read [`references/builder.md`](references/builder.md)** first: it holds
-the architecture and the rules, and its routing table names the one
-reference under `references/builder/` to read next for the task.
+The user docs are in `docs/content/builder/`. The site
+[phenix.sceptre.dev/latest/builder](https://phenix.sceptre.dev/latest/builder/)
+shows them only after a release that includes them. For any Builder task, **read [`references/builder.md`](references/builder.md)**
+first. It maps the docs pages, the code and the rules, and its routing
+table names the reference under `references/builder/` to read next.
 
 ## CLI Overview
 
-Command groups: `config` (stored configs), `builder` (publish a Builder
-document as a topology; list, export and check drafts and Node Templates on
-a running server), `experiment` (lifecycle), `vm`
+Command groups: `config` (stored configs), `experiment` (lifecycle), `vm`
 (running VMs), `image` (vmdb2 disk images), `vlan` (per-experiment VLAN
 aliases/ranges), `workflow` (topology directory deployment), plus `mm`,
 `settings`, `ui`, `util`, `completion`, and `version`. Every subcommand

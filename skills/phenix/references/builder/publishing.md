@@ -1,254 +1,117 @@
-# Builder publishing
+# Publishing and preflight
 
-Part of the [Builder references](../builder.md). The scenarios a document
-lists and the Scenarios dialog, the scenario stage of Publish, when a draft
-may update a topology or experiment, what only Publish refuses, and the
-publish preview (dry run).
+Part of the [Builder references](../builder.md). The publish route: when a
+draft may update a config, the scenario stage, what only Publish refuses,
+the dry run, and the preflight checks.
 
-## Scenarios and publishing
+User docs: [Publishing](https://phenix.sceptre.dev/latest/builder/publishing/)
+(the rules, refusals and messages a user sees) and
+[Preflight](https://phenix.sceptre.dev/latest/builder/editor/#preflight).
+Code: `web/builder_publish.go`, `web/builder_preview.go`,
+`api/builder/changes.go`, `types/builder/topology.go`, `builder/publish.js`.
 
-### Scenarios of a document
+## Updating a topology or experiment
 
-A document names the Scenario configs it is used with in root `scenarios`
-(`bdoc.Document.Scenarios`): at most 20 (`MaxScenarios`, `MAX_SCENARIOS`),
-each a config name (`^[A-Za-z0-9_@.-]+$`) of at most 256 bytes
-(`MaxScenarioNameBytes`, the bound on a publication's targets), none twice
-ignoring case, left out when empty. It holds no scenario content: there is
-no `scenario` object (strict decoding refuses that key, with no shim), no
-uploaded kind and no digest. Go (`validateScenarios`) and JS
-(`validate.js`, `scenarioNameProblem`; `decode.js` refuses a non-list or a
-non-text entry, and validation an empty one) check it alike through the
-shared corpus.
+`POST /builder/drafts/{owner}/{draft}/publish` needs `If-Match`. A draft may
+update a stored Topology or Experiment only when it is tied to that exact
+source and nothing else changed the source since. Otherwise 409. The tie
+is the draft's source token:
 
-Generating from an Experiment (stored or a file) lists its `scenario`
-annotation when that names a Scenario config the caller may list on this
-server (`configs` `list` and `scenarios` `list`;
-`bdoc.WithScenarioResolver`, `storedScenarioResolver` in
-`web/builder_sources.go`); otherwise it lists none and warns `the
-experiment's scenario "<name>" is not a stored Scenario config and was not
-attached` (`the experiment's scenario is not ...` when it names none but
-holds content). The experiment's embedded copy is never attached. For a
-file it also warns `scenario "<name>" is this server's Scenario config of
-that name, not the copy the experiment file holds`. A store error answers
-500.
+- `Topology/<name>` or `Experiment/<name>`: imported from the stored
+  config. Uploaded sources (`uploaded/…`) and copies (`''`) can only create.
+- `builder-doc/<document id>`: opened from a published document. Creating
+  the draft needs `configs` `get` on the config the document was published
+  to, else 404.
+- `builder-file/<topology>/<digest>`: opened from a Builder file (see
+  [published-documents.md](published-documents.md#builder-files)).
+- `forkOf: "<owner>/<draft id>"` on `POST /builder/drafts` copies that
+  draft's token and records its last publication as `forked`. The caller
+  must be able to read that draft, else 404.
 
-### The Scenario dialog
+A published topology names its document in `builder-doc`. A published
+experiment records the draft, the document and its own digest after the
+configure stage in its `builder-experiment` annotation, so any later change
+to its spec counts as a change. An Experiment update runs the apps'
+configure stage, as `PUT /configs` does. A failed configure stage leaves
+the experiment unchanged and is a `partial` result.
 
-The Scenario dialog (`dialogs/ScenarioDialog.vue`, title "Scenarios",
-testids `scenario-…`) edits the list: Remove, Add a stored scenario (the
-sources not listed), and Upload a scenario file (`phenix.sandia.gov/v2`
-only; name from `metadata.name`, else the file name through `configName`,
-editable). Store and add creates the config with `api.createConfig` (`POST
-/configs`, JSON `{apiVersion, kind: Scenario, metadata: {name,
-annotations?}, spec}`), or, for a name the sources list, after the
-confirmation "Replace scenario <name>?" (it says the spec is replaced and
-the annotations kept), replaces it with `api.updateConfig` (`PUT
-/configs/Scenario/<name>`). A PUT replaces the annotations too, so
-`store.saveScenarioConfig` first reads the stored config
-(`api.getConfig`, `GET /configs/Scenario/<name>`) and sends
-`replacedScenarioConfig(stored, file)` (`builder/publish.js`): the stored
-annotations with the file's over them, and the `topology` annotations
-merged by `mergeTopologyAnnotation` (the stored value byte for byte, then
-each file name it lacks, after a comma), so no topology is taken off a
-scenario. The server's refusal, of the read or the write, shows in the
-dialog's alert (`serverReason`). `store.saveScenarioConfig` then reads the
-sources again. A stored name the list already has in another letter case
-replaces that entry with the stored config's spelling (the status says
-"the list names it <name> in place of <old>"); one listed exactly is left
-("The list already names it."). Save writes the list with
-`store.setScenarios` (one undo step "Updated scenarios"); Cancel keeps a
-stored scenario on the server but not in the list.
+## The scenario stage
 
-### The scenario stage of Publish
+A document lists Scenario config names in root `scenarios`
+(`bdoc.Document.Scenarios`, at most `MaxScenarios`). It holds no scenario
+content. When it lists any, Publish runs a `scenario` stage after the
+topology and before the experiment (`preflightScenarios`,
+`publishScenarioStage`). Each scenario must be readable, else 422. Its
+`topology` annotation gets the topology appended
+(`addTopologyAnnotation`, the rest of the value kept byte for byte), which
+needs `configs` `update` on it, else 403. A failed write leaves the earlier
+ones written, and publishing again resumes. The request's `scenario` names
+the experiment's scenario and must be one the document lists.
 
-Publish (`preflightScenarios`, `publishScenarioStage` in
-`web/builder_publish.go`), in either mode, runs a `scenario` stage after the
-topology and before the experiment whenever the draft's document lists
-scenarios: each must exist and be readable (`configs` `get`, `scenarios`
-`list`), else 422 `scenario <name> does not exist` (a hidden one alike);
-one whose `topology` annotation does not name the topology exactly
-(comma-separated, trimmed; `hasTopologyAnnotation`) gets it added
-(`addTopologyAnnotation`: appended after a comma, the rest of the value
-kept byte for byte, or the whole value when it was empty), which needs `configs` `update` on it (else 403
-`adding topology <t> to scenario <s> not allowed`); others are not written.
-The one stage reports `updated` or `skipped`, a message such as `added
-topology t to scenarios a, b; scenario c already names it`, and `config`
-only when one scenario is listed. A failed write leaves the earlier ones
-written (a warning names them); publishing again resumes. The request's
-`scenario` is `{name}` only, allowed only in `topology-experiment` mode
-(400 otherwise, and for a name outside the config rule or any other key),
-and must be one of the document's `scenarios` (422 `scenario <name> is not
-one of the scenarios this draft lists`); the experiment is created with it
-(`CreateWithScenario`, after the stage annotated it) or updated with it
-(`MakeCustomScenarioFromConfig`, `MergeScenariosForTopology`, the
-`scenario` annotation); none leaves the experiment without one. The
-publication records it as `scenarioTarget`. The Publish dialog's
-Experiment scenario select (`publish-scenario`) lists the document's
-scenarios and No scenario, the first by default, and its hint
-(`scenarioStageHint`) says the topology is added to each listed scenario.
+Only the Scenarios dialog stores a Scenario config (`api.createConfig` or
+`api.updateConfig`). A `PUT` replaces the annotations, so
+`store.saveScenarioConfig` first reads the stored config and sends
+`replacedScenarioConfig(stored, file)`, which keeps every `topology` the
+stored value names (`mergeTopologyAnnotation`).
 
-### Updating a topology or experiment
+## What only Publish refuses
 
-Topology and Experiment updates require a draft tied
-to that exact stored source: one imported from it, or one that published it (or
-was opened from the published diagram that did), with nothing else having
-changed it since. Otherwise the update gets 409, for example `topology <name>
-changed after this draft published it` or `experiment <name> changed after this
-draft published it`. `POST /builder/drafts` accepts
-`forkOf: "<owner>/<draft id>"`, which saving the editor's history as a new
-draft sends: the new draft takes that draft's source token and records its last
-publication as `forked`, so it can update what that draft published or was
-opened from (not what that draft publishes later). The caller must be able to
-read that draft (owner, a share, or `builder-drafts` `get`), otherwise 404. A
-`sourceToken` of `builder-doc/<document id>` needs `configs` `get` for the config
-that document was published to, otherwise 404. A `sourceToken` of
-`builder-file/<topology>/<digest>` names the Builder file a topology
-references (see [Builder files](published-documents.md#builder-files)). A published
-topology names its document in its `builder-doc` annotation (see
-[The builder-doc reference](published-documents.md#the-builder-doc-reference)); a published
-experiment records the draft and document that published it, and its digest
-after the configure stage, in its `builder-experiment` annotation, so any later
-change to its spec counts. An Experiment update then runs the apps' configure
-stage, as `PUT /configs` does. A failed configure stage leaves the experiment
-unchanged and is reported as a `partial` result, and an experiment found
-running once its lock is held is too. An Experiment create is refused with 422
-before anything is written if its name is `all` (in any case), or longer than
-15 characters in auto bridge mode. A name outside the config naming rule is
-refused with 400.
+Publish answers 422 for three problems that drafts keep. The editor shows
+them as warnings with `blocksPublish`, and the Publish dialog lists them as
+errors.
 
-### What only Publish refuses
+- An interface without a VLAN on a device that is not external
+  (`InterfaceVLANError`, `interface.vlan.missing`).
+- The same IP or MAC address on one network (`InterfaceAddressError`,
+  `interface.ip.shared`). An interface's network is its bridge and the VLAN
+  Publish writes (`interfaceNetwork`, `connectInterfaces` in `topology.go`,
+  and `interfaceNetworks` in `validate.js`, which must agree).
+- A hostname phenix refuses (`NodeHostnameError`).
 
-Publish answers 422 when an interface of a device that is not external has no
-VLAN, and the error `message` names the devices and interfaces (the first three,
-then how many more; by position, such as `#2`, when unnamed or when two share a
-name): phenix would store such a topology, but minimega refuses the interface
-when the experiment starts. Connect the interface or give it a VLAN. A VLAN
-that names no network of the document still publishes as it is, since phenix
-allocates VLANs by name and matches them exactly (`exp` is not network `EXP`).
-Drafts keep such interfaces; the editor flags them as warnings.
+Each `message` names the first three, then how many more. A 422 names only
+the first kind found, in that order. Publish also answers 409 when an
+included topology now defines a hostname the document defines
+(`publish.include.clash`). User docs:
+[What blocks publishing](https://phenix.sceptre.dev/latest/builder/publishing/#what-blocks-publishing).
 
-Publish also answers 422 when interfaces on the same network use the same IP
-or MAC address, and the error `message` names each address, its network and
-the interfaces that use it (the first three addresses, then how many more),
-such as `IP address 10.0.0.5 on VLAN "EXP" is used by interface "eth0" of
-device "a" and interface "eth0" of device "b"`: phenix would store such a
-topology, but the addresses clash once the experiment runs. An interface's
-network is its bridge and the VLAN Publish writes for it: the connected
-network's name, else its own VLAN, compared exactly after trimming white
-space (`interfaceNetwork`, `connectInterfaces` in `types/builder/topology.go`;
-`connectionNetworks`, `publishedVLANs`, `interfaceNetworks` in
-`validate.js`). A blank bridge and `phenix` are the experiment's default
-bridge, and any other bridge is compared as written (`on VLAN "EXP" of
-bridge "lab"`). Interfaces on two VLANs, or on VLANs of one name on two
-bridges, may share an address, as isolated networks do and as minimega
-allows; interfaces without a VLAN are compared with each other only
-(`without a VLAN`). IP addresses are compared parsed, without a prefix
-length typed after them, and MAC addresses in any case and with any
-separators. The IP addresses of interfaces whose `proto` is `dhcp` or
-`manual`, blank values and external devices' MAC addresses are not
-compared. Included devices are, but an address only they use is left to
-their topology. When interfaces also have no VLAN, the 422 names only
-those. Drafts keep shared addresses; the editor flags each interface that
-uses one as a warning (`... is also used on VLAN "EXP" by ...`; the
-Inspector's field warning compares a VLAN the working copy changed as
-typed), and the Publish dialog lists them as errors.
+## Dry run
 
-Publish also answers 422 for a hostname of a device that is not external
-which phenix refuses, and the error `message` gives phenix's reason for each,
-which names the hostname (the first three, then how many more): one character
-long, which phenix's schema refuses, or `all`, all digits, or `phenix` on a
-Windows node, which phenix stores but refuses when it creates an experiment.
-When interfaces also have no VLAN or share addresses, the 422 names only
-those. Drafts keep such hostnames, as a topology an older phenix stored may
-have them; the editor flags each as a warning, and the Publish dialog lists
-them as errors. It shows phenix's warnings about other casings of `all`, and
-about `phenix` on a node that is not Windows, as plain warnings, and Publish
-returns them in `warnings`. Included devices are left to their topology, but
-an experiment publish whose included topology has a hostname phenix refuses
-in an experiment (any of the above, one character long included) answers 422
-before anything is written.
+`"dryRun": true` in the publish body (`previewPublish` in
+`builder_preview.go`) needs no `If-Match`, takes no publish lock and writes
+nothing. It authorizes and runs `preflightPublish` as a publish does, and
+answers 200 `{status: "preview", changes, warnings, errors}`. A refusal a
+publish answers with 400, 409 or 422 is listed in `errors` with `changes:
+null`. 401, 403, 404 and 5xx keep their status. A publish still checks
+`If-Match` before it decodes the body, so `builderDryRunRequested` reads
+the body loosely first.
 
-## Publish preview (dry run)
+`changes` is `bapi.DescribePublishChanges(PublishState)`, which reads and
+writes nothing: `topology`, `experiment`, `includes`, `scenarios`,
+`images` (with `onServer`, null when the caller may not list the image or
+the listing gives nothing) and `vlanAliases`. The Publish dialog sends a
+dry run 300 ms after each change and after each save
+(`usePublishPreview` in `dialogs/publishPreview.js`). It drops stale
+answers, and lists only the issues its own checks do not already list
+(`issuesNotInChecks`). e2e helpers that wait for a publish
+(`isPublishRequest` in `builder-support.js`) leave dry runs out.
 
-`POST /builder/drafts/{owner}/{draft}/publish` with `"dryRun": true` in the
-intent (`builderPublishRequest.DryRun`, `previewPublish` in
-`web/builder_preview.go`) needs no If-Match and takes no publish lock. A
-publish still answers a missing or malformed If-Match (400) before it decodes
-the body; only a request without a valid one has its body read first for
-`dryRun` (`builderPublishIntent`; `builderDryRunRequested` decodes loosely
-and puts the body back for the strict decode), and is answered with that 400
-unless it asks for a dry run. It
-authorizes the draft (`builderVerbUpdate`) and the targets and runs
-`preflightPublish` on the current snapshot as a publish does, writes nothing
-(no published document, config, scenario, experiment or `MarkPublished`),
-and answers 200 `{status: "preview", changes, warnings, errors}`. A refusal a
-publish answers with 400 (a target name), 409 or 422 is listed in `errors`
-(the refusal's issues, `bdoc.ErrorIssues`, else one issue of its code and
-words, each severity `error`) with `changes: null`
-(`builderPreviewRefusal`); 401, 403, 404, a body strict decoding refuses and
-5xx keep their status. `warnings` are the projection's plus those a publish
-adds once it writes the topology (`publish.file.unchanged`,
-`publish.legacy.replaced`/`removed`).
+## Preflight
 
-`changes` is `bapi.DescribePublishChanges(PublishState)` in
-`api/builder/changes.go`, which reads and writes nothing: `topology` and
-`experiment` (`{name, action}`, action `create`, `update` or `unchanged` when
-the config already holds the publication: `plan.topology.applied`,
-`plan.experiment.applied`), `includes` (`spec.includeTopologies` of the
-stored topology against the projection's: `added`, `removed`, `kept`),
-`scenarios` (`annotate`, or `unchanged` when `HasTopologyAnnotation`),
-`images` (`hardware.drives[].image` of the stored topology's devices against
-the projection's, with the hostnames using each, those of the stored
-topology for a removed one, and `onServer`), `vlanAliases` (experiment only,
-left out when empty: `spec.vlans.aliases` of the stored experiment against
-`projection.VLANAliases`, `{name, from, to, change}`, all `added` on
-create). Lists are sorted by name. `onServer` compares the image's file name
-(`path.Base`, as `validate.js` does) with the names of every image the
-server has (`builderAPI.disks`, a `builderDiskLister` over
-`disk.GetImages("")` in `web/builder_disks.go` that package resolve and the
-preflight disks check share: a successful listing is reused for
-`builderDiskListTTL`, 10 s, and concurrent requests wait for the one in
-flight; tests set `withBuilderDisks` and may replace `disks.now`), and is
-null without `disks` `list`, when the listing fails, when it lists none
-(minimega not running), and for an image whose file name the caller may not
-list (`hideUnlistedImages`, as `GET /disks` leaves it out), whether the
-server has it or not. A dry run whose projection names no drive image
-(`bapi.NamesDiskImage`) lists nothing, so every `onServer` is then null; the
-Publish dialog sends a dry run after each 300 ms editing pause. The dialog
-words each change with `publishChangeGroups` in `publish.js`. When
-`DescribePublishChanges` fails, the dry run answers 500 "unable to describe
-what publishing changes".
+`POST /builder/drafts/{owner}/{draft}/preflight` with `{"checks": [...],
+"experiment"?: "<name>"}` runs the named checks (`capacity`, `network`,
+`disks`, `apps`) on the current snapshot (`bapi.RunPreflight` in
+`api/builder/preflight.go`, route in `web/builder_preflight.go`). It writes
+and starts nothing. Each check runs at most 20 s (`PreflightTimeout`). Each
+answers `passed`, `failed` (an error issue) or `unavailable`. Access is
+that of a draft read.
 
-The Publish dialog's What publishing changes (testids `publish-preview`,
-lists `publish-preview-configs`, `-includes`, `-scenarios`, `-images`,
-`-aliases`; `publish-preview-blocked`, `publish-preview-error`,
-`publish-preview-issues`) calls `store.previewPublish(intent)` once the
-lists it reads on open settle, 300 ms after a change of the form or of
-`store.sources`/`store.documents`, after each save (`store.etag`), and after
-Back (`usePublishPreview` in `dialogs/publishPreview.js`). The store drops an
-answer a later preview made stale (`previewRequest`, and a change of draft)
-and returns a failure as `{failed, message}` without setting `store.error`;
-the dialog also drops an answer asked for before a later change, once it
-closed, or for an intent it could not build (shown as
-`publish-preview-blocked`, nothing sent). The section is `aria-busy` from
-the change that schedules a preview (through the 300 ms pause) until the
-answer, keeps the last answer meanwhile, and says it was read again through
-a polite live line (no second `status` role) that counts the warnings. The
-answer's `errors`, then `warnings`, are listed below the changes in
-`BuilderIssueList` (`publish-preview-issues`, `-error`, `-warning`, with
-codes), less those the dialog's checks list already
-(`issuesNotInChecks` in `builder/issues.js`: same code and same node,
-connection or network, or both about none, whatever the words or severity),
-so a check the server also refuses (`interface.vlan.missing`,
-`interface.ip.shared`, a refused hostname) is listed once, under Checks;
-server-only refusals (`publish.include.clash`, `publish.scenario.missing`)
-still show, until a refused Publish lists them (`store.publishIssues`,
-`publish-refusal`): the same rule leaves out what the refusal lists, in
-whichever order the two answers arrive. While the checks have errors, the
-section says "Publishing is blocked by the errors listed under Checks."
-(`publish-preview-checks`). A dry run that fails shows its message
-(`publish-preview-error`), with "You can still publish." only while Publish
-is available (`publishable` in `publishPreview.js`). It is hidden for a
-read-only draft and never disables Publish. e2e helpers that wait for a
-publish use `isPublishRequest`/`isPublishResponse` in `builder-support.js`,
-which leave out dry runs (`isPublishPreview`).
+- Every source is behind `bapi.PreflightEnvironment`. The web one applies
+  the caller's RBAC as the listing routes do, and hides what the caller may
+  not list. Tests set the sources with `withBuilderPreflightSources`, so no
+  test needs minimega.
+- Gotcha: the bridge listing (`mm.GetBridges` in `util/mm/bridges.go`) runs
+  `ovs-vsctl --timeout=5 list-br` on each host. Never use minimega's
+  `bridge` command for it: that command creates the default bridge and
+  rewrites minimega's `bridges` file.
+- The UI is `BuilderChecks.vue` and `builder/preflight.js`. The last choice
+  of checks is kept in `phenix.builder.preflight`.

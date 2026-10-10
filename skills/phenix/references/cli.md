@@ -15,7 +15,7 @@ has a matching config-file key and `PHENIX_*` env var):
 | `--base-dir.minimega` | `base-dir.minimega` / `PHENIX_BASE_DIR_MINIMEGA` | `/tmp/minimega` | Base minimega directory |
 | `--base-dir.injects` | `base-dir.injects` / `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Where `phenix workflow apply` stages `phenix-injects/` (as `<base-dir.injects>/<name>`). The server's value wins over the CLI's own unless the flag is given; see the `injects` step in [`workflow.md`](workflow.md). Use an absolute path |
 | `--base-dir.topologies` | `base-dir.topologies` / `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Where `phenix workflow apply NAME` looks up a bare topology directory name. Use an absolute path |
-| `--base-dir.builder-templates` | `base-dir.builder-templates` / `PHENIX_BASE_DIR_BUILDER_TEMPLATES` | `<base-dir.phenix>/builder/templates` | Template files `phenix ui` reads at start as read-only Builder server collections (see [`builder/templates.md`](builder/templates.md#server-collections)). Use an absolute path |
+| `--base-dir.builder-templates` | `base-dir.builder-templates` / `PHENIX_BASE_DIR_BUILDER_TEMPLATES` | `<base-dir.phenix>/builder/templates` | Template files `phenix ui` reads at start as read-only Builder server collections (see [`builder/templates-and-icons.md`](builder/templates-and-icons.md#server-collections)). Use an absolute path |
 | `--mount-dir` | `mount-dir` / `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts (`phenix vm mount`, UI `vm-mount` feature) |
 | `--hostname-suffixes` | `hostname-suffixes` / `PHENIX_HOSTNAME_SUFFIXES` | `-minimega,-phenix` | Hostname suffixes to strip |
 | `--log.level` | `log.level` / `PHENIX_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` — use `--log.level=debug` for verbose troubleshooting output |
@@ -73,16 +73,10 @@ whose `builder-doc` is not valid is refused on create and update, also with
 one (annotation maps merge).
 
 `config create` takes files and directories (walked recursively). A Builder
-document (a Builder JSON or YAML download) is not a config: one found in
-a directory is skipped with the log line `skipped Builder document; upload
-it in the Builder to publish it`, and one named on the command line is
-refused with `<file> is a Builder document, not a configuration: upload it
-in the Builder, or send it to the Builder REST API (/api/v1/builder/drafts),
-and publish it to create its topology`. A template file or a package is
-not a config either: skipped in a directory with a debug log line, refused
-on the command line (`<file> is a Builder template file, not a
-configuration: ...`, `<file> is a Builder package, not a configuration:
-...`).
+document, template file or package is not a config. `config create` skips
+one that it finds in a directory, and refuses one named on the command line
+(see
+[Builder documents and phenix config create](https://phenix.sceptre.dev/latest/builder/import-upload-download/#builder-documents-and-phenix-config-create)).
 
 ## `phenix experiment` — experiment lifecycle
 

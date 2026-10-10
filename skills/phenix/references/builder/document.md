@@ -1,121 +1,102 @@
 # Builder document format
 
-Part of the [Builder references](../builder.md). The document's root keys
-and `metadata`, diagram notes, the generated schema and its documentation
-rule, and the provenance fields the server stamps.
+Part of the [Builder references](../builder.md). The `builder/v1` document:
+its keys, how Go and JS validate it, the generated schema, and the
+provenance fields the server stamps.
 
-## Document metadata
+User docs: [Builder JSON and YAML](https://phenix.sceptre.dev/latest/builder/import-upload-download/#builder-json-and-yaml)
+and [Who made and last saved a diagram](https://phenix.sceptre.dev/latest/builder/import-upload-download/#who-made-and-last-saved-a-diagram).
+[Building a Diagram](https://phenix.sceptre.dev/latest/builder/diagrams/)
+describes the fields a user edits, and the limits.
 
-A Builder document's root keys are, in this order, `$schema`, `revision`,
-`metadata`, then the content: `nodes`, `networks`, `edges`, `viewport`,
-`grid`, and the optional `scenarios`, `source`, `layout`, `iconSize`,
-`templates` and `icons`. `metadata` (`bdoc.Metadata`) is required and holds only `id`
-(required, the document ID), `name`, `description`, the four provenance
-fields below, and `notes`. Strict decoding refuses any other key there, and
-refuses the metadata keys at the root (there is no shim for the old root
-fields `id`, `name`, `description`, `author`, ...). A missing or null
-`metadata` is reported as `metadata.id` "document ID is required"; issue
-paths name the new place (`metadata.createdBy`, `metadata.notes[3]`). Go
-(`validateMetadata` in `validate.go`) and JS (`validate.js`, `decode.js`)
-check it alike through the shared corpus.
+## Keys and validation
 
-`metadata.notes` are free text about the diagram as a whole: at most 100
-(`MaxDiagramNotes`, `MAX_DIAGRAM_NOTES`), each not blank after trimming, at
-most 4096 bytes (`MaxDiagramNoteBytes`) and free of control characters but
-newline and tab. They are document content (in the digest) and never
-written to a config. The Inspector's Diagram view lists them after Scenarios
-under Notes (`InspectorDiagram.vue`, testids `inspector-notes`,
-`inspector-note-N`, `inspector-note-add`): a textarea "Note N" and a
-"Delete note N" button each, "No notes." when there are none, and Add note,
-disabled at 100 with a hint. A note is written when its textarea fires
-`change`, through `store.setDiagramNotes(notes)` (model `setDiagramNotes`,
-one undo step "Updated diagram notes"); blank rows are dropped. Text over
-4096 UTF-8 bytes or with another control character is never written:
-`diagramNoteProblem` (`model.js`) names why, the textarea gets
-`aria-invalid` and an error under it (`role="alert"`, testid
-`inspector-note-error-N`, named by `aria-describedby`), and the diagram
-keeps that note as last saved until the text is fixed; model
-`setDiagramNotes` returns the document unchanged for a list holding such a
-note. "Blank" means only Go's `unicode.IsSpace` white space everywhere
-(`isBlank` in `text.js`, `trimSpace` in `validate.js`, and `notePattern` in
-`schema.go`, which spells the set out as `\x00-\x20\x7f\x85\p{Z}` since `\s`
-differs between Go and ECMAScript): U+0085 is blank, U+FEFF is not. A
-read-only draft shows the notes as text.
+- Root keys, in this order: `$schema`, `revision`, `metadata`, `nodes`,
+  `networks`, `edges`, `viewport`, `grid`, then the optional `scenarios`,
+  `source`, `layout`, `iconSize`, `templates` and `icons`. The revision
+  stays 1: new fields are optional.
+- `metadata` (`bdoc.Metadata`) is required. It holds only `id` (required),
+  `name`, `description`, the four provenance fields and `notes`. Strict
+  decoding refuses any other key, and refuses these keys at the root (no
+  shim for the old root `id`, `name`, `author`).
+- Go (`types/builder/validate.go`) and JS (`validate.js`, `decode.js`)
+  check the same rules with the same codes. The shared corpus
+  `types/builder/testdata/validation-corpus.json` holds them to each other.
+  A new rule goes in both, with a case in the corpus.
+- "Blank" means Go's `unicode.IsSpace` white space everywhere (`isBlank` in
+  `text.js`, `trimSpace` in `validate.js`, `notePattern` in `schema.go`).
+  The pattern spells the set out as `\x00-\x20\x7f\x85\p{Z}`, because `\s`
+  differs between Go and ECMAScript. U+0085 is blank and U+FEFF is not.
+- Presentation fields never reach a config or Topology YAML
+  (`TestToTopologyOmitsPresentationFields`,
+  `TestToTopologyOmitsVisualNodes`): colors, `lineStyle`, `borderStyle`,
+  `icon`, `iconKey`, `iconSize`, switch `notes`, `metadata.notes`, groups,
+  the drawing node kinds `shape`, `icon` and `line` (also not GEXF),
+  `layout`, edge `route`, and `purdueLevel`. A device's notes are its
+  spec's `general.notes`, which Publish writes.
+- `purdueLevel` on a device, a switch or a template's device is one of
+  `PurdueLevels()` (`"5"`, `"4"`, `"3.5"`, `"3"`, `"2"`, `"1"`, `"0"`).
+  Another value is `device.purdue-level.unknown`,
+  `switch.purdue-level.unknown` or `template.purdue-level.unknown`. The
+  "Layered by tier" layout (`layouts/tiers.js`) reads it. User docs:
+  [Purdue layers](https://phenix.sceptre.dev/latest/builder/diagrams/#purdue-layers).
+- `TemplateDevice` must hold every `Device` field except `hostname`,
+  `interfaces` and `includedFrom`. A reflection test checks it, so a new
+  device field is a template field too.
 
-The generated schema (`builder.Schema()`, committed as
-`src/js/src/builder/schema/builder-v1.schema.json`) gives every
-Builder-owned property a `title`, a `description` and `examples`
-(`documented()` in `schema.go`, values in `schema_examples.go`; the bundled
-phenix `$defs` are left alone). `TestSchemaDocumentsEveryProperty` walks it in Go and
-`schema-examples.test.js` checks each example against its subschema with
-ajv. The Inspector does not show these titles: `schema.js` strips them from
-the fields it builds, so labels stay as they were. `openapi.yml` lists the
-root (`BuilderDocument`) and metadata (`BuilderDocumentMetadata`)
-properties, which `TestBuilderDocumentDocumented` in `web/builder_test.go`
-holds to the Go structs.
+## Generated schema
+
+`builder.Schema()` is committed as
+`src/js/src/builder/schema/builder-v1.schema.json`. Run `make generate` in
+`src/go` after a change to `types/builder/` or to the config schemas. CI
+fails when the bundle is stale.
+
+Every Builder-owned property has a `title`, a `description` and `examples`
+(`documented()` in `schema.go`, values in `schema_examples.go`).
+`TestSchemaDocumentsEveryProperty` checks it in Go, and
+`schema-examples.test.js` checks each example with ajv. The template file
+and package schemas follow the same rule. `openapi.yml` lists the root
+(`BuilderDocument`) and `metadata` (`BuilderDocumentMetadata`) properties,
+and `TestBuilderDocumentDocumented` holds them to the Go structs. The
+Inspector strips the schema titles (`schema.js`), so its labels do not
+change.
 
 ## Document provenance
 
-A document's `metadata` has four optional string fields after
-`description`: `createdBy`, `createdAt`, `updatedBy`, `updatedAt`. Users are
-at most 256 bytes with no control characters; times are exactly
-`YYYY-MM-DDTHH:MM:SSZ` (UTC, whole seconds); an empty string or null is
-none; no pairing or ordering rule. Revision stays 1. They are document
-content and part of its digest. `source.updatedAt` is a different field
-(the imported config's time).
-
-The server stamps them in `api/builder` when it stores a draft snapshot;
-the editor never sets them:
+`metadata.createdBy`, `createdAt`, `updatedBy` and `updatedAt` are document
+content and part of the digest. The server stamps them in `api/builder`
+when it stores a snapshot. The editor never sets them.
 
 - `POST /builder/drafts` (`CreateDraft`): `createdBy` and `createdAt` are
-  the body's when present, else the caller and now; `updatedBy` and
-  `updatedAt` are always the caller and now. The draft record keeps the two
-  as `documentCreatedBy` and `documentCreatedAt` (a record with the old key
-  `documentAuthor` is refused as corrupt). So an Upload keeps the file's
-  `createdBy`, and anyone with `configs` `create` can name anyone. A body
-  cannot set `updatedBy` or `updatedAt`, except through the unchanged copy
-  below.
+  the body's when present, else the caller and now. `updatedBy` and
+  `updatedAt` are always the caller and now. So an Upload keeps the file's
+  `createdBy`.
 - Unchanged copy: with `sourceToken` `builder-doc/<id>` or
-  `builder-file/<topology>/<digest>` and no `forkOf`, a body whose canonical
-  JSON is the opened document is stored unstamped, so the draft's `digest`
-  equals the document's and an unchanged publish answers topology
-  `skipped`. A client must send the document exactly as `GET` returned it.
-  For a `builder-file/` token all four fields are then whatever the file
-  says, also in what the draft publishes before its first save: they are
-  only as trustworthy as whoever can write the file.
-- `POST .../snapshots` (`AppendSnapshot`): `createdBy` and `createdAt` come from
-  the draft record (left out when it has none); `updatedBy` and `updatedAt`
-  are the caller and now, equal to the snapshot's `createdBy` and its
-  `createdAt` cut to seconds. Every save is an edit, also one that changes
-  nothing.
-- Nothing else writes a document: cursor moves (undo, redo, restore),
-  snapshot delete, shares, publish and a file read never stamp. A
-  published document holds the fields of the snapshot it was published from.
-- A value that is not valid in any of the four fields answers 422 on create
-  and save.
+  `builder-file/<topology>/<digest>` and no `forkOf`, the server stores a
+  body whose canonical JSON is the opened document without a stamp. The
+  draft's digest then equals the document's, and an unchanged publish
+  answers topology `skipped`. The client must send the document exactly as
+  `GET` returned it.
+- `POST …/snapshots` (`AppendSnapshot`) keeps the draft record's
+  `createdBy` and `createdAt` and stamps `updatedBy` and `updatedAt`. Every
+  save is an edit, also one that changes nothing.
+- Nothing else stamps: not undo, redo, restore, snapshot delete, shares,
+  publish or a file read.
+- Create and save responses carry no document, so they carry `stamp`
+  (empty fields left out). The editor copies it into its document
+  (`withStamp` in `model.js`). Watchers that must not react to a stamp
+  alone use `sameButStamp`.
 
-Create and save responses have no document, so they carry `stamp:
-{createdBy?, createdAt?, updatedBy?, updatedAt?}` (empty fields left out, `{}`
-for an unchanged copy of a document that names nobody); the editor copies
-it into its document (`withStamp` in `model.js`). No other response has
-`stamp`. Copying it replaces `store.doc`, so the Inspector's watch on the
-document skips a change of the stamp alone (`sameButStamp`): a reset there
-drops text being typed in a field (`builder-inspector.spec.js` checks it).
-Any other change (a layout landing from ELK's worker, an edit on the canvas)
-reloads the form only while `keepsWorkingCopy` (`adapters/forms.js`) is
-false: no unapplied edits, no text typed and not committed (`typing`), no
-focus on Apply or Cancel (`held`), no look held, no change JSON Forms has
-not sent, no rows a renderer holds back. Otherwise `rebasedWorkingCopy`
-moves the working copy onto the element as it is now (`mergeFormData`), so
-a field changed elsewhere shows and Apply keeps it. Apply, and a save of
-unapplied edits (`settle`, `saveUnapplied`), reload the form once the store
-takes their commit, as every field has committed its text by then: a field
-shows the value the document took, such as a VLAN typed as `exp` that
-names network `EXP` (`builder-publish.spec.js` checks it).
+`sourceFile` on `POST /builder/drafts` records the base name of the
+uploaded file (at most 255 bytes, no `/` or `\`, not `.` or `..`, no
+control characters, else 422). Nothing opens it. A `forkOf` draft records
+none.
 
-`sourceFile` on `POST /builder/drafts` records the name of the uploaded
-file a draft came from (the UI sends it for Upload of a file and Import of
-a config file): a base name of at most 255 bytes, no `/` or `\`, not
-`.` or `..`, no control characters, else 422. It is returned on every draft
-response when set, is never used to open anything, and a `forkOf` draft
-records none.
+## Other file formats
+
+- Template files: [templates-and-icons.md](templates-and-icons.md#template-files).
+- Builder packages: [sources.md](sources.md#downloads-and-packages).
+- YAML input of all three formats goes through `builder.JSONFromYAML`
+  (`types/builder/yaml.go`). It refuses anchors, aliases, merge keys, a
+  second document, non-scalar or duplicate keys, other tags, `.inf` and
+  `.nan`, and types scalars as js-yaml's `JSON_SCHEMA` does.
