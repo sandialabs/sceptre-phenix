@@ -138,11 +138,20 @@ type PreflightExperiment struct {
 }
 
 // PreflightVLAN is a VLAN a running experiment holds: its ID, its alias there,
-// and the experiment, "" for one the caller may not see.
+// and the experiment.
 type PreflightVLAN struct {
 	ID         int
 	Alias      string
 	Experiment string
+}
+
+// PreflightVLANs is what the network check reads of the running experiments:
+// the VLANs those the caller may see hold, and whether a running experiment
+// the caller may not see was left out. Nothing names such an experiment or
+// the VLANs it holds, which the check then does not compare.
+type PreflightVLANs struct {
+	InUse  []PreflightVLAN
+	Hidden bool
 }
 
 // PreflightEnvironment is what the preflight checks read, as the caller may
@@ -165,9 +174,10 @@ type PreflightEnvironment interface {
 	// Experiment returns the VLAN range and default bridge of the named
 	// experiment.
 	Experiment(ctx context.Context, name string) (PreflightExperiment, error)
-	// VLANsInUse returns the VLANs the running experiments hold, but the one
-	// named except.
-	VLANsInUse(ctx context.Context, except string) ([]PreflightVLAN, error)
+	// VLANsInUse returns the VLANs the running experiments the caller may
+	// see hold, but the one named except, and whether a running experiment
+	// the caller may not see was left out.
+	VLANsInUse(ctx context.Context, except string) (PreflightVLANs, error)
 	// Bridges returns the bridges each schedulable host has, by host name.
 	Bridges(ctx context.Context) (map[string][]string, error)
 }
@@ -203,6 +213,11 @@ type PreflightRequest struct {
 	Checks     []PreflightCheck
 	Experiment string
 	Timeout    time.Duration
+	// checkTimeouts bounds each check it names instead of Timeout, so one
+	// check can time out at once while the others have all the time they
+	// need, and a test of the timeout does not depend on how fast the other
+	// checks run.
+	checkTimeouts map[PreflightCheck]time.Duration
 }
 
 // PreflightChecks returns every preflight check, in the order the editor
@@ -241,12 +256,17 @@ func RunPreflight(
 	var group sync.WaitGroup
 
 	for i, check := range request.Checks {
+		limit := timeout
+		if own := request.checkTimeouts[check]; own > 0 {
+			limit = own
+		}
+
 		group.Add(1)
 
 		go func() {
 			defer group.Done()
 
-			results[i] = runPreflightCheck(ctx, doc, check, request.Experiment, timeout, env)
+			results[i] = runPreflightCheck(ctx, doc, check, request.Experiment, limit, env)
 		}()
 	}
 
@@ -827,9 +847,11 @@ func vlanRangeIssues(
 }
 
 // aliasesInUse looks up each VLAN alias the document's networks fix among
-// the VLANs the running experiments hold, but the experiment named. It
-// returns the issues, the part of the summary that says what was compared,
-// and why the aliases could not be compared, if they could not.
+// the VLANs the running experiments the caller may see hold, but the
+// experiment named. It returns the issues, the part of the summary that
+// says what was compared, and why the aliases could not be compared, if
+// they could not. When a running experiment the caller may not see was left
+// out, the part says so, without naming it or its VLANs.
 func aliasesInUse(
 	ctx context.Context,
 	doc *builder.Document,
@@ -855,10 +877,10 @@ func aliasesInUse(
 		}
 	}
 
-	byID := make(map[int]PreflightVLAN, len(used))
+	byID := make(map[int]PreflightVLAN, len(used.InUse))
 
-	for _, vlan := range used {
-		if _, ok := byID[vlan.ID]; !ok || byID[vlan.ID].Experiment == "" {
+	for _, vlan := range used.InUse {
+		if _, ok := byID[vlan.ID]; !ok {
 			byID[vlan.ID] = vlan
 		}
 	}
@@ -876,20 +898,22 @@ func aliasesInUse(
 			continue
 		}
 
-		message := fmt.Sprintf("network %q has VLAN alias %d, which another running experiment uses", network.Name, *network.Alias)
-		if vlan.Experiment != "" {
-			message = fmt.Sprintf(
-				"network %q has VLAN alias %d, which running experiment %s uses for VLAN %q",
-				network.Name, *network.Alias, vlan.Experiment, vlan.Alias,
-			)
-		}
+		message := fmt.Sprintf(
+			"network %q has VLAN alias %d, which running experiment %s uses for VLAN %q",
+			network.Name, *network.Alias, vlan.Experiment, vlan.Alias,
+		)
 
 		issue := builder.NewIssue(builder.CodePreflightNetworkAliasInUse, fmt.Sprintf("networks[%d].alias", i), message)
 		issue.NetworkID = network.ID
 		issues = append(issues, issue)
 	}
 
-	return issues, []string{plural(aliased, "VLAN alias", "VLAN aliases") + " compared with running experiments"}, nil
+	part := plural(aliased, "VLAN alias", "VLAN aliases") + " compared with running experiments"
+	if used.Hidden {
+		part += "; running experiments your role may not list were not compared"
+	}
+
+	return issues, []string{part}, nil
 }
 
 // wantedBridges returns the bridges the document's devices are on, by name,

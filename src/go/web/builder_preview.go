@@ -117,7 +117,7 @@ func (b *builderAPI) publishPreview(
 		TopologyHeld:   plan.topology.applied,
 		Scenarios:      nil,
 		Experiment:     nil,
-		ServerImages:   b.serverImages(actor),
+		ServerImages:   b.serverImages(actor, projection.Spec),
 	}
 
 	if plan.scenarios != nil {
@@ -253,13 +253,16 @@ func builderPreviewRefusal(err error) ([]bdoc.Issue, bool) {
 // as GET /disks reads them, or nil when they are unknown: the caller may
 // list no disks, the listing failed, or it lists none, as it does when
 // minimega is not running. It holds the images the caller may not list by
-// name too, which [hideUnlistedImages] then reports nothing of.
-func (b *builderAPI) serverImages(actor builderActor) []string {
-	if b.listDisks == nil || !actor.role.Allowed("disks", "list") {
+// name too, which [hideUnlistedImages] then reports nothing of. It lists
+// nothing when spec, the topology the publication writes, names no disk
+// image: the Publish dialog sends a dry run after each pause in editing,
+// and there is then no image the server's list would say anything of.
+func (b *builderAPI) serverImages(actor builderActor, spec map[string]any) []string {
+	if !actor.role.Allowed("disks", "list") || !bapi.NamesDiskImage(spec) {
 		return nil
 	}
 
-	disks, err := b.listDisks()
+	disks, err := b.disks.images()
 	if err != nil {
 		plog.Debug(plog.TypeSystem, "listing disk images for a builder publication preview", "err", err)
 

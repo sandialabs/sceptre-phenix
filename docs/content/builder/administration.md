@@ -195,7 +195,7 @@ instead.
 | Delete a published topology | `configs` `delete` on `Topology/<name>` |
 | Get the Inspector's fields from the server | `schemas` `get` on `builder` |
 | Get drive image suggestions and missing-image checks | `disks` `list` |
-| Run **Preflight** checks on a draft | As opening the draft. Each check also needs: **Host capacity** `hosts` `list`; **Networks** `hosts` `list` for the bridges, `experiments` `list` for the VLANs running experiments use, and `configs` `get` and `experiments` `get` on the experiment named; **Disk images** `disks` `list`; **Scenario apps** `applications` `list`, and `configs` `get` and `scenarios` `list` on each `Scenario/<name>` the diagram lists. A check, or part of one, that its permission is missing for is reported as unavailable |
+| Run **Preflight** checks on a draft | As opening the draft. Each check also needs: **Host capacity** `hosts` `list`; **Networks** `hosts` `list` for the bridges, `experiments` `list` for the VLANs running experiments use (only the experiments it may list by name are compared), and `configs` `get` and `experiments` `get` on the experiment named; **Disk images** `disks` `list`; **Scenario apps** `applications` `list`, and `configs` `get` and `scenarios` `list` on each `Scenario/<name>` the diagram lists. A check, or part of one, that its permission is missing for is reported as unavailable |
 | List, open, change or delete other users' drafts | `builder-drafts` (see [Other users' drafts](#other-users-drafts)) |
 | See and use the server's icons | `configs` `list` |
 | Upload an icon, and add a diagram's icons to the server with **Upload** | `configs` `create` |

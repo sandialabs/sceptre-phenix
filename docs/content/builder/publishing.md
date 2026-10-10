@@ -126,7 +126,9 @@ Each list says its changes in words:
   server's disk images, the line ends "; the server has it" or "; the server
   does not have it". Without minimega running, without the `disks` `list`
   permission, or for an image whose name your role may not list, it says
-  neither.
+  neither. The server lists its disk images only when the devices name one,
+  and reuses that list for 10 seconds, so an image added in that time may
+  not show as on the server yet.
 - **VLAN aliases**, with an experiment: "VLAN alias for network CORP is set to
   120", "VLAN alias for network OT changes from 101 to 120", "VLAN alias 5
   for network DMZ is removed" or "VLAN alias for network EXP stays 0". A new

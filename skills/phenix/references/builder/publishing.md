@@ -207,11 +207,17 @@ left out when empty: `spec.vlans.aliases` of the stored experiment against
 `projection.VLANAliases`, `{name, from, to, change}`, all `added` on
 create). Lists are sorted by name. `onServer` compares the image's file name
 (`path.Base`, as `validate.js` does) with the names of every image the
-server has (`builderAPI.listDisks`, `disk.GetImages("")`; tests set
-`withBuilderDisks`), and is null without `disks` `list`, when the listing
-fails, when it lists none (minimega not running), and for an image whose
-file name the caller may not list (`hideUnlistedImages`, as `GET /disks`
-leaves it out), whether the server has it or not. `PublishChanges.Lines()`
+server has (`builderAPI.disks`, a `builderDiskLister` over
+`disk.GetImages("")` in `web/builder_disks.go` that package resolve and the
+preflight disks check share: a successful listing is reused for
+`builderDiskListTTL`, 10 s, and concurrent requests wait for the one in
+flight; tests set `withBuilderDisks` and may replace `disks.now`), and is
+null without `disks` `list`, when the listing fails, when it lists none
+(minimega not running), and for an image whose file name the caller may not
+list (`hideUnlistedImages`, as `GET /disks` leaves it out), whether the
+server has it or not. A dry run whose projection names no drive image
+(`bapi.NamesDiskImage`) lists nothing, so every `onServer` is then null; the
+Publish dialog sends a dry run after each 300 ms editing pause. `PublishChanges.Lines()`
 words each change as the dialog does (`publishChangeLines` in
 `publish.js`), ending "Nothing outside the Topology changes" when the four
 lists are empty. `planTopology` never fails on it: when a stored topology

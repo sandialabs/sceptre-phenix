@@ -18,10 +18,18 @@ import (
 	"phenix/web/rbac"
 )
 
+// preflightDisks lists the one disk image base.qc2, a VM image, as the
+// server's.
+func preflightDisks() builderOption {
+	return withBuilderDisks(func() ([]disk.Details, error) {
+		return []disk.Details{{Name: "base.qc2", Kind: disk.VMImage}}, nil
+	})
+}
+
 // preflightSources is what the preflight checks read in these tests: one
 // schedulable host h1 (and a head node VMs are not scheduled on) with bridge
-// phenix, the image base.qc2, and the apps ntp (a default app) and scorch.
-// hostReads counts the reads of the cluster hosts.
+// phenix, and the apps ntp (a default app) and scorch. hostReads counts the
+// reads of the cluster hosts. The disk images are set with [preflightDisks].
 func preflightSources(hostReads *atomic.Int32) builderPreflightSources {
 	return builderPreflightSources{
 		clusterHosts: func() (mm.Hosts, error) {
@@ -40,17 +48,16 @@ func preflightSources(hostReads *atomic.Int32) builderPreflightSources {
 
 			return bridges, nil
 		},
-		diskImages:  func() ([]disk.Details, error) { return []disk.Details{{Name: "base.qc2", Kind: disk.VMImage}}, nil },
 		defaultApps: func() []string { return []string{"ntp"} },
 		apps:        func() []string { return []string{"scorch"} },
 		timeout:     time.Second,
 	}
 }
 
-// preflightFixture is a harness reading preflightSources, holding topology
-// lab (device web, whose drive image is miniccc.qc2, on VLAN EXP), scenario
-// sc (app scorch, and app gone, disabled), and the given configs, and a draft
-// of alice's made from lab that lists sc.
+// preflightFixture is a harness reading preflightSources and preflightDisks,
+// holding topology lab (device web, whose drive image is miniccc.qc2, on
+// VLAN EXP), scenario sc (app scorch, and app gone, disabled), and the given
+// configs, and a draft of alice's made from lab that lists sc.
 func preflightFixture(t *testing.T, hostReads *atomic.Int32, configs ...store.Config) (*builderHarness, builderDraftResponse) {
 	t.Helper()
 
@@ -64,7 +71,7 @@ func preflightFixture(t *testing.T, hostReads *atomic.Int32, configs ...store.Co
 	}}
 
 	harness := newBuilderHarnessWith(t,
-		[]builderOption{withBuilderPreflightSources(preflightSources(hostReads))},
+		[]builderOption{withBuilderPreflightSources(preflightSources(hostReads)), preflightDisks()},
 		slices.Concat([]store.Config{topology, scenario}, configs)...,
 	)
 
@@ -499,5 +506,64 @@ func TestBuilderPreflightNetworkReadsExperiments(t *testing.T) {
 
 	if !strings.Contains(result.Summary, "experiment exp's VLAN range is 100 to 200") {
 		t.Fatalf("summary = %q, want the experiment's range", result.Summary)
+	}
+}
+
+// TestBuilderPreflightAliasesLeaveOutHiddenExperiments compares the VLAN
+// aliases only with the running experiments the caller may list by name: for
+// a role whose experiments list names only mine, the VLAN that running
+// experiment secret holds is not compared, and the summary says that running
+// experiments the role may not list were not compared, naming neither secret
+// nor its VLAN. Naming secret as the experiment changes nothing of that.
+func TestBuilderPreflightAliasesLeaveOutHiddenExperiments(t *testing.T) {
+	mine := builderConfig(t, kindExperiment, "mine")
+	mine.Status = map[string]any{"startTime": "2026-01-01T00:00:00Z", "vlans": map[string]any{"X": float64(150)}}
+
+	secret := builderConfig(t, kindExperiment, "secret")
+	secret.Status = map[string]any{"startTime": "2026-01-01T00:00:00Z", "vlans": map[string]any{"HIDDEN": float64(151)}}
+
+	var hostReads atomic.Int32
+
+	harness, _ := preflightFixture(t, &hostReads, mine, secret)
+
+	document := generateBuilderDocument(t, harness, "Topology/lab")
+	alias := 151
+	document.Networks[0].Alias = &alias
+	draft := createBuilderPublishDraft(t, harness, document)
+
+	scoped := builderRole(
+		preflightLister(),
+		builderPolicy([]string{"configs", "topologies", "scenarios"}, []string{"*", "*/*"}, []string{"list", "get"}),
+		builderPolicy([]string{"experiments"}, []string{"mine"}, []string{"list"}),
+	)
+
+	const note = "running experiments your role may not list were not compared"
+
+	for _, body := range []string{`{"checks":["network"]}`, `{"checks":["network"],"experiment":"secret"}`} {
+		recorder := postBuilderPreflight(harness, draft, &scoped, body)
+		network := preflightResultOf(t, preflightReport(t, harness, recorder), bapi.PreflightNetwork)
+
+		if slices.ContainsFunc(network.Issues, func(issue bdoc.Issue) bool {
+			return issue.Code == bdoc.CodePreflightNetworkAliasInUse
+		}) {
+			t.Errorf("%s: network = %+v, want the alias not compared with secret's VLAN", body, network)
+		}
+
+		if !strings.Contains(network.Summary, "1 VLAN alias compared with running experiments; "+note) {
+			t.Errorf("%s: summary = %q, want it to say the experiments the role may not list were not compared", body, network.Summary)
+		}
+
+		if answer := recorder.Body.String(); strings.Contains(answer, "HIDDEN") ||
+			strings.Contains(answer, "running experiment secret") {
+			t.Errorf("%s: the answer names secret or its VLAN: %s", body, answer)
+		}
+	}
+
+	full := preflightResultOf(t, preflightReport(t, harness, postBuilderPreflight(harness, draft, nil,
+		`{"checks":["network"]}`)), bapi.PreflightNetwork)
+
+	issue := preflightIssue(t, full, bdoc.CodePreflightNetworkAliasInUse)
+	if !strings.Contains(issue.Message, `running experiment secret uses for VLAN "HIDDEN"`) || strings.Contains(full.Summary, note) {
+		t.Fatalf("network for the full role = %+v, want the alias in use by secret and no note", full)
 	}
 }

@@ -27,6 +27,7 @@ type fakePreflight struct {
 	experiment    PreflightExperiment
 	experimentErr error
 	vlans         []PreflightVLAN
+	vlansHidden   bool
 	vlansErr      error
 	excepted      string
 	bridges       map[string][]string
@@ -70,10 +71,10 @@ func (f *fakePreflight) Experiment(context.Context, string) (PreflightExperiment
 	return f.experiment, f.experimentErr
 }
 
-func (f *fakePreflight) VLANsInUse(_ context.Context, except string) ([]PreflightVLAN, error) {
+func (f *fakePreflight) VLANsInUse(_ context.Context, except string) (PreflightVLANs, error) {
 	f.excepted = except
 
-	return f.vlans, f.vlansErr
+	return PreflightVLANs{InUse: f.vlans, Hidden: f.vlansHidden}, f.vlansErr
 }
 
 func (f *fakePreflight) Bridges(context.Context) (map[string][]string, error) {
@@ -279,7 +280,7 @@ func networkDocument() *builder.Document {
 func TestPreflightNetworkFindsEveryProblem(t *testing.T) {
 	env := &fakePreflight{
 		experiment: PreflightExperiment{VLANMin: 100, VLANMax: 200, DefaultBridge: ""},
-		vlans:      []PreflightVLAN{{ID: 101, Alias: "X", Experiment: "other"}, {ID: 102, Alias: "Y", Experiment: ""}},
+		vlans:      []PreflightVLAN{{ID: 101, Alias: "X", Experiment: "other"}, {ID: 102, Alias: "Y", Experiment: "third"}},
 		bridges:    map[string][]string{"h1": {"phenix"}, "h2": {"lab", "phenix"}},
 	}
 
@@ -313,6 +314,41 @@ func TestPreflightNetworkFindsEveryProblem(t *testing.T) {
 
 	if want := "2 VLANs; experiment exp's VLAN range is 100 to 200"; !strings.HasPrefix(result.Summary, want) {
 		t.Fatalf("summary = %q, want it to start with %q", result.Summary, want)
+	}
+
+	if strings.Contains(result.Summary, "may not list") {
+		t.Fatalf("summary = %q, want no note of running experiments left out, since none was", result.Summary)
+	}
+}
+
+// A running experiment the caller may not see is left out of the VLANs in
+// use: the aliases are compared with the others, and the summary says that
+// some running experiments were not compared, naming none of them.
+func TestPreflightNetworkNotesHiddenExperiments(t *testing.T) {
+	env := &fakePreflight{
+		vlans:       []PreflightVLAN{{ID: 300, Alias: "M", Experiment: "seen"}},
+		vlansHidden: true,
+		bridges:     map[string][]string{"h1": {"lab", "phenix"}},
+	}
+
+	result := runOne(t, networkDocument(), PreflightNetwork, "", env)
+
+	if got := issueCodes(result.Issues); result.Status != PreflightFailed ||
+		!slices.Equal(got, []builder.Code{builder.CodePreflightNetworkAliasInUse}) {
+		t.Fatalf("result = %+v, want failed only by MGMT's alias, which seen uses", result)
+	}
+
+	note := "2 VLAN aliases compared with running experiments; running experiments your role may not list were not compared"
+	if !strings.Contains(result.Summary, note) {
+		t.Fatalf("summary = %q, want it to contain %q", result.Summary, note)
+	}
+
+	env.vlans = nil
+
+	result = runOne(t, networkDocument(), PreflightNetwork, "", env)
+
+	if result.Status != PreflightPassed || len(result.Issues) != 0 || !strings.Contains(result.Summary, note) {
+		t.Fatalf("result = %+v, want passed, noting the running experiments left out", result)
 	}
 }
 
@@ -527,7 +563,10 @@ func TestPreflightAppsWithoutScenariosOrPermission(t *testing.T) {
 
 // The report lists the checks in the order asked, and the names of those
 // that passed, failed and were unavailable; a check that takes too long is
-// unavailable, and the others are reported.
+// unavailable, and the others are reported. The capacity check's hosts never
+// answer while the test runs, so only its own short timeout can end it; the
+// other checks have a minute, so how fast they run on a loaded machine does
+// not change the outcome.
 func TestRunPreflightOrderAndTimeout(t *testing.T) {
 	block := make(chan struct{})
 	t.Cleanup(func() { close(block) })
@@ -538,7 +577,13 @@ func TestRunPreflightOrderAndTimeout(t *testing.T) {
 	report := RunPreflight(t.Context(), doc, PreflightRequest{
 		Checks:     []PreflightCheck{PreflightApps, PreflightCapacity, PreflightDisks},
 		Experiment: "",
-		Timeout:    20 * time.Millisecond,
+		Timeout:    time.Minute,
+		checkTimeouts: map[PreflightCheck]time.Duration{
+			PreflightCapacity: 20 * time.Millisecond,
+			PreflightNetwork:  time.Minute,
+			PreflightDisks:    time.Minute,
+			PreflightApps:     time.Minute,
+		},
 	}, env)
 
 	names := make([]PreflightCheck, len(report.Checks))

@@ -24,11 +24,11 @@ export const BROTLI_QUALITY_VARIABLE = 'PHENIX_BROTLI_QUALITY';
 export const DEFAULT_BROTLI_QUALITY = 9;
 
 // The Brotli quality PHENIX_BROTLI_QUALITY in env names, a whole number from
-// 0 to 11, or DEFAULT_BROTLI_QUALITY when it is not set; null for any other
-// value.
+// 0 to 11, or DEFAULT_BROTLI_QUALITY when it is not set, empty or only white
+// space, as src/js/Makefile reads it; null for any other value.
 export function brotliQuality(env) {
   const value = env[BROTLI_QUALITY_VARIABLE];
-  if (value === undefined) {
+  if (value === undefined || value.trim() === '') {
     return DEFAULT_BROTLI_QUALITY;
   }
 

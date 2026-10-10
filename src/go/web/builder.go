@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 
 	bapi "phenix/api/builder"
 	"phenix/api/config"
-	"phenix/api/disk"
 	"phenix/store"
 	bdoc "phenix/types/builder"
 	putil "phenix/util"
@@ -134,16 +134,14 @@ type builderAPI struct {
 	// start, as the server's collections of templates (see
 	// [bapi.Service.LoadServerTemplates]); "" reads none.
 	templateFiles string
-	// diskImages lists this server's disk images, which a package's diagram
-	// may need (see [builderAPI.resolvePackage]).
-	diskImages func() ([]disk.Details, error)
+	// disks lists this server's disk images, as GET /disks lists them, for
+	// the routes that compare a document with them: package resolve (see
+	// [builderAPI.resolvePackage]), the dry run of a publication and the
+	// preflight disks check. It reuses a listing for a short time.
+	disks *builderDiskLister
 	// appNames lists the apps this server runs, which a package's diagram
 	// may need.
 	appNames func() []string
-	// listDisks lists the disk images the server has, as GET /disks lists
-	// them, for a dry run of a publication to say whether the server has
-	// each image the topology's devices use.
-	listDisks func() ([]disk.Details, error)
 	// preflight is where the preflight checks of a draft read the cluster
 	// and the server from (see [builderAPI.preflightDraft]).
 	preflight builderPreflightSources
@@ -173,9 +171,8 @@ func newBuilderAPI(opts ...builderOption) (*builderAPI, error) {
 		publish:       newBuilderPublishOps(),
 		documentFiles: builderDocumentFiles,
 		templateFiles: common.BuilderTemplatesDir(),
-		diskImages:    builderDiskImages,
+		disks:         newBuilderDiskLister(builderDiskImages, time.Now),
 		appNames:      builderAppNames,
-		listDisks:     func() ([]disk.Details, error) { return disk.GetImages("") },
 		preflight:     defaultBuilderPreflightSources(),
 	}
 
@@ -290,11 +287,6 @@ func builderDocumentFiles() (string, []string) {
 // at start as the server's template collections; "" reads none.
 func withBuilderTemplateFiles(directory string) builderOption {
 	return func(api *builderAPI) { api.templateFiles = directory }
-}
-
-// withBuilderDisks sets how the server's disk images are listed.
-func withBuilderDisks(list func() ([]disk.Details, error)) builderOption {
-	return func(api *builderAPI) { api.listDisks = list }
 }
 
 // withBuilderDocumentFiles sets the directory Builder files are read from,

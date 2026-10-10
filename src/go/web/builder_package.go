@@ -109,23 +109,11 @@ func (d builderPackageDependency) with(status, detail string) builderPackageDepe
 	return d
 }
 
-// builderDiskImages lists this server's disk images, as GET /disks lists
-// them.
-func builderDiskImages() ([]disk.Details, error) {
-	return disk.GetImages("")
-}
-
 // builderAppNames lists the apps this server runs: the apps a scenario can
 // name, as GET /applications lists them, and the default apps every
 // experiment runs.
 func builderAppNames() []string {
 	return slices.Concat(app.List(), app.DefaultApps())
-}
-
-// withBuilderDiskImages sets how the package routes list this server's disk
-// images.
-func withBuilderDiskImages(list func() ([]disk.Details, error)) builderOption {
-	return func(api *builderAPI) { api.diskImages = list }
 }
 
 // withBuilderApps sets how the package routes list the apps this server
@@ -467,7 +455,8 @@ func (b *builderAPI) packageIcons(ctx context.Context, document *bdoc.Document) 
 // compared by its bytes the same way. Disk images are looked for among
 // those GET /disks lists the caller (disks list, then by name), so one the
 // caller may not see reads missing, as an absent one does; without disks
-// list, or when the disk images cannot be listed, they are unknown. Apps
+// list, or when the disk images cannot be listed or the server lists none
+// (as it does when minimega cannot be reached), they are unknown. Apps
 // are looked for the same way among those GET /applications lists the
 // caller (applications list, then by name), and are unknown only without
 // applications list. Templates travel in the document and
@@ -717,17 +706,24 @@ func (b *builderAPI) imageDependencies(actor builderActor, images []bdoc.Package
 
 // listedDiskImages returns the disk images of this server GET /disks lists
 // the caller: with disks list, each whose name the role allows; or why
-// they cannot be listed for the caller.
+// they cannot be listed for the caller. A listing of no images at all is
+// what the server gives when it cannot reach minimega, so it is reported as
+// one that could not be made, as the publish dry run and the preflight
+// disks check report it, rather than as every image missing.
 func (b *builderAPI) listedDiskImages(actor builderActor) ([]disk.Details, string) {
 	if !actor.role.Allowed("disks", "list") {
 		return nil, "Your role cannot list disk images."
 	}
 
-	images, err := b.diskImages()
+	images, err := b.disks.images()
 	if err != nil {
 		plog.Warn(plog.TypeSystem, "listing disk images for a builder package", "err", err)
 
-		return nil, "The server's disk images could not be listed."
+		return nil, builderDisksUnlisted
+	}
+
+	if len(images) == 0 {
+		return nil, builderDisksUnlisted
 	}
 
 	allowed := make([]disk.Details, 0, len(images))

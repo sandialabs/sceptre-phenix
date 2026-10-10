@@ -6,12 +6,14 @@ on:
     paths:
       - 'src/go/**'
       - 'src/js/src/builder/schema/**'
+      - 'docs/content/builder/error-codes.md'
       - 'Makefile'
       - '.github/workflows/ci.yml'
   pull_request:
     paths:
       - 'src/go/**'
       - 'src/js/src/builder/schema/**'
+      - 'docs/content/builder/error-codes.md'
       - 'Makefile'
       - '.github/workflows/ci.yml'
 
@@ -42,11 +44,12 @@ jobs:
       - name: Generate code
         working-directory: src/go
         run: make generate
-      - name: Check the Builder schema bundle is current
+      - name: Check the Builder schema bundle and codes table are current
         run: |
-          if [ -n "$(git status --porcelain -- src/js/src/builder/schema)" ]; then
-            git diff -- src/js/src/builder/schema
-            echo "::error::src/js/src/builder/schema differs from the Go builder schema: run make generate in src/go and commit the result"
+          generated="src/js/src/builder/schema docs/content/builder/error-codes.md"
+          if [ -n "$(git status --porcelain -- $generated)" ]; then
+            git diff -- $generated
+            echo "::error::$generated differ from the Go builder schema and codes: run make generate in src/go and commit the result"
             exit 1
           fi
       - name: Run tests with coverage

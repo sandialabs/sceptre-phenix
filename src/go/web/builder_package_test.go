@@ -649,14 +649,22 @@ func builderResolvePackage(t *testing.T, harness *builderHarness) *bdoc.Package 
 func newBuilderResolveHarness(t *testing.T, disksErr error) *builderHarness {
 	t.Helper()
 
-	harness := newBuilderHarnessWith(t, []builderOption{
-		withBuilderDiskImages(func() ([]disk.Details, error) {
-			if disksErr != nil {
-				return nil, disksErr
-			}
+	return newBuilderResolveHarnessWith(t, func() ([]disk.Details, error) {
+		if disksErr != nil {
+			return nil, disksErr
+		}
 
-			return []disk.Details{{Name: builderPackageImage, FullPath: "/phenix/images/" + builderPackageImage}}, nil
-		}),
+		return []disk.Details{{Name: builderPackageImage, FullPath: "/phenix/images/" + builderPackageImage}}, nil
+	})
+}
+
+// newBuilderResolveHarnessWith is [newBuilderResolveHarness] whose server
+// lists the disk images disks lists.
+func newBuilderResolveHarnessWith(t *testing.T, disks func() ([]disk.Details, error)) *builderHarness {
+	t.Helper()
+
+	harness := newBuilderHarnessWith(t, []builderOption{
+		withBuilderDisks(disks),
 		withBuilderApps(func() []string { return []string{"pkg-app", "ntp"} }),
 	}, namedScenario(t, "pkg-same", "topo"), namedScenario(t, "pkg-diff", "topo"))
 
@@ -766,6 +774,30 @@ func TestBuilderResolvePackageWhenDisksCannotBeListed(t *testing.T) {
 	got := dependencies["image/gone.qc2"]
 	if got.Status != builderDependencyUnknown || !strings.HasPrefix(got.Detail, "The server's disk images could not be listed.") {
 		t.Errorf("image/gone.qc2 = %+v, want it unknown, since the disk images could not be listed", got)
+	}
+}
+
+// TestBuilderResolvePackageWhenDisksListNone reports each disk image
+// unknown, rather than missing, when the server lists no disk images at
+// all, as it does without an error when minimega cannot be reached.
+func TestBuilderResolvePackageWhenDisksListNone(t *testing.T) {
+	harness := newBuilderResolveHarnessWith(t, func() ([]disk.Details, error) { return nil, nil })
+	pkg := builderResolvePackage(t, harness)
+
+	status, dependencies := resolveBuilderPackage(t, harness, nil, pkg)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want %d", status, http.StatusOK)
+	}
+
+	for _, key := range []string{"image/gone.qc2", "image//phenix/images/" + builderPackageImage} {
+		got := dependencies[key]
+		if got.Status != builderDependencyUnknown || !strings.HasPrefix(got.Detail, "The server's disk images could not be listed.") {
+			t.Errorf("%s = %+v, want it unknown, since the server listed no disk images", key, got)
+		}
+	}
+
+	if got := dependencies["app/pkg-app"].Status; got != builderDependencyPresent {
+		t.Errorf("app/pkg-app = %q, want %q: only the disk images are unknown", got, builderDependencyPresent)
 	}
 }
 

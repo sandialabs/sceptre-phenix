@@ -245,8 +245,14 @@ describe('the Brotli quality', () => {
 
       expect(brotliQuality(env)).toBe(quality);
     }
-    for (const value of ['', ' 9', '09', '9.5', '-1', '12', 'max']) {
+    for (const value of [' 9', '09', '9.5', '-1', '12', 'max']) {
       expect(brotliQuality({ PHENIX_BROTLI_QUALITY: value })).toBeNull();
+    }
+  });
+
+  test('is 9 when PHENIX_BROTLI_QUALITY is empty or only white space, as the Makefile reads it', () => {
+    for (const value of ['', ' ', '\t \n']) {
+      expect(brotliQuality({ PHENIX_BROTLI_QUALITY: value })).toBe(9);
     }
   });
 
@@ -263,10 +269,14 @@ describe('the Brotli quality', () => {
 
     expect(emitted['assets/Builder-A.js.br']).toEqual(at(11));
     expect(brotliDecompressSync(at(11))).toEqual(content);
+
+    const empty = generate(input, { env: { PHENIX_BROTLI_QUALITY: ' ' } });
+
+    expect(empty['assets/Builder-A.js.br']).toEqual(at(9));
   });
 
   test('fails the build on any other PHENIX_BROTLI_QUALITY', () => {
-    for (const value of ['', '12', 'max']) {
+    for (const value of [' 9', '12', 'max']) {
       const env = { PHENIX_BROTLI_QUALITY: value };
       const message = `PHENIX_BROTLI_QUALITY must be a whole number from 0 to 11, not "${value}".`;
 

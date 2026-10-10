@@ -11,7 +11,6 @@ import (
 	"time"
 
 	bapi "phenix/api/builder"
-	"phenix/api/disk"
 	"phenix/app"
 	"phenix/store"
 	bdoc "phenix/types/builder"
@@ -42,12 +41,13 @@ type builderPreflightRequest struct {
 }
 
 // builderPreflightSources is where the preflight checks read the cluster and
-// the server from: minimega's schedulable hosts and their bridges, the disk
-// images, and the apps. Tests replace them, so no test needs minimega.
+// the server from: minimega's schedulable hosts and their bridges, and the
+// apps. The disk images are read through the API's disk lister, which the
+// other routes that compare a document with them share. Tests replace them,
+// so no test needs minimega.
 type builderPreflightSources struct {
 	clusterHosts func() (mm.Hosts, error)
 	bridges      func(hosts ...string) (map[string][]string, error)
-	diskImages   func() ([]disk.Details, error)
 	// defaultApps are the apps every experiment runs; apps are the others
 	// the server can run, built in or on its PATH.
 	defaultApps func() []string
@@ -56,13 +56,12 @@ type builderPreflightSources struct {
 	timeout time.Duration
 }
 
-// defaultBuilderPreflightSources reads the cluster through minimega, the
-// disk images as GET /disks does and the apps as GET /applications does.
+// defaultBuilderPreflightSources reads the cluster through minimega and the
+// apps as GET /applications does.
 func defaultBuilderPreflightSources() builderPreflightSources {
 	return builderPreflightSources{
 		clusterHosts: func() (mm.Hosts, error) { return mm.GetClusterHosts(true) },
 		bridges:      mm.GetBridges,
-		diskImages:   func() ([]disk.Details, error) { return disk.GetImages("") },
 		defaultApps:  app.DefaultApps,
 		apps:         app.List,
 		timeout:      bapi.PreflightTimeout,
@@ -242,7 +241,7 @@ func (e *builderPreflightEnvironment) DiskImages(context.Context) ([]bapi.Prefli
 		return nil, bapi.NewPreflightUnavailable("your role may not list the disk images")
 	}
 
-	images, err := e.api.preflight.diskImages()
+	images, err := e.api.disks.images()
 	if err != nil {
 		return nil, err
 	}
@@ -356,40 +355,48 @@ func (e *builderPreflightEnvironment) Experiment(_ context.Context, name string)
 	}, nil
 }
 
-// VLANsInUse returns the VLANs the running experiments hold, but the one
-// named except, as their status records them. Reading them takes the
-// experiments list permission; an experiment the caller may not list (the
-// configs list and experiments list permissions on its name) is not named.
-func (e *builderPreflightEnvironment) VLANsInUse(_ context.Context, except string) ([]bapi.PreflightVLAN, error) {
+// VLANsInUse returns the VLANs the running experiments the caller may list
+// (the configs list and experiments list permissions on each one's name)
+// hold, but the one named except, as their status records them. Reading
+// them takes the experiments list permission. A running experiment the
+// caller may not list is left out with its VLANs, whose IDs would tell the
+// caller it exists; the result only says that one was left out. The
+// experiment named except counts as left out when the caller may not list
+// it, so naming an experiment never tells whether it is running.
+func (e *builderPreflightEnvironment) VLANsInUse(_ context.Context, except string) (bapi.PreflightVLANs, error) {
+	var used bapi.PreflightVLANs
+
 	if !e.actor.role.Allowed("experiments", "list") {
-		return nil, bapi.NewPreflightUnavailable("your role may not list experiments")
+		return used, bapi.NewPreflightUnavailable("your role may not list experiments")
 	}
 
 	experiments, err := e.api.listConfigs(builderSourceExperiment)
 	if err != nil {
-		return nil, err
+		return used, err
 	}
-
-	var used []bapi.PreflightVLAN
 
 	for _, experiment := range experiments {
 		name := experiment.Metadata.Name
 
-		started, _ := experiment.Status["startTime"].(string)
-		if name == except || started == "" {
+		if started, _ := experiment.Status["startTime"].(string); started == "" {
 			continue
 		}
 
-		shown := ""
-		if builderKindAllowed(e.actor.role, builderExperiments, name) &&
-			builderBaseAllowed(e.actor.role, builderVerbList, experiment.FullName()) {
-			shown = name
+		if !builderKindAllowed(e.actor.role, builderExperiments, name) ||
+			!builderBaseAllowed(e.actor.role, builderVerbList, experiment.FullName()) {
+			used.Hidden = true
+
+			continue
+		}
+
+		if name == except {
+			continue
 		}
 
 		vlans, _ := experiment.Status[builderExperimentVLANs].(map[string]any)
 
 		for alias, id := range vlans {
-			used = append(used, bapi.PreflightVLAN{ID: builderConfigInt(id), Alias: alias, Experiment: shown})
+			used.InUse = append(used.InUse, bapi.PreflightVLAN{ID: builderConfigInt(id), Alias: alias, Experiment: name})
 		}
 	}
 

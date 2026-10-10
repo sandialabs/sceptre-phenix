@@ -216,6 +216,15 @@ func DescribePublishChanges(state PublishState) (*PublishChanges, error) {
 	return changes, nil
 }
 
+// NamesDiskImage reports whether the devices of a topology spec name a disk
+// image (hardware.drives[].image), as [DescribePublishChanges] reads them.
+// A spec it cannot decode names none.
+func NamesDiskImage(spec map[string]any) bool {
+	parts, err := decodeSpecParts(spec)
+
+	return err == nil && len(parts.images) > 0
+}
+
 // HasTopologyAnnotation reports whether value, a scenario's comma-separated
 // "topology" annotation, names topology: one of its names, trimmed, is
 // exactly topology. A name that only contains it does not count.

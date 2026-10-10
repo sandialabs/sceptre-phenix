@@ -791,7 +791,9 @@ requirements:
       content. It is not changed.
     - **Not checked**: the server cannot check it, for example because your
       role cannot read that config, or cannot list disk images or apps.
-      Files on the server are never checked.
+      Disk images are not checked either when the server lists none, as it
+      does when minimega is not running. Files on the server are never
+      checked.
 
     A disk image or an app is looked for among the images or apps your role
     can list, so one your role cannot see reads Missing. A drive whose image
@@ -812,8 +814,8 @@ requirements:
 
 The dialog in step 2, for
 [pump-station.package.yaml](examples/pump-station.package.yaml) on a server
-that has no Scenario config pump-station-ntp and, without minimega running,
-lists no disk images:
+that has no Scenario config pump-station-ntp and none of the diagram's disk
+images:
 
 ![The Upload diagram dialog after the upload of pump-station.package.yaml: the diagram needs 5 items, 4 of them missing on this server; under Scenario configs, pump-station-ntp is Missing, in the package, with an unticked Create on this server checkbox; under Disk images, bennu.qc2, minirouter.qc2 and windows10.qc2 are Missing, each with the device that uses it; under Apps, ntp is Present; and the Cancel and Continue to editor buttons.](../images/builder/package-upload.png)
 

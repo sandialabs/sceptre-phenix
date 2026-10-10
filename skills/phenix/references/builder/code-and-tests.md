@@ -40,7 +40,8 @@ means updating the `view` passed to the plugin in `src/js/vite.config.js`;
 the build fails when it finds no chunk for it. Without the list, every file
 is served uncompressed and the server logs a warning at startup. gzip runs
 at level 9, and Brotli at quality 9 unless `PHENIX_BROTLI_QUALITY` names
-another whole number from 0 to 11; any other value fails the build. The
+another whole number from 0 to 11; empty or only white space counts as
+unset, as `src/js/Makefile` reads it, and any other value fails the build. The
 Docker image, the Podman image and the Debian package (built from the
 Docker image) set it to 11 in their UI build stage; local builds and the
 CI e2e build use 9. Measured on Builder's files (7 files, 3.1 MB):

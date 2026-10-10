@@ -63,7 +63,7 @@ func TestBuilderPreflightAnswersAsRecorded(t *testing.T) {
 	var hostReads atomic.Int32
 
 	harness := newBuilderHarnessWith(t,
-		[]builderOption{withBuilderPreflightSources(preflightSources(&hostReads))}, topology, scenario,
+		[]builderOption{withBuilderPreflightSources(preflightSources(&hostReads)), preflightDisks()}, topology, scenario,
 	)
 
 	document := generateBuilderDocument(t, harness, "Topology/plant")

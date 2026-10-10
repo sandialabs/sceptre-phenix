@@ -425,8 +425,8 @@ func TestBuilderPublishDryRunComparesDiskImages(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			calls := 0
 			counted := func(api *builderAPI) {
-				list := api.listDisks
-				api.listDisks = func() ([]disk.Details, error) {
+				list := api.disks.source
+				api.disks.source = func() ([]disk.Details, error) {
 					calls++
 
 					return list()
@@ -466,6 +466,99 @@ func TestBuilderPublishDryRunComparesDiskImages(t *testing.T) {
 				t.Errorf("the server's images were listed %d times, want listed %t", calls, test.listed)
 			}
 		})
+	}
+}
+
+// TestBuilderPublishDryRunListsDisksOnlyForImages lists the server's disk
+// images for a dry run whose topology names a drive image, and never for one
+// whose topology names none, which has no image to compare.
+func TestBuilderPublishDryRunListsDisksOnlyForImages(t *testing.T) {
+	calls := 0
+	harness, imaged := imagedPreview(t, previewDisks(&calls, previewKeptImage))
+	plain := harness.createDraft(builderTestOwner, "plain")
+
+	recorder, preview := previewBuilderDraft(t, harness, plain, nil,
+		`{"mode":"topology","topology":{"name":"plain","action":"create"},"dryRun":true}`)
+	if recorder.Code != http.StatusOK || preview.Changes == nil || len(preview.Changes.Images) != 0 {
+		t.Fatalf("dry run of a draft without images: status %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	if calls != 0 {
+		t.Fatalf("the server's images were listed %d times for a topology that names none", calls)
+	}
+
+	recorder, preview = previewBuilderDraft(t, harness, imaged, nil,
+		`{"mode":"topology","topology":{"name":"imaged","action":"update"},"dryRun":true}`)
+	if recorder.Code != http.StatusOK || preview.Changes == nil || len(preview.Changes.Images) == 0 {
+		t.Fatalf("dry run of a draft with images: status %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	if calls != 1 {
+		t.Fatalf("the server's images were listed %d times for a topology that names some, want once", calls)
+	}
+}
+
+// TestBuilderPublishDryRunReusesTheDiskListing lists the server's disk
+// images once for dry runs within [builderDiskListTTL] of each other, each
+// still reported as the caller's role may list them by name, and lists them
+// again once that time has passed.
+func TestBuilderPublishDryRunReusesTheDiskListing(t *testing.T) {
+	const body = `{"mode":"topology","topology":{"name":"imaged","action":"update"},"dryRun":true}`
+
+	var (
+		calls     = 0
+		now       = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		has, lack = true, false
+	)
+
+	harness, draft := imagedPreview(t, func(api *builderAPI) {
+		previewDisks(&calls, previewKeptImage, previewAddedImage)(api)
+		api.disks.now = func() time.Time { return now }
+	})
+
+	onServer := func(role *rbac.Role) map[string]*bool {
+		t.Helper()
+
+		recorder, preview := previewBuilderDraft(t, harness, draft, role, body)
+		if recorder.Code != http.StatusOK || preview.Changes == nil {
+			t.Fatalf("dry run: status %d: %s", recorder.Code, recorder.Body.String())
+		}
+
+		images := map[string]*bool{}
+		for _, image := range preview.Changes.Images {
+			images[image.Name] = image.OnServer
+		}
+
+		return images
+	}
+
+	everything := map[string]*bool{previewKeptImage: &has, previewAddedImage: &has, previewRemovedImage: &lack}
+	if got := onServer(nil); !reflect.DeepEqual(got, everything) {
+		t.Fatalf("images for the full role = %s, want %s", builderJSON(t, got), builderJSON(t, everything))
+	}
+
+	// new.qc2 is on the server but hidden from this role, which may list
+	// keep.qc2 and gone.qc2: the shared listing does not show it.
+	byName := map[string]*bool{previewKeptImage: &has, previewAddedImage: nil, previewRemovedImage: &lack}
+
+	now = now.Add(builderDiskListTTL - time.Second)
+
+	if got := onServer(previewRole(previewKeptImage, previewRemovedImage)); !reflect.DeepEqual(got, byName) {
+		t.Fatalf("images for a role listing some by name = %s, want %s", builderJSON(t, got), builderJSON(t, byName))
+	}
+
+	if calls != 1 {
+		t.Fatalf("the server's images were listed %d times for two dry runs within %s, want once", calls, builderDiskListTTL)
+	}
+
+	now = now.Add(time.Second)
+
+	if got := onServer(nil); !reflect.DeepEqual(got, everything) {
+		t.Fatalf("images after the listing expired = %s, want %s", builderJSON(t, got), builderJSON(t, everything))
+	}
+
+	if calls != 2 {
+		t.Fatalf("the server's images were listed %d times, want again once the listing is %s old", calls, builderDiskListTTL)
 	}
 }
 

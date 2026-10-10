@@ -140,19 +140,22 @@ answers `{dependencies:
 `missing`, or `unknown` when the caller may not read it (`configs` `get` and
 the kind's `list`) or the name is no config name. Icons: the library by
 name (`configs` `list`), bytes compared. Images: `disks` `list`, then the
-listing (`diskImages`, default `disk.GetImages("")`) filtered by `disks`
+listing (`builderAPI.disks`, the cached `builderDiskLister` the publish dry
+run and preflight share, default `disk.GetImages("")`) filtered by `disks`
 `list` on each image's name as `GET /disks` filters it, so an image the
 caller may not see is `missing` like an absent one; matched by name or full
 path, else by file name (`builderFindDisk`), and then the detail says so
 (`Matched by file name pkg.qc2; this server's image is
-/phenix/images/pkg.qc2.`, `builderDiskMatch`); a listing error is
-`unknown`. Apps: `applications` `list`, then the listing (`appNames`,
+/phenix/images/pkg.qc2.`, `builderDiskMatch`); a listing error, or a
+listing of no images at all (what `disk.GetImages` gives without an error
+when minimega cannot be reached), is `unknown` with "The server's disk
+images could not be listed.". Apps: `applications` `list`, then the listing (`appNames`,
 default `app.List()` plus `app.DefaultApps()`) filtered by `applications`
 `list` on each name (`listedAppNames`), so an app the caller may not see is
 `missing` like an absent one; `unknown` only without `applications` `list`
 at all. Templates are
 `present`; files always `unknown`. Nothing is written; the tests inject
-`withBuilderDiskImages` and `withBuilderApps`.
+`withBuilderDisks` and `withBuilderApps`.
 
 ### Package UI
 

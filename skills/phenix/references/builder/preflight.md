@@ -40,9 +40,13 @@ routes do and reads through `builderPreflightSources` (tests set them with
   applies them; `configs` `get` and `experiments` `get`, else that part is
   unavailable with "experiment X does not exist, or your role may not read
   it"; `preflight.network.vlan-range`); aliases against the status VLANs of
-  running experiments but the named one (`experiments` `list`; the holder
-  is named only for a role that may list it;
-  `preflight.network.alias-in-use`); bridges the interfaces name and the
+  the running experiments the role may list by name (`experiments` `list`,
+  and `configs` `list` and `experiments` `list` on each name), but the
+  named one (`preflight.network.alias-in-use`, naming the holder). A running
+  experiment the role may not list, the named one included, is left out
+  with its VLANs (`PreflightVLANs.Hidden`), and the summary's alias part
+  then adds "running experiments your role may not list were not compared",
+  with no name or ID; bridges the interfaces name and the
   default bridge (the experiment's `defaultBridge`, else `phenix`) against
   `mm.GetBridges(hosts...)` (`util/mm/bridges.go`: `shell ovs-vsctl
   --timeout=5 list-br` on the head node, `mesh send <host> shell ...`
@@ -52,7 +56,9 @@ routes do and reads through `builderPreflightSources` (tests set them with
   `preflight.network.bridge-missing` at the first interface naming it
   (minimega creates a missing bridge when a VM starts on it).
 - `disks`: each drive image by file name against `disk.GetImages("")`
-  (`disks` `list`, also per name); an empty listing (no minimega) is
+  through `builderAPI.disks`, the lister the publish dry run and package
+  resolve share, which reuses a listing for 10 s (`disks` `list`, also per
+  name); an empty listing (no minimega) is
   unavailable, as the editor's own check then checks nothing. kvm needs
   VM or ISO, container needs Container, Unknown fits either
   (`preflight.disk.missing`, `preflight.disk.kind`, field
