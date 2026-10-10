@@ -2354,7 +2354,7 @@ test.describe('Builder canvas editing', () => {
         'Undid Applied Network cards layout.',
       );
       await expect(restore).toHaveCount(0);
-      await expect(item('Standard')).toBeFocused();
+      await expect(item('Radial')).toBeFocused();
       await expect.soft(item('Standard')).toBeChecked();
       await page.keyboard.press('Escape');
       await expect(layoutButton).toBeFocused();
