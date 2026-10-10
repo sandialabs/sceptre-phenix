@@ -906,6 +906,7 @@ test.describe('keyboard shortcut sheet', () => {
             'Edit',
             'Selection',
             'Structure',
+            'Add',
             'Go to',
             'View',
             'Draft',
