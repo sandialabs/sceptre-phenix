@@ -238,6 +238,51 @@
         v-if="target.kind === 'document'"
         @scenario="$emit('scenario')" />
 
+      <!-- The Purdue layer of a device or a switch, in a section of its own
+           above the connection points. Like them, it acts at once, without
+           Apply: a choice is one undo step. The Layered by tier layout
+           reads it, and publishing never writes it to a config. A locked
+           node or a read-only draft shows a read-only text field in place
+           of the select, as a locked field of the form does (see
+           InspectorEnumControl.vue). -->
+      <div
+        v-if="!template && PURDUE_KINDS.includes(target.kind)"
+        class="builder-inspector__purdue"
+        data-testid="inspector-purdue">
+        <h3>
+          <label for="inspector-purdue-level">Purdue layer</label>
+        </h3>
+        <p id="inspector-purdue-hint" class="builder-inspector__hint">
+          The level of the Purdue model this
+          {{ target.kind === 'switch' ? 'network' : 'device' }} is at. The
+          Layered by tier layout puts higher levels above lower ones.
+        </p>
+        <input
+          v-if="host.readOnly || lock.all"
+          id="inspector-purdue-level"
+          type="text"
+          readonly
+          aria-readonly="true"
+          autocomplete="off"
+          aria-describedby="inspector-purdue-hint"
+          data-testid="inspector-purdue-level"
+          :value="
+            PURDUE_LEVEL_TITLES[purdueLevel(target.target)] || PURDUE_NONE
+          " />
+        <select
+          v-else
+          id="inspector-purdue-level"
+          aria-describedby="inspector-purdue-hint"
+          data-testid="inspector-purdue-level"
+          :value="purdueLevel(target.target)"
+          @change="choosePurdueLevel($event.target.value)">
+          <option value="">{{ PURDUE_NONE }}</option>
+          <option v-for="level in PURDUE_LEVELS" :key="level" :value="level">
+            {{ PURDUE_LEVEL_TITLES[level] }}
+          </option>
+        </select>
+      </div>
+
       <!-- Named apart from the node's own "Interfaces" list above: these
            act at once, while that list is part of the working copy. Its
            hint is a tooltip on its heading, shown on hover and on keyboard
@@ -436,11 +481,16 @@
   import {
     connectionChanges,
     findNetwork,
+    findNode,
     HEX_COLOR,
     LOOK_KEYS,
     lookOf,
     moveNodes,
     NODE_COLOR_KEYS,
+    PURDUE_KINDS,
+    PURDUE_LEVEL_TITLES,
+    PURDUE_LEVELS,
+    purdueLevel,
     sameButStamp,
   } from '@/builder/model.js';
   import { schemaForKind } from '@/builder/schema.js';
@@ -458,7 +508,7 @@
     // the Inspector uses. Those are doc, inspectorSelection, schema,
     // schemaError, readOnly, disks, issues, canRedo and canCreateDrafts,
     // and the actions commit(doc, label), announce(message), addInterface,
-    // removeInterface, remove and moveNodes; Go to from a list of checks
+    // removeInterface, remove, moveNodes and setPurdueLevel; Go to from a list of checks
     // also reads focusRequest and calls takeFocusRequest, which a host
     // without Go to leaves out. A commit that is not the
     // store's drops the copies of icons the document need not carry, as
@@ -1781,6 +1831,28 @@
       `Canvas pixels${target.value?.target?.parentId ? ' inside its group' : ''}. Moves the node without dragging.`,
   );
 
+  // What the Purdue layer says of a node at no level.
+  const PURDUE_NONE = 'None';
+
+  // Puts the selected device or switch at the level chosen, at once. The
+  // select shows the node's level again when the change is refused, such
+  // as while a conflict is resolved.
+  function choosePurdueLevel(level) {
+    const node = target.value?.target;
+
+    if (!node || host.readOnly || lock.value.all) {
+      return;
+    }
+
+    host.setPurdueLevel(node.id, level);
+
+    const select = panel.value?.querySelector('#inspector-purdue-level');
+
+    if (select) {
+      select.value = purdueLevel(findNode(host.doc, node.id));
+    }
+  }
+
   const ifacesHint = computed(() =>
     lock.value.all
       ? 'Interfaces of this device, as its included topology defines them.'
@@ -2097,6 +2169,7 @@
   }
 
   .builder-inspector__ifaces h3,
+  .builder-inspector__purdue h3,
   .builder-inspector__position h3 {
     font-weight: 700;
     font-size: 0.85rem;

@@ -769,6 +769,32 @@ Each user may upload at most 64 icons and 1 MiB of them, and the server
 holds at most 2,000 icons. Use the editor or the REST API to manage the
 icon library.
 
+## Purdue layers
+
+A device or a switch can have a **Purdue layer**: the level of the Purdue
+model that it is at. The Purdue model divides an industrial network into
+these levels, from the top to the bottom:
+
+| Purdue layer | Typical devices |
+|---|---|
+| **Level 5: Enterprise network** | Enterprise IT systems and the connection to the internet |
+| **Level 4: Site business planning and logistics** | Business systems of the site, such as ERP and email |
+| **Level 3.5: Industrial DMZ** | Jump hosts, patch servers and historian copies between business and operations |
+| **Level 3: Site operations** | Historians and site-wide operations systems |
+| **Level 2: Area supervisory control** | HMIs, SCADA servers and engineering workstations |
+| **Level 1: Basic control** | PLCs, RTUs and IEDs |
+| **Level 0: Physical process** | Sensors and actuators |
+
+To set the Purdue layer of a device or a switch:
+
+1. Select the device or the switch.
+2. In the Inspector, under **Purdue layer**, select a level.
+
+The change takes effect at once, as one step of **Undo**. Select **None** to
+remove the Purdue layer. The [Layered by tier](#layered-by-tier) layout uses
+the Purdue layers. They stay in the Builder document: publishing writes none
+of them, and an import sets none.
+
 ## Layouts
 
 The layout menu in the toolbar arranges the whole diagram. It shows the
@@ -781,6 +807,7 @@ its devices in rows on a grid, with the switches below them.
 | Layout | Menu summary | What it does |
 |---|---|---|
 | **ELK layered** | Clusters by network, left to right | Clusters each network's switch with its devices, a device on several networks in its smallest one, and runs connections left to right between the clusters. |
+| **Layered by tier** | Purdue layers, top to bottom | Puts each node at its [Purdue layer](#purdue-layers), level 5 at the top, and runs connections down from the higher layer to the lower one. |
 | **Network cards** | A card per network, on a grid | A card per network, its devices in a column grouped by name with the switch at their head, and the cards on a grid. |
 | **Dagre** | Networks in layers, left to right | Each network's devices in a column beside their switch, and the networks in layers along the connections between them. |
 | **Standard** | Devices above switches, top to bottom | Every device in a row above the switches, from top to bottom. |
@@ -813,6 +840,28 @@ Settings layout on a draft at **Default**. Its keys are
 **ELK layered** is the default.
 
 Publishing, and a download as Topology YAML, ignore positions and layouts.
+
+### Layered by tier
+
+**Layered by tier** arranges the diagram from top to bottom by
+[Purdue layer](#purdue-layers). Level 5 is at the top and level 0 is at the
+bottom. Each connection goes down from the higher layer to the lower one.
+
+- A device or a switch without a Purdue layer goes to the layer of the
+  nearest connected node that has one. When two such nodes are equally near,
+  it goes to the higher layer.
+- A connected node that no Purdue layer reaches goes below the Purdue
+  layers. A node without connections, such as a note, goes at the bottom.
+- A group is at the layer of its highest member. Inside the group, its
+  members are in the order of their layers.
+
+In one layer, and in a diagram without Purdue layers, the layout starts
+from a root and puts each node below the node that leads to it. The root is
+the selected node. With no selection, the root is an external device, else
+a firewall, else a router, else the switch with the most connections. A
+firewall or a router is known by its icon or its node type. So in a diagram
+without Purdue layers, firewalls and routers are above their switches, and
+switches are above their other devices.
 
 ## Arranging by hand
 

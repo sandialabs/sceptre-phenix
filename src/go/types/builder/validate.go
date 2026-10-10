@@ -64,6 +64,11 @@ var (
 
 	// iconSizes are the sizes node icons may be drawn at, smallest first.
 	iconSizes = []string{IconSizeSmall, IconSizeMedium, IconSizeLarge} //nolint:gochecknoglobals // immutable list
+
+	// purdueLevels are the levels of the Purdue model a device or a switch
+	// may name, from the top (the enterprise network) to the bottom (the
+	// physical process). Level 3.5 is the industrial DMZ.
+	purdueLevels = []string{"5", "4", "3.5", "3", "2", "1", "0"} //nolint:gochecknoglobals // immutable list
 )
 
 // The sizes the editor draws the icon of a device, a switch or a group at:
@@ -78,6 +83,13 @@ const (
 // [Switch.IconSize] and [Group.IconSize] may name, smallest first.
 func IconSizes() []string {
 	return slices.Clone(iconSizes)
+}
+
+// PurdueLevels returns the levels of the Purdue model [Device.PurdueLevel],
+// [Switch.PurdueLevel] and [TemplateDevice.PurdueLevel] may name, from the
+// top level to the bottom one.
+func PurdueLevels() []string {
+	return slices.Clone(purdueLevels)
 }
 
 // LineStyles returns the dash patterns [Network.LineStyle],
@@ -201,6 +213,8 @@ type noteCodes struct {
 //     edge or line style outside [LineStyles],
 //   - an icon size outside [IconSizes], of the document, a device, a switch,
 //     a group or a template,
+//   - a Purdue level outside [PurdueLevels], of a device, a switch or a
+//     template,
 //   - a shape whose figure is not one of [ShapeFigures], an icon node that
 //     does not name exactly one of a built-in and a custom icon, and a line
 //     with fewer than [MinLinePoints] or more than [MaxLinePoints] points,
@@ -592,11 +606,13 @@ func (v *validator) validateDevice(node *Node, path string, i int, seenHostnames
 	v.validateIconSize(node.Device.IconSize, path+".device.iconSize", CodeDeviceIconSizeUnknown)
 	v.validateColor(node.Device.OutlineColor, path+".device.outlineColor", CodeDeviceColorInvalid)
 	v.validateColor(node.Device.FillColor, path+".device.fillColor", CodeDeviceColorInvalid)
+	v.validatePurdueLevel(node.Device.PurdueLevel, path+".device."+keyPurdueLevel, CodeDevicePurdueLevelUnknown)
 	v.validateIncludedFrom(node.Device.IncludedFrom, path+".device.includedFrom")
 }
 
 // validateSwitch checks the payload of a switch node at path: the network
-// it names, which the document has, its colors, its icon size and its notes.
+// it names, which the document has, its colors, its icon size, its Purdue
+// level and its notes.
 func (v *validator) validateSwitch(hub *Switch, path string) {
 	if hub.NetworkID == "" {
 		v.addf(CodeSwitchNetworkRequired, path+".networkId", "switch must reference a network")
@@ -607,6 +623,7 @@ func (v *validator) validateSwitch(hub *Switch, path string) {
 	v.validateColor(hub.OutlineColor, path+".outlineColor", CodeSwitchColorInvalid)
 	v.validateColor(hub.FillColor, path+".fillColor", CodeSwitchColorInvalid)
 	v.validateIconSize(hub.IconSize, path+"."+keyIconSize, CodeSwitchIconSizeUnknown)
+	v.validatePurdueLevel(hub.PurdueLevel, path+"."+keyPurdueLevel, CodeSwitchPurdueLevelUnknown)
 	v.validateNotes(path+"."+keyNotes, hub.Notes, noteCodes{
 		tooMany: CodeSwitchNotesTooMany, blank: CodeSwitchNoteBlank,
 		tooLong: CodeSwitchNoteTooLong, control: CodeSwitchNoteControl,
@@ -726,6 +743,25 @@ func iconSizeProblem(size string) string {
 	}
 
 	return fmt.Sprintf("unknown icon size %q (expected one of %s)", truncate(size), strings.Join(iconSizes, ", "))
+}
+
+// validatePurdueLevel checks the Purdue level of a device or a switch:
+// none, or one of [PurdueLevels].
+func (v *validator) validatePurdueLevel(level, path string, code Code) {
+	if problem := purdueLevelProblem(level); problem != "" {
+		v.addf(code, path, "%s", problem)
+	}
+}
+
+// purdueLevelProblem says why level is no Purdue level, or returns "".
+func purdueLevelProblem(level string) string {
+	if level == "" || slices.Contains(purdueLevels, level) {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"unknown Purdue layer %q (expected one of %s)", truncate(level), strings.Join(purdueLevels, ", "),
+	)
 }
 
 // validateBorderStyle checks the border style of a group or a shape: none,

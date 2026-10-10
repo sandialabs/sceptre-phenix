@@ -43,7 +43,7 @@ describe('automatic layout in the store', () => {
     resetSettings(null);
   });
 
-  test.each(['elk', 'cards', 'dagre', 'standard'])(
+  test.each(['elk', 'tiers', 'cards', 'dagre', 'standard'])(
     'lays the diagram out with the %s setting',
     async (id) => {
       const doc = store.doc;
@@ -141,6 +141,22 @@ describe('automatic layout in the store', () => {
     expect(runLayout).toHaveBeenLastCalledWith('standard', expect.anything(), {
       showNotes: false,
     });
+  });
+
+  // Layered by tier starts from the selected nodes.
+  test('a layout is told which nodes are selected', async () => {
+    const alpha = store.doc.nodes.find(
+      (node) => node.device?.hostname === 'alpha',
+    );
+
+    store.select({ nodes: [alpha.id] });
+    await store.layout({ algorithm: 'tiers' });
+    expect(runLayout).toHaveBeenLastCalledWith('tiers', expect.anything(), {
+      showNotes: true,
+      selected: [alpha.id],
+    });
+    expect(store.currentLayout).toBe('tiers');
+    expect(store.announcement).toBe('Applied Layered by tier layout');
   });
 
   test('a chosen layout is kept with the draft in the same commit', async () => {

@@ -57,8 +57,9 @@ function specInterfaces(spec) {
 /**
  * The store.addNode options that make a device from a template in `doc`:
  * a copy of the template's spec, its look (icon, custom icon and colors),
- * and a handle for each interface its spec names. The device is named after
- * the template's hostname, which addNode makes unique.
+ * its Purdue level, and a handle for each interface its spec names. The
+ * device is named after the template's hostname, which addNode makes
+ * unique.
  *
  * An interface's VLAN follows the rule of a paste (see pasteClipboard): one
  * that names a network of `doc` is emptied, since the new device is
@@ -72,7 +73,7 @@ function specInterfaces(spec) {
  * @returns {object} addNode options, less the position
  */
 export function nodeOptionsFromTemplate(template, doc) {
-  const { spec: _, ...look } = templateDevice(template?.device);
+  const { spec: _, purdueLevel, ...look } = templateDevice(template?.device);
   const spec = clone(template?.device?.spec ?? {});
   const named = new Set();
 
@@ -99,6 +100,7 @@ export function nodeOptionsFromTemplate(template, doc) {
     hostname: spec.general?.hostname,
     spec,
     look,
+    ...(purdueLevel ? { purdueLevel } : {}),
     interfaces: [...named].map((name) => ({ name })),
   };
 }

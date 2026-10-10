@@ -385,6 +385,8 @@ Select a node to see its fields. A device has these sections:
 - **Network**: **Interfaces**, **OSPF**, **Routes** and **Rulesets**.
 - **More settings**: **Commands**, **Delay**, **Injections**, **Advanced
   settings**, **Labels** and **Annotations**.
+- **Purdue layer**: the level of the Purdue model the device is at (see
+  [Purdue layers](diagrams.md#purdue-layers)).
 - **Connection points**: the interfaces with a handle on the canvas.
 - **Position**: **X** and **Y**, and **Move**.
 
@@ -424,6 +426,8 @@ Some fields of a device take effect at once, without **Apply**:
 - **Icon**, **Custom icon**, **Icon size**, **Outline Color** and **Fill
   Color**. Each change is one step of **Undo**, for example "Changed the
   fill color of Device web-01 to #2f6fbf".
+- **Purdue layer**. Each change is one step of **Undo**, for example
+  "Changed the Purdue layer of Device plc-01 to Level 1: Basic control".
 - **Connection points**: adding, disconnecting or removing one.
 
 The fields come from the phenix server, so they match what it accepts. When
@@ -436,8 +440,8 @@ the Builder instead, which may differ from what this server accepts." See
 
 - A switch is one network. Its Inspector ("Network CORP") has **Name**,
   **VLAN alias**, **Description**, **Edge Color**, **Line style**,
-  **Outline Color**, **Fill Color**, **Icon size**, **Notes** and
-  **Position**. See
+  **Outline Color**, **Fill Color**, **Icon size**, **Notes**,
+  **Purdue layer** and **Position**. See
   [Adding switches and networks](diagrams.md#adding-switches-and-networks).
   The switch's notes are edited as a device's are, and stay in the diagram
   (see
@@ -460,7 +464,8 @@ the Builder instead, which may differ from what this server accepts." See
 
 These fields wait for **Apply**, the colors, icons and icon sizes of
 switches and groups too. Only a device's icons, icon size and colors take
-effect at once.
+effect at once. The **Purdue layer** of a switch also takes effect at once,
+as a device's does.
 
 ### Fields you cannot change
 
@@ -803,8 +808,8 @@ and they stay after you log out.
   device's light or dark appearance.
 - **Reduce motion**: the canvas pans and zooms at once, and nothing
   animates. Motion is also reduced whenever your device asks for it.
-- **Default layout**: **ELK layered** (the default), **Network cards**,
-  **Dagre** or **Standard**. **Auto layout** and **Auto-group** use it on a
+- **Default layout**: **ELK layered** (the default), **Layered by tier**,
+  **Network cards**, **Dagre** or **Standard**. **Auto layout** and **Auto-group** use it on a
   draft whose layout menu says **Default**, and the draft then keeps it. It
   does not move anything by itself.
 - **Show the minimap**: on by default. The toolbar's **Minimap** button

@@ -37,6 +37,7 @@ import {
   MAX_LINE_POINTS,
   MIN_LINE_POINTS,
   NODE_KINDS,
+  PURDUE_LEVELS,
   SCHEMA_REVISION,
   SCHEMA_URI,
   SHAPE_FIGURES,
@@ -267,6 +268,23 @@ function iconSizeProblem(size) {
 
 function validateIconSize(size, path, issues, code) {
   const problem = iconSizeProblem(size);
+
+  if (problem) {
+    issue(issues, code, path, problem);
+  }
+}
+
+// Why a Purdue level is none a device, a switch or a template's device may
+// name (purdueLevelProblem in validate.go), or '': none, or one of
+// PURDUE_LEVELS.
+function purdueLevelProblem(level) {
+  return unset(level) || PURDUE_LEVELS.includes(level)
+    ? ''
+    : `unknown Purdue layer ${quoted(level)} (expected one of ${PURDUE_LEVELS.join(', ')})`;
+}
+
+function validatePurdueLevel(level, path, issues, code) {
+  const problem = purdueLevelProblem(level);
 
   if (problem) {
     issue(issues, code, path, problem);
@@ -551,6 +569,12 @@ export function templateIssues(template, path) {
     'template.icon-size.unknown',
   );
   validateColors(device, `${path}.device`, issues, 'template.color.invalid');
+  validatePurdueLevel(
+    device.purdueLevel,
+    `${path}.device.purdueLevel`,
+    issues,
+    'template.purdue-level.unknown',
+  );
 
   const size = templateDeviceBytes(device);
 
@@ -1253,6 +1277,12 @@ function validateDevice(
     'device.icon-size.unknown',
   );
   validateColors(node.device, `${path}.device`, issues, 'device.color.invalid');
+  validatePurdueLevel(
+    node.device.purdueLevel,
+    `${path}.device.purdueLevel`,
+    issues,
+    'device.purdue-level.unknown',
+  );
   validateIncludedFrom(doc, node.device.includedFrom, path, issues);
   validateDeviceHandles(node, path, issues, handleOwner);
 }
@@ -1346,6 +1376,12 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
         `${path}.switch.iconSize`,
         issues,
         'switch.icon-size.unknown',
+      );
+      validatePurdueLevel(
+        node.switch.purdueLevel,
+        `${path}.switch.purdueLevel`,
+        issues,
+        'switch.purdue-level.unknown',
       );
       validateNotes(
         node.switch.notes,

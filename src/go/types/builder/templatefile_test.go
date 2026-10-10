@@ -301,6 +301,13 @@ func TestParseTemplateFileValidates(t *testing.T) {
 			want: "templates[0].device.iconSize: ",
 		},
 		{
+			name: "an unknown Purdue layer",
+			change: func(file map[string]any) {
+				file["templates"].([]any)[0].(map[string]any)["device"].(map[string]any)["purdueLevel"] = "6"
+			},
+			want: `templates[0].device.purdueLevel: unknown Purdue layer "6"`,
+		},
+		{
 			name: "an icon that is not a PNG",
 			change: func(file map[string]any) {
 				file["icons"] = map[string]any{iconFixtureName: map[string]any{"data": "aGVsbG8="}}
@@ -567,5 +574,26 @@ func TestParseTemplateFileKeepsIconSize(t *testing.T) {
 	encoded, err := json.Marshal(fromYAML.Templates[0].Device)
 	if err != nil || !strings.Contains(string(encoded), `"iconSize":"medium"`) {
 		t.Fatalf("the device encodes as %s, %v; want its icon size", encoded, err)
+	}
+}
+
+func TestParseTemplateFileKeepsPurdueLevel(t *testing.T) {
+	value := templateFileValue()
+	value["templates"].([]any)[0].(map[string]any)["device"].(map[string]any)["purdueLevel"] = "1"
+
+	parsed, err := builder.ParseTemplateFile(templateFileJSON(t, value))
+	if err != nil {
+		t.Fatalf("ParseTemplateFile returned error: %v", err)
+	}
+
+	device := parsed.Templates[0].Template("t1").Device
+	if device.PurdueLevel != "1" {
+		t.Fatalf("purdueLevel = %q, want %q", device.PurdueLevel, "1")
+	}
+
+	// It is written back as it was read.
+	encoded, err := json.Marshal(device)
+	if err != nil || !strings.Contains(string(encoded), `"purdueLevel":"1"`) {
+		t.Fatalf("the device encodes as %s, %v; want its Purdue layer", encoded, err)
 	}
 }

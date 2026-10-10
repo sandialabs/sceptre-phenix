@@ -925,6 +925,7 @@ describe('running', () => {
 
     expect(layouts.map((command) => command.title)).toEqual([
       'Layout: ELK layered',
+      'Layout: Layered by tier',
       'Layout: Network cards',
       'Layout: Dagre',
       'Layout: Standard',
@@ -943,6 +944,8 @@ describe('running', () => {
     expect(ctx.store.layout).toHaveBeenLastCalledWith({ algorithm: 'cards' });
     expect(runCommand('structure.layout.dagre', ctx)).toBe(true);
     expect(ctx.store.layout).toHaveBeenLastCalledWith({ algorithm: 'dagre' });
+    expect(runCommand('structure.layout.tiers', ctx)).toBe(true);
+    expect(ctx.store.layout).toHaveBeenLastCalledWith({ algorithm: 'tiers' });
     // Auto layout runs the draft's layout.
     expect(runCommand('structure.layout', ctx)).toBe(true);
     expect(ctx.store.layout).toHaveBeenLastCalledWith();

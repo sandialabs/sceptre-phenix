@@ -601,6 +601,71 @@ test('an Inspector with no changes shows no Apply, Cancel or state', async () =>
   expect(html).not.toContain('No changes');
 });
 
+// A device or a switch has a Purdue layer, in a section of its own above
+// the connection points: a select with None and every level, which a
+// read-only draft shows as read-only text.
+describe('the Purdue layer section', () => {
+  const withLevel = (sample) => ({
+    ...sample.doc,
+    nodes: sample.doc.nodes.map((node) =>
+      node.id === sample.alpha.id
+        ? { ...node, device: { ...node.device, purdueLevel: '2' } }
+        : node,
+    ),
+  });
+
+  test('is above the connection points of a device, and names every level', async () => {
+    const html = await renderInspector({ change: withLevel });
+    const section = html.indexOf('data-testid="inspector-purdue"');
+    const select = tags(html, 'select').find((tag) =>
+      tag.includes('id="inspector-purdue-level"'),
+    );
+    const options = html.slice(section).match(/<select[\s\S]*?<\/select>/)[0];
+
+    expect(section).toBeGreaterThan(html.indexOf('</form>'));
+    expect(section).toBeLessThan(html.indexOf('Connection points'));
+    expect(html).toMatch(
+      /<label for="inspector-purdue-level"[^>]*>Purdue layer<\/label>/,
+    );
+    expect(select).toContain('aria-describedby="inspector-purdue-hint"');
+    expect(choicesOf(options)).toEqual([
+      'None',
+      'Level 5: Enterprise network',
+      'Level 4: Site business planning and logistics',
+      'Level 3.5: Industrial DMZ',
+      'Level 3: Site operations',
+      'Level 2: Area supervisory control',
+      'Level 1: Basic control',
+      'Level 0: Physical process',
+    ]);
+    expect(select).toContain('value="2"');
+  });
+
+  test('is shown for a switch, and for no note', async () => {
+    const hub = await renderInspector({ select: (sample) => sample.sw.id });
+
+    expect(hub).toContain('data-testid="inspector-purdue"');
+    expect(text(hub)).toContain('this network is at');
+
+    const note = await renderInspector({
+      change: (sample) => addNode(sample.doc, { kind: 'note', id: 'n1' }).doc,
+      select: () => 'n1',
+    });
+
+    expect(note).not.toContain('data-testid="inspector-purdue"');
+  });
+
+  test('is read-only text in a read-only draft', async () => {
+    const html = await renderInspector({ readOnly: true, change: withLevel });
+    const field = tags(html, 'input').find((tag) =>
+      tag.includes('id="inspector-purdue-level"'),
+    );
+
+    expect(field).toContain('readonly');
+    expect(field).toContain('value="Level 2: Area supervisory control"');
+  });
+});
+
 // Firefox keeps what a form sends and offers it back under the field typed
 // in, once its lookup returns, and first scrolls that field into view: the
 // Inspector moved away from a pointer pressing a button below. No text

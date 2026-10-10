@@ -50,6 +50,7 @@ describe('Builder settings', () => {
     });
     expect(LAYOUT_ALGORITHMS.map((algorithm) => algorithm.id)).toEqual([
       'elk',
+      'tiers',
       'cards',
       'dagre',
       'standard',

@@ -321,6 +321,7 @@ const (
 	keyIconKey      = "iconKey"
 	keyIcon         = "icon"
 	keyIconSize     = "iconSize"
+	keyPurdueLevel  = "purdueLevel"
 	keyOutlineColor = "outlineColor"
 	keyFillColor    = "fillColor"
 	keyLineStyle    = "lineStyle"
@@ -550,6 +551,13 @@ func builderDefs() map[string]any {
 			"Size a node icon is drawn at: small (16 pixels), medium (24) or large (32); empty selects the default, "+
 				"the document's size for a node and small for the document.",
 			[]any{IconSizeMedium},
+		),
+		keyPurdueLevel: documented(
+			enumDef(styleEnum(purdueLevels)), "Purdue Layer",
+			"Level of the Purdue model a node is at: 5 (enterprise network), "+
+				"4 (site business planning and logistics), 3.5 (industrial DMZ), 3 (site operations), "+
+				"2 (area supervisory control), 1 (basic control) or 0 (physical process). Empty is none.",
+			[]any{"3.5"},
 		),
 		defIconRef:        iconRefDef(),
 		keyIcon:           iconDef(),
@@ -796,6 +804,11 @@ func deviceDef() map[string]any {
 			keyFillColor: documentedRef(
 				defHexColor, "Fill Color", "Background color of the device on the canvas.", []any{exampleFillColor},
 			),
+			keyPurdueLevel: documentedRef(
+				keyPurdueLevel, "Purdue Layer",
+				"Purdue layer of the device, which the Layered by tier layout reads. It is never published.",
+				[]any{"1"},
+			),
 			keySpec: nodeSpecDef(),
 			"interfaces": documented(
 				arrayDef(ref("interfaceHandle")), "Interface Handles",
@@ -830,6 +843,11 @@ func switchDef() map[string]any {
 			keyIconSize: documentedRef(
 				keyIconSize, "Icon Size", "Size the switch's icon is drawn at; empty uses the document's.",
 				[]any{IconSizeMedium},
+			),
+			keyPurdueLevel: documentedRef(
+				keyPurdueLevel, "Purdue Layer",
+				"Purdue layer of the switch's network, which the Layered by tier layout reads. It is never published.",
+				[]any{"2"},
 			),
 			keyNotes: documented(
 				notesDef(), "Notes",
@@ -1162,6 +1180,10 @@ func templateDeviceDef() map[string]any {
 				keyFillColor: documentedRef(
 					defHexColor, "Fill Color", "Background color of the devices made from the template.",
 					[]any{exampleFillColor},
+				),
+				keyPurdueLevel: documentedRef(
+					keyPurdueLevel, "Purdue Layer", "Purdue layer of the devices made from the template.",
+					[]any{"1"},
 				),
 				keySpec: nodeSpecDef(),
 			},

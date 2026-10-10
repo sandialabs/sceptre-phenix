@@ -4271,15 +4271,20 @@ components:
                   payload of a device node: its hostname, its complete phenix
                   node spec (whose `general.notes` the canvas shows under the
                   node), its interface handles, its icon and the `iconSize`
-                  it is drawn at in place of the diagram's, and its colors
+                  it is drawn at in place of the diagram's, its colors, and
+                  its `purdueLevel`, the level of the Purdue model it is at
+                  ("5", "4", "3.5", "3", "2", "1" or "0"), which is never
+                  published
                 type: object
                 additionalProperties: true
               switch:
                 description: >
                   payload of a switch node: the network it stands for, its
                   colors, the `iconSize` its icon is drawn at in place of the
-                  diagram's, and its `notes`, at most 100 lines of text the
-                  canvas shows under the node, which are never published
+                  diagram's, its `purdueLevel` (as a device's), and its
+                  `notes`, at most 100 lines of text the canvas shows under
+                  the node. The `purdueLevel` and the `notes` are never
+                  published.
                 type: object
                 additionalProperties: true
               note:
@@ -5956,6 +5961,20 @@ components:
         fillColor:
           type: string
           pattern: "^#[0-9a-fA-F]{6}$"
+        purdueLevel:
+          description: >
+            the level of the Purdue model of a device made from the
+            template. Empty is none.
+          type: string
+          enum:
+            - ""
+            - "5"
+            - "4"
+            - "3.5"
+            - "3"
+            - "2"
+            - "1"
+            - "0"
         spec:
           description: >
             a complete phenix node spec, as a device node holds it; at most

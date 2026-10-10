@@ -100,6 +100,7 @@ export const DEVICE_KEYS = new Set([
   'iconSize',
   'outlineColor',
   'fillColor',
+  'purdueLevel',
   'spec',
   'interfaces',
   'includedFrom',
@@ -110,6 +111,7 @@ export const SWITCH_KEYS = new Set([
   'outlineColor',
   'fillColor',
   'iconSize',
+  'purdueLevel',
   'notes',
 ]);
 export const NOTE_KEYS = new Set(['text', 'color']);

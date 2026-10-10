@@ -56,6 +56,7 @@ type TemplateDevice struct {
 	IconSize     string `json:"iconSize,omitempty"`
 	OutlineColor string `json:"outlineColor,omitempty"`
 	FillColor    string `json:"fillColor,omitempty"`
+	PurdueLevel  string `json:"purdueLevel,omitempty"`
 	// Spec is a complete phenix node spec, as a device holds it. Its
 	// general.hostname is what a device made from the template is named
 	// after, and its interfaces are kept.
@@ -72,7 +73,8 @@ type TemplateDevice struct {
 //     blank one or one with whitespace,
 //   - an icon key outside the icon key registry (see [IsIconKey]), a custom
 //     icon that is not an icon name (see [IconNameProblem]), an icon size
-//     outside [IconSizes], or a color that is not "#rrggbb",
+//     outside [IconSizes], a color that is not "#rrggbb", or a Purdue
+//     level outside [PurdueLevels],
 //   - a device whose JSON encoding is longer than [MaxTemplateDeviceBytes].
 //
 // The spec is not checked against the phenix schema, as a device's is not.
@@ -146,6 +148,10 @@ func (t *Template) Issues(path string) []Issue {
 		addf(CodeTemplateColorInvalid, ".device.fillColor", "%s", problem)
 	}
 
+	if problem := purdueLevelProblem(device.PurdueLevel); problem != "" {
+		addf(CodeTemplatePurdueLevelUnknown, ".device.purdueLevel", "%s", problem)
+	}
+
 	encoded, err := json.Marshal(device)
 
 	switch {
@@ -217,7 +223,8 @@ func builtinTemplate(id, name, description, iconKey string, spec map[string]any)
 		Name:        name,
 		Description: description,
 		Device: TemplateDevice{
-			IconKey: iconKey, Icon: "", IconSize: "", OutlineColor: "", FillColor: "", Spec: spec,
+			IconKey: iconKey, Icon: "", IconSize: "", OutlineColor: "", FillColor: "", PurdueLevel: "",
+			Spec: spec,
 		},
 	}
 }

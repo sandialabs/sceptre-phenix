@@ -112,6 +112,8 @@ const FIELD_LABELS = {
   targetHandleId: 'switch handle',
   networkId: 'network',
   iconSize: 'icon size',
+  'device.purdueLevel': 'Purdue layer',
+  'switch.purdueLevel': 'Purdue layer',
 };
 
 function isObject(value) {

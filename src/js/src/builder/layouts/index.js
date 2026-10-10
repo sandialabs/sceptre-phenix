@@ -18,6 +18,7 @@ import { layout as cards } from './cards.js';
 import { layout as dagre } from './dagre.js';
 import { layout as elk } from './elk.js';
 import { layout as standard } from './standard.js';
+import { layout as tiers } from './tiers.js';
 
 export { LayoutError } from './common.js';
 export { stopLayoutEngine } from './elk.js';
@@ -29,6 +30,13 @@ export const LAYOUT_ALGORITHMS = Object.freeze([
     summary: 'Clusters by network, left to right',
     description:
       'Clusters each network’s switch with its devices, a device on several networks in its smallest one, and runs connections left to right between the clusters.',
+  },
+  {
+    id: 'tiers',
+    label: 'Layered by tier',
+    summary: 'Purdue layers, top to bottom',
+    description:
+      'ELK layered from top to bottom: each node at its Purdue layer, level 5 at the top. A node without a Purdue layer takes the layer of the nearest node that has one. Without any, firewalls and routers go above switches, and switches above other devices.',
   },
   {
     id: 'cards',
@@ -92,7 +100,7 @@ export function documentLayout(doc, fallback = DEFAULT_LAYOUT_ALGORITHM) {
   return layoutAlgorithm(fallback) ? fallback : DEFAULT_LAYOUT_ALGORITHM;
 }
 
-const LAYOUTS = { elk, cards, dagre, standard };
+const LAYOUTS = { elk, tiers, cards, dagre, standard };
 
 /**
  * Lays a document out with one of the algorithms. Positions are absolute,

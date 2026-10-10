@@ -149,6 +149,8 @@ import {
   namedSwitches,
   networkRefusal,
   nodeLabel,
+  PURDUE_LEVEL_TITLES,
+  purdueLevel,
   removalKept,
   removalRefusal,
   removeElements,
@@ -165,6 +167,7 @@ import {
   setIconSize,
   setLinePoints,
   setParent,
+  setPurdueLevel,
   setDocumentInfo,
   setScenarios,
   setViewport,
@@ -366,8 +369,15 @@ async function layOut(store, doc, id, options, task) {
   store.autoGrouping = task === 'group';
 
   try {
-    // Nodes leave room for their notes while the canvas shows them.
-    laid = await runLayout(id, doc, { ...notesShown(), ...options });
+    // Nodes leave room for their notes while the canvas shows them. The
+    // selected nodes are where Layered by tier starts (see layouts/tiers.js).
+    laid = await runLayout(id, doc, {
+      ...notesShown(),
+      ...(store.selection.nodes.length
+        ? { selected: [...store.selection.nodes] }
+        : {}),
+      ...options,
+    });
   } catch (error) {
     // Stopped as the Builder closed or the session ended (see
     // stopLayoutEngine): there is no one to tell.
@@ -5366,6 +5376,40 @@ export const useBuilderStore = defineStore('builder', {
       return this.commit(
         next,
         `Changed the diagram's icon size to ${ICON_SIZE_TITLES[documentIconSize(next)]}`,
+      );
+    },
+
+    /**
+     * Puts a device or a switch at a level of the Purdue model, or at none,
+     * in one undo step (see setPurdueLevel in model.js). A device included
+     * from another topology is refused. The level the node has already
+     * takes no step.
+     *
+     * @param {string} nodeId
+     * @param {string} level one of PURDUE_LEVELS, or '' for none
+     * @returns {object|null} the history entry, or null when nothing changed
+     *   or the draft is read only
+     */
+    setPurdueLevel(nodeId, level) {
+      if (this.refuseIncluded(nodeId)) {
+        return null;
+      }
+
+      const next = setPurdueLevel(this.doc, nodeId, level);
+
+      if (next === this.doc) {
+        return null;
+      }
+
+      const node = findNode(next, nodeId);
+      const name = `${kindLabel(node)} ${nodeLabel(node)}`;
+      const title = PURDUE_LEVEL_TITLES[purdueLevel(node)];
+
+      return this.commit(
+        next,
+        title
+          ? `Changed the Purdue layer of ${name} to ${title}`
+          : `Removed the Purdue layer of ${name}`,
       );
     },
 

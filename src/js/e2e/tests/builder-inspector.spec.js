@@ -3061,4 +3061,61 @@ test.describe('Builder inspector', () => {
       },
     );
   }
+
+  // A device's Purdue layer is in a section of its own, above its
+  // connection points, and a choice applies at once, without Apply.
+  test('the Purdue layer of a device applies at once and is kept by the draft', async ({
+    page,
+    builder,
+    issues,
+  }) => {
+    const draft = await newDraft(builder, 'device', 'switch');
+    await builder.selectInOutline('node');
+
+    const layer = builder.inspector.getByLabel('Purdue layer', {
+      exact: true,
+    });
+
+    await expect
+      .soft(builder.inspector.locator('h3'))
+      .toContainText(['Purdue layer', 'Connection points', 'Position']);
+    await expect.soft(layer).toHaveValue('');
+    await expect
+      .soft(layer)
+      .toHaveAccessibleDescription(
+        /^The level of the Purdue model this device/,
+      );
+
+    await layer.selectOption({ label: 'Level 1: Basic control' });
+    await expect
+      .soft(builder)
+      .toHaveAnnounced(
+        'Changed the Purdue layer of Device node to Level 1: Basic control',
+      );
+    await expect(builder.inspector).not.toContainText('Unapplied changes');
+    await expect
+      .poll(
+        async () =>
+          nodeOf(await builder.serverDocument(draft), 'device').device
+            .purdueLevel,
+        PERSIST,
+      )
+      .toBe('1');
+
+    await layer.selectOption({ label: 'None' });
+    await expect
+      .poll(
+        async () =>
+          'purdueLevel' in
+          nodeOf(await builder.serverDocument(draft), 'device').device,
+        PERSIST,
+      )
+      .toBe(false);
+
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the Purdue layer section',
+    });
+    expectNoFatal(issues);
+  });
 });

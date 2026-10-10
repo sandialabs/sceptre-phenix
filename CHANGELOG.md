@@ -31,6 +31,7 @@ All notable changes to this project will be documented in this file.
 - **Builder error codes**: Stable error codes on Builder errors and issues.
 - **Builder publish preview**: What publishing changes, in the Publish dialog.
 - **Builder preflight**: Checks of a draft against the server's hosts, VLANs, bridges, images and apps.
+- **Builder Purdue layers**: Devices and switches take an optional Purdue layer (`purdueLevel`), which the Inspector sets and publishing ignores. The **Layered by tier** layout arranges a diagram by it, from top to bottom.
 
 ### Changed
 

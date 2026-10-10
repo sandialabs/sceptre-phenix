@@ -31,7 +31,8 @@ import { sampleDocument, testId } from './fixtures.js';
 import { ICON_DATA } from './png.js';
 
 // A document that uses every presentation field a document may leave out:
-// the custom icon and colors of a device, the colors of a switch, a group's
+// the custom icon, colors and Purdue level of a device, the colors and
+// Purdue level of a switch, a group's
 // description, border, icon key and custom icon, the line style of a network
 // and of a connection, the includes that were not resolved, a template and
 // the icon they use.
@@ -46,10 +47,12 @@ function decoratedDocument() {
     icon: 'plc',
     outlineColor: '#2f6fbf',
     fillColor: '#EEF4FB',
+    purdueLevel: '3.5',
   });
   Object.assign(find(sample.sw.id).switch, {
     outlineColor: '#1f7a5a',
     fillColor: '#e8f5f0',
+    purdueLevel: '2',
   });
   Object.assign(find(group.node.id).group, {
     description: 'first rack\nsecond line',
@@ -74,6 +77,7 @@ function decoratedDocument() {
         icon: 'plc',
         outlineColor: '#2f6fbf',
         fillColor: '#EEF4FB',
+        purdueLevel: '1',
         spec: {
           type: 'VirtualMachine',
           general: { hostname: 'plc', vm_type: 'kvm' },
@@ -300,6 +304,7 @@ describe('strict decoding', () => {
       'iconSize',
       'outlineColor',
       'fillColor',
+      'purdueLevel',
       'spec',
     ]);
     expect(
@@ -333,6 +338,7 @@ describe('strict decoding', () => {
       'borderStyle',
       'lineStyle',
       'unresolvedIncludes',
+      'purdueLevel',
     ]) {
       expect(text, key).not.toContain(`"${key}"`);
     }

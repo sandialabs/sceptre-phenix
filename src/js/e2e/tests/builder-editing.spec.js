@@ -2091,6 +2091,7 @@ test.describe('Builder canvas editing', () => {
       await expect(layoutButton).toHaveAttribute('aria-expanded', 'true');
       await expect(menu.getByRole('menuitemradio')).toHaveText([
         /^ELK layered/,
+        /^Layered by tier/,
         /^Network cards/,
         /^Dagre/,
         /^Standard/,

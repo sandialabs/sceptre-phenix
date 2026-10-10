@@ -190,6 +190,83 @@ export function setIconSize(doc, size) {
   return next;
 }
 
+// The levels of the Purdue model a device or a switch may be at
+// (PurdueLevels in validate.go), from the top level to the bottom one, and
+// the name the Inspector shows for each. Level 3.5 is the industrial DMZ.
+// The Layered by tier layout reads them (see layouts/tiers.js). They stay
+// in the diagram: publishing never writes them to a config.
+export const PURDUE_LEVELS = ['5', '4', '3.5', '3', '2', '1', '0'];
+export const PURDUE_LEVEL_TITLES = {
+  5: 'Level 5: Enterprise network',
+  4: 'Level 4: Site business planning and logistics',
+  3.5: 'Level 3.5: Industrial DMZ',
+  3: 'Level 3: Site operations',
+  2: 'Level 2: Area supervisory control',
+  1: 'Level 1: Basic control',
+  0: 'Level 0: Physical process',
+};
+
+// The kinds of nodes that may name a Purdue level.
+export const PURDUE_KINDS = ['device', 'switch'];
+
+/**
+ * The Purdue level of a node: its own when it is a device or a switch that
+ * names one of PURDUE_LEVELS, else ''.
+ *
+ * @param {object} [node]
+ * @returns {string} one of PURDUE_LEVELS, or '' for none
+ */
+export function purdueLevel(node) {
+  const own = PURDUE_KINDS.includes(node?.kind)
+    ? node[node.kind]?.purdueLevel
+    : undefined;
+
+  return PURDUE_LEVELS.includes(own) ? own : '';
+}
+
+/**
+ * The document with a device or a switch at a Purdue level. An empty level
+ * removes the node's `purdueLevel`, so the document's bytes are those of a
+ * node that never had one. The same document is returned when nothing
+ * changes: the node is not a device or a switch, the device is included
+ * from another topology, the level is unknown, or the node is at it
+ * already.
+ *
+ * @param {object} doc
+ * @param {string} id the node's id
+ * @param {string} level one of PURDUE_LEVELS, or '' for none
+ * @returns {object} document
+ */
+export function setPurdueLevel(doc, id, level) {
+  const node = findNode(doc, id);
+  const wanted = level ?? '';
+
+  if (
+    !PURDUE_KINDS.includes(node?.kind) ||
+    !node[node.kind] ||
+    includedFrom(node) ||
+    (wanted !== '' && !PURDUE_LEVELS.includes(wanted)) ||
+    (node[node.kind].purdueLevel ?? '') === wanted
+  ) {
+    return doc;
+  }
+
+  const payload = { ...node[node.kind] };
+
+  if (wanted) {
+    payload.purdueLevel = wanted;
+  } else {
+    delete payload.purdueLevel;
+  }
+
+  return {
+    ...doc,
+    nodes: doc.nodes.map((entry) =>
+      entry === node ? { ...node, [node.kind]: payload } : entry,
+    ),
+  };
+}
+
 // A device's presentation fields: its icon, the custom icon drawn in its
 // place (an icon name, see icons.js), the size its icon is drawn at and its
 // colors on the canvas. The Inspector applies a change of one at once,
@@ -221,7 +298,7 @@ const GROUP_OPTIONAL_KEYS = [
   'icon',
   'iconSize',
 ];
-const SWITCH_OPTIONAL_KEYS = [...NODE_COLOR_KEYS, 'iconSize'];
+const SWITCH_OPTIONAL_KEYS = [...NODE_COLOR_KEYS, 'iconSize', 'purdueLevel'];
 
 // Removes the keys of optional fields that hold no value, so a field set
 // and emptied again leaves the payload, and the document's bytes, as they
@@ -868,8 +945,8 @@ function uniqueHostname(doc, wanted) {
  * @param {object} doc
  * @param {object} options kind, position, size, parentId, label, and kind
  *   specific fields: a device's hostname, spec, look (its presentation
- *   fields, see LOOK_KEYS) and interfaces; a switch's networkId, outlineColor,
- *   fillColor, iconSize and notes; a note's text; a group's title,
+ *   fields, see LOOK_KEYS), purdueLevel and interfaces; a switch's
+ *   networkId, outlineColor, fillColor, iconSize, purdueLevel and notes; a note's text; a group's title,
  *   description, borderStyle, iconKey, icon and iconSize; a shape's shape
  *   (its figure), fillColor,
  *   outlineColor and borderStyle; an icon's iconKey or icon; a line's points
@@ -931,6 +1008,10 @@ export function addNode(doc, options = {}) {
         if (look[key]) {
           node.device[key] = look[key];
         }
+      }
+
+      if (PURDUE_LEVELS.includes(options.purdueLevel)) {
+        node.device.purdueLevel = options.purdueLevel;
       }
 
       const wanted = Array.isArray(options.interfaces)
@@ -1170,8 +1251,9 @@ export function updateNode(doc, id, patch = {}) {
         networks.get(handleId)?.id === networkByName(doc, vlan)?.id,
     );
 
-    // An emptied color is no color, and an emptied custom icon none.
-    updated.device = dropEmpty(device, OPTIONAL_LOOK_KEYS);
+    // An emptied color is no color, an emptied custom icon none, and an
+    // emptied Purdue level none.
+    updated.device = dropEmpty(device, [...OPTIONAL_LOOK_KEYS, 'purdueLevel']);
     updated.label = patch.label !== undefined ? patch.label : device.hostname;
   }
 

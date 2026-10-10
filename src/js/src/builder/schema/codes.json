@@ -35,6 +35,10 @@
     "severity": "warning",
     "description": "A device has no interfaces."
   },
+  "device.purdue-level.unknown": {
+    "severity": "error",
+    "description": "A device's Purdue layer is not 0, 1, 2, 3, 3.5, 4 or 5."
+  },
   "device.spec.required": {
     "severity": "error",
     "description": "A device has no spec."
@@ -919,6 +923,10 @@
     "severity": "error",
     "description": "A switch has more than 100 notes."
   },
+  "switch.purdue-level.unknown": {
+    "severity": "error",
+    "description": "A switch's Purdue layer is not 0, 1, 2, 3, 3.5, 4 or 5."
+  },
   "template.collection-description.control": {
     "severity": "error",
     "description": "A collection description holds a control character."
@@ -1034,6 +1042,10 @@
   "template.name.too-long": {
     "severity": "error",
     "description": "A template name is longer than 128 bytes."
+  },
+  "template.purdue-level.unknown": {
+    "severity": "error",
+    "description": "A template's Purdue layer is not 0, 1, 2, 3, 3.5, 4 or 5."
   },
   "template.shares.too-many": {
     "severity": "error",

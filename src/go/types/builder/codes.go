@@ -127,6 +127,7 @@ const (
 	CodeDeviceIconInvalid          Code = "device.icon.invalid"
 	CodeDeviceIconSizeUnknown      Code = "device.icon-size.unknown"
 	CodeDeviceColorInvalid         Code = "device.color.invalid"
+	CodeDevicePurdueLevelUnknown   Code = "device.purdue-level.unknown"
 	CodeDeviceIncludedFromInvalid  Code = "device.included-from.invalid"
 	CodeDeviceIncludedFromNoSource Code = "device.included-from.no-includes"
 	CodeDeviceInterfacesNone       Code = "device.interfaces.none"
@@ -153,16 +154,17 @@ const (
 
 // Codes of the payload of a switch node.
 const (
-	CodeSwitchNetworkRequired Code = "switch.network.required"
-	CodeSwitchNetworkUnknown  Code = "switch.network.unknown"
-	CodeSwitchColorInvalid    Code = "switch.color.invalid"
-	CodeSwitchIconSizeUnknown Code = "switch.icon-size.unknown"
-	CodeSwitchNotesNotList    Code = "switch.notes.not-list"
-	CodeSwitchNotesTooMany    Code = "switch.notes.too-many"
-	CodeSwitchNoteNotText     Code = "switch.note.not-text"
-	CodeSwitchNoteBlank       Code = "switch.note.blank"
-	CodeSwitchNoteTooLong     Code = "switch.note.too-long"
-	CodeSwitchNoteControl     Code = "switch.note.control"
+	CodeSwitchNetworkRequired    Code = "switch.network.required"
+	CodeSwitchNetworkUnknown     Code = "switch.network.unknown"
+	CodeSwitchColorInvalid       Code = "switch.color.invalid"
+	CodeSwitchIconSizeUnknown    Code = "switch.icon-size.unknown"
+	CodeSwitchPurdueLevelUnknown Code = "switch.purdue-level.unknown"
+	CodeSwitchNotesNotList       Code = "switch.notes.not-list"
+	CodeSwitchNotesTooMany       Code = "switch.notes.too-many"
+	CodeSwitchNoteNotText        Code = "switch.note.not-text"
+	CodeSwitchNoteBlank          Code = "switch.note.blank"
+	CodeSwitchNoteTooLong        Code = "switch.note.too-long"
+	CodeSwitchNoteControl        Code = "switch.note.control"
 )
 
 // Codes of the payload of a group node.
@@ -256,6 +258,7 @@ const (
 	CodeTemplateIconInvalid           Code = "template.icon.invalid"
 	CodeTemplateIconSizeUnknown       Code = "template.icon-size.unknown"
 	CodeTemplateColorInvalid          Code = "template.color.invalid"
+	CodeTemplatePurdueLevelUnknown    Code = "template.purdue-level.unknown"
 	CodeTemplateDeviceUnencodable     Code = "template.device.unencodable"
 	CodeTemplateDeviceTooLarge        Code = "template.device.too-large"
 	CodeTemplateFileInvalid           Code = "template.file.invalid"
@@ -476,6 +479,7 @@ var codeRegistry = []CodeInfo{
 	{CodeDeviceIconInvalid, SeverityError, "A device's custom icon is not an icon name."},
 	{CodeDeviceIconSizeUnknown, SeverityError, "A device's icon size is not small, medium or large."},
 	{CodeDeviceColorInvalid, SeverityError, "A device's outline or fill color is not #rrggbb."},
+	{CodeDevicePurdueLevelUnknown, SeverityError, "A device's Purdue layer is not 0, 1, 2, 3, 3.5, 4 or 5."},
 	{CodeDeviceIncludedFromInvalid, SeverityError, "The topology a device is included from is blank or holds white space."},
 	{CodeDeviceIncludedFromNoSource, SeverityError, "A device is included from a topology, but the document includes none."},
 	{CodeDeviceInterfacesNone, SeverityWarning, "A device has no interfaces."},
@@ -499,6 +503,7 @@ var codeRegistry = []CodeInfo{
 	{CodeSwitchNetworkUnknown, SeverityError, "A switch names a network the document does not have."},
 	{CodeSwitchColorInvalid, SeverityError, "A switch's outline or fill color is not #rrggbb."},
 	{CodeSwitchIconSizeUnknown, SeverityError, "A switch's icon size is not small, medium or large."},
+	{CodeSwitchPurdueLevelUnknown, SeverityError, "A switch's Purdue layer is not 0, 1, 2, 3, 3.5, 4 or 5."},
 	{CodeSwitchNotesNotList, SeverityError, "A switch's notes are not a list of text."},
 	{CodeSwitchNotesTooMany, SeverityError, "A switch has more than 100 notes."},
 	{CodeSwitchNoteNotText, SeverityError, "A note of a switch is not text."},
@@ -577,6 +582,7 @@ var codeRegistry = []CodeInfo{
 	{CodeTemplateIconInvalid, SeverityError, "A template's custom icon is not an icon name."},
 	{CodeTemplateIconSizeUnknown, SeverityError, "A template's icon size is not small, medium or large."},
 	{CodeTemplateColorInvalid, SeverityError, "A template's outline or fill color is not #rrggbb."},
+	{CodeTemplatePurdueLevelUnknown, SeverityError, "A template's Purdue layer is not 0, 1, 2, 3, 3.5, 4 or 5."},
 	{CodeTemplateDeviceUnencodable, SeverityError, "A template's device cannot be encoded as JSON."},
 	{CodeTemplateDeviceTooLarge, SeverityError, "A template's device takes more than 16 KiB as JSON."},
 	{CodeTemplateFileInvalid, SeverityError, "A template file does not validate; issues lists each reason."},

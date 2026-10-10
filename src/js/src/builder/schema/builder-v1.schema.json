@@ -135,6 +135,14 @@
           ],
           "title": "Outline Color"
         },
+        "purdueLevel": {
+          "$ref": "#/$defs/purdueLevel",
+          "description": "Purdue layer of the device, which the Layered by tier layout reads. It is never published.",
+          "examples": [
+            "1"
+          ],
+          "title": "Purdue Layer"
+        },
         "spec": {
           "description": "Complete phenix topology node spec, in the stored snake_case form, which publishing writes to the topology.",
           "examples": [
@@ -2946,6 +2954,24 @@
       "title": "Position",
       "type": "object"
     },
+    "purdueLevel": {
+      "description": "Level of the Purdue model a node is at: 5 (enterprise network), 4 (site business planning and logistics), 3.5 (industrial DMZ), 3 (site operations), 2 (area supervisory control), 1 (basic control) or 0 (physical process). Empty is none.",
+      "enum": [
+        "",
+        "5",
+        "4",
+        "3.5",
+        "3",
+        "2",
+        "1",
+        "0"
+      ],
+      "examples": [
+        "3.5"
+      ],
+      "title": "Purdue Layer",
+      "type": "string"
+    },
     "shape": {
       "additionalProperties": false,
       "description": "Payload of a shape node: a rectangle or a circle drawn on the canvas, which is never published.",
@@ -3251,6 +3277,14 @@
             "#2f6fbf"
           ],
           "title": "Outline Color"
+        },
+        "purdueLevel": {
+          "$ref": "#/$defs/purdueLevel",
+          "description": "Purdue layer of the switch's network, which the Layered by tier layout reads. It is never published.",
+          "examples": [
+            "2"
+          ],
+          "title": "Purdue Layer"
         }
       },
       "required": [
@@ -3447,6 +3481,14 @@
             "#2f6fbf"
           ],
           "title": "Outline Color"
+        },
+        "purdueLevel": {
+          "$ref": "#/$defs/purdueLevel",
+          "description": "Purdue layer of the devices made from the template.",
+          "examples": [
+            "1"
+          ],
+          "title": "Purdue Layer"
         },
         "spec": {
           "description": "Complete phenix topology node spec, in the stored snake_case form, which publishing writes to the topology.",

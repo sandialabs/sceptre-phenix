@@ -205,6 +205,10 @@ type Device struct {
 	// "#rrggbb". Empty leaves the editor's own.
 	OutlineColor string `json:"outlineColor,omitempty"`
 	FillColor    string `json:"fillColor,omitempty"`
+	// PurdueLevel is the level of the Purdue model the device is at, one of
+	// [PurdueLevels]. Empty is none. The editor's "Layered by tier" layout
+	// reads it. It stays in the document and is never written to a config.
+	PurdueLevel string `json:"purdueLevel,omitempty"`
 	// Spec is the complete phenix node spec, using the stored (snake_case)
 	// representation. Unknown keys are preserved verbatim so documents survive
 	// schema growth without data loss.
@@ -242,6 +246,9 @@ type Switch struct {
 	// IconSize is the size the switch's icon is drawn at, one of
 	// [IconSizes]. Empty uses the document's [Document.IconSize].
 	IconSize string `json:"iconSize,omitempty"`
+	// PurdueLevel is the level of the Purdue model the switch's network is
+	// at, as [Device.PurdueLevel] is a device's.
+	PurdueLevel string `json:"purdueLevel,omitempty"`
 	// Notes are free text about the switch, which the editor shows below it,
 	// held to the rules of [Metadata.Notes]. A switch is no topology node, so
 	// they stay in the document and are never written to a config; a

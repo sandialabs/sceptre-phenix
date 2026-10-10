@@ -547,8 +547,9 @@ async function testEngine() {
 }
 
 // A browser keeps a module it could not fetch as failed, so only a reload
-// fetches elkjs again.
-function elkEngine() {
+// fetches elkjs again. The Layered by tier layout (tiers.js) shares the
+// engine.
+export function elkEngine() {
   if (!engine) {
     engine = (
       import.meta.env.MODE === 'test' ? testEngine() : workerEngine()

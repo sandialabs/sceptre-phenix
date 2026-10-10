@@ -180,6 +180,7 @@ The warnings of an import or of a legacy diagram's conversion
 | `device.icon.invalid` | error | A device's custom icon is not an icon name. |
 | `device.icon-size.unknown` | error | A device's icon size is not small, medium or large. |
 | `device.color.invalid` | error | A device's outline or fill color is not #rrggbb. |
+| `device.purdue-level.unknown` | error | A device's Purdue layer is not 0, 1, 2, 3, 3.5, 4 or 5. |
 | `device.included-from.invalid` | error | The topology a device is included from is blank or holds white space. |
 | `device.included-from.no-includes` | error | A device is included from a topology, but the document includes none. |
 | `device.interfaces.none` | warning | A device has no interfaces. |
@@ -201,6 +202,7 @@ The warnings of an import or of a legacy diagram's conversion
 | `switch.network.unknown` | error | A switch names a network the document does not have. |
 | `switch.color.invalid` | error | A switch's outline or fill color is not #rrggbb. |
 | `switch.icon-size.unknown` | error | A switch's icon size is not small, medium or large. |
+| `switch.purdue-level.unknown` | error | A switch's Purdue layer is not 0, 1, 2, 3, 3.5, 4 or 5. |
 | `switch.notes.not-list` | error | A switch's notes are not a list of text. |
 | `switch.notes.too-many` | error | A switch has more than 100 notes. |
 | `switch.note.not-text` | error | A note of a switch is not text. |
@@ -272,6 +274,7 @@ The warnings of an import or of a legacy diagram's conversion
 | `template.icon.invalid` | error | A template's custom icon is not an icon name. |
 | `template.icon-size.unknown` | error | A template's icon size is not small, medium or large. |
 | `template.color.invalid` | error | A template's outline or fill color is not #rrggbb. |
+| `template.purdue-level.unknown` | error | A template's Purdue layer is not 0, 1, 2, 3, 3.5, 4 or 5. |
 | `template.device.unencodable` | error | A template's device cannot be encoded as JSON. |
 | `template.device.too-large` | error | A template's device takes more than 16 KiB as JSON. |
 | `template.file.invalid` | error | A template file does not validate; issues lists each reason. |

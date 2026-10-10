@@ -219,6 +219,7 @@ export function pasteClipboard(doc, payload, options = {}) {
       init.hostname = node.device?.hostname;
       init.spec = node.device?.spec;
       init.look = lookOf(node.device);
+      init.purdueLevel = node.device?.purdueLevel;
       init.interfaces = (node.device?.interfaces || []).map((handle) => ({
         name: handle.name,
       }));
@@ -236,6 +237,7 @@ export function pasteClipboard(doc, payload, options = {}) {
       init.outlineColor = node.switch?.outlineColor;
       init.fillColor = node.switch?.fillColor;
       init.iconSize = node.switch?.iconSize;
+      init.purdueLevel = node.switch?.purdueLevel;
       // A switch's notes are its own, so a copy carries them as a device's
       // general.notes go with its spec.
       init.notes = node.switch?.notes;
