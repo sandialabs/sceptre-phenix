@@ -82,7 +82,11 @@ document (a Builder JSON or YAML download) is not a config: one found in
 a directory is skipped with the log line `skipped Builder document; use
 phenix builder publish`, and one named on the command line is refused with
 `<file> is a Builder document, not a configuration: use "phenix builder
-publish <file>" to create its topology`.
+publish <file>" to create its topology`. A template file or a package is
+not a config either: skipped in a directory with a debug log line, refused
+on the command line (`<file> is a Builder template file, not a
+configuration: ...`, `<file> is a Builder package, not a configuration:
+...`).
 
 ## `phenix builder` — Builder documents, drafts and Node Templates
 
@@ -152,11 +156,16 @@ phenix builder templates import <file> [--name <collection>]
 
 `--url` (`PHENIX_URL`) names the server and `--token` (`PHENIX_TOKEN`) the
 API token sent as `X-Phenix-Auth-Token: Bearer <token>`: the requests have
-the token user's permissions; a server with auth off needs none. Without
-`--url` they go to the unix socket (`--unix-socket`, default
-`/tmp/phenix.sock`) as global-admin; a token without a URL is refused. A
-flag given an empty value counts as not given. Redirects are refused, not
-followed. `-o` defaults to `table`. Exit status: 0 success, 1 findings
+the token user's permissions; a server with auth off needs none. A token
+sent to an `http` URL of a host other than localhost or a loopback address
+is a warning on stderr, not a refusal. Without `--url` they go to the unix
+socket (`--unix-socket`, default `/tmp/phenix.sock`) as global-admin, after
+checking it is a socket owned by the caller or root and not writable by
+others (else exit 2); a token without a URL is refused, and `drafts list`
+lists every draft without `--shared`. A flag given an empty value counts as
+not given. Redirects are refused, not followed. `drafts export --package`
+writes the package alone and prints the server's warnings on stderr. `-o`
+defaults to `table`. Exit status: 0 success, 1 findings
 (validate errors, a failed preflight check, or with `--strict` an
 unavailable one), 2 refused or no answer (connection, redirect, 401/403,
 404, unknown subcommand, invalid arguments or file). The report

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -372,5 +373,105 @@ func TestConfigCreateRecognizesBuilderDocuments(t *testing.T) { //nolint:paralle
 	other := writeTestFile(t, t.TempDir(), "other.json", []byte(`{"$schema": "https://json-schema.org/draft/2020-12/schema"}`))
 	if err := run(other); err == nil || !strings.HasPrefix(err.Error(), "Unable to create configuration from "+other) {
 		t.Errorf("config create of a file that is no config: error = %v, want the humanized failure", err)
+	}
+}
+
+// TestConfigCreateSkipsBuilderFiles runs config create on a directory that
+// holds a config and the three kinds of Builder files the docs examples
+// directory holds: a Builder document, a template file and a package, YAML
+// and JSON. The config is created, the document is skipped with its log
+// line, and each template file and package with a debug log line that names
+// it. Named on the command line, a template file or a package is refused
+// with what to do with it instead.
+func TestConfigCreateSkipsBuilderFiles(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+	useBoltStore(t)
+
+	logs := plogtest.Capture(t)
+	directory := t.TempDir()
+
+	asJSON := func(name string) []byte {
+		var generic any
+		if err := yaml.Unmarshal(docsExample(t, name), &generic); err != nil {
+			t.Fatalf("decoding the docs example %s: %v", name, err)
+		}
+
+		data, err := json.Marshal(generic)
+		if err != nil {
+			t.Fatalf("encoding the docs example %s as JSON: %v", name, err)
+		}
+
+		return data
+	}
+
+	document := writeTestFile(t, directory, "diagram.json", docsExample(t, builderExample))
+	skipped := map[string]string{}
+
+	skipped[writeTestFile(t, directory, "node-templates.yaml", docsExample(t, "node-templates.yaml"))] = builderFileTemplateFile
+	skipped[writeTestFile(t, directory, "templates.json", asJSON("node-templates.yaml"))] = builderFileTemplateFile
+	skipped[writeTestFile(t, directory, "pump-station.package.yaml", docsExample(t, "pump-station.package.yaml"))] = builderFilePackage
+	skipped[writeTestFile(t, directory, "package.json", asJSON("pump-station.package.yaml"))] = builderFilePackage
+
+	writeTestFile(t, directory, "pump-station.topology.yaml", docsExample(t, "pump-station.topology.yaml"))
+
+	run := func(args ...string) error {
+		root := &cobra.Command{Use: "phenix", SilenceUsage: true, SilenceErrors: true}
+		configCmd := newConfigCmd()
+		configCmd.AddCommand(newConfigCreateCmd())
+		root.AddCommand(configCmd)
+		root.SetArgs(append([]string{"config", "create"}, args...))
+
+		_, err := root.ExecuteC()
+
+		return err
+	}
+
+	if err := run(directory); err != nil {
+		t.Fatalf("config create on the directory returned error: %v", err)
+	}
+
+	topologies, err := config.List("topology")
+	if err != nil || len(topologies) != 1 || topologies[0].Metadata.Name != "pump-station" {
+		t.Fatalf("topologies = %v, %v, want only pump-station, from the config file", topologies, err)
+	}
+
+	if scenarios, err := config.List("scenario"); err != nil || len(scenarios) != 0 {
+		t.Errorf("scenarios = %v, %v, want none: a package's Scenario config is not created", scenarios, err)
+	}
+
+	documents := logs.Records(t, plogtest.Message("skipped Builder document; use phenix builder publish"))
+	if len(documents) != 1 || documents[0]["path"] != document {
+		t.Errorf("document log lines = %v, want one for %s", documents, document)
+	}
+
+	got := map[string]string{}
+
+	for _, record := range logs.Records(t, plogtest.Message("skipped Builder file, which is not a configuration")) {
+		path, _ := record["path"].(string)
+		kind, _ := record["kind"].(string)
+		got[path] = kind
+
+		if record["level"] != slog.LevelDebug.String() {
+			t.Errorf("the log line for %s is at level %v, want %v", path, record["level"], slog.LevelDebug)
+		}
+	}
+
+	if !reflect.DeepEqual(got, skipped) {
+		t.Errorf("skipped %v, want %v", got, skipped)
+	}
+
+	for path, kind := range skipped {
+		want := path + ` is a Builder package, not a configuration: upload it in the Builder to open its diagram`
+		if kind == builderFileTemplateFile {
+			want = path + ` is a Builder template file, not a configuration: use "phenix builder templates import ` +
+				path + `" to add its Node Templates`
+		}
+
+		if err := run(path); err == nil || err.Error() != want {
+			t.Errorf("config create %s: error = %v, want %q", path, err, want)
+		}
+	}
+
+	if topologies, err := config.List("topology"); err != nil || len(topologies) != 1 {
+		t.Errorf("topologies = %v, %v, want still only pump-station", topologies, err)
 	}
 }

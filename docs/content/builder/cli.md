@@ -33,6 +33,12 @@ given, so the environment variable still applies. Prefer `PHENIX_TOKEN`
 to `--token`: other users of the host can see the arguments of a running
 command. The commands never print the token.
 
+With an `http` URL, the token travels unencrypted. When the URL's host is
+not `localhost` or a loopback address such as `127.0.0.1`, the command
+prints one warning on standard error, which starts
+`warning: the token travels unencrypted`, and still sends the request.
+Use `https` where others share the network.
+
 The commands do not follow redirects, so the token goes to no other
 server. When the server answers with a redirect, such as a proxy that
 sends `http` to `https`, the command exits 2 and names where the redirect
@@ -53,8 +59,17 @@ unix socket of `phenix ui` on the same host: the socket the global
 is refused (exit 2, "--token needs --url; without --url the commands use
 the local socket as global-admin") rather than left unsent. The socket's
 file mode decides who may connect: the user that runs `phenix ui`, and with
-`phenix ui --unix-socket-gid` the members of that group. With Docker, run
-the command in the container:
+`phenix ui --unix-socket-gid` the members of that group.
+
+Before it connects, the command checks the socket, and refuses it (exit 2)
+unless it is a socket, not a link or another kind of file, owned by you or
+by `root`, that users outside its owner and its group cannot write to.
+Anyone can create a file in `/tmp`, and the requests act as
+`global-admin`. The socket `phenix ui --unix-socket-gid` makes, mode
+`0770` with that group, passes.
+
+With Docker, run the command in the container. Over the socket,
+`drafts list` lists every draft, as `--shared` does:
 
 ```bash
 docker exec phenix phenix builder drafts list
@@ -71,10 +86,13 @@ shows it.
 phenix builder drafts list [--shared] [--owner <user>] [-o table|json|yaml]
 ```
 
-Lists your own drafts. `--shared` adds the drafts of other users you can
-see: those shared with you, and those your role may list. `--owner`
-lists only the drafts of that user, from either. Drafts are sorted by
-owner, then by ID. A draft this server can no longer read is not listed.
+With `--url`, lists your own drafts. `--shared` adds the drafts of other
+users you can see: those shared with you, and those your role may list.
+Without `--url`, over the unix socket, the command acts as `global-admin`
+and lists every draft, its own and those of other users, with or without
+`--shared`. `--owner` lists only the drafts of that user, from either.
+Drafts are sorted by owner, then by ID. A draft this server can no longer
+read is not listed.
 
 Here alice lists her draft Riverside Water expansion and bob's Pump station,
 which bob shared with her and carol to edit, and which carol saved last:
@@ -128,8 +146,18 @@ Writes the current document of the draft as Builder JSON (the default) or
 Builder YAML, to standard output or to the file `--output` names. The
 same document always gives the same bytes, so an export can be committed
 and compared. With `--package`, the command writes the Builder package the
-server makes of the document instead, holding the parts `--include`
-names.
+server makes of the document instead, in the same format, holding the
+parts `--include` names (see
+[Moving a diagram with a Builder package](import-upload-download.md#moving-a-diagram-with-a-builder-package)).
+The server's warnings about the package, such as a Scenario config it
+names but cannot carry, go to standard error, one line each with its
+[error code](error-codes.md). Here the draft names the Scenario config
+`riverside-ops`, which the server does not have:
+
+```console
+$ phenix builder drafts export alice/860e1241-4b2a-4be8-9592-63d7b1ce78f0 --package --include scenarios --output riverside-expansion.package.json
+warning: [package.config.unreadable] Scenario config riverside-ops does not exist on this server, or your role cannot read it: the package names it but does not carry it.
+```
 
 ```bash
 phenix builder drafts export alice/860e1241-4b2a-4be8-9592-63d7b1ce78f0 --output riverside-expansion.builder.json

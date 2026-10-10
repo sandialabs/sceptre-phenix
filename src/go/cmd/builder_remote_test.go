@@ -276,6 +276,12 @@ func TestBuilderDraftsListJSON(t *testing.T) {
 	if strings.Contains(stdout+stderr, builderTestToken) {
 		t.Error("the output holds the token")
 	}
+
+	// The fake answers on a loopback address, where http keeps the token on
+	// this host: no warning.
+	if stderr != "" {
+		t.Errorf("drafts list over loopback http wrote %q to standard error, want nothing", stderr)
+	}
 }
 
 func TestBuilderDraftsListSharedAndOwner(t *testing.T) {
@@ -415,14 +421,21 @@ viewport:
 func TestBuilderDraftsExportPackage(t *testing.T) {
 	t.Parallel()
 
-	const pack = `{"$schema":"https://phenix.sandia.gov/schemas/builder/package/v1","document":` + builderTestDocument + `}`
+	// The route answers the package and its warnings; the command writes the
+	// package alone, and the warnings on standard error.
+	const (
+		pack    = `{"$schema":"https://phenix.sandia.gov/schemas/builder/package/v1","document":` + builderTestDocument + `}`
+		warning = `Custom icon plc-icon is not in the server's icon library: the package names it but does not carry it.`
+		answer  = `{"package":` + pack + `,"warnings":[{"code":"package.icon.missing","severity":"warning",` +
+			`"message":"` + warning + `"}]}`
+	)
 
 	fake := newBuilderFake(t, map[string][]builderFakeAnswer{
 		routeDraft:   builderOK(builderTestDraft),
-		routePackage: builderOK(pack),
+		routePackage: builderOK(answer),
 	})
 
-	stdout, _, err := runBuilderRemote(
+	stdout, stderr, err := runBuilderRemote(
 		fake.remote("drafts", "export", "alice/riverside", "--package", "--include", "scenarios,icons")...,
 	)
 	wantExit(t, err, 0)
@@ -434,6 +447,10 @@ func TestBuilderDraftsExportPackage(t *testing.T) {
 
 	if want := indented.String() + "\n"; stdout != want {
 		t.Errorf("drafts export --package wrote\n%s\nwant\n%s", stdout, want)
+	}
+
+	if want := "warning: [package.icon.missing] " + warning + "\n"; stderr != want {
+		t.Errorf("drafts export --package wrote %q to standard error, want %q", stderr, want)
 	}
 
 	requests := fake.recorded()
@@ -455,6 +472,121 @@ func TestBuilderDraftsExportPackage(t *testing.T) {
 
 	if requests := fake.recorded(); len(requests) != 2 {
 		t.Errorf("requests = %+v, want none more for refused arguments", requests)
+	}
+
+	// An answer without a package is refused, and nothing is written.
+	empty := newBuilderFake(t, map[string][]builderFakeAnswer{
+		routeDraft:   builderOK(builderTestDraft),
+		routePackage: builderOK(`{"package": null, "warnings": []}`),
+	})
+
+	stdout, _, err = runBuilderRemote(empty.remote("drafts", "export", "alice/riverside", "--package")...)
+	wantExit(t, err, exitRefused)
+
+	if stdout != "" || !strings.Contains(err.Error(), "no package") {
+		t.Errorf("an answer without a package: wrote %q, error = %v; want nothing written and the error", stdout, err)
+	}
+}
+
+// TestBuilderDraftsExportPackageMatchesRoute runs drafts export --package
+// against the package route's recorded answer: the request and the answer
+// that TestBuilderPackageAnswersAsRecorded in phenix/web checks the route
+// against. The command must send the recorded request, write the package
+// alone, as JSON or YAML, and print each warning with its code on standard
+// error.
+func TestBuilderDraftsExportPackageMatchesRoute(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("..", "web", "testdata", "builder-package-exchange.json")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+
+	var exchange struct {
+		Request json.RawMessage `json:"request"`
+		Answer  json.RawMessage `json:"answer"`
+	}
+
+	if err := json.Unmarshal(data, &exchange); err != nil {
+		t.Fatalf("decoding %s: %v", path, err)
+	}
+
+	var (
+		request struct {
+			Document json.RawMessage `json:"document"`
+			Include  []string        `json:"include"`
+		}
+		answer struct {
+			Package  json.RawMessage `json:"package"`
+			Warnings []builderIssue  `json:"warnings"`
+		}
+	)
+
+	if err := json.Unmarshal(exchange.Request, &request); err != nil {
+		t.Fatalf("decoding the recorded request: %v", err)
+	}
+
+	if err := json.Unmarshal(exchange.Answer, &answer); err != nil {
+		t.Fatalf("decoding the recorded answer: %v", err)
+	}
+
+	if len(answer.Warnings) == 0 {
+		t.Fatalf("the answer recorded in %s has no warning", path)
+	}
+
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, exchange.Request); err != nil {
+		t.Fatalf("compacting the recorded request: %v", err)
+	}
+
+	draft := `{"id": "riverside", "owner": "alice", "title": "Riverside", "etag": "\"4\"", "access": "owner", ` +
+		`"history": [], "document": ` + string(request.Document) + `}`
+
+	fake := newBuilderFake(t, map[string][]builderFakeAnswer{
+		routeDraft:   builderOK(draft),
+		routePackage: builderOK(string(exchange.Answer)),
+	})
+
+	args := []string{"drafts", "export", "alice/riverside", "--package", "--include", strings.Join(request.Include, ",")}
+
+	stdout, stderr, err := runBuilderRemote(fake.remote(args...)...)
+	wantExit(t, err, 0)
+
+	if requests := fake.recorded(); len(requests) != 2 || requests[1].body != compact.String() {
+		t.Errorf("requests = %+v, want the recorded request %s", requests, compact.String())
+	}
+
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, answer.Package, "", "  "); err != nil {
+		t.Fatalf("indenting the recorded package: %v", err)
+	}
+
+	if want := indented.String() + "\n"; stdout != want {
+		t.Errorf("drafts export --package wrote\n%s\nwant the recorded package alone\n%s", stdout, want)
+	}
+
+	for _, warning := range answer.Warnings {
+		if want := "warning: [" + warning.Code + "] " + warning.Message + "\n"; !strings.Contains(stderr, want) {
+			t.Errorf("standard error = %q, want the recorded warning %q", stderr, want)
+		}
+	}
+
+	stdout, _, err = runBuilderRemote(fake.remote(append(args, "--format", FormatYAML)...)...)
+	wantExit(t, err, 0)
+
+	wantYAML, err := builderYAML(answer.Package)
+	if err != nil {
+		t.Fatalf("converting the recorded package to YAML: %v", err)
+	}
+
+	if stdout != string(wantYAML) || !strings.HasPrefix(stdout, "$schema: "+bdoc.PackageSchemaURI+"\n") {
+		t.Errorf("drafts export --package --format yaml wrote\n%s\nwant the recorded package alone\n%s", stdout, wantYAML)
+	}
+
+	if pack, err := bdoc.ParsePackage([]byte(stdout)); err != nil || pack.Schema != bdoc.PackageSchemaURI {
+		t.Errorf("the YAML package does not load: %v", err)
 	}
 }
 
@@ -579,6 +711,11 @@ func TestBuilderDraftsValidateRefusalIssues(t *testing.T) {
 
 	stdout, _, err := runBuilderRemote(fake.remote("drafts", "validate", "alice/riverside", "-o", FormatJSON)...)
 	wantExit(t, err, exitFindings)
+
+	// One error: the verb agrees with it.
+	if want := "draft alice/riverside has 1 error that blocks publishing"; err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
+	}
 
 	var report builderValidation
 
@@ -903,6 +1040,12 @@ func TestBuilderServerFromEnvironmentAndSocket(t *testing.T) {
 		}
 	})
 
+	// The mode of phenix ui's socket, whatever the umask: one other users
+	// may write to is refused.
+	if err := os.Chmod(socket.socket, 0o700); err != nil {
+		t.Fatalf("setting the mode of the socket: %v", err)
+	}
+
 	previous := common.UnixSocket
 	common.UnixSocket = socket.socket //nolint:reassign // the fake's socket
 
@@ -931,11 +1074,24 @@ func TestBuilderServerFromEnvironmentAndSocket(t *testing.T) {
 
 	t.Setenv(builderTokenEnv, "")
 
+	// Over the socket, as global-admin, every draft it may see is listed
+	// without --shared: its own and those of other users.
 	stdout, _, err := runBuilderRemote("drafts", "list", "-o", FormatJSON)
 	wantExit(t, err, 0)
 
-	if stdout != builderTestDraftsJSON {
-		t.Errorf("over the socket: wrote\n%s\nwant\n%s", stdout, builderTestDraftsJSON)
+	var list builderDraftList
+
+	if err := json.Unmarshal([]byte(stdout), &list); err != nil {
+		t.Fatalf("decoding %s: %v", stdout, err)
+	}
+
+	listed := make([]string, 0, len(list.Drafts))
+	for _, draft := range list.Drafts {
+		listed = append(listed, draft.Owner+"/"+draft.ID)
+	}
+
+	if want := []string{"alice/annex", "alice/riverside", "bob/pumps"}; !slices.Equal(listed, want) {
+		t.Errorf("over the socket: listed %v, want %v\n%s", listed, want, stdout)
 	}
 
 	if requests := socket.recorded(); len(requests) != 1 || requests[0].path != "/api/v1/builder/drafts" {

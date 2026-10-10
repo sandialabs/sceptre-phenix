@@ -14,6 +14,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -337,6 +338,10 @@ func newBuilderClient(server, token, socket string) (*builderClient, error) {
 			return nil, fmt.Errorf("no phenix server to ask: give --url or %s, or --unix-socket", builderURLEnv)
 		}
 
+		if err := checkBuilderSocket(socket); err != nil {
+			return nil, err
+		}
+
 		transport := &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				return dialer.DialContext(ctx, "unix", socket)
@@ -375,6 +380,114 @@ func newBuilderClient(server, token, socket string) (*builderClient, error) {
 		token:  token,
 		socket: "",
 	}, nil
+}
+
+// checkBuilderSocket refuses the unix socket at path unless phenix ui of this
+// host may be what listens there (see [builderSocketProblem]). A path with
+// nothing at it gets the error of a socket that cannot be dialed.
+func checkBuilderSocket(path string) error {
+	info, err := os.Lstat(path)
+
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf(
+			"%w: there is no unix socket at %s; start phenix ui on this host, or give the URL of a phenix server with --url or %s",
+			errServerUnreachable, path, builderURLEnv,
+		)
+	case errors.Is(err, fs.ErrPermission):
+		return fmt.Errorf("%w: %w; %s", errServerUnreachable, err, socketPermissionHint)
+	case err != nil:
+		return fmt.Errorf("%w: %w", errServerUnreachable, err)
+	}
+
+	return builderSocketProblem(path, info, os.Getuid())
+}
+
+// builderSocketProblem says why the file at path, which info describes, is
+// not a socket the commands send requests to when the user uid runs them, or
+// returns nil. The requests act as global-admin and the answers are trusted,
+// so the file must be a socket, not a link or another kind of file, owned by
+// that user or by root, and not writable by users outside its owner and its
+// group: any user may create a socket in a directory such as /tmp, and a
+// socket every user may write to lets any of them connect as global-admin.
+// phenix ui --unix-socket-gid gives a group of users the socket, with mode
+// 0770, which passes.
+func builderSocketProblem(path string, info fs.FileInfo, uid int) error {
+	const otherWrite = 0o002
+
+	if info.Mode().Type() != fs.ModeSocket {
+		return fmt.Errorf(
+			"%s is not a unix socket (it is %s); give the socket phenix ui listens on with --unix-socket, "+
+				"or the URL of a phenix server with --url or %s",
+			path, fileTypeName(info.Mode()), builderURLEnv,
+		)
+	}
+
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("the owner of unix socket %s cannot be read, so phenix does not send requests to it", path)
+	}
+
+	if owner := int64(stat.Uid); owner != int64(uid) && owner != 0 {
+		return fmt.Errorf(
+			"unix socket %s is owned by user ID %d, which is neither you nor root, so phenix ui may not be what "+
+				"listens on it: give the socket phenix ui listens on with --unix-socket, or the URL of a phenix "+
+				"server with --url or %s",
+			path, owner, builderURLEnv,
+		)
+	}
+
+	if mode := info.Mode().Perm(); mode&otherWrite != 0 {
+		return fmt.Errorf(
+			"unix socket %s can be written by every user of this host (mode %04o), so any of them could act "+
+				"as global-admin through it: limit its mode, such as with phenix ui --unix-socket-gid, or give "+
+				"the URL of a phenix server with --url or %s",
+			path, mode, builderURLEnv,
+		)
+	}
+
+	return nil
+}
+
+// fileTypeName names the type of file of mode, for an error.
+func fileTypeName(mode fs.FileMode) string {
+	switch {
+	case mode&fs.ModeSymlink != 0:
+		return "a symbolic link"
+	case mode.IsDir():
+		return "a directory"
+	case mode.IsRegular():
+		return "a regular file"
+	}
+
+	return "another kind of file"
+}
+
+// cleartextTokenWarning says that the token travels unencrypted when it is
+// sent to an http URL of another host, and is "" otherwise: with no token,
+// for https, and for localhost or a loopback address, which never leave this
+// host. Labs often serve phenix over http on a private network, so this is a
+// warning, not a refusal. It never holds the token.
+func cleartextTokenWarning(server, token string) string {
+	parsed, err := url.Parse(server)
+	if token == "" || err != nil || parsed.Scheme != "http" {
+		return ""
+	}
+
+	host := parsed.Hostname()
+
+	if strings.EqualFold(host, "localhost") {
+		return ""
+	}
+
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"the token travels unencrypted to %s, since --url is http, not https: anyone on the network path can read it",
+		host,
+	)
 }
 
 // newBuilderHTTPClient returns the HTTP client of a [builderClient], which
@@ -549,7 +662,8 @@ func addBuilderServerFlags(cmd *cobra.Command) {
 // builderClientFor returns the client of the server cmd's flags, their
 // environment variables or the global --unix-socket name. A token without a
 // URL is refused rather than left unsent: over the socket, every request acts
-// as global-admin, not as the token's user.
+// as global-admin, not as the token's user. A token sent unencrypted to
+// another host is a warning on standard error (see [cleartextTokenWarning]).
 func builderClientFor(cmd *cobra.Command) (*builderClient, error) {
 	server := builderSetting(cmd, builderURLFlag, builderURLEnv)
 	token := builderSetting(cmd, builderTokenFlag, builderTokenEnv)
@@ -569,8 +683,15 @@ func builderClientFor(cmd *cobra.Command) (*builderClient, error) {
 	}
 
 	client, err := newBuilderClient(server, token, socket)
+	if err != nil {
+		return nil, refused(err)
+	}
 
-	return client, refused(err)
+	if warning := cleartextTokenWarning(server, token); warning != "" {
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+warning)
+	}
+
+	return client, nil
 }
 
 // builderSetting is the value of the flag, else of the environment variable.

@@ -66,7 +66,16 @@ running `phenix ui`.
 found in a directory it is skipped with the log line `skipped Builder
 document; use phenix builder publish`, and named on the command line it is
 refused with `<file> is a Builder document, not a configuration: use
-"phenix builder publish <file>" to create its topology`.
+"phenix builder publish <file>" to create its topology`. A template file
+(`bdoc.IsTemplateFileText`) and a package (`bdoc.IsPackageText`), by their
+`$schema` and no `kind` as for a document, are skipped the same way with
+the debug line `skipped Builder file, which is not a configuration` (`kind`,
+`path`), and refused on the command line with `<file> is a Builder template
+file, not a configuration: use "phenix builder templates import <file>" to
+add its Node Templates` or `<file> is a Builder package, not a
+configuration: upload it in the Builder to open its diagram`
+(`builderFileKind`, `skipBuilderFile`, `builderFileRefusal` in
+`cmd/config.go`).
 
 ## CLI: phenix builder drafts and templates
 
@@ -82,7 +91,15 @@ its help lists them (`phenix builder` help hides inherited flags). With
 info, query or fragment) they send `--token` (`PHENIX_TOKEN`; flag wins) as
 `X-Phenix-Auth-Token: Bearer <token>` and act as that user; without it they
 dial `common.UnixSocket` (`--unix-socket`) and act as global-admin, sending
-no token. A flag given an empty value counts as not given
+no token. A token sent to an `http` URL whose host is not `localhost` or a
+loopback address prints one warning on stderr, `warning: the token
+travels unencrypted to` and the host, and is still sent
+(`cleartextTokenWarning`, from `builderClientFor`). Before dialing, the socket is checked with `Lstat`
+(`checkBuilderSocket`, `builderSocketProblem`): it must be a socket (not a
+link), owned by the caller's uid or root, without the other-write bit
+(`0770` with a group, as `--unix-socket-gid` sets, passes); else exit 2
+with the reason, and a missing one gets the "start phenix ui" hint. A flag
+given an empty value counts as not given
 (`builderSetting`), and a token without a URL is refused with exit 2
 (`builderClientFor`: "--token needs --url; ..."). Redirects are not
 followed (`CheckRedirect` returns `http.ErrUseLastResponse`): a 3xx is
@@ -108,7 +125,9 @@ message, path?, nodeId?, edgeId?, networkId?, field?}`; a string issue
 becomes `{severity, message}` (`builderIssues`).
 
 - `drafts list [--shared] [--owner U]`: `GET /builder/drafts`; own rows,
-  plus `shared` with `--shared` or `--owner`; sorted by owner then ID;
+  plus `shared` with `--shared` or `--owner`, and always over the socket
+  (global-admin's own drafts are rarely the ones wanted); sorted by owner
+  then ID;
   `{"drafts": [{owner, id, name?, updatedAt?, updatedBy?, access?}]}` from
   `title`, `updated`, `lastModifiedBy`, `access`. Damaged drafts are left
   out.
@@ -116,7 +135,14 @@ becomes `{severity, message}` (`builderIssues`).
   `GET /builder/drafts/{owner}/{draft}`, JSON indented by two spaces in the
   server's key order plus a newline, or YAML; byte-stable. `--package
   [--include scenarios,topologies,icons,images]` posts `{document,
-  include}` to `POST /builder/package` and writes its answer instead.
+  include}` to `POST /builder/package` and writes the answer's `package`
+  instead, by the same format rules (`fetchBuilderPackage`); each of the
+  answer's `warnings` is a `warning: [code] message` line on stderr, and an
+  answer without a package is exit 2.
+  `TestBuilderDraftsExportPackageMatchesRoute` runs it against
+  `web/testdata/builder-package-exchange.json`, which
+  `TestBuilderPackageAnswersAsRecorded` checks against the real route (API
+  and socket routers).
 - `drafts validate O/D`: posts the document to `POST
   /builder/export/topology`; `{"draft": {owner, id, name?}, "valid",
   "errors", "warnings"}` from `publishBlockers` and `warnings`. A 422

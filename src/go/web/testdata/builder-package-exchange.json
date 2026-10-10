@@ -1,0 +1,56 @@
+{
+  "request": {
+    "document": {
+      "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+      "revision": 1,
+      "metadata": {
+        "id": "6f1c8a52-3d2e-4b7a-9c1d-2e5f7a9b0c13",
+        "name": "Riverside",
+        "description": "Pumps and valves"
+      },
+      "nodes": [],
+      "networks": [],
+      "edges": [],
+      "viewport": { "x": 0, "y": 0, "zoom": 1 },
+      "grid": { "enabled": true, "size": 20, "snap": true },
+      "scenarios": ["riverside-ops"]
+    },
+    "include": ["scenarios"]
+  },
+  "answer": {
+    "package": {
+      "$schema": "https://phenix.sandia.gov/schemas/builder/package/v1",
+      "document": {
+        "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+        "revision": 1,
+        "metadata": {
+          "id": "6f1c8a52-3d2e-4b7a-9c1d-2e5f7a9b0c13",
+          "name": "Riverside",
+          "description": "Pumps and valves"
+        },
+        "nodes": [],
+        "networks": [],
+        "edges": [],
+        "viewport": { "x": 0, "y": 0, "zoom": 1 },
+        "grid": { "enabled": true, "size": 20, "snap": true },
+        "scenarios": ["riverside-ops"]
+      },
+      "requirements": {
+        "scenarios": ["riverside-ops"],
+        "topologies": [],
+        "templates": [],
+        "icons": [],
+        "images": [],
+        "apps": [],
+        "files": []
+      }
+    },
+    "warnings": [
+      {
+        "code": "package.config.unreadable",
+        "severity": "warning",
+        "message": "Scenario config riverside-ops does not exist on this server, or your role cannot read it: the package names it but does not carry it."
+      }
+    ]
+  }
+}

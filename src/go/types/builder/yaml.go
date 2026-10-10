@@ -97,6 +97,26 @@ func IsDocumentText(text []byte) bool {
 		!strings.HasPrefix(schema, templateFileSchemaPrefix) && !strings.HasPrefix(schema, packageSchemaPrefix)
 }
 
+// IsTemplateFileText reports whether text, the content of a JSON or YAML
+// file, is a template file (see [TemplateFileSchemaURI]) and not a phenix
+// config: a map whose "$schema" is a template file schema URI, of any
+// revision, and that has no "kind". It reads text as [IsDocumentText] does.
+func IsTemplateFileText(text []byte) bool {
+	schema, kind, ok := textHead(text)
+
+	return ok && !kind && strings.HasPrefix(schema, templateFileSchemaPrefix)
+}
+
+// IsPackageText reports whether text, the content of a JSON or YAML file, is
+// a package (see [PackageSchemaURI]) and not a phenix config: a map whose
+// "$schema" is a package schema URI, of any revision, and that has no
+// "kind". It reads text as [IsDocumentText] does.
+func IsPackageText(text []byte) bool {
+	schema, kind, ok := textHead(text)
+
+	return ok && !kind && strings.HasPrefix(schema, packageSchemaPrefix)
+}
+
 // textHead returns the "$schema" of text, the content of a JSON or YAML
 // file, and whether it has a "kind". The last result is false for text that
 // is not a map, or whose "$schema" is not text.

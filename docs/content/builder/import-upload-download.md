@@ -1151,8 +1151,20 @@ Here `examples` is a directory with the example configs and the two Builder
 documents of these pages (see
 [Load the example configs](index.md#load-the-example-configs)). A template
 file or a Builder package, such as `node-templates.yaml` or
-`pump-station.package.yaml`, is not a config either, and `phenix config
-create` stops at it with an error, so keep those out of such a directory.
+`pump-station.package.yaml`, is not a config either. `phenix config create`
+skips one it finds in a directory, with a debug log line that names it, and
+refuses one named on the command line:
+
+```console
+$ phenix config create node-templates.yaml
+Error: node-templates.yaml is a Builder template file, not a configuration: use "phenix builder templates import node-templates.yaml" to add its Node Templates
+$ phenix config create pump-station.package.yaml
+Error: pump-station.package.yaml is a Builder package, not a configuration: upload it in the Builder to open its diagram
+```
+
+To add the templates of a template file, see
+[Importing a template file](cli.md#importing-a-template-file); to open a
+package, see [Uploading a package](#uploading-a-package).
 
 ## A Builder file beside a topology
 

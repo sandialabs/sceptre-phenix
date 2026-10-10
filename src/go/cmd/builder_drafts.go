@@ -93,17 +93,20 @@ func newBuilderDraftsCmd() *cobra.Command {
 func newBuilderDraftsListCmd() *cobra.Command {
 	desc := `List drafts
 
-  Lists the caller's own drafts. --shared adds the drafts of other users
-  the caller may see: those shared with it, and those its role may list.
-  --owner lists only the drafts of that user, from either. Drafts are
-  sorted by owner, then by ID.`
+  With --url, lists the caller's own drafts. --shared adds the drafts of
+  other users the caller may see: those shared with it, and those its role
+  may list. --owner lists only the drafts of that user, from either.
+  Without --url, over the unix socket, where the requests act as
+  global-admin, it lists every draft global-admin may see, its own and
+  those of other users, as --shared does. Drafts are sorted by owner, then
+  by ID.`
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List drafts",
 		Long:  desc,
 		Example: `  phenix builder drafts list
-  phenix builder drafts list --shared -o json
+  phenix builder drafts list --shared -o json --url https://phenix.example --token "$PHENIX_TOKEN"
   phenix builder drafts list --owner bob --url https://phenix.example --token "$PHENIX_TOKEN"`,
 		Args: refusedArgs(cobra.NoArgs),
 		RunE: runBuilderDraftsList,
@@ -112,7 +115,7 @@ func newBuilderDraftsListCmd() *cobra.Command {
 	addBuilderServerFlags(cmd)
 	addBuilderOutputFlag(cmd)
 	cmd.Flags().String("owner", "", "List only the drafts of this user")
-	cmd.Flags().Bool("shared", false, "Also list the drafts of other users the caller may see")
+	cmd.Flags().Bool("shared", false, "Also list the drafts of other users the caller may see (always so without --url)")
 
 	return cmd
 }
@@ -123,8 +126,10 @@ func newBuilderDraftsExportCmd() *cobra.Command {
   Writes the current document of a draft, as Builder JSON (the default) or
   Builder YAML, to standard output or to the file --output names. The same
   draft always gives the same bytes. With --package, it writes the Builder
-  package the server makes of the document instead, holding the parts
-  --include names: scenarios, topologies, icons, images.`
+  package the server makes of the document instead, in the same format,
+  holding the parts --include names: scenarios, topologies, icons, images.
+  Each warning of the server about the package, such as a Scenario config
+  it names but cannot carry, is printed on standard error with its code.`
 
 	cmd := &cobra.Command{
 		Use:   "export <owner>/<draft>",
@@ -423,9 +428,11 @@ func runBuilderDraftsList(cmd *cobra.Command, _ []string) error {
 		return refused(err)
 	}
 
-	list := newBuilderDraftList(
-		listing.Drafts, listing.Shared, MustGetString(cmd.Flags(), "owner"), MustGetBool(cmd.Flags(), "shared"),
-	)
+	// Over the unix socket the caller is global-admin, whose own drafts are
+	// rarely the ones wanted: every draft it may see is listed.
+	withShared := MustGetBool(cmd.Flags(), "shared") || client.socket != ""
+
+	list := newBuilderDraftList(listing.Drafts, listing.Shared, MustGetString(cmd.Flags(), "owner"), withShared)
 
 	return writeBuilderOutput(cmd.OutOrStdout(), format, list, list.table)
 }
@@ -475,11 +482,11 @@ func runBuilderDraftsExport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if pack {
-		request := builderPackageRequest{Document: data, Include: builderNonNil(include)}
+	var warnings []builderIssue
 
-		if err := client.post(cmd.Context(), "/builder/package", request, &data); err != nil {
-			return refused(err)
+	if pack {
+		if data, warnings, err = fetchBuilderPackage(cmd.Context(), client, ref, data, include); err != nil {
+			return err
 		}
 	}
 
@@ -488,7 +495,45 @@ func runBuilderDraftsExport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	for _, warning := range warnings {
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+issueLine(warning))
+	}
+
 	return writeBuilderFile(cmd.OutOrStdout(), MustGetString(cmd.Flags(), "output"), text)
+}
+
+// builderPackageAnswer is what drafts export reads of the answer to
+// POST /builder/package: the package, and the warnings that say what it names
+// but does not carry.
+type builderPackageAnswer struct {
+	Package  json.RawMessage   `json:"package"`
+	Warnings []json.RawMessage `json:"warnings"`
+}
+
+// fetchBuilderPackage asks the server for the Builder package of document,
+// the current document of the draft ref names, holding the parts include
+// names. It returns the package alone, as the server encoded it, so that its
+// keys keep the server's order, and the answer's warnings.
+func fetchBuilderPackage(
+	ctx context.Context,
+	client *builderClient,
+	ref builderDraftRef,
+	document json.RawMessage,
+	include []string,
+) (json.RawMessage, []builderIssue, error) {
+	var answer builderPackageAnswer
+
+	request := builderPackageRequest{Document: document, Include: builderNonNil(include)}
+
+	if err := client.post(ctx, "/builder/package", request, &answer); err != nil {
+		return nil, nil, refused(err)
+	}
+
+	if trimmed := bytes.TrimSpace(answer.Package); len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, nil, refused(fmt.Errorf("the phenix server answered with no package for draft %s", ref))
+	}
+
+	return answer.Package, builderIssues(answer.Warnings, builderSeverityWarning), nil
 }
 
 // builderExportText is the JSON text data as format writes it: JSON indented
@@ -569,13 +614,22 @@ func runBuilderDraftsValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	if !report.Valid {
-		return &exitError{
-			code: exitFindings,
-			err:  fmt.Errorf("draft %s has %s that block publishing", ref, builderCount(len(report.Errors), builderSeverityError)),
-		}
+		return &exitError{code: exitFindings, err: errors.New(blockedDraftMessage(ref, len(report.Errors)))}
 	}
 
 	return nil
+}
+
+// blockedDraftMessage says that the draft ref names has count errors that
+// block publishing it, with the verb agreeing with the count: "1 error that
+// blocks", "2 errors that block".
+func blockedDraftMessage(ref builderDraftRef, count int) string {
+	verb := "block"
+	if count == 1 {
+		verb = "blocks"
+	}
+
+	return fmt.Sprintf("draft %s has %s that %s publishing", ref, builderCount(count, builderSeverityError), verb)
 }
 
 // validateBuilderDocument checks document, the current document of the

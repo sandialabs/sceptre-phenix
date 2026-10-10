@@ -301,9 +301,12 @@ func newConfigCreateCmd() *cobra.Command {
   YAML file(s). A directory path can also be given, and all JSON and YAML
   files in the given directory will be parsed.
 
-  A Builder document (the Builder's JSON or YAML export) is not a
-  configuration. One found in a directory is skipped, and one named on the
-  command line is refused: "phenix builder publish" creates its topology.`
+  A Builder document (the Builder's JSON or YAML export), a Builder
+  template file and a Builder package are not configurations. One found in
+  a directory is skipped, and one named on the command line is refused:
+  "phenix builder publish" creates the topology of a document, "phenix
+  builder templates import" adds the templates of a template file, and the
+  Builder's Upload opens a package.`
 
 	cmd := &cobra.Command{
 		Use:   "create </path/to/filename> ...",
@@ -325,17 +328,14 @@ func newConfigCreateCmd() *cobra.Command {
 				}
 
 				for _, path := range configs {
-					if isBuilderDocumentFile(path) {
+					if kind := builderFileKind(path); kind != "" {
 						// The file named on the command line, and not one
 						// found in a directory it names.
 						if path == f {
-							return fmt.Errorf(
-								"%s is a Builder document, not a configuration: "+
-									"use \"phenix builder publish %s\" to create its topology", path, path,
-							)
+							return builderFileRefusal(kind, path)
 						}
 
-						plog.Info(plog.TypeSystem, "skipped Builder document; use phenix builder publish", "path", path)
+						skipBuilderFile(kind, path)
 
 						continue
 					}
@@ -406,16 +406,71 @@ func configFilesAt(path string) ([]string, error) {
 	return configs, err //nolint:wrapcheck // the caller words the error
 }
 
-// isBuilderDocumentFile reports whether the file at path holds a Builder
-// document, by its content: the Builder exports one as plain .json or .yaml.
-// A file that cannot be read is not one, and is left to report why.
-func isBuilderDocumentFile(path string) bool {
+// Kinds of Builder-owned files, none of which holds a configuration (see
+// [builderFileKind]).
+const (
+	builderFileDocument     = "Builder document"
+	builderFileTemplateFile = "Builder template file"
+	builderFilePackage      = "Builder package"
+)
+
+// builderFileKind returns what the file at path is when it is a
+// Builder-owned file, by its content: a Builder document, a template file or
+// a package, each of which the Builder exports as plain .json or .yaml. It is
+// "" for any other file, and for one that cannot be read, which is left to
+// report why.
+func builderFileKind(path string) string {
 	text, err := os.ReadFile(path) //nolint:gosec // a config file the caller named
 	if err != nil {
-		return false
+		return ""
 	}
 
-	return bdoc.IsDocumentText(text)
+	switch {
+	case bdoc.IsDocumentText(text):
+		return builderFileDocument
+	case bdoc.IsTemplateFileText(text):
+		return builderFileTemplateFile
+	case bdoc.IsPackageText(text):
+		return builderFilePackage
+	}
+
+	return ""
+}
+
+// skipBuilderFile logs that config create skipped the Builder-owned file at
+// path, of kind, found in a directory it was given. The line of a Builder
+// document names the command that publishes it; the other kinds are logged
+// at debug level.
+func skipBuilderFile(kind, path string) {
+	if kind == builderFileDocument {
+		plog.Info(plog.TypeSystem, "skipped Builder document; use phenix builder publish", "path", path)
+
+		return
+	}
+
+	plog.Debug(plog.TypeSystem, "skipped Builder file, which is not a configuration", "kind", kind, "path", path)
+}
+
+// builderFileRefusal is the error of config create for the Builder-owned
+// file at path, of kind, named on the command line: it says what to do with
+// the file instead.
+func builderFileRefusal(kind, path string) error {
+	switch kind {
+	case builderFileTemplateFile:
+		return fmt.Errorf(
+			"%s is a Builder template file, not a configuration: "+
+				"use \"phenix builder templates import %s\" to add its Node Templates", path, path,
+		)
+	case builderFilePackage:
+		return fmt.Errorf(
+			"%s is a Builder package, not a configuration: upload it in the Builder to open its diagram", path,
+		)
+	}
+
+	return fmt.Errorf(
+		"%s is a Builder document, not a configuration: "+
+			"use \"phenix builder publish %s\" to create its topology", path, path,
+	)
 }
 
 // configCreateError is the error "config create" returns when the config in

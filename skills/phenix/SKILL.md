@@ -159,7 +159,8 @@ Builder document file, in the store; `phenix builder drafts`
 (`list|export|validate|preflight`) and `phenix builder templates`
 (`list|export|import`) call the REST API of a running server, at `--url`
 with `--token` (`PHENIX_URL`, `PHENIX_TOKEN`) or over the unix socket as
-global-admin. `phenix config create` skips or refuses Builder documents.
+global-admin. `phenix config create` skips or refuses Builder documents,
+template files and packages.
 There is no CLI for import, the legacy conversion, sharing, publishing a
 draft or managing the icon library. The icon library is
 one server-wide set of custom icons with unique names, which nodes and
