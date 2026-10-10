@@ -1741,7 +1741,7 @@ func experimentUpdateMatchesSource(
 // and names those topologies instead (see [bdoc.Document.ToTopology]); phenix
 // merges them into an experiment when it creates one, so an update merges
 // them the same way, once mergedIncludesRefusal has checked it may.
-func (b *builderAPI) experimentTopology(
+func (b *builderAPI) experimentTopology( //nolint:ireturn // returns decodeTopology's interface
 	projection *bdoc.Topology,
 	topologyName string,
 ) (ifaces.TopologySpec, error) {
