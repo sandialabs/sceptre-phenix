@@ -484,7 +484,7 @@ Some fields are read only:
 Builder checks the diagram as you edit it. The checks button in the
 header shows the result: **No issues**, or a count such as **3 warnings**.
 
-![The Diagram checks dialog listing three warnings: historian-01 and historian-01-2 share the IP address 10.10.30.20, and interface eth0 of historian-01-2 is not connected and has no VLAN.](../images/builder/checks-dialog.png)
+![The Diagram checks dialog of Riverside Water expansion: it says the diagram has 1 warning, which Publish lists as an error, and that drive images are not checked; under the heading 1 warning, the warning that interface eth0 of historian-01-2 is not connected to a network and has no VLAN, with Device historian-01-2, the code interface.vlan.missing and a Go to button; below it, the Preflight section with its four checks not ticked, the Experiment (optional) field and the Run button.](../images/builder/checks-dialog.png)
 
 To see and fix the warnings of the Riverside Water expansion draft:
 
@@ -564,6 +564,11 @@ To check the Riverside Water expansion draft before starting it as the
 5. Each issue of a check has its code and, when it is about a device or a
    network, **Go to**, as the other issues do.
 
+On a phenix server where minimega is not running, the report of step 4
+says "Preflight: 1 passed, 3 unavailable":
+
+![The Preflight section after Run, with the four checks ticked and riverside in Experiment (optional): it says Preflight: 1 passed, 3 unavailable. Host capacity: Unavailable, because the cluster hosts cannot be read; Networks: Unavailable, with 4 VLANs, no VLAN range in experiment riverside, and the bridges not checked; Disk images: Unavailable, because the server listed no disk images; each of these with its warning and the code preflight.unavailable; and Scenario apps: Passed, Found: 2 of 2 apps, named by 1 scenario.](../images/builder/preflight-report.png)
+
 A check is **Unavailable** when it, or a part of it, could not be made, and
 an issue says why: your role lacks the permission it needs (see
 [Administration](administration.md#what-each-task-needs)), minimega cannot
@@ -637,7 +642,7 @@ such as `G`.
 The sheet sets its groups in columns: three in a wide window, two in a
 narrower one, and one in a narrow one.
 
-![The Keyboard shortcuts sheet with Single-key shortcuts on, the Change shortcuts button, the Filter shortcuts field, and the groups in three columns: General and Edit; Selection; Structure, Go to, View and Draft, with their macOS keys.](../images/builder/shortcuts-sheet.png)
+![The Keyboard shortcuts sheet with Single-key shortcuts on and its hint that ?, N, =, +, − and ⇧1 work alone, the Change shortcuts button, the Filter shortcuts field, and the groups in three columns: General and Edit; Selection; Structure, Add (Add device, N), Go to, View and Draft, with their macOS keys.](../images/builder/shortcuts-sheet.png)
 
 The default shortcuts:
 

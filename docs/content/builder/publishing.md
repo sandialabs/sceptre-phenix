@@ -132,6 +132,11 @@ Each list says its changes in words:
   for network DMZ is removed" or "VLAN alias for network EXP stays 0". A new
   experiment gets every alias.
 
+For the Riverside Water draft and the topology name `riverside-water`, on a
+server without minimega running:
+
+![What publishing changes for Riverside Water and the topology name riverside-water: under Configs, Updates Topology config riverside-water; under Included topologies, Keeps included topology corp-services; under Scenarios, Scenario riverside-water already names topology riverside-water; and under Disk images, that kali.qc2, minirouter.qc2, ubuntu.qc2, vyos.qc2 and windows10.qc2 are still used, each with the devices that use it.](../images/builder/publish-preview.png)
+
 When there are no included topologies, scenarios, disk images or VLAN
 aliases, it says "Nothing outside the Topology changes." Below the lists, it
 shows the warnings publishing would give, as the checks do, under a heading
@@ -304,7 +309,7 @@ To update `riverside-water` and create the experiment `riverside-lab` from it:
 
 The dialog in step 5:
 
-![The Publish diagram dialog set to Topology and an experiment: Topology name riverside-water with the warning A topology with this name exists and will be updated., Experiment name riverside-lab to be created, Experiment scenario riverside-water with the hint that publishing adds this topology to the topology annotation of the scenario riverside-water, the checks summary, and the Update topology and create experiment button.](../images/builder/publish-experiment.png)
+![The Publish diagram dialog set to Topology and an experiment: Topology name riverside-water with the warning A topology with this name exists and will be updated., Experiment name riverside-lab to be created, Experiment scenario riverside-water with the hint that publishing adds this topology to the topology annotation of the scenario riverside-water, the checks summary, What publishing changes, which says that Topology config riverside-water is unchanged because it already holds this diagram, that publishing creates Experiment config riverside-lab and keeps included topology corp-services, that scenario riverside-water already names the topology and that each disk image is still used, and the Update topology and create experiment button.](../images/builder/publish-experiment.png)
 
 The Experiment config `riverside-lab` now uses the topology `riverside-water`
 and the scenario `riverside-water`. Start it from the **Experiments** page
@@ -452,20 +457,23 @@ The Riverside Water expansion draft has a copy of `historian-01`, made with
 **Duplicate** (see [Duplicating a device](diagrams.md#duplicating-a-device)).
 The copy, `historian-01-2`, keeps the address 10.10.30.20, and its eth0 is not
 connected. Select **Publish**. Under **Checks**, the dialog lists one error
-under "1 error blocks publishing", with the device it is about and **Go to**,
-and **Create topology** is unavailable:
+under "1 error blocks publishing", with the device it is about, its code and
+**Go to**, and **Create topology** is unavailable:
 
 ```text
 1 error blocks publishing
 Error: interface "eth0" of "historian-01-2" is not connected to a network and has no VLAN, so it cannot be published: connect it, or type a VLAN for it
-  Device historian-01-2
+  Device historian-01-2  interface.vlan.missing
 ```
+
+**What publishing changes** lists the same problem in the server's words,
+as the reason the server would refuse to publish.
 
 The address is not an error yet, because historian-01-2 is on no network.
 Once its eth0 is on OT, the network of historian-01, the two would share
 10.10.30.20 there.
 
-![The Publish diagram dialog for Riverside Water expansion: Topology only, Topology name Riverside-Water-expansion with the hint A new topology will be created., the Scenarios part, and three errors under Checks, for the shared address 10.10.30.20 and the unconnected eth0 of historian-01-2, with the Create topology button unavailable.](../images/builder/publish-blocked.png)
+![The Publish diagram dialog for Riverside Water expansion: Topology only, Topology name Riverside-Water-expansion with the hint A new topology will be created., the Scenarios part, and under Checks the summary and, under 1 error blocks publishing, the error that interface eth0 of historian-01-2 is not connected to a network and has no VLAN, with Device historian-01-2, the code interface.vlan.missing and Go to; What publishing changes lists the server's refusal, that eth0 of historian-01-2 has no VLAN, under 1 error blocks publishing; and the Create topology button is unavailable.](../images/builder/publish-blocked.png)
 
 To fix it, and give the copy its own hostname and address:
 

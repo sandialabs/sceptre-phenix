@@ -9,7 +9,7 @@ the topology to the diagram's scenarios (see [Publishing](publishing.md)).
 
 Select **Builder** in the phenix navigation bar. The drafts page opens.
 
-![The Builder drafts page with the Blank diagram, Import, Upload and Commands buttons, the My Drafts, Shared Drafts, Published Diagrams and Node Templates tabs, the Select all row, and cards for Metro Campus, Riverside Water and Riverside Water expansion, each with a checkbox and the Open, Share, Delete and Publish buttons.](../images/builder/drafts-page.png)
+![The Builder drafts page with the Blank diagram, Import, Upload and Commands buttons, the My Drafts, Shared Drafts, Published Diagrams and Node Templates tabs, the row with Select all, 0 of 3 selected, Share selected, Download selected, Delete selected and the note that Download selected saves a file for each, and cards for Riverside Water, shared with alice and bob, Metro Campus and Riverside Water expansion, each with a checkbox and the Open, Share, Delete and Publish buttons.](../images/builder/drafts-page.png)
 
 The buttons at the top right are:
 
@@ -308,22 +308,30 @@ header:
 Choose one:
 
 - **Review and merge**: opens the **Merge changes from alice** dialog, which
-  lists each clash, for example "router-1 name", with **Keep mine** and
+  lists each clash, for example "ws-01 name", with **Keep mine** and
   **Keep theirs** and the value each keeps. Choose one for every clash, or
   select **Keep all mine** or **Keep all theirs**; the count, for example
-  "2 of 3 chosen", says how many have a choice. **Save merged** saves the
+  "1 of 2 chosen", says how many have a choice. **Save merged** saves the
   merged diagram on top of the newer version, with every change that does not
   clash. If the merged diagram has an error, such as two devices with the same
   hostname, the dialog lists it and stays open. If Builder is already merging
   again with a newer version when you select **Save merged**, nothing is saved
   and the dialog says "Another change arrived; the merge is being redone."
-  **Cancel** goes back to the panel.
+  If the save fails, the dialog says why ("The merged diagram could not be
+  saved: …") and keeps your choices, so you can select **Save merged**
+  again. **Cancel** goes back to the panel.
 - **Save my history as a new draft**: saves your version as a new draft of
   your own, named for example "Riverside Water (local copy)", and opens it.
   The draft that changed on the server stays as it is.
 - **Discard mine and load the server version**: asks "Discard your unsaved
   changes?". Select **Discard and load the server version** to delete your
   changes and load the newer version. This cannot be undone.
+
+For example, alice renames ws-01 of Riverside Water to ws-gis and describes
+it as a GIS workstation, and saves first. You rename it ws-cad and describe
+it as a CAD workstation. The dialog, with **Keep mine** chosen for the name:
+
+![The Merge changes from alice dialog: it says you and alice changed these differently and that every other change is merged; Keep all mine and Keep all theirs; ws-01 name, which you and they both changed, with Keep mine: ws-cad chosen and Keep theirs: ws-gis; ws-01 description with Keep mine: CAD workstation and Keep theirs: GIS workstation, neither chosen; 1 of 2 chosen; and Cancel and Save merged, which is unavailable.](../images/builder/merge-dialog.png)
 
 A role that cannot create drafts gets **Download** instead of **Save my
 history as a new draft**: download a copy of your work before you load the
@@ -538,12 +546,12 @@ diagram, by topology name:
 - A topology published from Builder, or with `phenix builder publish`
   (see [From the command line](import-upload-download.md#from-the-command-line)),
   with when it was published, for example riverside-water with "Published
-  Sep 29, 2026, 10:30 AM".
+  Oct 10, 2026, 5:45 AM".
 - A topology whose diagram is read from a file on the phenix server, with
   the tag **File** and where the file is (see
   [Diagrams read from a file](#diagrams-read-from-a-file)).
 
-![The Published Diagrams tab with the Select all row and two cards: riverside-water, with a checkbox, Published Sep 29, 2026, 10:30 AM, and Open, Exp and Delete; and pump-station with the tag File, Read from /phenix/topologies/pump-station/pump-station.builder.json, and Open only.](../images/builder/published-diagrams.png)
+![The Published Diagrams tab with the row of Select all, 0 of 1 selected, Download selected, Delete selected and the note that Download selected saves a file for each, and two cards: riverside-water, with a checkbox, Published Oct 10, 2026, 5:45 AM, and Open, Exp and Delete; and pump-station with the tag File, Read from /phenix/topologies/pump-station/pump-station.builder.json, and Open only.](../images/builder/published-diagrams.png)
 
 To see one:
 
@@ -707,6 +715,10 @@ is announced to screen readers, for example "3 of 12 selected."
 1. Select the cards, for example of Metro Campus and Riverside Water
    expansion.
 2. Select **Download selected**.
+
+The tab in step 2:
+
+![My Drafts with Metro Campus and Riverside Water expansion selected: their checkboxes are ticked and their cards have a blue border; the row above the cards shows Select all in a mixed state, 2 of 3 selected, and Share selected, Download selected and Delete selected.](../images/builder/drafts-selected.png)
 
 Builder saves a Builder JSON file for each, one after another, as
 **Download** saves the diagram open in the editor, with the custom icons it

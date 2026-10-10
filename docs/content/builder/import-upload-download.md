@@ -353,10 +353,12 @@ To download the Riverside Water diagram:
 3. Select a format. The buttons are in two rows: **Builder JSON**,
    **Builder YAML** and **Topology YAML**, then **PNG**, **SVG** and
    **Gephi (GEXF)**. The browser saves the file, and the dialog says so, for
-   example "Saved riverside-water.json."
+   example "Saved riverside-water.json." Below them, **Builder package**
+   saves the diagram with what it needs (see
+   [Downloading a package](#downloading-a-package)).
 4. Select **Close**.
 
-![The Download diagram dialog with the diagram bounds, the Builder JSON, Builder YAML and Topology YAML buttons in one row and the PNG, SVG and Gephi (GEXF) buttons in the next, and the message that riverside-water.gexf was saved with 12 devices, 4 networks and 15 connections.](../images/builder/download-dialog.png)
+![The Download diagram dialog with the diagram bounds, the Builder JSON, Builder YAML and Topology YAML buttons in one row and the PNG, SVG and Gephi (GEXF) buttons in the next, their hints, the Builder package part with its hint, the Scenario configs, Included topologies, Custom icons and Disk-image requirements checkboxes not ticked, Package format JSON and the Builder package button, and the message that riverside-water.gexf was saved with 12 devices, 4 networks and 15 connections.](../images/builder/download-dialog.png)
 
 The command palette has a command for each format, such as
 **Download PNG** or **Download Topology YAML**: it opens the dialog and
@@ -588,7 +590,7 @@ dialog lists every reason. The Riverside Water expansion draft gives:
 published yet: interface "eth0" of device "historian-01-2" has no VLAN:
 connect it to a network, or type a VLAN for it."
 
-![The Download diagram dialog after Topology YAML: riverside-water-expansion.topology.yaml was saved, and the topology cannot be published yet because eth0 of historian-01-2 has no VLAN and 10.10.30.20 is used by two interfaces.](../images/builder/download-topology-blockers.png)
+![The Download diagram dialog of Riverside Water expansion after Topology YAML: riverside-water-expansion.topology.yaml was saved, and the topology cannot be published yet because interface eth0 of device historian-01-2 has no VLAN.](../images/builder/download-topology-blockers.png)
 
 This makes **Topology YAML** a quick way to see every problem that
 publishing would report (see
@@ -807,6 +809,13 @@ requirements:
    Builder document does; and opens the diagram as a new draft. The diagram
    still names its scenarios and topologies as the file does, whether or
    not you created them.
+
+The dialog in step 2, for
+[pump-station.package.yaml](examples/pump-station.package.yaml) on a server
+that has no Scenario config pump-station-ntp and, without minimega running,
+lists no disk images:
+
+![The Upload diagram dialog after the upload of pump-station.package.yaml: the diagram needs 5 items, 4 of them missing on this server; under Scenario configs, pump-station-ntp is Missing, in the package, with an unticked Create on this server checkbox; under Disk images, bennu.qc2, minirouter.qc2 and windows10.qc2 are Missing, each with the device that uses it; under Apps, ntp is Present; and the Cancel and Continue to editor buttons.](../images/builder/package-upload.png)
 
 While Builder creates the configs and adds the icons, the dialog stays open
 and says what it is doing; **Cancel** and closing the dialog do nothing
@@ -1108,7 +1117,7 @@ still publishes, and warns:
 ```console
 $ cd /home/alice
 $ phenix builder publish pump-station.builder.json --name pump-home --record-path
-2026-10-01 21:51:08.761 WRN The phenix server does not read Builder files from /home/alice/pump-station.builder.json: it reads them below /phenix, except below /phenix/mounts. The topology opens from the stored document. type=SYSTEM topology=pump-home
+2026-10-01 21:51:08.761 WRN The phenix server does not read Builder files from /home/alice/pump-station.builder.json: it reads them below /phenix, except below /phenix/mounts. The topology opens from the stored document. type=SYSTEM topology=pump-home code=publish.file.unserved
 2026-10-01 21:51:08.761 INF topology created type=SYSTEM name=pump-home document=6978dcd05cb671ffd6c547d994d01d69eac9f76bac85503809750cd42db05e19 digest=sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732
 ```
 
@@ -1138,8 +1147,12 @@ $ phenix config create examples
 2026-10-01 21:51:06.115 INF configuration created type=SYSTEM kind=Role name=topology-reviewer
 ```
 
-Here `examples` is a directory with every
-[example file](index.md#load-the-example-configs) of these pages.
+Here `examples` is a directory with the example configs and the two Builder
+documents of these pages (see
+[Load the example configs](index.md#load-the-example-configs)). A template
+file or a Builder package, such as `node-templates.yaml` or
+`pump-station.package.yaml`, is not a config either, and `phenix config
+create` stops at it with an error, so keep those out of such a directory.
 
 ## A Builder file beside a topology
 

@@ -657,7 +657,7 @@ The dialog lists:
   the list by name, other name or uploader. Each icon has **Use**, and
   **Rename** and **Delete** when you may change it.
 
-![The Custom icons dialog: its description, Upload icon…, and Server icons (3) with You uploaded 3 of 64 icons, 1.5 KiB of 1 MiB, the Filter icons field, and the icons plc, pump and valve, each uploaded by global-admin, with its size and the Use, Rename and Delete buttons; and Close.](../images/builder/custom-icons-dialog.png){ width="624" }
+![The Custom icons dialog: its description, Upload icon…, and Server icons (3) with You uploaded 3 of 64 icons, 1.5 KiB of 1 MiB, the Filter icons field, the row with Select all, 0 of 3 selected and Delete selected, and the icons plc, pump and valve, each with a checkbox, uploaded by global-admin, with its size and the Use, Rename and Delete buttons; and Close.](../images/builder/custom-icons-dialog.png){ width="624" }
 
 ### Uploading an icon
 
@@ -746,6 +746,12 @@ action:
   icon instead." Select **Delete 2 icons**. One icon alone is asked about as
   its own **Delete** asks.
 
+Here the pump station's rtu-01 and eng-ws-01 use the icons gauge and tank,
+which the diagram carries and the server lacks, and the two copies and the
+server icons plc and pump are selected:
+
+![The Custom icons dialog with icons selected: under In this diagram (2), the row with Select all ticked, 2 of 2 selected and Add selected to server, and the copies gauge and tank, both ticked, each with Use and Add to server; under Server icons (3), the row with Select all in a mixed state, 2 of 3 selected and Delete selected, and plc and pump ticked and valve not, each with Use, Rename and Delete; and Close.](../images/builder/icons-selected.png){ width="624" }
+
 The rows of a list are one stop of the Tab key, and take the keys of the
 drafts page (see
 [Selecting with the keyboard](drafts.md#selecting-with-the-keyboard)):
@@ -810,9 +816,11 @@ Publishing, and a download as Topology YAML, ignore positions and layouts.
 
 ## Arranging by hand
 
-- Drag a node, or several selected nodes. Nodes snap to a 16-pixel grid.
+- Drag a node, or several selected nodes. A drag puts them on a 16-pixel
+  grid.
 - Press <kbd>⇧</kbd> (<kbd>Shift</kbd>) with an arrow key to move the
-  selected nodes 10 pixels.
+  selected nodes 10 pixels. They do not snap to the grid, and stay where you
+  put them when the diagram opens again.
 - Type a position: under **Position** in the Inspector, enter **X** and
   **Y**, then select **Move**. For example, move the note of Riverside Water
   to **X** `1248` and **Y** `880`.

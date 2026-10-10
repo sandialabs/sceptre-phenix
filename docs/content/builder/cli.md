@@ -76,14 +76,17 @@ see: those shared with you, and those your role may list. `--owner`
 lists only the drafts of that user, from either. Drafts are sorted by
 owner, then by ID. A draft this server can no longer read is not listed.
 
+Here alice lists her draft Riverside Water expansion and bob's Pump station,
+which bob shared with her and carol to edit, and which carol saved last:
+
 ```console
 $ phenix builder drafts list --shared
-+-------+-----------+--------------+----------------------+------------+--------+
-| OWNER |   DRAFT   |     NAME     |       UPDATED        | UPDATED BY | ACCESS |
-+-------+-----------+--------------+----------------------+------------+--------+
-| alice | riverside | Riverside    | 2026-10-02T10:30:00Z | alice      | owner  |
-| bob   | pumps     | Pump station | 2026-10-04T12:00:00Z | carol      | edit   |
-+-------+-----------+--------------+----------------------+------------+--------+
++-------+--------------------------------------+---------------------------+-----------------------------+------------+--------+
+| OWNER |                DRAFT                 |           NAME            |           UPDATED           | UPDATED BY | ACCESS |
++-------+--------------------------------------+---------------------------+-----------------------------+------------+--------+
+| alice | 860e1241-4b2a-4be8-9592-63d7b1ce78f0 | Riverside Water expansion | 2026-10-10T11:48:01.160717Z | alice      | owner  |
+| bob   | 781230a3-7580-4b83-9869-6d07d5d32613 | Pump station              | 2026-10-10T11:48:01.326926Z | carol      | edit   |
++-------+--------------------------------------+---------------------------+-----------------------------+------------+--------+
 ```
 
 With `-o json`:
@@ -93,11 +96,19 @@ With `-o json`:
   "drafts": [
     {
       "owner": "alice",
-      "id": "riverside",
-      "name": "Riverside",
-      "updatedAt": "2026-10-02T10:30:00Z",
+      "id": "860e1241-4b2a-4be8-9592-63d7b1ce78f0",
+      "name": "Riverside Water expansion",
+      "updatedAt": "2026-10-10T11:48:01.160717Z",
       "updatedBy": "alice",
       "access": "owner"
+    },
+    {
+      "owner": "bob",
+      "id": "781230a3-7580-4b83-9869-6d07d5d32613",
+      "name": "Pump station",
+      "updatedAt": "2026-10-10T11:48:01.326926Z",
+      "updatedBy": "carol",
+      "access": "edit"
     }
   ]
 }
@@ -121,7 +132,7 @@ server makes of the document instead, holding the parts `--include`
 names.
 
 ```bash
-phenix builder drafts export alice/riverside --output riverside.builder.json
+phenix builder drafts export alice/860e1241-4b2a-4be8-9592-63d7b1ce78f0 --output riverside-expansion.builder.json
 ```
 
 ### Checking whether a draft can be published
@@ -133,16 +144,18 @@ phenix builder drafts validate <owner>/<draft> [-o table|json|yaml]
 Checks the current document of the draft as the Topology YAML download
 does (see [Downloading](import-upload-download.md)): errors are what would
 block publishing it, warnings what publishing would warn about. Nothing is
-written. The command exits 1 when the draft has errors.
+written. The command exits 1 when the draft has errors. alice's Riverside
+Water expansion has the copy historian-01-2, whose eth0 has no VLAN (see
+[What blocks publishing](publishing.md#example-riverside-water-expansion)):
 
 ```console
-$ phenix builder drafts validate alice/riverside
-Draft alice/riverside (Riverside) cannot be published: 1 error, 0 warnings.
-+----------+------+---------+------------------------------------------+
-| SEVERITY | CODE | ELEMENT |                 MESSAGE                  |
-+----------+------+---------+------------------------------------------+
-| error    |      |         | interface eth0 of device web has no VLAN |
-+----------+------+---------+------------------------------------------+
+$ phenix builder drafts validate alice/860e1241-4b2a-4be8-9592-63d7b1ce78f0
+Draft alice/860e1241-4b2a-4be8-9592-63d7b1ce78f0 (Riverside Water expansion) cannot be published: 1 error, 0 warnings.
++----------+------------------------+-------------------------------------------+---------------------------------------------------------------------------------------------------------+
+| SEVERITY |          CODE          |                  ELEMENT                  |                                                 MESSAGE                                                 |
++----------+------------------------+-------------------------------------------+---------------------------------------------------------------------------------------------------------+
+| error    | interface.vlan.missing | node 410daea8-b303-4f4c-8a67-660bab677f62 | interface "eth0" of device "historian-01-2" has no VLAN: connect it to a network, or type a VLAN for it |
++----------+------------------------+-------------------------------------------+---------------------------------------------------------------------------------------------------------+
 ```
 
 With `-o json`:
@@ -151,14 +164,18 @@ With `-o json`:
 {
   "draft": {
     "owner": "alice",
-    "id": "riverside",
-    "name": "Riverside"
+    "id": "860e1241-4b2a-4be8-9592-63d7b1ce78f0",
+    "name": "Riverside Water expansion"
   },
   "valid": false,
   "errors": [
     {
+      "code": "interface.vlan.missing",
       "severity": "error",
-      "message": "interface eth0 of device web has no VLAN"
+      "message": "interface \"eth0\" of device \"historian-01-2\" has no VLAN: connect it to a network, or type a VLAN for it",
+      "path": "nodes[21].device.spec.network.interfaces[0]",
+      "nodeId": "410daea8-b303-4f4c-8a67-660bab677f62",
+      "field": "spec.network.interfaces.0.vlan"
     }
   ],
   "warnings": []
@@ -186,32 +203,36 @@ the `apps` it needs. `--check` names the checks to run, all four by
 default, and `--experiment` the experiment they are for. Each check
 `passed`, `failed`, or is `unavailable` when the server could not run it.
 The command exits 1 when a check failed, and with `--strict` also when a
-check is unavailable. The JSON is the server's answer:
+check is unavailable. The JSON is the server's answer, here to
+`--check disks` on a server that cannot reach minimega (the command exits
+0, and 1 with `--strict`):
 
 ```json
 {
   "checks": [
     {
       "name": "disks",
-      "status": "failed",
-      "summary": "1 disk image is missing",
+      "status": "unavailable",
+      "summary": "The server listed no disk images, as it does when minimega cannot be reached.",
       "issues": [
         {
-          "code": "disk-missing",
-          "severity": "error",
-          "message": "disk image win10.qc2 does not exist",
-          "nodeId": "n-ws"
+          "code": "preflight.unavailable",
+          "severity": "warning",
+          "message": "the server listed no disk images, as it does when minimega cannot be reached"
         }
       ]
     }
   ],
   "passed": [],
-  "failed": [
+  "failed": [],
+  "unavailable": [
     "disks"
-  ],
-  "unavailable": []
+  ]
 }
 ```
+
+The table output lists each check with its status and summary, then each
+issue with its check, severity, code, element and message.
 
 ## Node Templates
 
@@ -233,19 +254,24 @@ Lists the collections and templates you can use. Each has a `source`:
 
 `--owner` lists only the items of that user. With `-o json`, `user` is
 you, a collection lists the IDs of its `templates`, and a template the
-IDs of the `collections` that hold it:
+IDs of the `collections` that hold it. Here for alice, on a server that
+reads the example template file
+[node-templates.yaml](examples/node-templates.yaml), shortened to one
+built-in template and one template of the file:
 
 ```json
 {
   "user": "alice",
   "collections": [
     {
-      "id": "0f6c2b5e",
-      "name": "Lab",
-      "owner": "alice",
-      "source": "mine",
+      "id": "server-25a9113d122ba13ef5b07e7c",
+      "name": "Example Plant Templates",
+      "description": "Devices of a small water treatment plant.",
+      "source": "server",
       "templates": [
-        "8d1e4a77"
+        "server-b1e16eb5f8170fd2bc74b1d4",
+        "server-e5c9c005b24fcffc9e2413f4",
+        "server-79c393fa26a3ac1234d3f382"
       ]
     }
   ],
@@ -259,12 +285,12 @@ IDs of the `collections` that hold it:
       "collections": []
     },
     {
-      "id": "8d1e4a77",
+      "id": "server-b1e16eb5f8170fd2bc74b1d4",
       "name": "PLC",
-      "owner": "alice",
-      "source": "mine",
+      "description": "Programmable logic controller on the control network",
+      "source": "server",
       "collections": [
-        "0f6c2b5e"
+        "server-25a9113d122ba13ef5b07e7c"
       ]
     }
   ]
@@ -326,12 +352,12 @@ and still fail the step.
 A CI job can check that a draft can be published, and keep the report:
 
 ```bash
-phenix builder drafts validate alice/riverside --url https://phenix.example --token "$PHENIX_TOKEN" -o json > validate.json
+phenix builder drafts validate alice/860e1241-4b2a-4be8-9592-63d7b1ce78f0 --url https://phenix.example --token "$PHENIX_TOKEN" -o json > validate.json
 ```
 
 The step fails when the draft has errors (1) or when the server could not
 be asked (2). To keep the diagram with the code that uses it:
 
 ```bash
-phenix builder drafts export alice/riverside --url https://phenix.example --format yaml --output riverside.builder.yaml
+phenix builder drafts export alice/860e1241-4b2a-4be8-9592-63d7b1ce78f0 --url https://phenix.example --format yaml --output riverside-expansion.builder.yaml
 ```
