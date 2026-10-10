@@ -413,7 +413,7 @@ func checkBuilderSocket(path string) error {
 // phenix ui --unix-socket-gid gives a group of users the socket, with mode
 // 0770, which passes.
 func builderSocketProblem(path string, info fs.FileInfo, uid int) error {
-	const otherWrite = 0o002
+	const worldWritableBit = 0o002
 
 	if info.Mode().Type() != fs.ModeSocket {
 		return fmt.Errorf(
@@ -437,7 +437,7 @@ func builderSocketProblem(path string, info fs.FileInfo, uid int) error {
 		)
 	}
 
-	if mode := info.Mode().Perm(); mode&otherWrite != 0 {
+	if mode := info.Mode().Perm(); mode&worldWritableBit != 0 {
 		return fmt.Errorf(
 			"unix socket %s can be written by every user of this host (mode %04o), so any of them could act "+
 				"as global-admin through it: limit its mode, such as with phenix ui --unix-socket-gid, or give "+
