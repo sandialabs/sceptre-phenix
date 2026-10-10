@@ -79,7 +79,8 @@ silently skipping checks.
 
 Before changing the Builder (`src/builder/`, `src/components/builder/`,
 `src/views/Builder.vue`, or the `builder*` e2e specs), read
-[`../../skills/phenix/references/builder.md`](../../skills/phenix/references/builder.md).
+[`../../skills/phenix/references/builder.md`](../../skills/phenix/references/builder.md),
+then the reference its routing table names for the task.
 
 ## CI
 

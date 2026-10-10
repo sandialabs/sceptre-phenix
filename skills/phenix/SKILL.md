@@ -21,7 +21,7 @@ Detailed references and examples, loaded only when needed:
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
-| The Builder, the web topology editor: drafts, sharing, publishing, import options, legacy diagram conversion, icon and template libraries, the Builder role, the `builder-doc` annotation, Builder files, `phenix builder publish`, routes, its code | [`references/builder.md`](references/builder.md) |
+| The Builder, the web topology editor: drafts, sharing, publishing, import options, legacy diagram conversion, icon and template libraries, the Builder role, the `builder-doc` annotation, Builder files, `phenix builder publish`, routes, its code | [`references/builder.md`](references/builder.md), an index that names the reference under `references/builder/` to read for the task |
 | Deploying a topology directory with `phenix workflow apply`: layout, steps, workflow config, endpoints, gotchas, troubleshooting | [`references/workflow.md`](references/workflow.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
@@ -173,7 +173,9 @@ topologies and experiments, legacy conversion, icons and node templates,
 `/builder/…` routes, the `builder-doc` annotation and Builder files, the
 `builder-drafts`, `builder-templates` and `builder-icons` RBAC resources, or
 its code),
-**read [`references/builder.md`](references/builder.md)** first.
+**read [`references/builder.md`](references/builder.md)** first: it holds
+the architecture and the rules, and its routing table names the one
+reference under `references/builder/` to read next for the task.
 
 ## CLI Overview
 

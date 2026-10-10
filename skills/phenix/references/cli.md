@@ -15,7 +15,7 @@ has a matching config-file key and `PHENIX_*` env var):
 | `--base-dir.minimega` | `base-dir.minimega` / `PHENIX_BASE_DIR_MINIMEGA` | `/tmp/minimega` | Base minimega directory |
 | `--base-dir.injects` | `base-dir.injects` / `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Where `phenix workflow apply` stages `phenix-injects/` (as `<base-dir.injects>/<name>`). The server's value wins over the CLI's own unless the flag is given; see the `injects` step in [`workflow.md`](workflow.md). Use an absolute path |
 | `--base-dir.topologies` | `base-dir.topologies` / `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Where `phenix workflow apply NAME` looks up a bare topology directory name. Use an absolute path |
-| `--base-dir.builder-templates` | `base-dir.builder-templates` / `PHENIX_BASE_DIR_BUILDER_TEMPLATES` | `<base-dir.phenix>/builder/templates` | Template files `phenix ui` reads at start as read-only Builder server collections (see [`builder.md`](builder.md#node-templates)). Use an absolute path |
+| `--base-dir.builder-templates` | `base-dir.builder-templates` / `PHENIX_BASE_DIR_BUILDER_TEMPLATES` | `<base-dir.phenix>/builder/templates` | Template files `phenix ui` reads at start as read-only Builder server collections (see [`builder/templates.md`](builder/templates.md#server-collections)). Use an absolute path |
 | `--mount-dir` | `mount-dir` / `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts (`phenix vm mount`, UI `vm-mount` feature) |
 | `--hostname-suffixes` | `hostname-suffixes` / `PHENIX_HOSTNAME_SUFFIXES` | `-minimega,-phenix` | Hostname suffixes to strip |
 | `--log.level` | `log.level` / `PHENIX_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` — use `--log.level=debug` for verbose troubleshooting output |
@@ -72,7 +72,7 @@ a tab) is written double quoted.
 
 Annotations are text, except `builder-doc` on a Topology, which every JSON
 and YAML form of a config shows as a map of `digest`, `id` and `path` (see
-[`builder.md`](builder.md#the-builder-doc-reference)). A Topology
+[`builder/published-documents.md`](builder/published-documents.md#the-builder-doc-reference)). A Topology
 whose `builder-doc` is not valid is refused on create and update, also with
 `--skip-validation`. `config edit` can change an annotation but not remove
 one (annotation maps merge).
@@ -134,7 +134,7 @@ reload; nothing serializes a CLI publish with a UI publish of the same
 topology. The Configs page opens the published topology in the Builder, not
 as text (it has `builder-doc`); `phenix config edit` edits it as text.
 Details and the full rules are in
-[`builder.md`](builder.md#cli-phenix-builder-publish).
+[`builder/cli.md`](builder/cli.md#cli-phenix-builder-publish).
 
 ### Drafts and templates through the REST API
 
@@ -161,7 +161,7 @@ followed. `-o` defaults to `table`. Exit status: 0 success, 1 findings
 unavailable one), 2 refused or no answer (connection, redirect, 401/403,
 404, unknown subcommand, invalid arguments or file). The report
 is written before exit 1. JSON shapes and the rules are in
-[`builder.md`](builder.md#cli-phenix-builder-drafts-and-templates).
+[`builder/cli.md`](builder/cli.md#cli-phenix-builder-drafts-and-templates).
 
 ```bash
 phenix builder drafts validate alice/riverside --url https://phenix.example --token "$PHENIX_TOKEN" -o json
