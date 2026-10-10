@@ -1100,6 +1100,12 @@ with its new ETag. Draft responses also have the ETag in their body, as
 `etag`. Use that one: a proxy that compresses responses can change the
 `ETag` header.
 
+A refused request answers with a JSON body whose `code` names the failure,
+such as `publish.topology.exists` or `request.stale`; a document that does
+not validate, and a draft that only publishing refuses, also list each
+problem in `issues`, each with its own code. Warnings and failures of a
+publication are issues too. [Error Codes](error-codes.md) lists every code.
+
 ### Response headers
 
 Every response of a Builder route, `/api/v1/schemas/builder/v1` and

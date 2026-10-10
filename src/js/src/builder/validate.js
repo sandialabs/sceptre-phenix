@@ -127,8 +127,11 @@ function finite(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function issue(issues, path, message, level = 'error', extra = {}) {
-  issues.push({ path, message, level, ...extra });
+// Adds the issue of the rule `code` (a code of the registry Go generates,
+// schema/codes.json) at path. `severity` repeats `level`, which existing
+// callers read, under the name the server's issues use.
+function issue(issues, code, path, message, level = 'error', extra = {}) {
+  issues.push({ code, path, message, level, severity: level, ...extra });
 }
 
 // The longest value a message quotes, in UTF-8 bytes.
@@ -226,10 +229,10 @@ function isObject(value) {
 }
 
 // The icon key of a device, a group or a template's device (validateIconKey
-// in validate.go): none, or one of the registry.
-function validateIconKey(key, path, issues) {
+// in validate.go): none, or one of the registry. code is the owner's.
+function validateIconKey(key, path, issues, code) {
   if (!unset(key) && !isIconKey(key)) {
-    issue(issues, path, `unknown icon key "${key}"`);
+    issue(issues, code, path, `unknown icon key "${key}"`);
   }
 }
 
@@ -241,13 +244,14 @@ function colorProblem(color) {
     : `color ${quoted(color)} must be a hex color such as #2f6fbf`;
 }
 
-// The outline and fill colors of a device, a switch or a template's device.
-function validateColors(payload, path, issues) {
+// The outline and fill colors of a device, a switch, a shape or a template's
+// device, whose code is code.
+function validateColors(payload, path, issues, code) {
   ['outlineColor', 'fillColor'].forEach((key) => {
     const problem = colorProblem(payload?.[key]);
 
     if (problem) {
-      issue(issues, `${path}.${key}`, problem);
+      issue(issues, code, `${path}.${key}`, problem);
     }
   });
 }
@@ -261,20 +265,21 @@ function iconSizeProblem(size) {
     : `unknown icon size ${quoted(size)} (expected one of ${ICON_SIZES.join(', ')})`;
 }
 
-function validateIconSize(size, path, issues) {
+function validateIconSize(size, path, issues, code) {
   const problem = iconSizeProblem(size);
 
   if (problem) {
-    issue(issues, path, problem);
+    issue(issues, code, path, problem);
   }
 }
 
-// The line style of a network or a connection (validateLineStyle in
+// The line style of a network, a connection or a line (validateLineStyle in
 // validate.go): none, or one of LINE_STYLES.
-function validateLineStyle(style, path, issues) {
+function validateLineStyle(style, path, issues, code) {
   if (!unset(style) && !LINE_STYLES.includes(style)) {
     issue(
       issues,
+      code,
       path,
       `unknown line style ${quoted(style)} (expected one of ${LINE_STYLES.join(', ')})`,
     );
@@ -306,7 +311,7 @@ export function iconNameProblem(name) {
 // The custom icon a device, a group, an icon node or a template names
 // (validateIconRef in validate.go): none, or an icon name. A name the document does not carry
 // is allowed: the server's icon library resolves it.
-function validateIconRef(name, path, issues) {
+function validateIconRef(name, path, issues, code) {
   if (unset(name)) {
     return;
   }
@@ -314,7 +319,7 @@ function validateIconRef(name, path, issues) {
   const problem = iconNameProblem(name);
 
   if (problem) {
-    issue(issues, path, problem);
+    issue(issues, code, path, problem);
   }
 }
 
@@ -332,8 +337,8 @@ const MAX_CHECKED_ICONS = 256;
  *
  * @param {object|null|undefined} icons by name, {data}
  * @param {string} [path] the path the issues are reported at
- * @returns {{path: string, message: string, level: 'error'}[]} in the order
- *   of the keys
+ * @returns {{code: string, path: string, message: string, level: 'error',
+ *   severity: 'error'}[]} in the order of the keys
  */
 export function validateIcons(icons, path = 'icons') {
   const issues = [];
@@ -345,7 +350,12 @@ export function validateIcons(icons, path = 'icons') {
 
   // The server refuses any other value when it decodes the document.
   if (!isObject(icons)) {
-    issue(issues, path, 'custom icons must be an object of icons by name');
+    issue(
+      issues,
+      'icon.list.not-object',
+      path,
+      'custom icons must be an object of icons by name',
+    );
 
     return issues;
   }
@@ -355,6 +365,7 @@ export function validateIcons(icons, path = 'icons') {
   if (keys.length > MAX_DOCUMENT_ICONS) {
     issue(
       issues,
+      'icon.list.too-many',
       path,
       `at most ${MAX_DOCUMENT_ICONS} custom icons are allowed, not ${keys.length}`,
     );
@@ -365,7 +376,7 @@ export function validateIcons(icons, path = 'icons') {
     const problem = iconNameProblem(key);
 
     if (problem) {
-      issue(issues, path, problem);
+      issue(issues, 'icon.name.invalid', path, problem);
     }
 
     if (typeof data === 'string' && checkedIcons.has(data)) {
@@ -377,6 +388,7 @@ export function validateIcons(icons, path = 'icons') {
     if (!bytes) {
       issue(
         issues,
+        'icon.data.invalid',
         path,
         `icon ${quoted(key)} data must be base64 of at most ${MAX_ICON_BYTES} bytes`,
       );
@@ -389,6 +401,7 @@ export function validateIcons(icons, path = 'icons') {
     if (pngProblem) {
       issue(
         issues,
+        'icon.png.invalid',
         path,
         `icon ${quoted(key)} is not an accepted PNG: ${pngProblem}`,
       );
@@ -433,23 +446,31 @@ function templateDeviceBytes(device) {
  * @param {object} template {id, name, description?, device}
  * @param {string} path the path of the template, which the issues' paths
  *   start with: templates[0]
- * @returns {{path: string, message: string, level: 'error'}[]}
+ * @returns {{code: string, path: string, message: string, level: 'error',
+ *   severity: 'error'}[]}
  */
 export function templateIssues(template, path) {
   const issues = [];
   const { name, description, device } = isObject(template) ? template : {};
 
   if (typeof name !== 'string' || !trimSpace(name)) {
-    issue(issues, `${path}.name`, 'template name is required');
+    issue(
+      issues,
+      'template.name.required',
+      `${path}.name`,
+      'template name is required',
+    );
   } else if (utf8Length(name) > MAX_TEMPLATE_NAME_BYTES) {
     issue(
       issues,
+      'template.name.too-long',
       `${path}.name`,
       `template name must be at most ${MAX_TEMPLATE_NAME_BYTES} bytes`,
     );
   } else if (hasControlCharacters(name)) {
     issue(
       issues,
+      'template.name.control',
       `${path}.name`,
       'template name must not contain control characters',
     );
@@ -462,12 +483,14 @@ export function templateIssues(template, path) {
     ) {
       issue(
         issues,
+        'template.description.too-long',
         `${path}.description`,
         `template description must be at most ${MAX_TEMPLATE_DESCRIPTION_BYTES} bytes`,
       );
     } else if (hasControlCharacters(description)) {
       issue(
         issues,
+        'template.description.control',
         `${path}.description`,
         'template description must not contain control characters',
       );
@@ -475,7 +498,12 @@ export function templateIssues(template, path) {
   }
 
   if (!isObject(device) || !isObject(device.spec)) {
-    issue(issues, `${path}.device.spec`, 'template device spec is required');
+    issue(
+      issues,
+      'template.spec.required',
+      `${path}.device.spec`,
+      'template device spec is required',
+    );
   } else {
     const general = device.spec.general;
     const hostname =
@@ -486,12 +514,14 @@ export function templateIssues(template, path) {
     if (!trimSpace(hostname)) {
       issue(
         issues,
+        'template.hostname.required',
         `${path}.device.spec.general.hostname`,
         'template hostname is required',
       );
     } else if (WHITESPACE.test(hostname)) {
       issue(
         issues,
+        'template.hostname.whitespace',
         `${path}.device.spec.general.hostname`,
         `template hostname ${quoted(hostname)} must not contain whitespace`,
       );
@@ -502,16 +532,32 @@ export function templateIssues(template, path) {
     return issues;
   }
 
-  validateIconKey(device.iconKey, `${path}.device.iconKey`, issues);
-  validateIconRef(device.icon, `${path}.device.icon`, issues);
-  validateIconSize(device.iconSize, `${path}.device.iconSize`, issues);
-  validateColors(device, `${path}.device`, issues);
+  validateIconKey(
+    device.iconKey,
+    `${path}.device.iconKey`,
+    issues,
+    'template.icon-key.unknown',
+  );
+  validateIconRef(
+    device.icon,
+    `${path}.device.icon`,
+    issues,
+    'template.icon.invalid',
+  );
+  validateIconSize(
+    device.iconSize,
+    `${path}.device.iconSize`,
+    issues,
+    'template.icon-size.unknown',
+  );
+  validateColors(device, `${path}.device`, issues, 'template.color.invalid');
 
   const size = templateDeviceBytes(device);
 
   if (size > MAX_TEMPLATE_DEVICE_BYTES) {
     issue(
       issues,
+      'template.device.too-large',
       `${path}.device`,
       `template device must take at most ${MAX_TEMPLATE_DEVICE_BYTES} bytes as JSON, not ${size}`,
     );
@@ -531,7 +577,12 @@ function validateTemplates(doc, issues) {
 
   // The server refuses any other value when it decodes the document.
   if (!Array.isArray(doc.templates)) {
-    issue(issues, 'templates', 'templates must be a list of templates');
+    issue(
+      issues,
+      'template.list.not-list',
+      'templates',
+      'templates must be a list of templates',
+    );
 
     return;
   }
@@ -539,6 +590,7 @@ function validateTemplates(doc, issues) {
   if (doc.templates.length > MAX_TEMPLATES) {
     issue(
       issues,
+      'template.list.too-many',
       'templates',
       `at most ${MAX_TEMPLATES} templates are allowed, not ${doc.templates.length}`,
     );
@@ -551,10 +603,16 @@ function validateTemplates(doc, issues) {
     const id = template?.id;
 
     if (!trimSpace(String(id || ''))) {
-      issue(issues, `${path}.id`, 'template ID is required');
+      issue(
+        issues,
+        'template.id.required',
+        `${path}.id`,
+        'template ID is required',
+      );
     } else if (seenIds.has(fold(id))) {
       issue(
         issues,
+        'template.id.duplicate',
         `${path}.id`,
         `duplicate template ID ${goQuoted(String(id))} (also templates[${seenIds.get(fold(id))}])`,
       );
@@ -562,18 +620,19 @@ function validateTemplates(doc, issues) {
       seenIds.set(fold(id), index);
     }
 
-    validateUUID(issues, `${path}.id`, 'template', id);
+    validateUUID(issues, `${path}.id`, 'template', id, 'template.id.invalid');
     issues.push(...templateIssues(template, path));
   });
 }
 
 // Every identifier is a UUID: crypto.randomUUID mints the editor's, and the
 // server derives name based ones (validateID in validate.go). A missing one
-// is reported where it is required.
-function validateUUID(issues, path, kind, id) {
+// is reported where it is required. code is the kind's.
+function validateUUID(issues, path, kind, id, code) {
   if (trimSpace(String(id || '')) && !UUID_PATTERN.test(String(id))) {
     issue(
       issues,
+      code,
       path,
       `${kind} ID ${goQuoted(String(id))} is not a valid UUID`,
     );
@@ -589,11 +648,21 @@ function validateUser(issues, path, user) {
   }
 
   if (typeof user !== 'string') {
-    issue(issues, path, `${path} must be a string`);
+    issue(issues, 'metadata.user.not-text', path, `${path} must be a string`);
   } else if (utf8Length(user) > MAX_USER_BYTES) {
-    issue(issues, path, `${path} must be at most ${MAX_USER_BYTES} bytes`);
+    issue(
+      issues,
+      'metadata.user.too-long',
+      path,
+      `${path} must be at most ${MAX_USER_BYTES} bytes`,
+    );
   } else if (hasControlCharacters(user)) {
-    issue(issues, path, `${path} must not contain control characters`);
+    issue(
+      issues,
+      'metadata.user.control',
+      path,
+      `${path} must not contain control characters`,
+    );
   }
 }
 
@@ -638,28 +707,53 @@ function validateTime(issues, path, value) {
   }
 
   if (typeof value !== 'string') {
-    issue(issues, path, `${path} must be a string`);
+    issue(issues, 'metadata.time.not-text', path, `${path} must be a string`);
   } else if (!isTime(value)) {
     issue(
       issues,
+      'metadata.time.invalid',
       path,
       `${path} must be a UTC time in the form YYYY-MM-DDTHH:MM:SSZ`,
     );
   }
 }
 
+// The codes of the rules of the notes of the diagram and of a switch
+// (noteCodes in validate.go).
+const METADATA_NOTE_CODES = {
+  notList: 'metadata.notes.not-list',
+  tooMany: 'metadata.notes.too-many',
+  notText: 'metadata.note.not-text',
+  blank: 'metadata.note.blank',
+  tooLong: 'metadata.note.too-long',
+  control: 'metadata.note.control',
+};
+const SWITCH_NOTE_CODES = {
+  notList: 'switch.notes.not-list',
+  tooMany: 'switch.notes.too-many',
+  notText: 'switch.note.not-text',
+  blank: 'switch.note.blank',
+  tooLong: 'switch.note.too-long',
+  control: 'switch.note.control',
+};
+
 // The notes at `at`, of the diagram or of a switch (validateNotes in
 // validate.go): at most MAX_DIAGRAM_NOTES, each text that is not blank, at
 // most MAX_DIAGRAM_NOTE_BYTES long, and without control characters but the
-// newline and the tab.
-function validateNotes(notes, issues, at = 'metadata.notes') {
+// newline and the tab. codes are the codes of the notes' owner.
+function validateNotes(
+  notes,
+  issues,
+  at = 'metadata.notes',
+  codes = METADATA_NOTE_CODES,
+) {
   if (notes === undefined || notes === null) {
     return;
   }
 
   // The server refuses any other value when it decodes the document.
   if (!Array.isArray(notes)) {
-    issue(issues, at, 'notes must be a list of text');
+    issue(issues, codes.notList, at, 'notes must be a list of text');
 
     return;
   }
@@ -667,6 +761,7 @@ function validateNotes(notes, issues, at = 'metadata.notes') {
   if (notes.length > MAX_DIAGRAM_NOTES) {
     issue(
       issues,
+      codes.tooMany,
       at,
       `at most ${MAX_DIAGRAM_NOTES} notes are allowed, not ${notes.length}`,
     );
@@ -676,18 +771,20 @@ function validateNotes(notes, issues, at = 'metadata.notes') {
     const path = `${at}[${index}]`;
 
     if (typeof note !== 'string') {
-      issue(issues, path, 'note must be text');
+      issue(issues, codes.notText, path, 'note must be text');
     } else if (!trimSpace(note)) {
-      issue(issues, path, 'note must not be blank');
+      issue(issues, codes.blank, path, 'note must not be blank');
     } else if (utf8Length(note) > MAX_DIAGRAM_NOTE_BYTES) {
       issue(
         issues,
+        codes.tooLong,
         path,
         `note must be at most ${MAX_DIAGRAM_NOTE_BYTES} bytes`,
       );
     } else if (hasControlCharactersInLines(note)) {
       issue(
         issues,
+        codes.control,
         path,
         'note must not contain control characters other than newline and tab',
       );
@@ -700,22 +797,35 @@ function validateNotes(notes, issues, at = 'metadata.notes') {
 // metadata.<field>, as the server reports them.
 function validateMetadata(metadata, issues) {
   if (!trimSpace(String(metadata.id || ''))) {
-    issue(issues, 'metadata.id', 'document ID is required');
+    issue(
+      issues,
+      'metadata.id.required',
+      'metadata.id',
+      'document ID is required',
+    );
   }
 
-  validateUUID(issues, 'metadata.id', 'document', metadata.id);
+  validateUUID(
+    issues,
+    'metadata.id',
+    'document',
+    metadata.id,
+    'metadata.id.invalid',
+  );
 
   const name = String(metadata.name ?? '');
 
   if (utf8Length(name) > MAX_NAME_BYTES) {
     issue(
       issues,
+      'metadata.name.too-long',
       'metadata.name',
       `document name must be at most ${MAX_NAME_BYTES} bytes`,
     );
   } else if (hasControlCharacters(name)) {
     issue(
       issues,
+      'metadata.name.control',
       'metadata.name',
       'document name must not contain control characters',
     );
@@ -732,6 +842,7 @@ function validateHeader(doc, issues) {
   if (doc.$schema !== SCHEMA_URI) {
     issue(
       issues,
+      'document.schema.mismatch',
       '$schema',
       `expected "${SCHEMA_URI}", got "${doc.$schema ?? ''}"`,
     );
@@ -740,6 +851,7 @@ function validateHeader(doc, issues) {
   if (doc.revision !== SCHEMA_REVISION) {
     issue(
       issues,
+      'document.revision.mismatch',
       'revision',
       `expected ${SCHEMA_REVISION}, got ${doc.revision ?? ''}`,
     );
@@ -750,15 +862,30 @@ function validateHeader(doc, issues) {
   const viewport = doc.viewport || {};
 
   if (!finite(viewport.x) || !finite(viewport.y) || !finite(viewport.zoom)) {
-    issue(issues, 'viewport', 'viewport values must be finite numbers');
+    issue(
+      issues,
+      'document.viewport.not-finite',
+      'viewport',
+      'viewport values must be finite numbers',
+    );
   } else if (viewport.zoom <= 0) {
-    issue(issues, 'viewport.zoom', 'zoom must be a positive number');
+    issue(
+      issues,
+      'document.zoom.not-positive',
+      'viewport.zoom',
+      'zoom must be a positive number',
+    );
   }
 
   const grid = doc.grid || {};
 
   if (!finite(grid.size) || grid.size <= 0) {
-    issue(issues, 'grid.size', 'grid size must be a positive finite number');
+    issue(
+      issues,
+      'document.grid.invalid',
+      'grid.size',
+      'grid size must be a positive finite number',
+    );
   }
 
   // Any string, or none: an id the editor does not know is ignored (see
@@ -768,10 +895,20 @@ function validateHeader(doc, issues) {
     doc.layout !== null &&
     typeof doc.layout !== 'string'
   ) {
-    issue(issues, 'layout', 'layout must be a string');
+    issue(
+      issues,
+      'document.layout.not-text',
+      'layout',
+      'layout must be a string',
+    );
   }
 
-  validateIconSize(doc.iconSize, 'iconSize', issues);
+  validateIconSize(
+    doc.iconSize,
+    'iconSize',
+    issues,
+    'document.icon-size.unknown',
+  );
 }
 
 // The fewest points an edge route may hold: its two ends (minRoutePoints in
@@ -788,6 +925,7 @@ function validateRoute(route, path, issues) {
   if (!Array.isArray(route) || route.length < MIN_ROUTE_POINTS) {
     issue(
       issues,
+      'edge.route.too-few',
       path,
       `a route must have at least ${MIN_ROUTE_POINTS} points`,
     );
@@ -796,7 +934,12 @@ function validateRoute(route, path, issues) {
   }
 
   if (!route.every((point) => finite(point?.x) && finite(point?.y))) {
-    issue(issues, path, 'route points must be finite numbers');
+    issue(
+      issues,
+      'edge.route.not-finite',
+      path,
+      'route points must be finite numbers',
+    );
   }
 }
 
@@ -809,10 +952,16 @@ function validateNetworks(doc, issues, networksById) {
     const path = `networks[${index}]`;
 
     if (!trimSpace(String(network.id || ''))) {
-      issue(issues, `${path}.id`, 'network ID is required');
+      issue(
+        issues,
+        'network.id.required',
+        `${path}.id`,
+        'network ID is required',
+      );
     } else if (seenIds.has(fold(network.id))) {
       issue(
         issues,
+        'network.id.duplicate',
         `${path}.id`,
         `duplicate network ID "${network.id}" (also networks[${seenIds.get(fold(network.id))}])`,
       );
@@ -821,13 +970,25 @@ function validateNetworks(doc, issues, networksById) {
       networksById.set(network.id, network);
     }
 
-    validateUUID(issues, `${path}.id`, 'network', network.id);
+    validateUUID(
+      issues,
+      `${path}.id`,
+      'network',
+      network.id,
+      'network.id.invalid',
+    );
 
     if (!trimSpace(String(network.name || ''))) {
-      issue(issues, `${path}.name`, 'network name is required');
+      issue(
+        issues,
+        'network.name.required',
+        `${path}.name`,
+        'network name is required',
+      );
     } else if (WHITESPACE.test(network.name)) {
       issue(
         issues,
+        'network.name.whitespace',
         `${path}.name`,
         `network name "${network.name}" must not contain whitespace`,
       );
@@ -836,6 +997,7 @@ function validateNetworks(doc, issues, networksById) {
       // differing only by case are different VLANs.
       issue(
         issues,
+        'network.name.duplicate',
         `${path}.name`,
         `conflicting network name "${network.name}" (also networks[${seenNames.get(network.name)}])`,
       );
@@ -843,7 +1005,12 @@ function validateNetworks(doc, issues, networksById) {
       seenNames.set(network.name, index);
     }
 
-    validateLineStyle(network.lineStyle, `${path}.lineStyle`, issues);
+    validateLineStyle(
+      network.lineStyle,
+      `${path}.lineStyle`,
+      issues,
+      'network.line-style.unknown',
+    );
 
     if (network.alias === undefined || network.alias === null) {
       return;
@@ -856,6 +1023,7 @@ function validateNetworks(doc, issues, networksById) {
     ) {
       issue(
         issues,
+        'network.alias.out-of-range',
         `${path}.alias`,
         `VLAN alias ${network.alias} is out of range (1-${MAX_VLAN_ALIAS})`,
       );
@@ -866,6 +1034,7 @@ function validateNetworks(doc, issues, networksById) {
     if (seenAliases.has(network.alias)) {
       issue(
         issues,
+        'network.alias.duplicate',
         `${path}.alias`,
         `conflicting VLAN alias ${network.alias} (also networks[${seenAliases.get(network.alias)}])`,
       );
@@ -880,7 +1049,12 @@ const PAYLOAD_KEYS = NODE_KINDS;
 
 function validateNodePayload(node, path, issues) {
   if (!PAYLOAD_KEYS.includes(node.kind)) {
-    issue(issues, `${path}.kind`, `unknown node kind "${node.kind ?? ''}"`);
+    issue(
+      issues,
+      'node.kind.unknown',
+      `${path}.kind`,
+      `unknown node kind "${node.kind ?? ''}"`,
+    );
 
     return false;
   }
@@ -888,6 +1062,7 @@ function validateNodePayload(node, path, issues) {
   if (!node[node.kind]) {
     issue(
       issues,
+      'node.payload.missing',
       path,
       `node of kind "${node.kind}" is missing its "${node.kind}" payload`,
     );
@@ -897,6 +1072,7 @@ function validateNodePayload(node, path, issues) {
     if (node[key]) {
       issue(
         issues,
+        'node.payload.extra',
         path,
         `node of kind "${node.kind}" must not carry a "${key}" payload`,
       );
@@ -918,10 +1094,16 @@ function validateDeviceHandles(node, path, issues, handleOwner) {
     const handlePath = `${path}.device.interfaces[${index}]`;
 
     if (!trimSpace(String(handle.id || ''))) {
-      issue(issues, `${handlePath}.id`, 'interface handle ID is required');
+      issue(
+        issues,
+        'interface.id.required',
+        `${handlePath}.id`,
+        'interface handle ID is required',
+      );
     } else if (handleOwner.has(handle.id)) {
       issue(
         issues,
+        'interface.id.duplicate',
         `${handlePath}.id`,
         `duplicate interface handle ID "${handle.id}" (also used by node "${handleOwner.get(handle.id).id}")`,
       );
@@ -929,10 +1111,21 @@ function validateDeviceHandles(node, path, issues, handleOwner) {
       handleOwner.set(handle.id, node);
     }
 
-    validateUUID(issues, `${handlePath}.id`, 'interface handle', handle.id);
+    validateUUID(
+      issues,
+      `${handlePath}.id`,
+      'interface handle',
+      handle.id,
+      'interface.id.invalid',
+    );
 
     if (!trimSpace(String(handle.name || ''))) {
-      issue(issues, `${handlePath}.name`, 'interface name is required');
+      issue(
+        issues,
+        'interface.name.required',
+        `${handlePath}.name`,
+        'interface name is required',
+      );
 
       return;
     }
@@ -940,6 +1133,7 @@ function validateDeviceHandles(node, path, issues, handleOwner) {
     if (seenNames.has(fold(handle.name))) {
       issue(
         issues,
+        'interface.name.duplicate',
         `${handlePath}.name`,
         `duplicate interface name "${handle.name}" (also interfaces[${seenNames.get(fold(handle.name))}])`,
       );
@@ -950,6 +1144,7 @@ function validateDeviceHandles(node, path, issues, handleOwner) {
     if (!specNames.has(handle.name)) {
       issue(
         issues,
+        'interface.name.unmatched',
         `${handlePath}.name`,
         `interface "${handle.name}" has no matching entry in the node's Interfaces`,
       );
@@ -968,16 +1163,98 @@ function validateIncludedFrom(doc, name, path, issues) {
   if (typeof name !== 'string' || !trimSpace(name) || WHITESPACE.test(name)) {
     issue(
       issues,
+      'device.included-from.invalid',
       `${path}.device.includedFrom`,
       `included topology name "${name}" must not be blank or contain whitespace`,
     );
   } else if (!(doc.source?.includeTopologies || []).length) {
     issue(
       issues,
+      'device.included-from.no-includes',
       `${path}.device.includedFrom`,
       `device is included from topology "${name}", but the document includes no topologies`,
     );
   }
+}
+
+// The payload of the device node at index (validateDevice in validate.go):
+// its hostname, unique among the devices ignoring case, a spec whose
+// hostname is the device's, its icon and colors, the topology it is
+// included from, and its connection points. seenHostnames holds the index of
+// each folded hostname seen so far, and handleOwner the node of each
+// connection point id.
+function validateDevice(
+  doc,
+  node,
+  path,
+  index,
+  issues,
+  { seenHostnames, handleOwner },
+) {
+  const hostname = node.device.hostname;
+
+  if (!trimSpace(String(hostname || ''))) {
+    issue(
+      issues,
+      'node.hostname.required',
+      `${path}.device.hostname`,
+      'hostname is required',
+    );
+  } else if (WHITESPACE.test(hostname)) {
+    issue(
+      issues,
+      'node.hostname.whitespace',
+      `${path}.device.hostname`,
+      `hostname "${hostname}" must not contain whitespace`,
+    );
+  } else if (seenHostnames.has(fold(hostname))) {
+    issue(
+      issues,
+      'node.hostname.duplicate',
+      `${path}.device.hostname`,
+      `duplicate hostname "${hostname}" (also nodes[${seenHostnames.get(fold(hostname))}])`,
+    );
+  } else {
+    seenHostnames.set(fold(hostname), index);
+  }
+
+  if (!node.device.spec) {
+    issue(
+      issues,
+      'device.spec.required',
+      `${path}.device.spec`,
+      'device spec is required',
+    );
+  } else if (node.device.spec.general?.hostname !== hostname) {
+    issue(
+      issues,
+      'device.hostname.mismatch',
+      `${path}.device.spec.general.hostname`,
+      'Node hostname must match the device Hostname',
+    );
+  }
+
+  validateIconKey(
+    node.device.iconKey,
+    `${path}.device.iconKey`,
+    issues,
+    'device.icon-key.unknown',
+  );
+  validateIconRef(
+    node.device.icon,
+    `${path}.device.icon`,
+    issues,
+    'device.icon.invalid',
+  );
+  validateIconSize(
+    node.device.iconSize,
+    `${path}.device.iconSize`,
+    issues,
+    'device.icon-size.unknown',
+  );
+  validateColors(node.device, `${path}.device`, issues, 'device.color.invalid');
+  validateIncludedFrom(doc, node.device.includedFrom, path, issues);
+  validateDeviceHandles(node, path, issues, handleOwner);
 }
 
 function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
@@ -988,10 +1265,11 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
     const path = `nodes[${index}]`;
 
     if (!trimSpace(String(node.id || ''))) {
-      issue(issues, `${path}.id`, 'node ID is required');
+      issue(issues, 'node.id.required', `${path}.id`, 'node ID is required');
     } else if (seenIds.has(fold(node.id))) {
       issue(
         issues,
+        'node.id.duplicate',
         `${path}.id`,
         `duplicate node ID "${node.id}" (also nodes[${seenIds.get(fold(node.id))}])`,
       );
@@ -1000,11 +1278,12 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
       nodesById.set(node.id, node);
     }
 
-    validateUUID(issues, `${path}.id`, 'node', node.id);
+    validateUUID(issues, `${path}.id`, 'node', node.id, 'node.id.invalid');
 
     if (!finite(node.position?.x) || !finite(node.position?.y)) {
       issue(
         issues,
+        'node.position.not-finite',
         `${path}.position`,
         'position values must be finite numbers',
       );
@@ -1021,6 +1300,7 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
       ) {
         issue(
           issues,
+          'node.size.invalid',
           `${path}.size`,
           'size values must be positive finite numbers',
         );
@@ -1032,62 +1312,47 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
     }
 
     if (node.kind === 'device' && node.device) {
-      const hostname = node.device.hostname;
-
-      if (!trimSpace(String(hostname || ''))) {
-        issue(issues, `${path}.device.hostname`, 'hostname is required');
-      } else if (WHITESPACE.test(hostname)) {
-        issue(
-          issues,
-          `${path}.device.hostname`,
-          `hostname "${hostname}" must not contain whitespace`,
-        );
-      } else if (seenHostnames.has(fold(hostname))) {
-        issue(
-          issues,
-          `${path}.device.hostname`,
-          `duplicate hostname "${hostname}" (also nodes[${seenHostnames.get(fold(hostname))}])`,
-        );
-      } else {
-        seenHostnames.set(fold(hostname), index);
-      }
-
-      if (!node.device.spec) {
-        issue(issues, `${path}.device.spec`, 'device spec is required');
-      } else if (node.device.spec.general?.hostname !== hostname) {
-        issue(
-          issues,
-          `${path}.device.spec.general.hostname`,
-          'Node hostname must match the device Hostname',
-        );
-      }
-
-      validateIconKey(node.device.iconKey, `${path}.device.iconKey`, issues);
-      validateIconRef(node.device.icon, `${path}.device.icon`, issues);
-      validateIconSize(node.device.iconSize, `${path}.device.iconSize`, issues);
-      validateColors(node.device, `${path}.device`, issues);
-      validateIncludedFrom(doc, node.device.includedFrom, path, issues);
-      validateDeviceHandles(node, path, issues, handleOwner);
+      validateDevice(doc, node, path, index, issues, {
+        seenHostnames,
+        handleOwner,
+      });
     }
 
     if (node.kind === 'switch' && node.switch) {
       if (!node.switch.networkId) {
         issue(
           issues,
+          'switch.network.required',
           `${path}.switch.networkId`,
           'switch must reference a network',
         );
       } else if (!networksById.has(node.switch.networkId)) {
         issue(
           issues,
+          'switch.network.unknown',
           `${path}.switch.networkId`,
           `unknown network "${node.switch.networkId}"`,
         );
       }
 
-      validateColors(node.switch, `${path}.switch`, issues);
-      validateIconSize(node.switch.iconSize, `${path}.switch.iconSize`, issues);
-      validateNotes(node.switch.notes, issues, `${path}.switch.notes`);
+      validateColors(
+        node.switch,
+        `${path}.switch`,
+        issues,
+        'switch.color.invalid',
+      );
+      validateIconSize(
+        node.switch.iconSize,
+        `${path}.switch.iconSize`,
+        issues,
+        'switch.icon-size.unknown',
+      );
+      validateNotes(
+        node.switch.notes,
+        issues,
+        `${path}.switch.notes`,
+        SWITCH_NOTE_CODES,
+      );
     }
 
     if (node.kind === 'group' && node.group) {
@@ -1095,10 +1360,26 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
         node.group.borderStyle,
         `${path}.group.borderStyle`,
         issues,
+        'group.border-style.unknown',
       );
-      validateIconKey(node.group.iconKey, `${path}.group.iconKey`, issues);
-      validateIconRef(node.group.icon, `${path}.group.icon`, issues);
-      validateIconSize(node.group.iconSize, `${path}.group.iconSize`, issues);
+      validateIconKey(
+        node.group.iconKey,
+        `${path}.group.iconKey`,
+        issues,
+        'group.icon-key.unknown',
+      );
+      validateIconRef(
+        node.group.icon,
+        `${path}.group.icon`,
+        issues,
+        'group.icon.invalid',
+      );
+      validateIconSize(
+        node.group.iconSize,
+        `${path}.group.iconSize`,
+        issues,
+        'group.icon-size.unknown',
+      );
     }
 
     if (node.kind === 'shape' && isObject(node.shape)) {
@@ -1117,10 +1398,11 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
 
 // The border style of a group or a shape (validateBorderStyle in
 // validate.go): none, or one of BORDER_STYLES.
-function validateBorderStyle(style, path, issues) {
+function validateBorderStyle(style, path, issues, code) {
   if (!unset(style) && !BORDER_STYLES.includes(style)) {
     issue(
       issues,
+      code,
       path,
       `unknown border style ${quoted(style)} (expected one of ${BORDER_STYLES.join(', ')})`,
     );
@@ -1133,13 +1415,19 @@ function validateShape(shape, path, issues) {
   if (!SHAPE_FIGURES.includes(shape.shape)) {
     issue(
       issues,
+      'drawing.shape.unknown',
       `${path}.shape`,
       `unknown shape ${quoted(shape.shape ?? '')} (expected one of ${SHAPE_FIGURES.join(', ')})`,
     );
   }
 
-  validateColors(shape, path, issues);
-  validateBorderStyle(shape.borderStyle, `${path}.borderStyle`, issues);
+  validateColors(shape, path, issues, 'drawing.color.invalid');
+  validateBorderStyle(
+    shape.borderStyle,
+    `${path}.borderStyle`,
+    issues,
+    'drawing.border-style.unknown',
+  );
 }
 
 // The payload of an icon node (validateIconNode in validate.go): exactly
@@ -1148,13 +1436,19 @@ function validateIconNode(icon, path, issues) {
   if (unset(icon.iconKey) === unset(icon.icon)) {
     issue(
       issues,
+      'drawing.icon.ambiguous',
       path,
       'an icon node must name exactly one of a built-in icon and a custom icon',
     );
   }
 
-  validateIconKey(icon.iconKey, `${path}.iconKey`, issues);
-  validateIconRef(icon.icon, `${path}.icon`, issues);
+  validateIconKey(
+    icon.iconKey,
+    `${path}.iconKey`,
+    issues,
+    'drawing.icon-key.unknown',
+  );
+  validateIconRef(icon.icon, `${path}.icon`, issues, 'drawing.icon.invalid');
 }
 
 // The payload of a line (validateLine in validate.go): from MIN_LINE_POINTS
@@ -1166,31 +1460,48 @@ function validateLine(line, path, issues) {
   if (!Array.isArray(points) || points.length < MIN_LINE_POINTS) {
     issue(
       issues,
+      'drawing.points.too-few',
       `${path}.points`,
       `a line must have at least ${MIN_LINE_POINTS} points`,
     );
   } else if (points.length > MAX_LINE_POINTS) {
     issue(
       issues,
+      'drawing.points.too-many',
       `${path}.points`,
       `a line must have at most ${MAX_LINE_POINTS} points`,
     );
   } else if (!points.every((point) => finite(point?.x) && finite(point?.y))) {
-    issue(issues, `${path}.points`, 'line points must be finite numbers');
+    issue(
+      issues,
+      'drawing.points.not-finite',
+      `${path}.points`,
+      'line points must be finite numbers',
+    );
   }
 
   const problem = colorProblem(line.color);
 
   if (problem) {
-    issue(issues, `${path}.color`, problem);
+    issue(issues, 'drawing.color.invalid', `${path}.color`, problem);
   }
 
-  validateLineStyle(line.lineStyle, `${path}.lineStyle`, issues);
+  validateLineStyle(
+    line.lineStyle,
+    `${path}.lineStyle`,
+    issues,
+    'drawing.line-style.unknown',
+  );
 
   // The server decodes nothing else into them.
   ['startArrow', 'endArrow'].forEach((key) => {
     if (line[key] != null && typeof line[key] !== 'boolean') {
-      issue(issues, `${path}.${key}`, `${key} must be true or false`);
+      issue(
+        issues,
+        'drawing.arrow.not-boolean',
+        `${path}.${key}`,
+        `${key} must be true or false`,
+      );
     }
   });
 }
@@ -1204,7 +1515,7 @@ function validateParents(doc, issues, nodesById) {
     }
 
     if (node.parentId === node.id) {
-      issue(issues, path, 'node cannot be its own parent');
+      issue(issues, 'node.parent.self', path, 'node cannot be its own parent');
 
       return;
     }
@@ -1212,13 +1523,23 @@ function validateParents(doc, issues, nodesById) {
     const parent = nodesById.get(node.parentId);
 
     if (!parent) {
-      issue(issues, path, `unknown parent node "${node.parentId}"`);
+      issue(
+        issues,
+        'node.parent.unknown',
+        path,
+        `unknown parent node "${node.parentId}"`,
+      );
 
       return;
     }
 
     if (parent.kind !== 'group') {
-      issue(issues, path, `parent node "${node.parentId}" is not a group`);
+      issue(
+        issues,
+        'node.parent.not-group',
+        path,
+        `parent node "${node.parentId}" is not a group`,
+      );
 
       return;
     }
@@ -1230,6 +1551,7 @@ function validateParents(doc, issues, nodesById) {
       if (seen.has(current.parentId)) {
         issue(
           issues,
+          'node.parent.cycle',
           path,
           `group membership cycle detected at node "${node.id}"`,
         );
@@ -1251,10 +1573,11 @@ function validateEdges(doc, issues, nodesById, networksById) {
     const path = `edges[${index}]`;
 
     if (!trimSpace(String(edge.id || ''))) {
-      issue(issues, `${path}.id`, 'edge ID is required');
+      issue(issues, 'edge.id.required', `${path}.id`, 'edge ID is required');
     } else if (seenIds.has(fold(edge.id))) {
       issue(
         issues,
+        'edge.id.duplicate',
         `${path}.id`,
         `duplicate edge ID "${edge.id}" (also edges[${seenIds.get(fold(edge.id))}])`,
       );
@@ -1262,13 +1585,19 @@ function validateEdges(doc, issues, nodesById, networksById) {
       seenIds.set(fold(edge.id), index);
     }
 
-    validateUUID(issues, `${path}.id`, 'edge', edge.id);
+    validateUUID(issues, `${path}.id`, 'edge', edge.id, 'edge.id.invalid');
     validateRoute(edge.route, `${path}.route`, issues);
-    validateLineStyle(edge.lineStyle, `${path}.lineStyle`, issues);
+    validateLineStyle(
+      edge.lineStyle,
+      `${path}.lineStyle`,
+      issues,
+      'edge.line-style.unknown',
+    );
 
     if (!nodesById.has(edge.sourceNodeId)) {
       issue(
         issues,
+        'edge.source.unknown',
         `${path}.sourceNodeId`,
         `unknown node "${edge.sourceNodeId}"`,
       );
@@ -1277,6 +1606,7 @@ function validateEdges(doc, issues, nodesById, networksById) {
     if (!nodesById.has(edge.targetNodeId)) {
       issue(
         issues,
+        'edge.target.unknown',
         `${path}.targetNodeId`,
         `unknown node "${edge.targetNodeId}"`,
       );
@@ -1290,7 +1620,7 @@ function validateEdges(doc, issues, nodesById, networksById) {
     }
 
     if (edge.sourceNodeId === edge.targetNodeId) {
-      issue(issues, path, 'edge endpoints must differ');
+      issue(issues, 'edge.endpoints.same', path, 'edge endpoints must differ');
 
       return;
     }
@@ -1300,6 +1630,7 @@ function validateEdges(doc, issues, nodesById, networksById) {
     if (!endpoints || !endpoints.handleId) {
       issue(
         issues,
+        'edge.endpoints.invalid',
         path,
         'an edge must connect one device interface to one switch',
       );
@@ -1314,6 +1645,7 @@ function validateEdges(doc, issues, nodesById, networksById) {
     if (!handle) {
       issue(
         issues,
+        'edge.handle.unknown',
         path,
         `unknown interface handle "${endpoints.handleId}" on device node "${endpoints.device.id}"`,
       );
@@ -1324,6 +1656,7 @@ function validateEdges(doc, issues, nodesById, networksById) {
     if (connected.has(endpoints.handleId)) {
       issue(
         issues,
+        'edge.interface.connected',
         path,
         `interface "${handle.name}" of device "${endpoints.device.device.hostname}" is already connected by edges[${connected.get(endpoints.handleId)}]`,
       );
@@ -1332,13 +1665,23 @@ function validateEdges(doc, issues, nodesById, networksById) {
     }
 
     if (!edge.networkId) {
-      issue(issues, `${path}.networkId`, 'edge must reference a network');
+      issue(
+        issues,
+        'edge.network.required',
+        `${path}.networkId`,
+        'edge must reference a network',
+      );
 
       return;
     }
 
     if (!networksById.has(edge.networkId)) {
-      issue(issues, `${path}.networkId`, `unknown network "${edge.networkId}"`);
+      issue(
+        issues,
+        'edge.network.unknown',
+        `${path}.networkId`,
+        `unknown network "${edge.networkId}"`,
+      );
 
       return;
     }
@@ -1348,6 +1691,7 @@ function validateEdges(doc, issues, nodesById, networksById) {
     if (edge.networkId !== switchNetwork) {
       issue(
         issues,
+        'edge.network.mismatch',
         `${path}.networkId`,
         `network "${edge.networkId}" does not match network "${switchNetwork}" of switch "${endpoints.switchNode.id}"`,
       );
@@ -1364,21 +1708,36 @@ function validateEdges(doc, issues, nodesById, networksById) {
  * @returns {string}
  */
 export function scenarioNameProblem(name) {
+  return scenarioNameRule(name).message;
+}
+
+// Why a Scenario config name is one a document may not list, with the code
+// of that rule, or no message.
+function scenarioNameRule(name) {
   const text = typeof name === 'string' ? name : '';
 
   if (text === '') {
-    return 'scenario name is required';
+    return {
+      code: 'scenario.name.required',
+      message: 'scenario name is required',
+    };
   }
 
   if (utf8Length(text) > MAX_SCENARIO_NAME_BYTES) {
-    return `scenario name must be at most ${MAX_SCENARIO_NAME_BYTES} bytes`;
+    return {
+      code: 'scenario.name.too-long',
+      message: `scenario name must be at most ${MAX_SCENARIO_NAME_BYTES} bytes`,
+    };
   }
 
   if (!CONFIG_NAME.test(text)) {
-    return `scenario name ${quoted(text)} may use only letters, numbers, underscores, at signs, periods and hyphens`;
+    return {
+      code: 'scenario.name.invalid',
+      message: `scenario name ${quoted(text)} may use only letters, numbers, underscores, at signs, periods and hyphens`,
+    };
   }
 
-  return '';
+  return { code: '', message: '' };
 }
 
 // The Scenario configs a document lists (validateScenarios in validate.go):
@@ -1389,6 +1748,7 @@ function validateScenarios(doc, issues) {
   if (scenarios.length > MAX_SCENARIOS) {
     issue(
       issues,
+      'scenario.list.too-many',
       'scenarios',
       `at most ${MAX_SCENARIOS} scenarios are allowed, not ${scenarios.length}`,
     );
@@ -1398,10 +1758,10 @@ function validateScenarios(doc, issues) {
 
   scenarios.forEach((name, index) => {
     const path = `scenarios[${index}]`;
-    const problem = scenarioNameProblem(name);
+    const rule = scenarioNameRule(name);
 
-    if (problem) {
-      issue(issues, path, problem);
+    if (rule.message) {
+      issue(issues, rule.code, path, rule.message);
 
       return;
     }
@@ -1411,6 +1771,7 @@ function validateScenarios(doc, issues) {
     if (seen.has(key)) {
       issue(
         issues,
+        'scenario.name.duplicate',
         path,
         `duplicate scenario ${goQuoted(name)} (also scenarios[${seen.get(key)}])`,
       );
@@ -1428,6 +1789,7 @@ function validateSource(doc, issues) {
   if (!['manual', 'topology', 'experiment'].includes(doc.source.kind)) {
     issue(
       issues,
+      'source.kind.unknown',
       'source.kind',
       `unknown source kind "${doc.source.kind ?? ''}"`,
     );
@@ -1450,6 +1812,7 @@ function validateSource(doc, issues) {
   if (digest != null && digest !== '' && !isDigest(digest)) {
     issue(
       issues,
+      'source.digest.malformed',
       'source.digest',
       `malformed source digest "${digest}" (expected sha256:<64 hex>)`,
     );
@@ -1463,17 +1826,28 @@ function validateSource(doc, issues) {
 function validateIncludes(includes, path, issues) {
   // The server refuses any other value when it decodes the document.
   if (includes != null && !Array.isArray(includes)) {
-    issue(issues, path, 'included topologies must be a list of topology names');
+    issue(
+      issues,
+      'include.list.not-list',
+      path,
+      'included topologies must be a list of topology names',
+    );
   }
 
   (Array.isArray(includes) ? includes : []).forEach((name, index) => {
     const at = `${path}[${index}]`;
 
     if (typeof name !== 'string' || !trimSpace(name)) {
-      issue(issues, at, 'included topology name is required');
+      issue(
+        issues,
+        'include.name.required',
+        at,
+        'included topology name is required',
+      );
     } else if (WHITESPACE.test(name)) {
       issue(
         issues,
+        'include.name.whitespace',
         at,
         `included topology name "${name}" must not contain whitespace`,
       );
@@ -1481,18 +1855,29 @@ function validateIncludes(includes, path, issues) {
   });
 }
 
-// What makes an annotation key unusable (annotationKeyProblem in
-// validate.go), or ''.
+// What makes an annotation key unusable, with the code of that rule
+// (annotationKeyProblem in validate.go), or no problem.
 function annotationKeyProblem(key) {
   if (!trimSpace(key)) {
-    return 'must not be blank';
+    return {
+      code: 'source.annotation-key.blank',
+      problem: 'must not be blank',
+    };
   }
 
   if (utf8Length(key) > MAX_NAME_BYTES) {
-    return `must be at most ${MAX_NAME_BYTES} bytes`;
+    return {
+      code: 'source.annotation-key.too-long',
+      problem: `must be at most ${MAX_NAME_BYTES} bytes`,
+    };
   }
 
-  return hasControlCharacters(key) ? 'must not contain control characters' : '';
+  return hasControlCharacters(key)
+    ? {
+        code: 'source.annotation-key.control',
+        problem: 'must not contain control characters',
+      }
+    : { code: '', problem: '' };
 }
 
 function validateAnnotations(annotations, issues) {
@@ -1505,7 +1890,12 @@ function validateAnnotations(annotations, issues) {
 
   // The server refuses any other value when it decodes the document.
   if (typeof annotations !== 'object' || Array.isArray(annotations)) {
-    issue(issues, path, 'annotations must be an object of text values');
+    issue(
+      issues,
+      'source.annotations.not-object',
+      path,
+      'annotations must be an object of text values',
+    );
 
     return;
   }
@@ -1517,13 +1907,19 @@ function validateAnnotations(annotations, issues) {
     if (typeof value === 'string') {
       size += utf8Length(key) + utf8Length(value);
     } else {
-      issue(issues, `${path}.${key}`, `annotation "${key}" must be text`);
+      issue(
+        issues,
+        'source.annotation.not-text',
+        `${path}.${key}`,
+        `annotation "${key}" must be text`,
+      );
     }
   });
 
   if (entries.length > MAX_ANNOTATIONS) {
     issue(
       issues,
+      'source.annotations.too-many',
       path,
       `at most ${MAX_ANNOTATIONS} annotations are allowed, not ${entries.length}`,
     );
@@ -1532,6 +1928,7 @@ function validateAnnotations(annotations, issues) {
   if (size > MAX_ANNOTATION_BYTES) {
     issue(
       issues,
+      'source.annotations.too-large',
       path,
       `annotations must take at most ${MAX_ANNOTATION_BYTES} bytes in all, not ${size}`,
     );
@@ -1541,10 +1938,10 @@ function validateAnnotations(annotations, issues) {
     .map(([key]) => key)
     .sort()
     .forEach((key) => {
-      const problem = annotationKeyProblem(key);
+      const { code, problem } = annotationKeyProblem(key);
 
       if (problem) {
-        issue(issues, path, `annotation key ${quoted(key)} ${problem}`);
+        issue(issues, code, path, `annotation key ${quoted(key)} ${problem}`);
       }
     });
 }
@@ -1584,10 +1981,11 @@ function arrayOf(value) {
  * @param {object} spec
  * @param {string} hostname the device's, for the issue text
  * @param {object} context see specContext
- * @returns {{field: string, path: string, warning: string, issue: string}[]}
- *   field is the JSON Forms data path of the field (spec.hardware.drives.0.
- *   image) and path its path under the node (device.spec.hardware.drives[0].
- *   image); warning is worded for the field, and issue for the diagram
+ * @returns {{code: string, field: string, path: string, warning: string,
+ *   issue: string}[]} code is the rule's; field is the JSON Forms data path
+ *   of the field (spec.hardware.drives.0.image) and path its path under the
+ *   node (device.spec.hardware.drives[0].image); warning is worded for the
+ *   field, and issue for the diagram
  */
 function specFindings(spec, hostname, { networks, disks }) {
   const findings = [];
@@ -1605,6 +2003,7 @@ function specFindings(spec, hostname, { networks, disks }) {
       : `interface #${index + 1}`;
 
     findings.push({
+      code: 'interface.vlan.unknown',
       field: `spec.network.interfaces.${index}.vlan`,
       path: `device.spec.network.interfaces[${index}].vlan`,
       warning: `No network in this diagram is named "${vlan}".`,
@@ -1624,6 +2023,7 @@ function specFindings(spec, hostname, { networks, disks }) {
     }
 
     findings.push({
+      code: 'device.image.unknown',
       field: `spec.hardware.drives.${index}.image`,
       path: `device.spec.hardware.drives[${index}].image`,
       warning: `The server has no disk image named "${image}".`,
@@ -1646,15 +2046,17 @@ function specFindings(spec, hostname, { networks, disks }) {
  *
  * @param {string} hostname
  * @param {object} spec the device spec
- * @returns {{message: string, refused: boolean}|null} null for a hostname
- *   phenix takes as it is
+ * @returns {{code: string, message: string, refused: boolean}|null} null
+ *   for a hostname phenix takes as it is; code is the rule's
+ *   (hostnameCode in types/builder/topology.go)
  */
 function hostnameFinding(hostname, spec) {
   if (typeof hostname !== 'string' || !hostname || spec?.external != null) {
     return null;
   }
 
-  const refused = (problem, reason) => ({
+  const refused = (code, problem, reason) => ({
+    code,
     message: `hostname "${hostname}" ${problem}, so the device cannot be published: ${reason}`,
     refused: true,
   });
@@ -1664,6 +2066,7 @@ function hostnameFinding(hostname, spec) {
 
   if ([...hostname].length === 1) {
     return refused(
+      'node.hostname.short',
       'is 1 character long',
       'phenix requires hostnames of at least 2 characters, as VyOS, Vyatta and Windows do',
     );
@@ -1671,6 +2074,7 @@ function hostnameFinding(hostname, spec) {
 
   if (hostname === MINIMEGA_WILDCARD_VM) {
     return refused(
+      'node.hostname.reserved',
       'is reserved',
       `minimega uses "all" as its wildcard VM target, so it refuses to launch a VM named "all", and commands that target a VM by name (such as "vm kill all") act on every VM in the experiment`,
     );
@@ -1678,6 +2082,7 @@ function hostnameFinding(hostname, spec) {
 
   if (/^[0-9]+$/.test(hostname)) {
     return refused(
+      'node.hostname.numeric',
       'is all digits',
       `minimega reads "vm launch kvm ${hostname}" as a number of VMs to launch rather than a VM name, and reads a numeric VM target as a VM ID`,
     );
@@ -1685,6 +2090,7 @@ function hostnameFinding(hostname, spec) {
 
   if (folded === MINIMEGA_WILDCARD_VM) {
     return {
+      code: 'node.hostname.reserved-case',
       message: `hostname "${hostname}" differs from the reserved name "all" only by case: minimega accepts it because its reserved-name check is case-sensitive, but any tool or script that lowercases VM names would treat it as minimega's wildcard for every VM`,
       refused: false,
     };
@@ -1692,6 +2098,7 @@ function hostnameFinding(hostname, spec) {
 
   if (folded === PHENIX_HOSTNAME && windows) {
     return refused(
+      'node.hostname.windows-phenix',
       'cannot be used for a Windows node',
       `the startup app writes each Windows node's startup script to "<hostname>-startup.ps1" in the experiment's startup directory, where it also stages "phenix-startup.ps1", the startup wrapper every Windows node runs; the file names collide, so one file overwrites the other`,
     );
@@ -1699,6 +2106,7 @@ function hostnameFinding(hostname, spec) {
 
   if (folded === PHENIX_HOSTNAME) {
     return {
+      code: 'node.hostname.phenix',
       message: `hostname "${hostname}" matches "phenix", the hostname "phenix image" bakes into the images it builds: until the startup app renames them, other VMs built from those images also report "phenix" to miniccc, so hostname-based C2 checks for this node (such as delay.c2 without useUUID) can match the wrong VM; this hostname also cannot be published if the node's os_type is changed to windows`,
       refused: false,
     };
@@ -1820,8 +2228,9 @@ function interfaceLabels(interfaces) {
  * @param {object} node device node
  * @param {Set<string>} connected ids of the connected interface handles
  * @param {object} networks networksByName(doc)
- * @returns {{index: number, message: string, blocksPublish?: true}[]} index
- *   is the interface's in the spec
+ * @returns {{index: number, code: string, message: string,
+ *   blocksPublish?: true}[]} index is the interface's in the spec, and code
+ *   the rule's
  */
 function interfaceWarnings(node, connected, networks) {
   const interfaces = specInterfaces(node);
@@ -1852,30 +2261,38 @@ function interfaceWarnings(node, connected, networks) {
     const unnamed = !trimSpace(name);
     const shared = !unnamed && names.indexOf(name) !== names.lastIndexOf(name);
     const subject = `interface ${labels[index]} of "${node.device.hostname}"`;
-    const warn = (message, extra = {}) =>
-      warnings.push({ index, message, ...extra });
+    const warn = (code, message, extra = {}) =>
+      warnings.push({ index, code, message, ...extra });
     const blocks = { blocksPublish: true };
+    const missing = 'interface.vlan.missing';
 
     if (!hasVLAN(iface)) {
       if (external) {
-        warn(`${subject} is not connected to a network`);
+        warn(
+          'interface.network.unconnected',
+          `${subject} is not connected to a network`,
+        );
       } else if (handle) {
         warn(
+          missing,
           `${subject} is not connected to a network and has no VLAN, so it cannot be published: connect it, or type a VLAN for it`,
           blocks,
         );
       } else if (unnamed) {
         warn(
+          missing,
           `${subject} has no name and no VLAN, so it cannot be published: name it, then connect it or type a VLAN for it`,
           blocks,
         );
       } else if (shared) {
         warn(
+          missing,
           `${subject} has no VLAN, and another interface has its name, so it cannot be connected or published: rename it, then connect it or type a VLAN for it`,
           blocks,
         );
       } else {
         warn(
+          missing,
           `${subject} has no VLAN and no connection point on the canvas, so it cannot be published: type a VLAN for it`,
           blocks,
         );
@@ -1890,14 +2307,19 @@ function interfaceWarnings(node, connected, networks) {
 
     if (network) {
       warn(
+        'interface.vlan.implicit',
         `${subject} is not connected on the canvas, but its VLAN "${vlan}" puts it on network ${network.name} when published`,
       );
     } else if (cased) {
       warn(
+        'interface.vlan.case-mismatch',
         `${subject} is not connected on the canvas, and its VLAN "${vlan}" differs from network ${cased.name} only in case: phenix treats them as different VLANs, so publishing does not put it on network ${cased.name}`,
       );
     } else {
-      warn(`${subject} is not connected to a network`);
+      warn(
+        'interface.network.unconnected',
+        `${subject} is not connected to a network`,
+      );
     }
   });
 
@@ -2068,11 +2490,24 @@ function interfaceMAC(iface) {
 }
 
 // The addresses sharedAddresses compares: the field each is in, its name in
-// a message, and whether an external device's count. phenix does not start
-// an external device, and its schema (so the Inspector) has no MAC.
+// a message, whether an external device's count, and the code of one two
+// interfaces use. phenix does not start an external device, and its schema
+// (so the Inspector) has no MAC.
 const ADDRESS_FIELDS = [
-  { field: 'address', name: 'IP address', read: interfaceIP, external: true },
-  { field: 'mac', name: 'MAC address', read: interfaceMAC, external: false },
+  {
+    field: 'address',
+    name: 'IP address',
+    read: interfaceIP,
+    external: true,
+    code: 'interface.ip.shared',
+  },
+  {
+    field: 'mac',
+    name: 'MAC address',
+    read: interfaceMAC,
+    external: false,
+    code: 'interface.mac.shared',
+  },
 ];
 
 // The bridge an interface names to be on the experiment's default bridge,
@@ -2255,11 +2690,12 @@ function addressDevice(node, connected) {
  *   included: boolean, external: boolean}[]} devices networks holds the
  *   network of each interface (see interfaceNetworks)
  * @returns {{device: number, index: number, field: string, name: string,
- *   text: string, network: string, label: string, hostname: string,
- *   other: object, more: number}[]} for each interface, by the device's
- *   position in `devices` and its own in the spec, the address as typed,
- *   its network as a message names it (see networkPhrase), and another
- *   interface that uses it (label and hostname), and how many more do
+ *   code: string, text: string, network: string, label: string,
+ *   hostname: string, other: object, more: number}[]} for each interface,
+ *   by the device's position in `devices` and its own in the spec, the
+ *   address as typed, the code of the rule, its network as a message names
+ *   it (see networkPhrase), and another interface that uses it (label and
+ *   hostname), and how many more do
  */
 function sharedAddresses(devices) {
   const users = ADDRESS_FIELDS.map(() => new Map());
@@ -2304,7 +2740,7 @@ function sharedAddresses(devices) {
     });
   });
 
-  return ADDRESS_FIELDS.flatMap(({ field, name }, kind) =>
+  return ADDRESS_FIELDS.flatMap(({ field, name, code }, kind) =>
     [...users[kind].values()]
       .filter((list) => list.length > 1)
       .flatMap((list) =>
@@ -2316,6 +2752,7 @@ function sharedAddresses(devices) {
                   ...user,
                   field,
                   name,
+                  code,
                   other: list[position === 0 ? 1 : 0],
                   more: list.length - 2,
                 },
@@ -2371,10 +2808,13 @@ function collectWarnings(doc, issues, context) {
     if (named) {
       issue(
         issues,
+        named.code,
         `nodes[${index}].device.hostname`,
         named.message,
         'warning',
-        named.refused ? { blocksPublish: true } : {},
+        named.refused
+          ? { blocksPublish: true, field: 'hostname' }
+          : { field: 'hostname' },
       );
     }
 
@@ -2382,9 +2822,11 @@ function collectWarnings(doc, issues, context) {
       (finding) => {
         issue(
           issues,
+          finding.code,
           `nodes[${index}].${finding.path}`,
           finding.issue,
           'warning',
+          { field: finding.field },
         );
       },
     );
@@ -2392,6 +2834,7 @@ function collectWarnings(doc, issues, context) {
     if (specInterfaces(node).length === 0) {
       issue(
         issues,
+        'device.interfaces.none',
         `nodes[${index}]`,
         `device "${node.device?.hostname}" has no interfaces`,
         'warning',
@@ -2401,13 +2844,16 @@ function collectWarnings(doc, issues, context) {
     }
 
     interfaceWarnings(node, connected, networks).forEach(
-      ({ index: position, message, ...extra }) => {
+      ({ index: position, code, message, ...extra }) => {
         issue(
           issues,
+          code,
           `nodes[${index}].device.spec.network.interfaces[${position}]`,
           message,
           'warning',
-          extra,
+          code === 'interface.vlan.missing'
+            ? { ...extra, field: `spec.network.interfaces.${position}.vlan` }
+            : extra,
         );
       },
     );
@@ -2425,10 +2871,14 @@ function collectWarnings(doc, issues, context) {
   sharedAddresses(devices).forEach((shared) => {
     issue(
       issues,
+      shared.code,
       `nodes[${devices[shared.device].index}].device.spec.network.interfaces[${shared.index}].${shared.field}`,
       `${shared.name} ${shared.text} of interface ${shared.label} of "${shared.hostname}" is also used${shared.network} by ${otherUsers(shared)}`,
       'warning',
-      { blocksPublish: true },
+      {
+        blocksPublish: true,
+        field: `spec.network.interfaces.${shared.index}.${shared.field}`,
+      },
     );
   });
 
@@ -2442,6 +2892,7 @@ function collectWarnings(doc, issues, context) {
     if (!switched.has(network.id)) {
       issue(
         issues,
+        'network.switch.missing',
         `networks[${index}]`,
         `network "${network.name}" has no switch on the canvas`,
         'warning',
@@ -2468,15 +2919,19 @@ function locate(doc, entry) {
  * @param {object} doc
  * @param {object} [options] disks: file names of the server's disk images,
  *   to check drive images against, or null while they are unknown
- * @returns {{path: string, message: string, level: 'error'|'warning',
- *   nodeId?: string, edgeId?: string, networkId?: string}[]} issues sorted
- *   by path
+ * @returns {{code: string, path: string, message: string,
+ *   level: 'error'|'warning', severity: 'error'|'warning', nodeId?: string,
+ *   edgeId?: string, networkId?: string, field?: string,
+ *   blocksPublish?: true}[]} issues sorted by path; code is a code of the
+ *   registry Go generates (schema/codes.json), and severity is level
  */
 export function validateDocument(doc, { disks = null } = {}) {
   const issues = [];
 
   if (!doc || typeof doc !== 'object') {
-    return [{ path: '', message: 'document is required', level: 'error' }];
+    issue(issues, 'document.content.missing', '', 'document is required');
+
+    return issues;
   }
 
   const nodesById = new Map();

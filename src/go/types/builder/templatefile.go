@@ -171,36 +171,42 @@ func (f *TemplateFile) Validate() error {
 func (f *TemplateFile) Issues() []Issue {
 	var issues []Issue
 
-	addf := func(at, format string, args ...any) {
-		issues = append(issues, Issue{Path: at, Message: fmt.Sprintf(format, args...)})
+	addf := func(code Code, at, format string, args ...any) {
+		issues = append(issues, NewIssue(code, at, fmt.Sprintf(format, args...)))
 	}
 
 	if f.Schema != TemplateFileSchemaURI {
-		addf(schemaKey, "template file schema must be %q, not %q", TemplateFileSchemaURI, truncate(f.Schema))
+		addf(
+			CodeTemplateFileSchemaMismatch, schemaKey,
+			"template file schema must be %q, not %q", TemplateFileSchemaURI, truncate(f.Schema),
+		)
 	}
 
 	switch {
 	case strings.TrimSpace(f.Name) == "":
-		addf(keyName, "collection name is required")
+		addf(CodeTemplateCollectionRequired, keyName, "collection name is required")
 	case len(f.Name) > MaxTemplateNameBytes:
-		addf(keyName, "collection name must be at most %d bytes", MaxTemplateNameBytes)
+		addf(CodeTemplateCollectionTooLong, keyName, "collection name must be at most %d bytes", MaxTemplateNameBytes)
 	case strings.ContainsFunc(f.Name, isControl):
-		addf(keyName, "collection name must not contain control characters")
+		addf(CodeTemplateCollectionControl, keyName, "collection name must not contain control characters")
 	}
 
 	switch {
 	case len(f.Description) > MaxTemplateDescriptionBytes:
-		addf(keyDescription, "collection description must be at most %d bytes", MaxTemplateDescriptionBytes)
+		addf(
+			CodeTemplateCollectionDescLong, keyDescription,
+			"collection description must be at most %d bytes", MaxTemplateDescriptionBytes,
+		)
 	case strings.ContainsFunc(f.Description, isControl):
-		addf(keyDescription, "collection description must not contain control characters")
+		addf(CodeTemplateCollectionDescControl, keyDescription, "collection description must not contain control characters")
 	}
 
 	switch {
 	case len(f.Templates) == 0:
-		addf(keyTemplates, "a template file holds at least one template")
+		addf(CodeTemplateFileEmpty, keyTemplates, "a template file holds at least one template")
 	case len(f.Templates) > MaxTemplateFileTemplates:
 		addf(
-			keyTemplates, "a template file holds at most %d templates, not %d",
+			CodeTemplateFileTooMany, keyTemplates, "a template file holds at most %d templates, not %d",
 			MaxTemplateFileTemplates, len(f.Templates),
 		)
 	}
@@ -220,6 +226,7 @@ func (f *TemplateFile) Issues() []Issue {
 
 		if first, seen := names[name]; seen {
 			addf(
+				CodeTemplateNameDuplicate,
 				path+"."+keyName, "template name %q is also the name of %s[%d], ignoring case",
 				truncate(template.Name), keyTemplates, first,
 			)

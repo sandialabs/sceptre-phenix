@@ -1,0 +1,1018 @@
+{
+  "device.color.invalid": {
+    "severity": "error",
+    "description": "A device's outline or fill color is not #rrggbb."
+  },
+  "device.hostname.mismatch": {
+    "severity": "warning",
+    "description": "A device's spec names another hostname than the device; the device's wins."
+  },
+  "device.icon-key.unknown": {
+    "severity": "error",
+    "description": "A device's icon key is not a built-in icon."
+  },
+  "device.icon-size.unknown": {
+    "severity": "error",
+    "description": "A device's icon size is not small, medium or large."
+  },
+  "device.icon.invalid": {
+    "severity": "error",
+    "description": "A device's custom icon is not an icon name."
+  },
+  "device.image.unknown": {
+    "severity": "warning",
+    "description": "A device's drive image is not one of the server's disk images."
+  },
+  "device.included-from.invalid": {
+    "severity": "error",
+    "description": "The topology a device is included from is blank or holds white space."
+  },
+  "device.included-from.no-includes": {
+    "severity": "error",
+    "description": "A device is included from a topology, but the document includes none."
+  },
+  "device.interfaces.none": {
+    "severity": "warning",
+    "description": "A device has no interfaces."
+  },
+  "device.spec.required": {
+    "severity": "error",
+    "description": "A device has no spec."
+  },
+  "document.content.missing": {
+    "severity": "error",
+    "description": "There is no document at all."
+  },
+  "document.field.unknown": {
+    "severity": "error",
+    "description": "An object of the document holds a key that object does not have."
+  },
+  "document.grid.invalid": {
+    "severity": "error",
+    "description": "The grid size is not a positive finite number."
+  },
+  "document.icon-size.unknown": {
+    "severity": "error",
+    "description": "The document's icon size is not small, medium or large."
+  },
+  "document.invalid": {
+    "severity": "error",
+    "description": "The document does not validate; issues lists each reason."
+  },
+  "document.layout.not-text": {
+    "severity": "error",
+    "description": "The document's layout is not text."
+  },
+  "document.list.missing": {
+    "severity": "error",
+    "description": "nodes, networks or edges is missing, null or not a list."
+  },
+  "document.revision.mismatch": {
+    "severity": "error",
+    "description": "The document's revision is not the one this phenix reads."
+  },
+  "document.schema.mismatch": {
+    "severity": "error",
+    "description": "The document's $schema is not the Builder document schema."
+  },
+  "document.viewport.not-finite": {
+    "severity": "error",
+    "description": "A viewport value is not a finite number."
+  },
+  "document.zoom.not-positive": {
+    "severity": "error",
+    "description": "The viewport zoom is not a positive number."
+  },
+  "draft.conflict": {
+    "severity": "error",
+    "description": "The draft changed while the request was handled; read it again and retry."
+  },
+  "draft.shares.stale": {
+    "severity": "error",
+    "description": "The If-Match entity tag names a share list of the draft that is no longer current."
+  },
+  "draft.snapshot.current": {
+    "severity": "error",
+    "description": "The current version of a draft cannot be deleted."
+  },
+  "draft.stale": {
+    "severity": "error",
+    "description": "The If-Match entity tag names a version of the draft that is no longer current."
+  },
+  "drawing.arrow.not-boolean": {
+    "severity": "error",
+    "description": "A line's startArrow or endArrow is not true or false."
+  },
+  "drawing.border-style.unknown": {
+    "severity": "error",
+    "description": "A shape's border style is not one the editor draws."
+  },
+  "drawing.color.invalid": {
+    "severity": "error",
+    "description": "A shape's or a line's color is not #rrggbb."
+  },
+  "drawing.icon-key.unknown": {
+    "severity": "error",
+    "description": "An icon drawing's icon key is not a built-in icon."
+  },
+  "drawing.icon.ambiguous": {
+    "severity": "error",
+    "description": "An icon drawing names both or neither of a built-in icon and a custom icon."
+  },
+  "drawing.icon.invalid": {
+    "severity": "error",
+    "description": "An icon drawing's custom icon is not an icon name."
+  },
+  "drawing.line-style.unknown": {
+    "severity": "error",
+    "description": "A line's style is not one the editor draws."
+  },
+  "drawing.points.not-finite": {
+    "severity": "error",
+    "description": "A point of a line is not finite numbers."
+  },
+  "drawing.points.too-few": {
+    "severity": "error",
+    "description": "A line has fewer than 2 points."
+  },
+  "drawing.points.too-many": {
+    "severity": "error",
+    "description": "A line has more than 64 points."
+  },
+  "drawing.shape.unknown": {
+    "severity": "error",
+    "description": "A shape's figure is not rectangle or circle."
+  },
+  "edge.endpoints.invalid": {
+    "severity": "error",
+    "description": "A connection does not join one device interface to one switch."
+  },
+  "edge.endpoints.same": {
+    "severity": "error",
+    "description": "A connection joins a node to itself."
+  },
+  "edge.handle.unknown": {
+    "severity": "error",
+    "description": "A connection names a connection point its device does not have."
+  },
+  "edge.id.duplicate": {
+    "severity": "error",
+    "description": "Two connections have the same ID, ignoring case."
+  },
+  "edge.id.invalid": {
+    "severity": "error",
+    "description": "A connection ID is not a UUID."
+  },
+  "edge.id.required": {
+    "severity": "error",
+    "description": "A connection has no ID."
+  },
+  "edge.interface.connected": {
+    "severity": "error",
+    "description": "An interface is connected by more than one connection."
+  },
+  "edge.line-style.unknown": {
+    "severity": "error",
+    "description": "A connection's line style is not one the editor draws."
+  },
+  "edge.network.mismatch": {
+    "severity": "error",
+    "description": "A connection names another network than its switch."
+  },
+  "edge.network.required": {
+    "severity": "error",
+    "description": "A connection names no network."
+  },
+  "edge.network.unknown": {
+    "severity": "error",
+    "description": "A connection names a network the document does not have."
+  },
+  "edge.route.not-finite": {
+    "severity": "error",
+    "description": "A point of a connection's route is not finite numbers."
+  },
+  "edge.route.too-few": {
+    "severity": "error",
+    "description": "A connection's route has fewer than 2 points."
+  },
+  "edge.source.unknown": {
+    "severity": "error",
+    "description": "A connection's source is no node of the document."
+  },
+  "edge.target.unknown": {
+    "severity": "error",
+    "description": "A connection's target is no node of the document."
+  },
+  "group.border-style.unknown": {
+    "severity": "error",
+    "description": "A group's border style is not one the editor draws."
+  },
+  "group.icon-key.unknown": {
+    "severity": "error",
+    "description": "A group's icon key is not a built-in icon."
+  },
+  "group.icon-size.unknown": {
+    "severity": "error",
+    "description": "A group's icon size is not small, medium or large."
+  },
+  "group.icon.invalid": {
+    "severity": "error",
+    "description": "A group's custom icon is not an icon name."
+  },
+  "icon.data.invalid": {
+    "severity": "error",
+    "description": "A custom icon's data is not base64 of at most 40960 bytes."
+  },
+  "icon.list.not-object": {
+    "severity": "error",
+    "description": "The custom icons are not an object of icons by name."
+  },
+  "icon.list.too-many": {
+    "severity": "error",
+    "description": "More than 50 custom icons are carried."
+  },
+  "icon.name.invalid": {
+    "severity": "error",
+    "description": "A custom icon's name is not an icon name."
+  },
+  "icon.png.invalid": {
+    "severity": "error",
+    "description": "A custom icon is not a PNG the Builder accepts."
+  },
+  "import.name.invalid": {
+    "severity": "error",
+    "description": "The new topology name of a copy or a combined import is not a config name."
+  },
+  "import.name.source": {
+    "severity": "error",
+    "description": "The new topology name of a copy or a combined import is the imported topology's own name."
+  },
+  "include.list.not-list": {
+    "severity": "error",
+    "description": "The included topologies are not a list of names."
+  },
+  "include.name.required": {
+    "severity": "error",
+    "description": "An included topology has no name."
+  },
+  "include.name.whitespace": {
+    "severity": "error",
+    "description": "The name of an included topology holds white space."
+  },
+  "interface.id.duplicate": {
+    "severity": "error",
+    "description": "Two interface connection points have the same ID, ignoring case."
+  },
+  "interface.id.invalid": {
+    "severity": "error",
+    "description": "An interface connection point ID is not a UUID."
+  },
+  "interface.id.required": {
+    "severity": "error",
+    "description": "An interface connection point has no ID."
+  },
+  "interface.ip.shared": {
+    "severity": "error",
+    "description": "Interfaces on one network use the same IP address, which blocks publishing."
+  },
+  "interface.mac.shared": {
+    "severity": "error",
+    "description": "Interfaces on one network use the same MAC address, which blocks publishing."
+  },
+  "interface.name.duplicate": {
+    "severity": "error",
+    "description": "Two connection points of a device have the same name, ignoring case."
+  },
+  "interface.name.required": {
+    "severity": "error",
+    "description": "An interface connection point has no name."
+  },
+  "interface.name.unmatched": {
+    "severity": "warning",
+    "description": "A connection point names no interface of the device's spec, so publishing drops it."
+  },
+  "interface.network.unconnected": {
+    "severity": "warning",
+    "description": "An interface is not connected to a network."
+  },
+  "interface.vlan.case-mismatch": {
+    "severity": "warning",
+    "description": "An interface's VLAN differs from a network's name only in case, which phenix keeps apart."
+  },
+  "interface.vlan.implicit": {
+    "severity": "warning",
+    "description": "An unconnected interface's VLAN puts it on a network of the diagram when published."
+  },
+  "interface.vlan.missing": {
+    "severity": "error",
+    "description": "An interface of a device phenix starts has no VLAN, which blocks publishing."
+  },
+  "interface.vlan.unknown": {
+    "severity": "warning",
+    "description": "An interface's VLAN names no network of the diagram."
+  },
+  "metadata.id.invalid": {
+    "severity": "error",
+    "description": "The document ID is not a UUID."
+  },
+  "metadata.id.required": {
+    "severity": "error",
+    "description": "The document has no ID."
+  },
+  "metadata.name.control": {
+    "severity": "error",
+    "description": "The document name holds a control character."
+  },
+  "metadata.name.too-long": {
+    "severity": "error",
+    "description": "The document name is longer than 512 bytes."
+  },
+  "metadata.not-object": {
+    "severity": "error",
+    "description": "The document's metadata is not an object."
+  },
+  "metadata.note.blank": {
+    "severity": "error",
+    "description": "A note of the diagram is blank."
+  },
+  "metadata.note.control": {
+    "severity": "error",
+    "description": "A note of the diagram holds a control character other than newline and tab."
+  },
+  "metadata.note.not-text": {
+    "severity": "error",
+    "description": "A note of the diagram is not text."
+  },
+  "metadata.note.too-long": {
+    "severity": "error",
+    "description": "A note of the diagram is longer than 4096 bytes."
+  },
+  "metadata.notes.not-list": {
+    "severity": "error",
+    "description": "The diagram's notes are not a list of text."
+  },
+  "metadata.notes.too-many": {
+    "severity": "error",
+    "description": "The diagram has more than 100 notes."
+  },
+  "metadata.time.invalid": {
+    "severity": "error",
+    "description": "createdAt or updatedAt is not a UTC time of the form YYYY-MM-DDTHH:MM:SSZ."
+  },
+  "metadata.time.not-text": {
+    "severity": "error",
+    "description": "createdAt or updatedAt is not text."
+  },
+  "metadata.user.control": {
+    "severity": "error",
+    "description": "createdBy or updatedBy holds a control character."
+  },
+  "metadata.user.not-text": {
+    "severity": "error",
+    "description": "createdBy or updatedBy is not text."
+  },
+  "metadata.user.too-long": {
+    "severity": "error",
+    "description": "createdBy or updatedBy is longer than 256 bytes."
+  },
+  "network.alias.duplicate": {
+    "severity": "error",
+    "description": "Two networks have the same VLAN alias."
+  },
+  "network.alias.out-of-range": {
+    "severity": "error",
+    "description": "A network's VLAN alias is not from 1 to 4094."
+  },
+  "network.id.duplicate": {
+    "severity": "error",
+    "description": "Two networks have the same ID, ignoring case."
+  },
+  "network.id.invalid": {
+    "severity": "error",
+    "description": "A network ID is not a UUID."
+  },
+  "network.id.required": {
+    "severity": "error",
+    "description": "A network has no ID."
+  },
+  "network.line-style.unknown": {
+    "severity": "error",
+    "description": "A network's line style is not one the editor draws."
+  },
+  "network.name.duplicate": {
+    "severity": "error",
+    "description": "Two networks have exactly the same name."
+  },
+  "network.name.required": {
+    "severity": "error",
+    "description": "A network has no name."
+  },
+  "network.name.whitespace": {
+    "severity": "error",
+    "description": "A network name holds white space."
+  },
+  "network.switch.missing": {
+    "severity": "warning",
+    "description": "A network has no switch on the canvas."
+  },
+  "node.hostname.duplicate": {
+    "severity": "error",
+    "description": "Two devices have the same hostname, ignoring case."
+  },
+  "node.hostname.numeric": {
+    "severity": "error",
+    "description": "A device hostname is all digits, which phenix refuses in an experiment."
+  },
+  "node.hostname.phenix": {
+    "severity": "warning",
+    "description": "A device that is not Windows is named \"phenix\", the hostname of phenix's own images."
+  },
+  "node.hostname.required": {
+    "severity": "error",
+    "description": "A device has no hostname."
+  },
+  "node.hostname.reserved": {
+    "severity": "error",
+    "description": "A device hostname is \"all\", which minimega takes for every VM."
+  },
+  "node.hostname.reserved-case": {
+    "severity": "warning",
+    "description": "A device hostname differs from \"all\" only by case."
+  },
+  "node.hostname.short": {
+    "severity": "error",
+    "description": "A device hostname is 1 character long, which phenix refuses."
+  },
+  "node.hostname.whitespace": {
+    "severity": "error",
+    "description": "A device hostname holds white space."
+  },
+  "node.hostname.windows-phenix": {
+    "severity": "error",
+    "description": "A Windows device is named \"phenix\", which phenix refuses in an experiment."
+  },
+  "node.id.duplicate": {
+    "severity": "error",
+    "description": "Two nodes have the same ID, ignoring case."
+  },
+  "node.id.invalid": {
+    "severity": "error",
+    "description": "A node ID is not a UUID."
+  },
+  "node.id.required": {
+    "severity": "error",
+    "description": "A node has no ID."
+  },
+  "node.kind.unknown": {
+    "severity": "error",
+    "description": "A node's kind is not one the Builder knows."
+  },
+  "node.parent.cycle": {
+    "severity": "error",
+    "description": "Groups contain each other in a cycle."
+  },
+  "node.parent.not-group": {
+    "severity": "error",
+    "description": "A node's parent is not a group."
+  },
+  "node.parent.self": {
+    "severity": "error",
+    "description": "A node is its own parent."
+  },
+  "node.parent.unknown": {
+    "severity": "error",
+    "description": "A node's parent is no node of the document."
+  },
+  "node.payload.extra": {
+    "severity": "error",
+    "description": "A node carries the payload of another kind."
+  },
+  "node.payload.missing": {
+    "severity": "error",
+    "description": "A node lacks the payload of its kind."
+  },
+  "node.position.not-finite": {
+    "severity": "error",
+    "description": "A node's position is not finite numbers."
+  },
+  "node.size.invalid": {
+    "severity": "error",
+    "description": "A node's size is not positive finite numbers."
+  },
+  "package.config-annotation.builder": {
+    "severity": "error",
+    "description": "A carried config has a Builder annotation, which a package never carries."
+  },
+  "package.config-api-version.invalid": {
+    "severity": "error",
+    "description": "A carried config's apiVersion is not phenix.sandia.gov/v and a number."
+  },
+  "package.config-key.invalid": {
+    "severity": "error",
+    "description": "The key a package keeps a config under is not a config name."
+  },
+  "package.config-kind.mismatch": {
+    "severity": "error",
+    "description": "A carried config's kind is not the kind of its list."
+  },
+  "package.config-name.mismatch": {
+    "severity": "error",
+    "description": "A carried config's metadata.name is not the key the package keeps it under."
+  },
+  "package.config-spec.missing": {
+    "severity": "error",
+    "description": "A carried config has no spec."
+  },
+  "package.config.unlisted": {
+    "severity": "error",
+    "description": "A package carries a config its requirements do not name."
+  },
+  "package.config.unreadable": {
+    "severity": "warning",
+    "description": "A Scenario config or included topology the document names does not exist, or the caller may not read it, so the package does not carry it."
+  },
+  "package.configs.too-many": {
+    "severity": "error",
+    "description": "A package carries more than 20 Scenario configs or 100 Topology configs."
+  },
+  "package.document.invalid": {
+    "severity": "error",
+    "description": "A package's document does not decode as a Builder document."
+  },
+  "package.document.missing": {
+    "severity": "error",
+    "description": "A package holds no Builder document."
+  },
+  "package.icon.missing": {
+    "severity": "warning",
+    "description": "A custom icon the document names is not in the icon library, so the package does not carry it."
+  },
+  "package.icons.too-many": {
+    "severity": "warning",
+    "description": "The document names more custom icons than the 50 a package carries; the package does not carry the rest."
+  },
+  "package.include.file-path": {
+    "severity": "warning",
+    "description": "An included topology is a file path, which a package never carries."
+  },
+  "package.invalid": {
+    "severity": "error",
+    "description": "A Builder package does not decode or validate; issues lists what does not validate."
+  },
+  "package.requirement.blank": {
+    "severity": "error",
+    "description": "An entry of a package's requirements is blank."
+  },
+  "package.requirement.control": {
+    "severity": "error",
+    "description": "An entry of a package's requirements holds a control character."
+  },
+  "package.requirement.left-out": {
+    "severity": "warning",
+    "description": "A name or path the document or a config holds is blank, longer than 4096 bytes or holds a control character, so the package does not list it."
+  },
+  "package.requirement.too-long": {
+    "severity": "error",
+    "description": "An entry of a package's requirements is longer than 4096 bytes."
+  },
+  "package.requirements.missing": {
+    "severity": "error",
+    "description": "A list of a package's requirements is missing or null."
+  },
+  "package.requirements.too-many": {
+    "severity": "error",
+    "description": "A list of a package's requirements holds more than 1000 entries."
+  },
+  "package.requirements.truncated": {
+    "severity": "warning",
+    "description": "A list of the requirements would hold more than 1000 entries, so the package lists the first 1000."
+  },
+  "package.schema.mismatch": {
+    "severity": "error",
+    "description": "A package's $schema is not the Builder package schema."
+  },
+  "package.too-large": {
+    "severity": "error",
+    "description": "A Builder package is larger than 5 MiB."
+  },
+  "publish.alias.unpublished": {
+    "severity": "warning",
+    "description": "The document's VLAN aliases are not published: a topology holds none."
+  },
+  "publish.blocked": {
+    "severity": "error",
+    "description": "Only publishing refuses the topology; issues lists each interface, address or hostname to fix."
+  },
+  "publish.broadcast.failed": {
+    "severity": "warning",
+    "description": "A config was stored, but its live update could not be broadcast."
+  },
+  "publish.cleanup.failed": {
+    "severity": "warning",
+    "description": "The publication went through, but content it replaces could not be removed."
+  },
+  "publish.experiment.changed": {
+    "severity": "error",
+    "description": "The experiment changed after this draft published it."
+  },
+  "publish.experiment.exists": {
+    "severity": "error",
+    "description": "The experiment a publish creates already exists."
+  },
+  "publish.experiment.invalid": {
+    "severity": "error",
+    "description": "phenix refuses the experiment a publish would write."
+  },
+  "publish.experiment.missing": {
+    "severity": "error",
+    "description": "The experiment a publish updates does not exist."
+  },
+  "publish.experiment.name-too-long": {
+    "severity": "error",
+    "description": "The experiment name is longer than a bridge name this server names after it."
+  },
+  "publish.experiment.not-source": {
+    "severity": "error",
+    "description": "The experiment is not the one this draft was loaded from, so it cannot update it."
+  },
+  "publish.experiment.reserved": {
+    "severity": "error",
+    "description": "The experiment is named \"all\", which phenix reserves."
+  },
+  "publish.experiment.running": {
+    "severity": "error",
+    "description": "A running experiment cannot be updated."
+  },
+  "publish.experiment.unmergeable": {
+    "severity": "error",
+    "description": "An included topology cannot be merged into the experiment an update writes."
+  },
+  "publish.experiment.unrecorded": {
+    "severity": "warning",
+    "description": "The experiment was stored, but not which draft published it."
+  },
+  "publish.file.unchanged": {
+    "severity": "warning",
+    "description": "The topology names a Builder file that publishing does not change."
+  },
+  "publish.file.unserved": {
+    "severity": "warning",
+    "description": "The recorded Builder file is in a directory the phenix server does not read."
+  },
+  "publish.include.clash": {
+    "severity": "error",
+    "description": "A hostname is defined both in the topology and in a topology it includes."
+  },
+  "publish.include.hostname": {
+    "severity": "error",
+    "description": "An included topology has a hostname phenix refuses in an experiment."
+  },
+  "publish.include.unchecked": {
+    "severity": "warning",
+    "description": "An included topology could not be read to check for duplicate hostnames."
+  },
+  "publish.legacy.removed": {
+    "severity": "warning",
+    "description": "The topology's legacy Builder diagram could not be read and was removed."
+  },
+  "publish.legacy.replaced": {
+    "severity": "warning",
+    "description": "The topology's legacy Builder diagram was replaced by this diagram."
+  },
+  "publish.path.invalid": {
+    "severity": "error",
+    "description": "A Builder file path cannot be recorded on the topology."
+  },
+  "publish.retry.complete": {
+    "severity": "warning",
+    "description": "The same publication was already complete; nothing was written."
+  },
+  "publish.scenario.invalid": {
+    "severity": "error",
+    "description": "A listed scenario would not be valid with the topology added."
+  },
+  "publish.scenario.missing": {
+    "severity": "error",
+    "description": "A scenario the document lists does not exist, or the caller may not read it."
+  },
+  "publish.scenario.not-listed": {
+    "severity": "error",
+    "description": "The experiment's scenario is not one the document lists."
+  },
+  "publish.scenario.partial": {
+    "severity": "warning",
+    "description": "Some scenarios were updated before the scenario stage failed."
+  },
+  "publish.scenario.unchanged": {
+    "severity": "warning",
+    "description": "phenix builder publish changes none of the document's scenarios."
+  },
+  "publish.source.changed": {
+    "severity": "error",
+    "description": "The config this draft was imported from changed since."
+  },
+  "publish.stage.failed": {
+    "severity": "error",
+    "description": "A publish stage failed after earlier stages were written."
+  },
+  "publish.target.invalid": {
+    "severity": "error",
+    "description": "A topology, experiment or scenario name is not a config name."
+  },
+  "publish.topology.changed": {
+    "severity": "error",
+    "description": "The topology changed after this draft published it."
+  },
+  "publish.topology.exists": {
+    "severity": "error",
+    "description": "The topology a publish creates already exists."
+  },
+  "publish.topology.file-changed": {
+    "severity": "error",
+    "description": "The topology or its Builder file changed after this draft was opened from the file."
+  },
+  "publish.topology.file-mismatch": {
+    "severity": "error",
+    "description": "The topology is not what its Builder file publishes, so it cannot be updated."
+  },
+  "publish.topology.invalid": {
+    "severity": "error",
+    "description": "phenix's topology schema refuses the topology the document publishes as."
+  },
+  "publish.topology.missing": {
+    "severity": "error",
+    "description": "The topology a publish updates does not exist."
+  },
+  "publish.topology.not-source": {
+    "severity": "error",
+    "description": "The topology is not the one this draft was loaded from, so it cannot update it."
+  },
+  "request.conflict": {
+    "severity": "error",
+    "description": "The request conflicts with what is stored."
+  },
+  "request.forbidden": {
+    "severity": "error",
+    "description": "The caller's role does not allow the operation."
+  },
+  "request.invalid": {
+    "severity": "error",
+    "description": "The request is malformed: its body, a header or a parameter."
+  },
+  "request.method-not-allowed": {
+    "severity": "error",
+    "description": "The route does not take the request's method; Allow names the methods it takes."
+  },
+  "request.not-found": {
+    "severity": "error",
+    "description": "What the request names does not exist, or the caller may not see it."
+  },
+  "request.stale": {
+    "severity": "error",
+    "description": "The If-Match entity tag names a version that is no longer current."
+  },
+  "request.too-large": {
+    "severity": "error",
+    "description": "The request or what it stores is larger than a limit."
+  },
+  "request.unprocessable": {
+    "severity": "error",
+    "description": "The request is well formed, but what it asks for cannot be done."
+  },
+  "scenario.list.too-many": {
+    "severity": "error",
+    "description": "The document lists more than 20 scenarios."
+  },
+  "scenario.name.duplicate": {
+    "severity": "error",
+    "description": "A scenario is listed twice, ignoring case."
+  },
+  "scenario.name.invalid": {
+    "severity": "error",
+    "description": "A scenario name is not a config name."
+  },
+  "scenario.name.required": {
+    "severity": "error",
+    "description": "A listed scenario has no name."
+  },
+  "scenario.name.too-long": {
+    "severity": "error",
+    "description": "A scenario name is longer than 256 bytes."
+  },
+  "server.busy": {
+    "severity": "error",
+    "description": "The server gave up because what was asked kept changing; try again."
+  },
+  "server.error": {
+    "severity": "error",
+    "description": "The server failed; its log says why."
+  },
+  "server.storage-full": {
+    "severity": "error",
+    "description": "The store refused a write for lack of space."
+  },
+  "share.users.refused": {
+    "severity": "error",
+    "description": "Some users of a share list were refused; errors names each and why."
+  },
+  "source.annotation-key.blank": {
+    "severity": "error",
+    "description": "A source annotation key is blank."
+  },
+  "source.annotation-key.control": {
+    "severity": "error",
+    "description": "A source annotation key holds a control character."
+  },
+  "source.annotation-key.too-long": {
+    "severity": "error",
+    "description": "A source annotation key is longer than 512 bytes."
+  },
+  "source.annotation.not-text": {
+    "severity": "error",
+    "description": "A source annotation's value is not text."
+  },
+  "source.annotations.not-object": {
+    "severity": "error",
+    "description": "The source annotations are not an object of text values."
+  },
+  "source.annotations.too-large": {
+    "severity": "error",
+    "description": "The source annotations take more than 256 KiB."
+  },
+  "source.annotations.too-many": {
+    "severity": "error",
+    "description": "The source carries more than 100 annotations."
+  },
+  "source.digest.malformed": {
+    "severity": "error",
+    "description": "The source digest is not sha256: and 64 hex digits."
+  },
+  "source.kind.unknown": {
+    "severity": "error",
+    "description": "The source's kind is not manual, topology or experiment."
+  },
+  "switch.color.invalid": {
+    "severity": "error",
+    "description": "A switch's outline or fill color is not #rrggbb."
+  },
+  "switch.icon-size.unknown": {
+    "severity": "error",
+    "description": "A switch's icon size is not small, medium or large."
+  },
+  "switch.network.required": {
+    "severity": "error",
+    "description": "A switch names no network."
+  },
+  "switch.network.unknown": {
+    "severity": "error",
+    "description": "A switch names a network the document does not have."
+  },
+  "switch.note.blank": {
+    "severity": "error",
+    "description": "A note of a switch is blank."
+  },
+  "switch.note.control": {
+    "severity": "error",
+    "description": "A note of a switch holds a control character other than newline and tab."
+  },
+  "switch.note.not-text": {
+    "severity": "error",
+    "description": "A note of a switch is not text."
+  },
+  "switch.note.too-long": {
+    "severity": "error",
+    "description": "A note of a switch is longer than 4096 bytes."
+  },
+  "switch.notes.not-list": {
+    "severity": "error",
+    "description": "A switch's notes are not a list of text."
+  },
+  "switch.notes.too-many": {
+    "severity": "error",
+    "description": "A switch has more than 100 notes."
+  },
+  "template.collection-description.control": {
+    "severity": "error",
+    "description": "A collection description holds a control character."
+  },
+  "template.collection-description.too-long": {
+    "severity": "error",
+    "description": "A collection description is longer than 1024 bytes."
+  },
+  "template.collection-name.control": {
+    "severity": "error",
+    "description": "A collection name holds a control character."
+  },
+  "template.collection-name.required": {
+    "severity": "error",
+    "description": "A template file's collection has no name."
+  },
+  "template.collection-name.too-long": {
+    "severity": "error",
+    "description": "A collection name is longer than 128 bytes."
+  },
+  "template.color.invalid": {
+    "severity": "error",
+    "description": "A template's outline or fill color is not #rrggbb."
+  },
+  "template.description.control": {
+    "severity": "error",
+    "description": "A template description holds a control character."
+  },
+  "template.description.too-long": {
+    "severity": "error",
+    "description": "A template description is longer than 1024 bytes."
+  },
+  "template.device.too-large": {
+    "severity": "error",
+    "description": "A template's device takes more than 16 KiB as JSON."
+  },
+  "template.device.unencodable": {
+    "severity": "error",
+    "description": "A template's device cannot be encoded as JSON."
+  },
+  "template.file.empty": {
+    "severity": "error",
+    "description": "A template file holds no template."
+  },
+  "template.file.invalid": {
+    "severity": "error",
+    "description": "A template file does not validate; issues lists each reason."
+  },
+  "template.file.schema-mismatch": {
+    "severity": "error",
+    "description": "A template file's $schema is not the template file schema."
+  },
+  "template.file.too-many": {
+    "severity": "error",
+    "description": "A template file holds more than 200 templates."
+  },
+  "template.hostname.required": {
+    "severity": "error",
+    "description": "A template's spec has no general.hostname."
+  },
+  "template.hostname.whitespace": {
+    "severity": "error",
+    "description": "A template's hostname holds white space."
+  },
+  "template.icon-key.unknown": {
+    "severity": "error",
+    "description": "A template's icon key is not a built-in icon."
+  },
+  "template.icon-size.unknown": {
+    "severity": "error",
+    "description": "A template's icon size is not small, medium or large."
+  },
+  "template.icon.invalid": {
+    "severity": "error",
+    "description": "A template's custom icon is not an icon name."
+  },
+  "template.id.duplicate": {
+    "severity": "error",
+    "description": "Two templates have the same ID, ignoring case."
+  },
+  "template.id.invalid": {
+    "severity": "error",
+    "description": "A template ID is not a UUID."
+  },
+  "template.id.required": {
+    "severity": "error",
+    "description": "A template has no ID."
+  },
+  "template.item.not-found": {
+    "severity": "error",
+    "description": "A template or collection a share or publish request names is not in the library."
+  },
+  "template.list.not-list": {
+    "severity": "error",
+    "description": "The document's templates are not a list."
+  },
+  "template.list.too-many": {
+    "severity": "error",
+    "description": "The document carries more than 50 templates."
+  },
+  "template.name.control": {
+    "severity": "error",
+    "description": "A template name holds a control character."
+  },
+  "template.name.duplicate": {
+    "severity": "error",
+    "description": "Two templates of a template file have the same name, ignoring case."
+  },
+  "template.name.required": {
+    "severity": "error",
+    "description": "A template has no name."
+  },
+  "template.name.too-long": {
+    "severity": "error",
+    "description": "A template name is longer than 128 bytes."
+  },
+  "template.shares.too-many": {
+    "severity": "error",
+    "description": "A template or collection would be shared with more users than it may be."
+  },
+  "template.spec.required": {
+    "severity": "error",
+    "description": "A template's device has no spec."
+  }
+}

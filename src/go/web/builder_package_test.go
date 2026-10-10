@@ -87,6 +87,41 @@ func buildBuilderPackage(
 	return recorder.Code, response
 }
 
+// builderPackageWarnings returns each warning of a package by what it says,
+// and fails the test for one that is not a warning with a code of the
+// registry.
+func builderPackageWarnings(t *testing.T, warnings []bdoc.Issue) map[string]bdoc.Code {
+	t.Helper()
+
+	byMessage := make(map[string]bdoc.Code, len(warnings))
+
+	for _, warning := range warnings {
+		if _, known := bdoc.LookupCode(warning.Code); !known || warning.Severity != bdoc.SeverityWarning {
+			t.Errorf("warning %+v is not a warning with a registered code", warning)
+		}
+
+		byMessage[warning.Message] = warning.Code
+	}
+
+	return byMessage
+}
+
+// builderPackageRefusal sends body to the package route at path and returns
+// the status and the refusal it answers.
+func builderPackageRefusal(t *testing.T, harness *builderHarness, path, body string) (int, builderErrorBody) {
+	t.Helper()
+
+	recorder := harness.do(builderRequest{method: http.MethodPost, path: path, body: body, user: builderTestOwner})
+
+	var refusal builderErrorBody
+
+	if recorder.Code != http.StatusOK {
+		harness.decode(recorder, &refusal)
+	}
+
+	return recorder.Code, refusal
+}
+
 func TestBuilderPackageSchemaRoute(t *testing.T) {
 	harness := newBuilderHarness(t)
 
@@ -184,15 +219,23 @@ func TestBuilderBuildPackageWithEverySection(t *testing.T) {
 		t.Errorf("icons = %v, want a copy of the library's %s", pkg.Document.Icons, builderPackageIcon)
 	}
 
-	for _, want := range []string{
-		"Scenario config pkg-gone does not exist on this server, or your role cannot read it: " +
-			"the package names it but does not carry it.",
-		"Included topology pkg-hidden does not exist on this server, or your role cannot read it: " +
-			"the package names it but does not carry it.",
-		"Included topology /phenix/x.yml is a file path: the package names it but does not carry it.",
+	warnings := builderPackageWarnings(t, response.Warnings)
+	unreadableScenario := "Scenario config pkg-gone does not exist on this server, or your role cannot read it: " +
+		"the package names it but does not carry it."
+	unreadableTopology := "Included topology pkg-hidden does not exist on this server, or your role cannot read it: " +
+		"the package names it but does not carry it."
+	filePath := "Included topology /phenix/x.yml is a file path: the package names it but does not carry it."
+
+	for _, want := range []struct {
+		message string
+		code    bdoc.Code
+	}{
+		{message: unreadableScenario, code: bdoc.CodePackageConfigUnreadable},
+		{message: unreadableTopology, code: bdoc.CodePackageConfigUnreadable},
+		{message: filePath, code: bdoc.CodePackageIncludeFilePath},
 	} {
-		if !slices.Contains(response.Warnings, want) {
-			t.Errorf("warnings = %q, want %q", response.Warnings, want)
+		if got, found := warnings[want.message]; !found || got != want.code {
+			t.Errorf("warnings = %+v, want %q with the code %s", response.Warnings, want.message, want.code)
 		}
 	}
 }
@@ -229,12 +272,11 @@ func TestBuilderBuildPackageWithNoSection(t *testing.T) {
 		t.Errorf("requirements = %+v, want no images and the icon", pkg.Requirements)
 	}
 
-	want := []string{
-		"Scenario config pkg-gone does not exist on this server, or your role cannot read it: " +
-			"the package lists none of its apps.",
-	}
-	if !slices.Equal(response.Warnings, want) {
-		t.Errorf("warnings = %q, want %q", response.Warnings, want)
+	want := "Scenario config pkg-gone does not exist on this server, or your role cannot read it: " +
+		"the package lists none of its apps."
+	if warnings := builderPackageWarnings(t, response.Warnings); len(warnings) != 1 ||
+		warnings[want] != bdoc.CodePackageConfigUnreadable {
+		t.Errorf("warnings = %+v, want only %q with the code %s", response.Warnings, want, bdoc.CodePackageConfigUnreadable)
 	}
 }
 
@@ -256,11 +298,13 @@ func TestBuilderBuildPackageHidesUnreadableScenarios(t *testing.T) {
 		t.Errorf("scenarios = %v, want none", response.Package.Scenarios)
 	}
 
+	warnings := builderPackageWarnings(t, response.Warnings)
+
 	for _, name := range []string{"pkg-sc", "pkg-gone"} {
 		want := "Scenario config " + name + " does not exist on this server, or your role cannot read it: " +
 			"the package names it but does not carry it."
-		if !slices.Contains(response.Warnings, want) {
-			t.Errorf("warnings = %q, want %q", response.Warnings, want)
+		if warnings[want] != bdoc.CodePackageConfigUnreadable {
+			t.Errorf("warnings = %+v, want %q", response.Warnings, want)
 		}
 	}
 }
@@ -312,12 +356,14 @@ func TestBuilderBuildPackageWithoutKindListPermissions(t *testing.T) {
 			pkg.Scenarios, pkg.Topologies, pkg.Requirements.Apps)
 	}
 
+	warnings := builderPackageWarnings(t, response.Warnings)
+
 	for _, want := range []string{
 		builderUnreadableWarning("Scenario config", "pkg-sc"),
 		builderUnreadableWarning("Included topology", "pkg-inc"),
 	} {
-		if !slices.Contains(response.Warnings, want) {
-			t.Errorf("warnings = %q, want %q", response.Warnings, want)
+		if warnings[want] != bdoc.CodePackageConfigUnreadable {
+			t.Errorf("warnings = %+v, want %q", response.Warnings, want)
 		}
 	}
 }
@@ -341,9 +387,11 @@ func TestBuilderBuildPackageHidesUnreadableIncludes(t *testing.T) {
 		t.Errorf("topologies = %v, want none", response.Package.Topologies)
 	}
 
+	warnings := builderPackageWarnings(t, response.Warnings)
+
 	for _, name := range []string{"pkg-inc", "pkg-hidden"} {
-		if want := builderUnreadableWarning("Included topology", name); !slices.Contains(response.Warnings, want) {
-			t.Errorf("warnings = %q, want %q", response.Warnings, want)
+		if want := builderUnreadableWarning("Included topology", name); warnings[want] != bdoc.CodePackageConfigUnreadable {
+			t.Errorf("warnings = %+v, want %q", response.Warnings, want)
 		}
 	}
 }
@@ -379,13 +427,15 @@ func TestBuilderBuildPackageLeavesOutWhatCannotBeListed(t *testing.T) {
 		t.Errorf("apps = %q, files = %q, want ok-app and no file", pkg.Requirements.Apps, pkg.Requirements.Files)
 	}
 
+	warnings := builderPackageWarnings(t, response.Warnings)
+
 	for _, want := range []string{
 		`The package does not list app "bad\napp": it must not contain control characters.`,
 		`The package does not list file "/phenix/assets/x\ty": it must not contain control characters.`,
 		`The package does not list file "/phenix/injects/a\nb": it must not contain control characters.`,
 	} {
-		if !slices.Contains(response.Warnings, want) {
-			t.Errorf("warnings = %q, want %q", response.Warnings, want)
+		if warnings[want] != bdoc.CodePackageRequirementLeftOut {
+			t.Errorf("warnings = %+v, want %q with the code %s", response.Warnings, want, bdoc.CodePackageRequirementLeftOut)
 		}
 	}
 
@@ -394,15 +444,10 @@ func TestBuilderBuildPackageLeavesOutWhatCannotBeListed(t *testing.T) {
 	}
 }
 
-// builderErrorBody is the body of a refusal.
-type builderErrorBody struct {
-	Message string `json:"message"`
-	Cause   string `json:"cause"`
-}
-
 // TestBuilderBuildPackageRefusesWhatWouldNotLoad asserts a package the
 // resolve route would refuse for anything but its requirements is never
-// answered: the refusal names the issue.
+// answered: the refusal, of the code package.invalid, names the issue, with
+// its code.
 func TestBuilderBuildPackageRefusesWhatWouldNotLoad(t *testing.T) {
 	scenario := namedScenario(t, "pkg-nospec", "")
 	scenario.Spec = nil
@@ -415,25 +460,28 @@ func TestBuilderBuildPackageRefusesWhatWouldNotLoad(t *testing.T) {
 		t.Fatalf("encoding the request: %v", err)
 	}
 
-	recorder := harness.do(builderRequest{
-		method: http.MethodPost, path: "/builder/package", body: string(body), user: builderTestOwner,
-	})
-	if recorder.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnprocessableEntity)
+	status, refusal := builderPackageRefusal(t, harness, "/builder/package", string(body))
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", status, http.StatusUnprocessableEntity)
 	}
-
-	var refusal builderErrorBody
-
-	harness.decode(recorder, &refusal)
 
 	if !strings.Contains(refusal.Cause, "scenarios.pkg-nospec.spec: a config needs a spec") {
 		t.Errorf("the refusal = %+v, want it to name the config without a spec", refusal)
 	}
+
+	if refusal.Code != string(bdoc.CodePackageInvalid) || !slices.ContainsFunc(refusal.Issues, func(issue bdoc.Issue) bool {
+		return issue.Code == bdoc.CodePackageConfigSpecMissing && issue.Path == "scenarios.pkg-nospec.spec" &&
+			issue.Severity == bdoc.SeverityError
+	}) {
+		t.Errorf("the refusal = %+v, want the code %s and the issue of the config without a spec, with its code",
+			refusal, bdoc.CodePackageInvalid)
+	}
 }
 
 // TestBuilderPackageRoutesRefuseTooMuch asserts a package larger than
-// MaxPackageBytes is refused with 413: the one the build route would make,
-// and the body of the resolve route before it is decoded.
+// MaxPackageBytes is refused with 413 and the code package.too-large: the
+// one the build route would make, and the body of the resolve route before
+// it is decoded.
 func TestBuilderPackageRoutesRefuseTooMuch(t *testing.T) {
 	scenario := namedScenario(t, "pkg-big", "")
 	scenario.Spec = map[string]any{"apps": []any{map[string]any{
@@ -444,24 +492,26 @@ func TestBuilderPackageRoutesRefuseTooMuch(t *testing.T) {
 	harness := newBuilderHarness(t, scenario)
 	document := builderPackageDocument(t, []string{"pkg-big"}, nil)
 
-	status, _ := buildBuilderPackage(t, harness, nil, document, "scenarios")
-	if status != http.StatusRequestEntityTooLarge {
-		t.Errorf("building a package that carries pkg-big: status = %d, want %d", status, http.StatusRequestEntityTooLarge)
+	request, err := json.Marshal(map[string]any{"document": document, "include": []string{"scenarios"}})
+	if err != nil {
+		t.Fatalf("encoding the request: %v", err)
+	}
+
+	status, refusal := builderPackageRefusal(t, harness, "/builder/package", string(request))
+	if status != http.StatusRequestEntityTooLarge || refusal.Code != string(bdoc.CodePackageTooLarge) {
+		t.Errorf("building a package that carries pkg-big: %d %+v, want %d with the code %s",
+			status, refusal, http.StatusRequestEntityTooLarge, bdoc.CodePackageTooLarge)
 	}
 
 	if status, _ := buildBuilderPackage(t, harness, nil, document); status != http.StatusOK {
 		t.Errorf("building a package that only names pkg-big: status = %d, want %d", status, http.StatusOK)
 	}
 
-	recorder := harness.do(builderRequest{
-		method: http.MethodPost,
-		path:   "/builder/package/resolve",
-		body:   `{"$schema": "` + strings.Repeat("x", bdoc.MaxPackageBytes) + `"}`,
-		user:   builderTestOwner,
-	})
-	if recorder.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("resolving a body larger than the limit: status = %d, want %d",
-			recorder.Code, http.StatusRequestEntityTooLarge)
+	status, refusal = builderPackageRefusal(t, harness, "/builder/package/resolve",
+		`{"$schema": "`+strings.Repeat("x", bdoc.MaxPackageBytes)+`"}`)
+	if status != http.StatusRequestEntityTooLarge || refusal.Code != string(bdoc.CodePackageTooLarge) {
+		t.Errorf("resolving a body larger than the limit: %d %+v, want %d with the code %s",
+			status, refusal, http.StatusRequestEntityTooLarge, bdoc.CodePackageTooLarge)
 	}
 }
 
@@ -798,22 +848,29 @@ func TestBuilderResolvePackageRefusesBuilderAnnotations(t *testing.T) {
 		t.Fatalf("encoding the package: %v", err)
 	}
 
-	recorder := harness.do(builderRequest{
-		method: http.MethodPost, path: "/builder/package/resolve", body: string(body), user: builderTestOwner,
-	})
-	if recorder.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnprocessableEntity)
+	status, refusal := builderPackageRefusal(t, harness, "/builder/package/resolve", string(body))
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", status, http.StatusUnprocessableEntity)
 	}
-
-	var refusal builderErrorBody
-
-	harness.decode(recorder, &refusal)
 
 	for _, key := range []string{"builder-doc", "builder-xml"} {
 		want := `scenarios.pkg-new.metadata.annotations: "` + key + `" is a Builder annotation`
 		if !strings.Contains(refusal.Cause, want) {
 			t.Errorf("the refusal = %+v, want it to name %s", refusal, key)
 		}
+	}
+
+	annotations := 0
+
+	for _, issue := range refusal.Issues {
+		if issue.Code == bdoc.CodePackageConfigBuilderNote && issue.Path == "scenarios.pkg-new.metadata.annotations" {
+			annotations++
+		}
+	}
+
+	if refusal.Code != string(bdoc.CodePackageInvalid) || annotations != 2 {
+		t.Errorf("the refusal = %+v, want the code %s and an issue of the code %s for each annotation",
+			refusal, bdoc.CodePackageInvalid, bdoc.CodePackageConfigBuilderNote)
 	}
 }
 
@@ -861,19 +918,27 @@ func TestBuilderResolvePackageRefusesWhatIsNoPackage(t *testing.T) {
 		"no requirements":        `{"$schema": "` + bdoc.PackageSchemaURI + `", "document": ` + string(builderDocument(t, "x")) + `}`,
 		"a document of a schema": string(builderDocument(t, "x")),
 	} {
-		recorder := harness.do(builderRequest{
-			method: http.MethodPost, path: "/builder/package/resolve", body: body, user: builderTestOwner,
-		})
-		if recorder.Code != http.StatusUnprocessableEntity {
-			t.Errorf("%s: status = %d, want %d", name, recorder.Code, http.StatusUnprocessableEntity)
+		status, refusal := builderPackageRefusal(t, harness, "/builder/package/resolve", body)
+		if status != http.StatusUnprocessableEntity || refusal.Code != string(bdoc.CodePackageInvalid) {
+			t.Errorf("%s: %d %+v, want %d with the code %s",
+				name, status, refusal, http.StatusUnprocessableEntity, bdoc.CodePackageInvalid)
 		}
 	}
 
-	recorder := harness.do(builderRequest{
-		method: http.MethodPost, path: "/builder/package/resolve", body: `{} {}`, user: builderTestOwner,
-	})
-	if recorder.Code != http.StatusBadRequest {
-		t.Errorf("two JSON values: status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	// What does not validate is listed issue by issue, each with its code.
+	_, refusal := builderPackageRefusal(t, harness, "/builder/package/resolve",
+		`{"$schema": "`+bdoc.PackageSchemaURI+`", "document": `+string(builderDocument(t, "x"))+`}`)
+	if !slices.ContainsFunc(refusal.Issues, func(issue bdoc.Issue) bool {
+		return issue.Code == bdoc.CodePackageRequirementsMissing && issue.Path == "requirements.scenarios"
+	}) {
+		t.Errorf("no requirements: issues = %+v, want each missing list with the code %s",
+			refusal.Issues, bdoc.CodePackageRequirementsMissing)
+	}
+
+	status, refusal := builderPackageRefusal(t, harness, "/builder/package/resolve", `{} {}`)
+	if status != http.StatusBadRequest || refusal.Code != string(bdoc.CodeRequestInvalid) {
+		t.Errorf("two JSON values: %d %+v, want %d with the code %s",
+			status, refusal, http.StatusBadRequest, bdoc.CodeRequestInvalid)
 	}
 }
 

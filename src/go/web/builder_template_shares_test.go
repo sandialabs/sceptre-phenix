@@ -12,6 +12,7 @@ import (
 
 	bapi "phenix/api/builder"
 	"phenix/store"
+	bdoc "phenix/types/builder"
 	"phenix/util/plog/plogtest"
 	"phenix/web/rbac"
 )
@@ -373,7 +374,9 @@ func TestBuilderTemplateShareRefusals(t *testing.T) {
 	}
 
 	unprocessable := func(errs ...builderShareError) string {
-		return builderJSON(t, builderShareErrorsResponse{Message: "Some people could not be added.", Cause: "", Errors: errs})
+		return builderJSON(t, builderShareErrorsResponse{
+			Message: "Some people could not be added.", Cause: "", Code: string(bdoc.CodeShareUsersRefused), Errors: errs,
+		})
 	}
 
 	tests := []struct {
@@ -517,8 +520,9 @@ func TestBuilderTemplateShareFailures(t *testing.T) {
 		Remove:      nil,
 	})
 
-	want := `{"failed":[{"kind":"template","id":"` + fixture.plc + `","reason":"too-many"},` +
-		`{"kind":"template","id":"missing","reason":"not-found"},{"kind":"collection","id":"gone","reason":"not-found"}]}`
+	want := `{"failed":[{"kind":"template","id":"` + fixture.plc + `","reason":"too-many","code":"template.shares.too-many"},` +
+		`{"kind":"template","id":"missing","reason":"not-found","code":"template.item.not-found"},` +
+		`{"kind":"collection","id":"gone","reason":"not-found","code":"template.item.not-found"}]}`
 
 	if recorder.Code != http.StatusOK || recorder.Body.String() != want {
 		t.Fatalf("sharing past the limit = %d %s, want 200 %s", recorder.Code, recorder.Body, want)
@@ -669,7 +673,7 @@ func TestBuilderTemplatePublish(t *testing.T) {
 		builderTestOwner, builderTestOwner, publisher, body(true, []string{fixture.plc, "missing"}, []string{fixture.floor}),
 	)
 
-	if want := `{"failed":[{"kind":"template","id":"missing","reason":"not-found"}]}`; recorder.Code != http.StatusOK ||
+	if want := `{"failed":[{"kind":"template","id":"missing","reason":"not-found","code":"template.item.not-found"}]}`; recorder.Code != http.StatusOK ||
 		recorder.Body.String() != want {
 		t.Fatalf("publishing = %d %s, want 200 %s", recorder.Code, recorder.Body, want)
 	}
@@ -1051,7 +1055,9 @@ func TestBuilderTemplateResultShape(t *testing.T) {
 
 	result := builderTemplateResultShape(t, recorder)
 
-	if want := []builderTemplateFailure{{Kind: "template", ID: "missing", Reason: "not-found"}}; !slices.Equal(result.Failed, want) {
+	if want := []builderTemplateFailure{
+		{Kind: "template", ID: "missing", Reason: "not-found", Code: string(bdoc.CodeTemplateItemNotFound)},
+	}; !slices.Equal(result.Failed, want) {
 		t.Fatalf("failed = %+v, want %+v", result.Failed, want)
 	}
 }

@@ -122,11 +122,15 @@ type builderPublishStage struct {
 	Config  string             `json:"config,omitempty"`
 }
 
+// builderPublishResponse is what a publication did. Warnings and Errors are
+// issues, each with its code (see [bdoc.Issue]): what the caller should know
+// of a publication that went through, and why a stage of a partial one
+// failed.
 type builderPublishResponse struct {
 	Status     bapi.PublishStatus      `json:"status"`
 	Stages     []builderPublishStage   `json:"stages"`
-	Warnings   []string                `json:"warnings"`
-	Errors     []string                `json:"errors"`
+	Warnings   []bdoc.Issue            `json:"warnings"`
+	Errors     []bdoc.Issue            `json:"errors"`
 	Topology   *builderPublishTarget   `json:"topology,omitempty"`
 	Scenario   *builderPublishScenario `json:"scenario,omitempty"`
 	Experiment *builderPublishTarget   `json:"experiment,omitempty"`
@@ -286,11 +290,15 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 
+	if warnings == nil {
+		warnings = []bdoc.Issue{}
+	}
+
 	response := builderPublishResponse{
 		Status:     bapi.PublishSucceeded,
 		Stages:     []builderPublishStage{},
 		Warnings:   warnings,
-		Errors:     []string{},
+		Errors:     []bdoc.Issue{},
 		Topology:   &request.Topology,
 		Scenario:   request.Scenario,
 		Experiment: request.Experiment,
@@ -312,8 +320,8 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 		// it replaces was not removed: publishing goes on, as every other
 		// mutation does, and startup cleanup removes that content later.
 		builderWarnCleanup(w, err, "publish", actor.user)
-		response.Warnings = append(response.Warnings,
-			"the builder document was stored, but content it replaces could not be removed")
+		response.Warnings = append(response.Warnings, bdoc.NewIssue(bdoc.CodePublishCleanupFailed, "",
+			"the builder document was stored, but content it replaces could not be removed"))
 	case err != nil:
 		return builderWebError(err, "unable to store the published builder document")
 	}
@@ -324,7 +332,8 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 
 	documentReference := publishedTopologyReference(published, plan.topology.existing)
 	if documentReference.Path != "" {
-		response.Warnings = append(response.Warnings, builderFileNotWrittenWarning(request.Topology.Name, documentReference.Path))
+		response.Warnings = append(response.Warnings, bdoc.NewIssue(bdoc.CodePublishFileUnchanged, "",
+			builderFileNotWrittenWarning(request.Topology.Name, documentReference.Path)))
 	}
 
 	reference, err := documentReference.EncodeReference()
@@ -389,7 +398,8 @@ func (b *builderAPI) publishDraft(w http.ResponseWriter, r *http.Request) error 
 	response.Draft = b.draftResponse(actor, updated)
 
 	if _, err := b.drafts.DeleteSupersededDocuments(r.Context(), request.Topology.Name, published.ID); err != nil {
-		response.Warnings = append(response.Warnings, "publication succeeded but superseded builder documents could not be removed")
+		response.Warnings = append(response.Warnings, bdoc.NewIssue(bdoc.CodePublishCleanupFailed, "",
+			"publication succeeded but superseded builder documents could not be removed"))
 		plog.Error(plog.TypeSystem, "cleaning superseded builder documents", "err", err)
 	}
 
@@ -423,8 +433,8 @@ func (b *builderAPI) publishExperimentStage(
 	}
 
 	if !recorded {
-		response.Warnings = append(response.Warnings,
-			"experiment was stored, but not which draft published it, so this draft cannot update it again")
+		response.Warnings = append(response.Warnings, bdoc.NewIssue(bdoc.CodePublishExperimentUnrecorded, "",
+			"experiment was stored, but not which draft published it, so this draft cannot update it again"))
 	}
 
 	response.Stages = append(response.Stages, builderPublishStage{
@@ -434,7 +444,8 @@ func (b *builderAPI) publishExperimentStage(
 
 	if !plan.applied {
 		if err := b.publish.broadcastExperiment(plan.name, plan.action); err != nil {
-			response.Warnings = append(response.Warnings, "experiment was stored but its live update could not be broadcast")
+			response.Warnings = append(response.Warnings, bdoc.NewIssue(bdoc.CodePublishBroadcastFailed, "",
+				"experiment was stored but its live update could not be broadcast"))
 			plog.Error(plog.TypeSystem, "broadcasting published experiment", "err", err)
 		}
 	}
@@ -648,16 +659,18 @@ func (b *builderAPI) preflightPublish(
 // cannot be published. Interfaces without a VLAN, addresses that interfaces
 // share, and hostnames phenix refuses are named in the message, which is what
 // clients show, and not only in its cause; past the first few, only their
-// number is.
+// number is. Its code is [bdoc.CodePublishBlocked], and its issues name each
+// of them where it is (see [builderCodedError]); a projection phenix's schema
+// refuses for a reason of its own has [bdoc.CodePublishTopologyInvalid].
 func publishProjectionRefusal(topologyName string, err error) error {
 	problems, named := projectionProblems(err)
 	if !named {
 		return weberror.NewWebError(err, "builder document cannot be published as topology %s", topologyName).
-			SetStatus(http.StatusUnprocessableEntity)
+			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishTopologyInvalid))
 	}
 
 	return weberror.NewWebError(err, "topology %s cannot be published: %s", topologyName, problems).
-		SetStatus(http.StatusUnprocessableEntity)
+		SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishBlocked))
 }
 
 // projectionProblems names the interfaces without a VLAN, the addresses
@@ -724,7 +737,7 @@ func mergedIncludesRefusal(actor builderActor, experimentName string, includes b
 			nil,
 			"experiment %s cannot be updated: included topology %s cannot be merged: %v",
 			experimentName, problem.Name, problem.Err,
-		).SetStatus(http.StatusUnprocessableEntity)
+		).SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentUnmerged))
 	}
 
 	return nil
@@ -756,7 +769,7 @@ func includedHostnameRefusal(experimentName string, includes bdoc.IncludeReport)
 
 	return weberror.NewWebError(
 		nil, "experiment %s cannot be published: %s", experimentName, strings.Join(reasons, "; "),
-	).SetStatus(http.StatusUnprocessableEntity)
+	).SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishIncludeHostname))
 }
 
 // includeClashRefusal refuses a topology whose included topologies define a
@@ -776,7 +789,7 @@ func includeClashRefusal(topologyName string, includes bdoc.IncludeReport) error
 			"topology %s cannot be published: node %s is defined both here and in its included topology %s; "+
 				"phenix rejects duplicate hostnames, so rename the node here or in %s",
 			topologyName, clashes[0].Hostname, clashes[0].Include, clashes[0].Include,
-		).SetStatus(http.StatusConflict)
+		).SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishIncludeClash))
 	default:
 		nodes := make([]string, 0, listed+1)
 
@@ -793,7 +806,7 @@ func includeClashRefusal(topologyName string, includes bdoc.IncludeReport) error
 			"topology %s cannot be published: nodes %s and %s are defined both here and in its included topologies; "+
 				"phenix rejects duplicate hostnames, so rename them here or in those topologies",
 			topologyName, strings.Join(nodes[:len(nodes)-1], ", "), nodes[len(nodes)-1],
-		).SetStatus(http.StatusConflict)
+		).SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishIncludeClash))
 	}
 }
 
@@ -912,7 +925,7 @@ func (b *builderAPI) checkSourceFreshness(
 
 	if !published {
 		return weberror.NewWebError(nil, "builder source %s changed after this draft was imported", fullName).
-			SetStatus(http.StatusConflict)
+			SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishSourceChanged))
 	}
 
 	return nil
@@ -1284,7 +1297,7 @@ func (b *builderAPI) preflightTopology(
 		return builderPublishConfigPlan{}, err
 	}
 
-	if err := requirePublishAction(target, exists, applied); err != nil {
+	if err := requirePublishAction(builderKindTopology, target, exists, applied); err != nil {
 		return builderPublishConfigPlan{}, err
 	}
 
@@ -1335,10 +1348,10 @@ func (b *builderAPI) topologyUpdateRefusal(
 	case held.owned && held.file:
 		return weberror.NewWebError(
 			nil, "topology %s is not what its Builder file publishes, so this draft cannot update it", name,
-		).SetStatus(http.StatusConflict)
+		).SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishTopologyFileMismatch))
 	case held.owned:
 		return weberror.NewWebError(nil, "topology %s changed after this draft published it", name).
-			SetStatus(http.StatusConflict)
+			SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishTopologyChanged))
 	}
 
 	// Before the import rule: a document read from the file may itself have
@@ -1346,7 +1359,7 @@ func (b *builderAPI) topologyUpdateRefusal(
 	if opened, _, ok := openedBuilderFile(meta.SourceToken); ok && opened == name {
 		return weberror.NewWebError(
 			nil, "topology %s or its Builder file changed after this draft was opened from the file", name,
-		).SetStatus(http.StatusConflict)
+		).SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishTopologyFileChanged))
 	}
 
 	if topologyUpdateMatchesSource(meta, document, existing) {
@@ -1354,7 +1367,7 @@ func (b *builderAPI) topologyUpdateRefusal(
 	}
 
 	return weberror.NewWebError(nil, "topology %s is not the source this draft was loaded from", name).
-		SetStatus(http.StatusConflict)
+		SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishTopologyNotSource))
 }
 
 // topologyUpdateMatchesSource reports whether the document was imported from
@@ -1453,8 +1466,10 @@ func (b *builderAPI) preflightScenarios(
 ) (*builderPublishScenarioPlan, error) {
 	picked := request.scenarioName()
 	if picked != "" && !slices.Contains(document.Scenarios, picked) {
-		return nil, weberror.NewWebError(nil, "scenario %s is not one of the scenarios this draft lists", picked).
-			SetStatus(http.StatusUnprocessableEntity)
+		return nil, builderScenarioRefusal(
+			weberror.NewWebError(nil, "scenario %s is not one of the scenarios this draft lists", picked),
+			bdoc.CodePublishScenarioNotListed, picked,
+		)
 	}
 
 	topologyName := request.Topology.Name
@@ -1488,8 +1503,9 @@ func (b *builderAPI) preflightScenarios(
 			)
 
 			if err := types.ValidateConfigSpec(*scenario); err != nil {
-				return nil, weberror.NewWebError(err, "scenario %s is not valid", name).
-					SetStatus(http.StatusUnprocessableEntity)
+				return nil, builderScenarioRefusal(
+					weberror.NewWebError(err, "scenario %s is not valid", name), bdoc.CodePublishScenarioInvalid, name,
+				)
 			}
 
 			plan.changed = append(plan.changed, builderPublishConfigPlan{
@@ -1509,8 +1525,9 @@ func (b *builderAPI) preflightScenarios(
 // that does not exist, and one the caller may not read (the configs get and
 // the scenarios list permissions), are refused alike, with 422.
 func (b *builderAPI) listedScenario(actor builderActor, name string) (*store.Config, error) {
-	missing := weberror.NewWebError(nil, "scenario %s does not exist", name).
-		SetStatus(http.StatusUnprocessableEntity)
+	missing := builderScenarioRefusal(
+		weberror.NewWebError(nil, "scenario %s does not exist", name), bdoc.CodePublishScenarioMissing, name,
+	)
 
 	full := store.ConfigFullName(builderKindScenario, name)
 	if full == "" ||
@@ -1531,6 +1548,19 @@ func (b *builderAPI) listedScenario(actor builderActor, name string) (*store.Con
 	return existing, nil
 }
 
+// builderScenarioMetadata is the key of the metadata of a refusal about one
+// of the scenarios a draft's document lists, whose value names that
+// scenario, so that a client can tell whether it is the experiment's.
+const builderScenarioMetadata = "scenario"
+
+// builderScenarioRefusal answers a publication refused for one of the
+// scenarios the draft's document lists, named name, with 422, the code of the
+// refusal, and the scenario's name in its metadata.
+func builderScenarioRefusal(refusal *weberror.WebError, code bdoc.Code, name string) *weberror.WebError {
+	return refusal.SetStatus(http.StatusUnprocessableEntity).WithCode(string(code)).
+		WithMetadata(builderScenarioMetadata, name, true)
+}
+
 // publishScenarioStage writes a publication's scenario stage: each listed
 // scenario that does not name the topology yet is stored with it added and
 // broadcast. It adds the stage to the response, with a message saying what
@@ -1547,10 +1577,10 @@ func (b *builderAPI) publishScenarioStage(
 		stored, err := b.writePublishedConfig(change, change.config)
 		if err != nil {
 			if len(written) > 0 {
-				response.Warnings = append(response.Warnings, fmt.Sprintf(
+				response.Warnings = append(response.Warnings, bdoc.NewIssue(bdoc.CodePublishScenarioPartial, "", fmt.Sprintf(
 					"topology %s was added to %s before the scenario stage failed",
 					topologyName, builderScenarioList(written),
-				))
+				)))
 			}
 
 			return err
@@ -1559,8 +1589,8 @@ func (b *builderAPI) publishScenarioStage(
 		written = append(written, stored.Metadata.Name)
 
 		if err := b.publish.broadcastConfig(stored, change.action); err != nil {
-			response.Warnings = append(response.Warnings,
-				fmt.Sprintf("scenario %s was stored but its live update could not be broadcast", stored.Metadata.Name))
+			response.Warnings = append(response.Warnings, bdoc.NewIssue(bdoc.CodePublishBroadcastFailed, "",
+				fmt.Sprintf("scenario %s was stored but its live update could not be broadcast", stored.Metadata.Name)))
 			plog.Error(plog.TypeSystem, "broadcasting published scenario", "scenario", stored.Metadata.Name, "err", err)
 		}
 	}
@@ -1590,7 +1620,7 @@ func (b *builderAPI) preflightExperiment(
 	topologySpec, topologyErr := b.experimentTopology(projection, topologyName)
 	applied := topologyErr == nil &&
 		experimentAlreadyApplied(existing, topologySpec, projection, topologyName, scenarioName)
-	if err := requirePublishAction(target, exists, applied); err != nil {
+	if err := requirePublishAction(kindExperiment, target, exists, applied); err != nil {
 		return nil, err
 	}
 
@@ -1617,16 +1647,16 @@ func (b *builderAPI) preflightExperiment(
 	current, err := types.DecodeExperimentFromConfig(*existing)
 	if err != nil {
 		return nil, weberror.NewWebError(err, "experiment %s cannot be decoded", target.Name).
-			SetStatus(http.StatusUnprocessableEntity)
+			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentInvalid))
 	}
 	if current.Running() {
 		return nil, weberror.NewWebError(nil, "running experiment %s cannot be updated", target.Name).
-			SetStatus(http.StatusConflict)
+			SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishExperimentRunning))
 	}
 
 	if topologyErr != nil {
 		return nil, weberror.NewWebError(topologyErr, "experiment %s cannot be updated", target.Name).
-			SetStatus(http.StatusUnprocessableEntity)
+			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentInvalid))
 	}
 
 	plan.rebuild = func(current *store.Config) (*store.Config, error) {
@@ -1643,12 +1673,12 @@ func (b *builderAPI) preflightExperiment(
 	updated, err := plan.rebuild(existing)
 	if err != nil {
 		return nil, weberror.NewWebError(err, "experiment %s cannot be updated", target.Name).
-			SetStatus(http.StatusUnprocessableEntity)
+			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentInvalid))
 	}
 
 	if err := types.ValidateConfigSpec(*updated); err != nil {
 		return nil, weberror.NewWebError(err, "experiment %s is not valid", target.Name).
-			SetStatus(http.StatusUnprocessableEntity)
+			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentInvalid))
 	}
 
 	return plan, nil
@@ -1666,7 +1696,7 @@ func experimentCreateRefusal(name string, projection *bdoc.Topology) error {
 
 	if strings.EqualFold(name, "all") {
 		return weberror.NewWebError(nil, "experiment %s is reserved: phenix uses the name to mean every experiment", name).
-			SetStatus(http.StatusUnprocessableEntity)
+			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentReserved))
 	}
 
 	if common.BridgeMode == common.BridgeModeAuto && len(name) > maxBridgeName {
@@ -1674,7 +1704,7 @@ func experimentCreateRefusal(name string, projection *bdoc.Topology) error {
 			nil,
 			"experiment %s has a name longer than %d characters, and this server names each experiment's bridge after it",
 			name, maxBridgeName,
-		).SetStatus(http.StatusUnprocessableEntity)
+		).SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentNameLong))
 	}
 
 	created, err := store.NewConfig(kindExperiment + "/" + name)
@@ -1691,7 +1721,7 @@ func experimentCreateRefusal(name string, projection *bdoc.Topology) error {
 
 	if err := types.ValidateConfigSpec(*created); err != nil {
 		return weberror.NewWebError(err, "experiment %s is not valid", name).
-			SetStatus(http.StatusUnprocessableEntity)
+			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentInvalid))
 	}
 
 	return nil
@@ -1718,11 +1748,11 @@ func experimentUpdateRefusal(meta *bapi.DraftMetadata, document *bdoc.Document, 
 		return nil
 	case owned:
 		return weberror.NewWebError(nil, "experiment %s changed after this draft published it", name).
-			SetStatus(http.StatusConflict)
+			SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishExperimentChanged))
 	}
 
 	return weberror.NewWebError(nil, "experiment %s is not the source this draft was loaded from", name).
-		SetStatus(http.StatusConflict)
+		SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishExperimentNotSource))
 }
 
 func experimentUpdateMatchesSource(
@@ -1837,7 +1867,8 @@ func (b *builderAPI) publishConfigStage(
 
 	if !plan.applied {
 		if err := b.publish.broadcastConfig(written, plan.action); err != nil {
-			response.Warnings = append(response.Warnings, stage+" was stored but its live update could not be broadcast")
+			response.Warnings = append(response.Warnings, bdoc.NewIssue(bdoc.CodePublishBroadcastFailed, "",
+				stage+" was stored but its live update could not be broadcast"))
 			plog.Error(plog.TypeSystem, "broadcasting published "+stage, "err", err)
 		}
 	}
@@ -2043,16 +2074,25 @@ func (b *builderAPI) configIfExists(kind, name string) (*store.Config, bool, err
 		SetStatus(http.StatusInternalServerError)
 }
 
-func requirePublishAction(target builderPublishTarget, exists, applied bool) error {
+// requirePublishAction refuses a create of a config of kind (Topology or
+// Experiment) that exists, and an update of one that does not, unless an
+// earlier attempt already applied the publication. The code of the refusal
+// names the kind and what the caller did not expect.
+func requirePublishAction(kind string, target builderPublishTarget, exists, applied bool) error {
+	taken, absent := bdoc.CodePublishTopologyExists, bdoc.CodePublishTopologyMissing
+	if kind == kindExperiment {
+		taken, absent = bdoc.CodePublishExperimentExists, bdoc.CodePublishExperimentMissing
+	}
+
 	switch {
 	case applied:
 		return nil
 	case target.Action == builderPublishActionCreate && exists:
 		return weberror.NewWebError(nil, "config %s already exists; choose update explicitly", target.Name).
-			SetStatus(http.StatusConflict)
+			SetStatus(http.StatusConflict).WithCode(string(taken))
 	case target.Action == builderPublishActionUpdate && !exists:
 		return weberror.NewWebError(nil, "config %s does not exist; choose create explicitly", target.Name).
-			SetStatus(http.StatusConflict)
+			SetStatus(http.StatusConflict).WithCode(string(absent))
 	}
 
 	return nil
@@ -2113,7 +2153,7 @@ func validatePublishTarget(kind string, target builderPublishTarget) error {
 
 func invalidPublishTarget(kind, name string) error {
 	return weberror.NewWebError(nil, "%s target %q is not a valid config name", kind, name).
-		SetStatus(http.StatusBadRequest)
+		SetStatus(http.StatusBadRequest).WithCode(string(bdoc.CodePublishTargetInvalid))
 }
 
 // addTopologyAnnotation adds topology to value, a scenario's comma-separated
@@ -2254,8 +2294,8 @@ func (b *builderAPI) writePublishRetry(
 	return builderWriteJSON(w, http.StatusOK, meta.ETag(), builderPublishResponse{
 		Status:     bapi.PublishSucceeded,
 		Stages:     stages,
-		Warnings:   []string{"identical publication was already complete"},
-		Errors:     []string{},
+		Warnings:   []bdoc.Issue{bdoc.NewIssue(bdoc.CodePublishRetryComplete, "", "identical publication was already complete")},
+		Errors:     []bdoc.Issue{},
 		Topology:   &request.Topology,
 		Scenario:   request.Scenario,
 		Experiment: request.Experiment,
@@ -2271,17 +2311,19 @@ func (b *builderAPI) writePublishPartial(
 	stage string,
 	cause error,
 ) error {
-	message := stage + " publication failed"
+	message, code := stage+" publication failed", bdoc.CodePublishStageFailed
 
 	switch {
 	case errors.Is(cause, errBuilderExperimentRunning):
 		message += ": " + errBuilderExperimentRunning.Error()
+		code = bdoc.CodePublishExperimentRunning
 	case errors.Is(cause, store.ErrNoSpace):
 		message += ": " + store.ErrNoSpace.Error()
+		code = bdoc.CodeServerStorageFull
 	}
 
 	response.Status = bapi.PublishPartial
-	response.Errors = append(response.Errors, message)
+	response.Errors = append(response.Errors, bdoc.NewIssue(code, "", message))
 	response.Stages = append(response.Stages, builderPublishStage{
 		Name: stage, Status: bapi.PublishFailed, Message: message, Config: "",
 	})

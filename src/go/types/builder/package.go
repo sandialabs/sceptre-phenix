@@ -168,7 +168,9 @@ type PackageContents struct {
 	Images bool
 }
 
-// PackageError lists everything that makes a package unusable. It unwraps to
+// PackageError lists everything that makes a package unusable, each issue
+// with its code: a package-* code, or the code of the rule of a document
+// that its document breaks, at a path below "document". It unwraps to
 // [ErrInvalidPackage].
 type PackageError struct {
 	Issues []Issue
@@ -277,8 +279,10 @@ type packageText struct {
 
 // DecodePackage strictly decodes a package from JSON: unknown fields and
 // trailing content are refused, in the package and in its document, which
-// is decoded as [Decode] decodes one. It does not validate the package: see
-// [ParsePackage] and [Package.Validate].
+// is decoded as [Decode] decodes one. A document [Decode] refuses is a
+// *[PackageError]: the issues of its *[ValidationError] at their paths
+// below "document", or one issue with the decoder's error. It does not
+// validate the package: see [ParsePackage] and [Package.Validate].
 func DecodePackage(data []byte) (*Package, error) {
 	var text packageText
 
@@ -297,13 +301,39 @@ func DecodePackage(data []byte) (*Package, error) {
 	if raw := bytes.TrimSpace(text.Document); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
 		document, err := Decode(raw)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s: %w", ErrInvalidPackage, keyDocument, err)
+			return nil, &PackageError{Issues: packageDocumentIssues(err)}
 		}
 
 		pkg.Document = document
 	}
 
 	return pkg, nil
+}
+
+// packageDocumentIssues returns the issues of the error a package's document
+// was refused with, by [Decode] or [Document.Validate]: those of its
+// *[ValidationError], each at its path below "document", or else one issue
+// of [CodePackageDocumentInvalid] with the error's text.
+func packageDocumentIssues(err error) []Issue {
+	var invalid *ValidationError
+
+	if !errors.As(err, &invalid) {
+		return []Issue{NewIssue(CodePackageDocumentInvalid, keyDocument, err.Error())}
+	}
+
+	issues := make([]Issue, 0, len(invalid.Issues))
+
+	for _, issue := range invalid.Issues {
+		if issue.Path == "" {
+			issue.Path = keyDocument
+		} else {
+			issue.Path = keyDocument + "." + issue.Path
+		}
+
+		issues = append(issues, issue)
+	}
+
+	return issues
 }
 
 // Validate checks a decoded package, and returns nil or a *[PackageError]
@@ -330,27 +360,21 @@ func (p *Package) Validate() error {
 	return nil
 }
 
-// Issues returns what [Package.Validate] finds.
+// Issues returns what [Package.Validate] finds, each with its code: one of
+// the package-* codes, or, for its document, the code of the rule of a
+// document it breaks.
 func (p *Package) Issues() []Issue {
 	var issues []Issue
 
 	if p.Schema != PackageSchemaURI {
-		issues = append(issues, Issue{
-			Path:    schemaKey,
-			Message: fmt.Sprintf("package schema must be %q, not %q", PackageSchemaURI, truncate(p.Schema)),
-		})
+		issues = append(issues, NewIssue(CodePackageSchemaMismatch, schemaKey,
+			fmt.Sprintf("package schema must be %q, not %q", PackageSchemaURI, truncate(p.Schema))))
 	}
 
-	var invalid *ValidationError
-
-	switch err := p.validateDocument(); {
-	case err == nil:
-	case errors.As(err, &invalid):
-		for _, issue := range invalid.Issues {
-			issues = append(issues, Issue{Path: keyDocument + "." + issue.Path, Message: issue.Message})
-		}
-	default:
-		issues = append(issues, Issue{Path: keyDocument, Message: err.Error()})
+	if p.Document == nil {
+		issues = append(issues, NewIssue(CodePackageDocumentMissing, keyDocument, "a package holds a Builder document"))
+	} else if err := p.Document.Validate(); err != nil {
+		issues = append(issues, packageDocumentIssues(err)...)
 	}
 
 	issues = append(issues, packageConfigIssues(
@@ -363,26 +387,17 @@ func (p *Package) Issues() []Issue {
 	return append(issues, p.Requirements.issues()...)
 }
 
-// validateDocument returns why the package's document is unusable, or nil.
-func (p *Package) validateDocument() error {
-	if p.Document == nil {
-		return errors.New("a package holds a Builder document")
-	}
-
-	return p.Document.Validate()
-}
-
 // packageConfigIssues returns what is wrong with one list of the configs a
 // package carries.
 func packageConfigIssues(key, kind string, configs map[string]PackageConfig, limit int, listed []string) []Issue {
 	var issues []Issue
 
-	addf := func(at, format string, args ...any) {
-		issues = append(issues, Issue{Path: at, Message: fmt.Sprintf(format, args...)})
+	addf := func(code Code, at, format string, args ...any) {
+		issues = append(issues, NewIssue(code, at, fmt.Sprintf(format, args...)))
 	}
 
 	if len(configs) > limit {
-		addf(key, "a package carries at most %d %s configs, not %d", limit, kind, len(configs))
+		addf(CodePackageConfigsTooMany, key, "a package carries at most %d %s configs, not %d", limit, kind, len(configs))
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(configs)) {
@@ -390,33 +405,34 @@ func packageConfigIssues(key, kind string, configs map[string]PackageConfig, lim
 		path := key + "." + name
 
 		if !IsConfigName(name) {
-			addf(path, "%q is not a config name", truncate(name))
+			addf(CodePackageConfigKeyInvalid, path, "%q is not a config name", truncate(name))
 		}
 
 		if config.Kind != kind {
-			addf(path+"."+keyKind, "must be %q, not %q", kind, truncate(config.Kind))
+			addf(CodePackageConfigKindMismatch, path+"."+keyKind, "must be %q, not %q", kind, truncate(config.Kind))
 		}
 
 		if config.Metadata.Name != name {
-			addf(path+"."+keyMetadata+"."+keyName, "must be %q, the name the package keeps it under, not %q",
-				truncate(name), truncate(config.Metadata.Name))
+			addf(CodePackageConfigNameMismatch, path+"."+keyMetadata+"."+keyName,
+				"must be %q, the name the package keeps it under, not %q", truncate(name), truncate(config.Metadata.Name))
 		}
 
 		if !packageAPIVersion.MatchString(config.APIVersion) {
-			addf(path+"."+keyAPIVersion, "must be phenix.sandia.gov/v<number>, not %q", truncate(config.APIVersion))
+			addf(CodePackageConfigVersionInvalid, path+"."+keyAPIVersion,
+				"must be phenix.sandia.gov/v<number>, not %q", truncate(config.APIVersion))
 		}
 
 		if config.Spec == nil {
-			addf(path+"."+keySpec, "a config needs a spec")
+			addf(CodePackageConfigSpecMissing, path+"."+keySpec, "a config needs a spec")
 		}
 
 		if !slices.Contains(listed, name) {
-			addf(path, "the package carries it, but its requirements do not name it")
+			addf(CodePackageConfigUnlisted, path, "the package carries it, but its requirements do not name it")
 		}
 
 		for _, annotation := range slices.Sorted(maps.Keys(config.Metadata.Annotations)) {
 			if IsBuilderAnnotation(annotation) {
-				addf(path+"."+keyMetadata+"."+keyAnnotations,
+				addf(CodePackageConfigBuilderNote, path+"."+keyMetadata+"."+keyAnnotations,
 					"%q is a Builder annotation, which a package never carries", truncate(annotation))
 			}
 		}
@@ -449,19 +465,16 @@ func (r *PackageRequirements) issues() []Issue {
 
 	switch {
 	case r.Images == nil:
-		issues = append(issues, Issue{Path: path, Message: "the list is required, empty when there is nothing in it"})
+		issues = append(issues, requirementListMissing(path))
 	case len(r.Images) > MaxPackageRequirements:
-		issues = append(issues, Issue{
-			Path:    path,
-			Message: fmt.Sprintf("the list holds at most %d entries, not %d", MaxPackageRequirements, len(r.Images)),
-		})
+		issues = append(issues, requirementListTooLong(path, len(r.Images)))
 	}
 
 	for i, image := range r.Images {
 		at := fmt.Sprintf("%s[%d]", path, i)
 
-		if problem := requirementProblem(image.Name); problem != "" {
-			issues = append(issues, Issue{Path: at + "." + keyName, Message: problem})
+		if code, problem := requirementProblem(image.Name); problem != "" {
+			issues = append(issues, NewIssue(code, at+"."+keyName, problem))
 		}
 
 		issues = append(issues, requirementListIssues(at+"."+keyUsedBy, image.UsedBy)...)
@@ -477,36 +490,46 @@ func requirementListIssues(path string, values []string) []Issue {
 
 	switch {
 	case values == nil:
-		return []Issue{{Path: path, Message: "the list is required, empty when there is nothing in it"}}
+		return []Issue{requirementListMissing(path)}
 	case len(values) > MaxPackageRequirements:
-		issues = append(issues, Issue{
-			Path:    path,
-			Message: fmt.Sprintf("the list holds at most %d entries, not %d", MaxPackageRequirements, len(values)),
-		})
+		issues = append(issues, requirementListTooLong(path, len(values)))
 	}
 
 	for i, value := range values {
-		if problem := requirementProblem(value); problem != "" {
-			issues = append(issues, Issue{Path: fmt.Sprintf("%s[%d]", path, i), Message: problem})
+		if code, problem := requirementProblem(value); problem != "" {
+			issues = append(issues, NewIssue(code, fmt.Sprintf("%s[%d]", path, i), problem))
 		}
 	}
 
 	return issues
 }
 
-// requirementProblem says why value is no entry of the requirements, or
-// returns "".
-func requirementProblem(value string) string {
+// requirementListMissing is the issue of a list of the requirements that is
+// missing or null, at path.
+func requirementListMissing(path string) Issue {
+	return NewIssue(CodePackageRequirementsMissing, path, "the list is required, empty when there is nothing in it")
+}
+
+// requirementListTooLong is the issue of a list of the requirements, at
+// path, that holds more than [MaxPackageRequirements] entries.
+func requirementListTooLong(path string, entries int) Issue {
+	return NewIssue(CodePackageRequirementsTooMany, path,
+		fmt.Sprintf("the list holds at most %d entries, not %d", MaxPackageRequirements, entries))
+}
+
+// requirementProblem returns the code of the rule value breaks as an entry
+// of the requirements and what is wrong with it, or "" and "".
+func requirementProblem(value string) (Code, string) {
 	switch {
 	case strings.TrimSpace(value) == "":
-		return "must not be blank"
+		return CodePackageRequirementBlank, "must not be blank"
 	case len(value) > MaxRequirementBytes:
-		return fmt.Sprintf("must be at most %d bytes", MaxRequirementBytes)
+		return CodePackageRequirementTooLong, fmt.Sprintf("must be at most %d bytes", MaxRequirementBytes)
 	case strings.ContainsFunc(value, isControl):
-		return "must not contain control characters"
+		return CodePackageRequirementControl, "must not contain control characters"
 	}
 
-	return ""
+	return "", ""
 }
 
 // requirementNamesShown is how many of the entries a warning of
@@ -514,54 +537,56 @@ func requirementProblem(value string) string {
 const requirementNamesShown = 3
 
 // TrimRequirements makes the requirements fit [Package.Validate], and
-// returns a warning naming each entry it leaves out: first every entry that
-// is blank, longer than [MaxRequirementBytes] or holds control characters,
-// then the entries of a list past its first [MaxPackageRequirements].
-// [NewPackage] lists what the document and the configs name as they are,
-// and a stored config may name anything, so whoever builds a package trims
-// it before handing it on; nothing is left out without a warning.
-func (p *Package) TrimRequirements() []string {
+// returns a warning naming each entry it leaves out, at the path of its
+// list: first every entry that is blank, longer than [MaxRequirementBytes]
+// or holds control characters ([CodePackageRequirementLeftOut]), then the
+// entries of a list past its first [MaxPackageRequirements]
+// ([CodePackageRequirementsTruncated]). [NewPackage] lists what the
+// document and the configs name as they are, and a stored config may name
+// anything, so whoever builds a package trims it before handing it on;
+// nothing is left out without a warning.
+func (p *Package) TrimRequirements() []Issue {
 	r := &p.Requirements
-	warnings := []string{}
+	warnings := []Issue{}
 
-	trim := func(values *[]string, noun, nouns string) {
-		var left []string
+	trim := func(values *[]string, key, noun, nouns string) {
+		var left []Issue
 
-		*values, left = trimRequirementList(*values, noun, nouns, "")
+		*values, left = trimRequirementList(*values, keyRequirements+"."+key, noun, nouns, "")
 		warnings = append(warnings, left...)
 	}
 
-	trim(&r.Scenarios, "Scenario config", "Scenario configs")
-	trim(&r.Topologies, "included topology", "included topologies")
-	trim(&r.Templates, "template", "templates")
-	trim(&r.Icons, "custom icon", "custom icons")
+	trim(&r.Scenarios, keyScenarios, "Scenario config", "Scenario configs")
+	trim(&r.Topologies, keyTopologies, "included topology", "included topologies")
+	trim(&r.Templates, keyTemplates, "template", "templates")
+	trim(&r.Icons, keyIcons, "custom icon", "custom icons")
 
-	var left []string
+	var left []Issue
 
 	r.Images, left = trimRequirementImages(r.Images)
 	warnings = append(warnings, left...)
 
-	trim(&r.Apps, "app", "apps")
-	trim(&r.Files, "file", "files")
+	trim(&r.Apps, keyApps, "app", "apps")
+	trim(&r.Files, keyFiles, "file", "files")
 
 	return warnings
 }
 
-// trimRequirementList returns the entries of a list of the requirements
-// that [Package.Validate] takes, as a list that is not nil, and a warning
-// for each entry it leaves out, and one for the entries past the first
-// [MaxPackageRequirements]. noun and nouns name one entry and several in
-// the warnings, and owner, when not empty, follows them.
-func trimRequirementList(values []string, noun, nouns, owner string) ([]string, []string) {
+// trimRequirementList returns the entries of the list of the requirements
+// at path that [Package.Validate] takes, as a list that is not nil, and a
+// warning for each entry it leaves out, and one for the entries past the
+// first [MaxPackageRequirements]. noun and nouns name one entry and several
+// in the warnings, and owner, when not empty, follows them.
+func trimRequirementList(values []string, path, noun, nouns, owner string) ([]string, []Issue) {
 	kept := make([]string, 0, len(values))
 
-	var warnings []string
+	var warnings []Issue
 
 	for _, value := range values {
-		if problem := requirementProblem(value); problem != "" {
-			warnings = append(warnings, fmt.Sprintf(
+		if _, problem := requirementProblem(value); problem != "" {
+			warnings = append(warnings, NewIssue(CodePackageRequirementLeftOut, path, fmt.Sprintf(
 				"The package does not list %s %q%s: it %s.", noun, truncate(value), owner, problem,
-			))
+			)))
 
 			continue
 		}
@@ -570,11 +595,11 @@ func trimRequirementList(values []string, noun, nouns, owner string) ([]string, 
 	}
 
 	if len(kept) > MaxPackageRequirements {
-		warnings = append(warnings, fmt.Sprintf(
+		warnings = append(warnings, NewIssue(CodePackageRequirementsTruncated, path, fmt.Sprintf(
 			"The package lists at most %d %s%s, so it does not list %d more: %s.",
 			MaxPackageRequirements, nouns, owner, len(kept)-MaxPackageRequirements,
 			quotedRequirements(kept[MaxPackageRequirements:]),
-		))
+		)))
 		kept = kept[:MaxPackageRequirements]
 	}
 
@@ -583,22 +608,23 @@ func trimRequirementList(values []string, noun, nouns, owner string) ([]string, 
 
 // trimRequirementImages is [trimRequirementList] for the disk images of the
 // requirements and the hostnames that use each.
-func trimRequirementImages(images []PackageImage) ([]PackageImage, []string) {
+func trimRequirementImages(images []PackageImage) ([]PackageImage, []Issue) {
+	path := keyRequirements + "." + keyImages
 	kept := make([]PackageImage, 0, len(images))
 
-	var warnings []string
+	var warnings []Issue
 
 	for _, image := range images {
-		if problem := requirementProblem(image.Name); problem != "" {
-			warnings = append(warnings, fmt.Sprintf(
+		if _, problem := requirementProblem(image.Name); problem != "" {
+			warnings = append(warnings, NewIssue(CodePackageRequirementLeftOut, path, fmt.Sprintf(
 				"The package does not list disk image %q: it %s.", truncate(image.Name), problem,
-			))
+			)))
 
 			continue
 		}
 
 		owner := fmt.Sprintf(" among the users of disk image %q", truncate(image.Name))
-		usedBy, left := trimRequirementList(image.UsedBy, "host", "hosts", owner)
+		usedBy, left := trimRequirementList(image.UsedBy, path, "host", "hosts", owner)
 
 		warnings = append(warnings, left...)
 		kept = append(kept, PackageImage{Name: image.Name, UsedBy: usedBy})
@@ -611,10 +637,10 @@ func trimRequirementImages(images []PackageImage) ([]PackageImage, []string) {
 			names = append(names, image.Name)
 		}
 
-		warnings = append(warnings, fmt.Sprintf(
+		warnings = append(warnings, NewIssue(CodePackageRequirementsTruncated, path, fmt.Sprintf(
 			"The package lists at most %d disk images, so it does not list %d more: %s.",
 			MaxPackageRequirements, len(names), quotedRequirements(names),
-		))
+		)))
 		kept = kept[:MaxPackageRequirements]
 	}
 

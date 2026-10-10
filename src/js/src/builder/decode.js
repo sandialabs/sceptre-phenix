@@ -191,6 +191,27 @@ export const TEMPLATE_DEVICE_KEYS = new Set(
 // customicons.go).
 export const ICON_ENTRY_KEYS = new Set(['data']);
 
+// A refusal that the server's decoder lists as an issue too (decodeIssues
+// in decode.go): message says what is refused, and the issue names its
+// rule with the server's code, path and words.
+function refusal(message, code, path, issueMessage) {
+  return new DocumentError(message, {
+    issues: [
+      {
+        code,
+        path,
+        message: issueMessage,
+        level: 'error',
+        severity: 'error',
+      },
+    ],
+  });
+}
+
+// What the server says of a list of notes that is not one, of the diagram
+// or of a switch.
+const NOTES_NOT_LIST = 'notes must be a list of text';
+
 function rejectUnknown(value, allowed, path) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new DocumentError(`${path}: expected an object`);
@@ -198,7 +219,12 @@ function rejectUnknown(value, allowed, path) {
 
   Object.keys(value).forEach((key) => {
     if (!allowed.has(key)) {
-      throw new DocumentError(`${path}: unknown field "${key}"`);
+      throw refusal(
+        `${path}: unknown field "${key}"`,
+        'document.field.unknown',
+        path === 'document' ? key : `${path}.${key}`,
+        `unknown field "${key}"`,
+      );
     }
   });
 }
@@ -247,8 +273,11 @@ function checkNode(node, index) {
     const { notes } = node.switch;
 
     if (notes !== undefined && notes !== null && !Array.isArray(notes)) {
-      throw new DocumentError(
+      throw refusal(
         `document: "${path}.switch.notes" must be an array`,
+        'switch.notes.not-list',
+        `${path}.switch.notes`,
+        NOTES_NOT_LIST,
       );
     }
   }
@@ -312,7 +341,12 @@ export function decodeDocument(value) {
   // validation then asks for its id.
   if (value.metadata !== undefined && value.metadata !== null) {
     if (typeof value.metadata !== 'object' || Array.isArray(value.metadata)) {
-      throw new DocumentError('document: "metadata" must be an object');
+      throw refusal(
+        'document: "metadata" must be an object',
+        'metadata.not-object',
+        'metadata',
+        'metadata must be an object',
+      );
     }
 
     rejectUnknown(value.metadata, METADATA_KEYS, 'metadata');
@@ -320,21 +354,25 @@ export function decodeDocument(value) {
     const { notes } = value.metadata;
 
     if (notes !== undefined && notes !== null && !Array.isArray(notes)) {
-      throw new DocumentError('document: "metadata.notes" must be an array');
+      throw refusal(
+        'document: "metadata.notes" must be an array',
+        'metadata.notes.not-list',
+        'metadata.notes',
+        NOTES_NOT_LIST,
+      );
     }
   }
 
-  if (!Array.isArray(value.nodes)) {
-    throw new DocumentError('document: "nodes" must be an array');
-  }
-
-  if (!Array.isArray(value.networks)) {
-    throw new DocumentError('document: "networks" must be an array');
-  }
-
-  if (!Array.isArray(value.edges)) {
-    throw new DocumentError('document: "edges" must be an array');
-  }
+  ['nodes', 'networks', 'edges'].forEach((key) => {
+    if (!Array.isArray(value[key])) {
+      throw refusal(
+        `document: "${key}" must be an array`,
+        'document.list.missing',
+        key,
+        `${key} must be an array`,
+      );
+    }
+  });
 
   value.nodes.forEach(checkNode);
 
@@ -379,7 +417,12 @@ export function decodeDocument(value) {
 
   if (value.templates !== undefined && value.templates !== null) {
     if (!Array.isArray(value.templates)) {
-      throw new DocumentError('document: "templates" must be an array');
+      throw refusal(
+        'document: "templates" must be an array',
+        'template.list.not-list',
+        'templates',
+        'templates must be a list of templates',
+      );
     }
 
     value.templates.forEach((template, index) => {
@@ -399,11 +442,17 @@ export function decodeDocument(value) {
 
   if (value.icons !== undefined && value.icons !== null) {
     if (typeof value.icons !== 'object' || Array.isArray(value.icons)) {
-      throw new DocumentError('document: "icons" must be an object');
+      throw refusal(
+        'document: "icons" must be an object',
+        'icon.list.not-object',
+        'icons',
+        'custom icons must be an object of icons by name',
+      );
     }
 
-    Object.values(value.icons).forEach((entry) => {
-      rejectUnknown(entry, ICON_ENTRY_KEYS, 'icons');
+    // An icon is named by its key, as the server names it.
+    Object.entries(value.icons).forEach(([name, entry]) => {
+      rejectUnknown(entry, ICON_ENTRY_KEYS, `icons.${name}`);
     });
   }
 

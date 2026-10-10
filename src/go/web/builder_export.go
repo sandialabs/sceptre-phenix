@@ -26,13 +26,15 @@ type builderTopologyExportRequest struct {
 // the warnings too, and so that a refusal is the JSON error of every other
 // Builder route.
 type builderTopologyExportResponse struct {
-	Name     string   `json:"name"`
-	YAML     string   `json:"yaml"`
-	Warnings []string `json:"warnings"`
+	Name     string       `json:"name"`
+	YAML     string       `json:"yaml"`
+	Warnings []bdoc.Issue `json:"warnings"`
 	// PublishBlockers is why publishing the topology would be refused
-	// although phenix's config validation accepts it, one entry per check in
-	// the order Publish makes them; Publish's refusal names the first.
-	PublishBlockers []string `json:"publishBlockers"`
+	// although phenix's config validation accepts it, one issue per check in
+	// the order Publish makes them; Publish's refusal names the first. Each
+	// says what Publish's refusal says of its check, has the code of the
+	// check's first problem, and is located when the check has one problem.
+	PublishBlockers []bdoc.Issue `json:"publishBlockers"`
 }
 
 // builderExportedTopology is a topology config as an export writes it: the
@@ -105,15 +107,10 @@ func (b *builderAPI) exportTopology(w http.ResponseWriter, r *http.Request) erro
 	}
 
 	// Each is named as Publish's refusal names it (see publishProjectionRefusal).
-	blockers := make([]string, 0, len(export.PublishBlockers))
+	blockers := make([]bdoc.Issue, 0, len(export.PublishBlockers))
 
 	for _, blocker := range export.PublishBlockers {
-		reason, named := projectionProblems(blocker)
-		if !named {
-			reason = blocker.Error()
-		}
-
-		blockers = append(blockers, reason)
+		blockers = append(blockers, exportBlocker(blocker))
 	}
 
 	body, err := yaml.Marshal(builderExportedTopology{
@@ -129,7 +126,7 @@ func (b *builderAPI) exportTopology(w http.ResponseWriter, r *http.Request) erro
 
 	warnings := export.Warnings
 	if warnings == nil {
-		warnings = []string{}
+		warnings = []bdoc.Issue{}
 	}
 
 	return builderWriteJSON(w, http.StatusOK, "", builderTopologyExportResponse{
@@ -138,4 +135,26 @@ func (b *builderAPI) exportTopology(w http.ResponseWriter, r *http.Request) erro
 		Warnings:        warnings,
 		PublishBlockers: blockers,
 	})
+}
+
+// exportBlocker is the issue of one check only publishing makes that an
+// exported topology fails: what Publish's refusal says of it (see
+// [projectionProblems]), of the code of its first problem, and where that
+// problem is when it is the only one.
+func exportBlocker(blocker error) bdoc.Issue {
+	problems := bdoc.ErrorIssues(blocker)
+
+	reason, named := projectionProblems(blocker)
+	if !named || len(problems) == 0 {
+		return bdoc.NewIssue(bdoc.CodePublishTopologyInvalid, "", blocker.Error())
+	}
+
+	issue := problems[0]
+	issue.Message = reason
+
+	if len(problems) > 1 {
+		issue.Path, issue.NodeID, issue.EdgeID, issue.NetworkID, issue.Field = "", "", "", "", ""
+	}
+
+	return issue
 }

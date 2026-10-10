@@ -743,7 +743,8 @@ most 4096 bytes long and without control characters. An entry that does
 not fit, such as an injection source with a line break in it, is left out
 of the list, and the dialog names it the same way before the file is
 saved, for example "The package does not list file "/phenix/injects/a\nb":
-it must not contain control characters."
+it must not contain control characters." Each warning shows its
+[error code](error-codes.md), such as `package.config.unreadable`.
 
 [pump-station.package.yaml](examples/pump-station.package.yaml) is the
 pump station with **Scenario configs** and **Disk-image requirements**
@@ -913,14 +914,16 @@ Document ID:  3da3426690fe1cfddce33b19a0596a7362da0ff2ba342a6b69554d7be110d47e
 Topology:     Riverside-Water (would be created)
 Nodes:        10
 Warnings:
-  - The document's scenario is not changed: only the topology is published.
+  - The document's scenario is not changed: only the topology is published. [publish.scenario.unchanged]
 Nothing was written.
 ```
 
 The **Topology** line says "(would be created)", "(would be updated)" or
-"(would be left as it is: it already holds this document)". A document that
-cannot be published prints the reason as an error instead, and the command
-exits with 1. This makes `--dry-run` a check for a repository's CI.
+"(would be left as it is: it already holds this document)". Each warning,
+and each line of a refusal, ends with its code in brackets (see
+[Error Codes](error-codes.md)). A document that cannot be published prints
+the reason as an error instead, and the command exits with 1. This makes
+`--dry-run` a check for a repository's CI.
 
 ### Updating a topology
 
@@ -928,7 +931,7 @@ The command replaces an existing topology only with `--update`:
 
 ```console
 $ phenix builder publish pump-station.builder.json
-Error: topology Pump-station already exists; use --update to replace it
+Error: topology Pump-station already exists; use --update to replace it [publish.topology.exists]
 $ phenix builder publish pump-station.builder.json --update
 2026-10-01 21:51:06.957 INF topology updated type=SYSTEM name=Pump-station document=01211d6f143060dd6ef56d26cb67e86770671b059e263060f73ee344f4fc4362 digest=sha256:4ba9ae46494bb7d2498f5119b55996f332c52c1b95d79502361afbf50707cbc3
 ```
@@ -951,7 +954,7 @@ in two cases only:
 
     ```console
     $ phenix builder publish riverside-water.builder.json --name riverside-water --update
-    2026-10-01 21:51:07.132 WRN The document's scenario is not changed: only the topology is published. type=SYSTEM topology=riverside-water
+    2026-10-01 21:51:07.132 WRN The document's scenario is not changed: only the topology is published. type=SYSTEM topology=riverside-water code=publish.scenario.unchanged
     2026-10-01 21:51:07.132 INF topology updated type=SYSTEM name=riverside-water document=87d5f9c5e686bdf96898b772f1b8f863b7d3c0f3e7ece332629a03f3849badcb digest=sha256:1ff0029f39e932995bffdc1335c03683dc7ff94bead6b943b788431187d861db
     ```
 
@@ -966,8 +969,8 @@ In every other case the command refuses:
 
 | Error | Why | What to do |
 |---|---|---|
-| `topology Pump-station was changed after it was published, and replacing it would discard that change` | The topology was changed after its document was published, with `phenix config edit` for example | Import the topology in Builder and publish that draft, or delete the topology and publish the file again |
-| `topology corp-services was not published from a Builder document that is still stored, and this document was not made from the topology as it is now` | The topology has no stored published document (a plain topology, a topology the legacy Builder saved, or one that only names a Builder file), and the document was not imported from it as it is now | The same |
+| `topology Pump-station was changed after it was published, and replacing it would discard that change [publish.topology.changed]` | The topology was changed after its document was published, with `phenix config edit` for example | Import the topology in Builder and publish that draft, or delete the topology and publish the file again |
+| `topology corp-services was not published from a Builder document that is still stored, and this document was not made from the topology as it is now [publish.topology.changed]` | The topology has no stored published document (a plain topology, a topology the legacy Builder saved, or one that only names a Builder file), and the document was not imported from it as it is now | The same |
 
 There is no flag to force an update.
 
@@ -986,21 +989,25 @@ every problem at once:
 
 ```console
 $ phenix builder publish blocked.builder.json
-Error: the document cannot be published as topology Pump-station:
-  interface "eth0" of device "eng-ws-01" has no VLAN: connect it to a network, or type a VLAN for it
-  IP address 10.40.1.10 on VLAN "STATION" is used by interface "eth0" of device "rtu-01" and interface "eth1" of device "station-rtr"
+Error: the document cannot be published as topology Pump-station [publish.blocked]:
+  interface "eth0" of device "eng-ws-01" has no VLAN: connect it to a network, or type a VLAN for it [interface.vlan.missing]
+  IP address 10.40.1.10 on VLAN "STATION" is used by interface "eth0" of device "rtu-01" and interface "eth1" of device "station-rtr" [interface.ip.shared]
 ```
 
 Here `blocked.builder.json` is the pump station with eth0 of eng-ws-01
 disconnected, and with the address of rtu-01 given to eth1 of station-rtr
 too.
 
-A file that is not a valid Builder document is refused with the reason, for
-example for a Topology config:
+A file that is not a valid Builder document is refused with every reason,
+each on a line of its own with where it is and its code, for example for a
+Topology config:
 
 ```console
 $ phenix builder publish pump-station.topology.yaml
-Error: pump-station.topology.yaml is not a valid Builder document: decoding builder document: json: unknown field "apiVersion"
+Error: pump-station.topology.yaml is not a valid Builder document [document.invalid]:
+  apiVersion: unknown field "apiVersion" [document.field.unknown]
+  kind: unknown field "kind" [document.field.unknown]
+  spec: unknown field "spec" [document.field.unknown]
 ```
 
 The file can be at most 5 MiB. Its content decides whether it is read as

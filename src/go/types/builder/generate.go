@@ -345,7 +345,7 @@ func CheckIncludes(name string, spec map[string]any, load TopologyLoader) (Inclu
 			}
 		}
 
-		startedNodes(topology.spec, func(hostname, osType string) {
+		startedNodes(topology.spec, func(_ int, hostname, osType string) {
 			if _, err := checkHostname(hostname, osType); err != nil {
 				report.Refused = append(report.Refused, RefusedHostname{Include: topology.name, Reason: err.Error()})
 			}
@@ -1357,7 +1357,7 @@ func (g *generator) importAnnotations(annotations map[string]string) {
 
 		value := annotations[key]
 
-		if annotationKeyProblem(key) != "" || len(kept) == MaxAnnotations ||
+		if _, problem := annotationKeyProblem(key); problem != "" || len(kept) == MaxAnnotations ||
 			size+len(key)+len(value) > MaxAnnotationBytes {
 			dropped = append(dropped, strconv.Quote(truncate(key)))
 

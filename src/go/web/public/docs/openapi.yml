@@ -1909,10 +1909,11 @@ paths:
           $ref: "#/components/responses/BuilderConflict"
         "412":
           description: >
-            The If-Match header does not name the draft's current revision.
-            The caller may delete the draft, so the response carries its
-            current ETag, as the listing does for a draft whose metadata this
-            server can no longer read, which cannot be read on its own.
+            The If-Match header does not name the draft's current revision
+            (`draft.stale`). The caller may delete the draft, so the response
+            carries its current ETag, as the listing does for a draft whose
+            metadata this server can no longer read, which cannot be read on
+            its own.
           headers:
             ETag:
               $ref: "#/components/headers/BuilderETag"
@@ -2070,8 +2071,9 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
         "409":
           description: >
-            The snapshot is the current version, or the draft changed while
-            the request was handled.
+            The snapshot is the current version (`draft.snapshot.current`),
+            or the draft changed while the request was handled
+            (`draft.conflict`).
           content:
             application/json:
               schema:
@@ -2380,8 +2382,8 @@ paths:
         "412":
           description: >
             The If-Match header does not name the list's current entity tag,
-            or the list changed while the request was handled. The response
-            carries the current one.
+            or the list changed while the request was handled
+            (`draft.shares.stale`). The response carries the current one.
           headers:
             ETag:
               $ref: "#/components/headers/BuilderSharesETag"
@@ -2510,8 +2512,9 @@ paths:
         another value, or when `name` is given without `copy` or `includes`
         `combine`. Answered with 422 when `copy` or `includes` `combine` is
         asked of an Experiment, when the new name is not a config name of 1
-        to 512 bytes, and when it is the name of the stored topology being
-        imported. Answered with 500 when the config store cannot be read,
+        to 512 bytes (`import.name.invalid`), and when it is the name of the
+        stored topology being imported (`import.name.source`). Answered with
+        500 when the config store cannot be read,
         such as for the Scenario config an Experiment names.
       operationId: postBuilderGenerate
       requestBody:
@@ -2667,10 +2670,15 @@ paths:
         a requirements entry the package format refuses (blank, longer than
         4096 bytes, holding control characters such as a newline in an
         injection source, or past the first 1000 entries of its list) is left
-        out of the requirements, and a warning names it. Anything else the
-        package would be refused for, such as a stored config without a spec,
-        is answered 422 with the issues. A package larger than 5242880 bytes
-        is refused with 413.
+        out of the requirements, and a warning names it. Each warning is an
+        issue with its code (`package.config.unreadable`,
+        `package.include.file-path`, `package.icon.missing`,
+        `package.icons.too-many`, `package.requirement.left-out`,
+        `package.requirements.truncated`). Anything else the package would
+        be refused for, such as a stored config without a spec, is answered
+        422 with the code `package.invalid` and the issues. A package larger
+        than 5242880 bytes is refused with 413 and the code
+        `package.too-large`.
       operationId: postBuilderPackage
       requestBody:
         required: true
@@ -2701,10 +2709,12 @@ paths:
       description: >
         Reports, for each entry of the package's requirements, whether this
         server has it. Requires `configs` `get`. The package is the request
-        body, at most 5242880 bytes (413 beyond), decoded strictly (unknown
-        fields are refused) and checked as the package schema describes, else
-        422; a carried config with a Builder annotation (`builder-*`) is
-        refused too. A Scenario or Topology config
+        body, at most 5242880 bytes (413 beyond, with the code
+        `package.too-large`), decoded strictly (unknown fields are refused)
+        and checked as the package schema describes, else 422 with the code
+        `package.invalid` and, for a package that does not validate, each
+        problem in `issues`; a carried config with a Builder annotation
+        (`builder-*`) is refused too. A Scenario or Topology config
         is `present` when the server has one of that name with the package's
         spec, or the package carries none; `different` when its spec is
         another; `missing` when there is none; and `unknown` when the caller
@@ -3913,6 +3923,97 @@ components:
           type: object
           additionalProperties:
             type: string
+        code:
+          description: >
+            The stable, machine-readable code of the failure. Every Builder
+            route's error has one, such as `document.invalid`,
+            `publish.blocked`, `publish.topology.exists`, `request.not-found`
+            or `request.stale`; other routes leave it out. The answers about
+            a draft a client tells apart have codes of their own:
+            `draft.stale` and `draft.shares.stale` (412), `draft.conflict`
+            and `draft.snapshot.current` (409). A method a Builder route does
+            not take is answered with 405, `request.method-not-allowed`, and
+            the methods it takes in `Allow`. A refusal about one of the
+            scenarios a draft lists (`publish.scenario.*`) names that
+            scenario in `metadata.scenario`. The docs list every code at
+            https://phenix.sceptre.dev/latest/builder/error-codes/.
+          type: string
+          pattern: "^[a-z]+(\\.[a-z0-9-]+)+$"
+          example: publish.blocked
+        issues:
+          description: >
+            Each problem a Builder error is made of, when it names them one
+            by one: the issues of a document that does not validate
+            (`document.invalid`), or the interfaces, addresses and hostnames
+            only publishing refuses (`publish.blocked`).
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderIssue"
+    BuilderIssue:
+      title: Builder Issue
+      description: >
+        One problem the Builder found in a document, a publication or a
+        request: the code of the rule it breaks, its severity, what it says,
+        and where it is, by the parts that are known. The web UI's validator
+        reports the same codes for the same rules. A code never changes
+        meaning once published; a new rule gets a new code.
+      type: object
+      required:
+        - code
+        - severity
+        - message
+      properties:
+        code:
+          title: Code
+          description: >
+            The rule the issue breaks, as dotted lowercase words whose first
+            names what the rule is about. The docs list every code at
+            https://phenix.sceptre.dev/latest/builder/error-codes/.
+          type: string
+          pattern: "^[a-z]+(\\.[a-z0-9-]+)+$"
+          example: node.hostname.duplicate
+        severity:
+          title: Severity
+          description: >
+            `error` for an issue that refuses what was asked, `warning` for
+            one that does not.
+          type: string
+          enum: [error, warning]
+          example: error
+        message:
+          title: Message
+          description: What the issue says, in words a person is shown.
+          type: string
+          example: duplicate hostname "web" (also nodes[1])
+        path:
+          title: Path
+          description: >
+            Where the issue is in the document, when it is about a part of
+            it.
+          type: string
+          example: nodes[3].device.hostname
+        nodeId:
+          title: Node ID
+          description: The ID of the node the issue is about, when it is about one.
+          type: string
+          example: 4113dfc0-f4be-57f9-8115-6cecd1f1aea3
+        edgeId:
+          title: Edge ID
+          description: The ID of the connection the issue is about, when it is about one.
+          type: string
+          example: 7f010dcd-e23d-514c-9206-3609df999026
+        networkId:
+          title: Network ID
+          description: The ID of the network the issue is about, when it is about one.
+          type: string
+          example: a8af611d-c68f-54e0-94a5-9176cea64e44
+        field:
+          title: Field
+          description: >
+            The JSON Forms data path of the device field the issue is about,
+            when it is about one.
+          type: string
+          example: spec.network.interfaces.0.vlan
     BuilderDocument:
       title: Builder Document
       description: >
@@ -4844,13 +4945,20 @@ components:
           items:
             $ref: "#/components/schemas/BuilderPublishStage"
         warnings:
+          description: >
+            what the caller should know of the publication, each with its
+            code, such as `publish.file.unchanged` or `publish.legacy.replaced`
           type: array
           items:
-            type: string
+            $ref: "#/components/schemas/BuilderIssue"
         errors:
+          description: >
+            why a stage of a partial publication failed, each with its code:
+            `publish.stage.failed`, `publish.experiment.running` or
+            `server.storage-full`
           type: array
           items:
-            type: string
+            $ref: "#/components/schemas/BuilderIssue"
         topology:
           $ref: "#/components/schemas/BuilderPublishTarget"
         scenario:
@@ -5019,20 +5127,22 @@ components:
             a line break, is double quoted
           type: string
         warnings:
-          description: what the projection left out or changed
+          description: what the projection left out or changed, each with its code
           type: array
           items:
-            type: string
+            $ref: "#/components/schemas/BuilderIssue"
         publishBlockers:
           description: >
             why a publish of the topology would be refused although phenix's
-            config validation accepts it, one entry per check in the order a
+            config validation accepts it, one issue per check in the order a
             publish makes them: interfaces without a VLAN, then addresses
             interfaces share, then hostnames phenix refuses when it creates an
-            experiment. A publish's 422 message names the first.
+            experiment. A publish's 422 message names the first. Each says
+            what that message says of its check, has the code of the check's
+            first problem, and is located when the check has one problem.
           type: array
           items:
-            type: string
+            $ref: "#/components/schemas/BuilderIssue"
     BuilderPackageRequest:
       type: object
       additionalProperties: false
@@ -5066,10 +5176,12 @@ components:
           type: object
           additionalProperties: true
         warnings:
-          description: what the package names but does not carry, and why
+          description: >
+            what the package names but does not carry, or leaves out of its
+            requirements, and why, each with its code
           type: array
           items:
-            type: string
+            $ref: "#/components/schemas/BuilderIssue"
     BuilderPackageDependencies:
       type: object
       properties:
@@ -5278,6 +5390,10 @@ components:
           type: string
         cause:
           type: string
+        code:
+          description: always `share.users.refused`
+          type: string
+          example: share.users.refused
         errors:
           type: array
           items:
@@ -5875,6 +5991,14 @@ components:
                 enum:
                   - not-found
                   - too-many
+              code:
+                description: >
+                  the code of the reason: `template.item.not-found` or
+                  `template.shares.too-many`
+                type: string
+                enum:
+                  - template.item.not-found
+                  - template.shares.too-many
     Workflow:
       type: object
       title: Workflow
@@ -6227,13 +6351,18 @@ components:
           schema:
             $ref: "#/components/schemas/WebError"
     BuilderConflict:
-      description: The draft or a target config changed while the request was handled.
+      description: >
+        The draft or a target config changed while the request was handled.
+        A draft that changed has the code `draft.conflict`: read it again and
+        retry.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/WebError"
     BuilderPreconditionFailed:
-      description: The If-Match header does not name the draft's current revision.
+      description: >
+        The If-Match header does not name the draft's current revision
+        (`draft.stale`).
       content:
         application/json:
           schema:

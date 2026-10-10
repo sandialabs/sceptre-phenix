@@ -388,18 +388,137 @@ describe('strict decoding', () => {
     expect(refused({ icons: 'x' })).toThrowError(
       'document: "icons" must be an object',
     );
+    // An entry is named by the icon's name, its key.
     expect(refused({ icons: { plc: ICON_DATA } })).toThrowError(
-      'icons: expected an object',
+      'icons.plc: expected an object',
     );
     expect(
       refused({
         icons: { plc: { data: ICON_DATA, type: 'image/svg+xml' } },
       }),
-    ).toThrowError('icons: unknown field "type"');
+    ).toThrowError('icons.plc: unknown field "type"');
     // An icon's name is its key: an entry holds its data alone.
     expect(
       refused({ icons: { plc: { name: 'plc', data: ICON_DATA } } }),
-    ).toThrowError('icons: unknown field "name"');
+    ).toThrowError('icons.plc: unknown field "name"');
+  });
+
+  // What the server's decoder lists as issues too is refused with the same
+  // issue: its code, its path and its words (decodeIssues in decode.go).
+  test('refusals the server lists as issues carry the issue', () => {
+    const doc = decoratedDocument();
+    const switchAt = doc.nodes.findIndex((node) => node.kind === 'switch');
+    const issueOf = (value) => {
+      try {
+        decodeDocument(value);
+      } catch (error) {
+        return error.issues.map(({ code, path, message, severity }) => ({
+          code,
+          path,
+          message,
+          severity,
+        }));
+      }
+
+      return 'accepted';
+    };
+    // The document with a key of its switch's payload set to value.
+    const withSwitch = (key, value) => {
+      const payload = JSON.parse(JSON.stringify(doc));
+
+      payload.nodes[switchAt].switch[key] = value;
+
+      return payload;
+    };
+
+    expect(issueOf({ ...doc, author: 'alice' })).toEqual([
+      {
+        code: 'document.field.unknown',
+        path: 'author',
+        message: 'unknown field "author"',
+        severity: 'error',
+      },
+    ]);
+    expect(
+      issueOf({ ...doc, metadata: { ...doc.metadata, author: 'alice' } }),
+    ).toEqual([
+      {
+        code: 'document.field.unknown',
+        path: 'metadata.author',
+        message: 'unknown field "author"',
+        severity: 'error',
+      },
+    ]);
+    expect(issueOf(withSwitch('color2', '#fff'))).toEqual([
+      {
+        code: 'document.field.unknown',
+        path: `nodes[${switchAt}].switch.color2`,
+        message: 'unknown field "color2"',
+        severity: 'error',
+      },
+    ]);
+    expect(
+      issueOf({ ...doc, icons: { plc: { data: ICON_DATA, type: 'png' } } }),
+    ).toEqual([
+      {
+        code: 'document.field.unknown',
+        path: 'icons.plc.type',
+        message: 'unknown field "type"',
+        severity: 'error',
+      },
+    ]);
+    expect(issueOf({ ...doc, metadata: [] })).toEqual([
+      {
+        code: 'metadata.not-object',
+        path: 'metadata',
+        message: 'metadata must be an object',
+        severity: 'error',
+      },
+    ]);
+    expect(
+      issueOf({ ...doc, metadata: { ...doc.metadata, notes: 'x' } }),
+    ).toEqual([
+      {
+        code: 'metadata.notes.not-list',
+        path: 'metadata.notes',
+        message: 'notes must be a list of text',
+        severity: 'error',
+      },
+    ]);
+    expect(issueOf(withSwitch('notes', 'x'))).toEqual([
+      {
+        code: 'switch.notes.not-list',
+        path: `nodes[${switchAt}].switch.notes`,
+        message: 'notes must be a list of text',
+        severity: 'error',
+      },
+    ]);
+    expect(issueOf({ ...doc, edges: 'none' })).toEqual([
+      {
+        code: 'document.list.missing',
+        path: 'edges',
+        message: 'edges must be an array',
+        severity: 'error',
+      },
+    ]);
+    expect(issueOf({ ...doc, templates: {} })).toEqual([
+      {
+        code: 'template.list.not-list',
+        path: 'templates',
+        message: 'templates must be a list of templates',
+        severity: 'error',
+      },
+    ]);
+    expect(issueOf({ ...doc, icons: [] })).toEqual([
+      {
+        code: 'icon.list.not-object',
+        path: 'icons',
+        message: 'custom icons must be an object of icons by name',
+        severity: 'error',
+      },
+    ]);
+    // What the server's decoder refuses with its own words is no issue.
+    expect(issueOf({ ...doc, viewport: 5 })).toEqual([]);
   });
 
   test('unknown fields beside the presentation fields are refused', () => {

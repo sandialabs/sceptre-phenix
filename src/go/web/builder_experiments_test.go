@@ -573,7 +573,8 @@ func TestBuilderPublishAnswersNameExperiment(t *testing.T) {
 	before.ETag = bapi.RevisionETag(mustDraftMeta(t, harness, lab.draft.ID).Publication.Revision)
 
 	retried, _ := publishBuilderDraft(t, harness, before, publishLabExperiment, http.StatusOK)
-	if !strings.Contains(strings.Join(retried.Warnings, " "), "already complete") || retried.Draft.Experiment != "exp" {
+	if !strings.Contains(strings.Join(bdoc.IssueMessages(retried.Warnings), " "), "already complete") ||
+		retried.Draft.Experiment != "exp" {
 		t.Fatalf("retry: warnings %q and draft experiment %q, want the completed publication with exp",
 			retried.Warnings, retried.Draft.Experiment)
 	}

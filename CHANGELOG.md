@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - **Builder template files**: Node Templates export to and import from YAML or JSON template files, one collection per file, with the custom icons they use. `phenix ui` reads the template files in `base-dir.builder-templates` (default `<base-dir.phenix>/builder/templates`) at start as read-only server collections that every user sees and can copy.
 - **Builder merging**: Builder merges a draft with another editor's changes when both saved, and asks only about clashing fields.
 - **Builder packages**: Download saves a diagram as a Builder package: one JSON or YAML file with the Scenario configs, included topologies and custom icons you tick, and a list of what the diagram needs. Uploading it shows which of those the server has, and creates a missing config only when you tick it.
+- **Builder error codes**: Builder REST errors, validation issues, publish blockers and package warnings carry stable error codes.
 
 ### Changed
 

@@ -728,33 +728,58 @@ export function buildPublishIntent(form = {}, context = {}) {
   return { intent, error: '', field: '' };
 }
 
-// The server's refusal of a create or update that does not match the configs
-// it has: the list the dialog chose the action from has changed since.
-// serverReason() makes each reason a sentence, so the patterns allow for its
-// capital and full stop.
-const STALE_ACTION =
-  /^config (\S+) (already exists|does not exist); choose (?:update|create) explicitly\.?$/i;
+// What the codes of the server's publish refusals (codes.go) say: the kind
+// of config a refusal is about, and for some, the rule the dialog explains
+// in its own words. `stale` is a create or update that does not match the
+// configs the server has (the list the dialog chose the action from has
+// changed since), with whether the config exists; `source` an update
+// draftCanUpdate() expected the server to accept, for example because the
+// config was republished from another diagram since the list of published
+// diagrams was read; `changed` an update of a config this draft published,
+// which someone else has changed since, so publishing would overwrite that.
+// A code of another refusal of a publish names its kind by its second word
+// (publish.experiment.running), and the refusals of the topology as a whole
+// (what only publishing refuses, and a hostname an included topology
+// defines too) and of an included topology's hostnames are about the
+// topology and the experiment.
+const REFUSAL_RULES = {
+  'publish.topology.exists': { kind: 'topology', stale: true, exists: true },
+  'publish.topology.missing': { kind: 'topology', stale: true, exists: false },
+  'publish.experiment.exists': {
+    kind: 'experiment',
+    stale: true,
+    exists: true,
+  },
+  'publish.experiment.missing': {
+    kind: 'experiment',
+    stale: true,
+    exists: false,
+  },
+  'publish.topology.not-source': { kind: 'topology', source: true },
+  'publish.experiment.not-source': { kind: 'experiment', source: true },
+  'publish.topology.changed': { kind: 'topology', changed: true },
+  'publish.experiment.changed': { kind: 'experiment', changed: true },
+  'publish.blocked': { kind: 'topology' },
+  'publish.include.clash': { kind: 'topology' },
+  'publish.include.hostname': { kind: 'experiment' },
+};
 
-// The server's refusal of an update draftCanUpdate() expected it to accept,
-// for example because the config was republished from another diagram since
-// the list of published diagrams was read.
-const NOT_SOURCE =
-  /^(topology|experiment) (\S+) is not the source this draft was loaded from\.?$/i;
+// The kinds of config a publish refusal's code may name by its second word.
+const REFUSAL_KINDS = ['topology', 'experiment', 'scenario'];
 
-// The server's refusal of an update to a topology or experiment this draft
-// published, which someone else has changed since: publishing would
-// overwrite that.
-const CHANGED_SINCE =
-  /^(topology|experiment) (\S+) changed after this draft published it\.?$/i;
+// What a publish refusal's code says, as REFUSAL_RULES has it: the kind of
+// config it is about ('' for none) and its rule.
+function refusalRule(code) {
+  if (REFUSAL_RULES[code]) {
+    return REFUSAL_RULES[code];
+  }
 
-// A refusal that names its config ("running experiment lab cannot be
-// updated", "experiment lab is not valid", "scenario ntp does not exist").
-const NAMED_TARGET = /^(?:running )?(topology|scenario|experiment) (\S+) /i;
+  const [scope, kind] = String(code || '').split('.');
 
-// The targets a publish creates or updates, in the order the server checks
-// them; it reports the first refusal. Scenarios are never created or
-// updated as a whole: their topology annotation is.
-const TARGET_KINDS = ['topology', 'experiment'];
+  return {
+    kind: scope === 'publish' && REFUSAL_KINDS.includes(kind) ? kind : '',
+  };
+}
 
 // The form field a refusal of a config of kind named name is about, in
 // buildPublishIntent's terms: a scenario has one only when it is the
@@ -800,14 +825,18 @@ function staleActionRefusal(kind, intent, exists, context) {
 }
 
 /**
- * A publish the server refused (409), as a message for the dialog and the
- * form field it is about. The server names the config it refused. When it
- * refuses a create or update because the config does or does not exist, the
- * dialog chose the action from a list that is out of date, and the message
- * says what publishing again will do. When it refuses an update this draft
- * may not make, the message says so and asks for another name.
+ * A publish the server refused (409 or 422), as a message for the dialog and
+ * the form field it is about, both chosen by the refusal's code. When the
+ * server refuses a create or update because the config does or does not
+ * exist, the dialog chose the action from a list that is out of date, and
+ * the message says what publishing again will do. When it refuses an update
+ * this draft may not make, the message says so and asks for another name.
+ * Any other refusal keeps the server's reason, on the field of the config
+ * its code is about: a scenario's only when it is the experiment's.
  *
- * @param {string} reason the server's reason, from serverReason()
+ * @param {{code?: string, reason?: string, scenario?: string}} refusal as
+ *   serverRefusal() reads it: the server's code, its reason, and the
+ *   scenario a refusal about one of the draft's scenarios names
  * @param {object} intent the refused intent
  * @param {object} [context] topologies, experiments and draft, as
  *   buildPublishIntent takes them, read again after the refusal
@@ -816,55 +845,37 @@ function staleActionRefusal(kind, intent, exists, context) {
  *   a config refused because someone else changed it since this draft
  *   published it
  */
-export function publishRefusal(reason, intent = {}, context = {}) {
+export function publishRefusal(refusal = {}, intent = {}, context = {}) {
+  const { code = '', reason = '', scenario = '' } = refusal || {};
   const text = String(reason || '').trim();
-  const stale = STALE_ACTION.exec(text);
+  const rule = refusalRule(code);
+  const name = intent[rule.kind]?.name;
 
-  if (stale) {
-    const [, name, state] = stale;
-    const exists = state.toLowerCase() === 'already exists';
-    // "config core already exists" does not say which config: it is the first
-    // target of that name whose action the refusal is about.
-    const kind = TARGET_KINDS.find(
-      (candidate) =>
-        intent[candidate]?.name === name &&
-        (intent[candidate].action === 'create') === exists,
-    );
-
-    if (kind) {
-      return staleActionRefusal(kind, intent, exists, context);
-    }
+  if (rule.stale && name) {
+    return staleActionRefusal(rule.kind, intent, rule.exists, context);
   }
 
-  const notSource = NOT_SOURCE.exec(text);
-  const refusedKind = notSource?.[1].toLowerCase();
-
-  if (refusedKind && intent[refusedKind]?.name === notSource[2]) {
+  if (rule.source && name) {
     return {
-      message: updateProblem(refusedKind, notSource[2]),
-      field: targetField(refusedKind),
+      message: updateProblem(rule.kind, name),
+      field: targetField(rule.kind),
     };
   }
-
-  const changed = CHANGED_SINCE.exec(text);
-  const changedKind = changed?.[1].toLowerCase();
 
   // The dialog keeps the name blocked from now on (see updateBlocker).
-  if (changedKind && intent[changedKind]?.name === changed[2]) {
+  if (rule.changed && name) {
     return {
-      message: updateProblem(changedKind, changed[2], 'changed'),
-      field: targetField(changedKind),
-      changed: `${changedKind}/${changed[2]}`,
+      message: updateProblem(rule.kind, name, 'changed'),
+      field: targetField(rule.kind),
+      changed: `${rule.kind}/${name}`,
     };
   }
 
-  const named = NAMED_TARGET.exec(text);
-  const kind = named?.[1].toLowerCase();
   const field =
-    kind === 'scenario'
-      ? targetField(kind, intent, named[2])
-      : kind && intent[kind]?.name === named[2]
-        ? targetField(kind, intent)
+    rule.kind === 'scenario'
+      ? targetField(rule.kind, intent, scenario)
+      : name
+        ? targetField(rule.kind, intent)
         : '';
 
   return {
@@ -885,12 +896,13 @@ export function publishRefusal(reason, intent = {}, context = {}) {
  * addresses clash, when the experiment starts.
  *
  * @param {object[]} issues validateDocument() issues
- * @returns {object[]} the issues, each one that blocks publishing an error
+ * @returns {object[]} the issues, each one that blocks publishing an error,
+ *   in `level` and `severity` alike, with its code
  */
 export function publishChecks(issues = []) {
   return issues.map((issue) =>
     issue.blocksPublish && issue.level !== 'error'
-      ? { ...issue, level: 'error' }
+      ? { ...issue, level: 'error', severity: 'error' }
       : issue,
   );
 }

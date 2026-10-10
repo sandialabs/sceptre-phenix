@@ -17,6 +17,14 @@ type WebError struct {
 	SystemMetadata map[string]string `json:"sys_metadata,omitempty"` // logged, but not return to user
 	UserMetadata   map[string]string `json:"metadata,omitempty"`     // logged and returned to user
 
+	// Code is a stable, machine-readable name of the failure. The Builder
+	// routes give every error one; other routes leave it out.
+	Code string `json:"code,omitempty"`
+	// Issues lists the problems the failure is made of, one by one, where a
+	// route names them (the Builder routes, as issue objects); otherwise it
+	// is left out.
+	Issues any `json:"issues,omitempty"`
+
 	// wrapped is the error the WebError was made from, if any.
 	wrapped error
 }
@@ -62,6 +70,21 @@ func (err *WebError) SetStatus(status int) *WebError {
 	return err
 }
 
+// WithCode sets the code of the failure (see [WebError.Code]).
+func (err *WebError) WithCode(code string) *WebError {
+	err.Code = code
+
+	return err
+}
+
+// WithIssues sets the problems the failure is made of (see
+// [WebError.Issues]).
+func (err *WebError) WithIssues(issues any) *WebError {
+	err.Issues = issues
+
+	return err
+}
+
 func (err WebError) Error() string {
 	if err.Cause == "" {
 		return err.Message
@@ -96,6 +119,8 @@ func (err ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				Message:        store.ErrNoSpace.Error(),
 				SystemMetadata: web.SystemMetadata,
 				UserMetadata:   web.UserMetadata,
+				Code:           web.Code,
+				Issues:         nil,
 				wrapped:        err,
 			}
 			logged = err.Error()

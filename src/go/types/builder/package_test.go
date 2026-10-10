@@ -334,26 +334,31 @@ func TestPackageValidateFindsIssues(t *testing.T) {
 		name   string
 		change func(value map[string]any)
 		want   string
+		code   builder.Code
 	}{
 		{
 			name:   "another schema",
 			change: func(value map[string]any) { value["$schema"] = "https://phenix.sandia.gov/schemas/builder/v1" },
 			want:   "$schema: package schema must be",
+			code:   builder.CodePackageSchemaMismatch,
 		},
 		{
 			name:   "no document",
 			change: func(value map[string]any) { delete(value, "document") },
 			want:   "document: a package holds a Builder document",
+			code:   builder.CodePackageDocumentMissing,
 		},
 		{
 			name:   "a document that is not valid",
 			change: func(value map[string]any) { value["document"].(map[string]any)["nodes"] = nil },
 			want:   "document.nodes: nodes must be an array",
+			code:   builder.CodeDocumentListMissing,
 		},
 		{
 			name:   "a scenario of another kind",
 			change: func(value map[string]any) { scenario(value)["kind"] = builder.PackageKindTopology },
 			want:   `scenarios.pkg-scenario.kind: must be "Scenario"`,
+			code:   builder.CodePackageConfigKindMismatch,
 		},
 		{
 			name: "a config named apart from its key",
@@ -361,21 +366,25 @@ func TestPackageValidateFindsIssues(t *testing.T) {
 				scenario(value)["metadata"].(map[string]any)["name"] = "other"
 			},
 			want: `scenarios.pkg-scenario.metadata.name: must be "pkg-scenario"`,
+			code: builder.CodePackageConfigNameMismatch,
 		},
 		{
 			name:   "an apiVersion of no phenix config",
 			change: func(value map[string]any) { scenario(value)["apiVersion"] = "v2" },
 			want:   "scenarios.pkg-scenario.apiVersion: must be phenix.sandia.gov/v<number>",
+			code:   builder.CodePackageConfigVersionInvalid,
 		},
 		{
 			name:   "a config without a spec",
 			change: func(value map[string]any) { delete(scenario(value), "spec") },
 			want:   "scenarios.pkg-scenario.spec: a config needs a spec",
+			code:   builder.CodePackageConfigSpecMissing,
 		},
 		{
 			name:   "a carried config the requirements do not name",
 			change: func(value map[string]any) { requirements(value)["scenarios"] = []any{"pkg-unread"} },
 			want:   "scenarios.pkg-scenario: the package carries it, but its requirements do not name it",
+			code:   builder.CodePackageConfigUnlisted,
 		},
 		{
 			name: "a carried config of a key that is no config name",
@@ -388,26 +397,31 @@ func TestPackageValidateFindsIssues(t *testing.T) {
 				requirements(value)["topologies"] = []any{"a b"}
 			},
 			want: `topologies.a b: "a b" is not a config name`,
+			code: builder.CodePackageConfigKeyInvalid,
 		},
 		{
 			name:   "a missing list",
 			change: func(value map[string]any) { delete(requirements(value), "images") },
 			want:   "requirements.images: the list is required",
+			code:   builder.CodePackageRequirementsMissing,
 		},
 		{
 			name:   "a null list",
 			change: func(value map[string]any) { requirements(value)["apps"] = nil },
 			want:   "requirements.apps: the list is required",
+			code:   builder.CodePackageRequirementsMissing,
 		},
 		{
 			name:   "a blank entry",
 			change: func(value map[string]any) { requirements(value)["files"] = []any{" "} },
 			want:   "requirements.files[0]: must not be blank",
+			code:   builder.CodePackageRequirementBlank,
 		},
 		{
 			name:   "an entry with a control character",
 			change: func(value map[string]any) { requirements(value)["icons"] = []any{"a\tb"} },
 			want:   "requirements.icons[0]: must not contain control characters",
+			code:   builder.CodePackageRequirementControl,
 		},
 		{
 			name: "an image used by nobody listed",
@@ -415,6 +429,7 @@ func TestPackageValidateFindsIssues(t *testing.T) {
 				requirements(value)["images"].([]any)[0].(map[string]any)["usedBy"] = nil
 			},
 			want: "requirements.images[0].usedBy: the list is required",
+			code: builder.CodePackageRequirementsMissing,
 		},
 		{
 			name: "a Builder annotation on a config",
@@ -423,18 +438,21 @@ func TestPackageValidateFindsIssues(t *testing.T) {
 			},
 			want: `scenarios.pkg-scenario.metadata.annotations: ` +
 				`"builder-doc" is a Builder annotation, which a package never carries`,
+			code: builder.CodePackageConfigBuilderNote,
 		},
 		{
 			name:   "more Scenario configs than a document names",
 			change: func(value map[string]any) { carryConfigs(value, "scenarios", builder.MaxScenarios+1) },
 			want: fmt.Sprintf("scenarios: a package carries at most %d Scenario configs, not %d",
 				builder.MaxScenarios, builder.MaxScenarios+1),
+			code: builder.CodePackageConfigsTooMany,
 		},
 		{
 			name:   "more Topology configs than a package carries",
 			change: func(value map[string]any) { carryConfigs(value, "topologies", builder.MaxPackageTopologies+1) },
 			want: fmt.Sprintf("topologies: a package carries at most %d Topology configs, not %d",
 				builder.MaxPackageTopologies, builder.MaxPackageTopologies+1),
+			code: builder.CodePackageConfigsTooMany,
 		},
 		{
 			name: "a list longer than a package lists",
@@ -443,6 +461,7 @@ func TestPackageValidateFindsIssues(t *testing.T) {
 			},
 			want: fmt.Sprintf("requirements.files: the list holds at most %d entries, not %d",
 				builder.MaxPackageRequirements, builder.MaxPackageRequirements+1),
+			code: builder.CodePackageRequirementsTooMany,
 		},
 		{
 			name: "an entry longer than a package lists",
@@ -450,6 +469,7 @@ func TestPackageValidateFindsIssues(t *testing.T) {
 				requirements(value)["apps"] = []any{strings.Repeat("a", builder.MaxRequirementBytes+1)}
 			},
 			want: fmt.Sprintf("requirements.apps[0]: must be at most %d bytes", builder.MaxRequirementBytes),
+			code: builder.CodePackageRequirementTooLong,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -466,10 +486,16 @@ func TestPackageValidateFindsIssues(t *testing.T) {
 
 			for _, issue := range found {
 				issues = append(issues, issue.String())
+
+				if info, ok := builder.LookupCode(issue.Code); !ok || issue.Severity != info.Severity {
+					t.Errorf("issue %+v has a code the registry does not hold, or another severity", issue)
+				}
 			}
 
-			if !slices.ContainsFunc(issues, func(issue string) bool { return strings.HasPrefix(issue, tt.want) }) {
-				t.Fatalf("issues = %q, want one starting %q", issues, tt.want)
+			if !slices.ContainsFunc(found, func(issue builder.Issue) bool {
+				return strings.HasPrefix(issue.String(), tt.want) && issue.Code == tt.code
+			}) {
+				t.Fatalf("issues = %q (%+v), want one starting %q with the code %s", issues, found, tt.want, tt.code)
 			}
 
 			var invalid *builder.PackageError
@@ -522,9 +548,31 @@ func TestPackageValidateRefusesBuilderAnnotations(t *testing.T) {
 	}
 }
 
+// TestDecodePackageGivesDocumentIssuesTheirCodes asserts a document the
+// decoder refuses makes a PackageError whose issues keep the codes of the
+// document's rules, at their paths below "document".
+func TestDecodePackageGivesDocumentIssuesTheirCodes(t *testing.T) {
+	value := packageValue(t, samplePackage(t))
+	value["document"].(map[string]any)["extra"] = true
+
+	_, err := builder.DecodePackage(packageText(t, value))
+
+	var invalid *builder.PackageError
+	if !errors.As(err, &invalid) || !errors.Is(err, builder.ErrInvalidPackage) {
+		t.Fatalf("DecodePackage error = %v, want a PackageError", err)
+	}
+
+	issues := builder.ErrorIssues(err)
+	if !slices.ContainsFunc(issues, func(issue builder.Issue) bool {
+		return issue.Code == builder.CodeDocumentFieldUnknown && issue.Path == "document.extra"
+	}) {
+		t.Fatalf("issues = %+v, want the unknown field of the document with its code", issues)
+	}
+}
+
 func TestPackageTrimRequirementsNamesWhatItLeavesOut(t *testing.T) {
 	if warnings := samplePackage(t).TrimRequirements(); len(warnings) != 0 {
-		t.Fatalf("a package that fits gives warnings %q, want none", warnings)
+		t.Fatalf("a package that fits gives warnings %+v, want none", warnings)
 	}
 
 	pkg := samplePackage(t)
@@ -563,8 +611,27 @@ func TestPackageTrimRequirementsNamesWhatItLeavesOut(t *testing.T) {
 		fmt.Sprintf("The package does not list file %q: it must be at most %d bytes.",
 			strings.Repeat("f", 64)+"...", builder.MaxRequirementBytes),
 	}
-	if !slices.Equal(warnings, want) {
-		t.Fatalf("warnings =\n  %s\nwant\n  %s", strings.Join(warnings, "\n  "), strings.Join(want, "\n  "))
+	if got := builder.IssueMessages(warnings); !slices.Equal(got, want) {
+		t.Fatalf("warnings =\n  %s\nwant\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+	}
+
+	// Each is a warning with its code, at the path of the list it leaves an
+	// entry out of.
+	codes := []struct {
+		code builder.Code
+		path string
+	}{
+		{builder.CodePackageRequirementLeftOut, "requirements.images"},
+		{builder.CodePackageRequirementLeftOut, "requirements.images"},
+		{builder.CodePackageRequirementsTruncated, "requirements.apps"},
+		{builder.CodePackageRequirementLeftOut, "requirements.files"},
+		{builder.CodePackageRequirementLeftOut, "requirements.files"},
+	}
+
+	for i, warning := range warnings {
+		if warning.Code != codes[i].code || warning.Path != codes[i].path || warning.Severity != builder.SeverityWarning {
+			t.Errorf("warning %d = %+v, want a warning of the code %s at %s", i, warning, codes[i].code, codes[i].path)
+		}
 	}
 
 	if len(requirements.Apps) != builder.MaxPackageRequirements || slices.Contains(requirements.Files, long) {

@@ -159,7 +159,11 @@ func TestToTopologyWarnsOnHandleWithoutInterface(t *testing.T) {
 		t.Fatalf("ToTopology: %v", err)
 	}
 
-	if !containsSubstring(topology.Warnings, `interface "eth9"`) {
+	if !containsSubstring(builder.IssueMessages(topology.Warnings), `interface "eth9"`) ||
+		!slices.ContainsFunc(topology.Warnings, func(warning builder.Issue) bool {
+			return warning.Code == builder.CodeInterfaceNameUnmatched && warning.NodeID == router.ID &&
+				warning.Severity == builder.SeverityWarning
+		}) {
 		t.Fatalf("expected a warning about the missing interface, got %v", topology.Warnings)
 	}
 }
@@ -284,7 +288,10 @@ func TestToTopologyDeviceHostnameWins(t *testing.T) {
 		t.Fatalf("renamed device lost its network: %v", vlan)
 	}
 
-	if !containsSubstring(topology.Warnings, "the device hostname wins") {
+	if !containsSubstring(builder.IssueMessages(topology.Warnings), "the device hostname wins") ||
+		!slices.ContainsFunc(topology.Warnings, func(warning builder.Issue) bool {
+			return warning.Code == builder.CodeDeviceHostnameMismatch
+		}) {
 		t.Fatalf("expected a hostname override warning, got %v", topology.Warnings)
 	}
 }
@@ -583,6 +590,18 @@ func TestPublishTopologyConfigNamesInterfacesByPosition(t *testing.T) {
 	if !reflect.DeepEqual(vlanErr.Problems, want) {
 		t.Fatalf("problems = %q, want %q", vlanErr.Problems, want)
 	}
+
+	// Each problem is an issue at its interface, of the device it is on.
+	host := nodeByHostname(t, doc, "host-a")
+	issues := vlanErr.Issues()
+
+	for i, field := range []string{"spec.network.interfaces.1.vlan", "spec.network.interfaces.2.vlan", "spec.network.interfaces.4.vlan"} {
+		if len(issues) != len(want) || issues[i].Code != builder.CodeInterfaceVLANMissing || issues[i].Message != want[i] ||
+			issues[i].NodeID != host.ID || issues[i].Field != field || issues[i].Severity != builder.SeverityError ||
+			!strings.HasPrefix(issues[i].Path, "nodes[") {
+			t.Fatalf("issues = %+v, want each problem at its interface, field %s", issues, field)
+		}
+	}
 }
 
 // phenix allocates VLANs by name, so an unconnected interface's VLAN that
@@ -662,6 +681,22 @@ func sharedAddresses(t *testing.T, doc *builder.Document) []string {
 	var addressErr *builder.InterfaceAddressError
 	if !errors.As(err, &addressErr) {
 		return nil
+	}
+
+	// Each problem is an issue of its kind of address, at an interface of a
+	// device that is not included.
+	issues := addressErr.Issues()
+
+	for i, issue := range issues {
+		code := builder.CodeInterfaceIPShared
+		if strings.HasPrefix(addressErr.Problems[i], "MAC address ") {
+			code = builder.CodeInterfaceMACShared
+		}
+
+		if len(issues) != len(addressErr.Problems) || issue.Code != code || issue.Message != addressErr.Problems[i] ||
+			issue.NodeID == "" || !strings.HasPrefix(issue.Field, "spec.network.interfaces.") {
+			t.Fatalf("issues = %+v, want one at an interface for each problem of %q", issues, addressErr.Problems)
+		}
 	}
 
 	return addressErr.Problems
@@ -1216,6 +1251,53 @@ func renamedHost(t *testing.T, hostname, osType string) *builder.Document {
 	return doc
 }
 
+// checkHostnameRefusal fails the test unless the issue of a refusal of a
+// hostname has the code of phenix's reason, at the device's hostname, and
+// says what the refusal says. An error that refuses no hostname is the
+// caller's to check.
+func checkHostnameRefusal(t *testing.T, err error, code builder.Code) {
+	t.Helper()
+
+	var refusal *builder.NodeHostnameError
+	if !errors.As(err, &refusal) {
+		return
+	}
+
+	issues := refusal.Issues()
+	if len(issues) != 1 || issues[0].Code != code || issues[0].NodeID == "" || issues[0].Severity != builder.SeverityError ||
+		!strings.HasSuffix(issues[0].Path, ".device.hostname") || issues[0].Message != refusal.Problems[0] {
+		t.Fatalf("refusal issues = %+v, want one of code %s at the device's hostname", issues, code)
+	}
+}
+
+// checkHostnameWarning fails the test unless the warnings about a hostname
+// are none, when start is "", or else one that starts with start, of code
+// and severity warning, at the device's hostname.
+func checkHostnameWarning(t *testing.T, warnings []builder.Issue, start string, code builder.Code) {
+	t.Helper()
+
+	var found []builder.Issue
+
+	for _, warning := range warnings {
+		if strings.HasPrefix(warning.Message, "hostname '") {
+			found = append(found, warning)
+		}
+	}
+
+	if start == "" {
+		if len(found) != 0 {
+			t.Fatalf("hostname warnings = %+v, want none", found)
+		}
+
+		return
+	}
+
+	if len(found) != 1 || !strings.HasPrefix(found[0].Message, start) || found[0].Code != code ||
+		found[0].Severity != builder.SeverityWarning || !strings.HasSuffix(found[0].Path, ".device.hostname") {
+		t.Fatalf("hostname warnings = %+v, want one of code %s starting %q", found, code, start)
+	}
+}
+
 // phenix stores a topology with a hostname it refuses once it creates an
 // experiment from it, and its schema refuses a hostname of one character.
 // Publishing refuses both, in phenix's words, which name the hostname, and a
@@ -1232,26 +1314,33 @@ func TestPublishTopologyConfigChecksHostnames(t *testing.T) {
 		exports bool
 		// warning starts the warning phenix logs, or is "" for none.
 		warning string
+		// code is the code of the refusal, or else of the warning.
+		code builder.Code
 	}{
 		"all": {
 			hostname: "all", osType: "linux", refused: "hostname 'all' is reserved", exports: true, warning: "",
+			code: builder.CodeNodeHostnameReserved,
 		},
 		"digits": {
 			hostname: "42", osType: "linux", refused: "hostname '42' is all digits", exports: true, warning: "",
+			code: builder.CodeNodeHostnameNumeric,
 		},
 		"phenix on Windows": {
 			hostname: "phenix", osType: "windows", refused: "hostname 'phenix' can't be used for a Windows node",
-			exports: true, warning: "",
+			exports: true, warning: "", code: builder.CodeNodeHostnameWindows,
 		},
 		"one character": {
 			hostname: "a", osType: "linux", refused: "hostname 'a' is 1 character long", exports: false, warning: "",
+			code: builder.CodeNodeHostnameShort,
 		},
 		"all in another case": {
 			hostname: "All", osType: "linux", refused: "", exports: true,
 			warning: "hostname 'All' differs from the reserved name 'all' only by case",
+			code:    builder.CodeNodeHostnameReservedCase,
 		},
 		"phenix": {
 			hostname: "Phenix", osType: "linux", refused: "", exports: true, warning: "hostname 'Phenix' matches 'phenix'",
+			code: builder.CodeNodeHostnamePhenix,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1273,18 +1362,8 @@ func TestPublishTopologyConfigChecksHostnames(t *testing.T) {
 				t.Fatalf("PublishTopologyConfig = %v, %v, want a NodeHostnameError starting %q", config, err, tt.refused)
 			}
 
-			var hostnameWarnings []string
-
-			for _, warning := range warnings {
-				if strings.HasPrefix(warning, "hostname '") {
-					hostnameWarnings = append(hostnameWarnings, warning)
-				}
-			}
-
-			if tt.warning == "" && len(hostnameWarnings) != 0 ||
-				tt.warning != "" && (len(hostnameWarnings) != 1 || !strings.HasPrefix(hostnameWarnings[0], tt.warning)) {
-				t.Fatalf("hostname warnings = %q, want one starting %q", hostnameWarnings, tt.warning)
-			}
+			checkHostnameRefusal(t, err, tt.code)
+			checkHostnameWarning(t, warnings, tt.warning, tt.code)
 
 			export, exportErr := doc.ExportTopologyConfig("hostnames")
 			if !tt.exports {

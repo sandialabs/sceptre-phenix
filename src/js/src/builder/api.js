@@ -541,6 +541,76 @@ export function serverReason(error) {
 }
 
 /**
+ * The code of the failure a server named for a refused request: a Builder
+ * error's stable, machine-readable name (document.invalid,
+ * publish.topology.exists; codes.go lists every one).
+ *
+ * @param {object} [error] axios-like error
+ * @returns {string} the code, or '' when the server gave none
+ */
+export function serverCode(error) {
+  const code = error?.response?.data?.code;
+
+  return typeof code === 'string' ? code : '';
+}
+
+/**
+ * Issues as the server reports them (BuilderIssue in openapi.yml): each with
+ * its code, its severity and its message, and where it is when that is
+ * known. A plain message, which a server of an earlier release sent, is an
+ * issue of no code.
+ *
+ * @param {Array} [list] the issues the server sent
+ * @param {'error'|'warning'} [severity] the severity of an issue that says
+ *   none
+ * @returns {{code: string, severity: string, message: string, path?: string,
+ *   nodeId?: string, edgeId?: string, networkId?: string, field?: string}[]}
+ */
+export function readIssues(list, severity = 'error') {
+  return (Array.isArray(list) ? list : []).flatMap((entry) => {
+    if (typeof entry === 'string') {
+      return entry ? [{ code: '', severity, message: entry }] : [];
+    }
+
+    if (
+      !entry ||
+      typeof entry !== 'object' ||
+      typeof entry.message !== 'string'
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        ...entry,
+        code: typeof entry.code === 'string' ? entry.code : '',
+        severity: ['error', 'warning'].includes(entry.severity)
+          ? entry.severity
+          : severity,
+      },
+    ];
+  });
+}
+
+/**
+ * A refused publish as publishRefusal() takes it: the server's code, its
+ * reason (see serverReason()), and the scenario a refusal about one of the
+ * scenarios the draft lists names in its metadata.
+ *
+ * @param {object} [error] axios-like error
+ * @returns {{code: string, reason: string, scenario: string}}
+ */
+export function serverRefusal(error) {
+  const scenario = error?.response?.data?.metadata?.scenario;
+
+  return {
+    code: serverCode(error),
+    reason: serverReason(error),
+    scenario: typeof scenario === 'string' ? scenario : '',
+  };
+}
+
+/**
  * What the server said of a refused request, word for word, as a sentence.
  * For answers written to be shown as they are: why a topology's Builder
  * file cannot be used names its path, which serverReason() would take an id
@@ -861,6 +931,10 @@ export function readPublishResult(response) {
       : succeeded.length > 0
         ? 'partial'
         : 'failed');
+  // Each with its code (see readIssues); warnings and errors are what they
+  // say, which the Publish dialog lists.
+  const warningIssues = readIssues(data.warnings, 'warning');
+  const errorIssues = readIssues(data.errors, 'error');
 
   return {
     status,
@@ -868,8 +942,10 @@ export function readPublishResult(response) {
     ok: failed.length === 0,
     stages,
     failed,
-    warnings: Array.isArray(data.warnings) ? data.warnings : [],
-    errors: Array.isArray(data.errors) ? data.errors : [],
+    warnings: warningIssues.map((entry) => entry.message),
+    errors: errorIssues.map((entry) => entry.message),
+    warningIssues,
+    errorIssues,
     topology: data.topology || null,
     scenario: data.scenario || null,
     experiment: data.experiment || null,
@@ -1184,8 +1260,11 @@ export function createBuilderApi(http = axiosInstance) {
      * @param {string} [name] the topology's name; without one, the server
      *   names it as the Publish dialog proposes
      * @returns {Promise<{name: string, yaml: string, warnings: string[],
-     *   publishBlockers: string[]}>} the config as YAML, what the projection
-     *   left out or changed, and why publishing it would be refused
+     *   publishBlockers: string[], warningIssues: object[],
+     *   publishBlockerIssues: object[]}>} the config as YAML, what the
+     *   projection left out or changed, and why publishing it would be
+     *   refused, as what each says and as issues with their codes (see
+     *   readIssues)
      */
     async exportTopology(document, name = '') {
       const payload = name ? { document, name } : { document };
@@ -1199,13 +1278,16 @@ export function createBuilderApi(http = axiosInstance) {
         throw new TypeError('The server sent an unexpected topology.');
       }
 
+      const warningIssues = readIssues(data.warnings, 'warning');
+      const publishBlockerIssues = readIssues(data.publishBlockers, 'error');
+
       return {
         name: data.name || name,
         yaml: data.yaml,
-        warnings: Array.isArray(data.warnings) ? data.warnings : [],
-        publishBlockers: Array.isArray(data.publishBlockers)
-          ? data.publishBlockers
-          : [],
+        warnings: warningIssues.map((entry) => entry.message),
+        publishBlockers: publishBlockerIssues.map((entry) => entry.message),
+        warningIssues,
+        publishBlockerIssues,
       };
     },
 
@@ -1218,8 +1300,10 @@ export function createBuilderApi(http = axiosInstance) {
      * @param {object} document
      * @param {string[]} [include] the sections the package carries:
      *   scenarios, topologies, icons and images
-     * @returns {Promise<{package: object, warnings: string[]}>} warnings:
-     *   what the package names but does not carry, and why
+     * @returns {Promise<{package: object, warnings: Array<object|string>}>}
+     *   warnings: what the package names but does not carry, or leaves out
+     *   of its requirements, and why, each an issue with its code (see
+     *   toIssue in issues.js)
      */
     async buildPackage(document, include = []) {
       const payload = { document, include };

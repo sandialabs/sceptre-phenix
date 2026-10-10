@@ -786,8 +786,10 @@ type validationCorpus struct {
 		Error string `json:"error"`
 		// Message is what the issue at Error says, when the case pins it.
 		Message string `json:"message"`
-		// Issues is every issue of the document, in any order, when the case
-		// pins that there are no others.
+		// Code is the code of the issue at Error, when the case pins it.
+		Code builder.Code `json:"code"`
+		// Issues is every issue of the document, with its code, in any
+		// order, when the case pins that there are no others.
 		Issues []builder.Issue `json:"issues"`
 	} `json:"cases"`
 }
@@ -871,7 +873,20 @@ func TestValidationCorpus(t *testing.T) {
 		t.Fatalf("reading %s: %v", corpus.Document, err)
 	}
 
+	// validate.test.js runs the same cases by name, so each name is one case.
+	// The cases given a subtest are counted, not the subtests that ran, so
+	// the count holds whichever subtests -run picks.
+	names := make(map[string]bool, len(corpus.Cases))
+	registered := 0
+
 	for _, test := range corpus.Cases {
+		if names[test.Name] {
+			t.Errorf("corpus case %q is named twice", test.Name)
+		}
+
+		names[test.Name] = true
+		registered++
+
 		t.Run(test.Name, func(t *testing.T) {
 			var doc any
 
@@ -900,8 +915,8 @@ func TestValidationCorpus(t *testing.T) {
 				t.Fatalf("refused: %v", err)
 			case test.Error != "" && err == nil:
 				t.Fatalf("accepted; want an issue at %s", test.Error)
-			case test.Error != "" && !refusedAt(err, test.Error, test.Message):
-				t.Fatalf("error %q has no issue at %s saying %q", err.Error(), test.Error, test.Message)
+			case test.Error != "" && !refusedAt(err, test.Error, test.Message, test.Code):
+				t.Fatalf("error %q has no issue at %s of code %q saying %q", err.Error(), test.Error, test.Code, test.Message)
 			}
 
 			if test.Issues == nil {
@@ -919,15 +934,19 @@ func TestValidationCorpus(t *testing.T) {
 			}
 		})
 	}
+
+	if registered != len(corpus.Cases) {
+		t.Fatalf("gave %d corpus cases a subtest, want all %d", registered, len(corpus.Cases))
+	}
 }
 
-// issueLines returns the issues as sorted lines, to compare two lists of
-// them whatever their order.
+// issueLines returns the issues as sorted lines of their code, path and
+// message, to compare two lists of them whatever their order.
 func issueLines(issues []builder.Issue) []string {
 	lines := make([]string, 0, len(issues))
 
 	for _, issue := range issues {
-		lines = append(lines, issue.Path+": "+issue.Message)
+		lines = append(lines, string(issue.Code)+" "+issue.Path+": "+issue.Message)
 	}
 
 	slices.Sort(lines)
@@ -936,13 +955,13 @@ func issueLines(issues []builder.Issue) []string {
 }
 
 // refusedAt reports whether err refuses a document at exactly path: an issue
-// of a validation error there, saying message when one is given, a value of
-// the wrong type there, or a key there the document may not have, both of
-// which the decoder refuses before validation. For a map value of the wrong
-// type, Go before 1.27 names only the map, so the map's own path counts too.
-// The decoder names an unknown key without the object it is in, so only the
-// last part of the path is compared.
-func refusedAt(err error, path, message string) bool {
+// of a validation error there, saying message and of code when they are
+// given, a value of the wrong type there, or a key there the document may not
+// have, both of which the decoder refuses before validation. For a map value
+// of the wrong type, Go before 1.27 names only the map, so the map's own path
+// counts too. The decoder names an unknown key without the object it is in,
+// so only the last part of the path is compared.
+func refusedAt(err error, path, message string, code builder.Code) bool {
 	var (
 		invalid  *builder.ValidationError
 		mistyped *json.UnmarshalTypeError
@@ -950,11 +969,11 @@ func refusedAt(err error, path, message string) bool {
 
 	if errors.As(err, &invalid) {
 		return slices.ContainsFunc(invalid.Issues, func(issue builder.Issue) bool {
-			return issue.Path == path && (message == "" || issue.Message == message)
+			return issue.Path == path && (message == "" || issue.Message == message) && (code == "" || issue.Code == code)
 		})
 	}
 
-	if message != "" {
+	if message != "" || code != "" {
 		return false
 	}
 

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -47,6 +48,10 @@ var (
 	// configName matches the names phenix gives configs, which a document
 	// names its scenarios by (see [IsConfigName]).
 	configNameRegexp = regexp.MustCompile(configNamePattern)
+
+	// elementPath matches the start of the path of an issue about a node, an
+	// edge or a network: the list and the index (see [Document.LocateIssues]).
+	elementPath = regexp.MustCompile(`^(nodes|edges|networks)\[(\d+)\]`)
 
 	// lineStyles are the dash patterns a network, an edge or a line may
 	// name, and borderStyles the border patterns a group or a shape may. In
@@ -92,11 +97,24 @@ func ShapeFigures() []string {
 	return slices.Clone(shapeFigures)
 }
 
-// Issue is a single validation failure, located by a JSON-ish path within the
-// document.
+// Issue is a single problem found in a document, a template file or a
+// publication: the [Code] of the rule it breaks, its [Severity], what it
+// says, and where it is, by the parts that are known. Path is a JSON-ish
+// path within the document (nodes[0].device.hostname); NodeID, EdgeID and
+// NetworkID name the element the issue is about, which still finds it once
+// an edit has moved the indexes in the path; Field is the JSON Forms data
+// path of the device field it is about (spec.hardware.drives.0.image). The
+// web UI's validator reports its issues in the same shape, with the same
+// codes for the same rules.
 type Issue struct {
-	Path    string `json:"path"`
-	Message string `json:"message"`
+	Code      Code     `json:"code"`
+	Severity  Severity `json:"severity"`
+	Message   string   `json:"message"`
+	Path      string   `json:"path,omitempty"`
+	NodeID    string   `json:"nodeId,omitempty"`
+	EdgeID    string   `json:"edgeId,omitempty"`
+	NetworkID string   `json:"networkId,omitempty"`
+	Field     string   `json:"field,omitempty"`
 }
 
 func (i Issue) String() string {
@@ -134,6 +152,12 @@ type validator struct {
 	nodesByID    map[string]*Node
 	networksByID map[string]*Network
 	handleOwner  map[string]*Node
+}
+
+// noteCodes are the codes of the rules of the notes of the diagram or of a
+// switch (see [validator.validateNotes]).
+type noteCodes struct {
+	tooMany, blank, tooLong, control Code
 }
 
 // Validate performs structural and semantic validation of the document.
@@ -197,7 +221,9 @@ type validator struct {
 //     spacing that are not strictly positive,
 //   - an edge route with fewer than two points.
 //
-// It returns nil or a *[ValidationError].
+// It returns nil or a *[ValidationError], whose issues each carry the code
+// of the rule they break and the IDs of the node, edge or network they are
+// about (see [Document.LocateIssues]).
 func (d *Document) Validate() error {
 	val := &validator{ //nolint:exhaustruct // issues accumulate during validation
 		doc:          d,
@@ -225,20 +251,62 @@ func (d *Document) Validate() error {
 		return val.issues[i].Path < val.issues[j].Path
 	})
 
+	d.LocateIssues(val.issues)
+
 	return &ValidationError{Issues: val.issues}
 }
 
-func (v *validator) addf(path, format string, args ...any) {
-	v.issues = append(v.issues, Issue{Path: path, Message: fmt.Sprintf(format, args...)})
+// LocateIssues gives each issue whose path starts at a node, an edge or a
+// network of the document the ID of that element, as the editor locates the
+// issues it finds, so an issue still names its element once an edit has
+// moved the indexes in its path. A blank ID is not given, and an issue that
+// names an element already keeps it.
+func (d *Document) LocateIssues(issues []Issue) {
+	for i := range issues {
+		d.locateIssue(&issues[i])
+	}
+}
+
+// locateIssue gives one issue the ID of the element its path starts at (see
+// [Document.LocateIssues]).
+func (d *Document) locateIssue(issue *Issue) {
+	match := elementPath.FindStringSubmatch(issue.Path)
+	if match == nil {
+		return
+	}
+
+	index, err := strconv.Atoi(match[2])
+	if err != nil {
+		return
+	}
+
+	switch match[1] {
+	case keyNodes:
+		if index < len(d.Nodes) && issue.NodeID == "" && strings.TrimSpace(d.Nodes[index].ID) != "" {
+			issue.NodeID = d.Nodes[index].ID
+		}
+	case keyEdges:
+		if index < len(d.Edges) && issue.EdgeID == "" && strings.TrimSpace(d.Edges[index].ID) != "" {
+			issue.EdgeID = d.Edges[index].ID
+		}
+	case keyNetworks:
+		if index < len(d.Networks) && issue.NetworkID == "" && strings.TrimSpace(d.Networks[index].ID) != "" {
+			issue.NetworkID = d.Networks[index].ID
+		}
+	}
+}
+
+func (v *validator) addf(code Code, path, format string, args ...any) {
+	v.issues = append(v.issues, NewIssue(code, path, fmt.Sprintf(format, args...)))
 }
 
 func (v *validator) validateHeader() {
 	if v.doc.Schema != SchemaURI {
-		v.addf("schema", "expected %q, got %q", SchemaURI, v.doc.Schema)
+		v.addf(CodeDocumentSchemaMismatch, "schema", "expected %q, got %q", SchemaURI, v.doc.Schema)
 	}
 
 	if v.doc.Revision != SchemaRevision {
-		v.addf("revision", "expected %d, got %d", SchemaRevision, v.doc.Revision)
+		v.addf(CodeDocumentRevisionMismatch, "revision", "expected %d, got %d", SchemaRevision, v.doc.Revision)
 	}
 
 	v.validateMetadata()
@@ -251,23 +319,23 @@ func (v *validator) validateHeader() {
 		keyEdges:    v.doc.Edges == nil,
 	} {
 		if missing {
-			v.addf(name, "%s must be an array", name)
+			v.addf(CodeDocumentListMissing, name, "%s must be an array", name)
 		}
 	}
 
 	if !finite(v.doc.Viewport.X) || !finite(v.doc.Viewport.Y) || !finite(v.doc.Viewport.Zoom) {
-		v.addf("viewport", "viewport values must be finite numbers")
+		v.addf(CodeDocumentViewportNotFinite, "viewport", "viewport values must be finite numbers")
 	}
 
 	if finite(v.doc.Viewport.Zoom) && v.doc.Viewport.Zoom <= 0 {
-		v.addf("viewport.zoom", "zoom must be a positive number")
+		v.addf(CodeDocumentZoomNotPositive, "viewport.zoom", "zoom must be a positive number")
 	}
 
 	if !finite(v.doc.Grid.Size) || v.doc.Grid.Size <= 0 {
-		v.addf("grid.size", "grid size must be a positive finite number")
+		v.addf(CodeDocumentGridInvalid, "grid.size", "grid size must be a positive finite number")
 	}
 
-	v.validateIconSize(v.doc.IconSize, keyIconSize)
+	v.validateIconSize(v.doc.IconSize, keyIconSize, CodeDocumentIconSizeUnknown)
 }
 
 // metadataPath is the path of a field of the document metadata.
@@ -280,20 +348,23 @@ func metadataPath(key string) string {
 func (v *validator) validateMetadata() {
 	meta := &v.doc.Metadata
 
-	v.validateID(metadataPath(keyID), "document", meta.ID)
+	v.validateID(metadataPath(keyID), "document", meta.ID, CodeMetadataIDRequired, CodeMetadataIDInvalid)
 
 	switch {
 	case len(meta.Name) > MaxNameBytes:
-		v.addf(metadataPath(keyName), "document name must be at most %d bytes", MaxNameBytes)
+		v.addf(CodeMetadataNameTooLong, metadataPath(keyName), "document name must be at most %d bytes", MaxNameBytes)
 	case strings.ContainsFunc(meta.Name, isControl):
-		v.addf(metadataPath(keyName), "document name must not contain control characters")
+		v.addf(CodeMetadataNameControl, metadataPath(keyName), "document name must not contain control characters")
 	}
 
 	v.validateUser(metadataPath(keyCreatedBy), meta.CreatedBy)
 	v.validateTime(metadataPath(keyCreatedAt), meta.CreatedAt)
 	v.validateUser(metadataPath(keyUpdatedBy), meta.UpdatedBy)
 	v.validateTime(metadataPath(keyUpdatedAt), meta.UpdatedAt)
-	v.validateNotes(metadataPath(keyNotes), meta.Notes)
+	v.validateNotes(metadataPath(keyNotes), meta.Notes, noteCodes{
+		tooMany: CodeMetadataNotesTooMany, blank: CodeMetadataNoteBlank,
+		tooLong: CodeMetadataNoteTooLong, control: CodeMetadataNoteControl,
+	})
 }
 
 // isControl reports whether r is a control character, which no single line
@@ -311,10 +382,11 @@ func isNoteControl(r rune) bool {
 
 // validateNotes checks the notes at path, of the diagram or of a switch: at
 // most [MaxDiagramNotes], each not blank, at most [MaxDiagramNoteBytes], and
-// free of control characters but newlines and tabs.
-func (v *validator) validateNotes(at string, notes []string) {
+// free of control characters but newlines and tabs. codes are the codes of
+// the notes' owner.
+func (v *validator) validateNotes(at string, notes []string, codes noteCodes) {
 	if len(notes) > MaxDiagramNotes {
-		v.addf(at, "at most %d notes are allowed, not %d", MaxDiagramNotes, len(notes))
+		v.addf(codes.tooMany, at, "at most %d notes are allowed, not %d", MaxDiagramNotes, len(notes))
 	}
 
 	for i, note := range notes {
@@ -322,11 +394,11 @@ func (v *validator) validateNotes(at string, notes []string) {
 
 		switch {
 		case strings.TrimSpace(note) == "":
-			v.addf(path, "note must not be blank")
+			v.addf(codes.blank, path, "note must not be blank")
 		case len(note) > MaxDiagramNoteBytes:
-			v.addf(path, "note must be at most %d bytes", MaxDiagramNoteBytes)
+			v.addf(codes.tooLong, path, "note must be at most %d bytes", MaxDiagramNoteBytes)
 		case strings.ContainsFunc(note, isNoteControl):
-			v.addf(path, "note must not contain control characters other than newline and tab")
+			v.addf(codes.control, path, "note must not contain control characters other than newline and tab")
 		}
 	}
 }
@@ -338,9 +410,9 @@ func (v *validator) validateNotes(at string, notes []string) {
 func (v *validator) validateUser(path, user string) {
 	switch {
 	case len(user) > MaxUserBytes:
-		v.addf(path, "%s must be at most %d bytes", path, MaxUserBytes)
+		v.addf(CodeMetadataUserTooLong, path, "%s must be at most %d bytes", path, MaxUserBytes)
 	case strings.ContainsFunc(user, isControl):
-		v.addf(path, "%s must not contain control characters", path)
+		v.addf(CodeMetadataUserControl, path, "%s must not contain control characters", path)
 	}
 }
 
@@ -356,7 +428,7 @@ func IsTime(value string) bool {
 // validateTime checks a time of the document metadata, when it has one.
 func (v *validator) validateTime(path, value string) {
 	if value != "" && !IsTime(value) {
-		v.addf(path, "%s must be a UTC time in the form YYYY-MM-DDTHH:MM:SSZ", path)
+		v.addf(CodeMetadataTimeInvalid, path, "%s must be a UTC time in the form YYYY-MM-DDTHH:MM:SSZ", path)
 	}
 }
 
@@ -369,9 +441,9 @@ func (v *validator) validateNetworks() {
 		network := &v.doc.Networks[i]
 		path := fmt.Sprintf("networks[%d]", i)
 
-		if v.validateID(path+".id", "network", network.ID) {
+		if v.validateID(path+".id", "network", network.ID, CodeNetworkIDRequired, CodeNetworkIDInvalid) {
 			if prev, ok := seenIDs[foldKey(network.ID)]; ok {
-				v.addf(path+".id", "duplicate network ID %q (also networks[%d])", network.ID, prev)
+				v.addf(CodeNetworkIDDuplicate, path+".id", "duplicate network ID %q (also networks[%d])", network.ID, prev)
 			} else {
 				seenIDs[foldKey(network.ID)] = i
 				v.networksByID[network.ID] = network
@@ -380,14 +452,15 @@ func (v *validator) validateNetworks() {
 
 		switch {
 		case strings.TrimSpace(network.Name) == "":
-			v.addf(path+".name", "network name is required")
+			v.addf(CodeNetworkNameRequired, path+".name", "network name is required")
 		case strings.ContainsAny(network.Name, " \t\n"):
-			v.addf(path+".name", "network name %q must not contain whitespace", network.Name)
+			v.addf(CodeNetworkNameWhitespace, path+".name", "network name %q must not contain whitespace", network.Name)
 		default:
 			// Exactly: minimega VLAN names are case sensitive, so networks
 			// differing only by case are different VLANs.
 			if prev, ok := seenNames[network.Name]; ok {
 				v.addf(
+					CodeNetworkNameDuplicate,
 					path+".name",
 					"conflicting network name %q (also networks[%d])",
 					network.Name, prev,
@@ -397,7 +470,7 @@ func (v *validator) validateNetworks() {
 			}
 		}
 
-		v.validateLineStyle(network.LineStyle, path+".lineStyle")
+		v.validateLineStyle(network.LineStyle, path+".lineStyle", CodeNetworkLineStyle)
 
 		if network.Alias == nil {
 			continue
@@ -406,13 +479,13 @@ func (v *validator) validateNetworks() {
 		alias := *network.Alias
 
 		if alias < 1 || alias > maxVLANAlias {
-			v.addf(path+".alias", "VLAN alias %d is out of range (1-%d)", alias, maxVLANAlias)
+			v.addf(CodeNetworkAliasRange, path+".alias", "VLAN alias %d is out of range (1-%d)", alias, maxVLANAlias)
 
 			continue
 		}
 
 		if prev, ok := seenAliases[alias]; ok {
-			v.addf(path+".alias", "conflicting VLAN alias %d (also networks[%d])", alias, prev)
+			v.addf(CodeNetworkAliasDuplicate, path+".alias", "conflicting VLAN alias %d (also networks[%d])", alias, prev)
 		} else {
 			seenAliases[alias] = i
 		}
@@ -427,9 +500,9 @@ func (v *validator) validateNodes() {
 		node := &v.doc.Nodes[i]
 		path := fmt.Sprintf("nodes[%d]", i)
 
-		if v.validateID(path+".id", "node", node.ID) {
+		if v.validateID(path+".id", "node", node.ID, CodeNodeIDRequired, CodeNodeIDInvalid) {
 			if prev, ok := seenIDs[foldKey(node.ID)]; ok {
-				v.addf(path+".id", "duplicate node ID %q (also nodes[%d])", node.ID, prev)
+				v.addf(CodeNodeIDDuplicate, path+".id", "duplicate node ID %q (also nodes[%d])", node.ID, prev)
 			} else {
 				seenIDs[foldKey(node.ID)] = i
 				v.nodesByID[node.ID] = node
@@ -437,13 +510,13 @@ func (v *validator) validateNodes() {
 		}
 
 		if !finite(node.Position.X) || !finite(node.Position.Y) {
-			v.addf(path+".position", "position values must be finite numbers")
+			v.addf(CodeNodePositionNotFinite, path+".position", "position values must be finite numbers")
 		}
 
 		if node.Size != nil {
 			if !finite(node.Size.Width) || !finite(node.Size.Height) ||
 				node.Size.Width <= 0 || node.Size.Height <= 0 {
-				v.addf(path+".size", "size values must be positive finite numbers")
+				v.addf(CodeNodeSizeInvalid, path+".size", "size values must be positive finite numbers")
 			}
 		}
 
@@ -467,10 +540,10 @@ func (v *validator) validateKind(node *Node, path string, i int, seenHostnames m
 		}
 	case NodeKindGroup:
 		if node.Group != nil {
-			v.validateBorderStyle(node.Group.BorderStyle, path+".group.borderStyle")
-			v.validateIconKey(node.Group.IconKey, path+".group.iconKey")
-			v.validateIconRef(node.Group.Icon, path+".group.icon")
-			v.validateIconSize(node.Group.IconSize, path+".group.iconSize")
+			v.validateBorderStyle(node.Group.BorderStyle, path+".group.borderStyle", CodeGroupBorderStyleUnknown)
+			v.validateIconKey(node.Group.IconKey, path+".group.iconKey", CodeGroupIconKeyUnknown)
+			v.validateIconRef(node.Group.Icon, path+".group.icon", CodeGroupIconInvalid)
+			v.validateIconSize(node.Group.IconSize, path+".group.iconSize", CodeGroupIconSizeUnknown)
 		}
 	case NodeKindShape:
 		if node.Shape != nil {
@@ -497,12 +570,13 @@ func (v *validator) validateDevice(node *Node, path string, i int, seenHostnames
 
 	switch {
 	case strings.TrimSpace(hostname) == "":
-		v.addf(path+".device.hostname", "hostname is required")
+		v.addf(CodeNodeHostnameRequired, path+".device.hostname", "hostname is required")
 	case strings.ContainsAny(hostname, " \t\n"):
-		v.addf(path+".device.hostname", "hostname %q must not contain whitespace", hostname)
+		v.addf(CodeNodeHostnameWhitespace, path+".device.hostname", "hostname %q must not contain whitespace", hostname)
 	default:
 		if prev, ok := seenHostnames[foldKey(hostname)]; ok {
 			v.addf(
+				CodeNodeHostnameDuplicate,
 				path+".device.hostname",
 				"duplicate hostname %q (also nodes[%d])",
 				hostname, prev,
@@ -513,11 +587,11 @@ func (v *validator) validateDevice(node *Node, path string, i int, seenHostnames
 	}
 
 	v.validateDeviceHandles(node, path)
-	v.validateIconKey(node.Device.IconKey, path+".device.iconKey")
-	v.validateIconRef(node.Device.Icon, path+".device.icon")
-	v.validateIconSize(node.Device.IconSize, path+".device.iconSize")
-	v.validateColor(node.Device.OutlineColor, path+".device.outlineColor")
-	v.validateColor(node.Device.FillColor, path+".device.fillColor")
+	v.validateIconKey(node.Device.IconKey, path+".device.iconKey", CodeDeviceIconKeyUnknown)
+	v.validateIconRef(node.Device.Icon, path+".device.icon", CodeDeviceIconInvalid)
+	v.validateIconSize(node.Device.IconSize, path+".device.iconSize", CodeDeviceIconSizeUnknown)
+	v.validateColor(node.Device.OutlineColor, path+".device.outlineColor", CodeDeviceColorInvalid)
+	v.validateColor(node.Device.FillColor, path+".device.fillColor", CodeDeviceColorInvalid)
 	v.validateIncludedFrom(node.Device.IncludedFrom, path+".device.includedFrom")
 }
 
@@ -525,15 +599,18 @@ func (v *validator) validateDevice(node *Node, path string, i int, seenHostnames
 // it names, which the document has, its colors, its icon size and its notes.
 func (v *validator) validateSwitch(hub *Switch, path string) {
 	if hub.NetworkID == "" {
-		v.addf(path+".networkId", "switch must reference a network")
+		v.addf(CodeSwitchNetworkRequired, path+".networkId", "switch must reference a network")
 	} else if _, ok := v.networksByID[hub.NetworkID]; !ok {
-		v.addf(path+".networkId", "unknown network %q", hub.NetworkID)
+		v.addf(CodeSwitchNetworkUnknown, path+".networkId", "unknown network %q", hub.NetworkID)
 	}
 
-	v.validateColor(hub.OutlineColor, path+".outlineColor")
-	v.validateColor(hub.FillColor, path+".fillColor")
-	v.validateIconSize(hub.IconSize, path+"."+keyIconSize)
-	v.validateNotes(path+"."+keyNotes, hub.Notes)
+	v.validateColor(hub.OutlineColor, path+".outlineColor", CodeSwitchColorInvalid)
+	v.validateColor(hub.FillColor, path+".fillColor", CodeSwitchColorInvalid)
+	v.validateIconSize(hub.IconSize, path+"."+keyIconSize, CodeSwitchIconSizeUnknown)
+	v.validateNotes(path+"."+keyNotes, hub.Notes, noteCodes{
+		tooMany: CodeSwitchNotesTooMany, blank: CodeSwitchNoteBlank,
+		tooLong: CodeSwitchNoteTooLong, control: CodeSwitchNoteControl,
+	})
 }
 
 func (v *validator) validateNodePayload(node *Node, path string) {
@@ -541,7 +618,7 @@ func (v *validator) validateNodePayload(node *Node, path string) {
 	case NodeKindDevice, NodeKindSwitch, NodeKindNote, NodeKindGroup,
 		NodeKindShape, NodeKindIcon, NodeKindLine:
 	default:
-		v.addf(path+".kind", "unknown node kind %q", node.Kind)
+		v.addf(CodeNodeKindUnknown, path+".kind", "unknown node kind %q", node.Kind)
 
 		return
 	}
@@ -557,25 +634,26 @@ func (v *validator) validateNodePayload(node *Node, path string) {
 	}
 
 	if !payloads[node.Kind] {
-		v.addf(path, "node of kind %q is missing its %q payload", node.Kind, node.Kind)
+		v.addf(CodeNodePayloadMissing, path, "node of kind %q is missing its %q payload", node.Kind, node.Kind)
 	}
 
 	for kind, present := range payloads {
 		if present && kind != node.Kind {
-			v.addf(path, "node of kind %q must not carry a %q payload", node.Kind, kind)
+			v.addf(CodeNodePayloadExtra, path, "node of kind %q must not carry a %q payload", node.Kind, kind)
 		}
 	}
 
 	if node.Kind == NodeKindDevice && node.Device != nil && node.Device.Spec == nil {
-		v.addf(path+".device.spec", "device spec is required")
+		v.addf(CodeDeviceSpecRequired, path+".device.spec", "device spec is required")
 	}
 }
 
 // validateIconKey enforces the bounded icon key registry shared with the
-// generated JSON Schema. An empty key means "use the default icon".
-func (v *validator) validateIconKey(key, path string) {
+// generated JSON Schema. An empty key means "use the default icon". code is
+// the code of the key's owner.
+func (v *validator) validateIconKey(key, path string, code Code) {
 	if problem := iconKeyProblem(key); problem != "" {
-		v.addf(path, "%s", problem)
+		v.addf(code, path, "%s", problem)
 	}
 }
 
@@ -597,20 +675,20 @@ func iconKeyProblem(key string) string {
 // does not carry is allowed: on a phenix server it names an icon of the
 // server's icon library, and where nothing resolves it the node shows its
 // built-in icon.
-func (v *validator) validateIconRef(name, path string) {
+func (v *validator) validateIconRef(name, path string, code Code) {
 	if name == "" {
 		return
 	}
 
 	if problem := IconNameProblem(name); problem != "" {
-		v.addf(path, "%s", problem)
+		v.addf(code, path, "%s", problem)
 	}
 }
 
 // validateColor checks an outline or fill color: none, or "#rrggbb".
-func (v *validator) validateColor(color, path string) {
+func (v *validator) validateColor(color, path string, code Code) {
 	if problem := colorProblem(color); problem != "" {
-		v.addf(path, "%s", problem)
+		v.addf(code, path, "%s", problem)
 	}
 }
 
@@ -625,19 +703,19 @@ func colorProblem(color string) string {
 
 // validateLineStyle checks the line style of a network or an edge: none,
 // or one of [LineStyles].
-func (v *validator) validateLineStyle(style, path string) {
+func (v *validator) validateLineStyle(style, path string, code Code) {
 	if style == "" || slices.Contains(lineStyles, style) {
 		return
 	}
 
-	v.addf(path, "unknown line style %q (expected one of %s)", truncate(style), strings.Join(lineStyles, ", "))
+	v.addf(code, path, "unknown line style %q (expected one of %s)", truncate(style), strings.Join(lineStyles, ", "))
 }
 
 // validateIconSize checks the icon size of the document, a device, a switch
 // or a group: none, or one of [IconSizes].
-func (v *validator) validateIconSize(size, path string) {
+func (v *validator) validateIconSize(size, path string, code Code) {
 	if problem := iconSizeProblem(size); problem != "" {
-		v.addf(path, "%s", problem)
+		v.addf(code, path, "%s", problem)
 	}
 }
 
@@ -652,12 +730,12 @@ func iconSizeProblem(size string) string {
 
 // validateBorderStyle checks the border style of a group or a shape: none,
 // or one of [BorderStyles].
-func (v *validator) validateBorderStyle(style, path string) {
+func (v *validator) validateBorderStyle(style, path string, code Code) {
 	if style == "" || slices.Contains(borderStyles, style) {
 		return
 	}
 
-	v.addf(path, "unknown border style %q (expected one of %s)", truncate(style), strings.Join(borderStyles, ", "))
+	v.addf(code, path, "unknown border style %q (expected one of %s)", truncate(style), strings.Join(borderStyles, ", "))
 }
 
 // validateShape checks the payload of a shape node at path: its figure, its
@@ -665,25 +743,26 @@ func (v *validator) validateBorderStyle(style, path string) {
 func (v *validator) validateShape(shape *Shape, path string) {
 	if !slices.Contains(shapeFigures, shape.Shape) {
 		v.addf(
+			CodeDrawingShapeUnknown,
 			path+".shape", "unknown shape %q (expected one of %s)",
 			truncate(shape.Shape), strings.Join(shapeFigures, ", "),
 		)
 	}
 
-	v.validateColor(shape.FillColor, path+".fillColor")
-	v.validateColor(shape.OutlineColor, path+".outlineColor")
-	v.validateBorderStyle(shape.BorderStyle, path+".borderStyle")
+	v.validateColor(shape.FillColor, path+".fillColor", CodeDrawingColorInvalid)
+	v.validateColor(shape.OutlineColor, path+".outlineColor", CodeDrawingColorInvalid)
+	v.validateBorderStyle(shape.BorderStyle, path+".borderStyle", CodeDrawingBorderStyleUnknown)
 }
 
 // validateIconNode checks the payload of an icon node at path: exactly one
 // of a built-in icon key and a custom icon name.
 func (v *validator) validateIconNode(icon *IconNode, path string) {
 	if (icon.IconKey == "") == (icon.Icon == "") {
-		v.addf(path, "an icon node must name exactly one of a built-in icon and a custom icon")
+		v.addf(CodeDrawingIconAmbiguous, path, "an icon node must name exactly one of a built-in icon and a custom icon")
 	}
 
-	v.validateIconKey(icon.IconKey, path+".iconKey")
-	v.validateIconRef(icon.Icon, path+".icon")
+	v.validateIconKey(icon.IconKey, path+".iconKey", CodeDrawingIconKeyUnknown)
+	v.validateIconRef(icon.Icon, path+".icon", CodeDrawingIconInvalid)
 }
 
 // validateLine checks the payload of a line node at path: from
@@ -692,21 +771,21 @@ func (v *validator) validateIconNode(icon *IconNode, path string) {
 func (v *validator) validateLine(line *Line, path string) {
 	switch {
 	case len(line.Points) < MinLinePoints:
-		v.addf(path+".points", "a line must have at least %d points", MinLinePoints)
+		v.addf(CodeDrawingPointsTooFew, path+".points", "a line must have at least %d points", MinLinePoints)
 	case len(line.Points) > MaxLinePoints:
-		v.addf(path+".points", "a line must have at most %d points", MaxLinePoints)
+		v.addf(CodeDrawingPointsTooMany, path+".points", "a line must have at most %d points", MaxLinePoints)
 	default:
 		for _, point := range line.Points {
 			if !finite(point.X) || !finite(point.Y) {
-				v.addf(path+".points", "line points must be finite numbers")
+				v.addf(CodeDrawingPointsNotFinite, path+".points", "line points must be finite numbers")
 
 				break
 			}
 		}
 	}
 
-	v.validateColor(line.Color, path+".color")
-	v.validateLineStyle(line.LineStyle, path+".lineStyle")
+	v.validateColor(line.Color, path+".color", CodeDrawingColorInvalid)
+	v.validateLineStyle(line.LineStyle, path+".lineStyle", CodeDrawingLineStyleUnknown)
 }
 
 // validateTemplates checks the document's templates: how many, the id of
@@ -714,7 +793,10 @@ func (v *validator) validateLine(line *Line, path string) {
 // which includes the custom icon each names.
 func (v *validator) validateTemplates() {
 	if len(v.doc.Templates) > MaxTemplates {
-		v.addf(keyTemplates, "at most %d templates are allowed, not %d", MaxTemplates, len(v.doc.Templates))
+		v.addf(
+			CodeTemplateListTooMany, keyTemplates,
+			"at most %d templates are allowed, not %d", MaxTemplates, len(v.doc.Templates),
+		)
 	}
 
 	seenIDs := map[string]int{}
@@ -723,9 +805,12 @@ func (v *validator) validateTemplates() {
 		template := &v.doc.Templates[i]
 		path := fmt.Sprintf("%s[%d]", keyTemplates, i)
 
-		if v.validateID(path+".id", "template", template.ID) {
+		if v.validateID(path+".id", "template", template.ID, CodeTemplateIDRequired, CodeTemplateIDInvalid) {
 			if prev, ok := seenIDs[foldKey(template.ID)]; ok {
-				v.addf(path+".id", "duplicate template ID %q (also %s[%d])", template.ID, keyTemplates, prev)
+				v.addf(
+					CodeTemplateIDDuplicate, path+".id",
+					"duplicate template ID %q (also %s[%d])", template.ID, keyTemplates, prev,
+				)
 			} else {
 				seenIDs[foldKey(template.ID)] = i
 			}
@@ -743,9 +828,13 @@ func (v *validator) validateIncludedFrom(name, path string) {
 	switch {
 	case name == "":
 	case strings.TrimSpace(name) == "" || strings.ContainsAny(name, " \t\n"):
-		v.addf(path, "included topology name %q must not be blank or contain whitespace", name)
+		v.addf(
+			CodeDeviceIncludedFromInvalid, path,
+			"included topology name %q must not be blank or contain whitespace", name,
+		)
 	case v.doc.Source == nil || len(v.doc.Source.IncludeTopologies) == 0:
 		v.addf(
+			CodeDeviceIncludedFromNoSource,
 			path,
 			"device is included from topology %q, but the document includes no topologies",
 			name,
@@ -760,9 +849,12 @@ func (v *validator) validateDeviceHandles(node *Node, path string) {
 		handle := &node.Device.Interfaces[j]
 		handlePath := fmt.Sprintf("%s.device.interfaces[%d]", path, j)
 
-		if v.validateID(handlePath+".id", "interface handle", handle.ID) {
+		if v.validateID(
+			handlePath+".id", "interface handle", handle.ID, CodeInterfaceIDRequired, CodeInterfaceIDInvalid,
+		) {
 			if owner, ok := v.handleOwner[foldKey(handle.ID)]; ok {
 				v.addf(
+					CodeInterfaceIDDuplicate,
 					handlePath+".id",
 					"duplicate interface handle ID %q (also used by node %q)",
 					handle.ID, owner.ID,
@@ -773,13 +865,14 @@ func (v *validator) validateDeviceHandles(node *Node, path string) {
 		}
 
 		if strings.TrimSpace(handle.Name) == "" {
-			v.addf(handlePath+".name", "interface name is required")
+			v.addf(CodeInterfaceNameRequired, handlePath+".name", "interface name is required")
 
 			continue
 		}
 
 		if prev, ok := seenNames[foldKey(handle.Name)]; ok {
 			v.addf(
+				CodeInterfaceNameDuplicate,
 				handlePath+".name",
 				"duplicate interface name %q (also interfaces[%d])",
 				handle.Name, prev,
@@ -800,26 +893,26 @@ func (v *validator) validateParents() {
 		}
 
 		if node.ParentID == node.ID {
-			v.addf(path, "node cannot be its own parent")
+			v.addf(CodeNodeParentSelf, path, "node cannot be its own parent")
 
 			continue
 		}
 
 		parent, ok := v.nodesByID[node.ParentID]
 		if !ok {
-			v.addf(path, "unknown parent node %q", node.ParentID)
+			v.addf(CodeNodeParentUnknown, path, "unknown parent node %q", node.ParentID)
 
 			continue
 		}
 
 		if parent.Kind != NodeKindGroup {
-			v.addf(path, "parent node %q is not a group", node.ParentID)
+			v.addf(CodeNodeParentNotGroup, path, "parent node %q is not a group", node.ParentID)
 
 			continue
 		}
 
 		if v.parentCycle(node) {
-			v.addf(path, "group membership cycle detected at node %q", node.ID)
+			v.addf(CodeNodeParentCycle, path, "group membership cycle detected at node %q", node.ID)
 		}
 	}
 }
@@ -884,25 +977,25 @@ func (v *validator) validateEdges() {
 		edge := &v.doc.Edges[i]
 		path := fmt.Sprintf("edges[%d]", i)
 
-		if v.validateID(path+".id", "edge", edge.ID) {
+		if v.validateID(path+".id", "edge", edge.ID, CodeEdgeIDRequired, CodeEdgeIDInvalid) {
 			if prev, ok := seenIDs[foldKey(edge.ID)]; ok {
-				v.addf(path+".id", "duplicate edge ID %q (also edges[%d])", edge.ID, prev)
+				v.addf(CodeEdgeIDDuplicate, path+".id", "duplicate edge ID %q (also edges[%d])", edge.ID, prev)
 			} else {
 				seenIDs[foldKey(edge.ID)] = i
 			}
 		}
 
 		v.validateRoute(path+".route", edge.Route)
-		v.validateLineStyle(edge.LineStyle, path+".lineStyle")
+		v.validateLineStyle(edge.LineStyle, path+".lineStyle", CodeEdgeLineStyleUnknown)
 
 		source, sourceOK := v.nodesByID[edge.SourceNodeID]
 		if !sourceOK {
-			v.addf(path+".sourceNodeId", "unknown node %q", edge.SourceNodeID)
+			v.addf(CodeEdgeSourceUnknown, path+".sourceNodeId", "unknown node %q", edge.SourceNodeID)
 		}
 
 		target, targetOK := v.nodesByID[edge.TargetNodeID]
 		if !targetOK {
-			v.addf(path+".targetNodeId", "unknown node %q", edge.TargetNodeID)
+			v.addf(CodeEdgeTargetUnknown, path+".targetNodeId", "unknown node %q", edge.TargetNodeID)
 		}
 
 		if !sourceOK || !targetOK {
@@ -910,14 +1003,14 @@ func (v *validator) validateEdges() {
 		}
 
 		if source.ID == target.ID {
-			v.addf(path, "edge endpoints must differ")
+			v.addf(CodeEdgeEndpointsSame, path, "edge endpoints must differ")
 
 			continue
 		}
 
 		device, deviceHandle, switchNode, ok := edgeEndpoints(source, edge.SourceHandleID, target, edge.TargetHandleID)
 		if !ok {
-			v.addf(path, "an edge must connect one device interface to one switch")
+			v.addf(CodeEdgeEndpointsInvalid, path, "an edge must connect one device interface to one switch")
 
 			continue
 		}
@@ -925,6 +1018,7 @@ func (v *validator) validateEdges() {
 		handle := handles.find(device, deviceHandle)
 		if handle == nil {
 			v.addf(
+				CodeEdgeHandleUnknown,
 				path,
 				"unknown interface handle %q on device node %q",
 				deviceHandle, device.ID,
@@ -935,6 +1029,7 @@ func (v *validator) validateEdges() {
 
 		if prev, ok := connected[deviceHandle]; ok {
 			v.addf(
+				CodeEdgeInterfaceTaken,
 				path,
 				"interface %q of device %q is already connected by edges[%d]",
 				handle.Name, device.Device.Hostname, prev,
@@ -947,25 +1042,32 @@ func (v *validator) validateEdges() {
 			continue
 		}
 
-		if edge.NetworkID == "" {
-			v.addf(path+".networkId", "edge must reference a network")
+		v.validateEdgeNetwork(edge, path, switchNode)
+	}
+}
 
-			continue
-		}
+// validateEdgeNetwork checks the network an edge at path names: one of the
+// document, and the network of the switch it connects to.
+func (v *validator) validateEdgeNetwork(edge *Edge, path string, switchNode *Node) {
+	if edge.NetworkID == "" {
+		v.addf(CodeEdgeNetworkRequired, path+".networkId", "edge must reference a network")
 
-		if _, ok := v.networksByID[edge.NetworkID]; !ok {
-			v.addf(path+".networkId", "unknown network %q", edge.NetworkID)
+		return
+	}
 
-			continue
-		}
+	if _, ok := v.networksByID[edge.NetworkID]; !ok {
+		v.addf(CodeEdgeNetworkUnknown, path+".networkId", "unknown network %q", edge.NetworkID)
 
-		if edge.NetworkID != switchNode.Switch.NetworkID {
-			v.addf(
-				path+".networkId",
-				"network %q does not match network %q of switch %q",
-				edge.NetworkID, switchNode.Switch.NetworkID, switchNode.ID,
-			)
-		}
+		return
+	}
+
+	if edge.NetworkID != switchNode.Switch.NetworkID {
+		v.addf(
+			CodeEdgeNetworkMismatch,
+			path+".networkId",
+			"network %q does not match network %q of switch %q",
+			edge.NetworkID, switchNode.Switch.NetworkID, switchNode.ID,
+		)
 	}
 }
 
@@ -977,14 +1079,14 @@ func (v *validator) validateRoute(path string, route []Position) {
 	}
 
 	if len(route) < minRoutePoints {
-		v.addf(path, "a route must have at least %d points", minRoutePoints)
+		v.addf(CodeEdgeRouteTooFew, path, "a route must have at least %d points", minRoutePoints)
 
 		return
 	}
 
 	for _, point := range route {
 		if !finite(point.X) || !finite(point.Y) {
-			v.addf(path, "route points must be finite numbers")
+			v.addf(CodeEdgeRouteNotFinite, path, "route points must be finite numbers")
 
 			return
 		}
@@ -1003,7 +1105,10 @@ func IsConfigName(name string) bool {
 // and none twice, ignoring case as the editor compares them.
 func (v *validator) validateScenarios() {
 	if len(v.doc.Scenarios) > MaxScenarios {
-		v.addf(keyScenarios, "at most %d scenarios are allowed, not %d", MaxScenarios, len(v.doc.Scenarios))
+		v.addf(
+			CodeScenarioListTooMany, keyScenarios,
+			"at most %d scenarios are allowed, not %d", MaxScenarios, len(v.doc.Scenarios),
+		)
 	}
 
 	seen := map[string]int{}
@@ -1013,15 +1118,16 @@ func (v *validator) validateScenarios() {
 
 		switch {
 		case name == "":
-			v.addf(path, "scenario name is required")
+			v.addf(CodeScenarioNameRequired, path, "scenario name is required")
 
 			continue
 		case len(name) > MaxScenarioNameBytes:
-			v.addf(path, "scenario name must be at most %d bytes", MaxScenarioNameBytes)
+			v.addf(CodeScenarioNameTooLong, path, "scenario name must be at most %d bytes", MaxScenarioNameBytes)
 
 			continue
 		case !configNameRegexp.MatchString(name):
 			v.addf(
+				CodeScenarioNameInvalid,
 				path,
 				"scenario name %q may use only letters, numbers, underscores, at signs, periods and hyphens",
 				truncate(name),
@@ -1031,7 +1137,7 @@ func (v *validator) validateScenarios() {
 		}
 
 		if prev, ok := seen[foldKey(name)]; ok {
-			v.addf(path, "duplicate scenario %q (also %s[%d])", name, keyScenarios, prev)
+			v.addf(CodeScenarioNameDuplicate, path, "duplicate scenario %q (also %s[%d])", name, keyScenarios, prev)
 		} else {
 			seen[foldKey(name)] = i
 		}
@@ -1046,14 +1152,14 @@ func (v *validator) validateSource() {
 	switch v.doc.Source.Kind {
 	case SourceKindManual, SourceKindTopology, SourceKindExperiment:
 	default:
-		v.addf("source.kind", "unknown source kind %q", v.doc.Source.Kind)
+		v.addf(CodeSourceKindUnknown, "source.kind", "unknown source kind %q", v.doc.Source.Kind)
 	}
 
 	v.validateIncludes("source.includeTopologies", v.doc.Source.IncludeTopologies)
 	v.validateIncludes("source.unresolvedIncludes", v.doc.Source.UnresolvedIncludes)
 
 	if digest := v.doc.Source.Digest; digest != "" && !IsDigest(digest) {
-		v.addf("source.digest", "malformed source digest %q (expected sha256:<64 hex>)", digest)
+		v.addf(CodeSourceDigestMalformed, "source.digest", "malformed source digest %q (expected sha256:<64 hex>)", digest)
 	}
 
 	v.validateAnnotations(v.doc.Source.Annotations)
@@ -1067,9 +1173,10 @@ func (v *validator) validateIncludes(path string, names []string) {
 
 		switch {
 		case strings.TrimSpace(name) == "":
-			v.addf(at, "included topology name is required")
+			v.addf(CodeIncludeNameRequired, at, "included topology name is required")
 		case strings.ContainsAny(name, " \t\n"):
 			v.addf(
+				CodeIncludeNameWhitespace,
 				at,
 				"included topology name %q must not contain whitespace",
 				name,
@@ -1084,16 +1191,22 @@ func (v *validator) validateAnnotations(annotations map[string]string) {
 	const path = "source.annotations"
 
 	if len(annotations) > MaxAnnotations {
-		v.addf(path, "at most %d annotations are allowed, not %d", MaxAnnotations, len(annotations))
+		v.addf(
+			CodeSourceAnnotationsTooMany, path,
+			"at most %d annotations are allowed, not %d", MaxAnnotations, len(annotations),
+		)
 	}
 
 	if size := annotationBytes(annotations); size > MaxAnnotationBytes {
-		v.addf(path, "annotations must take at most %d bytes in all, not %d", MaxAnnotationBytes, size)
+		v.addf(
+			CodeSourceAnnotationsTooLarge, path,
+			"annotations must take at most %d bytes in all, not %d", MaxAnnotationBytes, size,
+		)
 	}
 
 	for _, key := range slices.Sorted(maps.Keys(annotations)) {
-		if problem := annotationKeyProblem(key); problem != "" {
-			v.addf(path, "annotation key %q %s", truncate(key), problem)
+		if code, problem := annotationKeyProblem(key); problem != "" {
+			v.addf(code, path, "annotation key %q %s", truncate(key), problem)
 		}
 	}
 }
@@ -1109,35 +1222,37 @@ func annotationBytes(annotations map[string]string) int {
 	return size
 }
 
-// annotationKeyProblem says what makes an annotation key unusable, or
-// returns "".
-func annotationKeyProblem(key string) string {
+// annotationKeyProblem says what makes an annotation key unusable, with the
+// code of that rule, or returns "".
+func annotationKeyProblem(key string) (Code, string) {
 	switch {
 	case strings.TrimSpace(key) == "":
-		return "must not be blank"
+		return CodeSourceAnnotationKeyBlank, "must not be blank"
 	case len(key) > MaxNameBytes:
-		return fmt.Sprintf("must be at most %d bytes", MaxNameBytes)
+		return CodeSourceAnnotationKeyLong, fmt.Sprintf("must be at most %d bytes", MaxNameBytes)
 	case strings.ContainsFunc(key, isControl):
-		return "must not contain control characters"
+		return CodeSourceAnnotationKeyCtrl, "must not contain control characters"
 	default:
-		return ""
+		return "", ""
 	}
 }
 
 // validateID enforces the identifier contract: every entity identifier is an
 // RFC 4122 UUID. Generated identifiers are name based UUIDs; identifiers minted
 // by the front end are random (version 4) UUIDs. It reports whether there is
-// an identifier at all: a blank one is reported as missing here, and is then
-// neither a duplicate of another blank one nor a name to look an entity up by.
-func (v *validator) validateID(path, kindName, id string) bool {
+// an identifier at all: a blank one is reported as missing here, with the
+// code required, and is then neither a duplicate of another blank one nor a
+// name to look an entity up by. One that is not a UUID is reported with the
+// code invalid.
+func (v *validator) validateID(path, kindName, id string, required, invalid Code) bool {
 	if strings.TrimSpace(id) == "" {
-		v.addf(path, "%s ID is required", kindName)
+		v.addf(required, path, "%s ID is required", kindName)
 
 		return false
 	}
 
 	if !IsUUID(id) {
-		v.addf(path, "%s ID %q is not a valid UUID", kindName, id)
+		v.addf(invalid, path, "%s ID %q is not a valid UUID", kindName, id)
 	}
 
 	return true

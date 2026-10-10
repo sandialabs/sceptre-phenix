@@ -425,6 +425,28 @@ func TestPublishTopologyNamesEveryBlocker(t *testing.T) { //nolint:paralleltest 
 		t.Errorf("refusal = %s with %d problems, want 4 problems and ErrInvalid", fmtErr(refusal), len(refusal.Problems))
 	}
 
+	// Each problem is an issue with the code of its rule, at the device it is
+	// about.
+	codes := []builder.Code{
+		builder.CodeInterfaceVLANMissing, builder.CodeInterfaceVLANMissing,
+		builder.CodeInterfaceIPShared, builder.CodeNodeHostnameReserved,
+	}
+
+	if issues := refusal.Issues(); refusal.Code != builder.CodePublishBlocked || len(issues) != len(codes) {
+		t.Errorf(
+			"refusal code %s with issues %+v, want %s and one issue for each problem",
+			refusal.Code,
+			issues,
+			builder.CodePublishBlocked,
+		)
+	} else {
+		for i, issue := range issues {
+			if issue.Code != codes[i] || issue.Message != refusal.Problems[i] || issue.NodeID == "" {
+				t.Errorf("issue %d = %+v, want code %s saying %q at its device", i, issue, codes[i], refusal.Problems[i])
+			}
+		}
+	}
+
 	// Each problem is a line of its own in the text a caller shows.
 	if lines := strings.Split(refusal.Error(), "\n"); len(lines) != 5 ||
 		lines[0] != "the document cannot be published as topology blocked:" {
@@ -486,8 +508,9 @@ func TestPublishTopologyNamesEveryBlocker(t *testing.T) { //nolint:paralleltest 
 	invalid.Nodes[0].Device.Spec["type"] = "NotAType"
 
 	refusal = p.refused(invalid, PublishTopologyRequest{}, PublishRefusedBlocked)
-	if len(refusal.Problems) != 1 || !strings.Contains(refusal.Problems[0], "validating topology projection") {
-		t.Errorf("problems = %q, want the schema's own error", refusal.Problems)
+	if len(refusal.Problems) != 1 || !strings.Contains(refusal.Problems[0], "validating topology projection") ||
+		refusal.Issues()[0].Code != builder.CodePublishTopologyInvalid {
+		t.Errorf("problems = %q (issues %+v), want the schema's own error", refusal.Problems, refusal.Issues())
 	}
 
 	// A name that is not a config name, given or proposed.
@@ -560,12 +583,15 @@ func TestPublishTopologyChecksIncludes(t *testing.T) { //nolint:paralleltest // 
 		PublishTopologyRequest{}, TopologyCreated,
 	)
 
-	if len(publication.Warnings) != 2 ||
-		!strings.Contains(publication.Warnings[0], "Included topology missing was not checked") ||
-		!strings.Contains(publication.Warnings[0], "no stored topology has that name") ||
-		!strings.Contains(publication.Warnings[1], "/phenix/topologies/other.yaml") ||
-		!strings.Contains(publication.Warnings[1], "not from files") {
-		t.Errorf("warnings = %q, want one for each included topology that was not read", publication.Warnings)
+	warnings := builder.IssueMessages(publication.Warnings)
+	if len(warnings) != 2 ||
+		!strings.Contains(warnings[0], "Included topology missing was not checked") ||
+		!strings.Contains(warnings[0], "no stored topology has that name") ||
+		!strings.Contains(warnings[1], "/phenix/topologies/other.yaml") ||
+		!strings.Contains(warnings[1], "not from files") ||
+		publication.Warnings[0].Code != builder.CodePublishIncludeUnchecked ||
+		publication.Warnings[1].Code != builder.CodePublishIncludeUnchecked {
+		t.Errorf("warnings = %+v, want one for each included topology that was not read", publication.Warnings)
 	}
 
 	stored, _ := p.stored("site").Spec["includeTopologies"].([]any)
@@ -666,7 +692,8 @@ func TestPublishTopologyReplacesLegacyDiagram(t *testing.T) { //nolint:parallelt
 	// A dry run says what the update would do, and writes nothing.
 	planned := p.mustPublish(converted, PublishTopologyRequest{Name: "legacy", Update: true, DryRun: true}, TopologyUpdated)
 
-	const replaced = "The legacy Builder diagram of topology legacy was replaced by this diagram."
+	replaced := builder.NewIssue(builder.CodePublishLegacyReplaced, "",
+		"The legacy Builder diagram of topology legacy was replaced by this diagram.")
 	if !slices.Contains(planned.Warnings, replaced) {
 		t.Errorf("dry run warnings = %q, want %q", planned.Warnings, replaced)
 	}
@@ -778,9 +805,13 @@ func TestPublishTopologyRemovesUnreadableLegacyDiagram(t *testing.T) { //nolint:
 
 	publication := p.mustPublish(converted, PublishTopologyRequest{Name: "legacy", Update: true}, TopologyUpdated)
 
-	const removed = "The legacy Builder diagram of topology legacy could not be read and was removed."
+	removed := builder.NewIssue(builder.CodePublishLegacyRemoved, "",
+		"The legacy Builder diagram of topology legacy could not be read and was removed.")
 	if !slices.Contains(publication.Warnings, removed) ||
-		slices.ContainsFunc(publication.Warnings, func(warning string) bool { return strings.Contains(warning, "replaced") }) {
+		slices.ContainsFunc(
+			publication.Warnings,
+			func(warning builder.Issue) bool { return strings.Contains(warning.Message, "replaced") },
+		) {
 		t.Errorf("warnings = %q, want %q and nothing of a replaced diagram", publication.Warnings, removed)
 	}
 
@@ -1030,7 +1061,8 @@ func TestPublishTopologyRecordsPath(t *testing.T) { //nolint:paralleltest // rep
 
 	elsewhere := p.mustPublish(third, PublishTopologyRequest{Path: moved, Update: true}, TopologyUpdated)
 	if got := p.reference("lab"); got.Path != file || len(elsewhere.Warnings) != 1 ||
-		!strings.Contains(elsewhere.Warnings[0], "names the Builder file "+file) {
+		!strings.Contains(elsewhere.Warnings[0].Message, "names the Builder file "+file) ||
+		elsewhere.Warnings[0].Code != builder.CodePublishFileUnchanged {
 		t.Errorf("reference = %+v, warnings %q, want the path kept and a warning that names it", got, elsewhere.Warnings)
 	}
 
@@ -1143,9 +1175,10 @@ func TestPublishTopologyWarnsOfWhatIsNotPublished(t *testing.T) { //nolint:paral
 	// stored here.
 	riverside := publish(read(examples, "riverside-water.builder.json"), "")
 	if riverside.Name != "Riverside-Water" ||
-		!slices.Contains(riverside.Warnings, "The document's scenario is not changed: only the topology is published.") ||
-		!slices.ContainsFunc(riverside.Warnings, func(warning string) bool {
-			return strings.HasPrefix(warning, "Included topology corp-services was not checked")
+		!slices.Contains(riverside.Warnings, builder.NewIssue(builder.CodePublishScenarioUnchanged, "",
+			"The document's scenario is not changed: only the topology is published.")) ||
+		!slices.ContainsFunc(riverside.Warnings, func(warning builder.Issue) bool {
+			return strings.HasPrefix(warning.Message, "Included topology corp-services was not checked")
 		}) {
 		t.Errorf("published as %q with warnings %q, want the scenario and the include named", riverside.Name, riverside.Warnings)
 	}
@@ -1155,7 +1188,8 @@ func TestPublishTopologyWarnsOfWhatIsNotPublished(t *testing.T) { //nolint:paral
 	}
 
 	aliased := publish(read("..", "..", "types", "builder", "testdata", "strict-document.json"), "aliased")
-	if !slices.Contains(aliased.Warnings, "The document's VLAN alias is not published: a topology holds none.") {
+	if !slices.Contains(aliased.Warnings, builder.NewIssue(builder.CodePublishAliasUnpublished, "",
+		"The document's VLAN alias is not published: a topology holds none.")) {
 		t.Errorf("warnings = %q, want the VLAN alias named", aliased.Warnings)
 	}
 
@@ -1166,7 +1200,8 @@ func TestPublishTopologyWarnsOfWhatIsNotPublished(t *testing.T) { //nolint:paral
 	}
 
 	publication := p.mustPublish(several, PublishTopologyRequest{}, TopologyCreated)
-	if !slices.Contains(publication.Warnings, "The document's 2 VLAN aliases are not published: a topology holds none.") {
+	if !slices.Contains(builder.IssueMessages(publication.Warnings),
+		"The document's 2 VLAN aliases are not published: a topology holds none.") {
 		t.Errorf("warnings = %q, want both VLAN aliases counted", publication.Warnings)
 	}
 }
@@ -1187,7 +1222,8 @@ func TestPublishTopologyWarnsWhenSupersededDocumentsStay(t *testing.T) { //nolin
 
 	updated := p.mustPublish(second, PublishTopologyRequest{Update: true}, TopologyUpdated)
 
-	if len(updated.Warnings) != 1 || !strings.Contains(updated.Warnings[0], "could not be removed") {
+	if len(updated.Warnings) != 1 || !strings.Contains(updated.Warnings[0].Message, "could not be removed") ||
+		updated.Warnings[0].Code != builder.CodePublishCleanupFailed {
 		t.Errorf("warnings = %q, want one for the documents that stay", updated.Warnings)
 	}
 

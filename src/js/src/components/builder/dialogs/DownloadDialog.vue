@@ -215,9 +215,16 @@
         <li
           v-for="(warning, index) in packageHeld.warnings"
           :key="index"
-          data-level="warning">
+          data-level="warning"
+          data-testid="download-package-warning">
           <strong>Warning:</strong>
-          {{ warning }}
+          {{ warning.message }}
+          <code
+            v-if="warning.code"
+            class="builder-download__code"
+            data-testid="issue-code"
+            >{{ warning.code }}</code
+          >
         </li>
       </ul>
       <div class="builder-dialog__actions">
@@ -282,6 +289,7 @@
   import { GEXF_MIME, lastModified, toGEXF } from '@/builder/gexf.js';
   import { iconLibrary } from '@/builder/iconLibrary.js';
   import { unappliedBlock } from '@/builder/leave.js';
+  import { toIssue } from '@/builder/issues.js';
   import { documentScenarios } from '@/builder/model.js';
   import { PACKAGE_SECTIONS, packageFileName } from '@/builder/package.js';
   import { builderSettings } from '@/builder/settings.js';
@@ -436,10 +444,12 @@
 
       if (built.warnings.length) {
         status.clear();
+        // Each warning is an issue with its code; one the server sends as
+        // plain text is shown as it is.
         packageHeld.value = {
           pkg: built.package,
           format,
-          warnings: built.warnings,
+          warnings: built.warnings.map((entry) => toIssue(entry, 'warning')),
         };
         await nextTick();
         packageSaveButton.value?.focus();
@@ -669,5 +679,17 @@
 
   .builder-download__held {
     margin-bottom: 0.75rem;
+  }
+
+  /* The code of a warning, in the warning's own color, as the lists of
+     checks show it (see BuilderIssueList.vue). */
+  .builder-download__code {
+    padding: 0 0.3rem;
+    border: 1px solid var(--bx-border);
+    border-radius: var(--bx-radius);
+    background: transparent;
+    color: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.75rem;
   }
 </style>

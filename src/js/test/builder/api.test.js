@@ -28,11 +28,14 @@ import {
   publishPath,
   preconditionETag,
   readEnvelope,
+  readIssues,
   readPublishResult,
   readETag,
   readShares,
   SCHEMA_PATH,
+  serverCode,
   serverReason,
+  serverRefusal,
   serverSentence,
   shareCandidatesPath,
   shareErrors,
@@ -816,13 +819,25 @@ describe('client', () => {
   });
 
   test('a partial publish is reported as partial, not as success', () => {
+    const failure = {
+      code: 'publish.stage.failed',
+      severity: 'error',
+      message: 'experiment publication failed',
+    };
     const result = readPublishResult({
       data: {
         stages: [
           { name: 'topology', status: 'created' },
           { name: 'experiment', status: 'failed', error: 'name taken' },
         ],
-        warnings: ['check the image'],
+        warnings: [
+          {
+            code: 'publish.broadcast.failed',
+            severity: 'warning',
+            message: 'check the image',
+          },
+        ],
+        errors: [failure],
       },
     });
 
@@ -832,6 +847,68 @@ describe('client', () => {
     expect(result.failed).toHaveLength(1);
     expect(result.failed[0].message).toBe('name taken');
     expect(result.warnings).toEqual(['check the image']);
+    expect(result.warningIssues).toEqual([
+      {
+        code: 'publish.broadcast.failed',
+        severity: 'warning',
+        message: 'check the image',
+      },
+    ]);
+    expect(result.errors).toEqual(['experiment publication failed']);
+    expect(result.errorIssues).toEqual([failure]);
+  });
+
+  // Issues each carry their code; a plain message of a server of an earlier
+  // release is an issue of no code, and an entry with no message none.
+  test('issues are read with their codes and severities', () => {
+    expect(
+      readIssues(
+        [
+          'plain words',
+          { code: 'node.hostname.duplicate', message: 'twice', nodeId: 'n1' },
+          { code: 'publish.broadcast.failed', severity: 'odd', message: 'x' },
+          { code: 'no.message.here' },
+          '',
+          7,
+        ],
+        'warning',
+      ),
+    ).toEqual([
+      { code: '', severity: 'warning', message: 'plain words' },
+      {
+        code: 'node.hostname.duplicate',
+        severity: 'warning',
+        message: 'twice',
+        nodeId: 'n1',
+      },
+      { code: 'publish.broadcast.failed', severity: 'warning', message: 'x' },
+    ]);
+    expect(readIssues(undefined)).toEqual([]);
+  });
+
+  test('a refusal is read with its code, its reason and its scenario', () => {
+    const refused = (data) => ({ response: { status: 422, data } });
+
+    expect(
+      serverRefusal(
+        refused({
+          code: 'publish.scenario.missing',
+          message: 'scenario ntp does not exist',
+          cause: '',
+          metadata: { scenario: 'ntp' },
+        }),
+      ),
+    ).toEqual({
+      code: 'publish.scenario.missing',
+      reason: 'Scenario ntp does not exist.',
+      scenario: 'ntp',
+    });
+    expect(serverCode(refused({ message: 'x' }))).toBe('');
+    expect(serverRefusal(undefined)).toEqual({
+      code: '',
+      reason: '',
+      scenario: '',
+    });
   });
 
   test('a publish with no stage results is a success', () => {
@@ -1113,13 +1190,25 @@ describe('client', () => {
   test('exportTopology sends the document and reads the YAML and what blocks publishing', async () => {
     const { doc } = sampleDocument();
     const yaml = 'apiVersion: phenix.sandia.gov/v1\nkind: Topology\n';
+    const warning = {
+      code: 'interface.name.unmatched',
+      severity: 'warning',
+      message: 'dropped a connection',
+      path: 'nodes[1].device.interfaces[0].name',
+      nodeId: 'n1',
+    };
+    const blocker = {
+      code: 'interface.vlan.missing',
+      severity: 'error',
+      message: 'interface "eth0" of device "alpha" has no VLAN',
+    };
     const http = fakeHttp({
       'post builder/export/topology': {
         data: {
           name: 'Sample',
           yaml,
-          warnings: ['dropped a connection'],
-          publishBlockers: ['interface "eth0" of device "alpha" has no VLAN'],
+          warnings: [warning],
+          publishBlockers: [blocker],
         },
         headers: {},
       },
@@ -1131,6 +1220,8 @@ describe('client', () => {
       yaml,
       warnings: ['dropped a connection'],
       publishBlockers: ['interface "eth0" of device "alpha" has no VLAN'],
+      warningIssues: [warning],
+      publishBlockerIssues: [blocker],
     });
     expect(http.calls[0].body).toEqual({ document: doc, name: 'Sample' });
 

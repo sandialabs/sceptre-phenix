@@ -90,6 +90,7 @@ nav:
     - Import, Upload and Download: builder/import-upload-download.md
     - Publishing: builder/publishing.md
     - Administration: builder/administration.md
+    - Error Codes: builder/error-codes.md
     - Legacy Builder: builder/legacy.md
   - Apps:
     - Overview: apps.md

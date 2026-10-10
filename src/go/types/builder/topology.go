@@ -53,8 +53,9 @@ type Topology struct {
 	// VLANAliases maps network names to their integer VLAN alias, ready to be
 	// used as an experiment's spec.vlans.aliases.
 	VLANAliases map[string]int
-	// Warnings collects non-fatal issues found while mapping the document.
-	Warnings []string
+	// Warnings collects non-fatal issues found while mapping the document,
+	// each with its code and the device it is about.
+	Warnings []Issue
 }
 
 // TopologyExport is the topology config a document publishes as (see
@@ -66,10 +67,11 @@ type TopologyExport struct {
 	// [Topology.VLANAliases]). A topology config holds none.
 	VLANAliases map[string]int
 	// Warnings collects non-fatal issues found while mapping the document.
-	Warnings []string
+	Warnings []Issue
 	// PublishBlockers are why publishing refuses Config although phenix's
 	// config validation accepts it, one error per check in the order
 	// publishing makes them (see [Document.PublishTopologyConfig]), or none.
+	// Each lists its problems as issues (see [ErrorIssues]).
 	PublishBlockers []error
 }
 
@@ -80,10 +82,19 @@ type TopologyExport struct {
 type InterfaceVLANError struct {
 	// Problems names each device and interface, and what to do about it.
 	Problems []string
+
+	// issues holds the issue of each problem, in the same order.
+	issues []Issue
 }
 
 func (e *InterfaceVLANError) Error() string {
 	return strings.Join(e.Problems, "; ")
+}
+
+// Issues returns one issue of code [CodeInterfaceVLANMissing] for each
+// problem, saying what the problem says, at the interface it names.
+func (e *InterfaceVLANError) Issues() []Issue {
+	return problemIssues(CodeInterfaceVLANMissing, e.Problems, e.issues)
 }
 
 // InterfaceAddressError is returned, wrapped, by [Document.PublishTopologyConfig]
@@ -94,10 +105,20 @@ type InterfaceAddressError struct {
 	// Problems names each address, its network and the interfaces that use
 	// it.
 	Problems []string
+
+	// issues holds the issue of each problem, in the same order.
+	issues []Issue
 }
 
 func (e *InterfaceAddressError) Error() string {
 	return strings.Join(e.Problems, "; ")
+}
+
+// Issues returns one issue for each problem, of code [CodeInterfaceIPShared]
+// or [CodeInterfaceMACShared], saying what the problem says, at the first
+// interface of a device that is not included that uses the address.
+func (e *InterfaceAddressError) Issues() []Issue {
+	return problemIssues(CodeInterfaceIPShared, e.Problems, e.issues)
 }
 
 // NodeHostnameError is returned, wrapped, by [Document.PublishTopologyConfig]
@@ -106,10 +127,83 @@ func (e *InterfaceAddressError) Error() string {
 type NodeHostnameError struct {
 	// Problems names each hostname and why phenix refuses it.
 	Problems []string
+
+	// issues holds the issue of each problem, in the same order.
+	issues []Issue
 }
 
 func (e *NodeHostnameError) Error() string {
 	return strings.Join(e.Problems, "; ")
+}
+
+// Issues returns one issue for each problem, of the code of why phenix
+// refuses the hostname (such as [CodeNodeHostnameReserved]), saying what the
+// problem says, at the device's hostname.
+func (e *NodeHostnameError) Issues() []Issue {
+	return problemIssues(CodeNodeHostnameShort, e.Problems, e.issues)
+}
+
+// problemIssues returns the issues of a publish blocker: located, when it
+// holds one for each problem, or else an issue of code for each problem,
+// located nowhere, as a blocker made outside this package has.
+func problemIssues(code Code, problems []string, located []Issue) []Issue {
+	if len(located) == len(problems) {
+		return slices.Clone(located)
+	}
+
+	issues := make([]Issue, len(problems))
+
+	for i, problem := range problems {
+		issues[i] = NewIssue(code, "", problem)
+	}
+
+	return issues
+}
+
+// specNode is the document node a node of the projection's topology spec was
+// made from: its index among the document's nodes, and its ID.
+type specNode struct {
+	index int
+	id    string
+}
+
+// projectedNodes returns the document node each node of the spec
+// [Document.ToTopology] makes comes from, in the spec's order: every device
+// that is not included from another topology.
+func (d *Document) projectedNodes() []specNode {
+	var nodes []specNode
+
+	for i := range d.Nodes {
+		node := &d.Nodes[i]
+		if !projectedDevice(node) {
+			continue
+		}
+
+		nodes = append(nodes, specNode{index: i, id: node.ID})
+	}
+
+	return nodes
+}
+
+// projectedDevice reports whether the node is one [Document.ToTopology]
+// writes to the topology spec: a device that is not included from another
+// topology.
+func projectedDevice(node *Node) bool {
+	return node.Kind == NodeKindDevice && node.Device != nil && node.Device.IncludedFrom == ""
+}
+
+// locate gives an issue about the spec node at index the path below the
+// document node it was made from (nodes[3].<below>) and that node's ID. An
+// index past the nodes leaves the issue where it is.
+func locate(issue Issue, nodes []specNode, index int, below string) Issue {
+	if index < 0 || index >= len(nodes) {
+		return issue
+	}
+
+	issue.Path = fmt.Sprintf("nodes[%d].%s", nodes[index].index, below)
+	issue.NodeID = nodes[index].id
+
+	return issue
 }
 
 // ToTopology maps a builder document onto a phenix topology spec and the
@@ -141,16 +235,16 @@ func (d *Document) ToTopology() (*Topology, error) {
 
 	var (
 		nodes    = make([]any, 0, len(d.Nodes))
-		warnings []string
+		warnings []Issue
 	)
 
 	for i := range d.Nodes {
 		node := &d.Nodes[i]
-		if node.Kind != NodeKindDevice || node.Device == nil || node.Device.IncludedFrom != "" {
+		if !projectedDevice(node) {
 			continue
 		}
 
-		spec, nodeWarnings, err := deviceSpec(node, handleNetworks)
+		spec, nodeWarnings, err := deviceSpec(node, i, handleNetworks)
 		if err != nil {
 			return nil, fmt.Errorf("mapping device %q: %w", node.Device.Hostname, err)
 		}
@@ -181,7 +275,7 @@ func (d *Document) ToTopology() (*Topology, error) {
 }
 
 // ToTopologyConfig maps the document onto a stored Topology config named name.
-func (d *Document) ToTopologyConfig(name string) (*store.Config, []string, error) {
+func (d *Document) ToTopologyConfig(name string) (*store.Config, []Issue, error) {
 	topology, err := d.ToTopology()
 	if err != nil {
 		return nil, nil, err
@@ -230,7 +324,7 @@ func topologyConfig(name string, topology *Topology) (*store.Config, error) {
 // whatever else phenix's config validation finds, as its errors name what to
 // fix: the first check that fails, so interfaces without a VLAN before
 // addresses interfaces share, and those before hostnames phenix refuses.
-func (d *Document) PublishTopologyConfig(name string) (*store.Config, []string, error) {
+func (d *Document) PublishTopologyConfig(name string) (*store.Config, []Issue, error) {
 	config, _, warnings, err := d.PublishTopology(name)
 
 	return config, warnings, err
@@ -241,7 +335,7 @@ func (d *Document) PublishTopologyConfig(name string) (*store.Config, []string, 
 // VLAN aliases, say) without projecting the document again. The config's
 // spec is the projection's, so neither may be changed while the other is
 // in use.
-func (d *Document) PublishTopology(name string) (*store.Config, *Topology, []string, error) {
+func (d *Document) PublishTopology(name string) (*store.Config, *Topology, []Issue, error) {
 	projection, err := d.projectTopology(name)
 	if err != nil {
 		return nil, nil, nil, err
@@ -321,7 +415,7 @@ type topologyProjection struct {
 	// topology is the projection config was made from; config.Spec is its
 	// Spec.
 	topology *Topology
-	warnings []string
+	warnings []Issue
 	// blockers are the checks only publishing makes that config fails, in the
 	// order publishing makes them (see [Document.projectTopology]).
 	blockers []error
@@ -362,7 +456,9 @@ func (d *Document) projectTopology(name string) (*topologyProjection, error) {
 		blockers: nil, absentVLANs: nil, shortHostnames: nil, schema: nil,
 	}
 
-	if vlans, absent := checkInterfaceVLANs(config.Spec); vlans != nil {
+	nodes := d.projectedNodes()
+
+	if vlans, absent := checkInterfaceVLANs(config.Spec, nodes); vlans != nil {
 		blocker := fmt.Errorf("validating topology projection: %w", vlans)
 		projection.blockers = append(projection.blockers, blocker)
 
@@ -375,7 +471,7 @@ func (d *Document) projectTopology(name string) (*topologyProjection, error) {
 		projection.blockers = append(projection.blockers, fmt.Errorf("validating topology projection: %w", addresses))
 	}
 
-	hostnames, short, hostnameWarnings := checkHostnames(config.Spec)
+	hostnames, short, hostnameWarnings := checkHostnames(config.Spec, nodes)
 	projection.warnings = append(projection.warnings, hostnameWarnings...)
 
 	if hostnames != nil {
@@ -404,16 +500,18 @@ func (d *Document) projectTopology(name string) (*topologyProjection, error) {
 // its position when it has no name, or shares it with another. It also
 // reports whether one of those interfaces has no vlan key or a null one,
 // which phenix's schema refuses as well, rather than a blank VLAN, which it
-// accepts.
-func checkInterfaceVLANs(spec map[string]any) (*InterfaceVLANError, bool) {
-	nodes, _ := spec[keyNodes].([]any)
+// accepts. nodes are the document nodes the spec's nodes were made from (see
+// [Document.projectedNodes]), which locate the issue of each problem.
+func checkInterfaceVLANs(spec map[string]any, nodes []specNode) (*InterfaceVLANError, bool) {
+	entries, _ := spec[keyNodes].([]any)
 
 	var (
 		problems []string
+		issues   []Issue
 		absent   bool
 	)
 
-	for _, entry := range nodes {
+	for position, entry := range entries {
 		node, ok := entry.(map[string]any)
 		if !ok || node["external"] != nil {
 			continue
@@ -431,10 +529,16 @@ func checkInterfaceVLANs(spec map[string]any) (*InterfaceVLANError, bool) {
 
 			absent = absent || missing
 
-			problems = append(problems, fmt.Sprintf(
+			problem := fmt.Sprintf(
 				"interface %s of device %q has no VLAN: connect it to a network, or type a VLAN for it",
 				labels[index], hostname,
-			))
+			)
+
+			issue := NewIssue(CodeInterfaceVLANMissing, "", problem)
+			issue.Field = fmt.Sprintf("spec.network.interfaces.%d.vlan", index)
+
+			problems = append(problems, problem)
+			issues = append(issues, locate(issue, nodes, position, fmt.Sprintf("device.spec.network.interfaces[%d]", index)))
 		}
 	}
 
@@ -442,29 +546,38 @@ func checkInterfaceVLANs(spec map[string]any) (*InterfaceVLANError, bool) {
 		return nil, false
 	}
 
-	return &InterfaceVLANError{Problems: problems}, absent
+	return &InterfaceVLANError{Problems: problems, issues: issues}, absent
 }
 
 // checkHostnames refuses a topology spec with a hostname phenix refuses (see
 // [checkHostname]). The error names each hostname and why, in phenix's words.
 // It also reports whether one of them is a single character, and returns the
 // warnings phenix logs then about the hostnames it accepts. External nodes are
-// not started, and phenix checks none of their hostnames.
-func checkHostnames(spec map[string]any) (*NodeHostnameError, bool, []string) {
+// not started, and phenix checks none of their hostnames. nodes are the
+// document nodes the spec's nodes were made from, which locate the issues.
+func checkHostnames(spec map[string]any, nodes []specNode) (*NodeHostnameError, bool, []Issue) {
 	var (
-		problems, warnings []string
-		short              bool
+		problems         []string
+		issues, warnings []Issue
+		short            bool
 	)
 
-	startedNodes(spec, func(hostname, osType string) {
+	startedNodes(spec, func(position int, hostname, osType string) {
 		warning, err := checkHostname(hostname, osType)
 		if err != nil {
+			issue := NewIssue(hostnameCode(hostname, true), "", err.Error())
+			issue.Field = specHostname
+
 			problems = append(problems, err.Error())
+			issues = append(issues, locate(issue, nodes, position, hostnamePath))
 			short = short || isShortHostname(hostname)
 		}
 
 		if warning != "" {
-			warnings = append(warnings, warning)
+			issue := NewIssue(hostnameCode(hostname, false), "", warning)
+			issue.Field = specHostname
+
+			warnings = append(warnings, locate(issue, nodes, position, hostnamePath))
 		}
 	})
 
@@ -472,7 +585,33 @@ func checkHostnames(spec map[string]any) (*NodeHostnameError, bool, []string) {
 		return nil, false, warnings
 	}
 
-	return &NodeHostnameError{Problems: problems}, short, warnings
+	return &NodeHostnameError{Problems: problems, issues: issues}, short, warnings
+}
+
+// minimegaWildcardVM is the name minimega takes for every VM, which phenix
+// refuses as a hostname (see [v1.CheckHostname]).
+const minimegaWildcardVM = "all"
+
+// hostnameCode is the code of what phenix makes of a hostname it refuses
+// (refused) or warns about (see [checkHostname]), in the order phenix checks
+// them: one character, "all", all digits, and else "phenix" on a Windows
+// node; for a warning, another casing of "all", and else "phenix" on another
+// node.
+func hostnameCode(hostname string, refused bool) Code {
+	switch {
+	case refused && isShortHostname(hostname):
+		return CodeNodeHostnameShort
+	case refused && hostname == minimegaWildcardVM:
+		return CodeNodeHostnameReserved
+	case refused && hostname != "" && strings.Trim(hostname, "0123456789") == "":
+		return CodeNodeHostnameNumeric
+	case refused:
+		return CodeNodeHostnameWindows
+	case strings.EqualFold(hostname, minimegaWildcardVM):
+		return CodeNodeHostnameReservedCase
+	default:
+		return CodeNodeHostnamePhenix
+	}
 }
 
 // checkHostname reports what phenix makes of the hostname of a node it
@@ -499,18 +638,19 @@ func isShortHostname(hostname string) bool {
 	return utf8.RuneCountInString(hostname) == 1
 }
 
-// startedNodes calls visit with the hostname and os_type of each node of a
-// topology spec that phenix starts: every node but the external ones.
-func startedNodes(spec map[string]any, visit func(hostname, osType string)) {
+// startedNodes calls visit with the position among the spec's nodes, the
+// hostname and the os_type of each node of a topology spec that phenix
+// starts: every node but the external ones.
+func startedNodes(spec map[string]any, visit func(position int, hostname, osType string)) {
 	nodes, _ := spec[keyNodes].([]any)
 
-	for _, entry := range nodes {
+	for position, entry := range nodes {
 		node, ok := entry.(map[string]any)
 		if !ok || node["external"] != nil {
 			continue
 		}
 
-		visit(specString(node, "general", "hostname"), specString(node, "hardware", "os_type"))
+		visit(position, specString(node, "general", "hostname"), specString(node, "hardware", "os_type"))
 	}
 }
 
@@ -552,6 +692,34 @@ type addressUsers struct {
 	users []string
 	// own counts the interfaces of devices that are not included.
 	own int
+	// issue is the issue of the address, of its code, located at the first
+	// interface of a device that is not included that uses it.
+	issue Issue
+}
+
+// The keys of a spec interface that hold the addresses
+// [Document.checkInterfaceAddresses] compares, and the path below a device
+// node of its hostname, where an issue about the hostname is.
+const (
+	specAddressKey = "address"
+	specMACKey     = "mac"
+	hostnamePath   = "device.hostname"
+)
+
+// addressUse is one interface's use of an IP or MAC address (see
+// [Document.checkInterfaceAddresses]).
+type addressUse struct {
+	// key is the address and its network as they are compared.
+	key addressKey
+	// address names the address and its network in a message.
+	address string
+	// user names the interface in a message.
+	user     string
+	included bool
+	// code is the code of a shared address of this kind.
+	code Code
+	// path, nodeID and field locate the interface's address field.
+	path, nodeID, field string
 }
 
 // addressKey is what two interfaces share when their addresses clash: an
@@ -582,69 +750,37 @@ type addressKey struct {
 // network and the interfaces that use it, in document order.
 func (d *Document) checkInterfaceAddresses() error {
 	var (
-		shared   []*addressUsers
-		byKey    = map[addressKey]*addressUsers{}
-		networks = d.handleNetworks()
+		shared []*addressUsers
+		byKey  = map[addressKey]*addressUsers{}
 	)
 
-	use := func(key addressKey, address, user string, included bool) {
-		entry := byKey[key]
+	use := func(found addressUse) {
+		entry := byKey[found.key]
 		if entry == nil {
-			entry = &addressUsers{address: address, users: nil, own: 0}
-			byKey[key] = entry
+			entry = &addressUsers{address: found.address, users: nil, own: 0, issue: NewIssue(found.code, "", "")}
+			byKey[found.key] = entry
 			shared = append(shared, entry)
 		}
 
-		entry.users = append(entry.users, user)
+		entry.users = append(entry.users, found.user)
 
-		if !included {
-			entry.own++
+		if found.included {
+			return
 		}
+
+		if entry.own == 0 {
+			entry.issue.Path, entry.issue.NodeID, entry.issue.Field = found.path, found.nodeID, found.field
+		}
+
+		entry.own++
 	}
 
-	for i := range d.Nodes {
-		node := &d.Nodes[i]
-		if node.Kind != NodeKindDevice || node.Device == nil {
-			continue
-		}
+	d.eachAddressUse(use)
 
-		spec, err := normalizeSpecMap(node.Device.Spec)
-		if err != nil {
-			continue // ToTopology refuses it first
-		}
-
-		// Each interface's VLAN as publishing writes it. The spec is a copy,
-		// and the warnings are ToTopology's to give.
-		connectInterfaces(node, spec, networks)
-
-		ifaces := specNodeInterfaces(spec)
-		labels := interfaceLabels(ifaces)
-		included := node.Device.IncludedFrom != ""
-		external := spec["external"] != nil
-
-		for index, entry := range ifaces {
-			iface, ok := entry.(map[string]any)
-			if !ok {
-				continue
-			}
-
-			user := fmt.Sprintf("interface %s of device %q", labels[index], node.Device.Hostname)
-			bridge, vlan := interfaceNetwork(iface)
-			network := networkPhrase(bridge, vlan)
-
-			if addr, ok := interfaceIP(iface); ok {
-				key := addressKey{kind: "ip", address: addr.String(), bridge: bridge, vlan: vlan}
-				use(key, "IP address "+addr.String()+network, user, included)
-			}
-
-			if mac, ok := interfaceMAC(iface); ok && !external {
-				key := addressKey{kind: "mac", address: mac.String(), bridge: bridge, vlan: vlan}
-				use(key, "MAC address "+mac.String()+network, user, included)
-			}
-		}
-	}
-
-	var problems []string
+	var (
+		problems []string
+		issues   []Issue
+	)
 
 	for _, entry := range shared {
 		if len(entry.users) < 2 || entry.own == 0 {
@@ -661,14 +797,82 @@ func (d *Document) checkInterfaceAddresses() error {
 			users = fmt.Sprintf("%s, %s and %d more interfaces", first, second, more)
 		}
 
-		problems = append(problems, fmt.Sprintf("%s is used by %s", entry.address, users))
+		problem := fmt.Sprintf("%s is used by %s", entry.address, users)
+		entry.issue.Message = problem
+
+		problems = append(problems, problem)
+		issues = append(issues, entry.issue)
 	}
 
 	if len(problems) == 0 {
 		return nil
 	}
 
-	return &InterfaceAddressError{Problems: problems}
+	return &InterfaceAddressError{Problems: problems, issues: issues}
+}
+
+// eachAddressUse calls use with each IP address and each MAC address an
+// interface of a device of the document uses, in document order, on the
+// network publishing puts the interface on, as
+// [Document.checkInterfaceAddresses] compares them: an external device's MAC
+// addresses are left out.
+func (d *Document) eachAddressUse(use func(addressUse)) {
+	networks := d.handleNetworks()
+
+	for i := range d.Nodes {
+		node := &d.Nodes[i]
+		if node.Kind != NodeKindDevice || node.Device == nil {
+			continue
+		}
+
+		spec, err := normalizeSpecMap(node.Device.Spec)
+		if err != nil {
+			continue // ToTopology refuses it first
+		}
+
+		// Each interface's VLAN as publishing writes it. The spec is a copy,
+		// and the warnings are ToTopology's to give.
+		connectInterfaces(node, i, spec, networks)
+
+		ifaces := specNodeInterfaces(spec)
+		labels := interfaceLabels(ifaces)
+		included := node.Device.IncludedFrom != ""
+		external := spec["external"] != nil
+
+		for index, entry := range ifaces {
+			iface, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+
+			user := fmt.Sprintf("interface %s of device %q", labels[index], node.Device.Hostname)
+			bridge, vlan := interfaceNetwork(iface)
+			network := networkPhrase(bridge, vlan)
+
+			// found is the interface's use of the address, of the kind ("ip"
+			// or "mac") a message calls name, held in its key specKey.
+			found := func(kind, address, name string, code Code, specKey string) addressUse {
+				return addressUse{
+					key:      addressKey{kind: kind, address: address, bridge: bridge, vlan: vlan},
+					address:  name + " " + address + network,
+					user:     user,
+					included: included,
+					code:     code,
+					path:     fmt.Sprintf("nodes[%d].device.spec.network.interfaces[%d].%s", i, index, specKey),
+					nodeID:   node.ID,
+					field:    fmt.Sprintf("spec.network.interfaces.%d.%s", index, specKey),
+				}
+			}
+
+			if addr, ok := interfaceIP(iface); ok {
+				use(found("ip", addr.String(), "IP address", CodeInterfaceIPShared, specAddressKey))
+			}
+
+			if mac, ok := interfaceMAC(iface); ok && !external {
+				use(found("mac", mac.String(), "MAC address", CodeInterfaceMACShared, specMACKey))
+			}
+		}
+	}
 }
 
 // interfaceIP reads the IP address a spec interface entry uses, as Go parses
@@ -692,7 +896,7 @@ func interfaceIP(iface map[string]any) (netip.Addr, bool) {
 		return netip.Addr{}, false
 	}
 
-	text, _ := iface["address"].(string)
+	text, _ := iface[specAddressKey].(string)
 	text, _, _ = strings.Cut(text, "/")
 
 	addr, err := netip.ParseAddr(trimASCIISpace(text))
@@ -711,7 +915,7 @@ func interfaceIP(iface map[string]any) (netip.Addr, bool) {
 func interfaceMAC(iface map[string]any) (net.HardwareAddr, bool) {
 	const length = 6 // bytes of a MAC address
 
-	text, _ := iface["mac"].(string)
+	text, _ := iface[specMACKey].(string)
 
 	mac, err := hex.DecodeString(strings.NewReplacer(":", "", "-", "", ".", "").Replace(trimASCIISpace(text)))
 	if err != nil || len(mac) != length {
@@ -842,8 +1046,9 @@ func (d *Document) handleNetworks() map[string]*Network {
 	return handles
 }
 
-// deviceSpec produces the topology node spec of a device node.
-func deviceSpec(node *Node, handleNetworks map[string]*Network) (map[string]any, []string, error) {
+// deviceSpec produces the topology node spec of a device node, the one at
+// index among the document's nodes, which locates its warnings.
+func deviceSpec(node *Node, index int, handleNetworks map[string]*Network) (map[string]any, []Issue, error) {
 	spec, err := normalizeSpecMap(node.Device.Spec)
 	if err != nil {
 		return nil, nil, err
@@ -853,13 +1058,15 @@ func deviceSpec(node *Node, handleNetworks map[string]*Network) (map[string]any,
 		spec = map[string]any{}
 	}
 
-	var warnings []string
+	var warnings []Issue
 
 	if existing := specString(spec, "general", "hostname"); existing != "" &&
 		existing != node.Device.Hostname {
-		warnings = append(warnings, fmt.Sprintf(
-			"device %q carries a node spec with hostname %q; the device hostname wins",
-			node.Device.Hostname, existing,
+		warnings = append(warnings, deviceIssue(
+			CodeDeviceHostnameMismatch, node, index, "device.spec.general.hostname", fmt.Sprintf(
+				"device %q carries a node spec with hostname %q; the device hostname wins",
+				node.Device.Hostname, existing,
+			),
 		))
 	}
 
@@ -867,22 +1074,32 @@ func deviceSpec(node *Node, handleNetworks map[string]*Network) (map[string]any,
 		return nil, nil, fmt.Errorf("node spec key %q is not an object", "general")
 	}
 
-	warnings = append(warnings, connectInterfaces(node, spec, handleNetworks)...)
+	warnings = append(warnings, connectInterfaces(node, index, spec, handleNetworks)...)
 
 	return spec, warnings, nil
 }
 
+// deviceIssue is an issue of code about the device node at index among the
+// document's nodes, at path below it.
+func deviceIssue(code Code, node *Node, index int, path, message string) Issue {
+	issue := NewIssue(code, fmt.Sprintf("nodes[%d].%s", index, path), message)
+	issue.NodeID = node.ID
+
+	return issue
+}
+
 // connectInterfaces sets the VLAN of each interface of spec, the node spec of
-// the device node, whose connection point is connected to a network to that
-// network's name, as publishing writes it. It returns a warning for each
-// connection whose interface the spec does not have, which publishing drops.
-func connectInterfaces(node *Node, spec map[string]any, handleNetworks map[string]*Network) []string {
+// the device node at index among the document's nodes, whose connection point
+// is connected to a network to that network's name, as publishing writes it.
+// It returns a warning for each connection whose interface the spec does not
+// have, which publishing drops.
+func connectInterfaces(node *Node, index int, spec map[string]any, handleNetworks map[string]*Network) []Issue {
 	var (
 		ifaces   = specNodeInterfaces(spec)
-		warnings []string
+		warnings []Issue
 	)
 
-	for _, handle := range node.Device.Interfaces {
+	for position, handle := range node.Device.Interfaces {
 		network, ok := handleNetworks[handle.ID]
 		if !ok || network == nil {
 			continue
@@ -890,10 +1107,12 @@ func connectInterfaces(node *Node, spec map[string]any, handleNetworks map[strin
 
 		iface := findInterface(ifaces, handle.Name)
 		if iface == nil {
-			warnings = append(warnings, fmt.Sprintf(
-				"device %q is connected to network %q through interface %q, "+
-					"but the node spec has no such interface; the connection was dropped",
-				node.Device.Hostname, network.Name, handle.Name,
+			warnings = append(warnings, deviceIssue(
+				CodeInterfaceNameUnmatched, node, index, fmt.Sprintf("device.interfaces[%d].name", position), fmt.Sprintf(
+					"device %q is connected to network %q through interface %q, "+
+						"but the node spec has no such interface; the connection was dropped",
+					node.Device.Hostname, network.Name, handle.Name,
+				),
 			))
 
 			continue

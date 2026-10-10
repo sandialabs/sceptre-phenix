@@ -529,6 +529,12 @@ test.describe('Builder packages', () => {
       await expect(
         dialog.getByTestId('download-package-warnings'),
       ).toContainText(`Scenario config ${absent} does not exist`);
+      // Each warning shows the server's code for it.
+      await expect(
+        dialog
+          .getByTestId('download-package-warning')
+          .getByTestId('issue-code'),
+      ).toHaveText('package.config.unreadable');
       await dialog.getByTestId('download-package-discard').click();
       await expect(dialog.getByTestId('download-package-held')).toHaveCount(0);
       await expect(dialog.getByRole('status')).toHaveText(

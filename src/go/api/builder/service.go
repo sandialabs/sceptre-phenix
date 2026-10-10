@@ -23,6 +23,10 @@ const (
 	kindPublished = "published document"
 )
 
+// KindDraft is the Kind of a [ConflictError] or a [NotFoundError] about a
+// draft.
+const KindDraft = kindDraft
+
 // Clock returns the current time. It is injected so tests can control the
 // timestamps written to metadata.
 type Clock func() time.Time

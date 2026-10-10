@@ -686,6 +686,98 @@ func builderNotFound(kind, name string) *weberror.WebError {
 		SetStatus(http.StatusNotFound)
 }
 
+// builderHandler is the handler of a Builder route: [weberror.ErrorHandler]
+// answers its errors, as it answers every route's, after
+// [builderCodedError] gives each its code and issues.
+func builderHandler(handler func(http.ResponseWriter, *http.Request) error) weberror.ErrorHandler {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		return builderCodedError(handler(w, r))
+	}
+}
+
+// builderCodedError gives the error of a Builder route the code of its
+// failure (see [bdoc.Code]), unless the route gave it one, and the issues it
+// is made of: those of a package or a document that does not validate, or of
+// what only publishing refuses (see [bdoc.ErrorIssues]). A write refused for lack of
+// space is answered with 507 and its code, whatever error carries it. Any
+// other error that is not a [weberror.WebError] is left as it is: it is
+// answered with 500 and no body.
+func builderCodedError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	web := &weberror.WebError{} //nolint:exhaustruct // filled by errors.As
+
+	if !errors.As(err, &web) {
+		if errors.Is(err, store.ErrNoSpace) {
+			return weberror.NewWebError(err, "%s", store.ErrNoSpace.Error()).
+				SetStatus(http.StatusInsufficientStorage).WithCode(string(bdoc.CodeServerStorageFull))
+		}
+
+		return err
+	}
+
+	issues := bdoc.ErrorIssues(err)
+
+	if web.Code == "" {
+		web.Code = string(builderErrorCode(err, web.Status, issues))
+	}
+
+	if web.Issues == nil && len(issues) > 0 {
+		web.Issues = issues
+	}
+
+	return err
+}
+
+// builderErrorCode is the code of the failure of a Builder route that names
+// none itself: a write refused for lack of space, a package that does not
+// decode or validate, a document that does not validate, a template file
+// that does not, what only publishing refuses (any other error holding
+// issues), or else the kind of failure its status says.
+func builderErrorCode(err error, status int, issues []bdoc.Issue) bdoc.Code {
+	var templateFile *bdoc.TemplateFileError
+
+	switch {
+	case errors.Is(err, store.ErrNoSpace):
+		return bdoc.CodeServerStorageFull
+	case errors.Is(err, bdoc.ErrInvalidPackage):
+		return bdoc.CodePackageInvalid
+	case errors.Is(err, bdoc.ErrInvalidDocument):
+		return bdoc.CodeDocumentInvalid
+	case errors.As(err, &templateFile):
+		return bdoc.CodeTemplateFileInvalid
+	case len(issues) > 0:
+		return bdoc.CodePublishBlocked
+	}
+
+	switch status {
+	case http.StatusForbidden:
+		return bdoc.CodeRequestForbidden
+	case http.StatusNotFound:
+		return bdoc.CodeRequestNotFound
+	case http.StatusConflict:
+		return bdoc.CodeRequestConflict
+	case http.StatusPreconditionFailed:
+		return bdoc.CodeRequestStale
+	case http.StatusRequestEntityTooLarge:
+		return bdoc.CodeRequestTooLarge
+	case http.StatusUnprocessableEntity:
+		return bdoc.CodeRequestUnprocessable
+	case http.StatusServiceUnavailable:
+		return bdoc.CodeServerBusy
+	case http.StatusInsufficientStorage:
+		return bdoc.CodeServerStorageFull
+	}
+
+	if status >= http.StatusInternalServerError {
+		return bdoc.CodeServerError
+	}
+
+	return bdoc.CodeRequestInvalid
+}
+
 // builderWebError maps a [phenix/api/builder] error to the HTTP status it
 // corresponds to. Cleanup failures must be handled by the caller before this is
 // reached: they follow a durable, successful mutation. A write refused because
@@ -693,9 +785,14 @@ func builderNotFound(kind, name string) *weberror.WebError {
 func builderWebError(err error, format string, args ...any) *weberror.WebError {
 	webErr := weberror.NewWebError(err, format, args...)
 
+	var conflict *bapi.ConflictError
+
 	switch {
 	case errors.Is(err, bapi.ErrNotFound):
 		return webErr.SetStatus(http.StatusNotFound)
+	case errors.As(err, &conflict) && conflict.Kind == bapi.KindDraft:
+		// The draft changed between the handler's read and the write.
+		return webErr.SetStatus(http.StatusConflict).WithCode(string(bdoc.CodeDraftConflict))
 	case errors.Is(err, bapi.ErrConflict):
 		return webErr.SetStatus(http.StatusConflict)
 	case errors.Is(err, bapi.ErrTooLarge):
@@ -796,7 +893,7 @@ func builderCheckIfMatch(ifMatch string, meta *bapi.DraftMetadata) error {
 	}
 
 	return weberror.NewWebError(nil, "draft %s has changed since it was last read", meta.ID).
-		SetStatus(http.StatusPreconditionFailed)
+		SetStatus(http.StatusPreconditionFailed).WithCode(string(bdoc.CodeDraftStale))
 }
 
 // builderDecode strictly decodes a JSON request body into target. Unknown
@@ -907,25 +1004,75 @@ const (
 // browser load, run and frame nothing, should it ever show one as a page.
 func builderResponseHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if path, ok := strings.CutPrefix(r.URL.Path, builderAPIPrefix); ok {
-			if strings.HasPrefix(path, builderRoutePrefix) || path == builderSchemaPath ||
-				path == builderTemplateSchemaPath || path == builderPackageSchemaPath {
-				w.Header().Set("X-Content-Type-Options", "nosniff")
-			}
+		if builderPath(r.URL.Path) {
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+		}
 
-			if path == builderIconsPath || strings.HasPrefix(path, builderIconsPath+"/") {
-				w.Header().Set("Content-Security-Policy", builderIconPolicy)
-			}
+		if path, ok := strings.CutPrefix(r.URL.Path, builderAPIPrefix); ok &&
+			(path == builderIconsPath || strings.HasPrefix(path, builderIconsPath+"/")) {
+			w.Header().Set("Content-Security-Policy", builderIconPolicy)
 		}
 
 		next.ServeHTTP(w, r)
 	})
 }
 
-// builderMethodNotAllowed answers a request that matches a route's path but
-// none of its methods, as the router does when it has no handler for that.
-func builderMethodNotAllowed(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusMethodNotAllowed)
+// builderPath reports whether path, a request's, is under the Builder's
+// paths: below /api/v1/builder/, or one of the schema routes of the
+// document, template file and package formats.
+func builderPath(path string) bool {
+	rest, ok := strings.CutPrefix(path, builderAPIPrefix)
+
+	return ok && (strings.HasPrefix(rest, builderRoutePrefix) || rest == builderSchemaPath ||
+		rest == builderTemplateSchemaPath || rest == builderPackageSchemaPath)
+}
+
+// builderMethodNotAllowed returns the handler of a request that matches a
+// route's path but none of its methods, for a router that has none of its
+// own. Under the Builder's paths it answers 405 with the methods router takes
+// for the path in Allow and a body with the code of the refusal, as every
+// Builder error has; any other path, with the status alone, as the router
+// does.
+func builderMethodNotAllowed(router *mux.Router) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !builderPath(r.URL.Path) {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+
+			return
+		}
+
+		if allowed := builderAllowedMethods(router, r); len(allowed) > 0 {
+			w.Header().Set("Allow", strings.Join(allowed, ", "))
+		}
+
+		refusal := weberror.NewWebError(nil, "the %s method is not allowed for this path", r.Method).
+			WithCode(string(bdoc.CodeRequestMethodNotAllowed))
+
+		_ = builderWriteJSON(w, http.StatusMethodNotAllowed, "", refusal)
+	}
+}
+
+// builderAllowedMethods returns the methods router has a route for at the
+// path of r, in the order Allow names them.
+func builderAllowedMethods(router *mux.Router, r *http.Request) []string {
+	methods := []string{
+		http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+		http.MethodPatch, http.MethodDelete, http.MethodOptions,
+	}
+	allowed := make([]string, 0, len(methods))
+
+	for _, method := range methods {
+		probe := r.Clone(r.Context())
+		probe.Method = method
+
+		var match mux.RouteMatch
+
+		if router.Match(probe, &match) && match.MatchErr == nil {
+			allowed = append(allowed, method)
+		}
+	}
+
+	return allowed
 }
 
 // routes registers every Builder route on the given router. Each route
@@ -948,92 +1095,92 @@ func (b *builderAPI) routes(router *mux.Router) {
 
 	notAllowed := router.MethodNotAllowedHandler
 	if notAllowed == nil {
-		notAllowed = http.HandlerFunc(builderMethodNotAllowed)
+		notAllowed = builderMethodNotAllowed(router)
 	}
 
 	router.MethodNotAllowedHandler = builderResponseHeaders(notAllowed)
 
-	router.Handle(builderSchemaPath, weberror.ErrorHandler(b.getSchema)).
+	router.Handle(builderSchemaPath, builderHandler(b.getSchema)).
 		Methods("GET", "OPTIONS")
-	router.Handle(builderTemplateSchemaPath, weberror.ErrorHandler(b.getTemplateSchema)).
+	router.Handle(builderTemplateSchemaPath, builderHandler(b.getTemplateSchema)).
 		Methods("GET", "OPTIONS")
-	router.Handle(builderPackageSchemaPath, weberror.ErrorHandler(b.getPackageSchema)).
+	router.Handle(builderPackageSchemaPath, builderHandler(b.getPackageSchema)).
 		Methods("GET", "OPTIONS")
-	router.Handle("/builder/drafts", weberror.ErrorHandler(b.listDrafts)).
+	router.Handle("/builder/drafts", builderHandler(b.listDrafts)).
 		Methods("GET", "OPTIONS")
-	router.Handle("/builder/drafts", weberror.ErrorHandler(b.createDraft)).
+	router.Handle("/builder/drafts", builderHandler(b.createDraft)).
 		Methods("POST", "OPTIONS")
-	router.Handle(draftPath, weberror.ErrorHandler(b.getDraft)).
+	router.Handle(draftPath, builderHandler(b.getDraft)).
 		Methods("GET", "OPTIONS")
-	router.Handle(draftPath, weberror.ErrorHandler(b.deleteDraft)).
+	router.Handle(draftPath, builderHandler(b.deleteDraft)).
 		Methods("DELETE", "OPTIONS")
-	router.Handle(snapshotsPath, weberror.ErrorHandler(b.listSnapshots)).
+	router.Handle(snapshotsPath, builderHandler(b.listSnapshots)).
 		Methods("GET", "OPTIONS")
-	router.Handle(snapshotsPath, weberror.ErrorHandler(b.createSnapshot)).
+	router.Handle(snapshotsPath, builderHandler(b.createSnapshot)).
 		Methods("POST", "OPTIONS")
-	router.Handle(snapshotsPath+"/{snapshot}", weberror.ErrorHandler(b.getSnapshot)).
+	router.Handle(snapshotsPath+"/{snapshot}", builderHandler(b.getSnapshot)).
 		Methods("GET", "OPTIONS")
-	router.Handle(snapshotsPath+"/{snapshot}", weberror.ErrorHandler(b.deleteSnapshot)).
+	router.Handle(snapshotsPath+"/{snapshot}", builderHandler(b.deleteSnapshot)).
 		Methods("DELETE", "OPTIONS")
 	// PUT is accepted alongside PATCH so a client that models the cursor as a
 	// replaceable sub-resource reaches the same handler.
-	router.Handle(draftPath+"/cursor", weberror.ErrorHandler(b.updateCursor)).
+	router.Handle(draftPath+"/cursor", builderHandler(b.updateCursor)).
 		Methods("PATCH", "PUT", "OPTIONS")
-	router.Handle(draftPath+"/publish", weberror.ErrorHandler(b.publishDraft)).
+	router.Handle(draftPath+"/publish", builderHandler(b.publishDraft)).
 		Methods("POST", "OPTIONS")
-	router.Handle(draftPath+"/shares", weberror.ErrorHandler(b.getShares)).
+	router.Handle(draftPath+"/shares", builderHandler(b.getShares)).
 		Methods("GET", "OPTIONS")
-	router.Handle(draftPath+"/shares", weberror.ErrorHandler(b.putShares)).
+	router.Handle(draftPath+"/shares", builderHandler(b.putShares)).
 		Methods("PUT", "OPTIONS")
-	router.Handle(draftPath+"/shares/candidates", weberror.ErrorHandler(b.getShareCandidates)).
+	router.Handle(draftPath+"/shares/candidates", builderHandler(b.getShareCandidates)).
 		Methods("GET", "OPTIONS")
-	router.Handle("/builder/sources", weberror.ErrorHandler(b.listSources)).
+	router.Handle("/builder/sources", builderHandler(b.listSources)).
 		Methods("GET", "OPTIONS")
-	router.Handle("/builder/generate", weberror.ErrorHandler(b.generateDocument)).
+	router.Handle("/builder/generate", builderHandler(b.generateDocument)).
 		Methods("POST", "OPTIONS")
-	router.Handle("/builder/legacy", weberror.ErrorHandler(b.convertLegacy)).
+	router.Handle("/builder/legacy", builderHandler(b.convertLegacy)).
 		Methods("POST", "OPTIONS")
-	router.Handle("/builder/export/topology", weberror.ErrorHandler(b.exportTopology)).
+	router.Handle("/builder/export/topology", builderHandler(b.exportTopology)).
 		Methods("POST", "OPTIONS")
-	router.Handle("/builder/package", weberror.ErrorHandler(b.buildPackage)).
+	router.Handle("/builder/package", builderHandler(b.buildPackage)).
 		Methods("POST", "OPTIONS")
-	router.Handle("/builder/package/resolve", weberror.ErrorHandler(b.resolvePackage)).
+	router.Handle("/builder/package/resolve", builderHandler(b.resolvePackage)).
 		Methods("POST", "OPTIONS")
-	router.Handle("/builder/documents", weberror.ErrorHandler(b.listDocuments)).
+	router.Handle("/builder/documents", builderHandler(b.listDocuments)).
 		Methods("GET", "OPTIONS")
-	router.Handle("/builder/documents/{document}", weberror.ErrorHandler(b.getDocument)).
+	router.Handle("/builder/documents/{document}", builderHandler(b.getDocument)).
 		Methods("GET", "OPTIONS")
-	router.Handle("/builder/documents/{document}", weberror.ErrorHandler(b.deleteDocument)).
+	router.Handle("/builder/documents/{document}", builderHandler(b.deleteDocument)).
 		Methods("DELETE", "OPTIONS")
-	router.Handle("/builder/topologies/{topology}/document", weberror.ErrorHandler(b.getTopologyDocument)).
+	router.Handle("/builder/topologies/{topology}/document", builderHandler(b.getTopologyDocument)).
 		Methods("GET", "OPTIONS")
-	router.Handle(builderIconsPath, weberror.ErrorHandler(b.listIcons)).
+	router.Handle(builderIconsPath, builderHandler(b.listIcons)).
 		Methods("GET", "OPTIONS")
-	router.Handle(builderIconsPath, weberror.ErrorHandler(b.createIcon)).
+	router.Handle(builderIconsPath, builderHandler(b.createIcon)).
 		Methods("POST", "OPTIONS")
-	router.Handle(builderIconsPath+"/{icon}", weberror.ErrorHandler(b.getIcon)).
+	router.Handle(builderIconsPath+"/{icon}", builderHandler(b.getIcon)).
 		Methods("GET", "OPTIONS")
-	router.Handle(builderIconsPath+"/{icon}", weberror.ErrorHandler(b.renameIcon)).
+	router.Handle(builderIconsPath+"/{icon}", builderHandler(b.renameIcon)).
 		Methods("PUT", "OPTIONS")
-	router.Handle(builderIconsPath+"/{icon}", weberror.ErrorHandler(b.deleteIcon)).
+	router.Handle(builderIconsPath+"/{icon}", builderHandler(b.deleteIcon)).
 		Methods("DELETE", "OPTIONS")
-	router.Handle(builderTemplatesPath, weberror.ErrorHandler(b.listTemplates)).
+	router.Handle(builderTemplatesPath, builderHandler(b.listTemplates)).
 		Methods("GET", "OPTIONS")
-	router.Handle(builderTemplatesPath+"/candidates", weberror.ErrorHandler(b.getTemplateShareCandidates)).
+	router.Handle(builderTemplatesPath+"/candidates", builderHandler(b.getTemplateShareCandidates)).
 		Methods("GET", "OPTIONS")
-	router.Handle(libraryPath+"/items", weberror.ErrorHandler(b.createTemplates)).
+	router.Handle(libraryPath+"/items", builderHandler(b.createTemplates)).
 		Methods("POST", "OPTIONS")
-	router.Handle(libraryPath+"/items/{template}", weberror.ErrorHandler(b.putTemplate)).
+	router.Handle(libraryPath+"/items/{template}", builderHandler(b.putTemplate)).
 		Methods("PUT", "OPTIONS")
-	router.Handle(libraryPath+"/collections", weberror.ErrorHandler(b.createTemplateCollection)).
+	router.Handle(libraryPath+"/collections", builderHandler(b.createTemplateCollection)).
 		Methods("POST", "OPTIONS")
-	router.Handle(libraryPath+"/collections/{collection}", weberror.ErrorHandler(b.putTemplateCollection)).
+	router.Handle(libraryPath+"/collections/{collection}", builderHandler(b.putTemplateCollection)).
 		Methods("PUT", "OPTIONS")
-	router.Handle(libraryPath+"/delete", weberror.ErrorHandler(b.deleteTemplates)).
+	router.Handle(libraryPath+"/delete", builderHandler(b.deleteTemplates)).
 		Methods("POST", "OPTIONS")
-	router.Handle(libraryPath+"/share", weberror.ErrorHandler(b.shareTemplates)).
+	router.Handle(libraryPath+"/share", builderHandler(b.shareTemplates)).
 		Methods("POST", "OPTIONS")
-	router.Handle(libraryPath+"/publish", weberror.ErrorHandler(b.publishTemplates)).
+	router.Handle(libraryPath+"/publish", builderHandler(b.publishTemplates)).
 		Methods("POST", "OPTIONS")
 }
 

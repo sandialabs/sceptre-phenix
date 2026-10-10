@@ -15,6 +15,7 @@ import {
   LINE_STYLES,
 } from '@/builder/model.js';
 import bundle from '@/builder/schema/builder-v1.schema.json';
+import CODES from '@/builder/schema/codes.json';
 import {
   deviceFieldWarnings,
   iconNameProblem,
@@ -513,10 +514,13 @@ describe('interface VLANs and drive images', () => {
 
     expect(warningsOf(doc)).toEqual([
       {
+        code: 'interface.vlan.unknown',
         path: 'nodes[2].device.spec.network.interfaces[0].vlan',
         message:
           'interface "eth0" of "bravo" uses VLAN "GHOST", which is not a network in this diagram',
         level: 'warning',
+        severity: 'warning',
+        field: 'spec.network.interfaces.0.vlan',
         nodeId: bravo.id,
       },
     ]);
@@ -689,10 +693,13 @@ describe('interface VLANs and drive images', () => {
     // Matched by file name, as the server lists them.
     expect(warningsOf(doc, { disks: ['ubuntu.qc2'] })).toEqual([
       {
+        code: 'device.image.unknown',
         path: 'nodes[2].device.spec.hardware.drives[2].image',
         message:
           'drive image "missing.qc2" of "bravo" is not among the server\'s disk images',
         level: 'warning',
+        severity: 'warning',
+        field: 'spec.hardware.drives.2.image',
         nodeId: bravo.id,
       },
     ]);
@@ -754,9 +761,11 @@ describe('interface VLANs and drive images', () => {
         metadata: { ...broken.metadata, id: '' },
       }).find((issue) => issue.path === 'metadata.id'),
     ).toEqual({
+      code: 'metadata.id.required',
       path: 'metadata.id',
       message: 'document ID is required',
       level: 'error',
+      severity: 'error',
     });
   });
 
@@ -931,19 +940,25 @@ describe('IP and MAC addresses that two interfaces use', () => {
 
     expect(addressIssues(doc)).toEqual([
       {
+        code: 'interface.ip.shared',
         path: 'nodes[1].device.spec.network.interfaces[0].address',
         message:
           'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used on VLAN "EXP" by interface "eth0" of "bravo"',
         level: 'warning',
+        severity: 'warning',
         blocksPublish: true,
+        field: 'spec.network.interfaces.0.address',
         nodeId: alpha.id,
       },
       {
+        code: 'interface.ip.shared',
         path: 'nodes[2].device.spec.network.interfaces[0].address',
         message:
           'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha"',
         level: 'warning',
+        severity: 'warning',
         blocksPublish: true,
+        field: 'spec.network.interfaces.0.address',
         nodeId: bravo.id,
       },
     ]);
@@ -1653,9 +1668,11 @@ describe('colors, styles, custom icons and templates', () => {
       validateIcons({ [ICON_KEY]: { data: ICON_DATA } }, 'library.icons'),
     ).toEqual([
       {
+        code: 'icon.name.invalid',
         path: 'library.icons',
         message: `icon name "${ICON_KEY.slice(0, 64)}..." must be 1 to 64 letters, digits, "_", "@", "." or "-"`,
         level: 'error',
+        severity: 'error',
       },
     ]);
     expect(validateIcons({ plc: 'x' })[0]).toMatchObject({
@@ -1745,38 +1762,46 @@ describe('colors, styles, custom icons and templates', () => {
         }),
         'library.templates[3]',
       ),
-    ).toEqual([
-      {
-        path: 'library.templates[3].name',
-        message: 'template name is required',
+    ).toEqual(
+      [
+        [
+          'template.name.required',
+          'library.templates[3].name',
+          'template name is required',
+        ],
+        [
+          'template.description.control',
+          'library.templates[3].description',
+          'template description must not contain control characters',
+        ],
+        [
+          'template.hostname.whitespace',
+          'library.templates[3].device.spec.general.hostname',
+          'template hostname "two words" must not contain whitespace',
+        ],
+        [
+          'template.icon-key.unknown',
+          'library.templates[3].device.iconKey',
+          'unknown icon key "toaster"',
+        ],
+        [
+          'template.color.invalid',
+          'library.templates[3].device.outlineColor',
+          'color "red" must be a hex color such as #2f6fbf',
+        ],
+        [
+          'template.color.invalid',
+          'library.templates[3].device.fillColor',
+          'color "#abc" must be a hex color such as #2f6fbf',
+        ],
+      ].map(([code, path, message]) => ({
+        code,
+        path,
+        message,
         level: 'error',
-      },
-      {
-        path: 'library.templates[3].description',
-        message: 'template description must not contain control characters',
-        level: 'error',
-      },
-      {
-        path: 'library.templates[3].device.spec.general.hostname',
-        message: 'template hostname "two words" must not contain whitespace',
-        level: 'error',
-      },
-      {
-        path: 'library.templates[3].device.iconKey',
-        message: 'unknown icon key "toaster"',
-        level: 'error',
-      },
-      {
-        path: 'library.templates[3].device.outlineColor',
-        message: 'color "red" must be a hex color such as #2f6fbf',
-        level: 'error',
-      },
-      {
-        path: 'library.templates[3].device.fillColor',
-        message: 'color "#abc" must be a hex color such as #2f6fbf',
-        level: 'error',
-      },
-    ]);
+        severity: 'error',
+      })),
+    );
 
     for (const broken of [undefined, null, 'PLC', [], {}]) {
       expect(
@@ -1928,58 +1953,208 @@ describe('the validation corpus shared with the server', () => {
       .join('');
   }
 
+  // The issues as sorted lines of their code, path and message.
   function issueLines(issues = []) {
-    return issues.map((issue) => `${issue.path}: ${issue.message}`).sort();
+    return issues
+      .map((issue) => `${issue.code} ${issue.path}: ${issue.message}`)
+      .sort();
   }
 
-  test.each(corpus.cases.map((entry) => [entry.name, entry]))(
-    '%s',
-    (_, entry) => {
+  // TestValidationCorpus runs the same cases by name, so each name is one
+  // case, and both sides run every case: the table of the tests below holds
+  // each case of the corpus. It is counted itself, not the tests that ran,
+  // so the count holds whichever tests -t or .only pick.
+  const table = corpus.cases.map((entry) => [entry.name, entry]);
+
+  test('names each case once', () => {
+    expect(new Set(table.map(([name]) => name)).size).toBe(corpus.cases.length);
+  });
+
+  test('runs every case', () => {
+    expect(table.map(([, entry]) => entry)).toEqual(corpus.cases);
+  });
+
+  test.each(table)('%s', (_, entry) => {
+    const doc = read(corpus.document);
+
+    (entry.set || []).forEach(({ path, value, join, delete: remove }) =>
+      setIn(doc, path, join ? joinParts(join) : value, remove),
+    );
+
+    if (!entry.error) {
+      expect(() => parseDocument(doc)).not.toThrow();
+
+      return;
+    }
+
+    let refusal;
+
+    try {
+      parseDocument(doc);
+    } catch (error) {
+      refusal = error;
+    }
+
+    // Every issue, in any order, when the case pins that there are no
+    // others.
+    if (entry.issues) {
+      expect(issueLines(refusal?.issues)).toEqual(issueLines(entry.issues));
+    }
+
+    // The code of the issue at the path, when the case pins it.
+    if (entry.code) {
+      expect(
+        refusal?.issues
+          ?.filter((issue) => issue.path === entry.error)
+          .map((issue) => issue.code),
+        refusal?.message || 'accepted',
+      ).toContain(entry.code);
+    }
+
+    // The words the server refuses it in, when the case pins them.
+    if (entry.message) {
+      expect(
+        refusal?.issues
+          ?.filter((issue) => issue.path === entry.error)
+          .map((issue) => issue.message),
+        refusal?.message || 'accepted',
+      ).toContain(entry.message);
+
+      return;
+    }
+
+    // An issue at the path, or a decoding error naming the key.
+    expect(
+      refusal?.issues?.some((issue) => issue.path === entry.error) ||
+        refusal?.message.includes(`"${entry.error}"`) ||
+        unknownKey(refusal?.message || '', entry.error),
+      refusal?.message || 'accepted',
+    ).toBe(true);
+  });
+
+  // Every issue the corpus raises has a code of the registry the server
+  // holds, and the severity it is reported at.
+  test('every issue of the corpus carries a code of the registry', () => {
+    corpus.cases.forEach((entry) => {
       const doc = read(corpus.document);
 
       (entry.set || []).forEach(({ path, value, join, delete: remove }) =>
         setIn(doc, path, join ? joinParts(join) : value, remove),
       );
 
-      if (!entry.error) {
-        expect(() => parseDocument(doc)).not.toThrow();
+      let issues;
 
-        return;
-      }
-
-      let refusal;
-
+      // A document of the wrong shape is the decoder's to refuse, before
+      // it is validated.
       try {
-        parseDocument(doc);
-      } catch (error) {
-        refusal = error;
-      }
-
-      // Every issue, in any order, when the case pins that there are no
-      // others.
-      if (entry.issues) {
-        expect(issueLines(refusal?.issues)).toEqual(issueLines(entry.issues));
-      }
-
-      // The words the server refuses it in, when the case pins them.
-      if (entry.message) {
-        expect(
-          refusal?.issues
-            ?.filter((issue) => issue.path === entry.error)
-            .map((issue) => issue.message),
-          refusal?.message || 'accepted',
-        ).toContain(entry.message);
-
+        issues = validateDocument(doc);
+      } catch {
         return;
       }
 
-      // An issue at the path, or a decoding error naming the key.
-      expect(
-        refusal?.issues?.some((issue) => issue.path === entry.error) ||
-          refusal?.message.includes(`"${entry.error}"`) ||
-          unknownKey(refusal?.message || '', entry.error),
-        refusal?.message || 'accepted',
-      ).toBe(true);
-    },
+      issues.forEach((found) => {
+        expect(CODES[found.code], `${entry.name}: ${found.path}`).toBeTruthy();
+        expect(found.severity).toBe(found.level);
+      });
+    });
+  });
+});
+
+// The codes validate.js and decode.js report are the server's (codes.go),
+// as schema/codes.json lists them: each quoted text of two or more dotted
+// words in their source is a code the registry holds, or else the path of a
+// property of the document, which an issue is reported at. No code is put
+// together in a template string, where the scan would not see it.
+describe('the codes the validator reports', () => {
+  const sources = ['validate.js', 'decode.js'].map((name) =>
+    readFileSync(new URL(`../../src/builder/${name}`, import.meta.url), 'utf8'),
   );
+  const quoted = sources.flatMap((source) =>
+    [...source.matchAll(/'([a-z]+(?:\.[a-z0-9-]+)+)'/g)].map(
+      ([, text]) => text,
+    ),
+  );
+  // The first word of each code: what the codes are about.
+  const subjects = new Set(
+    Object.keys(CODES).map((code) => code.split('.')[0]),
+  );
+
+  // The schemas a schema stands for: itself, the one it refers to, and
+  // each of its alternatives.
+  function resolved(schema) {
+    if (!schema || typeof schema !== 'object') {
+      return [];
+    }
+
+    if (schema.$ref) {
+      return resolved(bundle.$defs[schema.$ref.replace('#/$defs/', '')]);
+    }
+
+    return [
+      schema,
+      ...[
+        ...(schema.anyOf || []),
+        ...(schema.oneOf || []),
+        ...(schema.allOf || []),
+      ].flatMap(resolved),
+    ];
+  }
+
+  // Whether dotted names a property of the document schema: each word a
+  // property, a key of a map, or an index of a list in the one before.
+  function documentPath(dotted) {
+    let schemas = [bundle];
+
+    for (const word of dotted.split('.')) {
+      schemas = schemas
+        .flatMap(resolved)
+        .flatMap((schema) => [
+          ...(schema.properties?.[word] ? [schema.properties[word]] : []),
+          ...(typeof schema.additionalProperties === 'object'
+            ? [schema.additionalProperties]
+            : []),
+          ...(/^\d+$/.test(word) && schema.items ? [schema.items] : []),
+        ]);
+
+      if (schemas.length === 0) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  test('are codes of the registry, or paths of the document', () => {
+    expect(quoted.filter((text) => CODES[text]).length).toBeGreaterThan(100);
+    expect(
+      quoted.filter((text) => !CODES[text] && !documentPath(text)),
+    ).toEqual([]);
+    // A code is not taken for a path.
+    expect(documentPath('metadata.id.required')).toBe(false);
+    expect(documentPath('metadata.id')).toBe(true);
+  });
+
+  test('are not put together in template strings', () => {
+    const built = sources
+      .flatMap((source) =>
+        [
+          ...source.matchAll(/`([a-z]+(?:\.(?:[a-z0-9-]|\$\{[^}]*\})+)+)`/g),
+        ].map(([, text]) => text),
+      )
+      .filter(
+        (text) =>
+          subjects.has(text.split('.')[0]) &&
+          !documentPath(text.replace(/\$\{[^}]*\}/g, '0')),
+      );
+
+    expect(built).toEqual([]);
+  });
+
+  test('match the registry form and severities', () => {
+    Object.entries(CODES).forEach(([code, { severity, description }]) => {
+      expect(code).toMatch(/^[a-z]+(\.[a-z0-9-]+)+$/);
+      expect(['error', 'warning']).toContain(severity);
+      expect(description).toMatch(/\.$/);
+    });
+  });
 });

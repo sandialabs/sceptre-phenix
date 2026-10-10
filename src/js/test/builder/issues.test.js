@@ -620,6 +620,48 @@ describe('the lists of checks', () => {
     );
   });
 
+  test('a Builder refusal lists its issues with their codes, and Go to each', () => {
+    const { doc, alpha } = sampleDocument();
+    const message =
+      'IP address 10.0.0.5 on VLAN "EXP" is used by interface "eth0" of device "alpha" and interface "eth0" of device "bravo"';
+    // The body of the 422 the server answers a publish with when only
+    // publishing refuses the topology (builderCodedError in web/builder.go).
+    const body = {
+      cause: `validating topology projection: ${message}`,
+      message: `topology Sample cannot be published: ${message}`,
+      code: 'publish.blocked',
+      issues: [
+        {
+          code: 'interface.ip.shared',
+          severity: 'error',
+          message,
+          path: 'nodes[1].device.spec.network.interfaces[0].address',
+          nodeId: alpha.id,
+          field: 'spec.network.interfaces.0.address',
+        },
+      ],
+    };
+    const [errors, warnings] = bySeverity(
+      issueEntries(doc, responseIssues(body)),
+      doc,
+    );
+
+    expect(warnings.issues).toEqual([]);
+    expect(errors.issues).toHaveLength(1);
+    expect(errors.issues[0]).toMatchObject({
+      code: 'interface.ip.shared',
+      severity: 'error',
+      message,
+      element: 'Device alpha',
+      target: {
+        kind: 'nodes',
+        id: alpha.id,
+        field: 'spec.network.interfaces.0.address',
+      },
+    });
+    expect(errors.issues[0].text).toContain('10.0.0.5 on VLAN "EXP"');
+  });
+
   test('publishing lists a warning about what it refuses as an error', () => {
     const { doc, issues } = brokenSample();
     const { errors: before, blocking } = issueCounts(issues);

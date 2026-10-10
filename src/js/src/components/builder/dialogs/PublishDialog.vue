@@ -553,8 +553,17 @@
   const refusalGroups = computed(() =>
     bySeverity(refusalIssues.value, store.doc),
   );
+  // A result keeps its errors and warnings as issues, each with its code
+  // (errorIssues and warningIssues, see readPublishResult), beside their
+  // messages alone.
   const resultIssues = computed(() =>
-    issueEntries(store.doc, responseIssues(result.value)),
+    issueEntries(
+      store.doc,
+      responseIssues({
+        errors: result.value?.errorIssues ?? result.value?.errors,
+        warnings: result.value?.warningIssues ?? result.value?.warnings,
+      }),
+    ),
   );
   const resultGroups = computed(() =>
     bySeverity(resultIssues.value, store.doc),

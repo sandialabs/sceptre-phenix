@@ -29,11 +29,30 @@ var (
 // content, and documents carrying an unexpected schema or revision are rejected.
 // Decode does not perform semantic validation; use [Parse] for decode plus
 // validation.
+//
+// When what the decoder refuses is keys their objects do not have and values
+// of the wrong type where the editor checks the type too (the metadata, its
+// users, times and notes, the lists of nodes, networks and edges, a switch's
+// notes, a line's arrows, the layout, the templates, the custom icons, and
+// the source's included topologies and annotations), the error is a
+// *[ValidationError] with an issue for each, in the editor's words and with
+// its codes. Otherwise it is the decoder's own.
 func Decode(data []byte) (*Document, error) {
-	return DecodeReader(bytes.NewReader(data))
+	doc, err := DecodeReader(bytes.NewReader(data))
+	if err == nil {
+		return doc, nil
+	}
+
+	if issues := decodeIssues(data); issues != nil {
+		return nil, &ValidationError{Issues: issues}
+	}
+
+	return nil, err
 }
 
-// DecodeReader behaves like [Decode], reading the document from r.
+// DecodeReader behaves like [Decode], reading the document from r, except
+// that its error for a key or a value the decoder refuses is always the
+// decoder's own.
 func DecodeReader(reader io.Reader) (*Document, error) {
 	var doc Document
 

@@ -1,5 +1,5 @@
 {
-  "description": "Documents validate.go and the front end's validate.js must agree on. Each case changes document.json: every set entry puts value at path (object keys and array indexes), removes the key there when it has delete, or, in place of a value, the text its join parts make, where a part is text, or text and how many times to repeat it. A case with an error is refused by both, with an issue at that path, which says the case's message when it has one; one without is accepted by both. A case with issues is refused with those issues and no others, in any order. Read by TestValidationCorpus and validate.test.js.",
+  "description": "Documents validate.go and the front end's validate.js must agree on. Each case changes document.json: every set entry puts value at path (object keys and array indexes), removes the key there when it has delete, or, in place of a value, the text its join parts make, where a part is text, or text and how many times to repeat it. A case with an error is refused by both, with an issue at that path, which says the case's message and has the case's code (see codes.go) when it has them; one without is accepted by both. A case with issues is refused with those issues, each with its code, and no others, in any order. Every case has a name of its own, and both sides run every case. Read by TestValidationCorpus and validate.test.js.",
   "document": "document.json",
   "cases": [
     {
@@ -16,7 +16,8 @@
           "value": 0
         }
       ],
-      "error": "viewport.zoom"
+      "error": "viewport.zoom",
+      "code": "document.zoom.not-positive"
     },
     {
       "name": "zero grid size",
@@ -29,7 +30,8 @@
           "value": 0
         }
       ],
-      "error": "grid.size"
+      "error": "grid.size",
+      "code": "document.grid.invalid"
     },
     {
       "name": "zero node width",
@@ -46,7 +48,8 @@
           }
         }
       ],
-      "error": "nodes[0].size"
+      "error": "nodes[0].size",
+      "code": "node.size.invalid"
     },
     {
       "name": "document ID that is not a UUID",
@@ -59,7 +62,8 @@
           "value": "doc-1"
         }
       ],
-      "error": "metadata.id"
+      "error": "metadata.id",
+      "code": "metadata.id.invalid"
     },
     {
       "name": "node ID that is not a UUID",
@@ -73,7 +77,8 @@
           "value": "n1"
         }
       ],
-      "error": "nodes[4].id"
+      "error": "nodes[4].id",
+      "code": "node.id.invalid"
     },
     {
       "name": "network ID that is not a UUID",
@@ -87,7 +92,8 @@
           "value": "net-reserved"
         }
       ],
-      "error": "networks[1].id"
+      "error": "networks[1].id",
+      "code": "network.id.invalid"
     },
     {
       "name": "edge ID that is not a UUID",
@@ -101,7 +107,8 @@
           "value": "e1"
         }
       ],
-      "error": "edges[0].id"
+      "error": "edges[0].id",
+      "code": "edge.id.invalid"
     },
     {
       "name": "connection with a color of its own",
@@ -203,6 +210,7 @@
         }
       ],
       "error": "scenarios",
+      "code": "scenario.list.too-many",
       "message": "at most 20 scenarios are allowed, not 21"
     },
     {
@@ -231,6 +239,7 @@
         }
       ],
       "error": "scenarios[1]",
+      "code": "scenario.name.required",
       "message": "scenario name is required"
     },
     {
@@ -267,6 +276,7 @@
         }
       ],
       "error": "scenarios[0]",
+      "code": "scenario.name.too-long",
       "message": "scenario name must be at most 256 bytes"
     },
     {
@@ -281,6 +291,7 @@
         }
       ],
       "error": "scenarios[0]",
+      "code": "scenario.name.invalid",
       "message": "scenario name \"two words\" may use only letters, numbers, underscores, at signs, periods and hyphens"
     },
     {
@@ -295,6 +306,7 @@
         }
       ],
       "error": "scenarios[0]",
+      "code": "scenario.name.invalid",
       "message": "scenario name \"Scenario/ntp\" may use only letters, numbers, underscores, at signs, periods and hyphens"
     },
     {
@@ -309,6 +321,7 @@
         }
       ],
       "error": "scenarios[0]",
+      "code": "scenario.name.invalid",
       "message": "scenario name \"ntpé\" may use only letters, numbers, underscores, at signs, periods and hyphens"
     },
     {
@@ -329,6 +342,7 @@
         }
       ],
       "error": "scenarios[0]",
+      "code": "scenario.name.invalid",
       "message": "scenario name \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...\" may use only letters, numbers, underscores, at signs, periods and hyphens"
     },
     {
@@ -346,6 +360,7 @@
         }
       ],
       "error": "scenarios[2]",
+      "code": "scenario.name.duplicate",
       "message": "duplicate scenario \"NTP\" (also scenarios[0])"
     },
     {
@@ -361,7 +376,8 @@
           }
         }
       ],
-      "error": "scenario"
+      "error": "scenario",
+      "code": "document.field.unknown"
     },
     {
       "name": "interface handle ID that is not a UUID",
@@ -378,7 +394,8 @@
           "value": "h-eth1"
         }
       ],
-      "error": "nodes[1].device.interfaces[1].id"
+      "error": "nodes[1].device.interfaces[1].id",
+      "code": "interface.id.invalid"
     },
     {
       "name": "uppercase UUIDs",
@@ -403,7 +420,8 @@
           "value": "sha256:abc"
         }
       ],
-      "error": "source.digest"
+      "error": "source.digest",
+      "code": "source.digest.malformed"
     },
     {
       "name": "null source digest, which Go decodes as none",
@@ -430,7 +448,8 @@
           ]
         }
       ],
-      "error": "source.includeTopologies[0]"
+      "error": "source.includeTopologies[0]",
+      "code": "include.name.whitespace"
     },
     {
       "name": "included topologies that are not a list",
@@ -443,7 +462,8 @@
           "value": "shared"
         }
       ],
-      "error": "source.includeTopologies"
+      "error": "source.includeTopologies",
+      "code": "include.list.not-list"
     },
     {
       "name": "source annotations, which a document only shows",
@@ -473,7 +493,8 @@
           }
         }
       ],
-      "error": "source.annotations"
+      "error": "source.annotations",
+      "code": "source.annotation-key.blank"
     },
     {
       "name": "annotation key with a newline",
@@ -488,7 +509,8 @@
           }
         }
       ],
-      "error": "source.annotations"
+      "error": "source.annotations",
+      "code": "source.annotation-key.control"
     },
     {
       "name": "annotations that are not an object",
@@ -503,7 +525,8 @@
           ]
         }
       ],
-      "error": "source.annotations"
+      "error": "source.annotations",
+      "code": "source.annotations.not-object"
     },
     {
       "name": "annotation that is not a string",
@@ -518,7 +541,8 @@
           }
         }
       ],
-      "error": "source.annotations.count"
+      "error": "source.annotations.count",
+      "code": "source.annotation.not-text"
     },
     {
       "name": "101 annotations",
@@ -633,7 +657,8 @@
           }
         }
       ],
-      "error": "source.annotations"
+      "error": "source.annotations",
+      "code": "source.annotations.too-many"
     },
     {
       "name": "network name with a tab",
@@ -647,7 +672,8 @@
           "value": "RES\tERVED"
         }
       ],
-      "error": "networks[1].name"
+      "error": "networks[1].name",
+      "code": "network.name.whitespace"
     },
     {
       "name": "network name with a carriage return, which validate.go does not count as whitespace",
@@ -687,7 +713,8 @@
           "value": "EXP"
         }
       ],
-      "error": "networks[1].name"
+      "error": "networks[1].name",
+      "code": "network.name.duplicate"
     },
     {
       "name": "VLAN alias 4094, the largest",
@@ -714,7 +741,8 @@
           "value": 4095
         }
       ],
-      "error": "networks[0].alias"
+      "error": "networks[0].alias",
+      "code": "network.alias.out-of-range"
     },
     {
       "name": "null edges",
@@ -726,7 +754,8 @@
           "value": null
         }
       ],
-      "error": "edges"
+      "error": "edges",
+      "code": "document.list.missing"
     },
     {
       "name": "null nodes",
@@ -738,7 +767,8 @@
           "value": null
         }
       ],
-      "error": "nodes"
+      "error": "nodes",
+      "code": "document.list.missing"
     },
     {
       "name": "document name with a tab, which a draft title cannot hold",
@@ -751,7 +781,8 @@
           "value": "my\ttopology"
         }
       ],
-      "error": "metadata.name"
+      "error": "metadata.name",
+      "code": "metadata.name.control"
     },
     {
       "name": "document name of 514 bytes in 257 characters",
@@ -764,7 +795,8 @@
           "value": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
         }
       ],
-      "error": "metadata.name"
+      "error": "metadata.name",
+      "code": "metadata.name.too-long"
     },
     {
       "name": "the draft's own layout",
@@ -798,7 +830,8 @@
           "value": 5
         }
       ],
-      "error": "layout"
+      "error": "layout",
+      "code": "document.layout.not-text"
     },
     {
       "name": "connection with a route",
@@ -860,7 +893,8 @@
           ]
         }
       ],
-      "error": "edges[0].route"
+      "error": "edges[0].route",
+      "code": "edge.route.too-few"
     },
     {
       "name": "createdBy, createdAt, updatedBy and updatedAt",
@@ -944,7 +978,8 @@
           "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         }
       ],
-      "error": "metadata.createdBy"
+      "error": "metadata.createdBy",
+      "code": "metadata.user.too-long"
     },
     {
       "name": "createdBy of 86 characters in 258 bytes",
@@ -957,7 +992,8 @@
           "value": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€"
         }
       ],
-      "error": "metadata.createdBy"
+      "error": "metadata.createdBy",
+      "code": "metadata.user.too-long"
     },
     {
       "name": "createdBy with a tab",
@@ -970,7 +1006,8 @@
           "value": "alice\tsmith"
         }
       ],
-      "error": "metadata.createdBy"
+      "error": "metadata.createdBy",
+      "code": "metadata.user.control"
     },
     {
       "name": "createdBy that is a number",
@@ -983,7 +1020,8 @@
           "value": 7
         }
       ],
-      "error": "metadata.createdBy"
+      "error": "metadata.createdBy",
+      "code": "metadata.user.not-text"
     },
     {
       "name": "null createdBy, which Go decodes as none",
@@ -1020,7 +1058,8 @@
           "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         }
       ],
-      "error": "metadata.updatedBy"
+      "error": "metadata.updatedBy",
+      "code": "metadata.user.too-long"
     },
     {
       "name": "updatedBy with a control character",
@@ -1033,7 +1072,8 @@
           "value": "bob\u0007"
         }
       ],
-      "error": "metadata.updatedBy"
+      "error": "metadata.updatedBy",
+      "code": "metadata.user.control"
     },
     {
       "name": "updatedBy with a delete character",
@@ -1046,7 +1086,8 @@
           "value": "bob"
         }
       ],
-      "error": "metadata.updatedBy"
+      "error": "metadata.updatedBy",
+      "code": "metadata.user.control"
     },
     {
       "name": "updatedBy that is an object",
@@ -1061,7 +1102,8 @@
           }
         }
       ],
-      "error": "metadata.updatedBy"
+      "error": "metadata.updatedBy",
+      "code": "metadata.user.not-text"
     },
     {
       "name": "empty createdAt, which is none",
@@ -1086,7 +1128,8 @@
           "value": "2026-10-01T15:04:05+00:00"
         }
       ],
-      "error": "metadata.createdAt"
+      "error": "metadata.createdAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "createdAt with a fraction of a second",
@@ -1099,7 +1142,8 @@
           "value": "2026-10-01T15:04:05.000Z"
         }
       ],
-      "error": "metadata.createdAt"
+      "error": "metadata.createdAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "createdAt with a space for the T",
@@ -1112,7 +1156,8 @@
           "value": "2026-10-01 15:04:05Z"
         }
       ],
-      "error": "metadata.createdAt"
+      "error": "metadata.createdAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "createdAt with a lower case z",
@@ -1125,7 +1170,8 @@
           "value": "2026-10-01T15:04:05z"
         }
       ],
-      "error": "metadata.createdAt"
+      "error": "metadata.createdAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "createdAt without a zone",
@@ -1138,7 +1184,8 @@
           "value": "2026-10-01T15:04:05"
         }
       ],
-      "error": "metadata.createdAt"
+      "error": "metadata.createdAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "createdAt on February 30",
@@ -1151,7 +1198,8 @@
           "value": "2026-02-30T00:00:00Z"
         }
       ],
-      "error": "metadata.createdAt"
+      "error": "metadata.createdAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "createdAt on February 29 of a year that is not a leap year",
@@ -1164,7 +1212,8 @@
           "value": "2026-02-29T00:00:00Z"
         }
       ],
-      "error": "metadata.createdAt"
+      "error": "metadata.createdAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "createdAt at hour 24",
@@ -1177,7 +1226,8 @@
           "value": "2026-10-01T24:00:00Z"
         }
       ],
-      "error": "metadata.createdAt"
+      "error": "metadata.createdAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "createdAt that is a date only",
@@ -1190,7 +1240,8 @@
           "value": "2026-10-01"
         }
       ],
-      "error": "metadata.createdAt"
+      "error": "metadata.createdAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "createdAt that is a number",
@@ -1203,7 +1254,8 @@
           "value": 1790866800
         }
       ],
-      "error": "metadata.createdAt"
+      "error": "metadata.createdAt",
+      "code": "metadata.time.not-text"
     },
     {
       "name": "updatedAt with an offset",
@@ -1216,7 +1268,8 @@
           "value": "2026-10-01T09:04:05-06:00"
         }
       ],
-      "error": "metadata.updatedAt"
+      "error": "metadata.updatedAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "updatedAt with a leap second",
@@ -1229,7 +1282,8 @@
           "value": "2026-12-31T23:59:60Z"
         }
       ],
-      "error": "metadata.updatedAt"
+      "error": "metadata.updatedAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "updatedAt in month 13",
@@ -1242,7 +1296,8 @@
           "value": "2026-13-01T00:00:00Z"
         }
       ],
-      "error": "metadata.updatedAt"
+      "error": "metadata.updatedAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "updatedAt with surrounding space",
@@ -1255,7 +1310,8 @@
           "value": " 2026-10-01T15:04:05Z"
         }
       ],
-      "error": "metadata.updatedAt"
+      "error": "metadata.updatedAt",
+      "code": "metadata.time.invalid"
     },
     {
       "name": "updatedAt that is true",
@@ -1268,7 +1324,8 @@
           "value": true
         }
       ],
-      "error": "metadata.updatedAt"
+      "error": "metadata.updatedAt",
+      "code": "metadata.time.not-text"
     },
     {
       "name": "custom icon that a device, a group and a template use",
@@ -1422,6 +1479,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.name.invalid",
       "message": "icon name \"ñandú\" must be 1 to 64 letters, digits, \"_\", \"@\", \".\" or \"-\""
     },
     {
@@ -1439,6 +1497,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.name.invalid",
       "message": "icon name \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn...\" must be 1 to 64 letters, digits, \"_\", \"@\", \".\" or \"-\""
     },
     {
@@ -1456,6 +1515,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.name.invalid",
       "message": "icon name \"plc\\ticon\" must be 1 to 64 letters, digits, \"_\", \"@\", \".\" or \"-\""
     },
     {
@@ -1506,7 +1566,8 @@
           ]
         }
       ],
-      "error": "icons"
+      "error": "icons",
+      "code": "icon.list.not-object"
     },
     {
       "name": "custom icon with a palette and its transparency",
@@ -1925,6 +1986,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.list.too-many",
       "message": "at most 50 custom icons are allowed, not 51"
     },
     {
@@ -1987,6 +2049,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.data.invalid",
       "message": "icon \"icon-bb9cdbd7\" data must be base64 of at most 40960 bytes"
     },
     {
@@ -2017,6 +2080,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.data.invalid",
       "message": "icon \"plc\" data must be base64 of at most 40960 bytes"
     },
     {
@@ -2034,6 +2098,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.name.invalid",
       "message": "icon name \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" must be 1 to 64 letters, digits, \"_\", \"@\", \".\" or \"-\""
     },
     {
@@ -2051,6 +2116,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.name.invalid",
       "message": "icon name \"plc/icon\" must be 1 to 64 letters, digits, \"_\", \"@\", \".\" or \"-\""
     },
     {
@@ -2068,6 +2134,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.name.invalid",
       "message": "icon name \"..\" must not be \".\" or \"..\""
     },
     {
@@ -2085,6 +2152,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.name.invalid",
       "message": "icon name \".\" must not be \".\" or \"..\""
     },
     {
@@ -2100,6 +2168,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.data.invalid",
       "message": "icon \"plc\" data must be base64 of at most 40960 bytes"
     },
     {
@@ -2117,6 +2186,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.data.invalid",
       "message": "icon \"plc\" data must be base64 of at most 40960 bytes"
     },
     {
@@ -2134,6 +2204,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.data.invalid",
       "message": "icon \"plc\" data must be base64 of at most 40960 bytes"
     },
     {
@@ -2151,6 +2222,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.data.invalid",
       "message": "icon \"plc\" data must be base64 of at most 40960 bytes"
     },
     {
@@ -2168,6 +2240,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.data.invalid",
       "message": "icon \"plc\" data must be base64 of at most 40960 bytes"
     },
     {
@@ -2185,6 +2258,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.data.invalid",
       "message": "icon \"plc\" data must be base64 of at most 40960 bytes"
     },
     {
@@ -2202,6 +2276,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.data.invalid",
       "message": "icon \"plc\" data must be base64 of at most 40960 bytes"
     },
     {
@@ -2219,6 +2294,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.data.invalid",
       "message": "icon \"plc\" data must be base64 of at most 40960 bytes"
     },
     {
@@ -2236,6 +2312,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.data.invalid",
       "message": "icon \"plc\" data must be base64 of at most 40960 bytes"
     },
     {
@@ -2253,6 +2330,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-bc703a1f\" is not an accepted PNG: the image is not a PNG"
     },
     {
@@ -2270,6 +2348,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-1f19970f\" is not an accepted PNG: the image is not a PNG"
     },
     {
@@ -2287,6 +2366,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-d20f6ffd\" is not an accepted PNG: the image is not a PNG"
     },
     {
@@ -2304,6 +2384,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-4c4b6a3b\" is not an accepted PNG: the PNG is cut short"
     },
     {
@@ -2321,6 +2402,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-95be9a5e\" is not an accepted PNG: icon is 97 x 1 pixels; the limit is 96 x 96"
     },
     {
@@ -2338,6 +2420,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-833c1618\" is not an accepted PNG: icon is 1 x 97 pixels; the limit is 96 x 96"
     },
     {
@@ -2355,6 +2438,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-34c492d7\" is not an accepted PNG: icon is 0 x 1 pixels; the limit is 96 x 96"
     },
     {
@@ -2372,6 +2456,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-2d9ff156\" is not an accepted PNG: icon is 50000 x 50000 pixels; the limit is 96 x 96"
     },
     {
@@ -2389,6 +2474,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-70be8a0a\" is not an accepted PNG: the PNG holds a \"tEXt\" chunk; only IHDR, PLTE, tRNS, IDAT and IEND are allowed"
     },
     {
@@ -2406,6 +2492,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-ceed3215\" is not an accepted PNG: the PNG holds a \"acTL\" chunk; only IHDR, PLTE, tRNS, IDAT and IEND are allowed"
     },
     {
@@ -2423,6 +2510,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-fae1c21a\" is not an accepted PNG: the PNG holds a \"idat\" chunk; only IHDR, PLTE, tRNS, IDAT and IEND are allowed"
     },
     {
@@ -2440,6 +2528,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-a613861b\" is not an accepted PNG: the PNG holds a \"PLTE\" chunk, which its color type does not use"
     },
     {
@@ -2457,6 +2546,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-290ab772\" is not an accepted PNG: the PNG holds a \"PLTE\" chunk, which its color type does not use"
     },
     {
@@ -2474,6 +2564,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-eda344e9\" is not an accepted PNG: the PNG holds a \"PLTE\" chunk, which its color type does not use"
     },
     {
@@ -2491,6 +2582,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-8856b04c\" is not an accepted PNG: the PNG holds a \"tRNS\" chunk, which its color type does not use"
     },
     {
@@ -2508,6 +2600,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-99cdc9a5\" is not an accepted PNG: the PNG holds a \"tRNS\" chunk, which its color type does not use"
     },
     {
@@ -2525,6 +2618,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-e6ef8c8d\" is not an accepted PNG: the PNG has data after its end"
     },
     {
@@ -2542,6 +2636,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-87d23144\" is not an accepted PNG: the PNG has data after its end"
     },
     {
@@ -2559,6 +2654,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-4d7b9acd\" is not an accepted PNG: the PNG is cut short"
     },
     {
@@ -2576,6 +2672,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-71770938\" is not an accepted PNG: the PNG is cut short"
     },
     {
@@ -2593,6 +2690,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-529be6db\" is not an accepted PNG: the PNG does not end as a PNG does"
     },
     {
@@ -2610,6 +2708,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-1132cb64\" is not an accepted PNG: the PNG does not start with its header"
     },
     {
@@ -2627,6 +2726,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-55e757b1\" is not an accepted PNG: the PNG does not start with its header"
     },
     {
@@ -2644,6 +2744,7 @@
         }
       ],
       "error": "icons",
+      "code": "icon.png.invalid",
       "message": "icon \"icon-3469e296\" is not an accepted PNG: the PNG has a second header"
     },
     {
@@ -2768,6 +2869,7 @@
         }
       ],
       "error": "nodes[1].device.icon",
+      "code": "device.icon.invalid",
       "message": "icon name \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" must be 1 to 64 letters, digits, \"_\", \"@\", \".\" or \"-\""
     },
     {
@@ -2784,6 +2886,7 @@
         }
       ],
       "error": "nodes[0].group.icon",
+      "code": "group.icon.invalid",
       "message": "icon name \"..\" must not be \".\" or \"..\""
     },
     {
@@ -2832,6 +2935,7 @@
         }
       ],
       "error": "templates[0].device.icon",
+      "code": "template.icon.invalid",
       "message": "icon name \"plc icon\" must be 1 to 64 letters, digits, \"_\", \"@\", \".\" or \"-\""
     },
     {
@@ -2962,6 +3066,7 @@
         }
       ],
       "error": "nodes[1].device.fillColor",
+      "code": "device.color.invalid",
       "message": "color \"red\" must be a hex color such as #2f6fbf"
     },
     {
@@ -2978,6 +3083,7 @@
         }
       ],
       "error": "nodes[1].device.outlineColor",
+      "code": "device.color.invalid",
       "message": "color \"#abc\" must be a hex color such as #2f6fbf"
     },
     {
@@ -2994,6 +3100,7 @@
         }
       ],
       "error": "nodes[2].device.outlineColor",
+      "code": "device.color.invalid",
       "message": "color \"2f6fbf\" must be a hex color such as #2f6fbf"
     },
     {
@@ -3010,6 +3117,7 @@
         }
       ],
       "error": "nodes[3].switch.fillColor",
+      "code": "switch.color.invalid",
       "message": "color \"#2f6fbf80\" must be a hex color such as #2f6fbf"
     },
     {
@@ -3026,6 +3134,7 @@
         }
       ],
       "error": "nodes[3].switch.outlineColor",
+      "code": "switch.color.invalid",
       "message": "color \"#2f6fbf;background:url(//example.com)\" must be a hex color such as #2f6fbf"
     },
     {
@@ -3042,6 +3151,7 @@
         }
       ],
       "error": "nodes[3].switch.outlineColor",
+      "code": "switch.color.invalid",
       "message": "color \"#2f6fbf\\n\" must be a hex color such as #2f6fbf"
     },
     {
@@ -3217,6 +3327,7 @@
         }
       ],
       "error": "nodes[0].group.borderStyle",
+      "code": "group.border-style.unknown",
       "message": "unknown border style \"wavy\" (expected one of solid, dashed, dotted, double)"
     },
     {
@@ -3233,6 +3344,7 @@
         }
       ],
       "error": "nodes[0].group.borderStyle",
+      "code": "group.border-style.unknown",
       "message": "unknown border style \"dash-dot\" (expected one of solid, dashed, dotted, double)"
     },
     {
@@ -3248,7 +3360,8 @@
           "value": "rack"
         }
       ],
-      "error": "nodes[0].group.iconKey"
+      "error": "nodes[0].group.iconKey",
+      "code": "group.icon-key.unknown"
     },
     {
       "name": "group icon key that is a URL",
@@ -3263,7 +3376,8 @@
           "value": "https://example.com/icon.svg"
         }
       ],
-      "error": "nodes[0].group.iconKey"
+      "error": "nodes[0].group.iconKey",
+      "code": "group.icon-key.unknown"
     },
     {
       "name": "a rectangle in a group, with a label, colors and a border style",
@@ -3340,6 +3454,7 @@
         }
       ],
       "error": "nodes[4].shape.shape",
+      "code": "drawing.shape.unknown",
       "message": "unknown shape \"\" (expected one of rectangle, circle)"
     },
     {
@@ -3364,6 +3479,7 @@
         }
       ],
       "error": "nodes[4].shape.shape",
+      "code": "drawing.shape.unknown",
       "message": "unknown shape \"triangle\" (expected one of rectangle, circle)"
     },
     {
@@ -3391,16 +3507,20 @@
         }
       ],
       "error": "nodes[4].shape.borderStyle",
+      "code": "drawing.border-style.unknown",
       "issues": [
         {
+          "code": "drawing.color.invalid",
           "path": "nodes[4].shape.fillColor",
           "message": "color \"red\" must be a hex color such as #2f6fbf"
         },
         {
+          "code": "drawing.color.invalid",
           "path": "nodes[4].shape.outlineColor",
           "message": "color \"#abc\" must be a hex color such as #2f6fbf"
         },
         {
+          "code": "drawing.border-style.unknown",
           "path": "nodes[4].shape.borderStyle",
           "message": "unknown border style \"dash-dot\" (expected one of solid, dashed, dotted, double)"
         }
@@ -3428,7 +3548,8 @@
           }
         }
       ],
-      "error": "nodes[4].shape.text"
+      "error": "nodes[4].shape.text",
+      "code": "document.field.unknown"
     },
     {
       "name": "an icon of a built-in icon, with a label",
@@ -3513,6 +3634,7 @@
         }
       ],
       "error": "nodes[4].icon",
+      "code": "drawing.icon.ambiguous",
       "message": "an icon node must name exactly one of a built-in icon and a custom icon"
     },
     {
@@ -3548,8 +3670,10 @@
         }
       ],
       "error": "nodes[4].icon",
+      "code": "drawing.icon.ambiguous",
       "issues": [
         {
+          "code": "drawing.icon.ambiguous",
           "path": "nodes[4].icon",
           "message": "an icon node must name exactly one of a built-in icon and a custom icon"
         }
@@ -3576,7 +3700,8 @@
           }
         }
       ],
-      "error": "nodes[4].icon.iconKey"
+      "error": "nodes[4].icon.iconKey",
+      "code": "drawing.icon-key.unknown"
     },
     {
       "name": "an icon of a custom icon the document does not carry, which a server's icon library resolves",
@@ -3622,6 +3747,7 @@
         }
       ],
       "error": "nodes[4].icon.icon",
+      "code": "drawing.icon.invalid",
       "message": "icon name \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" must be 1 to 64 letters, digits, \"_\", \"@\", \".\" or \"-\""
     },
     {
@@ -3781,6 +3907,7 @@
         }
       ],
       "error": "nodes[4].line.points",
+      "code": "drawing.points.too-many",
       "message": "a line must have at most 64 points"
     },
     {
@@ -3810,6 +3937,7 @@
         }
       ],
       "error": "nodes[4].line.points",
+      "code": "drawing.points.too-few",
       "message": "a line must have at least 2 points"
     },
     {
@@ -3834,6 +3962,7 @@
         }
       ],
       "error": "nodes[4].line.points",
+      "code": "drawing.points.too-few",
       "message": "a line must have at least 2 points"
     },
     {
@@ -3869,12 +3998,15 @@
         }
       ],
       "error": "nodes[4].line.color",
+      "code": "drawing.color.invalid",
       "issues": [
         {
+          "code": "drawing.color.invalid",
           "path": "nodes[4].line.color",
           "message": "color \"blue\" must be a hex color such as #2f6fbf"
         },
         {
+          "code": "drawing.line-style.unknown",
           "path": "nodes[4].line.lineStyle",
           "message": "unknown line style \"double\" (expected one of solid, dashed, dotted, dash-dot)"
         }
@@ -3910,6 +4042,7 @@
         }
       ],
       "error": "edges[0]",
+      "code": "edge.endpoints.invalid",
       "message": "an edge must connect one device interface to one switch"
     },
     {
@@ -3951,6 +4084,7 @@
         }
       ],
       "error": "nodes[2].parentId",
+      "code": "node.parent.not-group",
       "message": "parent node \"874e945f-4f75-57c7-9533-0d8ffd6ec32b\" is not a group"
     },
     {
@@ -4071,6 +4205,7 @@
         }
       ],
       "error": "networks[1].lineStyle",
+      "code": "network.line-style.unknown",
       "message": "unknown line style \"wavy\" (expected one of solid, dashed, dotted, dash-dot)"
     },
     {
@@ -4086,6 +4221,7 @@
         }
       ],
       "error": "networks[0].lineStyle",
+      "code": "network.line-style.unknown",
       "message": "unknown line style \"double\" (expected one of solid, dashed, dotted, dash-dot)"
     },
     {
@@ -4101,6 +4237,7 @@
         }
       ],
       "error": "edges[0].lineStyle",
+      "code": "edge.line-style.unknown",
       "message": "unknown line style \"DASHED\" (expected one of solid, dashed, dotted, dash-dot)"
     },
     {
@@ -4116,6 +4253,7 @@
         }
       ],
       "error": "edges[1].lineStyle",
+      "code": "edge.line-style.unknown",
       "message": "unknown line style \"4 2\" (expected one of solid, dashed, dotted, dash-dot)"
     },
     {
@@ -4181,6 +4319,7 @@
         }
       ],
       "error": "source.unresolvedIncludes[1]",
+      "code": "include.name.whitespace",
       "message": "included topology name \"shared services\" must not contain whitespace"
     },
     {
@@ -4197,6 +4336,7 @@
         }
       ],
       "error": "source.unresolvedIncludes[0]",
+      "code": "include.name.required",
       "message": "included topology name is required"
     },
     {
@@ -4210,7 +4350,8 @@
           "value": "plant"
         }
       ],
-      "error": "source.unresolvedIncludes"
+      "error": "source.unresolvedIncludes",
+      "code": "include.list.not-list"
     },
     {
       "name": "template with every field but a custom icon",
@@ -5632,6 +5773,7 @@
         }
       ],
       "error": "templates",
+      "code": "template.list.too-many",
       "message": "at most 50 templates are allowed, not 51"
     },
     {
@@ -5681,7 +5823,8 @@
           }
         }
       ],
-      "error": "templates"
+      "error": "templates",
+      "code": "template.list.not-list"
     },
     {
       "name": "template ID that is not a UUID",
@@ -5731,6 +5874,7 @@
         }
       ],
       "error": "templates[0].id",
+      "code": "template.id.invalid",
       "message": "template ID \"server\" is not a valid UUID"
     },
     {
@@ -5780,6 +5924,7 @@
         }
       ],
       "error": "templates[0].id",
+      "code": "template.id.required",
       "message": "template ID is required"
     },
     {
@@ -5866,6 +6011,7 @@
         }
       ],
       "error": "templates[1].id",
+      "code": "template.id.duplicate",
       "message": "duplicate template ID \"0D5F8F4E-6A57-4B53-9D0A-5C0F4E3B2A11\" (also templates[0])"
     },
     {
@@ -5915,6 +6061,7 @@
         }
       ],
       "error": "templates[0].name",
+      "code": "template.name.required",
       "message": "template name is required"
     },
     {
@@ -5965,6 +6112,7 @@
         }
       ],
       "error": "templates[0].name",
+      "code": "template.name.required",
       "message": "template name is required"
     },
     {
@@ -6077,6 +6225,7 @@
         }
       ],
       "error": "templates[0].name",
+      "code": "template.name.too-long",
       "message": "template name must be at most 128 bytes"
     },
     {
@@ -6127,6 +6276,7 @@
         }
       ],
       "error": "templates[0].name",
+      "code": "template.name.control",
       "message": "template name must not contain control characters"
     },
     {
@@ -6251,6 +6401,7 @@
         }
       ],
       "error": "templates[0].description",
+      "code": "template.description.too-long",
       "message": "template description must be at most 1024 bytes"
     },
     {
@@ -6301,6 +6452,7 @@
         }
       ],
       "error": "templates[0].description",
+      "code": "template.description.control",
       "message": "template description must not contain control characters"
     },
     {
@@ -6319,6 +6471,7 @@
         }
       ],
       "error": "templates[0].device.spec",
+      "code": "template.spec.required",
       "message": "template device spec is required"
     },
     {
@@ -6338,6 +6491,7 @@
         }
       ],
       "error": "templates[0].device.spec",
+      "code": "template.spec.required",
       "message": "template device spec is required"
     },
     {
@@ -6360,6 +6514,7 @@
         }
       ],
       "error": "templates[0].device.spec",
+      "code": "template.spec.required",
       "message": "template device spec is required"
     },
     {
@@ -6382,6 +6537,7 @@
         }
       ],
       "error": "templates[0].device.spec",
+      "code": "template.spec.required",
       "message": "template device spec is required"
     },
     {
@@ -6406,6 +6562,7 @@
         }
       ],
       "error": "templates[0].device.spec.general.hostname",
+      "code": "template.hostname.required",
       "message": "template hostname is required"
     },
     {
@@ -6432,6 +6589,7 @@
         }
       ],
       "error": "templates[0].device.spec.general.hostname",
+      "code": "template.hostname.required",
       "message": "template hostname is required"
     },
     {
@@ -6458,6 +6616,7 @@
         }
       ],
       "error": "templates[0].device.spec.general.hostname",
+      "code": "template.hostname.required",
       "message": "template hostname is required"
     },
     {
@@ -6482,6 +6641,7 @@
         }
       ],
       "error": "templates[0].device.spec.general.hostname",
+      "code": "template.hostname.required",
       "message": "template hostname is required"
     },
     {
@@ -6508,6 +6668,7 @@
         }
       ],
       "error": "templates[0].device.spec.general.hostname",
+      "code": "template.hostname.whitespace",
       "message": "template hostname \"plc one\" must not contain whitespace"
     },
     {
@@ -6555,7 +6716,8 @@
           ]
         }
       ],
-      "error": "templates[0].device.iconKey"
+      "error": "templates[0].device.iconKey",
+      "code": "template.icon-key.unknown"
     },
     {
       "name": "template outline color that is a name",
@@ -6603,6 +6765,7 @@
         }
       ],
       "error": "templates[0].device.outlineColor",
+      "code": "template.color.invalid",
       "message": "color \"red\" must be a hex color such as #2f6fbf"
     },
     {
@@ -6687,6 +6850,7 @@
         }
       ],
       "error": "templates[1].device.fillColor",
+      "code": "template.color.invalid",
       "message": "color \"#abc\" must be a hex color such as #2f6fbf"
     },
     {
@@ -6779,6 +6943,7 @@
         }
       ],
       "error": "templates[0].device",
+      "code": "template.device.too-large",
       "message": "template device must take at most 16384 bytes as JSON, not 16385"
     },
     {
@@ -6804,6 +6969,7 @@
         }
       ],
       "error": "templates[0].name",
+      "code": "template.name.required",
       "message": "template name is required"
     },
     {
@@ -6852,6 +7018,7 @@
         }
       ],
       "error": "templates[0].device.spec.general.hostname",
+      "code": "template.hostname.required",
       "message": "template hostname is required"
     },
     {
@@ -6900,9 +7067,11 @@
         }
       ],
       "error": "templates[0].id",
+      "code": "template.id.required",
       "message": "template ID is required",
       "issues": [
         {
+          "code": "template.id.required",
           "path": "templates[0].id",
           "message": "template ID is required"
         }
@@ -6921,6 +7090,7 @@
         }
       ],
       "error": "networks[1].name",
+      "code": "network.name.required",
       "message": "network name is required"
     },
     {
@@ -6950,6 +7120,7 @@
         }
       ],
       "error": "source.annotations",
+      "code": "source.annotation-key.blank",
       "message": "annotation key \"\\u0085\" must not be blank"
     },
     {
@@ -6986,13 +7157,16 @@
         }
       ],
       "error": "templates[1].id",
+      "code": "template.id.required",
       "message": "template ID is required",
       "issues": [
         {
+          "code": "template.id.required",
           "path": "templates[0].id",
           "message": "template ID is required"
         },
         {
+          "code": "template.id.required",
           "path": "templates[1].id",
           "message": "template ID is required"
         }
@@ -7019,13 +7193,16 @@
         }
       ],
       "error": "edges[1].id",
+      "code": "edge.id.required",
       "message": "edge ID is required",
       "issues": [
         {
+          "code": "edge.id.required",
           "path": "edges[0].id",
           "message": "edge ID is required"
         },
         {
+          "code": "edge.id.required",
           "path": "edges[1].id",
           "message": "edge ID is required"
         }
@@ -7052,25 +7229,31 @@
         }
       ],
       "error": "networks[1].id",
+      "code": "network.id.required",
       "message": "network ID is required",
       "issues": [
         {
+          "code": "edge.network.unknown",
           "path": "edges[0].networkId",
           "message": "unknown network \"a8af611d-c68f-54e0-94a5-9176cea64e44\""
         },
         {
+          "code": "edge.network.unknown",
           "path": "edges[1].networkId",
           "message": "unknown network \"a8af611d-c68f-54e0-94a5-9176cea64e44\""
         },
         {
+          "code": "network.id.required",
           "path": "networks[0].id",
           "message": "network ID is required"
         },
         {
+          "code": "network.id.required",
           "path": "networks[1].id",
           "message": "network ID is required"
         },
         {
+          "code": "switch.network.unknown",
           "path": "nodes[3].switch.networkId",
           "message": "unknown network \"a8af611d-c68f-54e0-94a5-9176cea64e44\""
         }
@@ -7097,25 +7280,31 @@
         }
       ],
       "error": "nodes[1].id",
+      "code": "node.id.required",
       "message": "node ID is required",
       "issues": [
         {
+          "code": "edge.source.unknown",
           "path": "edges[0].sourceNodeId",
           "message": "unknown node \"4113dfc0-f4be-57f9-8115-6cecd1f1aea3\""
         },
         {
+          "code": "node.id.required",
           "path": "nodes[0].id",
           "message": "node ID is required"
         },
         {
+          "code": "node.id.required",
           "path": "nodes[1].id",
           "message": "node ID is required"
         },
         {
+          "code": "node.parent.unknown",
           "path": "nodes[1].parentId",
           "message": "unknown parent node \"c60601dd-6d6b-56c7-97e5-149caf5ed993\""
         },
         {
+          "code": "node.parent.unknown",
           "path": "nodes[2].parentId",
           "message": "unknown parent node \"c60601dd-6d6b-56c7-97e5-149caf5ed993\""
         }
@@ -7148,17 +7337,21 @@
         }
       ],
       "error": "nodes[1].device.interfaces[1].id",
+      "code": "interface.id.required",
       "message": "interface handle ID is required",
       "issues": [
         {
+          "code": "edge.handle.unknown",
           "path": "edges[0]",
           "message": "unknown interface handle \"7f010dcd-e23d-514c-9206-3609df999026\" on device node \"4113dfc0-f4be-57f9-8115-6cecd1f1aea3\""
         },
         {
+          "code": "interface.id.required",
           "path": "nodes[1].device.interfaces[0].id",
           "message": "interface handle ID is required"
         },
         {
+          "code": "interface.id.required",
           "path": "nodes[1].device.interfaces[1].id",
           "message": "interface handle ID is required"
         }
@@ -7187,6 +7380,7 @@
         }
       ],
       "error": "templates[0].id",
+      "code": "template.id.invalid",
       "message": "template ID \"a\\\"b\\\\c\\x01\" is not a valid UUID"
     },
     {
@@ -7223,6 +7417,7 @@
         }
       ],
       "error": "templates[1].id",
+      "code": "template.id.duplicate",
       "message": "duplicate template ID \"A\\\"B\" (also templates[0])"
     },
     {
@@ -7239,6 +7434,7 @@
         }
       ],
       "error": "nodes[3].switch.fillColor",
+      "code": "switch.color.invalid",
       "message": "color \"a\\x01\\\"b\" must be a hex color such as #2f6fbf"
     },
     {
@@ -7255,6 +7451,7 @@
         }
       ],
       "error": "nodes[3].switch.fillColor",
+      "code": "switch.color.invalid",
       "message": "color \"\\a\\x7f\\u0085\\u00a0\\u2028\\U000e0001é😀\" must be a hex color such as #2f6fbf"
     },
     {
@@ -7271,6 +7468,7 @@
         }
       ],
       "error": "source.annotations",
+      "code": "source.annotation-key.control",
       "message": "annotation key \"a\\ab\" must not contain control characters"
     },
     {
@@ -7292,6 +7490,7 @@
         }
       ],
       "error": "nodes[3].switch.fillColor",
+      "code": "switch.color.invalid",
       "message": "color \"éééééééééééééééééééééééééééééééé\" must be a hex color such as #2f6fbf"
     },
     {
@@ -7314,6 +7513,7 @@
         }
       ],
       "error": "nodes[3].switch.fillColor",
+      "code": "switch.color.invalid",
       "message": "color \"aééééééééééééééééééééééééééééééé...\" must be a hex color such as #2f6fbf"
     },
     {
@@ -7335,6 +7535,7 @@
         }
       ],
       "error": "nodes[3].switch.fillColor",
+      "code": "switch.color.invalid",
       "message": "color \"€€€€€€€€€€€€€€€€€€€€€...\" must be a hex color such as #2f6fbf"
     },
     {
@@ -7356,6 +7557,7 @@
         }
       ],
       "error": "nodes[3].switch.fillColor",
+      "code": "switch.color.invalid",
       "message": "color \"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀...\" must be a hex color such as #2f6fbf"
     },
     {
@@ -7381,6 +7583,7 @@
         }
       ],
       "error": "templates[0].device.spec.general.hostname",
+      "code": "template.hostname.whitespace",
       "message": "template hostname \"aééééééééééééééééééééééééééééééé...\" must not contain whitespace"
     },
     {
@@ -7394,6 +7597,7 @@
         }
       ],
       "error": "metadata.id",
+      "code": "metadata.id.required",
       "message": "document ID is required"
     },
     {
@@ -7407,6 +7611,7 @@
         }
       ],
       "error": "metadata.id",
+      "code": "metadata.id.required",
       "message": "document ID is required"
     },
     {
@@ -7419,7 +7624,8 @@
           "value": "hand-authored"
         }
       ],
-      "error": "metadata"
+      "error": "metadata",
+      "code": "metadata.not-object"
     },
     {
       "name": "metadata that is a list",
@@ -7431,7 +7637,8 @@
           "value": []
         }
       ],
-      "error": "metadata"
+      "error": "metadata",
+      "code": "metadata.not-object"
     },
     {
       "name": "an author in the metadata, which names its creator createdBy",
@@ -7444,7 +7651,8 @@
           "value": "alice"
         }
       ],
-      "error": "metadata.author"
+      "error": "metadata.author",
+      "code": "document.field.unknown"
     },
     {
       "name": "an author at the root, where the metadata is not",
@@ -7456,7 +7664,8 @@
           "value": "alice"
         }
       ],
-      "error": "author"
+      "error": "author",
+      "code": "document.field.unknown"
     },
     {
       "name": "a name at the root, where the metadata is not",
@@ -7468,7 +7677,8 @@
           "value": "hand-authored"
         }
       ],
-      "error": "name"
+      "error": "name",
+      "code": "document.field.unknown"
     },
     {
       "name": "notes on several lines and with tabs",
@@ -7736,6 +7946,7 @@
         }
       ],
       "error": "metadata.notes",
+      "code": "metadata.notes.too-many",
       "message": "at most 100 notes are allowed, not 101"
     },
     {
@@ -7753,6 +7964,7 @@
         }
       ],
       "error": "metadata.notes[1]",
+      "code": "metadata.note.blank",
       "message": "note must not be blank"
     },
     {
@@ -7769,6 +7981,7 @@
         }
       ],
       "error": "metadata.notes[0]",
+      "code": "metadata.note.blank",
       "message": "note must not be blank"
     },
     {
@@ -7785,6 +7998,7 @@
         }
       ],
       "error": "metadata.notes[0]",
+      "code": "metadata.note.blank",
       "message": "note must not be blank"
     },
     {
@@ -7801,6 +8015,7 @@
         }
       ],
       "error": "metadata.notes[0]",
+      "code": "metadata.note.blank",
       "message": "note must not be blank"
     },
     {
@@ -7817,6 +8032,7 @@
         }
       ],
       "error": "metadata.notes[0]",
+      "code": "metadata.note.blank",
       "message": "note must not be blank"
     },
     {
@@ -7888,6 +8104,7 @@
         }
       ],
       "error": "metadata.notes[0]",
+      "code": "metadata.note.too-long",
       "message": "note must be at most 4096 bytes"
     },
     {
@@ -7904,6 +8121,7 @@
         }
       ],
       "error": "metadata.notes[0]",
+      "code": "metadata.note.control",
       "message": "note must not contain control characters other than newline and tab"
     },
     {
@@ -7920,6 +8138,7 @@
         }
       ],
       "error": "metadata.notes[0]",
+      "code": "metadata.note.control",
       "message": "note must not contain control characters other than newline and tab"
     },
     {
@@ -7936,6 +8155,7 @@
         }
       ],
       "error": "metadata.notes[0]",
+      "code": "metadata.note.control",
       "message": "note must not contain control characters other than newline and tab"
     },
     {
@@ -7949,7 +8169,8 @@
           "value": "one note"
         }
       ],
-      "error": "metadata.notes"
+      "error": "metadata.notes",
+      "code": "metadata.notes.not-list"
     },
     {
       "name": "switch notes on several lines and with tabs",
@@ -8112,6 +8333,7 @@
         }
       ],
       "error": "nodes[3].switch.notes",
+      "code": "switch.notes.too-many",
       "message": "at most 100 notes are allowed, not 101"
     },
     {
@@ -8131,6 +8353,7 @@
         }
       ],
       "error": "nodes[3].switch.notes[1]",
+      "code": "switch.note.blank",
       "message": "note must not be blank"
     },
     {
@@ -8149,6 +8372,7 @@
         }
       ],
       "error": "nodes[3].switch.notes[0]",
+      "code": "switch.note.blank",
       "message": "note must not be blank"
     },
     {
@@ -8230,6 +8454,7 @@
         }
       ],
       "error": "nodes[3].switch.notes[0]",
+      "code": "switch.note.too-long",
       "message": "note must be at most 4096 bytes"
     },
     {
@@ -8249,6 +8474,7 @@
         }
       ],
       "error": "nodes[3].switch.notes[1]",
+      "code": "switch.note.control",
       "message": "note must not contain control characters other than newline and tab"
     },
     {
@@ -8376,6 +8602,7 @@
         }
       ],
       "error": "iconSize",
+      "code": "document.icon-size.unknown",
       "message": "unknown icon size \"huge\" (expected one of small, medium, large)"
     },
     {
@@ -8392,6 +8619,7 @@
         }
       ],
       "error": "nodes[1].device.iconSize",
+      "code": "device.icon-size.unknown",
       "message": "unknown icon size \"32\" (expected one of small, medium, large)"
     },
     {
@@ -8408,6 +8636,7 @@
         }
       ],
       "error": "nodes[3].switch.iconSize",
+      "code": "switch.icon-size.unknown",
       "message": "unknown icon size \"Large\" (expected one of small, medium, large)"
     },
     {
@@ -8424,6 +8653,7 @@
         }
       ],
       "error": "nodes[0].group.iconSize",
+      "code": "group.icon-size.unknown",
       "message": "unknown icon size \"xl\" (expected one of small, medium, large)"
     },
     {
@@ -8476,6 +8706,7 @@
         }
       ],
       "error": "templates[0].device.iconSize",
+      "code": "template.icon-size.unknown",
       "message": "unknown icon size \"tiny\" (expected one of small, medium, large)"
     }
   ]

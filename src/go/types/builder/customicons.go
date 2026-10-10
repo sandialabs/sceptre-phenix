@@ -244,12 +244,12 @@ func NormalizeIconPNG(input []byte) ([]byte, error) {
 func ValidateIcons(icons map[string]Icon, path string) []Issue {
 	var issues []Issue
 
-	addf := func(format string, args ...any) {
-		issues = append(issues, Issue{Path: path, Message: fmt.Sprintf(format, args...)})
+	addf := func(code Code, format string, args ...any) {
+		issues = append(issues, NewIssue(code, path, fmt.Sprintf(format, args...)))
 	}
 
 	if len(icons) > MaxDocumentIcons {
-		addf("at most %d custom icons are allowed, not %d", MaxDocumentIcons, len(icons))
+		addf(CodeIconListTooMany, "at most %d custom icons are allowed, not %d", MaxDocumentIcons, len(icons))
 	}
 
 	for _, key := range slices.Sorted(maps.Keys(icons)) {
@@ -257,18 +257,18 @@ func ValidateIcons(icons map[string]Icon, path string) []Issue {
 		shown := truncate(key)
 
 		if problem := IconNameProblem(key); problem != "" {
-			addf("%s", problem)
+			addf(CodeIconNameInvalid, "%s", problem)
 		}
 
 		data, ok := decodeIconData(icon.Data)
 		if !ok {
-			addf("icon %q data must be base64 of at most %d bytes", shown, MaxIconBytes)
+			addf(CodeIconDataInvalid, "icon %q data must be base64 of at most %d bytes", shown, MaxIconBytes)
 
 			continue
 		}
 
 		if _, _, err := ValidateIconPNG(data); err != nil {
-			addf("icon %q is not an accepted PNG: %s", shown, iconReason(err))
+			addf(CodeIconPNGInvalid, "icon %q is not an accepted PNG: %s", shown, iconReason(err))
 		}
 	}
 

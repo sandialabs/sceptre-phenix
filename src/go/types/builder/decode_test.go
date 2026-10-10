@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -82,11 +84,15 @@ func TestDecodeRejects(t *testing.T) {
 		data    string
 		wantErr error
 		wantMsg string
+		// wantCode is the code of an issue the error lists, when it is a
+		// validation error.
+		wantCode builder.Code
 	}{
 		{
-			name:    "unknown field",
-			data:    strings.Replace(string(valid), `"name": "hand-authored"`, `"nickname": "nope"`, 1),
-			wantMsg: "unknown field",
+			name:     "unknown field",
+			data:     strings.Replace(string(valid), `"name": "hand-authored"`, `"nickname": "nope"`, 1),
+			wantMsg:  "unknown field",
+			wantCode: builder.CodeDocumentFieldUnknown,
 		},
 		{
 			name:    "wrong schema",
@@ -121,14 +127,18 @@ func TestDecodeRejects(t *testing.T) {
 			wantMsg: `unknown field "author"`,
 		},
 		{
-			name:    "metadata that is not an object",
-			data:    strings.Replace(string(valid), `"metadata": {`, `"metadata": "hand-authored", "unused": {`, 1),
-			wantMsg: "decoding builder document",
+			name:     "metadata that is not an object",
+			data:     strings.Replace(string(valid), `"metadata": {`, `"metadata": "hand-authored", "unused": {`, 1),
+			wantErr:  builder.ErrInvalidDocument,
+			wantMsg:  "metadata: metadata must be an object",
+			wantCode: builder.CodeMetadataNotObject,
 		},
 		{
-			name:    "notes that are not a list",
-			data:    strings.Replace(string(valid), `"name": "hand-authored"`, `"notes": "one note"`, 1),
-			wantMsg: "decoding builder document",
+			name:     "notes that are not a list",
+			data:     strings.Replace(string(valid), `"name": "hand-authored"`, `"notes": "one note"`, 1),
+			wantErr:  builder.ErrInvalidDocument,
+			wantMsg:  "metadata.notes: notes must be a list of text",
+			wantCode: builder.CodeMetadataNotesNotList,
 		},
 		{
 			name:    "legacy schema field",
@@ -171,6 +181,8 @@ func TestDecodeRejects(t *testing.T) {
 			wantErr: util.ErrTrailingJSON,
 		},
 		{
+			// The editor checks no type of the revision, which is the
+			// decoder's to refuse.
 			name:    "wrong type",
 			data:    strings.Replace(string(valid), `"revision": 1`, `"revision": "one"`, 1),
 			wantMsg: "decoding builder document",
@@ -203,9 +215,11 @@ func TestDecodeRejects(t *testing.T) {
 			wantMsg: `unknown field "hostname"`,
 		},
 		{
-			name:    "custom icons that are a list",
-			data:    strings.Replace(string(valid), `"viewport":`, `"icons": [], "viewport":`, 1),
-			wantMsg: "decoding builder document",
+			name:     "custom icons that are a list",
+			data:     strings.Replace(string(valid), `"viewport":`, `"icons": [], "viewport":`, 1),
+			wantErr:  builder.ErrInvalidDocument,
+			wantMsg:  "icons: custom icons must be an object of icons by name",
+			wantCode: builder.CodeIconListNotObject,
 		},
 		{
 			name: "unknown field of a switch",
@@ -229,6 +243,178 @@ func TestDecodeRejects(t *testing.T) {
 
 			if test.wantMsg != "" && !strings.Contains(err.Error(), test.wantMsg) {
 				t.Fatalf("error %q does not contain %q", err.Error(), test.wantMsg)
+			}
+
+			if test.wantCode != "" && !slices.ContainsFunc(builder.ErrorIssues(err), func(issue builder.Issue) bool {
+				return issue.Code == test.wantCode
+			}) {
+				t.Fatalf("error %v lists no issue of code %s", err, test.wantCode)
+			}
+		})
+	}
+}
+
+// TestDecodeReportsWrongShapesAsIssues asserts the keys and values the strict
+// decoder refuses are listed as issues where the editor refuses them with a
+// code too, each at its path, list indexes and map keys included, and that
+// anything else keeps the decoder's own error.
+func TestDecodeReportsWrongShapesAsIssues(t *testing.T) {
+	// fixture returns the fixture document as JSON decodes it.
+	fixture := func(t *testing.T) map[string]any {
+		t.Helper()
+
+		data, err := os.ReadFile(filepath.Join("testdata", "document.json"))
+		if err != nil {
+			t.Fatalf("reading the fixture: %v", err)
+		}
+
+		var document map[string]any
+
+		if err := json.Unmarshal(data, &document); err != nil {
+			t.Fatalf("decoding the fixture: %v", err)
+		}
+
+		return document
+	}
+
+	nodes, _ := fixture(t)["nodes"].([]any)
+
+	// index returns the index of the fixture's first node of kind.
+	index := func(kind string) int {
+		t.Helper()
+
+		for i, node := range nodes {
+			if node.(map[string]any)["kind"] == kind {
+				return i
+			}
+		}
+
+		t.Fatalf("the fixture has no %s node", kind)
+
+		return -1
+	}
+
+	switchAt := index("switch")
+
+	tests := []struct {
+		name string
+		edit func(document map[string]any)
+		// want is every issue of the error, as "code path: message"; none
+		// for an error that is the decoder's own.
+		want []string
+	}{
+		{
+			name: "values of the wrong type at the paths the editor checks, and an unknown key",
+			edit: func(document map[string]any) {
+				metadata := document["metadata"].(map[string]any)
+				metadata["createdBy"] = 7
+				metadata["notes"] = []any{"kept", 3}
+				metadata["author"] = "alice"
+
+				nodes := document["nodes"].([]any)
+				nodes[switchAt].(map[string]any)["switch"].(map[string]any)["notes"] = "one note"
+				nodes = append(nodes, map[string]any{
+					"id": "8a6b5dbc-2bd3-4a43-9dd2-3c6f3d0b54a1", "kind": "line", "position": map[string]any{"x": 0, "y": 0},
+					"line": map[string]any{"points": []any{}, "endArrow": "yes"},
+				})
+				document["nodes"] = nodes
+
+				document["source"] = map[string]any{
+					"kind": "manual", "includeTopologies": []any{"corp", 5}, "annotations": map[string]any{"count": 3},
+				}
+				document["layout"] = 5
+			},
+			want: []string{
+				"document.layout.not-text layout: layout must be a string",
+				"document.field.unknown metadata.author: unknown field \"author\"",
+				"metadata.user.not-text metadata.createdBy: metadata.createdBy must be a string",
+				"metadata.note.not-text metadata.notes[1]: note must be text",
+				"switch.notes.not-list nodes[" + strconv.Itoa(switchAt) + "].switch.notes: notes must be a list of text",
+				"drawing.arrow.not-boolean nodes[" + strconv.Itoa(len(nodes)) + "].line.endArrow: endArrow must be true or false",
+				"source.annotation.not-text source.annotations.count: annotation \"count\" must be text",
+				"include.name.required source.includeTopologies[1]: included topology name is required",
+			},
+		},
+		{
+			name: "lists that are not lists",
+			edit: func(document map[string]any) {
+				document["edges"] = "none"
+				document["templates"] = map[string]any{}
+				document["source"] = map[string]any{"kind": "manual", "unresolvedIncludes": "plant"}
+			},
+			want: []string{
+				"document.list.missing edges: edges must be an array",
+				"include.list.not-list source.unresolvedIncludes: included topologies must be a list of topology names",
+				"template.list.not-list templates: templates must be a list of templates",
+			},
+		},
+		{
+			name: "an unknown key of a custom icon, named by the icon",
+			edit: func(document map[string]any) {
+				document["icons"] = map[string]any{iconFixtureName: map[string]any{"data": iconFixtureData, "type": "png"}}
+			},
+			want: []string{"document.field.unknown icons." + iconFixtureName + ".type: unknown field \"type\""},
+		},
+		{
+			// The editor checks no type of a position, so the decoder's
+			// error says what is wrong, also beside a value the editor
+			// checks.
+			name: "a value of the wrong type at a path the editor does not check",
+			edit: func(document map[string]any) {
+				nodes := document["nodes"].([]any)
+				nodes[0].(map[string]any)["position"].(map[string]any)["x"] = "left"
+				document["layout"] = 5
+			},
+			want: nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			document := fixture(t)
+
+			test.edit(document)
+
+			data, err := json.Marshal(document)
+			if err != nil {
+				t.Fatalf("encoding the document: %v", err)
+			}
+
+			_, err = builder.Decode(data)
+			if err == nil {
+				t.Fatal("Decode accepted the document")
+			}
+
+			var invalid *builder.ValidationError
+
+			if test.want == nil {
+				if errors.As(err, &invalid) || !strings.Contains(err.Error(), "decoding builder document") {
+					t.Fatalf("error = %v, want the decoder's own", err)
+				}
+
+				return
+			}
+
+			if !errors.As(err, &invalid) || !errors.Is(err, builder.ErrInvalidDocument) {
+				t.Fatalf("error = %v, want a validation error", err)
+			}
+
+			got := make([]string, 0, len(invalid.Issues))
+
+			for _, issue := range invalid.Issues {
+				if issue.Severity != builder.SeverityError {
+					t.Errorf("issue %+v is not an error", issue)
+				}
+
+				got = append(got, string(issue.Code)+" "+issue.Path+": "+issue.Message)
+			}
+
+			slices.Sort(got)
+
+			want := slices.Sorted(slices.Values(test.want))
+
+			if !slices.Equal(got, want) {
+				t.Fatalf("issues:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
 			}
 		})
 	}

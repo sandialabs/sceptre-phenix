@@ -9,6 +9,7 @@ import (
 	"time"
 
 	bapi "phenix/api/builder"
+	bdoc "phenix/types/builder"
 	"phenix/util/plog"
 	"phenix/web/weberror"
 )
@@ -76,10 +77,11 @@ type builderShareError struct {
 }
 
 // builderShareErrorsResponse is the 422 a refused share list is answered
-// with: a [weberror.WebError] with the refused entries added.
+// with: a [weberror.WebError], with its code, and the refused entries added.
 type builderShareErrorsResponse struct {
 	Message string              `json:"message"`
 	Cause   string              `json:"cause"`
+	Code    string              `json:"code"`
 	Errors  []builderShareError `json:"errors"`
 }
 
@@ -158,7 +160,7 @@ func (b *builderAPI) putShares(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("ETag", meta.SharesETag())
 
 		return weberror.NewWebError(nil, "who draft %s is shared with has changed since it was last read", meta.ID).
-			SetStatus(http.StatusPreconditionFailed)
+			SetStatus(http.StatusPreconditionFailed).WithCode(string(bdoc.CodeDraftSharesStale))
 	}
 
 	var request builderSharesRequest
@@ -471,7 +473,7 @@ func (b *builderAPI) sharesUpdateError(
 		}
 
 		return weberror.NewWebError(nil, "who draft %s is shared with has changed since it was last read", meta.ID).
-			SetStatus(http.StatusPreconditionFailed)
+			SetStatus(http.StatusPreconditionFailed).WithCode(string(bdoc.CodeDraftSharesStale))
 	case errors.Is(err, bapi.ErrBusy):
 		w.Header().Set("Retry-After", "1")
 	}
@@ -485,6 +487,7 @@ func builderWriteShareErrors(w http.ResponseWriter, problems []builderShareError
 	return builderWriteJSON(w, http.StatusUnprocessableEntity, "", builderShareErrorsResponse{
 		Message: "Some people could not be added.",
 		Cause:   "",
+		Code:    string(bdoc.CodeShareUsersRefused),
 		Errors:  problems,
 	})
 }

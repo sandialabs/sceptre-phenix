@@ -208,11 +208,12 @@ type builderTemplatePublishRequest struct {
 }
 
 // builderTemplateFailure names an item a request left unchanged, and why:
-// "not-found" or "too-many".
+// "not-found" or "too-many", and the code of that reason.
 type builderTemplateFailure struct {
 	Kind   string `json:"kind"`
 	ID     string `json:"id"`
 	Reason string `json:"reason"`
+	Code   string `json:"code"`
 }
 
 // builderTemplateResult is what a request sharing or publishing items could
@@ -1007,12 +1008,19 @@ func (b *builderAPI) deleteTemplates(w http.ResponseWriter, r *http.Request) err
 }
 
 // builderTemplateFailures returns the items a change left unchanged as a
-// response names them: always a list.
+// response names them, each with the code of its reason: always a list.
 func builderTemplateFailures(failed []bapi.LibraryFailure) []builderTemplateFailure {
 	failures := make([]builderTemplateFailure, 0, len(failed))
 
 	for _, failure := range failed {
-		failures = append(failures, builderTemplateFailure{Kind: failure.Kind, ID: failure.ID, Reason: failure.Reason})
+		code := bdoc.CodeTemplateItemNotFound
+		if failure.Reason == bapi.FailureTooMany {
+			code = bdoc.CodeTemplateSharesTooMany
+		}
+
+		failures = append(failures, builderTemplateFailure{
+			Kind: failure.Kind, ID: failure.ID, Reason: failure.Reason, Code: string(code),
+		})
 	}
 
 	return failures

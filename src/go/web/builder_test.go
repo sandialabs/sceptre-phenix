@@ -1238,8 +1238,8 @@ func TestBuilderDeleteSnapshot(t *testing.T) {
 
 		harness.decode(recorder, &refused)
 
-		if refused.Message != "The current version cannot be deleted." {
-			t.Fatalf("deleting %s: message = %q", snapshot, refused.Message)
+		if refused.Message != "The current version cannot be deleted." || refused.Code != string(bdoc.CodeDraftSnapshotCurrent) {
+			t.Fatalf("deleting %s: message = %q, code %q", snapshot, refused.Message, refused.Code)
 		}
 	}
 
@@ -1264,8 +1264,10 @@ func TestBuilderDeleteSnapshot(t *testing.T) {
 			deleted, recorder.Header().Get("ETag"))
 	}
 
-	if recorder := remove(history.Snapshots[1].ID, etag); recorder.Code != http.StatusPreconditionFailed {
-		t.Fatalf("deleting with a stale ETag: status = %d, want %d", recorder.Code, http.StatusPreconditionFailed)
+	if recorder := remove(history.Snapshots[1].ID, etag); recorder.Code != http.StatusPreconditionFailed ||
+		!strings.Contains(recorder.Body.String(), `"code":"`+string(bdoc.CodeDraftStale)+`"`) {
+		t.Fatalf("deleting with a stale ETag: status = %d, want %d and code %s: %s",
+			recorder.Code, http.StatusPreconditionFailed, bdoc.CodeDraftStale, recorder.Body)
 	}
 
 	// Snapshots never share content: the current version holds the same
@@ -1801,10 +1803,10 @@ type openAPIObject struct {
 	Properties map[string]openAPIProperty `yaml:"properties"`
 }
 
-// TestBuilderDocumentDocumented asserts the BuilderDocument and
-// BuilderDocumentMetadata components of the OpenAPI document list exactly
-// the JSON fields of [bdoc.Document] and [bdoc.Metadata], each with a
-// title, a description and an example.
+// TestBuilderDocumentDocumented asserts the BuilderDocument,
+// BuilderDocumentMetadata and BuilderIssue components of the OpenAPI
+// document list exactly the JSON fields of [bdoc.Document], [bdoc.Metadata]
+// and [bdoc.Issue], each with a title, a description and an example.
 func TestBuilderDocumentDocumented(t *testing.T) {
 	t.Parallel()
 
@@ -1818,6 +1820,7 @@ func TestBuilderDocumentDocumented(t *testing.T) {
 			Schemas struct {
 				Document openAPIObject `yaml:"BuilderDocument"`
 				Metadata openAPIObject `yaml:"BuilderDocumentMetadata"`
+				Issue    openAPIObject `yaml:"BuilderIssue"`
 			} `yaml:"schemas"`
 		} `yaml:"components"`
 	}
@@ -1833,6 +1836,7 @@ func TestBuilderDocumentDocumented(t *testing.T) {
 	}{
 		{"BuilderDocument", spec.Components.Schemas.Document, reflect.TypeFor[bdoc.Document]()},
 		{"BuilderDocumentMetadata", spec.Components.Schemas.Metadata, reflect.TypeFor[bdoc.Metadata]()},
+		{"BuilderIssue", spec.Components.Schemas.Issue, reflect.TypeFor[bdoc.Issue]()},
 	}
 
 	for _, component := range components {

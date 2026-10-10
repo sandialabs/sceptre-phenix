@@ -303,8 +303,10 @@ func TestBuilderPublishKeepsReferencePath(t *testing.T) {
 			t.Fatalf("stages = %#v, want the topology updated", response.Stages)
 		}
 
-		if !slices.Contains(response.Warnings, builderFileNotWrittenWarning("site", builderTestFile)) {
-			t.Fatalf("warnings = %q, want one saying the file is not written", response.Warnings)
+		if !slices.Contains(response.Warnings, bdoc.NewIssue(
+			bdoc.CodePublishFileUnchanged, "", builderFileNotWrittenWarning("site", builderTestFile),
+		)) {
+			t.Fatalf("warnings = %+v, want one saying the file is not written", response.Warnings)
 		}
 
 		draft = response.Draft
@@ -338,7 +340,7 @@ func TestBuilderPublishKeepsReferencePath(t *testing.T) {
 		t.Fatalf("reference of a created topology = %+v, want the document and no file", got)
 	}
 
-	if slices.ContainsFunc(created.Warnings, func(warning string) bool { return strings.Contains(warning, "Builder file") }) {
+	if slices.ContainsFunc(created.Warnings, func(warning bdoc.Issue) bool { return strings.Contains(warning.Message, "Builder file") }) {
 		t.Fatalf("warnings = %q, want none of a file for a topology that names none", created.Warnings)
 	}
 

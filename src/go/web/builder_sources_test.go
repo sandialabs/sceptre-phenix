@@ -720,6 +720,8 @@ func TestBuilderGenerateChoices(t *testing.T) {
 		role    *rbac.Role
 		status  int
 		message string
+		// code is the code of the refusal, when the case pins it.
+		code bdoc.Code
 	}{
 		{
 			name:   "an unknown field",
@@ -791,29 +793,34 @@ func TestBuilderGenerateChoices(t *testing.T) {
 			name:   "a name with a space",
 			body:   `{"source":"Topology/root","copy":true,"name":"root copy"}`,
 			status: http.StatusUnprocessableEntity, message: `new topology name "root copy" is not allowed` + nameRule,
+			code: bdoc.CodeImportNameInvalid,
 		},
 		{
 			name:   "a name with a slash",
 			body:   `{"source":"Topology/root","includes":"combine","name":"Topology/other"}`,
 			status: http.StatusUnprocessableEntity, message: `new topology name "Topology/other" is not allowed` + nameRule,
+			code: bdoc.CodeImportNameInvalid,
 		},
 		{
 			name:    "a name of 513 bytes, shown cut",
 			body:    `{"source":"Topology/root","copy":true,"name":"` + strings.Repeat("n", 513) + `"}`,
 			status:  http.StatusUnprocessableEntity,
 			message: `new topology name "` + strings.Repeat("n", 64) + `..." is not allowed` + nameRule,
+			code:    bdoc.CodeImportNameInvalid,
 		},
 		{
 			name:    "the name of the stored topology",
 			body:    `{"source":"Topology/root","copy":true,"name":"root"}`,
 			status:  http.StatusUnprocessableEntity,
 			message: `new topology name "root" is the name of the imported topology: enter another name`,
+			code:    bdoc.CodeImportNameSource,
 		},
 		{
 			name:    "the name of the stored topology, combined",
 			body:    `{"source":"Topology/root","includes":"combine","name":"root"}`,
 			status:  http.StatusUnprocessableEntity,
 			message: `new topology name "root" is the name of the imported topology: enter another name`,
+			code:    bdoc.CodeImportNameSource,
 		},
 		{
 			name:   "a scenario file is refused for its kind, not for a name",
@@ -837,6 +844,10 @@ func TestBuilderGenerateChoices(t *testing.T) {
 
 			if tt.message != "" && refusal.Message != tt.message {
 				t.Errorf("message = %q, want %q", refusal.Message, tt.message)
+			}
+
+			if tt.code != "" && refusal.Code != string(tt.code) {
+				t.Errorf("code = %q, want %q", refusal.Code, tt.code)
 			}
 		})
 	}

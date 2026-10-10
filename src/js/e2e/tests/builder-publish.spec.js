@@ -2075,7 +2075,10 @@ test('a refused publish lists the issues the server names, with Go to their node
   const topology = uniqueName(testInfo, 'refused');
   const document = labDocument(topology);
   const [, server2] = devicesOf(document);
-  const reason = 'hostname "server-2" is not allowed on this server';
+  // A server that reserves the hostname, refusing it as phenix refuses the
+  // hostname "all", with the code of that refusal.
+  const reason =
+    'hostname "server-2" is reserved on this server, so the device cannot be published';
 
   await listDriveImages(page);
   await builder.openDraft(await builder.seedDraft(document));
@@ -2086,9 +2089,10 @@ test('a refused publish lists the issues the server names, with Go to their node
       contentType: 'application/json',
       body: JSON.stringify({
         message: `topology ${topology} cannot be published: ${reason}`,
+        code: 'publish.blocked',
         errors: [
           {
-            code: 'hostname-not-allowed',
+            code: 'node.hostname.reserved',
             severity: 'error',
             message: reason,
             nodeId: server2.id,
@@ -2097,7 +2101,7 @@ test('a refused publish lists the issues the server names, with Go to their node
         ],
         warnings: [
           {
-            code: 'builder-file-kept',
+            code: 'publish.file.unchanged',
             severity: 'warning',
             message: 'the Builder file of the topology is not changed',
           },
@@ -2110,8 +2114,8 @@ test('a refused publish lists the issues the server names, with Go to their node
   await fillPublish(page, { topology });
   await expectPublish(page, 422);
 
-  // The reason names the topology, so the dialog marks the topology name
-  // field as well as listing the issues.
+  // The refusal's code is about the topology, so the dialog marks the
+  // topology name field as well as listing the issues.
   await expect(page.getByTestId('publish-error')).toContainText(reason);
   await expect
     .soft(page.getByTestId('publish-name'))
@@ -2125,8 +2129,8 @@ test('a refused publish lists the issues the server names, with Go to their node
     refusal.getByTestId('publish-refusal-warning').getByRole('heading'),
   ).toHaveText('1 warning');
   await expect(refusal.getByTestId('issue-code')).toHaveText([
-    'hostname-not-allowed',
-    'builder-file-kept',
+    'node.hostname.reserved',
+    'publish.file.unchanged',
   ]);
   await expect(refusal.getByTestId('issue-element')).toHaveText([
     'Device server-2',

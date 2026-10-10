@@ -1303,9 +1303,11 @@ func TestBuilderShareRacesSave(t *testing.T) {
 	raced = raceBuilderShares(fixture, func() { fixture.share(builderShareCarol + ":edit") })
 
 	recorder = fixture.put(`"shares-2"`, builderShareBody(t))
-	if !*raced || recorder.Code != http.StatusPreconditionFailed || recorder.Header().Get("ETag") != `"shares-3"` {
-		t.Fatalf("raced %t, status = %d with ETag %q, want %d with \"shares-3\": %s",
-			*raced, recorder.Code, recorder.Header().Get("ETag"), http.StatusPreconditionFailed, recorder.Body)
+	if !*raced || recorder.Code != http.StatusPreconditionFailed || recorder.Header().Get("ETag") != `"shares-3"` ||
+		!strings.Contains(recorder.Body.String(), `"code":"`+string(bdoc.CodeDraftSharesStale)+`"`) {
+		t.Fatalf("raced %t, status = %d with ETag %q, want %d with \"shares-3\" and code %s: %s",
+			*raced, recorder.Code, recorder.Header().Get("ETag"), http.StatusPreconditionFailed, bdoc.CodeDraftSharesStale,
+			recorder.Body)
 	}
 
 	if users := builderShareUsers(fixture.share(builderShareCarol + ":edit").Shares); len(users) != 1 {

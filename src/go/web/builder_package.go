@@ -69,8 +69,9 @@ type builderPackageRequest struct {
 type builderPackageResponse struct {
 	// Package is the package, ready to be saved as a file.
 	Package *bdoc.Package `json:"package"`
-	// Warnings say what the package names but does not carry, and why.
-	Warnings []string `json:"warnings"`
+	// Warnings say what the package names but does not carry, or leaves out
+	// of its requirements, and why, each with its code.
+	Warnings []bdoc.Issue `json:"warnings"`
 }
 
 // builderPackageResolveResponse is what a package's diagram needs, and
@@ -183,7 +184,9 @@ func (b *builderAPI) getPackageSchema(w http.ResponseWriter, r *http.Request) er
 // out silently, and the user can still move the diagram. The package is
 // then checked as the resolve route checks one, and anything else it would
 // refuse, such as a stored config without a spec, is answered 422 with the
-// issues, which name each.
+// code package.invalid and the issues, which name each. A package larger
+// than [bdoc.MaxPackageBytes] is answered 413 with the code
+// package.too-large. Each warning has its code (see [bdoc.Code]).
 func (b *builderAPI) buildPackage(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderBuildPackage")
 
@@ -232,7 +235,7 @@ func (b *builderAPI) buildPackage(w http.ResponseWriter, r *http.Request) error 
 
 	if err := pkg.Validate(); err != nil {
 		return weberror.NewWebError(err, "unable to package the builder document: the package would not load").
-			SetStatus(http.StatusUnprocessableEntity)
+			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePackageInvalid))
 	}
 
 	encoded, err := json.Marshal(pkg)
@@ -244,7 +247,7 @@ func (b *builderAPI) buildPackage(w http.ResponseWriter, r *http.Request) error 
 	if len(encoded) > bdoc.MaxPackageBytes {
 		return weberror.NewWebError(
 			nil, "the package is larger than %d bytes; leave out some of its sections", bdoc.MaxPackageBytes,
-		).SetStatus(http.StatusRequestEntityTooLarge)
+		).SetStatus(http.StatusRequestEntityTooLarge).WithCode(string(bdoc.CodePackageTooLarge))
 	}
 
 	return builderWriteJSON(w, http.StatusOK, "", builderPackageResponse{Package: pkg, Warnings: warnings})
@@ -282,27 +285,29 @@ func (b *builderAPI) packageContents(
 	actor builderActor,
 	document *bdoc.Document,
 	sections map[string]bool,
-) (bdoc.PackageContents, []string, error) {
+) (bdoc.PackageContents, []bdoc.Issue, error) {
 	contents := bdoc.PackageContents{
 		Scenarios:      map[string]bdoc.PackageConfig{},
 		CarryScenarios: sections[builderPackageScenarios],
 		Topologies:     map[string]bdoc.PackageConfig{},
 		Images:         sections[builderPackageImages],
 	}
-	warnings := []string{}
+	warnings := []bdoc.Issue{}
 
 	for _, name := range document.Scenarios {
 		config, err := b.packagedConfig(actor, builderKindScenario, builderScenarios, name)
 
 		switch {
 		case errors.Is(err, errBuilderPackageUnreadable) && contents.CarryScenarios:
-			warnings = append(warnings, builderUnreadableWarning("Scenario config", name))
+			warnings = append(warnings, builderPackageWarning(
+				bdoc.CodePackageConfigUnreadable, builderUnreadableWarning("Scenario config", name),
+			))
 		case errors.Is(err, errBuilderPackageUnreadable):
-			warnings = append(warnings, fmt.Sprintf(
+			warnings = append(warnings, builderPackageWarning(bdoc.CodePackageConfigUnreadable, fmt.Sprintf(
 				"Scenario config %s does not exist on this server, or your role cannot read it: "+
 					"the package lists none of its apps.",
 				name,
-			))
+			)))
 		case err != nil:
 			return contents, nil, err
 		default:
@@ -316,9 +321,9 @@ func (b *builderAPI) packageContents(
 
 	for _, name := range document.Source.IncludeTopologies {
 		if strings.ContainsAny(name, `/\`) {
-			warnings = append(warnings, fmt.Sprintf(
+			warnings = append(warnings, builderPackageWarning(bdoc.CodePackageIncludeFilePath, fmt.Sprintf(
 				"Included topology %s is a file path: the package names it but does not carry it.", name,
-			))
+			)))
 
 			continue
 		}
@@ -327,7 +332,9 @@ func (b *builderAPI) packageContents(
 
 		switch {
 		case errors.Is(err, errBuilderPackageUnreadable):
-			warnings = append(warnings, builderUnreadableWarning("Included topology", name))
+			warnings = append(warnings, builderPackageWarning(
+				bdoc.CodePackageConfigUnreadable, builderUnreadableWarning("Included topology", name),
+			))
 		case err != nil:
 			return contents, nil, err
 		default:
@@ -336,6 +343,12 @@ func (b *builderAPI) packageContents(
 	}
 
 	return contents, warnings, nil
+}
+
+// builderPackageWarning is a warning of POST /builder/package: the issue of
+// code saying message, about the package as a whole, so it has no path.
+func builderPackageWarning(code bdoc.Code, message string) bdoc.Issue {
+	return bdoc.NewIssue(code, "", message)
 }
 
 // builderUnreadableWarning says that a package names a config it does not
@@ -399,8 +412,8 @@ func builderPackageConfig(config *store.Config) bdoc.PackageConfig {
 // packageIcons gives the document a copy of each custom icon it names and
 // does not carry, from the server's icon library, at most as many as a
 // document carries. It returns a warning for each icon it gives no copy of.
-func (b *builderAPI) packageIcons(ctx context.Context, document *bdoc.Document) ([]string, error) {
-	warnings := []string{}
+func (b *builderAPI) packageIcons(ctx context.Context, document *bdoc.Document) ([]bdoc.Issue, error) {
+	warnings := []bdoc.Issue{}
 	icons := map[string]bdoc.Icon{}
 
 	maps.Copy(icons, document.Icons)
@@ -411,10 +424,10 @@ func (b *builderAPI) packageIcons(ctx context.Context, document *bdoc.Document) 
 		}
 
 		if len(icons) >= bdoc.MaxDocumentIcons {
-			warnings = append(warnings, fmt.Sprintf(
+			warnings = append(warnings, builderPackageWarning(bdoc.CodePackageIconsTooMany, fmt.Sprintf(
 				"A package carries at most %d custom icons, so it names custom icon %s but does not carry it.",
 				bdoc.MaxDocumentIcons, name,
-			))
+			)))
 
 			continue
 		}
@@ -423,9 +436,9 @@ func (b *builderAPI) packageIcons(ctx context.Context, document *bdoc.Document) 
 
 		switch {
 		case errors.Is(err, bapi.ErrNotFound):
-			warnings = append(warnings, fmt.Sprintf(
+			warnings = append(warnings, builderPackageWarning(bdoc.CodePackageIconMissing, fmt.Sprintf(
 				"Custom icon %s is not in the server's icon library: the package names it but does not carry it.", name,
-			))
+			)))
 		case err != nil:
 			return nil, builderWebError(err, "unable to read custom icon %s", name)
 		default:
@@ -456,7 +469,10 @@ func (b *builderAPI) packageIcons(ctx context.Context, document *bdoc.Document) 
 // caller may not see reads missing, as an absent one does; without disks
 // list, or when the disk images cannot be listed, they are unknown. Apps
 // need applications list, by name too. Templates travel in the document and
-// are present. Files are never checked. Nothing is written.
+// are present. Files are never checked. Nothing is written. A body larger
+// than the bound is answered 413 with the code package.too-large, and a
+// package that does not decode or validate 422 with the code
+// package.invalid and, for one that does not validate, its issues.
 func (b *builderAPI) resolvePackage(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderResolvePackage")
 
@@ -468,6 +484,12 @@ func (b *builderAPI) resolvePackage(w http.ResponseWriter, r *http.Request) erro
 	var body json.RawMessage
 
 	if err := builderDecodeLimit(w, r, &body, bdoc.MaxPackageBytes); err != nil {
+		var refusal *weberror.WebError
+
+		if errors.As(err, &refusal) && refusal.Status == http.StatusRequestEntityTooLarge {
+			refusal.Code = string(bdoc.CodePackageTooLarge)
+		}
+
 		return err
 	}
 
@@ -478,7 +500,7 @@ func (b *builderAPI) resolvePackage(w http.ResponseWriter, r *http.Request) erro
 
 	if err != nil {
 		return weberror.NewWebError(err, "unable to read the builder package").
-			SetStatus(http.StatusUnprocessableEntity)
+			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePackageInvalid))
 	}
 
 	dependencies, err := b.packageDependencies(r.Context(), actor, pkg)

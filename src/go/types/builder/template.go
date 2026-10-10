@@ -79,73 +79,83 @@ type TemplateDevice struct {
 // Neither is the id, whose form depends on where the template is kept:
 // [Document.Validate] checks it for a document's templates. The custom icon
 // names an icon of the server's icon library, or one a document carries.
+// Each issue carries the code of the rule it breaks.
 func (t *Template) Issues(path string) []Issue {
 	var issues []Issue
 
-	addf := func(at, format string, args ...any) {
-		issues = append(issues, Issue{Path: path + at, Message: fmt.Sprintf(format, args...)})
+	addf := func(code Code, at, format string, args ...any) {
+		issues = append(issues, NewIssue(code, path+at, fmt.Sprintf(format, args...)))
 	}
 
 	switch {
 	case strings.TrimSpace(t.Name) == "":
-		addf(".name", "template name is required")
+		addf(CodeTemplateNameRequired, ".name", "template name is required")
 	case len(t.Name) > MaxTemplateNameBytes:
-		addf(".name", "template name must be at most %d bytes", MaxTemplateNameBytes)
+		addf(CodeTemplateNameTooLong, ".name", "template name must be at most %d bytes", MaxTemplateNameBytes)
 	case strings.ContainsFunc(t.Name, isControl):
-		addf(".name", "template name must not contain control characters")
+		addf(CodeTemplateNameControl, ".name", "template name must not contain control characters")
 	}
 
 	switch {
 	case len(t.Description) > MaxTemplateDescriptionBytes:
-		addf(".description", "template description must be at most %d bytes", MaxTemplateDescriptionBytes)
+		addf(
+			CodeTemplateDescriptionTooLong, ".description",
+			"template description must be at most %d bytes", MaxTemplateDescriptionBytes,
+		)
 	case strings.ContainsFunc(t.Description, isControl):
-		addf(".description", "template description must not contain control characters")
+		addf(CodeTemplateDescriptionControl, ".description", "template description must not contain control characters")
 	}
 
 	device := &t.Device
 
 	if device.Spec == nil {
-		addf(".device.spec", "template device spec is required")
+		addf(CodeTemplateSpecRequired, ".device.spec", "template device spec is required")
 	} else {
 		hostname := specString(device.Spec, specGeneral, specHostname)
 
 		switch {
 		case strings.TrimSpace(hostname) == "":
-			addf(".device.spec.general.hostname", "template hostname is required")
+			addf(CodeTemplateHostnameRequired, ".device.spec.general.hostname", "template hostname is required")
 		case strings.ContainsAny(hostname, " \t\n"):
-			addf(".device.spec.general.hostname", "template hostname %q must not contain whitespace", truncate(hostname))
+			addf(
+				CodeTemplateHostnameWhitespace, ".device.spec.general.hostname",
+				"template hostname %q must not contain whitespace", truncate(hostname),
+			)
 		}
 	}
 
 	if problem := iconKeyProblem(device.IconKey); problem != "" {
-		addf(".device.iconKey", "%s", problem)
+		addf(CodeTemplateIconKeyUnknown, ".device.iconKey", "%s", problem)
 	}
 
 	if device.Icon != "" {
 		if problem := IconNameProblem(device.Icon); problem != "" {
-			addf(".device.icon", "%s", problem)
+			addf(CodeTemplateIconInvalid, ".device.icon", "%s", problem)
 		}
 	}
 
 	if problem := iconSizeProblem(device.IconSize); problem != "" {
-		addf(".device.iconSize", "%s", problem)
+		addf(CodeTemplateIconSizeUnknown, ".device.iconSize", "%s", problem)
 	}
 
 	if problem := colorProblem(device.OutlineColor); problem != "" {
-		addf(".device.outlineColor", "%s", problem)
+		addf(CodeTemplateColorInvalid, ".device.outlineColor", "%s", problem)
 	}
 
 	if problem := colorProblem(device.FillColor); problem != "" {
-		addf(".device.fillColor", "%s", problem)
+		addf(CodeTemplateColorInvalid, ".device.fillColor", "%s", problem)
 	}
 
 	encoded, err := json.Marshal(device)
 
 	switch {
 	case err != nil:
-		addf(".device", "template device is not encodable: %v", err)
+		addf(CodeTemplateDeviceUnencodable, ".device", "template device is not encodable: %v", err)
 	case len(encoded) > MaxTemplateDeviceBytes:
-		addf(".device", "template device must take at most %d bytes as JSON, not %d", MaxTemplateDeviceBytes, len(encoded))
+		addf(
+			CodeTemplateDeviceTooLarge, ".device",
+			"template device must take at most %d bytes as JSON, not %d", MaxTemplateDeviceBytes, len(encoded),
+		)
 	}
 
 	return issues

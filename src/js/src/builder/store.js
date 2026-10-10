@@ -24,7 +24,8 @@ import {
   fileTopology,
   libraryErrorMessage,
   preconditionETag,
-  serverReason,
+  serverCode,
+  serverRefusal,
   serverSentence,
   shareErrors,
   sourceFileName,
@@ -186,6 +187,10 @@ function emptySelection() {
 // What the Inspector says when it falls back to the bundled schema.
 const BUNDLED_FIELDS =
   'The Inspector shows the fields built into the Builder instead, which may differ from what this server accepts.';
+
+// The codes of the server's refusals of the new topology name of a copy or
+// a combined import (see generate).
+const NEW_NAME_CODES = new Set(['import.name.invalid', 'import.name.source']);
 
 // The disk listing under way (see fetchDisks).
 let disksRequest = null;
@@ -3609,13 +3614,13 @@ export const useBuilderStore = defineStore('builder', {
 
         if (error?.response?.status === 409) {
           // A 409 is about a config the publish would write, not the draft,
-          // and the server says which and why. A create or update refused
-          // because the config does or does not exist means the list of
-          // existing configs is out of date, so it is read again first,
+          // and the server's code says which and why. A create or update
+          // refused because the config does or does not exist means the list
+          // of existing configs is out of date, so it is read again first,
           // with the published diagrams that say which this draft may update.
           await Promise.all([this.fetchSources(), this.fetchDocuments()]);
 
-          const refusal = publishRefusal(serverReason(error), intent, {
+          const refusal = publishRefusal(serverRefusal(error), intent, {
             topologies: this.sources.topologies,
             experiments: this.sources.experiments,
             draft: this.publishDraft,
@@ -3636,10 +3641,11 @@ export const useBuilderStore = defineStore('builder', {
           );
         } else if (error?.response?.status === 422) {
           // A target the server refuses, such as an experiment name it
-          // reserves, is named in the reason: the dialog marks its field.
+          // reserves, is named by the refusal's code: the dialog marks its
+          // field.
           this.setError(
             this.describeError(error, 'publish the diagram'),
-            publishRefusal(serverReason(error), intent).field,
+            publishRefusal(serverRefusal(error), intent).field,
           );
         } else if (classifyError(error) === 'conflict') {
           // 412 or 428: the draft's ETag.
@@ -3698,11 +3704,9 @@ export const useBuilderStore = defineStore('builder', {
         const kind = classifyError(error);
         const uploaded = typeof request?.content === 'string';
 
-        // A new name the server refuses is about the field it was typed in.
-        if (
-          error?.response?.status === 422 &&
-          /^new topology name\b/i.test(serverReason(error))
-        ) {
+        // A new name the server refuses is about the field it was typed in:
+        // one that is no config name, or the imported topology's own.
+        if (NEW_NAME_CODES.has(serverCode(error))) {
           this.setError(
             this.describeError(error, 'import the diagram'),
             'newName',

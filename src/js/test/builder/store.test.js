@@ -2515,6 +2515,7 @@ describe('server data', () => {
         response: {
           status: 409,
           data: {
+            code: 'publish.topology.exists',
             message: 'config core already exists; choose update explicitly',
           },
         },
@@ -2546,6 +2547,7 @@ describe('server data', () => {
         response: {
           status: 409,
           data: {
+            code: 'publish.topology.not-source',
             message:
               'topology core is not the source this draft was loaded from',
           },
@@ -3138,16 +3140,18 @@ describe('server data', () => {
     }
   });
 
+  // The field is picked by the refusal's code, not its words.
   test('a new topology name the server refuses is reported on its field', async () => {
-    const refusal = (message) =>
+    const refusal = (message, code) =>
       Object.assign(new Error('refused'), {
-        response: { status: 422, data: { message, cause: '' } },
+        response: { status: 422, data: { message, cause: '', code } },
       });
     const request = { kind: 'topology', name: 'core', copy: true };
 
     api.generate.mockRejectedValueOnce(
       refusal(
         'new topology name "core" is the name of the imported topology: enter another name',
+        'import.name.source',
       ),
     );
     await expect(
@@ -3161,14 +3165,28 @@ describe('server data', () => {
     api.generate.mockRejectedValueOnce(
       refusal(
         'new topology name "a b" is not allowed: use 1 to 512 letters, numbers, underscores, at signs, periods and hyphens',
+        'import.name.invalid',
       ),
     );
     await store.generate({ ...request, newName: 'a b' });
     expect(store.errorField).toBe('newName');
 
+    // Words alone, without the code, do not name the field.
+    api.generate.mockRejectedValueOnce(
+      refusal(
+        'new topology name "a b" is not allowed',
+        'request.unprocessable',
+      ),
+    );
+    await store.generate({ ...request, newName: 'a b' });
+    expect(store.errorField).toBe('name');
+
     // Any other refusal of the same request is about its source.
     api.generate.mockRejectedValueOnce(
-      refusal('only a topology can be combined or copied on import'),
+      refusal(
+        'only a topology can be combined or copied on import',
+        'request.unprocessable',
+      ),
     );
     await store.generate({ ...request, newName: 'core-copy' });
     expect(store.errorField).toBe('name');

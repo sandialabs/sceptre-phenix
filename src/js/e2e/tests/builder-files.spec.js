@@ -309,10 +309,16 @@ test(
       const warning =
         `Topology ${name} names the Builder file ${file}, which Publish does not change. ` +
         'Download the diagram and replace the file to keep it in step.';
-      expect.soft(JSON.parse(body).warnings).toEqual([warning]);
+      const code = 'publish.file.unchanged';
+      // The server reports the warning as an issue, with its code.
+      expect
+        .soft(JSON.parse(body).warnings)
+        .toEqual([{ code, severity: 'warning', message: warning }]);
+      const shown = result.getByTestId('publish-result-issues-warning');
       await expect
-        .soft(result.locator('li').filter({ hasText: 'Warning:' }))
+        .soft(shown.getByTestId('issue-message'))
         .toHaveText(`Warning: ${warning}`);
+      await expect.soft(shown.getByTestId('issue-code')).toHaveText(code);
 
       // The annotation now names the stored document too, and keeps the path.
       const config = await builder.config('Topology', name);
@@ -392,6 +398,7 @@ test('a Builder file phenix cannot use is still listed, and opening it says why'
       what: 'a path outside the base directory',
       reference: { path: files.outside },
       status: 422,
+      code: 'request.unprocessable',
       sentence: `Builder file ${files.outside} is outside ${BASE_DIR}, the directory phenix reads Builder files from.`,
     },
     {
@@ -399,6 +406,7 @@ test('a Builder file phenix cannot use is still listed, and opening it says why'
       what: 'a file that does not exist',
       reference: { path: files.missing },
       status: 404,
+      code: 'request.not-found',
       sentence: `Builder file ${files.missing} does not exist on this phenix server.`,
     },
     {
@@ -406,6 +414,7 @@ test('a Builder file phenix cannot use is still listed, and opening it says why'
       what: 'a file that is not the one the topology pins by digest',
       reference: { path: files.pinned, digest: `sha256:${'0'.repeat(64)}` },
       status: 422,
+      code: 'request.unprocessable',
       sentence: `Builder file ${files.pinned} does not match the digest topology ${names.pinned} records for it.`,
     },
     {
@@ -413,6 +422,7 @@ test('a Builder file phenix cannot use is still listed, and opening it says why'
       what: 'a file that is not a Builder document',
       reference: { path: files.invalid },
       status: 422,
+      code: 'request.unprocessable',
       sentence: `Builder file ${files.invalid} is not a valid Builder document. Upload it in the Builder to see why.`,
     },
   ];
@@ -429,7 +439,7 @@ test('a Builder file phenix cannot use is still listed, and opening it says why'
   const creates = watchDraftCreates(page);
   await openPublishedTab(builder);
 
-  for (const { part, what, status, sentence } of cases) {
+  for (const { part, what, status, code, sentence } of cases) {
     await test.step(what, async () => {
       const name = names[part];
       const open = page.getByTestId(`draft-open-${fileHandle(name)}`);
@@ -447,9 +457,10 @@ test('a Builder file phenix cannot use is still listed, and opening it says why'
       await open.click();
       const response = await read;
       expect.soft(response.status(), what).toBe(status);
+      // The sentence and the code of the refusal, and nothing of the file.
       expect
         .soft(await response.json(), what)
-        .toEqual({ message: sentence, cause: '' });
+        .toEqual({ message: sentence, cause: '', code });
       await expect(errorBanner(page)).toHaveText(
         `Could not open the diagram of topology ${name}. ${sentence}`,
       );

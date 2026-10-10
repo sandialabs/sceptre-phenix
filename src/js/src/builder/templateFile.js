@@ -381,55 +381,74 @@ export function decodeTemplateFile(value) {
 
 /**
  * What makes a decoded template file unusable (TemplateFile.Issues in
- * templatefile.go), in its order: another schema; a collection name or
- * description a collection may not have; no template, or more than
- * MAX_TEMPLATE_FILE_TEMPLATES; a template a library refuses (see
- * templateIssues); two templates whose names differ only in case; and
- * custom icons a document may not carry (see validateIcons). A template may
- * name an icon the file does not carry.
+ * templatefile.go), in its order, each with the code the server gives it:
+ * another schema; a collection name or description a collection may not
+ * have; no template, or more than MAX_TEMPLATE_FILE_TEMPLATES; a template a
+ * library refuses (see templateIssues); two templates whose names differ
+ * only in case; and custom icons a document may not carry (see
+ * validateIcons). A template may name an icon the file does not carry.
  *
  * @param {object} file as decodeTemplateFile returns it
- * @returns {{path: string, message: string}[]}
+ * @returns {{code: string, path: string, message: string, level: 'error',
+ *   severity: 'error'}[]}
  */
 export function templateFileIssues(file) {
   const issues = [];
-  const add = (path, message) => issues.push({ path, message });
+  const add = (code, path, message) =>
+    issues.push({ code, path, message, level: 'error', severity: 'error' });
   const { name = '', description = '', templates = [] } = file;
 
   if (file.$schema !== TEMPLATE_FILE_SCHEMA_URI) {
     add(
+      'template.file.schema-mismatch',
       '$schema',
       `template file schema must be "${TEMPLATE_FILE_SCHEMA_URI}", not "${file.$schema ?? ''}"`,
     );
   }
 
   if (isBlank(name)) {
-    add('name', 'collection name is required');
+    add(
+      'template.collection-name.required',
+      'name',
+      'collection name is required',
+    );
   } else if (utf8Length(name) > MAX_TEMPLATE_NAME_BYTES) {
     add(
+      'template.collection-name.too-long',
       'name',
       `collection name must be at most ${MAX_TEMPLATE_NAME_BYTES} bytes`,
     );
   } else if (hasControlCharacters(name)) {
-    add('name', 'collection name must not contain control characters');
+    add(
+      'template.collection-name.control',
+      'name',
+      'collection name must not contain control characters',
+    );
   }
 
   if (utf8Length(description) > MAX_TEMPLATE_DESCRIPTION_BYTES) {
     add(
+      'template.collection-description.too-long',
       'description',
       `collection description must be at most ${MAX_TEMPLATE_DESCRIPTION_BYTES} bytes`,
     );
   } else if (hasControlCharacters(description)) {
     add(
+      'template.collection-description.control',
       'description',
       'collection description must not contain control characters',
     );
   }
 
   if (templates.length === 0) {
-    add('templates', 'a template file holds at least one template');
+    add(
+      'template.file.empty',
+      'templates',
+      'a template file holds at least one template',
+    );
   } else if (templates.length > MAX_TEMPLATE_FILE_TEMPLATES) {
     add(
+      'template.file.too-many',
       'templates',
       `a template file holds at most ${MAX_TEMPLATE_FILE_TEMPLATES} templates, not ${templates.length}`,
     );
@@ -441,7 +460,7 @@ export function templateFileIssues(file) {
     const path = `templates[${index}]`;
 
     templateIssues(template, path).forEach((entry) =>
-      add(entry.path, entry.message),
+      add(entry.code, entry.path, entry.message),
     );
 
     const key =
@@ -453,6 +472,7 @@ export function templateFileIssues(file) {
 
     if (names.has(key)) {
       add(
+        'template.name.duplicate',
         `${path}.name`,
         `template name "${template.name}" is also the name of templates[${names.get(key)}], ignoring case`,
       );
@@ -462,7 +482,7 @@ export function templateFileIssues(file) {
   });
 
   validateIcons(file.icons, 'icons').forEach((entry) =>
-    add(entry.path, entry.message),
+    add(entry.code, entry.path, entry.message),
   );
 
   return issues;
@@ -475,8 +495,8 @@ export function templateFileIssues(file) {
  *
  * @param {string} text
  * @returns {{ok: true, file: object} | {ok: false, error: string, issues:
- *   {path: string, message: string}[]}} issues name each problem by where it
- *   is in the file, such as "templates[2].name"
+ *   object[]}} issues name each problem by its code and where it is in the
+ *   file, such as "templates[2].name" (see templateFileIssues)
  */
 export function parseTemplateFile(text) {
   const input = String(text ?? '');

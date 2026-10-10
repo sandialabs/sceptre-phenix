@@ -50,10 +50,19 @@ import {
   templateByKey,
   templateOrigin,
 } from '@/builder/templates.js';
-import { MAX_TEMPLATE_NAME_BYTES } from '@/builder/validate.js';
+import CODES from '@/builder/schema/codes.json';
+import {
+  MAX_TEMPLATE_DESCRIPTION_BYTES,
+  MAX_TEMPLATE_NAME_BYTES,
+} from '@/builder/validate.js';
 
 import { libraryOf } from './fixtures.js';
 import { ICON_DATA } from './png.js';
+
+// An issue of a template file, as templateFileIssues reports it.
+function fileIssue(code, path, message) {
+  return { code, path, message, level: 'error', severity: 'error' };
+}
 
 // A template as the server lists it, of any source.
 function listed(id, init = {}) {
@@ -547,40 +556,46 @@ describe('reading a template file', () => {
       'This template file cannot be imported (6 problems):',
     );
     expect(read.issues).toEqual([
-      {
-        path: '$schema',
-        message: `template file schema must be "${TEMPLATE_FILE_SCHEMA_URI}", not "https://phenix.sandia.gov/schemas/builder/v1"`,
-      },
-      { path: 'name', message: 'collection name is required' },
-      {
-        path: 'templates[1].device.spec.general.hostname',
-        message: 'template hostname is required',
-      },
-      {
-        path: 'templates[1].device.icon',
-        message:
-          'icon name "a b" must be 1 to 64 letters, digits, "_", "@", "." or "-"',
-      },
-      {
-        path: 'templates[2].name',
-        message:
-          'template name "router" is also the name of templates[0], ignoring case',
-      },
-      {
-        path: 'icons',
-        message: expect.stringMatching(
-          /^icon "plc-icon" is not an accepted PNG/,
-        ),
-      },
+      fileIssue(
+        'template.file.schema-mismatch',
+        '$schema',
+        `template file schema must be "${TEMPLATE_FILE_SCHEMA_URI}", not "https://phenix.sandia.gov/schemas/builder/v1"`,
+      ),
+      fileIssue(
+        'template.collection-name.required',
+        'name',
+        'collection name is required',
+      ),
+      fileIssue(
+        'template.hostname.required',
+        'templates[1].device.spec.general.hostname',
+        'template hostname is required',
+      ),
+      fileIssue(
+        'template.icon.invalid',
+        'templates[1].device.icon',
+        'icon name "a b" must be 1 to 64 letters, digits, "_", "@", "." or "-"',
+      ),
+      fileIssue(
+        'template.name.duplicate',
+        'templates[2].name',
+        'template name "router" is also the name of templates[0], ignoring case',
+      ),
+      fileIssue(
+        'icon.png.invalid',
+        'icons',
+        expect.stringMatching(/^icon "plc-icon" is not an accepted PNG/),
+      ),
     ]);
   });
 
   test('a file holds one to 200 templates', () => {
     expect(parseTemplateFile(fileText({ templates: [] })).issues).toEqual([
-      {
-        path: 'templates',
-        message: 'a template file holds at least one template',
-      },
+      fileIssue(
+        'template.file.empty',
+        'templates',
+        'a template file holds at least one template',
+      ),
     ]);
 
     const many = Array.from({ length: 201 }, (_, index) => ({
@@ -589,11 +604,60 @@ describe('reading a template file', () => {
     }));
 
     expect(parseTemplateFile(fileText({ templates: many })).issues).toEqual([
-      {
-        path: 'templates',
-        message: 'a template file holds at most 200 templates, not 201',
-      },
+      fileIssue(
+        'template.file.too-many',
+        'templates',
+        'a template file holds at most 200 templates, not 201',
+      ),
     ]);
+  });
+
+  test('a collection’s name and description carry the codes the server gives them', () => {
+    const codes = (init) =>
+      templateFileIssues({
+        $schema: TEMPLATE_FILE_SCHEMA_URI,
+        name: 'Plant floor',
+        templates: [
+          { name: 'PLC', device: { spec: { general: { hostname: 'plc' } } } },
+        ],
+        ...init,
+      }).map((issue) => issue.code);
+
+    expect(codes({ name: 'x'.repeat(MAX_TEMPLATE_NAME_BYTES + 1) })).toEqual([
+      'template.collection-name.too-long',
+    ]);
+    expect(codes({ name: 'a\u0007b' })).toEqual([
+      'template.collection-name.control',
+    ]);
+    expect(
+      codes({ description: 'x'.repeat(MAX_TEMPLATE_DESCRIPTION_BYTES + 1) }),
+    ).toEqual(['template.collection-description.too-long']);
+    expect(codes({ description: 'a\u0007b' })).toEqual([
+      'template.collection-description.control',
+    ]);
+  });
+
+  test('every code a template file issue has is one the server knows', () => {
+    const read = parseTemplateFile(
+      fileText({
+        $schema: '',
+        name: 'a\u0007b',
+        description: 'x'.repeat(MAX_TEMPLATE_DESCRIPTION_BYTES + 1),
+        templates: [
+          { name: 'A', device: { iconKey: 'nope', spec: {} } },
+          { name: 'a', device: { spec: { general: { hostname: 'h' } } } },
+        ],
+        icons: { 'bad name': { data: 'aGVsbG8=' } },
+      }),
+    );
+
+    expect(read.issues.length).toBeGreaterThan(5);
+    read.issues.forEach((issue) => {
+      expect(CODES[issue.code], issue.code).toMatchObject({
+        severity: 'error',
+      });
+      expect(issue).toMatchObject({ level: 'error', severity: 'error' });
+    });
   });
 });
 

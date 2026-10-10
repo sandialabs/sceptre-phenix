@@ -153,7 +153,10 @@ func TestBuilderPublishReportsBroadcastWarning(t *testing.T) {
 	response, _ := publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology","topology":{"name":"broadcast","action":"create"}}`, http.StatusOK)
 
-	if !strings.Contains(strings.Join(response.Warnings, " "), "broadcast") {
+	if !strings.Contains(strings.Join(bdoc.IssueMessages(response.Warnings), " "), "broadcast") ||
+		!slices.ContainsFunc(response.Warnings, func(warning bdoc.Issue) bool {
+			return warning.Code == bdoc.CodePublishBroadcastFailed && warning.Severity == bdoc.SeverityWarning
+		}) {
 		t.Fatalf("warnings = %#v, want a broadcast warning", response.Warnings)
 	}
 	if response.Draft.Publication == nil {
@@ -178,7 +181,9 @@ func TestBuilderPublishReportsPartialFailure(t *testing.T) {
 
 	var response builderPublishResponse
 	harness.decode(recorder, &response)
-	if response.Status != "partial" || len(response.Stages) != 2 {
+	if response.Status != "partial" || len(response.Stages) != 2 ||
+		len(response.Errors) != 1 || response.Errors[0].Code != bdoc.CodePublishStageFailed ||
+		response.Errors[0].Message != response.Stages[1].Message {
 		t.Fatalf("partial response = %#v", response)
 	}
 	if response.Stages[0].Name != builderPublishStageDocument ||
@@ -215,8 +220,9 @@ func TestBuilderPublishReportsPartialFailure(t *testing.T) {
 
 	var refused builderPublishResponse
 	harness.decode(recorder, &refused)
-	if want := "topology publication failed: " + store.ErrNoSpace.Error(); len(refused.Errors) != 1 || refused.Errors[0] != want {
-		t.Fatalf("out of space: errors = %q, want %q", refused.Errors, want)
+	if want := "topology publication failed: " + store.ErrNoSpace.Error(); len(refused.Errors) != 1 ||
+		refused.Errors[0].Message != want || refused.Errors[0].Code != bdoc.CodeServerStorageFull {
+		t.Fatalf("out of space: errors = %+v, want %q", refused.Errors, want)
 	}
 }
 
@@ -1167,9 +1173,10 @@ func TestBuilderPublishReportsScenariosWrittenBeforeFailure(t *testing.T) {
 		t.Fatalf("failed publication = %+v, want the scenario stage failed last", failed)
 	}
 
-	const warning = "topology topo was added to scenario sc-a before the scenario stage failed"
+	warning := bdoc.NewIssue(bdoc.CodePublishScenarioPartial, "",
+		"topology topo was added to scenario sc-a before the scenario stage failed")
 	if !slices.Contains(failed.Warnings, warning) {
-		t.Fatalf("warnings = %q, want %q", failed.Warnings, warning)
+		t.Fatalf("warnings = %+v, want %+v", failed.Warnings, warning)
 	}
 
 	if got, want := annotations(), []string{"other,topo", ""}; !slices.Equal(got, want) || harness.experimentWrites != 0 {
@@ -1308,7 +1315,8 @@ func TestBuilderPublishRetryIsIdempotent(t *testing.T) {
 	response, _ := publishBuilderDraft(t, harness, draft, body, http.StatusOK)
 
 	if response.Status != bapi.PublishSucceeded ||
-		!strings.Contains(strings.Join(response.Warnings, " "), "already complete") {
+		!strings.Contains(strings.Join(bdoc.IssueMessages(response.Warnings), " "), "already complete") ||
+		response.Warnings[0].Code != bdoc.CodePublishRetryComplete {
 		t.Fatalf("retry response = %#v", response)
 	}
 	if harness.configWrites != 1 {
@@ -1752,10 +1760,14 @@ func publishBuilderDraft(
 	return response, refusal.Message
 }
 
-// builderPublishRefusal is what the server says of a publication it refused.
+// builderPublishRefusal is what the server says of a publication it refused:
+// the code of the refusal, its words, and the issues it is made of.
 type builderPublishRefusal struct {
-	Message string `json:"message"`
-	Cause   string `json:"cause"`
+	Code     string            `json:"code"`
+	Message  string            `json:"message"`
+	Cause    string            `json:"cause"`
+	Metadata map[string]string `json:"metadata"`
+	Issues   []bdoc.Issue      `json:"issues"`
 }
 
 // publishBuilderDraftAs is [publishBuilderDraft] with the caller holding role

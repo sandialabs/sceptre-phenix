@@ -70,6 +70,12 @@ type PublishRefusedError struct {
 	Message string
 	// Problems names each thing to fix, when there are several.
 	Problems []string
+	// Code is the code of the refusal as a whole (see [builder.Code]).
+	Code builder.Code
+	// Located holds the issue of each problem, in the same order, with the
+	// code of its rule and where it is, when the problems are what only
+	// publishing refuses (see [builder.ErrorIssues]).
+	Located []builder.Issue
 }
 
 func (e *PublishRefusedError) Error() string {
@@ -78,6 +84,23 @@ func (e *PublishRefusedError) Error() string {
 	}
 
 	return e.Message + ":\n  " + strings.Join(e.Problems, "\n  ")
+}
+
+// Issues returns one issue for each problem: the located one, or else one of
+// the refusal's code saying what the problem says. A refusal without
+// problems has none.
+func (e *PublishRefusedError) Issues() []builder.Issue {
+	if len(e.Located) == len(e.Problems) {
+		return slices.Clone(e.Located)
+	}
+
+	issues := make([]builder.Issue, len(e.Problems))
+
+	for i, problem := range e.Problems {
+		issues[i] = builder.NewIssue(e.Code, "", problem)
+	}
+
+	return issues
 }
 
 // Unwrap lets [errors.Is] match [ErrInvalid] or [ErrConflict].
@@ -133,8 +156,9 @@ type TopologyPublication struct {
 	Config *store.Config
 	// Warnings says what the caller should know of a publication that went
 	// through: what the projection warns of, what of the document a topology
-	// has no place for, and what could not be checked or cleaned up.
-	Warnings []string
+	// has no place for, and what could not be checked or cleaned up. Each is
+	// an issue of severity warning, with its code.
+	Warnings []builder.Issue
 }
 
 // PublishTopology publishes a Builder document as a Topology config, as the
@@ -206,8 +230,8 @@ func (s *Service) PublishTopology(ctx context.Context, req PublishTopologyReques
 	case published != nil && errors.Is(err, ErrCleanup):
 		// The document is stored, repairing a damaged copy of it; the content
 		// it replaces is left to the cleanup at startup.
-		publication.Warnings = append(publication.Warnings,
-			"The Builder document was stored, but content it replaces could not be removed.")
+		publication.Warnings = append(publication.Warnings, builder.NewIssue(builder.CodePublishCleanupFailed, "",
+			"The Builder document was stored, but content it replaces could not be removed."))
 	case err != nil:
 		return nil, err
 	}
@@ -230,8 +254,8 @@ func (s *Service) PublishTopology(ctx context.Context, req PublishTopologyReques
 	}
 
 	if _, err := s.DeleteSupersededDocuments(ctx, publication.Name, published.ID); err != nil {
-		publication.Warnings = append(publication.Warnings,
-			"The topology was published, but Builder documents it no longer names could not be removed.")
+		publication.Warnings = append(publication.Warnings, builder.NewIssue(builder.CodePublishCleanupFailed, "",
+			"The topology was published, but Builder documents it no longer names could not be removed."))
 
 		plog.Error(plog.TypeSystem, "cleaning superseded builder documents", "topology", publication.Name, "err", err)
 	}
@@ -304,11 +328,11 @@ func (s *Service) planTopology(ctx context.Context, req PublishTopologyRequest) 
 	}
 
 	if reference.Path != "" && reference.Path != req.Path {
-		warnings = append(warnings, fmt.Sprintf(
+		warnings = append(warnings, builder.NewIssue(builder.CodePublishFileUnchanged, "", fmt.Sprintf(
 			"Topology %s names the Builder file %s, which was not read or changed. "+
 				"Replace that file with the published document to keep it in step.",
 			name, reference.Path,
-		))
+		)))
 	}
 
 	if outcome == TopologyUnchanged {
@@ -344,26 +368,28 @@ func (s *Service) planTopology(ctx context.Context, req PublishTopologyRequest) 
 // with a Builder document reference the diagram the legacy Builder kept on
 // it (see [builder.LegacyXMLAnnotation]): the topology is a Builder topology
 // from then on. It reports whether there was one, with the warning that says
-// what became of it: this diagram replaces it, or, when it cannot be read
-// (see [builder.DecodeLegacy]), so that an import converted nothing of it,
-// it was removed. Every other annotation is left as it is.
-func ReplaceLegacyDiagram(topology *store.Config) (string, bool) {
+// what became of it: this diagram replaces it
+// ([builder.CodePublishLegacyReplaced]), or, when it cannot be read (see
+// [builder.DecodeLegacy]), so that an import converted nothing of it, it was
+// removed ([builder.CodePublishLegacyRemoved]). Every other annotation is
+// left as it is.
+func ReplaceLegacyDiagram(topology *store.Config) (builder.Issue, bool) {
 	diagram, legacy := topology.Metadata.Annotations[builder.LegacyXMLAnnotation]
 	if !legacy {
-		return "", false
+		return builder.NewIssue("", "", ""), false
 	}
 
 	delete(topology.Metadata.Annotations, builder.LegacyXMLAnnotation)
 
 	if _, err := builder.DecodeLegacy([]byte(diagram)); err != nil {
-		return fmt.Sprintf(
+		return builder.NewIssue(builder.CodePublishLegacyRemoved, "", fmt.Sprintf(
 			"The legacy Builder diagram of topology %s could not be read and was removed.", topology.Metadata.Name,
-		), true
+		)), true
 	}
 
-	return fmt.Sprintf(
+	return builder.NewIssue(builder.CodePublishLegacyReplaced, "", fmt.Sprintf(
 		"The legacy Builder diagram of topology %s was replaced by this diagram.", topology.Metadata.Name,
-	), true
+	)), true
 }
 
 // publishedName returns the name the request publishes the document under:
@@ -379,6 +405,7 @@ func publishedName(req PublishTopologyRequest, document *builder.Document) (stri
 	if !validTopologyName(name) {
 		return "", &PublishRefusedError{
 			Refusal: PublishRefusedName, Topology: name, Problems: nil,
+			Code: builder.CodePublishTargetInvalid, Located: nil,
 			Message: fmt.Sprintf(
 				"%q is not a topology name: a name holds letters, digits and the characters _ @ . - only, and at most %d of them",
 				name, MaxTargetLength,
@@ -393,6 +420,7 @@ func publishedName(req PublishTopologyRequest, document *builder.Document) (stri
 	if err := ValidateDocumentPath(req.Path); err != nil {
 		return "", &PublishRefusedError{
 			Refusal: PublishRefusedPath, Topology: name, Problems: nil,
+			Code: builder.CodePublishPathInvalid, Located: nil,
 			Message: fmt.Sprintf("the path %s cannot be recorded: %s", req.Path, validationReason(err)),
 		}
 	}
@@ -437,9 +465,16 @@ func validationReason(err error) string {
 // [builder.Document.ExportTopologyConfig]), or else what phenix's config
 // validation refuses for a reason of its own.
 func publishableTopology(document *builder.Document, name string) (*builder.TopologyExport, error) {
-	refused := func(problems []string) error {
+	refused := func(blockers ...error) error {
+		issues := make([]builder.Issue, 0, len(blockers))
+
+		for _, blocker := range blockers {
+			issues = append(issues, blockerIssues(blocker)...)
+		}
+
 		return &PublishRefusedError{
-			Refusal: PublishRefusedBlocked, Topology: name, Problems: problems,
+			Refusal: PublishRefusedBlocked, Topology: name, Problems: builder.IssueMessages(issues),
+			Code: builder.CodePublishBlocked, Located: issues,
 			Message: fmt.Sprintf("the document cannot be published as topology %s", name),
 		}
 	}
@@ -456,23 +491,17 @@ func publishableTopology(document *builder.Document, name string) (*builder.Topo
 		// other checks of publishing found.
 		blockers, err = document.PublishBlockers(name)
 		if err != nil {
-			return nil, refused(blockerProblems(err))
+			return nil, refused(err)
 		}
 	default:
-		return nil, refused(blockerProblems(err))
+		return nil, refused(err)
 	}
 
 	if len(blockers) == 0 {
 		return export, nil
 	}
 
-	var problems []string
-
-	for _, blocker := range blockers {
-		problems = append(problems, blockerProblems(blocker)...)
-	}
-
-	return nil, refused(problems)
+	return nil, refused(blockers...)
 }
 
 // isPublishBlocker reports whether err is a check only publishing makes:
@@ -488,38 +517,29 @@ func isPublishBlocker(err error) bool {
 	return errors.As(err, &vlans) || errors.As(err, &addresses) || errors.As(err, &hostnames)
 }
 
-// blockerProblems names each interface without a VLAN, each address
-// interfaces share and each hostname phenix refuses that err reports (see
-// [builder.InterfaceVLANError], [builder.InterfaceAddressError] and
-// [builder.NodeHostnameError]), or else gives the error's own text.
-func blockerProblems(err error) []string {
-	var (
-		vlans     *builder.InterfaceVLANError
-		addresses *builder.InterfaceAddressError
-		hostnames *builder.NodeHostnameError
-	)
-
-	switch {
-	case errors.As(err, &vlans):
-		return vlans.Problems
-	case errors.As(err, &addresses):
-		return addresses.Problems
-	case errors.As(err, &hostnames):
-		return hostnames.Problems
+// blockerIssues returns an issue for each interface without a VLAN, each
+// address interfaces share and each hostname phenix refuses that err reports
+// (see [builder.ErrorIssues]), or else one of code
+// [builder.CodePublishTopologyInvalid] saying the error's own text.
+func blockerIssues(err error) []builder.Issue {
+	if issues := builder.ErrorIssues(err); len(issues) > 0 {
+		return issues
 	}
 
-	return []string{err.Error()}
+	return []builder.Issue{builder.NewIssue(builder.CodePublishTopologyInvalid, "", err.Error())}
 }
 
 // checkStoredIncludes reads the topologies the spec of the topology name
 // includes, and refuses a hostname the topology and one of them both define:
 // phenix refuses to merge such a topology into an experiment. It returns a
 // warning for each included topology that could not be read.
-func checkStoredIncludes(name string, spec map[string]any) ([]string, error) {
+func checkStoredIncludes(name string, spec map[string]any) ([]builder.Issue, error) {
 	includes, err := builder.CheckIncludes(name, spec, storedTopologyLoader)
 	if err != nil {
 		return nil, &PublishRefusedError{
 			Refusal: PublishRefusedBlocked, Topology: name, Problems: []string{err.Error()},
+			Code:    builder.CodePublishBlocked,
+			Located: []builder.Issue{builder.NewIssue(builder.CodePublishTopologyInvalid, "", err.Error())},
 			Message: fmt.Sprintf("the document cannot be published as topology %s", name),
 		}
 	}
@@ -535,6 +555,7 @@ func checkStoredIncludes(name string, spec map[string]any) ([]string, error) {
 
 		return nil, &PublishRefusedError{
 			Refusal: PublishRefusedIncludes, Topology: name, Problems: problems,
+			Code: builder.CodePublishIncludeClash, Located: nil,
 			Message: fmt.Sprintf(
 				"topology %s cannot be published: phenix rejects duplicate hostnames, "+
 					"so rename these nodes here or in the included topologies", name,
@@ -542,12 +563,12 @@ func checkStoredIncludes(name string, spec map[string]any) ([]string, error) {
 		}
 	}
 
-	warnings := make([]string, 0, len(includes.Unreadable))
+	warnings := make([]builder.Issue, 0, len(includes.Unreadable))
 
 	for _, unreadable := range includes.Unreadable {
-		warnings = append(warnings, fmt.Sprintf(
+		warnings = append(warnings, builder.NewIssue(builder.CodePublishIncludeUnchecked, "", fmt.Sprintf(
 			"Included topology %s was not checked for duplicate hostnames: %v.", unreadable.Name, unreadable.Err,
-		))
+		)))
 	}
 
 	return warnings, nil
@@ -592,25 +613,27 @@ func storedTopology(name string) (*store.Config, bool, error) {
 // alone: its scenarios, whose topology annotation only Publish in the web UI
 // adds the topology to, and the VLAN aliases of its networks, which only an
 // experiment holds.
-func unpublishedParts(document *builder.Document, export *builder.TopologyExport) []string {
-	var notices []string
+func unpublishedParts(document *builder.Document, export *builder.TopologyExport) []builder.Issue {
+	var notices []builder.Issue
 
 	switch scenarios := len(document.Scenarios); {
 	case scenarios == 1:
-		notices = append(notices, "The document's scenario is not changed: only the topology is published.")
+		notices = append(notices, builder.NewIssue(builder.CodePublishScenarioUnchanged, "",
+			"The document's scenario is not changed: only the topology is published."))
 	case scenarios > 1:
-		notices = append(notices, fmt.Sprintf(
+		notices = append(notices, builder.NewIssue(builder.CodePublishScenarioUnchanged, "", fmt.Sprintf(
 			"The document's %d scenarios are not changed: only the topology is published.", scenarios,
-		))
+		)))
 	}
 
 	switch aliases := len(export.VLANAliases); {
 	case aliases == 1:
-		notices = append(notices, "The document's VLAN alias is not published: a topology holds none.")
+		notices = append(notices, builder.NewIssue(builder.CodePublishAliasUnpublished, "",
+			"The document's VLAN alias is not published: a topology holds none."))
 	case aliases > 1:
-		notices = append(notices, fmt.Sprintf(
+		notices = append(notices, builder.NewIssue(builder.CodePublishAliasUnpublished, "", fmt.Sprintf(
 			"The document's %d VLAN aliases are not published: a topology holds none.", aliases,
-		))
+		)))
 	}
 
 	return notices
@@ -654,8 +677,14 @@ func (s *Service) existingTopologyOutcome(
 	name := existing.Metadata.Name
 
 	refused := func(refusal PublishRefusal, format string, args ...any) (TopologyOutcome, error) {
+		code := builder.CodePublishTopologyChanged
+		if refusal == PublishRefusedExists {
+			code = builder.CodePublishTopologyExists
+		}
+
 		return "", &PublishRefusedError{
 			Refusal: refusal, Topology: name, Message: fmt.Sprintf(format, args...), Problems: nil,
+			Code: code, Located: nil,
 		}
 	}
 

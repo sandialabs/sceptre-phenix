@@ -341,8 +341,10 @@ func TestBuilderExportTopologyRefusesAsPublishDoes(t *testing.T) {
 
 			if want := []string{
 				strings.TrimPrefix(publishRefusal.Message, tt.refusal),
-			}; !slices.Equal(response.PublishBlockers, want) || !strings.HasSuffix(want[0], "; 1 more interface has no VLAN") {
-				t.Fatalf("publish blockers = %q, want %q", response.PublishBlockers, want)
+			}; !slices.Equal(bdoc.IssueMessages(response.PublishBlockers), want) ||
+				!strings.HasSuffix(want[0], "; 1 more interface has no VLAN") ||
+				response.PublishBlockers[0].Code != bdoc.CodeInterfaceVLANMissing {
+				t.Fatalf("publish blockers = %+v, want %q", response.PublishBlockers, want)
 			}
 
 			if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"host"}) {
@@ -402,15 +404,37 @@ func TestBuilderExportTopologyNamesSharedAddresses(t *testing.T) {
 				t.Fatalf("publish message = %q, want %q", publishRefusal.Message, want)
 			}
 
+			// The refusal names each problem of its check as an issue, at the
+			// device it is about.
+			code := bdoc.CodeInterfaceIPShared
+			if tt.eth1 {
+				code = bdoc.CodeInterfaceVLANMissing
+			}
+
+			if publishRefusal.Code != string(bdoc.CodePublishBlocked) || len(publishRefusal.Issues) == 0 ||
+				slices.ContainsFunc(publishRefusal.Issues, func(issue bdoc.Issue) bool {
+					return issue.Code != code || issue.NodeID == "" || issue.Severity != bdoc.SeverityError
+				}) {
+				t.Fatalf("publish refusal = %+v, want code %s and issues of code %s", publishRefusal, bdoc.CodePublishBlocked, code)
+			}
+
 			response, exported := exportedBuilderTopology(t, harness, exportBuilderTopology(t, harness, document, "shared", nil))
 
-			if !slices.Equal(response.PublishBlockers, tt.blockers) {
-				t.Fatalf("publish blockers = %q, want %q", response.PublishBlockers, tt.blockers)
+			if !slices.Equal(bdoc.IssueMessages(response.PublishBlockers), tt.blockers) {
+				t.Fatalf("publish blockers = %+v, want %q", response.PublishBlockers, tt.blockers)
 			}
 
 			// The first is what Publish's refusal says.
-			if response.PublishBlockers[0] != strings.TrimPrefix(publishRefusal.Message, refusal) {
-				t.Fatalf("first publish blocker = %q, want the publish message %q", response.PublishBlockers[0], publishRefusal.Message)
+			if response.PublishBlockers[0].Message != strings.TrimPrefix(publishRefusal.Message, refusal) {
+				t.Fatalf("first publish blocker = %+v, want the publish message %q", response.PublishBlockers[0], publishRefusal.Message)
+			}
+
+			// The shared address is one problem, so its blocker is located at
+			// the interface of the first device that uses it.
+			last := response.PublishBlockers[len(response.PublishBlockers)-1]
+			if last.Code != bdoc.CodeInterfaceIPShared || last.NodeID == "" ||
+				last.Field != "spec.network.interfaces.0.address" {
+				t.Fatalf("shared address blocker = %+v, want one of code %s at aa's eth0", last, bdoc.CodeInterfaceIPShared)
 			}
 
 			if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"aa", "bb"}) {
@@ -473,9 +497,11 @@ func TestBuilderExportTopologyNamesHostnames(t *testing.T) {
 				response, _ := exportedBuilderTopology(t, harness, recorder)
 
 				if want := strings.TrimPrefix(publishRefusal.Message, refusal); !slices.Equal(
-					response.PublishBlockers, []string{want},
-				) {
-					t.Fatalf("publish blockers = %q, want %q", response.PublishBlockers, want)
+					bdoc.IssueMessages(response.PublishBlockers), []string{want},
+				) || response.PublishBlockers[0].Code != bdoc.CodeNodeHostnameReserved ||
+					!strings.HasSuffix(response.PublishBlockers[0].Path, ".device.hostname") ||
+					response.PublishBlockers[0].NodeID == "" {
+					t.Fatalf("publish blockers = %+v, want %q", response.PublishBlockers, want)
 				}
 			}
 

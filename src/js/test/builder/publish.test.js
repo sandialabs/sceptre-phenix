@@ -647,11 +647,17 @@ describe('which configs a draft may update', () => {
   test('a refused update of a file topology is shown on the topology field', () => {
     const intent = { topology: { name: 'plant', action: 'update' } };
 
-    for (const reason of [
-      'Topology plant is not what its Builder file publishes, so this draft cannot update it.',
-      'Topology plant or its Builder file changed after this draft was opened from the file.',
+    for (const [code, reason] of [
+      [
+        'publish.topology.file-mismatch',
+        'Topology plant is not what its Builder file publishes, so this draft cannot update it.',
+      ],
+      [
+        'publish.topology.file-changed',
+        'Topology plant or its Builder file changed after this draft was opened from the file.',
+      ],
     ]) {
-      expect(publishRefusal(reason, intent)).toEqual({
+      expect(publishRefusal({ code, reason }, intent)).toEqual({
         message: reason,
         field: 'topologyName',
       });
@@ -834,10 +840,13 @@ describe('publish refusals', () => {
     experiment: { name: 'lab', action: 'update' },
   };
 
-  test('a create refused because the config exists names its kind and field', () => {
-    // serverReason() makes the reason a sentence.
-    const exists = 'Config lab already exists; choose update explicitly.';
+  // serverRefusal() reads the code and makes the reason a sentence.
+  const exists = {
+    code: 'publish.topology.exists',
+    reason: 'Config lab already exists; choose update explicitly.',
+  };
 
+  test('a create refused because the config exists names its kind and field', () => {
     // A config this draft cannot update is not promised as an update.
     expect(
       publishRefusal(exists, { topology: { name: 'lab', action: 'create' } }),
@@ -859,11 +868,14 @@ describe('publish refusals', () => {
         'A topology named "lab" already exists. Publish again to update it, or enter another name to create a new topology.',
       field: 'topologyName',
     });
-    // The server checks the topology and the experiment in turn; the
-    // refusal is about the first one with that name and action.
+    // The code names the config: the server checks the topology and the
+    // experiment in turn, and reports the first it refuses.
     expect(
       publishRefusal(
-        'config lab does not exist; choose create explicitly',
+        {
+          code: 'publish.experiment.missing',
+          reason: 'config lab does not exist; choose create explicitly',
+        },
         intent,
       ),
     ).toEqual({
@@ -875,35 +887,57 @@ describe('publish refusals', () => {
 
   test('a scenario refusal points at the scenario field only for the experiment’s', () => {
     const picked = { ...intent, scenario: { name: 'lab' } };
+    const scenario = (code, reason, name) =>
+      publishRefusal({ code, reason, scenario: name }, picked);
 
-    expect(publishRefusal('Scenario lab does not exist.', picked)).toEqual({
+    expect(
+      scenario(
+        'publish.scenario.missing',
+        'Scenario lab does not exist.',
+        'lab',
+      ),
+    ).toEqual({
       message: 'Scenario lab does not exist.',
       field: 'scenarioName',
     });
     expect(
-      publishRefusal(
+      scenario(
+        'publish.scenario.not-listed',
         'Scenario lab is not one of the scenarios this draft lists.',
-        picked,
+        'lab',
       ).field,
     ).toBe('scenarioName');
     // Another listed scenario has no field in the Publish form.
-    expect(publishRefusal('Scenario other does not exist.', picked).field).toBe(
-      '',
-    );
+    expect(
+      scenario(
+        'publish.scenario.missing',
+        'Scenario other does not exist.',
+        'other',
+      ).field,
+    ).toBe('');
     // A scenario is never created or updated as a whole, so a refusal of a
     // config's create or update is never about it.
-    expect(
-      publishRefusal('config lab already exists; choose update explicitly', {
-        ...picked,
-        topology: { name: 'core', action: 'update' },
-      }).field,
-    ).toBe('');
+    for (const code of [
+      'publish.topology.exists',
+      'publish.experiment.exists',
+      'publish.experiment.missing',
+    ]) {
+      expect(
+        publishRefusal(
+          {
+            code,
+            reason: 'config lab already exists; choose update explicitly',
+          },
+          { ...picked, topology: { name: 'core', action: 'update' } },
+        ).field,
+      ).not.toBe('scenarioName');
+    }
   });
 
   test('a topology with a legacy Builder diagram stored meanwhile is refused like any other', () => {
     const refusal = (draft) =>
       publishRefusal(
-        'Config lab already exists; choose update explicitly.',
+        exists,
         { topology: { name: 'lab', action: 'create' } },
         { topologies: [{ name: 'lab', builder: 'builder-xml' }], draft },
       );
@@ -928,7 +962,9 @@ describe('publish refusals', () => {
       'topology lab is not the source this draft was loaded from',
       'Topology lab is not the source this draft was loaded from.',
     ]) {
-      expect(publishRefusal(reason, intent)).toEqual({
+      expect(
+        publishRefusal({ code: 'publish.topology.not-source', reason }, intent),
+      ).toEqual({
         message:
           'A topology named "lab" already exists, and this diagram cannot update it: ' +
           'the diagram was not imported from it, opened from its published diagram or published to it. ' +
@@ -939,7 +975,11 @@ describe('publish refusals', () => {
 
     expect(
       publishRefusal(
-        'Experiment lab is not the source this draft was loaded from.',
+        {
+          code: 'publish.experiment.not-source',
+          reason:
+            'Experiment lab is not the source this draft was loaded from.',
+        },
         intent,
       ),
     ).toEqual({
@@ -951,35 +991,66 @@ describe('publish refusals', () => {
     });
   });
 
-  test('other refusals keep the server reason and name the field it is about', () => {
-    // The sentence a server once sent for a legacy topology is not special:
-    // it is shown as any refusal that names its config.
+  test('other refusals keep the server reason and name the field their code is about', () => {
+    // What only publishing refuses is about the topology.
     expect(
       publishRefusal(
-        'topology lab belongs to the legacy XML Builder and cannot be updated here',
+        {
+          code: 'publish.blocked',
+          reason:
+            'topology lab cannot be published: interface "eth0" of device "web" has no VLAN',
+        },
+        intent,
+      ),
+    ).toEqual({
+      message:
+        'Topology lab cannot be published: interface "eth0" of device "web" has no VLAN.',
+      field: 'topologyName',
+    });
+    expect(
+      publishRefusal(
+        {
+          code: 'publish.experiment.running',
+          reason: 'running experiment lab cannot be updated',
+        },
+        intent,
+      ).field,
+    ).toBe('experimentName');
+    expect(
+      publishRefusal(
+        {
+          code: 'publish.source.changed',
+          reason:
+            'builder source Topology/lab changed after this draft was imported',
+        },
+        intent,
+      ).field,
+    ).toBe('');
+    // A refusal without a code keeps its reason, on no field: the words are
+    // not read for a config.
+    expect(
+      publishRefusal(
+        {
+          reason:
+            'topology lab belongs to the legacy XML Builder and cannot be updated here',
+        },
         intent,
       ),
     ).toEqual({
       message:
         'Topology lab belongs to the legacy XML Builder and cannot be updated here.',
-      field: 'topologyName',
+      field: '',
     });
-    expect(
-      publishRefusal('running experiment lab cannot be updated', intent).field,
-    ).toBe('experimentName');
-    expect(
-      publishRefusal(
-        'builder source Topology/lab changed after this draft was imported',
-        intent,
-      ).field,
-    ).toBe('');
-    expect(publishRefusal('', intent).message).toMatch(/Try again\.$/);
+    expect(publishRefusal({}, intent).message).toMatch(/Try again\.$/);
   });
 
   test('a topology or experiment changed since this draft published it is not overwritten', () => {
     expect(
       publishRefusal(
-        'Topology lab changed after this draft published it.',
+        {
+          code: 'publish.topology.changed',
+          reason: 'Topology lab changed after this draft published it.',
+        },
         intent,
       ),
     ).toEqual({
@@ -991,7 +1062,10 @@ describe('publish refusals', () => {
     });
     expect(
       publishRefusal(
-        'Experiment lab changed after this draft published it.',
+        {
+          code: 'publish.experiment.changed',
+          reason: 'Experiment lab changed after this draft published it.',
+        },
         intent,
       ),
     ).toMatchObject({ field: 'experimentName', changed: 'experiment/lab' });
@@ -1012,7 +1086,11 @@ describe('publish refusals', () => {
   test('a refused experiment name names its field', () => {
     expect(
       publishRefusal(
-        'Experiment all is reserved: phenix uses it to mean every experiment.',
+        {
+          code: 'publish.experiment.reserved',
+          reason:
+            'Experiment all is reserved: phenix uses it to mean every experiment.',
+        },
         { ...intent, experiment: { name: 'all', action: 'create' } },
       ).field,
     ).toBe('experimentName');

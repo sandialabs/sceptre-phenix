@@ -731,7 +731,7 @@ func (b *builderAPI) deleteSnapshot(w http.ResponseWriter, r *http.Request) erro
 		return builderNotFound("snapshot", requested)
 	case manifest.ID == meta.Current().ID:
 		return weberror.NewWebError(nil, "The current version cannot be deleted.").
-			SetStatus(http.StatusConflict)
+			SetStatus(http.StatusConflict).WithCode(string(bdoc.CodeDraftSnapshotCurrent))
 	}
 
 	updated, err := b.drafts.DeleteSnapshot(r.Context(), bapi.DeleteSnapshotRequest{

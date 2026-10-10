@@ -787,13 +787,13 @@ func TestBuilderPublishReplacesLegacyDiagram(t *testing.T) {
 	count := 0
 
 	for _, warning := range response.Warnings {
-		if warning == legacyReplaced {
+		if warning == bdoc.NewIssue(bdoc.CodePublishLegacyReplaced, "", legacyReplaced) {
 			count++
 		}
 	}
 
 	if count != 1 {
-		t.Errorf("warnings = %q, want %q once", response.Warnings, legacyReplaced)
+		t.Errorf("warnings = %+v, want %q once, of code %s", response.Warnings, legacyReplaced, bdoc.CodePublishLegacyReplaced)
 	}
 
 	published, err := harness.getConfig("Topology/sample")
@@ -825,7 +825,7 @@ func TestBuilderPublishReplacesLegacyDiagram(t *testing.T) {
 	edited := editBuilderDraft(t, harness, response.Draft, document, "added")
 
 	again, _ := publishBuilderDraft(t, harness, edited, update, http.StatusOK)
-	if slices.Contains(again.Warnings, legacyReplaced) {
+	if slices.Contains(bdoc.IssueMessages(again.Warnings), legacyReplaced) {
 		t.Errorf("warnings of the second publication = %q, want none of a legacy diagram", again.Warnings)
 	}
 
@@ -872,7 +872,8 @@ func TestBuilderPublishRemovesUnreadableLegacyDiagram(t *testing.T) {
 			response, _ := publishBuilderDraft(t, harness, draft,
 				`{"mode":"topology","topology":{"name":"sample","action":"update"}}`, http.StatusOK)
 
-			if !slices.Contains(response.Warnings, removed) || slices.Contains(response.Warnings, legacyReplaced) {
+			if !slices.Contains(response.Warnings, bdoc.NewIssue(bdoc.CodePublishLegacyRemoved, "", removed)) ||
+				slices.Contains(bdoc.IssueMessages(response.Warnings), legacyReplaced) {
 				t.Errorf("warnings = %q, want %q and nothing of a replaced diagram", response.Warnings, removed)
 			}
 
@@ -906,7 +907,7 @@ func TestBuilderPublishExperimentReplacesLegacyDiagram(t *testing.T) {
 	}
 
 	if published.HasAnnotation(bdoc.LegacyXMLAnnotation) || !published.HasAnnotation(bapi.DocumentAnnotation) ||
-		!slices.Contains(response.Warnings, legacyReplaced) {
+		!slices.Contains(response.Warnings, bdoc.NewIssue(bdoc.CodePublishLegacyReplaced, "", legacyReplaced)) {
 		t.Errorf("annotations = %v, warnings = %q, want the legacy diagram replaced and a warning",
 			published.Metadata.Annotations, response.Warnings)
 	}

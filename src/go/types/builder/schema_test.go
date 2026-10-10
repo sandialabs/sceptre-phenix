@@ -26,7 +26,7 @@ var frontendSchemaBundle = filepath.Join( //nolint:gochecknoglobals // test fixt
 var updateFrontendSchema = flag.Bool( //nolint:gochecknoglobals // test flag
 	"update-frontend-schema",
 	false,
-	"rewrite the web UI builder schema bundle from builder.SchemaJSON",
+	"rewrite the web UI builder schema bundle and error codes, and the docs' table of codes, from the builder package",
 )
 
 func TestSchemaHeader(t *testing.T) {

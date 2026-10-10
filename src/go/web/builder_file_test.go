@@ -835,8 +835,8 @@ func TestBuilderPublishToFileBackedTopology(t *testing.T) {
 		response, _ := publishBuilderDraft(t, harness, draft, update, http.StatusOK)
 		draft = response.Draft
 
-		warning := "Topology site names the Builder file " + path +
-			", which Publish does not change. Download the diagram and replace the file to keep it in step."
+		warning := bdoc.NewIssue(bdoc.CodePublishFileUnchanged, "", "Topology site names the Builder file "+path+
+			", which Publish does not change. Download the diagram and replace the file to keep it in step.")
 
 		if response.Stages[1].Status != "updated" || !slices.Contains(response.Warnings, warning) {
 			t.Fatalf("pinned %t: stages = %#v, warnings = %q; want the topology updated with the warning",

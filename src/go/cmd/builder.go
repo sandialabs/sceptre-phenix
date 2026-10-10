@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	bapi "phenix/api/builder"
+	bdoc "phenix/types/builder"
 	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/plog"
@@ -130,11 +131,11 @@ func publishBuilderDocument(cmd *cobra.Command, path string) error {
 
 	if base, mounts := common.PhenixBase, common.MountDir(); record &&
 		!bapi.DocumentPathServed(base, []string{mounts}, absolute) {
-		warnings = append(warnings, fmt.Sprintf(
+		warnings = append(warnings, bdoc.NewIssue(bdoc.CodePublishFileUnserved, "", fmt.Sprintf(
 			"The phenix server does not read Builder files from %s: it reads them below %s, except below %s. "+
 				"The topology opens from the stored document.",
 			absolute, base, mounts,
-		))
+		)))
 	}
 
 	if dryRun {
@@ -142,7 +143,7 @@ func publishBuilderDocument(cmd *cobra.Command, path string) error {
 	}
 
 	for _, warning := range warnings {
-		plog.Warn(plog.TypeSystem, warning, "topology", publication.Name)
+		plog.Warn(plog.TypeSystem, warning.Message, "topology", publication.Name, "code", string(warning.Code))
 	}
 
 	message := "topology already up to date"
@@ -184,7 +185,8 @@ func builderPublisher() (string, error) {
 
 // builderFileError says why the file at path cannot be used as a Builder
 // document: what the builder package found wrong with it, without the prefix
-// its errors carry for its other callers, or else why it could not be read.
+// its errors carry for its other callers, each issue on a line of its own
+// with its code, or else why it could not be read.
 func builderFileError(path string, err error) error {
 	var (
 		invalid *bapi.ValidationError
@@ -196,6 +198,8 @@ func builderFileError(path string, err error) error {
 		const mebibyte = 1 << 20
 
 		return fmt.Errorf("%s is larger than %d MiB, the most a Builder document may be", path, bapi.MaxDocumentBytes/mebibyte)
+	case errors.As(err, &invalid) && len(bdoc.ErrorIssues(invalid.Cause)) > 0:
+		return errors.New(builderInvalidDocument(path, bdoc.ErrorIssues(invalid.Cause)))
 	case errors.As(err, &invalid) && invalid.Cause != nil:
 		return fmt.Errorf("%s is not a valid Builder document: %w", path, invalid.Cause)
 	case errors.As(err, &invalid):
@@ -212,7 +216,7 @@ func builderFileError(path string, err error) error {
 
 // builderPublishError is the error of a publication that did not go
 // through. A refusal is shown as it is, with the flag that lifts it where
-// there is one.
+// there is one, and the code of each line after it (see [builderRefusal]).
 func builderPublishError(path string, err error) error {
 	var (
 		refused *bapi.PublishRefusedError
@@ -221,9 +225,9 @@ func builderPublishError(path string, err error) error {
 
 	switch {
 	case errors.As(err, &refused) && refused.Refusal == bapi.PublishRefusedExists:
-		return errors.New(refused.Error() + "; use --update to replace it")
+		return errors.New(builderRefusal(refused, "; use --update to replace it"))
 	case errors.As(err, &refused):
-		return errors.New(refused.Error())
+		return errors.New(builderRefusal(refused, ""))
 	case errors.As(err, &invalid) && invalid.Field == "actor":
 		return fmt.Errorf("the user to record as the publisher %s", invalid.Reason)
 	}
@@ -231,11 +235,56 @@ func builderPublishError(path string, err error) error {
 	return util.HumanizeError(err, "%s", "Unable to publish Builder document "+path).Humanized()
 }
 
+// builderCoded is a message with the code of its rule after it, as the
+// command's text shows each refusal, problem and warning:
+// "topology lab already exists [publish.topology.exists]".
+func builderCoded(message string, code bdoc.Code) string {
+	if code == "" {
+		return message
+	}
+
+	return message + " [" + string(code) + "]"
+}
+
+// builderInvalidDocument is the text of a document that does not validate:
+// that the file at path is not a valid Builder document, with the code of
+// that, and then each issue on a line of its own, where it is and what it
+// says, with its code:
+//
+//	pump.json is not a valid Builder document [document.invalid]:
+//	  metadata.id: document ID "x" is not a valid UUID [metadata.id.invalid]
+func builderInvalidDocument(path string, issues []bdoc.Issue) string {
+	lines := make([]string, len(issues))
+
+	for i, issue := range issues {
+		lines[i] = builderCoded(issue.String(), issue.Code)
+	}
+
+	return builderCoded(path+" is not a valid Builder document", bdoc.CodeDocumentInvalid) + ":\n  " + strings.Join(lines, "\n  ")
+}
+
+// builderRefusal is the text of a refusal: its message, with hint after it,
+// and then each thing to fix on a line of its own, each line with its code.
+func builderRefusal(refused *bapi.PublishRefusedError, hint string) string {
+	issues := refused.Issues()
+	if len(issues) == 0 {
+		return builderCoded(refused.Message+hint, refused.Code)
+	}
+
+	lines := make([]string, len(issues))
+
+	for i, issue := range issues {
+		lines[i] = builderCoded(issue.Message, issue.Code)
+	}
+
+	return builderCoded(refused.Message+hint, refused.Code) + ":\n  " + strings.Join(lines, "\n  ")
+}
+
 // writeBuilderDryRun writes the report of a dry run: the document and the
 // file it was read from, the digest, the ID and, when one is recorded, the
 // path the topology's document reference would hold, what publishing would
-// do to which topology, and every warning.
-func writeBuilderDryRun(out io.Writer, path string, publication *bapi.TopologyPublication, warnings []string) error {
+// do to which topology, and every warning, with its code.
+func writeBuilderDryRun(out io.Writer, path string, publication *bapi.TopologyPublication, warnings []bdoc.Issue) error {
 	result := "would be left as it is: it already holds this document"
 
 	switch publication.Outcome {
@@ -266,7 +315,7 @@ func writeBuilderDryRun(out io.Writer, path string, publication *bapi.TopologyPu
 		report.WriteString("Warnings:\n")
 
 		for _, warning := range warnings {
-			fmt.Fprintf(&report, "  - %s\n", warning)
+			fmt.Fprintf(&report, "  - %s\n", builderCoded(warning.Message, warning.Code))
 		}
 	}
 

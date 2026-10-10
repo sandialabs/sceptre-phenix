@@ -259,8 +259,8 @@ saved view.
 ## Lists of checks and Go to
 
 The Publish dialog (its checks before publishing, the issues a 409 or 422
-refusal lists, and the `errors` and `warnings` of a result) and the Diagram
-checks dialog list issues through `BuilderIssueList.vue`: grouped by
+refusal lists, and a result's `errorIssues` and `warningIssues`) and the
+Diagram checks dialog list issues through `BuilderIssueList.vue`: grouped by
 severity, errors first (`bySeverity` in `issues.js`; with the document,
 each group in node, then connection, then diagram order), under headings
 that count them ("2 errors block publishing" in the Publish dialog's checks
@@ -807,13 +807,19 @@ through `JSONFromYAML`, at most 5 MiB (`MaxPackageBytes`), at most 20
 scenarios (`MaxScenarios`) and 100 topologies (`MaxPackageTopologies`).
 `decodePackage` in `package.js` makes the same checks with the same words
 (it stops at the first). `ParsePackage`, `DecodePackage`,
-`Package.Validate`/`Issues` (`*PackageError`, `ErrInvalidPackage`),
+`Package.Validate`/`Issues` (`*PackageError`, `ErrInvalidPackage`; each
+issue has a `package.*` code, e.g. `package.config-spec.missing`,
+`package.requirements.missing`, or, for the document, the document rule's
+code at a path below `document`; `DecodePackage` gives a document `Decode`
+refuses the same way, and `ErrorIssues` reads a `*PackageError`),
 `NewPackage(document, PackageContents)` (lists entries as named, so it may
 not validate), `Package.TrimRequirements` (leaves out each entry that is
 blank, too long or has control characters, then entries past 1000, and
-returns a warning naming each: `The package does not list file
-"/a\nb": it must not contain control characters.`, `The package lists at
-most 1000 apps, so it does not list 4 more: "a", "b", "c" and 1 more.`),
+returns a warning issue naming each, at the list's path:
+`package.requirement.left-out` `The package does not list file
+"/a\nb": it must not contain control characters.`,
+`package.requirements.truncated` `The package lists at most 1000 apps, so
+it does not list 4 more: "a", "b", "c" and 1 more.`),
 `Document.IconNames`; schema `PackageSchema()`
 (`package_schema.go`, documented like the others, checked by
 `TestPackageSchemaDocumentsEveryProperty`), served by `GET
@@ -824,7 +830,11 @@ A package never holds a file's content, a script or an app.
 
 `POST /builder/package` (`web/builder_package.go`, `configs` `get`) takes
 `{document, include: [scenarios|topologies|icons|images]}` (strict; an
-unknown or repeated section is 400) and answers `{package, warnings}`.
+unknown or repeated section is 400) and answers `{package, warnings}`;
+each warning is a `BuilderIssue` without a path (`package.config.unreadable`,
+`package.include.file-path`, `package.icon.missing`,
+`package.icons.too-many`, and the trim's two codes), which the Download
+dialog normalizes with `toIssue` and shows with its code.
 Requirements, whatever is included: the document's `scenarios`, its
 `source.includeTopologies`, its templates' names, `IconNames`, the apps of
 the Scenario configs that could be read (`apps[].name`, v2, or v1's
@@ -843,13 +853,16 @@ carry it.` (`... the package lists none of its apps.` without `scenarios`;
 50; a missing one warns). Then `TrimRequirements` (its warnings join the
 others; e.g. an injection `src` with a newline, or an app name a stored
 scenario holds with a control character) and `Validate`: what it still
-refuses (a stored config without a spec) is 422 with the issues in
-`cause`, so the route never answers a package the resolve route refuses.
-Over 5 MiB is 413. Nothing is written.
+refuses (a stored config without a spec) is 422 `package.invalid` with the
+issues in `cause` and `issues`, so the route never answers a package the
+resolve route refuses. Over 5 MiB is 413 `package.too-large`. Nothing is
+written.
 
 `POST /builder/package/resolve` (`configs` `get`; the body is the package,
-at most `MaxPackageBytes` through `builderDecodeLimit`, else 413 before
-decoding; strict, 422 when it does not decode or validate) answers `{dependencies:
+at most `MaxPackageBytes` through `builderDecodeLimit`, else 413
+`package.too-large` before decoding; strict, 422 `package.invalid` when it
+does not decode or validate, with `issues` when it does not validate)
+answers `{dependencies:
 [{kind, name, status, packaged, detail?}]}` in requirement order by kind
 (scenario, topology, template, icon, image, app, file). Configs: `present`
 (same spec as the package's copy by canonical JSON, or no copy), `different`,
@@ -1791,6 +1804,87 @@ All routes are relative to `/api/v1`.
 
 The OpenAPI document served at `/docs/` describes every request and response.
 
+## Error codes and issues
+
+Every Builder problem has a stable code, dotted lowercase words whose first
+names the subject (`node.hostname.duplicate`, `publish.topology.exists`,
+`request.not-found`). The one registry is `types/builder/codes.go`
+(`bdoc.Codes()`, `LookupCode`, constants `Code…`, each with a default
+severity and a description); `make generate-builder-schema` writes it to
+`src/js/src/builder/schema/codes.json` and the table of
+`docs/content/builder/error-codes.md` (Go tests fail when either is stale).
+A code never changes meaning once released: a new rule gets a new code, in
+Go and in `validate.js` and `decode.js`, which report the same codes for the
+same rules (the shared corpus pins `code` for every case with an `error`,
+and `validate.test.js` checks every quoted text of two or more dotted words
+in `validate.js` and `decode.js` is a code of `codes.json` or a path of the
+document schema, and that no code is put together in a template string).
+
+Decoding refusals are issues on both sides: `bdoc.Decode` (through
+`decodeIssues` in `types/builder/decodeissues.go`, which walks the JSON
+against the Go types by reflection, matching keys as `encoding/json` does)
+returns a `*ValidationError` when every key and value the strict decoder
+refuses is an unknown key (`document.field.unknown`, at the key's own path
+such as `icons.<name>.type`) or a value of the wrong type at a path the
+editor checks (`decodeRule`: `metadata.not-object`, `metadata.user.not-text`,
+`metadata.time.not-text`, the notes lists, `document.list.missing`,
+`drawing.arrow.not-boolean`, `document.layout.not-text`,
+`template.list.not-list`, `icon.list.not-object`, `include.list.not-list`,
+`include.name.required`, `source.annotations.not-object`,
+`source.annotation.not-text`); any other refusal keeps the decoder's error.
+`decode.js` throws a `DocumentError` whose `issues` hold the same issue
+(`refusal` there) for each of these it refuses before validation.
+
+An issue (`bdoc.Issue`, OpenAPI `BuilderIssue`) is `{code, severity,
+message, path?, nodeId?, edgeId?, networkId?, field?}`: `field` is the JSON
+Forms path of a device field (`spec.network.interfaces.0.vlan`, `hostname`).
+`Document.Validate` issues carry codes and the IDs `LocateIssues` reads from
+the path; the publish blockers (`InterfaceVLANError`,
+`InterfaceAddressError`, `NodeHostnameError`) list located issues through
+`Issues()`, and `bdoc.ErrorIssues(err)` finds the issues of any error.
+`Topology.Warnings`, `TopologyExport.Warnings` and
+`bapi.TopologyPublication.Warnings` are issues. JS issues keep `level` and
+add `code` and `severity` (the same value), and so do the issues
+`templateFileIssues` (`templateFile.js`) finds in a template file, with the
+codes `TemplateFile.Issues` gives them.
+
+Every Builder route's error body has `code` (`builderHandler` and
+`builderCodedError` in `web/builder.go`: an explicit `WithCode`, else
+`package.invalid`, `document.invalid`, `template.file.invalid`,
+`publish.blocked` for any other error with issues, or the status's
+`request.*`/`server.*` code) and `issues` for a package or a document that
+does not validate or what only publishing refuses; other routes leave both
+out (`TestNonBuilderErrorsCarryNoCode`). The package routes' refusals and
+`POST /builder/package` warnings have `package.*` codes (see
+[Builder packages](#builder-packages)). The draft
+answers a client tells apart have `draft.*` codes: `draft.stale`
+(`builderCheckIfMatch`, 412), `draft.shares.stale` (412 of `PUT .../shares`),
+`draft.conflict` (`builderWebError` for a `bapi.ConflictError` of kind
+`bapi.KindDraft`, 409) and `draft.snapshot.current` (409); other routes keep
+`request.stale` and `request.conflict`. A method a Builder route does not
+take is answered by `builderMethodNotAllowed` with 405,
+`request.method-not-allowed` and `Allow` (the methods the router matches for
+the path); any other path gets the bare 405. The new topology name of a copy
+or combine is refused with `import.name.invalid` or `import.name.source`,
+which `store.generate` reads (`serverCode`, `NEW_NAME_CODES`) to put the
+error on the `newName` field. Each `failed` entry of a template share or
+publish answer has `code` (`template.item.not-found`,
+`template.shares.too-many`) beside `reason`. A `publish.scenario.*` refusal
+names the scenario in `metadata.scenario`. The publish response's `warnings` and
+`errors`, and the Topology YAML download's `warnings` and `publishBlockers`
+(one per check, the code of its first problem, located when it has one),
+are issues; `readIssues` in `api.js` reads them, and `readPublishResult` and
+`exportTopology` keep `warnings`, `errors` and `publishBlockers` as the
+messages beside `warningIssues`, `errorIssues` and `publishBlockerIssues`.
+`publishRefusal(serverRefusal(error), intent, context)` in `publish.js`
+picks the form field by the code (`REFUSAL_RULES`). `phenix builder
+publish` prints each refusal line and warning with `[code]` after it, and a
+file that is not a valid document as `<file> is not a valid Builder
+document [document.invalid]:` with each issue (`path: message [code]`) on a
+line of its own (`builderInvalidDocument` in `cmd/builder.go`).
+Generation and legacy conversion warnings (`source.warnings`, the generate
+and legacy responses) are plain text.
+
 ## Storage
 
 Drafts live in the phenix store as records, apart from configs
@@ -1831,7 +1925,7 @@ Read this section before changing any file listed below.
 | Configs page links | `src/js/src/components/configs/ConfigsList.vue`, `ConfigsEditor.vue`, `src/js/src/builder/configs.js` |
 | Editor components | `src/js/src/components/builder/` (canvas, Inspector, outline, toolbar, side columns, `BuilderSignIn.vue`, dialogs, nodes, edges) |
 | Editor state and logic | `src/js/src/builder/` (`store.js`, `model.js`, `autosave.js`, `idb.js`, `tabs.js`, `session.js`, `signin.js`, `panes.js`, `commands.js`, `keymap.js`, `layouts/`, `adapters/`, `publish.js`, `templates.js`, `templateFile.js`, `icons.js`, `iconLibrary.js`, `bulk.js`, `listSelection.js`, `nodeInfo.js`, `nodeNotes.js`, `grouping.js`, `groupingWorker.js`) |
-| Generated schema bundle | `src/js/src/builder/schema/builder-v1.schema.json` |
+| Generated schema bundle and error codes | `src/js/src/builder/schema/builder-v1.schema.json`, `src/js/src/builder/schema/codes.json` (from `types/builder/codes.go`) |
 
 ### Rules
 

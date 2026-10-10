@@ -254,7 +254,7 @@ func TestBuilderPublishUpdate(t *testing.T) { //nolint:paralleltest // replaces 
 	_, reference := storedTopology(t, "Pump-station")
 
 	_, err := runBuilder("publish", edited)
-	if err == nil || err.Error() != "topology Pump-station already exists; use --update to replace it" {
+	if err == nil || err.Error() != "topology Pump-station already exists; use --update to replace it [publish.topology.exists]" {
 		t.Fatalf("publishing a changed document: error = %v, want it to name --update", err)
 	}
 
@@ -326,8 +326,9 @@ func TestBuilderPublishDryRun(t *testing.T) { //nolint:paralleltest // replaces 
 		"Document ID:  " + builder.PublishedDocumentID("riverside", parsed.Digest) + "\n",
 		"Topology:     riverside (would be created)\n",
 		"Warnings:\n",
-		"  - The document's scenario is not changed: only the topology is published.\n",
-		"  - Included topology corp-services was not checked for duplicate hostnames: no stored topology has that name.\n",
+		"  - The document's scenario is not changed: only the topology is published. [publish.scenario.unchanged]\n",
+		"  - Included topology corp-services was not checked for duplicate hostnames: no stored topology has that name." +
+			" [publish.include.unchecked]\n",
 		"Nothing was written.\n",
 	} {
 		if !strings.Contains(output, want) {
@@ -403,6 +404,17 @@ func TestBuilderPublishRefusals(t *testing.T) { //nolint:paralleltest // replace
 		t.Fatalf("EncodeDocument returned error: %v", err)
 	}
 
+	// A document that does not validate: an ID that is not a UUID, and a
+	// note of the diagram that is blank.
+	invalid := bdoc.NewDocument("Invalid lab")
+	invalid.Metadata.ID = "not-a-uuid"
+	invalid.Metadata.Notes = []string{" "}
+
+	invalidData, err := json.Marshal(invalid)
+	if err != nil {
+		t.Fatalf("encoding the invalid document: %v", err)
+	}
+
 	for name, test := range map[string]struct {
 		args []string
 		// says is text the error holds, and lines how many lines it has.
@@ -418,7 +430,22 @@ func TestBuilderPublishRefusals(t *testing.T) { //nolint:paralleltest // replace
 		},
 		"a config": {
 			args: []string{"publish", writeTestFile(t, directory, "topology.yaml", docsExample(t, "pump-station.topology.yaml"))},
-			says: []string{"topology.yaml is not a valid Builder document: ", `unknown field "apiVersion"`}, lines: 1,
+			says: []string{
+				"topology.yaml is not a valid Builder document [document.invalid]:\n",
+				"\n  apiVersion: unknown field \"apiVersion\" [document.field.unknown]",
+				"\n  kind: unknown field \"kind\" [document.field.unknown]",
+				"\n  spec: unknown field \"spec\" [document.field.unknown]",
+			},
+			lines: 4,
+		},
+		"a document that does not validate": {
+			args: []string{"publish", writeTestFile(t, directory, "invalid.json", invalidData)},
+			says: []string{
+				"invalid.json is not a valid Builder document [document.invalid]:\n",
+				"\n  metadata.id: document ID \"not-a-uuid\" is not a valid UUID [metadata.id.invalid]",
+				"\n  metadata.notes[0]: note must not be blank [metadata.note.blank]",
+			},
+			lines: 3,
 		},
 		"a name that is not a config name": {
 			args: []string{"publish", file, "--name", "pump station"},
@@ -435,11 +462,12 @@ func TestBuilderPublishRefusals(t *testing.T) { //nolint:paralleltest // replace
 		"blockers": {
 			args: []string{"publish", writeTestFile(t, directory, "blocked.json", blockedData), "--dry-run"},
 			says: []string{
-				"the document cannot be published as topology Blocked-lab:\n",
-				"\n  interface \"eth0\" of device \"alpha\" has no VLAN: connect it to a network, or type a VLAN for it",
+				"the document cannot be published as topology Blocked-lab [publish.blocked]:\n",
+				"\n  interface \"eth0\" of device \"alpha\" has no VLAN: connect it to a network, or type a VLAN for it" +
+					" [interface.vlan.missing]\n",
 				"\n  interface \"eth0\" of device \"beta\" has no VLAN: connect it to a network, or type a VLAN for it",
 				"\n  IP address 10.0.0.1 without a VLAN is used by interface \"eth0\" of device \"alpha\" " +
-					"and interface \"eth0\" of device \"beta\"",
+					"and interface \"eth0\" of device \"beta\" [interface.ip.shared]",
 			},
 			lines: 4,
 		},

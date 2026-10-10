@@ -50,7 +50,7 @@ help:
 	@echo "  generate-mocks     - Generate mocks"
 	@echo "  generate-protobuf  - Generate protobufs"
 	@echo "  go-generate        - Run go generate"
-	@echo "  generate-builder-schema - Write the web UI's Builder schema bundle"
+	@echo "  generate-builder-schema - Write the web UI's Builder schema bundle and error codes"
 	@echo ""
 	@echo "Installation targets:"
 	@echo "  install            - Install Go module dependencies"
@@ -67,10 +67,11 @@ all: test
 generate: generate-mocks generate-protobuf go-generate generate-builder-schema
 
 # The web UI's copy of the Builder document schema, which embeds the v1
-# and v2 config schemas, is committed. CI regenerates it and fails when the
-# result differs from what is committed.
+# and v2 config schemas, is committed, and so are its copy of the Builder
+# error codes and the docs' table of them. CI regenerates them and fails
+# when the result differs from what is committed.
 generate-builder-schema:
-	go test ./types/builder -run '^TestFrontendSchemaBundleMatchesSchemaJSON$$' -count=1 -update-frontend-schema
+	go test ./types/builder -run '^(TestFrontendSchemaBundleMatchesSchemaJSON|TestFrontendCodesMatchRegistry|TestDocsCodeTableMatchesRegistry)$$' -count=1 -update-frontend-schema
 
 test:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
