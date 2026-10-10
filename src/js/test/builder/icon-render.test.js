@@ -460,22 +460,33 @@ describe('the Custom icons dialog', () => {
       .slice(1)
       .map((row) => row.slice(0, row.indexOf('</li>')));
 
+    // A row's text, without its checkbox and the hidden words that say
+    // whether it is selected (see the test of selecting below).
+    const shown = (row) =>
+      textOf(
+        `<li${row}`
+          .replace(/<label\b[\s\S]*?<\/label>/, '')
+          .replace(/<span id="icon-state-[^"]*"[^>]*>[^<]*<\/span>/, ''),
+      );
+
     expect(textOf(html)).toContain('Server icons (2)');
     expect(textOf(html)).toContain(
       'You uploaded 1 of 64 icons, 0.1 KiB of 1 MiB.',
     );
-    expect(textOf(`<li${rows[0]}`)).toBe(
+    expect(shown(rows[0])).toBe(
       'hmi Uploaded by alice · 1 × 1 pixels, 0.1 KiB · also named old-hmi Use Rename Delete',
     );
     expect(rows[0]).toContain('aria-label="Rename hmi"');
     expect(rows[0]).toContain('aria-label="Delete hmi from the server"');
-    expect(textOf(`<li${rows[1]}`)).toBe(
+    expect(shown(rows[1])).toBe(
       'valve Uploaded by bob · 3 × 2 pixels, 0.1 KiB Use',
     );
 
-    // The filter is a labelled field.
+    // The filter is a labelled field; the other fields are checkboxes.
     expect(html).toMatch(/<label for="icon-filter"[^>]*>Filter icons<\/label>/);
-    expect(tags(html, 'input')).toHaveLength(2);
+    expect(
+      tags(html, 'input').filter((tag) => !tag.includes('type="checkbox"')),
+    ).toHaveLength(2);
 
     // The diagram's copy the server has as it is says so; one it lacks
     // offers to add it.
@@ -486,6 +497,74 @@ describe('the Custom icons dialog', () => {
 
     expect(copies).toContain('aria-label="Add aaa to the server"');
     expect(copies).toContain('aria-label="Add plc to the server"');
+  });
+
+  test('once the library is read, a copy it lacks and an icon the user may delete can be selected, and each list has a row of its own', async () => {
+    const html = await render(
+      IconDialog,
+      {},
+      provides({ library: { status: 'ready', icons: server } }),
+    );
+    const copies = html.slice(
+      html.indexOf('data-testid="icon-diagram-list"'),
+      html.indexOf('data-testid="icon-library-heading"'),
+    );
+    const list = html.slice(html.indexOf('data-testid="icon-library-list"'));
+    const rows = (part) =>
+      part
+        .split('<li')
+        .slice(1)
+        .map((row) => row.slice(0, row.indexOf('</li>')));
+    const [hmi, valve] = rows(list);
+
+    // Both copies, which the server lacks; of the server's icons only hmi,
+    // which the user may delete.
+    expect(copies.match(/data-testid="icon-select"/g)).toHaveLength(2);
+    expect(hmi).toMatch(
+      /<label class="builder-card__select"[^>]*><input type="checkbox"[^>]*data-testid="icon-select"[^>]*><span class="builder-visually-hidden"[^>]*>Select hmi<\/span><\/label>/,
+    );
+    expect(valve).not.toContain('icon-select');
+
+    // A row is the list's one Tab stop, the first, named by its icon and
+    // whether it is selected; one that cannot be selected by its icon.
+    expect(hmi).toMatch(/^ class="builder-icons__row"[^>]*tabindex="0"/);
+    expect(hmi).toContain(
+      'aria-labelledby="icon-name-library-0 icon-state-library-0"',
+    );
+    expect(hmi).toMatch(
+      /<span id="icon-state-library-0" hidden[^>]*>not selected<\/span>/,
+    );
+    expect(valve).toContain('tabindex="-1"');
+    expect(valve).toContain('aria-labelledby="icon-name-library-1"');
+
+    // The rows above the lists, each with its action.
+    const add = tags(html, 'button').find((tag) =>
+      tag.includes('data-testid="bulk-add-icons-diagram"'),
+    );
+    const remove = tags(html, 'button').find((tag) =>
+      tag.includes('data-testid="bulk-delete-icons-library"'),
+    );
+
+    expect(html).toContain('aria-label="Bulk actions: In this diagram"');
+    expect(html).toContain('aria-label="Bulk actions: Server icons"');
+    expect(html).toMatch(
+      /data-testid="bulk-count-icons-diagram"[^>]*>\s*0 of 2 selected\s*</,
+    );
+    expect(html).toMatch(
+      /data-testid="bulk-count-icons-library"[^>]*>\s*0 of 1 selected\s*</,
+    );
+    expect(add).toContain('aria-describedby="bulk-count-icons-diagram"');
+    expect(add).toContain('aria-disabled="true"');
+    expect(remove).toContain('aria-describedby="bulk-count-icons-library"');
+    expect(remove).toContain('aria-haspopup="dialog"');
+    expect(remove).toContain('aria-disabled="true"');
+    expect(html).toMatch(
+      /data-testid="bulk-add-icons-diagram"[^>]*>\s*Add selected to server\s*<\/button>/,
+    );
+    // The row of the copies stands between their hint and their list.
+    expect(html.indexOf('bulk-bar-icons-diagram')).toBeLessThan(
+      html.indexOf('data-testid="icon-diagram-list"'),
+    );
   });
 
   test('an icon the server added from its template files is listed as the server’s', async () => {

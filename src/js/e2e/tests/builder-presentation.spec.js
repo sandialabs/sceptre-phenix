@@ -29,8 +29,10 @@ const {
   expectNoFatal,
   iconName,
   iconOf,
+  iconPath,
   ownColor,
   pngOf,
+  seedIcon,
   waitForApi,
 } = require('./builder-support');
 
@@ -2791,6 +2793,164 @@ function iconsDocument(name, icons) {
   };
 }
 
+test('several custom icons are selected by keyboard, added to the server at once, and deleted from it at once', async ({
+  page,
+  builder,
+  request,
+  tracker,
+  issues,
+}, testInfo) => {
+  // Three copies the diagram carries, which the server lacks: names of the
+  // test's own, which the filter of the server's icons finds alone.
+  const token = iconName('bulk');
+  const icons = ['a', 'b', 'c'].map((part) =>
+    iconOf(pngOf(4, 4, ownColor()), `${token}-${part}`),
+  );
+  const draft = await builder.seedDraft(
+    iconsDocument(`icons-bulk-${testInfo.project.name}-${Date.now()}`, icons),
+  );
+  const field = iconField(page, builder);
+  const copies = field.dialog
+    .getByTestId('icon-diagram-list')
+    .locator(':scope > li');
+  const served = field.dialog
+    .getByTestId('icon-library-list')
+    .locator(':scope > li');
+  const count = (list) => field.dialog.getByTestId(`bulk-count-${list}`);
+
+  await builder.openDraft(draft);
+  await builder.selectInOutline('plc-00');
+  await field.choose.click();
+  await expect(
+    field.dialog.getByRole('heading', { name: 'In this diagram (3)' }),
+  ).toBeVisible();
+  await expect(field.heading).toHaveText(/^\s*Server icons \(\d+\)\s*$/);
+
+  await test.step('the copies are selected with Space and Shift and the arrow keys, and Escape keeps the dialog open', async () => {
+    await expect(
+      field.dialog.getByTestId('bulk-bar-icons-diagram'),
+    ).toHaveAccessibleName('Bulk actions: In this diagram');
+    await expect(count('icons-diagram')).toHaveText('0 of 3 selected');
+    await copies.first().focus();
+    await expect(copies.first()).toHaveAccessibleName(
+      `${icons[0].name} not selected`,
+    );
+    await page.keyboard.press('Space');
+    await expect(count('icons-diagram')).toHaveText('1 of 3 selected');
+    await expect(field.status).toHaveText('1 of 3 selected.');
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(copies.nth(1)).toBeFocused();
+    await expect(count('icons-diagram')).toHaveText('2 of 3 selected');
+    await expect(
+      field.inDiagram(icons[1].name).getByTestId('icon-select'),
+    ).toBeChecked();
+
+    // Escape clears the selection first, and the dialog stays.
+    await page.keyboard.press('Escape');
+    await expect(count('icons-diagram')).toHaveText('0 of 3 selected');
+    await expect(field.dialog).toBeVisible();
+    await page.keyboard.press('Home');
+    await expect(copies.first()).toBeFocused();
+    await page.keyboard.press('Space');
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(count('icons-diagram')).toHaveText('2 of 3 selected');
+  });
+
+  await test.step('Add selected to server adds each selected copy, and they are on the server', async () => {
+    const add = field.dialog.getByTestId('bulk-add-icons-diagram');
+    const posts = [];
+    const watch = (response) => {
+      if (
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname.endsWith('/builder/icons')
+      ) {
+        posts.push(response.status());
+      }
+    };
+
+    page.on('response', watch);
+    await expect(add).toHaveAccessibleDescription('2 of 3 selected');
+    await add.click();
+    await expect(field.status).toHaveText(
+      'Added 2 icons to the server. The diagram drops its copies with its next edit.',
+    );
+    page.off('response', watch);
+    expect(posts).toEqual([201, 201]);
+    for (const icon of icons.slice(0, 2)) {
+      await expect(
+        field.inDiagram(icon.name).getByTestId('icon-on-server'),
+      ).toBeVisible();
+      expect((await request.get(iconPath(icon.name))).status()).toBe(200);
+    }
+    // The copy the server still lacks keeps its checkbox, unselected.
+    await expect(count('icons-diagram')).toHaveText('0 of 1 selected');
+    await expect(
+      field.inDiagram(icons[2].name).getByTestId('icon-add-to-server'),
+    ).toBeVisible();
+  });
+
+  await test.step('a copy the server got since the library was read is said to be there, not counted as added', async () => {
+    // Added through the API: the dialog's list does not know it yet.
+    await seedIcon(request, tracker, icons[2]);
+    const posts = [];
+    const watch = (response) => {
+      if (
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname.endsWith('/builder/icons')
+      ) {
+        posts.push(response.status());
+      }
+    };
+
+    await field.inDiagram(icons[2].name).getByTestId('icon-select').check();
+    await expect(count('icons-diagram')).toHaveText('1 of 1 selected');
+    page.on('response', watch);
+    await field.dialog.getByTestId('bulk-add-icons-diagram').click();
+    await expect(field.status).toHaveText(
+      `The server already has ${icons[2].name}.`,
+    );
+    page.off('response', watch);
+    expect(posts).toEqual([200]);
+    await expect(
+      field.inDiagram(icons[2].name).getByTestId('icon-on-server'),
+    ).toBeVisible();
+    // No copy the server lacks is left, nor the row above them.
+    await expect(
+      field.dialog.getByTestId('bulk-bar-icons-diagram'),
+    ).toHaveCount(0);
+  });
+
+  await test.step('the server icons are selected with Mod+A, and Delete selected deletes them after one question', async () => {
+    await field.dialog.getByTestId('icon-filter').fill(token);
+    await expect(served).toHaveCount(3);
+    await expect(count('icons-library')).toHaveText('0 of 3 selected');
+    await served.first().focus();
+    await page.keyboard.press('ControlOrMeta+A');
+    await expect(count('icons-library')).toHaveText('3 of 3 selected');
+    await expect(field.status).toHaveText('3 of 3 selected.');
+
+    await page.keyboard.press('Delete');
+    const confirm = page.getByRole('alertdialog');
+    await expect(confirm).toHaveAccessibleName('Delete 3 icons?');
+    await expect(confirm.locator('p')).toHaveText(
+      `Delete ${icons[0].name}, ${icons[1].name} and ${icons[2].name} from the server? Diagrams and templates that use them, by any of their names, will show their built-in icon instead.`,
+    );
+    await expect(confirm.getByTestId('confirm-accept')).toHaveText(
+      'Delete 3 icons',
+    );
+    await confirm.getByTestId('confirm-accept').click();
+    await expect(field.status).toHaveText('Deleted 3 icons from the server.');
+    await expect(served).toHaveCount(0);
+    await expect(field.upload).toBeFocused();
+    for (const icon of icons) {
+      expect((await request.get(iconPath(icon.name))).status()).toBe(404);
+    }
+    await field.close.click();
+  });
+
+  expectNoFatal(issues);
+});
+
 // Custom icons are images in their own colors, the same in both themes, on
 // nodes, outline rows and the rows of the Custom icons dialog. The diagram
 // here is full: it carries as many copies as a document holds.
@@ -2902,6 +3062,80 @@ for (const scheme of ['light', 'dark']) {
       await field.renameCancel.click();
       await expect(field.renameName).toHaveCount(0);
       await expect.soft(rename).toBeFocused();
+
+      // Icons selected in both lists, the rows above them, and the question
+      // Delete selected asks.
+      const copiesCount = field.dialog.getByTestId('bulk-count-icons-diagram');
+      const servedCount = field.dialog.getByTestId('bulk-count-icons-library');
+
+      await field.inDiagram(icons[1].name).getByTestId('icon-select').check();
+      await field.inDiagram(icons[2].name).getByTestId('icon-select').check();
+      await field.dialog.getByTestId('bulk-all-icons-library').check();
+      await expect(servedCount).toHaveText('2 of 2 selected');
+      await expect(copiesCount).toHaveText(
+        `2 of ${MAX_DOCUMENT_ICONS - 1} selected`,
+      );
+      await expectAccessible(page, {
+        soft: true,
+        label: `axe on the Custom icons dialog with icons selected (${scheme})`,
+      });
+      await field.dialog.getByTestId('bulk-delete-icons-library').click();
+      const question = page.getByRole('alertdialog');
+
+      await expect(question).toHaveAccessibleName('Delete 2 icons?');
+      await expectAccessible(page, {
+        soft: true,
+        label: `axe on Delete 2 icons? (${scheme})`,
+      });
+      await question.getByTestId('confirm-cancel').click();
+      await expect(question).toHaveCount(0);
+
+      // Confirmed, one of the two is gone from the server already: the
+      // summary under the row lists it with why, and takes focus. (The
+      // routed listing, read again, keeps both.)
+      const ICON_ROUTE = '**/api/v1/builder/icons/*';
+
+      await page.route(ICON_ROUTE, (route) => {
+        if (route.request().method() !== 'DELETE') {
+          return route.fallback();
+        }
+
+        return new URL(route.request().url()).pathname.endsWith(
+          `/${spare.name}`,
+        )
+          ? route.fulfill({
+              status: 404,
+              json: { message: `icon ${spare.name} not found` },
+            })
+          : route.fulfill({ status: 204 });
+      });
+      await field.dialog.getByTestId('bulk-delete-icons-library').click();
+      await question.getByTestId('confirm-accept').click();
+      const summary = field.dialog.getByTestId('bulk-summary');
+
+      await expect(summary).toBeFocused();
+      await expect(summary).toHaveAccessibleName(
+        '1 of 2 icons could not be deleted. The other 1 was deleted.',
+      );
+      await expect(summary.getByRole('listitem')).toHaveText([
+        new RegExp(`^${spare.name}: .+$`),
+      ]);
+      await expectAccessible(page, {
+        soft: true,
+        label: `axe on the summary of icons not deleted (${scheme})`,
+      });
+      await page.unroute(ICON_ROUTE);
+
+      // Escape on a row unselects its list, and the dialog stays open.
+      await field.inLibrary(spare.name).focus();
+      await page.keyboard.press('Escape');
+      await expect(servedCount).toHaveText('0 of 2 selected');
+      await field.inDiagram(icons[1].name).focus();
+      await page.keyboard.press('Escape');
+      await expect(copiesCount).toHaveText(
+        `0 of ${MAX_DOCUMENT_ICONS - 1} selected`,
+      );
+      await expect(field.dialog).toBeVisible();
 
       await field.inLibrary(spare.name).getByTestId('icon-delete').click();
       const confirm = page.getByTestId('builder-confirm');

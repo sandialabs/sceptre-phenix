@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { computed, createSSRApp, effectScope, h, nextTick, toRaw } from 'vue';
 import { renderToString } from 'vue/server-renderer';
@@ -153,6 +153,7 @@ import ImportDialog from '@/components/builder/dialogs/ImportDialog.vue';
 
 import { serverCopyOf } from '@/builder/autosave.js';
 import { DUPLICATE_NEEDS_NODES } from '@/builder/clipboard.js';
+import { iconLibrary } from '@/builder/iconLibrary.js';
 import { createMemoryStore } from '@/builder/idb.js';
 import { mergeDocuments } from '@/builder/merge.js';
 import {
@@ -5790,6 +5791,234 @@ describe('bulk actions on listed drafts and published topologies', () => {
     expect(store.documents).toEqual([items[2]]);
     expect(store.deletingDocuments).toEqual([]);
     expect(store.error).toBe('');
+  });
+
+  describe('downloading several drafts or published diagrams', () => {
+    // The server's icon library: plc, which the diagrams name.
+    const library = (icons) => ({
+      icons,
+      maxIcons: 64,
+      maxBytes: 1048576,
+      usedIcons: icons.length,
+      usedBytes: 0,
+    });
+
+    // A diagram named `name` whose device alpha names the custom icon plc,
+    // of which it carries no copy: the library has it.
+    function iconDiagram(name) {
+      const sample = sampleDocument();
+      const doc = updateNode(sample.doc, sample.alpha.id, {
+        device: { icon: 'plc' },
+      });
+
+      return { ...doc, metadata: { ...doc.metadata, name } };
+    }
+
+    // A draft as GET /builder/drafts/{owner}/{draft} answers.
+    const envelope = (owner, id, document) => ({
+      draft: { id, owner },
+      document,
+      history: [],
+      cursor: 0,
+      etag: '"1"',
+    });
+
+    // The library is read once for the page; each test reads it again, and
+    // leaves it empty, as the other tests have it.
+    beforeEach(async () => {
+      api.listIcons
+        .mockReset()
+        .mockImplementation(async () =>
+          library([{ name: 'plc', aliases: [], data: ICON_DATA }]),
+        );
+      await iconLibrary.load();
+    });
+
+    afterEach(async () => {
+      api.getDocument
+        .mockReset()
+        .mockImplementation(async () => sampleDocument().doc);
+      api.listIcons.mockReset().mockImplementation(async () => library([]));
+      await iconLibrary.load();
+    });
+
+    test('each draft is read, then saved as a Builder JSON file with the custom icons it names from the library, one after another', async () => {
+      const items = [draft('d1'), draft('d2', { owner: 'bob' })];
+      const said = announcements();
+      const steps = [];
+      const files = [];
+      const progress = [];
+
+      api.getDraft.mockImplementation(async (owner, id) => {
+        steps.push(`read ${owner}/${id}`);
+
+        return envelope(owner, id, iconDiagram(`Lab ${id}`));
+      });
+      store.setError('An earlier failure.');
+
+      const outcome = await store.downloadDrafts(items, {
+        save: (file) => {
+          steps.push(`save ${file.name}`);
+          files.push(file);
+        },
+        onProgress: (done, total) => progress.push([done, total]),
+      });
+
+      expect(outcome).toEqual({ done: items, failures: [] });
+      // In order, and one at a time: a draft is saved before the next is
+      // read.
+      expect(steps).toEqual([
+        'read alice/d1',
+        'save lab-d1.json',
+        'read bob/d2',
+        'save lab-d2.json',
+      ]);
+      expect(progress).toEqual([
+        [1, 2],
+        [2, 2],
+      ]);
+      for (const [index, file] of files.entries()) {
+        const saved = JSON.parse(file.text);
+
+        expect(saved.metadata.name).toBe(`Lab ${items[index].id}`);
+        // The file carries the icon the library has, as Download does.
+        expect(saved.icons).toEqual({ plc: { data: ICON_DATA } });
+      }
+      // The caller says what the run came to, and the page alert is left
+      // alone.
+      expect(said).toEqual([]);
+      expect(store.error).toBe('An earlier failure.');
+    });
+
+    test('published diagrams are read as Open reads them, and saved the same way', async () => {
+      const items = [{ id: 'p1' }, { id: 'p2' }];
+      const names = [];
+
+      api.getDocument
+        .mockReset()
+        .mockImplementation(async (id) => iconDiagram(`Pub ${id}`));
+
+      const outcome = await store.downloadPublishedMany(items, {
+        save: (file) => names.push([file.name, JSON.parse(file.text).icons]),
+      });
+
+      expect(outcome).toEqual({ done: items, failures: [] });
+      expect(api.getDocument.mock.calls).toEqual([['p1'], ['p2']]);
+      expect(names).toEqual([
+        ['pub-p1.json', { plc: { data: ICON_DATA } }],
+        ['pub-p2.json', { plc: { data: ICON_DATA } }],
+      ]);
+    });
+
+    test('a draft or published diagram the server no longer has, and a diagram this version cannot read, are listed with why; the others are saved', async () => {
+      const gone = (what) => failed(404, `${what} not found`);
+      const items = ['d1', 'd2', 'd3', 'd4'].map((id) =>
+        draft(id, id === 'd2' ? { owner: 'bob' } : {}),
+      );
+      const save = vi.fn();
+
+      api.getDraft.mockImplementation(async (owner, id) => {
+        if (id === 'd1' || id === 'd2') {
+          throw gone(`draft ${owner}/${id}`);
+        }
+
+        // d3 was saved by a newer version of phenix.
+        return envelope(
+          owner,
+          id,
+          id === 'd3'
+            ? { ...iconDiagram('Newer'), revision: 99 }
+            : iconDiagram('Kept'),
+        );
+      });
+
+      const drafts = await store.downloadDrafts(items, { save });
+
+      expect(drafts.done).toEqual([items[3]]);
+      expect(
+        drafts.failures.map(({ item, reason }) => [item.id, reason]),
+      ).toEqual([
+        // The user's own is gone; another user's may only be hidden.
+        ['d1', 'It was deleted since the list was read.'],
+        [
+          'd2',
+          'It was deleted since the list was read, or you can no longer see it.',
+        ],
+        [
+          'd3',
+          'Its diagram cannot be read, so it was not downloaded. A newer version of phenix may have saved it.',
+        ],
+      ]);
+      expect(save).toHaveBeenCalledOnce();
+      expect(save.mock.calls[0][0].name).toBe('kept.json');
+
+      // A published diagram deleted or published again since the list was
+      // read, and one the server refuses to send.
+      const published = [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }];
+
+      save.mockClear();
+      api.getDocument.mockReset().mockImplementation(async (id) => {
+        if (id === 'p1') {
+          throw gone(`document ${id}`);
+        }
+
+        if (id === 'p2') {
+          throw failed(500, 'storage down');
+        }
+
+        return iconDiagram('Still here');
+      });
+
+      const diagrams = await store.downloadPublishedMany(published, { save });
+
+      expect(diagrams.done).toEqual([published[2]]);
+      expect(
+        diagrams.failures.map(({ item, reason }) => [item.id, reason]),
+      ).toEqual([
+        ['p1', 'It was deleted or published again since the list was read.'],
+        ['p2', 'Storage down.'],
+      ]);
+      expect(save).toHaveBeenCalledOnce();
+      expect(store.error).toBe('');
+    });
+
+    test('a session that ended, or a server out of reach, ends the run: the rest is not attempted', async () => {
+      const items = ['d1', 'd2', 'd3'].map((id) => draft(id));
+      const save = vi.fn();
+
+      for (const [error, reason] of [
+        [failed(401), 'Your session has ended. Sign in again to continue.'],
+        [
+          new Error('Network Error'),
+          'The server could not be reached. Check the connection and try again.',
+        ],
+      ]) {
+        api.getDraft.mockReset().mockRejectedValue(error);
+        api.getDocument.mockReset().mockRejectedValue(error);
+
+        const drafts = await store.downloadDrafts(items, { save });
+
+        expect(drafts.done).toEqual([]);
+        expect(drafts.failures.map((failure) => failure.reason)).toEqual([
+          reason,
+          'Not attempted.',
+          'Not attempted.',
+        ]);
+        expect(api.getDraft).toHaveBeenCalledOnce();
+
+        const diagrams = await store.downloadPublishedMany(
+          [{ id: 'p1' }, { id: 'p2' }],
+          { save },
+        );
+
+        expect(diagrams.failures.map((failure) => failure.reason)).toEqual([
+          reason,
+          'Not attempted.',
+        ]);
+        expect(api.getDocument).toHaveBeenCalledOnce();
+      }
+      expect(save).not.toHaveBeenCalled();
+    });
   });
 
   describe('sharing several drafts', () => {

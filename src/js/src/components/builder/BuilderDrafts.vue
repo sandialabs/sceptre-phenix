@@ -40,19 +40,30 @@
   saved, or why not, which its Open button is described by. Opening it
   again is the way back to changes that could not be saved.
 
-  Several cards can be acted on at once. A card the user may delete, or on
-  My Drafts share, has a checkbox, and its list a row above it
-  (BuilderBulkBar.vue) with Select all, how many are selected, and Share
-  selected and Delete selected. Drafts shared with the user have neither,
-  nor has a list with no such card. Each list keeps its own selection, by
-  cardKey, through a change of tab and a new read of the lists; every change
-  of it is announced (announce). Delete selected asks once for the batch,
-  naming what goes and how many, and the view deletes them (bulk-delete,
-  bulk-delete-published); Share selected has the view open the dialog that
-  shares them (bulk-share). While the view runs a batch (bulk), the row says
-  how far it is, and nothing can be selected or deleted. What a batch left
-  undone is listed under the row (bulkResult, BuilderBulkSummary.vue), in a
-  summary that takes focus.
+  Several cards can be acted on at once. A card a batch can act on has a
+  checkbox, and its list a row above it (BuilderBulkBar.vue) with Select
+  all, how many are selected, and the batch actions: Share selected (My
+  Drafts), Download selected (My Drafts, Shared Drafts and Published
+  Diagrams, but not a topology read from its Builder file) and Delete
+  selected (where the user may delete). A list with no such card has
+  neither. Each list keeps its own selection, by cardKey, through a change
+  of tab and a new read of the lists; every change of it is announced
+  (announce). Delete selected asks once for the batch, naming what goes and
+  how many, and the view deletes them (bulk-delete, bulk-delete-published);
+  Share selected has the view open the dialog that shares them
+  (bulk-share); Download selected has the view save each as a Builder file
+  of its own (bulk-download). While the view runs a batch (bulk), the row
+  says how far it is, and nothing can be selected or deleted. What a batch
+  left undone is listed under the row (bulkResult, BuilderBulkSummary.vue),
+  in a summary that takes focus.
+
+  The cards of a list are one Tab stop, and the keys of listSelection.js
+  move through them and select (onListKeydown): the arrow keys move focus
+  from card to card in the grid, Home and End to the first and last, Space
+  selects the focused card, Shift with Space or an arrow key a range, Mod+A
+  every card, Escape none, and Delete (Backspace on macOS) asks Delete
+  selected's question. A checkbox pressed with Shift makes the range from
+  the card last pressed as the box now is: selected, or not.
 
   The view can add a tab of its own, Node Templates (templates), whose panel
   is the templates slot.
@@ -159,6 +170,19 @@
           Share selected
         </button>
         <button
+          v-if="canDownloadSome(tab)"
+          type="button"
+          class="builder-button"
+          :data-testid="`bulk-download-${tab.id}`"
+          :aria-describedby="`bulk-count-${tab.id} bulk-download-note-${tab.id}`"
+          :aria-disabled="
+            !downloadable(tab).length || Boolean(bulk) || busy || undefined
+          "
+          @click="downloadSelected(tab)">
+          <builder-icon name="download" :size="14" />
+          Download selected
+        </button>
+        <button
           v-if="canDeleteSome(tab)"
           type="button"
           class="builder-button builder-button--danger"
@@ -171,6 +195,16 @@
           @click="askDeleteSelected(tab)">
           Delete selected
         </button>
+        <!-- Each item is a download of its own, which a browser may ask
+             the user to allow. -->
+        <span
+          v-if="canDownloadSome(tab)"
+          :id="`bulk-download-note-${tab.id}`"
+          class="builder-drafts__bulk-note"
+          :data-testid="`bulk-download-note-${tab.id}`">
+          Download selected saves a file for each; your browser may ask to allow
+          several downloads.
+        </span>
       </builder-bulk-bar>
 
       <!-- What the last batch on this tab left undone, under the row. -->
@@ -192,11 +226,19 @@
         class="builder-cards"
         :aria-busy="bulk?.tab === tab.id || undefined"
         :data-testid="`drafts-list-${tab.id}`">
+        <!-- A card is focusable, one at a time (the list's Tab stop), and
+             named by its title and whether it is selected. Focus on it, or
+             on a control in it, makes it the Tab stop. -->
         <li
-          v-for="item in tab.items"
+          v-for="(item, index) in tab.items"
           :key="`${item.owner || 'published'}-${item.id}`"
           class="builder-card builder-panel"
-          :class="{ 'is-selected': tab.selection?.has(item) }">
+          :class="{ 'is-selected': tab.selection?.has(item) }"
+          :tabindex="tab.selection?.tabStop(item) ? 0 : -1"
+          :aria-labelledby="cardLabelledBy(tab, item, index)"
+          :data-testid="`draft-card-${item.id}`"
+          @focusin="tab.selection?.focused(item)"
+          @keydown="onCardKeydown($event, tab, index)">
           <div class="builder-card__head">
             <!-- The checkbox is named for the card, as its buttons are. -->
             <label
@@ -207,12 +249,15 @@
                 :checked="tab.selection.has(item)"
                 :disabled="Boolean(bulk)"
                 :data-testid="`card-select-${item.id}`"
-                @change="select(tab, item, $event.target.checked)" />
+                @pointerdown="shift.pointerdown"
+                @keydown="shift.keydown"
+                @click="shift.click"
+                @change="select(tab, item, $event)" />
               <span class="builder-visually-hidden">
                 Select {{ cardName(item) }}
               </span>
             </label>
-            <h2>
+            <h2 :id="`card-name-${tab.id}-${index}`">
               {{ itemLabel(item) }}
               <span
                 v-if="isFile(item)"
@@ -400,6 +445,13 @@
               </span>
             </button>
           </div>
+          <!-- Whether the card is selected, for its name only. -->
+          <span
+            v-if="tab.selection && selectable(tab.id, item)"
+            :id="`card-state-${tab.id}-${index}`"
+            hidden
+            >{{ tab.selection.has(item) ? 'selected' : 'not selected' }}</span
+          >
         </li>
       </ul>
     </div>
@@ -465,7 +517,12 @@
   } from '@/builder/bulk.js';
   import { focusLost } from '@/builder/commands.js';
   import { formatTimestamp } from '@/builder/format.js';
-  import { useListSelection } from '@/builder/listSelection.js';
+  import {
+    columnsOf,
+    onListKeydown,
+    shiftPress,
+    useListSelection,
+  } from '@/builder/listSelection.js';
   import { rowTarget } from '@/builder/roving.js';
   import {
     deleteMessage,
@@ -532,6 +589,9 @@
     // (items, names, leftOut): the selected drafts to share, and how many
     // damaged ones of the selection are left out.
     'bulk-share',
+    // (tabId, items, names): the selected drafts or published diagrams to
+    // save as Builder files.
+    'bulk-download',
     'dismiss-bulk-result',
     // (text, slot): for the page's live region.
     'announce',
@@ -662,9 +722,23 @@
     others: [...props.others, ...(props.damaged.others || [])],
   }));
 
-  // A card can be selected when a bulk action could act on it: on My
-  // Drafts a draft the user may delete or share, elsewhere one they may
-  // delete. A draft shared with the user never can.
+  // Download selected saves drafts that can be read and published diagrams
+  // stored on the server, not a topology's Builder file.
+  function mayDownload(tabId, item) {
+    switch (tabId) {
+      case 'mine':
+      case 'shared':
+        return !item.damaged;
+      case 'published':
+        return !isFile(item);
+      default:
+        return false;
+    }
+  }
+
+  // A card can be selected when a bulk action could act on it: one the
+  // user may download, delete, or on My Drafts share. Other users' drafts
+  // only to delete them.
   function selectable(tabId, item) {
     const tab = { id: tabId };
 
@@ -672,9 +746,13 @@
       case 'mine':
         return item.damaged
           ? Boolean(item.canDelete)
-          : props.canDelete || Boolean(item.canShare);
+          : mayDownload(tabId, item) ||
+              props.canDelete ||
+              Boolean(item.canShare);
+      case 'shared':
+        return mayDownload(tabId, item);
       case 'published':
-        return mayDeletePublished(tab, item);
+        return mayDownload(tabId, item) || mayDeletePublished(tab, item);
       case 'others':
         return mayDelete(tab, item);
       default:
@@ -682,15 +760,16 @@
     }
   }
 
-  // The selection of each tab whose cards can be selected, by cardKey.
+  // The selection of each tab of cards, by cardKey, which also keeps the
+  // card that is the list's Tab stop. Every card is in it, for the keys to
+  // move to; only those a batch can act on can be selected.
   const selections = Object.fromEntries(
-    ['mine', 'published', 'others'].map((id) => [
+    ['mine', 'shared', 'published', 'others'].map((id) => [
       id,
       reactive(
-        useListSelection(
-          () => lists.value[id].filter((item) => selectable(id, item)),
-          cardKey,
-        ),
+        useListSelection(() => lists.value[id], cardKey, {
+          selectable: (item) => selectable(id, item),
+        }),
       ),
     ]),
   );
@@ -927,14 +1006,77 @@
     );
   }
 
-  function select(tab, item, on) {
-    tab.selection.toggle(item, on);
+  // Whether Shift was held as a card's checkbox was pressed.
+  const shift = shiftPress();
+
+  // A card's checkbox: with Shift, the range from the card last pressed
+  // becomes as the box now is. The box then shows what the selection holds.
+  function select(tab, item, event) {
+    tab.selection.press(item, {
+      checked: event.target.checked,
+      range: shift.take(),
+    });
+    event.target.checked = tab.selection.has(item);
     announceSelection(tab);
   }
 
   function selectAll(tab) {
     tab.selection.toggleAll();
     announceSelection(tab);
+  }
+
+  // A card's name: its title, and for a card that can be selected whether
+  // it is.
+  function cardLabelledBy(tab, item, index) {
+    const name = `card-name-${tab.id}-${index}`;
+
+    return tab.selection && selectable(tab.id, item)
+      ? `${name} card-state-${tab.id}-${index}`
+      : name;
+  }
+
+  // Focuses the card at a position of a tab's list, which becomes its Tab
+  // stop.
+  function focusCard(tab, index) {
+    const item = tab.items[index];
+    const list = rootEl.value?.querySelector(
+      `[data-testid="drafts-list-${CSS.escape(tab.id)}"]`,
+    );
+
+    if (item && list?.children[index]) {
+      tab.selection.focused(item);
+      list.children[index].focus();
+    }
+  }
+
+  // What the keys change: each is said, as a press of a checkbox is.
+  const SELECTING = ['extend', 'toggle', 'range', 'all', 'clear'];
+
+  // The keys of a list of cards (see onListKeydown in listSelection.js).
+  // While a batch runs the selection stays as it is: the keys only move.
+  function onCardKeydown(event, tab, index) {
+    if (!tab.selection) {
+      return;
+    }
+
+    const locked = Boolean(props.bulk);
+    const action = onListKeydown(event, {
+      selection: tab.selection,
+      items: tab.items,
+      index,
+      focus: (to) => focusCard(tab, to),
+      columns: columnsOf(event.currentTarget.parentElement),
+      locked,
+      canDelete: canDeleteSome(tab) && deletable(tab).length > 0 && !props.busy,
+      onDelete: () => askDeleteSelected(tab),
+    });
+
+    if (
+      SELECTING.includes(action?.type) &&
+      (action.type !== 'toggle' || selectable(tab.id, tab.items[index]))
+    ) {
+      announceSelection(tab);
+    }
   }
 
   // The selected drafts Share selected shares: the user's own that the
@@ -954,6 +1096,24 @@
         ? mayDeletePublished(tab, item) && !isDeleting(item)
         : mayDelete(tab, item),
     );
+  }
+
+  // The selected cards Download selected saves.
+  function downloadable(tab) {
+    return tab.selection.selected.filter((item) => mayDownload(tab.id, item));
+  }
+
+  // Download selected is there when any card of the tab can be saved.
+  function canDownloadSome(tab) {
+    return tab.items.some((item) => mayDownload(tab.id, item));
+  }
+
+  function downloadSelected(tab) {
+    const items = downloadable(tab);
+
+    if (items.length && !props.bulk && !props.busy) {
+      emit('bulk-download', tab.id, items, namesOf(items));
+    }
   }
 
   // Share selected is there when any listed draft can be shared, and
@@ -1176,6 +1336,12 @@
 
   .builder-drafts__note {
     margin: 0 0 0.75rem;
+  }
+
+  /* What Download selected does, beside it in the row. */
+  .builder-drafts__bulk-note {
+    font-size: 0.85em;
+    color: var(--bx-text-muted);
   }
 
   .builder-cards {

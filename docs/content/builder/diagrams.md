@@ -728,6 +728,37 @@ Diagrams and templates that use it, by any of its names, will show their
 built-in icon instead." Deleting an icon removes its other names too, and
 changes no diagram: its nodes keep the name.
 
+### Several icons at once
+
+In the Custom icons dialog, a copy the diagram carries that the server
+lacks, and a server icon you may delete, has a checkbox. Above each list, a
+row has **Select all**, how many are selected ("2 of 5 selected"), and its
+action:
+
+- **Add selected to server**, above **In this diagram**, adds each selected
+  copy to the server under its name: "Added 2 icons to the server. The
+  diagram drops its copies with its next edit." A copy someone added to the
+  server since the dialog opened is not counted, and is named instead: "The
+  server already has plc."
+- **Delete selected**, above **Server icons**, asks once, for example
+  "Delete 2 icons?" and "Delete plc and pump from the server? Diagrams and
+  templates that use them, by any of their names, will show their built-in
+  icon instead." Select **Delete 2 icons**. One icon alone is asked about as
+  its own **Delete** asks.
+
+The rows of a list are one stop of the Tab key, and take the keys of the
+drafts page (see
+[Selecting with the keyboard](drafts.md#selecting-with-the-keyboard)):
+arrow keys, **Space**, **Shift** for a range, <kbd>⌘</kbd>+<kbd>A</kbd>
+(<kbd>Ctrl</kbd>+<kbd>A</kbd>), and **Delete** on the server icons.
+**Escape** clears the selection, and with nothing selected closes the
+dialog. A checkbox pressed with **Shift** selects or clears the range, as
+on the drafts page. When some icons could not be added or deleted, a
+summary under the row lists each with the reason. When your session ends,
+or the server cannot be reached, Builder stops, and lists the rest as "Not
+attempted." **Filter icons** narrows what the server icons' row selects:
+icons it hides are not selected.
+
 Each user may upload at most 64 icons and 1 MiB of them, and the server
 holds at most 2,000 icons. There is no `phenix` command for the icon
 library: use the editor or the REST API.

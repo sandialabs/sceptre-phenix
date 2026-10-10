@@ -12,10 +12,22 @@ import {
   bulkFailureHeading,
   bulkOutcome,
   draftsDeleteMessage,
+  iconsDeleteMessage,
   mergeShareList,
   runBulk,
   topologiesDeleteMessage,
 } from '@/builder/bulk.js';
+
+describe('the question Delete selected asks of icons', () => {
+  test('names the icons, and what diagrams and templates then show', () => {
+    expect(iconsDeleteMessage(['plc', 'pump'])).toBe(
+      'Delete plc and pump from the server? Diagrams and templates that use them, by any of their names, will show their built-in icon instead.',
+    );
+    expect(iconsDeleteMessage(['a', 'b', 'c', 'd'])).toMatch(
+      /^Delete a, b and 2 others from the server\?/,
+    );
+  });
+});
 
 // Work the test ends by hand: started holds the items under way.
 function manualWork() {

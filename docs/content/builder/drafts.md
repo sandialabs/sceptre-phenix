@@ -492,8 +492,10 @@ In the dialog:
 
 The draft appears on their **Shared Drafts** tab, with the owner and their
 access, for example "Owner: e2e-admin · Can view", and on the next line
-"Updated Sep 29, 2026, 12:52 PM". Drafts shared with you have no checkbox,
-**Share** or **Delete**.
+"Updated Sep 29, 2026, 12:52 PM". A draft shared with you has a checkbox,
+for **Download selected** (see
+[Selecting several drafts](#selecting-several-drafts)), but no **Share** or
+**Delete**.
 
 When bob (**Can view**) opens Riverside Water, the header says "Shared by
 e2e-admin · Can view", and a notice says "e2e-admin shared this draft with
@@ -663,20 +665,58 @@ question then names the owner. A draft shared with you never has
 
 ## Selecting several drafts
 
-**My Drafts**, **Published Diagrams** and **Other users' drafts** let you
-delete several items at once, and **My Drafts** also lets you share several
-drafts at once. A card you may delete (or, on **My Drafts**, share) has a
-checkbox. Above the cards, a row holds:
+Every tab of cards lets you act on several items at once. A card has a
+checkbox when one of these actions can act on it:
 
-- **Select all**, which selects every card that has a checkbox, or none. It
-  shows a mixed state when only some cards are selected.
-- How many cards are selected, for example "2 of 3 selected".
-- **Share selected**, on **My Drafts** only, when phenix has user sign-in.
-- **Delete selected**.
+- **Download selected** on **My Drafts**, **Shared Drafts** and
+  **Published Diagrams**.
+- **Share selected** on **My Drafts**, when phenix has user sign-in.
+- **Delete selected** on **My Drafts**, **Published Diagrams** and **Other
+  users' drafts**, for the cards you may delete.
 
-**Shared Drafts** has no checkboxes. On **Published Diagrams**, a topology
-whose diagram is read from a file has none. Each tab keeps its own
-selection.
+Above the cards, a row holds **Select all**, which selects every card that
+has a checkbox, or none (it shows a mixed state when only some cards are
+selected), how many cards are selected, for example "2 of 3 selected", and
+the actions. On **Published Diagrams**, a topology whose diagram is read
+from a file has no checkbox. Each tab keeps its own selection.
+
+### Selecting with the keyboard
+
+The cards of a tab are one stop of the Tab key: Tab moves to the card you
+were last on, and the keys below work there. A focused card has a focus
+ring.
+
+| Key | What it does |
+|---|---|
+| Arrow keys | Move to the next or previous card, also to the card above or below |
+| Home, End | Move to the first or last card |
+| Space | Select the focused card, or clear it |
+| Shift+Space, Shift and an arrow key | Select the cards from the card you last selected or cleared to the focused card, also when you cleared that card |
+| ⌘A (macOS), Ctrl+A | Select every card |
+| Escape | Clear the selection |
+| Delete (Backspace on macOS too) | Ask to delete the selected cards, where **Delete selected** can |
+
+A checkbox pressed with Shift held makes the same range match it: checking
+it selects the cards from the card you last selected or cleared to it, and
+clearing it clears them. After **Select all**, ⌘A or Escape, a checkbox
+pressed with Shift changes only its own card. Each change of the selection
+is announced to screen readers, for example "3 of 12 selected."
+
+### Downloading several drafts
+
+1. Select the cards, for example of Metro Campus and Riverside Water
+   expansion.
+2. Select **Download selected**.
+
+Builder saves a Builder JSON file for each, one after another, as
+**Download** saves the diagram open in the editor, with the custom icons it
+uses. A draft is saved as the server has it. Your browser may ask you to
+allow the page to download several files. When every file is saved, Builder
+says so, for example "Downloaded 2 drafts." On **Published Diagrams**, it
+saves each published diagram ("Downloaded 2 diagrams."). A card whose draft
+or diagram could not be saved, for example because it was deleted since
+the list was read, is listed with the reason in a summary under the row,
+as for **Delete selected**.
 
 ### Deleting several drafts
 
@@ -723,10 +763,10 @@ dialog closes and Builder says so, for example "Shared 2 drafts with carol
 (can edit)." When some fail, the dialog lists them, and the drafts that
 were shared are no longer selected.
 
-When your session ends, or the server cannot be reached, during either
-action, Builder stops, and lists the rest as "Not attempted." Each item is
-deleted or shared with its own request, under your permissions for that
-item.
+When your session ends, or the server cannot be reached, while Builder
+deletes, shares or downloads several items, it stops, and lists the rest as
+"Not attempted." Each item is deleted, shared or read with its own request,
+under your permissions for that item.
 
 ## Damaged drafts
 

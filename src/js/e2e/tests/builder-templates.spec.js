@@ -1207,7 +1207,8 @@ test(
       expect.soft(Math.abs(edit.height - remove.height)).toBeLessThan(1);
 
       // Tab goes from the tab through what makes more, the Show field and
-      // the row above the cards, to the first card.
+      // the row above the cards, to the first card (the cards' one Tab
+      // stop), then into it, and on to the next card's controls.
       await library.tab.focus();
       for (const control of [
         library.newTemplate,
@@ -1218,6 +1219,7 @@ test(
         library.collect,
         library.bulkDelete,
         page.getByTestId('bulk-export-templates'),
+        library.card('server'),
         library.select('server'),
         library.edit('server'),
         library.remove('server'),
@@ -2489,6 +2491,114 @@ test('a collection is exported as a template file, which Import reads back into 
       icon: icon.name,
     });
     await builder.waitSaved();
+  });
+
+  expectNoFatal(issues);
+});
+
+test('the library’s cards are selected in ranges, with Shift and a checkbox or the keys, and Delete asks about them', async ({
+  page,
+  request,
+  builder,
+  tracker,
+  issues,
+}, testInfo) => {
+  const names = ['Range alfa', 'Range bravo', 'Range charlie', 'Range delta'];
+  // A collection of its own, which no other test's templates join.
+  const seeded = await seedTemplates(
+    request,
+    tracker,
+    names.map((name, index) => ({
+      name,
+      description: '',
+      device: unitDevice(`range-${index}`),
+    })),
+    { collection: { name: uniqueName(testInfo, 'range-set') } },
+  );
+  const library = templateLibrary(page);
+  const cards = library.list.locator(':scope > li');
+
+  await builder.open();
+  await library.tab.click();
+  await library.show.selectOption(seeded.collection);
+  await expect(cards).toHaveCount(4);
+  await expect(library.count).toHaveText('0 of 4 selected');
+
+  await test.step('Shift and a checkbox select the cards between it and the one last pressed', async () => {
+    await library.select(seeded.ids[0]).check();
+    await library.select(seeded.ids[2]).click({ modifiers: ['Shift'] });
+    await expect(library.count).toHaveText('3 of 4 selected');
+    await expect(library.select(seeded.ids[1])).toBeChecked();
+    await expect(library.select(seeded.ids[3])).not.toBeChecked();
+    await expect(builder).toHaveAnnounced('3 of 4 selected.');
+  });
+
+  await test.step('on a card, Escape clears, and Space and Shift with the arrow keys select a range', async () => {
+    await library.card(seeded.ids[3]).focus();
+    await page.keyboard.press('Escape');
+    await expect(library.count).toHaveText('0 of 4 selected');
+
+    await page.keyboard.press('Space');
+    await expect(library.select(seeded.ids[3])).toBeChecked();
+    // Back to the first card, which Shift+Home reaches in a grid of one
+    // row or of several.
+    await page.keyboard.press('Shift+Home');
+    await expect(library.card(seeded.ids[0])).toBeFocused();
+    await expect(library.count).toHaveText('4 of 4 selected');
+    await expect(library.card(seeded.ids[0])).toHaveAccessibleName(
+      `${names[0]} selected`,
+    );
+
+    // A range of the keys always selects, also from a card just unselected.
+    await page.keyboard.press('Space');
+    await expect(library.count).toHaveText('3 of 4 selected');
+    await expect(library.select(seeded.ids[0])).not.toBeChecked();
+    await page.keyboard.press('Shift+End');
+    await expect(library.card(seeded.ids[3])).toBeFocused();
+    await expect(library.count).toHaveText('4 of 4 selected');
+    await expect(library.select(seeded.ids[0])).toBeChecked();
+
+    // A checkbox cleared with Shift clears the range from the card last
+    // pressed.
+    await library.select(seeded.ids[1]).uncheck();
+    await expect(library.count).toHaveText('3 of 4 selected');
+    await library.select(seeded.ids[3]).click({ modifiers: ['Shift'] });
+    await expect(library.count).toHaveText('1 of 4 selected');
+    await expect(library.select(seeded.ids[0])).toBeChecked();
+    for (const index of [1, 2, 3]) {
+      await expect(library.select(seeded.ids[index])).not.toBeChecked();
+    }
+    await expect(builder).toHaveAnnounced('1 of 4 selected.');
+    // The card of the control focus is on is the cards' Tab stop.
+    await expect(library.card(seeded.ids[3])).toHaveAttribute('tabindex', '0');
+    await expect(library.card(seeded.ids[0])).toHaveAttribute('tabindex', '-1');
+
+    await library.card(seeded.ids[3]).focus();
+    await page.keyboard.press('ControlOrMeta+A');
+    await expect(library.count).toHaveText('4 of 4 selected');
+    await expect(library.all).toBeChecked();
+  });
+
+  await test.step('Delete asks to delete the selected templates, and Cancel keeps them', async () => {
+    const deletes = [];
+    const watch = (sent) => {
+      if (/\/builder\/templates\/[^/]+\/delete$/.test(sent.url())) {
+        deletes.push(sent.url());
+      }
+    };
+
+    page.on('request', watch);
+    await page.keyboard.press('Delete');
+    await expect(library.confirm).toBeVisible();
+    await expect(library.confirm).toHaveAccessibleName(
+      /^Delete 4 templates\?$/,
+    );
+    await library.cancel.click();
+    await expect(library.confirm).toHaveCount(0);
+    page.off('request', watch);
+    expect(deletes).toEqual([]);
+    await expect(library.count).toHaveText('4 of 4 selected');
+    await expect(cards).toHaveCount(4);
   });
 
   expectNoFatal(issues);

@@ -27,6 +27,7 @@ import {
   saveDraft,
   shortcutConflicts,
   shortcutLabel,
+  takesLetters,
   textFieldCommand,
   withShortcut,
   worksInTextFields,
@@ -42,7 +43,7 @@ import {
   typesCharacter,
 } from '@/builder/keymap.js';
 
-import { nextPosition } from '@/components/builder/paletteDnd.js';
+import { nextPosition, paletteNode } from '@/components/builder/paletteDnd.js';
 
 import { sampleDocument, withTemplates } from './fixtures.js';
 
@@ -331,8 +332,13 @@ describe('the registry', () => {
 
           expect(parseKey(key), where).not.toBeNull();
           expect(reservedReason(key, platform), where).toBe('');
+          // A user could choose it for the command (a letter alone only for
+          // a command whose keys work on the canvas alone).
           if (isCustomizable(command)) {
-            expect(keyRefusal(key, platform), where).toBe('');
+            expect(
+              keyRefusal(key, platform, { letters: takesLetters(command) }),
+              where,
+            ).toBe('');
           }
           // A text field would keep it (see dispatchKeydown).
           if (worksInTextFields(command)) {
@@ -1457,6 +1463,73 @@ describe('the dispatcher', () => {
       expect(run(t.button, 'z', 'KeyZ', other)).toEqual([null, false]);
     },
   );
+
+  test('N on the canvas adds the plain Device in view, without asking, and focuses it', () => {
+    const t = targets();
+    const { doc } = sampleDocument();
+    const ctx = context({ store: { doc } });
+    const press = (target, mods = {}) => {
+      const event = keydown(target, 'n', 'KeyN', mods);
+
+      return [dispatch(event, ctx, t), event.defaultPrevented];
+    };
+
+    ctx.store.addNode = vi.fn(() => ({ id: 'added' }));
+
+    expect(press(t.canvas)).toEqual(['add.device', true]);
+    expect(ctx.view.openPalette).not.toHaveBeenCalled();
+    expect(ctx.store.addNode).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        kind: 'device',
+        position: nextPosition(doc, { kind: 'device' }),
+      }),
+    );
+    // The plain Device, as the palette's Add Device button adds it.
+    expect(ctx.store.addNode.mock.calls[0][0]).toEqual(
+      expect.objectContaining(paletteNode(ctx.store, 'device', '')),
+    );
+    expect(ctx.view.revealNode).toHaveBeenCalledWith('added');
+    expect(ctx.view.showNode).toHaveBeenCalledWith('added');
+
+    // On a focused node too: the canvas's scope.
+    expect(press(t.node)).toEqual(['add.device', true]);
+
+    // Not in a text field (the Inspector, the outline's rename field),
+    // nor on an outline row or elsewhere in the editor, nor with Shift.
+    expect(press(t.field)).toEqual([null, false]);
+    expect(press(t.row)).toEqual([null, false]);
+    expect(press(t.button)).toEqual([null, false]);
+    expect(press(t.canvas, { shiftKey: true })).toEqual([null, false]);
+    expect(ctx.store.addNode).toHaveBeenCalledTimes(2);
+
+    // The palette's Add device still asks, and leaves focus where it is.
+    ctx.view.showNode.mockClear();
+    runCommand('add.device', { ...ctx, source: 'palette' });
+    expect(ctx.view.openPalette).toHaveBeenLastCalledWith({
+      command: 'add.device',
+    });
+    runCommand('add.device', { ...ctx, source: 'palette' }, { value: '' });
+    expect(ctx.view.showNode).not.toHaveBeenCalled();
+
+    // A read-only draft adds nothing, and says why.
+    const readOnly = context({ store: { readOnly: true } });
+
+    expect(dispatch(keydown(t.canvas, 'n', 'KeyN'), readOnly, t)).toBe(
+      'add.device',
+    );
+    expect(readOnly.store.addNode).not.toHaveBeenCalled();
+    expect(readOnly.store.announce).toHaveBeenCalledWith(READ_ONLY);
+
+    // A letter alone is for the canvas only; the single-key switch turns
+    // it off.
+    expect(takesLetters('add.device')).toBe(true);
+    expect(takesLetters('view.zoomIn')).toBe(true);
+    expect(takesLetters('view.reset')).toBe(false);
+    expect(takesLetters('edit.rename')).toBe(false);
+    setSingleKeyShortcuts(false, null);
+    expect(press(t.canvas)).toEqual([null, false]);
+    setSingleKeyShortcuts(true, null);
+  });
 
   test('redo is ⇧⌘Z on macOS, and also Ctrl+Y elsewhere', () => {
     const t = targets();

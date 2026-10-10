@@ -8,6 +8,8 @@
 // The lists hold the other tests' drafts too: a test selects and deletes
 // only what it made, and the test that presses Select all deletes nothing.
 
+const fs = require('fs');
+
 const {
   API,
   blankDocument,
@@ -779,17 +781,20 @@ test(
       await expect(box).toHaveAccessibleName(
         new RegExp(`^Select ${first.title}, updated .+$`),
       );
-      // Drafts shared with the user are not selected.
+      // Without sign-in nothing is shared with the user, so that tab has no
+      // row.
       await expect(page.locator('#panel-shared .builder-bulk')).toHaveCount(0);
 
+      // The row's buttons, then the cards' Tab stop (the first card), then
+      // what is in that card.
       await page.getByTestId('drafts-tab-mine').focus();
       const order = [];
-      for (let stop = 0; stop < 4; stop += 1) {
+      for (let stop = 0; stop < 6; stop += 1) {
         await page.keyboard.press('Tab');
         order.push(
           await page.evaluate(() =>
             (document.activeElement.dataset.testid || '').replace(
-              /^(card-select|draft-open)-.*$/,
+              /^(card-select|draft-open|draft-card)-.*$/,
               '$1',
             ),
           ),
@@ -797,7 +802,9 @@ test(
       }
       expect(order).toEqual([
         'bulk-all-mine',
+        'bulk-download-mine',
         'bulk-delete-mine',
+        'draft-card',
         'card-select',
         'draft-open',
       ]);
@@ -903,6 +910,305 @@ test(
     expectNoFatal(issues);
   },
 );
+
+test('the arrow keys, Space and Shift select cards, Delete asks about them, and Download selected saves a Builder file for each', async ({
+  page,
+  builder,
+  issues,
+}, testInfo) => {
+  test.setTimeout(90000);
+
+  const drafts = [];
+  for (const part of ['a', 'b', 'c']) {
+    drafts.push(
+      await builder.seedDraft(
+        blankDocument(uniqueName(testInfo, `keys-${part}`)),
+      ),
+    );
+  }
+
+  // The list holds these three drafts alone, in this order, so the keys
+  // move between them whatever other tests make meanwhile.
+  await page.route('**/api/v1/builder/drafts', async (route) => {
+    if (route.request().method() !== 'GET') {
+      return route.fallback();
+    }
+
+    const response = await route.fetch();
+    const body = await response.json();
+    const listed = body.drafts || [];
+
+    return route.fulfill({
+      response,
+      json: {
+        ...body,
+        drafts: drafts
+          .map((draft) => listed.find((entry) => entry.id === draft.id))
+          .filter(Boolean),
+        damaged: [],
+      },
+    });
+  });
+
+  await builder.open();
+  const cards = page.getByTestId('drafts-list-mine').locator(':scope > li');
+  const card = (index) => cards.nth(index);
+  const count = page.getByTestId('bulk-count-mine');
+  const box = (index) => page.getByTestId(`card-select-${drafts[index].id}`);
+  await expect(cards).toHaveCount(3);
+  // The three cards are one row of the grid.
+  expect(
+    await cards.evaluateAll(
+      (items) => new Set(items.map((item) => item.offsetTop)).size,
+    ),
+    'rows of cards',
+  ).toBe(1);
+
+  await test.step('Tab reaches the first card, which the arrow keys, Home and End move from', async () => {
+    await page.getByTestId('bulk-delete-mine').focus();
+    await page.keyboard.press('Tab');
+    await expect(card(0)).toBeFocused();
+    await expect(card(0)).toHaveAccessibleName(
+      `${drafts[0].title} not selected`,
+    );
+    // The focused card has a focus ring.
+    await expect(card(0)).toHaveCSS('outline-style', 'solid');
+
+    await page.keyboard.press('ArrowRight');
+    await expect(card(1)).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(card(2)).toBeFocused();
+    // Down from the last row goes nowhere.
+    await page.keyboard.press('ArrowDown');
+    await expect(card(2)).toBeFocused();
+    await page.keyboard.press('Home');
+    await expect(card(0)).toBeFocused();
+
+    // The cards are one Tab stop: the card focus was last on, or on a
+    // control of.
+    await page.keyboard.press('ArrowRight');
+    await expect(card(1)).toHaveAttribute('tabindex', '0');
+    await expect(card(0)).toHaveAttribute('tabindex', '-1');
+    await page.getByTestId(`draft-open-${drafts[2].id}`).focus();
+    await expect(card(2)).toHaveAttribute('tabindex', '0');
+    await expect(card(1)).toHaveAttribute('tabindex', '-1');
+
+    // Shift+Tab from a card goes to the last control of the card before,
+    // which makes that card the stop, as Tab from the row above then finds.
+    await card(1).focus();
+    await page.keyboard.press('Shift+Tab');
+    await expect(card(0)).toHaveAttribute('tabindex', '0');
+    await expect(card(1)).toHaveAttribute('tabindex', '-1');
+    await page.getByTestId('bulk-delete-mine').focus();
+    await page.keyboard.press('Tab');
+    await expect(card(0)).toBeFocused();
+  });
+
+  await test.step('Space selects the focused card, Shift and an arrow key a range, and each change is said', async () => {
+    await page.keyboard.press('Space');
+    await expect(count).toHaveText('1 of 3 selected');
+    await expect(builder).toHaveAnnounced('1 of 3 selected.');
+    await expect(box(0)).toBeChecked();
+    await expect(card(0)).toHaveAccessibleName(`${drafts[0].title} selected`);
+    await expect(card(0)).toHaveClass(/is-selected/);
+
+    await page.keyboard.press('Shift+ArrowRight');
+    await expect(card(1)).toBeFocused();
+    await expect(count).toHaveText('2 of 3 selected');
+    await page.keyboard.press('Shift+ArrowRight');
+    await expect(count).toHaveText('3 of 3 selected');
+    await expect(builder).toHaveAnnounced('3 of 3 selected.');
+    for (const index of [0, 1, 2]) {
+      await expect(box(index)).toBeChecked();
+    }
+
+    // Back the other way, the range gives up what it took.
+    await page.keyboard.press('Shift+ArrowLeft');
+    await expect(count).toHaveText('2 of 3 selected');
+    await expect(box(2)).not.toBeChecked();
+    await page.keyboard.press('Shift+ArrowRight');
+    await expect(count).toHaveText('3 of 3 selected');
+  });
+
+  await test.step('Delete asks once about the selection, and Cancel deletes nothing', async () => {
+    const deletes = [];
+    const watch = (request) => {
+      if (request.method() === 'DELETE') {
+        deletes.push(request.url());
+      }
+    };
+
+    page.on('request', watch);
+    await page.keyboard.press('Delete');
+    const confirm = page.getByRole('alertdialog');
+    await expect(confirm).toHaveAccessibleName('Delete 3 drafts?');
+    await expect(confirm.getByTestId('confirm-cancel')).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(confirm).toHaveCount(0);
+    await expect.soft(card(2)).toBeFocused();
+    await expect(count).toHaveText('3 of 3 selected');
+    page.off('request', watch);
+    expect(deletes).toEqual([]);
+  });
+
+  await test.step('Escape clears the selection, Mod+A selects every card, and Shift with Space or Home a range back', async () => {
+    await card(2).focus();
+    await page.keyboard.press('Escape');
+    await expect(count).toHaveText('0 of 3 selected');
+    await expect(builder).toHaveAnnounced('0 of 3 selected.');
+    await page.keyboard.press('ControlOrMeta+A');
+    await expect(count).toHaveText('3 of 3 selected');
+
+    // With nothing pressed since Select all, a checkbox cleared with Shift
+    // clears its card alone, and stays cleared.
+    await box(1).click({ modifiers: ['Shift'] });
+    await expect(box(1)).not.toBeChecked();
+    await expect(count).toHaveText('2 of 3 selected');
+    await expect(box(0)).toBeChecked();
+    await expect(box(2)).toBeChecked();
+
+    await card(2).focus();
+    await page.keyboard.press('Escape');
+    await expect(count).toHaveText('0 of 3 selected');
+
+    // With nothing pressed since, Shift+Space selects the card alone, and
+    // Shift+Home the cards from it to the first.
+    await page.keyboard.press('Shift+Space');
+    await expect(count).toHaveText('1 of 3 selected');
+    await expect(box(2)).toBeChecked();
+    await page.keyboard.press('Shift+Home');
+    await expect(card(0)).toBeFocused();
+    await expect(count).toHaveText('3 of 3 selected');
+    await page.keyboard.press('Escape');
+    await expect(count).toHaveText('0 of 3 selected');
+
+    // A checkbox checked with Shift selects the range from the last pressed.
+    await box(0).click();
+    await box(2).click({ modifiers: ['Shift'] });
+    await expect(count).toHaveText('3 of 3 selected');
+    await expect(box(1)).toBeChecked();
+    await card(0).focus();
+    await page.keyboard.press('Escape');
+    await expect(count).toHaveText('0 of 3 selected');
+  });
+
+  await test.step('Download selected saves a Builder JSON file for each, one after another', async () => {
+    await card(0).focus();
+    await page.keyboard.press('Space');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Space');
+    await expect(count).toHaveText('2 of 3 selected');
+
+    const download = page.getByTestId('bulk-download-mine');
+    await expect(download).toHaveAccessibleDescription(
+      '2 of 3 selected Download selected saves a file for each; your browser may ask to allow several downloads.',
+    );
+
+    const files = [];
+    page.on('download', (file) => files.push(file));
+    await download.click();
+    await expect(builder).toHaveAnnounced('Downloaded 2 drafts.');
+    await expect.poll(() => files.length).toBe(2);
+
+    const saved = [];
+    for (const file of files) {
+      saved.push({
+        name: file.suggestedFilename(),
+        doc: JSON.parse(fs.readFileSync(await file.path(), 'utf8')),
+      });
+    }
+    expect(saved.map((file) => file.name)).toEqual([
+      `${drafts[0].title}.json`,
+      `${drafts[1].title}.json`,
+    ]);
+    expect(saved.map((file) => file.doc.metadata.name)).toEqual([
+      drafts[0].title,
+      drafts[1].title,
+    ]);
+    // The selection stays, and focus on the button.
+    await expect(count).toHaveText('2 of 3 selected');
+    await expect(download).toBeFocused();
+    await expect(page.getByTestId('bulk-summary')).toHaveCount(0);
+  });
+
+  expectNoFatal(issues);
+});
+
+test('Download selected on Published Diagrams saves a Builder file of each selected published diagram', async ({
+  page,
+  request,
+  builder,
+  tracker,
+  issues,
+}, testInfo) => {
+  test.setTimeout(90000);
+
+  const topologies = [
+    uniqueName(testInfo, 'dl-topo-a'),
+    uniqueName(testInfo, 'dl-topo-b'),
+  ];
+  const published = [];
+  for (const name of topologies) {
+    published.push(
+      await publishTopology(request, tracker, name, blankDocument(name), {
+        keepDraft: false,
+      }),
+    );
+  }
+  const nameOf = Object.fromEntries(
+    published.map(({ documentId }, index) => [documentId, topologies[index]]),
+  );
+
+  await builder.open();
+  await page.getByTestId('drafts-tab-published').click();
+  const download = page.getByTestId('bulk-download-published');
+  const count = page.getByTestId('bulk-count-published');
+  await expect(page.getByTestId('bulk-download-note-published')).toHaveText(
+    'Download selected saves a file for each; your browser may ask to allow several downloads.',
+  );
+  await expect(download).toHaveAttribute('aria-disabled', 'true');
+
+  for (const { documentId } of published) {
+    await page.getByTestId(`card-select-${documentId}`).check();
+  }
+  await expect(count).toHaveText(/^2 of \d+ selected$/);
+  await expect(download).not.toHaveAttribute('aria-disabled', 'true');
+
+  // The files come in the order of the cards.
+  const order = (
+    await page
+      .getByTestId('drafts-list-published')
+      .locator(':scope > li')
+      .evaluateAll((cards) =>
+        cards.map((card) => card.dataset.testid.replace(/^draft-card-/, '')),
+      )
+  ).filter((id) => id in nameOf);
+
+  const files = [];
+  page.on('download', (file) => files.push(file));
+  await download.click();
+  await expect(builder).toHaveAnnounced('Downloaded 2 diagrams.');
+  await expect.poll(() => files.length).toBe(2);
+
+  const saved = [];
+  for (const file of files) {
+    saved.push({
+      name: file.suggestedFilename(),
+      doc: JSON.parse(fs.readFileSync(await file.path(), 'utf8')),
+    });
+  }
+  expect(saved.map((file) => file.name)).toEqual(
+    order.map((id) => `${nameOf[id]}.json`),
+  );
+  expect(saved.map((file) => file.doc.metadata.name)).toEqual(
+    order.map((id) => nameOf[id]),
+  );
+  await expect(count).toHaveText(/^2 of \d+ selected$/);
+  await expect(download).toBeFocused();
+  await expect(page.getByTestId('bulk-summary')).toHaveCount(0);
+
+  expectNoFatal(issues);
+});
 
 test('Delete selected deletes the selected drafts or topologies after one question, and lists what it could not delete', async ({
   page,
@@ -1170,7 +1476,7 @@ test('Delete selected deletes the selected drafts or topologies after one questi
 test(
   'axe finds no serious violations in a selection, the question, the summary of what failed, and the dialog that shares several drafts',
   { tag: '@axe' },
-  async ({ page, builder }, testInfo) => {
+  async ({ page, request, builder, tracker }, testInfo) => {
     test.slow();
 
     const drafts = [];
@@ -1182,6 +1488,15 @@ test(
       );
     }
     const ours = new Set(drafts.map((draft) => draft.id));
+    // A published diagram, for the row of Published Diagrams.
+    const topologyName = uniqueName(testInfo, 'bulk-axe-topo');
+    const topology = await publishTopology(
+      request,
+      tracker,
+      topologyName,
+      blankDocument(topologyName),
+      { keepDraft: false },
+    );
 
     // Sharing needs sign-in, which this server has not: the listing says
     // these drafts can be shared, and names two users to share them with,
@@ -1308,6 +1623,18 @@ test(
         '1 of 3 drafts could not be deleted. The other 2 were deleted.',
       );
       await scan('the drafts with a failure summary');
+    });
+
+    await test.step('Published Diagrams with a selection, Download selected and its note', async () => {
+      await page.getByTestId('drafts-tab-published').click();
+      await page.getByTestId(`card-select-${topology.documentId}`).check();
+      await expect(page.getByTestId('bulk-count-published')).toHaveText(
+        /^1 of \d+ selected$/,
+      );
+      await expect(
+        page.getByTestId('bulk-download-note-published'),
+      ).toBeVisible();
+      await scan('Published Diagrams with a selection', '#panel-published');
     });
   },
 );

@@ -59,6 +59,20 @@ const stored = {
 
 const OTHER_DATA = base64Of(png(2, 2, [9, 9, 9, 255]));
 
+describe('a failure in a batch of library requests', () => {
+  test('ends the batch when the session ended or the server cannot be reached, as in a batch of drafts', () => {
+    const library = createIconLibrary({});
+
+    expect(library.ends(refusal(401, 'token expired'))).toBe(true);
+    expect(library.ends(new Error('Network Error'))).toBe(true);
+    // The other icons may still go: a missing, taken or refused icon, or a
+    // failing server, ends nothing.
+    expect(library.ends(refusal(404, 'icon plc not found'))).toBe(false);
+    expect(library.ends(refusal(409, 'icon name "plc" is taken'))).toBe(false);
+    expect(library.ends(refusal(500, 'storage down'))).toBe(false);
+  });
+});
+
 describe('icon library routes', () => {
   test('match the documented backend contract', () => {
     expect(ICONS_PATH).toBe('builder/icons');

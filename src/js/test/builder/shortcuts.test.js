@@ -188,12 +188,12 @@ describe('the sheet', () => {
   });
 
   test('marks the one-character keys the switch has turned off', () => {
-    expect(characterKeyLabels()).toEqual(['?', '=', '+', '−', '⇧1']);
+    expect(characterKeyLabels()).toEqual(['?', 'N', '=', '+', '−', '⇧1']);
     expect(singleKeyHint()).toMatch(
-      /^\?, =, \+, − and ⇧1 work alone, without ⌘\./,
+      /^\?, N, =, \+, − and ⇧1 work alone, without ⌘\./,
     );
     setPlatform('other');
-    expect(characterKeyLabels()).toEqual(['?', '=', '+', '−', 'Shift+1']);
+    expect(characterKeyLabels()).toEqual(['?', 'N', '=', '+', '−', 'Shift+1']);
     expect(singleKeyHint()).toMatch(/without Ctrl\. Turn them off if speech/);
 
     setSingleKeyShortcuts(false, null);
@@ -253,6 +253,31 @@ describe('the recorder', () => {
     );
     expect(judgeShortcut('view.reset', 'Meta+Shift+L').reason).toBe(
       'Shift+Meta+L is not used: Windows and Linux keep most shortcuts with the Windows key for themselves.',
+    );
+  });
+
+  test('lets a command whose keys work only on the canvas take a letter alone, and no other command', () => {
+    expect(judgeShortcut('add.device', 'M')).toMatchObject({
+      status: 'free',
+      reason: '',
+    });
+    // A zoom key works on the canvas only too.
+    expect(judgeShortcut('view.zoomIn', 'K')).toMatchObject({
+      status: 'free',
+      reason: '',
+    });
+    // On the canvas and the outline, in the whole editor, and in text
+    // fields too, a letter alone is still refused.
+    for (const id of ['edit.rename', 'view.reset', 'palette.open']) {
+      expect(judgeShortcut(id, 'K').reason, id).toMatch(
+        /^Letters without ⌘ are for typing/,
+      );
+    }
+
+    setPlatform('other');
+    expect(judgeShortcut('add.device', 'M').status).toBe('free');
+    expect(judgeShortcut('edit.rename', 'M').reason).toMatch(
+      /^Letters without Ctrl are for typing/,
     );
   });
 

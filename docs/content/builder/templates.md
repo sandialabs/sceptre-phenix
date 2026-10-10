@@ -278,6 +278,16 @@ many are selected ("2 of 5 selected"), and the actions your role allows:
 
 Choosing another list in **Show** clears the selection.
 
+The cards are one stop of the Tab key, and the keys of the drafts page work
+on them (see
+[Selecting with the keyboard](drafts.md#selecting-with-the-keyboard)): the
+arrow keys, **Home** and **End** move between cards, **Space** selects the
+focused card, **Shift** with **Space** or an arrow key selects a range,
+<kbd>⌘</kbd>+<kbd>A</kbd> (<kbd>Ctrl</kbd>+<kbd>A</kbd>) selects every card,
+**Escape** clears the selection, and **Delete** asks to delete the selected
+templates. A checkbox pressed with **Shift** held selects the range when it
+checks the box, and clears it when it clears the box.
+
 ## Exporting and importing templates
 
 A template file holds one collection of templates, as YAML or JSON. Export

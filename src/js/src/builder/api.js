@@ -13,6 +13,7 @@
 import axiosInstance from '@/utils/axios.js';
 
 import { count } from './announce.js';
+import { BulkError } from './bulk.js';
 import { MAX_DOCUMENT_BYTES, MAX_SHARES } from './limits.js';
 import { sessionEnded } from './signin.js';
 import { hasControlCharacters, utf8Length } from './text.js';
@@ -438,6 +439,22 @@ export function classifyError(error) {
   }
 
   return 'error';
+}
+
+/**
+ * Whether a failure ends a bulk action (runBulk's `stop` in bulk.js): once
+ * the session has ended or the server cannot be reached, the items left
+ * would fail the same way. A failure already in words (BulkError), which no
+ * request was sent for, never does.
+ *
+ * @param {*} error
+ * @returns {boolean}
+ */
+export function endsBulk(error) {
+  return (
+    !(error instanceof BulkError) &&
+    ['unauthenticated', 'offline'].includes(classifyError(error))
+  );
 }
 
 // An id in a server message. A draft is named by its owner and its id

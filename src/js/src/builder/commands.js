@@ -30,6 +30,8 @@
 //             options of the next step, as choices (below); `steps` names
 //             each step, and run gets the last choice and every choice in
 //             order
+//   keyChoice(ctx)  the choice its keys run it with, without asking (Add
+//             device's plain Device)
 //   prefix    the palette query that searches what the command goes to
 //   label(ctx)  the title as things are now ('Hide minimap')
 //   detail(ctx) a second line for the palette
@@ -1474,11 +1476,16 @@ export const COMMANDS = [
 
   // --- Add
   {
+    // Its key, on the canvas, adds the plain Device without asking, as the
+    // palette's Add Device button does, then focuses it.
     id: 'add.device',
     title: 'Add device',
     group: 'Add',
     keywords: ['vm', 'host', 'node', 'template'],
+    keys: ['N'],
+    scope: 'canvas',
     steps: ['Template'],
+    keyChoice: () => ({ id: 'device', title: 'Device', value: '' }),
     when: editable,
     detail: () => 'Choose a template',
     // The plain Device, then every template of the palette, in its groups'
@@ -1502,8 +1509,18 @@ export const COMMANDS = [
         })),
       ),
     ],
-    run: (ctx, choice) =>
-      addNode(ctx, paletteNode(ctx.store, 'device', choice?.value)),
+    run: (ctx, choice) => {
+      const node = addInView(
+        ctx,
+        paletteNode(ctx.store, 'device', choice?.value),
+      );
+
+      // From the canvas key, focus moves to the new device, so the keys
+      // that follow act on it; the palette leaves focus where it is.
+      return node && ctx.source === 'key'
+        ? ctx.view.showNode?.(node.id)
+        : undefined;
+    },
   },
   // Every other entry of Add nodes, by its id: add.switch, add.note,
   // add.group, and the drawings add.rectangle, add.circle, add.icon and
@@ -2052,7 +2069,14 @@ export function runCommand(idOrCommand, ctx, choice, picked) {
     return false;
   }
 
-  if (command.choices && choice === undefined) {
+  // A key press runs a command with the choice it makes for keys (Add
+  // device's plain Device), if it makes one.
+  const chosen =
+    choice === undefined && ctx.source === 'key'
+      ? command.keyChoice?.(ctx)
+      : choice;
+
+  if (command.choices && chosen === undefined) {
     ctx.view.openPalette(
       command.prefix ? { query: command.prefix } : { command: command.id },
     );
@@ -2063,8 +2087,8 @@ export function runCommand(idOrCommand, ctx, choice, picked) {
   const focus = noteFocus();
   const running = command.run?.(
     ctx,
-    choice,
-    picked || (choice === undefined ? [] : [choice]),
+    chosen,
+    picked || (chosen === undefined ? [] : [chosen]),
   );
 
   // After the command's own focus moves: Delete, Group and Ungroup move
@@ -2219,6 +2243,19 @@ function reachOf(command) {
  */
 export function worksInTextFields(idOrCommand) {
   return reachOf(getCommand(idOrCommand) || {}).has('field');
+}
+
+/**
+ * Whether a command may take a letter alone as a key (see keyRefusal):
+ * one whose keys work only on the canvas.
+ *
+ * @param {string|object} idOrCommand
+ * @returns {boolean}
+ */
+export function takesLetters(idOrCommand) {
+  const reach = [...reachOf(getCommand(idOrCommand) || {})];
+
+  return reach.length > 0 && reach.every((focus) => focus === 'canvas');
 }
 
 /**

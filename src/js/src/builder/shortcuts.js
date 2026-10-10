@@ -17,6 +17,7 @@ import {
   getCommand,
   isCustomizable,
   shortcutConflicts,
+  takesLetters,
   worksInTextFields,
 } from './commands.js';
 import {
@@ -232,7 +233,7 @@ export function shortcutGroups({
 
 /**
  * The one-character shortcuts the single-key switch turns on and off, as
- * the platform labels them: ['?', '=', '+', '−', '⇧1'].
+ * the platform labels them: ['?', 'N', '=', '+', '−', '⇧1'].
  *
  * @param {'mac'|'other'} [platform]
  * @returns {string[]}
@@ -332,7 +333,7 @@ export function judgeShortcut(
     label: key ? keyText(key, platform) : '',
     spoken: key ? spokenKey(key, platform) : '',
     reason:
-      keyRefusal(spec, platform) ||
+      keyRefusal(spec, platform, { letters: takesLetters(command) }) ||
       typedKeyReason(command, key, platform) ||
       systemKeyReason(key, platform),
     conflicts: [],

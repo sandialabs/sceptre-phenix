@@ -788,13 +788,22 @@ export function reservedReason(spec, platform = currentPlatform()) {
  * (reservedReason), Ctrl+Alt on Windows and Linux (AltGr types characters
  * with it), a letter without Ctrl, ⌘ or Alt (typing, and screen reader
  * navigation keys), or a key the Builder's controls use, with any
- * modifiers.
+ * modifiers. A command whose keys work only on the canvas may take a
+ * letter (letters): the canvas takes the keys a screen reader's focus mode
+ * passes it, as it takes the arrow keys, and the single-key switch turns
+ * such a key off.
  *
  * @param {string} spec
  * @param {'mac'|'other'} [platform]
+ * @param {object} [options]
+ * @param {boolean} [options.letters] a letter alone may be chosen
  * @returns {string} the reason, or '' when the key may be chosen
  */
-export function keyRefusal(spec, platform = currentPlatform()) {
+export function keyRefusal(
+  spec,
+  platform = currentPlatform(),
+  { letters = false } = {},
+) {
   const parts = parseKey(spec);
 
   if (!parts) {
@@ -813,7 +822,13 @@ export function keyRefusal(spec, platform = currentPlatform()) {
     return `${label} is not used: Ctrl+Alt types characters on many keyboard layouts.`;
   }
 
-  if (parts.kind === 'letter' && !want.ctrl && !want.meta && !want.alt) {
+  if (
+    parts.kind === 'letter' &&
+    !want.ctrl &&
+    !want.meta &&
+    !want.alt &&
+    !letters
+  ) {
     const mod = platform === 'mac' ? '⌘' : 'Ctrl';
 
     return `Letters without ${mod} are for typing, and screen readers use them to move through the page.`;

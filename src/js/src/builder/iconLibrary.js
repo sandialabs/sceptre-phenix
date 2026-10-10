@@ -14,6 +14,7 @@ import { shallowReactive } from 'vue';
 import {
   builderApi,
   classifyError,
+  endsBulk,
   errorMessage,
   serverSentence,
 } from './api.js';
@@ -55,9 +56,13 @@ export function nameTaken(error) {
  *   usedBytes); load() reads it; ensure() reads it unless it was read or is
  *   being read; lookup(name) finds an icon by its name or an alias,
  *   ignoring case; upload({name, data}, {refresh}) adds a PNG, as
- *   uploadIcon answers; rename(name, newName) and remove(name) rename and
- *   delete an icon; failure(error) says why one of them failed. Each change
- *   reads the library again.
+ *   uploadIcon answers; rename(name, newName) and remove(name, {refresh})
+ *   rename and delete an icon; failure(error) says why one of them failed,
+ *   and ends(error) whether that failure ends a batch of them (the session
+ *   ended, the server cannot be reached: endsBulk, as for the drafts'
+ *   batches). Each change reads the library again, but an upload or a
+ *   delete told refresh: false (one of a batch, which reads it once at the
+ *   end).
  */
 export function createIconLibrary(api = builderApi) {
   const state = shallowReactive({
@@ -147,13 +152,17 @@ export function createIconLibrary(api = builderApi) {
 
       return icon;
     },
-    async remove(name) {
+    async remove(name, { refresh = true } = {}) {
       await api.deleteIcon(name);
-      await load().catch(() => {});
+
+      if (refresh) {
+        await load().catch(() => {});
+      }
 
       return true;
     },
     failure: iconLibraryFailure,
+    ends: endsBulk,
   };
 }
 

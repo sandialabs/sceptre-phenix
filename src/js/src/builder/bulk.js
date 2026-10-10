@@ -1,5 +1,7 @@
-// One action on several listed items at once: deleting or sharing the
-// selected drafts, deleting the selected topologies.
+// One action on several listed items at once: deleting, sharing or
+// downloading the selected drafts, deleting or downloading the selected
+// published diagrams, deleting the selected icons or adding them to the
+// server.
 //
 // The server has a route for each item, not for a batch, so a bulk action
 // is a loop of requests, a few at a time. It never stops at the first
@@ -36,8 +38,9 @@ export class BulkError extends Error {
 /**
  * Runs `work` for each item, at most `limit` at a time, and reports every
  * outcome. A failure does not end the run, unless `stop` says it should
- * (the session ended, the server cannot be reached): the items under way
- * finish, and those not started are reported as skipped.
+ * (the session ended, the server cannot be reached: endsBulk in api.js):
+ * the items under way finish, and those not started are reported as
+ * skipped.
  *
  * @param {object[]} items
  * @param {(item: object) => Promise<*>} work
@@ -184,6 +187,17 @@ export function draftsDeleteMessage(names, { shared = 0, owners = [] } = {}) {
  */
 export function topologiesDeleteMessage(names) {
   return `${describeNames(names)}. The topologies are deleted from phēnix. Drafts and experiments made from them are not changed.`;
+}
+
+/**
+ * What deleting several icons of the server's icon library does, for the
+ * one confirmation the batch gets.
+ *
+ * @param {string[]} names the icons
+ * @returns {string}
+ */
+export function iconsDeleteMessage(names) {
+  return `Delete ${describeNames(names)} from the server? Diagrams and templates that use them, by any of their names, will show their built-in icon instead.`;
 }
 
 /**

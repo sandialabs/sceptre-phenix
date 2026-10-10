@@ -74,6 +74,7 @@
         @bulk-delete="deleteSelectedDrafts"
         @bulk-delete-published="deleteSelectedPublished"
         @bulk-share="shareSelected"
+        @bulk-download="downloadSelected"
         @dismiss-bulk-result="bulkResult = null"
         @announce="(text, slot) => store.announce(text, { slot })">
         <template #buttons>
@@ -633,6 +634,7 @@
     watch,
   } from 'vue';
   import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
+  import { saveAs } from 'file-saver';
 
   import '@/builder/builder.css';
 
@@ -1638,50 +1640,83 @@
   // out: { items, names, leftOut }.
   const bulkShare = ref(null);
 
-  // Deletes the selected items with `run`, which is told how far it is.
-  // BuilderDrafts has asked once for the batch. Nothing else is made,
-  // opened or deleted meanwhile; the row of the tab says how far the batch
-  // is, as the live region says what it is doing if it takes a while. When
-  // every item is deleted the live region says so. When some are not, they
-  // are listed with why in a summary on the tab, which takes focus (see
-  // BuilderDrafts.vue), and stay selected, for Delete selected to try them
-  // again; the page alert is not used.
-  function deleteSelected({ tab, items, names, noun, plural, run }) {
+  // Runs a batch on the selected items with `run`, which is told how far it
+  // is. BuilderDrafts has asked once for a batch that deletes. Nothing else
+  // is made, opened or deleted meanwhile; the row of the tab says how far
+  // the batch is (label: "Deleting 2 of 5…"), as the live region says what
+  // it is doing if it takes a while. When every item is done the live
+  // region says so ("Deleted 5 drafts."). When some are not, they are
+  // listed with why in a summary on the tab, which takes focus (see
+  // BuilderDrafts.vue), and stay selected, for the batch to try them again;
+  // the page alert is not used.
+  function runSelected({ tab, items, names, noun, plural, label, done, run }) {
     return whileBusy(async () => {
       const total = items.length;
-      const waited = announceWait(`Deleting ${count(total, noun, plural)}…`);
+      const waited = announceWait(`${label} ${count(total, noun, plural)}…`);
 
       bulkResult.value = null;
-      bulk.value = { tab, label: 'Deleting', done: 0, total };
+      bulk.value = { tab, label, done: 0, total };
 
       try {
-        const { done, failures } = await run((ended) => {
+        const outcome = await run((ended) => {
           bulk.value = { ...bulk.value, done: ended };
         });
 
-        if (failures.length) {
+        if (outcome.failures.length) {
           bulkResult.value = {
             tab,
             heading: bulkFailureHeading(
-              failures.length,
+              outcome.failures.length,
               total,
               noun,
               plural,
-              'deleted',
+              done,
             ),
-            items: failures.map(({ item, reason }) => ({
+            items: outcome.failures.map(({ item, reason }) => ({
               key: cardKey(item),
               name: names[cardKey(item)] || item.title || item.id,
               reason,
             })),
           };
         } else {
-          store.announce(bulkDoneMessage(done.length, noun, plural, 'deleted'));
+          store.announce(
+            bulkDoneMessage(outcome.done.length, noun, plural, done),
+          );
         }
       } finally {
         waited();
         bulk.value = null;
       }
+    });
+  }
+
+  function deleteSelected(options) {
+    return runSelected({ ...options, label: 'Deleting', done: 'deleted' });
+  }
+
+  // Download selected: a Builder JSON file for each selected draft or
+  // published diagram, saved one after another as Download saves the open
+  // diagram (see downloadDrafts and downloadPublishedMany in store.js).
+  function downloadSelected(tab, items, names = {}) {
+    const published = tab === 'published';
+    const save = (file) =>
+      saveAs(
+        new Blob([file.text], { type: 'application/json;charset=utf-8' }),
+        file.name,
+      );
+
+    return runSelected({
+      tab,
+      items,
+      names,
+      noun: published ? 'diagram' : 'draft',
+      plural: published ? 'diagrams' : 'drafts',
+      label: 'Downloading',
+      done: 'downloaded',
+      run: (onProgress) =>
+        published
+          ? store.downloadPublishedMany(items, { save, onProgress })
+          : store.downloadDrafts(items, { save, onProgress }),
     });
   }
 

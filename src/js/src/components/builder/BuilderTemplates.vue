@@ -16,7 +16,12 @@
   collection while a collection is shown, and Delete selected, each for a
   role that may do it. The selection
   is that of the list shown: showing another list drops it. Every change of
-  it is announced.
+  it is announced. The cards are one Tab stop, and the keys of
+  listSelection.js move through them and select (onListKeydown): arrow
+  keys, Home and End move, Space selects, Shift with Space or an arrow key
+  selects a range (a checkbox pressed with Shift makes the range as the
+  box now is), Mod+A every card, Escape none, and Delete (Backspace on
+  macOS) asks Delete selected's question.
 
   Deleting cannot be undone, so it asks first, once for the whole selection,
   and is one request. A deleted template leaves its collections; a deleted
@@ -389,12 +394,23 @@
         class="builder-cards"
         :aria-busy="busy || undefined"
         data-testid="templates-list">
+        <!-- A card is focusable, one at a time (the list's Tab stop), and
+             named by its template and whether it is selected. Focus on it,
+             or on a control in it, makes it the Tab stop. -->
         <li
-          v-for="template in items"
+          v-for="(template, index) in items"
           :key="`${template.owner}/${template.id}`"
           class="builder-card builder-panel"
           :class="{ 'is-selected': selection.has(template) }"
-          :data-testid="testid('template-card', template)">
+          :data-testid="testid('template-card', template)"
+          :tabindex="selection.tabStop(template) ? 0 : -1"
+          :aria-labelledby="
+            selectable
+              ? `template-name-${index} template-state-${index}`
+              : `template-name-${index}`
+          "
+          @focusin="selection.focused(template)"
+          @keydown="onCardKeydown($event, index)">
           <div class="builder-card__head">
             <!-- The checkbox is named for the card, as its buttons are. -->
             <label v-if="selectable" class="builder-card__select">
@@ -403,14 +419,17 @@
                 :checked="selection.has(template)"
                 :disabled="busy"
                 :data-testid="testid('template-select', template)"
-                @change="select(template, $event.target.checked)" />
+                @pointerdown="shift.pointerdown"
+                @keydown="shift.keydown"
+                @click="shift.click"
+                @change="select(template, $event)" />
               <span class="builder-visually-hidden">
                 Select {{ cardName(template) }}
               </span>
             </label>
             <!-- The icon devices made from it are drawn with; the name
                  says what the template is. -->
-            <h2>
+            <h2 :id="`template-name-${index}`">
               <builder-icon
                 :name="template.device?.iconKey || 'server'"
                 :src="iconSrc(template.device?.icon, null, iconLibrary)"
@@ -546,6 +565,10 @@
               Export
             </button>
           </div>
+          <!-- Whether the card is selected, for its name only. -->
+          <span v-if="selectable" :id="`template-state-${index}`" hidden>{{
+            selection.has(template) ? 'selected' : 'not selected'
+          }}</span>
         </li>
       </ul>
     </template>
@@ -583,7 +606,12 @@
   import { formatTimestamp } from '@/builder/format.js';
   import { iconLibrary } from '@/builder/iconLibrary.js';
   import { iconSrc } from '@/builder/icons.js';
-  import { useListSelection } from '@/builder/listSelection.js';
+  import {
+    columnsOf,
+    onListKeydown,
+    shiftPress,
+    useListSelection,
+  } from '@/builder/listSelection.js';
   import { describeShares } from '@/builder/share.js';
   import { LibraryError, useBuilderStore } from '@/builder/store.js';
   import { exportTemplateFile } from '@/builder/templateFile.js';
@@ -761,8 +789,13 @@
       ? rights.value.update || rights.value.delete
       : rights.value.create || mayUnpublish.value,
   );
+  // Every card is in it, for the keys to move to, and the card that is the
+  // list's Tab stop; they can be selected while something can be done to
+  // several at once.
   const selection = reactive(
-    useListSelection(items, (template) => `${template.owner}/${template.id}`),
+    useListSelection(items, (template) => `${template.owner}/${template.id}`, {
+      selectable: () => selectable.value,
+    }),
   );
 
   // The selection is that of the list shown: another list starts with
@@ -777,9 +810,54 @@
     });
   }
 
-  function select(template, on) {
-    selection.toggle(template, on);
+  // Whether Shift was held as a card's checkbox was pressed.
+  const shift = shiftPress();
+
+  // A card's checkbox: with Shift, the range from the card last pressed
+  // becomes as the box now is. The box then shows what the selection holds.
+  function select(template, event) {
+    selection.press(template, {
+      checked: event.target.checked,
+      range: shift.take(),
+    });
+    event.target.checked = selection.has(template);
     announceSelection();
+  }
+
+  // Focuses the card at a position of the list, which becomes its Tab
+  // stop.
+  function focusCard(index) {
+    const template = items.value[index];
+    const card = rootEl.value?.querySelector('[data-testid="templates-list"]')
+      ?.children[index];
+
+    if (template && card) {
+      selection.focused(template);
+      card.focus();
+    }
+  }
+
+  // What the keys change: each is said, as a press of a checkbox is.
+  const SELECTING = ['extend', 'toggle', 'range', 'all', 'clear'];
+
+  // The keys of the list of cards (see onListKeydown in listSelection.js).
+  // While the library takes a change the selection stays as it is: the
+  // keys only move. Delete asks Delete selected's question.
+  function onCardKeydown(event, index) {
+    const action = onListKeydown(event, {
+      selection,
+      items: items.value,
+      index,
+      focus: focusCard,
+      columns: columnsOf(event.currentTarget.parentElement),
+      locked: busy.value || !selectable.value,
+      canDelete: mine.value && rights.value.delete,
+      onDelete: askDeleteSelected,
+    });
+
+    if (SELECTING.includes(action?.type)) {
+      announceSelection();
+    }
   }
 
   function selectAll() {

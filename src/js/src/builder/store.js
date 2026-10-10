@@ -19,6 +19,7 @@ import {
 import {
   builderApi,
   classifyError,
+  endsBulk,
   errorMessage,
   fileTopology,
   libraryErrorMessage,
@@ -98,7 +99,11 @@ import {
   isSchemaBundle,
   normalizeSchemaBundle,
 } from './schema.js';
-import { onBuilderSessionEnd } from './session.js';
+import {
+  diagramFile,
+  downloadedDiagram,
+  onBuilderSessionEnd,
+} from './session.js';
 import { builderSettings } from './settings.js';
 import { newestFirst, reasonMessage } from './share.js';
 import { requestSignIn, signIn, signInAvailable } from './signin.js';
@@ -252,18 +257,56 @@ async function removeDraft(owner, id, etag) {
   }
 }
 
-// Whether a failure ends a bulk action: once the session has ended or the
-// server cannot be reached, the items left would fail the same way.
-function endsBulk(error) {
-  return (
-    !(error instanceof BulkError) &&
-    ['unauthenticated', 'offline'].includes(classifyError(error))
-  );
-}
-
 // Why one item of a bulk action failed, in words.
 function bulkReason(error) {
   return errorMessage(classifyError(error), error);
+}
+
+// Why a listed diagram could not be saved as a file: the server sent a
+// document this version of the Builder cannot read.
+const UNREADABLE_DOWNLOAD =
+  'Its diagram cannot be read, so it was not downloaded. A newer version of phenix may have saved it.';
+
+// Whether a failed download ends the run: as for the other batches, but a
+// diagram this version cannot read (a DocumentError, which carries no
+// response) is about that item alone, as the server did answer.
+function endsDownloads(error) {
+  return !(error instanceof DocumentError) && endsBulk(error);
+}
+
+/**
+ * Saves listed items as Builder JSON files, one after another, each as
+ * Download saves the open diagram: with a copy of every custom icon it
+ * names (see downloadedDiagram and diagramFile in session.js). Every item
+ * is tried, unless the session ends or the server cannot be reached.
+ *
+ * @param {object[]} items
+ * @param {(item: object) => Promise<object>} read the item's document
+ * @param {object} options save(file): saves {name, text}; onProgress(done,
+ *   total); missing: why an item the server no longer finds was not saved
+ * @returns {Promise<{done: object[], failures: Array<{item: object,
+ *   reason: string}>}>}
+ */
+async function downloadEach(items, read, { save, onProgress, missing }) {
+  const results = await runBulk(
+    items,
+    async (item) => {
+      const doc = await read(item);
+
+      save(diagramFile(await downloadedDiagram(doc)));
+    },
+    { limit: 1, onProgress, stop: endsDownloads },
+  );
+
+  return bulkOutcome(results, (error, item) => {
+    if (error instanceof DocumentError) {
+      return UNREADABLE_DOWNLOAD;
+    }
+
+    return classifyError(error) === 'missing'
+      ? missing(item)
+      : bulkReason(error);
+  });
 }
 
 // What a layout run is for, as the viewer knows it, and what is dropped
@@ -2456,6 +2499,46 @@ export const useBuilderStore = defineStore('builder', {
 
       return bulkOutcome(results, (error) =>
         classifyError(error) === 'missing' ? PUBLISHED_GONE : bulkReason(error),
+      );
+    },
+
+    /**
+     * Saves several listed drafts as Builder JSON files, one after another:
+     * each draft's current version as the server has it, read first, with
+     * a copy of every custom icon it names. What failed is returned with
+     * why, not put in the page alert, and nothing is announced.
+     *
+     * @param {{owner: string, id: string}[]} items listed drafts
+     * @param {object} options save(file): saves {name, text} (file-saver in
+     *   the app); onProgress(done, total)
+     * @returns {Promise<{done: object[], failures: Array<{item: object,
+     *   reason: string}>}>}
+     */
+    async downloadDrafts(items, { save, onProgress } = {}) {
+      return downloadEach(
+        items,
+        async (item) =>
+          serverDocument(
+            (await builderApi.getDraft(item.owner, item.id)).document,
+          ),
+        { save, onProgress, missing: draftMissingReason },
+      );
+    },
+
+    /**
+     * Saves several listed published diagrams as Builder JSON files, one
+     * after another, each read as readPublished reads it, likewise.
+     *
+     * @param {{id: string}[]} items listed published diagrams
+     * @param {object} options save(file); onProgress(done, total)
+     * @returns {Promise<{done: object[], failures: Array<{item: object,
+     *   reason: string}>}>}
+     */
+    async downloadPublishedMany(items, { save, onProgress } = {}) {
+      return downloadEach(
+        items,
+        async (item) => (await this.readPublished(item.id)).document,
+        { save, onProgress, missing: () => PUBLISHED_GONE },
       );
     },
 

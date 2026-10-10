@@ -2868,3 +2868,67 @@ test.describe('Builder canvas editing', () => {
     expectNoFatal(issues);
   });
 });
+
+test('N on the canvas adds a Device in view, selects and focuses it, and is typed in a field', async ({
+  page,
+  builder,
+  issues,
+}) => {
+  const draft = await blankDraft(builder);
+  const devices = builder.nodes('device');
+  // The device node focus is on, as Vue Flow wraps it.
+  const focused = page.locator(
+    '.vue-flow__node:focus [data-testid="builder-node"]',
+  );
+
+  await test.step('the canvas adds the plain Device, selects it and focuses it', async () => {
+    await builder.canvas.focus();
+    await page.keyboard.press('n');
+    await expect(devices).toHaveCount(1);
+    await expect(devices.first()).toHaveClass(/is-selected/);
+    await expect(focused).toHaveCount(1);
+    await expect.soft(builder).toHaveAnnounced('Added device');
+
+    // Inside the part of the canvas in view.
+    const view = await builder.canvas.boundingBox();
+    const box = await devices.first().boundingBox();
+
+    expect(box.x).toBeGreaterThanOrEqual(view.x);
+    expect(box.y).toBeGreaterThanOrEqual(view.y);
+    expect(box.x + box.width).toBeLessThanOrEqual(view.x + view.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(view.y + view.height);
+  });
+
+  await test.step('pressed on the new device, it adds another in a free spot', async () => {
+    await page.keyboard.press('n');
+    await expect(devices).toHaveCount(2);
+    await expect(focused).toHaveCount(1);
+    await builder.persisted(
+      draft,
+      (doc) => {
+        const [one, two] = devicesOf(doc);
+
+        return (
+          one.position.x !== two.position.x || one.position.y !== two.position.y
+        );
+      },
+      true,
+    );
+  });
+
+  await test.step('in a text field of the Inspector, N is typed', async () => {
+    const field = builder.inspector.getByRole('textbox').first();
+
+    await field.focus();
+    const before = await field.inputValue();
+
+    await page.keyboard.press('n');
+    await expect(field).toHaveValue(`${before}n`);
+    await expect(devices).toHaveCount(2);
+    await page.keyboard.press('Backspace');
+    await expect(field).toHaveValue(before);
+  });
+
+  await builder.waitSaved();
+  expectNoFatal(issues);
+});

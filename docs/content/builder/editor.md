@@ -625,12 +625,19 @@ The default shortcuts:
 | Ungroup | Editor, not in text fields | <kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>G</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> |
 | Auto-group by network | Editor, not in text fields | <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>G</kbd> | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> |
 | Auto layout | Editor, not in text fields | <kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>L</kbd> | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> |
+| Add device | Canvas | <kbd>N</kbd> | <kbd>N</kbd> |
 | Go to node | Editor, not in text fields | <kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>O</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> |
 | Zoom in | Canvas | <kbd>=</kbd> or <kbd>+</kbd> | <kbd>=</kbd> or <kbd>+</kbd> |
 | Zoom out | Canvas | <kbd>−</kbd> | <kbd>−</kbd> |
 | Fit diagram to view | Canvas | <kbd>⇧</kbd>+<kbd>1</kbd> | <kbd>Shift</kbd>+<kbd>1</kbd> |
 | Focus mode | Editor and drafts list, text fields too | <kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>F</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> |
 | Save now | Editor, text fields too | <kbd>⌘</kbd>+<kbd>S</kbd> | <kbd>Ctrl</kbd>+<kbd>S</kbd> |
+
+<kbd>N</kbd> on the canvas adds a plain Device, as **Device** under **Add
+nodes** does, at a free spot in the part of the canvas in view. The new
+device is selected and takes focus, so <kbd>N</kbd> again adds another. In
+the command palette, **Add device** asks for a template first. A read-only
+draft adds nothing.
 
 On a Mac keyboard without these keys, <kbd>⇟</kbd> and <kbd>⇞</kbd> are
 <kbd>Fn</kbd> with <kbd>↓</kbd> and <kbd>↑</kbd>, and <kbd>↖</kbd> and
@@ -694,7 +701,7 @@ palette and the sheet show the keys you have.
 
 ### Single-key shortcuts
 
-<kbd>?</kbd>, <kbd>=</kbd>, <kbd>+</kbd>, <kbd>−</kbd> and
+<kbd>?</kbd>, <kbd>N</kbd>, <kbd>=</kbd>, <kbd>+</kbd>, <kbd>−</kbd> and
 <kbd>⇧</kbd>+<kbd>1</kbd> work alone, without <kbd>⌘</kbd> or
 <kbd>Ctrl</kbd>. Turn off **Single-key shortcuts** in the sheet or in
 Settings if speech input or your screen reader might press them by mistake.

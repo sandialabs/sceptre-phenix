@@ -1498,6 +1498,82 @@ test('several drafts are shared at once: the people are added to each, no one is
   });
 });
 
+test('Download selected on Shared Drafts saves a Builder file of each selected draft shared with the user', async ({
+  sharingUsers,
+}) => {
+  test.setTimeout(120000);
+  const { owner, viewer } = sharingUsers;
+  const { page } = viewer;
+  // Names that are file names as they are.
+  const names = ['shared-download-alfa', 'shared-download-bravo'];
+  const drafts = [];
+  for (const name of names) {
+    drafts.push(
+      await seedDraft(owner, name, [{ user: viewer.username, access: 'view' }]),
+    );
+  }
+
+  await landing(viewer);
+  await page.getByTestId('drafts-tab-shared').click();
+  const count = page.getByTestId('bulk-count-shared');
+  const download = page.getByTestId('bulk-download-shared');
+
+  await test.step('the row has Select all, the count and Download selected, with a note on several downloads', async () => {
+    await expect(page.getByTestId('bulk-bar-shared')).toHaveAccessibleName(
+      'Bulk actions: Shared Drafts',
+    );
+    await expect(count).toHaveText('0 of 2 selected');
+    await expect(download).toHaveAccessibleDescription(
+      '0 of 2 selected Download selected saves a file for each; your browser may ask to allow several downloads.',
+    );
+    await expect(download).toHaveAttribute('aria-disabled', 'true');
+    // A share lets the user download a draft, never share or delete it.
+    await expect(page.getByTestId('bulk-share-shared')).toHaveCount(0);
+    await expect(page.getByTestId('bulk-delete-shared')).toHaveCount(0);
+
+    for (const draft of drafts) {
+      await page.getByTestId(`card-select-${draft.id}`).check();
+    }
+    await expect(count).toHaveText('2 of 2 selected');
+    await expectAccessible(page, {
+      include: '#panel-shared',
+      label: 'Shared Drafts with a selection and Download selected',
+    });
+  });
+
+  await test.step('Download selected saves each, in the order of the cards', async () => {
+    const order = (
+      await page
+        .getByTestId('drafts-list-shared')
+        .locator(':scope > li')
+        .evaluateAll((cards) =>
+          cards.map((card) => card.dataset.testid.replace(/^draft-card-/, '')),
+        )
+    ).map((id) => names[drafts.findIndex((draft) => draft.id === id)]);
+    const files = [];
+
+    page.on('download', (file) => files.push(file));
+    await download.click();
+    await expect(page).toHaveAnnounced('Downloaded 2 drafts.');
+    await expect.poll(() => files.length).toBe(2);
+
+    const saved = [];
+    for (const file of files) {
+      saved.push({
+        name: file.suggestedFilename(),
+        doc: JSON.parse(fs.readFileSync(await file.path(), 'utf8')),
+      });
+    }
+    expect(saved.map((file) => file.name)).toEqual(
+      order.map((name) => `${name}.json`),
+    );
+    expect(saved.map((file) => file.doc.metadata.name)).toEqual(order);
+    await expect(count).toHaveText('2 of 2 selected');
+    await expect(download).toBeFocused();
+    await expect(page.getByTestId('bulk-summary')).toHaveCount(0);
+  });
+});
+
 test('mistakes and changes from elsewhere in the Share dialog', async ({
   sharingUsers,
 }) => {

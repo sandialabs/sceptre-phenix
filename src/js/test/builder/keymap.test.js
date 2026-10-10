@@ -348,6 +348,12 @@ describe('keys a page must not take', () => {
     expect(keyRefusal('Ctrl+Alt+K', 'mac')).toBe('');
     expect(keyRefusal('K', 'mac')).toMatch(/^Letters without ⌘/);
     expect(keyRefusal('Shift+K', 'other')).toMatch(/^Letters without Ctrl/);
+    // A command whose keys work only on the canvas may take a letter alone;
+    // the other refusals stand for it.
+    expect(keyRefusal('K', 'mac', { letters: true })).toBe('');
+    expect(keyRefusal('K', 'other', { letters: true })).toBe('');
+    expect(keyRefusal('Mod+T', 'other', { letters: true })).toMatch(/new tab/);
+    expect(keyRefusal('Tab', 'other', { letters: true })).toMatch(/operates/);
     expect(keyRefusal('Tab', 'other')).toBe(
       "Tab already moves around or operates the Builder's controls.",
     );

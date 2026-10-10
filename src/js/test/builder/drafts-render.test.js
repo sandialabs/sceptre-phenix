@@ -493,8 +493,8 @@ describe('selecting cards', () => {
     expect(card).toMatch(/^class="builder-card builder-panel"/);
   });
 
-  test('on My Drafts, a draft that can be neither deleted nor shared has none', async () => {
-    // The role may not delete configs: only what can be shared is selected.
+  test('on My Drafts, every readable draft can be selected, to download it, and a damaged one only to delete it', async () => {
+    // The role may not delete configs: drafts are still downloaded.
     const html = await render({
       mine,
       canDelete: false,
@@ -508,15 +508,15 @@ describe('selecting cards', () => {
     });
     const panel = panelOf(html, 'mine');
 
-    // d1 can be shared; a damaged draft follows what the server says of it.
-    expect(selects(panel)).toEqual(['d1', 'x1']);
-    expect(tag(panel, 'data-testid="bulk-count-mine"')).toBeTruthy();
+    // A damaged draft follows what the server says of it.
+    expect(selects(panel)).toEqual(['d1', 'd2', 'x1']);
     expect(panel).toMatch(
-      /data-testid="bulk-count-mine"[^>]*>\s*0 of 2 selected\s*</,
+      /data-testid="bulk-count-mine"[^>]*>\s*0 of 3 selected\s*</,
     );
+    expect(panel).toContain('data-testid="bulk-download-mine"');
   });
 
-  test('drafts shared with the user are never selected, and have no row', async () => {
+  test('drafts shared with the user are selected to download them, and nothing else', async () => {
     const html = await render({
       mine,
       shared: [
@@ -533,9 +533,68 @@ describe('selecting cards', () => {
     const panel = panelOf(html, 'shared');
 
     expect(panel).toContain('draft-open-s1');
-    expect(selects(panel)).toEqual([]);
-    expect(panel).not.toContain('bulk-bar-');
-    expect(panel).not.toContain('builder-bulk');
+    expect(selects(panel)).toEqual(['s1']);
+    expect(tag(panel, 'data-testid="bulk-bar-shared"')).toContain(
+      'aria-label="Bulk actions: Shared Drafts"',
+    );
+    expect(panel).toContain('data-testid="bulk-download-shared"');
+    // A share never lets the user delete or share the draft.
+    expect(panel).not.toContain('bulk-delete-');
+    expect(panel).not.toContain('bulk-share-');
+  });
+
+  test('Download selected is described by the count and a note on several downloads, and waits for a selection', async () => {
+    const panel = panelOf(await render({ mine }), 'mine');
+    const download = tag(panel, 'data-testid="bulk-download-mine"');
+
+    expect(download).toMatch(/^<button/);
+    expect(download).toContain(
+      'aria-describedby="bulk-count-mine bulk-download-note-mine"',
+    );
+    expect(download).toContain('aria-disabled="true"');
+    // It saves files: it opens no dialog.
+    expect(download).not.toContain('aria-haspopup');
+    expect(panel).toMatch(
+      /data-testid="bulk-download-mine"[^>]*>[\s\S]*?Download selected\s*<\/button>/,
+    );
+    expect(panel).toMatch(
+      /<span id="bulk-download-note-mine"[^>]*>\s*Download selected saves a file for each; your browser may ask to allow several downloads\.\s*<\/span>/,
+    );
+    // Share selected, Download selected, then Delete selected.
+    expect(panel.indexOf('bulk-download-mine')).toBeLessThan(
+      panel.indexOf('bulk-delete-mine'),
+    );
+  });
+
+  test('the cards of a list are one Tab stop, each named by its title and whether it is selected', async () => {
+    const panel = panelOf(await render({ mine }), 'mine');
+    const first = tag(panel, 'data-testid="draft-card-d1"');
+    const second = tag(panel, 'data-testid="draft-card-d2"');
+
+    expect(first).toMatch(/^<li/);
+    expect(first).toContain('tabindex="0"');
+    expect(second).toContain('tabindex="-1"');
+    expect(first).toContain(
+      'aria-labelledby="card-name-mine-0 card-state-mine-0"',
+    );
+    expect(panel).toMatch(/<h2 id="card-name-mine-0"[^>]*>\s*Network lab/);
+    expect(panel).toMatch(
+      /<span id="card-state-mine-0" hidden[^>]*>not selected<\/span>/,
+    );
+
+    // A card that cannot be selected is named by its title alone.
+    const others = panelOf(
+      await render({
+        mine,
+        others: [{ id: 'r2', owner: 'erin', title: 'Kept', access: 'view' }],
+      }),
+      'others',
+    );
+
+    expect(tag(others, 'data-testid="draft-card-r2"')).toContain(
+      'aria-labelledby="card-name-others-0"',
+    );
+    expect(others).not.toContain('card-state-others-0');
   });
 
   test('other users’ drafts are selected where the user may delete them', async () => {
@@ -556,20 +615,25 @@ describe('selecting cards', () => {
     expect(none).not.toContain('bulk-bar-');
   });
 
-  test('published topologies are selected; experiments and Builder files are not', async () => {
+  test('published diagrams are selected to download them, and topologies to delete them; a Builder file is not', async () => {
     const panel = panelOf(await render({ published }), 'published');
 
-    expect(selects(panel)).toEqual(['p1']);
+    expect(selects(panel)).toEqual(['p1', 'p2']);
     expect(panel).toMatch(
-      /data-testid="bulk-count-published"[^>]*>\s*0 of 1 selected\s*</,
+      /data-testid="bulk-count-published"[^>]*>\s*0 of 2 selected\s*</,
     );
+    expect(panel).toContain('data-testid="bulk-download-published"');
     expect(panel).toContain('data-testid="bulk-delete-published"');
 
-    // A role that may not delete configs selects nothing.
-    const html = await render({ published, canDelete: false });
+    // A role that may not delete configs still downloads them.
+    const html = panelOf(
+      await render({ published, canDelete: false }),
+      'published',
+    );
 
-    expect(html).not.toContain('card-select-');
-    expect(html).not.toContain('bulk-bar-');
+    expect(selects(html)).toEqual(['p1', 'p2']);
+    expect(html).toContain('data-testid="bulk-download-published"');
+    expect(html).not.toContain('bulk-delete-published');
   });
 
   test('the row above the cards has Select all, the count, and the actions, which say why they cannot act', async () => {

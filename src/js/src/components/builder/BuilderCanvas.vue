@@ -1886,10 +1886,23 @@
 
   async function showNode(id) {
     await nextTick();
-    const element = nodeElement(id);
+    let element = null;
+
+    // A node just added (the add.device key) is drawn, and can take focus,
+    // a few frames later: Vue Flow keeps a new node hidden until it has
+    // measured it.
+    for (let frame = 0; frame < 10; frame += 1) {
+      element = nodeElement(id);
+      element?.focus({ preventScroll: true });
+
+      if (element && document.activeElement === element) {
+        break;
+      }
+
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
 
     if (element) {
-      element.focus({ preventScroll: true });
       reveal(element);
     }
   }

@@ -20,6 +20,17 @@
   The thumbnails are decoration: each row names its icon in text, and every
   button names the icon it acts on.
 
+  Several icons can be acted on at once. A copy the server lacks, and a
+  server icon the user may delete, has a checkbox, and each list a row
+  above it (BuilderBulkBar.vue) with Select all, how many are selected, and
+  Add selected to server (the copies) or Delete selected (the server icons,
+  after one question). The rows of a list are one Tab stop, and the keys of
+  listSelection.js move through them and select (onListKeydown); Escape
+  with icons selected unselects them and leaves the dialog open. Every
+  change of a selection is said in the status region, as the page's live
+  region waits while the dialog is open. What a batch left undone is listed
+  under its row (BuilderBulkSummary.vue), in a summary that takes focus.
+
   The status and error regions are rendered, empty, from the start. Focus
   moves to the new icon's Use after an upload, to the renamed icon's Rename
   after a rename, to Upload icon… after a delete, and back to the button
@@ -133,17 +144,77 @@
       <p class="builder-hint">
         Copies the diagram carries, from a file it was uploaded from.
       </p>
+      <builder-bulk-bar
+        v-if="copies.total"
+        id="icons-diagram"
+        label="In this diagram"
+        :count="copies.count"
+        :total="copies.total"
+        :state="copies.state"
+        :running="running?.list === 'diagram' ? running : null"
+        :disabled="Boolean(busy)"
+        @toggle-all="selectAll(copies)">
+        <button
+          type="button"
+          class="builder-button"
+          data-testid="bulk-add-icons-diagram"
+          aria-describedby="bulk-count-icons-diagram"
+          :aria-disabled="
+            !addable.length ||
+            library.state.status !== 'ready' ||
+            Boolean(busy) ||
+            undefined
+          "
+          @click="addSelected">
+          Add selected to server
+        </button>
+      </builder-bulk-bar>
+      <builder-bulk-summary
+        v-if="outcome?.list === 'diagram'"
+        :ref="(element) => (summary = element)"
+        :heading="outcome.heading"
+        :items="outcome.items"
+        :dismissible="false" />
       <ul class="builder-icons__list" data-testid="icon-diagram-list">
         <li
-          v-for="icon in diagram"
+          v-for="(icon, index) in diagram"
           :key="icon.name"
           class="builder-icons__row"
-          :data-icon="icon.name">
+          :class="{ 'is-selected': copies.has(icon) }"
+          :data-icon="icon.name"
+          :tabindex="copies.tabStop(icon) ? 0 : -1"
+          :aria-labelledby="rowLabelledBy('diagram', icon, index)"
+          @focusin="copies.focused(icon)"
+          @keydown="onRowKeydown($event, 'diagram', index)">
+          <label
+            v-if="rowSelectable('diagram', icon)"
+            class="builder-card__select">
+            <input
+              type="checkbox"
+              :checked="copies.has(icon)"
+              :disabled="Boolean(busy)"
+              data-testid="icon-select"
+              @pointerdown="shift.pointerdown"
+              @keydown="shift.keydown"
+              @click="shift.click"
+              @change="select(copies, icon, $event)" />
+            <span class="builder-visually-hidden">Select {{ icon.name }}</span>
+          </label>
           <builder-icon name="image" :src="srcOf(icon)" :size="32" />
           <span class="builder-icons__text">
-            <span class="builder-icons__name">{{ icon.name }}</span>
+            <span
+              :id="`icon-name-diagram-${index}`"
+              class="builder-icons__name"
+              >{{ icon.name }}</span
+            >
             <span class="builder-hint">{{ iconSizeText(icon) }}</span>
           </span>
+          <span
+            v-if="rowSelectable('diagram', icon)"
+            :id="`icon-state-diagram-${index}`"
+            hidden
+            >{{ copies.has(icon) ? 'selected' : 'not selected' }}</span
+          >
           <span class="builder-icons__buttons">
             <button
               type="button"
@@ -272,17 +343,71 @@
           {{ filterCount }}
         </span>
       </div>
+      <builder-bulk-bar
+        v-if="served.total"
+        id="icons-library"
+        label="Server icons"
+        :count="served.count"
+        :total="served.total"
+        :state="served.state"
+        :running="running?.list === 'library' ? running : null"
+        :disabled="Boolean(busy)"
+        @toggle-all="selectAll(served)">
+        <button
+          type="button"
+          class="builder-button builder-button--danger"
+          data-testid="bulk-delete-icons-library"
+          aria-haspopup="dialog"
+          aria-describedby="bulk-count-icons-library"
+          :aria-disabled="!served.count || Boolean(busy) || undefined"
+          @click="askDeleteSelected">
+          Delete selected
+        </button>
+      </builder-bulk-bar>
+      <builder-bulk-summary
+        v-if="outcome?.list === 'library'"
+        :ref="(element) => (summary = element)"
+        :heading="outcome.heading"
+        :items="outcome.items"
+        :dismissible="false" />
       <ul class="builder-icons__list" data-testid="icon-library-list">
         <li
-          v-for="icon in shown"
+          v-for="(icon, index) in shown"
           :key="icon.name"
           class="builder-icons__row"
-          :data-icon="icon.name">
+          :class="{ 'is-selected': served.has(icon) }"
+          :data-icon="icon.name"
+          :tabindex="served.tabStop(icon) ? 0 : -1"
+          :aria-labelledby="rowLabelledBy('library', icon, index)"
+          @focusin="served.focused(icon)"
+          @keydown="onRowKeydown($event, 'library', index)">
+          <label v-if="icon.canDelete" class="builder-card__select">
+            <input
+              type="checkbox"
+              :checked="served.has(icon)"
+              :disabled="Boolean(busy)"
+              data-testid="icon-select"
+              @pointerdown="shift.pointerdown"
+              @keydown="shift.keydown"
+              @click="shift.click"
+              @change="select(served, icon, $event)" />
+            <span class="builder-visually-hidden">Select {{ icon.name }}</span>
+          </label>
           <builder-icon name="image" :src="srcOf(icon)" :size="32" />
           <span class="builder-icons__text">
-            <span class="builder-icons__name">{{ icon.name }}</span>
+            <span
+              :id="`icon-name-library-${index}`"
+              class="builder-icons__name"
+              >{{ icon.name }}</span
+            >
             <span class="builder-hint">{{ detailsOf(icon) }}</span>
           </span>
+          <span
+            v-if="icon.canDelete"
+            :id="`icon-state-library-${index}`"
+            hidden
+            >{{ served.has(icon) ? 'selected' : 'not selected' }}</span
+          >
           <span class="builder-icons__buttons">
             <button
               type="button"
@@ -335,12 +460,31 @@
       confirm-label="Delete"
       @cancel="deleting = null"
       @confirm="confirmDelete" />
+    <!-- Delete selected: one question for the batch. -->
+    <builder-confirm
+      v-if="deletingSelected"
+      id="icons-delete"
+      :title="`Delete ${count(deletingSelected.length, 'icon')}?`"
+      :message="iconsDeleteMessage(deletingSelected.map((icon) => icon.name))"
+      :confirm-label="`Delete ${count(deletingSelected.length, 'icon')}`"
+      @cancel="deletingSelected = null"
+      @confirm="confirmDeleteSelected" />
   </builder-dialog>
 </template>
 
 <script setup>
-  import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+  import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    reactive,
+    ref,
+    watch,
+  } from 'vue';
 
+  import BuilderBulkBar from '../BuilderBulkBar.vue';
+  import BuilderBulkSummary from '../BuilderBulkSummary.vue';
   import BuilderConfirm from '../BuilderConfirm.vue';
   import BuilderDialog from '../BuilderDialog.vue';
   import BuilderIcon from '../BuilderIcon.vue';
@@ -350,6 +494,13 @@
   } from '../inspector/control.js';
   import { useMessage } from './message.js';
 
+  import { count, describeNames } from '@/builder/announce.js';
+  import {
+    bulkFailureHeading,
+    bulkOutcome,
+    iconsDeleteMessage,
+    runBulk,
+  } from '@/builder/bulk.js';
   import {
     ICON_NAME_HINT,
     IconFileError,
@@ -362,6 +513,11 @@
     sortIcons,
     usageText,
   } from '@/builder/icons.js';
+  import {
+    onListKeydown,
+    shiftPress,
+    useListSelection,
+  } from '@/builder/listSelection.js';
 
   const props = defineProps({
     // Makes an icon of a chosen file (see rasterizeIcon).
@@ -739,6 +895,307 @@
     emit('use', { name: icon.name });
   }
 
+  // --- selecting several icons ---------------------------------------------
+
+  // Whether the library has been read once: a read under way afterwards
+  // (after each change) keeps what the last one listed.
+  const libraryRead = ref(library.state.status === 'ready');
+
+  watch(
+    () => library.state.status,
+    (status) => {
+      if (status === 'ready') {
+        libraryRead.value = true;
+      }
+    },
+  );
+
+  // The diagram's copies, of which those the server lacks can be added to
+  // it, and the server icons shown, of which those the user may delete can
+  // be deleted: each list keeps its own selection, by name, and its own
+  // Tab stop.
+  const copies = reactive(
+    useListSelection(diagram, (icon) => icon.name, {
+      selectable: (icon) => rowSelectable('diagram', icon),
+    }),
+  );
+  const served = reactive(
+    useListSelection(shown, (icon) => icon.name, {
+      selectable: (icon) => rowSelectable('library', icon),
+    }),
+  );
+  const lists = {
+    diagram: { selection: copies, items: diagram, testid: 'icon-diagram-list' },
+    library: { selection: served, items: shown, testid: 'icon-library-list' },
+  };
+
+  // The batch under way, { list, label, done, total }, which its row shows,
+  // and what the last batch left undone, { list, heading, items }, under
+  // that row.
+  const running = ref(null);
+  const outcome = ref(null);
+  let summary = null;
+  // The icons Delete selected asks about, or null.
+  const deletingSelected = ref(null);
+
+  // The copies Add selected to server sends.
+  const addable = computed(() =>
+    copies.selected.filter((icon) => !onServer(icon)),
+  );
+
+  // Every change of a selection is said, in the dialog's status: the page's
+  // live region waits while a dialog is open.
+  function announceSelection(selection) {
+    status.set(`${selection.count} of ${selection.total} selected.`);
+  }
+
+  // Whether Shift was held as a row's checkbox was pressed.
+  const shift = shiftPress();
+
+  // A row's checkbox: with Shift, the range from the row last pressed
+  // becomes as the box now is.
+  function select(selection, icon, event) {
+    selection.press(icon, {
+      checked: event.target.checked,
+      range: shift.take(),
+    });
+    event.target.checked = selection.has(icon);
+    announceSelection(selection);
+  }
+
+  function selectAll(selection) {
+    selection.toggleAll();
+    announceSelection(selection);
+  }
+
+  // Whether a row's icon can be selected: a copy the server lacks, once the
+  // library has been read (until then no one knows), or a server icon the
+  // user may delete.
+  function rowSelectable(list, icon) {
+    return list === 'diagram'
+      ? libraryRead.value && !onServer(icon)
+      : Boolean(icon?.canDelete);
+  }
+
+  // A row's name: its icon's, and for a row that can be selected whether it
+  // is.
+  function rowLabelledBy(list, icon, index) {
+    const name = `icon-name-${list}-${index}`;
+
+    return rowSelectable(list, icon)
+      ? `${name} icon-state-${list}-${index}`
+      : name;
+  }
+
+  // Focuses the row at a position of a list, which becomes its Tab stop.
+  function focusListRow(list, index) {
+    const { selection, items, testid } = lists[list];
+    const icon = items.value[index];
+    const row = document.querySelector(`[data-testid="${testid}"]`)?.children[
+      index
+    ];
+
+    if (icon && row) {
+      selection.focused(icon);
+      row.focus();
+    }
+  }
+
+  // What the keys change: each is said, as a press of a checkbox is.
+  const SELECTING = ['extend', 'toggle', 'range', 'all', 'clear'];
+
+  // The keys of a list of icons (see onListKeydown in listSelection.js):
+  // Escape with icons selected unselects them, and leaves the dialog open.
+  // While a change is under way the selection stays as it is.
+  function onRowKeydown(event, list, index) {
+    const { selection, items } = lists[list];
+    const action = onListKeydown(event, {
+      selection,
+      items: items.value,
+      index,
+      focus: (to) => focusListRow(list, to),
+      locked: Boolean(busy.value),
+      canDelete: list === 'library',
+      onDelete: askDeleteSelected,
+    });
+
+    if (
+      SELECTING.includes(action?.type) &&
+      (action.type !== 'toggle' || rowSelectable(list, items.value[index]))
+    ) {
+      announceSelection(selection);
+    }
+  }
+
+  // After a batch, focus that was on a control that went moves to Upload
+  // icon…, as after a delete.
+  async function keepFocus() {
+    await nextTick();
+
+    const active = document.activeElement;
+
+    if (!active || active === document.body || !active.isConnected) {
+      uploadButton.value?.focus();
+    }
+  }
+
+  // Runs `work` for each icon, then reads the library once. A session that
+  // ends, or a server out of reach, stops the run (library.ends, the
+  // drafts page's endsBulk), and the icons not tried are listed as not
+  // attempted.
+  // What the run left undone is listed under the list's row, in a summary
+  // that takes focus; otherwise the status says what it came to
+  // (message(results), as runBulk gives them). `note(results)`, when there
+  // is one, is said in the status beside a summary too.
+  async function runOnIcons(
+    list,
+    icons,
+    { label, done, message, note = () => '', work },
+  ) {
+    status.clear();
+    error.clear();
+    outcome.value = null;
+    busy.value = 'bulk';
+    running.value = { list, label, done: 0, total: icons.length };
+
+    try {
+      const results = await runBulk(icons, work, {
+        onProgress: (ended) => {
+          running.value = { ...running.value, done: ended };
+        },
+        stop: (caught) => Boolean(library.ends?.(caught)),
+      });
+
+      await library.load().catch(() => {});
+
+      if (closed) {
+        return;
+      }
+
+      const { failures } = bulkOutcome(results, (caught) =>
+        library.failure(caught),
+      );
+
+      if (failures.length) {
+        const said = note(results);
+
+        if (said) {
+          status.set(said);
+        }
+
+        outcome.value = {
+          list,
+          heading: bulkFailureHeading(
+            failures.length,
+            icons.length,
+            'icon',
+            'icons',
+            done,
+          ),
+          items: failures.map(({ item, reason }) => ({
+            key: item.name,
+            name: item.name,
+            reason,
+          })),
+        };
+        await nextTick();
+        summary?.focus();
+      } else {
+        status.set(message(results));
+        await keepFocus();
+      }
+    } finally {
+      busy.value = '';
+      running.value = null;
+    }
+  }
+
+  // The copies the server answered it already had (added since the library
+  // was read, or under a name another of its names matches), as Add to
+  // server says of one: "The server already has plc.", "… has plc as
+  // pump.", or ''.
+  function keptText(results) {
+    const kept = results
+      .filter((result) => result.ok && !result.value?.created)
+      .map(({ item, value }) => {
+        const name = value?.icon?.name || item.name;
+
+        return name === item.name ? name : `${item.name} as ${name}`;
+      });
+
+    return kept.length ? `The server already has ${describeNames(kept)}.` : '';
+  }
+
+  // What Add selected to server says once every copy was sent: how many
+  // icons the server added (the diagram then drops those copies), and the
+  // copies it already had.
+  function addedText(results) {
+    const added = results.filter(
+      (result) => result.ok && result.value?.created,
+    ).length;
+    const parts = added
+      ? [
+          `Added ${count(added, 'icon')} to the server. The diagram drops its ${added === 1 ? 'copy' : 'copies'} with its next edit.`,
+        ]
+      : [];
+
+    return [...parts, keptText(results)].filter(Boolean).join(' ');
+  }
+
+  // Add selected to server: each selected copy the server lacks, under its
+  // name, as Add to server adds one.
+  function addSelected() {
+    const icons = addable.value;
+
+    if (!icons.length || busy.value || library.state.status !== 'ready') {
+      return;
+    }
+
+    runOnIcons('diagram', icons, {
+      label: 'Adding',
+      done: 'added to the server',
+      message: addedText,
+      note: keptText,
+      work: (icon) =>
+        library.upload(
+          { name: icon.name, data: icon.data },
+          { refresh: false },
+        ),
+    });
+  }
+
+  // Delete selected asks once for the batch (WCAG 3.3.4); one icon alone is
+  // asked about as its own Delete asks.
+  function askDeleteSelected() {
+    const icons = served.selected;
+
+    if (!icons.length || busy.value) {
+      return;
+    }
+
+    if (icons.length === 1) {
+      deleting.value = icons[0];
+    } else {
+      deletingSelected.value = icons;
+    }
+  }
+
+  function confirmDeleteSelected() {
+    const icons = deletingSelected.value;
+
+    deletingSelected.value = null;
+
+    if (icons?.length && !busy.value) {
+      runOnIcons('library', icons, {
+        label: 'Deleting',
+        done: 'deleted',
+        message: () =>
+          `Deleted ${count(icons.length, 'icon')} from the server.`,
+        work: (icon) => library.remove(icon.name, { refresh: false }),
+      });
+    }
+  }
+
   onMounted(load);
 
   onBeforeUnmount(() => {
@@ -775,6 +1232,12 @@
     gap: 0.4rem 0.6rem;
     padding: 0.35rem 0;
     border-top: 1px solid var(--bx-border);
+  }
+
+  /* A selected row has a bar in the accent color along its start. The
+     checked box is what says so; the bar only makes it easy to find. */
+  .builder-icons__row.is-selected {
+    box-shadow: inset 3px 0 0 var(--bx-accent);
   }
 
   .builder-icons__text,
