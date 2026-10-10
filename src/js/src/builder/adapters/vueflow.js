@@ -18,10 +18,12 @@ import {
   deviceTypeLabel,
   DRAWING_KINDS,
   findNode,
+  ICON_SIZE_KINDS,
   includedFrom,
   kindLabel,
   LINE_STYLES,
   nodeComment,
+  nodeIconSize,
   nodeLabel,
   sizeOf,
   specInterfaceFor,
@@ -370,9 +372,10 @@ function describedBy(node, issue) {
  * node whose custom icon resolves, to the document's copy or to the icon
  * library's icon of that name, has the address it is drawn from
  * (data.iconSrc, see iconSrc in icons.js); it is '' otherwise, and the node
- * draws its built-in icon. A shape, an icon and a line carry the name of
- * their kind (data.kindLabel), and a line the dash array of its line style
- * (data.dashArray).
+ * draws its built-in icon. A device, a switch and a group carry the size
+ * their icon is drawn at (data.iconSize, see nodeIconSize in model.js). A
+ * shape, an icon and a line carry the name of their kind (data.kindLabel),
+ * and a line the dash array of its line style (data.dashArray).
  *
  * @param {object} doc
  * @param {object} [options] selectedIds; issues: nodeIssueSummaries by
@@ -452,6 +455,9 @@ export function toFlowNodes(doc, options = {}) {
         label: nodeLabel(node),
         iconKey: nodeIconKey(node),
         iconSrc: iconSrc(nodeIcon(node), doc.icons, library),
+        iconSize: ICON_SIZE_KINDS.includes(node.kind)
+          ? nodeIconSize(doc, node)
+          : undefined,
         shape: kindMeta(node.kind).shape,
         comment: nodeComment(node),
         typeLabel: node.kind === 'device' ? deviceTypeLabel(node) : undefined,

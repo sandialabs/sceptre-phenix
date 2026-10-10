@@ -1997,13 +1997,20 @@ describe('colors, line styles and group fields', () => {
     const look = {
       iconKey: 'router',
       icon: '',
+      iconSize: 'large',
       outlineColor: '#2f6fbf',
       fillColor: '#1f7a5a',
     };
     const added = addNode(doc, { kind: 'device', hostname: 'edge', look });
 
     expect(lookOf(added.node.device)).toEqual(look);
-    expect(LOOK_KEYS).toEqual(['iconKey', 'icon', 'outlineColor', 'fillColor']);
+    expect(LOOK_KEYS).toEqual([
+      'iconKey',
+      'icon',
+      'iconSize',
+      'outlineColor',
+      'fillColor',
+    ]);
     expect(errorsOf(added.doc)).toEqual([]);
 
     // An icon key that is none of the registry's is picked from the spec,

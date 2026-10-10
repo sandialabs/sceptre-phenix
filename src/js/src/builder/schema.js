@@ -12,6 +12,8 @@ import { RETIRED_ICON_KEYS } from './catalog.js';
 import { itemNoun, startCase } from './form-validator.js';
 import {
   BORDER_STYLES,
+  ICON_SIZE_PIXELS,
+  ICON_SIZES,
   LINE_STYLES,
   MAX_LINE_POINTS,
   MIN_LINE_POINTS,
@@ -823,6 +825,35 @@ const BORDER_STYLE_TITLES = {
   dotted: 'Dotted',
   double: 'Double',
 };
+export const ICON_SIZE_TITLES = {
+  small: 'Small',
+  medium: 'Medium',
+  large: 'Large',
+};
+
+// The word the Icon size of a device, a switch or a group uses for no size
+// of its own: the node then draws the diagram's (see fieldDefault in
+// adapters/forms.js, which names it).
+export const ICON_SIZE_UNSET = 'Diagram default';
+
+// What the Icon size of a device, a switch or a group says of itself, after
+// what it sizes ("Size of the group's icon").
+function iconSizeHelp(subject) {
+  const { small, medium, large } = ICON_SIZE_PIXELS;
+
+  return `${subject} on the canvas: Small (${small} pixels), Medium (${medium}) or Large (${large}). Diagram default draws the size chosen for the whole diagram.`;
+}
+
+// The Icon size of a device, a switch or a group: Diagram default, or one
+// of the three sizes.
+function iconSizeField(defs, description) {
+  return {
+    ...choiceField(defs.iconSize, ICON_SIZES, ICON_SIZE_TITLES),
+    title: 'Icon size',
+    description,
+    [UNSET_KEYWORD]: ICON_SIZE_UNSET,
+  };
+}
 
 // A Builder definition or property of the bundle as an Inspector field
 // starts from it: without the title, description and examples that document
@@ -863,6 +894,7 @@ const DEVICE_HELP = {
     iconKey:
       'Canvas icon. A custom icon, when set, is drawn in its place. Presentation only, so a new one applies at once, without Apply.',
     icon: `${CUSTOM_ICON_HELP} Applies at once, without Apply.`,
+    iconSize: `${iconSizeHelp('Size of the icon')} Applies at once, without Apply.`,
     outlineColor:
       'Border color of the node on the canvas. Applies at once, without Apply.',
     fillColor:
@@ -876,6 +908,7 @@ const DEVICE_HELP = {
     iconKey:
       'Icon drawn on the canvas and in Add nodes. A custom icon, when set, is drawn in its place.',
     icon: "An image of the server's icon library, drawn in place of the icon. Devices made from the template name it too.",
+    iconSize: iconSizeHelp('Size of the icon of the devices made from it'),
     outlineColor: 'Border color of the node on the canvas.',
     fillColor:
       'Background color of the node on the canvas. Text and icon turn black or white to stay readable.',
@@ -942,6 +975,7 @@ function kindSchema(bundle, kind, context = {}) {
             title: 'Custom icon',
             description: help.icon,
           },
+          iconSize: iconSizeField(defs, help.iconSize),
           outlineColor: {
             ...hexColorField(defs),
             title: 'Outline Color',
@@ -1008,6 +1042,10 @@ function kindSchema(bundle, kind, context = {}) {
             description:
               'Background color of this switch on the canvas. Text and icon turn black or white to stay readable.',
           },
+          iconSize: iconSizeField(
+            defs,
+            iconSizeHelp("Size of this switch's icon"),
+          ),
           // A list of text, each note in a text area of its own, as a
           // device's general.notes (see isMultilineList).
           notes: {
@@ -1075,6 +1113,10 @@ function kindSchema(bundle, kind, context = {}) {
             title: 'Custom icon',
             description: CUSTOM_ICON_HELP,
           },
+          iconSize: iconSizeField(
+            defs,
+            iconSizeHelp("Size of the group's icon"),
+          ),
           // Not `collapsed`: the canvas does not draw a collapsed group yet.
           // A document that has it keeps it (applyFormData in forms.js).
         },

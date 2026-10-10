@@ -862,7 +862,7 @@ test(
       (node) => getComputedStyle(node).backgroundColor,
     );
 
-    await test.step('a device has Outline Color and Fill Color under its Icon and its Custom icon, each with its own picker', async () => {
+    await test.step('a device has Outline Color and Fill Color under its Icon, its Custom icon and its Icon size, each with its own picker', async () => {
       await builder.selectInOutline('web-01');
       await expect
         .soft(
@@ -874,6 +874,7 @@ test(
           /^Hostname/,
           /^Icon/,
           /^Custom icon/,
+          /^Icon size/,
           /^Outline Color/,
           /^Fill Color/,
         ]);
@@ -1338,6 +1339,7 @@ test('a network and a connection take a line style, a group a description, a bor
         /^Border pattern/,
         /^Icon/,
         /^Custom icon/,
+        /^Icon size/,
       ]);
     expect
       .soft(await choicesOf(field('borderStyle').select))
@@ -1451,6 +1453,384 @@ test('a network and a connection take a line style, a group a description, a bor
       expect.soft(olive, `${kind}: the switch's fill`).toBeGreaterThan(5000);
     }
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  });
+
+  expectNoFatal(issues);
+});
+
+// The icon a device, a switch or a group draws by its name.
+function nodeIcon(node) {
+  return node.locator('.builder-node__header > .builder-icon');
+}
+
+// The lines of text a device, a switch or a group shows.
+const NODE_LINES = `${NODE_TEXT}, .builder-node__origin`;
+
+// Where a node's icon and its lines of text are drawn in its box, in the
+// page's pixels: the box, the icon, and each line with its text.
+function layoutOf(node) {
+  return node.evaluate((element, selector) => {
+    const rect = (target) => {
+      const { left, top, right, bottom } = target.getBoundingClientRect();
+
+      return { left, top, right, bottom };
+    };
+
+    return {
+      box: rect(element),
+      icon: rect(
+        element.querySelector('.builder-node__header > .builder-icon'),
+      ),
+      lines: [...element.querySelectorAll(selector)].map((line) => ({
+        text: line.textContent.trim(),
+        ...rect(line),
+      })),
+    };
+  }, NODE_LINES);
+}
+
+// The node's icon and every line of its text are inside its box, and no
+// line runs under the icon.
+async function expectLaidOut(node, message) {
+  const { box, icon, lines } = await layoutOf(node);
+  const inside = (rect, what) => {
+    expect
+      .soft(rect.left, `${message}: ${what} left`)
+      .toBeGreaterThanOrEqual(box.left - 0.5);
+    expect
+      .soft(rect.right, `${message}: ${what} right`)
+      .toBeLessThanOrEqual(box.right + 0.5);
+    expect
+      .soft(rect.top, `${message}: ${what} top`)
+      .toBeGreaterThanOrEqual(box.top - 0.5);
+    expect
+      .soft(rect.bottom, `${message}: ${what} bottom`)
+      .toBeLessThanOrEqual(box.bottom + 0.5);
+  };
+
+  inside(icon, 'icon');
+  expect.soft(lines.length, `${message}: lines`).toBeGreaterThan(0);
+
+  for (const line of lines) {
+    inside(line, `"${line.text}"`);
+
+    const apart =
+      line.right <= icon.left + 0.5 ||
+      line.left >= icon.right - 0.5 ||
+      line.bottom <= icon.top + 0.5 ||
+      line.top >= icon.bottom - 0.5;
+
+    expect
+      .soft(apart, `${message}: "${line.text}" clear of the icon`)
+      .toBe(true);
+  }
+
+  return { box, icon, lines };
+}
+
+test('node icons are drawn Small, Medium or Large, as the diagram or the node says, and keep their node boxes', async ({
+  page,
+  builder,
+  issues,
+}, testInfo) => {
+  const { edgeIds: _, ...document } = styledDocument(
+    `icon-size-${testInfo.project.name}-${Date.now()}`,
+  );
+  // A second group at the least size a group can be resized to.
+  document.nodes.push({
+    id: crypto.randomUUID(),
+    kind: 'group',
+    label: 'Edge',
+    position: { x: 640, y: 400 },
+    size: { width: 120, height: 80 },
+    group: { title: 'Edge' },
+  });
+  const draft = await builder.seedDraft(document);
+  await builder.openDraft(draft);
+
+  const nodes = {
+    device: builder.node('web-01', 'device'),
+    switch: builder.node('EXP', 'switch'),
+    group: builder.node('Zone', 'group'),
+    'least group': builder.node('Edge', 'group'),
+  };
+  const PIXELS = { Small: 16, Medium: 24, Large: 32 };
+  const diagramSize = builder.inspector.getByTestId(
+    'inspector-icon-size-select',
+  );
+  const boxes = {};
+  // A picture of each kind at each size, kept in the test's output and
+  // attached to its report.
+  const keepScreenshot = async (locator, name) => {
+    const path = testInfo.outputPath(name);
+
+    await locator.screenshot({ path });
+    await testInfo.attach(name, { path, contentType: 'image/png' });
+  };
+
+  // Each node draws its icon at `size`, in the layout of that size, with
+  // its box as it was at Small; a screenshot of it goes with the report.
+  const expectSize = async (size, kinds = Object.keys(nodes)) => {
+    for (const kind of kinds) {
+      const node = nodes[kind];
+      const pixels = String(PIXELS[size]);
+
+      await expect(node).toHaveAttribute('data-icon-size', size.toLowerCase());
+      await expect.soft(nodeIcon(node)).toHaveAttribute('width', pixels);
+      await expect.soft(nodeIcon(node)).toHaveCSS('width', `${pixels}px`);
+      await expect.soft(nodeIcon(node)).toHaveCSS('height', `${pixels}px`);
+
+      if (size === 'Small') {
+        await expect.soft(node).not.toHaveClass(/builder-node--icon-/);
+      } else {
+        await expect
+          .soft(node)
+          .toHaveClass(new RegExp(`builder-node--icon-${size.toLowerCase()}`));
+      }
+
+      const { box } = await expectLaidOut(node, `${kind} at ${size}`);
+      const width = box.right - box.left;
+      const height = box.bottom - box.top;
+
+      boxes[kind] ??= { width, height };
+      expect
+        .soft(Math.abs(width - boxes[kind].width), `${kind} at ${size}: width`)
+        .toBeLessThan(0.5);
+      expect
+        .soft(
+          Math.abs(height - boxes[kind].height),
+          `${kind} at ${size}: height`,
+        )
+        .toBeLessThan(0.5);
+
+      await keepScreenshot(
+        node,
+        `icon-size-${kind.replace(' ', '-')}-${size.toLowerCase()}.png`,
+      );
+    }
+  };
+
+  await test.step('a diagram draws Small icons until it says otherwise', async () => {
+    await expect(diagramSize).toBeVisible();
+    await expect.soft(diagramSize).toHaveAccessibleName('Icon size');
+    await expect
+      .soft(diagramSize)
+      .toHaveAccessibleDescription(
+        'Devices, switches and groups draw their icons at this size, unless one has a size of its own.',
+      );
+    expect
+      .soft(await choicesOf(diagramSize))
+      .toEqual([
+        'Small (16 pixels)',
+        'Medium (24 pixels)',
+        'Large (32 pixels)',
+      ]);
+    await expect.soft(diagramSize).toHaveValue('small');
+    await expectSize('Small');
+  });
+
+  // A device's handle, where its connection meets it, stays where it is.
+  const handle = nodes.device.locator('.vue-flow__handle').first();
+  const handleBox = await handle.boundingBox();
+
+  await test.step('Medium and Large draw every node’s icon at once, beside its lines', async () => {
+    await diagramSize.selectOption('medium');
+    await expectSize('Medium');
+    await builder.persisted(draft, (doc) => doc.iconSize, 'medium', {
+      soft: true,
+    });
+
+    await diagramSize.selectOption('large');
+    await expectSize('Large');
+    await builder.persisted(draft, (doc) => doc.iconSize, 'large', {
+      soft: true,
+    });
+
+    const moved = await handle.boundingBox();
+
+    expect.soft(Math.abs(moved.x - handleBox.x), 'handle x').toBeLessThan(0.5);
+    expect.soft(Math.abs(moved.y - handleBox.y), 'handle y').toBeLessThan(0.5);
+  });
+
+  await test.step('the SVG and PNG downloads draw the icons Large, inside their nodes', async () => {
+    const dialog = await builder.openDialog('download');
+    const save = async (kind) => {
+      const [file] = await Promise.all([
+        page.waitForEvent('download'),
+        dialog.getByTestId(`download-${kind}`).click(),
+      ]);
+
+      return fs.readFileSync(await file.path());
+    };
+    const boundsText = dialog.getByText(/Diagram bounds: \d+ × \d+ px/);
+
+    await expect(boundsText).toBeVisible();
+
+    const [boundsWidth, boundsHeight] = (await boundsText.textContent())
+      .match(/(\d+) × (\d+)/)
+      .slice(1)
+      .map(Number);
+    // The image's size: the bounds at the zoom that fits them in 4096
+    // pixels, at most 2 (computeExportViewport in exporters.js).
+    const zoom = Math.min(2, 4096 / boundsWidth, 4096 / boundsHeight);
+    const imageSize = [
+      Math.ceil(boundsWidth * zoom),
+      Math.ceil(boundsHeight * zoom),
+    ];
+    const markup = (await save('svg')).toString('utf8');
+    const root = markup.match(/^<svg[^>]* width="(\d+)" height="(\d+)"/);
+
+    expect
+      .soft(root && root.slice(1).map(Number), 'SVG width and height')
+      .toEqual(imageSize);
+    expect.soft(markup).toContain('builder-node--icon-large');
+    expect
+      .soft(markup)
+      .toMatch(/<svg[^>]*class="builder-icon[^"]*"[^>]*width="32"/);
+    expect
+      .soft(markup)
+      .not.toMatch(/<svg[^>]*class="builder-icon[^"]*"[^>]*width="16"/);
+
+    // Where the file puts each Large node, its icon and its lines. The
+    // positions come from the layout of the styles the file carries, so the
+    // file is drawn in a page of its own, as a viewer draws it, and each
+    // node's icon and lines are measured there against its box.
+    const drawn = await page.context().newPage();
+
+    try {
+      await drawn.setContent(
+        `<!doctype html><body style="margin: 0">${markup}</body>`,
+      );
+
+      const large = drawn.locator('.builder-node--icon-large');
+
+      // Two devices, two switches and two groups, the least one too.
+      await expect.soft(large).toHaveCount(6);
+
+      for (const node of await large.all()) {
+        const kind = await node.getAttribute('data-node-kind');
+        const label = await node.locator('.builder-node__label').textContent();
+        const name = `${kind} ${label.trim()} in the SVG`;
+        const { icon } = await expectLaidOut(node, name);
+
+        // 32 pixels, at the image's zoom.
+        expect
+          .soft(Math.abs(icon.right - icon.left - 32 * zoom), `${name}: icon`)
+          .toBeLessThan(1);
+      }
+    } finally {
+      await drawn.close();
+    }
+
+    // The PNG: a picture the browser decodes, of the image's size in device
+    // pixels, as its header (IHDR, bytes 16 to 24) says too.
+    const png = await save('png');
+    const ratio = await page.evaluate(() => window.devicePixelRatio);
+    const pixels = imageSize.map((length) => length * ratio);
+    const picture = testInfo.outputPath('icon-size-download-large.png');
+
+    fs.writeFileSync(picture, png);
+    await testInfo.attach('icon-size-download-large.png', {
+      path: picture,
+      contentType: 'image/png',
+    });
+
+    const decoded = await page.evaluate(
+      async ({ data }) => {
+        const image = new Image();
+
+        image.src = `data:image/png;base64,${data}`;
+        await image.decode();
+
+        return [image.naturalWidth, image.naturalHeight];
+      },
+      { data: png.toString('base64') },
+    );
+
+    expect
+      .soft(png.subarray(0, 8).equals(PNG_SIGNATURE), 'PNG signature')
+      .toBe(true);
+    expect
+      .soft([png.readUInt32BE(16), png.readUInt32BE(20)], 'PNG header size')
+      .toEqual(pixels);
+    expect.soft(decoded, 'PNG size as decoded').toEqual(pixels);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  });
+
+  await test.step('a device of its own size draws it at once, and Diagram default gives the diagram’s back', async () => {
+    const own = inspectorField(builder, 'iconSize');
+
+    await builder.selectInOutline('web-01');
+    await expect.soft(own.label).toHaveText(/^Icon size/);
+    expect
+      .soft(await choicesOf(own.select))
+      .toEqual(['Diagram default (Large)', 'Small', 'Medium', 'Large']);
+    await expect.soft(own.select).toHaveValue('');
+
+    await own.select.selectOption({ label: 'Small' });
+    // A device's look takes no Apply.
+    await expect(nodeIcon(nodes.device)).toHaveAttribute('width', '16');
+    await expect.soft(nodes.device).not.toHaveClass(/builder-node--icon-/);
+    await expect
+      .soft(nodeIcon(builder.node('web-02', 'device')))
+      .toHaveAttribute('width', '32');
+    await builder.persisted(
+      draft,
+      (doc) =>
+        doc.nodes.find((node) => node.label === 'web-01').device.iconSize,
+      'small',
+      { soft: true },
+    );
+  });
+
+  await test.step('a switch of its own size draws it once applied', async () => {
+    const own = inspectorField(builder, 'iconSize');
+
+    await builder.selectInOutline('EXP');
+    await own.select.selectOption({ label: 'Medium' });
+    // A switch's form waits for Apply.
+    await expect.soft(nodeIcon(nodes.switch)).toHaveAttribute('width', '32');
+    await builder.inspector.getByTestId('inspector-apply').click();
+    await expect(nodeIcon(nodes.switch)).toHaveAttribute('width', '24');
+    await builder.persisted(
+      draft,
+      (doc) =>
+        doc.nodes.find((node) => node.kind === 'switch' && node.label === 'EXP')
+          .switch.iconSize,
+      'medium',
+      { soft: true },
+    );
+  });
+
+  await test.step('opened again in a new page load, the draft draws each size as it was left', async () => {
+    await builder.waitSaved();
+    // Loads the Builder page again and reads the draft from the server.
+    await builder.openDraft(draft);
+
+    await expect(nodeIcon(nodes.device)).toHaveAttribute('width', '16');
+    await expect
+      .soft(nodeIcon(builder.node('web-02', 'device')))
+      .toHaveAttribute('width', '32');
+    await expect.soft(nodeIcon(nodes.switch)).toHaveAttribute('width', '24');
+    await expect
+      .soft(nodeIcon(builder.node('MGMT', 'switch')))
+      .toHaveAttribute('width', '32');
+    await expect.soft(nodeIcon(nodes.group)).toHaveAttribute('width', '32');
+    await expect
+      .soft(nodeIcon(nodes['least group']))
+      .toHaveAttribute('width', '32');
+    await expect.soft(diagramSize).toHaveValue('large');
+  });
+
+  await test.step('in the dark theme, a selected Large device keeps its ring and check mark', async () => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await builder.selectInOutline('web-02');
+
+    const web02 = builder.node('web-02', 'device');
+
+    await expect(web02).toHaveClass(/is-selected/);
+    await expectLaidOut(web02, 'selected web-02 in the dark theme');
+    await keepScreenshot(web02, 'icon-size-device-large-selected-dark.png');
   });
 
   expectNoFatal(issues);

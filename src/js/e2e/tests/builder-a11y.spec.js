@@ -2448,6 +2448,141 @@ for (const scheme of ['light', 'dark']) {
   );
 }
 
+// A device, a switch and a group whose icons are Medium or Large lay their
+// text out beside the icon: a diagram drawn at `iconSize`, with a second
+// group at the least size a group can be resized to (120 by 80) and the
+// Inspector's Icon size in view, is scanned in both themes.
+function iconSizeDocument(name, iconSize) {
+  const id = () => crypto.randomUUID();
+  const network = { id: id(), name: 'EXP' };
+  const handle = { id: id(), name: 'eth0', index: 0 };
+  const device = {
+    id: id(),
+    kind: 'device',
+    label: 'web-01',
+    position: { x: 64, y: 96 },
+    device: {
+      hostname: 'web-01',
+      iconKey: 'server',
+      spec: {
+        type: 'VirtualMachine',
+        general: {
+          hostname: 'web-01',
+          vm_type: 'kvm',
+          description: 'Front end web server',
+        },
+        hardware: { os_type: 'linux', drives: [{ image: 'ubuntu.qc2' }] },
+        network: {
+          interfaces: [
+            { name: 'eth0', type: 'ethernet', proto: 'dhcp', vlan: 'EXP' },
+          ],
+        },
+      },
+      interfaces: [handle],
+    },
+  };
+  const sw = {
+    id: id(),
+    kind: 'switch',
+    label: 'EXP',
+    position: { x: 352, y: 112 },
+    switch: { networkId: network.id },
+  };
+
+  return {
+    ...blankDocument(name, {
+      nodes: [
+        device,
+        sw,
+        {
+          id: id(),
+          kind: 'group',
+          label: 'Zone',
+          position: { x: 640, y: 64 },
+          size: { width: 320, height: 240 },
+          group: { title: 'Zone', description: 'Web tier' },
+        },
+        {
+          id: id(),
+          kind: 'group',
+          label: 'Edge',
+          position: { x: 640, y: 352 },
+          size: { width: 120, height: 80 },
+          group: { title: 'Edge' },
+        },
+      ],
+      networks: [network],
+      edges: [
+        {
+          id: id(),
+          sourceNodeId: device.id,
+          sourceHandleId: handle.id,
+          targetNodeId: sw.id,
+          networkId: network.id,
+        },
+      ],
+    }),
+    iconSize,
+  };
+}
+
+test(
+  'axe finds no serious violations on canvases whose icons are Medium or Large',
+  { tag: ['@axe'] },
+  async ({ page, builder, issues }, testInfo) => {
+    // Two drafts, each opened in both themes.
+    test.slow();
+
+    for (const size of ['large', 'medium']) {
+      const title = size === 'large' ? 'Large' : 'Medium';
+      const name = `${size}-icons-${testInfo.project.name}-${Date.now()}`;
+      const draft = await builder.seedDraft(iconSizeDocument(name, size));
+      const sized = new RegExp(`builder-node--icon-${size}`);
+
+      for (const scheme of ['light', 'dark']) {
+        await test.step(`${title} icons, the ${scheme} theme`, async () => {
+          await page.emulateMedia({ colorScheme: scheme });
+          await builder.openDraft(draft);
+
+          const select = builder.inspector.getByTestId(
+            'inspector-icon-size-select',
+          );
+
+          await expect(select).toHaveValue(size);
+          await expect
+            .soft(
+              builder.nodes().locator('.builder-node__header > .builder-icon'),
+            )
+            .toHaveCount(4);
+          for (const kind of ['device', 'switch', 'group']) {
+            await expect.soft(builder.nodes(kind).first()).toHaveClass(sized);
+          }
+          // The group of the least size lays its text out beside the icon
+          // too.
+          await expect.soft(builder.node('Edge', 'group')).toHaveClass(sized);
+
+          // Keyboard: the select takes focus, and is named and described.
+          await select.focus();
+          await expect.soft(select).toBeFocused();
+          await expect.soft(select).toHaveAccessibleName('Icon size');
+          await expect
+            .soft(select)
+            .toHaveAccessibleDescription(
+              'Devices, switches and groups draw their icons at this size, unless one has a size of its own.',
+            );
+
+          await expectAccessible(page, {
+            soft: true,
+            label: `axe on a canvas of ${title} icons, ${scheme} theme`,
+          });
+        });
+      }
+    }
+
+    expectNoFatal(issues);
+  },
+);
+
 // --- themes, minimap and zoom -------------------------------------------------
 
 test.describe('themes and canvas controls', () => {

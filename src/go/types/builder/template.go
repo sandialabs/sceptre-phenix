@@ -53,6 +53,7 @@ type Template struct {
 type TemplateDevice struct {
 	IconKey      string `json:"iconKey,omitempty"`
 	Icon         string `json:"icon,omitempty"`
+	IconSize     string `json:"iconSize,omitempty"`
 	OutlineColor string `json:"outlineColor,omitempty"`
 	FillColor    string `json:"fillColor,omitempty"`
 	// Spec is a complete phenix node spec, as a device holds it. Its
@@ -70,8 +71,8 @@ type TemplateDevice struct {
 //   - a device without a spec, or whose spec has no general.hostname, a
 //     blank one or one with whitespace,
 //   - an icon key outside the icon key registry (see [IsIconKey]), a custom
-//     icon that is not an icon name (see [IconNameProblem]), or a color
-//     that is not "#rrggbb",
+//     icon that is not an icon name (see [IconNameProblem]), an icon size
+//     outside [IconSizes], or a color that is not "#rrggbb",
 //   - a device whose JSON encoding is longer than [MaxTemplateDeviceBytes].
 //
 // The spec is not checked against the phenix schema, as a device's is not.
@@ -124,6 +125,10 @@ func (t *Template) Issues(path string) []Issue {
 		if problem := IconNameProblem(device.Icon); problem != "" {
 			addf(".device.icon", "%s", problem)
 		}
+	}
+
+	if problem := iconSizeProblem(device.IconSize); problem != "" {
+		addf(".device.iconSize", "%s", problem)
 	}
 
 	if problem := colorProblem(device.OutlineColor); problem != "" {
@@ -201,7 +206,9 @@ func builtinTemplate(id, name, description, iconKey string, spec map[string]any)
 		ID:          id,
 		Name:        name,
 		Description: description,
-		Device:      TemplateDevice{IconKey: iconKey, Icon: "", OutlineColor: "", FillColor: "", Spec: spec},
+		Device: TemplateDevice{
+			IconKey: iconKey, Icon: "", IconSize: "", OutlineColor: "", FillColor: "", Spec: spec,
+		},
 	}
 }
 

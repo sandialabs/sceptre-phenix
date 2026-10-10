@@ -570,6 +570,78 @@
   border-width: 4px;
 }
 
+/* A Medium or a Large icon stands left of the node's lines, which make a
+   column beside it: on the name's line it would make that line taller than
+   the box holds (see nodes/nodeIconSize.js). The box keeps its size and its
+   handles their places, and each line keeps its ellipsis in the width left
+   to it. Like the check mark, the icon is placed in Vue Flow's wrapper,
+   which is the node's border box, at the place a Small icon starts: past
+   the border and the padding of the node's kind. A device's and a switch's
+   icon is centered on the box, with the lines centered beside it; a
+   group's is at its top left, with its title and description beside it,
+   as its members fill the rest of the box. */
+.builder-node--icon-medium {
+  --bx-node-icon: 24px;
+}
+
+.builder-node--icon-large {
+  --bx-node-icon: 32px;
+}
+
+.builder-node--icon-medium > .builder-node__header > .builder-icon,
+.builder-node--icon-large > .builder-node__header > .builder-icon {
+  position: absolute;
+  top: calc(50% - var(--bx-node-icon) / 2);
+  left: var(--bx-node-icon-left);
+}
+
+.builder-node--device.builder-node--icon-medium,
+.builder-node--device.builder-node--icon-large,
+.builder-node--group.builder-node--icon-medium,
+.builder-node--group.builder-node--icon-large {
+  --bx-node-icon-left: calc(2px + 0.5rem);
+  --bx-node-icon-top: calc(2px + 0.4rem);
+  padding-left: calc(1rem + var(--bx-node-icon));
+}
+
+.builder-node--device.builder-node--icon-medium,
+.builder-node--device.builder-node--icon-large,
+.builder-node--switch.builder-node--icon-medium,
+.builder-node--switch.builder-node--icon-large {
+  justify-content: center;
+}
+
+/* A switch's icon sits in the round end of its pill, which holds it whole,
+   so its lines keep as much of the width as they can. */
+.builder-node--switch.builder-node--icon-medium,
+.builder-node--switch.builder-node--icon-large {
+  --bx-node-icon-left: calc(4px + 0.5rem);
+  padding-left: calc(1rem + var(--bx-node-icon));
+}
+
+.builder-node--group[data-border='double'].builder-node--icon-medium,
+.builder-node--group[data-border='double'].builder-node--icon-large {
+  --bx-node-icon-left: calc(4px + 0.5rem);
+  --bx-node-icon-top: calc(4px + 0.4rem);
+}
+
+.builder-node--group.builder-node--icon-medium
+  > .builder-node__header
+  > .builder-icon,
+.builder-node--group.builder-node--icon-large
+  > .builder-node__header
+  > .builder-icon {
+  top: var(--bx-node-icon-top);
+}
+
+/* A group's title alone is centered on its icon, as a device's lines are. */
+.builder-node--group.builder-node--title-only.builder-node--icon-medium
+  > .builder-node__header,
+.builder-node--group.builder-node--title-only.builder-node--icon-large
+  > .builder-node__header {
+  min-height: var(--bx-node-icon);
+}
+
 .builder-node--note {
   border-style: dashed;
   background: var(--bx-bg-alt);

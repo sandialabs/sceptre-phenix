@@ -295,6 +295,7 @@ func TestFixtureEncodingsArePinned(t *testing.T) {
 	doc := decoratedDocument(t)
 	plain := loadDocumentFixture(t, "document.json")
 
+	doc.IconSize = ""
 	doc.Icons = map[string]builder.Icon{}
 	doc.Templates = []builder.Template{}
 	doc.Source = plain.Source

@@ -9,17 +9,22 @@
   device may (see nodeColors in colors.js), and notes of its own
   (switch.notes), in a card below its box (see NodeNotes.vue), which its
   description ends with.
+
+  Its icon is drawn at the switch's icon size, or the diagram's, before its
+  name when Small and left of both its lines when larger, as a device's is
+  (see DeviceNode.vue).
 -->
 <template>
   <div
     class="builder-node builder-node--switch"
-    :class="[{ 'is-selected': selected }, colorClasses]"
+    :class="[{ 'is-selected': selected }, iconClass, colorClasses]"
     :style="colorStyle"
     :data-node-id="id"
     data-node-kind="switch"
+    :data-icon-size="iconSize"
     data-testid="builder-node">
     <div class="builder-node__header">
-      <builder-icon :name="data.iconKey" :size="16" />
+      <builder-icon :name="data.iconKey" :size="iconPixels(iconSize)" />
       <span class="builder-node__label">{{ data.label }}</span>
     </div>
     <div class="builder-node__line">
@@ -71,11 +76,16 @@
   import NodeIssueMark from './NodeIssueMark.vue';
   import NodeNotes from './NodeNotes.vue';
   import { useNodeColors } from './nodeColors.js';
+  import { iconSizeClass } from './nodeIconSize.js';
   import { useNodeInfo } from './nodeTooltip.js';
 
   import { drawnNetworkColor } from '@/builder/colors.js';
   // Not nodeNotes: <node-notes> would resolve to it before NodeNotes.
-  import { nodeNotes as notesOf } from '@/builder/model.js';
+  import {
+    DEFAULT_ICON_SIZE,
+    iconPixels,
+    nodeNotes as notesOf,
+  } from '@/builder/model.js';
   import { switchInfo } from '@/builder/nodeInfo.js';
 
   // Vue Flow passes its node state as attributes as well; none belong on
@@ -95,6 +105,8 @@
     switchInfo(props.data.network, props.data.connected, props.data.node),
   );
   const notes = computed(() => notesOf(props.data.node));
+  const iconSize = computed(() => props.data.iconSize || DEFAULT_ICON_SIZE);
+  const iconClass = computed(() => iconSizeClass(iconSize.value));
   // As its connections and the Inspector's Color chip draw it: a color
   // addNetwork picks in its theme token, and no color in the token of the
   // network's place (see networkStyle).

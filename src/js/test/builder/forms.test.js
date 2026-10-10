@@ -155,8 +155,9 @@ describe('inspector working copy', () => {
     expect(target.title).toContain(network.name);
   });
 
-  // The network's fields, then the two colors that are the switch node's
-  // own. Two switches of one network share the first and not the second.
+  // The network's fields, then the two colors and the icon size that are
+  // the switch node's own. Two switches of one network share the first and
+  // not the second.
   test("a switch's working copy has its network's line style and its own colors", () => {
     const { doc, sw, network } = sampleDocument();
     const selection = { type: 'node', id: sw.id };
@@ -169,6 +170,7 @@ describe('inspector working copy', () => {
       lineStyle: '',
       outlineColor: '',
       fillColor: '',
+      iconSize: '',
     });
 
     const second = addNode(doc, { kind: 'switch', networkId: network.id });
@@ -188,7 +190,7 @@ describe('inspector working copy', () => {
     ).toMatchObject({ lineStyle: 'dotted', outlineColor: '', fillColor: '' });
   });
 
-  test("a device's working copy has its look: icon, custom icon, outline and fill", () => {
+  test("a device's working copy has its look: icon, custom icon, icon size, outline and fill", () => {
     const { doc, alpha } = sampleDocument();
     const selection = { type: 'node', id: alpha.id };
 
@@ -196,6 +198,7 @@ describe('inspector working copy', () => {
       'hostname',
       'iconKey',
       'icon',
+      'iconSize',
       'outlineColor',
       'fillColor',
       'spec',
@@ -404,6 +407,7 @@ describe('applying a working copy', () => {
       'borderStyle',
       'iconKey',
       'icon',
+      'iconSize',
     ]);
     expect(
       JSON.stringify(uiSchemaForKind(builderSchemaV1, 'group')),
@@ -415,6 +419,7 @@ describe('applying a working copy', () => {
       borderStyle: '',
       iconKey: '',
       icon: '',
+      iconSize: '',
     });
 
     const next = applyFormData(doc, selection, { title: 'Edge', color: '' });
@@ -455,6 +460,7 @@ describe('applying a working copy', () => {
       borderStyle: 'double',
       iconKey: 'firewall',
       icon: ICON_KEY,
+      iconSize: '',
     });
     // The description is a long text field, as a network's is.
     expect(
@@ -743,10 +749,11 @@ describe('what a change of look says', () => {
     expect(lookChangeLabel('Device a', none, { ...none })).toBe('');
   });
 
-  test('the look of a payload is its four fields as text', () => {
+  test('the look of a payload is its five fields as text', () => {
     expect(lookOf(undefined)).toEqual({
       iconKey: '',
       icon: '',
+      iconSize: '',
       outlineColor: '',
       fillColor: '',
     });
@@ -755,6 +762,7 @@ describe('what a change of look says', () => {
     ).toEqual({
       iconKey: 'router',
       icon: '',
+      iconSize: '',
       outlineColor: '',
       fillColor: '#222222',
     });

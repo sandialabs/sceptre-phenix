@@ -229,6 +229,66 @@ describe('documents', () => {
     expect(store.error).toBe('This draft is read only.');
   });
 
+  test('the diagram’s icon size is set in one undo step, named after the size, and Small leaves no key', () => {
+    const steps = store.history.entries.length;
+
+    expect(store.setIconSize('large')).toBeTruthy();
+    expect(store.doc.iconSize).toBe('large');
+    expect(store.history.entries).toHaveLength(steps + 1);
+    expect(store.history.undoLabel()).toBe(
+      "Changed the diagram's icon size to Large",
+    );
+    expect(store.announcement).toMatch(
+      /^Changed the diagram's icon size to Large/,
+    );
+
+    // The size the diagram has takes no step.
+    expect(store.setIconSize('large')).toBeNull();
+    expect(store.history.entries).toHaveLength(steps + 1);
+
+    store.undo();
+    expect(store.doc).not.toHaveProperty('iconSize');
+    store.redo();
+    expect(store.doc.iconSize).toBe('large');
+
+    expect(store.setIconSize('medium')).toBeTruthy();
+    expect(store.history.undoLabel()).toBe(
+      "Changed the diagram's icon size to Medium",
+    );
+
+    // Small is what a diagram without the key draws.
+    expect(store.setIconSize('small')).toBeTruthy();
+    expect(store.doc).not.toHaveProperty('iconSize');
+    expect(store.history.entries).toHaveLength(steps + 3);
+    expect(store.history.undoLabel()).toBe(
+      "Changed the diagram's icon size to Small",
+    );
+    store.undo();
+    expect(store.doc.iconSize).toBe('medium');
+  });
+
+  test('the diagram’s icon size is refused while a conflict is resolved, and in a read-only draft', () => {
+    const steps = store.history.entries.length;
+    const doc = store.doc;
+
+    store.resolvingConflict = true;
+
+    expect(store.setIconSize('large')).toBeNull();
+    expect(store.doc).toBe(doc);
+    expect(store.announcement).toBe(
+      'Not changed: the conflict is being resolved. Edit again once it is.',
+    );
+
+    store.resolvingConflict = false;
+    store.readOnly = true;
+
+    expect(store.setIconSize('medium')).toBeNull();
+    expect(store.doc).toBe(doc);
+    expect(store.doc).not.toHaveProperty('iconSize');
+    expect(store.error).toBe('This draft is read only.');
+    expect(store.history.entries).toHaveLength(steps);
+  });
+
   test('starting a new document detaches the previous draft queue', () => {
     const dispose = vi.fn();
 

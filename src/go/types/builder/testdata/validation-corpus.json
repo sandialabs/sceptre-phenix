@@ -8288,6 +8288,195 @@
           ]
         }
       ]
+    },
+    {
+      "name": "icon sizes of the document, a device, a switch and a group",
+      "set": [
+        {
+          "path": [
+            "iconSize"
+          ],
+          "value": "large"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "iconSize"
+          ],
+          "value": "small"
+        },
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "iconSize"
+          ],
+          "value": "medium"
+        },
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "iconSize"
+          ],
+          "value": "large"
+        }
+      ]
+    },
+    {
+      "name": "empty and null icon sizes, which are none",
+      "set": [
+        {
+          "path": [
+            "iconSize"
+          ],
+          "value": null
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "iconSize"
+          ],
+          "value": ""
+        },
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "iconSize"
+          ],
+          "value": null
+        },
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "iconSize"
+          ],
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "unknown document icon size",
+      "set": [
+        {
+          "path": [
+            "iconSize"
+          ],
+          "value": "huge"
+        }
+      ],
+      "error": "iconSize",
+      "message": "unknown icon size \"huge\" (expected one of small, medium, large)"
+    },
+    {
+      "name": "device icon size in pixels",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "iconSize"
+          ],
+          "value": "32"
+        }
+      ],
+      "error": "nodes[1].device.iconSize",
+      "message": "unknown icon size \"32\" (expected one of small, medium, large)"
+    },
+    {
+      "name": "switch icon size in another case",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "iconSize"
+          ],
+          "value": "Large"
+        }
+      ],
+      "error": "nodes[3].switch.iconSize",
+      "message": "unknown icon size \"Large\" (expected one of small, medium, large)"
+    },
+    {
+      "name": "unknown group icon size",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "iconSize"
+          ],
+          "value": "xl"
+        }
+      ],
+      "error": "nodes[0].group.iconSize",
+      "message": "unknown icon size \"xl\" (expected one of small, medium, large)"
+    },
+    {
+      "name": "template icon size",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "device": {
+                "iconSize": "medium",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unknown template icon size",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "device": {
+                "iconSize": "tiny",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.iconSize",
+      "message": "unknown icon size \"tiny\" (expected one of small, medium, large)"
     }
   ]
 }

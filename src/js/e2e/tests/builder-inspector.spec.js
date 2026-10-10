@@ -1214,6 +1214,7 @@ test.describe('Builder inspector', () => {
             /^Border pattern/,
             /^Icon/,
             /^Custom icon/,
+            /^Icon size/,
           ]);
         const title = builder.inspector.getByLabel('Title');
         await expect.soft(title).toHaveValue('Group');
@@ -1240,7 +1241,7 @@ test.describe('Builder inspector', () => {
         await builder.selectInOutline('EXP');
         await expect.soft(subject(builder)).toHaveText(/^\s*Network EXP\b/);
         // The network's fields, its color named by what it colors, then
-        // the outline and the fill of the switch node itself.
+        // the outline, the fill and the icon size of the switch node itself.
         await expect
           .soft(fields)
           .toHaveText([
@@ -1251,6 +1252,7 @@ test.describe('Builder inspector', () => {
             /^Line style/,
             /^Outline Color/,
             /^Fill Color/,
+            /^Icon size/,
           ]);
         await expect
           .soft(builder.inspector.getByLabel(/^Name/))

@@ -1,11 +1,21 @@
 <!--
   The rest of the Inspector's Diagram section, below the diagram's Name and
-  Description: who made the diagram and who saved it last, the annotations
-  of the config the diagram was imported from, its scenarios, each with the
-  hosts each of its apps runs on, and the notes of the diagram. All but the
-  notes are read only here. Edit scenarios (Add scenario when there is
-  none) opens the Scenario dialog the toolbar's Scenarios button opens, and
-  like it, not in a read-only draft.
+  Description: the size of the diagram's node icons, who made the diagram
+  and who saved it last, the annotations of the config the diagram was
+  imported from, its scenarios, each with the hosts each of its apps runs
+  on, and the notes of the diagram. All but the icon size and the notes are
+  read only here. Edit scenarios (Add scenario when there is none) opens the
+  Scenario dialog the toolbar's Scenarios button opens, and like it, not in
+  a read-only draft.
+
+  Icon size is the size devices, switches and groups draw their icons at,
+  unless one has a size of its own (see nodeIconSize in model.js). It is
+  presentation only, so a choice applies at once, as one undo step (the
+  store's setIconSize). As in a device's form, one choice is one step: a
+  size chosen with the pointer applies at once, and one stepped to with the
+  arrow keys when the choice is made, on Enter or when focus leaves the
+  select (see heldCommit.js). A size the store refuses leaves the select
+  showing the diagram's size. A read-only draft shows the size as text.
 
   Details shows what the server wrote into the document's metadata when it
   stored it: who made it and when, and the user and time of the save that
@@ -28,6 +38,32 @@
   read-only draft shows the notes as text.
 -->
 <template>
+  <div class="inspector-diagram" data-testid="inspector-icon-size">
+    <h3 id="inspector-icon-size-label">Icon size</h3>
+    <p v-if="store.readOnly" data-testid="inspector-icon-size-value">
+      {{ ICON_SIZE_TITLES[iconSize] }}
+    </p>
+    <select
+      v-else
+      ref="iconSizeSelect"
+      :value="iconSize"
+      aria-labelledby="inspector-icon-size-label"
+      aria-describedby="inspector-icon-size-help"
+      data-testid="inspector-icon-size-select"
+      @pointerdown="iconSizeChoice.point()"
+      @keydown="onIconSizeKey"
+      @change="iconSizeChoice.change($event.target.value)"
+      @blur="iconSizeChoice.flush()">
+      <option v-for="size in ICON_SIZES" :key="size" :value="size">
+        {{ ICON_SIZE_TITLES[size] }} ({{ ICON_SIZE_PIXELS[size] }} pixels)
+      </option>
+    </select>
+    <p id="inspector-icon-size-help" class="inspector-diagram__none">
+      Devices, switches and groups draw their icons at this size, unless one has
+      a size of its own.
+    </p>
+  </div>
+
   <!-- A diagram stored before the server kept these has none to show. -->
   <div
     v-if="details.length"
@@ -225,22 +261,62 @@
   } from 'vue';
 
   import BuilderIcon from '../BuilderIcon.vue';
+  import { heldCommit, keyEffect } from './heldCommit.js';
 
   import { formatTimestamp } from '@/builder/format.js';
   import {
     diagramNoteProblem,
+    documentIconSize,
+    ICON_SIZE_PIXELS,
+    ICON_SIZES,
     MAX_DIAGRAM_NOTES,
     documentScenarios,
     metadataOf,
     scenarioApps,
     sourceAnnotations,
   } from '@/builder/model.js';
+  import { ICON_SIZE_TITLES } from '@/builder/schema.js';
   import { useBuilderStore } from '@/builder/store.js';
   import { isBlank } from '@/builder/text.js';
 
   defineEmits(['scenario']);
 
   const store = useBuilderStore();
+
+  // --- icon size ---------------------------------------------------------
+
+  const iconSize = computed(() => documentIconSize(store.doc));
+  const iconSizeSelect = ref(null);
+
+  // A size the store refuses (while a conflict is resolved, or in a draft
+  // that turned read only) leaves the document's size as it was, and so the
+  // select's binding too, which then would not put it back: the select is
+  // given the document's size again here.
+  function commitIconSize(size) {
+    const entry = store.setIconSize(size);
+
+    if (!entry && iconSizeSelect.value) {
+      iconSizeSelect.value.value = iconSize.value;
+    }
+
+    return Boolean(entry);
+  }
+
+  const iconSizeChoice = heldCommit(commitIconSize);
+
+  // A key that steps the select holds the size it steps to; any other, such
+  // as Enter or a shortcut, applies the size held.
+  function onIconSizeKey(event) {
+    const effect = keyEffect(event);
+
+    if (effect === 'hold') {
+      iconSizeChoice.key();
+    } else if (effect === 'flush') {
+      iconSizeChoice.flush();
+    }
+  }
+
+  onBeforeUnmount(() => iconSizeChoice.flush());
 
   // A user and a time the document holds, as a row: the time in the
   // viewer's locale, then "by" the user. Either may be missing; with

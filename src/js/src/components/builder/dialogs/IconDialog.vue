@@ -32,9 +32,9 @@
     data-testid="icon-dialog"
     @close="$emit('close')">
     <p class="builder-hint builder-icons__intro">
-      An icon is a small image, drawn at 16 pixels, that every user of this
-      server can use. PNG, JPEG, GIF, WebP and SVG files are converted to a PNG
-      of at most 96 by 96 pixels.
+      An icon is a small image that every user of this server can use, drawn at
+      16, 24 or 32 pixels as the node's icon size says. PNG, JPEG, GIF, WebP and
+      SVG files are converted to a PNG of at most 96 by 96 pixels.
     </p>
 
     <button

@@ -65,6 +65,7 @@ export const DOCUMENT_KEYS = new Set([
   'scenarios',
   'source',
   'layout',
+  'iconSize',
   'templates',
   'icons',
 ]);
@@ -96,6 +97,7 @@ export const DEVICE_KEYS = new Set([
   'hostname',
   'iconKey',
   'icon',
+  'iconSize',
   'outlineColor',
   'fillColor',
   'spec',
@@ -107,6 +109,7 @@ export const SWITCH_KEYS = new Set([
   'networkId',
   'outlineColor',
   'fillColor',
+  'iconSize',
   'notes',
 ]);
 export const NOTE_KEYS = new Set(['text', 'color']);
@@ -117,6 +120,7 @@ export const GROUP_KEYS = new Set([
   'borderStyle',
   'iconKey',
   'icon',
+  'iconSize',
   'collapsed',
 ]);
 export const SHAPE_KEYS = new Set([
@@ -410,7 +414,7 @@ export function decodeDocument(value) {
   doc.metadata = doc.metadata || {};
 
   // Null is none, as Go decodes it.
-  ['layout', 'templates', 'icons'].forEach((key) => {
+  ['layout', 'iconSize', 'templates', 'icons'].forEach((key) => {
     if (doc[key] === null) {
       delete doc[key];
     }

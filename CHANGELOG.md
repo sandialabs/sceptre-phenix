@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - **Builder icons**: One icon library for the whole server: each custom icon has a unique name, which diagrams and templates refer to. The uploader, or a role with the new `builder-icons` permissions, can rename an icon (the old name keeps working) or delete it. Drafts carry no image data; a downloaded diagram embeds up to 50 icons it uses, and uploading it adds those the server lacks.
 - **Builder scenarios**: A diagram lists up to 20 Scenario configs by name (`scenarios`). The Scenarios dialog adds stored scenarios or stores an uploaded scenario file as a Scenario config (replacing one keeps its annotations), Publish adds the topology to each listed scenario's `topology` annotation, and the Publish dialog picks the experiment's scenario.
 - **Builder drawings**: Rectangles, circles, icons and lines (with bends and arrowheads) that are drawn in a diagram and never published. Shapes, icons, notes and groups resize with the mouse.
+- **Builder icon sizes**: Devices, switches and groups draw their icons Small (16 pixels), Medium (24) or Large (32): a size for the whole diagram (`iconSize`), and optionally one of a node's own, both chosen in the Inspector.
 
 ### Changed
 

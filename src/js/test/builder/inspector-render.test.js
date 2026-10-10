@@ -1317,19 +1317,30 @@ describe('colors, line styles and group fields', () => {
     expect(html).not.toContain('Not set');
   });
 
-  test('a device has Custom icon, Outline Color and Fill Color after its Icon', async () => {
+  test('a device has Custom icon, Icon size, Outline Color and Fill Color after its Icon', async () => {
     const html = await renderInspector({
       change: ({ doc, alpha }) =>
         updateNode(doc, alpha.id, { device: { fillColor: '#ffd400' } }),
     });
 
-    expect(labelsOf(html).slice(0, 5)).toEqual([
+    expect(labelsOf(html).slice(0, 6)).toEqual([
       'Hostname',
       'Icon',
       'Custom icon',
+      'Icon size',
       'Outline Color',
       'Fill Color',
     ]);
+    // Without a size of its own, the device draws the diagram's.
+    expect(choicesOf(fieldOf(html, 'iconSize'))).toEqual([
+      'Diagram default (Small)',
+      'Small',
+      'Medium',
+      'Large',
+    ]);
+    expect(fieldOf(html, 'iconSize')).toContain(
+      'Default: The diagram&#39;s icon size.',
+    );
     expect(picker(html, 'outlineColor')).toContain(
       'aria-label="Choose outline Color"',
     );
@@ -1364,13 +1375,20 @@ describe('colors, line styles and group fields', () => {
       select: () => group.id,
     });
 
-    expect(labelsOf(html).slice(0, 6)).toEqual([
+    expect(labelsOf(html).slice(0, 7)).toEqual([
       'Title',
       'Description',
       'Color',
       'Border pattern',
       'Icon',
       'Custom icon',
+      'Icon size',
+    ]);
+    expect(choicesOf(fieldOf(html, 'iconSize'))).toEqual([
+      'Diagram default (Small)',
+      'Small',
+      'Medium',
+      'Large',
     ]);
     expect(text(fieldOf(html, 'icon'))).toContain('None Choose…');
     expect(tags(fieldOf(html, 'description'), 'textarea')).toHaveLength(1);

@@ -81,6 +81,7 @@ import {
 } from './publish.js';
 import {
   builderSchemaV1,
+  ICON_SIZE_TITLES,
   isSchemaBundle,
   normalizeSchemaBundle,
 } from './schema.js';
@@ -106,6 +107,7 @@ import {
   connect,
   connectNodes,
   createDocument,
+  documentIconSize,
   documentScenarios,
   documentSummary,
   findNetwork,
@@ -134,6 +136,7 @@ import {
   savedStamp,
   setDiagramNotes,
   setGrid,
+  setIconSize,
   setLinePoints,
   setParent,
   setDocumentInfo,
@@ -4457,6 +4460,29 @@ export const useBuilderStore = defineStore('builder', {
       }
 
       return this.commit(next, 'Updated diagram notes');
+    },
+
+    /**
+     * Draws the icons of the diagram's devices, switches and groups at a
+     * size, in one undo step (see setIconSize in model.js); a node with a
+     * size of its own keeps it. The size the diagram has already takes no
+     * step.
+     *
+     * @param {string} size one of ICON_SIZES
+     * @returns {object|null} the history entry, or null when nothing changed
+     *   or the draft is read only
+     */
+    setIconSize(size) {
+      const next = setIconSize(this.doc, size);
+
+      if (next === this.doc) {
+        return null;
+      }
+
+      return this.commit(
+        next,
+        `Changed the diagram's icon size to ${ICON_SIZE_TITLES[documentIconSize(next)]}`,
+      );
     },
 
     setViewport(viewport) {

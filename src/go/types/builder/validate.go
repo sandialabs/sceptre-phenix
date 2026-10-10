@@ -56,7 +56,24 @@ var (
 
 	// shapeFigures are the figures a shape node may draw.
 	shapeFigures = []string{"rectangle", "circle"} //nolint:gochecknoglobals // immutable list
+
+	// iconSizes are the sizes node icons may be drawn at, smallest first.
+	iconSizes = []string{IconSizeSmall, IconSizeMedium, IconSizeLarge} //nolint:gochecknoglobals // immutable list
 )
+
+// The sizes the editor draws the icon of a device, a switch or a group at:
+// 16, 24 and 32 pixels. Small is the size of a document that names none.
+const (
+	IconSizeSmall  = "small"
+	IconSizeMedium = "medium"
+	IconSizeLarge  = "large"
+)
+
+// IconSizes returns the sizes [Document.IconSize], [Device.IconSize],
+// [Switch.IconSize] and [Group.IconSize] may name, smallest first.
+func IconSizes() []string {
+	return slices.Clone(iconSizes)
+}
 
 // LineStyles returns the dash patterns [Network.LineStyle],
 // [Edge.LineStyle] and [Line.LineStyle] may name.
@@ -158,6 +175,8 @@ type validator struct {
 //     color of a line, that is not "#rrggbb",
 //   - a group or shape border style outside [BorderStyles], and a network,
 //     edge or line style outside [LineStyles],
+//   - an icon size outside [IconSizes], of the document, a device, a switch,
+//     a group or a template,
 //   - a shape whose figure is not one of [ShapeFigures], an icon node that
 //     does not name exactly one of a built-in and a custom icon, and a line
 //     with fewer than [MinLinePoints] or more than [MaxLinePoints] points,
@@ -247,6 +266,8 @@ func (v *validator) validateHeader() {
 	if !finite(v.doc.Grid.Size) || v.doc.Grid.Size <= 0 {
 		v.addf("grid.size", "grid size must be a positive finite number")
 	}
+
+	v.validateIconSize(v.doc.IconSize, keyIconSize)
 }
 
 // metadataPath is the path of a field of the document metadata.
@@ -449,6 +470,7 @@ func (v *validator) validateKind(node *Node, path string, i int, seenHostnames m
 			v.validateBorderStyle(node.Group.BorderStyle, path+".group.borderStyle")
 			v.validateIconKey(node.Group.IconKey, path+".group.iconKey")
 			v.validateIconRef(node.Group.Icon, path+".group.icon")
+			v.validateIconSize(node.Group.IconSize, path+".group.iconSize")
 		}
 	case NodeKindShape:
 		if node.Shape != nil {
@@ -493,13 +515,14 @@ func (v *validator) validateDevice(node *Node, path string, i int, seenHostnames
 	v.validateDeviceHandles(node, path)
 	v.validateIconKey(node.Device.IconKey, path+".device.iconKey")
 	v.validateIconRef(node.Device.Icon, path+".device.icon")
+	v.validateIconSize(node.Device.IconSize, path+".device.iconSize")
 	v.validateColor(node.Device.OutlineColor, path+".device.outlineColor")
 	v.validateColor(node.Device.FillColor, path+".device.fillColor")
 	v.validateIncludedFrom(node.Device.IncludedFrom, path+".device.includedFrom")
 }
 
 // validateSwitch checks the payload of a switch node at path: the network
-// it names, which the document has, its colors and its notes.
+// it names, which the document has, its colors, its icon size and its notes.
 func (v *validator) validateSwitch(hub *Switch, path string) {
 	if hub.NetworkID == "" {
 		v.addf(path+".networkId", "switch must reference a network")
@@ -509,6 +532,7 @@ func (v *validator) validateSwitch(hub *Switch, path string) {
 
 	v.validateColor(hub.OutlineColor, path+".outlineColor")
 	v.validateColor(hub.FillColor, path+".fillColor")
+	v.validateIconSize(hub.IconSize, path+"."+keyIconSize)
 	v.validateNotes(path+"."+keyNotes, hub.Notes)
 }
 
@@ -607,6 +631,23 @@ func (v *validator) validateLineStyle(style, path string) {
 	}
 
 	v.addf(path, "unknown line style %q (expected one of %s)", truncate(style), strings.Join(lineStyles, ", "))
+}
+
+// validateIconSize checks the icon size of the document, a device, a switch
+// or a group: none, or one of [IconSizes].
+func (v *validator) validateIconSize(size, path string) {
+	if problem := iconSizeProblem(size); problem != "" {
+		v.addf(path, "%s", problem)
+	}
+}
+
+// iconSizeProblem says why size is no icon size, or returns "".
+func iconSizeProblem(size string) string {
+	if size == "" || slices.Contains(iconSizes, size) {
+		return ""
+	}
+
+	return fmt.Sprintf("unknown icon size %q (expected one of %s)", truncate(size), strings.Join(iconSizes, ", "))
 }
 
 // validateBorderStyle checks the border style of a group or a shape: none,

@@ -21,7 +21,7 @@ to the topology like this:
 | A device from an included topology | Nothing: `includeTopologies` names that topology |
 | A note or a group | Nothing: notes and groups only help people read the diagram |
 | A shape, an icon or a line | Nothing: they are drawings in the diagram |
-| Colors, line styles, custom icons and the diagram's templates | Nothing: they stay in the Builder document |
+| Colors, line styles, icon sizes, custom icons and the diagram's templates | Nothing: they stay in the Builder document |
 
 For example, the connection from ws-01 to the CORP switch is this interface
 of ws-01:
@@ -570,6 +570,34 @@ A chosen pattern may repeat on several networks. The connection's label, the
 switch it joins and its name for screen readers still name its network.
 **Line style** waits for **Apply**.
 
+## Icon size
+
+Devices, switches and groups draw their icons at one of three sizes:
+**Small** (16 pixels), **Medium** (24 pixels) or **Large** (32 pixels). Set
+the size for the whole diagram under **Icon size** in the Inspector's
+**Diagram** section (select an empty part of the canvas). It takes effect at
+once, as one step of **Undo**. A new diagram draws **Small** icons.
+
+A device, a switch or a group can have a size of its own: **Icon size** in
+its Inspector offers **Diagram default**, which names the diagram's size, for
+example "Diagram default (Large)", and the three sizes. On a device it takes
+effect at once, as a device's icon and colors do; on a switch or a group it
+waits for **Apply**.
+
+Nodes keep their size on the canvas. A **Small** icon sits before the node's
+name. A **Medium** or **Large** icon stands left of the node's lines, which
+make a column beside it: centered on a device or a switch, and at the top
+left of a group, beside its title and description. Text that no longer fits
+ends with an ellipsis, as before; the Inspector and the node's tooltip show
+it whole. PNG and SVG downloads draw the icons at their sizes. Icon sizes
+stay in the Builder document: publishing writes none of them.
+
+At **Medium** and **Large**, a switch's second line, which names its network
+(for example "Network CORP, VLAN alias 120"), shows fewer characters than at
+**Small** before its ellipsis, because the icon takes part of its width. The
+network's name stays in the switch's label, in its tooltip and in the
+Inspector.
+
 ## Custom icons
 
 A device, a group or an icon can show an image of your own in place of its
@@ -626,9 +654,10 @@ icon. When nothing of it can be drawn, or (in Chrome) when it embeds HTML,
 the dialog says "This image could not be converted. Save it as a PNG and
 upload it again." Browsers differ on such files: save the picture as a PNG.
 
-An icon is drawn at 16 pixels on the canvas (14 in the Outline), in its own
-colors, the same in the light and the dark theme. Choose one that reads on
-both, or give the node a **Fill Color**.
+An icon is drawn at the node's [icon size](#icon-size) on the canvas (16,
+24 or 32 pixels; 14 in the Outline), in its own colors, the same in the light
+and the dark theme. Choose one that reads on both, or give the node a **Fill
+Color**.
 
 ### The diagram and its icons
 

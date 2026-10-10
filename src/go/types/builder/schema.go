@@ -133,6 +133,12 @@ func rootProperties() map[string]any {
 				"empty, or an id the editor does not know, means a layout did not make the positions.",
 			[]any{"elk"},
 		),
+		keyIconSize: documentedRef(
+			keyIconSize, "Icon Size",
+			"Size the canvas draws the icons of devices, switches and groups at, unless a node names its own; "+
+				"empty is small.",
+			[]any{IconSizeLarge},
+		),
 		keyTemplates: templatesDef(),
 		keyIcons:     iconsDef(),
 	}
@@ -314,6 +320,7 @@ const (
 
 	keyIconKey      = "iconKey"
 	keyIcon         = "icon"
+	keyIconSize     = "iconSize"
 	keyOutlineColor = "outlineColor"
 	keyFillColor    = "fillColor"
 	keyLineStyle    = "lineStyle"
@@ -537,6 +544,12 @@ func builderDefs() map[string]any {
 			enumDef(styleEnum(borderStyles)), "Border Style",
 			"Border pattern of a group or a shape; empty selects the default, dashed for a group and solid for a shape.",
 			[]any{"double"},
+		),
+		keyIconSize: documented(
+			enumDef(styleEnum(iconSizes)), "Icon Size",
+			"Size a node icon is drawn at: small (16 pixels), medium (24) or large (32); empty selects the default, "+
+				"the document's size for a node and small for the document.",
+			[]any{IconSizeMedium},
 		),
 		defIconRef:        iconRefDef(),
 		keyIcon:           iconDef(),
@@ -773,6 +786,10 @@ func deviceDef() map[string]any {
 				defIconRef, "Custom Icon", "Name of the custom icon drawn in place of the built-in one; empty for none.",
 				[]any{exampleIconName},
 			),
+			keyIconSize: documentedRef(
+				keyIconSize, "Icon Size", "Size the device's icon is drawn at; empty uses the document's.",
+				[]any{IconSizeLarge},
+			),
 			keyOutlineColor: documentedRef(
 				defHexColor, "Outline Color", "Border color of the device on the canvas.", []any{exampleOutlineColor},
 			),
@@ -809,6 +826,10 @@ func switchDef() map[string]any {
 			),
 			keyFillColor: documentedRef(
 				defHexColor, "Fill Color", "Background color of the switch on the canvas.", []any{exampleFillColor},
+			),
+			keyIconSize: documentedRef(
+				keyIconSize, "Icon Size", "Size the switch's icon is drawn at; empty uses the document's.",
+				[]any{IconSizeMedium},
 			),
 			keyNotes: documented(
 				notesDef(), "Notes",
@@ -861,6 +882,10 @@ func groupDef() map[string]any {
 			keyIcon: documentedRef(
 				defIconRef, "Custom Icon", "Name of the custom icon drawn in place of the built-in one; empty for none.",
 				[]any{exampleIconName},
+			),
+			keyIconSize: documentedRef(
+				keyIconSize, "Icon Size", "Size the group's icon is drawn at; empty uses the document's.",
+				[]any{IconSizeLarge},
 			),
 			"collapsed": documented(boolDef(), "Collapsed", "Whether the group is collapsed.", []any{false}),
 		}),
@@ -1124,6 +1149,11 @@ func templateDeviceDef() map[string]any {
 				keyIcon: documentedRef(
 					defIconRef, "Custom Icon", "Name of the custom icon of the devices made from the template; empty for none.",
 					[]any{exampleIconName},
+				),
+				keyIconSize: documentedRef(
+					keyIconSize, "Icon Size",
+					"Icon size of the devices made from the template; empty uses the document's.",
+					[]any{IconSizeLarge},
 				),
 				keyOutlineColor: documentedRef(
 					defHexColor, "Outline Color", "Border color of the devices made from the template.",

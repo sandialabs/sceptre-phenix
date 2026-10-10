@@ -22,6 +22,12 @@
 
   The device's notes (its spec's general.notes) show in a card below its
   box (see NodeNotes.vue), and its description ends with them.
+
+  Its icon is drawn at the device's icon size, or the diagram's (see
+  nodeIconSize in model.js). A Small icon sits before the hostname; a Medium
+  or a Large one stands left of all its lines, which make a column beside it
+  (see iconSizeClass in nodeIconSize.js and builder.css). The box keeps its
+  size either way.
 -->
 <template>
   <div
@@ -31,14 +37,19 @@
         'is-selected': selected,
         'builder-node--included': Boolean(data.includedFrom),
       },
+      iconClass,
       colorClasses,
     ]"
     :style="colorStyle"
     :data-node-id="id"
     :data-node-kind="'device'"
+    :data-icon-size="iconSize"
     data-testid="builder-node">
     <div class="builder-node__header">
-      <builder-icon :name="data.iconKey" :src="data.iconSrc" :size="16" />
+      <builder-icon
+        :name="data.iconKey"
+        :src="data.iconSrc"
+        :size="iconPixels(iconSize)" />
       <span class="builder-node__label">{{ data.label }}</span>
     </div>
     <span
@@ -121,11 +132,16 @@
   import NodeIssueMark from './NodeIssueMark.vue';
   import NodeNotes from './NodeNotes.vue';
   import { useNodeColors } from './nodeColors.js';
+  import { iconSizeClass } from './nodeIconSize.js';
   import { useNodeInfo } from './nodeTooltip.js';
 
   import { NEW_INTERFACE_HANDLE_ID } from '@/builder/adapters/vueflow.js';
   // Not nodeNotes: <node-notes> would resolve to it before NodeNotes.
-  import { nodeNotes as notesOf } from '@/builder/model.js';
+  import {
+    DEFAULT_ICON_SIZE,
+    iconPixels,
+    nodeNotes as notesOf,
+  } from '@/builder/model.js';
   import { deviceInfo } from '@/builder/nodeInfo.js';
 
   // Vue Flow passes its node state as attributes as well; none belong on
@@ -145,6 +161,8 @@
   const { infoId, infoText } = useNodeInfo(() => deviceInfo(props.data.node));
   const interfaceCount = computed(() => props.data.handles.length);
   const notes = computed(() => notesOf(props.data.node));
+  const iconSize = computed(() => props.data.iconSize || DEFAULT_ICON_SIZE);
+  const iconClass = computed(() => iconSizeClass(iconSize.value));
 
   function handleStyle(index) {
     const count = Math.max(1, props.data.handles.length);

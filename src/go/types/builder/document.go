@@ -118,6 +118,12 @@ type Document struct {
 	// editor does not know, means the positions were not made by a layout. It
 	// is presentation only and never written to a config.
 	Layout string `json:"layout,omitempty"`
+	// IconSize is the size the editor draws the icons of devices, switches
+	// and groups at, one of [IconSizes]; a node's own [Device.IconSize],
+	// [Switch.IconSize] or [Group.IconSize] wins over it. Empty is
+	// [IconSizeSmall]. It is presentation only and never written to a
+	// config.
+	IconSize string `json:"iconSize,omitempty"`
 	// Templates are the device templates saved with this diagram, which the
 	// editor offers beside its own. They are presentation only and never
 	// written to a config.
@@ -192,6 +198,9 @@ type Device struct {
 	// name; with neither, IconKey is drawn. Like the colors below, it is
 	// presentation only and never written to a topology spec.
 	Icon string `json:"icon,omitempty"`
+	// IconSize is the size the device's icon is drawn at, one of
+	// [IconSizes]. Empty uses the document's [Document.IconSize].
+	IconSize string `json:"iconSize,omitempty"`
 	// OutlineColor and FillColor color the node's border and background, as
 	// "#rrggbb". Empty leaves the editor's own.
 	OutlineColor string `json:"outlineColor,omitempty"`
@@ -230,6 +239,9 @@ type Switch struct {
 	// in (see [Network.Color]).
 	OutlineColor string `json:"outlineColor,omitempty"`
 	FillColor    string `json:"fillColor,omitempty"`
+	// IconSize is the size the switch's icon is drawn at, one of
+	// [IconSizes]. Empty uses the document's [Document.IconSize].
+	IconSize string `json:"iconSize,omitempty"`
 	// Notes are free text about the switch, which the editor shows below it,
 	// held to the rules of [Metadata.Notes]. A switch is no topology node, so
 	// they stay in the document and are never written to a config; a
@@ -254,8 +266,11 @@ type Group struct {
 	// IconKey is drawn beside the title, from the icon key registry (see
 	// [IsIconKey]), and Icon, the name of a custom icon (see [Device.Icon]),
 	// in its place.
-	IconKey   string `json:"iconKey,omitempty"`
-	Icon      string `json:"icon,omitempty"`
+	IconKey string `json:"iconKey,omitempty"`
+	Icon    string `json:"icon,omitempty"`
+	// IconSize is the size the group's icon is drawn at, one of
+	// [IconSizes]. Empty uses the document's [Document.IconSize].
+	IconSize  string `json:"iconSize,omitempty"`
 	Collapsed bool   `json:"collapsed,omitempty"`
 }
 

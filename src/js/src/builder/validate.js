@@ -30,6 +30,7 @@ import { MAX_USER_BYTES } from './limits.js';
 import {
   BORDER_STYLES,
   HEX_COLOR,
+  ICON_SIZES,
   LINE_STYLES,
   MAX_DIAGRAM_NOTE_BYTES,
   MAX_DIAGRAM_NOTES,
@@ -251,6 +252,23 @@ function validateColors(payload, path, issues) {
   });
 }
 
+// Why an icon size is none the document, a device, a switch, a group or a
+// template's device may name (iconSizeProblem in validate.go), or '': none,
+// or one of ICON_SIZES.
+function iconSizeProblem(size) {
+  return unset(size) || ICON_SIZES.includes(size)
+    ? ''
+    : `unknown icon size ${quoted(size)} (expected one of ${ICON_SIZES.join(', ')})`;
+}
+
+function validateIconSize(size, path, issues) {
+  const problem = iconSizeProblem(size);
+
+  if (problem) {
+    issue(issues, path, problem);
+  }
+}
+
 // The line style of a network or a connection (validateLineStyle in
 // validate.go): none, or one of LINE_STYLES.
 function validateLineStyle(style, path, issues) {
@@ -406,10 +424,10 @@ function templateDeviceBytes(device) {
  * characters; a description longer than MAX_TEMPLATE_DESCRIPTION_BYTES or
  * holding control characters; a device without a spec, or whose spec has no
  * general.hostname, a blank one or one with whitespace; an unknown icon key;
- * a custom icon that is not an icon name; a color that is not #rrggbb; and a
- * device longer than MAX_TEMPLATE_DEVICE_BYTES as JSON. The spec is not
- * checked against the phenix schema here, as a device's is not. Neither is
- * the id, whose form depends on where the template is kept:
+ * a custom icon that is not an icon name; an unknown icon size; a color that
+ * is not #rrggbb; and a device longer than MAX_TEMPLATE_DEVICE_BYTES as JSON.
+ * The spec is not checked against the phenix schema here, as a device's is
+ * not. Neither is the id, whose form depends on where the template is kept:
  * validateDocument checks it for a document's templates.
  *
  * @param {object} template {id, name, description?, device}
@@ -486,6 +504,7 @@ export function templateIssues(template, path) {
 
   validateIconKey(device.iconKey, `${path}.device.iconKey`, issues);
   validateIconRef(device.icon, `${path}.device.icon`, issues);
+  validateIconSize(device.iconSize, `${path}.device.iconSize`, issues);
   validateColors(device, `${path}.device`, issues);
 
   const size = templateDeviceBytes(device);
@@ -751,6 +770,8 @@ function validateHeader(doc, issues) {
   ) {
     issue(issues, 'layout', 'layout must be a string');
   }
+
+  validateIconSize(doc.iconSize, 'iconSize', issues);
 }
 
 // The fewest points an edge route may hold: its two ends (minRoutePoints in
@@ -1043,6 +1064,7 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
 
       validateIconKey(node.device.iconKey, `${path}.device.iconKey`, issues);
       validateIconRef(node.device.icon, `${path}.device.icon`, issues);
+      validateIconSize(node.device.iconSize, `${path}.device.iconSize`, issues);
       validateColors(node.device, `${path}.device`, issues);
       validateIncludedFrom(doc, node.device.includedFrom, path, issues);
       validateDeviceHandles(node, path, issues, handleOwner);
@@ -1064,6 +1086,7 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
       }
 
       validateColors(node.switch, `${path}.switch`, issues);
+      validateIconSize(node.switch.iconSize, `${path}.switch.iconSize`, issues);
       validateNotes(node.switch.notes, issues, `${path}.switch.notes`);
     }
 
@@ -1075,6 +1098,7 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
       );
       validateIconKey(node.group.iconKey, `${path}.group.iconKey`, issues);
       validateIconRef(node.group.icon, `${path}.group.icon`, issues);
+      validateIconSize(node.group.iconSize, `${path}.group.iconSize`, issues);
     }
 
     if (node.kind === 'shape' && isObject(node.shape)) {

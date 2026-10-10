@@ -92,6 +92,14 @@
           ],
           "title": "Icon"
         },
+        "iconSize": {
+          "$ref": "#/$defs/iconSize",
+          "description": "Size the device's icon is drawn at; empty uses the document's.",
+          "examples": [
+            "large"
+          ],
+          "title": "Icon Size"
+        },
         "includedFrom": {
           "description": "Topology that defines the device when it came from an included topology, which keeps it read only and out of what publishing writes.",
           "examples": [
@@ -406,6 +414,14 @@
           ],
           "title": "Icon"
         },
+        "iconSize": {
+          "$ref": "#/$defs/iconSize",
+          "description": "Size the group's icon is drawn at; empty uses the document's.",
+          "examples": [
+            "large"
+          ],
+          "title": "Icon Size"
+        },
         "title": {
           "description": "Title shown at the top of the group.",
           "examples": [
@@ -546,6 +562,20 @@
       ],
       "pattern": "^([A-Za-z0-9_@.-]{1,64})?$",
       "title": "Custom Icon Reference",
+      "type": "string"
+    },
+    "iconSize": {
+      "description": "Size a node icon is drawn at: small (16 pixels), medium (24) or large (32); empty selects the default, the document's size for a node and small for the document.",
+      "enum": [
+        "",
+        "small",
+        "medium",
+        "large"
+      ],
+      "examples": [
+        "medium"
+      ],
+      "title": "Icon Size",
       "type": "string"
     },
     "identifier": {
@@ -3180,6 +3210,14 @@
           ],
           "title": "Fill Color"
         },
+        "iconSize": {
+          "$ref": "#/$defs/iconSize",
+          "description": "Size the switch's icon is drawn at; empty uses the document's.",
+          "examples": [
+            "medium"
+          ],
+          "title": "Icon Size"
+        },
         "networkId": {
           "$ref": "#/$defs/identifier",
           "description": "Identifier of the network the switch stands for.",
@@ -3394,6 +3432,14 @@
           ],
           "title": "Icon"
         },
+        "iconSize": {
+          "$ref": "#/$defs/iconSize",
+          "description": "Icon size of the devices made from the template; empty uses the document's.",
+          "examples": [
+            "large"
+          ],
+          "title": "Icon Size"
+        },
         "outlineColor": {
           "$ref": "#/$defs/hexColor",
           "description": "Border color of the devices made from the template.",
@@ -3538,6 +3584,14 @@
         }
       ],
       "title": "Grid"
+    },
+    "iconSize": {
+      "$ref": "#/$defs/iconSize",
+      "description": "Size the canvas draws the icons of devices, switches and groups at, unless a node names its own; empty is small.",
+      "examples": [
+        "large"
+      ],
+      "title": "Icon Size"
     },
     "icons": {
       "additionalProperties": {

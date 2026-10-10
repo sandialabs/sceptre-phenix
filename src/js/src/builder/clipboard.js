@@ -230,6 +230,7 @@ export function pasteClipboard(doc, payload, options = {}) {
       init.networkName = network?.name;
       init.outlineColor = node.switch?.outlineColor;
       init.fillColor = node.switch?.fillColor;
+      init.iconSize = node.switch?.iconSize;
       // A switch's notes are its own, so a copy carries them as a device's
       // general.notes go with its spec.
       init.notes = node.switch?.notes;
@@ -247,6 +248,7 @@ export function pasteClipboard(doc, payload, options = {}) {
       init.borderStyle = node.group?.borderStyle;
       init.iconKey = node.group?.iconKey;
       init.icon = node.group?.icon;
+      init.iconSize = node.group?.iconSize;
     }
 
     // A drawing's payload is what addNode takes for it: a shape's figure,

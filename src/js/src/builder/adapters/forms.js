@@ -54,6 +54,7 @@ import {
 import {
   connectionEndLabel,
   deviceHandles,
+  documentIconSize,
   findNetwork,
   findNode,
   includedFrom,
@@ -70,6 +71,7 @@ import {
   updateNode,
 } from '../model.js';
 import {
+  ICON_SIZE_TITLES,
   MAP_KEYWORD,
   normalizeSchemaBundle,
   schemaForKind,
@@ -276,7 +278,8 @@ function specEntry(table, path) {
  * draws for it; a line style is the pattern the canvas picks (a network's
  * by its place in the diagram, a connection's its network's, a line's
  * solid); a group's border is dashed and its icon the group icon, and a
- * shape's border solid; a device's spec field is
+ * shape's border solid; the icon size of a device, a switch or a group is
+ * the diagram's; a device's spec field is
  * the value phenix gives it (see PHENIX_DEFAULTS), else its schema's
  * `default`.
  *
@@ -322,6 +325,11 @@ export function fieldDefault(target, path, schema) {
 
   if (target?.kind === 'group' && path === 'iconKey') {
     return { value: kindMeta('group').iconKey, note: 'The group icon' };
+  }
+
+  // A node without an icon size of its own draws the diagram's.
+  if (path === 'iconSize' && target?.diagramIconSize) {
+    return { value: target.diagramIconSize, note: "The diagram's icon size" };
   }
 
   const spec = target?.kind === 'device' ? target.data?.spec : undefined;
@@ -605,6 +613,7 @@ function clone(value) {
 const LOOK_NAMES = {
   iconKey: 'icon',
   icon: 'custom icon',
+  iconSize: 'icon size',
   outlineColor: 'outline color',
   fillColor: 'fill color',
 };
@@ -613,9 +622,10 @@ const LOOK_NAMES = {
  * What a change of a device's presentation fields says, and undoes as: the
  * first of the fields that differs names it, as "Changed the fill color of
  * Device web-01 to #2f6fbf", "Removed the fill color of Device web-01",
- * "Changed the icon of Device web-01 to the default" or "Changed the custom
- * icon of Device web-01 to plc". A custom icon is said by its name, which
- * is what the field holds.
+ * "Changed the icon of Device web-01 to the default", "Changed the icon
+ * size of Device web-01 to Large", "Changed the icon size of Device web-01
+ * to the diagram default" or "Changed the custom icon of Device web-01 to
+ * plc". A custom icon is said by its name, which is what the field holds.
  *
  * @param {string} title the device's title, from inspectorTarget
  * @param {object} before its look (see lookOf)
@@ -631,6 +641,10 @@ export function lookChangeLabel(title, before, after) {
 
   if (key === 'iconKey') {
     return `Changed the icon of ${title} to ${after.iconKey || 'the default'}`;
+  }
+
+  if (key === 'iconSize') {
+    return `Changed the icon size of ${title} to ${ICON_SIZE_TITLES[after.iconSize] || 'the diagram default'}`;
   }
 
   if (!after[key]) {
@@ -711,6 +725,8 @@ export function inspectorTarget(doc, selection) {
           spec: clone(node.device.spec),
         },
         interfaces: deviceHandles(node),
+        // What its Icon size comes to while it has none (see fieldDefault).
+        diagramIconSize: documentIconSize(doc),
       };
     case 'switch': {
       const network = networkOfSwitch(doc, node);
@@ -721,9 +737,11 @@ export function inspectorTarget(doc, selection) {
         target: node,
         network,
         networkStyle: network ? networkStyle(doc, network.id) : undefined,
-        // The network's fields, then the colors and notes of this switch
-        // node itself. A switch without notes has no `notes` here, so its
-        // form starts with no list; applying an emptied list removes them.
+        diagramIconSize: documentIconSize(doc),
+        // The network's fields, then the colors, icon size and notes of
+        // this switch node itself. A switch without notes has no `notes`
+        // here, so its form starts with no list; applying an emptied list
+        // removes them.
         data: {
           name: network?.name || '',
           ...(Number.isInteger(network?.alias) ? { alias: network.alias } : {}),
@@ -732,6 +750,7 @@ export function inspectorTarget(doc, selection) {
           lineStyle: network?.lineStyle || '',
           outlineColor: node.switch?.outlineColor || '',
           fillColor: node.switch?.fillColor || '',
+          iconSize: node.switch?.iconSize || '',
           ...(Array.isArray(node.switch?.notes) && node.switch.notes.length
             ? { notes: [...node.switch.notes] }
             : {}),
@@ -750,6 +769,7 @@ export function inspectorTarget(doc, selection) {
         kind: 'group',
         title: 'Group',
         target: node,
+        diagramIconSize: documentIconSize(doc),
         data: {
           title: node.group?.title || '',
           description: node.group?.description || '',
@@ -757,6 +777,7 @@ export function inspectorTarget(doc, selection) {
           borderStyle: node.group?.borderStyle || '',
           iconKey: node.group?.iconKey || '',
           icon: node.group?.icon || '',
+          iconSize: node.group?.iconSize || '',
         },
       };
     case 'shape': {
@@ -1111,9 +1132,9 @@ export function applyFormData(doc, selection, data) {
         return doc;
       }
 
-      // The network's fields, then the switch node's own colors and notes,
-      // as one document and so one Undo step. Notes the form emptied are
-      // none.
+      // The network's fields, then the switch node's own colors, icon size
+      // and notes, as one document and so one Undo step. Notes the form
+      // emptied are none, and an icon size it emptied the diagram's.
       return updateNode(
         updateNetwork(doc, network.id, {
           name: data.name,
@@ -1127,6 +1148,7 @@ export function applyFormData(doc, selection, data) {
           switch: {
             outlineColor: data.outlineColor ?? '',
             fillColor: data.fillColor ?? '',
+            iconSize: data.iconSize ?? '',
             notes: Array.isArray(data.notes) ? data.notes : [],
           },
         },
@@ -1146,6 +1168,7 @@ export function applyFormData(doc, selection, data) {
           borderStyle: data.borderStyle ?? '',
           iconKey: data.iconKey ?? '',
           icon: data.icon ?? '',
+          iconSize: data.iconSize ?? '',
         },
       });
     case 'shape':

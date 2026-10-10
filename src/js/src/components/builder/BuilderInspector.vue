@@ -777,22 +777,24 @@
   // it, for focus to return to when Apply or Cancel goes.
   let lastEdited = null;
 
-  // A device's look (its icon, its custom icon, its outline color and its
-  // fill color, see LOOK_KEYS) is presentation only, so a new one is
-  // applied without Apply, as an edit of its own, like Add connection
-  // point. Left to Apply, which on a device's long form is far below these
-  // fields, it reached the canvas only once the selection changed and
-  // applied it. Other unapplied edits stay unapplied. A switch's short form
-  // waits for Apply.
+  // A device's look (its icon, its custom icon, its icon size, its outline
+  // color and its fill color, see LOOK_KEYS) is presentation only, so a new
+  // one is applied without Apply, as an edit of its own, like Add
+  // connection point. Left to Apply, which on a device's long form is far
+  // below these fields, it reached the canvas only once the selection
+  // changed and applied it. Other unapplied edits stay unapplied. A
+  // switch's short form waits for Apply.
   //
-  // One choice is one edit (see heldCommit): an icon chosen from the list
-  // with the pointer commits at once, and one stepped to with keys when the
-  // choice is made: when focus leaves the field, on Enter or another key
-  // that is no step (a shortcut), on Apply or Cancel, or when the selection
-  // changes. A color arrives as one change, from its picker or its text
-  // field, and a custom icon as one, from its dialog or Remove: each
-  // commits at once. See onFieldKey, holdLook and commitLook.
+  // One choice is one edit (see heldCommit): an icon or an icon size chosen
+  // from its list with the pointer commits at once, and one stepped to with
+  // keys when the choice is made: when focus leaves the field, on Enter or
+  // another key that is no step (a shortcut), on Apply or Cancel, or when
+  // the selection changes. A color arrives as one change, from its picker
+  // or its text field, and a custom icon as one, from its dialog or Remove:
+  // each commits at once. See onFieldKey, holdLook and commitLook.
   const look = heldCommit(commitLook);
+  // The look fields that are selects, whose keys step through the choices.
+  const HELD_LOOK_PATHS = ['iconKey', 'iconSize'];
   // A look was committed in the task under way: Enter in a color's text
   // field commits the color and, where the browser submits the form for it
   // (Firefox does, before the field's change), asks to apply what is left.
@@ -1165,14 +1167,15 @@
     });
   }
 
-  // A key on the Icon select: one that steps it holds the icon it steps to,
-  // and any other, such as Enter or a shortcut, commits the icon held first.
+  // A key on the Icon or the Icon size select: one that steps it holds the
+  // choice it steps to, and any other, such as Enter or a shortcut, commits
+  // the choice held first.
   function onFieldKey(event) {
     const field = event.target;
 
     if (
       field.tagName !== 'SELECT' ||
-      field.closest('[data-path]')?.dataset.path !== 'iconKey'
+      !HELD_LOOK_PATHS.includes(field.closest('[data-path]')?.dataset.path)
     ) {
       return;
     }

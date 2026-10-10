@@ -7,7 +7,7 @@
 // Wire shape (see src/go/types/builder/document.go):
 //
 //   { $schema, revision, metadata, nodes[], networks[], edges[], viewport,
-//     grid, scenarios?, source?, layout?, templates?, icons? }
+//     grid, scenarios?, source?, layout?, iconSize?, templates?, icons? }
 //
 // where metadata is { id, name?, description?, createdBy?, createdAt?,
 // updatedBy?, updatedAt?, notes? }.
@@ -109,11 +109,89 @@ export const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 // The colors a device or a switch node may have of its own on the canvas.
 export const NODE_COLOR_KEYS = ['outlineColor', 'fillColor'];
 
+// The sizes a node's icon is drawn at (IconSizes in validate.go), smallest
+// first, and each one's side in pixels: Small is the size icons always had,
+// Medium one and a half times it and Large twice it. A document that names
+// none draws Small.
+export const ICON_SIZES = ['small', 'medium', 'large'];
+export const ICON_SIZE_PIXELS = { small: 16, medium: 24, large: 32 };
+export const DEFAULT_ICON_SIZE = 'small';
+
+// The kinds of nodes that draw an icon at the document's icon size, or at
+// one of their own.
+export const ICON_SIZE_KINDS = ['device', 'switch', 'group'];
+
+/**
+ * The icon size of a document: the one it names, or Small.
+ *
+ * @param {object} [doc]
+ * @returns {string} one of ICON_SIZES
+ */
+export function documentIconSize(doc) {
+  return ICON_SIZES.includes(doc?.iconSize) ? doc.iconSize : DEFAULT_ICON_SIZE;
+}
+
+/**
+ * The size a node's icon is drawn at: the node's own, else the document's
+ * (see documentIconSize). A node of a kind outside ICON_SIZE_KINDS takes
+ * the document's, as it names none.
+ *
+ * @param {object} [doc]
+ * @param {object} [node]
+ * @returns {string} one of ICON_SIZES
+ */
+export function nodeIconSize(doc, node) {
+  const own = ICON_SIZE_KINDS.includes(node?.kind)
+    ? node[node.kind]?.iconSize
+    : undefined;
+
+  return ICON_SIZES.includes(own) ? own : documentIconSize(doc);
+}
+
+/**
+ * The side in pixels of an icon drawn at a size.
+ *
+ * @param {string} [size] one of ICON_SIZES; Small for any other
+ * @returns {number}
+ */
+export function iconPixels(size) {
+  return ICON_SIZE_PIXELS[size] ?? ICON_SIZE_PIXELS[DEFAULT_ICON_SIZE];
+}
+
+/**
+ * The document drawing its node icons at a size. Small, the size a
+ * document that names none draws, leaves the document without `iconSize`,
+ * so choosing it again gives back the document's bytes. The same document
+ * is returned when it draws that size already.
+ *
+ * @param {object} doc
+ * @param {string} size one of ICON_SIZES
+ * @returns {object} document
+ */
+export function setIconSize(doc, size) {
+  const wanted = ICON_SIZES.includes(size) ? size : DEFAULT_ICON_SIZE;
+  const kept = wanted === DEFAULT_ICON_SIZE ? undefined : wanted;
+
+  if (doc.iconSize === kept) {
+    return doc;
+  }
+
+  const next = { ...doc };
+
+  if (kept === undefined) {
+    delete next.iconSize;
+  } else {
+    next.iconSize = kept;
+  }
+
+  return next;
+}
+
 // A device's presentation fields: its icon, the custom icon drawn in its
-// place (an icon name, see icons.js) and its colors on the canvas. The
-// Inspector applies a change of one at once, without Apply, and a new
-// device takes them from addNode's `look` option.
-export const LOOK_KEYS = ['iconKey', 'icon', ...NODE_COLOR_KEYS];
+// place (an icon name, see icons.js), the size its icon is drawn at and its
+// colors on the canvas. The Inspector applies a change of one at once,
+// without Apply, and a new device takes them from addNode's `look` option.
+export const LOOK_KEYS = ['iconKey', 'icon', 'iconSize', ...NODE_COLOR_KEYS];
 
 // Those written only when set. A device always has an icon key.
 const OPTIONAL_LOOK_KEYS = LOOK_KEYS.filter((key) => key !== 'iconKey');
@@ -123,8 +201,8 @@ const OPTIONAL_LOOK_KEYS = LOOK_KEYS.filter((key) => key !== 'iconKey');
  * working copy of one (see LOOK_KEYS), each as text: '' for one not set.
  *
  * @param {object} [payload]
- * @returns {{iconKey: string, icon: string, outlineColor: string,
- *   fillColor: string}}
+ * @returns {{iconKey: string, icon: string, iconSize: string,
+ *   outlineColor: string, fillColor: string}}
  */
 export function lookOf(payload) {
   return Object.fromEntries(
@@ -132,8 +210,15 @@ export function lookOf(payload) {
   );
 }
 
-// The fields of a group that are written only when set.
-const GROUP_OPTIONAL_KEYS = ['description', 'borderStyle', 'iconKey', 'icon'];
+// The fields of a group and of a switch that are written only when set.
+const GROUP_OPTIONAL_KEYS = [
+  'description',
+  'borderStyle',
+  'iconKey',
+  'icon',
+  'iconSize',
+];
+const SWITCH_OPTIONAL_KEYS = [...NODE_COLOR_KEYS, 'iconSize'];
 
 // Removes the keys of optional fields that hold no value, so a field set
 // and emptied again leaves the payload, and the document's bytes, as they
@@ -781,8 +866,9 @@ function uniqueHostname(doc, wanted) {
  * @param {object} options kind, position, size, parentId, label, and kind
  *   specific fields: a device's hostname, spec, look (its presentation
  *   fields, see LOOK_KEYS) and interfaces; a switch's networkId, outlineColor,
- *   fillColor and notes; a note's text; a group's title, description,
- *   borderStyle, iconKey and icon; a shape's shape (its figure), fillColor,
+ *   fillColor, iconSize and notes; a note's text; a group's title,
+ *   description, borderStyle, iconKey, icon and iconSize; a shape's shape
+ *   (its figure), fillColor,
  *   outlineColor and borderStyle; an icon's iconKey or icon; a line's points
  *   (relative to `position`; by default two ends 160 pixels apart across),
  *   color, lineStyle, startArrow and endArrow. The label of a shape, an icon
@@ -867,7 +953,7 @@ export function addNode(doc, options = {}) {
         node.switch = { networkId: network.id };
       }
 
-      for (const key of NODE_COLOR_KEYS) {
+      for (const key of SWITCH_OPTIONAL_KEYS) {
         if (options[key]) {
           node.switch[key] = options[key];
         }
@@ -1087,9 +1173,10 @@ export function updateNode(doc, id, patch = {}) {
   }
 
   // A patch that names no network keeps the switch on its own, and one that
-  // names no color or no notes keeps its colors or its notes; an emptied
-  // color is no color, and an emptied list of notes no notes, so the
-  // document's bytes are those of a switch that never had them.
+  // names no color, icon size or notes keeps those it has; an emptied color
+  // is no color, an emptied icon size the document's, and an emptied list
+  // of notes no notes, so the document's bytes are those of a switch that
+  // never had them.
   if (patch.switch && node.kind === 'switch') {
     const next = dropEmpty(
       {
@@ -1097,7 +1184,7 @@ export function updateNode(doc, id, patch = {}) {
         ...patch.switch,
         networkId: patch.switch.networkId ?? node.switch?.networkId,
       },
-      NODE_COLOR_KEYS,
+      SWITCH_OPTIONAL_KEYS,
     );
 
     if (Array.isArray(next.notes) && next.notes.length > 0) {
@@ -3335,7 +3422,8 @@ const NOT_TEMPLATE_KEYS = ['hostname', 'interfaces', 'includedFrom'];
  * added to devices is a template's too, with no change here.
  *
  * @param {object} payload a node's `device`, or a template's
- * @returns {object} {iconKey?, icon?, outlineColor?, fillColor?, spec}
+ * @returns {object} {iconKey?, icon?, iconSize?, outlineColor?, fillColor?,
+ *   spec}
  */
 export function templateDevice(payload) {
   const device = {};

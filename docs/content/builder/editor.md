@@ -313,6 +313,11 @@ The **Diagram** section has:
 
 - **Name** and **Description** of the diagram. Select **Apply** to keep a
   change.
+- **Icon size**: **Small**, **Medium** or **Large**, the size devices,
+  switches and groups draw their icons at unless one has a size of its own
+  (see [Icon size](diagrams.md#icon-size)). A choice takes effect at once,
+  as one step of **Undo**. In a draft you can only view, the size is shown
+  as text.
 - **Details**, which you cannot change here:
     - **Created**: when the diagram was made, and by whom.
     - **Last edited**: when the content you see was saved, and by whom. It
@@ -366,8 +371,9 @@ The **Diagram** section has:
 
 Select a node to see its fields. A device has these sections:
 
-- **Hostname**, **Icon**, **Custom icon**, **Outline Color** and **Fill
-  Color** (see [Colors](diagrams.md#colors) and
+- **Hostname**, **Icon**, **Custom icon**, **Icon size**, **Outline Color**
+  and **Fill Color** (see [Colors](diagrams.md#colors),
+  [Icon size](diagrams.md#icon-size) and
   [Custom icons](diagrams.md#custom-icons)).
 - **Node**: **Type**, and **General** (**Description**, **Do not boot**,
   **Node hostname**, **Notes**, **Snapshot**, **VM type**). Each note has a
@@ -411,9 +417,9 @@ in Draft History as "Saved unapplied changes to" and the node's name.
 
 Some fields of a device take effect at once, without **Apply**:
 
-- **Icon**, **Custom icon**, **Outline Color** and **Fill Color**. Each
-  change is one step of **Undo**, for example "Changed the fill color of
-  Device web-01 to #2f6fbf".
+- **Icon**, **Custom icon**, **Icon size**, **Outline Color** and **Fill
+  Color**. Each change is one step of **Undo**, for example "Changed the
+  fill color of Device web-01 to #2f6fbf".
 - **Connection points**: adding, disconnecting or removing one.
 
 The fields come from the phenix server, so they match what it accepts. When
@@ -426,7 +432,8 @@ the Builder instead, which may differ from what this server accepts." See
 
 - A switch is one network. Its Inspector ("Network CORP") has **Name**,
   **VLAN alias**, **Description**, **Edge Color**, **Line style**,
-  **Outline Color**, **Fill Color**, **Notes** and **Position**. See
+  **Outline Color**, **Fill Color**, **Icon size**, **Notes** and
+  **Position**. See
   [Adding switches and networks](diagrams.md#adding-switches-and-networks).
   The switch's notes are edited as a device's are, and stay in the diagram
   (see
@@ -434,7 +441,7 @@ the Builder instead, which may differ from what this server accepts." See
 - A note has **Text**, **Color** and **Position** (see
   [Notes](diagrams.md#notes)).
 - A group has **Title**, **Description**, **Color**, **Border pattern**,
-  **Icon**, **Custom icon** and **Position** (see
+  **Icon**, **Custom icon**, **Icon size** and **Position** (see
   [Groups](diagrams.md#groups)).
 - A connection has **Label** (by default, the network's name), **Color** and
   **Line style**. Its Inspector names it, for example "Connection from
@@ -447,8 +454,9 @@ the Builder instead, which may differ from what this server accepts." See
   the canvas (see
   [Shapes, icons and lines](diagrams.md#shapes-icons-and-lines)).
 
-These fields wait for **Apply**, the colors and icons of switches and groups
-too. Only a device's icons and colors take effect at once.
+These fields wait for **Apply**, the colors, icons and icon sizes of
+switches and groups too. Only a device's icons, icon size and colors take
+effect at once.
 
 ### Fields you cannot change
 

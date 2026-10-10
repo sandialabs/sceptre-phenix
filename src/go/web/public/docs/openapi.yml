@@ -3729,8 +3729,8 @@ components:
         is checked against, with a title, a description and examples for
         each property. A document holds no other property: one that does,
         such as a metadata field at the root, is refused. `layout`,
-        `templates` and `icons` are presentation only and are never written
-        to a config.
+        `iconSize`, `templates` and `icons` are presentation only and are
+        never written to a config.
       type: object
       additionalProperties: false
       required:
@@ -4074,6 +4074,19 @@ components:
             not know, means a layout did not make the positions
           type: string
           example: elk
+        iconSize:
+          title: Icon Size
+          description: >
+            the size the canvas draws the icons of devices, switches and
+            groups at, unless a node names its own: small (16 pixels), medium
+            (24) or large (32); empty is small
+          type: string
+          enum:
+            - ""
+            - small
+            - medium
+            - large
+          example: large
         templates:
           title: Templates
           description: >

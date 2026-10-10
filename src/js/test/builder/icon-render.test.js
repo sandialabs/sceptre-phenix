@@ -375,7 +375,7 @@ describe('the Custom icons dialog', () => {
     expect(html).toMatch(/<h2 id="icon-dialog-title"[^>]*>Custom icons<\/h2>/);
     expect(html).toContain('aria-labelledby="icon-dialog-title"');
     expect(textOf(html)).toContain(
-      'An icon is a small image, drawn at 16 pixels, that every user of this server can use. PNG, JPEG, GIF, WebP and SVG files are converted to a PNG of at most 96 by 96 pixels.',
+      'An icon is a small image that every user of this server can use, drawn at 16, 24 or 32 pixels as the node&#39;s icon size says. PNG, JPEG, GIF, WebP and SVG files are converted to a PNG of at most 96 by 96 pixels.',
     );
 
     const [upload] = tags(html, 'button').filter((tag) =>

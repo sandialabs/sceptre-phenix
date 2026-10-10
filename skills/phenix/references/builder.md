@@ -899,8 +899,8 @@ server.", plus a sentence when `topologyDiffers`.
 
 A Builder document's root keys are, in this order, `$schema`, `revision`,
 `metadata`, then the content: `nodes`, `networks`, `edges`, `viewport`,
-`grid`, and the optional `scenarios`, `source`, `layout`, `templates` and
-`icons`. `metadata` (`bdoc.Metadata`) is required and holds only `id`
+`grid`, and the optional `scenarios`, `source`, `layout`, `iconSize`,
+`templates` and `icons`. `metadata` (`bdoc.Metadata`) is required and holds only `id`
 (required, the document ID), `name`, `description`, the four provenance
 fields below, and `notes`. Strict decoding refuses any other key there, and
 refuses the metadata keys at the root (there is no shim for the old root
@@ -1170,6 +1170,27 @@ see [Node templates](#node-templates)). An icon name is 1 to 64 bytes of
 carry. Go and JS validate them alike (`testdata/validation-corpus.json`).
 The Inspector writes them; the network's own `color` is labelled "Edge
 Color".
+
+Icon size: root `iconSize` and `iconSize` on the device, switch and group
+payloads (and so on a template's device), each `small`, `medium` or `large`
+(`IconSizes()` in `validate.go`, `ICON_SIZES` in `model.js`; empty or null
+is none). A node draws its own, else the root's, else small
+(`nodeIconSize`, `documentIconSize`), at 16, 24 or 32 pixels
+(`ICON_SIZE_PIXELS`, `iconPixels`); drawings (`icon` nodes) are sized by
+their box instead. `setIconSize` leaves the root without the key for small.
+The Inspector's Diagram view has an Icon size select
+(`InspectorDiagram.vue`, testid `inspector-icon-size-select`, one undo step
+"Changed the diagram's icon size to Large", `store.setIconSize`); the
+device, switch and group forms have Icon size with "Diagram default (…)"
+(`UNSET_KEYWORD`, `fieldDefault` names the diagram's size), which removes
+the node's. A device's applies at once as a look key (`LOOK_KEYS`), a
+switch's and a group's with Apply; copy and paste keep a node's own
+(`clipboard.js`). Node boxes keep `DEFAULT_SIZES`: a Small
+icon sits before the name as before; Medium and Large add
+`builder-node--icon-<size>` (`nodes/nodeIconSize.js`) and `builder.css`
+places the icon absolutely in Vue Flow's wrapper, left of the node's lines
+(centered on a device or switch, top left of a group); every node of these
+kinds carries `data-icon-size`.
 
 Drawings: node kinds `shape` (`shape: {shape: rectangle|circle, label?,
 fillColor?, outlineColor?, borderStyle?}`), `icon` (`icon: {iconKey?, icon?,

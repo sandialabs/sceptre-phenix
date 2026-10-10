@@ -297,6 +297,7 @@ describe('strict decoding', () => {
     expect([...TEMPLATE_DEVICE_KEYS]).toEqual([
       'iconKey',
       'icon',
+      'iconSize',
       'outlineColor',
       'fillColor',
       'spec',
@@ -326,6 +327,7 @@ describe('strict decoding', () => {
       'templates',
       'icons',
       'icon',
+      'iconSize',
       'outlineColor',
       'fillColor',
       'borderStyle',

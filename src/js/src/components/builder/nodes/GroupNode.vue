@@ -6,14 +6,25 @@
   one). A custom icon, when the group has one, is drawn in place of the icon
   of its key. A selected group has handles to resize it with the mouse,
   never smaller than its members need (see NodeResize.vue).
+
+  Its icon is drawn at the group's icon size, or the diagram's: before the
+  title when Small, and when larger at the top left, with the title and the
+  description in a column beside it (see nodeIconSize.js).
 -->
 <template>
   <div
     class="builder-node builder-node--group"
-    :class="{ 'is-selected': selected }"
+    :class="[
+      {
+        'is-selected': selected,
+        'builder-node--title-only': !data.comment,
+      },
+      iconClass,
+    ]"
     :data-border="border"
     :data-node-id="id"
     data-node-kind="group"
+    :data-icon-size="iconSize"
     data-testid="builder-node">
     <span
       v-if="accent"
@@ -21,7 +32,10 @@
       :style="{ '--bx-node-accent': accent }"
       aria-hidden="true"></span>
     <div class="builder-node__header">
-      <builder-icon :name="data.iconKey" :src="data.iconSrc" :size="16" />
+      <builder-icon
+        :name="data.iconKey"
+        :src="data.iconSrc"
+        :size="iconPixels(iconSize)" />
       <span class="builder-node__label">{{ data.label }}</span>
     </div>
     <span v-if="data.comment" class="builder-node__comment">
@@ -38,9 +52,14 @@
   import BuilderIcon from '../BuilderIcon.vue';
   import NodeIssueMark from './NodeIssueMark.vue';
   import NodeResize from './NodeResize.vue';
+  import { iconSizeClass } from './nodeIconSize.js';
 
   import { drawnColor } from '@/builder/colors.js';
-  import { BORDER_STYLES } from '@/builder/model.js';
+  import {
+    BORDER_STYLES,
+    DEFAULT_ICON_SIZE,
+    iconPixels,
+  } from '@/builder/model.js';
 
   // Vue Flow passes its node state as attributes as well; none belong on
   // the node's element.
@@ -53,6 +72,8 @@
   });
 
   const accent = computed(() => drawnColor(props.data.node.group?.color));
+  const iconSize = computed(() => props.data.iconSize || DEFAULT_ICON_SIZE);
+  const iconClass = computed(() => iconSizeClass(iconSize.value));
   // A pattern the editor does not know, which only an edited file can
   // hold, is drawn as none: dashed.
   const border = computed(() => {

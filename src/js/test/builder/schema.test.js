@@ -248,7 +248,7 @@ describe('inspector schemas', () => {
 
   // The network's color is labelled by what it colors, now that the switch
   // has an outline and a fill of its own.
-  test("a switch's fields are its network's, then its own outline, fill and notes", () => {
+  test("a switch's fields are its network's, then its own outline, fill, icon size and notes", () => {
     const { properties } = schemaForKind(builderSchemaV1, 'switch');
 
     expect(Object.keys(properties)).toEqual([
@@ -259,6 +259,7 @@ describe('inspector schemas', () => {
       'lineStyle',
       'outlineColor',
       'fillColor',
+      'iconSize',
       'notes',
     ]);
     // A list of text held to the bundle's bounds, as the server holds it.
@@ -282,13 +283,14 @@ describe('inspector schemas', () => {
     expect(properties.fillColor.pattern).toBe('^(#[0-9a-fA-F]{6})?$');
   });
 
-  test("a device's icon is followed by its custom icon and its outline and fill colors", () => {
+  test("a device's icon is followed by its custom icon, its icon size and its outline and fill colors", () => {
     const { properties } = schemaForKind(builderSchemaV1, 'device');
 
     expect(Object.keys(properties)).toEqual([
       'hostname',
       'iconKey',
       'icon',
+      'iconSize',
       'outlineColor',
       'fillColor',
       'spec',
@@ -322,6 +324,7 @@ describe('inspector schemas', () => {
       'borderStyle',
       'iconKey',
       'icon',
+      'iconSize',
     ]);
 
     for (const { icon } of [device, group]) {
