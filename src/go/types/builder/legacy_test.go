@@ -1689,18 +1689,6 @@ func checkLegacyConversion(t *testing.T, content []byte, topology store.Config) 
 	}
 }
 
-// TestLegacyConversionHolds runs the checks of the fuzz test over its seeds,
-// by name, so a failure says which input it was.
-func TestLegacyConversionHolds(t *testing.T) {
-	topology := legacySampleTopology(t)
-
-	for i, seed := range legacySeeds(t) {
-		t.Run(fmt.Sprintf("seed %d", i), func(t *testing.T) {
-			checkLegacyConversion(t, seed, topology)
-		})
-	}
-}
-
 // FuzzDecodeLegacy feeds the decoder and the conversion arbitrary input.
 // The seeds run with every "go test"; run it for longer with
 //
