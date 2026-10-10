@@ -413,7 +413,7 @@ func TestPublishTopologyNamesEveryBlocker(t *testing.T) { //nolint:paralleltest 
 	for _, want := range []string{
 		`interface "eth0" of device "aa" has no VLAN`,
 		`interface "eth1" of device "bb" has no VLAN`,
-		`IP address 10.0.0.2 is used by`,
+		`IP address 10.0.0.2 on VLAN "EXP" is used by`,
 		`all`,
 	} {
 		if !slices.ContainsFunc(refusal.Problems, func(problem string) bool { return strings.Contains(problem, want) }) {
@@ -450,17 +450,17 @@ func TestPublishTopologyNamesEveryBlocker(t *testing.T) { //nolint:paralleltest 
 	}{
 		"no vlan key": {
 			nodes: []builder.Node{
-				testDevice("aa", map[string]any{"name": "eth0", "address": "10.0.0.1"}),
+				testDevice("aa", map[string]any{"name": "eth0"}, testInterface("eth1", "EXP", "10.0.0.1")),
 				testDevice("bb", testInterface("eth0", "EXP", "10.0.0.1")),
 			},
-			want: []string{`interface "eth0" of device "aa" has no VLAN`, `IP address 10.0.0.1 is used by`},
+			want: []string{`interface "eth0" of device "aa" has no VLAN`, `IP address 10.0.0.1 on VLAN "EXP" is used by`},
 		},
 		"a hostname of one character": {
 			nodes: []builder.Node{
 				testDevice("a", testInterface("eth0", "EXP", "10.0.0.1")),
 				testDevice("bb", testInterface("eth0", "EXP", "10.0.0.1")),
 			},
-			want: []string{`IP address 10.0.0.1 is used by`, `hostname 'a'`},
+			want: []string{`IP address 10.0.0.1 on VLAN "EXP" is used by`, `hostname 'a'`},
 		},
 	} {
 		several := builder.NewDocument("several")

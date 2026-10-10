@@ -484,14 +484,14 @@ header shows the result: **No issues**, or a count such as **3 warnings**.
 To see and fix the warnings of the Riverside Water expansion draft:
 
 1. Open the Riverside Water expansion draft. The checks button says
-   **3 warnings**.
-2. Select **3 warnings**. The **Diagram checks** dialog lists the warnings
+   **1 warning**.
+2. Select **1 warning**. The **Diagram checks** dialog lists the warnings
    under **Nodes**, by device.
 3. Select the warning "Warning: interface "eth0" of "historian-01-2" is not
    connected to a network and has no VLAN, so it cannot be published:
    connect it, or type a VLAN for it". The dialog closes and the canvas
    selects historian-01-2.
-4. The Inspector lists the device's own warnings under "Checks: 2 warnings".
+4. The Inspector lists the device's own warnings under "Checks: 1 warning".
    Fix them there (see
    [What blocks publishing](publishing.md#what-blocks-publishing) for this
    example).
@@ -502,7 +502,8 @@ There are two levels:
   published until they are fixed.
 - **Warnings**. Three kinds also stop the diagram from being published: an
   interface with no VLAN (on a device that is not external), an IP or MAC
-  address that two interfaces use, and a hostname phenix refuses.
+  address that two interfaces on the same network use, and a hostname phenix
+  refuses.
   **Publish** lists those as errors. The dialog says so, for example "The
   warnings must be fixed before the diagram can be published, and Publish
   lists those warnings as errors." Other warnings, such as a device with no

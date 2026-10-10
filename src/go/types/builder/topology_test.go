@@ -495,8 +495,14 @@ func TestExportTopologyConfigRefusesForTheSchemaReason(t *testing.T) {
 		"empty":   {set: func(iface map[string]any) { iface["vlan"] = "" }, address: false, vlan: false},
 		"null":    {set: func(iface map[string]any) { iface["vlan"] = nil }, address: false, vlan: true},
 		"missing": {set: func(iface map[string]any) { delete(iface, "vlan") }, address: false, vlan: true},
-		// The router's eth0 has this address too.
-		"shared address": {set: func(iface map[string]any) { iface["address"] = "10.0.0.1" }, address: true, vlan: false},
+		// The router's eth0 has this address too, on network EXP.
+		"shared address": {
+			set: func(iface map[string]any) {
+				iface["address"] = "10.0.0.1"
+				iface["vlan"] = "EXP"
+			},
+			address: true, vlan: false,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc, eth0 := unconnectedHost(t)
@@ -661,9 +667,11 @@ func sharedAddresses(t *testing.T, doc *builder.Document) []string {
 	return addressErr.Problems
 }
 
-// Two interfaces with one IP or MAC address clash once the experiment runs,
-// so publishing refuses them, however each is written: IP addresses are
-// compared parsed, and MAC addresses in any case and with any separators.
+// Two interfaces on one network with one IP or MAC address clash once the
+// experiment runs, so publishing refuses them, however each is written: IP
+// addresses are compared parsed, and MAC addresses in any case and with any
+// separators. The fixture connects both to network EXP, though their specs
+// name the VLAN STALE.
 func TestPublishTopologyConfigRefusesSharedAddresses(t *testing.T) {
 	const both = `interface "eth0" of device "router" and interface "eth0" of device "host-a"`
 
@@ -674,41 +682,53 @@ func TestPublishTopologyConfigRefusesSharedAddresses(t *testing.T) {
 		"IPv4": {
 			router: map[string]any{"address": "10.0.0.5", "mask": 24},
 			host:   map[string]any{"address": " 10.0.0.5/16 ", "mask": 16},
-			want:   "IP address 10.0.0.5 is used by " + both,
+			want:   `IP address 10.0.0.5 on VLAN "EXP" is used by ` + both,
 		},
 		"IPv6": {
 			router: map[string]any{"address": "2001:db8::1"},
 			host:   map[string]any{"address": "2001:DB8:0:0:0:0:0:1/64"},
-			want:   "IP address 2001:db8::1 is used by " + both,
+			want:   `IP address 2001:db8::1 on VLAN "EXP" is used by ` + both,
 		},
 		"IPv4 mapped into IPv6": {
 			router: map[string]any{"address": "::ffff:10.0.0.5"},
 			host:   map[string]any{"address": "10.0.0.5"},
-			want:   "IP address 10.0.0.5 is used by " + both,
+			want:   `IP address 10.0.0.5 on VLAN "EXP" is used by ` + both,
 		},
 		"MAC": {
 			router: map[string]any{"mac": "AA-BB-CC-DD-EE-FF"},
 			host:   map[string]any{"mac": "aa:bb:cc:dd:ee:ff"},
-			want:   "MAC address aa:bb:cc:dd:ee:ff is used by " + both,
+			want:   `MAC address aa:bb:cc:dd:ee:ff on VLAN "EXP" is used by ` + both,
 		},
 		// The phenix schema refuses this form, but it is the same address.
 		"MAC in dotted form": {
 			router: map[string]any{"mac": "aa:bb:cc:dd:ee:ff"},
 			host:   map[string]any{"mac": "AABB.CCDD.EEFF"},
-			want:   "MAC address aa:bb:cc:dd:ee:ff is used by " + both,
+			want:   `MAC address aa:bb:cc:dd:ee:ff on VLAN "EXP" is used by ` + both,
 		},
 		// The editor trims the same characters (validate.js).
 		"ASCII whitespace": {
 			router: map[string]any{"address": "10.0.0.5", "mac": "aa:bb:cc:dd:ee:ff"},
 			host:   map[string]any{"address": "\t\v\f10.0.0.5\r\n", "mac": "\taa:bb:cc:dd:ee:ff\n"},
-			want: "IP address 10.0.0.5 is used by " + both + "; " +
-				"MAC address aa:bb:cc:dd:ee:ff is used by " + both,
+			want: `IP address 10.0.0.5 on VLAN "EXP" is used by ` + both + "; " +
+				`MAC address aa:bb:cc:dd:ee:ff on VLAN "EXP" is used by ` + both,
 		},
 		// minirouter and Vyatta assign the address of a QinQ interface.
 		"QinQ": {
 			router: map[string]any{"address": "10.0.0.5", "qinq": true},
 			host:   map[string]any{"address": "10.0.0.5"},
-			want:   "IP address 10.0.0.5 is used by " + both,
+			want:   `IP address 10.0.0.5 on VLAN "EXP" is used by ` + both,
+		},
+		// A blank bridge and phenix both name the experiment's default
+		// bridge.
+		"default bridge": {
+			router: map[string]any{"address": "10.0.0.5", "bridge": "phenix"},
+			host:   map[string]any{"address": "10.0.0.5", "bridge": ""},
+			want:   `IP address 10.0.0.5 on VLAN "EXP" is used by ` + both,
+		},
+		"one bridge": {
+			router: map[string]any{"address": "10.0.0.5", "bridge": "lab"},
+			host:   map[string]any{"address": "10.0.0.5", "bridge": "lab"},
+			want:   `IP address 10.0.0.5 on VLAN "EXP" of bridge "lab" is used by ` + both,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -782,7 +802,8 @@ func TestExportTopologyConfigReportsSharedAddresses(t *testing.T) {
 			}
 
 			if got := export.PublishBlockers[len(export.PublishBlockers)-1].Error(); !strings.HasSuffix(
-				got, `IP address 10.0.0.5 is used by interface "eth0" of device "router" and interface "eth0" of device "host-a"`,
+				got, `IP address 10.0.0.5 on VLAN "EXP" is used by interface "eth0" of device "router" `+
+					`and interface "eth0" of device "host-a"`,
 			) {
 				t.Fatalf("address blocker = %q", got)
 			}
@@ -802,8 +823,8 @@ func TestPublishTopologyConfigRefusesAddressesOfOneDevice(t *testing.T) {
 	})
 
 	want := []string{
-		`IP address 10.0.0.2 is used by interface "eth0" of device "host-a" and interface "eth1" (#2) of device "host-a"`,
-		`MAC address 00:00:00:00:00:01 is used by interface "eth0" of device "host-a", ` +
+		`IP address 10.0.0.2 on VLAN "EXP" is used by interface "eth0" of device "host-a" and interface "eth1" (#2) of device "host-a"`,
+		`MAC address 00:00:00:00:00:01 on VLAN "EXP" is used by interface "eth0" of device "host-a", ` +
 			`interface "eth1" (#2) of device "host-a" and 1 more interface`,
 	}
 	if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
@@ -898,7 +919,7 @@ func TestPublishTopologyConfigComparesExternalDevicesByIP(t *testing.T) {
 	eth0["address"] = "10.0.0.1"
 
 	want := []string{
-		`IP address 10.0.0.1 is used by interface "eth0" of device "router" and interface "eth0" of device "host-a"`,
+		`IP address 10.0.0.1 on VLAN "EXP" is used by interface "eth0" of device "router" and interface "eth0" of device "host-a"`,
 	}
 	if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
 		t.Fatalf("problems = %q, want %q", got, want)
@@ -916,7 +937,7 @@ func TestPublishTopologyConfigComparesIncludedDevices(t *testing.T) {
 	nodeByHostname(t, doc, "host-a").Device.IncludedFrom = "shared"
 
 	want := []string{
-		`IP address 10.0.0.1 is used by interface "eth0" of device "router" and interface "eth0" of device "host-a"`,
+		`IP address 10.0.0.1 on VLAN "EXP" is used by interface "eth0" of device "router" and interface "eth0" of device "host-a"`,
 	}
 	if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
 		t.Fatalf("problems = %q, want %q", got, want)
@@ -926,6 +947,234 @@ func TestPublishTopologyConfigComparesIncludedDevices(t *testing.T) {
 
 	if got := sharedAddresses(t, doc); got != nil {
 		t.Fatalf("problems = %q, want none among included devices", got)
+	}
+}
+
+// unconnectedPair returns the strict fixture with no connections, and the
+// eth0 of the router and of host-a each extended with the given fields, so
+// each is on the VLAN its spec names.
+func unconnectedPair(t *testing.T, router, host map[string]any) *builder.Document {
+	t.Helper()
+
+	doc := withInterfaces(t, map[string][]map[string]any{"router": {router}, "host-a": {host}})
+	doc.Edges = []builder.Edge{}
+
+	return doc
+}
+
+// Isolated networks often use the same private addresses, and minimega
+// compares VLANs before it reports a MAC address twice, so an address clashes
+// only on one network: the VLAN an interface is published with, after the
+// diagram's connections, on its bridge. Interfaces on two VLANs, or on VLANs
+// of one name on two bridges, may share one.
+func TestPublishTopologyConfigComparesAddressesOnOneNetwork(t *testing.T) {
+	const both = `interface "eth0" of device "router" and interface "eth0" of device "host-a"`
+
+	static := func(vlan, bridge string) map[string]any {
+		return map[string]any{"vlan": vlan, "bridge": bridge, "proto": "static", "address": "10.0.0.1", "mask": 24}
+	}
+	mac := func(vlan string) map[string]any {
+		return map[string]any{"vlan": vlan, "mac": "00:00:00:00:00:01"}
+	}
+
+	for name, doc := range map[string]*builder.Document{
+		"two VLANs":              unconnectedPair(t, static("ISOLATED-1", ""), static("ISOLATED-2", "")),
+		"a VLAN in another case": unconnectedPair(t, static("ISOLATED-1", ""), static("isolated-1", "")),
+		"two bridges":            unconnectedPair(t, static("EXP", "lab-a"), static("EXP", "lab-b")),
+		"a MAC on two VLANs":     unconnectedPair(t, mac("ISOLATED-1"), mac("ISOLATED-2")),
+	} {
+		t.Run(name, func(t *testing.T) {
+			blockers, err := doc.PublishBlockers("isolated")
+			if err != nil || len(blockers) != 0 {
+				t.Fatalf("PublishBlockers = %v, %v, want none", blockers, err)
+			}
+
+			if _, _, err := doc.PublishTopologyConfig("isolated"); err != nil {
+				t.Fatalf("PublishTopologyConfig: %v", err)
+			}
+		})
+	}
+
+	for name, test := range map[string]struct {
+		doc  *builder.Document
+		want string
+	}{
+		"one VLAN": {
+			doc:  unconnectedPair(t, static("ISOLATED-1", ""), static(" ISOLATED-1 ", "phenix")),
+			want: `IP address 10.0.0.1 on VLAN "ISOLATED-1" is used by ` + both,
+		},
+		"a MAC on one VLAN": {
+			doc:  unconnectedPair(t, mac("ISOLATED-1"), mac("ISOLATED-1")),
+			want: `MAC address 00:00:00:00:00:01 on VLAN "ISOLATED-1" is used by ` + both,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := sharedAddresses(t, test.doc); !reflect.DeepEqual(got, []string{test.want}) {
+				t.Fatalf("problems = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+// The router's eth0 is connected to network EXP, though its spec names the
+// VLAN STALE, so it is published on EXP: host-a's eth0, disconnected, shares
+// its address only on EXP.
+func TestPublishTopologyConfigComparesAddressesAfterConnections(t *testing.T) {
+	for vlan, want := range map[string][]string{
+		"STALE": nil,
+		"EXP": {
+			`IP address 10.0.0.1 on VLAN "EXP" is used by interface "eth0" of device "router" ` +
+				`and interface "eth0" of device "host-a"`,
+		},
+	} {
+		t.Run(vlan, func(t *testing.T) {
+			doc, eth0 := unconnectedHost(t)
+			eth0["vlan"] = vlan
+			eth0["address"] = "10.0.0.1"
+
+			if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
+				t.Fatalf("problems = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// Identifiers of the network ISOLATED-2 and of its switch, which
+// connectedOnTwoNetworks adds to the strict fixture.
+const (
+	idNetIsolated2 = "2c4e6a8b-1d3f-5a7c-9e0b-2d4f6a8c0e1a" // net-isolated-2
+	idSwIsolated2  = "3d5f7b9c-2e4a-5b8d-a01c-3e5a7b9d1f2b" // sw-isolated-2
+)
+
+// connectHost connects host-a's eth0, by its edge in the strict fixture, to
+// the switch hub of network.
+func connectHost(t *testing.T, doc *builder.Document, hub, network string) {
+	t.Helper()
+
+	for index := range doc.Edges {
+		if doc.Edges[index].ID == idEHostEth0 {
+			doc.Edges[index].SourceNodeID = hub
+			doc.Edges[index].NetworkID = network
+
+			return
+		}
+	}
+
+	t.Fatalf("the document has no edge %s", idEHostEth0)
+}
+
+// connectedOnTwoNetworks returns the strict fixture with its network EXP
+// named ISOLATED-1, a network ISOLATED-2 and a switch for it added, and the
+// eth0 of the router and of host-a each extended with fields. Both stay
+// connected on the canvas: the router's eth0 to the switch of ISOLATED-1,
+// host-a's to the switch of ISOLATED-2. Both specs still name the VLAN STALE.
+func connectedOnTwoNetworks(t *testing.T, fields map[string]any) *builder.Document {
+	t.Helper()
+
+	const first, second = "ISOLATED-1", "ISOLATED-2"
+
+	doc := withInterfaces(t, map[string][]map[string]any{"router": {fields}, "host-a": {fields}})
+	doc.Networks[0].Name = first
+	doc.NodeByID(idSwExp).Label = first
+	doc.Networks = append(doc.Networks, builder.Network{ID: idNetIsolated2, Name: second})
+	doc.Nodes = append(doc.Nodes, builder.Node{
+		ID:       idSwIsolated2,
+		Kind:     builder.NodeKindSwitch,
+		Label:    second,
+		Position: builder.Position{X: 480, Y: 260},
+		Switch:   &builder.Switch{NetworkID: idNetIsolated2},
+	})
+	connectHost(t, doc, idSwIsolated2, idNetIsolated2)
+
+	return doc
+}
+
+// Two devices connected on the canvas, each to the switch of a network of its
+// own, may use one IP or MAC address, though their specs name one VLAN.
+// Connected to one network, they may not, and publishing names that network.
+func TestPublishTopologyConfigComparesConnectedAddressesOnTheirNetworks(t *testing.T) {
+	const both = `interface "eth0" of device "router" and interface "eth0" of device "host-a"`
+
+	for name, test := range map[string]struct {
+		fields map[string]any
+		want   string
+	}{
+		"IP": {
+			fields: map[string]any{"proto": "static", "address": "10.0.0.1", "mask": 24},
+			want:   `IP address 10.0.0.1 on VLAN "ISOLATED-1" is used by ` + both,
+		},
+		"MAC": {
+			fields: map[string]any{"mac": "00:00:00:00:00:01"},
+			want:   `MAC address 00:00:00:00:00:01 on VLAN "ISOLATED-1" is used by ` + both,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := connectedOnTwoNetworks(t, test.fields)
+
+			blockers, err := doc.PublishBlockers("connected")
+			if err != nil || len(blockers) != 0 {
+				t.Fatalf("PublishBlockers = %v, %v, want none", blockers, err)
+			}
+
+			if _, _, err := doc.PublishTopologyConfig("connected"); err != nil {
+				t.Fatalf("PublishTopologyConfig: %v", err)
+			}
+
+			// host-a's eth0 connected to the switch of ISOLATED-1 too.
+			connectHost(t, doc, idSwExp, idNetExp)
+
+			blockers, err = doc.PublishBlockers("connected")
+
+			var addressErr *builder.InterfaceAddressError
+			if err != nil || len(blockers) != 1 || !errors.As(blockers[0], &addressErr) ||
+				!reflect.DeepEqual(addressErr.Problems, []string{test.want}) {
+				t.Fatalf("PublishBlockers = %v, %v, want the problem %q", blockers, err, test.want)
+			}
+
+			if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, []string{test.want}) {
+				t.Fatalf("problems = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+// Interfaces without a VLAN, which publishing refuses unless their device is
+// external, are compared with each other, and with no interface on a VLAN.
+func TestPublishBlockersCompareAddressesWithoutVLAN(t *testing.T) {
+	for name, test := range map[string]struct {
+		host map[string]any
+		want []string
+	}{
+		"both without a VLAN": {
+			host: map[string]any{"vlan": " ", "address": "10.0.0.1"},
+			want: []string{
+				`IP address 10.0.0.1 without a VLAN is used by interface "eth0" of device "router" ` +
+					`and interface "eth0" of device "host-a"`,
+			},
+		},
+		"one on a VLAN": {host: map[string]any{"vlan": "EXP", "address": "10.0.0.1"}, want: nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := unconnectedPair(t, map[string]any{"vlan": ""}, test.host)
+
+			blockers, err := doc.PublishBlockers("no-vlan")
+			if err != nil {
+				t.Fatalf("PublishBlockers: %v", err)
+			}
+
+			var got []string
+
+			for _, blocker := range blockers {
+				var addressErr *builder.InterfaceAddressError
+				if errors.As(blocker, &addressErr) {
+					got = addressErr.Problems
+				}
+			}
+
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("problems = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

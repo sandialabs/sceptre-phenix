@@ -384,16 +384,16 @@ func TestBuilderPublishNamesSharedAddresses(t *testing.T) {
 	}
 
 	want := `topology shared cannot be published: ` +
-		`IP address 10.0.0.1 is used by ` + users("eth0") + `; ` +
-		`MAC address 00:00:00:00:00:01 is used by ` + users("eth0") + `; ` +
-		`IP address 10.0.0.2 is used by ` + users("eth1") + `; ` +
+		`IP address 10.0.0.1 on VLAN "EXP" is used by ` + users("eth0") + `; ` +
+		`MAC address 00:00:00:00:00:01 on VLAN "EXP" is used by ` + users("eth0") + `; ` +
+		`IP address 10.0.0.2 on VLAN "EXP" is used by ` + users("eth1") + `; ` +
 		`1 more address is used more than once`
 	if body.Message != want {
 		t.Fatalf("message = %q, want %q", body.Message, want)
 	}
 
 	// The cause still lists every one.
-	if !strings.Contains(body.Cause, `MAC address 00:00:00:00:00:02 is used by `+users("eth1")) {
+	if !strings.Contains(body.Cause, `MAC address 00:00:00:00:00:02 on VLAN "EXP" is used by `+users("eth1")) {
 		t.Fatalf("cause %q does not name the second MAC address", body.Cause)
 	}
 

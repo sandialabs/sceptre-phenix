@@ -1712,7 +1712,7 @@ test('an interface with no VLAN or a used address is refused at publish, and its
     const seeded = await builder.seedDraft(document);
     await builder.openDraft(seeded);
     const uses = (hostname, other) =>
-      `IP address 10.0.0.5 of interface "eth0" of "${hostname}" is also used by interface "eth0" of "${other}"`;
+      `IP address 10.0.0.5 of interface "eth0" of "${hostname}" is also used on VLAN "EXP" by interface "eth0" of "${other}"`;
 
     await page.getByTestId('builder-checks').click();
     const checks = page.getByTestId('checks-dialog');
@@ -1735,7 +1735,7 @@ test('an interface with no VLAN or a used address is refused at publish, and its
     });
     expect(refused.status(), await refused.text()).toBe(422);
     const usedBy =
-      'IP address 10.0.0.5 is used by interface "eth0" of device "server" and interface "eth0" of device "server-2"';
+      'IP address 10.0.0.5 on VLAN "EXP" is used by interface "eth0" of device "server" and interface "eth0" of device "server-2"';
     expect((await refused.json()).message).toBe(
       `topology ${shared} cannot be published: ${usedBy}`,
     );
@@ -1757,7 +1757,7 @@ test('an interface with no VLAN or a used address is refused at publish, and its
       '[data-path="spec.network.interfaces.0.address"]',
     );
     await expect(field.getByTestId('inspector-field-warning')).toHaveText(
-      'Warning: This IP address is also used by interface "eth0" of "server".',
+      'Warning: This IP address is also used on VLAN "EXP" by interface "eth0" of "server".',
     );
     await field.getByRole('textbox').fill('10.0.0.6');
     await field.getByRole('textbox').press('Enter');

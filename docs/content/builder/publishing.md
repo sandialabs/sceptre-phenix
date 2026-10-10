@@ -359,12 +359,18 @@ experiment would fail or misbehave when it starts.
   refuses the interface when the experiment starts. Connect the interface,
   or type a VLAN for it (see
   [Connecting interfaces](diagrams.md#connecting-interfaces)).
-- **A shared IP or MAC address**: two interfaces with the same IP address or
-  the same MAC address. IP addresses are compared without the prefix length.
-  MAC addresses are compared in any case and with any separators, so
-  `aa:bb:cc:dd:ee:ff` and `AA-BB-CC-DD-EE-FF` are the same. Blank values,
-  the IP addresses of interfaces whose protocol is `dhcp` or `manual`, and the
-  MAC addresses of external devices are not compared.
+- **A shared IP or MAC address**: two interfaces on the same network with the
+  same IP address or the same MAC address. Two interfaces are on the same
+  network when they have the same VLAN, the network they are connected to or
+  else the VLAN typed for them, and the same bridge (a blank bridge and
+  `phenix` are the experiment's default bridge). Interfaces on different
+  networks, such as isolated networks `ISOLATED-1` and `ISOLATED-2`, may use
+  the same addresses. Interfaces with no VLAN are compared with each other.
+  IP addresses are compared without the prefix length. MAC addresses are
+  compared in any case and with any separators, so `aa:bb:cc:dd:ee:ff` and
+  `AA-BB-CC-DD-EE-FF` are the same. Blank values, the IP addresses of
+  interfaces whose protocol is `dhcp` or `manual`, and the MAC addresses of
+  external devices are not compared.
 - **A hostname phenix refuses**: one character long; `all`; all digits; or
   `phenix` on a device whose OS type is `windows`. External devices are not
   checked. Other casings of `all`, such as `All`, and `phenix` on a device
@@ -383,22 +389,24 @@ hostname "dns-01" (also nodes[10])".
 The Riverside Water expansion draft has a copy of `historian-01`, made with
 **Duplicate** (see [Duplicating a device](diagrams.md#duplicating-a-device)).
 The copy, `historian-01-2`, keeps the address 10.10.30.20, and its eth0 is not
-connected. Select **Publish**. Under **Checks**, the dialog lists three
-errors, and **Create topology** is unavailable:
+connected. Select **Publish**. Under **Checks**, the dialog lists an error,
+and **Create topology** is unavailable:
 
 ```text
-Error: IP address 10.10.30.20 of interface "eth0" of "historian-01" is also used by interface "eth0" of "historian-01-2"
 Error: interface "eth0" of "historian-01-2" is not connected to a network and has no VLAN, so it cannot be published: connect it, or type a VLAN for it
-Error: IP address 10.10.30.20 of interface "eth0" of "historian-01-2" is also used by interface "eth0" of "historian-01"
 ```
+
+The address is not an error yet, because historian-01-2 is on no network.
+Once its eth0 is on OT, the network of historian-01, the two would share
+10.10.30.20 there.
 
 ![The Publish diagram dialog for Riverside Water expansion: Topology only, Topology name Riverside-Water-expansion with the hint A new topology will be created., the Scenarios part, and three errors under Checks, for the shared address 10.10.30.20 and the unconnected eth0 of historian-01-2, with the Create topology button unavailable.](../images/builder/publish-blocked.png)
 
-To fix them:
+To fix it, and give the copy its own hostname and address:
 
 1. Select **Cancel**.
 2. Select historian-01-2 on the canvas or in the Outline. The Inspector
-   says "Checks: 2 warnings".
+   says "Checks: 1 warning".
 3. Set **Hostname** to `historian-02`.
 4. Under **Network**, in the eth0 interface, set **VLAN** to `OT` and
    **Address** to `10.10.30.21`.

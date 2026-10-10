@@ -62,6 +62,7 @@ All notable changes to this project will be documented in this file.
 - **Configs page**: The viewer opens for topologies saved by the legacy Builder instead of showing an error, is labeled with the config's name, and returns focus to it when closed.
 - **Users**: Signing in as the same user from parallel requests no longer loses a token. Creating a user or signing up with a name already in use returns 409, and the Users page and the Create Account dialog say the user exists. Creating a user with an unknown role no longer leaves a user without a role. A `ui.users` entry without a role is skipped and logged instead of crashing phenix.
 - **etcd store**: Crash at startup with an empty etcd; wrong errors for missing or existing configs, and for writes to a full etcd.
+- **Builder**: Builder no longer refuses the same IP or MAC address on two different networks.
 
 ### Security
 

@@ -87,11 +87,12 @@ func (e *InterfaceVLANError) Error() string {
 }
 
 // InterfaceAddressError is returned, wrapped, by [Document.PublishTopologyConfig]
-// for a document in which interfaces use the same IP or MAC address (see
-// [Document.checkInterfaceAddresses]), and is one of the
+// for a document in which interfaces on one network use the same IP or MAC
+// address (see [Document.checkInterfaceAddresses]), and is one of the
 // [TopologyExport.PublishBlockers] of such a document.
 type InterfaceAddressError struct {
-	// Problems names each address and the interfaces that use it.
+	// Problems names each address, its network and the interfaces that use
+	// it.
 	Problems []string
 }
 
@@ -211,8 +212,9 @@ func topologyConfig(name string, topology *Topology) (*store.Config, error) {
 // PublishTopologyConfig projects the document onto a topology config and runs
 // the checks publishing makes, so a caller about to publish a topology can
 // authoritatively verify complete node specs: every interface of a device
-// phenix starts has a VLAN (see [checkInterfaceVLANs]), no two interfaces use
-// one IP or MAC address (see [Document.checkInterfaceAddresses]), phenix
+// phenix starts has a VLAN (see [checkInterfaceVLANs]), no two interfaces on
+// one network use one IP or MAC address (see
+// [Document.checkInterfaceAddresses]), phenix
 // accepts every hostname (see [checkHostnames]), and the spec passes the
 // existing phenix topology schema validation (types.ValidateConfigSpec, which
 // does not resolve included topologies from the store).
@@ -540,10 +542,11 @@ func interfaceLabels(ifaces []any) []string {
 	return labels
 }
 
-// addressUsers are the interfaces that use one IP or MAC address, in document
-// order.
+// addressUsers are the interfaces that use one IP or MAC address on one
+// network, in document order.
 type addressUsers struct {
-	// address names the address in a message: "IP address 10.0.0.5".
+	// address names the address and its network in a message:
+	// `IP address 10.0.0.5 on VLAN "EXP"`.
 	address string
 	// users names each interface: `interface "eth0" of device "web"`.
 	users []string
@@ -551,23 +554,40 @@ type addressUsers struct {
 	own int
 }
 
-// checkInterfaceAddresses refuses a document in which two interfaces use the
-// same IP address or the same MAC address: phenix stores such a topology, but
-// the addresses clash once the experiment runs. Every device counts, including
+// addressKey is what two interfaces share when their addresses clash: an
+// address of one kind on one network (see [interfaceNetwork]).
+type addressKey struct {
+	// kind is "ip" or "mac".
+	kind string
+	// address is the address as [interfaceIP] or [interfaceMAC] reads it.
+	address string
+	bridge  string
+	vlan    string
+}
+
+// checkInterfaceAddresses refuses a document in which two interfaces on the
+// same network use the same IP address or the same MAC address: phenix stores
+// such a topology, but the addresses clash once the experiment runs. Each
+// interface is on the network publishing puts it on (see
+// [interfaceNetwork]): interfaces on different VLANs, or on VLANs of one name
+// on different bridges, are on networks of their own, which may use the same
+// addresses, as isolated networks often do and as minimega allows (it compares
+// VLANs before it reports a MAC address twice). Every device counts, including
 // an external device's IP addresses and the devices of included topologies,
 // which phenix merges into the experiment; an address only included devices
 // use is their topology's to fix. An external device's MAC addresses do not
 // count: phenix does not start it, and its schema has no MAC. IP addresses are
 // compared parsed (see [interfaceIP]), and MAC addresses in any case and with
-// any separators (see [interfaceMAC]). The error names each address and the
-// interfaces that use it, in document order.
+// any separators (see [interfaceMAC]). The error names each address, its
+// network and the interfaces that use it, in document order.
 func (d *Document) checkInterfaceAddresses() error {
 	var (
-		shared []*addressUsers
-		byKey  = map[string]*addressUsers{}
+		shared   []*addressUsers
+		byKey    = map[addressKey]*addressUsers{}
+		networks = d.handleNetworks()
 	)
 
-	use := func(key, address, user string, included bool) {
+	use := func(key addressKey, address, user string, included bool) {
 		entry := byKey[key]
 		if entry == nil {
 			entry = &addressUsers{address: address, users: nil, own: 0}
@@ -593,6 +613,10 @@ func (d *Document) checkInterfaceAddresses() error {
 			continue // ToTopology refuses it first
 		}
 
+		// Each interface's VLAN as publishing writes it. The spec is a copy,
+		// and the warnings are ToTopology's to give.
+		connectInterfaces(node, spec, networks)
+
 		ifaces := specNodeInterfaces(spec)
 		labels := interfaceLabels(ifaces)
 		included := node.Device.IncludedFrom != ""
@@ -605,13 +629,17 @@ func (d *Document) checkInterfaceAddresses() error {
 			}
 
 			user := fmt.Sprintf("interface %s of device %q", labels[index], node.Device.Hostname)
+			bridge, vlan := interfaceNetwork(iface)
+			network := networkPhrase(bridge, vlan)
 
 			if addr, ok := interfaceIP(iface); ok {
-				use("ip "+addr.String(), "IP address "+addr.String(), user, included)
+				key := addressKey{kind: "ip", address: addr.String(), bridge: bridge, vlan: vlan}
+				use(key, "IP address "+addr.String()+network, user, included)
 			}
 
 			if mac, ok := interfaceMAC(iface); ok && !external {
-				use("mac "+mac.String(), "MAC address "+mac.String(), user, included)
+				key := addressKey{kind: "mac", address: mac.String(), bridge: bridge, vlan: vlan}
+				use(key, "MAC address "+mac.String()+network, user, included)
 			}
 		}
 	}
@@ -691,6 +719,46 @@ func interfaceMAC(iface map[string]any) (net.HardwareAddr, bool) {
 	}
 
 	return net.HardwareAddr(mac), true
+}
+
+// defaultBridgeName is the bridge an interface names to be on the
+// experiment's default bridge, as a blank bridge does: phenix replaces both
+// with that bridge (see v1.Network.SetDefaults).
+const defaultBridgeName = "phenix"
+
+// interfaceNetwork names the network a spec interface entry is on, once
+// connecting it on the canvas has set its VLAN (see [connectInterfaces]): the
+// bridge, "" for the experiment's default one, and the VLAN, without the
+// white space around it, "" for none. A bridge is compared as it is written,
+// so one that names the experiment's default bridge counts as another bridge;
+// a VLAN as it is written too, as phenix matches VLAN names exactly.
+// Interfaces without a VLAN, which publishing refuses unless their device is
+// external, are all on one network of their own.
+func interfaceNetwork(iface map[string]any) (string, string) {
+	bridge, _ := iface["bridge"].(string)
+	if bridge == defaultBridgeName {
+		bridge = ""
+	}
+
+	vlan, _ := iface["vlan"].(string)
+
+	return bridge, strings.TrimSpace(vlan)
+}
+
+// networkPhrase names the network [interfaceNetwork] returns in a message,
+// after an address: ` on VLAN "EXP"`, ` on VLAN "EXP" of bridge "lab"`,
+// ` without a VLAN`.
+func networkPhrase(bridge, vlan string) string {
+	switch {
+	case vlan == "" && bridge == "":
+		return " without a VLAN"
+	case vlan == "":
+		return fmt.Sprintf(" on bridge %q without a VLAN", bridge)
+	case bridge == "":
+		return fmt.Sprintf(" on VLAN %q", vlan)
+	default:
+		return fmt.Sprintf(" on VLAN %q of bridge %q", vlan, bridge)
+	}
 }
 
 // trimASCIISpace trims the ASCII whitespace around an address or a proto. The
@@ -799,7 +867,20 @@ func deviceSpec(node *Node, handleNetworks map[string]*Network) (map[string]any,
 		return nil, nil, fmt.Errorf("node spec key %q is not an object", "general")
 	}
 
-	ifaces := specNodeInterfaces(spec)
+	warnings = append(warnings, connectInterfaces(node, spec, handleNetworks)...)
+
+	return spec, warnings, nil
+}
+
+// connectInterfaces sets the VLAN of each interface of spec, the node spec of
+// the device node, whose connection point is connected to a network to that
+// network's name, as publishing writes it. It returns a warning for each
+// connection whose interface the spec does not have, which publishing drops.
+func connectInterfaces(node *Node, spec map[string]any, handleNetworks map[string]*Network) []string {
+	var (
+		ifaces   = specNodeInterfaces(spec)
+		warnings []string
+	)
 
 	for _, handle := range node.Device.Interfaces {
 		network, ok := handleNetworks[handle.ID]
@@ -821,7 +902,7 @@ func deviceSpec(node *Node, handleNetworks map[string]*Network) (map[string]any,
 		iface["vlan"] = network.Name
 	}
 
-	return spec, warnings, nil
+	return warnings
 }
 
 // findInterface locates a spec interface by name, preferring an exact match and

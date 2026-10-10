@@ -6,8 +6,10 @@ import { describe, expect, test } from 'vitest';
 import { parseDocument } from '@/builder/decode.js';
 import { MAX_DOCUMENT_ICONS, MAX_ICON_NAME_BYTES } from '@/builder/icons.js';
 import {
+  addNetwork,
   addNode,
   BORDER_STYLES,
+  connect,
   createDocument,
   HEX_COLOR,
   LINE_STYLES,
@@ -867,7 +869,9 @@ describe('interface VLANs and drive images', () => {
 
 describe('IP and MAC addresses that two interfaces use', () => {
   // The sample with the spec interfaces of alpha and bravo changed by
-  // `edits`, keyed by hostname.
+  // `edits`, keyed by hostname. alpha's eth0 is connected to network EXP;
+  // bravo's, which the sample leaves unconnected, gets the VLAN EXP before
+  // its edit, so that both are on network EXP, where addresses clash.
   function withInterfaces(edits) {
     const sample = sampleDocument();
     const doc = {
@@ -880,6 +884,10 @@ describe('IP and MAC addresses that two interfaces use', () => {
         }
 
         const copy = JSON.parse(JSON.stringify(node));
+
+        if (copy.device.hostname === 'bravo') {
+          copy.device.spec.network.interfaces[0].vlan = 'EXP';
+        }
 
         edit(copy.device.spec.network.interfaces, copy);
 
@@ -925,7 +933,7 @@ describe('IP and MAC addresses that two interfaces use', () => {
       {
         path: 'nodes[1].device.spec.network.interfaces[0].address',
         message:
-          'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
+          'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used on VLAN "EXP" by interface "eth0" of "bravo"',
         level: 'warning',
         blocksPublish: true,
         nodeId: alpha.id,
@@ -933,7 +941,7 @@ describe('IP and MAC addresses that two interfaces use', () => {
       {
         path: 'nodes[2].device.spec.network.interfaces[0].address',
         message:
-          'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"',
+          'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha"',
         level: 'warning',
         blocksPublish: true,
         nodeId: bravo.id,
@@ -955,8 +963,8 @@ describe('IP and MAC addresses that two interfaces use', () => {
       ['10.0.0.5', '\t\v\f10.0.0.5\r\n', '10.0.0.5'],
     ]) {
       expect(pair(fixed(first), fixed(second))).toEqual([
-        `IP address ${first} of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"`,
-        `IP address ${shown} of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"`,
+        `IP address ${first} of interface "eth0" of "alpha" is also used on VLAN "EXP" by interface "eth0" of "bravo"`,
+        `IP address ${shown} of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha"`,
       ]);
     }
 
@@ -966,8 +974,8 @@ describe('IP and MAC addresses that two interfaces use', () => {
       ['\taa:bb:cc:dd:ee:ff\n', 'aa:bb:cc:dd:ee:ff'],
     ]) {
       expect(pair({ mac: 'aa:bb:cc:dd:ee:ff' }, { mac: second })).toEqual([
-        'MAC address aa:bb:cc:dd:ee:ff of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
-        `MAC address ${shown} of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"`,
+        'MAC address aa:bb:cc:dd:ee:ff of interface "eth0" of "alpha" is also used on VLAN "EXP" by interface "eth0" of "bravo"',
+        `MAC address ${shown} of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha"`,
       ]);
     }
   });
@@ -976,9 +984,190 @@ describe('IP and MAC addresses that two interfaces use', () => {
   // interface its address (vrouter.go, vyatta.tmpl).
   test('the address of a QinQ interface is compared', () => {
     expect(pair(fixed('10.0.0.5', { qinq: true }), fixed('10.0.0.5'))).toEqual([
-      'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
-      'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"',
+      'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used on VLAN "EXP" by interface "eth0" of "bravo"',
+      'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha"',
     ]);
+  });
+
+  // Isolated networks often use the same private addresses, and minimega
+  // compares VLANs before it reports a MAC address twice, so addresses
+  // clash only on one network: the bridge and the VLAN an interface is
+  // published with (checkInterfaceAddresses in types/builder/topology.go).
+  describe('only on one network', () => {
+    // Both devices disconnected, so each is on the VLAN it has.
+    function unconnected(first, second) {
+      const { doc } = withInterfaces({
+        alpha: ([eth0]) => Object.assign(eth0, first),
+        bravo: ([eth0]) => Object.assign(eth0, second),
+      });
+
+      const issues = addressIssues({ ...doc, edges: [] });
+
+      return issues.map((issue) => issue.message);
+    }
+
+    const isolated = (vlan, more = {}) =>
+      fixed('10.0.0.1', { mask: 24, vlan, ...more });
+
+    test('two VLANs may use one address, and one VLAN may not', () => {
+      expect(
+        unconnected(isolated('ISOLATED-1'), isolated('ISOLATED-2')),
+      ).toEqual([]);
+      expect(
+        unconnected(isolated('ISOLATED-1'), isolated(' ISOLATED-1 ')),
+      ).toEqual([
+        'IP address 10.0.0.1 of interface "eth0" of "alpha" is also used on VLAN "ISOLATED-1" by interface "eth0" of "bravo"',
+        'IP address 10.0.0.1 of interface "eth0" of "bravo" is also used on VLAN "ISOLATED-1" by interface "eth0" of "alpha"',
+      ]);
+      // phenix matches VLAN names exactly.
+      expect(
+        unconnected(isolated('ISOLATED-1'), isolated('isolated-1')),
+      ).toEqual([]);
+    });
+
+    test('a MAC address may be used on two VLANs, and not twice on one', () => {
+      const mac = (vlan) => ({ vlan, mac: '00:00:00:00:00:01' });
+
+      expect(unconnected(mac('ISOLATED-1'), mac('ISOLATED-2'))).toEqual([]);
+      expect(unconnected(mac('ISOLATED-1'), mac('ISOLATED-1'))).toEqual([
+        'MAC address 00:00:00:00:00:01 of interface "eth0" of "alpha" is also used on VLAN "ISOLATED-1" by interface "eth0" of "bravo"',
+        'MAC address 00:00:00:00:00:01 of interface "eth0" of "bravo" is also used on VLAN "ISOLATED-1" by interface "eth0" of "alpha"',
+      ]);
+    });
+
+    // A VLAN of one name on two bridges is two networks. A blank bridge and
+    // phenix are both the experiment's default bridge.
+    test('a VLAN of one name on two bridges may use one address', () => {
+      expect(
+        unconnected(
+          isolated('EXP', { bridge: 'lab-a' }),
+          isolated('EXP', { bridge: 'lab-b' }),
+        ),
+      ).toEqual([]);
+      expect(
+        unconnected(
+          isolated('EXP', { bridge: 'lab-a' }),
+          isolated('EXP', { bridge: 'lab-a' }),
+        ),
+      ).toEqual([
+        'IP address 10.0.0.1 of interface "eth0" of "alpha" is also used on VLAN "EXP" of bridge "lab-a" by interface "eth0" of "bravo"',
+        'IP address 10.0.0.1 of interface "eth0" of "bravo" is also used on VLAN "EXP" of bridge "lab-a" by interface "eth0" of "alpha"',
+      ]);
+      expect(
+        unconnected(
+          isolated('EXP', { bridge: 'phenix' }),
+          isolated('EXP', { bridge: '' }),
+        ),
+      ).toEqual([
+        'IP address 10.0.0.1 of interface "eth0" of "alpha" is also used on VLAN "EXP" by interface "eth0" of "bravo"',
+        'IP address 10.0.0.1 of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha"',
+      ]);
+    });
+
+    // Publishing refuses an interface without a VLAN, unless its device is
+    // external; until then it is compared with the others that have none.
+    test('interfaces without a VLAN are compared with each other only', () => {
+      expect(unconnected(isolated(''), isolated('  '))).toEqual([
+        'IP address 10.0.0.1 of interface "eth0" of "alpha" is also used without a VLAN by interface "eth0" of "bravo"',
+        'IP address 10.0.0.1 of interface "eth0" of "bravo" is also used without a VLAN by interface "eth0" of "alpha"',
+      ]);
+      expect(unconnected(isolated(''), isolated('EXP'))).toEqual([]);
+    });
+
+    // A connected interface is published on its network, whatever VLAN its
+    // spec still names.
+    test('a connected interface is on its network', () => {
+      expect(pair(isolated('ISOLATED-2'), isolated('ISOLATED-2'))).toEqual([]);
+      expect(pair(isolated('ISOLATED-2'), isolated('EXP'))).toEqual([
+        'IP address 10.0.0.1 of interface "eth0" of "alpha" is also used on VLAN "EXP" by interface "eth0" of "bravo"',
+        'IP address 10.0.0.1 of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha"',
+      ]);
+    });
+
+    // A diagram with networks ISOLATED-1 and ISOLATED-2, a switch for each,
+    // and devices alpha and bravo whose eth0 has `fields` and is connected
+    // on the canvas to the switch of the network `networks` names for it.
+    function connectedTo(fields, networks) {
+      let doc = createDocument({ id: testId(), name: 'Isolated' });
+      const switches = new Map();
+
+      for (const [index, name] of ['ISOLATED-1', 'ISOLATED-2'].entries()) {
+        const added = addNetwork(doc, { name });
+        const hub = addNode(added.doc, {
+          kind: 'switch',
+          networkId: added.network.id,
+          position: { x: 200, y: 200 * index },
+        });
+
+        doc = hub.doc;
+        switches.set(name, hub.node);
+      }
+
+      for (const [index, hostname] of ['alpha', 'bravo'].entries()) {
+        const added = addNode(doc, {
+          kind: 'device',
+          hostname,
+          position: { x: 0, y: 200 * index },
+          interfaces: [{ name: 'eth0' }],
+        });
+
+        doc = connect(added.doc, {
+          sourceNodeId: added.node.id,
+          sourceHandleId: added.node.device.interfaces[0].id,
+          targetNodeId: switches.get(networks[hostname]).id,
+        }).doc;
+      }
+
+      return {
+        ...doc,
+        nodes: doc.nodes.map((node) => {
+          if (!node.device) {
+            return node;
+          }
+
+          const copy = JSON.parse(JSON.stringify(node));
+
+          Object.assign(copy.device.spec.network.interfaces[0], fields);
+
+          return copy;
+        }),
+      };
+    }
+
+    // Each device connected to a network of its own, both connected to one.
+    const apart = { alpha: 'ISOLATED-1', bravo: 'ISOLATED-2' };
+    const together = { alpha: 'ISOLATED-1', bravo: 'ISOLATED-1' };
+
+    test('devices connected to two networks may use one address, and on one network may not', () => {
+      const blockers = (doc) =>
+        validateDocument(doc).filter((issue) => issue.blocksPublish);
+
+      for (const fields of [
+        fixed('10.0.0.1', { mask: 24 }),
+        { mac: '00:00:00:00:00:01' },
+      ]) {
+        const doc = connectedTo(fields, apart);
+
+        expect(doc.edges).toHaveLength(2);
+        expect(blockers(doc)).toEqual([]);
+        expect(addressIssues(doc)).toEqual([]);
+        expect(blockers(connectedTo(fields, together))).toHaveLength(2);
+      }
+
+      const messages = (fields) =>
+        addressIssues(connectedTo(fields, together)).map(
+          (issue) => issue.message,
+        );
+
+      expect(messages(fixed('10.0.0.1', { mask: 24 }))).toEqual([
+        'IP address 10.0.0.1 of interface "eth0" of "alpha" is also used on VLAN "ISOLATED-1" by interface "eth0" of "bravo"',
+        'IP address 10.0.0.1 of interface "eth0" of "bravo" is also used on VLAN "ISOLATED-1" by interface "eth0" of "alpha"',
+      ]);
+      expect(messages({ mac: '00:00:00:00:00:01' })).toEqual([
+        'MAC address 00:00:00:00:00:01 of interface "eth0" of "alpha" is also used on VLAN "ISOLATED-1" by interface "eth0" of "bravo"',
+        'MAC address 00:00:00:00:00:01 of interface "eth0" of "bravo" is also used on VLAN "ISOLATED-1" by interface "eth0" of "alpha"',
+      ]);
+    });
   });
 
   // An interface that asks DHCP for its address has none of its own, phenix
@@ -1040,18 +1229,18 @@ describe('IP and MAC addresses that two interfaces use', () => {
           mac: '00:00:00:00:00:01',
         });
         interfaces.push(
-          { name: 'eth1', ...fixed('10.0.0.5') },
-          { name: 'eth1', mac: '00-00-00-00-00-01' },
+          { name: 'eth1', vlan: 'EXP', ...fixed('10.0.0.5') },
+          { name: 'eth1', vlan: 'EXP', mac: '00-00-00-00-00-01' },
         );
       },
     });
 
     expect(addressIssues(doc).map((issue) => issue.message)).toEqual([
-      'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo" and 1 more interface',
-      'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha" and 1 more interface',
-      'MAC address 00:00:00:00:00:01 of interface "eth0" of "bravo" is also used by interface "eth1" (#3) of "bravo"',
-      'IP address 10.0.0.5 of interface "eth1" (#2) of "bravo" is also used by interface "eth0" of "alpha" and 1 more interface',
-      'MAC address 00-00-00-00-00-01 of interface "eth1" (#3) of "bravo" is also used by interface "eth0" of "bravo"',
+      'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used on VLAN "EXP" by interface "eth0" of "bravo" and 1 more interface',
+      'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha" and 1 more interface',
+      'MAC address 00:00:00:00:00:01 of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth1" (#3) of "bravo"',
+      'IP address 10.0.0.5 of interface "eth1" (#2) of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha" and 1 more interface',
+      'MAC address 00-00-00-00-00-01 of interface "eth1" (#3) of "bravo" is also used on VLAN "EXP" by interface "eth0" of "bravo"',
     ]);
   });
 
@@ -1078,8 +1267,8 @@ describe('IP and MAC addresses that two interfaces use', () => {
         withInterfaces({ alpha: own, bravo: external('10.0.0.5') }).doc,
       ).map((issue) => issue.message),
     ).toEqual([
-      'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
-      'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"',
+      'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used on VLAN "EXP" by interface "eth0" of "bravo"',
+      'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha"',
     ]);
   });
 
@@ -1104,7 +1293,7 @@ describe('IP and MAC addresses that two interfaces use', () => {
       {
         path: 'nodes[2].device.spec.network.interfaces[0].address',
         message:
-          'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"',
+          'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha"',
       },
     ]);
     expect(addressIssues({ ...both.doc, source })).toEqual([]);
@@ -1139,13 +1328,13 @@ describe('IP and MAC addresses that two interfaces use', () => {
       ),
     ).toEqual({
       'spec.network.interfaces.0.address': [
-        'This IP address is also used by interface "eth0" of "alpha".',
+        'This IP address is also used on VLAN "EXP" by interface "eth0" of "alpha".',
       ],
       'spec.network.interfaces.1.mac': [
-        'This MAC address is also used by interface "eth2" of "bravo".',
+        'This MAC address is also used on VLAN "EXP" by interface "eth2" of "bravo".',
       ],
       'spec.network.interfaces.2.mac': [
-        'This MAC address is also used by interface "eth1" of "bravo".',
+        'This MAC address is also used on VLAN "EXP" by interface "eth1" of "bravo".',
       ],
     });
     // Its own spec in the diagram is not compared with it.
@@ -1159,6 +1348,54 @@ describe('IP and MAC addresses that two interfaces use', () => {
         nodeId: alpha.id,
       }),
     ).toEqual({});
+  });
+
+  // Applying a VLAN typed in the Inspector connects the interface by it, so
+  // a changed VLAN is the network its address is compared on; an unchanged
+  // one keeps the interface's connection.
+  test('field warnings compare an address on the VLAN the working copy has', () => {
+    const { doc, bravo } = withInterfaces({
+      alpha: ([eth0]) => Object.assign(eth0, fixed('10.0.0.5')),
+      bravo: ([eth0]) => Object.assign(eth0, fixed('10.0.0.9')),
+    });
+    const working = (vlan) => ({
+      network: { interfaces: [{ name: 'eth0', vlan, ...fixed('10.0.0.5') }] },
+    });
+
+    expect(
+      deviceFieldWarnings(doc, working('ISOLATED-1'), { nodeId: bravo.id }),
+    ).toEqual({
+      'spec.network.interfaces.0.vlan': [
+        'No network in this diagram is named "ISOLATED-1".',
+      ],
+    });
+    expect(
+      deviceFieldWarnings(doc, working('EXP'), { nodeId: bravo.id }),
+    ).toEqual({
+      'spec.network.interfaces.0.address': [
+        'This IP address is also used on VLAN "EXP" by interface "eth0" of "alpha".',
+      ],
+    });
+
+    // An unchanged VLAN keeps the interface on the network it is connected
+    // to, whatever its spec names.
+    const stale = withInterfaces({
+      alpha: ([eth0]) => Object.assign(eth0, { vlan: 'STALE' }),
+      bravo: ([eth0]) => Object.assign(eth0, fixed('10.0.0.5')),
+    });
+
+    expect(
+      deviceFieldWarnings(stale.doc, working('STALE'), {
+        nodeId: stale.alpha.id,
+      }),
+    ).toEqual({
+      'spec.network.interfaces.0.address': [
+        'This IP address is also used on VLAN "EXP" by interface "eth0" of "bravo".',
+      ],
+      'spec.network.interfaces.0.vlan': [
+        'No network in this diagram is named "STALE".',
+      ],
+    });
   });
 
   // The checks run on every edit, so each interface is looked up by its
@@ -1205,7 +1442,7 @@ describe('IP and MAC addresses that two interfaces use', () => {
     ).toMatchObject({
       path: 'nodes[3].device.spec.network.interfaces[3].mac',
       message:
-        'MAC address 02:00:00:ff:ff:ff of interface "eth3" of "host-0" is also used by interface "eth3" of "host-1" and 498 more interfaces',
+        'MAC address 02:00:00:ff:ff:ff of interface "eth3" of "host-0" is also used on VLAN "EXP" by interface "eth3" of "host-1" and 498 more interfaces',
     });
     expect(elapsed).toBeLessThan(500);
   });

@@ -580,9 +580,7 @@ When the diagram cannot be published yet, the file is still saved, and the
 dialog lists every reason. The Riverside Water expansion draft gives:
 "Saved riverside-water-expansion.topology.yaml. This topology cannot be
 published yet: interface "eth0" of device "historian-01-2" has no VLAN:
-connect it to a network, or type a VLAN for it; IP address 10.10.30.20 is
-used by interface "eth0" of device "historian-01" and interface "eth0" of
-device "historian-01-2"."
+connect it to a network, or type a VLAN for it."
 
 ![The Download diagram dialog after Topology YAML: riverside-water-expansion.topology.yaml was saved, and the topology cannot be published yet because eth0 of historian-01-2 has no VLAN and 10.10.30.20 is used by two interfaces.](../images/builder/download-topology-blockers.png)
 
@@ -862,7 +860,7 @@ every problem at once:
 $ phenix builder publish blocked.builder.json
 Error: the document cannot be published as topology Pump-station:
   interface "eth0" of device "eng-ws-01" has no VLAN: connect it to a network, or type a VLAN for it
-  IP address 10.40.1.10 is used by interface "eth0" of device "rtu-01" and interface "eth1" of device "station-rtr"
+  IP address 10.40.1.10 on VLAN "STATION" is used by interface "eth0" of device "rtu-01" and interface "eth1" of device "station-rtr"
 ```
 
 Here `blocked.builder.json` is the pump station with eth0 of eng-ws-01

@@ -438,7 +438,8 @@ func TestBuilderPublishRefusals(t *testing.T) { //nolint:paralleltest // replace
 				"the document cannot be published as topology Blocked-lab:\n",
 				"\n  interface \"eth0\" of device \"alpha\" has no VLAN: connect it to a network, or type a VLAN for it",
 				"\n  interface \"eth0\" of device \"beta\" has no VLAN: connect it to a network, or type a VLAN for it",
-				"\n  IP address 10.0.0.1 is used by interface \"eth0\" of device \"alpha\" and interface \"eth0\" of device \"beta\"",
+				"\n  IP address 10.0.0.1 without a VLAN is used by interface \"eth0\" of device \"alpha\" " +
+					"and interface \"eth0\" of device \"beta\"",
 			},
 			lines: 4,
 		},

@@ -268,14 +268,15 @@ For example, to add a second historian:
 2. Press <kbd>⌘</kbd>+<kbd>D</kbd> (<kbd>Ctrl</kbd>+<kbd>D</kbd>). A copy
    named historian-01-2 appears, with the address 10.10.30.20 and an eth0
    that is not connected.
-3. The header now says **3 warnings**: both historians use 10.10.30.20, and
-   eth0 of historian-01-2 has no VLAN (see
-   [Checks and warnings](editor.md#checks-and-warnings)).
+3. The header now says **1 warning**: eth0 of historian-01-2 has no VLAN
+   (see [Checks and warnings](editor.md#checks-and-warnings)). Both
+   historians use 10.10.30.20, which becomes a warning too once the copy's
+   eth0 is on the network of historian-01.
 
 The Riverside Water expansion draft is a copy of Riverside Water after
 step 2 (see [The drafts on these pages](index.md#the-drafts-on-these-pages)).
 To keep Riverside Water unchanged, select **Undo** after step 3. To fix the
-warnings, give the copy its own hostname and address, and connect it: see
+warning, give the copy its own hostname and address, and connect it: see
 [Example: Riverside Water expansion](publishing.md#example-riverside-water-expansion).
 
 ### Drive images

@@ -31,7 +31,8 @@ Experiment configs and adds a topology to its scenarios, and only the
 - Share a draft with other users, who can view it or edit it. See
   [Sharing a draft](drafts.md#sharing-a-draft).
 - Check the diagram for problems before you publish, such as an interface
-  with no network or two interfaces with the same address. See
+  with no network or two interfaces on the same network with the same
+  address. See
   [Checks and warnings](editor.md#checks-and-warnings).
 - Publish a Topology config, or a Topology and an Experiment config with one
   of the diagram's scenarios, from the editor or from the drafts page. See
@@ -147,8 +148,8 @@ Most pages show drafts made from the example lab:
   **Upload** on the drafts page and upload `riverside-water.builder.json`
   (see [Uploading a Builder document](import-upload-download.md#uploading-a-builder-document)).
 - **Riverside Water expansion**: a second copy of Riverside Water with a
-  duplicate of `historian-01`, which gives the diagram three warnings. To
-  make it:
+  duplicate of `historian-01`, which gives the diagram a warning. To make
+  it:
     1. On the drafts page, select **Upload** and upload
        `riverside-water.builder.json` again. Upload always makes a new draft,
        so you now have two drafts named Riverside Water. The new one opens.
@@ -158,7 +159,7 @@ Most pages show drafts made from the example lab:
     3. Select `historian-01` and press <kbd>⌘</kbd>+<kbd>D</kbd> on macOS or
        <kbd>Ctrl</kbd>+<kbd>D</kbd> on Windows and Linux (see
        [Duplicating a device](diagrams.md#duplicating-a-device)). The copy is
-       named `historian-01-2`, and the header says **3 warnings**.
+       named `historian-01-2`, and the header says **1 warning**.
 - **Metro Campus**: the import of `metro-campus`, renamed Metro Campus (see
   [Renaming the diagram](editor.md#renaming-the-diagram)), before any layout.
 

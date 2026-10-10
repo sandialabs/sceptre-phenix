@@ -117,7 +117,7 @@ describe('diagram checks', () => {
     };
     const issues = validateDocument(doc);
     const of = (hostname, other) =>
-      `IP address 10.0.0.5 of interface "eth0" of "${hostname}" is also used by interface "eth0" of "${other}"`;
+      `IP address 10.0.0.5 of interface "eth0" of "${hostname}" is also used on VLAN "EXP" by interface "eth0" of "${other}"`;
 
     expect(nodeIssueSummaries(doc, issues).get(alpha.id)).toEqual({
       level: 'warning',

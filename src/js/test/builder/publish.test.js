@@ -1081,8 +1081,12 @@ describe('publish checks', () => {
   test('an address two interfaces use is an error in the Publish dialog only', () => {
     const { doc } = sampleDocument();
 
+    // alpha is connected to network EXP, and bravo's VLAN puts it there.
     for (const node of doc.nodes.filter((entry) => entry.kind === 'device')) {
-      node.device.spec.network.interfaces[0].mac = '00:00:00:00:00:01';
+      Object.assign(node.device.spec.network.interfaces[0], {
+        vlan: 'EXP',
+        mac: '00:00:00:00:00:01',
+      });
     }
 
     const issues = validateDocument(doc);
@@ -1092,9 +1096,8 @@ describe('publish checks', () => {
 
     expect(issues.filter((issue) => issue.level === 'error')).toEqual([]);
     expect(errors).toEqual([
-      'MAC address 00:00:00:00:00:01 of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
-      expect.stringContaining('"bravo" is not connected to a network'),
-      'MAC address 00:00:00:00:00:01 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"',
+      'MAC address 00:00:00:00:00:01 of interface "eth0" of "alpha" is also used on VLAN "EXP" by interface "eth0" of "bravo"',
+      'MAC address 00:00:00:00:00:01 of interface "eth0" of "bravo" is also used on VLAN "EXP" by interface "eth0" of "alpha"',
     ]);
   });
 });

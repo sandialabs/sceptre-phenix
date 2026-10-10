@@ -281,7 +281,7 @@ func TestBuilderExportTopologyRefusesAsPublishDoes(t *testing.T) {
 				map[string]any{"name": "eth2", "vlan": "EXP", "mac": "not-a-mac"},
 			),
 			exports:       false,
-			refusal:       "topology no-vlan cannot be published: IP address 10.0.0.5 is used by ",
+			refusal:       `topology no-vlan cannot be published: IP address 10.0.0.5 on VLAN "EXP" is used by `,
 			exportRefusal: "builder document cannot be published as topology no-vlan",
 			exportCause:   `Error at "/mac"`,
 		},
@@ -360,7 +360,7 @@ func TestBuilderExportTopologyRefusesAsPublishDoes(t *testing.T) {
 func TestBuilderExportTopologyNamesSharedAddresses(t *testing.T) {
 	const (
 		refusal = "topology shared cannot be published: "
-		shared  = `IP address 10.0.0.5 is used by interface "eth0" of device "aa" and interface "eth0" of device "bb"`
+		shared  = `IP address 10.0.0.5 on VLAN "EXP" is used by interface "eth0" of device "aa" and interface "eth0" of device "bb"`
 		fix     = " has no VLAN: connect it to a network, or type a VLAN for it"
 		noVLAN  = `interface "eth1" of device "aa"` + fix + `; interface "eth1" of device "bb"` + fix
 	)

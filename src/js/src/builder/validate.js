@@ -1749,21 +1749,27 @@ export function deviceFieldWarnings(
     (node) => node.kind === 'device' && node.id !== nodeId,
   );
   const self = (doc?.nodes || []).find((node) => node.id === nodeId);
+  const connections = connectionNetworks(doc);
+  const interfaces = arrayOf(spec?.network?.interfaces);
 
   sharedAddresses([
     {
       hostname: self?.device?.hostname ?? '',
-      interfaces: arrayOf(spec?.network?.interfaces),
+      interfaces,
+      networks: interfaceNetworks(
+        interfaces,
+        workingVLANs(self, interfaces, connections),
+      ),
       included: false,
       external: spec?.external != null,
     },
-    ...others.map(addressDevice),
+    ...others.map((node) => addressDevice(node, connections)),
   ])
     .filter((shared) => shared.device === 0)
     .forEach((shared) => {
       add(
         `spec.network.interfaces.${shared.index}.${shared.field}`,
-        `This ${shared.name} is also used by ${otherUsers(shared)}.`,
+        `This ${shared.name} is also used${shared.network} by ${otherUsers(shared)}.`,
       );
     });
 
@@ -2069,11 +2075,162 @@ const ADDRESS_FIELDS = [
   { field: 'mac', name: 'MAC address', read: interfaceMAC, external: false },
 ];
 
-// A device node as sharedAddresses takes it.
-function addressDevice(node) {
+// The bridge an interface names to be on the experiment's default bridge,
+// as a blank bridge does: phenix replaces both with that bridge
+// (defaultBridgeName in types/builder/topology.go).
+const DEFAULT_BRIDGE = 'phenix';
+
+// The network each connected interface handle is on, by handle id, as the
+// server finds it (handleNetworks in types/builder/topology.go): the
+// network of the switch the connection joins the device to.
+function connectionNetworks(doc) {
+  const nodes = new Map();
+  const networks = new Map();
+  const handles = new Map();
+
+  for (const node of doc?.nodes || []) {
+    if (node && !nodes.has(node.id)) {
+      nodes.set(node.id, node);
+    }
+  }
+
+  for (const network of doc?.networks || []) {
+    if (network && !networks.has(network.id)) {
+      networks.set(network.id, network);
+    }
+  }
+
+  for (const edge of doc?.edges || []) {
+    const ends = edge ? edgeEndpoints(doc, edge, (id) => nodes.get(id)) : null;
+    const network =
+      ends?.handleId && ends.device.device
+        ? networks.get(ends.switchNode.switch?.networkId)
+        : undefined;
+
+    if (network) {
+      handles.set(ends.handleId, network);
+    }
+  }
+
+  return handles;
+}
+
+// The spec interface a connection point of that name is, as the server
+// finds it (findInterface in types/builder/topology.go): the first of
+// exactly that name, else the first of that name in any case, or -1.
+function specInterfaceIndex(interfaces, name) {
+  let fallback = -1;
+
+  for (const [index, iface] of interfaces.entries()) {
+    // An entry of the wrong shape is left to the schema.
+    if (iface && typeof iface === 'object') {
+      const own = typeof iface.name === 'string' ? iface.name : '';
+
+      if (own === name) {
+        return index;
+      }
+
+      if (fallback < 0 && fold(own) === fold(name)) {
+        fallback = index;
+      }
+    }
+  }
+
+  return fallback;
+}
+
+// The VLAN each spec interface of a device is published with, as the
+// server projects it (connectInterfaces in types/builder/topology.go): a
+// connected interface's is its network's name, and any other keeps its own.
+function publishedVLANs(node, interfaces, connected) {
+  const vlans = interfaces.map((iface) => iface?.vlan);
+
+  deviceHandles(node).forEach((handle) => {
+    const network = handle ? connected.get(handle.id) : undefined;
+    const index = network ? specInterfaceIndex(interfaces, handle.name) : -1;
+
+    if (index >= 0) {
+      vlans[index] = network.name;
+    }
+  });
+
+  return vlans;
+}
+
+// An interface's VLAN as typed, without the white space around it.
+function typedVLAN(iface) {
+  return typeof iface?.vlan === 'string' ? trimSpace(iface.vlan) : '';
+}
+
+// The VLAN each interface of the Inspector's working copy of a device is
+// published with once it is applied. Applying connects an interface whose
+// VLAN the working copy changed by that VLAN (see connectByVLAN in
+// model.js), so it is on the VLAN as typed; any other interface keeps the
+// network publishing puts it on now (see publishedVLANs).
+function workingVLANs(node, interfaces, connected) {
+  const published = publishedVLANs(node, interfaces, connected);
+  const before = new Map(
+    specInterfaces(node).map((iface) => [iface?.name, typedVLAN(iface)]),
+  );
+
+  return interfaces.map((iface, index) => {
+    const typed = typedVLAN(iface);
+
+    return before.has(iface?.name) && before.get(iface.name) === typed
+      ? published[index]
+      : typed;
+  });
+}
+
+// The network each spec interface is on once published, given the VLAN it
+// is published with, as the server names it (interfaceNetwork in
+// types/builder/topology.go): the bridge as written, '' for the
+// experiment's default one, and the VLAN without the white space around
+// it, '' for none; null for an entry of the wrong shape.
+function interfaceNetworks(interfaces, vlans) {
+  return interfaces.map((iface, index) => {
+    if (!iface || typeof iface !== 'object') {
+      return null;
+    }
+
+    const bridge =
+      typeof iface.bridge === 'string' && iface.bridge !== DEFAULT_BRIDGE
+        ? iface.bridge
+        : '';
+    const vlan =
+      typeof vlans[index] === 'string' ? trimSpace(vlans[index]) : '';
+
+    return { bridge, vlan };
+  });
+}
+
+// How a message names a network interfaceNetworks returns, after the words
+// it is used in, as the server names it (networkPhrase in
+// types/builder/topology.go).
+function networkPhrase({ bridge, vlan }) {
+  if (!vlan) {
+    return bridge
+      ? ` on bridge ${goQuoted(bridge)} without a VLAN`
+      : ' without a VLAN';
+  }
+
+  return bridge
+    ? ` on VLAN ${goQuoted(vlan)} of bridge ${goQuoted(bridge)}`
+    : ` on VLAN ${goQuoted(vlan)}`;
+}
+
+// A device node as sharedAddresses takes it, with the networks its
+// interfaces are published on.
+function addressDevice(node, connected) {
+  const interfaces = specInterfaces(node);
+
   return {
     hostname: node.device?.hostname ?? '',
-    interfaces: specInterfaces(node),
+    interfaces,
+    networks: interfaceNetworks(
+      interfaces,
+      publishedVLANs(node, interfaces, connected),
+    ),
     included: Boolean(node.device?.includedFrom),
     external: node.device?.spec?.external != null,
   };
@@ -2081,19 +2238,27 @@ function addressDevice(node) {
 
 /**
  * The interfaces that use an IP address or a MAC address another interface
- * uses too: of any two devices, or of one. The interfaces of an included
- * device count, as phenix merges them into the experiment, but are not
- * reported, and neither is an address only included devices share: they are
- * their topology's to fix. An external device's IP addresses count, and its
- * MAC addresses do not (see ADDRESS_FIELDS). Interfaces are looked up by
- * address, so the check grows with the diagram, never with its square.
+ * on the same network uses too: of any two devices, or of one. Each
+ * interface is on the network publishing puts it on: its bridge and the
+ * VLAN it is published with (see interfaceNetworks), so interfaces on
+ * different VLANs, or on VLANs of one name on different bridges, may use
+ * the same addresses, as the server allows (checkInterfaceAddresses in
+ * types/builder/topology.go). Interfaces without a VLAN are compared with
+ * each other. The interfaces of an included device count, as phenix merges
+ * them into the experiment, but are not reported, and neither is an address
+ * only included devices share: they are their topology's to fix. An
+ * external device's IP addresses count, and its MAC addresses do not (see
+ * ADDRESS_FIELDS). Interfaces are looked up by network and address, so the
+ * check grows with the diagram, never with its square.
  *
- * @param {{hostname: string, interfaces: object[], included: boolean,
- *   external: boolean}[]} devices
+ * @param {{hostname: string, interfaces: object[], networks: object[],
+ *   included: boolean, external: boolean}[]} devices networks holds the
+ *   network of each interface (see interfaceNetworks)
  * @returns {{device: number, index: number, field: string, name: string,
- *   text: string, label: string, hostname: string, other: object,
- *   more: number}[]} for each interface, by the device's position in
- *   `devices` and its own in the spec, the address as typed, and another
+ *   text: string, network: string, label: string, hostname: string,
+ *   other: object, more: number}[]} for each interface, by the device's
+ *   position in `devices` and its own in the spec, the address as typed,
+ *   its network as a message names it (see networkPhrase), and another
  *   interface that uses it (label and hostname), and how many more do
  */
 function sharedAddresses(devices) {
@@ -2108,6 +2273,9 @@ function sharedAddresses(devices) {
         return;
       }
 
+      const network = device.networks[index];
+      const scope = JSON.stringify([network.bridge, network.vlan]);
+
       ADDRESS_FIELDS.forEach(({ read, external }, kind) => {
         const address = device.external && !external ? null : read(iface);
 
@@ -2119,16 +2287,18 @@ function sharedAddresses(devices) {
           device: position,
           index,
           text: address.text,
+          network: networkPhrase(network),
           label: labels[index],
           hostname: device.hostname,
           included: device.included,
         };
-        const list = users[kind].get(address.key);
+        const key = `${scope} ${address.key}`;
+        const list = users[kind].get(key);
 
         if (list) {
           list.push(user);
         } else {
-          users[kind].set(address.key, [user]);
+          users[kind].set(key, [user]);
         }
       });
     });
@@ -2168,10 +2338,11 @@ function otherUsers({ other, more }) {
  * editing. None blocks saving. Three block publishing, and say so with
  * `blocksPublish`: an interface with no VLAN, which phenix stores but
  * minimega refuses when the experiment starts, an IP or MAC address that
- * two interfaces use (see sharedAddresses), which phenix stores too, but
- * which clash once the experiment runs, and a hostname phenix refuses (see
- * hostnameFinding), which a draft imported from a topology an older phenix
- * stored can have. The server refuses to publish any of them
+ * two interfaces on one network use (see sharedAddresses), which phenix
+ * stores too, but which clash once the experiment runs, and a hostname
+ * phenix refuses (see hostnameFinding), which a draft imported from a
+ * topology an older phenix stored can have. The server refuses to publish
+ * any of them
  * (PublishTopologyConfig in types/builder/topology.go), checking every
  * interface in the device spec, as interfaceWarnings does. An external
  * device is not started, so its interfaces need no VLAN, and phenix does
@@ -2244,15 +2415,18 @@ function collectWarnings(doc, issues, context) {
 
   // At the interface's address or MAC field, where the Inspector shows its
   // warning too (see deviceFieldWarnings).
+  const connections = connectionNetworks(doc);
   const devices = (doc.nodes || []).flatMap((node, index) =>
-    node.kind === 'device' ? [{ ...addressDevice(node), index }] : [],
+    node.kind === 'device'
+      ? [{ ...addressDevice(node, connections), index }]
+      : [],
   );
 
   sharedAddresses(devices).forEach((shared) => {
     issue(
       issues,
       `nodes[${devices[shared.device].index}].device.spec.network.interfaces[${shared.index}].${shared.field}`,
-      `${shared.name} ${shared.text} of interface ${shared.label} of "${shared.hostname}" is also used by ${otherUsers(shared)}`,
+      `${shared.name} ${shared.text} of interface ${shared.label} of "${shared.hostname}" is also used${shared.network} by ${otherUsers(shared)}`,
       'warning',
       { blocksPublish: true },
     );

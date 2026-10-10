@@ -596,18 +596,31 @@ that names no network of the document still publishes as it is, since phenix
 allocates VLANs by name and matches them exactly (`exp` is not network `EXP`).
 Drafts keep such interfaces; the editor flags them as warnings.
 
-Publish also answers 422 when interfaces use the same IP or MAC address, and
-the error `message` names each address and the interfaces that use it (the
-first three addresses, then how many more): phenix would store such a
-topology, but the addresses clash once the experiment runs. IP addresses are
-compared parsed, without a prefix length typed after them, and MAC addresses
-in any case and with any separators. The IP addresses of interfaces whose
-`proto` is `dhcp` or `manual`, blank values and external devices' MAC
-addresses are not compared. Included devices are, but an address only they
-use is left to their topology. When interfaces also have no VLAN, the 422
-names only those. Drafts keep shared addresses; the editor flags each
-interface that uses one as a warning, and the Publish dialog lists them as
-errors.
+Publish also answers 422 when interfaces on the same network use the same IP
+or MAC address, and the error `message` names each address, its network and
+the interfaces that use it (the first three addresses, then how many more),
+such as `IP address 10.0.0.5 on VLAN "EXP" is used by interface "eth0" of
+device "a" and interface "eth0" of device "b"`: phenix would store such a
+topology, but the addresses clash once the experiment runs. An interface's
+network is its bridge and the VLAN Publish writes for it: the connected
+network's name, else its own VLAN, compared exactly after trimming white
+space (`interfaceNetwork`, `connectInterfaces` in `types/builder/topology.go`;
+`connectionNetworks`, `publishedVLANs`, `interfaceNetworks` in
+`validate.js`). A blank bridge and `phenix` are the experiment's default
+bridge, and any other bridge is compared as written (`on VLAN "EXP" of
+bridge "lab"`). Interfaces on two VLANs, or on VLANs of one name on two
+bridges, may share an address, as isolated networks do and as minimega
+allows; interfaces without a VLAN are compared with each other only
+(`without a VLAN`). IP addresses are compared parsed, without a prefix
+length typed after them, and MAC addresses in any case and with any
+separators. The IP addresses of interfaces whose `proto` is `dhcp` or
+`manual`, blank values and external devices' MAC addresses are not
+compared. Included devices are, but an address only they use is left to
+their topology. When interfaces also have no VLAN, the 422 names only
+those. Drafts keep shared addresses; the editor flags each interface that
+uses one as a warning (`... is also used on VLAN "EXP" by ...`; the
+Inspector's field warning compares a VLAN the working copy changed as
+typed), and the Publish dialog lists them as errors.
 
 Publish also answers 422 for a hostname of a device that is not external
 which phenix refuses, and the error `message` gives phenix's reason for each,
