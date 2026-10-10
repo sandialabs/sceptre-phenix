@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { withGeometry } from '@/builder/layout.js';
 import { GRID } from '@/builder/layouts/common.js';
+import { radialRoots } from '@/builder/layouts/graphviz.js';
 import {
   DEFAULT_LAYOUT_ALGORITHM,
   LAYOUT_ALGORITHMS,
@@ -756,6 +757,351 @@ describe('the ELK layout', () => {
   });
 });
 
+// The point layouts: Yifan Hu (Graphviz sfdp) and Radial (Graphviz twopi),
+// which run Graphviz's WebAssembly in-thread here, and Force (d3-force).
+const POINT_LAYOUTS = ['sfdp', 'force', 'radial'];
+
+// A box's centre.
+const centreOf = (node) => {
+  const box = boxOf(node);
+
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+};
+
+describe.each(POINT_LAYOUTS)('the %s layout', (id) => {
+  test('is deterministic, whatever the order of the document', async () => {
+    const { doc } = range();
+    const shuffled = {
+      ...doc,
+      nodes: [...doc.nodes].reverse(),
+      edges: [...doc.edges].reverse(),
+    };
+    const first = await runLayout(id, doc);
+
+    expect(await runLayout(id, doc)).toEqual(first);
+    expect(await runLayout(id, shuffled)).toEqual(first);
+  });
+
+  test('places every node on the grid, on no other node', async () => {
+    const { doc } = range();
+    const laid = await laidOut(id, doc);
+
+    expect(laid.nodes).toHaveLength(doc.nodes.length);
+    for (const node of laid.nodes) {
+      expect(node.position.x % GRID).toBe(0);
+      expect(node.position.y % GRID).toBe(0);
+    }
+    expectTidy(laid, id);
+  });
+
+  test('keeps groups around their members, nested groups too', async () => {
+    const { doc, sw, dev } = range();
+    let grouped = groupNodes(doc, [dev['IT-WS-1'].id, dev['IT-WS-2'].id]);
+    grouped = groupNodes(grouped.doc, [
+      sw.DMZ.id,
+      dev['WEB-1'].id,
+      dev['WEB-2'].id,
+    ]);
+    const inner = groupNodes(grouped.doc, [dev['PLC-1'].id]);
+    const outer = groupNodes(inner.doc, [dev['HMI-1'].id]);
+    const nested = setParent(outer.doc, inner.group.id, outer.group.id);
+    const laid = await laidOut(id, nested);
+    const find = (node) => laid.nodes.find((n) => n.id === node.id);
+
+    expectTidy(laid, id);
+    expect(inside(boxOf(find(outer.group)), boxOf(find(inner.group)))).toBe(
+      true,
+    );
+    // The positions come from the document's structure, not from where
+    // its nodes are: laid out again, it stays.
+    expect(await laidOut(id, laid)).toEqual(laid);
+  });
+
+  test('lays out an empty diagram, and one node', async () => {
+    expect(await runLayout(id, createDocument())).toEqual({
+      positions: {},
+      sizes: {},
+    });
+
+    const network = addNetwork(createDocument(), { name: 'LAN' });
+    const alone = addNode(network.doc, {
+      kind: 'switch',
+      networkId: network.network.id,
+    });
+
+    expect(await runLayout(id, alone.doc)).toEqual({
+      positions: { [alone.node.id]: { x: 32, y: 32 } },
+      sizes: {},
+    });
+  });
+
+  test('spreads a large diagram with no node on another', async () => {
+    // Twelve sites of twelve devices, each gatewayed into one core.
+    let doc = createDocument();
+    const core = addNetwork(doc, { name: 'CORE' });
+    const coreSwitch = addNode(core.doc, {
+      kind: 'switch',
+      networkId: core.network.id,
+    });
+
+    doc = coreSwitch.doc;
+    for (let site = 1; site <= 12; site += 1) {
+      const network = addNetwork(doc, { name: `SITE-${site}` });
+      const added = addNode(network.doc, {
+        kind: 'switch',
+        networkId: network.network.id,
+      });
+
+      doc = added.doc;
+      for (let n = 0; n <= 12; n += 1) {
+        const device = addNode(doc, {
+          kind: 'device',
+          hostname: n ? `S${site}-WS-${n}` : `S${site}-GW`,
+        });
+
+        doc = connect(device.doc, {
+          sourceNodeId: device.node.id,
+          targetNodeId: added.node.id,
+        }).doc;
+        if (!n) {
+          doc = connect(doc, {
+            sourceNodeId: device.node.id,
+            targetNodeId: coreSwitch.node.id,
+          }).doc;
+        }
+      }
+    }
+
+    expectTidy(await laidOut(id, doc), id);
+  });
+});
+
+describe('the Radial layout', () => {
+  // Scope items as layoutScopes gives them: the parts radialRoots reads.
+  const item = (id, kind, name, device) => ({
+    id,
+    kind,
+    name,
+    node: device ? { kind, device } : { kind },
+  });
+  const edge = (source, target) => ({
+    id: `${source}-${target}`,
+    source,
+    target,
+  });
+
+  test('chooses its root: the selected node, a router or firewall, then the largest switch', () => {
+    const items = [
+      item('a', 'switch', 'LAN-A'),
+      item('b', 'switch', 'LAN-B'),
+      item('fw', 'device', 'edge', { iconKey: 'firewall' }),
+      item('rt', 'device', 'core', {
+        iconKey: 'server',
+        spec: { type: 'Router' },
+      }),
+      item('ws1', 'device', 'ws1', { iconKey: 'server' }),
+      item('ws2', 'device', 'ws2', { iconKey: 'server' }),
+      item('ws3', 'device', 'ws3', { iconKey: 'server' }),
+      // A part of its own: two switches and a device between them.
+      item('c', 'switch', 'LAN-C'),
+      item('d', 'switch', 'LAN-D'),
+      item('gw', 'device', 'gw', { iconKey: 'server' }),
+      item('ws4', 'device', 'ws4', { iconKey: 'server' }),
+    ];
+    const edges = [
+      edge('fw', 'a'),
+      edge('rt', 'a'),
+      edge('rt', 'b'),
+      edge('ws1', 'a'),
+      edge('ws2', 'b'),
+      edge('ws3', 'b'),
+      edge('gw', 'c'),
+      edge('gw', 'd'),
+      edge('ws4', 'd'),
+    ];
+
+    // The router (a node type) has more connections than the firewall
+    // (an icon); in the other part, the switch with more devices.
+    expect(radialRoots(items, edges)).toEqual(['rt', 'd']);
+    // Without the router, the firewall.
+    expect(
+      radialRoots(
+        items.filter((entry) => entry.id !== 'rt'),
+        edges.filter((entry) => entry.source !== 'rt'),
+      ),
+    ).toEqual(['fw', 'b', 'd']);
+    // The selected node comes first.
+    expect(radialRoots(items, edges, new Set(['ws1']))).toEqual(['ws1', 'd']);
+  });
+
+  test('puts the root at the centre, and nodes in rings by their distance from it', async () => {
+    const { doc, sw, dev } = range();
+    // How far each node is from `root`, laid out with `options`.
+    const fromRoot = async (root, options) => {
+      const laid = withGeometry(doc, await runLayout('radial', doc, options));
+      const at = (node) => centreOf(laid.nodes.find((n) => n.id === node.id));
+
+      return (node) =>
+        Math.hypot(at(node).x - at(root).x, at(node).y - at(root).y);
+    };
+    const hosts = (...names) => names.map((name) => dev[name]);
+    // The nodes of one ring are about as far from the root, and nearer
+    // than the nodes of the rings after it.
+    const rings = (distance, ring, after) => {
+      const near = ring.map(distance);
+
+      expect(Math.max(...near) / Math.min(...near)).toBeLessThan(1.5);
+      expect(Math.max(...near)).toBeLessThan(Math.min(...after.map(distance)));
+    };
+
+    // No node selected, and no router or firewall by icon or type: CORP,
+    // the switch with the most devices.
+    rings(
+      await fromRoot(sw.CORP),
+      hosts('IT-WS-10', 'DB-HR', 'DB-ERP', 'FW-OT', 'FW-CORP'),
+      [sw.DMZ, sw.OT, dev['PLC-1'], dev['PLC-SIS-1']],
+    );
+
+    // The selected node, here PLC-1: its switch's devices on the second
+    // ring.
+    rings(
+      await fromRoot(dev['PLC-1'], { root: dev['PLC-1'].id }),
+      hosts('HMI-1', 'PLC-2', 'HMI-2', 'FW-OT', 'FW-SIS'),
+      [sw.CORP, sw.SAFETY, ...hosts('IT-WS-1', 'DB-HR', 'PLC-SIS-1')],
+    );
+  });
+});
+
+describe('the Graphviz layouts in a Web Worker', () => {
+  // Workers as Graphviz's: each answers a layout with every node on a
+  // diagonal, or as `answer` says: 'load' (Graphviz did not load), 'start'
+  // (the worker did not start) or 'hold' (no answer yet).
+  const workers = [];
+  let answer = 'layout';
+
+  class FakeWorker {
+    constructor(url) {
+      this.url = String(url);
+      this.listeners = { message: [], error: [] };
+      this.layouts = 0;
+      this.terminated = false;
+      workers.push(this);
+    }
+
+    addEventListener(type, listener) {
+      this.listeners[type].push(listener);
+    }
+
+    emit(type, event) {
+      for (const listener of this.listeners[type]) {
+        listener(event);
+      }
+    }
+
+    postMessage({ id, dot }) {
+      this.layouts += 1;
+      if (answer === 'start') {
+        this.emit('error', { preventDefault() {} });
+      } else if (answer === 'load') {
+        this.emit('message', {
+          data: { id, failed: 'load', message: 'no WebAssembly' },
+        });
+      } else if (answer === 'layout') {
+        const names = [...dot.matchAll(/^ {2}(n\d+) \[/gm)].map(
+          (match) => match[1],
+        );
+
+        this.emit('message', {
+          data: {
+            id,
+            centres: Object.fromEntries(
+              names.map((name, index) => [
+                name,
+                { x: index * 300, y: index * 200 },
+              ]),
+            ),
+          },
+        });
+      }
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+
+  const settled = (promise) =>
+    promise.then(
+      () => 'laid out',
+      (error) => `${error.name}: ${error.message}`,
+    );
+
+  beforeEach(() => {
+    // The tests before laid out in-thread, as tests do.
+    stopLayoutEngine();
+    vi.stubEnv('MODE', 'production');
+    vi.stubGlobal('Worker', FakeWorker);
+  });
+
+  afterEach(() => {
+    stopLayoutEngine();
+    workers.length = 0;
+    answer = 'layout';
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  test('keeps its worker for the next layout, until the session ends', async () => {
+    const { doc } = range();
+
+    expect(await settled(runLayout('sfdp', doc))).toBe('laid out');
+    expect(await settled(runLayout('radial', doc))).toBe('laid out');
+    expect(workers).toHaveLength(1);
+    expect(workers[0].url).toMatch(/graphvizWorker\.js$/);
+    expectTidy(await laidOut('sfdp', doc), 'sfdp');
+
+    // The session's end stops it, and the layout under way.
+    answer = 'hold';
+
+    const running = settled(runLayout('sfdp', doc));
+
+    await vi.waitFor(() => expect(workers[0].layouts).toBe(4));
+    await endBuilderSession({
+      localStorage: null,
+      sessionStorage: null,
+      clearDatabase: async () => true,
+    });
+    expect(workers[0].terminated).toBe(true);
+    expect(await running).toMatch(/^AbortError/);
+
+    // The next layout starts another.
+    answer = 'layout';
+    expect(await settled(runLayout('radial', doc))).toBe('laid out');
+    expect(workers).toHaveLength(2);
+  });
+
+  test('says so when Graphviz does not load or the worker does not start', async () => {
+    const { doc } = range();
+
+    answer = 'load';
+    expect(await settled(runLayout('sfdp', doc))).toBe(
+      'LayoutError: The layout engine could not be loaded. Reload the page to try again.',
+    );
+    expect(workers[0].terminated).toBe(true);
+
+    answer = 'start';
+    expect(await settled(runLayout('radial', doc))).toBe(
+      'LayoutError: The layout engine could not start.',
+    );
+    expect(workers[1].terminated).toBe(true);
+
+    // The next layout tries again with a new worker.
+    answer = 'layout';
+    expect(await settled(runLayout('radial', doc))).toBe('laid out');
+    expect(workers).toHaveLength(3);
+  });
+});
+
 describe('choosing a layout', () => {
   test('every algorithm has a layout, and an unknown one runs the default', async () => {
     const { doc } = range();
@@ -766,6 +1112,9 @@ describe('choosing a layout', () => {
       'cards',
       'dagre',
       'standard',
+      'sfdp',
+      'force',
+      'radial',
     ]);
     expect(await runLayout('nonesuch', doc)).toEqual(
       await runLayout(DEFAULT_LAYOUT_ALGORITHM, doc),

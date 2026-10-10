@@ -929,6 +929,9 @@ describe('running', () => {
       'Layout: Network cards',
       'Layout: Dagre',
       'Layout: Standard',
+      'Layout: Yifan Hu',
+      'Layout: Force',
+      'Layout: Radial',
     ]);
     // The draft's layout is marked, and can run again.
     expect(commandTitle('structure.layout.cards', ctx)).toBe(

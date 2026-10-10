@@ -4629,7 +4629,9 @@ export const useBuilderStore = defineStore('builder', {
      * names what made the positions. A layout that changes nothing is not
      * an edit, as in moveNodes: no undo step, no snapshot, and no restore;
      * one not chosen then keeps no layout either, so an empty diagram stays
-     * at Default. See layOut for a layout that finishes later.
+     * at Default. See layOut for a layout that finishes later. The Radial
+     * layout puts the selected node at its center, when one node is
+     * selected.
      *
      * @param {object} [options] algorithm: a LAYOUT_ALGORITHMS id to run;
      *   the rest go to the algorithm
@@ -4639,7 +4641,18 @@ export const useBuilderStore = defineStore('builder', {
     async layout({ algorithm, ...options } = {}) {
       const chosen = layoutAlgorithm(algorithm) ? algorithm : '';
       const id = chosen || this.layoutToRun;
-      const laid = await layOut(this, this.doc, id, options, 'layout');
+      // The Radial layout puts one selected node at its center.
+      const root =
+        id === 'radial' && this.selection.nodes.length === 1
+          ? { root: this.selection.nodes[0] }
+          : {};
+      const laid = await layOut(
+        this,
+        this.doc,
+        id,
+        { ...root, ...options },
+        'layout',
+      );
 
       if (!laid) {
         return null;

@@ -54,6 +54,9 @@ describe('Builder settings', () => {
       'cards',
       'dagre',
       'standard',
+      'sfdp',
+      'force',
+      'radial',
     ]);
     for (const algorithm of LAYOUT_ALGORITHMS) {
       expect(algorithm.label).toBeTruthy();

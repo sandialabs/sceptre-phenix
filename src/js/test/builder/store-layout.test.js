@@ -43,47 +43,80 @@ describe('automatic layout in the store', () => {
     resetSettings(null);
   });
 
-  test.each(['elk', 'tiers', 'cards', 'dagre', 'standard'])(
-    'lays the diagram out with the %s setting',
-    async (id) => {
-      const doc = store.doc;
+  test.each([
+    'elk',
+    'tiers',
+    'cards',
+    'dagre',
+    'standard',
+    'sfdp',
+    'force',
+    'radial',
+  ])('lays the diagram out with the %s setting', async (id) => {
+    const doc = store.doc;
 
-      setSetting('layoutAlgorithm', id, null);
-      // No layout of its own: the layout menu says Default.
-      expect(store.currentLayout).toBe('');
-      expect(store.layoutToRun).toBe(id);
+    setSetting('layoutAlgorithm', id, null);
+    // No layout of its own: the layout menu says Default.
+    expect(store.currentLayout).toBe('');
+    expect(store.layoutToRun).toBe(id);
 
-      const entry = await store.layout();
+    const entry = await store.layout();
 
-      expect(entry).not.toBeNull();
-      expect(store.doc).toEqual({
-        ...withGeometry(doc, await runLayout(id, doc)),
-        layout: id,
-      });
-      expect(store.announcement).toBe(`Applied ${labelOf(id)} layout`);
-      expect(store.canRestoreLayout).toBe(true);
-      // The draft keeps the layout that made its positions.
-      expect(store.currentLayout).toBe(id);
+    expect(entry).not.toBeNull();
+    expect(store.doc).toEqual({
+      ...withGeometry(doc, await runLayout(id, doc)),
+      layout: id,
+    });
+    expect(store.announcement).toBe(`Applied ${labelOf(id)} layout`);
+    expect(store.canRestoreLayout).toBe(true);
+    // The draft keeps the layout that made its positions.
+    expect(store.currentLayout).toBe(id);
 
-      // Changing the setting does not rename it.
-      const other = id === 'cards' ? 'dagre' : 'cards';
+    // Changing the setting does not rename it.
+    const other = id === 'cards' ? 'dagre' : 'cards';
 
-      setSetting('layoutAlgorithm', other, null);
-      expect(store.currentLayout).toBe(id);
-      expect(store.layoutToRun).toBe(id);
+    setSetting('layoutAlgorithm', other, null);
+    expect(store.currentLayout).toBe(id);
+    expect(store.layoutToRun).toBe(id);
 
-      // Undo brings Default back, and redo the layout; Restore previous
-      // layout puts back the one before the next.
-      store.undo();
-      expect(store.currentLayout).toBe('');
-      store.redo();
-      expect(store.currentLayout).toBe(id);
-      await store.layout({ algorithm: other });
-      expect(store.currentLayout).toBe(other);
-      store.restoreLayout();
-      expect(store.currentLayout).toBe(id);
-    },
-  );
+    // Undo brings Default back, and redo the layout; Restore previous
+    // layout puts back the one before the next.
+    store.undo();
+    expect(store.currentLayout).toBe('');
+    store.redo();
+    expect(store.currentLayout).toBe(id);
+    await store.layout({ algorithm: other });
+    expect(store.currentLayout).toBe(other);
+    store.restoreLayout();
+    expect(store.currentLayout).toBe(id);
+  });
+
+  test('the Radial layout puts the one selected node at its centre', async () => {
+    const [first, second] = store.doc.nodes.filter(
+      (node) => node.kind === 'device',
+    );
+
+    store.selection = { nodes: [first.id], edges: [] };
+    await store.layout({ algorithm: 'radial' });
+    expect(runLayout).toHaveBeenLastCalledWith('radial', expect.anything(), {
+      showNotes: true,
+      root: first.id,
+    });
+
+    // With more than one selected, Radial chooses its root itself.
+    store.selection = { nodes: [first.id, second.id], edges: [] };
+    await store.layout({ algorithm: 'radial' });
+    expect(runLayout).toHaveBeenLastCalledWith('radial', expect.anything(), {
+      showNotes: true,
+    });
+
+    // Another layout takes no root.
+    store.selection = { nodes: [first.id], edges: [] };
+    await store.layout({ algorithm: 'dagre' });
+    expect(runLayout).toHaveBeenLastCalledWith('dagre', expect.anything(), {
+      showNotes: true,
+    });
+  });
 
   test('restoring the layout that made a draft’s first positions brings back Default', async () => {
     const before = store.doc;
@@ -126,7 +159,7 @@ describe('automatic layout in the store', () => {
 
     // One this Builder does not know is ignored, and the layout that runs
     // in its place takes its place.
-    store.setDocument({ ...sampleDocument().doc, layout: 'radial' });
+    store.setDocument({ ...sampleDocument().doc, layout: 'spiral' });
     expect(store.currentLayout).toBe('');
     expect(store.layoutToRun).toBe('standard');
     await store.layout();

@@ -802,7 +802,7 @@ layout that last arranged the draft, or **Default** when none has. An
 imported, uploaded or blank draft starts at **Default**: an import places
 its devices in rows on a grid, with the switches below them.
 
-![The layout menu listing ELK layered, Layered by tier, Network cards, Dagre and Standard, each with a one-line summary.](../images/builder/layout-menu.png){ width="287" }
+![The layout menu listing ELK layered, Layered by tier, Network cards, Dagre, Standard, Yifan Hu, Force and Radial, each with a one-line summary.](../images/builder/layout-menu.png){ width="287" }
 
 | Layout | Menu summary | What it does |
 |---|---|---|
@@ -811,9 +811,28 @@ its devices in rows on a grid, with the switches below them.
 | **Network cards** | A card per network, on a grid | A card per network, its devices in a column grouped by name with the switch at their head, and the cards on a grid. |
 | **Dagre** | Networks in layers, left to right | Each network's devices in a column beside their switch, and the networks in layers along the connections between them. |
 | **Standard** | Devices above switches, top to bottom | Every device in a row above the switches, from top to bottom. |
+| **Yifan Hu** | Spring model, fast on large diagrams | Graphviz sfdp, the spring model of Yifan Hu. A connection keeps its nodes near each other, and each node keeps a distance from the others. Busy parts of the diagram become clusters. |
+| **Force** | Spring model, for small diagrams | A spring model like Yifan Hu, from d3-force. |
+| **Radial** | Rings around one node | Graphviz twopi. One node is at the center, and the other nodes are in rings by how many connections away they are. |
 
 **ELK layered** suits most diagrams. The **Default layout** setting
 describes each layout the same way.
+
+**Yifan Hu**, **Force** and **Radial** show the shape of the network. They
+do not put connections in a direction, such as left to right:
+
+- Use **Yifan Hu** for a large diagram with many networks. It shows which
+  networks are near each other.
+- Use **Force** for a small diagram with few networks.
+- Use **Radial** to show the diagram from the point of view of one node.
+  Select that node, then choose **Radial**. With no node selected, or more
+  than one, the center is a router or firewall, by its icon or its node
+  type. Without one, the center is the switch with the most devices.
+
+The same diagram always gets the same layout. **Yifan Hu** and **Radial**
+load when you first use one of them. If they cannot load, the page shows
+"Auto layout failed. The layout engine could not be loaded. Reload the page
+to try again."
 
 Layouts keep groups together: a group's members stay inside it, and no other
 node goes in.

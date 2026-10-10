@@ -46,6 +46,7 @@ const CONTRACT_TESTS = [
   'test/builder/schema-examples.test.js',
   'test/builder/schema.test.js',
   'test/builder/selection.test.js',
+  'test/builder/separate.test.js',
   'test/builder/stable.test.js',
   'test/builder/theme.test.js',
   'test/builder/validate.test.js',

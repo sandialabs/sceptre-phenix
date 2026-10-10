@@ -585,7 +585,7 @@ dialog closes and opens again, and is cleared when the diagram changes.
 
 The command palette runs any command by name, and finds nodes and networks.
 
-![The command palette filtered by layout, listing the Layout: ELK layered, Layered by tier, Network cards, Dagre and Standard commands, with ELK layered marked as the current layout, and Auto layout with its keys ⌥⇧L.](../images/builder/command-palette.png)
+![The command palette filtered by layout, listing the Layout: ELK layered, Layered by tier, Network cards, Dagre, Standard, Yifan Hu, Force and Radial commands, with ELK layered marked as the current layout, and Auto layout with its keys ⌥⇧L.](../images/builder/command-palette.png)
 
 To open it, select **Commands** in the header, or press
 <kbd>⌘</kbd>+<kbd>K</kbd> on macOS or <kbd>Ctrl</kbd>+<kbd>K</kbd> on Windows
@@ -809,7 +809,7 @@ and they stay after you log out.
 - **Reduce motion**: the canvas pans and zooms at once, and nothing
   animates. Motion is also reduced whenever your device asks for it.
 - **Default layout**: **ELK layered** (the default), **Layered by tier**,
-  **Network cards**, **Dagre** or **Standard**. **Auto layout** and **Auto-group** use it on a
+  **Network cards**, **Dagre**, **Standard**, **Yifan Hu**, **Force** or **Radial**. **Auto layout** and **Auto-group** use it on a
   draft whose layout menu says **Default**, and the draft then keeps it. It
   does not move anything by itself.
 - **Show the minimap**: on by default. The toolbar's **Minimap** button

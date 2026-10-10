@@ -19,6 +19,7 @@
     "@fortawesome/free-regular-svg-icons": "^6.7.2",
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
     "@fortawesome/vue-fontawesome": "^3.0.8",
+    "@hpcc-js/wasm-graphviz": "1.29.1",
     "@jsonforms/core": "^3.8.0",
     "@jsonforms/vue": "^3.8.0",
     "@jsonforms/vue-vanilla": "^3.8.0",

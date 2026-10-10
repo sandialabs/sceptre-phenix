@@ -16,12 +16,23 @@ import { DRAWING_KINDS, sizeOf } from '../model.js';
 import { GROUP_PADDING, snapUp } from './common.js';
 import { layout as cards } from './cards.js';
 import { layout as dagre } from './dagre.js';
-import { layout as elk } from './elk.js';
+import { layout as elk, stopLayoutEngine as stopElk } from './elk.js';
+import { layout as force } from './force.js';
+import { layoutRadial, layoutSfdp, stopGraphvizEngine } from './graphviz.js';
 import { layout as standard } from './standard.js';
 import { layout as tiers } from './tiers.js';
 
 export { LayoutError } from './common.js';
-export { stopLayoutEngine } from './elk.js';
+
+/**
+ * Stops the layout engines' workers (ELK's and Graphviz's), when the
+ * Builder closes or the session ends. A layout under way fails with an
+ * AbortError; the next layout starts a new worker.
+ */
+export function stopLayoutEngine() {
+  stopElk();
+  stopGraphvizEngine();
+}
 
 export const LAYOUT_ALGORITHMS = Object.freeze([
   {
@@ -58,6 +69,27 @@ export const LAYOUT_ALGORITHMS = Object.freeze([
     summary: 'Devices above switches, top to bottom',
     description:
       'The Builder’s original Auto layout: dagre from top to bottom, every device in a row above the switches.',
+  },
+  {
+    id: 'sfdp',
+    label: 'Yifan Hu',
+    summary: 'Spring model, fast on large diagrams',
+    description:
+      'Graphviz sfdp, the spring model of Yifan Hu: a connection keeps its nodes near each other, and each node keeps a distance from the others, so busy parts become clusters. It is fast on large diagrams.',
+  },
+  {
+    id: 'force',
+    label: 'Force',
+    summary: 'Spring model, for small diagrams',
+    description:
+      'A d3-force spring model: a connection keeps its nodes near each other, and each node keeps a distance from the others. It is best for small diagrams.',
+  },
+  {
+    id: 'radial',
+    label: 'Radial',
+    summary: 'Rings around one node',
+    description:
+      'Graphviz twopi: one node at the center, and the other nodes in rings by how many connections away they are. The center is the selected node, else a router or firewall, else the switch with the most devices.',
   },
 ]);
 
@@ -100,7 +132,16 @@ export function documentLayout(doc, fallback = DEFAULT_LAYOUT_ALGORITHM) {
   return layoutAlgorithm(fallback) ? fallback : DEFAULT_LAYOUT_ALGORITHM;
 }
 
-const LAYOUTS = { elk, tiers, cards, dagre, standard };
+const LAYOUTS = {
+  elk,
+  tiers,
+  cards,
+  dagre,
+  standard,
+  sfdp: layoutSfdp,
+  force,
+  radial: layoutRadial,
+};
 
 /**
  * Lays a document out with one of the algorithms. Positions are absolute,

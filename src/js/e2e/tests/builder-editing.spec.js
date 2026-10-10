@@ -2095,6 +2095,9 @@ test.describe('Builder canvas editing', () => {
         /^Network cards/,
         /^Dagre/,
         /^Standard/,
+        /^Yifan Hu/,
+        /^Force/,
+        /^Radial/,
       ]);
       await expect(item('ELK layered')).toBeFocused();
       await expect
