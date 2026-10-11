@@ -67,11 +67,11 @@ func TestStartupPreStartC2TriggerMatrix(t *testing.T) {
 
 			wantCommands := []string{
 				"send exp1/linux1-hostname.sh",
-				"exec-once bash /tmp/miniccc/files/exp1/linux1-hostname.sh",
+				"exec bash /tmp/miniccc/files/exp1/linux1-hostname.sh",
 				"send exp1/linux1-timezone.sh",
-				"exec-once bash /tmp/miniccc/files/exp1/linux1-timezone.sh",
+				"exec bash /tmp/miniccc/files/exp1/linux1-timezone.sh",
 				"send exp1/linux1-interfaces.sh",
-				"exec-once bash /tmp/miniccc/files/exp1/linux1-interfaces.sh",
+				"exec bash /tmp/miniccc/files/exp1/linux1-interfaces.sh",
 			}
 
 			for _, command := range wantCommands {
@@ -105,7 +105,7 @@ func TestStartupPreStartWindowsC2Commands(t *testing.T) {
 	runStartupPreStart(t, exp, mmDir)
 
 	wantSend := "send exp1/win1-startup.ps1"
-	wantExec := "exec-once cmd /c 'powershell.exe -noprofile -executionpolicy bypass -file /tmp/miniccc/files/exp1/win1-startup.ps1'"
+	wantExec := "exec cmd /c 'powershell.exe -noprofile -executionpolicy bypass -file /tmp/miniccc/files/exp1/win1-startup.ps1'"
 
 	if !hasCommand(node, wantSend) {
 		t.Fatalf("missing command %q", wantSend)
@@ -256,7 +256,7 @@ func TestStartupPreStartRemovesStaleC2Commands(t *testing.T) {
 	node := newStartupTestNode(t, "linux1", osLinux, true, 1)
 	node.CommandsF = []string{
 		"send exp1/linux1-hostname.sh",
-		"exec-once bash /tmp/miniccc/files/exp1/linux1-hostname.sh",
+		"exec bash /tmp/miniccc/files/exp1/linux1-hostname.sh",
 		"exec df -h",
 	}
 
@@ -266,7 +266,7 @@ func TestStartupPreStartRemovesStaleC2Commands(t *testing.T) {
 	if hasCommand(node, "send exp1/linux1-hostname.sh") {
 		t.Fatalf("unexpected stale startup C2 send command")
 	}
-	if hasCommand(node, "exec-once bash /tmp/miniccc/files/exp1/linux1-hostname.sh") {
+	if hasCommand(node, "exec bash /tmp/miniccc/files/exp1/linux1-hostname.sh") {
 		t.Fatalf("unexpected stale startup C2 exec command")
 	}
 	if !hasCommand(node, "exec df -h") {
@@ -327,7 +327,7 @@ func TestStartupPreStartLinuxDomainScriptUsesC2(t *testing.T) {
 	if !hasCommand(node, "send exp1/linux1-domain.sh") {
 		t.Fatalf("expected domain script send command")
 	}
-	if !hasCommand(node, "exec-once bash /tmp/miniccc/files/exp1/linux1-domain.sh") {
+	if !hasCommand(node, "exec bash /tmp/miniccc/files/exp1/linux1-domain.sh") {
 		t.Fatalf("expected domain script exec command")
 	}
 	if _, err := os.Stat(filepath.Join(mmDir, "exp1", "linux1-domain.sh")); err != nil {

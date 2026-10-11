@@ -187,7 +187,7 @@ func stageStartupC2Script(src, relPath string) error {
 	return nil
 }
 
-// startupC2Commands builds the minimega send and exec-once commands for a startup script.
+// startupC2Commands builds the minimega send and exec commands for a startup script.
 func startupC2Commands(exp *types.Experiment, filename string, executor startupC2Executor) (string, string, string) {
 	var (
 		relPath   = path.Join(exp.Spec.ExperimentName(), filepath.Base(filename))
@@ -198,11 +198,11 @@ func startupC2Commands(exp *types.Experiment, filename string, executor startupC
 
 	switch executor {
 	case startupC2Windows:
-		return send, fmt.Sprintf("exec-once cmd /c 'powershell.exe -noprofile -executionpolicy bypass -file %s'", guestPath), relPath
+		return send, fmt.Sprintf("exec cmd /c 'powershell.exe -noprofile -executionpolicy bypass -file %s'", guestPath), relPath
 	case startupC2Linux:
 		fallthrough
 	default:
-		return send, "exec-once bash " + guestPath, relPath
+		return send, "exec bash " + guestPath, relPath
 	}
 }
 
