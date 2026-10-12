@@ -183,6 +183,8 @@ Reference material — read only what the current task needs:
   `miniccc.service` unit pointing at `/opt/minimega/bin/miniccc` (via
   `POSTBUILD_PHENIX_BASE`), not the binary. `inject-miniexe` places the binary at
   `/usr/local/bin/miniccc` and overwrites that unit with one that matches.
+  Both units run as `root` with `HOME=/root`, which is the environment `cc exec`
+  commands inherit.
   `--init-system` is `systemd` (default) or `sysinitv` for Linux; `startup` is
   Windows-only (adds a Startup-folder scheduler for `miniccc.exe`). Injecting
   `minirouter` auto-injects the `miniccc` found next to it; Windows disks only

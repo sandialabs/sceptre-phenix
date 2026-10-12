@@ -38,6 +38,8 @@ cat > /etc/systemd/system/miniccc.service <<EOF
 [Unit]
 Description=miniccc
 [Service]
+User=root
+Environment=HOME=/root
 ExecStart=/opt/minimega/bin/miniccc -v=false -serial /dev/virtio-ports/cc -logfile /var/log/miniccc.log
 [Install]
 WantedBy=multi-user.target
