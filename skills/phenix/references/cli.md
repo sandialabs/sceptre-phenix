@@ -169,7 +169,7 @@ phenix vm set my-exp node1 -L role=web -L site=east --append-labels
 
 ```bash
 phenix image list
-phenix image create <name> [-s 10G] [-v minbase] [-r jammy] [-m <mirror>] [-l comp1,comp2] \
+phenix image create <name> [-s 10G] [-v minbase] [-r noble] [-m <mirror>] [-l comp1,comp2] \
   [-f qcow2] [-c] [-R] [-O overlay1,overlay2] [-P pkg1,pkg2] [-T script1,script2] \
   [-k arg1,arg2] [--skip-default-pkgs] [--no-virtuals]
 phenix image create-from <existing> <new>
@@ -180,7 +180,7 @@ phenix image append|remove|update <name> ...
 phenix image inject-miniexe <path/to/exe> <path/to/disk>
 ```
 
-Default variant/release/mirror are `minbase`/`jammy`/Ubuntu archive; `-l`
+Default variant/release/mirror are `minbase`/`noble`/Ubuntu archive; `-l`
 restricts which mirror components packages come from; `-f` supports `qcow2`
 (default) and other formats vmdb2 supports. On `build`, `-x` is very verbose
 and also writes `<image name>.log`, `-c` caches the rootfs as a tar archive for
