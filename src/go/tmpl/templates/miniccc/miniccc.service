@@ -2,6 +2,8 @@
 Description=miniccc Agent
 
 [Service]
+User=root
+Environment=HOME=/root
 ExecStart=/usr/local/bin/miniccc -serial /dev/virtio-ports/cc
 
 [Install]
