@@ -49,7 +49,7 @@ Flags:
   -O, --overlays string      List of overlay names (include full path; separated by comma)
   -P, --packages string      List of packages to include in addition to those provided by variant (separated by comma)
   -R, --ramdisk              Create a kernel/initrd pair in addition to a disk image
-  -r, --release string       OS release codename (default "jammy")
+  -r, --release string       OS release codename (default "noble")
   -T, --scripts string       List of scripts to include in addition to the defaults (include full path; separated by comma)
   -s, --size string          Image size to use (default "10G")
       --skip-default-pkgs    Skip default packages typically included in all builds

@@ -17,7 +17,7 @@ metadata:
   name: foo
 spec:
   variant: minbase            # minbase | mingui
-  release: noble              # debootstrap release codename
+  release: noble              # debootstrap release codename (default)
   format: qcow2               # raw | qcow2 | vmdk | vdi | vhdx
   size: 10G                   # M or G suffix required
   mirror: http://us.archive.ubuntu.com/ubuntu
@@ -54,7 +54,7 @@ use `components` / `--components` instead.
 |---|---|---|---|
 | `--size` | `-s` | `10G` | Must end in `M` or `G` |
 | `--variant` | `-v` | `minbase` | Only `minbase` and `mingui` |
-| `--release` | `-r` | `jammy` | debootstrap suite; only the exact Debian/Kali lists below get non-Ubuntu defaults |
+| `--release` | `-r` | `noble` | debootstrap suite; only the exact Debian/Kali lists below get non-Ubuntu defaults |
 | `--mirror` | `-m` | `http://us.archive.ubuntu.com/ubuntu` | Auto-switched only when left at default |
 | `--components` | `-l` | variant-derived | Comma-separated apt components |
 | `--format` | `-f` | `qcow2` | `raw`, `qcow2`, `vmdk`, `vdi`, `vhdx` |
@@ -97,20 +97,19 @@ Default packages (unless `--skip-default-pkgs`): `curl`, `ethtool`, `ncat`,
 
 | Release family (exact match on `release`) | Extra `minbase` packages | Extra `mingui` packages |
 |---|---|---|
-| Ubuntu — any release not listed below (`xenial`, `bionic`, `focal`, `jammy`, `noble`, but also `trixie`, `kali`, typos) | `linux-image-generic`, `linux-headers-generic` | `wmctrl`, `xdotool`, `xubuntu-desktop` |
-| Debian — `jessie`, `stretch`, `buster`, `bullseye`, `bookworm` | `dbus`, `gpg`, `initramfs-tools`, `linux-image-amd64`, `linux-headers-amd64`, `locales` | `wmctrl`, `xdotool`, `xfce4`, `xfce4-terminal` |
-| Kali — `kali-dev`, `kali-rolling`, `kali-last-snapshot`, `kali-bleeding-edge` | `linux-image-amd64`, `linux-headers-amd64`, `default-jdk` | `kali-desktop-xfce`, `wmctrl`, `xdotool` |
+| Ubuntu — any release not listed below (`focal`, `jammy`, `noble`, but also typos) | `linux-image-generic`, `linux-headers-generic` | `wmctrl`, `xdotool`, `xubuntu-desktop` |
+| Debian — `jessie`, `stretch`, `buster`, `bullseye`, `bookworm`, `trixie`, `forky` | `dbus`, `gpg`, `initramfs-tools`, `linux-image-amd64`, `linux-headers-amd64`, `locales` | `wmctrl`, `xdotool`, `xfce4`, `xfce4-terminal` |
+| Kali — `kali`, `kali-dev`, `kali-rolling`, `kali-last-snapshot`, `kali-bleeding-edge` | `linux-image-amd64`, `linux-headers-amd64`, `default-jdk` | `kali-desktop-xfce`, `wmctrl`, `xdotool` |
 
 The variant packages are added regardless of `--skip-default-pkgs`, which only
 drops the default list above. `mingui` also appends `POSTBUILD_GUI`
 (Ubuntu/Debian) or `POSTBUILD_KALI_GUI` (Kali) to the scripts.
 
-Default components: `main restricted universe multiverse` (Ubuntu/Debian) or
-`main contrib non-free non-free-firmware` (Kali). Mirror auto-selection when
+Default components: `main restricted universe multiverse` (Ubuntu) or
+`main contrib non-free non-free-firmware` (Debian/Kali). Mirror auto-selection when
 `--mirror` is untouched: Debian → `http://ftp.us.debian.org/debian`,
 Kali → `http://http.kali.org/kali`. `release: kali` is rewritten to `kali-rolling`
-only for the debootstrap suite at build time; at create time bare `kali` is not in
-the Kali list, so it still gets Ubuntu packages, components, and mirror.
+for the debootstrap suite at build time.
 
 Built-in postbuild scripts (see `constants.go`):
 
