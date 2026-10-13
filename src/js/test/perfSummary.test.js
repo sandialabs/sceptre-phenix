@@ -1,12 +1,17 @@
 // perf/summary.mjs turns the CI perf job's size-limit and Lighthouse CI
 // output into the job summary, the perf-summary artifact and the final
 // budget gate (see perf/README.md).
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  SCHEMA,
   annotations,
   buildSummary,
   escapeCell,
@@ -16,6 +21,7 @@ import {
 
 const fixtures = fileURLToPath(new URL('./fixtures/perf/', import.meta.url));
 const fixture = (name) => path.join(fixtures, name);
+const script = fileURLToPath(new URL('../perf/summary.mjs', import.meta.url));
 const meta = { baseRef: 'main', generatedAt: '2026-10-13T00:00:00.000Z' };
 
 function inputs({ baseline = false } = {}) {
@@ -186,5 +192,131 @@ describe('buildSummary', () => {
     const lines = annotations(buildSummary(data, meta));
     expect(lines).toHaveLength(11);
     expect(lines[10]).toBe('::error title=Perf budget::and 2 more');
+  });
+});
+
+describe('loadInputs', () => {
+  let dir;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'perf-summary-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("reads Lighthouse results only from the manifest's directory", () => {
+    const results = path.join(dir, 'results');
+    const outside = path.join(dir, 'outside');
+    fs.mkdirSync(results);
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(results, 'lhr.json'), '{"from":"results"}');
+    fs.writeFileSync(path.join(outside, 'lhr.json'), '{"from":"outside"}');
+    const manifest = path.join(results, 'manifest.json');
+    fs.writeFileSync(
+      manifest,
+      JSON.stringify([
+        {
+          url: 'a',
+          isRepresentativeRun: true,
+          jsonPath: '../outside/lhr.json',
+        },
+        {
+          url: 'b',
+          isRepresentativeRun: true,
+          jsonPath: outside + '/lhr.json',
+        },
+      ]),
+    );
+    expect(loadInputs({ manifestPath: manifest }).lhrs).toEqual({
+      a: { from: 'results' },
+      b: { from: 'results' },
+    });
+  });
+});
+
+describe('summary.mjs CLI', () => {
+  let dir;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'perf-summary-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  // runs the script without the runner's GITHUB_* variables, so it never
+  // writes to the CI job summary
+  function run(...args) {
+    return spawnSync(process.execPath, [script, ...args], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH },
+    });
+  }
+
+  function writeSummary(summary) {
+    const file = path.join(dir, 'perf-summary.json');
+    fs.writeFileSync(file, JSON.stringify(summary));
+    return file;
+  }
+
+  it('writes the summary files, and --check passes them', () => {
+    const json = path.join(dir, 'perf-summary.json');
+    const md = path.join(dir, 'perf-summary.md');
+    const out = run(
+      '--size',
+      fixture('size-limit.json'),
+      '--assert',
+      fixture('assertion-results.json'),
+      '--manifest',
+      fixture('manifest.json'),
+      '--baseline',
+      fixture('baseline.json'),
+      '--base-ref',
+      'main',
+      '--out-md',
+      md,
+      '--out-json',
+      json,
+    );
+    expect(out.status).toBe(0);
+    expect(out.stdout).toBe('');
+    const summary = JSON.parse(fs.readFileSync(json, 'utf8'));
+    expect(summary).toMatchObject({ schema: SCHEMA, passed: true });
+    expect(summary.size.rows[0].delta).toBe(564);
+    expect(fs.readFileSync(md, 'utf8')).toMatch(/✅ pass/);
+
+    const check = run('--check', json);
+    expect(check.status).toBe(0);
+    expect(check.stdout).toBe('All UI performance budgets passed.\n');
+  });
+
+  it('--check fails a summary over budget and annotates it', () => {
+    const data = inputs({ baseline: true });
+    data.size[1] = { ...data.size[1], passed: false, size: 53210 };
+    const out = run('--check', writeSummary(buildSummary(data, meta)));
+    expect(out.status).toBe(1);
+    expect(out.stdout).toBe(
+      '::error title=Perf budget::Entry CSS: 53.2 kB > 52.0 kB (+5.1 kB vs main)\n',
+    );
+  });
+
+  it('--check fails a missing, unreadable or other-schema summary', () => {
+    const passing = buildSummary(inputs(), meta);
+    const missing = path.join(dir, 'missing.json');
+    const garbled = path.join(dir, 'garbled.json');
+    fs.writeFileSync(garbled, '{');
+    const otherSchema = writeSummary({ ...passing, schema: SCHEMA + 1 });
+    for (const file of [missing, garbled, otherSchema]) {
+      const out = run('--check', file);
+      expect(out.status).toBe(1);
+      expect(out.stdout).toContain(
+        `::error title=Perf budget::No perf summary in ${file}`,
+      );
+    }
+  });
+
+  it('rejects an argument that is not a flag', () => {
+    const out = run('perf-summary.json');
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toContain('unexpected argument: perf-summary.json');
   });
 });
