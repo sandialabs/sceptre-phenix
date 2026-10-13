@@ -240,6 +240,9 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", util.Attachment("configs.zip"))
+	// built as it is sent, so it cannot be resumed or cached
+	w.Header().Set("Accept-Ranges", "none")
+	w.Header().Set("Cache-Control", "no-store")
 
 	// This will flush the zipped configs to the HTTP writer.
 	if err := zipper.Close(); err != nil {

@@ -26,6 +26,10 @@ const (
 	maxZipBytes = 2 << 30 // 2 GiB
 )
 
+// maxViewBytes is the largest experiment file the Files tab's viewer is sent;
+// a larger one is refused with 413, to be downloaded instead.
+const maxViewBytes = 10 << 20 // 10 MiB
+
 // filesRequest is the body of the requests acting on several experiment files.
 type filesRequest struct {
 	Paths []string `json:"paths"`
@@ -203,6 +207,9 @@ func DownloadExperimentFiles(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Content-Disposition", util.Attachment(name+"-files.zip"))
+		// built as it is sent, so it cannot be resumed or cached
+		w.Header().Set("Accept-Ranges", "none")
+		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 
 		return w

@@ -44,7 +44,7 @@ curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experi
 | Configs | `GET/POST /configs`, `GET/PUT/DELETE /configs/{kind}/{name}`, `POST /configs/download` |
 | Schemas | `GET /schemas/{version}`, `GET /schemas/{kind}/{version}` |
 | Experiments | `GET/POST /experiments`, `GET /experiments/{name}`, `PATCH /experiments/{name}`, `DELETE /experiments/{name}`, `POST /experiments/{name}/start`, `POST /experiments/{name}/stop`, `GET /experiments/{name}/apps`, `POST/PUT /experiments/builder` |
-| Experiment detail | `GET /experiments/{name}/topology`, `GET /experiments/{name}/topology/search`, `POST/DELETE /experiments/{name}/trigger`, `GET/POST /experiments/{name}/schedule`, `GET /experiments/{name}/soh` (state of health), `GET /soh` (state of health summary for every experiment), `GET /experiments/{name}/captures`, `GET /experiments/{name}/files`, `GET/DELETE /experiments/{name}/files/{filename}?path=`, `POST /experiments/{name}/files/download` and `/files/delete` (`{"paths": [...]}`; zip download, bulk delete), `POST /experiments/{name}/webshark` (`{"path"}` or `{"vm", "interface"}`; readies a capture for WebShark, served at `/webshark/` outside `/api/v1` when installed) |
+| Experiment detail | `GET /experiments/{name}/topology`, `GET /experiments/{name}/topology/search`, `POST/DELETE /experiments/{name}/trigger`, `GET/POST /experiments/{name}/schedule`, `GET /experiments/{name}/soh` (state of health), `GET /soh` (state of health summary for every experiment), `GET /experiments/{name}/captures`, `GET /experiments/{name}/files`, `GET/HEAD/DELETE /experiments/{name}/files/{filename}?path=` (resumable; see [Downloads](#downloads)), `POST /experiments/{name}/files/download` and `/files/delete` (`{"paths": [...]}`; zip download, not resumable, and bulk delete), `POST /experiments/{name}/webshark` (`{"path"}` or `{"vm", "interface"}`; readies a capture for WebShark, served at `/webshark/` outside `/api/v1` when installed) |
 | Netflow | `GET/POST/DELETE /experiments/{exp}/netflow`, `GET /experiments/{exp}/netflow/ws` |
 | Subnet captures | `POST /experiments/{exp}/captureSubnet`, `POST /experiments/{exp}/stopCaptureSubnet` |
 | VMs | `GET/PATCH /experiments/{exp}/vms`, `GET/PATCH/DELETE /experiments/{exp}/vms/{name}`, plus `/start`, `/stop`, `/restart`, `/redeploy`, `/shutdown`, `/reset`, `/cdrom`, `/vnc`, `/vnc/ws`, `/screenshot.png`, `/captures`, `/captures/{iface}/stream` (running capture as pcap over HTTP or websocket; `?from=now`), `/snapshots`, `/snapshots/{snapshot}`, `/commit`, `/memorySnapshot`, `/forwards`, `/forwards/{host}/{port}/ws` |
@@ -66,6 +66,35 @@ explained lines in `metadata.validation`, one per line, and the validator's
 text in `metadata.validation-raw`; see [`workflow.md`](workflow.md).
 
 `src/go/web/server.go` is the authoritative route list.
+
+## Downloads
+
+Single-file downloads stream from disk and resume. `GET /experiments/{name}/files/{filename}?path=`
+also answers `HEAD`, and sends `Accept-Ranges: bytes`, `Content-Length`, a
+strong `ETag` (from the file's inode, size and nanosecond modification time,
+never its contents) and `Last-Modified`, with `Cache-Control: private,
+no-cache`. `Range` gives a `206` (or `416` with `Content-Range: bytes */<size>`),
+and `If-Range` with the `ETag` resumes only while the file is unchanged,
+answering a changed file with the whole new one (`200`). `If-None-Match` gives
+`304`. Downloads are attachments and are never gzip-compressed; a compressed
+API response drops `Accept-Ranges` and weakens its `ETag` to `W/"..."`.
+
+With `Accept: text/plain` the same route is the Files tab's viewer: inline,
+`text/plain; charset=utf-8`, compressible, and `413` for a file over 10 MiB.
+The `downloaded file` log line fires once per download (a `GET` answered `200`,
+or `206` from byte 0), with the `range` asked for.
+
+`POST /experiments/{name}/files/download` and `POST /configs/download` build a
+zip as they send it: `Accept-Ranges: none`, `Cache-Control: no-store`, and no
+resume. Download very large files one at a time.
+
+```bash
+curl -C - -o out.pcap -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  "http://localhost:3000/api/v1/experiments/exp/files/out.pcap?path=scorch/run-0/out.pcap"
+```
+
+`curl -C -` sends only `Range`, not `If-Range`, so it splices a file that
+changed between attempts.
 
 ## minimega Console
 

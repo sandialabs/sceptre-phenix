@@ -1,13 +1,13 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"net/http"
 	"slices"
@@ -1222,7 +1222,7 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contents, err := experiment.File(name, path)
+	local, err := experiment.LocalFile(name, path)
 	if err != nil {
 		if status := fileErrorStatus(err); status != http.StatusInternalServerError {
 			http.Error(w, err.Error(), status)
@@ -1245,26 +1245,46 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// a download, streamed from disk and resumable; or the Files tab's
+	// viewer, which shows the file inline as text
+	d := util.Download{Path: local, Name: file, ContentType: "", Live: false, MaxSize: 0}
 	if r.Header.Get("Accept") == "text/plain" {
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write(contents) //nolint:gosec // XSS via taint analysis
+		d.Name = ""
+		d.ContentType = "text/plain; charset=utf-8"
+		d.MaxSize = maxViewBytes
+	}
+
+	served, err := util.ServeDownload(w, r, d)
+	if err != nil {
+		switch {
+		case errors.Is(err, util.ErrTooLarge):
+			http.Error(w, path+" is too large to view (over 10 MiB); download it instead", http.StatusRequestEntityTooLarge)
+		case errors.Is(err, fs.ErrNotExist), errors.Is(err, util.ErrNotRegular):
+			http.Error(w, path+": "+experiment.ErrFileNotFound.Error(), http.StatusNotFound)
+		default:
+			plog.Error(plog.TypeSystem, "sending file for experiment", "exp", name, "file", path, "err", err)
+			http.Error(w, "unable to read "+path, http.StatusInternalServerError)
+		}
 
 		return
 	}
 
-	w.Header().Set("Content-Disposition", util.Attachment(file))
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"downloaded file",
-		"user",
-		user,
-		"exp",
-		name,
-		"file",
-		path,
-	)
-	http.ServeContent(w, r, "", time.Now(), bytes.NewReader(contents))
+	// once per download, not per resumed range or HEAD
+	if d.Name != "" && served.Started {
+		user := middleware.UserFromContext(ctx)
+		plog.Info(
+			plog.TypeAction,
+			"downloaded file",
+			"user",
+			user,
+			"exp",
+			name,
+			"file",
+			path,
+			"range",
+			r.Header.Get("Range"),
+		)
+	}
 }
 
 // GetExperimentApps - GET /experiments/{name}/apps.

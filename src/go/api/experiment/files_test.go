@@ -142,7 +142,7 @@ func useCapture(t *testing.T, path string) *capturingMM {
 	return fake
 }
 
-func TestFileReadsTheExperimentsFile(t *testing.T) { //nolint:paralleltest // replaces package state
+func TestLocalFileFindsTheExperimentsFile(t *testing.T) { //nolint:paralleltest // replaces package state
 	tests := map[string]struct {
 		running  bool
 		path     string
@@ -181,13 +181,18 @@ func TestFileReadsTheExperimentsFile(t *testing.T) { //nolint:paralleltest // re
 			files := useListedFiles(t, file.File{Name: "remote.log", Path: "remote.log"})
 			files.remote = map[string]string{"remote.log": "remote"}
 
-			got, err := experiment.File("exp", tc.path)
+			local, err := experiment.LocalFile("exp", tc.path)
+
+			var got []byte
+			if err == nil {
+				got, err = os.ReadFile(local)
+			}
 
 			switch {
 			case tc.err != nil && !errors.Is(err, tc.err):
-				t.Fatalf("File = %q, %v; want %v", got, err, tc.err)
+				t.Fatalf("LocalFile = %q, %v; want %v", local, err, tc.err)
 			case tc.err == nil && (err != nil || string(got) != tc.want):
-				t.Fatalf("File = %q, %v; want %q", got, err, tc.want)
+				t.Fatalf("LocalFile = %q holding %q, %v; want %q", local, got, err, tc.want)
 			}
 
 			if files.listings != tc.listings || captures.lookups != tc.lookups {

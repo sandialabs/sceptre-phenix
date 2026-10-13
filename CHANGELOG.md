@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - **Settings**: Added `base-dir.injects` and `base-dir.topologies`, the directories `phenix workflow apply` stages injects in and looks up topology directories in. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow API**: The workflow endpoints accept `?dryRun=true`, which validates the request and changes nothing, and return a JSON result. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Validation Errors**: Config validation errors from the CLI, the API and the web UI name the list item, its hostname or name, and the line. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+- **Resumable downloads**: Experiment file downloads answer `HEAD` and resume with `Range` and `If-Range` against a strong `ETag`, so a browser or `curl -C -` continues an interrupted download instead of starting over.
 
 ### Changed
 
@@ -65,6 +66,7 @@ All notable changes to this project will be documented in this file.
 - **Workflow API**: A workflow apply is validated before a running experiment is stopped, so an invalid one returns 400 or 409 instead of 500 and leaves the experiment running. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow Schema (breaking)**: Workflow configs are validated against the new `Workflow` schema, so unknown or misspelled keys, values of the wrong type and a missing `spec` return 400 instead of being ignored. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **API compression**: Downloads (attachments) are never gzip-compressed, so they reach the client byte for byte, and a compressed API response no longer advertises byte ranges and carries only a weak ETag.
+- **Experiment file downloads**: Stream from disk instead of loading the whole file into server memory on every request. The Files tab's viewer refuses a file over 10 MiB (`413`) with a hint to download it, and zip downloads send `Accept-Ranges: none`.
 
 ### Removed
 
