@@ -320,51 +320,96 @@ describe('deep links', () => {
 });
 
 describe('Copy Wireshark command', () => {
+  const token = {
+    id: '3f9a0c51d2e47b86',
+    token: 'pcs_abc',
+    urls: { stream: 'webshark/streams/pcs_abc' },
+  };
+
   async function live() {
     vi.stubEnv('VITE_AUTH', 'enabled');
     vi.stubGlobal('window', {
       location: { origin: 'https://phenix.example' },
     });
-    return opened({ exp: 'exp1', vm: 'web', iface: '1' });
+    const ctx = await opened({ exp: 'exp1', vm: 'web', iface: '1' });
+    axios.post.mockReset();
+    axios.post.mockResolvedValue({ data: token });
+    return ctx;
   }
+
+  // the stream token is the command's only credential
   const command =
-    "curl -fsSN --max-redirs 0 -L -H 'X-Phenix-Auth-Token: Bearer jwt.token'" +
-    " 'https://phenix.example/api/v1/experiments/exp1/vms/web/captures/1/stream'" +
+    "curl -fsSN --max-redirs 0 -L 'https://phenix.example/webshark/streams/pcs_abc'" +
     ' | wireshark -k -i -';
 
-  it('copies a command that streams the capture into Wireshark', async () => {
+  const minted = () =>
+    expect(axios.post).toHaveBeenCalledWith('experiments/exp1/capture-tokens', {
+      vm: 'web',
+      interface: 1,
+      operations: ['stream'],
+    });
+
+  it('copies a command with a stream token, as the clipboard item it awaits', async () => {
+    const items = [];
+    vi.stubGlobal(
+      'ClipboardItem',
+      class {
+        constructor(data) {
+          this.data = data;
+        }
+      },
+    );
+    const write = vi.fn(async (written) => items.push(...written));
     const writeText = vi.fn(async () => {});
-    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    vi.stubGlobal('navigator', { clipboard: { write, writeText } });
     const ctx = await live();
     await ctx.copyWiresharkCommand();
-    expect(writeText).toHaveBeenCalledWith(command);
-    expect(ctx.$buefy.toast.open).toHaveBeenCalled();
+    minted();
+    expect(writeText).not.toHaveBeenCalled();
+    expect(await (await items[0].data['text/plain']).text()).toBe(command);
+    const [{ message, type }] = ctx.$buefy.toast.open.mock.calls[0];
+    expect(type).toBe('is-success');
+    expect(message).toContain('5 minutes');
+    expect(message).toContain('sign out');
   });
 
-  // a UI built without sign-in holds a placeholder token
-  it.each([
-    ['the UI has no sign-in', 'disabled', 'jwt.token'],
-    ['the UI was built without an auth mode', '', 'jwt.token'],
-    ['no one is signed in', 'enabled', ''],
-  ])('leaves the token out when %s', async (_, auth, token) => {
+  it('writes the command once it has it without clipboard items', async () => {
     const writeText = vi.fn(async () => {});
     vi.stubGlobal('navigator', { clipboard: { writeText } });
     const ctx = await live();
-    vi.stubEnv('VITE_AUTH', auth);
-    store.token = token;
     await ctx.copyWiresharkCommand();
-    expect(writeText).toHaveBeenCalledWith(
-      "curl -fsSN --max-redirs 0 -L 'https://phenix.example/api/v1/experiments/exp1/vms/web/captures/1/stream'" +
-        ' | wireshark -k -i -',
-    );
+    minted();
+    expect(writeText).toHaveBeenCalledWith(command);
+    expect(ctx.$buefy.toast.open).toHaveBeenCalled();
+    expect(ctx.$buefy.dialog.alert).not.toHaveBeenCalled();
   });
 
   it('shows the command when there is no clipboard', async () => {
     vi.stubGlobal('navigator', {});
     const ctx = await live();
     await ctx.copyWiresharkCommand();
-    const [{ message }] = ctx.$buefy.dialog.alert.mock.calls[0];
+    const [{ title, message }] = ctx.$buefy.dialog.alert.mock.calls[0];
+    expect(title).toBe('Wireshark command');
     expect(message).toContain(command);
+    expect(message).toContain('5 minutes');
+    expect(message).not.toContain('jwt.token');
+  });
+
+  it('copies nothing and says why when the server gives no token', async () => {
+    const writeText = vi.fn(async () => {});
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const ctx = await live();
+    const err = Object.assign(new Error('forbidden'), {
+      response: { status: 403 },
+    });
+    axios.post.mockRejectedValue(err);
+    await ctx.copyWiresharkCommand();
+    expect(writeText).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(err);
+    const [{ message, type }] = ctx.$buefy.toast.open.mock.calls[0];
+    expect(type).toBe('is-danger');
+    expect(message).toContain("You don't have permission");
+    expect(ctx.$buefy.dialog.alert).not.toHaveBeenCalled();
   });
 
   it('explains a sign-in proxy, which the command must get past', async () => {

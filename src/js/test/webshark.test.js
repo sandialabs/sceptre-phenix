@@ -13,8 +13,9 @@ vi.mock('@/utils/axios.js', () => ({ default: axios }));
 
 import {
   canUseWebShark,
-  captureStreamURL,
+  capabilityURL,
   isCaptureFile,
+  mintCaptureStream,
   openFailure,
   openInWebShark,
   queryTarget,
@@ -137,23 +138,38 @@ describe('openInWebShark', () => {
 });
 
 describe('the Wireshark command', () => {
-  it("streams the capture from the UI's API", () => {
-    const url = captureStreamURL('exp 1', 'web', 1, 'https://phenix.example');
-    expect(url).toBe(
-      'https://phenix.example/api/v1/experiments/exp%201/vms/web/captures/1/stream',
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('streams the capture with a stream token, under the base path', () => {
+    vi.stubEnv('BASE_URL', '/phenix/');
+    const url = capabilityURL(
+      'webshark/streams/pcs_abc',
+      'https://phenix.example',
     );
-    expect(wiresharkCommand(url, 'jwt.token')).toBe(
-      "curl -fsSN --max-redirs 0 -L -H 'X-Phenix-Auth-Token: Bearer jwt.token' " +
-        "'https://phenix.example/api/v1/experiments/exp%201/vms/web/captures/1/stream'" +
+    expect(url).toBe('https://phenix.example/phenix/webshark/streams/pcs_abc');
+    // the token is the only credential: no session token header
+    expect(wiresharkCommand(url)).toBe(
+      "curl -fsSN --max-redirs 0 -L 'https://phenix.example/phenix/webshark/streams/pcs_abc'" +
         ' | wireshark -k -i -',
     );
   });
 
   it('quotes what the shell would otherwise read', () => {
-    const url = captureStreamURL("it's", "vm'1", 0, 'http://h');
-    expect(wiresharkCommand(url, null)).toBe(
-      "curl -fsSN --max-redirs 0 -L 'http://h/api/v1/experiments/it'\\''s/vms/vm'\\''1/captures/0/stream'" +
-        ' | wireshark -k -i -',
+    expect(wiresharkCommand("http://h/it's")).toBe(
+      "curl -fsSN --max-redirs 0 -L 'http://h/it'\\''s' | wireshark -k -i -",
+    );
+  });
+
+  it("asks the server for a stream token of the VM interface's capture", async () => {
+    const token = {
+      token: 'pcs_abc',
+      urls: { stream: 'webshark/streams/pcs_abc' },
+    };
+    axios.post.mockResolvedValue({ data: token });
+    await expect(mintCaptureStream('exp 1', 'web', 2)).resolves.toEqual(token);
+    expect(axios.post).toHaveBeenCalledWith(
+      'experiments/exp%201/capture-tokens',
+      { vm: 'web', interface: 2, operations: ['stream'] },
     );
   });
 

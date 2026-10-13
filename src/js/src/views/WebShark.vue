@@ -135,15 +135,15 @@
   import { roomInWindow } from '@/utils/viewportFit.js';
   import { vmInterfaces } from '@/components/experiment/vmActions.js';
   import {
+    capabilityURL,
     captureStreamCLI,
-    captureStreamURL,
     fileTarget,
     isCaptureFile,
     liveTarget,
+    mintCaptureStream,
     openFailure,
     openInWebShark,
     queryTarget,
-    signInToken,
     webSharkInstalled,
     webSharkURL,
     wiresharkCommand,
@@ -158,6 +158,33 @@
     !targets.some((t) => t.key === selected.key)
       ? [...targets, selected]
       : targets;
+
+  // Copies the text a promise resolves to. Safari keeps the click's user
+  // activation only for a clipboard write started before the promise
+  // settles, which a ClipboardItem of the promise is; elsewhere writing the
+  // text once it is known works too. Resolves to whether it copied.
+  async function copyWhenReady(text) {
+    const clipboard = navigator.clipboard;
+    // there is no Clipboard API on a page served over plain http
+    if (!clipboard) return false;
+
+    if (clipboard.write && typeof ClipboardItem !== 'undefined') {
+      try {
+        const blob = text.then((t) => new Blob([t], { type: 'text/plain' }));
+        await clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
+        return true;
+      } catch {
+        // writeText below
+      }
+    }
+
+    try {
+      await clipboard.writeText(await text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   // The WebShark page: pick an experiment and one of its running captures or
   // saved capture files, and WebShark shows its packets in a frame. The URL
@@ -421,37 +448,51 @@
         this.$nextTick(this.fitFrame);
       },
 
+      // Copies a command that streams the running capture into a local
+      // Wireshark, with a stream token the server gives for it rather than
+      // the user's session token.
       async copyWiresharkCommand() {
         const target = this.streamTarget;
         if (!target) return;
-        const command = wiresharkCommand(
-          captureStreamURL(
-            this.exp,
-            target.vm,
-            target.iface,
-            window.location.origin,
-          ),
-          signInToken(usePhenixStore().token),
-        );
 
-        let copied = false;
+        const commandText = mintCaptureStream(
+          this.exp,
+          target.vm,
+          target.iface,
+        ).then((t) =>
+          wiresharkCommand(
+            capabilityURL(t.urls.stream, window.location.origin),
+          ),
+        );
+        // awaited below; a failure is reported there, not as unhandled
+        commandText.catch(() => {});
+
+        const copied = await copyWhenReady(commandText);
+
+        let command;
         try {
-          // there is no Clipboard API on a page served over plain http
-          if (!navigator.clipboard) throw new Error('no clipboard');
-          await navigator.clipboard.writeText(command);
-          copied = true;
-        } catch {
-          // shown below instead
+          command = await commandText;
+        } catch (err) {
+          this.$buefy.toast.open({
+            message: `Could not copy the Wireshark command. ${openFailure(err)}`,
+            type: 'is-danger',
+            duration: 6000,
+          });
+          useErrorNotification(err);
+          return;
         }
+
+        const lifetime =
+          'Run it within 5 minutes. Its stream stops when you sign out.';
 
         // Behind a sign-in proxy, the command reaches phēnix only if it signs
         // in to the proxy too, which the page cannot do for it.
         const proxy = import.meta.env.VITE_AUTH === 'proxy';
         if (copied && !proxy) {
           this.$buefy.toast.open({
-            message: 'Copied the Wireshark command',
+            message: `Copied the Wireshark command. ${lifetime}`,
             type: 'is-success',
-            duration: 4000,
+            duration: 6000,
           });
           return;
         }
@@ -464,10 +505,11 @@
           (copied
             ? 'Copied this command, which streams the capture into a local Wireshark:'
             : 'Run this command to stream the capture into a local Wireshark:') +
-          block(command);
+          block(command) +
+          lifetime;
         if (proxy) {
           message +=
-            'phēnix is behind a sign-in proxy, which turns the command away' +
+            ' phēnix is behind a sign-in proxy, which turns the command away' +
             ' unless it signs in to the proxy the way your browser does,' +
             " usually with the proxy's sign-in cookie. Copy that cookie from" +
             " your browser's developer tools and add it to the command as" +
