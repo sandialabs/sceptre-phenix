@@ -6,23 +6,13 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
 
 import DiskSelect from '@/components/experiment/DiskSelect.vue';
+import { disk } from './helpers/fixtures.js';
 import {
   renderSSR,
   selectOptions,
   textOf,
   tooltipButtons,
 } from './helpers/render.js';
-
-// A disk as GET disks lists it: inside the files directory /phenix/images
-// when given its path within it, else outside it.
-const disk = (fullPath, relativePath = '') => ({
-  kind: 'VM',
-  name: fullPath.replace(/^.*\//, ''),
-  fullPath,
-  relativePath,
-  outsideFilesDir: !relativePath,
-  readOnly: !relativePath,
-});
 
 const disks = [
   disk('/phenix/images/win/base.qc2', 'win/base.qc2'),

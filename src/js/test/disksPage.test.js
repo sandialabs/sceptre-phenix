@@ -5,42 +5,26 @@
 import realAxios from 'axios';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const rbac = vi.hoisted(() => ({ allowed: () => true }));
-vi.mock('@/utils/rbac.js', () => ({
-  roleAllowed: (...args) => rbac.allowed(...args),
-}));
-const axios = vi.hoisted(() => ({
-  get: vi.fn(),
-  post: vi.fn(),
-  request: vi.fn(),
-}));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-const notify = vi.hoisted(() => ({ show: vi.fn() }));
-vi.mock('@/utils/errorNotif', () => ({
-  showError: notify.show,
-  useErrorNotification: vi.fn(),
-}));
-vi.mock('@/store.js', () => ({
-  usePhenixStore: () => ({ token: 't', features: [], role: null }),
-}));
-vi.mock('@/utils/websocket', () => ({
-  addWsHandler: () => {},
-  removeWsHandler: () => {},
-}));
+const { axios, fetching, loaderSpy, modules, notify, rbac, resetMocks } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/websocket', modules.websocket);
 // a loader whose load() fetches as the real one does, without the cache
-const loader = vi.hoisted(() => ({ options: null, load: null }));
-vi.mock('@/utils/pageLoader.js', () => ({
-  createPageLoader: (options) => {
-    loader.options = options;
-    loader.load = vi.fn(() => options.fetch(new AbortController().signal));
-    return { start: () => {}, stop: () => {}, load: loader.load };
-  },
-  loadingText: (what) => `Loading ${what}…`,
-}));
+vi.mock('@/utils/pageLoader.js', fetching);
 
 import Disks from '@/views/Disks.vue';
 import { flush } from './helpers/async.js';
-import { makeContext } from './helpers/context.js';
+import { disk } from './helpers/fixtures.js';
+import { pageContext } from './helpers/page.js';
+import {
+  allowAll,
+  allowOnly,
+  denyAll,
+  denyOnly,
+} from './helpers/permissions.js';
 import {
   openModal,
   renderSSR,
@@ -50,29 +34,11 @@ import {
   tooltipButtons,
 } from './helpers/render.js';
 
-const page = (fields) => makeContext(Disks, fields);
+const page = (fields) => pageContext(Disks, { fields });
 
 beforeEach(() => {
-  rbac.allowed = () => true;
-  axios.get.mockReset();
+  resetMocks({ store: { token: 't', features: [], role: null } });
   axios.get.mockResolvedValue({ data: { disks: [] } });
-  axios.post.mockReset();
-  axios.request.mockReset();
-  notify.show.mockReset();
-});
-
-// A disk as GET disks lists it: inside the files directory /phenix/images
-// when given its path within it, else outside it and read-only.
-const disk = (fullPath, relativePath = '', fields = {}) => ({
-  name: fullPath.replace(/^.*\//, ''),
-  fullPath,
-  relativePath,
-  outsideFilesDir: !relativePath,
-  readOnly: !relativePath,
-  kind: 'VM',
-  inUse: false,
-  backingImages: [],
-  ...fields,
 });
 
 const OUTSIDE_TEXT =
@@ -103,7 +69,7 @@ describe('the disk list', () => {
   it("has the server inspect every image again on the header's refresh", async () => {
     const ctx = await opened();
 
-    await loader.options.refresh();
+    await loaderSpy.options.refresh();
     await ctx.loader.load();
     expect(urls()).toEqual(['disks?refresh=true', 'disks']);
   });
@@ -113,7 +79,7 @@ describe('the disk list', () => {
 
     ctx.handleWs({ resource: { type: 'disks', action: 'update' } });
     ctx.handleWs({ resource: { type: 'experiment', action: 'update' } });
-    expect(loader.load).toHaveBeenCalledTimes(1);
+    expect(loaderSpy.load).toHaveBeenCalledTimes(1);
   });
 
   it('refuses to upload a file that is no disk image', () => {
@@ -260,14 +226,11 @@ describe('disk actions', () => {
     ['delete', [['disks', 'delete', 'snap.qc2']]],
   ])('allows %s with the %j permissions alone', (action, needed) => {
     const ctx = page();
-    const key = (permission) => JSON.stringify(permission);
-    const neededKeys = new Set(needed.map(key));
-
-    rbac.allowed = (...args) => neededKeys.has(key(args));
+    rbac.allowed = allowOnly(...needed);
     expect(ctx.disabledReason(action, vmDisk)).toBe(null);
     // and refuses it without any one of them
     for (const missing of needed) {
-      rbac.allowed = (...args) => key(args) != key(missing);
+      rbac.allowed = denyOnly(missing);
       expect(ctx.disabledReason(action, vmDisk)).toBe(
         "you don't have permission",
       );
@@ -275,7 +238,7 @@ describe('disk actions', () => {
   });
 
   it('knows no reason to disable an action it does not have', () => {
-    rbac.allowed = () => false;
+    rbac.allowed = denyAll;
     expect(page().disabledReason('unknown', vmDisk)).toBe(null);
   });
 
@@ -298,7 +261,7 @@ describe('disk actions', () => {
   it.each([
     [
       'a role that may do anything',
-      () => true,
+      allowAll,
       {
         'snap.qc2': [OK, OK, OK, OK, OK],
         'isos/tools.iso': [VM_ONLY, OK, OK, OK, OK],
@@ -309,7 +272,7 @@ describe('disk actions', () => {
     ],
     [
       'a role that may only create disks',
-      (_, verb) => verb == 'create',
+      allowOnly(['*', 'create']),
       {
         'snap.qc2': [OK, OK, NO, NO, NO],
         'isos/tools.iso': [VM_ONLY, OK, NO, NO, NO],
@@ -320,7 +283,7 @@ describe('disk actions', () => {
     ],
     [
       'a role that may not download',
-      (_, verb) => verb != 'get',
+      denyOnly(['*', 'get']),
       {
         'snap.qc2': [OK, OK, NO, OK, OK],
         'isos/tools.iso': [VM_ONLY, OK, NO, OK, OK],
@@ -331,7 +294,7 @@ describe('disk actions', () => {
     ],
     [
       'a role that may do nothing',
-      () => false,
+      denyAll,
       {
         'snap.qc2': [NO, NO, NO, NO, NO],
         'isos/tools.iso': [VM_ONLY, NO, NO, NO, NO],
@@ -567,11 +530,7 @@ describe('disk action requests', () => {
     close: vi.fn(),
     cancelLoading: vi.fn(),
   });
-  const opened = () =>
-    page({
-      $buefy: { dialog: { prompt: vi.fn(), confirm: vi.fn() } },
-      loader: { load: vi.fn() },
-    });
+  const opened = () => page({ loader: { load: vi.fn() } });
   // the query the server gets for a request's config
   const query = (config) =>
     Object.fromEntries(
