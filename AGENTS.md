@@ -199,8 +199,9 @@ image, documentation, or topology details.
 ## CI and Release Safety
 
 Most GitHub Actions workflows are path-scoped: `ci.yml` generates code and tests
-Go, and its `generated` job runs `make check-generated`; `frontend.yml` runs Vitest, builds UI/backend, runs Playwright smoke tests,
-and checks UI bundle budgets and Lighthouse audits; `examples.yml` checks
+Go, and its `generated` job runs `make check-generated`; `frontend.yml` runs Vitest, builds the UI and backend once in a `build` job, and
+shares that build with the Playwright smoke test and UI bundle budget and
+Lighthouse jobs; `examples.yml` checks
 Go/Python examples; `docs.yml` builds the docs and API reference and publishes
 them from `main`. Every API reference build, local, container, or CI, goes
 through `scripts/api-docs.sh`, which pins the Redocly CLI version; a prek hook
