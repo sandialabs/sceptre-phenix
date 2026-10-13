@@ -3,44 +3,26 @@
 // messages, and its SVG and GEXF downloads.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/utils/rbac.js', () => ({ roleAllowed: () => true }));
-const axios = vi.hoisted(() => ({ get: vi.fn() }));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-vi.mock('@/store.js', () => ({
-  usePhenixStore: () => ({ token: 't', features: [], role: null }),
-}));
-vi.mock('@/utils/websocket', () => ({
-  addWsHandler: () => {},
-  removeWsHandler: () => {},
-}));
+const { axios, fetching, modules, notify, resetMocks, saver } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/websocket', modules.websocket);
 // a loader whose load() fetches as the real one does, without the cache
-vi.mock('@/utils/pageLoader.js', () => ({
-  createPageLoader: (options) => ({
-    start: () => {},
-    stop: () => {},
-    load: () => options.fetch(new AbortController().signal),
-  }),
-  pageStatus: {},
-}));
-const notifyError = vi.hoisted(() => vi.fn());
-vi.mock('@/utils/errorNotif', () => ({
-  useErrorNotification: notifyError,
-  showError: vi.fn(),
-}));
-const saver = vi.hoisted(() => ({ saveAs: vi.fn() }));
-vi.mock('file-saver', () => ({ default: saver }));
+vi.mock('@/utils/pageLoader.js', fetching);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('file-saver', modules.fileSaver);
 
 import { GROUPS_MAX_NODES } from '@/utils/soh/layouts.js';
 import StateOfHealth from '@/views/StateOfHealth.vue';
-import { makeContext } from './helpers/context.js';
+import { pageContext } from './helpers/page.js';
 import { buttons, renderSSR, stubBrowser, textOf } from './helpers/render.js';
 import { sohFixture } from './sohFixture.js';
 
 beforeEach(() => {
   stubBrowser();
-  axios.get.mockReset();
-  saver.saveAs.mockReset();
-  notifyError.mockReset();
+  resetMocks({ store: { token: 't', features: [], role: null } });
 });
 
 afterEach(() => {
@@ -50,12 +32,7 @@ afterEach(() => {
 
 // the page on experiment demo
 const page = (fields, component = StateOfHealth) =>
-  makeContext(component, {
-    $route: { params: { id: 'demo' } },
-    $buefy: { toast: { open: vi.fn() } },
-    $nextTick: () => Promise.resolve(),
-    ...fields,
-  });
+  pageContext(component, { id: 'demo', fields });
 
 describe('rendering', () => {
   const render = (data) =>
@@ -312,7 +289,7 @@ describe('downloading the graph', () => {
     );
 
     await ctx.download('svg');
-    expect(notifyError).not.toHaveBeenCalled();
+    expect(notify.error).not.toHaveBeenCalled();
     const [blob, name] = saver.saveAs.mock.calls[0];
     expect(name).toBe('demo-soh-layered-20260930-120000.svg');
     const svg = await blob.text();
@@ -389,7 +366,7 @@ describe('the layout drawn', () => {
       expect(libraries, layout).toEqual(loaded);
     }
     // and each layout ran without falling back to Force
-    expect(notifyError.mock.calls.map(([e]) => e.message)).toEqual([]);
+    expect(notify.error.mock.calls.map(([e]) => e.message)).toEqual([]);
     expect(ctx.layout).toBe('elk');
     expect(ctx.$buefy.toast.open).not.toHaveBeenCalled();
   });

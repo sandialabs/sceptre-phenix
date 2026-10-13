@@ -2,28 +2,14 @@
 // line and filters above its table, and the page itself.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const allowed = vi.hoisted(() => ({ fn: () => true }));
-vi.mock('@/utils/rbac.js', () => ({
-  roleAllowed: (...args) => allowed.fn(...args),
-}));
-
-const axios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-
-const notify = vi.hoisted(() => ({ showError: vi.fn(), useError: vi.fn() }));
-vi.mock('@/utils/errorNotif.js', () => ({
-  showError: notify.showError,
-  useErrorNotification: notify.useError,
-}));
-
-vi.mock('@/store.js', () => ({
-  usePhenixStore: () => ({ role: { name: 'Global Admin' } }),
-}));
-
-vi.mock('@/utils/websocket', () => ({
-  addWsHandler: () => {},
-  removeWsHandler: () => {},
-}));
+const { axios, modules, notify, rbac, resetMocks } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/websocket', modules.websocket);
 
 import {
   filterCounts,
@@ -44,7 +30,9 @@ import SohOverview, {
   PROBLEMS_SHOWN,
   RELOAD_DELAY_MS,
 } from '@/views/SohOverview.vue';
-import { makeContext } from './helpers/context.js';
+import { wsMsg } from './helpers/fixtures.js';
+import { pageContext } from './helpers/page.js';
+import { denyOnly } from './helpers/permissions.js';
 import {
   renderSSR,
   tableRows,
@@ -53,13 +41,7 @@ import {
 } from './helpers/render.js';
 
 // every test starts with a user who may do anything
-beforeEach(() => {
-  allowed.fn = () => true;
-  axios.get.mockReset();
-  axios.post.mockReset();
-  notify.showError.mockReset();
-  notify.useError.mockReset();
-});
+beforeEach(() => resetMocks({ store: { role: { name: 'Global Admin' } } }));
 
 // a running experiment with soh results and every check passing
 function summary(overrides = {}) {
@@ -293,10 +275,12 @@ describe('SohOverview view', () => {
   });
 
   const view = (experiments) =>
-    makeContext(SohOverview, {
-      experiments,
-      liveRows: createLiveRows(),
-      loader: { load: vi.fn(), loading: false },
+    pageContext(SohOverview, {
+      fields: {
+        experiments,
+        liveRows: createLiveRows(),
+        loader: { load: vi.fn(), loading: false },
+      },
     });
 
   it('filters rows by verdict and name', () => {
@@ -370,7 +354,7 @@ describe('SohOverview view', () => {
       /first checks/,
     );
 
-    allowed.fn = (resource) => resource !== 'experiments/trigger';
+    rbac.allowed = denyOnly(['experiments/trigger']);
     expect(ctx.runBlocked(summary())).toMatch(/may not run SOH/);
     axios.post.mockClear();
     ctx.runSoh(summary());
@@ -382,24 +366,19 @@ describe('SohOverview view', () => {
     const row = summary();
     const ctx = view([row]);
 
-    ctx.handleWs({
-      resource: { type: 'apps/soh', name: 'ot-substation', action: 'start' },
-    });
+    ctx.handleWs(wsMsg('apps/soh', 'ot-substation', 'start'));
     expect(row.soh_running).toBe(true);
 
-    ctx.handleWs({
-      resource: { type: 'apps/soh', name: 'ot-substation', action: 'error' },
-      result: { error: 'boom' },
-    });
-    expect(notify.showError).toHaveBeenCalledWith(
+    ctx.handleWs(
+      wsMsg('apps/soh', 'ot-substation', 'error', { error: 'boom' }),
+    );
+    expect(notify.show).toHaveBeenCalledWith(
       'State of health run failed for ot-substation',
       'boom',
     );
 
     // several updates, one reload
-    ctx.handleWs({
-      resource: { type: 'apps/soh', name: 'ot-substation', action: 'success' },
-    });
+    ctx.handleWs(wsMsg('apps/soh', 'ot-substation', 'success'));
     vi.advanceTimersByTime(RELOAD_DELAY_MS);
     expect(ctx.loader.load).toHaveBeenCalledTimes(1);
   });
@@ -410,9 +389,7 @@ describe('SohOverview view', () => {
       summary({ name: 'up' }),
       summary({ name: 'down', running: false, status: 'stopped' }),
     ]);
-    const vm = (name, action) => ({
-      resource: { type: 'experiment/vm', name, action },
-    });
+    const vm = (name, action) => wsMsg('experiment/vm', name, action);
 
     ctx.handleWs(vm('down/vm1', 'start'));
     ctx.handleWs(vm('up/vm1', 'cdrom-inserted'));
@@ -452,10 +429,8 @@ describe('SohOverview view', () => {
   it('shows experiment start progress without reloading', () => {
     const row = summary({ running: false, status: 'stopped' });
     const ctx = view([row]);
-    const exp = (action, result) => ({
-      resource: { type: 'experiment', name: 'ot-substation', action },
-      result,
-    });
+    const exp = (action, result) =>
+      wsMsg('experiment', 'ot-substation', action, result);
 
     ctx.handleWs(exp('starting'));
     expect(row.status).toBe('starting');
