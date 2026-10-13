@@ -58,6 +58,16 @@ tags:
       /features, and unlike the other endpoints here, these two are served
       from the server root rather than under /api/v1, and need neither
       credentials nor a permission, so each declares its own server.
+  - name: Health
+    description: >-
+      Liveness (/healthz) and readiness (/readyz) of this server, in the
+      application/health+json format of the IETF draft
+      draft-inadarei-api-health-check-06. Like /features, these are served
+      from the server root rather than under /api/v1 and need no credentials:
+      every caller sees the statuses, observed values, versions and timings,
+      but only an authenticated request (a valid token, or any request when
+      auth is disabled) sees the `output` fields, which may name paths, hosts
+      and errors.
 paths:
   "/configs":
     get:
@@ -3669,6 +3679,113 @@ paths:
           description: the name is empty, is not a bare file name, or starts with a dot
         "404":
           description: no such build is installed on this server
+  "/healthz":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Health
+      summary: Check the server's liveness
+      description: >-
+        Whether the server is up: its uptime and, for a BoltDB store, how long
+        the store takes to list configs. An etcd store is checked only by
+        /readyz, since restarting phenix would not fix an etcd outage. Results
+        are cached briefly (the store for 2 seconds), and each check has a
+        timeout, so probes are cheap. Needs no credentials; `output` fields
+        need a token, or auth disabled.
+      operationId: getHealthz
+      responses:
+        "200":
+          description: the server is alive (status pass or warn)
+          content:
+            application/health+json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: the server is not alive (status fail)
+          content:
+            application/health+json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+    head:
+      tags:
+        - Health
+      summary: Check the server's liveness, without a body
+      operationId: headHealthz
+      responses:
+        "200":
+          description: the server is alive (status pass or warn)
+        "503":
+          description: the server is not alive (status fail)
+  "/readyz":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Health
+      summary: Check the server's readiness
+      description: >-
+        Whether the server can run experiments: minimega's response time,
+        version and namespaces, the mesh size, the store, qemu-img, WebShark
+        (when installed), disk use of the minimega files directory and the
+        phenix base directory, the websocket broker, uptime and Go runtime
+        numbers. Status is the worst of every check's: minimega not answering,
+        an unreadable store or a disk at least 98% full fail; a disk at least
+        90% full, a slow minimega or store, a missing qemu-img or WebShark, a
+        shrunken mesh or a backed-up websocket queue warn. Results are cached
+        per check (minimega for 5 seconds), so probes send minimega at most
+        three commands every 5 seconds. Needs no credentials; `output` fields
+        need a token, or auth disabled.
+      operationId: getReadyz
+      parameters:
+        - name: exclude
+          in: query
+          description: >-
+            checks to leave out, by name (`uptime`, `go`, `store`, `minimega`,
+            `qemu-img`, `webshark`, `disk`, `websocket`); repeat it, or
+            separate names with commas
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              example: disk
+      responses:
+        "200":
+          description: the server is ready (status pass or warn)
+          content:
+            application/health+json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: the server is not ready (status fail)
+          content:
+            application/health+json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+    head:
+      tags:
+        - Health
+      summary: Check the server's readiness, without a body
+      operationId: headReadyz
+      parameters:
+        - name: exclude
+          in: query
+          description: checks to leave out, by name, as for GET
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        "200":
+          description: the server is ready (status pass or warn)
+        "503":
+          description: the server is not ready (status fail)
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
@@ -4737,6 +4854,100 @@ components:
           items:
             type: string
             example: phenix-tunneler-linux-amd64
+    HealthResponse:
+      type: object
+      description: >-
+        A health response in the format of the IETF draft
+        draft-inadarei-api-health-check-06
+      properties:
+        status:
+          type: string
+          enum: [pass, warn, fail]
+          description: the worst status of every check
+          example: pass
+        version:
+          type: string
+          description: the phenix build's tag
+          example: v1.2.0
+        releaseId:
+          type: string
+          description: the phenix build's commit
+          example: 059cd25b
+        serviceId:
+          type: string
+          example: phenix
+        description:
+          type: string
+          example: phēnix readiness
+        notes:
+          type: array
+          description: present when the request was not authenticated
+          items:
+            type: string
+            example: "output fields omitted: request not authenticated"
+        output:
+          type: string
+          description: detail, only for authenticated requests
+        checks:
+          type: object
+          description: >-
+            the checks' results, keyed "component:measurement" (such as
+            `minimega:responseTime`); most keys have one result, and
+            `disk:utilization` has one per filesystem
+          additionalProperties:
+            type: array
+            items:
+              $ref: "#/components/schemas/HealthCheckResult"
+      required:
+        - status
+        - serviceId
+        - description
+        - checks
+    HealthCheckResult:
+      type: object
+      properties:
+        componentId:
+          type: string
+          description: >-
+            the component observed, such as `minimega`, `bolt` or
+            `files-dir`; never a path or host name
+          example: minimega
+        componentType:
+          type: string
+          enum: [component, datastore, system]
+          example: component
+        observedValue:
+          description: >-
+            the value observed; each key keeps one JSON type across runs, and
+            a run that observed nothing leaves it out
+          example: 1.27
+        observedUnit:
+          type: string
+          example: ms
+        status:
+          type: string
+          enum: [pass, warn, fail]
+          example: pass
+        affectedEndpoints:
+          type: array
+          description: the API routes that do not work while this check warns or fails
+          items:
+            type: string
+            example: /api/v1/vms
+        time:
+          type: string
+          format: date-time
+          description: when the value was observed
+        output:
+          type: string
+          description: >-
+            why the check warns or fails, or other detail (paths, hosts,
+            errors); only for authenticated requests
+          example: "minimega did not answer: unable to dial"
+      required:
+        - status
+        - time
+
   # Shared by the single-file download routes, which resume interrupted
   # downloads with Range and If-Range.
   parameters:

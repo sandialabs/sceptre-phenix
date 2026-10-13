@@ -35,6 +35,7 @@ All notable changes to this project will be documented in this file.
 - **CLI**: Added tab completion for `phenix mm`, which will now suggest minimega commands from the running minimega and `--namespace` from the names of running experiments.
 - **CLI**: `phenix vlan alias <experiment> <alias>` now prints the VLAN ID of that alias, or an error if the alias doesn't exist or doesn't have a VLAN ID yet. Its shell completion also completes experiment and alias names.
 - **Resumable downloads**: Experiment file, disk image, VM mount, tunneler and saved WebShark capture downloads answer `HEAD` and resume with `Range` and `If-Range` against a strong `ETag`, so a browser or `curl -C -` continues an interrupted download instead of starting over. `GET /experiments/{name}/files/{filename}/checksum` and `GET /disks/checksum` return a file's SHA-256, computed in the background, which downloads then also send as `Repr-Digest`.
+- **Health checks**: `GET /healthz` (liveness: uptime and the BoltDB store) and `GET /readyz` (readiness: minimega, mesh, store, qemu-img, WebShark, disk space, websocket broker and Go runtime) answer in the IETF `application/health+json` format, `503` when failing, without credentials; only their `output` details need a token. `phenix healthcheck` queries them and exits non-zero when phēnix is unhealthy.
 
 ### Changed
 
@@ -77,6 +78,7 @@ All notable changes to this project will be documented in this file.
 - **CLI**: Upgraded cobra from v1.0.0 to v1.10.2 and pflag from v1.0.3 to v1.0.9. `phenix completion bash` now generates cobra's V2 Bash script, and `phenix completion powershell` includes descriptions.
 - **API compression**: Downloads (attachments) are never gzip-compressed, so they reach the client byte for byte, and a compressed API response no longer advertises byte ranges and carries only a weak ETag.
 - **Experiment file downloads**: Stream from disk instead of loading the whole file into server memory on every request. The Files tab's viewer refuses a file over 10 MiB (`413`) with a hint to download it, and zip downloads send `Accept-Ranges: none`.
+- **Containers**: The Docker and Podman images gain a `HEALTHCHECK` running `phenix healthcheck`, which also replaces `phenix version` as the compose `phenix` service's health check, and `podman/pod.yml` gives the phenix container a matching liveness probe. Start one-off CLI containers with `--no-healthcheck`.
 
 ### Removed
 

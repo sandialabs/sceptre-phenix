@@ -182,6 +182,7 @@ are run with `docker exec` rather than a host-installed binary:
 
 ```bash
 docker exec phenix phenix experiment list   # no -it for scripted/agentic use
+docker exec phenix phenix healthcheck --ready  # is minimega, the store and disk OK?
 ```
 
 For interactive human use, `make install-wrapper` installs

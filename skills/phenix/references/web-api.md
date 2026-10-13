@@ -58,6 +58,7 @@ curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experi
 | Builder | `GET/POST /builder/topologies`, `GET/PUT /builder/topologies/{name}`; the builder UI itself is served from the server root as `GET /builder` and `POST /builder/save` (outside `/api/v1`). Payloads and workflow are in [`builder.md`](builder.md) |
 | Workflow | `POST /workflow/apply/{branch}` (`?dryRun=true`, `pending`, `expect`, `tag`), `POST /workflow/configs/{branch}` (`?dryRun=true`). Parameters and answers are in [`workflow.md`](workflow.md#rest-endpoints) |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode, plus `base-dir.injects` and `workflow-dry-run`) |
+| Health (server root, no token) | `GET/HEAD /healthz` (liveness: uptime, BoltDB store), `GET/HEAD /readyz` (readiness: minimega, mesh, store, qemu-img, WebShark, disk, websocket broker, runtime; `?exclude=<check>`); IETF `application/health+json`, `200` on pass or warn, `503` on fail, `output` fields only with a token or auth disabled. See `docs/content/health.md` |
 | Tunneler (server root, only with the `tunneler-download` feature) | `GET /downloads/tunneler` (lists the installed builds), `GET/HEAD /downloads/tunneler/{name}` (resumable); neither needs a token |
 
 When a config fails its schema, the config routes (`POST /configs`,
