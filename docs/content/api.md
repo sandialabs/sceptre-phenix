@@ -95,7 +95,8 @@ WebShark. Each download route also answers `HEAD`, and every response carries
 with a checksum. `GET /experiments/{name}/files/{file}/checksum?path=` and
 `GET /disks/checksum?disk=` return the file's SHA-256, computed in the
 background: `202` with `Retry-After` until it is known, then `200`. Downloads of
-the file then also send it as `Repr-Digest` (RFC 9530).
+the file then also send it as `Repr-Digest` (RFC 9530), except a gzip-compressed
+plain-text view.
 
 The zip downloads of several experiment files or configs are built as they are
 sent, so they cannot be resumed (`Accept-Ranges: none`).

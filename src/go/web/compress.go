@@ -196,6 +196,10 @@ func (cw *compressWriter) decide(code int) {
 		// also keeps If-Range from ever matching it
 		cw.Header().Del("Accept-Ranges")
 
+		// a Repr-Digest covers the content-coded representation (RFC 9530),
+		// which the identity bytes' checksum does not
+		cw.Header().Del("Repr-Digest")
+
 		if etag := cw.Header().Get("ETag"); etag != "" && !strings.HasPrefix(etag, "W/") {
 			cw.Header().Set("ETag", "W/"+etag)
 		}
