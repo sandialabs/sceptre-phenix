@@ -3,6 +3,7 @@
 package mmcli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -25,9 +26,30 @@ var (
 	// without having sent anything. That means the connection was lost, not that
 	// the command legitimately produced no output.
 	ErrNoResponse = errors.New("no response from minimega (connection lost)")
-	mu            sync.Mutex       //nolint:gochecknoglobals // global lock
-	mm            *miniclient.Conn //nolint:gochecknoglobals // global connection
-	mmDead        bool             //nolint:gochecknoglobals // flags mm for replacement
+
+	// shared is held by the command using the shared connection, so commands
+	// take it one at a time; a channel, so a waiter can give up.
+	shared = make(chan struct{}, 1) //nolint:gochecknoglobals // global lock
+
+	mu     sync.Mutex       //nolint:gochecknoglobals // guards mm and mmDead
+	mm     *miniclient.Conn //nolint:gochecknoglobals // global connection
+	mmDead bool             //nolint:gochecknoglobals // flags mm for replacement
+)
+
+// Deadlines for commands on the shared connection run without a context's
+// own (Run and RunStarted). Tests shorten them.
+//
+//nolint:gochecknoglobals // see above
+var (
+	// DefaultWaitTimeout is how long a command waits behind others for the
+	// shared connection before giving up with ErrTimeout.
+	DefaultWaitTimeout = 10 * time.Minute
+
+	// DefaultCommandTimeout is how long a command may hold the shared
+	// connection. Past it the caller gets ErrTimeout and the connection is
+	// abandoned, so the commands behind it can go on; minimega still finishes
+	// the command. Long-running commands use RunDedicated instead.
+	DefaultCommandTimeout = 30 * time.Minute
 )
 
 // errResponse builds the single response value used to report an error back
@@ -46,7 +68,7 @@ func errResponse(err error) *miniclient.Response {
 // reconstructErr turns a response's error string back into an error, restoring
 // the sentinel identity where the string is one of ours.
 func reconstructErr(msg string) error {
-	for _, sentinel := range []error{ErrTimeout, ErrNoResponse} {
+	for _, sentinel := range []error{ErrTimeout, ErrNoResponse, context.Canceled} {
 		if msg == sentinel.Error() {
 			return sentinel
 		}
@@ -202,8 +224,11 @@ func SingleDataResponse(responses chan *miniclient.Response) (any, error) {
 }
 
 // conn returns a usable connection to minimega, dialing or redialing as needed.
-// The caller must hold mu.
+// The caller must hold shared.
 func conn() (*miniclient.Conn, error) {
+	mu.Lock()
+	defer mu.Unlock()
+
 	// miniclient records only the FIRST error it encounters and never clears it,
 	// so any non-nil error means this connection is permanently unusable
 	if mm != nil && mm.Error() != nil {
@@ -254,10 +279,14 @@ func streamEnded(c *miniclient.Conn, count int) error {
 // guard forwards responses from the shared connection, reporting a truncated or
 // empty stream as an error rather than as a successful empty result.
 //
-// release is called once the terminal error has been read, before markDead,
-// which takes mu itself. It must not be called any earlier: miniclient closes
-// the response channel before releasing its own connection lock, so another
-// command could otherwise take that lock and overwrite Conn.err first.
+// release is called once the terminal error has been read. It must not be
+// called any earlier: miniclient closes the response channel before releasing
+// its own connection lock, so another command could otherwise take that lock
+// and overwrite Conn.err first.
+//
+// A command still running after timeout (none if zero or less) is abandoned:
+// the connection is marked dead and closed, and release is called at once, so
+// the commands waiting behind it can go on over a new connection.
 //
 // Callers MUST drain the returned channel. Abandoning it blocks this goroutine,
 // and miniclient's reader behind it, for the life of the process.
@@ -265,31 +294,64 @@ func guard(
 	c *miniclient.Conn,
 	in chan *miniclient.Response,
 	release func(),
+	timeout time.Duration,
 ) chan *miniclient.Response {
 	out := make(chan *miniclient.Response)
 
 	go func() {
 		defer close(out)
 
-		var count int
+		var (
+			count int
+			after <-chan time.Time // nil (never fires) without a timeout
+		)
 
-		for resp := range in {
-			count++
+		if timeout > 0 {
+			timer := time.NewTimer(timeout)
+			defer timer.Stop()
 
-			out <- resp
+			after = timer.C
 		}
 
-		err := streamEnded(c, count)
+		for {
+			select {
+			case resp, ok := <-in:
+				if !ok {
+					err := streamEnded(c, count)
 
-		release()
+					release()
 
-		if err == nil {
-			return
+					if err != nil {
+						markDead(c)
+
+						out <- errResponse(err)
+					}
+
+					return
+				}
+
+				count++
+
+				out <- resp
+			case <-after:
+				markDead(c)
+
+				// unblocks miniclient's reader, then lets it finish
+				_ = c.Close()
+
+				go func() {
+					for range in {
+						_ = struct{}{}
+					}
+				}()
+
+				release()
+
+				out <- errResponse(ErrTimeout)
+
+				return
+			}
 		}
-
-		markDead(c)
-
-		out <- errResponse(err)
 	}()
 
 	return out
@@ -297,7 +359,9 @@ func guard(
 
 // Run runs the given command against minimega, automatically redialing the
 // shared connection if it was disconnected. Any errors encountered will be
-// returned as part of the response channel, which the caller must drain.
+// returned as part of the response channel, which the caller must drain. A
+// command waiting longer than DefaultWaitTimeout for the shared connection, or
+// holding it longer than DefaultCommandTimeout, returns ErrTimeout.
 func Run(c *Command) chan *miniclient.Response {
 	return RunStarted(c, nil)
 }
@@ -307,6 +371,40 @@ func Run(c *Command) chan *miniclient.Response {
 // connection. started may run with the shared connection's lock held, so it
 // must be quick and must not run minimega commands itself.
 func RunStarted(c *Command, started func()) chan *miniclient.Response {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultWaitTimeout)
+
+	out := runShared(ctx, c, started, DefaultCommandTimeout)
+
+	// only the wait for the connection uses ctx, and that is over
+	cancel()
+
+	return out
+}
+
+// RunContext is Run for a caller that may stop waiting, such as a request
+// whose client left: once ctx is done, a command still waiting for the shared
+// connection gives up, returning ctx's error, without having been sent. A
+// command already sent is not interrupted, since that would disturb the
+// shared connection; it is bounded by ctx's deadline, if any, or else by
+// DefaultCommandTimeout, as with Run.
+func RunContext(ctx context.Context, c *Command) chan *miniclient.Response {
+	timeout := DefaultCommandTimeout
+
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = max(time.Until(deadline), time.Nanosecond)
+	}
+
+	return runShared(ctx, c, nil, timeout)
+}
+
+// runShared runs c on the shared connection once it is free, unless c has a
+// timeout of its own, which gives it a private connection.
+func runShared(
+	ctx context.Context,
+	c *Command,
+	started func(),
+	timeout time.Duration,
+) chan *miniclient.Response {
 	cmdStr := c.String()
 
 	if c.Timeout > 0 {
@@ -315,20 +413,31 @@ func RunStarted(c *Command, started func()) chan *miniclient.Response {
 		return runPrivate(cmdStr, c.Timeout)
 	}
 
-	mu.Lock()
+	select {
+	case shared <- struct{}{}:
+	case <-ctx.Done():
+		err := ctx.Err()
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = ErrTimeout
+		}
+
+		return wrapErr(fmt.Errorf("waiting for the minimega connection: %w", err))
+	}
+
+	release := func() { <-shared }
 
 	notify(started)
 
 	active, err := conn()
 	if err != nil {
-		mu.Unlock()
+		release()
 
 		return wrapErr(err)
 	}
 
-	// mu is held until guard has read the terminal error, so no other command
-	// can reach Conn.err in between
-	return guard(active, active.Run(cmdStr), mu.Unlock)
+	// shared is held until guard has read the terminal error, so no other
+	// command can reach Conn.err in between
+	return guard(active, active.Run(cmdStr), release, timeout)
 }
 
 // RunDedicated runs the given command on a connection of its own, with no
