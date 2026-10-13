@@ -152,6 +152,8 @@ func DeleteExperimentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	revokeExperimentFileGrants(name, path)
+
 	user := middleware.UserFromContext(r.Context())
 	plog.Info(plog.TypeAction, "deleted file", "user", user, "exp", name, "file", path)
 
@@ -192,6 +194,7 @@ func DeleteExperimentFiles(w http.ResponseWriter, r *http.Request) {
 	user := middleware.UserFromContext(r.Context())
 
 	for _, path := range deleted {
+		revokeExperimentFileGrants(name, path)
 		plog.Info(plog.TypeAction, "deleted file", "user", user, "exp", name, "file", path)
 	}
 

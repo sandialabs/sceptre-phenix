@@ -13,6 +13,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 
 	"phenix/store"
+	"phenix/web/capability"
 	"phenix/web/rbac"
 )
 
@@ -30,10 +31,12 @@ func useCapRecheck(t *testing.T) {
 	t.Cleanup(func() { capRecheckInterval = original })
 }
 
-// useTestUser stores the user with the role, signed in with a new session,
-// and returns the session's JWT, signed with testJWTKey.
-func useTestUser(t *testing.T, name string, role rbac.Role) string {
+// useTestUser stores the user alice with the role, signed in with a new
+// session, and returns the session's JWT, signed with testJWTKey.
+func useTestUser(t *testing.T, role rbac.Role) string {
 	t.Helper()
+
+	const name = "alice"
 
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		jwtClaimSub: name,
@@ -135,7 +138,7 @@ func TestCaptureGrantRechecksAccess(t *testing.T) {
 			useCapRecheck(t)
 			useExperimentFilesDir(t, map[string]string{"a.pcap": string(testPcapHeader())})
 
-			session := useTestUser(t, "alice", sharkRole())
+			session := useTestUser(t, sharkRole())
 			server := serveRouter(t, testPublic(), testJWTKey).URL
 
 			capture := openSignedIn(t, server, session)
@@ -169,7 +172,7 @@ func TestCaptureGrantEndsWithSession(t *testing.T) {
 	useWebShark(t)
 	useExperimentFilesDir(t, map[string]string{"a.pcap": string(testPcapHeader())})
 
-	session := useTestUser(t, "alice", sharkRole())
+	session := useTestUser(t, sharkRole())
 	server := serveRouter(t, testPublic(), testJWTKey).URL
 
 	capture := openSignedIn(t, server, session)
@@ -445,5 +448,117 @@ func TestWebSharkNameDoesNotStream(t *testing.T) {
 
 	if resp := do(t, http.MethodGet, server+"/webshark/streams/pcs_unknown", ""); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown token: got %d, want 404", resp.StatusCode)
+	}
+}
+
+// Stopping an experiment ends its stream grants; WebShark's go on.
+// Deleting it ends them all.
+func TestExperimentStopAndDeleteRevokeGrants(t *testing.T) {
+	live := useLiveCapture(t, useWebShark(t))
+	live.write(t, testPcapHeader())
+
+	server := serveAs(t, "alice", sharkRole()).URL
+	stream := server + "/" + streamToken(t, server).URLs["stream"]
+	view := server + "/webshark/captures/" + openInWebShark(t, server, `{"vm":"test-vm","interface":0}`).Capture
+
+	revokeOnExperimentStop("stop", "other-experiment")
+
+	if n := len(captureGrants.List("alice", "test-experiment")); n != 2 {
+		t.Fatalf("another experiment's stop left %d grants, want 2", n)
+	}
+
+	revokeOnExperimentStop("stop", "test-experiment")
+
+	if resp := do(t, http.MethodGet, stream, ""); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("stream after stop: got %d, want 404", resp.StatusCode)
+	}
+
+	if resp := do(t, http.MethodGet, view, ""); resp.StatusCode != http.StatusOK {
+		t.Fatalf("WebShark after stop: got %d, want 200", resp.StatusCode)
+	}
+
+	revokeOnExperimentDelete("delete", "test-experiment")
+
+	if resp := do(t, http.MethodGet, view, ""); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("WebShark after delete: got %d, want 404", resp.StatusCode)
+	}
+}
+
+// Signing out ends the grants given under the session, and only those.
+func TestLogoutRevokesGrants(t *testing.T) {
+	useWebShark(t)
+	useExperimentFilesDir(t, map[string]string{"a.pcap": string(testPcapHeader())})
+
+	session := useTestUser(t, sharkRole())
+	server := serveRouter(t, testPublic(), testJWTKey).URL
+	url := server + "/webshark/captures/" + openSignedIn(t, server, session).Capture
+
+	// another session's grant
+	other := captureGrants.Mint("other.pcap", capability.Grant{
+		User: "alice", Session: "other-session", Target: capability.Target{Exp: "test-experiment"},
+		Ops: viewOps, Expires: time.Now().Add(time.Hour),
+	})
+
+	if resp := signedIn(t, http.MethodGet, server+"/api/v1/logout", "", session); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("signing out: got %d", resp.StatusCode)
+	}
+
+	if resp := do(t, http.MethodGet, url, ""); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("after signing out: got %d, want 404", resp.StatusCode)
+	}
+
+	if list := captureGrants.List("alice", "test-experiment"); len(list) != 1 || list[0].ID != other.ID {
+		t.Fatalf("alice's grants after signing out: %+v", list)
+	}
+}
+
+func TestDeleteUserRevokesGrants(t *testing.T) {
+	useWebShark(t)
+	useExperimentFilesDir(t, map[string]string{"a.pcap": string(testPcapHeader())})
+	useTestUser(t, sharkRole())
+
+	server := serveAs(t, "alice", sharkRole()).URL
+	url := server + "/webshark/captures/" + openInWebShark(t, server, `{"path":"a.pcap"}`).Capture
+
+	admin := serveAs(t, "admin", testRole("users", "delete", "alice")).URL
+	if resp := do(t, http.MethodDelete, admin+"/api/v1/users/alice", ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("deleting alice: got %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	if resp := do(t, http.MethodGet, url, ""); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("after deleting the user: got %d, want 404", resp.StatusCode)
+	}
+}
+
+// Deleting a capture file ends its grants: a copy fetched from a mesh node
+// could otherwise still be read.
+func TestDeleteExperimentFileRevokesGrants(t *testing.T) {
+	useWebShark(t)
+	useExperimentFilesDir(t, map[string]string{
+		"a.pcap": string(testPcapHeader()), "b.pcap": string(testPcapHeader()), "c.pcap": string(testPcapHeader()),
+	})
+	useTestFiles(t, "a.pcap", "b.pcap", "c.pcap")
+
+	server := serveAs(t, "alice", combinedRole(sharkRole(), testRole("experiments/files", "delete", "test-experiment"))).URL
+
+	urls := make(map[string]string)
+	for _, name := range []string{"a.pcap", "b.pcap", "c.pcap"} {
+		urls[name] = server + "/webshark/captures/" + openInWebShark(t, server, `{"path":"`+name+`"}`).Capture
+	}
+
+	files := server + "/api/v1/experiments/test-experiment/files"
+
+	if resp := do(t, http.MethodDelete, files+"/a.pcap?path=a.pcap", ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("deleting a.pcap: got %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	if resp := do(t, http.MethodPost, files+"/delete", `{"paths":["b.pcap"]}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("deleting b.pcap: got %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	for name, want := range map[string]int{"a.pcap": http.StatusNotFound, "b.pcap": http.StatusNotFound, "c.pcap": http.StatusOK} {
+		if resp := do(t, http.MethodGet, urls[name], ""); resp.StatusCode != want {
+			t.Errorf("%s: got %d, want %d", name, resp.StatusCode, want)
+		}
 	}
 }

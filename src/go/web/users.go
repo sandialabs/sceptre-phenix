@@ -12,6 +12,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
+	"phenix/web/capability"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -477,6 +478,8 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	revokeCaptureGrants("user deleted", func(g capability.Grant) bool { return g.User == uname }, "user", uname)
 
 	broker.Broadcast(
 		bt.NewRequestPolicy(resourceUsers, "delete", uname),
