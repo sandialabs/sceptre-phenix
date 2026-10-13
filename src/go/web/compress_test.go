@@ -218,11 +218,12 @@ func TestCompressResponsesHeldBackStatus(t *testing.T) {
 	}
 }
 
-// A compressed response is not the bytes a strong ETag or a byte range would
-// refer to.
+// A compressed response is not the bytes a strong ETag, a byte range or a
+// Repr-Digest would refer to.
 func TestCompressResponsesWeakensValidators(t *testing.T) {
 	h := CompressResponses(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"abc"`)
+		w.Header().Set("Repr-Digest", "sha-256=:AAAA:")
 		http.ServeContent(w, r, "vms.json", time.Time{}, strings.NewReader(bigJSON))
 	}))
 
@@ -237,6 +238,10 @@ func TestCompressResponsesWeakensValidators(t *testing.T) {
 
 	if got := resp.Header.Get("Accept-Ranges"); got != "" {
 		t.Errorf("Accept-Ranges = %q on a compressed response", got)
+	}
+
+	if got := resp.Header.Get("Repr-Digest"); got != "" {
+		t.Errorf("Repr-Digest = %q on a compressed response", got)
 	}
 
 	if got := readBody(t, resp); got != bigJSON {

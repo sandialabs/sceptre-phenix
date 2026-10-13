@@ -4591,7 +4591,8 @@ components:
       description: >-
         the whole file's SHA-256 (RFC 9530), such as `sha-256=:<base64>:`,
         sent only once the file's checksum route has computed it; it holds
-        for a range too, so a resumed download can be verified
+        for a range too, so a resumed download can be verified, and is
+        dropped from a gzip-compressed response
       schema:
         type: string
   responses:

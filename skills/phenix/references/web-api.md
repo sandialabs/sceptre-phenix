@@ -80,7 +80,8 @@ no-cache`. `Range` gives a `206` (or `416` with `Content-Range: bytes */<size>`)
 and `If-Range` with the `ETag` resumes only while the file is unchanged,
 answering a changed file with the whole new one (`200`). `If-None-Match` gives
 `304`. Downloads are attachments and are never gzip-compressed; a compressed
-API response drops `Accept-Ranges` and weakens its `ETag` to `W/"..."`.
+API response drops `Accept-Ranges` and `Repr-Digest` and weakens its `ETag` to
+`W/"..."`.
 
 With `Accept: text/plain` the same route is the Files tab's viewer: inline,
 `text/plain; charset=utf-8`, compressible, and `413` for a file over 10 MiB.
