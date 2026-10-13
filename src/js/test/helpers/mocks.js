@@ -18,6 +18,10 @@ import { vi } from 'vitest';
 import { idle, resetLoader } from './pageLoader.js';
 import { allowAll } from './permissions.js';
 
+// the other page loaders, for a file to mock pageLoader.js with instead of
+// modules.pageLoader
+export { capturing, fetching, loaderSpy, switchable } from './pageLoader.js';
+
 // roleAllowed(resource, verb, name) answers with rbac.allowed; set it to a
 // predicate from permissions.js
 export const rbac = { allowed: allowAll };
@@ -78,7 +82,7 @@ export const modules = {
   fileSaver: () => ({ default: saver }),
   // a component that cannot run outside a browser, such as MiniTerminal.vue
   stub: () => ({ default: {} }),
-  // the other loaders in pageLoader.js may be passed instead
+  // every page gets a loader that loads nothing
   pageLoader: idle,
 };
 

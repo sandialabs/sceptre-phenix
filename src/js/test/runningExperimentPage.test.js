@@ -3,50 +3,26 @@
 // reconnects, and what it does with websocket traffic that is not its own.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/utils/rbac.js', () => ({ roleAllowed: () => true }));
-vi.mock('@/utils/axios.js', () => ({
-  default: { get: vi.fn(() => Promise.reject(new Error('no netflow'))) },
-}));
-vi.mock('@/store', () => ({
-  usePhenixStore: () => ({ token: 't', features: [], role: null }),
-}));
-
-const ws = vi.hoisted(() => ({ sent: [], reconnect: [] }));
-vi.mock('@/utils/websocket', () => ({
-  addWsHandler: () => {},
-  removeWsHandler: () => {},
-  onWsReconnect: (f) => {
-    ws.reconnect.push(f);
-    return () => {};
-  },
-  sendWsMsg: (msg) => ws.sent.push(msg),
-}));
-
+const { axios, capturing, loaderSpy, modules, resetMocks, ws } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/websocket', modules.websocket);
 // the options the page gives its loader, and the loader's load()
-const loader = vi.hoisted(() => ({ options: null, load: null }));
-vi.mock('@/utils/pageLoader.js', () => ({
-  createPageLoader: (options) => {
-    loader.options = options;
-    return { start: () => {}, stop: () => {}, load: loader.load };
-  },
-  loadingText: (what) => `Loading ${what}…`,
-}));
+vi.mock('@/utils/pageLoader.js', capturing);
 
 import { cachedPage, clearPageCache } from '@/utils/pageCache.js';
 import { experimentKey } from '@/utils/pageData.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
-import { makeContext } from './helpers/context.js';
+import { wsMsg } from './helpers/fixtures.js';
+import { pageContext } from './helpers/page.js';
 import { stubBrowser } from './helpers/render.js';
 
-// the page on exp1, created as it is when opened
+// The page on exp1, created as it is when opened. Not page.js's openPage,
+// whose flush() waits on a timer the fake timers hold back.
 async function openPage(fields = {}) {
-  const page = makeContext(RunningExperiment, {
-    $route: { params: { id: 'exp1' } },
-    $router: { replace: vi.fn() },
-    $buefy: { toast: { open: vi.fn() } },
-    $emit: vi.fn(),
-    ...fields,
-  });
+  const page = pageContext(RunningExperiment, { id: 'exp1', fields });
   await RunningExperiment.created.call(page);
   return page;
 }
@@ -62,18 +38,15 @@ const screenshotSizes = () =>
     .map((msg) => msg.request.size);
 
 // the server's answer to a VM list request
-const vmList = (name, vms) => ({
-  resource: { type: 'experiment/vms', name, action: 'list' },
-  result: { vms, total: vms.length },
-});
+const vmList = (name, vms) =>
+  wsMsg('experiment/vms', name, 'list', { vms, total: vms.length });
 
 beforeEach(() => {
   stubBrowser();
   // the timer that gives up waiting for screenshots
   vi.useFakeTimers();
-  ws.sent.length = 0;
-  ws.reconnect.length = 0;
-  loader.load = vi.fn();
+  resetMocks({ store: { token: 't', features: [], role: null } });
+  axios.get.mockRejectedValue(new Error('no netflow'));
 });
 
 afterEach(() => {
@@ -87,8 +60,8 @@ describe('loading', () => {
     const page = await openPage();
 
     // each list has the server ask minimega for every VM
-    loader.options.apply(running([{ name: 'vm1' }]));
-    loader.options.apply(running([{ name: 'vm1' }]));
+    loaderSpy.options.apply(running([{ name: 'vm1' }]));
+    loaderSpy.options.apply(running([{ name: 'vm1' }]));
 
     expect(vmLists()).toHaveLength(1);
     expect(page.experiment.vms.map((vm) => vm.name)).toEqual(['vm1']);
@@ -97,24 +70,24 @@ describe('loading', () => {
 
   it('lists the VMs again when the header refreshes the page', async () => {
     await openPage();
-    loader.options.apply(running([]));
+    loaderSpy.options.apply(running([]));
 
-    loader.options.refresh();
+    loaderSpy.options.refresh();
     expect(vmLists()).toHaveLength(2);
-    expect(loader.load).toHaveBeenCalled();
+    expect(loaderSpy.load).toHaveBeenCalled();
   });
 
   it('keeps the websocket rows once they have arrived', async () => {
     const page = await openPage();
     page.handleWs(vmList('exp1', [{ name: 'live' }]));
 
-    loader.options.apply(running([]));
+    loaderSpy.options.apply(running([]));
     expect(page.experiment.vms).toEqual([{ name: 'live' }]);
   });
 
   it('says the VMs are loading until the websocket lists them', async () => {
     const page = await openPage();
-    loader.options.apply(running([]));
+    loaderSpy.options.apply(running([]));
     expect(page.vmsEmptyText).toBe('Loading VMs…');
 
     page.handleWs(vmList('exp1', []));
@@ -125,7 +98,7 @@ describe('loading', () => {
 
   it('hands over to the stopped view when the experiment has stopped', async () => {
     const page = await openPage();
-    loader.options.apply({ name: 'exp1', running: false });
+    loaderSpy.options.apply({ name: 'exp1', running: false });
 
     expect(page.$emit).toHaveBeenCalledWith('running', false);
     expect(vmLists()).toHaveLength(0);
@@ -142,7 +115,7 @@ describe('after the websocket reconnects', () => {
     ['only the VM list at the default screenshot size', {}, []],
   ])('asks again for %s', async (_, fields, sizes) => {
     await openPage(fields);
-    loader.options.apply(running([]));
+    loaderSpy.options.apply(running([]));
     ws.sent.length = 0;
 
     ws.reconnect.forEach((f) => f());
@@ -161,7 +134,7 @@ describe('after the websocket reconnects', () => {
 describe('websocket traffic', () => {
   it("lists only its own experiment's VMs, and caches the list", async () => {
     const page = await openPage();
-    loader.options.apply(running([{ name: 'vm1' }]));
+    loaderSpy.options.apply(running([{ name: 'vm1' }]));
 
     page.handleWs(vmList('exp2', [{ name: 'other-vm' }]));
     expect(page.experiment.vms.map((vm) => vm.name)).toEqual(['vm1']);
@@ -182,9 +155,7 @@ describe('websocket traffic', () => {
     'leaves the page when its experiment is %s elsewhere',
     async (_, action) => {
       const page = await openPage();
-      const message = (name, act) => ({
-        resource: { type: 'experiment', name, action: act },
-      });
+      const message = (name, act) => wsMsg('experiment', name, act);
 
       // another experiment, or a message that does not end this one
       page.handleWs(message('exp2', action));
@@ -201,9 +172,7 @@ describe('websocket traffic', () => {
     const page = await openPage();
     page.isWaiting = true;
 
-    page.handleWs({
-      resource: { type: 'experiment', name: 'exp1', action: 'stop' },
-    });
+    page.handleWs(wsMsg('experiment', 'exp1', 'stop'));
     expect(page.$router.replace).not.toHaveBeenCalled();
     expect(page.$buefy.toast.open).not.toHaveBeenCalled();
   });
