@@ -411,22 +411,32 @@ func serveSharkCapture(w http.ResponseWriter, r *http.Request, name string, atta
 	if tap != nil {
 		defer tap.Release()
 
+		// still growing: no Last-Modified, so a resumed download (If-Range)
+		// gets the capture as it is now rather than splicing two versions
 		st := tap.State()
-		http.ServeContent(w, r, base, st.Modified, io.NewSectionReader(tap, 0, st.Size))
+		http.ServeContent(w, r, base, time.Time{}, io.NewSectionReader(tap, 0, st.Size))
 
 		return
 	}
 
 	defer f.Close()
 
-	info, err := f.Stat()
-	if err != nil {
-		sharkError(w, "not found", http.StatusNotFound)
-
-		return
+	// a finished file: resumable, with a strong ETag
+	saveAs := ""
+	if attachment {
+		saveAs = base
 	}
 
-	http.ServeContent(w, r, base, info.ModTime(), f)
+	_, err = util.ServeOpenFile(w, r, f, util.Download{
+		Path:        f.Name(),
+		Name:        saveAs,
+		ContentType: "application/octet-stream",
+		Live:        false,
+		MaxSize:     0,
+	})
+	if err != nil {
+		sharkError(w, "not found", http.StatusNotFound)
+	}
 }
 
 func sharkError(w http.ResponseWriter, msg string, status int) {

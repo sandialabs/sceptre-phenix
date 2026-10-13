@@ -325,7 +325,8 @@ running or has no active miniccc agent.
 The mount browser modal presents two panes:
 
 * **Local file system** — browse to a file on your local machine and upload it
-  into the VM, or download a file from the VM to your local machine.
+  into the VM, or download a file from the VM to your local machine. An
+  interrupted download resumes when retried from the browser's downloads list.
 * **Experiment files** — copy files that already exist on the phēnix server
   into the VM. This option is only available when the
   [experiment file server](settings.md#settings-reference) is enabled (see

@@ -48,8 +48,8 @@ curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experi
 | Netflow | `GET/POST/DELETE /experiments/{exp}/netflow`, `GET /experiments/{exp}/netflow/ws` |
 | Subnet captures | `POST /experiments/{exp}/captureSubnet`, `POST /experiments/{exp}/stopCaptureSubnet` |
 | VMs | `GET/PATCH /experiments/{exp}/vms`, `GET/PATCH/DELETE /experiments/{exp}/vms/{name}`, plus `/start`, `/stop`, `/restart`, `/redeploy`, `/shutdown`, `/reset`, `/cdrom`, `/vnc`, `/vnc/ws`, `/screenshot.png`, `/captures`, `/captures/{iface}/stream` (running capture as pcap over HTTP or websocket; `?from=now`), `/snapshots`, `/snapshots/{snapshot}`, `/commit`, `/memorySnapshot`, `/forwards`, `/forwards/{host}/{port}/ws` |
-| VM mount (only with the `vm-mount` feature enabled) | `POST /experiments/{exp}/vms/{name}/mount`, `DELETE .../unmount`, `GET .../files?path=`, `GET .../files/download?path=`, `PUT .../files/upload?path=`, `POST .../files/copy`. Mount and unmount answer 409 while the VM's mount or unmount is in progress, and unmount gives up with 409 `mount busy` after waiting 30 s for downloads |
-| Disks | `GET/POST/DELETE /disks` (`GET ?refresh=true` inspects every image again), `/disks/snapshot`, `/disks/rebase`, `/disks/resize`, `/disks/commit`, `/disks/clone`, `/disks/rename`, `/disks/download`. `GET` lists images up to 16 levels under the minimega files directory (skipping hidden names, `lost+found`, `<exp>/files`, `<exp>/tmp`, `<exp>/miniccc_responses`, and top-level `saved` and `transfer_*`; symlinked folders are not followed), plus topology images anywhere and their backing images, once each by cleaned `fullPath`, with `relativePath` (`""` outside), `outsideFilesDir`, `readOnly`, and `backingImages` as full paths; `name` is the file name `disks` RBAC checks. Outside images also need `experiments get` on an experiment using them (or must back an image the role sees), and `?expName=` needs `experiments get` (unknown: 404). Actions take query parameters (`disk`, `new` relative to the disk's folder, `backing`, `unsafe`, `size`) relative to the files directory or absolute, and answer 400 for outside or skipped paths, folders, a `new` that names no file (empty, ending in `/`, or last part `.` or `..`), and names minimega cannot take (white space, quotes, `#`, `\`, glob characters, `$`, `,`) in snapshot, commit, rebase and resize paths and in any `new`, 404 when missing, and 409 when `new` exists; clone, rename and delete act on the file directly, and clone and rename never replace a file; upload writes to the top level |
+| VM mount (only with the `vm-mount` feature enabled) | `POST /experiments/{exp}/vms/{name}/mount`, `DELETE .../unmount`, `GET .../files?path=`, `GET/HEAD .../files/download?path=` (resumable), `PUT .../files/upload?path=`, `POST .../files/copy`. Mount and unmount answer 409 while the VM's mount or unmount is in progress, and unmount gives up with 409 `mount busy` after waiting 30 s for downloads |
+| Disks | `GET/POST/DELETE /disks` (`GET ?refresh=true` inspects every image again), `/disks/snapshot`, `/disks/rebase`, `/disks/resize`, `/disks/commit`, `/disks/clone`, `/disks/rename`, `GET/HEAD /disks/download` (resumable). `GET` lists images up to 16 levels under the minimega files directory (skipping hidden names, `lost+found`, `<exp>/files`, `<exp>/tmp`, `<exp>/miniccc_responses`, and top-level `saved` and `transfer_*`; symlinked folders are not followed), plus topology images anywhere and their backing images, once each by cleaned `fullPath`, with `relativePath` (`""` outside), `outsideFilesDir`, `readOnly`, and `backingImages` as full paths; `name` is the file name `disks` RBAC checks. Outside images also need `experiments get` on an experiment using them (or must back an image the role sees), and `?expName=` needs `experiments get` (unknown: 404). Actions take query parameters (`disk`, `new` relative to the disk's folder, `backing`, `unsafe`, `size`) relative to the files directory or absolute, and answer 400 for outside or skipped paths, folders, a `new` that names no file (empty, ending in `/`, or last part `.` or `..`), and names minimega cannot take (white space, quotes, `#`, `\`, glob characters, `$`, `,`) in snapshot, commit, rebase and resize paths and in any `new`, 404 when missing, and 409 when `new` exists; clone, rename and delete act on the file directly, and clone and rename never replace a file; upload writes to the top level |
 | Misc lookups | `GET /vms` (all experiments), `GET /applications`, `GET /topologies`, `GET /topologies/{topo}/scenarios`, `GET /hosts` |
 | Users/Roles/Auth | `GET/POST /users`, `GET/PATCH/DELETE /users/{username}`, `POST /users/{username}/tokens`, `GET /roles`, `POST /signup`, `GET/POST /login`, `GET /logout` |
 | Realtime | `GET /ws` (websocket broker for UI events/logs), `GET /logs`, `POST /console`, `GET/DELETE /console/{pid}`, `GET /console/{pid}/ws`, `POST /console/{pid}/size` (minimega console; see below). Slow `/ws` clients are closed with code 1013 and should reconnect; the live log stream may skip lines under load |
@@ -58,7 +58,7 @@ curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experi
 | Builder | `GET/POST /builder/topologies`, `GET/PUT /builder/topologies/{name}`; the builder UI itself is served from the server root as `GET /builder` and `POST /builder/save` (outside `/api/v1`). Payloads and workflow are in [`builder.md`](builder.md) |
 | Workflow | `POST /workflow/apply/{branch}` (`?dryRun=true`, `pending`, `expect`, `tag`), `POST /workflow/configs/{branch}` (`?dryRun=true`). Parameters and answers are in [`workflow.md`](workflow.md#rest-endpoints) |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode, plus `base-dir.injects` and `workflow-dry-run`) |
-| Tunneler (server root, only with the `tunneler-download` feature) | `GET /downloads/tunneler` (lists the installed builds), `GET /downloads/tunneler/{name}`; neither needs a token |
+| Tunneler (server root, only with the `tunneler-download` feature) | `GET /downloads/tunneler` (lists the installed builds), `GET/HEAD /downloads/tunneler/{name}` (resumable); neither needs a token |
 
 When a config fails its schema, the config routes (`POST /configs`,
 `PUT /configs/{kind}/{name}`) and the workflow routes answer 400 with the
@@ -69,8 +69,11 @@ text in `metadata.validation-raw`; see [`workflow.md`](workflow.md).
 
 ## Downloads
 
-Single-file downloads stream from disk and resume. `GET /experiments/{name}/files/{filename}?path=`
-also answers `HEAD`, and sends `Accept-Ranges: bytes`, `Content-Length`, a
+Single-file downloads stream from disk and resume:
+`GET /experiments/{name}/files/{filename}?path=`, `GET /disks/download?disk=`,
+the VM mount's `GET .../files/download?path=`, `GET /downloads/tunneler/{name}`
+and a saved capture's `GET /webshark/captures/{name}`. Each also answers `HEAD`,
+and sends `Accept-Ranges: bytes`, `Content-Length`, a
 strong `ETag` (from the file's inode, size and nanosecond modification time,
 never its contents) and `Last-Modified`, with `Cache-Control: private,
 no-cache`. `Range` gives a `206` (or `416` with `Content-Range: bytes */<size>`),
@@ -94,7 +97,12 @@ curl -C - -o out.pcap -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
 ```
 
 `curl -C -` sends only `Range`, not `If-Range`, so it splices a file that
-changed between attempts.
+changed between attempts, such as a disk image a running VM writes to.
+
+A running capture in WebShark (`/webshark/captures/{name}` while live) sends no
+`ETag` or `Last-Modified` and `Cache-Control: no-store`: a range is still the
+bytes captured so far, but a resume with `If-Range` gets the whole capture
+again. `GET .../captures/{iface}/stream` is a live stream with no ranges.
 
 ## minimega Console
 

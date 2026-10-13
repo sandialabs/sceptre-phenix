@@ -109,3 +109,40 @@ func installTunnelers(t *testing.T, dir string) {
 		}
 	}
 }
+
+// A build download answers HEAD and resumes with a range against its ETag.
+//
+//nolint:paralleltest // changes the working directory
+func TestTunnelerDownloadResumes(t *testing.T) {
+	router := mux.NewRouter()
+	router.HandleFunc("/downloads/tunneler/{name}", GetTunneler).Methods("GET", "HEAD")
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	installTunnelers(t, filepath.Join(dir, tunnelerDir))
+
+	serve := func(method string, header ...string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "/downloads/tunneler/phenix-tunneler-linux-amd64", nil)
+		for i := 0; i+1 < len(header); i += 2 {
+			req.Header.Set(header[i], header[i+1])
+		}
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		return rec
+	}
+
+	head := serve(http.MethodHead)
+	etag := head.Header().Get("ETag")
+
+	if head.Code != http.StatusOK || etag == "" || head.Body.Len() != 0 || head.Header().Get("Content-Length") != "5" {
+		t.Fatalf("HEAD: status %d, ETag %q, %d body bytes, Content-Length %q",
+			head.Code, etag, head.Body.Len(), head.Header().Get("Content-Length"))
+	}
+
+	resumed := serve(http.MethodGet, "Range", "bytes=2-", "If-Range", etag)
+	if resumed.Code != http.StatusPartialContent || resumed.Body.String() != "nux" {
+		t.Fatalf("resume: status %d, body %q; want 206 nux", resumed.Code, resumed.Body)
+	}
+}

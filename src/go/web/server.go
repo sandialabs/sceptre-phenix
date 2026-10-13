@@ -235,7 +235,7 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	if o.featured("tunneler-download") {
 		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
 		router.HandleFunc("/downloads/tunneler", forward.ListTunnelers).Methods("GET")
-		router.HandleFunc("/downloads/tunneler/{name}", forward.GetTunneler).Methods("GET")
+		router.HandleFunc("/downloads/tunneler/{name}", forward.GetTunneler).Methods("GET", "HEAD")
 	}
 
 	if o.featured("webshark") {
@@ -449,7 +449,7 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 			Methods("GET", "OPTIONS").
 			Queries("path", "{path}")
 		api.HandleFunc("/experiments/{exp}/vms/{name}/files/download", DownloadMountFile).
-			Methods("GET", "OPTIONS").
+			Methods("GET", "HEAD", "OPTIONS").
 			Queries("path", "{path}")
 		api.HandleFunc("/experiments/{exp}/vms/{name}/files/upload", UploadMountFile).
 			Methods("PUT", "OPTIONS").
@@ -478,7 +478,7 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 		Queries("disk", "{disk}", "new", "{new}")
 	api.HandleFunc("/disks", UploadDisk).Methods("POST", "OPTIONS")
 	api.HandleFunc("/disks/download", DownloadDisk).
-		Methods("GET", "OPTIONS").
+		Methods("GET", "HEAD", "OPTIONS").
 		Queries("disk", "{disk}")
 
 	api.HandleFunc("/vms", GetAllVMs).Methods("GET", "OPTIONS")
