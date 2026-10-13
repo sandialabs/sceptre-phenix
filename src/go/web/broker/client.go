@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
+	"phenix/types"
 	"phenix/util/cache"
 	"phenix/util/mm"
 	"phenix/util/plog"
@@ -28,6 +30,27 @@ import (
 )
 
 var marshaler = protojson.MarshalOptions{EmitUnpopulated: true} //nolint:gochecknoglobals // global marshaler
+
+// clientDeps are what a client's requests ask of the store and minimega.
+type clientDeps struct {
+	experiment func(name string) (*types.Experiment, error)
+	vms        func(exp *types.Experiment) []mm.VM
+	// warms the experiment's topology search cache
+	topology   func(exp string) error
+	screenshot func(ctx context.Context, exp, vm, size string) ([]byte, error)
+}
+
+//nolint:gochecknoglobals // replaced in tests
+var deps = clientDeps{
+	experiment: experiment.Get,
+	vms:        vm.ListFor,
+	topology: func(exp string) error {
+		_, err := vm.Topology(exp, nil)
+
+		return err //nolint:wrapcheck // logged as is
+	},
+	screenshot: util.GetScreenshotContext,
+}
 
 type vmScope struct {
 	exp  string
@@ -55,6 +78,8 @@ const (
 	maxMsgSize           = 2048
 	socketBufferSize     = 4096
 	publishChannelBuffer = 256
+	// requests waiting for the client's worker; more are dropped.
+	clientJobQueue = 8
 	// just longer than the screenshot cache, so each round takes fresh
 	// screenshots while clients whose rounds fall within one cache life share
 	// them; every one is a minimega command, which blocks all others.
@@ -82,6 +107,9 @@ type Client struct {
 	done    chan struct{}
 	once    sync.Once
 
+	// requests read hands to work
+	jobs chan bt.Request
+
 	// Track the VMs this client currently has in view, if any, so we know
 	// what screenshots need to periodically be pushed to the client over
 	// the WebSocket connection.
@@ -106,6 +134,7 @@ func NewClient(role rbac.Role, conn *websocket.Conn) *Client {
 		conn:     conn,
 		publish:  make(chan any, publishChannelBuffer),
 		done:     make(chan struct{}),
+		jobs:     make(chan bt.Request, clientJobQueue),
 		shotSize: defaultBrokerScreenshotSize,
 	}
 }
@@ -140,6 +169,7 @@ func (c *Client) Go() {
 
 	go c.write()
 	go c.read()
+	go c.work()
 	go c.setScreenshotsTicker()
 }
 
@@ -184,8 +214,12 @@ func (c *Client) closeConn(code int, reason string) {
 	}
 }
 
-//nolint:cyclop,funlen,gocyclo // complex logic
-func (c *Client) read() { //nolint:maintidx // complex logic
+// read takes the client's requests. It does only cheap work itself and hands
+// requests that ask minimega or the store to the client's worker, so it keeps
+// reading, and answering pings, however long those take.
+//
+//nolint:funlen // one case per request type
+func (c *Client) read() {
 	defer c.Stop()
 
 	c.conn.SetReadLimit(maxMsgSize)
@@ -262,16 +296,22 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 						req.Resource.Action,
 					)
 				}
-
-				continue
-			case "experiment/vms":
-				// Sent when the client leaves the experiment's VM table. Without
-				// it the screenshot ticker keeps queuing minimega commands for
-				// VMs no longer on screen, delaying every other API request.
-				if req.Resource.Action == "unsubscribe" {
+			case vmsResourceType:
+				switch req.Resource.Action {
+				case "unsubscribe":
+					// Sent when the client leaves the experiment's VM table. Without
+					// it the screenshot ticker keeps queuing minimega commands for
+					// VMs no longer on screen, delaying every other API request.
 					c.clearVMs()
-
-					continue
+				case "list":
+					c.queue(req)
+				default:
+					plog.Error(
+						plog.TypeSystem,
+						"unexpected WebSocket request resource action",
+						"action",
+						req.Resource.Action,
+					)
 				}
 			case "metadata/screenshot":
 				var payload map[string]string
@@ -299,10 +339,8 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 					plog.Debug(plog.TypeSystem, "updated screenshot resolution", "size", size)
 					c.setScreenshotSize(size)
 
-					c.updateScreenshots()
+					go c.updateScreenshots()
 				}
-
-				continue
 			case "experiment/topology":
 				// Same permission as GET /experiments/{name}/topology.
 				if !c.role.Allowed("experiments/topology", "get", req.Resource.Name) {
@@ -316,117 +354,7 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 					continue
 				}
 
-				switch req.Resource.Action {
-				case "search":
-					var query map[string]string
-
-					if err := json.Unmarshal(req.Payload, &query); err != nil {
-						plog.Error(plog.TypeSystem, "cannot unmarshal request payload", "err", err)
-
-						continue
-					}
-
-					// TODO: handle multiple query terms (how? AND or OR?)
-					// Do the same as in web/experiment.go@SearchExperimentTopology
-					term := query["term"]
-					if term == "" {
-						term = "hostname"
-					}
-
-					value := query["value"]
-					if value == "" {
-						plog.Error(plog.TypeSystem, "missing search value for term", "term", term)
-
-						continue
-					}
-
-					cacheKey := fmt.Sprintf("experiment|%s|search", req.Resource.Name)
-
-					val, ok := cache.Get(cacheKey)
-					if !ok {
-						// warm the cache (again?)
-						if _, err := vm.Topology(req.Resource.Name, nil); err != nil {
-							plog.Error(
-								plog.TypeSystem,
-								"getting experiment topology",
-								"exp",
-								req.Resource.Name,
-								"err",
-								err,
-							)
-
-							continue
-						}
-
-						val, _ = cache.Get(cacheKey)
-					}
-
-					var (
-						search, _ = val.(vm.TopologySearch)
-						nodes     []int
-					)
-
-					switch strings.ToLower(term) {
-					case "hostname":
-						if node, ok := search.Hostname[value]; ok {
-							nodes = []int{node}
-						}
-					case "disk":
-						nodes = search.Disk[value]
-					case "node-type":
-						nodes = search.Type[value]
-					case "os-type":
-						nodes = search.OSType[value]
-					case "label":
-						nodes = search.Label[value]
-					case "annotation":
-						nodes = search.Annotation[value]
-					case "vlan":
-						nodes = search.VLAN[value]
-					case "ip":
-						if net, err := netaddr.ParseIPPrefix(value); err == nil {
-							for k, v := range search.IP {
-								ip, ipErr := netaddr.ParseIP(k)
-								if ipErr != nil {
-									continue
-								}
-
-								if net.Contains(ip) {
-									nodes = append(nodes, v...)
-								}
-							}
-						} else {
-							nodes = search.IP[value]
-						}
-					}
-
-					results := map[string]any{
-						"term":  term,
-						"value": value,
-						"results": map[string]any{
-							"nodes": nodes,
-						},
-					}
-
-					body, err := json.Marshal(results)
-					if err != nil {
-						plog.Error(
-							plog.TypeSystem,
-							"marshaling search results for WebSocket client",
-							"err",
-							err,
-						)
-
-						continue
-					}
-
-					c.send(bt.Publish{ //nolint:exhaustruct // partial initialization
-						Resource: bt.NewResource("experiment/topology", req.Resource.Name, "search"),
-						Result:   body,
-					})
-
-					continue
-				default:
+				if req.Resource.Action != "search" {
 					plog.Error(
 						plog.TypeSystem,
 						"unexpected WebSocket request resource action for experiment/topology resource type",
@@ -436,6 +364,8 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 
 					continue
 				}
+
+				c.queue(req)
 			default:
 				plog.Error(
 					plog.TypeSystem,
@@ -443,99 +373,282 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 					"type",
 					req.Resource.Type,
 				)
-
-				continue
 			}
-
-			switch req.Resource.Action {
-			case "list":
-			default:
-				plog.Error(
-					plog.TypeSystem,
-					"unexpected WebSocket request resource action",
-					"action",
-					req.Resource.Action,
-				)
-
-				continue
-			}
-
-			var payload map[string]any
-			if err := json.Unmarshal(req.Payload, &payload); err != nil {
-				plog.Error(
-					plog.TypeSystem,
-					"cannot unmarshal WebSocket request payload JSON",
-					"err",
-					err,
-				)
-
-				continue
-			}
-
-			if !c.role.Allowed("vms", "list") {
-				plog.Warn(plog.TypeSecurity, "client access to vms/list forbidden")
-
-				continue
-			}
-
-			expName := req.Resource.Name
-
-			exp, err := experiment.Get(expName)
-			if err != nil {
-				plog.Error(
-					plog.TypeSystem,
-					"getting experiment for WebSocket client",
-					"exp",
-					expName,
-					"err",
-					err,
-				)
-
-				continue
-			}
-
-			query := parseVMListQuery(payload)
-
-			// Screenshots follow the list (see updateScreenshots): minimega
-			// takes them one at a time, which would hold back the whole list.
-			allowed, total := util.SelectVMs(expName, vm.ListFor(exp), exp.Spec.Topology(), query, c.role)
-
-			c.vmMu.Lock()
-
-			c.vms = nil
-
-			for _, v := range allowed {
-				c.vms = append(c.vms, vmScope{exp: expName, name: v.Name, running: v.Running})
-			}
-
-			c.vmMu.Unlock()
-
-			resp := util.VMListToProtobuf(expName, allowed, total, exp.Spec.Topology())
-
-			body, err := marshaler.Marshal(resp)
-			if err != nil {
-				plog.Error(
-					plog.TypeSystem,
-					"marshaling experiment VMs for WebSocket client",
-					"exp",
-					exp,
-					"err",
-					err,
-				)
-
-				continue
-			}
-
-			if !c.send(bt.Publish{ //nolint:exhaustruct // partial initialization
-				Resource: bt.NewResource("experiment/vms", expName, "list"),
-				Result:   body,
-			}) {
-				return
-			}
-
-			go c.updateScreenshots()
 		}
 	}
+}
+
+// queue hands req to the client's worker, dropping it when the worker is that
+// far behind: the client asks again when it next needs the answer.
+func (c *Client) queue(req bt.Request) {
+	select {
+	case c.jobs <- req:
+	default:
+		plog.Debug(
+			plog.TypeSystem,
+			"dropping WebSocket request while earlier ones are answered",
+			"type", req.Resource.Type,
+			"name", req.Resource.Name,
+		)
+	}
+}
+
+// work answers the requests read queues, one at a time and in order. Of the
+// VM lists queued while it was busy only the newest is answered: each one
+// replaces the client's view, so the older ones would be thrown away.
+func (c *Client) work() {
+	for {
+		select {
+		case <-c.done:
+			return
+		case req := <-c.jobs:
+			batch := []bt.Request{req}
+
+		drain:
+			for {
+				select {
+				case req := <-c.jobs:
+					batch = append(batch, req)
+				default:
+					break drain
+				}
+			}
+
+			for _, req := range latestLists(batch) {
+				if isClosed(c.done) {
+					return
+				}
+
+				switch req.Resource.Type {
+				case vmsResourceType:
+					c.listVMs(req)
+				case "experiment/topology":
+					c.searchTopology(req)
+				}
+			}
+		}
+	}
+}
+
+// latestLists drops every VM list request in reqs but the last.
+func latestLists(reqs []bt.Request) []bt.Request {
+	last := -1
+
+	for i, req := range reqs {
+		if req.Resource.Type == vmsResourceType {
+			last = i
+		}
+	}
+
+	kept := make([]bt.Request, 0, len(reqs))
+
+	for i, req := range reqs {
+		if req.Resource.Type != vmsResourceType || i == last {
+			kept = append(kept, req)
+		}
+	}
+
+	return kept
+}
+
+func isClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
+// searchTopology answers an experiment/topology search request.
+//
+//nolint:funlen // one case per search term
+func (c *Client) searchTopology(req bt.Request) {
+	var query map[string]string
+
+	if err := json.Unmarshal(req.Payload, &query); err != nil {
+		plog.Error(plog.TypeSystem, "cannot unmarshal request payload", "err", err)
+
+		return
+	}
+
+	// TODO: handle multiple query terms (how? AND or OR?)
+	// Do the same as in web/experiment.go@SearchExperimentTopology
+	term := query["term"]
+	if term == "" {
+		term = "hostname"
+	}
+
+	value := query["value"]
+	if value == "" {
+		plog.Error(plog.TypeSystem, "missing search value for term", "term", term)
+
+		return
+	}
+
+	cacheKey := fmt.Sprintf("experiment|%s|search", req.Resource.Name)
+
+	val, ok := cache.Get(cacheKey)
+	if !ok {
+		// warm the cache (again?)
+		if err := deps.topology(req.Resource.Name); err != nil {
+			plog.Error(
+				plog.TypeSystem,
+				"getting experiment topology",
+				"exp",
+				req.Resource.Name,
+				"err",
+				err,
+			)
+
+			return
+		}
+
+		val, _ = cache.Get(cacheKey)
+	}
+
+	var (
+		search, _ = val.(vm.TopologySearch)
+		nodes     []int
+	)
+
+	switch strings.ToLower(term) {
+	case "hostname":
+		if node, ok := search.Hostname[value]; ok {
+			nodes = []int{node}
+		}
+	case "disk":
+		nodes = search.Disk[value]
+	case "node-type":
+		nodes = search.Type[value]
+	case "os-type":
+		nodes = search.OSType[value]
+	case "label":
+		nodes = search.Label[value]
+	case "annotation":
+		nodes = search.Annotation[value]
+	case "vlan":
+		nodes = search.VLAN[value]
+	case "ip":
+		if net, err := netaddr.ParseIPPrefix(value); err == nil {
+			for k, v := range search.IP {
+				ip, ipErr := netaddr.ParseIP(k)
+				if ipErr != nil {
+					continue
+				}
+
+				if net.Contains(ip) {
+					nodes = append(nodes, v...)
+				}
+			}
+		} else {
+			nodes = search.IP[value]
+		}
+	}
+
+	results := map[string]any{
+		"term":  term,
+		"value": value,
+		"results": map[string]any{
+			"nodes": nodes,
+		},
+	}
+
+	body, err := json.Marshal(results)
+	if err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"marshaling search results for WebSocket client",
+			"err",
+			err,
+		)
+
+		return
+	}
+
+	c.send(bt.Publish{ //nolint:exhaustruct // partial initialization
+		Resource: bt.NewResource("experiment/topology", req.Resource.Name, "search"),
+		Result:   body,
+	})
+}
+
+// listVMs answers an experiment/vms list request and puts the listed VMs in
+// view for screenshots.
+func (c *Client) listVMs(req bt.Request) {
+	var payload map[string]any
+	if err := json.Unmarshal(req.Payload, &payload); err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"cannot unmarshal WebSocket request payload JSON",
+			"err",
+			err,
+		)
+
+		return
+	}
+
+	if !c.role.Allowed("vms", "list") {
+		plog.Warn(plog.TypeSecurity, "client access to vms/list forbidden")
+
+		return
+	}
+
+	expName := req.Resource.Name
+
+	exp, err := deps.experiment(expName)
+	if err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"getting experiment for WebSocket client",
+			"exp",
+			expName,
+			"err",
+			err,
+		)
+
+		return
+	}
+
+	query := parseVMListQuery(payload)
+
+	// Screenshots follow the list (see updateScreenshots): minimega
+	// takes them one at a time, which would hold back the whole list.
+	allowed, total := util.SelectVMs(expName, deps.vms(exp), exp.Spec.Topology(), query, c.role)
+
+	c.vmMu.Lock()
+
+	c.vms = nil
+
+	for _, v := range allowed {
+		c.vms = append(c.vms, vmScope{exp: expName, name: v.Name, running: v.Running})
+	}
+
+	c.vmMu.Unlock()
+
+	resp := util.VMListToProtobuf(expName, allowed, total, exp.Spec.Topology())
+
+	body, err := marshaler.Marshal(resp)
+	if err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"marshaling experiment VMs for WebSocket client",
+			"exp",
+			exp,
+			"err",
+			err,
+		)
+
+		return
+	}
+
+	if !c.send(bt.Publish{ //nolint:exhaustruct // partial initialization
+		Resource: bt.NewResource(vmsResourceType, expName, "list"),
+		Result:   body,
+	}) {
+		return
+	}
+
+	go c.updateScreenshots()
 }
 
 // parseVMListQuery reads an experiment/vms list request payload. Clients may
@@ -812,10 +925,31 @@ func (c *Client) pushScreenshots() {
 
 	size := c.screenshotSize()
 
+	// a client that leaves stops waiting for its screenshots; minimega still
+	// takes the one asked for, and caches it for the next client
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		select {
+		case <-c.done:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
 	for exp, vms := range names {
 		for _, vm := range vms {
-			screenshot, err := util.GetScreenshot(exp, vm, size)
+			if ctx.Err() != nil {
+				return
+			}
+
+			screenshot, err := deps.screenshot(ctx, exp, vm, size)
 			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+
 				if errors.Is(err, mm.ErrVMNotFound) {
 					continue
 				}

@@ -110,6 +110,7 @@ func dialTestClient(t *testing.T, role rbac.Role) (*Client, *websocket.Conn) {
 
 		go c.read()
 		go c.write()
+		go c.work()
 
 		clients <- c
 	}))

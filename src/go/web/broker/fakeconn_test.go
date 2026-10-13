@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	bt "phenix/web/broker/brokertypes"
 )
 
 // withinTimeout is how long within waits.
@@ -77,7 +79,7 @@ func (c *fakeConn) ReadMessage() (int, []byte, error) { return c.read() }
 
 func (c *fakeConn) NextWriter(int) (io.WriteCloser, error) { return c.nextWriter() }
 
-func (c *fakeConn) isClosed() bool { return isDone(c.closed) }
+func (c *fakeConn) isClosed() bool { return isClosed(c.closed) }
 
 func (c *fakeConn) Close() error {
 	c.closeOnce.Do(func() { close(c.closed) })
@@ -221,15 +223,6 @@ func (w *blockingWriter) Close() error {
 	return nil
 }
 
-func isDone(ch <-chan struct{}) bool {
-	select {
-	case <-ch:
-		return true
-	default:
-		return false
-	}
-}
-
 // newFakeClient returns a client on conn that may do anything.
 func newFakeClient(conn wsConn) *Client {
 	return &Client{
@@ -237,6 +230,7 @@ func newFakeClient(conn wsConn) *Client {
 		conn:     conn,
 		publish:  make(chan any, publishChannelBuffer),
 		done:     make(chan struct{}),
+		jobs:     make(chan bt.Request, clientJobQueue),
 		shotSize: defaultBrokerScreenshotSize,
 	}
 }

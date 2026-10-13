@@ -26,6 +26,7 @@ const (
 	logBufferSize              = 1024
 	triggerStateError          = "error"
 	logResourceType            = "log"
+	vmsResourceType            = "experiment/vms"
 	delayedStartScreenshotSize = "215"
 	// how often the broker tells of the clients and log lines it dropped.
 	dropReportInterval = 30 * time.Second

@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -37,6 +38,13 @@ func ValidScreenshotSize(size string) bool {
 }
 
 func GetScreenshot(expName, vmName, size string) ([]byte, error) {
+	return GetScreenshotContext(context.Background(), expName, vmName, size)
+}
+
+// GetScreenshotContext is GetScreenshot for a caller that may stop waiting:
+// once ctx is done it returns ctx's error, while the minimega command it
+// shares with other callers runs on and caches its screenshot.
+func GetScreenshotContext(ctx context.Context, expName, vmName, size string) ([]byte, error) {
 	if !ValidScreenshotSize(size) {
 		return nil, ErrInvalidScreenshotSize
 	}
@@ -48,7 +56,7 @@ func GetScreenshot(expName, vmName, size string) ([]byte, error) {
 		return screenshot, nil
 	}
 
-	val, err, _ := screenshotFlights.Do(name, func() (any, error) {
+	flight := screenshotFlights.DoChan(name, func() (any, error) {
 		// a flight that finished after the check above has cached the screenshot
 		if screenshot, ok := cache.Get(name); ok {
 			return screenshot, nil
@@ -67,11 +75,17 @@ func GetScreenshot(expName, vmName, size string) ([]byte, error) {
 
 		return screenshot, nil
 	})
-	if err != nil {
-		return nil, err //nolint:wrapcheck // wrapped in the flight
+
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("waiting for screenshot: %w", ctx.Err())
+	case res := <-flight:
+		if res.Err != nil {
+			return nil, res.Err //nolint:wrapcheck // wrapped in the flight
+		}
+
+		screenshot, _ := res.Val.([]byte)
+
+		return screenshot, nil
 	}
-
-	screenshot, _ := val.([]byte)
-
-	return screenshot, nil
 }
