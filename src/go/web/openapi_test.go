@@ -241,7 +241,6 @@ var undocumentedBeforeContract = map[string]string{
 	"api GET /settings/password":                            "the password requirements",
 	"api GET /settings/timeout":                             "the session timeout",
 	"api GET /topologies/{}/scenarios":                      "lists a topology's scenarios",
-	"api PATCH /experiments/{}":                             "updates an experiment",
 	"api PATCH /experiments/{}/vms":                         "updates several VMs",
 	"api POST /configs/download":                            "downloads several configs as an archive",
 	"api POST /experiments/{}/captureSubnet":                "captures a subnet's VM interfaces",
