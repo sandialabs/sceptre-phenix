@@ -7,8 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **WebShark**: A WebShark tab (`/packets`) shows an experiment's running captures, live, and its saved capture files in the browser. Capture files on the Files tab and capturing interfaces in VM details open in it. The Docker, Podman and Debian builds ship it in `/opt/phenix/webshark`, and the tab shows only when the server finds it.
-- **Capture streaming**: `GET /experiments/{exp}/vms/{name}/captures/{iface}/stream` (HTTP or websocket, `?from=now` to skip the backlog) and `phenix vm capture stream` stream a running capture as pcap from any cluster node. The WebShark tab's Copy Wireshark command button copies a `curl` command against `GET /webshark/streams/{token}` with a stream token that starts streams for 5 minutes and whose streams stop at sign-out, rather than the user's sign-in token.
-- **API**: `POST /experiments/{exp}/webshark` readies a capture for WebShark, which the server serves under `/webshark/`, also behind a proxy that adds a base path or signs users in with a cookie. `POST/GET /experiments/{exp}/capture-tokens` and `DELETE .../capture-tokens/{id}` give, list and revoke capture tokens: WebShark capture names and stream tokens, bound to the user and session they were given under, rechecked against the user's role on use, and revoked on sign-out, user delete, experiment delete and capture file delete (stream tokens also on experiment stop). WebShark links end 2 hours after their last use, 12 hours after they were opened, or at sign-out.
+- **Capture streaming**: `GET /experiments/{exp}/vms/{name}/captures/{iface}/stream` (HTTP or websocket, `?from=now` to skip the backlog) and `phenix vm capture stream` stream a running capture as pcap from any cluster node. The WebShark tab's Copy Wireshark command button copies a `curl` command that uses a short-lived stream token instead of the user's sign-in token.
+- **API**: `POST /experiments/{exp}/webshark` readies a capture for WebShark, which the server serves under `/webshark/`, also behind a proxy that adds a base path or signs users in with a cookie.
+- **Capture tokens**: `/experiments/{exp}/capture-tokens` gives, lists and revokes expiring WebShark and capture stream tokens, each bound to one user, session, capture and operation.
 - **State of Health**: A State of Health tab summarizes every experiment's SOH (verdict, VM health, checks, reachability and a 12-run trend) from the new `GET /soh`. The soh app records its last run and a 20-run history in its app status.
 - **State of Health graph**: A layout picker (Force, Radial tree, Layered, VLAN groups, ELK layered; each loaded only when picked and remembered), a Fit button, a VM count, and a Download menu for PNG, SVG and GEXF (Gephi). Adds `@dagrejs/dagre` (MIT), `webcola` (MIT) and `elkjs` (EPL-2.0).
 - **Experiment files**: The Files tab can delete a file, or select several to download as a zip or delete. Backed by `DELETE /experiments/{name}/files/{file}`, `POST .../files/delete` and `POST .../files/download` (at most 500 files and 2 GiB), and a new `experiments/files` `delete` permission that Experiment Admin roles gain on startup.
@@ -19,7 +20,7 @@ All notable changes to this project will be documented in this file.
 - **Console**: The minimega console survives page changes, reloads and other tabs, replaying up to 256 KiB of output, and ends on CTRL+D, logout, or 15 seconds after its last tab closes (`GET` and `DELETE /console/{pid}`).
 - **SCORCH**: Clear a finished run's status (`POST .../scorch/pipelines/{run}/clear`) or run only its cleanup stage (`POST .../cleanup`), and Start all or Stop all runs, from the pipeline page.
 - **Documentation**: New pages for the web UI, Disks, Hosts and WebShark, rewritten VM, netflow, SCORCH, tunneler, config and RBAC pages with new screenshots, and the new routes in `openapi.yml`.
-- **CI**: A `perf` job enforces bundle size (size-limit) and Lighthouse budgets. It runs Lighthouse even when a bundle budget fails, writes a summary of both with deltas against the default branch to the job summary and a `perf-summary` artifact, and fails with one short annotation per failed budget.
+- **CI**: A `perf` job enforces bundle size (size-limit) and Lighthouse budgets, and summarizes each budget's change against the default branch.
 - **Topology Builder**:
   - **Topology Endpoints**: Added `POST /api/v1/builder/topologies` and `PUT /api/v1/builder/topologies/{name}` to create and save a topology and its diagram without touching an experiment; both refuse the write while an experiment built from that topology is running.
   - **Default Disk Images**: Added the `$DEFAULT_VM_IMAGE` and `$DEFAULT_ROUTER_IMAGE` experiment variables, which set the disk image new VM and router nodes are created with.
@@ -29,8 +30,8 @@ All notable changes to this project will be documented in this file.
 - **Settings**: Added `base-dir.injects` and `base-dir.topologies`, the directories `phenix workflow apply` stages injects in and looks up topology directories in. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow API**: The workflow endpoints accept `?dryRun=true`, which validates the request and changes nothing, and return a JSON result. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Validation Errors**: Config validation errors from the CLI, the API and the web UI name the list item, its hostname or name, and the line. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
-- **Resumable downloads**: Experiment file, disk image, VM mount, tunneler and saved WebShark capture downloads answer `HEAD` and resume with `Range` and `If-Range` against a strong `ETag`, so a browser or `curl -C -` continues an interrupted download instead of starting over. `GET /experiments/{name}/files/{filename}/checksum` and `GET /disks/checksum` return a file's SHA-256, computed in the background, which downloads then also send as `Repr-Digest`.
-- **Health checks**: `GET /healthz` (liveness: uptime and the BoltDB store) and `GET /readyz` (readiness: minimega, mesh, store, qemu-img, WebShark, disk space, websocket broker and Go runtime) answer in the IETF `application/health+json` format, `503` when failing, without credentials; only their `output` details need a token. `phenix healthcheck` queries them and exits non-zero when phēnix is unhealthy.
+- **Resumable downloads**: Experiment file, disk image, VM mount, tunneler and saved WebShark capture downloads can be resumed with `Range`, and `GET .../files/{filename}/checksum` and `GET /disks/checksum` return a file's SHA-256.
+- **Health checks**: `GET /healthz` (liveness) and `GET /readyz` (readiness of minimega, the store, qemu-img, WebShark and disk space) report health as `application/health+json`, and `phenix healthcheck` queries them.
 
 ### Changed
 
@@ -54,9 +55,9 @@ All notable changes to this project will be documented in this file.
 - **Tunneler**: The page lists the builds the server has (`GET /downloads/tunneler`).
 - **Browser console**: Production builds log only warnings and errors, and lint rejects new `console.log` calls.
 - **CI**: The Frontend workflow cancels superseded runs, and closing a pull request cancels its CI.
-- **CI**: The Frontend workflow builds the UI and phenix once and shares them with the e2e and performance jobs, each with read-only permissions.
-- **CI**: The CI workflow regenerates the protobuf bindings, store mocks, RBAC policy and API reference twice (`make check-generated`) and fails on missing or non-deterministic output, or when generating changes tracked files.
-- **Build**: `make generate` also renders the API reference, `make build` binaries serve it at `/docs/` (`SKIP_API_DOCS=1` skips it for offline builds), and every build renders it with one Redocly CLI version, pinned in `scripts/api-docs.sh`. A prek hook checks that `openapi.yml` is valid OpenAPI.
+- **CI**: The Frontend workflow builds the UI and phenix once and shares them with the e2e and performance jobs.
+- **CI**: A `generated` job checks that generated code and the API reference are reproducible (`make check-generated`).
+- **Build**: `make generate` and `make build` also render the API reference served at `/docs/`, with one pinned Redocly CLI version.
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, form controls, selection checkboxes and modal close buttons, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, status tag, code and State of Health tab colors, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
 - **Topology Builder**:
@@ -66,17 +67,17 @@ All notable changes to this project will be documented in this file.
 - **Topology schema**: Require node hostnames to be at least 2 characters long.
 - **Workflow API**: A workflow apply is validated before a running experiment is stopped, so an invalid one returns 400 or 409 instead of 500 and leaves the experiment running. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow Schema (breaking)**: Workflow configs are validated against the new `Workflow` schema, so unknown or misspelled keys, values of the wrong type and a missing `spec` return 400 instead of being ignored. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
-- **API compression**: Downloads (attachments) are never gzip-compressed, so they reach the client byte for byte, and a compressed API response no longer advertises byte ranges and carries only a weak ETag.
-- **Experiment file downloads**: Stream from disk instead of loading the whole file into server memory on every request. The Files tab's viewer refuses a file over 10 MiB (`413`) with a hint to download it, and zip downloads send `Accept-Ranges: none`.
-- **Containers**: The Docker and Podman images gain a `HEALTHCHECK` running `phenix healthcheck`, which also replaces `phenix version` as the compose `phenix` service's health check, and `podman/pod.yml` gives the phenix container a matching liveness probe. Start one-off CLI containers with `--no-healthcheck`.
+- **API compression**: Downloads are no longer gzip-compressed.
+- **Experiment file downloads**: Files stream from disk instead of loading into server memory, and the Files tab's viewer refuses files over 10 MiB.
+- **Containers**: The Docker and Podman images, the compose file and `podman/pod.yml` check health with `phenix healthcheck`.
 
 ### Removed
 
-- **API**: The stale 2020 API Blueprint served at `/docs/apiary.apib`. `openapi.yml`, rendered at `/docs/`, is the API reference.
+- **API**: The outdated API Blueprint at `/docs/apiary.apib`.
 
 ### Fixed
 
-- **Documentation**: The configuration schema page shows the schemas phēnix validates with, included from the schema files for the version each kind is stored in, instead of hand-copied excerpts that had fallen out of date.
+- **Documentation**: The configuration schema page showed outdated schema excerpts.
 - **minimega**: Deleting or redeploying a VM removed every other stopped VM in the experiment, restoring a snapshot failed on multi-node experiments, and concurrent redeploys could launch a VM with another VM's settings.
 - **miniccc**: A command meant for one VM could run on another when two were sent at once, answered SOH commands ran again after a miniccc restart, and waiting for a VM's miniccc client ran up to 2 s past its timeout or cancellation.
 - **Namespaces**: On minimega 2.9, taps and netflow captures on other nodes outlived their experiment, and listing a stopped experiment's captures, port forwards or files recreated its namespace with a stale host list. The names `minimega` and `__phenix__` are now rejected.
@@ -112,15 +113,15 @@ All notable changes to this project will be documented in this file.
 - **Workflow API**: `POST /api/v1/workflow/configs/{branch}` returns 400 for a config with a missing or unknown kind, or with `/` in its name, instead of dropping the connection. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **CLI**: Every `phenix` command waits at most one minute for the server's options over `--unix-socket` instead of hanging on a server that never answers. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Containers**: The Docker and Podman builds gave the `INSTALL_CERTS` certificates to yarn, but the UI builds with npm, so building the UI behind a TLS-inspecting proxy failed to install its packages.
-- **Live updates**: A browser tab that stopped reading its websocket held up live updates for every other tab for up to 10 seconds at a time, and could stop live updates and all server logging for good. Such a tab's websocket is now closed with code 1013 once its queue fills, and the UI reconnects. Under heavy load the Logs page's live stream skips lines and says how many; reloading the page shows them. A VM list or screenshot waiting on a busy minimega no longer stops the websocket from answering pings, which disconnected it.
-- **SCORCH**: A component output window or read-only break terminal that stopped reading held up every experiment's SCORCH components, and a terminal exiting with one open blocked every other terminal. A window that falls behind now stops streaming; reopening it shows the full output.
-- **Port forwards**: Listing, creating or deleting a forward, and stopping any experiment, waited behind every other experiment's tunnel commands, and creating a forward retried busy cluster ports forever. Creating a forward now gives up after 20 busy ports, and an app's forward request no longer holds up the app.
-- **Netflow**: Starting or stopping one experiment's netflow capture held up every other experiment's netflow requests, and experiment stops, while it waited on the mesh. A capture still starting now reads as not started.
-- **VM mounts**: Mounting or unmounting one VM, or a slow download from a mounted VM, held up mount requests for every other VM. An unmount now waits up to 30 seconds for its own VM's downloads, then gives up with `409 mount busy`; mounting a VM while it is being unmounted answers `409`.
-- **Disks and captures**: Changes to the minimega files directory made while disk images were being inspected went unread until the inspection finished, and opening a live capture on another node held up every other capture's release while it asked minimega where the capture was.
-- **Streams and proxies**: A capture stream or WebShark tab that stopped reading kept its capture followed, over the mesh for captures on other nodes, until the connection dropped, and VNC and port forward websockets waited on an unreachable endpoint for as long as the system allowed. Such writes now give up after 10 seconds, the proxies stop connecting after 10 seconds or when the client leaves, and the web, Unix socket and file servers wait at most 10 seconds for a request's headers.
-- **VM copy progress**: Committing a VM's disk to a new backing image could crash phenix when the copy finished while its progress was being reported.
-- **minimega**: A minimega command that never answered held up every later command on phenix's shared minimega connection forever. A command now gives up with `timeout running command` after waiting 10 minutes for the connection or holding it for 30, and the connection is replaced. Code can wait with `mmcli.RunContext` and stop waiting when its context ends.
+- **Live updates**: A browser tab that stopped reading its websocket could delay or stop live updates for every other tab.
+- **SCORCH**: A component output window or break terminal that stopped reading could hold up every experiment's SCORCH components.
+- **Port forwards**: Port forward requests waited behind other experiments' tunnel commands, and creating a forward could retry busy ports forever.
+- **Netflow**: Starting or stopping one experiment's netflow capture held up other experiments' netflow requests and experiment stops.
+- **VM mounts**: Mounting, unmounting or downloading from one VM held up mount requests for every other VM.
+- **Disks and captures**: File changes made during a disk inspection went unnoticed until it finished, and opening a remote live capture held up other captures.
+- **Streams and proxies**: Capture streams, WebShark, VNC and port forward websockets could hang on a client or endpoint that stopped responding.
+- **VM copy progress**: Committing a VM's disk to a new backing image could crash phenix.
+- **minimega**: A minimega command that never answered held up every later minimega command.
 
 ## [1.0.0]
 
