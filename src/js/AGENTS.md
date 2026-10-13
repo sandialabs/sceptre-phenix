@@ -9,8 +9,8 @@ apply to Vue, JavaScript/TypeScript, Vite, Vitest, and Playwright work under
 - `src/views/`: route-level pages; `src/components/`: small reusable UI.
 - `src/utils/`: shared helpers; `router.js`: routes and guards; `store.js`:
   Pinia state; `main.js`: application setup.
-- Vite proxies `/api/v1`, `/version`, `/features`, and `/webshark` to
-  `localhost:3000`.
+- Vite proxies `/api/v1`, `/version`, `/features`, `/healthz`, `/readyz`, and
+  `/webshark` to `localhost:3000`.
 - `dist/` is generated output and is copied into `src/go/web/public/`; do not
   treat it as source.
 
