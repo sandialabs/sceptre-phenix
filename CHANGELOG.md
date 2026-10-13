@@ -136,6 +136,7 @@ All notable changes to this project will be documented in this file.
 - **Port forwards**: Listing, creating or deleting a forward, and stopping any experiment, waited behind every other experiment's tunnel commands, and creating a forward retried busy cluster ports forever. Creating a forward now gives up after 20 busy ports, and an app's forward request no longer holds up the app.
 - **Netflow**: Starting or stopping one experiment's netflow capture held up every other experiment's netflow requests, and experiment stops, while it waited on the mesh. A capture still starting now reads as not started.
 - **VM mounts**: Mounting or unmounting one VM, or a slow download from a mounted VM, held up mount requests for every other VM. An unmount now waits up to 30 seconds for its own VM's downloads, then gives up with `409 mount busy`; mounting a VM while it is being unmounted answers `409`.
+- **Disks and captures**: Changes to the minimega files directory made while disk images were being inspected went unread until the inspection finished, and opening a live capture on another node held up every other capture's release while it asked minimega where the capture was.
 
 ### Security
 

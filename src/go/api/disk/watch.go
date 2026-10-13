@@ -77,6 +77,22 @@ func (t *watchedTree) run(ctx context.Context, debounce time.Duration, onChange 
 	timer := time.NewTimer(debounce)
 	timer.Stop()
 
+	// onChange inspects images, which can take minutes, so it runs on its own
+	// goroutine while events are still read; changes meanwhile queue at most
+	// one more run.
+	changes := make(chan struct{}, 1)
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-changes:
+				onChange()
+			}
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -101,7 +117,10 @@ func (t *watchedTree) run(ctx context.Context, debounce time.Duration, onChange 
 			// events may have been lost, such as when the kernel's queue overflows
 			timer.Reset(debounce)
 		case <-timer.C:
-			onChange()
+			select {
+			case changes <- struct{}{}:
+			default:
+			}
 		}
 	}
 }

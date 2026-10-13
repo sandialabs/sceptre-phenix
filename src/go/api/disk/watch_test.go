@@ -1,10 +1,13 @@
 package disk
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 // Watch follows the folders GetImages searches, including ones made after it
@@ -84,5 +87,84 @@ func TestWatchSeesFolders(t *testing.T) {
 
 			reported("removing a folder")
 		})
+	}
+}
+
+// While onChange runs, the watch keeps reading events and stops when asked,
+// and the changes made meanwhile run onChange once more, not once each.
+func TestSlowOnChangeKeepsWatching(t *testing.T) {
+	t.Parallel()
+
+	const debounce = 20 * time.Millisecond
+
+	dir := t.TempDir()
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := watcher.Add(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	tree := &watchedTree{watcher: watcher, dir: dir, root: dir, dirs: map[string]bool{dir: true}}
+
+	var (
+		calls       = make(chan struct{}, 10)
+		gate        = make(chan struct{})
+		ran         = make(chan struct{})
+		ctx, cancel = context.WithCancel(t.Context())
+	)
+
+	defer cancel()
+
+	go func() {
+		defer close(ran)
+
+		tree.run(ctx, debounce, func() {
+			calls <- struct{}{}
+			<-gate
+		})
+	}()
+
+	called := func(what string) {
+		t.Helper()
+
+		select {
+		case <-calls:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("onChange not called after %s", what)
+		}
+	}
+
+	writeFile(t, filepath.Join(dir, "first.qc2"), "1")
+	called("writing an image")
+
+	// onChange is stuck; each write lands in its own debounce period
+	for _, name := range []string{"a.qc2", "b.qc2", "c.qc2"} {
+		writeFile(t, filepath.Join(dir, name), name)
+		time.Sleep(4 * debounce)
+	}
+
+	gate <- struct{}{}
+
+	called("the writes made while it ran")
+
+	// the second call is stuck now
+	cancel()
+
+	select {
+	case <-ran:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the watch did not stop while onChange ran")
+	}
+
+	gate <- struct{}{}
+
+	select {
+	case <-calls:
+		t.Fatal("onChange ran once for each change made while it ran")
+	case <-time.After(10 * debounce):
 	}
 }

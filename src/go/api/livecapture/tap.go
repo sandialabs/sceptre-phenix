@@ -165,27 +165,16 @@ type Tap struct {
 func Open(exp, vm string, iface int) (*Tap, error) {
 	key := Capture{Exp: exp, VM: vm, Interface: iface, Path: "", Host: ""}.key()
 
-	registryMu.Lock()
-
-	existing := registry[key]
-	if existing != nil && !existing.State().Done {
-		existing.acquire()
-		registryMu.Unlock()
-
-		return existing, nil
+	if t := acquireRunning(key); t != nil {
+		return t, nil
 	}
 
-	registryMu.Unlock()
-
 	c, err := find(exp, vm, iface)
-
-	registryMu.Lock()
-	defer registryMu.Unlock()
-
-	current := registry[key]
-
 	if err != nil {
-		if errors.Is(err, ErrNotCapturing) && current != nil {
+		registryMu.Lock()
+		defer registryMu.Unlock()
+
+		if current := registry[key]; errors.Is(err, ErrNotCapturing) && current != nil {
 			current.acquire()
 
 			return current, nil
@@ -195,25 +184,59 @@ func Open(exp, vm string, iface int) (*Tap, error) {
 	}
 
 	// another Open started one meanwhile
-	if current != nil && !current.State().Done {
+	if t := acquireRunning(key); t != nil {
+		return t, nil
+	}
+
+	// Asks minimega whether the capture is on the headnode and may create a
+	// spool, so it runs without the registry lock, which Release and expiry
+	// of every other capture take.
+	t, err := prepare(c)
+
+	registryMu.Lock()
+	defer registryMu.Unlock()
+
+	// and another started one while this one was prepared
+	if current := registry[key]; current != nil && !current.State().Done {
 		current.acquire()
+
+		if t != nil {
+			go t.discard()
+		}
 
 		return current, nil
 	}
 
-	t, err := start(c)
 	if err != nil {
 		return nil, err
 	}
 
 	registry[key] = t
 
+	go t.follow()
+
 	t.acquire()
 
 	return t, nil
 }
 
-func start(c Capture) (*Tap, error) {
+// acquireRunning takes a reference to the Tap following the capture at key, if
+// one is still following it.
+func acquireRunning(key string) *Tap {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+
+	if t := registry[key]; t != nil && !t.State().Done {
+		t.acquire()
+
+		return t
+	}
+
+	return nil
+}
+
+// prepare readies a Tap of the capture, which follows it once started.
+func prepare(c Capture) (*Tap, error) {
 	src, local, err := newSource(c)
 	if err != nil {
 		return nil, err
@@ -243,9 +266,17 @@ func start(c Capture) (*Tap, error) {
 		return nil, fmt.Errorf("opening store for capture %s: %w", c.Path, err)
 	}
 
-	go t.follow()
-
 	return t, nil
+}
+
+// discard closes a Tap prepare returned that was never started.
+func (t *Tap) discard() {
+	_ = t.src.Close()
+	_ = t.store.Close()
+
+	if t.spool != "" {
+		_ = os.Remove(t.spool)
+	}
 }
 
 // Capture returns the capture the Tap follows.
