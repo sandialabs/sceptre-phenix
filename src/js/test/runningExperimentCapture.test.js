@@ -17,6 +17,7 @@ vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 import { cachePage, clearPageCache } from '@/utils/pageCache.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import { flush } from './helpers/async.js';
+import { denyOnly } from './helpers/permissions.js';
 import {
   labeledControls,
   openModal,
@@ -270,7 +271,7 @@ describe('the CD-ROM picker', () => {
   });
 
   it("explains a role that can't list disks without asking the server", async () => {
-    rbac.allowed = (resource) => resource !== 'disks';
+    rbac.allowed = denyOnly(['disks']);
     const ctx = page();
     await ctx.showChangeDisc({ name: 'web' });
     expect(axios.get).not.toHaveBeenCalled();
@@ -486,7 +487,7 @@ describe("the VM details' disk and backing image chain", () => {
   });
 
   it("leaves it out for roles that can't list disks", async () => {
-    rbac.allowed = (resource) => resource !== 'disks';
+    rbac.allowed = denyOnly(['disks']);
     const vm = { name: 'web', disk: '/images/web_snap.qc2' };
     const ctx = page({ expModal: { active: true, vm, backingChain: null } });
     await ctx.loadBackingChain(vm);

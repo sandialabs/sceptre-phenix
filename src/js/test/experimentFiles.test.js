@@ -3,9 +3,8 @@
 // running and stopped experiment pages hold it.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notify, rbac, resetMocks, store } = await vi.hoisted(
-  () => import('./helpers/mocks.js'),
-);
+const { axios, modules, notify, rbac, resetMocks, saver, store } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
@@ -13,9 +12,7 @@ vi.mock('@/store.js', modules.store);
 // the experiment pages around the tab
 vi.mock('@/utils/websocket', modules.websocket);
 vi.mock('@/utils/pageLoader.js', modules.pageLoader);
-
-const saver = vi.hoisted(() => ({ saveAs: vi.fn() }));
-vi.mock('file-saver', () => ({ default: saver }));
+vi.mock('file-saver', modules.fileSaver);
 
 import { h } from 'vue';
 
@@ -24,7 +21,14 @@ import FileSelectionActions from '@/components/experiment/FileSelectionActions.v
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
 import { deferredGets, flush } from './helpers/async.js';
-import { makeContext } from './helpers/context.js';
+import { dialogs, toasts } from './helpers/buefy.js';
+import { pageContext } from './helpers/page.js';
+import {
+  allowAll,
+  allowOnly,
+  denyAll,
+  denyOnly,
+} from './helpers/permissions.js';
 import { renderSSR, stubBrowser, tableRows, textOf } from './helpers/render.js';
 import { memoryStorage } from './helpers/storage.js';
 
@@ -42,26 +46,18 @@ const answer = (names, categories = ['Unknown']) => ({
   },
 });
 
-// a Files tab on experiment exp1, with a dialog that records what it asks
-function filesTab(fields = {}) {
-  const tab = makeContext(ExperimentFilesTab, {
-    paginateKey: 'test-files',
-    filter: '',
-    category: null,
-    $route: { params: { id: 'exp1' } },
-    $router: { push: vi.fn() },
-    $emit: vi.fn(),
-    $nextTick: () => Promise.resolve(),
-    dialogs: [],
-    toasts: [],
-    ...fields,
+// a Files tab on experiment exp1, with its dialogs and toasts recorded
+const filesTab = (fields = {}) =>
+  pageContext(ExperimentFilesTab, {
+    id: 'exp1',
+    fields: {
+      paginateKey: 'test-files',
+      filter: '',
+      category: null,
+      $nextTick: () => Promise.resolve(),
+      ...fields,
+    },
   });
-  tab.$buefy = {
-    dialog: { confirm: (opts) => tab.dialogs.push(opts) },
-    toast: { open: (opts) => tab.toasts.push(opts) },
-  };
-  return tab;
-}
 
 // a Files tab already listing these paths; asking for the list again is
 // only recorded
@@ -77,10 +73,23 @@ function listing(paths = ['a.log', 'scorch/run-0/b.json', 'c.pcap']) {
 const emitted = (tab, event) =>
   tab.$emit.mock.calls.filter(([name]) => name == event).map(([, v]) => v);
 
-beforeEach(() => {
-  resetMocks();
-  saver.saveAs.mockReset();
-});
+// Roles, and whether each may download the experiment's files, delete them,
+// and so select them.
+const ROLES = [
+  ['a role that may do anything', allowAll, true, true, true],
+  [
+    "a role that may only get exp1's files",
+    allowOnly(['experiments/files', 'get', 'exp1']),
+    true,
+    false,
+    true,
+  ],
+  ['a role that may not delete', denyOnly(['*', 'delete']), true, false, true],
+  ['a role that may only list', allowOnly(['*', 'list']), false, false, false],
+  ['a role that may do nothing', denyAll, false, false, false],
+];
+
+beforeEach(() => resetMocks());
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -174,7 +183,7 @@ describe('listing files', () => {
   });
 
   it('does not request files without permission to list them', () => {
-    rbac.allowed = vi.fn(() => false);
+    rbac.allowed = vi.fn(denyAll);
     filesTab().updateFiles();
     expect(axios.get).not.toHaveBeenCalled();
     expect(rbac.allowed).toHaveBeenCalledWith(
@@ -296,17 +305,16 @@ describe('selecting files', () => {
     expect(listing([]).allFilesSelected).toBe(false);
   });
 
-  it('offers deletes only to roles allowed to delete files', () => {
-    rbac.allowed = (resource, verb, name) =>
-      resource == 'experiments/files' && verb == 'get' && name == 'exp1';
-    const tab = listing();
-    expect(tab.canDownloadFiles).toBe(true);
-    expect(tab.canDeleteFiles).toBe(false);
-    expect(tab.filesSelectable).toBe(true);
-
-    rbac.allowed = () => false;
-    expect(tab.filesSelectable).toBe(false);
-  });
+  it.each(ROLES)(
+    'offers %s only the downloads, deletes and selection it may use',
+    (_, role, download, del, select) => {
+      rbac.allowed = role;
+      const tab = listing();
+      expect(tab.canDownloadFiles).toBe(download);
+      expect(tab.canDeleteFiles).toBe(del);
+      expect(tab.filesSelectable).toBe(select);
+    },
+  );
 });
 
 describe('opening a file', () => {
@@ -423,7 +431,7 @@ describe('deleting a file', () => {
   it('names the file in the confirmation, escaped', () => {
     const tab = listing(['scorch/<b>x</b>.log']);
     tab.confirmDeleteFile(tab.files[0]);
-    const [dialog] = tab.dialogs;
+    const [dialog] = dialogs(tab);
     expect(dialog.type).toBe('is-danger');
     expect(dialog.confirmText).toBe('Delete');
     expect(dialog.message).toContain('&lt;b&gt;x&lt;/b&gt;.log');
@@ -438,7 +446,7 @@ describe('deleting a file', () => {
     tab.selectedFiles = ['scorch/run-0/b.json', 'a.log'];
 
     tab.confirmDeleteFile(tab.files[1]);
-    tab.dialogs[0].onConfirm();
+    dialogs(tab)[0].onConfirm();
 
     expect(axios.delete).toHaveBeenCalledWith('experiments/exp1/files/b.json', {
       params: { path: 'scorch/run-0/b.json' },
@@ -452,7 +460,7 @@ describe('deleting a file', () => {
     expect(tab.files.map((f) => f.path)).toEqual(['a.log', 'c.pcap']);
     expect(tab.filesTable.total).toBe(2);
     expect(tab.selectedFiles).toEqual(['a.log']);
-    expect(tab.toasts[0].type).toBe('is-success');
+    expect(toasts(tab)[0].type).toBe('is-success');
     expect(tab.updateFiles).toHaveBeenCalled();
   });
 
@@ -487,11 +495,11 @@ describe('deleting the selected files', () => {
     tab.selectedFiles = ['a.log', 'c.pcap'];
 
     tab.confirmDeleteSelectedFiles();
-    expect(tab.dialogs).toHaveLength(1);
-    expect(tab.dialogs[0].message).toContain('2 selected files');
-    expect(tab.dialogs[0].confirmText).toBe('Delete 2 Files');
+    expect(dialogs(tab)).toHaveLength(1);
+    expect(dialogs(tab)[0].message).toContain('2 selected files');
+    expect(dialogs(tab)[0].confirmText).toBe('Delete 2 Files');
 
-    const pending = tab.dialogs[0].onConfirm();
+    const pending = dialogs(tab)[0].onConfirm();
     expect(tab.filesBulkDeleting).toBe(true);
     await pending;
 
@@ -501,7 +509,7 @@ describe('deleting the selected files', () => {
     expect(tab.filesBulkDeleting).toBe(false);
     expect(tab.files.map((f) => f.path)).toEqual(['scorch/run-0/b.json']);
     expect(tab.selectedFiles).toEqual([]);
-    expect(tab.toasts[0].message).toBe('Deleted 2 files');
+    expect(toasts(tab)[0].message).toBe('Deleted 2 files');
     expect(notify.show).not.toHaveBeenCalled();
     expect(tab.updateFiles).toHaveBeenCalled();
   });
@@ -509,7 +517,7 @@ describe('deleting the selected files', () => {
   it('asks nothing when nothing is selected', () => {
     const tab = listing();
     tab.confirmDeleteSelectedFiles();
-    expect(tab.dialogs).toHaveLength(0);
+    expect(dialogs(tab)).toHaveLength(0);
   });
 
   it('reports the files it could not delete, which stay selected', async () => {
@@ -534,7 +542,7 @@ describe('deleting the selected files', () => {
     );
     expect(tab.selectedFiles).toEqual(['c.pcap', 'scorch/run-0/b.json']);
     expect(tab.files).toHaveLength(2);
-    expect(tab.toasts).toHaveLength(0);
+    expect(toasts(tab)).toHaveLength(0);
   });
 
   it('names the first ten failures and counts the rest', async () => {
@@ -721,17 +729,24 @@ describe('rendering', () => {
     expect(capture.path).toContain('/phenix/images/exp1/files/caps/a.pcap');
   });
 
-  it("leaves out the checkboxes and deletes a role can't use", async () => {
-    const files = [row('a.log')];
-    rbac.allowed = (_, verb) => verb != 'delete';
-    let [cells] = tableRows(await render({ files }, { tables: true }));
-    expect(buttons(cells.actions)).toEqual(['(space)', 'Download a.log']);
-    expect(cells.multiselect).toBeDefined();
-
-    rbac.allowed = (_, verb) => verb == 'list';
-    [cells] = tableRows(await render({ files }, { tables: true }));
-    expect(cells.multiselect).toBeUndefined();
-  });
+  it.each(ROLES)(
+    "leaves out the checkboxes and deletes %s can't use",
+    async (_, role, download, del, select) => {
+      rbac.allowed = role;
+      const [cells] = tableRows(
+        await render({ files: [row('a.log')] }, { tables: true }),
+      );
+      const shown = buttons(cells.actions);
+      if (download)
+        expect(shown).toEqual([
+          '(space)',
+          'Download a.log',
+          ...(del ? ['Delete a.log'] : []),
+        ]);
+      expect(shown.includes('Delete a.log')).toBe(del);
+      expect(cells.multiselect !== undefined).toBe(select);
+    },
+  );
 
   it('spins the toolbar button at work and holds the others', async () => {
     const toolbar = async (props) =>

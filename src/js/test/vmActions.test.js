@@ -17,6 +17,7 @@ import {
   vmStateInfo,
   vmStateType,
 } from '@/components/experiment/vmActions.js';
+import { allowAll, allowOnly, denyAll } from './helpers/permissions.js';
 
 const running = {
   name: 'vm1',
@@ -30,14 +31,6 @@ const quit = { ...running, state: 'QUIT', running: false };
 const persistent = { ...running, snapshot: false };
 const agentless = { ...running, ccActive: false };
 const busy = { ...running, busy: true };
-
-const all = () => true;
-const none = () => false;
-// a role allowed only the given resource/verb pairs
-const only =
-  (...pairs) =>
-  (resource, verb) =>
-    pairs.some(([r, v]) => r === resource && v === verb);
 
 const NOT_RUNNING = 'the VM is not running';
 const ALREADY_RUNNING = 'the VM is already running';
@@ -145,7 +138,7 @@ describe('the state rules', () => {
     ({ action, state, reason }) => {
       const vm = STATES[state];
       const button = vmActionState(action, vm, {
-        can: all,
+        can: allowAll,
         features: ['vm-mount'],
       });
       expect(button.permitted).toBe(true);
@@ -204,26 +197,31 @@ describe('vmStateInfo', () => {
 
 describe('vmActionState', () => {
   it('labels start as resume for a paused VM', () => {
-    expect(vmActionState('start', paused, { can: all }).label).toBe('Resume');
-    expect(vmActionState('start', quit, { can: all }).label).toBe('Start');
+    expect(vmActionState('start', paused, { can: allowAll }).label).toBe(
+      'Resume',
+    );
+    expect(vmActionState('start', quit, { can: allowAll }).label).toBe('Start');
   });
 
   it('offers to change the CD-ROM of a VM that has one', () => {
     const vm = { ...quit, cdRom: '/iso/a.iso' };
-    expect(vmActionState('cdrom', vm, { can: all })).toMatchObject({
+    expect(vmActionState('cdrom', vm, { can: allowAll })).toMatchObject({
       label: 'Change CD-ROM',
       reason: "Can't change the CD-ROM: the VM is not running",
     });
   });
 
   it("marks actions the role can't take as not permitted", () => {
-    const states = vmActionStates(POWER_ACTIONS, running, { can: none });
+    const states = vmActionStates(POWER_ACTIONS, running, { can: denyAll });
     expect(states.every((a) => !a.permitted && a.disabled)).toBe(true);
     expect(states[0].reason).toBe("Can't start: you don't have permission");
   });
 
   it('checks each action against its own permission', () => {
-    const can = only(['vms/shutdown', 'update'], ['vms/snapshots', 'create']);
+    const can = allowOnly(
+      ['vms/shutdown', 'update'],
+      ['vms/snapshots', 'create'],
+    );
     const states = vmActionStates(ROW_ACTIONS, running, { can });
     expect(states.map((a) => [a.name, a.permitted])).toEqual([
       ['shutdown', true],
@@ -236,11 +234,11 @@ describe('vmActionState', () => {
   });
 
   it('needs every permission an action lists', () => {
-    const can = only(['vms/cdrom', 'update']);
+    const can = allowOnly(['vms/cdrom', 'update']);
     expect(vmActionState('cdrom', running, { can }).permitted).toBe(false);
     expect(
       vmActionState('cdrom', running, {
-        can: only(['vms/cdrom', 'update'], ['vms/cdrom', 'delete']),
+        can: allowOnly(['vms/cdrom', 'update'], ['vms/cdrom', 'delete']),
       }).permitted,
     ).toBe(true);
   });
@@ -249,15 +247,17 @@ describe('vmActionState', () => {
     const states = vmActionStates(
       ROW_ACTIONS,
       { external: true },
-      { can: all },
+      { can: allowAll },
     );
     expect(states.every((a) => !a.permitted)).toBe(true);
   });
 
   it('offers mounting only when the server supports it', () => {
-    expect(vmActionState('mount', running, { can: all }).permitted).toBe(false);
+    expect(vmActionState('mount', running, { can: allowAll }).permitted).toBe(
+      false,
+    );
     expect(
-      vmActionState('mount', running, { can: all, features: ['vm-mount'] })
+      vmActionState('mount', running, { can: allowAll, features: ['vm-mount'] })
         .permitted,
     ).toBe(true);
   });
@@ -274,7 +274,7 @@ describe('vmActionState', () => {
   });
 
   it('rejects an unknown action', () => {
-    expect(() => vmActionState('explode', running, { can: all })).toThrow(
+    expect(() => vmActionState('explode', running, { can: allowAll })).toThrow(
       /unknown VM action/,
     );
   });
@@ -345,19 +345,20 @@ describe('capture all interfaces', () => {
   });
 
   it('uses the capture icon and needs permission to create captures', () => {
-    const state = vmActionState('captureAll', vm, { can: all });
+    const state = vmActionState('captureAll', vm, { can: allowAll });
     expect(state).toMatchObject({
       icon: CAPTURE_ICON,
       permitted: true,
       disabled: false,
     });
     expect(
-      vmActionState('captureAll', vm, { can: only(['vms/captures', 'list']) })
-        .permitted,
+      vmActionState('captureAll', vm, {
+        can: allowOnly(['vms/captures', 'list']),
+      }).permitted,
     ).toBe(false);
     expect(
       vmActionState('captureAll', vm, {
-        can: only(['vms/captures', 'create']),
+        can: allowOnly(['vms/captures', 'create']),
       }).permitted,
     ).toBe(true);
   });
@@ -376,7 +377,7 @@ describe('capture all interfaces', () => {
       /already being captured/,
     ],
   ])('is disabled for a VM %s, saying why', (_, target, reason) => {
-    const state = vmActionState('captureAll', target, { can: all });
+    const state = vmActionState('captureAll', target, { can: allowAll });
     expect(state.permitted).toBe(true);
     expect(state.disabled).toBe(true);
     expect(state.reason).toMatch(/^Can't capture all interfaces: /);

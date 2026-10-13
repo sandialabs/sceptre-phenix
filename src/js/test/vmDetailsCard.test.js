@@ -5,38 +5,25 @@
 // editor runs with a plain object standing in for the component instance.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const rbac = vi.hoisted(() => ({ allowed: () => true }));
-vi.mock('@/utils/rbac.js', () => ({
-  roleAllowed: (...args) => rbac.allowed(...args),
-}));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
+const { modules, rbac, resetMocks } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/store.js', modules.store);
 
 import { icon, library } from '@fortawesome/fontawesome-svg-core';
 
 import { faSharkFin } from '@/utils/icons.js';
 import VmDetailsCard from '@/components/experiment/VmDetailsCard.vue';
 import VmRowActions from '@/components/experiment/VmRowActions.vue';
+import { vm as makeVm } from './helpers/fixtures.js';
+import { allowAll, denyOnly } from './helpers/permissions.js';
 import { renderSSR, textOf, tooltipButtons } from './helpers/render.js';
 
-const vm = {
-  name: 'web',
-  state: 'RUNNING',
-  running: true,
-  cpus: 1,
-  ram: 2048,
-  ccActive: true,
-  snapshot: true,
-  disk: '/phenix/images/web_snap.qc2',
-  cdRom: '',
-  networks: ['DMZ (149)', 'MGMT (151)'],
-  ipv4: ['10.0.0.5', '10.1.0.5'],
-  taps: ['mega_tap1', 'mega_tap2'],
-  captures: [{ vm: 'web', interface: 1 }],
-};
+// web, capturing on its second interface
+const vm = makeVm({ captures: [{ vm: 'web', interface: 1 }] });
 
-beforeEach(() => {
-  rbac.allowed = () => true;
-});
+beforeEach(() => resetMocks({ store: {} }));
 
 const card = (props) =>
   renderSSR(VmDetailsCard, {
@@ -207,12 +194,6 @@ describe('VmDetailsCard Open in WebShark', () => {
   it('needs WebShark installed', async () => {
     expect(links(await card())).toEqual([]);
   });
-
-  it('needs permission to list the VM captures', async () => {
-    rbac.allowed = (resource, verb) =>
-      !(resource === 'vms/captures' && verb === 'list');
-    expect(links(await card({ features: ['webshark'] }))).toEqual([]);
-  });
 });
 
 // the Network box's buttons: [tooltip, attributes] for each of them
@@ -275,14 +256,6 @@ describe('VmDetailsCard Network buttons', () => {
     expect(stop).not.toContain('is-loading');
     expect(start).toContain('disabled');
     expect(stop).toContain('disabled');
-  });
-
-  it("leave out what the role can't do", async () => {
-    rbac.allowed = (resource, verb) =>
-      !(resource === 'vms/captures' && verb === 'create');
-    const html = await card();
-    expect(networkButton(html, 'captureAll')).toBeUndefined();
-    expect(networkButton(html, 'stopCaptures')).toBeDefined();
   });
 
   it("link to the WebShark tab on the VM's running capture", async () => {
@@ -365,15 +338,6 @@ describe('VmDetailsCard annotations', () => {
     expect(text).toContain('No annotations');
   });
 
-  it('offer editing to roles that can patch the VM', async () => {
-    const withAnnotations = { vm: { ...vm, annotations: {} } };
-    expect(await card(withAnnotations)).toContain('vm-edit-annotations');
-
-    rbac.allowed = (resource, verb) =>
-      !(resource === 'vms' && verb === 'patch');
-    expect(await card(withAnnotations)).not.toContain('vm-edit-annotations');
-  });
-
   const { editAnnotations, saveAnnotations } = VmDetailsCard.methods;
 
   it('edit as rows and save the whole set, keeping unchanged values as they were', () => {
@@ -441,24 +405,12 @@ describe('VmDetailsCard header', () => {
     expect(html).toMatch(/href="\/scorch\/demo"[^>]*aria-label="view scorch"/);
   });
 
-  it("hides the SOH and SCORCH links from roles that can't get the experiment", async () => {
-    rbac.allowed = (resource, verb) =>
-      !(resource === 'experiments' && verb === 'get');
-    const html = await card();
-    expect(html).not.toContain('aria-label="view soh"');
-    expect(html).not.toContain('aria-label="view scorch"');
-    expect(html).toContain('vm-card-docs');
-  });
-
   it('links to the VM docs and the Disks page', async () => {
     const html = await card();
     expect(html).toMatch(
       /class="[^"]*vm-card-docs"[^>]*href="https:\/\/phenix\.sceptre\.dev\/latest\/vms\/"/,
     );
     expect(html).toMatch(/href="\/disks\/"[^>]*vm-card-disks/);
-
-    rbac.allowed = (resource) => resource !== 'disks';
-    expect(await card()).not.toContain('vm-card-disks');
   });
 
   it('puts the miniccc agent first among the stats', async () => {
@@ -468,6 +420,53 @@ describe('VmDetailsCard header', () => {
     );
     expect(labels).toEqual(['miniccc agent', 'vCPU', 'Memory', 'Interfaces']);
   });
+});
+
+describe('VmDetailsCard permissions', () => {
+  // [what a role loses, the permission it lacks, the card's props, what
+  // shows that part of the card, a part the role keeps]
+  it.each([
+    [
+      'the WebShark links',
+      ['vms/captures', 'list'],
+      { features: ['webshark'] },
+      /<a[^>]*vm-webshark[" ]/,
+      null,
+    ],
+    [
+      'Capture all interfaces',
+      ['vms/captures', 'create'],
+      {},
+      'vm-captureAll',
+      'vm-stopCaptures',
+    ],
+    [
+      'annotation editing',
+      ['vms', 'patch'],
+      { vm: makeVm({ annotations: {} }) },
+      'vm-edit-annotations',
+      'vm-annotations',
+    ],
+    [
+      'the SOH and SCORCH links',
+      ['experiments', 'get'],
+      {},
+      /aria-label="view (soh|scorch)"/,
+      'vm-card-docs',
+    ],
+    ['the Disks link', ['disks'], {}, 'vm-card-disks', 'vm-card-docs'],
+  ])(
+    'hides %s from a role without %j',
+    async (_, permission, props, shown, kept) => {
+      rbac.allowed = allowAll;
+      expect(await card(props)).toMatch(shown);
+
+      rbac.allowed = denyOnly(permission);
+      const html = await card(props);
+      expect(html).not.toMatch(shown);
+      if (kept) expect(html).toContain(kept);
+    },
+  );
 });
 
 describe('VmRowActions', () => {
