@@ -226,11 +226,16 @@ describe('disk actions', () => {
     ['delete', [['disks', 'delete', 'snap.qc2']]],
   ])('allows %s with the %j permissions alone', (action, needed) => {
     const ctx = page();
-    rbac.allowed = allowOnly(...needed);
+    // compared whole, so a check that adds, drops or changes the disk's name
+    // does not match, as it would with allowOnly
+    const key = (permission) => JSON.stringify(permission);
+    const neededKeys = new Set(needed.map(key));
+
+    rbac.allowed = (...args) => neededKeys.has(key(args));
     expect(ctx.disabledReason(action, vmDisk)).toBe(null);
     // and refuses it without any one of them
     for (const missing of needed) {
-      rbac.allowed = denyOnly(missing);
+      rbac.allowed = (...args) => key(args) != key(missing);
       expect(ctx.disabledReason(action, vmDisk)).toBe(
         "you don't have permission",
       );
