@@ -177,7 +177,7 @@ func Start(opts ...ServerOption) error {
 
 		plog.Info(plog.TypeSystem, "starting Unix socket server", "path", common.UnixSocket)
 
-		server := http.Server{Handler: router} //nolint:gosec // Potential Slowloris Attack
+		server := newHTTPServer("", router)
 
 		//nolint:exhaustruct // partial initialization
 		listener, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", common.UnixSocket)
@@ -217,20 +217,11 @@ func Start(opts ...ServerOption) error {
 	if o.tlsEnabled() {
 		plog.Info(plog.TypeSystem, "starting HTTPS server", "endpoint", o.endpoint)
 
-		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
-		return http.ListenAndServeTLS(
-			o.endpoint,
-			o.tlsCrtPath,
-			o.tlsKeyPath,
-			router,
-		)
+		return newHTTPServer(o.endpoint, router).ListenAndServeTLS(o.tlsCrtPath, o.tlsKeyPath)
 	} else {
 		plog.Info(plog.TypeSystem, "Starting HTTP server", "endpoint", o.endpoint)
-		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
-		return http.ListenAndServe(
-			o.endpoint,
-			router,
-		)
+
+		return newHTTPServer(o.endpoint, router).ListenAndServe()
 	}
 }
 

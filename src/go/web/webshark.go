@@ -548,8 +548,15 @@ type sharkWatch struct {
 	heartbeat *time.Ticker
 }
 
+// sharkWriteTimeout bounds one event's write, so a watcher that stopped
+// reading does not keep its capture followed.
+const sharkWriteTimeout = 10 * time.Second
+
 func (e *sharkWatch) send(event string, data any) bool {
 	body, _ := json.Marshal(data)
+
+	// not every writer takes a deadline; one that does not is not bounded
+	_ = e.rc.SetWriteDeadline(time.Now().Add(sharkWriteTimeout))
 
 	if _, err := fmt.Fprintf(e.w, "event: %s\ndata: %s\n\n", event, body); err != nil {
 		return false

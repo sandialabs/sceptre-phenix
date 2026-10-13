@@ -218,8 +218,7 @@ func StartFileServer(endpoint string, jwtKey, proxyAuthHeader string) {
 	plog.Info(plog.TypeSystem, "starting file server", "endpoint", endpoint)
 	handler := fileServerCookieAuth(middleware.Auth(jwtKey, proxyAuthHeader)(mux), jwtKey)
 
-	//nolint:gosec // simple opt-in upload server; no timeouts to match UI server style
-	if err := http.ListenAndServe(endpoint, handler); err != nil {
+	if err := newHTTPServer(endpoint, handler).ListenAndServe(); err != nil {
 		plog.Error(plog.TypeSystem, "serving file server", "err", err)
 	}
 }
