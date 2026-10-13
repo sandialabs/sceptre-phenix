@@ -30,23 +30,22 @@ const (
 	forwardTickerInterval = 10 * time.Second
 	forwardPortBase       = 50000
 	forwardPortRange      = 15000
+	// cluster ports a new tunnel tries before giving up.
+	maxTunnelPortAttempts = 20
 )
 
+// forwardsMu guards forwards and pending, and only them: nothing that asks
+// minimega or the store, or broadcasts, runs while it is held.
 var (
-	forwards   = make(map[string]ft.Listener) //nolint:gochecknoglobals // global state
-	forwardsMu sync.Mutex                     //nolint:gochecknoglobals // global lock
+	forwards = make(map[string]ft.Listener) //nolint:gochecknoglobals // global state
+	// keys of the forwards being created, by experiment; a stop drops them.
+	pending    = make(map[string]string) //nolint:gochecknoglobals // global state
+	forwardsMu sync.Mutex                //nolint:gochecknoglobals // global lock
 )
 
 func init() { //nolint:gochecknoinits // background worker
-	experiment.RegisterHook("stop", func(stage, name string) {
-		forwardsMu.Lock()
-		defer forwardsMu.Unlock()
-
-		for _, l := range forwards {
-			if l.Exp == name {
-				deleteForward(l)
-			}
-		}
+	experiment.RegisterHook("stop", func(_, name string) {
+		dropExperimentForwards(name)
 	})
 
 	go func() {
@@ -58,78 +57,100 @@ func init() { //nolint:gochecknoinits // background worker
 		for {
 			select {
 			case <-ticker.C:
-				forwardsMu.Lock()
 				reapForwards()
-				forwardsMu.Unlock()
 			case pub := <-createTunnel:
 				tunnel, _ := pub.(app.CreateTunnel)
 
-				err := createPortForward(
-					tunnel.Experiment,
-					tunnel.VM,
-					tunnel.Sport,
-					tunnel.Dhost,
-					tunnel.Dport,
-					tunnel.User,
-				)
-				if err != nil {
-					plog.Error(
-						plog.TypeSystem,
-						"adding port forward",
-						"exp",
-						tunnel.Experiment,
-						"vm",
-						tunnel.VM,
-						"sport",
-						tunnel.Sport,
-						"host",
-						tunnel.Dhost,
-						"dport",
-						tunnel.Dport,
-						"err",
-						err,
-					)
-				}
+				// creating asks minimega, so the publisher and the ticker do
+				// not wait on it
+				go createAppForward(tunnel)
 			}
 		}
 	}()
 }
 
-// reapVMForwards drops the given VM's forwards whose tunnels have closed.
-// Request paths use it instead of reapForwards (left to the background ticker)
-// so they ask minimega about one VM at most: one tunnel listing, and none when
-// the VM has no tunnel-backed forwards. forwardsMu must be held.
-func reapVMForwards(exp, vm string) {
-	var (
-		tunnels []map[string]string
-		listed  bool
-	)
+// dropExperimentForwards forgets a stopped experiment's forwards, and the ones
+// being created for it.
+func dropExperimentForwards(exp string) {
+	forwardsMu.Lock()
 
-	// See reapForwards.
-	if !experiment.Running(exp) {
-		return
-	}
+	var gone []ft.Listener
 
 	for _, l := range forwards {
-		if l.Exp != exp || l.VM != vm {
-			continue
-		}
+		if l.Exp == exp {
+			removeLocked(l)
 
-		var vmTunnels []map[string]string
-
-		if !l.QEMU {
-			if !listed {
-				tunnels = mm.GetTunnels(mm.NS(exp), mm.VMName(vm))
-				listed = true
-			}
-
-			vmTunnels = tunnels
-		}
-
-		if !forwardExists(l, vmTunnels) {
-			deleteForward(l)
+			gone = append(gone, l)
 		}
 	}
+
+	for key, owner := range pending {
+		if owner == exp {
+			delete(pending, key)
+		}
+	}
+
+	forwardsMu.Unlock()
+
+	announceDeleted(gone)
+}
+
+// createAppForward creates a forward an app asked for.
+func createAppForward(tunnel app.CreateTunnel) {
+	err := createPortForward(
+		tunnel.Experiment,
+		tunnel.VM,
+		tunnel.Sport,
+		tunnel.Dhost,
+		tunnel.Dport,
+		tunnel.User,
+	)
+	if err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"adding port forward",
+			"exp",
+			tunnel.Experiment,
+			"vm",
+			tunnel.VM,
+			"sport",
+			tunnel.Sport,
+			"host",
+			tunnel.Dhost,
+			"dport",
+			tunnel.Dport,
+			"err",
+			err,
+		)
+	}
+}
+
+// createTunnel opens a minimega tunnel from a random free cluster port to the
+// VM's destination, and returns the port. It tries maxTunnelPortAttempts ports
+// before giving up.
+func createTunnel(exp, vm, host string, dst int) (int, error) {
+	var err error
+
+	for range maxTunnelPortAttempts {
+		port := forwardPortBase + rand.IntN(forwardPortRange) //nolint:gosec // weak random number generator
+
+		err = mm.CreateTunnel(
+			mm.NS(exp),
+			mm.VMName(vm),
+			mm.TunnelSourcePort(port),
+			mm.TunnelDestinationPort(dst),
+			mm.TunnelDestinationHost(host),
+		)
+		if err == nil {
+			return port, nil
+		}
+
+		if !strings.Contains(err.Error(), "bind: address already in use") {
+			return 0, fmt.Errorf("creating tunnel: %w", err)
+		}
+	}
+
+	return 0, fmt.Errorf("creating tunnel: no free cluster port in %d tries: %w", maxTunnelPortAttempts, err)
 }
 
 func createPortForward(exp, vm, src, host, dst, user string) error {
@@ -177,41 +198,29 @@ func createPortForward(exp, vm, src, host, dst, user string) error {
 		}
 	}
 
-	forwardsMu.Lock()
-	defer forwardsMu.Unlock()
-
 	reapVMForwards(exp, vm)
 
-	if _, ok := forwards[listener.ToKey()]; ok {
+	// the key is reserved, so the tunnel is made without holding forwardsMu
+	if !reserve(listener) {
 		return fmt.Errorf("forward already exists for user %s", user)
 	}
 
 	if listener.ClusterPort == 0 {
-		listener.ClusterPort = forwardPortBase + rand.IntN(forwardPortRange) //nolint:gosec // weak random number generator
+		listener.ClusterPort, err = createTunnel(exp, vm, host, listener.DstPort)
+		if err != nil {
+			forwardsMu.Lock()
+			delete(pending, listener.ToKey())
+			forwardsMu.Unlock()
 
-		for {
-			err = mm.CreateTunnel(
-				mm.NS(exp),
-				mm.VMName(vm),
-				mm.TunnelSourcePort(listener.ClusterPort),
-				mm.TunnelDestinationPort(listener.DstPort),
-				mm.TunnelDestinationHost(host),
-			)
-			if err != nil {
-				if strings.Contains(err.Error(), "bind: address already in use") {
-					listener.ClusterPort = forwardPortBase + rand.IntN(forwardPortRange) //nolint:gosec // weak random number generator
-
-					continue
-				} else {
-					return fmt.Errorf("creating tunnel: %w", err)
-				}
-			}
-
-			break
+			return err
 		}
 	}
 
-	forwards[listener.ToKey()] = listener
+	// The experiment stopped meanwhile, taking the tunnel with its VMs.
+	// Closing it here would recreate the experiment's minimega namespace.
+	if !commit(listener) {
+		return fmt.Errorf("creating forward: %w", experiment.ErrExperimentNotRunning)
+	}
 
 	body, _ := json.Marshal(listener)
 
@@ -222,6 +231,45 @@ func createPortForward(exp, vm, src, host, dst, user string) error {
 	)
 
 	return nil
+}
+
+// reserve claims a new forward's key while its tunnel is made. It reports
+// false when the key is taken.
+func reserve(l ft.Listener) bool {
+	forwardsMu.Lock()
+	defer forwardsMu.Unlock()
+
+	key := l.ToKey()
+
+	_, exists := forwards[key]
+	_, creating := pending[key]
+
+	if exists || creating {
+		return false
+	}
+
+	pending[key] = l.Exp
+
+	return true
+}
+
+// commit adds a reserved forward. It reports false when its experiment's stop
+// dropped the reservation.
+func commit(l ft.Listener) bool {
+	forwardsMu.Lock()
+	defer forwardsMu.Unlock()
+
+	key := l.ToKey()
+
+	if _, ok := pending[key]; !ok {
+		return false
+	}
+
+	delete(pending, key)
+
+	forwards[key] = l
+
+	return true
 }
 
 // GetPortForwards - GET /experiments/{exp}/vms/{name}/forwards.
@@ -260,16 +308,17 @@ func GetPortForwards(w http.ResponseWriter, r *http.Request) {
 		prefix    = fmt.Sprintf("%s:%s", exp, vm)
 	)
 
-	forwardsMu.Lock()
-	defer forwardsMu.Unlock()
-
 	reapVMForwards(exp, vm)
+
+	forwardsMu.Lock()
 
 	for key := range forwards {
 		if strings.HasPrefix(key, prefix) {
 			listeners = append(listeners, forwards[key])
 		}
 	}
+
+	forwardsMu.Unlock()
 
 	body, _ := json.Marshal(util.WithRoot("listeners", listeners))
 	_, _ = w.Write(body)
@@ -395,44 +444,73 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) {
 
 	key := fmt.Sprintf("%s:%s:%s:%d:%s", exp, vm, host, remoteDst, user)
 
-	forwardsMu.Lock()
-	defer forwardsMu.Unlock()
-
 	reapVMForwards(exp, vm)
 
-	if l, ok := forwards[key]; ok {
-		// TODO: how would we go about allowing admins to close all port forwards?
-		if l.Owner != user {
-			http.Error(w, "forbidden", http.StatusForbidden)
+	forwardsMu.Lock()
 
-			return
-		}
+	l, ok := forwards[key]
+	if !ok {
+		forwardsMu.Unlock()
 
-		if !l.QEMU {
-			err := mm.CloseTunnel(
-				mm.NS(exp),
-				mm.VMName(vm),
-				mm.TunnelSourcePort(l.ClusterPort),
-				mm.TunnelDestinationPort(remoteDst),
-				mm.TunnelDestinationHost(host),
-			)
-			if err != nil {
-				plog.Error(plog.TypeSystem, "closing tunnel", "err", err)
-
-				http.Error(w, "unable to close tunnel to vm", http.StatusInternalServerError)
-
-				return
-			}
-		}
-
-		deleteForward(l)
-
-		w.WriteHeader(http.StatusNoContent)
+		http.Error(w, "forward not found (are you the owner?)", http.StatusBadRequest)
 
 		return
 	}
 
-	http.Error(w, "forward not found (are you the owner?)", http.StatusBadRequest)
+	// TODO: how would we go about allowing admins to close all port forwards?
+	if l.Owner != user {
+		forwardsMu.Unlock()
+
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
+	// removed before the tunnel is closed, so no one else uses or closes it
+	removeLocked(l)
+
+	forwardsMu.Unlock()
+
+	if !l.QEMU {
+		err := mm.CloseTunnel(
+			mm.NS(exp),
+			mm.VMName(vm),
+			mm.TunnelSourcePort(l.ClusterPort),
+			mm.TunnelDestinationPort(remoteDst),
+			mm.TunnelDestinationHost(host),
+		)
+		if err != nil {
+			plog.Error(plog.TypeSystem, "closing tunnel", "err", err)
+
+			restoreForward(l)
+
+			http.Error(w, "unable to close tunnel to vm", http.StatusInternalServerError)
+
+			return
+		}
+	}
+
+	announceDeleted([]ft.Listener{l})
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// restoreForward puts back a forward whose tunnel failed to close, unless its
+// key was taken or its experiment stopped meanwhile.
+func restoreForward(l ft.Listener) {
+	running := experiment.Running(l.Exp)
+
+	forwardsMu.Lock()
+	defer forwardsMu.Unlock()
+
+	key := l.ToKey()
+
+	_, exists := forwards[key]
+	_, creating := pending[key]
+
+	if running && !exists && !creating {
+		forwards[key] = l
+	}
 }
 
 // GetPortForwardWebSocket - GET /experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws.
@@ -469,8 +547,9 @@ func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	key := fmt.Sprintf("%s:%s:%s:%s:%s", exp, vm, host, port, user)
 
-	forwardsMu.Lock()
 	reapVMForwards(exp, vm)
+
+	forwardsMu.Lock()
 
 	// Check to see if a forward exists that this user created.
 	if listener, ok := forwards[key]; ok {
