@@ -37,8 +37,14 @@ services:
       - ./tmp/phenix:/tmp/phenix
     depends_on:
       - minimega
+    # liveness of phenix ui: process up and store readable (see the image's
+    # HEALTHCHECK; `phenix healthcheck --ready` also checks minimega)
     healthcheck:
-      test: phenix version
+      test: ["CMD", "phenix", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
   minimega:
     image: ghcr.io/sandia-minimega/minimega:master
     container_name: minimega

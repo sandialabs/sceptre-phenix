@@ -195,4 +195,11 @@ LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandia-minimega/minimega:
 
 WORKDIR /opt/phenix
 
+# Liveness of `phenix ui` (process up, store readable), through the UI
+# server's /healthz. Containers running other phenix commands should disable
+# it: `docker run --no-healthcheck`, or `healthcheck: {disable: true}` in
+# compose.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD ["phenix", "healthcheck"]
+
 CMD ["phenix", "help"]
