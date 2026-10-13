@@ -52,6 +52,7 @@ All notable changes to this project will be documented in this file.
 - **Tunneler**: The page lists the builds the server has (`GET /downloads/tunneler`).
 - **Browser console**: Production builds log only warnings and errors, and lint rejects new `console.log` calls.
 - **CI**: The Frontend workflow cancels superseded runs, and closing a pull request cancels its CI.
+- **CI**: The Frontend workflow builds the UI and phenix once and shares them with the e2e and performance jobs, each with read-only permissions.
 - **CI**: The CI workflow regenerates the protobuf bindings, store mocks, RBAC policy and API reference twice (`make check-generated`) and fails on missing or non-deterministic output, or when generating changes tracked files.
 - **Build**: `make generate` also renders the API reference, `make build` binaries serve it at `/docs/` (`SKIP_API_DOCS=1` skips it for offline builds), and every build renders it with one Redocly CLI version, pinned in `scripts/api-docs.sh`. A prek hook checks that `openapi.yml` is valid OpenAPI.
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, form controls, selection checkboxes and modal close buttons, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, status tag, code and State of Health tab colors, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.

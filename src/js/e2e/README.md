@@ -19,8 +19,12 @@ a CI-built binary, a container, or a full range node.
 | `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`         | opt-in (`E2E_AUTH_MODE=enabled`) |
 | `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt` | opt-in (`E2E_AUTH_MODE=proxy`)   |
 
-CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`,
-starts `bin/phenix ui` against a throw-away store, and runs the default set.
+CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`
+and `bin/phenix` once, in its `build` job, and shares them as the
+`phenix-build-disabled` artifact with this suite's job and the `perf` job. Each
+starts that `bin/phenix ui` against a throw-away store with
+`scripts/ci-start-phenix-ui.sh`, and this job runs the default set. The auth
+specs need a build per mode, since `VITE_AUTH` is compiled into the UI.
 Specs that need data (a topology, experiments, configs) set it up through the
 REST API and remove what they made afterwards. Their experiments are never
 started, so they need no minimega.

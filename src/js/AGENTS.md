@@ -102,8 +102,11 @@ reactivity with `markRaw`, and clean up intervals, sockets, and listeners in
 
 ## CI
 
-`.github/workflows/frontend.yml` runs Vitest and builds the UI, then builds and
-starts a real backend for Playwright smoke tests. Its `perf` job checks bundle
-budgets and runs Lighthouse CI against a real backend. Keep Node versions, npm
+`.github/workflows/frontend.yml` runs Vitest, and its `build` job builds the UI
+(`VITE_AUTH=disabled`) and `bin/phenix` once and uploads them as the
+`phenix-build-disabled` artifact. The `test-e2e` and `perf` jobs download it,
+start the backend with `scripts/ci-start-phenix-ui.sh`, and run Playwright smoke
+tests and bundle budgets plus Lighthouse CI against it. Every job has read-only
+permissions. Keep Node versions, npm
 cache lockfiles, auth build mode, backend startup, and path filters aligned with
 local commands.

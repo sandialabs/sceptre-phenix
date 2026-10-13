@@ -8,6 +8,8 @@ on:
       - 'src/go/**'
       - 'docker/**'
       - 'Makefile'
+      - 'scripts/api-docs.sh'
+      - 'scripts/ci-start-phenix-ui.sh'
       - '.github/workflows/frontend.yml'
   pull_request:
     # closed: only to cancel this PR's runs (see concurrency); jobs skip it
@@ -17,14 +19,16 @@ on:
       - 'src/go/**'
       - 'docker/**'
       - 'Makefile'
+      - 'scripts/api-docs.sh'
+      - 'scripts/ci-start-phenix-ui.sh'
       - '.github/workflows/frontend.yml'
 
 env:
   GO_VERSION: '1.24'
   NODE_VERSION: '24'
 
-permissions:
-  contents: read
+# each job grants only what it needs
+permissions: {}
 
 # a newer commit (or closing the PR) cancels runs still going for this ref
 concurrency:
@@ -36,6 +40,8 @@ jobs:
     if: github.event.action != 'closed'
     name: Unit Tests (JS)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: src/js
@@ -53,10 +59,15 @@ jobs:
       - name: Run unit tests
         run: npm test
 
-  test-e2e:
+  # Builds the UI and phenix once for the e2e and perf jobs. VITE_AUTH is
+  # compiled into the UI, and the binary embeds the UI, so a job testing
+  # another auth mode needs its own build (make this a matrix over the mode).
+  build:
     if: github.event.action != 'closed'
-    name: E2E Smoke (UI)
+    name: Build UI and phenix (VITE_AUTH=disabled)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -65,9 +76,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: |
-            src/js/package-lock.json
-            src/js/e2e/package-lock.json
+          cache-dependency-path: src/js/package-lock.json
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -80,14 +89,44 @@ jobs:
           npm ci
           VITE_AUTH=disabled npm run build
       - name: Build phenix
-        # SKIP_UI keeps make from rebuilding the UI already built with VITE_AUTH=disabled
+        # SKIP_UI keeps make from rebuilding the UI already built with
+        # VITE_AUTH=disabled; the API reference is built, as in releases
         run: make bin/phenix SKIP_UI=1
+      - name: Package build
+        # tar keeps the executable bit, which upload-artifact drops
+        run: tar -cf phenix-build.tar bin/phenix src/js/dist
+      - name: Upload build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phenix-build-disabled
+          path: phenix-build.tar
+          retention-days: 3
+          if-no-files-found: error
+
+  test-e2e:
+    if: github.event.action != 'closed'
+    name: E2E Smoke (UI)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/js/e2e/package-lock.json
+      - name: Download build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phenix-build-disabled
+      - name: Unpack build
+        run: tar -xf phenix-build.tar && rm phenix-build.tar
       - name: Start phenix UI
-        run: |
-          ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-e2e.bdb \
-            --listen-endpoint 127.0.0.1:3000 &> /tmp/phenix-ui.log &
-          timeout 30 bash -c \
-            'until curl -sf http://127.0.0.1:3000/api/v1/experiments > /dev/null; do sleep 1; done'
+        run: ./scripts/ci-start-phenix-ui.sh /tmp/phenix-e2e.bdb /tmp/phenix-ui.log
       - name: Install e2e dependencies
         working-directory: src/js/e2e
         run: |
@@ -109,7 +148,10 @@ jobs:
   perf:
     if: github.event.action != 'closed'
     name: UI Performance (bundle budgets, Lighthouse)
+    needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -118,35 +160,21 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: |
-            src/js/package-lock.json
-            src/js/perf/package-lock.json
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+          cache-dependency-path: src/js/perf/package-lock.json
+      - name: Download build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: src/go/go.sum
-      - name: Install system dependencies
-        run: sudo apt-get update -q && sudo apt-get install -y protobuf-compiler
-      - name: Build UI
-        working-directory: src/js
-        run: |
-          npm ci
-          VITE_AUTH=disabled npm run build
+          name: phenix-build-disabled
+      - name: Unpack build
+        run: tar -xf phenix-build.tar && rm phenix-build.tar
       - name: Install perf tooling
         working-directory: src/js/perf
         run: npm ci
       - name: Check bundle size budgets
         working-directory: src/js/perf
         run: npm run size
-      - name: Build phenix
-        # SKIP_UI keeps make from rebuilding the UI already built with VITE_AUTH=disabled
-        run: make bin/phenix SKIP_UI=1
       - name: Start phenix UI
-        run: |
-          ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-perf.bdb \
-            --listen-endpoint 127.0.0.1:3000 &> /tmp/phenix-ui.log &
-          timeout 30 bash -c \
-            'until curl -sf http://127.0.0.1:3000/api/v1/experiments > /dev/null; do sleep 1; done'
+        run: ./scripts/ci-start-phenix-ui.sh /tmp/phenix-perf.bdb /tmp/phenix-ui.log
       - name: Run Lighthouse CI
         working-directory: src/js/perf
         run: npm run lighthouse
