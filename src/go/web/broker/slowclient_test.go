@@ -6,16 +6,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
 
+	"phenix/api/experiment"
+	"phenix/types"
+	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/util/polltest"
 	bt "phenix/web/broker/brokertypes"
+	"phenix/web/rbac"
 )
 
 // runBroker runs the broker loop until the test ends. Register any clients
@@ -126,7 +132,7 @@ func TestSlowClientDoesNotDelayOthers(t *testing.T) {
 		t.Errorf("slow clients dropped = %d, want 1", n)
 	}
 
-	if isDone(fast.done) {
+	if isClosed(fast.done) {
 		t.Error("the fast client was dropped")
 	}
 }
@@ -280,5 +286,212 @@ func TestPingDoesNotRaceShutdown(t *testing.T) {
 		cli.shutdown(websocket.CloseNormalClosure, "")
 
 		within(t, "the write loop ending", func() { <-wrote })
+	}
+}
+
+// withDeps restores the client's store and minimega calls after the test.
+func withDeps(t *testing.T) {
+	t.Helper()
+
+	saved := deps
+
+	t.Cleanup(func() { deps = saved })
+}
+
+// startFakeClient runs a client on conn with all its loops but the
+// screenshot ticker, until the test ends.
+func startFakeClient(t *testing.T, conn *fakeConn, role rbac.Role) *Client {
+	t.Helper()
+
+	c := newFakeClient(conn)
+	c.role = role
+
+	go c.read()
+	go c.write()
+	go c.work()
+
+	t.Cleanup(c.Stop)
+
+	return c
+}
+
+func listRequest(name string) []byte {
+	return []byte(`{"resource": {"type": "experiment/vms", "name": "` + name + `", "action": "list"}, "request": {}}`)
+}
+
+// replies returns the names of the VM lists conn has been sent.
+func vmListReplies(conn *fakeConn) []string {
+	var names []string
+
+	for _, msg := range conn.messages() {
+		var pub bt.Publish
+		if json.Unmarshal(msg, &pub) == nil && pub.Resource != nil && pub.Resource.Type == "experiment/vms" {
+			names = append(names, pub.Resource.Name)
+		}
+	}
+
+	return names
+}
+
+// While a VM list waits on minimega, the client's other requests are still
+// read, and so are its pongs.
+//
+//nolint:paralleltest // replaces the store and the client's dependencies
+func TestReadKeepsReadingWhileAListIsSlow(t *testing.T) {
+	useExperiment(t)
+	withDeps(t)
+
+	var (
+		entered = make(chan struct{}, 1)
+		gate    = make(chan struct{})
+		release = sync.OnceFunc(func() { close(gate) })
+	)
+
+	t.Cleanup(release)
+
+	deps.vms = func(*types.Experiment) []mm.VM {
+		entered <- struct{}{}
+		<-gate
+
+		return nil
+	}
+
+	conn := newFakeConn(t)
+	c := startFakeClient(t, conn, roleAllowing("vms", "list"))
+
+	conn.reads <- listRequest("exp")
+
+	within(t, "the list asking minimega", func() { <-entered })
+
+	conn.reads <- []byte(`{"resource": {"type": "log", "name": "phenix", "action": "subscribe"}}`)
+
+	polltest.Until(t, "the logs subscription is read", c.logsSubscribed.Load)
+
+	release()
+
+	var got []string
+
+	polltest.Until(t, "the list reply", func() bool {
+		got = append(got, vmListReplies(conn)...)
+
+		return len(got) > 0
+	})
+
+	if !slices.Equal(got, []string{"exp"}) {
+		t.Errorf("VM list replies = %v, want [exp]", got)
+	}
+}
+
+// Of the VM lists asked for while one is answered, only the newest is
+// answered next.
+//
+//nolint:paralleltest // replaces the store and the client's dependencies
+func TestListRequestsAreLatestWins(t *testing.T) {
+	useExperiment(t)
+	withDeps(t)
+
+	var (
+		entered = make(chan struct{}, 1)
+		gate    = make(chan struct{})
+		release = sync.OnceFunc(func() { close(gate) })
+		mu      sync.Mutex
+		asked   []string
+	)
+
+	t.Cleanup(release)
+
+	deps.experiment = func(name string) (*types.Experiment, error) {
+		mu.Lock()
+		asked = append(asked, name)
+		mu.Unlock()
+
+		return experiment.Get("exp")
+	}
+
+	first := true
+
+	deps.vms = func(*types.Experiment) []mm.VM {
+		if first {
+			first = false
+			entered <- struct{}{}
+			<-gate
+		}
+
+		return nil
+	}
+
+	conn := newFakeConn(t)
+	c := startFakeClient(t, conn, roleAllowing("vms", "list"))
+
+	conn.reads <- listRequest("first")
+
+	within(t, "the first list asking minimega", func() { <-entered })
+
+	for _, name := range []string{"second", "third", "last"} {
+		conn.reads <- listRequest(name)
+	}
+
+	polltest.Until(t, "the lists are queued", func() bool { return len(c.jobs) == 3 })
+
+	release()
+
+	var got []string
+
+	polltest.Until(t, "two list replies", func() bool {
+		got = append(got, vmListReplies(conn)...)
+
+		return len(got) >= 2
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if want := []string{"first", "last"}; !slices.Equal(got, want) || !slices.Equal(asked, want) {
+		t.Errorf("lists answered = %v, store asked for %v; want %v", got, asked, want)
+	}
+}
+
+// A client that leaves stops waiting on a screenshot minimega is still
+// taking.
+func TestScreenshotWaitEndsWithTheClient(t *testing.T) {
+	withDeps(t)
+
+	var (
+		entered = make(chan struct{}, 1)
+		gate    = make(chan struct{})
+	)
+
+	t.Cleanup(func() { close(gate) })
+
+	deps.screenshot = func(ctx context.Context, _, _, _ string) ([]byte, error) {
+		entered <- struct{}{}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-gate:
+			return []byte("png"), nil
+		}
+	}
+
+	c := newFakeClient(newFakeConn(t))
+	setVMs(c, vmScope{exp: "exp", name: "vm1", running: true}, vmScope{exp: "exp", name: "vm2", running: true})
+
+	pushed := make(chan struct{})
+
+	go func() {
+		defer close(pushed)
+
+		c.pushScreenshots()
+	}()
+
+	within(t, "the first screenshot", func() { <-entered })
+
+	c.shutdown(websocket.CloseNormalClosure, "")
+
+	within(t, "the screenshots giving up", func() { <-pushed })
+
+	if len(entered) != 0 {
+		t.Error("asked for the second screenshot after the client left")
 	}
 }

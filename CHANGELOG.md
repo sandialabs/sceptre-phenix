@@ -131,7 +131,7 @@ All notable changes to this project will be documented in this file.
 - **Workflow API**: `POST /api/v1/workflow/configs/{branch}` returns 400 for a config with a missing or unknown kind, or with `/` in its name, instead of dropping the connection. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **CLI**: Every `phenix` command waits at most one minute for the server's options over `--unix-socket` instead of hanging on a server that never answers. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Containers**: The Docker and Podman builds gave the `INSTALL_CERTS` certificates to yarn, but the UI builds with npm, so building the UI behind a TLS-inspecting proxy failed to install its packages.
-- **Live updates**: A browser tab that stopped reading its websocket held up live updates for every other tab for up to 10 seconds at a time, and could stop live updates and all server logging for good. Such a tab's websocket is now closed with code 1013 once its queue fills, and the UI reconnects. Under heavy load the Logs page's live stream skips lines and says how many; reloading the page shows them.
+- **Live updates**: A browser tab that stopped reading its websocket held up live updates for every other tab for up to 10 seconds at a time, and could stop live updates and all server logging for good. Such a tab's websocket is now closed with code 1013 once its queue fills, and the UI reconnects. Under heavy load the Logs page's live stream skips lines and says how many; reloading the page shows them. A VM list or screenshot waiting on a busy minimega no longer stops the websocket from answering pings, which disconnected it.
 
 ### Security
 
