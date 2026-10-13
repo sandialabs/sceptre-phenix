@@ -4,12 +4,12 @@
 // stale guess once its own data arrives.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const axios = vi.hoisted(() => ({ get: vi.fn() }));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-const notify = vi.hoisted(() => vi.fn());
-vi.mock('@/utils/errorNotif.js', () => ({ useErrorNotification: notify }));
-const store = vi.hoisted(() => ({ role: null }));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => store }));
+const { axios, modules, notify, resetMocks, store } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/store.js', modules.store);
 
 // Stand-ins for the views, each drawing its name. When views.found is set,
 // the view shown finds the experiment running or not, as the real views do
@@ -66,9 +66,7 @@ const shownNow = async (page) =>
 
 beforeEach(() => {
   clearPageCache();
-  axios.get.mockReset();
-  notify.mockReset();
-  store.role = { name: 'Experiment Admin' };
+  resetMocks({ store: { role: { name: 'Experiment Admin' } } });
   views.found = undefined;
 });
 
@@ -164,7 +162,7 @@ describe("an experiment's page", () => {
 
     const { page } = await open();
     await flush();
-    expect(notify).toHaveBeenCalledWith(err);
+    expect(notify.error).toHaveBeenCalledWith(err);
     expect(await shownNow(page)).toBe('Could not load the experiment');
   });
 

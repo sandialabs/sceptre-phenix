@@ -1,39 +1,30 @@
 // The Experiments page: its table, its search, and the rows it keeps up to
 // date from websocket messages, including experiments it has not loaded yet
 // (created by a workflow, the Configs page or the CLI).
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/utils/rbac.js', () => ({ roleAllowed: () => true }));
-vi.mock('@/utils/axios.js', () => ({
-  default: { get: vi.fn(() => new Promise(() => {})) },
-}));
-vi.mock('@/store.js', () => ({
-  usePhenixStore: () => ({ token: 't', features: [], role: null }),
-}));
-vi.mock('@/utils/websocket', () => ({
-  addWsHandler: () => {},
-  removeWsHandler: () => {},
-}));
-const loaderOpts = vi.hoisted(() => ({}));
-vi.mock('@/utils/pageLoader.js', () => ({
-  createPageLoader: (opts) => {
-    Object.assign(loaderOpts, opts);
-    return { start: () => {}, stop: () => {}, load: vi.fn() };
-  },
-  loadingText: (what) => `Loading ${what}…`,
-  stillLoading: (loaded) => !loaded,
-}));
+const { axios, capturing, loaderSpy, modules, resetMocks } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/websocket', modules.websocket);
+vi.mock('@/utils/pageLoader.js', capturing);
 vi.mock('@/utils/pageData.js', () => ({ pageFetchers: {} }));
 
 import Experiments from '@/views/Experiments.vue';
-import { makeContext } from './helpers/context.js';
+import { never } from './helpers/async.js';
+import { pageContext } from './helpers/page.js';
 import { renderSSR, tableRows, textOf } from './helpers/render.js';
 
+beforeEach(() => {
+  resetMocks({ store: { token: 't', features: [], role: null } });
+  axios.get.mockImplementation(never);
+});
+
 function page(experiments) {
-  const ctx = makeContext(Experiments, {
-    reloadSoon: vi.fn(),
-    $buefy: { toast: { open: vi.fn() } },
-  });
+  const ctx = pageContext(Experiments, { fields: { reloadSoon: vi.fn() } });
   Experiments.created.call(ctx);
   ctx.experiments = experiments;
   return ctx;
@@ -132,7 +123,7 @@ describe('websocket messages', () => {
       partial: true,
     });
 
-    loaderOpts.apply(
+    loaderSpy.options.apply(
       [
         {
           name: 'new',

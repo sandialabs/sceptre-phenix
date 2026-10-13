@@ -2,26 +2,16 @@
 // browser modals.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const allowed = vi.hoisted(() => ({ fn: () => true }));
-vi.mock('@/utils/rbac.js', () => ({
-  roleAllowed: (...args) => allowed.fn(...args),
-}));
-
-const axios = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn() }));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-
-vi.mock('@/store', () => ({
-  usePhenixStore: () => ({ token: 't', features: [], role: null }),
-}));
-
-vi.mock('@/utils/websocket', () => ({
-  addWsHandler: () => {},
-  removeWsHandler: () => {},
-}));
-
+const { axios, modules, rbac, resetMocks } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/websocket', modules.websocket);
 // the pages' lists come from the tests
-const loader = await vi.hoisted(() => import('./helpers/pageLoader.js'));
-vi.mock('@/utils/pageLoader.js', loader.idle);
+vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
 import VMtilesView from '@/views/experiment/VMtilesView.vue';
@@ -29,6 +19,9 @@ import VMLabelsModal from '@/components/VMLabelsModal.vue';
 import VMMountBrowserModal from '@/components/VMMountBrowserModal.vue';
 import { flush } from './helpers/async.js';
 import { makeContext } from './helpers/context.js';
+import { wsMsg } from './helpers/fixtures.js';
+import { pageContext } from './helpers/page.js';
+import { denyAll, denyOnly } from './helpers/permissions.js';
 import {
   renderSSR,
   stubBrowser,
@@ -38,9 +31,7 @@ import {
 } from './helpers/render.js';
 
 beforeEach(() => {
-  allowed.fn = () => true;
-  axios.get.mockReset();
-  axios.patch.mockReset();
+  resetMocks({ store: { token: 't', features: [], role: null } });
   stubBrowser();
 });
 
@@ -52,20 +43,18 @@ afterEach(() => {
 describe('StoppedExperiment', () => {
   // the page on experiment exp1, with these VMs once it has loaded
   function stopped(vms) {
-    const ctx = makeContext(StoppedExperiment, {
-      $route: { params: { id: 'exp1' } },
-      $buefy: { toast: { open: vi.fn() } },
-    });
+    const ctx = pageContext(StoppedExperiment, { id: 'exp1' });
     if (vms) ctx.experiment = { name: 'exp1', vms };
     return ctx;
   }
 
   it('applies VM updates only for its own experiment', () => {
     const ctx = stopped([{ name: 'vm1', host: 'a' }]);
-    const update = (exp) => ({
-      resource: { type: 'experiment/vm', name: `${exp}/vm1`, action: 'update' },
-      result: { name: 'vm1', host: 'b' },
-    });
+    const update = (exp) =>
+      wsMsg('experiment/vm', `${exp}/vm1`, 'update', {
+        name: 'vm1',
+        host: 'b',
+      });
 
     ctx.handleWs(update('exp2'));
     expect(ctx.experiment.vms[0].host).toBe('a');
@@ -76,10 +65,10 @@ describe('StoppedExperiment', () => {
 
   it('applies schedules only for its own experiment', () => {
     const ctx = stopped([{ name: 'vm1', host: 'a' }]);
-    const schedule = (exp) => ({
-      resource: { type: 'experiment', name: exp, action: 'schedule' },
-      result: { schedule: [{ vm: 'vm1', host: 'b' }] },
-    });
+    const schedule = (exp) =>
+      wsMsg('experiment', exp, 'schedule', {
+        schedule: [{ vm: 'vm1', host: 'b' }],
+      });
 
     ctx.handleWs(schedule('exp2'));
     expect(ctx.experiment.vms[0].host).toBe('a');
@@ -91,18 +80,17 @@ describe('StoppedExperiment', () => {
   it('ignores publishes before the experiment has loaded', () => {
     const ctx = stopped();
     expect(() =>
-      ctx.handleWs({
-        resource: { type: 'experiment/vm', name: 'exp1/vm1', action: 'update' },
-        result: { name: 'vm1' },
-      }),
+      ctx.handleWs(
+        wsMsg('experiment/vm', 'exp1/vm1', 'update', { name: 'vm1' }),
+      ),
     ).not.toThrow();
     expect(ctx.$buefy.toast.open).not.toHaveBeenCalled();
   });
 
   it('checks file listing permission for the routed experiment', () => {
-    allowed.fn = vi.fn(() => false);
+    rbac.allowed = vi.fn(denyAll);
     expect(stopped().canListFiles).toBe(false);
-    expect(allowed.fn).toHaveBeenCalledWith(
+    expect(rbac.allowed).toHaveBeenCalledWith(
       'experiments/files',
       'list',
       'exp1',
@@ -249,7 +237,7 @@ describe('StoppedExperiment', () => {
     });
 
     it('shows each VM its disk alone, with no warning, to a role that may not list disks', async () => {
-      allowed.fn = (resource) => resource !== 'disks';
+      rbac.allowed = denyOnly(['disks']);
       expect(await diskColumn({})).toEqual({
         web: { shown: ['/phenix/images/win/web.qc2'], warnings: [] },
         out: { shown: ['/data/vms/out.img'], warnings: [] },
@@ -258,7 +246,7 @@ describe('StoppedExperiment', () => {
     });
 
     it("names each VM's disk to a role that may not change it", async () => {
-      allowed.fn = (resource) => resource !== 'vms';
+      rbac.allowed = denyOnly(['vms']);
       expect(await diskColumn({ disks })).toEqual({
         web: { shown: 'win/web.qc2', warnings: [] },
         out: {
