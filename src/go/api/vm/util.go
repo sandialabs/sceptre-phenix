@@ -133,6 +133,9 @@ func getImageBackingChain(path string) ([]qemuBackingChain, error) {
 	return chain, nil
 }
 
+// copyProgressInterval is how often a copier reports its progress.
+var copyProgressInterval = time.Second //nolint:gochecknoglobals // shortened in tests
+
 type copier struct {
 	subs []chan float64
 }
@@ -174,24 +177,37 @@ func (c copier) copy(ctx context.Context, src, dst string) error {
 
 	pw := newProgressWriter(out)
 	cr := newCancelableReader(ctx, in)
-	done := make(chan struct{})
+
+	var (
+		done         = make(chan struct{})
+		progressDone = make(chan struct{})
+	)
 
 	go func() {
+		defer close(progressDone)
+
 		info, _ := in.Stat()
 		size := info.Size()
 
+		ticker := time.NewTicker(copyProgressInterval)
+		defer ticker.Stop()
+
 		for {
+			n := pw.N()
+
+			// a subscriber that stops reading does not hold up the copy's end
+			for _, s := range c.subs {
+				select {
+				case s <- float64(n) / float64(size):
+				case <-done:
+					return
+				}
+			}
+
 			select {
 			case <-done:
 				return
-			default:
-				n := pw.N()
-
-				for _, s := range c.subs {
-					s <- float64(n) / float64(size)
-				}
-
-				time.Sleep(1 * time.Second)
+			case <-ticker.C:
 			}
 		}
 	}()
@@ -199,6 +215,9 @@ func (c copier) copy(ctx context.Context, src, dst string) error {
 	_, err = io.Copy(pw, cr)
 
 	close(done)
+
+	// done closes the subscriptions, which the progress goroutine sends on
+	<-progressDone
 
 	if err != nil {
 		return err
