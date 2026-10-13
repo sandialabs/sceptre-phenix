@@ -1,9 +1,15 @@
 package experiment
 
 import (
+	"errors"
 	"net"
+	"sync"
 	"testing"
 	"time"
+
+	"phenix/store"
+	"phenix/store/storetest"
+	"phenix/util/mm"
 )
 
 func TestParseNetflowLine(t *testing.T) {
@@ -93,5 +99,169 @@ func TestNetflowPublishDoesNotBlockOnSlowConsumer(t *testing.T) {
 
 	if len(consumer) != netflowChannelBufferSize {
 		t.Fatalf("consumer queue length = %d, want %d", len(consumer), netflowChannelBufferSize)
+	}
+}
+
+// meshMM is a minimega whose mesh commands wait on a gate, telling entered
+// when one starts.
+type meshMM struct {
+	mm.MM
+
+	entered chan string
+	gate    chan struct{}
+	release func()
+}
+
+func (m *meshMM) Headnode() string { return "head" }
+
+func (m *meshMM) MeshSend(exp, _, _ string) error {
+	m.entered <- exp
+	<-m.gate
+
+	return nil
+}
+
+// useNetflows installs a store in which the named experiments are running, a
+// gated minimega, and an empty netflow registry.
+func useNetflows(t *testing.T, running ...string) *meshMM {
+	t.Helper()
+
+	storetest.Use(t)
+
+	for _, name := range running {
+		c, _ := store.NewConfig("experiment/" + name)
+		c.Spec = map[string]any{"experimentName": name, "defaultBridge": "br0"}
+		c.Status = map[string]any{"startTime": "2026-01-01T00:00:00Z", "schedules": map[string]any{"vm": "node1"}}
+
+		if err := store.Create(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fake := &meshMM{entered: make(chan string, 16), gate: make(chan struct{})}
+	fake.release = sync.OnceFunc(func() { close(fake.gate) })
+
+	originalMM := mm.DefaultMM
+	mm.DefaultMM = fake //nolint:reassign // install test double
+
+	netflowMu.Lock()
+	saved := netflows
+	netflows = make(map[string]*netflowEntry)
+	netflowMu.Unlock()
+
+	t.Cleanup(func() {
+		fake.release()
+
+		netflowMu.Lock()
+		for _, entry := range netflows {
+			if entry.flow != nil {
+				entry.flow.Close()
+			}
+		}
+
+		netflows = saved
+		netflowMu.Unlock()
+
+		mm.DefaultMM = originalMM //nolint:reassign // restore test double
+	})
+
+	return fake
+}
+
+// within fails the test if fn does not return within 2 seconds.
+func within(t *testing.T, what string, fn func()) {
+	t.Helper()
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		fn()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s took longer than 2s", what)
+	}
+}
+
+// stopHook runs the netflow stop hook for exp.
+func stopHook(exp string) {
+	for _, hook := range hooks["stop"] {
+		hook("stop", exp)
+	}
+}
+
+// While one experiment's capture waits on the mesh to start, other
+// experiments' captures can be read and stopped, and a second start of the
+// same capture is refused.
+//
+//nolint:paralleltest // replaces the store, minimega and the netflow registry
+func TestStartingOneNetflowDoesNotBlockOthers(t *testing.T) {
+	fake := useNetflows(t, "a", "b")
+
+	started := make(chan error, 1)
+
+	go func() { started <- StartNetflow("a") }()
+
+	within(t, "the start asking the mesh", func() { <-fake.entered })
+
+	within(t, "reading and stopping the other experiment's capture", func() {
+		if GetNetflow("b") != nil || GetNetflow("a") != nil {
+			t.Error("a capture that is not running was returned")
+		}
+
+		stopHook("b")
+	})
+
+	if err := StartNetflow("a"); !errors.Is(err, ErrNetflowAlreadyStarted) {
+		t.Errorf("second start returned %v, want %v", err, ErrNetflowAlreadyStarted)
+	}
+
+	fake.release()
+
+	var err error
+
+	within(t, "the start finishing", func() { err = <-started })
+
+	if err != nil {
+		t.Fatalf("starting: %v", err)
+	}
+
+	if GetNetflow("a") == nil {
+		t.Error("the started capture is not returned")
+	}
+}
+
+// An experiment stopping while its capture starts abandons the capture.
+//
+//nolint:paralleltest // replaces the store, minimega and the netflow registry
+func TestStopHookDuringStartAbandonsIt(t *testing.T) {
+	fake := useNetflows(t, "a")
+
+	started := make(chan error, 1)
+
+	go func() { started <- StartNetflow("a") }()
+
+	within(t, "the start asking the mesh", func() { <-fake.entered })
+	within(t, "the stop hook", func() { stopHook("a") })
+
+	fake.release()
+
+	var err error
+
+	within(t, "the start finishing", func() { err = <-started })
+
+	if !errors.Is(err, ErrExperimentNotRunning) {
+		t.Errorf("start returned %v, want %v", err, ErrExperimentNotRunning)
+	}
+
+	netflowMu.RLock()
+	defer netflowMu.RUnlock()
+
+	if len(netflows) != 0 {
+		t.Errorf("netflows = %v, want none", netflows)
 	}
 }
