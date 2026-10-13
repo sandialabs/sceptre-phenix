@@ -55,6 +55,17 @@ export default defineConfig(({ mode }) => {
           logLevel: 'debug',
           ws: true,
         },
+        // health endpoints, served from the server root
+        '/healthz': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          logLevel: 'debug',
+        },
+        '/readyz': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          logLevel: 'debug',
+        },
         // WebShark, which the server serves when it is installed
         '/webshark': {
           target: 'http://localhost:3000',

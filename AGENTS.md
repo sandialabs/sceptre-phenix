@@ -44,8 +44,8 @@ file rather than growing `SKILL.md`, and leave a one-line pointer to it from
   and etcd; `web/` serves REST, websockets, RBAC, and the built UI.
 - `src/js/src/views/` contains pages, `components/` reusable UI, and `utils/`
   shared helpers. `router.js`, `store.js`, and `main.js` wire the app.
-- The Vite server proxies `/api/v1`, `/version`, `/features`, and `/webshark` to
-  `localhost:3000`. Root builds copy `src/js/dist/` into `src/go/web/public/`.
+- The Vite server proxies `/api/v1`, `/version`, `/features`, `/healthz`,
+  `/readyz`, and `/webshark` to `localhost:3000`. Root builds copy `src/js/dist/` into `src/go/web/public/`.
 - The web UI targets desktop browsers only; phēnix is not used on phones or
   other mobile devices, so mobile support is out of scope.
 - `src/go/web/public/grapheditor/` is the Topology Builder, and is unrelated to
