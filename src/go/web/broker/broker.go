@@ -66,6 +66,10 @@ type Stats struct {
 	Clients            int64  `json:"clients"`
 	SlowClientsDropped uint64 `json:"slowClientsDropped"`
 	LogLinesDropped    uint64 `json:"logLinesDropped"`
+	// Queued and Capacity are the broadcasts waiting for the broker loop and
+	// how many fit.
+	Queued   int `json:"queued"`
+	Capacity int `json:"capacity"`
 }
 
 // CurrentStats returns the broker's counters. It is safe to call from any
@@ -75,6 +79,8 @@ func CurrentStats() Stats {
 		Clients:            clientCount.Load(),
 		SlowClientsDropped: slowDropped.Load(),
 		LogLinesDropped:    logsDropped.Load(),
+		Queued:             len(broadcast),
+		Capacity:           cap(broadcast),
 	}
 }
 

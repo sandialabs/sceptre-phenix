@@ -19,14 +19,21 @@ func roleAllowing(resource, verb string) rbac.Role {
 func withClients(t *testing.T, cs ...*Client) {
 	t.Helper()
 
-	saved := clients
+	saved, savedCount := clients, clientCount.Load()
 	clients = make(map[*Client]bool)
 
 	for _, c := range cs {
 		clients[c] = true
 	}
 
-	t.Cleanup(func() { clients = saved })
+	// counted as the broker loop counts the clients it registers
+	clientCount.Store(int64(len(cs)))
+
+	t.Cleanup(func() {
+		clients = saved
+
+		clientCount.Store(savedCount)
+	})
 }
 
 func received(c *Client) []encodedPublish {
