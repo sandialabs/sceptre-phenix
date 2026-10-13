@@ -148,6 +148,7 @@ We use a `Makefile` to standardize development tasks. Run `make help` to see all
 # Development
 make all         # Run all tools (lint, test, build examples)
 make check       # Run linters without fixing (for CI)
+make check-generated # Check that `make generate` is reproducible and writes only ignored files
 make generate    # Generate Go code (protobuf, mocks, RBAC policy) and the API reference
 make api-docs    # Render the API reference served at /docs/ (src/go/web/public/docs/index.html)
 make lint        # Run linters and formatters, fixing issues in place
