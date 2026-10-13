@@ -62,8 +62,8 @@ var minimegaEndpoints = []string{
 }
 
 // millis is d in milliseconds, to the microsecond.
-func millis(d time.Duration) float64 {
-	return float64(d.Microseconds()) / 1000 //nolint:mnd // microseconds per millisecond
+func millis(d time.Duration) Float {
+	return Float(d.Microseconds()) / 1000 //nolint:mnd // microseconds per millisecond
 }
 
 // round1 rounds f to one decimal place.
@@ -127,7 +127,7 @@ func GoRuntime() Check {
 			}
 
 			if samples[2].Value.Kind() == metrics.KindFloat64Histogram {
-				report(KeyGCPause, "ms", percentile(samples[2].Value.Float64Histogram(), 0.99)*1000) //nolint:mnd // ms
+				report(KeyGCPause, "ms", Float(percentile(samples[2].Value.Float64Histogram(), 0.99)*1000)) //nolint:mnd // ms
 			}
 
 			return results
@@ -549,7 +549,7 @@ func Disk(paths func() []DiskPath, statfs func(string) (DiskStat, error)) Check 
 					used = round1(float64(st.Total-min(st.Avail, st.Total)) / float64(st.Total) * 100) //nolint:mnd // percent
 				}
 
-				result.ObservedValue, result.ObservedUnit = used, "percent"
+				result.ObservedValue, result.ObservedUnit = Float(used), "percent"
 				result.Output = fmt.Sprintf("%s: %d bytes free", p.Path, st.Avail)
 
 				switch {
@@ -600,7 +600,7 @@ func Broker(stats func() BrokerStats) Check {
 				percent = round1(float64(s.Queued) / float64(s.Capacity) * 100) //nolint:mnd // percent
 			}
 
-			queue.ObservedValue = percent
+			queue.ObservedValue = Float(percent)
 			queue.Output = fmt.Sprintf("%d of %d broadcasts queued", s.Queued, s.Capacity)
 
 			if percent >= queueWarnPercent {

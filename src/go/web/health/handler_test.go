@@ -3,9 +3,11 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"phenix/version"
@@ -175,5 +177,28 @@ func TestHandlerReportsVersion(t *testing.T) {
 
 	if checks, ok := body["checks"].(map[string]any); !ok || len(checks) != 0 {
 		t.Errorf("checks = %v, want an empty object", body["checks"])
+	}
+}
+
+// Fractional values keep a decimal point when they happen to be whole, so an
+// index maps them as floats from the first document.
+func TestFloatMarshalsWithDecimalPoint(t *testing.T) {
+	t.Parallel()
+
+	tests := map[Float]string{0: "0.0", 42: "42.0", 1.27: "1.27", -3: "-3.0", 1e21: "1000000000000000000000.0"}
+
+	for f, want := range tests {
+		got, err := json.Marshal(Result{ObservedValue: f, Status: Pass})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !strings.Contains(string(got), `"observedValue":`+want+`,`) {
+			t.Errorf("Float(%v) marshals in %s, want observedValue %s", float64(f), got, want)
+		}
+	}
+
+	if _, err := json.Marshal(Float(math.NaN())); err == nil {
+		t.Error("NaN marshals, want an error")
 	}
 }

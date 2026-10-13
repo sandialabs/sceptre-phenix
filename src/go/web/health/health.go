@@ -6,11 +6,39 @@
 // Every observedValue keeps one JSON type per check key across runs: a run
 // that cannot observe a value leaves it out rather than reporting it as a
 // string, so tools that index the responses (such as Elasticsearch through
-// Metricbeat) never see a key change type.
+// Metricbeat) never see a key change type. Fractional values are [Float]s,
+// which keep a decimal point when whole, so such a tool maps them as floats.
 package health
+
+import (
+	"bytes"
+	"fmt"
+	"math"
+	"strconv"
+)
 
 // MediaType is the media type of a health response.
 const MediaType = "application/health+json"
+
+// Float is an observed value with a fractional part. It always marshals
+// with a decimal point ("42.0", not "42"), so a tool that maps a field from
+// the first value it sees, such as Elasticsearch, maps it as a floating-point
+// number rather than as an integer that truncates later values.
+type Float float64
+
+// MarshalJSON writes f as a JSON number with a decimal point.
+func (f Float) MarshalJSON() ([]byte, error) {
+	if math.IsNaN(float64(f)) || math.IsInf(float64(f), 0) {
+		return nil, fmt.Errorf("health: unsupported observed value %v", float64(f)) //nolint:err113 // not matched by callers
+	}
+
+	b := strconv.AppendFloat(nil, float64(f), 'f', -1, 64) //nolint:mnd // bits of a float64
+	if !bytes.ContainsRune(b, '.') {
+		b = append(b, ".0"...)
+	}
+
+	return b, nil
+}
 
 // Status is the health of a check, or of the whole service.
 type Status string

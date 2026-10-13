@@ -44,7 +44,7 @@ func TestDiskThresholds(t *testing.T) {
 
 		result := only(t, one(t, Disk(paths, statfs)), KeyDisk)
 
-		if result.Status != want || result.ObservedValue != float64(used) || result.ComponentID != "files-dir" {
+		if result.Status != want || result.ObservedValue != Float(used) || result.ComponentID != "files-dir" {
 			t.Errorf("%d%% used: %+v, want %s", used, result, want)
 		}
 	}
@@ -221,7 +221,7 @@ func TestStore(t *testing.T) {
 		t.Errorf("readable store = %+v, want a pass", r)
 	}
 
-	if _, ok := r.ObservedValue.(float64); !ok {
+	if _, ok := r.ObservedValue.(Float); !ok {
 		t.Errorf("readable store value = %#v, want milliseconds", r.ObservedValue)
 	}
 
@@ -241,7 +241,7 @@ func TestBrokerQueue(t *testing.T) {
 		stats := func() BrokerStats { return BrokerStats{Clients: 3, Queued: queued, Capacity: 100} }
 		results := one(t, Broker(stats))
 
-		if r := only(t, results, KeyWebsocketQueue); r.Status != want || r.ObservedValue != float64(queued) {
+		if r := only(t, results, KeyWebsocketQueue); r.Status != want || r.ObservedValue != Float(queued) {
 			t.Errorf("%d queued: %+v, want %s", queued, r, want)
 		}
 
