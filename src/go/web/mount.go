@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -558,18 +559,6 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) {
 
 	combinedPath := filepath.Join(basePath, vars["path"])
 
-	fileInfo, err := os.Stat(combinedPath)
-	if err != nil {
-		plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
-		http.Error(
-			w,
-			fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()),
-			http.StatusInternalServerError,
-		)
-
-		return
-	}
-
 	if !file.WithinDir(basePath, combinedPath) {
 		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
 		plog.Error(
@@ -589,25 +578,45 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if fileInfo.IsDir() {
-		http.Error(w, "Can't download directory: "+combinedPath, http.StatusBadRequest)
+	served, err := util.ServeDownload(w, r, util.Download{
+		Path:        combinedPath,
+		Name:        filepath.Base(combinedPath),
+		ContentType: "application/octet-stream",
+		Live:        false,
+		MaxSize:     0,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, util.ErrNotRegular):
+			http.Error(w, "Can't download directory: "+combinedPath, http.StatusBadRequest)
+		case errors.Is(err, fs.ErrNotExist):
+			http.Error(w, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()), http.StatusNotFound)
+		default:
+			plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
+			http.Error(
+				w,
+				fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()),
+				http.StatusInternalServerError,
+			)
+		}
 
 		return
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"download for file",
-		"file",
-		combinedPath,
-		"user",
-		user,
-	)
-
-	w.Header().Set("Content-Disposition", util.Attachment(fileInfo.Name()))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeFile(w, r, combinedPath)
+	// once per download, not per resumed range or HEAD
+	if served.Started {
+		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+		plog.Info(
+			plog.TypeAction,
+			"download for file",
+			"file",
+			combinedPath,
+			"user",
+			user,
+			"range",
+			r.Header.Get("Range"),
+		)
+	}
 }
 
 // UploadMountFile - PUT /experiments/{exp}/vms/{name}/files/download?path=.

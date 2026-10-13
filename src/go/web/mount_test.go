@@ -393,3 +393,31 @@ func TestUnmountGivesUpOnABusyMount(t *testing.T) {
 		t.Error("unmounted a busy mount")
 	}
 }
+
+// A mount download answers HEAD and resumes with a range against its ETag.
+func TestDownloadMountFileResumes(t *testing.T) {
+	useTestMount(t)
+
+	query := url.Values{"path": {"etc/hostname"}}
+
+	head := requestMount(t, http.MethodHead, "/download", query)
+	etag := head.Header.Get("ETag")
+
+	if head.StatusCode != http.StatusOK || etag == "" || head.Header.Get("Content-Length") != "7" {
+		t.Fatalf("HEAD: status %d, ETag %q, Content-Length %q", head.StatusCode, etag, head.Header.Get("Content-Length"))
+	}
+
+	server := serveAs(t, "alice", mountRole()).URL
+	resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/vms/test-vm/files/download?"+query.Encode(), "",
+		"Range", "bytes=5-", "If-Range", etag)
+
+	if body := readBody(t, resp); resp.StatusCode != http.StatusPartialContent || body != "vm" {
+		t.Fatalf("resume: status %d, body %q; want 206 vm", resp.StatusCode, body)
+	}
+
+	for path, want := range map[string]int{"etc": http.StatusBadRequest, "etc/missing": http.StatusNotFound} {
+		if resp := requestMount(t, http.MethodGet, "/download", url.Values{"path": {path}}); resp.StatusCode != want {
+			t.Errorf("%s: status %d, want %d", path, resp.StatusCode, want)
+		}
+	}
+}

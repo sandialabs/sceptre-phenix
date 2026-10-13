@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -525,6 +526,36 @@ func TestDownloadDiskRefuses(t *testing.T) {
 				t.Fatalf("expected %d, got %d", tc.want, resp.StatusCode)
 			}
 		})
+	}
+}
+
+// A disk download answers HEAD and resumes with a range against its ETag.
+func TestDownloadDiskResumes(t *testing.T) {
+	dir := useDiskFilesDir(t).dir
+
+	writeDisks(t, dir+"/win/a.qc2")
+
+	server := serveAs(t, "alice", testRole("disks", "get", "a.qc2", "win")).URL + "/api/v1/disks/download?disk="
+	contents := dir + "/win/a.qc2" // writeDisks writes each image's path into it
+
+	head := do(t, http.MethodHead, server+"win/a.qc2", "")
+	etag := head.Header.Get("ETag")
+
+	if head.StatusCode != http.StatusOK || etag == "" || head.Header.Get("Content-Length") != strconv.Itoa(len(contents)) {
+		t.Fatalf("HEAD: status %d, ETag %q, Content-Length %q", head.StatusCode, etag, head.Header.Get("Content-Length"))
+	}
+
+	if got := head.Header.Get("Content-Disposition"); got != "attachment; filename=a.qc2" {
+		t.Errorf("Content-Disposition = %q", got)
+	}
+
+	resp := do(t, http.MethodGet, server+"win/a.qc2", "", "Range", "bytes=5-", "If-Range", etag)
+	if body := readBody(t, resp); resp.StatusCode != http.StatusPartialContent || body != contents[5:] {
+		t.Fatalf("resume: status %d, body %q; want 206 %q", resp.StatusCode, body, contents[5:])
+	}
+
+	if resp := do(t, http.MethodGet, server+"win", ""); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a folder: status %d, want 400", resp.StatusCode)
 	}
 }
 

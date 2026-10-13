@@ -678,24 +678,29 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileInfo, err := os.Stat(path) //nolint:gosec // Path traversal via taint analysis
+	served, err := util.ServeDownload(w, r, util.Download{
+		Path:        path,
+		Name:        filepath.Base(path),
+		ContentType: "application/octet-stream",
+		Live:        false,
+		MaxSize:     0,
+	})
 	if err != nil {
+		if errors.Is(err, util.ErrNotRegular) {
+			http.Error(w, "Can't download directory: "+path, http.StatusBadRequest)
+
+			return
+		}
+
 		diskError(w, fmt.Errorf("disk image: %w", err))
 
 		return
 	}
 
-	if fileInfo.IsDir() {
-		http.Error(w, "Can't download directory: "+path, http.StatusBadRequest)
-
-		return
+	// once per download, not per resumed range or HEAD
+	if served.Started {
+		plog.Info(plog.TypeSystem, "download for file", "file", served.Info.Name(), "range", r.Header.Get("Range"))
 	}
-
-	plog.Info(plog.TypeSystem, "download for file", "file", fileInfo.Name())
-
-	w.Header().Set("Content-Disposition", util.Attachment(fileInfo.Name()))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeFile(w, r, path)
 }
 
 // for output disk names - makes absolute and adds qcow2 file extension.

@@ -74,32 +74,20 @@ func GetTunneler(w http.ResponseWriter, r *http.Request) {
 
 	path := filepath.Join(tunnelerDir, name)
 
-	info, err := os.Stat(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		plog.Error(plog.TypeSystem, "reading tunneler for download", "name", name, "err", err)
-		http.Error(w, "unable to read tunneler "+name, http.StatusInternalServerError)
+	_, err := util.ServeDownload(w, r, util.Download{
+		Path:        path,
+		Name:        name,
+		ContentType: "application/octet-stream",
+		Live:        false,
+		MaxSize:     0,
+	})
 
-		return
-	}
-
-	if err != nil || !info.Mode().IsRegular() {
+	switch {
+	case err == nil:
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, util.ErrNotRegular):
 		http.Error(w, "tunneler "+name+" is not installed on this server", http.StatusNotFound)
-
-		return
-	}
-
-	file, err := os.Open(path)
-	if err != nil {
+	default:
 		plog.Error(plog.TypeSystem, "opening tunneler for download", "name", name, "err", err)
 		http.Error(w, "unable to open tunneler "+name, http.StatusInternalServerError)
-
-		return
 	}
-
-	defer file.Close()
-
-	w.Header().Set("Content-Disposition", util.Attachment(name))
-	w.Header().Set("Content-Type", "application/octet-stream")
-
-	http.ServeContent(w, r, name, info.ModTime(), file)
 }

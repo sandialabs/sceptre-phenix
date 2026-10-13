@@ -166,6 +166,11 @@ func TestCreateWebSharkCaptureOfSavedFile(t *testing.T) {
 		t.Fatalf("serving the capture: %d, %d bytes", resp.StatusCode, len(body))
 	}
 
+	// a saved file does not change: resumable against its ETag
+	if etag := resp.Header.Get("ETag"); etag == "" || strings.HasPrefix(etag, "W/") {
+		t.Errorf("ETag = %q, want a strong one", etag)
+	}
+
 	resp = do(t, http.MethodGet, server+"/webshark/json?method=download&capture="+capture.Capture, "")
 	if got := resp.Header.Get("Content-Disposition"); got != `attachment; filename=router.pcap` {
 		t.Fatalf("download named %q", got)
@@ -258,6 +263,13 @@ func TestCreateWebSharkCaptureOfRunningCapture(t *testing.T) {
 	resp := do(t, http.MethodGet, server+"/webshark/captures/"+capture.Capture, "")
 	if body := readBody(t, resp); len(body) != whole {
 		t.Fatalf("served %d bytes, want the %d of whole records", len(body), whole)
+	}
+
+	// still growing: no validator a resumed download could splice against
+	for _, k := range []string{"ETag", "Last-Modified"} {
+		if got := resp.Header.Get(k); got != "" {
+			t.Errorf("%s = %q for a running capture", k, got)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())

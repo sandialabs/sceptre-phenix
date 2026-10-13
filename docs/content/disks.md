@@ -274,3 +274,15 @@ server serves only images it acts on: in the minimega files directory or a
 folder under it, but not at a path the list leaves out. A path with `../` in
 it, a sibling directory whose name merely starts with that directory's name, and
 an image outside the directory are all refused.
+
+Image downloads resume: if one is interrupted, retrying it in the browser's
+downloads list continues where it stopped, as long as the image has not
+changed. An image a running VM writes to changes during the download, which
+then starts over from the beginning, so stop the VM first for a consistent
+copy. From a shell, `curl -C -` resumes a download the same way, but without
+checking that the image is unchanged:
+
+```bash
+curl -C - -o win.qc2 -H 'X-Phenix-Auth-Token: Bearer <token>' \
+  'https://<phenix>/api/v1/disks/download?disk=win.qc2'
+```

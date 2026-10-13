@@ -2542,8 +2542,12 @@ paths:
         - Disks
       summary: Download a disk image
       description: >-
-        Sends the image's file as an attachment. Needs the `disks` `get`
-        permission for the image's file name.
+        Streams the image's file as an attachment. Downloads resume: send
+        `Range` with `If-Range` set to the `ETag` of an earlier response, and
+        the rest comes back (206) only while the image is unchanged. An image
+        a running VM writes to changes under the download, so stop the VM
+        first for a consistent copy. Needs the `disks` `get` permission for
+        the image's file name.
       operationId: getDisksDownload
       parameters:
         - name: disk
@@ -2555,14 +2559,74 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
       responses:
         "200":
           description: the image's file
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
           content:
             application/octet-stream:
               schema:
                 type: string
                 format: binary
+        "206":
+          $ref: "#/components/responses/PartialContent"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          description: >-
+            a path outside the minimega files directory or in a folder the
+            disk list leaves out, or a folder
+        "403":
+          description: forbidden
+        "404":
+          description: no such image
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "416":
+          $ref: "#/components/responses/RangeNotSatisfiable"
+    head:
+      tags:
+        - Disks
+      summary: Check a disk image download
+      description: >-
+        The GET response's headers without the image: its size
+        (Content-Length), `ETag` and `Last-Modified`. Needs the `disks` `get`
+        permission for the image's file name.
+      operationId: headDisksDownload
+      parameters:
+        - name: disk
+          in: query
+          description: >-
+            the image, relative to the minimega files directory or absolute;
+            it must be inside that directory and not in a folder the disk list
+            leaves out
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the image's headers
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+        "304":
+          $ref: "#/components/responses/NotModified"
         "400":
           description: >-
             a path outside the minimega files directory or in a folder the
@@ -3263,7 +3327,8 @@ paths:
         Serves one of the builds `GET /downloads/tunneler` lists, as an
         attachment under its own name. Only a file, or a link to one,
         directly in the downloads directory is served: a name that is a path,
-        or that starts with a dot, is refused. Needs neither credentials nor a
+        or that starts with a dot, is refused. Downloads resume with `Range`
+        and `If-Range`, as other downloads do. Needs neither credentials nor a
         permission.
       operationId: getDownloadsTunnelerName
       parameters:
@@ -3274,20 +3339,64 @@ paths:
           schema:
             type: string
             example: phenix-tunneler-linux-amd64
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
       responses:
         "200":
           description: the build
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
           content:
             application/octet-stream:
               schema:
                 type: string
                 format: binary
+        "206":
+          $ref: "#/components/responses/PartialContent"
+        "304":
+          $ref: "#/components/responses/NotModified"
         "400":
           description: the name is empty, is not a bare file name, or starts with a dot
         "404":
           description: no such build is installed on this server
         "500":
           description: the build could not be read or opened
+    head:
+      tags:
+        - Tunneler
+      summary: Check a tunneler build download
+      description: >-
+        The GET response's headers without the build: its size
+        (Content-Length), `ETag` and `Last-Modified`.
+      operationId: headDownloadsTunnelerName
+      parameters:
+        - name: name
+          in: path
+          description: file name of the build, as the list reports it
+          required: true
+          schema:
+            type: string
+            example: phenix-tunneler-linux-amd64
+      responses:
+        "200":
+          description: the build's headers
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+        "400":
+          description: the name is empty, is not a bare file name, or starts with a dot
+        "404":
+          description: no such build is installed on this server
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
