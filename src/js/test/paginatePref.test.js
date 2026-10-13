@@ -3,15 +3,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // the pages holding the tables
-vi.mock('@/utils/rbac.js', () => ({ roleAllowed: () => true }));
-vi.mock('@/utils/axios.js', () => ({ default: {} }));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
-vi.mock('@/utils/websocket', () => ({
-  addWsHandler: () => {},
-  removeWsHandler: () => {},
-  onWsReconnect: () => () => {},
-  sendWsMsg: () => {},
-}));
+const { modules, resetMocks } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/websocket', modules.websocket);
 
 import { nextTick } from 'vue';
 
@@ -28,7 +26,10 @@ import Users from '@/views/Users.vue';
 import { runSetup } from './helpers/context.js';
 import { blockedStorage, memoryStorage } from './helpers/storage.js';
 
-beforeEach(() => vi.stubGlobal('localStorage', memoryStorage()));
+beforeEach(() => {
+  resetMocks({ store: {} });
+  vi.stubGlobal('localStorage', memoryStorage());
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe('paginate preference', () => {

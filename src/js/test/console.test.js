@@ -71,6 +71,7 @@ vi.mock('@xterm/addon-attach', () => ({
 
 import { flush } from './helpers/async.js';
 import { makeContext } from './helpers/context.js';
+import { httpError } from './helpers/fixtures.js';
 import { blockedStorage, memoryStorage } from './helpers/storage.js';
 
 class FakeWebSocket {
@@ -103,8 +104,7 @@ class FakeElement {
   }
 }
 
-const notFound = () =>
-  Object.assign(new Error('404'), { response: { status: 404 } });
+const notFound = () => httpError(404);
 
 let consoleSession;
 let consoleTerminal;
@@ -209,7 +209,7 @@ describe('opening the console', () => {
 
   it('reports a check on the remembered console that fails', async () => {
     consoleSession.rememberConsolePid('alice', 7);
-    const err = Object.assign(new Error('403'), { response: { status: 403 } });
+    const err = httpError(403);
     axios.get.mockRejectedValue(err);
 
     await expect(consoleTerminal.openConsole()).rejects.toBe(err);
@@ -308,9 +308,7 @@ describe('a console session', () => {
     session.mount(new FakeElement());
     FakeWebSocket.instances[0].onopen();
 
-    axios.get.mockRejectedValue(
-      Object.assign(new Error('502'), { response: { status: 502 } }),
-    );
+    axios.get.mockRejectedValue(httpError(502));
     FakeWebSocket.instances[0].onclose({ code: 1000 });
     await flush();
 
@@ -458,9 +456,7 @@ describe('the Console page', () => {
   });
 
   it('explains a console the server does not offer', async () => {
-    axios.post.mockRejectedValue(
-      Object.assign(new Error('405'), { response: { status: 405 } }),
-    );
+    axios.post.mockRejectedValue(httpError(405));
     const ctx = page();
     Console.mounted.call(ctx);
     await flush();
