@@ -22,6 +22,7 @@ import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
 import { deferredGets, flush } from './helpers/async.js';
 import { dialogs, toasts } from './helpers/buefy.js';
+import { httpError } from './helpers/fixtures.js';
 import { pageContext } from './helpers/page.js';
 import {
   allowAll,
@@ -410,13 +411,12 @@ describe('opening a file', () => {
   });
 
   it.each([
-    ['WebShark is not installed', ['tunneler-download'], () => true],
-    ['the server has not said what it has installed', null, () => true],
+    ['WebShark is not installed', ['tunneler-download'], allowAll],
+    ['the server has not said what it has installed', null, allowAll],
     [
       'the role may not get the files',
       ['webshark'],
-      (resource, verb, name) =>
-        !(resource == 'experiments/files' && verb == 'get' && name == 'exp1'),
+      denyOnly(['experiments/files', 'get', 'exp1']),
     ],
   ])('opens nothing in WebShark when %s', (_, features, allowed) => {
     store.features = features;
@@ -601,9 +601,7 @@ describe('downloading the selected files', () => {
   });
 
   it('shows the server error text, which arrives as a blob', async () => {
-    const err = Object.assign(new Error('Request failed'), {
-      response: { status: 413, data: new Blob(['download too large']) },
-    });
+    const err = httpError(413, new Blob(['download too large']));
     axios.post.mockRejectedValue(err);
     const tab = listing();
     tab.selectedFiles = ['a.log'];

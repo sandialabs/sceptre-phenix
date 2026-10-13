@@ -424,7 +424,7 @@ describe('VmDetailsCard header', () => {
 
 describe('VmDetailsCard permissions', () => {
   // [what a role loses, the permission it lacks, the card's props, what
-  // shows that part of the card, a part the role keeps]
+  // shows that part of the card (each of a list), a part the role keeps]
   it.each([
     [
       'the WebShark links',
@@ -451,19 +451,21 @@ describe('VmDetailsCard permissions', () => {
       'the SOH and SCORCH links',
       ['experiments', 'get'],
       {},
-      /aria-label="view (soh|scorch)"/,
+      ['aria-label="view soh"', 'aria-label="view scorch"'],
       'vm-card-docs',
     ],
     ['the Disks link', ['disks'], {}, 'vm-card-disks', 'vm-card-docs'],
   ])(
     'hides %s from a role without %j',
     async (_, permission, props, shown, kept) => {
+      const parts = [shown].flat();
       rbac.allowed = allowAll;
-      expect(await card(props)).toMatch(shown);
+      const allowed = await card(props);
+      for (const part of parts) expect(allowed).toMatch(part);
 
       rbac.allowed = denyOnly(permission);
       const html = await card(props);
-      expect(html).not.toMatch(shown);
+      for (const part of parts) expect(html).not.toMatch(part);
       if (kept) expect(html).toContain(kept);
     },
   );
