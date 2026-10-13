@@ -135,6 +135,8 @@ func Start(opts ...ServerOption) error {
 		}
 	}
 
+	markStarted()
+
 	router, err := newRouter(assets, publicDir)
 	if err != nil {
 		return err
@@ -262,6 +264,14 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
 	router.HandleFunc("/version", GetVersion).Methods("GET")
+
+	// Health endpoints sit outside /api/v1, and so outside its auth, CORS,
+	// compression and request logging: probes need no credentials, and only
+	// their output fields depend on the request's.
+	probes := newHealthHandlers()
+	router.Handle("/healthz", probes.live).Methods("GET", "HEAD")
+	router.Handle("/readyz", probes.ready).Methods("GET", "HEAD")
+
 	router.HandleFunc("/builder", GetBuilder).Methods("GET")
 	router.HandleFunc("/builder/save", SaveBuilderTopology).Methods("POST")
 

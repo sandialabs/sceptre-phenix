@@ -377,6 +377,59 @@ func ResolveRole(jwtKey, user, rawJWT string) (rbac.Role, error) {
 	return role, nil
 }
 
+// Authenticator reports whether a request carries credentials the API would
+// accept, without rejecting it: with auth disabled (no JWT signing key, or a
+// dev key) every request does. Otherwise a request that presents a token is
+// passed through the same chain Auth builds, with its token, user, revocation
+// and proxy user checks, and counts as authenticated when it gets through. A
+// request without a token is not, and logs nothing, so unauthenticated health
+// probes do not fill the security log.
+func Authenticator(jwtKey, proxyAuthHeader string) func(*http.Request) bool {
+	if jwtKey == "" || strings.HasPrefix(jwtKey, "dev|") {
+		return func(*http.Request) bool { return true }
+	}
+
+	chain := Auth(jwtKey, proxyAuthHeader)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if reached, ok := r.Context().Value(authenticatedKey{}).(*bool); ok {
+			*reached = true
+		}
+	}))
+
+	return func(r *http.Request) bool {
+		if r.Header.Get("X-Phenix-Auth-Token") == "" && r.URL.Query().Get("token") == "" {
+			return false
+		}
+
+		var reached bool
+
+		probe := r.Clone(context.WithValue(r.Context(), authenticatedKey{}, &reached))
+
+		// Auth lets requests for paths ending in /login or /signup through
+		// without a user, which must not count here
+		probe.URL.Path = "/"
+
+		chain.ServeHTTP(discardWriter{header: make(http.Header)}, probe)
+
+		return reached
+	}
+}
+
+// authenticatedKey is the context key of the flag Authenticator's chain sets
+// when a request gets through it.
+type authenticatedKey struct{}
+
+// discardWriter is a response writer that drops what Auth writes when it
+// rejects a request Authenticator checks.
+type discardWriter struct {
+	header http.Header
+}
+
+func (w discardWriter) Header() http.Header { return w.header }
+
+func (discardWriter) Write(b []byte) (int, error) { return len(b), nil }
+
+func (discardWriter) WriteHeader(int) {}
+
 // userTokenFromContext returns the parsed JWT from phenix or JWT middleware context keys.
 func userTokenFromContext(ctx context.Context) any {
 	if token := ctx.Value(ContextKeyUser); token != nil {
