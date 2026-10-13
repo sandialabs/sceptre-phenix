@@ -405,7 +405,7 @@ func (c grantChecker) GetWebSharkWatch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	ctx, cancel := untilRevoked(r.Context(), g.Done)
+	ctx, cancel := c.untilRevoked(r.Context(), g)
 	defer cancel()
 
 	watch := &sharkWatch{w: w, rc: http.NewResponseController(w), heartbeat: time.NewTicker(sharkHeartbeat)}

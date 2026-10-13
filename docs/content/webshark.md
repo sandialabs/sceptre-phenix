@@ -170,7 +170,8 @@ server's memory.
 
 Each token is bound to the user and the session it was given under, and each
 use checks again that the user may still read the capture: a role change takes
-effect within seconds. A token also ends when its user signs out or is deleted,
+effect within seconds. An open stream or WebShark update is checked the same
+way every few seconds while it runs, and ends once the check fails. A token also ends when its user signs out or is deleted,
 when its experiment is deleted, or when its capture file is deleted. Stopping
 an experiment ends its stream tokens; WebShark goes on showing the capture
 files the stopped captures leave. Ending a token ends the streams and WebShark
