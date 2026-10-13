@@ -101,19 +101,22 @@ disconnects. It works whichever cluster node runs the VM.
 
 For a live capture, the WebShark tab has a `Copy Wireshark command` button that
 copies a command like this one, which streams the capture into a local
-Wireshark as the signed-in user:
+Wireshark:
 
 ```shell
-curl -fsSN --max-redirs 0 -L -H 'X-Phenix-Auth-Token: Bearer <token>' \
-  'https://phenix.example.com/api/v1/experiments/<exp>/vms/<vm>/captures/<iface>/stream' \
+curl -fsSN --max-redirs 0 -L \
+  'https://phenix.example.com/webshark/streams/pcs_<token>' \
   | wireshark -k -i -
 ```
 
+The command does not carry your sign-in token. It carries a stream token that
+the button gets for that one capture (see [Capture Tokens](#capture-tokens)):
+run the command within 5 minutes, and run it again in that time to reconnect.
+A stream it started keeps going until the capture stops, and stops when you
+sign out. After 5 minutes, copy the command again.
+
 When phēnix refuses the request, or a proxy in front of it redirects it, curl
 stops with an error instead of passing Wireshark an error or sign-in page.
-
-!!! warning
-    The command includes your sign-in token. Treat it like a password.
 
 Behind a sign-in proxy (a UI built with `PHENIX_WEB_AUTH=proxy`), the proxy
 turns the command away unless it signs in to the proxy the way your browser
@@ -148,12 +151,60 @@ websocket closes when the capture stops.
 Both need the same permissions as a live capture in the WebShark tab, and
 answer `404` when the VM's interface has no running capture.
 
+## Capture Tokens
+
+WebShark's own requests, and a command run outside the browser, carry no
+phēnix sign-in. phēnix gives each of them a capture token instead: a random
+token that reads one capture, for a few operations, and is kept only in the
+server's memory.
+
+* A **WebShark capture name** is the token in a WebShark link. It ends 2 hours
+  after it was last used, 12 hours after it was given, or when the session it
+  was given under ends, whichever comes first. Open the capture again from the
+  WebShark tab for a new one.
+* A **stream token** (`pcs_<random>`) streams a running capture as pcap from
+  `GET /webshark/streams/<token>`, with `?from=now` to skip the packets
+  captured before the request. It starts streams for 5 minutes, and a stream it
+  started ends with the session it was given under: at sign-out, or when the
+  sign-in token expires (24 hours by default).
+
+Each token is bound to the user and the session it was given under, and each
+use checks again that the user may still read the capture: a role change takes
+effect within seconds. A token also ends when its user signs out or is deleted,
+when its experiment is deleted, or when its capture file is deleted. Stopping
+an experiment ends its stream tokens; WebShark goes on showing the capture
+files the stopped captures leave. Ending a token ends the streams and WebShark
+updates it opened.
+
+The API gives, lists and revokes tokens:
+
+```shell
+# a stream token for a running capture
+curl -s -H 'X-Phenix-Auth-Token: Bearer <sign-in token>' \
+  -d '{"vm":"<vm>","interface":<iface>,"operations":["stream"]}' \
+  'https://phenix.example.com/api/v1/experiments/<exp>/capture-tokens'
+
+# the stream, from anywhere, with no sign-in token
+curl -fsSN 'https://phenix.example.com/webshark/streams/pcs_<token>' \
+  | wireshark -k -i -
+```
+
+`GET /api/v1/experiments/<exp>/capture-tokens` lists your own tokens, without
+the tokens themselves, and `DELETE .../capture-tokens/<id>` revokes one.
+`/webshark/streams/` is served whether or not WebShark is installed, under the
+same base path as WebShark, so a proxy needs no route of its own for it.
+
+Tokens live in the memory of the phēnix server that gave them: a restart ends
+them all, and behind a load balancer each user's requests must reach the same
+phēnix server (sticky sessions).
+
 ## Limitations
 
 * WebShark loads a whole capture into the browser and parses it there, so large
   captures (hundreds of megabytes) are slow to open, and a live capture is
   downloaded again each time WebShark reloads it. For large captures, stream
   them into a local Wireshark instead.
-* A WebShark link keeps working for 12 hours after it was last used, or until the
-  phēnix server restarts; after that, open the capture again from the WebShark
-  tab.
+* A WebShark link stops working 2 hours after it was last used, 12 hours after
+  it was opened, when you sign out, or when the phēnix server restarts. A tab
+  opened with `Open in new tab` and left idle then shows WebShark's "not found";
+  open the capture again from the WebShark tab.

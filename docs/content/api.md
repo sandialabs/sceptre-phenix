@@ -40,7 +40,8 @@ Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`,
 `Workflow`, etc.) and document most endpoints, including request parameters
 and response schemas. Some routes are not documented there yet, among them
 `/ws`, `/logs`, `/roles`, `/settings`, the netflow routes, and the `/webshark/`
-routes that WebShark itself calls.
+routes outside `/api/v1` that WebShark itself calls and that stream a capture by
+token, which take a capture token instead of a sign-in token.
 
 !!! info
     The underlying OpenAPI spec is maintained at
@@ -115,6 +116,11 @@ the command line:
   running packet capture as a pcap file, over plain HTTP or as websocket binary
   messages. See [WebShark](webshark.md#streaming-a-running-capture) for worked
   examples, or use `phenix vm capture stream`.
+* `GET /webshark/streams/{token}`, outside `/api/v1`, streams the same pcap
+  with a short-lived stream token from
+  `POST /experiments/{exp}/capture-tokens` as its only credential, so a command
+  run elsewhere need not carry a sign-in token. See
+  [Capture Tokens](webshark.md#capture-tokens).
 * `GET /console/{pid}/ws` attaches a websocket to a minimega console the server
   is running. See [minimega](minimega.md#from-the-web-ui).
 
