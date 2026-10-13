@@ -110,34 +110,32 @@ export function openFailure(err) {
 // quotes a string for a POSIX shell
 const shellQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
-// A running capture's pcap stream, as an absolute URL for tools outside the
-// browser. The API sits under the UI's base path, as axios.js builds it.
-export function captureStreamURL(exp, vm, iface, origin) {
-  const base = `${import.meta.env.BASE_URL}api/v1/`;
-  return (
-    `${origin}${base}experiments/${encodeURIComponent(exp)}` +
-    `/vms/${encodeURIComponent(vm)}/captures/${iface}/stream`
+// POST /experiments/{exp}/capture-tokens: has the server give a stream token
+// for a running capture, which a command outside the browser streams it with
+// in place of the user's session token. The token starts streams for 5
+// minutes, and its streams end when the user signs out. Resolves to
+// { id, token, expires, useBy, urls }; urls.stream is the stream's path
+// under the UI's base path.
+export async function mintCaptureStream(exp, vm, iface) {
+  const resp = await axiosInstance.post(
+    `experiments/${encodeURIComponent(exp)}/capture-tokens`,
+    { vm, interface: iface, operations: ['stream'] },
   );
+  return resp.data;
 }
 
-// The token a command outside the browser signs in with: none from a UI
-// built without sign-in, whose token is a placeholder (see router.js).
-export function signInToken(token) {
-  const auth = import.meta.env.VITE_AUTH;
-  return auth && auth !== 'disabled' ? token || null : null;
-}
+// An absolute URL, for tools outside the browser, of a path the server gives
+// under the UI's base path.
+export const capabilityURL = (rel, origin) =>
+  `${origin}${import.meta.env.BASE_URL}${rel}`;
 
-// A shell command that streams a capture into a local Wireshark, signed in
-// as the current user when there is a token. curl stops with an error,
-// rather than passing Wireshark an error or sign-in page, when phēnix
-// refuses the request or a proxy in front of it redirects it.
-export function wiresharkCommand(url, token) {
-  const auth = token
-    ? `-H ${shellQuote(`X-Phenix-Auth-Token: Bearer ${token}`)} `
-    : '';
+// A shell command that streams a capture into a local Wireshark from url,
+// whose token is its only credential. curl stops with an error, rather than
+// passing Wireshark an error or sign-in page, when phēnix refuses the request
+// or a proxy in front of it redirects it.
+export function wiresharkCommand(url) {
   return (
-    `curl -fsSN --max-redirs 0 -L ${auth}${shellQuote(url)}` +
-    ' | wireshark -k -i -'
+    `curl -fsSN --max-redirs 0 -L ${shellQuote(url)}` + ' | wireshark -k -i -'
   );
 }
 
