@@ -1359,6 +1359,7 @@
     async beforeUnmount() {
       this.unmounting = true;
       window.removeEventListener('resize', this.fitNetflowView);
+      this.pageResize?.disconnect();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       removeWsHandler(this.handleWs);
       this.offWsReconnect();
@@ -1371,6 +1372,14 @@
       }
 
       this.loader.stop();
+    },
+
+    mounted() {
+      // the page changes height without the window resizing: the tab left
+      // for the netflow tab stays laid out until its slide ends, and the VM
+      // table fills in after the netflow table may have been sized
+      this.pageResize = new ResizeObserver(() => this.fitNetflowView());
+      this.pageResize.observe(this.$el);
     },
 
     async created() {
@@ -3632,7 +3641,7 @@
       fitNetflowView() {
         const room = roomInWindow(this.$refs.netflowView);
         if (room == null) return;
-        this.netflowMaxHeight = `${Math.max(Math.floor(room), 100)}px`;
+        this.netflowMaxHeight = `${Math.max(Math.floor(room), 240)}px`;
       },
 
       // keeps the most recent NETFLOW_MAX_LINES lines
@@ -3910,6 +3919,14 @@
   .netflow-table td {
     font-family: monospace;
     white-space: nowrap;
+  }
+
+  /* the header and its row take the table's color, so the sticky header
+     cells cover the rows scrolling under them */
+  .netflow-table thead,
+  .netflow-table thead tr,
+  .netflow-table thead th {
+    background-color: inherit;
   }
 
   .netflow-table thead th {
