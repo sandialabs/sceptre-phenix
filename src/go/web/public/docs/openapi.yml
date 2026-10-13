@@ -4919,7 +4919,9 @@ components:
         observedValue:
           description: >-
             the value observed; each key keeps one JSON type across runs, and
-            a run that observed nothing leaves it out
+            a run that observed nothing leaves it out. Fractional values
+            (milliseconds, percentages) always carry a decimal point, even
+            when whole (`42.0`)
           example: 1.27
         observedUnit:
           type: string

@@ -77,8 +77,11 @@ the results keyed `component:measurement`. A trimmed `/readyz` answer:
 
 Each check key keeps one JSON type for its `observedValue` across runs: a
 check that could not observe a value (minimega down, the store unreadable)
-leaves `observedValue` out rather than reporting a string. That keeps
-dynamically mapped fields in tools such as Elasticsearch from conflicting.
+leaves `observedValue` out rather than reporting a string. Fractional values,
+such as milliseconds and percentages, always carry a decimal point, even when
+they happen to be whole (`42.0`, not `42`). That keeps dynamically mapped
+fields in tools such as Elasticsearch from conflicting, and maps fractional
+values as floats from the first document, so later values are not truncated.
 
 ## Checks
 
