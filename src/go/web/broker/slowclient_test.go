@@ -17,6 +17,7 @@ import (
 
 	"phenix/api/experiment"
 	"phenix/types"
+	v1 "phenix/types/version/v1"
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/util/polltest"
@@ -382,8 +383,8 @@ func TestReadKeepsReadingWhileAListIsSlow(t *testing.T) {
 	}
 }
 
-// Of the VM lists asked for while one is answered, only the newest is
-// answered next.
+// Of the VM lists asked for while one is answered, however many, only the
+// newest is answered next.
 //
 //nolint:paralleltest // replaces the store and the client's dependencies
 func TestListRequestsAreLatestWins(t *testing.T) {
@@ -427,11 +428,14 @@ func TestListRequestsAreLatestWins(t *testing.T) {
 
 	within(t, "the first list asking minimega", func() { <-entered })
 
-	for _, name := range []string{"second", "third", "last"} {
-		conn.reads <- listRequest(name)
+	// more than the worker's queue would hold
+	for i := range 2 * clientJobQueue {
+		conn.reads <- listRequest(strconv.Itoa(i))
 	}
 
-	polltest.Until(t, "the lists are queued", func() bool { return len(c.jobs) == 3 })
+	conn.reads <- listRequest("last")
+
+	polltest.Until(t, "the last list is queued", func() bool { return nextListName(c) == "last" })
 
 	release()
 
@@ -448,6 +452,113 @@ func TestListRequestsAreLatestWins(t *testing.T) {
 
 	if want := []string{"first", "last"}; !slices.Equal(got, want) || !slices.Equal(asked, want) {
 		t.Errorf("lists answered = %v, store asked for %v; want %v", got, asked, want)
+	}
+}
+
+// nextListName returns the experiment of the VM list c answers next, if any.
+func nextListName(c *Client) string {
+	c.vmMu.RLock()
+	defer c.vmMu.RUnlock()
+
+	if c.nextList == nil {
+		return ""
+	}
+
+	return c.nextList.req.Resource.Name
+}
+
+// A VM list the client leaves its VM table during, or before it is answered,
+// puts no VMs back in view, so they are not screenshotted.
+//
+//nolint:paralleltest // replaces the store and the client's dependencies
+func TestUnsubscribeOutlastsPendingLists(t *testing.T) {
+	useExperiment(t, map[string]any{"general": map[string]any{"hostname": "vm1"}})
+	withDeps(t)
+
+	var (
+		entered = make(chan struct{}, 1)
+		gate    = make(chan struct{})
+		release = sync.OnceFunc(func() { close(gate) })
+		mu      sync.Mutex
+		asked   []string
+	)
+
+	t.Cleanup(release)
+
+	deps.experiment = func(name string) (*types.Experiment, error) {
+		mu.Lock()
+		asked = append(asked, name)
+		mu.Unlock()
+
+		return experiment.Get("exp")
+	}
+
+	deps.vms = func(*types.Experiment) []mm.VM {
+		entered <- struct{}{}
+		<-gate
+
+		return []mm.VM{{Name: "vm1", Running: true}}
+	}
+
+	shots := make(chan string, 8)
+
+	deps.screenshot = func(_ context.Context, exp, vm, _ string) ([]byte, error) {
+		shots <- exp + "/" + vm
+
+		return []byte("png"), nil
+	}
+
+	role := rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{
+		{Resources: []string{"vms"}, ResourceNames: []string{"*/*"}, Verbs: []string{"list"}},
+	}}}
+
+	conn := newFakeConn(t)
+	c := startFakeClient(t, conn, role)
+
+	conn.reads <- listRequest("running")
+
+	within(t, "the first list asking minimega", func() { <-entered })
+
+	conn.reads <- listRequest("queued")
+
+	polltest.Until(t, "the second list is queued", func() bool { return nextListName(c) == "queued" })
+
+	conn.reads <- []byte(`{"resource": {"type": "experiment/vms", "name": "exp", "action": "unsubscribe"}}`)
+
+	polltest.Until(t, "the unsubscribe is read", func() bool { return nextListName(c) == "" })
+
+	release()
+
+	// a list asked for after the unsubscribe is answered as usual, and shows
+	// the worker is done with the ones before it
+	conn.reads <- listRequest("after")
+
+	var got []string
+
+	polltest.Until(t, "the list after the unsubscribe", func() bool {
+		got = append(got, vmListReplies(conn)...)
+
+		return len(got) > 0
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if want := []string{"after"}; !slices.Equal(got, want) || !slices.Equal(asked, []string{"running", "after"}) {
+		t.Errorf("lists answered = %v, store asked for %v; want %v and [running after]", got, asked, want)
+	}
+
+	want := []vmScope{{exp: "after", name: "vm1", running: true}}
+	if inView := vmsInView(c); !slices.Equal(inView, want) {
+		t.Errorf("VMs in view = %v, want %v", inView, want)
+	}
+
+	var shot string
+
+	within(t, "the screenshot of the list's VM", func() { shot = <-shots })
+
+	if shot != "after/vm1" || len(shots) != 0 {
+		t.Errorf("screenshots asked for = %s and %d more, want after/vm1 only", shot, len(shots))
 	}
 }
 

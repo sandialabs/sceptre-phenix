@@ -52,6 +52,12 @@ var deps = clientDeps{
 	screenshot: util.GetScreenshotContext,
 }
 
+// listJob is a VM list request and the view it was asked for in.
+type listJob struct {
+	req  bt.Request
+	view uint64
+}
+
 type vmScope struct {
 	exp  string
 	name string
@@ -78,7 +84,7 @@ const (
 	maxMsgSize           = 2048
 	socketBufferSize     = 4096
 	publishChannelBuffer = 256
-	// requests waiting for the client's worker; more are dropped.
+	// topology searches waiting for the client's worker; more are dropped.
 	clientJobQueue = 8
 	// just longer than the screenshot cache, so each round takes fresh
 	// screenshots while clients whose rounds fall within one cache life share
@@ -107,13 +113,20 @@ type Client struct {
 	done    chan struct{}
 	once    sync.Once
 
-	// requests read hands to work
+	// topology searches read hands to work, answered in order
 	jobs chan bt.Request
+	// the VM list work answers next, guarded by vmMu; a newer list replaces
+	// it, and listReady tells work one is waiting
+	nextList  *listJob
+	listReady chan struct{}
 
 	// Track the VMs this client currently has in view, if any, so we know
 	// what screenshots need to periodically be pushed to the client over
 	// the WebSocket connection.
-	vms  []vmScope
+	vms []vmScope
+	// bumped each time the client leaves its VM table, so a list asked for
+	// before then does not put its VMs back in view
+	view uint64
 	vmMu sync.RWMutex
 
 	// held while screenshots are being pushed; shotAgain asks for another round
@@ -130,12 +143,13 @@ type Client struct {
 
 func NewClient(role rbac.Role, conn *websocket.Conn) *Client {
 	return &Client{ //nolint:exhaustruct // partial initialization
-		role:     role,
-		conn:     conn,
-		publish:  make(chan any, publishChannelBuffer),
-		done:     make(chan struct{}),
-		jobs:     make(chan bt.Request, clientJobQueue),
-		shotSize: defaultBrokerScreenshotSize,
+		role:      role,
+		conn:      conn,
+		publish:   make(chan any, publishChannelBuffer),
+		done:      make(chan struct{}),
+		jobs:      make(chan bt.Request, clientJobQueue),
+		listReady: make(chan struct{}, 1),
+		shotSize:  defaultBrokerScreenshotSize,
 	}
 }
 
@@ -304,7 +318,7 @@ func (c *Client) read() {
 					// VMs no longer on screen, delaying every other API request.
 					c.clearVMs()
 				case "list":
-					c.queue(req)
+					c.queueList(req)
 				default:
 					plog.Error(
 						plog.TypeSystem,
@@ -378,8 +392,8 @@ func (c *Client) read() {
 	}
 }
 
-// queue hands req to the client's worker, dropping it when the worker is that
-// far behind: the client asks again when it next needs the answer.
+// queue hands a topology search to the client's worker, dropping it when the
+// worker is that far behind.
 func (c *Client) queue(req bt.Request) {
 	select {
 	case c.jobs <- req:
@@ -393,62 +407,59 @@ func (c *Client) queue(req bt.Request) {
 	}
 }
 
-// work answers the requests read queues, one at a time and in order. Of the
-// VM lists queued while it was busy only the newest is answered: each one
-// replaces the client's view, so the older ones would be thrown away.
+// queueList makes req the next VM list the client's worker answers. It
+// replaces any list not yet answered: each list replaces the client's view,
+// so only the newest counts.
+func (c *Client) queueList(req bt.Request) {
+	c.vmMu.Lock()
+	c.nextList = &listJob{req: req, view: c.view}
+	c.vmMu.Unlock()
+
+	select {
+	case c.listReady <- struct{}{}:
+	default:
+		// work has yet to take the last signal, and takes this list with it
+	}
+}
+
+// takeList returns the VM list waiting to be answered, if any.
+func (c *Client) takeList() (listJob, bool) {
+	c.vmMu.Lock()
+	defer c.vmMu.Unlock()
+
+	job := c.nextList
+	c.nextList = nil
+
+	if job == nil {
+		return listJob{}, false
+	}
+
+	return *job, true
+}
+
+// work answers the requests read queues, one at a time: the topology searches
+// in order, and the newest VM list.
 func (c *Client) work() {
 	for {
 		select {
 		case <-c.done:
 			return
 		case req := <-c.jobs:
-			batch := []bt.Request{req}
-
-		drain:
-			for {
-				select {
-				case req := <-c.jobs:
-					batch = append(batch, req)
-				default:
-					break drain
-				}
+			if isClosed(c.done) {
+				return
 			}
 
-			for _, req := range latestLists(batch) {
-				if isClosed(c.done) {
-					return
-				}
+			c.searchTopology(req)
+		case <-c.listReady:
+			if isClosed(c.done) {
+				return
+			}
 
-				switch req.Resource.Type {
-				case vmsResourceType:
-					c.listVMs(req)
-				case "experiment/topology":
-					c.searchTopology(req)
-				}
+			if job, ok := c.takeList(); ok {
+				c.listVMs(job)
 			}
 		}
 	}
-}
-
-// latestLists drops every VM list request in reqs but the last.
-func latestLists(reqs []bt.Request) []bt.Request {
-	last := -1
-
-	for i, req := range reqs {
-		if req.Resource.Type == vmsResourceType {
-			last = i
-		}
-	}
-
-	kept := make([]bt.Request, 0, len(reqs))
-
-	for i, req := range reqs {
-		if req.Resource.Type != vmsResourceType || i == last {
-			kept = append(kept, req)
-		}
-	}
-
-	return kept
 }
 
 func isClosed(ch <-chan struct{}) bool {
@@ -573,8 +584,11 @@ func (c *Client) searchTopology(req bt.Request) {
 }
 
 // listVMs answers an experiment/vms list request and puts the listed VMs in
-// view for screenshots.
-func (c *Client) listVMs(req bt.Request) {
+// view for screenshots. A list the client left its VM table after asking for
+// is neither answered nor put in view.
+func (c *Client) listVMs(job listJob) {
+	req := job.req
+
 	var payload map[string]any
 	if err := json.Unmarshal(req.Payload, &payload); err != nil {
 		plog.Error(
@@ -616,6 +630,12 @@ func (c *Client) listVMs(req bt.Request) {
 	allowed, total := util.SelectVMs(expName, deps.vms(exp), exp.Spec.Topology(), query, c.role)
 
 	c.vmMu.Lock()
+
+	if job.view != c.view {
+		c.vmMu.Unlock()
+
+		return
+	}
 
 	c.vms = nil
 
@@ -746,7 +766,7 @@ func vmStateOf(pub bt.Publish) (vmState, bool) {
 // trackVMState notes, from a broadcast, a VM in view starting or stopping or
 // its experiment stopping, so screenshots are taken only of running VMs. The
 // replies a client asks for itself change nothing here: a VM list reply's
-// running states are put in view when read builds the list.
+// running states are put in view when the list is built.
 func (c *Client) trackVMState(msg any) {
 	out, ok := msg.(encodedPublish)
 	if !ok {
@@ -882,11 +902,15 @@ func (c *Client) setScreenshotsTicker() {
 	}
 }
 
+// clearVMs takes the client's VMs out of view, along with those of any list it
+// asked for before.
 func (c *Client) clearVMs() {
 	c.vmMu.Lock()
 	defer c.vmMu.Unlock()
 
 	c.vms = nil
+	c.nextList = nil
+	c.view++
 }
 
 // updateScreenshots pushes screenshots of the VMs in view. The ticker, a new

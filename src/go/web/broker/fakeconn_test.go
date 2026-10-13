@@ -226,11 +226,12 @@ func (w *blockingWriter) Close() error {
 // newFakeClient returns a client on conn that may do anything.
 func newFakeClient(conn wsConn) *Client {
 	return &Client{
-		role:     roleAllowing("*", "*"),
-		conn:     conn,
-		publish:  make(chan any, publishChannelBuffer),
-		done:     make(chan struct{}),
-		jobs:     make(chan bt.Request, clientJobQueue),
-		shotSize: defaultBrokerScreenshotSize,
+		role:      roleAllowing("*", "*"),
+		conn:      conn,
+		publish:   make(chan any, publishChannelBuffer),
+		done:      make(chan struct{}),
+		jobs:      make(chan bt.Request, clientJobQueue),
+		listReady: make(chan struct{}, 1),
+		shotSize:  defaultBrokerScreenshotSize,
 	}
 }
