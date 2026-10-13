@@ -133,6 +133,7 @@ All notable changes to this project will be documented in this file.
 - **Containers**: The Docker and Podman builds gave the `INSTALL_CERTS` certificates to yarn, but the UI builds with npm, so building the UI behind a TLS-inspecting proxy failed to install its packages.
 - **Live updates**: A browser tab that stopped reading its websocket held up live updates for every other tab for up to 10 seconds at a time, and could stop live updates and all server logging for good. Such a tab's websocket is now closed with code 1013 once its queue fills, and the UI reconnects. Under heavy load the Logs page's live stream skips lines and says how many; reloading the page shows them. A VM list or screenshot waiting on a busy minimega no longer stops the websocket from answering pings, which disconnected it.
 - **SCORCH**: A component output window or read-only break terminal that stopped reading held up every experiment's SCORCH components, and a terminal exiting with one open blocked every other terminal. A window that falls behind now stops streaming; reopening it shows the full output.
+- **Port forwards**: Listing, creating or deleting a forward, and stopping any experiment, waited behind every other experiment's tunnel commands, and creating a forward retried busy cluster ports forever. Creating a forward now gives up after 20 busy ports, and an app's forward request no longer holds up the app.
 
 ### Security
 

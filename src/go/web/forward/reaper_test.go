@@ -57,8 +57,8 @@ func useForwards(t *testing.T, running []string, tunnels []map[string]string, fo
 	mm.DefaultMM = fake //nolint:reassign // install test double
 
 	forwardsMu.Lock()
-	saved := forwards
-	forwards = make(map[string]ft.Listener)
+	saved, savedPending := forwards, pending
+	forwards, pending = make(map[string]ft.Listener), make(map[string]string)
 
 	for _, l := range forwarded {
 		forwards[l.ToKey()] = l
@@ -70,7 +70,7 @@ func useForwards(t *testing.T, running []string, tunnels []map[string]string, fo
 		mm.DefaultMM = originalMM //nolint:reassign // restore test double
 
 		forwardsMu.Lock()
-		forwards = saved
+		forwards, pending = saved, savedPending
 		forwardsMu.Unlock()
 	})
 
@@ -238,10 +238,10 @@ func TestReapingAsksMinimegaOnlyWhenNeeded(t *testing.T) {
 // reapAll runs the background reaper and returns the keys of the forwards
 // left.
 func reapAll() []string {
+	reapForwards()
+
 	forwardsMu.Lock()
 	defer forwardsMu.Unlock()
-
-	reapForwards()
 
 	keys := make([]string, 0, len(forwards))
 	for key := range forwards {
