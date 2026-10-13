@@ -15,6 +15,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
 
+	"phenix/api/experiment"
 	"phenix/store"
 	"phenix/util/plog"
 	"phenix/web/capability"
@@ -256,6 +257,47 @@ func (c grantChecker) recheck(g capability.Grant) (string, error) {
 	}
 
 	return "", nil
+}
+
+//nolint:gochecknoinits // experiment hooks are registered once, before any runs
+func init() {
+	experiment.RegisterHook("delete", revokeOnExperimentDelete)
+	experiment.RegisterHook("stop", revokeOnExperimentStop)
+}
+
+// revokeOnExperimentDelete ends every capture grant of a deleted experiment.
+func revokeOnExperimentDelete(_, exp string) {
+	revokeCaptureGrants("experiment deleted", func(g capability.Grant) bool {
+		return g.Target.Exp == exp
+	}, "exp", exp)
+}
+
+// revokeOnExperimentStop ends the stream grants of a stopped experiment,
+// whose captures have stopped. WebShark's grants go on showing the capture
+// files the captures leave.
+func revokeOnExperimentStop(_, exp string) {
+	revokeCaptureGrants("experiment stopped", func(g capability.Grant) bool {
+		return g.Target.Exp == exp && g.Allows(capability.OpStream)
+	}, "exp", exp)
+}
+
+// revokeExperimentFileGrants ends the capture grants of an experiment file
+// that has been deleted: a copy of it fetched from a mesh node may remain.
+func revokeExperimentFileGrants(exp, file string) {
+	revokeCaptureGrants("file deleted", func(g capability.Grant) bool {
+		return g.Target.Exp == exp && g.Target.File == file
+	}, "exp", exp, "file", file)
+}
+
+// revokeCaptureGrants ends the capture grants match reports true for, and
+// logs why with fields when there were any.
+func revokeCaptureGrants(reason string, match func(capability.Grant) bool, fields ...any) {
+	n := captureGrants.RevokeWhere(match)
+	if n == 0 {
+		return
+	}
+
+	plog.Info(plog.TypeSecurity, "revoked capture grants", append([]any{"reason", reason, "count", n}, fields...)...)
 }
 
 // untilRevoked returns a context that is also canceled when the grant whose

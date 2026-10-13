@@ -12,6 +12,7 @@ import (
 
 	"phenix/api/settings"
 	"phenix/util/plog"
+	"phenix/web/capability"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -385,6 +386,13 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusInternalServerError)
 
 		return
+	}
+
+	// the capture grants given under the session end with it
+	if token != "" {
+		revokeCaptureGrants("signed out", func(g capability.Grant) bool {
+			return g.User == u.Username() && g.Session == token
+		}, "user", u.Username())
 	}
 
 	plog.Info(plog.TypeSecurity, "user logged out", "user", u.Username())
