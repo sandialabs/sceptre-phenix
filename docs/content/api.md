@@ -97,6 +97,11 @@ client of its own should do the same. Under heavy load the live log stream
 skips lines rather than wait, and sends a `WARN` entry saying how many it
 skipped; `GET /logs` and the log file still have them.
 
+The capture stream above, and WebShark's live update stream, end when one
+write to the client takes longer than 10 seconds, letting go of the capture.
+The server also waits at most 10 seconds for a request's headers; request
+bodies and responses are not time-limited.
+
 ## Integrations
 
 The phēnix API can be used to integrate phēnix with external systems. Known

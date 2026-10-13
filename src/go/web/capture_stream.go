@@ -108,18 +108,26 @@ func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no") // proxies must pass packets on as they come
 	w.WriteHeader(http.StatusOK)
 
+	err = tap.Stream(ctx, fromNow, pcapSender(w))
+	if err != nil && ctx.Err() == nil {
+		// the status is gone; the client sees the stream end early
+		plog.Warn(plog.TypeSystem, "streaming VM capture", "exp", exp, "vm", name, "interface", iface, "err", err)
+	}
+}
+
+// pcapSender returns what sends each chunk of a capture stream as it comes.
+func pcapSender(w http.ResponseWriter) func([]byte) error {
 	rc := http.NewResponseController(w)
 
-	err = tap.Stream(ctx, fromNow, func(b []byte) error {
+	return func(b []byte) error {
+		// a client that stops reading ends the stream, letting go of the capture
+		_ = rc.SetWriteDeadline(time.Now().Add(captureStreamWriteDeadline))
+
 		if _, err := w.Write(b); err != nil {
 			return err //nolint:wrapcheck // the client went away
 		}
 
 		return rc.Flush() //nolint:wrapcheck // the client went away
-	})
-	if err != nil && ctx.Err() == nil {
-		// the status is gone; the client sees the stream end early
-		plog.Warn(plog.TypeSystem, "streaming VM capture", "exp", exp, "vm", name, "interface", iface, "err", err)
 	}
 }
 
