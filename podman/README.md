@@ -23,6 +23,22 @@ Next, run the `headnode` pod with Podman.
 podman play kube pod.yml
 ```
 
+## Health Checks
+
+`pod.yml` gives the phenix container a liveness probe, `phenix healthcheck`,
+which Podman runs as the container's health check:
+
+```text
+podman healthcheck run headnode-phenix && echo healthy
+podman exec headnode-phenix phenix healthcheck --ready
+```
+
+The Containerfile's `HEALTHCHECK` is kept only when the image is built with
+`podman build --format docker`, since the default OCI image format has no
+health check. Start containers that run other phenix commands with
+`--no-healthcheck`. See the
+[health checks documentation](https://phenix.sceptre.dev/latest/health/).
+
 ## Aliases
 
 Aliases for `phenix` and `mm` can be created similar to how they were done for
