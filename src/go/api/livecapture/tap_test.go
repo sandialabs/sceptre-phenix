@@ -42,6 +42,10 @@ type fakeCluster struct {
 	mu      sync.Mutex
 	release chan struct{} // while set, mesh reads wait for it to close
 	waiting chan struct{} // closed once a mesh read waits on release
+
+	// while set, asking whether a host is the headnode tells asked, then
+	// waits for headnode to close
+	asked, headnode chan struct{}
 }
 
 func (c *fakeCluster) GetVMCaptures(...mm.Option) []mm.Capture {
@@ -62,6 +66,15 @@ func (c *fakeCluster) GetVMHost(...mm.Option) (string, error) {
 }
 
 func (c *fakeCluster) IsHeadnode(host string) bool {
+	c.mu.Lock()
+	asked, headnode := c.asked, c.headnode
+	c.mu.Unlock()
+
+	if asked != nil {
+		asked <- struct{}{}
+		<-headnode
+	}
+
 	return host == "headnode"
 }
 
@@ -593,5 +606,67 @@ func TestCloseAllStopsEveryTap(t *testing.T) { //nolint:paralleltest // replaces
 
 	if again == tap {
 		t.Fatal("Open after CloseAll returned the closed Tap")
+	}
+}
+
+// Starting a Tap asks minimega whether its capture is on the headnode, which
+// can take a minimega command; other captures can be released meanwhile.
+func TestOpenDoesNotAskMinimegaUnderTheRegistryLock(t *testing.T) { //nolint:paralleltest // replaces package state
+	cluster := useFakeCluster(t, false)
+	activeCheck = time.Hour
+
+	other, err := Open("exp", "vm", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	asked, headnode := make(chan struct{}, 1), make(chan struct{})
+	release := sync.OnceFunc(func() { close(headnode) })
+
+	t.Cleanup(release)
+
+	cluster.mu.Lock()
+	cluster.asked, cluster.headnode = asked, headnode
+	cluster.mu.Unlock()
+
+	opened := make(chan error, 1)
+
+	go func() {
+		tap, err := Open("exp", "vm", 0)
+		if err == nil {
+			tap.Release()
+		}
+
+		opened <- err
+	}()
+
+	select {
+	case <-asked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Open did not ask minimega")
+	}
+
+	released := make(chan struct{})
+
+	go func() {
+		other.Release()
+		close(released)
+	}()
+
+	select {
+	case <-released:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Release waited on another capture's Open")
+	}
+
+	release()
+
+	select {
+	case err := <-opened:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Open did not return")
 	}
 }
