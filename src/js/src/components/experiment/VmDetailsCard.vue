@@ -1340,8 +1340,10 @@
     color: #cfcfcf;
   }
 
+  /* has-addons drops the space between tags, so space the labels apart */
   .vm-label {
     margin-bottom: 0 !important;
+    margin-right: 0.5rem;
   }
 
   .vm-label .tag {
