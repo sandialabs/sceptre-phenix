@@ -1,17 +1,18 @@
 # Podman Usage
 
-This directory contains a Containerfile and a Kubernetes pod configuration that
-can be used to run phenix and minimega using Podman.
+This directory contains a Kubernetes pod configuration that can be used to run
+phenix and minimega using Podman. The image is built from the same
+`docker/Dockerfile` that Docker uses.
 
 ## Usage
 
-First, build the phenix image with Podman.
+First, build the phenix image with Podman from the repository root.
 
 > NOTE: If you don't have `/etc/sub*id` configured for your user to run Podman
 > in rootless mode, then you will need to run the following command as root.
 
 ```text
-podman build -f Containerfile -t phenix ..
+podman build -f docker/Dockerfile -t phenix .
 ```
 
 Next, run the `headnode` pod with Podman.

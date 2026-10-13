@@ -181,8 +181,10 @@ image, documentation, or topology details.
   `feat-add-user-authentication`.
 - Use rebase workflow and one commit per logical feature; PRs normally contain
   one commit. Squash work-in-progress commits and update the message.
-- Update `CHANGELOG.md` for code or behavior changes and `CODEOWNERS` for new
-  areas or ownership changes.
+- Don't edit `CHANGELOG.md`: releasaurus generates it at release time from
+  the Conventional Commit subjects on `main`, so write commit and PR titles
+  that describe the change for users. Update `CODEOWNERS` for new areas or
+  ownership changes.
 - New user-facing features need a minimal README example and documentation in
   [`docs/`](docs/).
 - Keep API docs, schemas, examples, and the phēnix skill (`SKILL.md` and its
@@ -192,15 +194,23 @@ image, documentation, or topology details.
 
 ## CI and Release Safety
 
-GitHub Actions is path-scoped: `ci.yml` generates, lints, and tests Go;
-`frontend.yml` runs Vitest, builds UI/backend, and runs Playwright smoke tests;
-`examples.yml` checks Go/Python examples; `packages.yml` builds Docker, Debian,
-and Podman outputs; `docs.yml` builds the documentation site for pull requests
-and publishes it to GitHub Pages from `main`. `lint.yml` runs every prek hook
-on all changes. Update affected path filters, inputs, generated artifacts,
-tool versions, and local-equivalent commands together. Preserve least-privilege
-permissions, supported action versions, lockfile caches, and shared version
-values.
+GitHub Actions workflows:
+
+| Workflow | Runs on | Does |
+|---|---|---|
+| `ci.yml` | every push and PR | prek lint, Go tests, UI builds and Vitest, Playwright e2e (one job per UI auth mode), examples, docs build; a `changes` job skips areas a change didn't touch, and `CI OK` sums up the run |
+| `packages.yml` | every push; PRs that change the build | Docker image (Buildx with the GHA layer cache), smoke test, JIT UI image, `.deb`; pushes images except on PRs |
+| `podman.yml` | changes to `docker/Dockerfile` or `podman/`; weekly | builds the same Dockerfile with Podman and smoke tests it |
+| `release.yml` | pushes to `main` | releasaurus release PR; on merge, tags `vYYYY.MM.DD`, then calls `packages.yml` and `docs.yml` |
+| `docs.yml` | docs changes on `main`; releases | publishes GitHub Pages (`latest` plus one version per release) |
+| `pr-title.yml` | PRs | Conventional Commit PR titles |
+
+Shared setup lives in `.github/actions/` (`setup-go` installs Go from
+`src/go/go.mod` and protoc; `setup-prek` installs prek), each with a per-job
+cache key. When adding a path, job, or tool, update the `changes` filters in
+`ci.yml`, the `packages.yml` path lists, and the local-equivalent commands
+together. Preserve least-privilege permissions, SHA-pinned actions, and
+caches keyed on lockfiles.
 
 Do not publish artifacts, push images, or create releases under any
 circumstances. The only exception is packages that a fork's own workflows

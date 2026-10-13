@@ -1,4 +1,4 @@
-.PHONY: all build check clean deb docker docs-build docs-serve examples example-go example-python generate help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
+.PHONY: all build check clean deb docker docs-build docs-serve examples example-go example-python generate help help-all install-dev install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
 .DEFAULT_GOAL := help
 
 DOCKER_TAG ?= latest
@@ -24,7 +24,6 @@ help:
 	@echo "  test           - Run unit tests"
 	@echo "  examples       - Build/Check example applications"
 	@echo "  run-examples   - Run example applications"
-	@echo "  update-actions - Update pinned actions in GitHub workflows"
 	@echo ""
 	@echo "Build:"
 	@echo "  build          - Build the main phenix binary"
@@ -103,10 +102,6 @@ install-dev:
 	$(MAKE) -C src/go install-dev
 	$(MAKE) -C src/js install-dev
 	$(MAKE) -C examples install-dev
-
-update-actions:
-	@echo "Updating pinned actions in GitHub workflows..."
-	@docker run --rm -v $(CURDIR):/workflows mheap/pin-github-action .github/workflows/
 
 install-wrapper:
 	@echo "Installing wrapper script to /usr/local/bin/phenix (requires sudo)..."

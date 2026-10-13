@@ -1,5 +1,13 @@
 # check=skip=SecretsUsedInArgOrEnv
 
+# Builds the phenix image with Docker or Podman. Base images are fully
+# qualified so Podman doesn't need short-name resolution.
+#
+# Steps are ordered so the layer cache survives a normal code change: tools,
+# dependencies and external downloads come before the phenix source, and
+# per-commit build args are declared as late as possible (an ARG invalidates
+# every RUN that follows it when its value changes).
+
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix. This build stage is needed for making sure the
 # latest version of the minimega Python module is installed.
@@ -8,18 +16,21 @@ FROM ghcr.io/sandia-minimega/minimega:${MM_MIN_REV} AS minimega
 
 
 # ** jsbuilder **
-FROM node:24.16.0 AS jsbuilder
+FROM docker.io/library/node:24.16.0 AS jsbuilder
 
 ARG INSTALL_CERTS=
 COPY docker/install-certs.sh /tmp/install-certs.sh
 RUN /tmp/install-certs.sh && \
-  yarn config set cafile /etc/ssl/certs/ca-certificates.crt
+  npm config set cafile /etc/ssl/certs/ca-certificates.crt
 
 RUN npm install -g @redocly/cli@2.48.0
 
-COPY ./src/js /phenix/src/js
-
 WORKDIR /phenix/src/js
+
+COPY src/js/package.json src/js/package-lock.json ./
+RUN npm ci --no-fund --no-audit
+
+COPY src/js ./
 
 ARG PHENIX_WEB_AUTH=disabled
 ARG PHENIX_BASE_PATH=/
@@ -27,42 +38,21 @@ ARG PHENIX_BASE_PATH=/
 ENV VITE_AUTH=${PHENIX_WEB_AUTH}
 ENV VITE_BASE_PATH=${PHENIX_BASE_PATH}
 
-RUN make dist/index.html
+RUN npm run build
 
-COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi.yml
+COPY src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi.yml
 
 WORKDIR /phenix/src/go/web/public/docs
 
-RUN npx @redocly/cli build-docs openapi.yml -o index.html --title 'phenix API'
+RUN redocly build-docs openapi.yml -o index.html --title 'phenix API'
 
 
-# ** gobuilder **
-FROM golang:1.24.1 AS gobuilder
-
-RUN apt-get update \
-  && apt-get install -y protobuf-compiler xz-utils
-
-COPY .git       /phenix/.git
-COPY ./Makefile /phenix/Makefile
-COPY ./src/go   /phenix/src/go
-
-WORKDIR /phenix
-
-# Copy files from jsbuilder stage
-COPY --from=jsbuilder /phenix/src/js /phenix/src/js
-COPY --from=jsbuilder /phenix/src/go/web/public/docs/index.html /phenix/src/go/web/public/docs/index.html
+# ** appsbuilder **
+FROM docker.io/library/golang:1.24.1 AS appsbuilder
 
 ARG INSTALL_CERTS=
 COPY docker/install-certs.sh /tmp/install-certs.sh
 RUN /tmp/install-certs.sh
-
-ARG PHENIX_COMMIT
-ARG PHENIX_TAG
-ARG PHENIX_REPO
-
-# Build phenix binary (skip UI build since artifacts are already copied)
-RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} REPO=${PHENIX_REPO} make bin/phenix SKIP_UI=1
-RUN make -C src/go phenix-tunneler
 
 # Allow installing from a fork of sceptre-phenix-apps that could
 # exist on GitHub or elsewhere.
@@ -72,24 +62,68 @@ ARG APPS_BRANCH=main
 # Or the user can override Go and Python apps repos/branches separately
 ARG GO_APPS_REPO=${APPS_REPO}
 ARG GO_APPS_BRANCH=${APPS_BRANCH}
+# Optional commit to build instead of the branch head. CI passes the resolved
+# head so the cached layer is rebuilt when the branch moves.
+ARG APPS_REF=
+ARG GO_APPS_REF=${APPS_REF}
 
-RUN git clone --branch ${GO_APPS_BRANCH} https://${GO_APPS_REPO}.git /phenix-apps
+RUN git clone --branch ${GO_APPS_BRANCH} https://${GO_APPS_REPO}.git /phenix-apps \
+  && git -C /phenix-apps checkout --detach "${GO_APPS_REF:-HEAD}"
 
 WORKDIR /phenix-apps/src/go
 
 RUN CGO_ENABLED=0 GOOS=linux go install -trimpath ./...
 
 
+# ** gobuilder **
+FROM docker.io/library/golang:1.24.1 AS gobuilder
+
+RUN apt-get update \
+  && apt-get install -y protobuf-compiler xz-utils
+
+ARG INSTALL_CERTS=
+COPY docker/install-certs.sh /tmp/install-certs.sh
+RUN /tmp/install-certs.sh
+
+# The build reads version info from the bind-mounted .git, whose owner
+# differs from the build user.
+RUN git config --global --add safe.directory '*'
+
+WORKDIR /phenix/src/go
+
+COPY src/go/go.mod src/go/go.sum ./
+RUN go mod download
+
+WORKDIR /phenix
+
+COPY Makefile ./
+COPY src/go ./src/go
+
+RUN make generate
+
+COPY --from=jsbuilder /phenix/src/js/dist ./src/js/dist
+COPY --from=jsbuilder /phenix/src/go/web/public/docs/index.html ./src/go/web/public/docs/index.html
+
+# Fall back to the bind-mounted .git for any of these left unset.
+ARG PHENIX_COMMIT
+ARG PHENIX_TAG
+ARG PHENIX_REPO
+
+# Build phenix binary (skip UI build since artifacts are already copied)
+RUN --mount=type=bind,source=.git,target=/phenix/.git \
+  COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} REPO=${PHENIX_REPO} make bin/phenix SKIP_UI=1
+RUN --mount=type=bind,source=.git,target=/phenix/.git \
+  COMMIT=${PHENIX_COMMIT} make -C src/go phenix-tunneler
+
+
 # ** Build the phenix image **
-FROM ubuntu:24.04
+FROM docker.io/library/ubuntu:24.04
 
 # General image metadata
 # Reference: https://github.com/opencontainers/image-spec/blob/main/annotations.md
-ARG PHENIX_COMMIT
 LABEL org.opencontainers.image.authors="Sandia National Laboratories <emulytics@sandia.gov>, Bryan Richardson <bryan@activeshadow.com>" \
   org.opencontainers.image.documentation="https://phenix.sceptre.dev/" \
   org.opencontainers.image.source="https://github.com/sandialabs/sceptre-phenix" \
-  org.opencontainers.image.revision="${PHENIX_COMMIT}" \
   org.opencontainers.image.vendor="Sandia National Laboratories" \
   org.opencontainers.image.licenses="GPL-3.0-only" \
   org.opencontainers.image.title="phenix" \
@@ -120,12 +154,6 @@ ARG INSTALL_CERTS=
 COPY docker/install-certs.sh /tmp/install-certs.sh
 RUN /tmp/install-certs.sh
 
-RUN git clone https://gitlab.com/glattercj/vmdb2 /opt/vmdb2
-RUN ln -s /opt/vmdb2/vmdb2 /usr/bin/vmdb2
-
-# needed to build Kali images with phenix
-RUN wget --progress=dot:giga https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
-
 # used by scorch
 RUN wget --progress=dot:giga -O glow.tgz https://github.com/charmbracelet/glow/releases/download/v1.5.0/glow_1.5.0_Linux_x86_64.tar.gz \
   && tar -xzf glow.tgz glow \
@@ -136,6 +164,15 @@ RUN wget --progress=dot:giga -O glow.tgz https://github.com/charmbracelet/glow/r
 RUN wget --progress=dot:giga -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.17.5-amd64.deb \
   && dpkg -i filebeat.deb \
   && rm filebeat.deb
+
+# needed to build Kali images with phenix
+RUN wget --progress=dot:giga https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
+
+# Optional vmdb2 commit to install instead of the default branch head
+ARG VMDB2_REF=
+RUN git clone https://gitlab.com/glattercj/vmdb2 /opt/vmdb2 \
+  && git -C /opt/vmdb2 checkout --detach "${VMDB2_REF:-HEAD}" \
+  && ln -s /opt/vmdb2/vmdb2 /usr/bin/vmdb2
 
 # Allow the use of PyPI mirrors via build args
 ARG PIP_INDEX="https://pypi.org/"
@@ -153,21 +190,26 @@ ARG APPS_BRANCH=main
 # Or the user can override Go and Python apps repos/branches separately
 ARG PY_APPS_REPO=${APPS_REPO}
 ARG PY_APPS_BRANCH=${APPS_BRANCH}
+# Optional commit to install instead of the branch head (see appsbuilder)
+ARG APPS_REF=
+ARG PY_APPS_REF=${APPS_REF}
 
 # Install phenix user apps
 RUN python3 -m pip install --break-system-packages --ignore-installed --no-cache-dir \
-  "git+https://${PY_APPS_REPO}.git@${PY_APPS_BRANCH}#egg=phenix-apps&subdirectory=src/python"
+  "git+https://${PY_APPS_REPO}.git@${PY_APPS_REF:-${PY_APPS_BRANCH}}#egg=phenix-apps&subdirectory=src/python"
 
-# Copy binaries from gobuilder stage
+# Copy binaries from the build stages
+COPY --from=appsbuilder /go/bin/phenix-app-* /usr/local/bin
 COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
-COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 
 COPY --from=gobuilder /phenix/src/go/bin/phenix-tunneler-* /opt/phenix/downloads/tunneler/
 
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix.
 ARG   MM_MIN_REV=master
-LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandia-minimega/minimega:${MM_MIN_REV}"
+ARG   PHENIX_COMMIT
+LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandia-minimega/minimega:${MM_MIN_REV}" \
+  org.opencontainers.image.revision="${PHENIX_COMMIT}"
 
 WORKDIR /opt/phenix
 

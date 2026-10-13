@@ -1,0 +1,88 @@
+# Weekly grouped dependency updates. The 30-day cooldown matches prek's
+# `update.cooldown_days`, so only releases that have been out for a while are
+# proposed.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - '/'
+      - '/.github/actions/*'
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 30
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      github-actions:
+        patterns: ['*']
+
+  - package-ecosystem: gomod
+    directories:
+      - '/src/go'
+      - '/examples/go'
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 30
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      go:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directories:
+      - '/src/js'
+      - '/src/js/e2e'
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 30
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directories:
+      - '/docker'
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 30
+    commit-message:
+      prefix: chore
+      include: scope
+    # Language and OS release lines (Go 1.24, Node 24, Ubuntu 24.04) are
+    # upgraded deliberately, not by the bot.
+    ignore:
+      - dependency-name: '*node'
+        update-types: [version-update:semver-major]
+      - dependency-name: '*golang'
+        update-types: [version-update:semver-major, version-update:semver-minor]
+      - dependency-name: '*ubuntu'
+        update-types: [version-update:semver-major, version-update:semver-minor]
+    groups:
+      docker:
+        patterns: ['*']
+
+  - package-ecosystem: pip
+    directories:
+      - '/docs'
+      - '/examples/python'
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 30
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      pip:
+        update-types: [minor, patch]

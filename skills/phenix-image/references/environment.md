@@ -17,9 +17,8 @@ Image builds are Linux-only, amd64-only, and need root/privileged execution
 | Disk space in the output dir | Raw image of `--size` plus converted copy plus `<name>.tar` cache |
 | Network access | debootstrap, apt, and script downloads |
 
-The in-tree [`docker/Dockerfile`](../../../docker/Dockerfile) and
-[`podman/Containerfile`](../../../podman/Containerfile) `apt-get install` the
-full set:
+The in-tree [`docker/Dockerfile`](../../../docker/Dockerfile) (used by both
+Docker and Podman) `apt-get install`s the full set:
 
 ```text
 cmdtest cpio debootstrap git iproute2 iputils-ping kpartx locales nano parted

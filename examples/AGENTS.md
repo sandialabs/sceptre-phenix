@@ -33,5 +33,6 @@ set `SYSTEM_PYTHON` when the default interpreter is older.
 - Update `README.md` and `TUTORIAL.md` when example behavior or workflows
   change.
 
-`.github/workflows/examples.yml` builds/tests both examples with Go 1.24 and
-Python 3.12. Keep workflow versions, dependencies, and Make targets aligned.
+The `Examples` jobs in `.github/workflows/ci.yml` build and test both examples
+with the Go version from `src/go/go.mod` and Python 3.12. Keep workflow
+versions, dependencies, and Make targets aligned.

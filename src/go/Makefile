@@ -1,8 +1,11 @@
 # Default build metadata to embedded values generated at build time.
-COMMIT := $(or $(COMMIT),$(shell git log -1 --format="%h"))
-TAG    := $(or $(TAG),$(shell git tag --points-at HEAD | head -n 1),$(shell git branch --show-current),$(COMMIT))
-REPO   ?= $(shell git config --get remote.origin.url 2>/dev/null | awk -F'github.com[:/]' '{print $$2}' | sed 's/\.git$$//')
+COMMIT := $(or $(COMMIT),$(shell git log -1 --format="%h" 2>/dev/null))
+TAG    := $(or $(TAG),$(shell git tag --points-at HEAD 2>/dev/null | head -n 1),$(shell git branch --show-current 2>/dev/null),$(COMMIT))
+REPO   := $(or $(REPO),$(shell git config --get remote.origin.url 2>/dev/null | awk -F'github.com[:/]' '{print $$2}' | sed 's/\.git$$//'))
 DATE   := $(shell date -u)
+
+# Extra flags for `make test`, e.g. GOTESTFLAGS=-coverprofile=coverage.out
+GOTESTFLAGS ?=
 
 SOURCES   := $(shell find . -name '*.go')
 UISOURCES := $(shell find web -name '*.go' -not -path 'web/rbac/known_policy.go')
@@ -67,7 +70,7 @@ generate: generate-mocks generate-protobuf go-generate
 
 test:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
-	go test -v -race ./...
+	go test -v -race $(GOTESTFLAGS) ./...
 
 clean:
 	$(RM) bin/phenix
@@ -142,7 +145,7 @@ web/rbac/known_policy.go: $(UISOURCES)
 phenix: bin/phenix
 bin/phenix: $(SOURCES) generate
 	mkdir -p bin
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -X 'phenix/version.Tag=$(TAG)' -X 'phenix/version.Date=$(DATE)' -X 'phenix/version.Repo=$(REPO)' -s -w" -trimpath -o bin/phenix main.go
+	CGO_ENABLED=0 GOOS=linux go build -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -X 'phenix/version.Tag=$(TAG)' -X 'phenix/version.Date=$(DATE)' -X 'phenix/version.Repo=$(REPO)' -s -w" -trimpath -o bin/phenix main.go
 
 phenix-debug: bin/phenix-debug
 bin/phenix-debug: $(SOURCES) generate
@@ -153,16 +156,16 @@ phenix-tunneler: bin/phenix-tunneler-linux-amd64 bin/phenix-tunneler-darwin-arm6
 
 bin/phenix-tunneler-linux-amd64: $(TUNNELSOURCES)
 	mkdir -p bin
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -s -w" -trimpath -o bin/phenix-tunneler-linux-amd64 $(TUNNELSOURCES)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -s -w" -trimpath -o bin/phenix-tunneler-linux-amd64 $(TUNNELSOURCES)
 
 bin/phenix-tunneler-darwin-arm64: $(TUNNELSOURCES)
 	mkdir -p bin
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -s -w" -trimpath -o bin/phenix-tunneler-darwin-arm64 $(TUNNELSOURCES)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -s -w" -trimpath -o bin/phenix-tunneler-darwin-arm64 $(TUNNELSOURCES)
 
 bin/phenix-tunneler-darwin-amd64: $(TUNNELSOURCES)
 	mkdir -p bin
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -s -w" -trimpath -o bin/phenix-tunneler-darwin-amd64 $(TUNNELSOURCES)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -s -w" -trimpath -o bin/phenix-tunneler-darwin-amd64 $(TUNNELSOURCES)
 
 bin/phenix-tunneler-windows-amd64.exe: $(TUNNELSOURCES)
 	mkdir -p bin
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -s -w" -trimpath -o bin/phenix-tunneler-windows-amd64.exe $(TUNNELSOURCES)
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -s -w" -trimpath -o bin/phenix-tunneler-windows-amd64.exe $(TUNNELSOURCES)

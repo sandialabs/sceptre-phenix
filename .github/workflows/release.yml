@@ -1,0 +1,102 @@
+name: Release
+
+# Releases with releasaurus (see releasaurus.toml). Each push to main opens or
+# updates a release PR that names the next version (vYYYY.MM.DD) and prepends
+# its changelog to CHANGELOG.md. Merging that PR tags the release and
+# publishes its notes; the jobs below then build and attach the packages and
+# publish the release's documentation.
+#
+# Tags and PRs created with GITHUB_TOKEN don't trigger other workflows, so
+# this workflow calls the package and docs workflows itself.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Show what would be released without changing anything
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  releasaurus:
+    name: Release
+    # Forks don't release, but can preview with a dry run.
+    if: github.repository == 'sandialabs/sceptre-phenix' || inputs.dry-run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DRY_RUN: ${{ inputs.dry-run && '--dry-run' || '' }}
+    outputs:
+      tag: ${{ steps.released.outputs.tag }}
+    steps:
+      - name: Record the latest release
+        id: before
+        run: echo "tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and publish a merged release PR
+        uses: robgonnella/releasaurus/action@f0de4acb4f196104bfeea768cba5f21a05615545 # v1.3.0-rc.1
+        with:
+          command: release
+          command_args: >-
+            --forge github
+            --repo ${{ github.server_url }}/${{ github.repository }}
+            ${{ env.DRY_RUN }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Find the new release
+        id: released
+        env:
+          BEFORE: ${{ steps.before.outputs.tag }}
+        run: |
+          after=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)
+          if [ -n "$after" ] && [ "$after" != "$BEFORE" ]; then
+            echo "Released ${after}"
+            echo "tag=${after}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update the release PR
+        uses: robgonnella/releasaurus/action@f0de4acb4f196104bfeea768cba5f21a05615545 # v1.3.0-rc.1
+        with:
+          command: release-pr
+          command_args: >-
+            --forge github
+            --repo ${{ github.server_url }}/${{ github.repository }}
+            ${{ env.DRY_RUN }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  packages:
+    name: Packages
+    needs: releasaurus
+    if: needs.releasaurus.outputs.tag
+    uses: ./.github/workflows/packages.yml
+    with:
+      tag: ${{ needs.releasaurus.outputs.tag }}
+    permissions:
+      contents: write
+      packages: write
+
+  docs:
+    name: Documentation
+    needs: releasaurus
+    if: needs.releasaurus.outputs.tag
+    uses: ./.github/workflows/docs.yml
+    with:
+      version: ${{ needs.releasaurus.outputs.tag }}
+    permissions:
+      contents: write
+      pages: write
+      id-token: write

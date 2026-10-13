@@ -98,7 +98,13 @@ test('signup success (200) logs the user in via response.data', async ({
     0,
   );
 
-  // 401/user-error fallout is expected: the user was never really created
-  const fatal = fatalOf(issues).filter((i) => !/401|user error/.test(i.text));
+  // 401/user-error fallout is expected: the user was never really created.
+  // The websocket handshake also fails, because the extraHTTPHeaders standing
+  // in for the auth proxy aren't sent on websocket upgrades.
+  const fatal = fatalOf(issues).filter(
+    (i) =>
+      !/401|user error/.test(i.text) &&
+      !/WebSocket connection .* failed/.test(i.text),
+  );
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });

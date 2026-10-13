@@ -1,5 +1,8 @@
 name: Publish Documentation
 
+# Publishes the documentation site to GitHub Pages: `latest` from main, plus
+# a copy for each release when release.yml calls this workflow. Pull requests
+# build the site in the CI workflow.
 on:
   push:
     branches:
@@ -9,56 +12,26 @@ on:
       - 'src/go/web/public/docs/openapi.yml'
       - 'src/go/types/version/schemas/v2.yaml'
       - '.github/workflows/docs.yml'
-  pull_request:
-    paths:
-      - 'docs/**'
-      - 'src/go/web/public/docs/openapi.yml'
-      - 'src/go/types/version/schemas/v2.yaml'
-      - '.github/workflows/docs.yml'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: Release version to publish alongside latest
+        type: string
+        required: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: docs-publish
+  cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build Documentation
-    if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: docs
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: docs/requirements.txt
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '24'
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Build API documentation
-        working-directory: .
-        run: |
-          npx --yes @redocly/cli@2.53.2 build-docs \
-            src/go/web/public/docs/openapi.yml \
-            --output=/tmp/swagger.html \
-            --title='phenix API'
-      - name: Build documentation
-        run: mkdocs build --strict
-
   publish:
     name: Build Published Documentation
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Forks have no Pages site to publish to.
+    if: github.repository == 'sandialabs/sceptre-phenix'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -91,11 +64,16 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-      - name: Prepare latest documentation
+      - name: Prepare documentation
         working-directory: .
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
           cp docs/CNAME /tmp/CNAME
           mike deploy --config-file docs/mkdocs.yml --update-aliases latest
+          if [ -n "$VERSION" ]; then
+            mike deploy --config-file docs/mkdocs.yml "$VERSION"
+          fi
           mike set-default --config-file docs/mkdocs.yml latest
           git switch gh-pages
           cp /tmp/CNAME CNAME

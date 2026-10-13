@@ -7,6 +7,7 @@
 .editorconfig   @GhostofGoes
 .gitignore      @GhostofGoes @activeshadow @glattercj @cmulk
 CHANGELOG.md    @glattercj @cmulk @GhostofGoes
+releasaurus.toml @glattercj @cmulk @GhostofGoes
 LICENSE         @cmulk @mgaliar
 Makefile        @glattercj @activeshadow @GhostofGoes @cmulk
 README.md       @cmulk @activeshadow @glattercj @GhostofGoes @mgaliar
@@ -19,6 +20,7 @@ README.md       @cmulk @activeshadow @glattercj @GhostofGoes @mgaliar
 
 # Containers
 /docker/        @activeshadow @glattercj @GhostofGoes @mgaliar @cmulk @nblair2
+.dockerignore   @activeshadow @glattercj @GhostofGoes @mgaliar @cmulk @nblair2
 /podman/        @activeshadow
 
 # Go code

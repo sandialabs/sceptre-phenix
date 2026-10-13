@@ -67,7 +67,8 @@ prerequisites instead of silently skipping checks.
 
 ## CI
 
-`.github/workflows/frontend.yml` runs Vitest and builds the UI, then builds and
-starts a real backend for Playwright smoke tests. Keep Node versions, npm cache
-lockfiles, auth build mode, backend startup, and path filters aligned with local
+`.github/workflows/ci.yml` runs Vitest, then builds the UI and backend once per
+`VITE_AUTH` mode (`disabled`, `enabled`, `proxy`) and runs the matching
+Playwright specs against each. Keep Node versions, npm cache lockfiles, auth
+build modes, backend startup, and the `changes` filters aligned with local
 commands.

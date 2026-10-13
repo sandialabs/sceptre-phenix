@@ -1,0 +1,27 @@
+name: PR Title
+
+# Squash merges use the PR title as the commit subject, and the release
+# changelog is generated from those subjects, so titles must follow
+# Conventional Commits.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Conventional Commit title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the PR title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        # Keep the types in sync with the conventional-pre-commit hook in prek.toml
+        run: |
+          pattern='^(feat|fix|perf|docs|style|refactor|test|build|ci|chore|revert)(\([^)]+\))?!?: [^ ].*$'
+          if [[ ! "$TITLE" =~ $pattern ]]; then
+            echo "::error::PR title must follow Conventional Commits, e.g. 'fix(ui): handle empty VM list': ${TITLE}"
+            exit 1
+          fi

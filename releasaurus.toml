@@ -1,0 +1,16 @@
+# Release settings for releasaurus (https://releasaurus.rgon.io), which
+# .github/workflows/release.yml runs on every push to main. Versions are
+# calendar dates (vYYYY.MM.DD, at most one release per UTC day), and the
+# changelog is generated from the Conventional Commit subjects on main.
+
+[defaults.versioning]
+version_type = "%Y.%m.%d"
+
+[defaults.changelog]
+include_pr_link = true
+
+[[package]]
+name = "phenix"
+path = "."
+# No release_type: the version is injected at build time rather than kept in
+# a file, so releasaurus only writes the changelog and tags the release.
