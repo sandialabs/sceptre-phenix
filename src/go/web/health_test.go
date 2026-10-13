@@ -9,10 +9,13 @@ import (
 	"time"
 
 	"github.com/activeshadow/libminimega/minicli"
+	"github.com/dgrijalva/jwt-go"
 
+	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/mm/mmtest"
 	"phenix/web/health"
+	"phenix/web/rbac"
 )
 
 // healthyMinimega answers the readiness check's minimega commands: version,
@@ -220,6 +223,88 @@ func TestHealthNeedsNoToken(t *testing.T) {
 
 	if r := body.Checks[health.KeyStore]; len(r) != 1 || r[0].ComponentID != "bolt" {
 		t.Errorf("liveness store = %+v, want the bolt store", r)
+	}
+}
+
+// With auth enabled, a valid token, in the header or the query, shows the
+// output fields.
+//
+//nolint:paralleltest // uses the process-wide fake minimega
+func TestHealthShowsOutputWithValidToken(t *testing.T) {
+	useTestStore(t)
+	useStoreEndpoint(t, "bolt:///var/lib/phenix/store.bdb")
+
+	mmtest.Use(t, healthyMinimega)
+
+	user := rbac.NewUser("alice", "password")
+	if user == nil {
+		t.Fatal("creating user")
+	}
+
+	if err := user.SetRole(&rbac.Role{Spec: &v1.RoleSpec{Name: "Global Viewer"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": "alice",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	}).SignedString([]byte("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := user.AddToken(token, "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	server := serveRouter(t, testPublic(), "secret")
+
+	resp, body := getHealth(t, server.URL+readyz, "X-Phenix-Auth-Token", "Bearer "+token)
+
+	if resp.StatusCode != http.StatusOK || len(body.Notes) != 0 {
+		t.Errorf("status %d, notes %v, want 200 with no notes", resp.StatusCode, body.Notes)
+	}
+
+	if r := body.Checks[health.KeyMinimegaVersion]; len(r) != 1 || r[0].Output == "" {
+		t.Errorf("version = %+v, want its output", r)
+	}
+
+	// passing liveness checks have no output, but none is omitted either
+	if _, body = getHealth(t, server.URL+"/healthz?token="+token); len(body.Notes) != 0 {
+		t.Errorf("liveness notes %v with a token in the query, want none", body.Notes)
+	}
+}
+
+// The health endpoints answer themselves, not with the UI's index.html that
+// the router's NotFound fallback serves for unknown paths.
+//
+//nolint:paralleltest // sets the store endpoint
+func TestHealthzIsNotTheUIIndex(t *testing.T) {
+	useTestStore(t)
+	useStoreEndpoint(t, "etcd://etcd.example:2379")
+
+	server := serveRouter(t, testPublic(), "")
+
+	// the fallback is in place
+	unknown := do(t, http.MethodGet, server.URL+"/no-such-page", "")
+
+	if raw, _ := io.ReadAll(unknown.Body); !strings.Contains(string(raw), "<title>phenix</title>") {
+		t.Fatalf("unknown path = %q, want the UI index", raw)
+	}
+
+	for _, path := range []string{"/healthz", "/healthz?verbose=1"} {
+		resp := do(t, http.MethodGet, server.URL+path, "")
+		raw, _ := io.ReadAll(resp.Body)
+
+		if strings.Contains(string(raw), "<title>") || resp.Header.Get("Content-Type") != health.MediaType {
+			t.Errorf("GET %s = %s %q, want a health response", path, resp.Header.Get("Content-Type"), raw)
+		}
+	}
+
+	resp := do(t, http.MethodPost, server.URL+"/healthz", "")
+
+	if raw, _ := io.ReadAll(resp.Body); resp.StatusCode != http.StatusMethodNotAllowed || strings.Contains(string(raw), "<title>") {
+		t.Errorf("POST /healthz = %d %q, want 405 without the UI index", resp.StatusCode, raw)
 	}
 }
 
