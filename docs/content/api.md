@@ -139,6 +139,14 @@ write to the client takes longer than 10 seconds, letting go of the capture.
 The server also waits at most 10 seconds for a request's headers; request
 bodies and responses are not time-limited.
 
+## Health Endpoints
+
+`GET /healthz` (liveness) and `GET /readyz` (readiness) report the server's
+health in the `application/health+json` format, answering `503` when it
+fails. Like `/features`, they are served from the server root, outside
+`/api/v1`, and need no credentials; only their `output` details need a token.
+See [Health Checks](health.md).
+
 ## Integrations
 
 The phēnix API can be used to integrate phēnix with external systems. Known

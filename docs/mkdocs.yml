@@ -102,6 +102,7 @@ nav:
   - Administration:
     - Users: user-administration.md
     - Hosts: hosts.md
+    - Health Checks: health.md
   - Reference:
     - minimega: minimega.md
     - Troubleshooting: troubleshooting.md

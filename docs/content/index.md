@@ -52,6 +52,16 @@ After starting the services with either method, view the logs to see the initial
 docker compose logs -f
 ```
 
+Once phēnix is up, `docker compose ps` shows the `phenix` container as
+`(healthy)`. To check that phēnix can reach minimega, its store and enough disk
+space, run:
+
+```bash
+docker exec phenix phenix healthcheck --ready
+```
+
+See [Health Checks](health.md) for details.
+
 !!! note
     The Docker image includes the user apps from the [sceptre-phenix-apps](https://github.com/sandialabs/sceptre-phenix-apps) repository.
 

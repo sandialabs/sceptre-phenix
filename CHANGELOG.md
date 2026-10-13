@@ -30,6 +30,7 @@ All notable changes to this project will be documented in this file.
 - **Workflow API**: The workflow endpoints accept `?dryRun=true`, which validates the request and changes nothing, and return a JSON result. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Validation Errors**: Config validation errors from the CLI, the API and the web UI name the list item, its hostname or name, and the line. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Resumable downloads**: Experiment file, disk image, VM mount, tunneler and saved WebShark capture downloads answer `HEAD` and resume with `Range` and `If-Range` against a strong `ETag`, so a browser or `curl -C -` continues an interrupted download instead of starting over. `GET /experiments/{name}/files/{filename}/checksum` and `GET /disks/checksum` return a file's SHA-256, computed in the background, which downloads then also send as `Repr-Digest`.
+- **Health checks**: `GET /healthz` (liveness: uptime and the BoltDB store) and `GET /readyz` (readiness: minimega, mesh, store, qemu-img, WebShark, disk space, websocket broker and Go runtime) answer in the IETF `application/health+json` format, `503` when failing, without credentials; only their `output` details need a token. `phenix healthcheck` queries them and exits non-zero when phēnix is unhealthy.
 
 ### Changed
 
@@ -67,6 +68,7 @@ All notable changes to this project will be documented in this file.
 - **Workflow Schema (breaking)**: Workflow configs are validated against the new `Workflow` schema, so unknown or misspelled keys, values of the wrong type and a missing `spec` return 400 instead of being ignored. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **API compression**: Downloads (attachments) are never gzip-compressed, so they reach the client byte for byte, and a compressed API response no longer advertises byte ranges and carries only a weak ETag.
 - **Experiment file downloads**: Stream from disk instead of loading the whole file into server memory on every request. The Files tab's viewer refuses a file over 10 MiB (`413`) with a hint to download it, and zip downloads send `Accept-Ranges: none`.
+- **Containers**: The Docker and Podman images gain a `HEALTHCHECK` running `phenix healthcheck`, which also replaces `phenix version` as the compose `phenix` service's health check, and `podman/pod.yml` gives the phenix container a matching liveness probe. Start one-off CLI containers with `--no-healthcheck`.
 
 ### Removed
 
