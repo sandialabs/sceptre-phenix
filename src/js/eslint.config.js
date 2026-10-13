@@ -92,6 +92,16 @@ export default [
       },
     },
   },
+  {
+    // perf/summary.mjs is an ES module run under Node in CI.
+    files: ['perf/**/*.mjs'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
   // Turns off eslint-plugin-vue's formatting rules that overlap with
   // Prettier, so the two tools don't disagree. Must stay last.
   skipFormatting,

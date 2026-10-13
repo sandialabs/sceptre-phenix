@@ -199,21 +199,22 @@ image, documentation, or topology details.
 ## CI and Release Safety
 
 Most GitHub Actions workflows are path-scoped: `ci.yml` generates code and tests
-Go, and its `generated` job runs `make check-generated`; `frontend.yml` runs Vitest, builds the UI and backend once in a `build` job, and
-shares that build with the Playwright smoke test and UI bundle budget and
-Lighthouse jobs; `examples.yml` checks
-Go/Python examples; `docs.yml` builds the docs and API reference and publishes
-them from `main`. Every API reference build, local, container, or CI, goes
-through `scripts/api-docs.sh`, which pins the Redocly CLI version; a prek hook
-lints `openapi.yml` with it. `lint.yml` runs the `prek` hooks, including golangci-lint for
-Go (`src/go/prek.toml`), on every push, and `packages.yml` builds Docker,
-Debian, and Podman outputs on every push that changes more than the docs;
-`cancel-closed-pr.yml` cancels a closed pull request branch's push-triggered
-runs (branches in this repository only), while each workflow's own concurrency
-group cancels the pull request's `pull_request` runs. Update affected path
-filters, inputs, generated artifacts, tool versions, and local-equivalent
-commands together. Preserve least-privilege permissions, supported action
-versions, lockfile caches, and shared version values.
+Go, and its `generated` job runs `make check-generated`; `frontend.yml` runs
+Vitest, builds the UI and backend once in a `build` job, and shares that build
+with the Playwright smoke test and UI bundle budget and Lighthouse jobs, the
+latter writing a budget summary with deltas against the default branch;
+`examples.yml` checks Go/Python examples; `docs.yml` builds the docs and API
+reference and publishes them from `main`. Every API reference build, local,
+container, or CI, goes through `scripts/api-docs.sh`, which pins the Redocly CLI
+version; a prek hook lints `openapi.yml` with it. `lint.yml` runs the `prek`
+hooks, including golangci-lint for Go (`src/go/prek.toml`), on every push, and
+`packages.yml` builds Docker, Debian, and Podman outputs on every push that
+changes more than the docs; `cancel-closed-pr.yml` cancels a closed pull request
+branch's push-triggered runs (branches in this repository only), while each
+workflow's own concurrency group cancels the pull request's `pull_request` runs.
+Update affected path filters, inputs, generated artifacts, tool versions, and
+local-equivalent commands together. Preserve least-privilege permissions,
+supported action versions, lockfile caches, and shared version values.
 
 Do not publish artifacts, push images, or create releases under any
 circumstances. The only exception is packages that a fork's own workflows

@@ -20,7 +20,7 @@ All notable changes to this project will be documented in this file.
 - **Console**: The minimega console survives page changes, reloads and other tabs, replaying up to 256 KiB of output, and ends on CTRL+D, logout, or 15 seconds after its last tab closes (`GET` and `DELETE /console/{pid}`).
 - **SCORCH**: Clear a finished run's status (`POST .../scorch/pipelines/{run}/clear`) or run only its cleanup stage (`POST .../cleanup`), and Start all or Stop all runs, from the pipeline page.
 - **Documentation**: New pages for the web UI, Disks, Hosts and WebShark, rewritten VM, netflow, SCORCH, tunneler, config and RBAC pages with new screenshots, and the new routes in `openapi.yml`.
-- **CI**: A `perf` job enforces bundle size (size-limit) and Lighthouse budgets.
+- **CI**: A `perf` job enforces bundle size (size-limit) and Lighthouse budgets. It runs Lighthouse even when a bundle budget fails, writes a summary of both with deltas against the default branch to the job summary and a `perf-summary` artifact, and fails with one short annotation per failed budget.
 - **Topology Builder**:
   - **Topology Endpoints**: Added `POST /api/v1/builder/topologies` and `PUT /api/v1/builder/topologies/{name}` to create and save a topology and its diagram without touching an experiment; both refuse the write while an experiment built from that topology is running.
   - **Default Disk Images**: Added the `$DEFAULT_VM_IMAGE` and `$DEFAULT_ROUTER_IMAGE` experiment variables, which set the disk image new VM and router nodes are created with.

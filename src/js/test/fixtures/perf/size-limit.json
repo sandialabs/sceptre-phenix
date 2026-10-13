@@ -1,0 +1,14 @@
+[
+  {
+    "name": "Entry JS (loaded on every page)",
+    "passed": true,
+    "size": 149564,
+    "sizeLimit": 155000
+  },
+  {
+    "name": "Entry CSS",
+    "passed": true,
+    "size": 48074,
+    "sizeLimit": 52000
+  }
+]

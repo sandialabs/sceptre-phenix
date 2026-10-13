@@ -31,7 +31,9 @@ npm ci
 | Production build         | `npm run build`                                          |
 | Format, then review diff | `npm run format`                                         |
 | Bundle size budgets      | `cd perf && npm ci && npm run size` (after a build)      |
+| Bundle sizes as JSON     | `cd perf && npm run --silent size:json`                  |
 | Lighthouse audits        | `cd perf && npm run lighthouse` (needs a running server) |
+| CI perf summary          | `cd perf && node summary.mjs ...` (see `perf/README.md`) |
 
 The development server needs a backend on `localhost:3000`.
 
@@ -93,8 +95,11 @@ their options on a plain object with `test/helpers/context.js`. Do not add
 
 ## Performance
 
-`perf/` holds size-limit budgets and Lighthouse CI assertions; see
-`perf/README.md`. Register new Buefy components in `src/utils/buefy.js` (or
+`perf/` holds size-limit budgets, Lighthouse CI assertions, and `summary.mjs`,
+which writes the CI budget summary; see `perf/README.md`. `perf/` and `e2e/`
+are separate npm projects with their own lockfiles, so a plain `npm ci` here
+does not install Lighthouse or Playwright; `perf/README.md` explains why they
+are not merged into workspaces. Register new Buefy components in `src/utils/buefy.js` (or
 locally in the one view that uses a heavy one) rather than installing all of
 Buefy, keep long-lived third-party objects (xterm, d3, editors) out of deep
 reactivity with `markRaw`, and clean up intervals, sockets, and listeners in
@@ -107,6 +112,7 @@ reactivity with `markRaw`, and clean up intervals, sockets, and listeners in
 `phenix-build-disabled` artifact. The `test-e2e` and `perf` jobs download it,
 start the backend with `scripts/ci-start-phenix-ui.sh`, and run Playwright smoke
 tests and bundle budgets plus Lighthouse CI against it. Every job has read-only
-permissions. Keep Node versions, npm
+permissions; `perf` also reads the default branch's `perf-summary` artifact to
+report deltas, and its final Check budgets step is what fails it. Keep Node versions, npm
 cache lockfiles, auth build mode, backend startup, and path filters aligned with
 local commands.
