@@ -52,6 +52,7 @@ All notable changes to this project will be documented in this file.
 - **Tunneler**: The page lists the builds the server has (`GET /downloads/tunneler`).
 - **Browser console**: Production builds log only warnings and errors, and lint rejects new `console.log` calls.
 - **CI**: The Frontend workflow cancels superseded runs, and closing a pull request cancels its CI.
+- **Build**: `make generate` also renders the API reference, `make build` binaries serve it at `/docs/` (`SKIP_API_DOCS=1` skips it for offline builds), and every build renders it with one Redocly CLI version, pinned in `scripts/api-docs.sh`. A prek hook checks that `openapi.yml` is valid OpenAPI.
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, form controls, selection checkboxes and modal close buttons, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, status tag, code and State of Health tab colors, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
 - **Topology Builder**:
@@ -61,6 +62,10 @@ All notable changes to this project will be documented in this file.
 - **Topology schema**: Require node hostnames to be at least 2 characters long.
 - **Workflow API**: A workflow apply is validated before a running experiment is stopped, so an invalid one returns 400 or 409 instead of 500 and leaves the experiment running. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow Schema (breaking)**: Workflow configs are validated against the new `Workflow` schema, so unknown or misspelled keys, values of the wrong type and a missing `spec` return 400 instead of being ignored. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+
+### Removed
+
+- **API**: The stale 2020 API Blueprint served at `/docs/apiary.apib`. `openapi.yml`, rendered at `/docs/`, is the API reference.
 
 ### Fixed
 

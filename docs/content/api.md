@@ -47,7 +47,10 @@ routes that WebShark itself calls.
     [`src/go/web/public/docs/openapi.yml`](https://github.com/sandialabs/sceptre-phenix/blob/main/src/go/web/public/docs/openapi.yml)
     in the [sceptre-phenix](https://github.com/sandialabs/sceptre-phenix)
     repository, and is rendered to static HTML with
-    [Redoc](https://github.com/Redocly/redoc) as part of the phēnix build.
+    [Redoc](https://github.com/Redocly/redoc) as part of the phēnix build:
+    container images, Debian packages, this site, and binaries built with
+    `make build` all use the Redocly CLI version pinned in
+    `scripts/api-docs.sh`. Run `make api-docs` to render it locally.
 
 ## Authentication
 

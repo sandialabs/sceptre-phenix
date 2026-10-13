@@ -97,11 +97,12 @@ Docker for full deployments and image builds.
 | Inspect targets | `make help` or `make help-all` |
 | Install development tools | `make install-dev` |
 | Install with another Python | `SYSTEM_PYTHON=/path/to/python3.12 make install-dev` |
-| Generate mocks, protobufs, and RBAC | `make generate` |
+| Generate mocks, protobufs, RBAC, and the API reference | `make generate` (Go only: `make generate-go`) |
+| Render / lint the API reference (`/docs/`) | `make api-docs` / `scripts/api-docs.sh lint src/go/web/public/docs/openapi.yml` |
 | Format / fixing lint for Go/examples | `make format` / `make lint` |
 | Generate, then non-fixing lint | `make check` |
 | Go core and example tests | `make test` |
-| Build UI and `bin/phenix` | `make build` |
+| Build UI, API reference, and `bin/phenix` | `make build` (`SKIP_UI=1`, `SKIP_API_DOCS=1` reuse or skip them) |
 | Build UI only | `make ui` |
 | Build container / Debian package | `make docker` / `make deb` |
 | Build / preview docs site | `make docs-build` / `make docs-serve` |
@@ -198,7 +199,9 @@ Most GitHub Actions workflows are path-scoped: `ci.yml` generates code and tests
 Go; `frontend.yml` runs Vitest, builds UI/backend, runs Playwright smoke tests,
 and checks UI bundle budgets and Lighthouse audits; `examples.yml` checks
 Go/Python examples; `docs.yml` builds the docs and API reference and publishes
-them from `main`. `lint.yml` runs the `prek` hooks, including golangci-lint for
+them from `main`. Every API reference build, local, container, or CI, goes
+through `scripts/api-docs.sh`, which pins the Redocly CLI version; a prek hook
+lints `openapi.yml` with it. `lint.yml` runs the `prek` hooks, including golangci-lint for
 Go (`src/go/prek.toml`), on every push, and `packages.yml` builds Docker,
 Debian, and Podman outputs on every push that changes more than the docs;
 `cancel-closed-pr.yml` cancels a closed pull request branch's push-triggered

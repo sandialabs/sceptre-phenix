@@ -148,12 +148,13 @@ We use a `Makefile` to standardize development tasks. Run `make help` to see all
 # Development
 make all         # Run all tools (lint, test, build examples)
 make check       # Run linters without fixing (for CI)
-make generate    # Run code generation (protobuf, mocks, etc)
+make generate    # Generate Go code (protobuf, mocks, RBAC policy) and the API reference
+make api-docs    # Render the API reference served at /docs/ (src/go/web/public/docs/index.html)
 make lint        # Run linters and formatters, fixing issues in place
 make test        # Run unit tests
 
 # Build
-make build       # Build the main phenix binary
+make build       # Build the UI, the API reference and the main phenix binary
 make deb         # Build the phenix .deb package
 make docker      # Build the phenix docker image
 make tunneler    # Build phenix-tunneler binaries
@@ -178,6 +179,12 @@ git clone https://github.com/sandialabs/sceptre-phenix.git
 cd sceptre-phenix
 make build
 ```
+
+`make build` also renders the API reference that `bin/phenix` serves at
+`/docs/`, with the Redocly CLI version pinned in `scripts/api-docs.sh`. That
+step runs `npx` and needs network access the first time; pass
+`SKIP_API_DOCS=1` to build offline without it, and `SKIP_UI=1` to reuse an
+existing UI build in `src/js/dist`.
 
 ## Logging & Configuration
 

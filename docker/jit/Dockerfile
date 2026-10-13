@@ -14,9 +14,6 @@ RUN wget --progress=dot:giga -O node.txz https://nodejs.org/dist/v${NODE_VERSION
   && tar -xJf node.txz -C /usr/local --strip-components=1 --no-same-owner && rm node.txz \
   && ln -s /usr/local/bin/node /usr/local/bin/nodejs
 
-# Install Redocly CLI globally for building API docs
-RUN npm install -g @redocly/cli@2.48.0 && npm cache clean --force
-
 RUN git clone --branch ${PHENIX_BRANCH} https://github.com/${PHENIX_REPO}.git /usr/local/src/phenix \
   && mkdir -p /opt/phenix/web \
   && cp -a /usr/local/src/phenix/src/go/web/public /opt/phenix/web
@@ -24,9 +21,11 @@ RUN git clone --branch ${PHENIX_BRANCH} https://github.com/${PHENIX_REPO}.git /u
 WORKDIR /usr/local/src/phenix/src/js
 RUN npm ci --no-fund --no-audit && npm cache clean --force
 
-# API documentation
+# API documentation, rendered with the Redocly version pinned in the cloned
+# branch's scripts/api-docs.sh
 WORKDIR /opt/phenix/web/public
-RUN redocly build-docs docs/openapi.yml -o docs/index.html --title 'phenix API'
+RUN /usr/local/src/phenix/scripts/api-docs.sh build docs/openapi.yml docs/index.html \
+  && npm cache clean --force
 
 COPY phenix-ui-entrypoint.sh /phenix-ui-entrypoint.sh
 RUN  chmod +x /phenix-ui-entrypoint.sh
