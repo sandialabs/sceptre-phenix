@@ -61,9 +61,9 @@ annotation per failed budget, at most 10.
 - `passed`: false when a bundle budget or an `error` assertion failed, or a
   tool did not run.
 
-The baseline is the newest unexpired `perf-summary` artifact from a run on the
-pull request's base branch, or on the default branch for pushes, in this
-repository. Bundle size deltas are exact. Lighthouse deltas are informational:
+The baseline is the newest unexpired `perf-summary` artifact among the last 30
+completed push runs on the pull request's base branch, or on the default branch
+for pushes, in this repository. Bundle size deltas are exact. Lighthouse deltas are informational:
 medians of 3 runs on shared runners vary from run to run, so only the absolute
 budgets in `lighthouserc.cjs` fail the job. Without a baseline, for example
 before the default branch has a run or after its artifact expires, deltas show

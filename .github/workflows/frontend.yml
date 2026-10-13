@@ -191,8 +191,11 @@ jobs:
         continue-on-error: true
         run: npm run lighthouse
       - name: Find baseline
-        # the newest unexpired perf-summary artifact from a run on the base
-        # branch of this repository (not a fork's branch of the same name)
+        # the newest unexpired perf-summary artifact from a push run on the
+        # base branch: push runs are always on this repository's own branches,
+        # never a fork's branch of the same name. Listing runs, not the
+        # repository's artifacts, keeps other branches' artifacts from pushing
+        # the baseline off the first page.
         id: baseline
         if: always()
         continue-on-error: true
@@ -201,11 +204,17 @@ jobs:
           REPO: ${{ github.repository }}
           BASE: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
         run: |
-          run_id="$(gh api "repos/$REPO/actions/artifacts?name=perf-summary&per_page=100" \
-            --jq '[.artifacts[] | select(.expired | not)
-                   | select(.workflow_run.head_branch == env.BASE
-                            and .workflow_run.head_repository_id == .workflow_run.repository_id)
-                  ][0].workflow_run.id // empty')"
+          run_id=""
+          for id in $(gh api -X GET "repos/$REPO/actions/workflows/frontend.yml/runs" \
+              -f branch="$BASE" -f event=push -f status=completed -F per_page=30 \
+              --jq '.workflow_runs[].id'); do
+            found="$(gh api "repos/$REPO/actions/runs/$id/artifacts?name=perf-summary" \
+              --jq '[.artifacts[] | select(.expired | not)] | length')" || found=0
+            if [ "$found" -gt 0 ]; then
+              run_id="$id"
+              break
+            fi
+          done
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
       - name: Download baseline
         if: always() && steps.baseline.outputs.run_id != ''
