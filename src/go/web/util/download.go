@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -140,7 +141,7 @@ func ServeOpenFile(w http.ResponseWriter, r *http.Request, f *os.File, d Downloa
 
 	http.ServeContent(sw, r, d.Name, modtime, f)
 
-	return Served{Info: info, Status: sw.status, Started: started(r, sw.status, header)}, nil
+	return Served{Info: info, Status: sw.status, Started: started(r, sw.status, header, info.Size())}, nil
 }
 
 // downloadType is the Content-Type to send for d, or "" to have net/http
@@ -166,9 +167,9 @@ func downloadType(d Download) string {
 	return ""
 }
 
-// started reports whether a response with status and header began a download
-// (see Served.Started).
-func started(r *http.Request, status int, header http.Header) bool {
+// started reports whether a response with status and header, for a file of
+// size bytes, began a download (see Served.Started).
+func started(r *http.Request, status int, header http.Header, size int64) bool {
 	if r.Method != http.MethodGet {
 		return false
 	}
@@ -177,11 +178,48 @@ func started(r *http.Request, status int, header http.Header) bool {
 	case http.StatusOK:
 		return true
 	case http.StatusPartialContent:
-		// a multipart response has no Content-Range of its own
-		return strings.HasPrefix(header.Get("Content-Range"), "bytes 0-")
+		if cr := header.Get("Content-Range"); cr != "" {
+			return strings.HasPrefix(cr, "bytes 0-")
+		}
+
+		// a multipart response has no Content-Range of its own, so look for
+		// a requested range that starts at the first byte
+		return rangeFromStart(r.Header.Get("Range"), size)
 	default:
 		return false
 	}
+}
+
+// rangeFromStart reports whether the Range header value, already satisfied by
+// [http.ServeContent], asks for any range starting at the first byte of a file
+// of size bytes: "0-..." or a suffix "-n" with n at least size.
+func rangeFromStart(header string, size int64) bool {
+	specs, ok := strings.CutPrefix(header, "bytes=")
+	if !ok {
+		return false
+	}
+
+	for spec := range strings.SplitSeq(specs, ",") {
+		start, end, ok := strings.Cut(strings.TrimSpace(spec), "-")
+		if !ok {
+			continue
+		}
+
+		start = strings.TrimSpace(start)
+		if start == "" {
+			if n, err := strconv.ParseInt(strings.TrimSpace(end), 10, 64); err == nil && n >= size {
+				return true
+			}
+
+			continue
+		}
+
+		if n, err := strconv.ParseInt(start, 10, 64); err == nil && n == 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 // statusWriter records the status a handler sends. It passes ReadFrom through,

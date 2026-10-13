@@ -157,6 +157,41 @@ func TestServeDownload(t *testing.T) {
 	}
 }
 
+// A multipart response has no Content-Range, so whether it began a download
+// depends on the ranges asked for. This calls started directly: whether
+// ServeContent answers several ranges at all depends on the Go release
+// (GODEBUG httpservecontentmaxranges).
+func TestStartedMultipart(t *testing.T) {
+	t.Parallel()
+
+	multipart := http.Header{"Content-Type": {"multipart/byteranges; boundary=x"}}
+
+	tests := map[string]struct {
+		ranges      string
+		wantStarted bool
+	}{
+		"whole file":        {ranges: "bytes=0-9,10-", wantStarted: true},
+		"first byte later":  {ranges: "bytes=50-59, 0-9", wantStarted: true},
+		"suffix whole file": {ranges: "bytes=-100,0-0", wantStarted: true},
+		"resumed":           {ranges: "bytes=10-19,30-39"},
+		"short suffix":      {ranges: "bytes=-10,20-29"},
+		"not bytes":         {ranges: "items=0-9,10-19"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodGet, "/download", nil)
+			req.Header.Set("Range", tc.ranges)
+
+			if got := started(req, http.StatusPartialContent, multipart, 100); got != tc.wantStarted {
+				t.Errorf("started = %v, want %v", got, tc.wantStarted)
+			}
+		})
+	}
+}
+
 func TestServeDownloadHeaders(t *testing.T) {
 	t.Parallel()
 
