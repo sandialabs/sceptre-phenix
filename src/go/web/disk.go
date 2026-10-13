@@ -703,6 +703,41 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetDiskChecksum - GET /disks/checksum?disk=.
+//
+// It answers with the image's SHA-256, computed in the background: 202 until
+// it is known, then 200 (see util.ServeChecksum).
+func GetDiskChecksum(w http.ResponseWriter, r *http.Request) {
+	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
+	name := mux.Vars(r)["disk"]
+
+	path, err := disk.Resolve(name)
+	if err != nil {
+		diskError(w, err)
+
+		return
+	}
+
+	if !role.Allowed("disks", "get", filepath.Base(path)) {
+		diskForbidden(w, r, "getting disk checksum not allowed", "disk", path)
+
+		return
+	}
+
+	err = util.ServeChecksum(w, path, name)
+
+	switch {
+	case err == nil:
+	case errors.Is(err, util.ErrNotRegular):
+		http.Error(w, "Can't checksum directory: "+path, http.StatusBadRequest)
+	case errors.Is(err, util.ErrChangedWhileHashing):
+		http.Error(w, err.Error(), http.StatusConflict)
+	default:
+		plog.Error(plog.TypeSystem, "getting disk checksum", "disk", path, "err", err)
+		diskError(w, fmt.Errorf("disk image: %w", err))
+	}
+}
+
 // for output disk names - makes absolute and adds qcow2 file extension.
 func normalizeDstDisk(src, dst string) string {
 	if !filepath.IsAbs(dst) {

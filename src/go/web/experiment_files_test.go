@@ -2,6 +2,9 @@ package web
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +21,7 @@ import (
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
+	"phenix/web/util"
 )
 
 // requestFiles sends a request for test-experiment's files, under path, as a
@@ -430,6 +434,75 @@ func TestGetExperimentFileRefuses(t *testing.T) {
 			useTestFiles(t, "live.pcap", "scorch/run-0/a.log")
 
 			resp := getExperimentFile(t, http.MethodGet, tc.path)
+			if resp.StatusCode != tc.wantCode {
+				t.Fatalf("expected %d, got %d: %s", tc.wantCode, resp.StatusCode, readBody(t, resp))
+			}
+		})
+	}
+}
+
+// A file's checksum, once known, also comes with every download of it, so a
+// resumed download can be verified.
+func TestGetExperimentFileChecksum(t *testing.T) {
+	useExperimentFilesDir(t, map[string]string{"scorch/run-0/out.bin": "contents"})
+
+	resp := getExperimentFile(t, http.MethodGet, "scorch/run-0/out.bin")
+	if digest := resp.Header.Get("Repr-Digest"); digest != "" {
+		t.Fatalf("Repr-Digest = %q before anyone asked for the checksum", digest)
+	}
+
+	server := serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
+	resp = do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/files/out.bin/checksum?path=scorch/run-0/out.bin", "")
+
+	// a file this small is hashed before the answer
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("checksum: status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	var body util.Checksum
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+
+	sum := sha256.Sum256([]byte("contents"))
+	if body.Path != "scorch/run-0/out.bin" || body.SHA256 != hex.EncodeToString(sum[:]) || body.Size != 8 {
+		t.Fatalf("got %+v", body)
+	}
+
+	want := "sha-256=:" + base64.StdEncoding.EncodeToString(sum[:]) + ":"
+
+	resp = getExperimentFile(t, http.MethodGet, "scorch/run-0/out.bin", "Range", "bytes=4-")
+	if got := resp.Header.Get("Repr-Digest"); resp.StatusCode != http.StatusPartialContent || got != want {
+		t.Errorf("resumed download: status %d, Repr-Digest %q; want 206 with %q", resp.StatusCode, got, want)
+	}
+
+	if got := resp.Header.Get("ETag"); got != body.ETag {
+		t.Errorf("download ETag %q, checksum ETag %q", got, body.ETag)
+	}
+}
+
+func TestGetExperimentFileChecksumRefuses(t *testing.T) {
+	tests := map[string]struct {
+		path     string
+		verb     string
+		wantCode int
+	}{
+		"not allowed":    {path: "a.log", verb: "list", wantCode: http.StatusForbidden},
+		"being captured": {path: "live.pcap", verb: "get", wantCode: http.StatusBadRequest},
+		"missing":        {path: "missing.log", verb: "get", wantCode: http.StatusNotFound},
+		"escapes":        {path: "../other/files/a.log", verb: "get", wantCode: http.StatusBadRequest},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			useTestExperiment(t)
+			useTestMM(t, &testMM{captures: []mm.Capture{
+				{VM: "test-vm", Interface: 0, Filepath: "/phenix/images/test-experiment/files/live.pcap"},
+			}})
+			useExperimentFilesDir(t, map[string]string{"live.pcap": "pcap", "a.log": "a"})
+			useTestFiles(t, "live.pcap", "a.log")
+
+			resp := requestFiles(t, http.MethodGet, "/x/checksum?path="+url.QueryEscape(tc.path), "", tc.verb)
 			if resp.StatusCode != tc.wantCode {
 				t.Fatalf("expected %d, got %d: %s", tc.wantCode, resp.StatusCode, readBody(t, resp))
 			}

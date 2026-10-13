@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -83,6 +84,46 @@ func forbidFiles(w http.ResponseWriter, r *http.Request, name, action string) {
 	user := middleware.UserFromContext(r.Context())
 	plog.Warn(plog.TypeSecurity, action+" not allowed", "user", user, "exp", name)
 	http.Error(w, "forbidden", http.StatusForbidden)
+}
+
+// GetExperimentFileChecksum - GET /experiments/{name}/files/{filename}/checksum?path=.
+//
+// It answers with the file's SHA-256, computed in the background: 202 until
+// it is known, then 200 (see util.ServeChecksum).
+func GetExperimentFileChecksum(w http.ResponseWriter, r *http.Request) {
+	var (
+		name = mux.Vars(r)["name"]
+		path = r.URL.Query().Get("path")
+	)
+
+	role := middleware.RoleFromContext(r.Context())
+	if !role.Allowed("experiments/files", "get", name) {
+		forbidFiles(w, r, name, "getting experiment file checksum")
+
+		return
+	}
+
+	local, err := experiment.LocalFile(name, path)
+	if err == nil {
+		err = util.ServeChecksum(w, local, path)
+	}
+
+	if err == nil {
+		return
+	}
+
+	status := fileErrorStatus(err)
+
+	switch {
+	case errors.Is(err, util.ErrChangedWhileHashing):
+		status = http.StatusConflict
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, util.ErrNotRegular):
+		status = http.StatusNotFound
+	case status == http.StatusInternalServerError:
+		plog.Error(plog.TypeSystem, "getting experiment file checksum", "exp", name, "file", path, "err", err)
+	}
+
+	http.Error(w, err.Error(), status)
 }
 
 // DeleteExperimentFile - DELETE /experiments/{name}/files/{filename}?path=.

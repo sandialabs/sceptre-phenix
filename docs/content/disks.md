@@ -286,3 +286,8 @@ checking that the image is unchanged:
 curl -C - -o win.qc2 -H 'X-Phenix-Auth-Token: Bearer <token>' \
   'https://<phenix>/api/v1/disks/download?disk=win.qc2'
 ```
+
+To verify a download, compare its `sha256sum` with the `sha256` that
+`GET /api/v1/disks/checksum?disk=win.qc2` returns. phēnix computes it in the
+background, which takes minutes for a large image; until then the route
+answers `202`, so ask again later.

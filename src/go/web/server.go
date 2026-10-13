@@ -390,6 +390,8 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 		Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files/{filename}", GetExperimentFile).
 		Methods("GET", "HEAD", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/files/{filename}/checksum", GetExperimentFileChecksum).
+		Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files/{filename}", DeleteExperimentFile).
 		Methods("DELETE", "OPTIONS")
 	scorch.RegisterRoutes(api)
@@ -479,6 +481,9 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	api.HandleFunc("/disks", UploadDisk).Methods("POST", "OPTIONS")
 	api.HandleFunc("/disks/download", DownloadDisk).
 		Methods("GET", "HEAD", "OPTIONS").
+		Queries("disk", "{disk}")
+	api.HandleFunc("/disks/checksum", GetDiskChecksum).
+		Methods("GET", "OPTIONS").
 		Queries("disk", "{disk}")
 
 	api.HandleFunc("/vms", GetAllVMs).Methods("GET", "OPTIONS")

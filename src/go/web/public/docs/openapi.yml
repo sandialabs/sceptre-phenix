@@ -957,6 +957,8 @@ paths:
               $ref: "#/components/headers/LastModified"
             Accept-Ranges:
               $ref: "#/components/headers/AcceptRanges"
+            Repr-Digest:
+              $ref: "#/components/headers/ReprDigest"
           content:
             application/octet-stream:
               schema:
@@ -1034,6 +1036,8 @@ paths:
               $ref: "#/components/headers/LastModified"
             Accept-Ranges:
               $ref: "#/components/headers/AcceptRanges"
+            Repr-Digest:
+              $ref: "#/components/headers/ReprDigest"
         "304":
           $ref: "#/components/responses/NotModified"
         "400":
@@ -1083,6 +1087,68 @@ paths:
           description: forbidden
         "404":
           description: the path is not one of the experiment's files
+  "/experiments/{name}/files/{filename}/checksum":
+    get:
+      tags:
+        - Experiments
+      summary: Get an experiment file's SHA-256 checksum
+      description: >-
+        Computes the file's SHA-256 in the background, at most two files at
+        a time server-wide, and keeps it in memory for as long as the file is
+        unchanged: 202 until it is known (a small file's comes back at once),
+        then 200. From then on, downloads of the file carry it as
+        `Repr-Digest`. Needs the `experiments/files` `get` permission.
+      operationId: getExperimentsNameFilesFilenameChecksum
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment the file belongs to
+          required: true
+          schema:
+            type: string
+        - name: filename
+          in: path
+          description: the file's name; the file is the one `path` names
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: path of the file relative to the experiment's files directory, as listed
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the file's checksum
+          headers:
+            Repr-Digest:
+              $ref: "#/components/headers/ReprDigest"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileChecksum"
+        "202":
+          description: the checksum is being computed; ask again later
+          headers:
+            Retry-After:
+              description: seconds to wait before asking again
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileChecksum"
+        "400":
+          description: >-
+            the path is not clean and relative to the files directory, or a
+            running capture is still writing the pcap
+        "403":
+          description: forbidden
+        "404":
+          description: the path is not one of the experiment's files
+        "409":
+          description: the file changed while it was hashed; ask again
   "/experiments/{name}/scorch/pipelines":
     get:
       tags:
@@ -2572,6 +2638,8 @@ paths:
               $ref: "#/components/headers/LastModified"
             Accept-Ranges:
               $ref: "#/components/headers/AcceptRanges"
+            Repr-Digest:
+              $ref: "#/components/headers/ReprDigest"
           content:
             application/octet-stream:
               schema:
@@ -2625,6 +2693,8 @@ paths:
               $ref: "#/components/headers/LastModified"
             Accept-Ranges:
               $ref: "#/components/headers/AcceptRanges"
+            Repr-Digest:
+              $ref: "#/components/headers/ReprDigest"
         "304":
           $ref: "#/components/responses/NotModified"
         "400":
@@ -2635,6 +2705,60 @@ paths:
           description: forbidden
         "404":
           description: no such image
+  "/disks/checksum":
+    get:
+      tags:
+        - Disks
+      summary: Get a disk image's SHA-256 checksum
+      description: >-
+        Computes the image's SHA-256 in the background, at most two files at
+        a time server-wide, and keeps it in memory for as long as the image is
+        unchanged: 202 until it is known, then 200. A large image takes
+        minutes. From then on, downloads of the image carry it as
+        `Repr-Digest`. Needs the `disks` `get` permission for the image's
+        file name.
+      operationId: getDisksChecksum
+      parameters:
+        - name: disk
+          in: query
+          description: >-
+            the image, relative to the minimega files directory or absolute;
+            it must be inside that directory and not in a folder the disk list
+            leaves out
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the file's checksum
+          headers:
+            Repr-Digest:
+              $ref: "#/components/headers/ReprDigest"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileChecksum"
+        "202":
+          description: the checksum is being computed; ask again later
+          headers:
+            Retry-After:
+              description: seconds to wait before asking again
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileChecksum"
+        "400":
+          description: >-
+            a path outside the minimega files directory or in a folder the
+            disk list leaves out, or a folder
+        "403":
+          description: forbidden
+        "404":
+          description: no such image
+        "409":
+          description: the image changed while it was hashed; ask again
   "/hosts":
     get:
       tags:
@@ -3352,6 +3476,8 @@ paths:
               $ref: "#/components/headers/LastModified"
             Accept-Ranges:
               $ref: "#/components/headers/AcceptRanges"
+            Repr-Digest:
+              $ref: "#/components/headers/ReprDigest"
           content:
             application/octet-stream:
               schema:
@@ -3393,6 +3519,8 @@ paths:
               $ref: "#/components/headers/LastModified"
             Accept-Ranges:
               $ref: "#/components/headers/AcceptRanges"
+            Repr-Digest:
+              $ref: "#/components/headers/ReprDigest"
         "400":
           description: the name is empty, is not a bare file name, or starts with a dot
         "404":
@@ -4385,6 +4513,24 @@ components:
           items:
             type: string
             example: webshark
+    FileChecksum:
+      type: object
+      properties:
+        path:
+          type: string
+          description: the file as the request named it
+        size:
+          type: integer
+          format: int64
+        modified:
+          type: string
+          format: date-time
+        etag:
+          type: string
+          description: the `ETag` downloads of the file carry
+        sha256:
+          type: string
+          description: hex SHA-256 of the file; absent while it is being computed
     Tunnelers:
       type: object
       properties:
@@ -4441,6 +4587,13 @@ components:
       description: the range sent and the file's size, such as `bytes 1048576-2097151/4194304`
       schema:
         type: string
+    ReprDigest:
+      description: >-
+        the whole file's SHA-256 (RFC 9530), such as `sha-256=:<base64>:`,
+        sent only once the file's checksum route has computed it; it holds
+        for a range too, so a resumed download can be verified
+      schema:
+        type: string
   responses:
     PartialContent:
       description: the requested range of the file
@@ -4449,6 +4602,8 @@ components:
           $ref: "#/components/headers/ContentRange"
         ETag:
           $ref: "#/components/headers/ETag"
+        Repr-Digest:
+          $ref: "#/components/headers/ReprDigest"
       content:
         application/octet-stream:
           schema:

@@ -543,7 +543,11 @@ instead.
     ```
 
     Unlike a browser, `curl -C -` does not check that the file is unchanged,
-    so a file that changed between attempts comes out spliced.
+    so a file that changed between attempts comes out spliced. To verify a
+    resumed download, compare its `sha256sum` with the `sha256` that
+    `GET /api/v1/experiments/<name>/files/<file>/checksum?path=<path>` returns.
+    phēnix computes the checksum in the background: until it is known the
+    route answers `202`, so ask again after a few seconds.
 
 !!! warning
     A `.pcap` file a running capture is still writing cannot be viewed,

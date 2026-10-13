@@ -29,7 +29,7 @@ All notable changes to this project will be documented in this file.
 - **Settings**: Added `base-dir.injects` and `base-dir.topologies`, the directories `phenix workflow apply` stages injects in and looks up topology directories in. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow API**: The workflow endpoints accept `?dryRun=true`, which validates the request and changes nothing, and return a JSON result. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Validation Errors**: Config validation errors from the CLI, the API and the web UI name the list item, its hostname or name, and the line. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
-- **Resumable downloads**: Experiment file, disk image, VM mount, tunneler and saved WebShark capture downloads answer `HEAD` and resume with `Range` and `If-Range` against a strong `ETag`, so a browser or `curl -C -` continues an interrupted download instead of starting over.
+- **Resumable downloads**: Experiment file, disk image, VM mount, tunneler and saved WebShark capture downloads answer `HEAD` and resume with `Range` and `If-Range` against a strong `ETag`, so a browser or `curl -C -` continues an interrupted download instead of starting over. `GET /experiments/{name}/files/{filename}/checksum` and `GET /disks/checksum` return a file's SHA-256, computed in the background, which downloads then also send as `Repr-Digest`.
 
 ### Changed
 
