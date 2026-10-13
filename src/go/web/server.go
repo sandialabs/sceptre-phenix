@@ -389,7 +389,7 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	api.HandleFunc("/experiments/{name}/files/delete", DeleteExperimentFiles).
 		Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files/{filename}", GetExperimentFile).
-		Methods("GET", "OPTIONS")
+		Methods("GET", "HEAD", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files/{filename}", DeleteExperimentFile).
 		Methods("DELETE", "OPTIONS")
 	scorch.RegisterRoutes(api)

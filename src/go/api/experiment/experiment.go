@@ -1271,6 +1271,9 @@ func InvalidateFiles(name string) {
 // it to the headnode first if only a mesh node has it. It refuses a pcap a
 // running capture is still writing (a *CaptureWritingError, which wraps
 // mm.ErrCaptureExists).
+//
+// Deprecated: File reads the whole file into memory. Use LocalFile and stream
+// the file from its path instead.
 func File(name, filePath string) ([]byte, error) {
 	local, err := LocalFile(name, filePath)
 	if err != nil {
@@ -1285,9 +1288,11 @@ func File(name, filePath string) ([]byte, error) {
 	return data, nil
 }
 
-// LocalFile returns the headnode path of one of the experiment's files, as
-// File finds it, for a caller that streams the file rather than reading it
-// into memory.
+// LocalFile returns the headnode path of one of the experiment's files, by its
+// path relative to the experiment's files directory as listed (see Files),
+// copying it to the headnode first if only a mesh node has it. It refuses a
+// pcap a running capture is still writing (a *CaptureWritingError, which
+// wraps mm.ErrCaptureExists).
 func LocalFile(name, filePath string) (string, error) {
 	clean, err := cleanFilePath(filePath)
 	if err != nil {

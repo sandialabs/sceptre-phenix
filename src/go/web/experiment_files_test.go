@@ -7,10 +7,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
 )
@@ -200,6 +205,11 @@ func TestDownloadExperimentFilesStreamsZip(t *testing.T) {
 		t.Errorf("Content-Disposition = %q", got)
 	}
 
+	// built as it is sent: never resumable
+	if got := resp.Header.Get("Accept-Ranges"); got != "none" {
+		t.Errorf("Accept-Ranges = %q, want none", got)
+	}
+
 	archive, err := zip.NewReader(strings.NewReader(body), int64(len(body)))
 	if err != nil {
 		t.Fatalf("reading zip: %v", err)
@@ -257,6 +267,171 @@ func TestDownloadExperimentFilesRefusals(t *testing.T) {
 
 			if resp.Header.Get("Content-Type") == "application/zip" {
 				t.Fatal("started a zip for a refused download")
+			}
+		})
+	}
+}
+
+// getExperimentFile requests one of test-experiment's files, by its path, as
+// a user who may get them, with the given headers (name, value pairs).
+func getExperimentFile(t *testing.T, method, path string, header ...string) *http.Response {
+	t.Helper()
+
+	server := serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
+
+	return do(t, method, server+"/api/v1/experiments/test-experiment/files/"+filepath.Base(path)+
+		"?path="+url.QueryEscape(path), "", header...)
+}
+
+// rewriteExperimentFile replaces one of test-experiment's files with new
+// contents and a later modification time.
+func rewriteExperimentFile(t *testing.T, path, contents string) {
+	t.Helper()
+
+	local := filepath.Join(common.PhenixBase, "images", "test-experiment", "files", path)
+
+	if err := os.WriteFile(local, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(local, later, later); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A browser or curl resumes an interrupted download with a range, and gets
+// the rest of the file only while it is unchanged.
+func TestGetExperimentFileResumes(t *testing.T) {
+	data := strings.Repeat("0123456789abcdef", 4096) // 64 KiB
+	useExperimentFilesDir(t, map[string]string{"scorch/run-0/out.bin": data})
+
+	resp := getExperimentFile(t, http.MethodGet, "scorch/run-0/out.bin")
+	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || body != data {
+		t.Fatalf("download: status %d, %d bytes", resp.StatusCode, len(body))
+	}
+
+	etag := resp.Header.Get("ETag")
+	if etag == "" || strings.HasPrefix(etag, "W/") {
+		t.Fatalf("ETag = %q, want a strong one", etag)
+	}
+
+	for k, want := range map[string]string{
+		"Accept-Ranges":       "bytes",
+		"Content-Disposition": "attachment; filename=out.bin",
+		"Content-Length":      strconv.Itoa(len(data)),
+		"Content-Encoding":    "",
+	} {
+		if got := resp.Header.Get(k); got != want {
+			t.Errorf("%s = %q, want %q", k, got, want)
+		}
+	}
+
+	resp = getExperimentFile(t, http.MethodGet, "scorch/run-0/out.bin", "Range", "bytes=40000-", "If-Range", etag)
+	if body := readBody(t, resp); resp.StatusCode != http.StatusPartialContent || body != data[40000:] {
+		t.Fatalf("resume: status %d, %d bytes; want 206 with the last %d", resp.StatusCode, len(body), len(data)-40000)
+	}
+
+	rewritten := strings.ToUpper(data)
+	rewriteExperimentFile(t, "scorch/run-0/out.bin", rewritten)
+
+	// the file changed: the whole new file, not its tail spliced onto the old
+	resp = getExperimentFile(t, http.MethodGet, "scorch/run-0/out.bin", "Range", "bytes=40000-", "If-Range", etag)
+	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || body != rewritten {
+		t.Fatalf("resume of a changed file: status %d, %d bytes; want 200 with the whole file", resp.StatusCode, len(body))
+	}
+}
+
+func TestGetExperimentFileHead(t *testing.T) {
+	useExperimentFilesDir(t, map[string]string{"a.log": "alpha"})
+
+	resp := getExperimentFile(t, http.MethodHead, "a.log")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	if resp.Header.Get("ETag") == "" || resp.Header.Get("Content-Length") != "5" {
+		t.Errorf("ETag %q, Content-Length %q", resp.Header.Get("ETag"), resp.Header.Get("Content-Length"))
+	}
+
+	if body := readBody(t, resp); body != "" {
+		t.Errorf("HEAD response has a body: %q", body)
+	}
+}
+
+// The Files tab's viewer gets the file inline, compressed, and revalidates a
+// file it has shown before.
+func TestGetExperimentFileViewerIsInline(t *testing.T) {
+	text := strings.Repeat("phenix log line\n", 256)
+	useExperimentFilesDir(t, map[string]string{"a.log": text})
+
+	resp := getExperimentFile(t, http.MethodGet, "a.log", "Accept", "text/plain", "Accept-Encoding", "gzip")
+	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || body != text {
+		t.Fatalf("view: status %d, body %q", resp.StatusCode, body)
+	}
+
+	if got := resp.Header.Get("Content-Disposition"); got != "" {
+		t.Errorf("Content-Disposition = %q for the viewer", got)
+	}
+
+	if got := resp.Header.Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Errorf("Content-Type = %q", got)
+	}
+
+	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Errorf("Content-Encoding = %q, want gzip", got)
+	}
+
+	// gzipped, so no longer byte for byte the file a strong ETag names
+	etag := resp.Header.Get("ETag")
+	if !strings.HasPrefix(etag, `W/"`) {
+		t.Fatalf("ETag = %q, want a weak one", etag)
+	}
+
+	resp = getExperimentFile(t, http.MethodGet, "a.log", "Accept", "text/plain", "If-None-Match", etag)
+	if resp.StatusCode != http.StatusNotModified {
+		t.Errorf("revalidating: status %d, want 304", resp.StatusCode)
+	}
+}
+
+func TestGetExperimentFileViewerRefusesLargeFiles(t *testing.T) {
+	useExperimentFilesDir(t, map[string]string{"big.log": strings.Repeat("x", maxViewBytes+1)})
+
+	resp := getExperimentFile(t, http.MethodGet, "big.log", "Accept", "text/plain")
+	if body := readBody(t, resp); resp.StatusCode != http.StatusRequestEntityTooLarge || !strings.Contains(body, "download it") {
+		t.Fatalf("status %d, body %q; want 413 with a hint", resp.StatusCode, body)
+	}
+
+	// downloading it is fine
+	resp = getExperimentFile(t, http.MethodHead, "big.log")
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("download: status %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestGetExperimentFileRefuses(t *testing.T) {
+	tests := map[string]struct {
+		path     string
+		wantCode int
+	}{
+		"being captured": {path: "live.pcap", wantCode: http.StatusBadRequest},
+		"directory":      {path: "scorch", wantCode: http.StatusNotFound},
+		"missing":        {path: "missing.log", wantCode: http.StatusNotFound},
+		"escapes":        {path: "../other/files/a.log", wantCode: http.StatusBadRequest},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			useTestExperiment(t)
+			useTestMM(t, &testMM{captures: []mm.Capture{
+				{VM: "test-vm", Interface: 0, Filepath: "/phenix/images/test-experiment/files/live.pcap"},
+			}})
+			useExperimentFilesDir(t, map[string]string{"live.pcap": "pcap", "scorch/run-0/a.log": "a"})
+			useTestFiles(t, "live.pcap", "scorch/run-0/a.log")
+
+			resp := getExperimentFile(t, http.MethodGet, tc.path)
+			if resp.StatusCode != tc.wantCode {
+				t.Fatalf("expected %d, got %d: %s", tc.wantCode, resp.StatusCode, readBody(t, resp))
 			}
 		})
 	}

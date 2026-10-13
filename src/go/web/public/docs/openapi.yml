@@ -826,7 +826,9 @@ paths:
         stored under its path relative to the experiment's files directory.
         Every path is checked before anything is sent. Needs the
         `experiments/files` `get` permission. At most 500 files totaling
-        2 GiB are allowed.
+        2 GiB are allowed. The archive is built as it is sent, so it cannot
+        be resumed (`Accept-Ranges: none`); download very large files one at
+        a time with `GET /experiments/{name}/files/{filename}`.
       operationId: postExperimentsNameFilesDownload
       parameters:
         - name: name
@@ -901,7 +903,17 @@ paths:
       tags:
         - Experiments
       summary: Download experiment file
-      description: ""
+      description: >-
+        Streams the file from disk as an attachment, copying it to the head
+        node first if only a mesh node has it. Downloads resume: send `Range`
+        with `If-Range` set to the `ETag` of an earlier response, and the rest
+        of the file comes back (206) only while it is unchanged; a changed
+        file comes back whole (200). Downloads are never gzip-compressed.
+        With `Accept: text/plain` the file is instead sent inline as
+        `text/plain; charset=utf-8` for the Files tab's viewer, gzip-compressed
+        for clients that accept it (with a weak `ETag`), and a file over
+        10 MiB is refused with 413. Needs the `experiments/files` `get`
+        permission.
       operationId: getExperimentsNameFilesFilename
       parameters:
         - name: name
@@ -912,7 +924,9 @@ paths:
             type: string
         - name: filename
           in: path
-          description: name of file download
+          description: >-
+            name the download is saved as (sent in Content-Disposition); the
+            file sent is the one `path` names
           required: true
           schema:
             type: string
@@ -922,14 +936,106 @@ paths:
           required: true
           schema:
             type: string
+        - name: Accept
+          in: header
+          description: >-
+            `text/plain` for the Files tab's viewer: the file is sent inline
+            as text rather than as an attachment
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
       responses:
         "200":
-          description: successful operation
+          description: the whole file
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
           content:
             application/octet-stream:
               schema:
                 type: string
                 format: binary
+            text/plain:
+              schema:
+                type: string
+        "206":
+          $ref: "#/components/responses/PartialContent"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          description: >-
+            the path is not clean and relative to the files directory, or a
+            running capture is still writing the pcap
+        "403":
+          description: forbidden
+        "404":
+          description: the path is not one of the experiment's files
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          description: "asked for with `Accept: text/plain`, and the file is over 10 MiB"
+        "416":
+          $ref: "#/components/responses/RangeNotSatisfiable"
+    head:
+      tags:
+        - Experiments
+      summary: Check an experiment file download
+      description: >-
+        The GET response's headers without the file: its size
+        (Content-Length), `ETag` and `Last-Modified`. Needs the
+        `experiments/files` `get` permission.
+      operationId: headExperimentsNameFilesFilename
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to get file from
+          required: true
+          schema:
+            type: string
+        - name: filename
+          in: path
+          description: >-
+            name the download is saved as (sent in Content-Disposition); the
+            file sent is the one `path` names
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: path of the file relative to the experiment's files directory, as listed
+          required: true
+          schema:
+            type: string
+        - name: Accept
+          in: header
+          description: >-
+            `text/plain` for the Files tab's viewer: the file is sent inline
+            as text rather than as an attachment
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the file's headers
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+        "304":
+          $ref: "#/components/responses/NotModified"
         "400":
           description: >-
             the path is not clean and relative to the files directory, or a
@@ -4179,3 +4285,77 @@ components:
           items:
             type: string
             example: phenix-tunneler-linux-amd64
+  # Shared by the single-file download routes, which resume interrupted
+  # downloads with Range and If-Range.
+  parameters:
+    RangeHeader:
+      name: Range
+      in: header
+      description: >-
+        the bytes to send, such as `bytes=1048576-` to resume a download after
+        its first MiB
+      required: false
+      schema:
+        type: string
+    IfRangeHeader:
+      name: If-Range
+      in: header
+      description: >-
+        the `ETag` of an earlier response: `Range` is honored only while the
+        file still has it, and a changed file is sent whole (200)
+      required: false
+      schema:
+        type: string
+    IfNoneMatchHeader:
+      name: If-None-Match
+      in: header
+      description: the `ETag` of an earlier response; 304 while the file still has it
+      required: false
+      schema:
+        type: string
+  headers:
+    ETag:
+      description: >-
+        strong validator built from the file's inode, size and modification
+        time (not its contents), so it changes whenever the file does
+      schema:
+        type: string
+    LastModified:
+      description: the file's modification time
+      schema:
+        type: string
+    AcceptRanges:
+      description: "`bytes`: the file can be fetched, and resumed, in ranges"
+      schema:
+        type: string
+    ContentRange:
+      description: the range sent and the file's size, such as `bytes 1048576-2097151/4194304`
+      schema:
+        type: string
+  responses:
+    PartialContent:
+      description: the requested range of the file
+      headers:
+        Content-Range:
+          $ref: "#/components/headers/ContentRange"
+        ETag:
+          $ref: "#/components/headers/ETag"
+      content:
+        application/octet-stream:
+          schema:
+            type: string
+            format: binary
+    NotModified:
+      description: the file still has the `If-None-Match` ETag
+      headers:
+        ETag:
+          $ref: "#/components/headers/ETag"
+    PreconditionFailed:
+      description: the file no longer has the `If-Match` ETag
+    RangeNotSatisfiable:
+      description: the range starts past the end of the file
+      headers:
+        Content-Range:
+          description: "`bytes */<size>`"
+          schema:
+            type: string

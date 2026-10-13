@@ -524,8 +524,12 @@ In order, they are:
 
 * the button that opens the file: `Open in WebShark`, a shark fin, for a capture
   file, or `view file` for a text file. A row for any other kind of file leaves
-  that space empty.
-* `download`, which downloads that one file.
+  that space empty. A text file over 10 MiB is too large to view; download it
+  instead.
+* `download`, which downloads that one file. Single-file downloads resume: if
+  one is interrupted, retrying it in the browser's downloads list continues
+  where it stopped, as long as the file has not changed meanwhile (a changed
+  file downloads again from the start).
 * `delete`, which asks you to confirm, naming the file, and spins while the file
   is deleted. Deleting a file removes it from every cluster node and cannot be
   undone.
@@ -560,6 +564,20 @@ instead.
 !!! note
     One zip download holds at most 500 files and 2 GiB in total. A larger one is
     refused before any of it is sent; through the [API](api.md) that is a `413`.
+    A zip is built as it is sent, so an interrupted zip download cannot be
+    resumed: download very large files one at a time instead.
+
+!!! tip "Resuming a download from a shell"
+    `curl -C -` resumes a single-file download where an earlier attempt
+    stopped:
+
+    ```bash
+    curl -C - -o out.pcap -H 'X-Phenix-Auth-Token: Bearer <token>' \
+      'https://<phenix>/api/v1/experiments/<name>/files/out.pcap?path=scorch/run-0/out.pcap'
+    ```
+
+    Unlike a browser, `curl -C -` does not check that the file is unchanged,
+    so a file that changed between attempts comes out spliced.
 
 !!! warning
     A `.pcap` file a running capture is still writing cannot be viewed,
