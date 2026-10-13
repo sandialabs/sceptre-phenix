@@ -14,3 +14,6 @@ export function deferredGets(get) {
   });
   return calls;
 }
+
+// a request the server never answers
+export const never = () => new Promise(() => {});

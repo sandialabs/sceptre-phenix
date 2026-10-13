@@ -4,7 +4,9 @@
 //   const loader = await vi.hoisted(() => import('./helpers/pageLoader.js'));
 //   vi.mock('@/utils/pageLoader.js', loader.idle);
 //
-// It imports nothing, so loading it that early loads no module a test mocks.
+// It imports only vitest, so loading it that early loads no module a test
+// mocks.
+import { vi } from 'vitest';
 
 // a loader that loads nothing: the page shows the state it is given
 const idleLoader = () => ({ start: () => {}, stop: () => {}, load: () => {} });
@@ -36,4 +38,42 @@ export async function withoutLoading(render) {
   } finally {
     loading = true;
   }
+}
+
+// The options the last page's loader was made with, and that loader's load(),
+// for the capturing and fetching loaders. A test may set load before the
+// page is made, to answer as it likes.
+export const loaderSpy = { options: null, load: null };
+
+// forgets the loader the last page made
+export function resetLoader() {
+  loaderSpy.options = null;
+  loaderSpy.load = null;
+}
+
+// the real module, whose loaders record their options and load nothing:
+// their load() is loaderSpy.load, a vi.fn unless the test set one
+export async function capturing(original) {
+  return {
+    ...(await original()),
+    createPageLoader: (options) => {
+      loaderSpy.options = options;
+      loaderSpy.load ??= vi.fn();
+      return { ...idleLoader(), load: (...args) => loaderSpy.load(...args) };
+    },
+  };
+}
+
+// The real module, whose loaders record their options and whose load()
+// fetches as the real one does, without the cache or apply(): it resolves
+// to the data.
+export async function fetching(original) {
+  return {
+    ...(await original()),
+    createPageLoader: (options) => {
+      loaderSpy.options = options;
+      loaderSpy.load = vi.fn(() => options.fetch(new AbortController().signal));
+      return { ...idleLoader(), load: (...args) => loaderSpy.load(...args) };
+    },
+  };
 }

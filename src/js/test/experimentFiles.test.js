@@ -4,11 +4,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, notify, rbac, resetMocks, store } = await vi.hoisted(
-  () => import('./helpers/experimentMocks.js'),
+  () => import('./helpers/mocks.js'),
 );
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
-vi.mock('@/utils/errorNotif', modules.errorNotif);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
 // the experiment pages around the tab
 vi.mock('@/utils/websocket', modules.websocket);

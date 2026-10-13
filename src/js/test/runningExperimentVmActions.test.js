@@ -4,12 +4,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, modules, notify, rbac, resetMocks } = await vi.hoisted(
-  () => import('./helpers/experimentMocks.js'),
+  () => import('./helpers/mocks.js'),
 );
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
-vi.mock('@/utils/errorNotif', modules.errorNotif);
-vi.mock('@/store', modules.store);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/store.js', modules.store);
 vi.mock('@/utils/websocket', modules.websocket);
 vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 
@@ -28,6 +28,7 @@ import {
 import { namedList } from '@/utils/plural.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import { flush } from './helpers/async.js';
+import { lastAlert, lastConfirm } from './helpers/buefy.js';
 import {
   labeledControls,
   openModal,
@@ -44,11 +45,7 @@ import { blockedStorage } from './helpers/storage.js';
 const { onVmAction, showVlanModal } = RunningExperiment.methods;
 const { expModalVm } = RunningExperiment.computed;
 
-// the options of the page's last confirm and alert dialogs
-const lastConfirm = (ctx) => ctx.$buefy.dialog.confirm.mock.lastCall?.[0];
-const lastAlert = (ctx) => ctx.$buefy.dialog.alert.mock.lastCall?.[0];
-
-beforeEach(resetMocks);
+beforeEach(() => resetMocks());
 
 // the page's method for each VM action, and whether it takes the VM itself
 // rather than its name
