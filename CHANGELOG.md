@@ -70,6 +70,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Documentation**: The configuration schema page shows the schemas phēnix validates with, included from the schema files for the version each kind is stored in, instead of hand-copied excerpts that had fallen out of date.
 - **minimega**: Deleting or redeploying a VM removed every other stopped VM in the experiment, restoring a snapshot failed on multi-node experiments, and concurrent redeploys could launch a VM with another VM's settings.
 - **miniccc**: A command meant for one VM could run on another when two were sent at once, answered SOH commands ran again after a miniccc restart, and waiting for a VM's miniccc client ran up to 2 s past its timeout or cancellation.
 - **Namespaces**: On minimega 2.9, taps and netflow captures on other nodes outlived their experiment, and listing a stopped experiment's captures, port forwards or files recreated its namespace with a stale host list. The names `minimega` and `__phenix__` are now rejected.

@@ -53,6 +53,8 @@ markdown_extensions:
   - pymdownx.snippets:
       base_path: !relative $config_dir/..
       check_paths: true
+      # schema.md includes indented sections of the schema files
+      dedent_subsections: true
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: __span

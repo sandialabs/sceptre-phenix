@@ -5,6 +5,7 @@ info:
 paths: {}
 components:
   schemas:
+    # --8<-- [start:Image]
     Image:
       type: object
       required:
@@ -69,6 +70,8 @@ components:
         variant:
           type: string
           example: minbase
+    # --8<-- [end:Image]
+    # --8<-- [start:Role]
     Role:
       type: object
       required:
@@ -104,6 +107,8 @@ components:
         roleName:
           type: string
           example: Example Role
+    # --8<-- [end:Role]
+    # --8<-- [start:User]
     User:
       type: object
       required:
@@ -128,6 +133,8 @@ components:
         username:
           type: string
           example: johndoe@example.com
+    # --8<-- [end:User]
+    # --8<-- [start:Topology]
     Topology:
       type: object
       anyOf:
@@ -149,6 +156,7 @@ components:
             oneOf:
             - $ref: '#/components/schemas/minimega_node'
             - $ref: '#/components/schemas/external_node'
+    # --8<-- [end:Topology]
     Scenario:
       type: object
       required:
@@ -167,6 +175,7 @@ components:
                   name:
                     type: string
                     minLength: 1
+    # --8<-- [start:Experiment]
     Experiment:
       type: object
       required:
@@ -202,6 +211,8 @@ components:
             type: string
           example:
             ADServer: compute1
+    # --8<-- [end:Experiment]
+    # --8<-- [start:minimega_node]
     minimega_node:
       type: object
       required:
@@ -553,6 +564,8 @@ components:
             type: string
           example:
           - exec df -h
+    # --8<-- [end:minimega_node]
+    # --8<-- [start:external_node]
     external_node:
       type: object
       required:
@@ -662,6 +675,8 @@ components:
                   vlan:
                     type: string
                     example: EXP-1
+    # --8<-- [end:external_node]
+    # --8<-- [start:iface]
     iface:
       type: object
       required:
@@ -696,6 +711,8 @@ components:
         qinq:
           type: boolean
           default: false
+    # --8<-- [end:iface]
+    # --8<-- [start:iface_address]
     iface_address:
       type: object
       required:
@@ -728,6 +745,8 @@ components:
           example:
           - 192.168.1.1
           - 192.168.1.2
+    # --8<-- [end:iface_address]
+    # --8<-- [start:iface_rulesets]
     iface_rulesets:
       type: object
       properties:
@@ -739,6 +758,8 @@ components:
           type: string
           example: InFromInet
           pattern: '^[\w-]+$'
+    # --8<-- [end:iface_rulesets]
+    # --8<-- [start:static_iface]
     static_iface:
       allOf:
       - $ref: '#/components/schemas/iface'
@@ -761,6 +782,8 @@ components:
           - ospf
           default: static
           example: static
+    # --8<-- [end:static_iface]
+    # --8<-- [start:dhcp_iface]
     dhcp_iface:
       allOf:
       - $ref: '#/components/schemas/iface'
@@ -782,6 +805,10 @@ components:
           - manual
           default: dhcp
           example: dhcp
+    # --8<-- [end:dhcp_iface]
+    # The serial_iface section runs to the end of the file, since yamllint
+    # rejects a comment after the last, more deeply indented line.
+    # --8<-- [start:serial_iface]
     serial_iface:
       allOf:
       - $ref: '#/components/schemas/iface'
