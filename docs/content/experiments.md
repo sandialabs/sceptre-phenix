@@ -14,7 +14,7 @@ the user has access to view or edit.
 Click a column heading to sort the table by it: `Name`, `Status`, `Topology`,
 `Scenario`, `Start Time`, and `VMs` can all be sorted on. Experiments created or
 started somewhere else, such as from the command line binary or a
-[Git workflow](git-workflow.md), appear in the list as they are created or
+[workflow](workflow.md), appear in the list as they are created or
 start, without reloading the page.
 
 ### From the Command Line Binary
@@ -135,7 +135,7 @@ Expand `Advanced Options` for the remaining settings:
 * `Default Bridge Name`: see [Bridge Mode](bridge-mode.md).
 * `VLAN Range`: the VLAN IDs minimega may give the experiment's VLANs.
 * `Git Workflow Branch Name`: links the experiment to a
-  [Git workflow](git-workflow.md) branch.
+  [workflow](workflow.md#branch-name) branch.
 * `Annotations for Every VM` and `Experiment Annotations`: see
   [Adding Annotations](#adding-annotations).
 
