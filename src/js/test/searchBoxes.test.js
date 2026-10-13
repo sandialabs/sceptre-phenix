@@ -3,34 +3,17 @@
 // there is one. Each page is rendered with the real Buefy components.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/utils/rbac.js', () => ({ roleAllowed: () => true }));
-vi.mock('@/utils/axios.js', () => {
-  // the pages' lists never arrive
-  const never = () => new Promise(() => {});
-  return { default: { get: never, post: never, patch: never, delete: never } };
-});
-vi.mock('@/store.js', () => ({
-  usePhenixStore: () => ({
-    token: 't',
-    features: [],
-    role: { name: 'Global Admin' },
-    username: 'admin',
-  }),
-}));
-vi.mock('@/utils/websocket', () => ({
-  addWsHandler: () => {},
-  removeWsHandler: () => {},
-  onWsReconnect: () => () => {},
-  sendWsMsg: () => {},
-}));
-vi.mock('@/utils/pageLoader.js', () => ({
-  createPageLoader: () => ({ start: () => {}, stop: () => {}, load: () => {} }),
-  loadingText: (what) => `Loading ${what}…`,
-  stillLoading: (loaded) => !loaded,
-  pageStatus: {},
-}));
+const { axios, modules, resetMocks } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/websocket', modules.websocket);
+vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 // its terminal needs a browser
-vi.mock('@/components/MiniTerminal.vue', () => ({ default: {} }));
+vi.mock('@/components/MiniTerminal.vue', modules.stub);
 
 import ConfigsList from '@/components/configs/ConfigsList.vue';
 import Disks from '@/views/Disks.vue';
@@ -42,6 +25,7 @@ import Logs from '@/views/Logs.vue';
 import Scorch from '@/views/Scorch.vue';
 import SohOverview from '@/views/SohOverview.vue';
 import Users from '@/views/Users.vue';
+import { never } from './helpers/async.js';
 import { renderSSR, stubBrowser } from './helpers/render.js';
 
 // each page, where it is, and the searches it can clear
@@ -84,6 +68,16 @@ const clearButton = (html) =>
 
 let warn;
 beforeEach(() => {
+  resetMocks({
+    store: {
+      token: 't',
+      features: [],
+      role: { name: 'Global Admin' },
+      username: 'admin',
+    },
+  });
+  // the pages' lists never arrive
+  for (const request of Object.values(axios)) request.mockImplementation(never);
   stubBrowser();
   warn = vi.spyOn(console, 'warn');
 });

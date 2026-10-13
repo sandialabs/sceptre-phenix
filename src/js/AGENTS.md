@@ -71,6 +71,26 @@ minimega, VM images, and a topology (`E2E_LIFECYCLE=1`). Auth suites require a
 matching `VITE_AUTH` build and signing key. See `e2e/README.md`; report missing
 prerequisites instead of silently skipping checks.
 
+## Unit Tests
+
+Vitest runs in Node without a DOM: tests render components with
+`test/helpers/render.js` (server-side rendering with the real Buefy) and run
+their options on a plain object with `test/helpers/context.js`. Do not add
+`@vue/test-utils` or jsdom. Shared helpers live in `test/helpers/`:
+
+- Page tests load `mocks.js` with `vi.hoisted`, hand its `modules.*`
+  factories to `vi.mock`, and call `resetMocks()` in `beforeEach`, passing
+  the store the test needs (`resetMocks({ store: {} })`). Add a stand-in for
+  a newly mocked module there rather than in one test file.
+- Roles for the mocked `roleAllowed` are `permissions.js` predicates
+  (`allowAll`, `denyAll`, `allowOnly`, `denyOnly`); `roles.js` builds role
+  objects for the real `rbac.js`.
+- Build pages with `page.js` (`pageContext`, `openPage`), read their dialogs
+  and toasts with `buefy.js`, and build disks, VMs, websocket messages and
+  failed requests with `fixtures.js`.
+- Write repeated permission or state cases as `it.each` tables, each row
+  checking both the allowed and the refused case.
+
 ## Performance
 
 `perf/` holds size-limit budgets and Lighthouse CI assertions; see
