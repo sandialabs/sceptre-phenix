@@ -66,7 +66,7 @@ func initComponents() {
 	componentUpdates = make(chan ComponentUpdate)
 	outputRequests = make(chan outputRequest)
 	wsRequests = make(chan wsRequest)
-	ws = make(map[string]map[string]wsRequest)
+	ws = make(map[string]map[string]*viewer)
 
 	cmpType = make(map[string]string)
 	running = make(map[string]bool)
@@ -96,32 +96,21 @@ func processComponents() {
 
 				if len(update.Output) != 0 {
 					output[key] = append(output[key], update.Output...)
-				}
 
-				// stream to any websockets listening for this key
-				for id, cli := range ws[key] {
-					nw, err := cli.ws.Write(update.Output)
-					if err != nil {
-						close(cli.done)
-						delete(ws[key], id)
-
-						continue
-					}
-
-					if nw != len(update.Output) {
-						close(cli.done)
-						delete(ws[key], id)
-					}
+					// stream to any websockets listening for this key
+					streamTo(key, update.Output)
 				}
 			case statusSuccess, statusFailure:
 				delete(running, key)
 
 				// notify any websockets for this key that component is done
-				for id, cli := range ws[key] {
-					_, _ = cli.ws.Write([]byte("***** COMPONENT FINISHED *****"))
-					close(cli.done)
+				for id, v := range ws[key] {
+					v.offer([]byte(finishedMarker))
+					v.finish()
 					delete(ws[key], id)
 				}
+
+				delete(ws, key)
 			}
 
 			close(update.done)
