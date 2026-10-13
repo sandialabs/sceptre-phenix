@@ -44,6 +44,22 @@ args = [
     "--fix"
 ]
 
+
+# OpenAPI: checks that the spec served at /docs/ is valid OpenAPI, with the
+# Redocly version pinned in scripts/api-docs.sh (needs Node.js, as the
+# src/js hooks do)
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "openapi-lint"
+name = "openapi lint (redocly, spec ruleset)"
+entry = "scripts/api-docs.sh lint src/go/web/public/docs/openapi.yml"
+language = "system"
+pass_filenames = false
+files = '^(src/go/web/public/docs/openapi\.yml|scripts/api-docs\.sh)$'
+priority = "lint"
+
 # Spell checking
 [[repos]]
 repo = "https://github.com/codespell-project/codespell"

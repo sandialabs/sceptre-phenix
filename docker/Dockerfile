@@ -15,8 +15,6 @@ COPY docker/install-certs.sh /tmp/install-certs.sh
 RUN /tmp/install-certs.sh && \
   npm config set cafile /etc/ssl/certs/ca-certificates.crt
 
-RUN npm install -g @redocly/cli@2.48.0
-
 COPY ./src/js /phenix/src/js
 
 WORKDIR /phenix/src/js
@@ -30,10 +28,12 @@ ENV VITE_BASE_PATH=${PHENIX_BASE_PATH}
 RUN make dist/index.html
 
 COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi.yml
+COPY scripts/api-docs.sh /tmp/api-docs.sh
 
 WORKDIR /phenix/src/go/web/public/docs
 
-RUN npx @redocly/cli build-docs openapi.yml -o index.html --title 'phenix API'
+# scripts/api-docs.sh pins the Redocly CLI version for every build.
+RUN /tmp/api-docs.sh build openapi.yml index.html
 
 
 # ** websharkbuilder **
@@ -82,8 +82,9 @@ ARG PHENIX_COMMIT
 ARG PHENIX_TAG
 ARG PHENIX_REPO
 
-# Build phenix binary (skip UI build since artifacts are already copied)
-RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} REPO=${PHENIX_REPO} make bin/phenix SKIP_UI=1
+# Build phenix binary (skip the UI and API reference builds, since jsbuilder
+# already produced both and this image has no Node.js)
+RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} REPO=${PHENIX_REPO} make bin/phenix SKIP_UI=1 SKIP_API_DOCS=1
 RUN make -C src/go phenix-tunneler
 
 # Allow installing from a fork of sceptre-phenix-apps that could

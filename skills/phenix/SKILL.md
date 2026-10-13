@@ -188,10 +188,11 @@ For interactive human use, `make install-wrapper` installs
 `scripts/phenix-wrapper.sh` as `/usr/local/bin/phenix` so shell completion and
 TTY allocation work. See `README.md` ("Running with Docker").
 
-**Local binary (development):** `make build` produces `bin/phenix`; run any
-subcommand from it, typically against a local `bolt://` store and a local
-`minimega`. See `README.md` ("Local Development") for prerequisites and
-`make help` for targets.
+**Local binary (development):** `make build` produces `bin/phenix`, which
+also serves the API reference at `/docs/`; run any subcommand from it,
+typically against a local `bolt://` store and a local `minimega`. See
+`README.md` ("Local Development") for prerequisites and `make help` for
+targets.
 
 ## Querying the Web API
 
