@@ -19,16 +19,17 @@ const elapsedPrecision = time.Millisecond
 // Name means the base name of the topology directory, and Config is relative
 // to that directory unless absolute.
 type applyOptions struct {
-	Name                string
-	Config              string
-	ConfigExplicit      bool
-	DryRun              bool
-	Force               bool
-	Socket              string
-	InjectsBase         string
-	TopologiesBase      string
-	InjectsBaseExplicit bool
-	Now                 func() time.Time
+	Name                 string
+	Config               string
+	ConfigExplicit       bool
+	DryRun               bool
+	Force                bool
+	Socket               string
+	InjectsBase          string
+	TopologiesBase       string
+	InjectsBaseExplicit  bool
+	FollowInjectSymlinks bool
+	Now                  func() time.Time
 }
 
 // configFile is a config file as read. Body goes to the server unchanged, so

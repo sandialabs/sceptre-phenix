@@ -26,9 +26,11 @@ func isMarkerName(name string) bool {
 
 // injectsMarkerEntry returns the first entry with a marker name at the top
 // level of injects or directly inside one of its top-level directories,
-// relative to injects, or "". It follows no symbolic link, since staging
-// copies a link as a link.
-func injectsMarkerEntry(injects string) string {
+// relative to injects, or "". When followSymlinks is false, it follows no
+// symbolic link, since staging copies a link as a link. When followSymlinks
+// is true, it follows symlinks to directories so a directory that will become
+// a directory after staging is checked too.
+func injectsMarkerEntry(injects string, followSymlinks bool) string {
 	top, _ := os.ReadDir(injects)
 
 	for _, entry := range top {
@@ -36,7 +38,14 @@ func injectsMarkerEntry(injects string) string {
 			return entry.Name()
 		}
 
-		if !entry.IsDir() {
+		isDir := entry.IsDir()
+		if !isDir && followSymlinks && entry.Type()&fs.ModeSymlink != 0 {
+			if info, err := os.Stat(filepath.Join(injects, entry.Name())); err == nil && info.IsDir() {
+				isDir = true
+			}
+		}
+
+		if !isDir {
 			continue
 		}
 
@@ -78,7 +87,10 @@ func (r *applyRun) stage(injectsBase string) error {
 
 	plog.Info(plog.TypeSystem, "staging injects", "step", stepInjects, "dir", dest)
 
-	count, err := workflow.StageInjects(r.injects, injectsBase, r.name, protect...)
+	count, err := workflow.StageInjectsWithOptions(r.injects, injectsBase, r.name, workflow.StageOptions{
+		FollowSymlinks: r.opts.FollowInjectSymlinks,
+		Protect:        protect,
+	})
 
 	// kept is the error that names the previous copy this run kept, if any.
 	var kept error

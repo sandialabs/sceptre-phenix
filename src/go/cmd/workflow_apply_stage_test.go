@@ -767,3 +767,79 @@ func TestRunWorkflowApplyPreviousCopyKept(t *testing.T) {
 		"level": "WARN", "type": "SYSTEM", "step": "injects", "path": filepath.Join(resolved, earlier),
 	})
 }
+
+func TestRunWorkflowApplyFollowInjectSymlinks(t *testing.T) {
+	extDir := t.TempDir()
+	extFile := filepath.Join(extDir, "ext.txt")
+	if err := os.WriteFile(extFile, []byte("external-content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	extSub := filepath.Join(extDir, "subdir")
+	if err := os.Mkdir(extSub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extSub, "inner.txt"), []byte("inner-content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := newTopologyDir(t, "foo", fullTopology())
+
+	// Create symlinks inside phenix-injects
+	symFile := filepath.Join(dir, "phenix-injects", "link_file")
+	if err := os.Symlink(extFile, symFile); err != nil {
+		t.Fatal(err)
+	}
+	symDir := filepath.Join(dir, "phenix-injects", "link_dir")
+	if err := os.Symlink(extSub, symDir); err != nil {
+		t.Fatal(err)
+	}
+
+	injects := t.TempDir()
+	fake := newFakePhenix(t, fakePhenix{
+		options: serverOptions(injects),
+		plan:    workflow.Plan{Action: workflow.ActionCreateAndStart, Experiment: "foo"},
+	})
+
+	opts := testApplyOptions(fake.socket, t.TempDir())
+	opts.FollowInjectSymlinks = true
+
+	logs := captureLogs(t)
+
+	if err := runWorkflowApply(t.Context(), opts, dir); err != nil {
+		t.Fatalf("runWorkflowApply() error = %v", err)
+	}
+
+	stagedDir := filepath.Join(injects, "foo")
+
+	// link_file should be a regular file with external-content, not a symlink
+	info, err := os.Lstat(filepath.Join(stagedDir, "link_file"))
+	if err != nil {
+		t.Fatalf("Lstat link_file: %v", err)
+	}
+	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		t.Errorf("link_file mode = %v, want regular file", info.Mode())
+	}
+	content, err := os.ReadFile(filepath.Join(stagedDir, "link_file"))
+	if err != nil || string(content) != "external-content" {
+		t.Errorf("link_file content = %q (err %v), want %q", content, err, "external-content")
+	}
+
+	// link_dir should be a regular directory with inner.txt, not a symlink
+	dirInfo, err := os.Lstat(filepath.Join(stagedDir, "link_dir"))
+	if err != nil {
+		t.Fatalf("Lstat link_dir: %v", err)
+	}
+	if dirInfo.Mode()&fs.ModeSymlink != 0 || !dirInfo.IsDir() {
+		t.Errorf("link_dir mode = %v, want regular directory", dirInfo.Mode())
+	}
+	innerContent, err := os.ReadFile(filepath.Join(stagedDir, "link_dir", "inner.txt"))
+	if err != nil || string(innerContent) != "inner-content" {
+		t.Errorf("inner.txt content = %q (err %v), want %q", innerContent, err, "inner-content")
+	}
+
+	// 1 scripts/hello.sh + 1 link_file + 1 link_dir/inner.txt = 3
+	checkFields(t, logs.first(t, "injects staged"), map[string]string{
+		"level": "INFO", "step": "injects", "dir": stagedDir, "files": "3",
+	})
+}
