@@ -45,7 +45,8 @@ type Registry struct {
 // per request.
 type entry struct {
 	check Check
-	now   func() time.Time // the clock of the TTL, replaced by tests
+	now   func() time.Time                     // the clock of the TTL, replaced by tests
+	after func(time.Duration) <-chan time.Time // the timeout's timer, replaced by tests
 
 	mu       sync.Mutex
 	last     map[string][]Result
@@ -59,7 +60,7 @@ func NewRegistry(checks ...Check) *Registry {
 	r := &Registry{entries: make([]*entry, 0, len(checks))}
 
 	for _, c := range checks {
-		r.entries = append(r.entries, &entry{check: c, now: time.Now}) //nolint:exhaustruct // zero state
+		r.entries = append(r.entries, &entry{check: c, now: time.Now, after: time.After}) //nolint:exhaustruct // zero state
 	}
 
 	return r
@@ -145,8 +146,7 @@ func (e *entry) get(ctx context.Context) map[string][]Result {
 
 	e.mu.Unlock()
 
-	timer := time.NewTimer(e.check.Timeout - time.Since(started))
-	defer timer.Stop()
+	timedOut := e.after(e.check.Timeout - time.Since(started))
 
 	select {
 	case <-done:
@@ -154,16 +154,17 @@ func (e *entry) get(ctx context.Context) map[string][]Result {
 		defer e.mu.Unlock()
 
 		return e.last
-	case <-timer.C:
-		failed := e.failure(fmt.Sprintf("timed out after %s", e.check.Timeout))
-
+	case <-timedOut:
 		e.mu.Lock()
 		defer e.mu.Unlock()
 
-		// unless the run ended meanwhile, with results of its own
-		if e.inflight == done {
-			e.last, e.at = failed, e.now()
+		// the run may have ended as the timer fired, with results of its own
+		if e.inflight != done {
+			return e.last
 		}
+
+		failed := e.failure(fmt.Sprintf("timed out after %s", e.check.Timeout))
+		e.last, e.at = failed, e.now()
 
 		return failed
 	case <-ctx.Done():
