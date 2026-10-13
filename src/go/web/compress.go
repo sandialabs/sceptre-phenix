@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"compress/gzip"
 	"errors"
+	"io"
 	"mime"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -46,7 +48,8 @@ var (
 // clients that accept it. Large list responses (VMs, disks, configs, logs) are
 // repetitive JSON that shrinks several fold, which matters on the slow links
 // the UI is often used over. Websocket upgrades and every other content type
-// pass through as-is.
+// pass through as-is, as do downloads (attachments): their bytes must reach the
+// client unchanged so byte ranges and the ETag refer to what it saves.
 func CompressResponses(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Vary", "Accept-Encoding")
@@ -116,6 +119,25 @@ func (cw *compressWriter) Write(b []byte) (int, error) {
 	return cw.write(b)
 }
 
+// ReadFrom passes a response that is not compressed straight to the
+// underlying writer, so [http.ServeContent] still sends a file with sendfile.
+func (cw *compressWriter) ReadFrom(src io.Reader) (int64, error) {
+	if !cw.decided {
+		if cw.Header().Get("Content-Type") == "" {
+			// sniff the type from the start of the body, as Write does
+			return io.Copy(writerOnly{cw}, src) //nolint:wrapcheck // passthrough
+		}
+
+		cw.decide(cw.status())
+	}
+
+	if rf, ok := cw.ResponseWriter.(io.ReaderFrom); ok && cw.zw == nil {
+		return rf.ReadFrom(src) //nolint:wrapcheck // passthrough
+	}
+
+	return io.Copy(writerOnly{cw}, src) //nolint:wrapcheck // passthrough
+}
+
 func (cw *compressWriter) Flush() {
 	_ = cw.flushSniffed()
 
@@ -168,6 +190,15 @@ func (cw *compressWriter) decide(code int) {
 	if shouldCompress(code, cw.Header()) {
 		cw.Header().Set("Content-Encoding", "gzip")
 		cw.Header().Del("Content-Length")
+
+		// byte ranges would refer to the uncompressed body, and the gzipped
+		// body is not byte-for-byte the one a strong ETag names; a weak one
+		// also keeps If-Range from ever matching it
+		cw.Header().Del("Accept-Ranges")
+
+		if etag := cw.Header().Get("ETag"); etag != "" && !strings.HasPrefix(etag, "W/") {
+			cw.Header().Set("ETag", "W/"+etag)
+		}
 
 		zw, _ := gzipWriters.Get().(*gzip.Writer)
 		zw.Reset(cw.ResponseWriter)
@@ -223,7 +254,7 @@ func shouldCompress(code int, header http.Header) bool {
 		return false
 	}
 
-	if header.Get("Content-Encoding") != "" {
+	if header.Get("Content-Encoding") != "" || isAttachment(header) {
 		return false
 	}
 
@@ -236,4 +267,18 @@ func shouldCompress(code int, header http.Header) bool {
 	mediaType, _, err := mime.ParseMediaType(header.Get("Content-Type"))
 
 	return err == nil && compressibleTypes[mediaType]
+}
+
+// isAttachment reports whether the response is a download, one the browser
+// saves as a file rather than shows.
+func isAttachment(header http.Header) bool {
+	disposition, _, err := mime.ParseMediaType(header.Get("Content-Disposition"))
+
+	return err == nil && disposition == "attachment"
+}
+
+// writerOnly hides a writer's ReadFrom from [io.Copy], which would otherwise
+// call it back.
+type writerOnly struct {
+	io.Writer
 }

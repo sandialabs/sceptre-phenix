@@ -1,20 +1,26 @@
 package web
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 var bigJSON = `{"vms":[` + strings.Repeat(`{"name":"host","state":"RUNNING"},`, 200) + `{}]}` //nolint:gochecknoglobals // test fixture
 
 func apiHandler(status int, contentType, body string, setLength bool) http.Handler {
-	return CompressResponses(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	return CompressResponses(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if contentType != "" {
 			w.Header().Set("Content-Type", contentType)
+		}
+
+		if r.URL.Query().Has("attachment") {
+			w.Header().Set("Content-Disposition", `attachment; filename="vms.txt"`)
 		}
 
 		if setLength {
@@ -48,6 +54,8 @@ func TestCompressResponses(t *testing.T) {
 		{"small with length", 0, "application/json", `{"ok":true}`, true, "gzip", false},
 		{"binary download", 0, "application/octet-stream", bigJSON, false, "gzip", false},
 		{"zip download", 0, "application/zip", bigJSON, false, "gzip", false},
+		// a download reaches the client byte for byte, whatever its type
+		{"text attachment", 0, "text/plain", bigJSON, false, "gzip", false},
 		{"no content", http.StatusNoContent, "application/json", "", false, "gzip", false},
 		{"not modified", http.StatusNotModified, "application/json", "", false, "gzip", false},
 		// byte ranges refer to the uncompressed body
@@ -56,7 +64,12 @@ func TestCompressResponses(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			resp := get(t, apiHandler(tc.status, tc.contentType, tc.body, tc.setLength), "/api/v1/vms", tc.acceptEncoding)
+			target := "/api/v1/vms"
+			if strings.Contains(tc.name, "attachment") {
+				target += "?attachment"
+			}
+
+			resp := get(t, apiHandler(tc.status, tc.contentType, tc.body, tc.setLength), target, tc.acceptEncoding)
 
 			if got := resp.Header.Get("Content-Encoding") == "gzip"; got != tc.wantGzip {
 				t.Fatalf("gzip = %v, want %v", got, tc.wantGzip)
@@ -200,6 +213,135 @@ func TestCompressResponsesHeldBackStatus(t *testing.T) {
 
 			if got := readBody(t, resp); got != tc.body {
 				t.Fatalf("body = %q, want %q", got, tc.body)
+			}
+		})
+	}
+}
+
+// A compressed response is not the bytes a strong ETag or a byte range would
+// refer to.
+func TestCompressResponsesWeakensValidators(t *testing.T) {
+	h := CompressResponses(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", `"abc"`)
+		http.ServeContent(w, r, "vms.json", time.Time{}, strings.NewReader(bigJSON))
+	}))
+
+	resp := get(t, h, "/api/v1/vms", "gzip")
+	if resp.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatal("response was not compressed")
+	}
+
+	if got := resp.Header.Get("ETag"); got != `W/"abc"` {
+		t.Errorf("ETag = %q, want the weak W/\"abc\"", got)
+	}
+
+	if got := resp.Header.Get("Accept-Ranges"); got != "" {
+		t.Errorf("Accept-Ranges = %q on a compressed response", got)
+	}
+
+	if got := readBody(t, resp); got != bigJSON {
+		t.Errorf("body does not round-trip")
+	}
+}
+
+// A range of a text file is the uncompressed bytes asked for, even from a
+// client that accepts gzip. Go's client drops gzip when it sends a Range, so
+// the header is set explicitly.
+func TestCompressResponsesRangeOnTextFile(t *testing.T) {
+	text := strings.Repeat("phenix log line\n", 256)
+
+	h := CompressResponses(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		http.ServeContent(w, r, "", time.Time{}, strings.NewReader(text))
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/experiments/exp/files/a.log", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Range", "bytes=0-99")
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusPartialContent {
+		t.Fatalf("status = %d, want 206", resp.StatusCode)
+	}
+
+	if enc := resp.Header.Get("Content-Encoding"); enc != "" {
+		t.Errorf("Content-Encoding = %q on a range", enc)
+	}
+
+	if got := readBody(t, resp); got != text[:100] {
+		t.Errorf("body = %q, want the first 100 bytes", got)
+	}
+}
+
+// readerFromRecorder is a ResponseRecorder that, like net/http's own writer,
+// can send from a reader itself.
+type readerFromRecorder struct {
+	*httptest.ResponseRecorder
+
+	readFrom int
+}
+
+func (r *readerFromRecorder) ReadFrom(src io.Reader) (int64, error) {
+	r.readFrom++
+
+	return io.Copy(r.ResponseRecorder, src)
+}
+
+// A response that is not compressed reaches the underlying writer's ReadFrom,
+// which net/http uses to send files with sendfile.
+func TestCompressWriterReadFromPassesThrough(t *testing.T) {
+	data := bytes.Repeat([]byte{0, 1, 2, 3}, 4096)
+
+	cases := []struct {
+		name         string
+		contentType  string
+		wantReadFrom bool
+		wantGzip     bool
+	}{
+		{"binary", "application/octet-stream", true, false},
+		{"compressed", "application/json", false, true},
+		{"sniffed", "", false, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := CompressResponses(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.contentType != "" {
+					w.Header().Set("Content-Type", tc.contentType)
+				}
+
+				rf, ok := w.(io.ReaderFrom)
+				if !ok {
+					t.Fatal("compressing writer is not a ReaderFrom")
+				}
+
+				_, _ = rf.ReadFrom(bytes.NewReader(data))
+			}))
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/disks/download", nil)
+			req.Header.Set("Accept-Encoding", "gzip")
+
+			rec := &readerFromRecorder{ResponseRecorder: httptest.NewRecorder(), readFrom: 0}
+			h.ServeHTTP(rec, req)
+
+			if got := rec.readFrom > 0; got != tc.wantReadFrom {
+				t.Errorf("underlying ReadFrom used = %v, want %v", got, tc.wantReadFrom)
+			}
+
+			resp := rec.Result()
+			defer resp.Body.Close()
+
+			if got := resp.Header.Get("Content-Encoding") == "gzip"; got != tc.wantGzip {
+				t.Errorf("gzip = %v, want %v", got, tc.wantGzip)
+			}
+
+			if got := readBody(t, resp); got != string(data) {
+				t.Errorf("body changed: got %d bytes, want %d", len(got), len(data))
 			}
 		})
 	}
