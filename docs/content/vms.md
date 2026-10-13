@@ -331,6 +331,12 @@ The mount browser modal presents two panes:
   [experiment file server](settings.md#settings-reference) is enabled (see
   below).
 
+Several users can have the same VM mounted; it is unmounted when the last of
+them closes the modal. That unmount waits up to 30 seconds for downloads from
+the VM to finish, and otherwise leaves the VM mounted and fails with
+`409 mount busy`. Opening the modal for a VM still being unmounted fails with
+`409 unmount in progress`; try again a moment later.
+
 ### Uploading Experiment Files from the phēnix Server { #uploading-experiment-files-from-the-phenix-server }
 
 phēnix can optionally run a lightweight file server on a port separate from the
