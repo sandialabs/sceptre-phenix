@@ -4,6 +4,7 @@
   "description": "Bundle size budgets and Lighthouse audits for the phenix web UI",
   "scripts": {
     "size": "size-limit",
+    "size:json": "size-limit --json",
     "lighthouse": "lhci autorun"
   },
   "devDependencies": {

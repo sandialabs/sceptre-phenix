@@ -152,6 +152,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # finds and downloads the default branch's perf-summary artifact
+      actions: read
+    defaults:
+      run:
+        working-directory: src/js/perf
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -166,21 +171,72 @@ jobs:
         with:
           name: phenix-build-disabled
       - name: Unpack build
+        working-directory: .
         run: tar -xf phenix-build.tar && rm phenix-build.tar
       - name: Install perf tooling
-        working-directory: src/js/perf
         run: npm ci
+      # The size and Lighthouse steps may fail without stopping the job, so
+      # both always run and the summary covers both; "Check budgets" fails it.
       - name: Check bundle size budgets
-        working-directory: src/js/perf
-        run: npm run size
+        id: size
+        continue-on-error: true
+        run: npm run --silent size:json > size-limit.json
       - name: Start phenix UI
+        id: server
+        working-directory: .
         run: ./scripts/ci-start-phenix-ui.sh /tmp/phenix-perf.bdb /tmp/phenix-ui.log
       - name: Run Lighthouse CI
-        working-directory: src/js/perf
+        id: lighthouse
+        if: steps.server.outcome == 'success'
+        continue-on-error: true
         run: npm run lighthouse
-      - name: Server log
-        if: failure()
-        run: tail -100 /tmp/phenix-ui.log
+      - name: Find baseline
+        # the newest unexpired perf-summary artifact from a run on the base
+        # branch of this repository (not a fork's branch of the same name)
+        id: baseline
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+        run: |
+          run_id="$(gh api "repos/$REPO/actions/artifacts?name=perf-summary&per_page=100" \
+            --jq '[.artifacts[] | select(.expired | not)
+                   | select(.workflow_run.head_branch == env.BASE
+                            and .workflow_run.head_repository_id == .workflow_run.repository_id)
+                  ][0].workflow_run.id // empty')"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Download baseline
+        if: always() && steps.baseline.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: perf-summary
+          run-id: ${{ steps.baseline.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: src/js/perf/baseline
+      - name: Summarize
+        if: always()
+        env:
+          BASE: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+        run: |
+          node summary.mjs --size size-limit.json \
+            --assert .lighthouseci/assertion-results.json \
+            --manifest lighthouse-results/manifest.json \
+            --baseline baseline/perf-summary.json --base-ref "$BASE" \
+            --out-md perf-summary.md --out-json perf-summary.json
+      - name: Upload perf summary
+        # kept 90 days: runs on the default branch are the baseline for later runs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: perf-summary
+          path: |
+            src/js/perf/perf-summary.md
+            src/js/perf/perf-summary.json
+          retention-days: 90
+          if-no-files-found: ignore
       - name: Upload Lighthouse reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -190,4 +246,23 @@ jobs:
             src/js/perf/lighthouse-results
             src/js/perf/.lighthouseci
           include-hidden-files: true
+          retention-days: 14
           if-no-files-found: ignore
+      - name: Check budgets
+        if: always()
+        env:
+          SIZE_OUTCOME: ${{ steps.size.outcome }}
+          LIGHTHOUSE_OUTCOME: ${{ steps.lighthouse.outcome }}
+        run: |
+          if ! node summary.mjs --check perf-summary.json; then
+            exit 1
+          fi
+          # a fallback in case the summary missed a failed step
+          if [ "$SIZE_OUTCOME" != success ] || [ "$LIGHTHOUSE_OUTCOME" != success ]; then
+            echo "::error title=Perf budget::size-limit ($SIZE_OUTCOME) or Lighthouse ($LIGHTHOUSE_OUTCOME) failed; see their steps."
+            exit 1
+          fi
+      - name: Server log
+        if: failure()
+        working-directory: .
+        run: tail -100 /tmp/phenix-ui.log
