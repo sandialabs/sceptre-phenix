@@ -3,13 +3,17 @@ package web
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/gorilla/mux"
 
 	"phenix/store"
 	"phenix/util/plog"
@@ -52,10 +56,10 @@ var (
 	viewOps = []capability.Op{capability.OpView, capability.OpDownload, capability.OpWatch}
 )
 
-// newCaptureToken returns a new random token: for a stream, or, for
+// newCaptureSecret returns a new random token: for a stream, or, for
 // WebShark, a name that keeps the readable file name base WebShark shows
 // and saves the capture as: router.pcap becomes router-<random>.pcap.
-func newCaptureToken(stream bool, base string) string {
+func newCaptureSecret(stream bool, base string) string {
 	secret := strings.ToLower(rand.Text())
 
 	if stream {
@@ -113,7 +117,7 @@ func mintCaptureGrant(r *http.Request, target capability.Target, ops []capabilit
 		}
 	}
 
-	token := newCaptureToken(stream, sharkBaseName(target))
+	token := newCaptureSecret(stream, sharkBaseName(target))
 	g = captureGrants.Mint(token, g)
 
 	plog.Info(
@@ -268,4 +272,194 @@ func untilRevoked(ctx context.Context, done <-chan struct{}) (context.Context, c
 	}()
 
 	return ctx, cancel
+}
+
+type captureTokenRequest struct {
+	sharkCaptureRequest
+
+	Operations []capability.Op `json:"operations"`
+}
+
+type captureTokenTarget struct {
+	Path      string `json:"path,omitempty"`
+	VM        string `json:"vm,omitempty"`
+	Interface *int   `json:"interface,omitempty"`
+}
+
+// captureToken is a capture grant as the capture-tokens routes show it. The
+// token itself is shown only when the grant is given.
+type captureToken struct {
+	ID         string             `json:"id"`
+	Token      string             `json:"token,omitempty"`
+	Operations []capability.Op    `json:"operations"`
+	Expires    string             `json:"expires"`
+	UseBy      string             `json:"useBy,omitempty"`
+	LastUsed   string             `json:"lastUsed"`
+	Uses       int                `json:"uses"`
+	Experiment string             `json:"experiment"`
+	Target     captureTokenTarget `json:"target"`
+	// where to use the token, relative to the UI's base path
+	URLs map[string]string `json:"urls,omitempty"`
+}
+
+func newCaptureToken(g capability.Grant) captureToken {
+	t := captureToken{
+		ID:         g.ID,
+		Token:      "",
+		Operations: g.Ops,
+		Expires:    g.Expires.UTC().Format(time.RFC3339),
+		UseBy:      "",
+		LastUsed:   g.LastUsed.UTC().Format(time.RFC3339),
+		Uses:       g.Uses,
+		Experiment: g.Target.Exp,
+		Target:     captureTokenTarget{Path: g.Target.File, VM: "", Interface: nil},
+		URLs:       nil,
+	}
+
+	if !g.UseBy.IsZero() {
+		t.UseBy = g.UseBy.UTC().Format(time.RFC3339)
+	}
+
+	if g.Target.VM != "" {
+		iface := g.Target.Interface
+		t.Target.VM, t.Target.Interface = g.Target.VM, &iface
+	}
+
+	return t
+}
+
+// captureOps checks the operations a capture token is asked for: stream
+// alone, or any of WebShark's.
+func captureOps(ops []capability.Op) ([]capability.Op, error) {
+	if len(ops) == 0 {
+		return nil, errors.New(`give the "operations" the token allows`)
+	}
+
+	var granted []capability.Op
+
+	for _, op := range ops {
+		switch {
+		case op == capability.OpStream && len(ops) == 1:
+		case op == capability.OpStream:
+			return nil, errors.New("a stream token allows only stream")
+		case !slices.Contains(viewOps, op):
+			return nil, fmt.Errorf("unknown operation %q", op)
+		}
+
+		if !slices.Contains(granted, op) {
+			granted = append(granted, op)
+		}
+	}
+
+	return granted, nil
+}
+
+// CreateCaptureToken - POST /experiments/{exp}/capture-tokens
+//
+// Gives the user a capture token: for a stream of a running capture
+// ({"operations": ["stream"]}), which a command outside the browser streams
+// it with at /webshark/streams/{token}, or for WebShark to open a capture,
+// as POST /experiments/{exp}/webshark does. The capture is named as that
+// route takes it, and the user needs the same permissions.
+func CreateCaptureToken(w http.ResponseWriter, r *http.Request) {
+	var (
+		exp = mux.Vars(r)["exp"]
+		req captureTokenRequest
+	)
+
+	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSharkRequestBytes)).Decode(&req)
+	if err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	ops, err := captureOps(req.Operations)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	stream := ops[0] == capability.OpStream
+
+	if !stream && !o.featured("webshark") {
+		http.Error(w, "WebShark is not installed on this phēnix server", http.StatusNotImplemented)
+
+		return
+	}
+
+	target, ok := resolveSharkTarget(w, r, exp, req.sharkCaptureRequest)
+	if !ok {
+		return
+	}
+
+	if stream && !target.Live {
+		http.Error(w, "only a running capture streams; this file is no longer being captured", http.StatusBadRequest)
+
+		return
+	}
+
+	g, token := mintCaptureGrant(r, target, ops)
+
+	resp := newCaptureToken(g)
+	resp.Token = token
+
+	if stream {
+		resp.URLs = map[string]string{"stream": "webshark/streams/" + url.PathEscape(token)}
+	} else if g.Allows(capability.OpView) {
+		resp.URLs = map[string]string{"view": "webshark/embed?capture=" + url.QueryEscape(token)}
+	}
+
+	body, _ := json.Marshal(resp)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write(body)
+}
+
+// ListCaptureTokens - GET /experiments/{exp}/capture-tokens
+//
+// Lists the user's own capture tokens for the experiment that have not
+// ended, without the tokens themselves.
+func ListCaptureTokens(w http.ResponseWriter, r *http.Request) {
+	var (
+		exp    = mux.Vars(r)["exp"]
+		user   = middleware.UserFromContext(r.Context())
+		grants = captureGrants.List(user, exp)
+		tokens = make([]captureToken, 0, len(grants))
+	)
+
+	for _, g := range grants {
+		tokens = append(tokens, newCaptureToken(g))
+	}
+
+	body, _ := json.Marshal(map[string]any{"tokens": tokens})
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// DeleteCaptureToken - DELETE /experiments/{exp}/capture-tokens/{id}
+//
+// Revokes one of the user's own capture tokens, ending what it opened. A
+// token that is not the user's is not found, like one that has ended.
+func DeleteCaptureToken(w http.ResponseWriter, r *http.Request) {
+	var (
+		vars = mux.Vars(r)
+		user = middleware.UserFromContext(r.Context())
+		id   = vars["id"]
+	)
+
+	grants := captureGrants.List(user, vars["exp"])
+	if !slices.ContainsFunc(grants, func(g capability.Grant) bool { return g.ID == id }) || !captureGrants.Revoke(id, user) {
+		http.Error(w, "capture token not found", http.StatusNotFound)
+
+		return
+	}
+
+	plog.Info(plog.TypeSecurity, "capture grant revoked", "reason", "revoked by user", "user", user, "exp", vars["exp"], "id", id)
+
+	w.WriteHeader(http.StatusNoContent)
 }

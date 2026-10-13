@@ -241,6 +241,10 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	// capture grants are the credentials of these routes (see capability.go)
 	grants := grantChecker{jwtKey: o.jwtKey, proxyAuthHeader: o.proxyAuthHeader}
 
+	// streams a capture into a command outside the browser, with or without
+	// WebShark, under the /webshark/ that proxies already pass on
+	router.HandleFunc("/webshark/streams/{token}", grants.GetCaptureStreamByToken).Methods("GET")
+
 	if o.featured("webshark") {
 		plog.Info(plog.TypeSystem, "Serving WebShark", "dir", o.websharkDir)
 		router.HandleFunc("/webshark/json", grants.GetWebSharkJSON).Methods("GET")
@@ -386,6 +390,10 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	api.HandleFunc("/experiments/{exp}/stopCaptureSubnet", StopCaptureSubnet).
 		Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/webshark", CreateWebSharkCapture).Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/capture-tokens", CreateCaptureToken).Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/capture-tokens", ListCaptureTokens).Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/capture-tokens/{id}", DeleteCaptureToken).
+		Methods("DELETE", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files", GetExperimentFiles).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files/download", DownloadExperimentFiles).
 		Methods("POST", "OPTIONS")

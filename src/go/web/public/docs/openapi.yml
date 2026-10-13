@@ -768,6 +768,135 @@ paths:
           description: no such file, or the interface is not being captured
         "501":
           description: WebShark is not installed
+  "/experiments/{exp_name}/capture-tokens":
+    post:
+      tags:
+        - Experiments
+      summary: Give a capture token
+      description: >-
+        Gives the caller a capture token for one capture, named as
+        `/experiments/{exp_name}/webshark` takes it and with the same
+        permissions. With `"operations": ["stream"]` (a running capture
+        only), a command outside the browser streams the capture as pcap with
+        `GET /webshark/streams/{token}`, which needs no other credentials
+        and lives outside `/api/v1`, under the UI's base path, so that
+        `curl -fsSN '<origin>/webshark/streams/<token>' | wireshark -k -i -`
+        works without the caller's session token. A stream token starts
+        streams, from the start of the capture or with `?from=now`, for 5
+        minutes, and what it started ends with the caller's session (or 24
+        hours after it was given when the server does not sign users in).
+        With any of `view`, `download` and `watch`, the token is a WebShark
+        capture name. A token is bound to the caller and the session it was
+        given under, and each use checks that the caller may still read the
+        capture. Signing out, deleting the user, deleting the experiment or
+        the capture file, and revoking the token end it; stopping the
+        experiment ends its stream tokens. Tokens are kept in the server's
+        memory, so a restart ends them all.
+      operationId: postExperimentsNameCaptureTokens
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - operations
+              properties:
+                path:
+                  type: string
+                  description: a .pcap, .pcapng or .cap experiment file, optionally gzipped
+                vm:
+                  type: string
+                  description: VM with a running capture (with interface)
+                interface:
+                  type: integer
+                  description: index of the VM interface being captured
+                operations:
+                  type: array
+                  description: "`stream` alone, or any of `view`, `download` and `watch`"
+                  items:
+                    type: string
+                    enum: [stream, view, download, watch]
+                  example: [stream]
+      responses:
+        "201":
+          description: the token, which no other response shows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureToken"
+        "400":
+          description: >-
+            no or unknown operations, stream with other operations, a stream
+            of a capture that is not running, or a capture named as
+            `/experiments/{exp_name}/webshark` refuses it
+        "403":
+          description: forbidden
+        "404":
+          description: no such file, or the interface is not being captured
+        "501":
+          description: WebShark is not installed (for view, download and watch)
+    get:
+      tags:
+        - Experiments
+      summary: List the caller's capture tokens
+      description: >-
+        Lists the caller's own capture tokens for the experiment that have
+        not ended, WebShark capture names included, without the tokens.
+      operationId: getExperimentsNameCaptureTokens
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokens:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CaptureToken"
+  "/experiments/{exp_name}/capture-tokens/{id}":
+    delete:
+      tags:
+        - Experiments
+      summary: Revoke a capture token
+      description: >-
+        Revokes one of the caller's own capture tokens, ending the streams
+        and WebShark watches it opened.
+      operationId: deleteExperimentsNameCaptureTokensId
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: the token's ID
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: revoked
+        "404":
+          description: no such token of the caller's, or it has ended
   "/experiments/{name}/files":
     get:
       tags:
@@ -3762,6 +3891,59 @@ components:
           type: integer
         filepath:
           type: string
+    CaptureToken:
+      type: object
+      properties:
+        id:
+          type: string
+          description: not secret; names the token in listings, logs and revocation
+          example: 3f9a0c51d2e47b86
+        token:
+          type: string
+          description: >-
+            the token, only when it is given: `pcs_<random>` for a stream, or
+            a WebShark capture name
+          example: pcs_k2j4m6n8p1q3r5s7t9v2w4x6y8
+        operations:
+          type: array
+          items:
+            type: string
+            enum: [stream, view, download, watch]
+        expires:
+          type: string
+          format: date-time
+          description: when the token, and anything it opened, ends at the latest
+        useBy:
+          type: string
+          format: date-time
+          description: a stream token's last moment to start a stream
+        lastUsed:
+          type: string
+          format: date-time
+        uses:
+          type: integer
+        experiment:
+          type: string
+        target:
+          type: object
+          properties:
+            path:
+              type: string
+              description: the experiment file holding the capture, when known
+            vm:
+              type: string
+            interface:
+              type: integer
+        urls:
+          type: object
+          description: where to use the token, relative to the UI's base path
+          properties:
+            stream:
+              type: string
+              example: webshark/streams/pcs_k2j4m6n8p1q3r5s7t9v2w4x6y8
+            view:
+              type: string
+              example: webshark/embed?capture=router-k2j4m6n8p1q3r5s7t9v2w4x6y8.pcap
     Snapshots:
       type: object
       properties:

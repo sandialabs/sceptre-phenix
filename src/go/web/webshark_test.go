@@ -497,7 +497,7 @@ func TestSharkCaptureNamesKeepTheirExtension(t *testing.T) {
 		"no-extension":     {"no-extension-", ""},
 		"dir.pcap/file.gz": {"dir.pcap/file.gz-", ""},
 	} {
-		name := newCaptureToken(false, base)
+		name := newCaptureSecret(false, base)
 
 		if !strings.HasPrefix(name, want[0]) || !strings.HasSuffix(name, want[1]) ||
 			len(name) < len(want[0])+len(want[1])+20 {
@@ -505,7 +505,7 @@ func TestSharkCaptureNamesKeepTheirExtension(t *testing.T) {
 		}
 	}
 
-	if token := newCaptureToken(true, "router.pcap"); !strings.HasPrefix(token, "pcs_") || len(token) < 24 ||
+	if token := newCaptureSecret(true, "router.pcap"); !strings.HasPrefix(token, "pcs_") || len(token) < 24 ||
 		strings.Contains(token, "router") {
 		t.Errorf("stream token %s, want pcs_<random>", token)
 	}

@@ -1,9 +1,12 @@
 package web
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -244,5 +247,203 @@ func TestCaptureGrantOperations(t *testing.T) {
 	list := captureGrants.List("alice", "test-experiment")
 	if len(list) != 1 || list[0].ID != capture.ID || list[0].Uses != 1 || list[0].IdleTimeout != viewGrantIdle {
 		t.Fatalf("alice's grants: %+v", list)
+	}
+}
+
+// createCaptureToken asks the server for a capture token of test-experiment
+// and returns the response and, if it is a 201, the token.
+func createCaptureToken(t *testing.T, server, body string) (*http.Response, captureToken) {
+	t.Helper()
+
+	resp := do(t, http.MethodPost, server+"/api/v1/experiments/test-experiment/capture-tokens", body)
+
+	var token captureToken
+
+	if resp.StatusCode == http.StatusCreated {
+		if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
+			t.Fatalf("decoding token: %v", err)
+		}
+	}
+
+	return resp, token
+}
+
+// streamToken has the server give a stream token for test-vm's capture.
+func streamToken(t *testing.T, server string) captureToken {
+	t.Helper()
+
+	resp, token := createCaptureToken(t, server, `{"vm":"test-vm","interface":0,"operations":["stream"]}`)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("got %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	return token
+}
+
+func TestCreateCaptureTokenRefuses(t *testing.T) {
+	fake := useWebShark(t)
+	useExperimentFilesDir(t, map[string]string{"saved.pcap": string(testPcapHeader())})
+	useLiveCapture(t, fake)
+
+	tests := map[string]struct {
+		role rbac.Role
+		body string
+		want int
+	}{
+		"no file permission": {
+			testRole("experiments/files", "list", "test-experiment"),
+			`{"path":"saved.pcap","operations":["view"]}`, http.StatusForbidden,
+		},
+		"no capture permission": {
+			testRole("experiments/files", "get", "test-experiment"),
+			`{"vm":"test-vm","interface":0,"operations":["stream"]}`, http.StatusForbidden,
+		},
+		"stream of a saved file": {
+			sharkRole(), `{"path":"saved.pcap","operations":["stream"]}`, http.StatusBadRequest,
+		},
+		"no operations": {sharkRole(), `{"vm":"test-vm","interface":0}`, http.StatusBadRequest},
+		"empty operations": {
+			sharkRole(), `{"vm":"test-vm","interface":0,"operations":[]}`, http.StatusBadRequest,
+		},
+		"unknown operation": {
+			sharkRole(), `{"vm":"test-vm","interface":0,"operations":["delete"]}`, http.StatusBadRequest,
+		},
+		"stream and view": {
+			sharkRole(), `{"vm":"test-vm","interface":0,"operations":["stream","view"]}`, http.StatusBadRequest,
+		},
+		"not being captured": {
+			sharkRole(), `{"vm":"test-vm","interface":1,"operations":["stream"]}`, http.StatusNotFound,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			resp, _ := createCaptureToken(t, serveAs(t, "alice", tt.role).URL, tt.body)
+			if resp.StatusCode != tt.want {
+				t.Fatalf("expected %d, got %d: %s", tt.want, resp.StatusCode, readBody(t, resp))
+			}
+		})
+	}
+
+	// streaming needs no WebShark; viewing does
+	o.features = map[string]bool{}
+	server := serveAs(t, "alice", sharkRole()).URL
+
+	resp, _ := createCaptureToken(t, server, `{"path":"saved.pcap","operations":["view"]}`)
+	if resp.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("view without WebShark: expected 501, got %d", resp.StatusCode)
+	}
+
+	streamToken(t, server)
+}
+
+func TestCaptureTokenStreams(t *testing.T) {
+	live := useLiveCapture(t, useWebShark(t))
+	header, old, fresh := testPcapHeader(), testPcapRecord(60), testPcapRecord(1500)
+	live.write(t, header, old)
+	followLiveCapture(t)
+
+	server := serveAs(t, "alice", sharkRole()).URL
+	token := streamToken(t, server)
+
+	if !strings.HasPrefix(token.Token, "pcs_") || token.ID == "" || token.UseBy == "" || token.Expires == "" ||
+		token.URLs["stream"] != "webshark/streams/"+token.Token || token.Target.VM != "test-vm" ||
+		token.Target.Interface == nil || *token.Target.Interface != 0 || token.Experiment != "test-experiment" {
+		t.Fatalf("unexpected token %+v", token)
+	}
+
+	// listed without the token
+	resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/capture-tokens", "")
+	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || strings.Contains(body, token.Token) ||
+		!strings.Contains(body, token.ID) {
+		t.Fatalf("listing: %d %s", resp.StatusCode, body)
+	}
+
+	url := server + "/" + token.URLs["stream"]
+
+	expect := openCaptureStream(t, url, false)
+	expect(header, "the file header")
+	expect(old, "the packet already captured")
+
+	live.write(t, fresh)
+	expect(fresh, "the new packet")
+
+	// it reconnects within its window, from now if asked
+	expect = openCaptureStream(t, url+"?from=now", false)
+	expect(header, "the file header again")
+
+	// another user cannot revoke it
+	bob := serveAs(t, "bob", sharkRole()).URL
+	resp = do(t, http.MethodDelete, bob+"/api/v1/experiments/test-experiment/capture-tokens/"+token.ID, "")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("bob revoking: got %d, want 404", resp.StatusCode)
+	}
+
+	// a WebShark route does not take it
+	if resp := do(t, http.MethodGet, server+"/webshark/captures/"+token.Token, ""); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("as a WebShark capture: got %d, want 403", resp.StatusCode)
+	}
+}
+
+// Revoking a stream token ends the streams it opened.
+func TestCaptureTokenRevokeEndsStream(t *testing.T) {
+	live := useLiveCapture(t, useWebShark(t))
+	header := testPcapHeader()
+	live.write(t, header)
+	followLiveCapture(t)
+
+	server := serveAs(t, "alice", sharkRole()).URL
+	token := streamToken(t, server)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, server+"/"+token.URLs["stream"], nil)
+
+	stream, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer stream.Body.Close()
+
+	if _, err := io.ReadFull(stream.Body, make([]byte, len(header))); err != nil {
+		t.Fatalf("reading the header: %v", err)
+	}
+
+	revoke := server + "/api/v1/experiments/test-experiment/capture-tokens/" + token.ID
+
+	resp := do(t, http.MethodDelete, revoke, "")
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("revoking: got %d", resp.StatusCode)
+	}
+
+	if _, err := io.ReadAll(stream.Body); err != nil || ctx.Err() != nil {
+		t.Fatalf("the stream did not end: %v %v", err, ctx.Err())
+	}
+
+	if resp := do(t, http.MethodGet, server+"/"+token.URLs["stream"], ""); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("after revoking: got %d, want 404", resp.StatusCode)
+	}
+
+	if resp := do(t, http.MethodDelete, revoke, ""); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("revoking again: got %d, want 404", resp.StatusCode)
+	}
+}
+
+// A WebShark capture name does not stream.
+func TestWebSharkNameDoesNotStream(t *testing.T) {
+	live := useLiveCapture(t, useWebShark(t))
+	live.write(t, testPcapHeader())
+
+	server := serveAs(t, "alice", sharkRole()).URL
+	capture := openInWebShark(t, server, `{"vm":"test-vm","interface":0}`)
+
+	if resp := do(t, http.MethodGet, server+"/webshark/streams/"+capture.Capture, ""); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("got %d, want 403", resp.StatusCode)
+	}
+
+	if resp := do(t, http.MethodGet, server+"/webshark/streams/pcs_unknown", ""); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown token: got %d, want 404", resp.StatusCode)
 	}
 }
