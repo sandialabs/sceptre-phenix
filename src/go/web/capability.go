@@ -54,6 +54,10 @@ var (
 	// How long a use of a grant trusts the last check of the user's access.
 	capRecheckInterval = 5 * time.Second
 
+	// How often an open stream or watch checks its grant when
+	// capRecheckInterval is shorter.
+	minOpenGrantRecheck = 10 * time.Millisecond
+
 	viewOps = []capability.Op{capability.OpView, capability.OpDownload, capability.OpWatch}
 )
 
@@ -211,12 +215,7 @@ func (c grantChecker) use(r *http.Request, token string, op capability.Op) (capa
 	}
 
 	if reason != "" {
-		captureGrants.RevokeWhere(func(other capability.Grant) bool { return other.ID == g.ID })
-
-		plog.Warn(
-			plog.TypeSecurity, "capture grant revoked",
-			"reason", reason, "user", g.User, "exp", g.Target.Exp, "id", g.ID, "op", op,
-		)
+		revokeCaptureGrant(g, reason, "op", op)
 
 		return g, http.StatusNotFound
 	}
@@ -224,6 +223,16 @@ func (c grantChecker) use(r *http.Request, token string, op capability.Op) (capa
 	captureGrants.Update(g.ID, func(g *capability.Grant) { g.Checked = time.Now() })
 
 	return g, 0
+}
+
+// revokeCaptureGrant ends the grant, whose user may no longer read its
+// capture for the reason, and logs it with fields.
+func revokeCaptureGrant(g capability.Grant, reason string, fields ...any) {
+	captureGrants.RevokeWhere(func(other capability.Grant) bool { return other.ID == g.ID })
+
+	plog.Warn(plog.TypeSecurity, "capture grant revoked", append([]any{
+		"reason", reason, "user", g.User, "exp", g.Target.Exp, "id", g.ID,
+	}, fields...)...)
 }
 
 // recheck returns why the grant's user may no longer read its capture, or
@@ -300,16 +309,45 @@ func revokeCaptureGrants(reason string, match func(capability.Grant) bool, field
 	plog.Info(plog.TypeSecurity, "revoked capture grants", append([]any{"reason", reason, "count", n}, fields...)...)
 }
 
-// untilRevoked returns a context that is also canceled when the grant whose
-// Done channel done is ends.
-func untilRevoked(ctx context.Context, done <-chan struct{}) (context.Context, context.CancelFunc) {
+// untilRevoked returns a context that is also canceled when the grant g
+// ends. A stream or watch is a single use of its grant that may run for
+// hours, so while it runs the grant is checked again every
+// capRecheckInterval, as each use is, and revoked when its user may no
+// longer read the capture.
+func (c grantChecker) untilRevoked(ctx context.Context, g capability.Grant) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(ctx)
 
+	// a ticker needs a positive interval; tests set capRecheckInterval to 0
+	recheck := time.NewTicker(max(capRecheckInterval, minOpenGrantRecheck))
+
 	go func() {
-		select {
-		case <-done:
-			cancel()
-		case <-ctx.Done():
+		defer recheck.Stop()
+
+		for {
+			select {
+			case <-g.Done:
+				cancel()
+
+				return
+			case <-ctx.Done():
+				return
+			case <-recheck.C:
+			}
+
+			reason, err := c.recheck(g)
+
+			switch {
+			case err != nil:
+				// keep streaming: the store may be back by the next check
+				plog.Error(plog.TypeSystem, "checking capture grant", "exp", g.Target.Exp, "id", g.ID, "err", err)
+			case reason != "":
+				revokeCaptureGrant(g, reason, "open", true)
+				cancel()
+
+				return
+			default:
+				captureGrants.Update(g.ID, func(g *capability.Grant) { g.Checked = time.Now() })
+			}
 		}
 	}()
 

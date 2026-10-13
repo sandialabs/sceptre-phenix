@@ -167,6 +167,44 @@ func TestCaptureGrantRechecksAccess(t *testing.T) {
 	}
 }
 
+// With dev auth the grant is the dev user's, and each use checks that the
+// server still signs that user in.
+func TestCaptureGrantDevAuth(t *testing.T) {
+	useWebShark(t)
+	useCapRecheck(t)
+	useExperimentFilesDir(t, map[string]string{"a.pcap": string(testPcapHeader())})
+	useTestStore(t, store.Config{
+		Version:  "phenix.sandia.gov/v1",
+		Kind:     "Role",
+		Metadata: store.ConfigMetadata{Name: "global-viewer"},
+		Spec:     map[string]any{"roleName": "Global Viewer", "policies": rolePolicies(sharkRole())},
+	})
+
+	server := serveRouter(t, testPublic(), "dev|alice|global-viewer").URL
+	capture := openInWebShark(t, server, `{"path":"a.pcap"}`)
+
+	for range 2 {
+		if resp := do(t, http.MethodGet, server+"/webshark/captures/"+capture.Capture, ""); resp.StatusCode != http.StatusOK {
+			t.Fatalf("got %d", resp.StatusCode)
+		}
+	}
+
+	list := captureGrants.List("alice", "test-experiment")
+	if len(list) != 1 || list[0].User != "alice" || list[0].ID != capture.ID || list[0].Session != "" {
+		t.Fatalf("alice's grants: %+v", list)
+	}
+
+	// a server signing in another dev user does not honor alice's grant
+	bob := serveRouter(t, testPublic(), "dev|bob|global-viewer").URL
+	if resp := do(t, http.MethodGet, bob+"/webshark/captures/"+capture.Capture, ""); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("as bob's server: got %d, want 404", resp.StatusCode)
+	}
+
+	if n := len(captureGrants.List("alice", "test-experiment")); n != 0 {
+		t.Fatalf("%d grants left, want the name revoked", n)
+	}
+}
+
 // A grant ends no later than the session it was given under.
 func TestCaptureGrantEndsWithSession(t *testing.T) {
 	useWebShark(t)
@@ -431,6 +469,65 @@ func TestCaptureTokenRevokeEndsStream(t *testing.T) {
 
 	if resp := do(t, http.MethodDelete, revoke, ""); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("revoking again: got %d, want 404", resp.StatusCode)
+	}
+}
+
+// An open stream checks its grant as it runs, and ends once the user may no
+// longer read the capture: here, when the session is deleted.
+func TestCaptureTokenRecheckEndsStream(t *testing.T) {
+	live := useLiveCapture(t, useWebShark(t))
+	header := testPcapHeader()
+	live.write(t, header)
+	followLiveCapture(t)
+	useCapRecheck(t)
+
+	session := useTestUser(t, sharkRole())
+	server := serveRouter(t, testPublic(), testJWTKey).URL
+
+	resp := signedIn(
+		t, http.MethodPost, server+"/api/v1/experiments/test-experiment/capture-tokens",
+		`{"vm":"test-vm","interface":0,"operations":["stream"]}`, session,
+	)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("minting: got %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	var token captureToken
+	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
+		t.Fatalf("decoding token: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, server+"/"+token.URLs["stream"], nil)
+
+	stream, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer stream.Body.Close()
+
+	if _, err := io.ReadFull(stream.Body, make([]byte, len(header))); err != nil {
+		t.Fatalf("reading the header: %v", err)
+	}
+
+	u, err := rbac.GetUser("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := u.DeleteToken(session); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := io.ReadAll(stream.Body); err != nil || ctx.Err() != nil {
+		t.Fatalf("the stream did not end: %v %v", err, ctx.Err())
+	}
+
+	if n := len(captureGrants.List("alice", "test-experiment")); n != 0 {
+		t.Fatalf("%d grants left, want the token revoked", n)
 	}
 }
 

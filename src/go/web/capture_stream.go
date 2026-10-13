@@ -96,7 +96,7 @@ func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	streamCapture(w, r, tap, fromNow, nil)
+	streamCapture(w, r, tap, fromNow)
 }
 
 // GetCaptureStreamByToken - GET /webshark/streams/{token}
@@ -104,7 +104,8 @@ func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) {
 // Streams the running capture a stream grant names, as
 // GetVMCaptureStream's pcap body does. The grant is the credential: a
 // command run outside the browser carries it rather than the user's
-// session. The stream ends when the grant does.
+// session. The stream ends when the grant does, or when a check of the
+// grant while it runs finds its user may no longer read the capture.
 func (c grantChecker) GetCaptureStreamByToken(w http.ResponseWriter, r *http.Request) {
 	g, status := c.use(r, mux.Vars(r)["token"], capability.OpStream)
 	if status != 0 {
@@ -127,7 +128,10 @@ func (c grantChecker) GetCaptureStreamByToken(w http.ResponseWriter, r *http.Req
 		"user", g.User, "exp", t.Exp, "vm", t.VM, "interface", t.Interface, "id", g.ID,
 	)
 
-	streamCapture(w, r, tap, r.URL.Query().Get("from") == "now", g.Done)
+	ctx, cancel := c.untilRevoked(r.Context(), g)
+	defer cancel()
+
+	streamCapture(w, r.WithContext(ctx), tap, r.URL.Query().Get("from") == "now")
 }
 
 // openCaptureTap starts following a VM interface's running capture. It
@@ -148,17 +152,10 @@ func openCaptureTap(w http.ResponseWriter, exp, vm string, iface int) (*livecapt
 	return tap, true
 }
 
-// streamCapture sends the capture as a chunked pcap body, until it stops,
-// the client goes away, or done, when not nil, is closed.
-func streamCapture(w http.ResponseWriter, r *http.Request, tap *livecapture.Tap, fromNow bool, done <-chan struct{}) {
+// streamCapture sends the capture as a chunked pcap body, until it stops or
+// the request's context ends.
+func streamCapture(w http.ResponseWriter, r *http.Request, tap *livecapture.Tap, fromNow bool) {
 	ctx := r.Context()
-
-	if done != nil {
-		var cancel context.CancelFunc
-
-		ctx, cancel = untilRevoked(ctx, done)
-		defer cancel()
-	}
 
 	capture := tap.Capture()
 
