@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -115,6 +116,75 @@ func TestFixedRoleModes(t *testing.T) {
 
 			if n := s.lists.Load(); n != tc.lookups {
 				t.Errorf("roles listed %d times, want %d", n, tc.lookups)
+			}
+		})
+	}
+}
+
+// userStore adds users to a roleStore: each holds the sessions given, and
+// the role named role.
+type userStore struct {
+	*roleStore
+
+	users map[string][]string
+}
+
+func (s *userStore) Get(c *store.Config) error {
+	sessions, ok := s.users[c.Metadata.Name]
+	if c.Kind != "User" || !ok {
+		return store.ErrNotExist
+	}
+
+	tokens := make(map[string]any, len(sessions))
+	for _, session := range sessions {
+		tokens[base64.StdEncoding.EncodeToString([]byte(session))] = "test"
+	}
+
+	c.Spec = map[string]any{
+		"username": c.Metadata.Name,
+		"tokens":   tokens,
+		"rbac":     map[string]any{"roleName": "role of " + c.Metadata.Name},
+	}
+
+	return nil
+}
+
+// ResolveRole finds a user's role again as each auth mode does.
+//
+//nolint:paralleltest // replaces the store and the fixed role cache
+func TestResolveRole(t *testing.T) {
+	s := &userStore{
+		roleStore: useRoles(t, map[string]string{"global-admin": "Global Admin", "global-viewer": "Global Viewer"}),
+		users:     map[string][]string{"alice": {"alice-session"}},
+	}
+
+	store.DefaultStore = s //nolint:reassign // install test double; useRoles restores the original
+
+	tests := map[string]struct {
+		jwtKey, user, session string
+		role                  string // empty for an error
+	}{
+		"no auth":              {"", "global-admin", "", "Global Admin"},
+		"dev auth":             {"dev|alice|global-viewer", "alice", "", "Global Viewer"},
+		"dev auth, other user": {"dev|alice|global-viewer", "bob", "", ""},
+		"jwt":                  {"secret", "alice", "alice-session", "role of alice"},
+		"proxy jwt":            {"proxy-jwt", "alice", "alice-session", "role of alice"},
+		"signed out":           {"secret", "alice", "old-session", ""},
+		"no session":           {"secret", "alice", "", ""},
+		"deleted user":         {"secret", "bob", "bob-session", ""},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			role, err := ResolveRole(tc.jwtKey, tc.user, tc.session)
+
+			switch {
+			case tc.role == "" && err == nil:
+				t.Fatalf("got role %q, want an error", role.Spec.Name)
+			case tc.role != "" && err != nil:
+				t.Fatalf("got %v, want role %q", err, tc.role)
+			case tc.role != "" && role.Spec.Name != tc.role:
+				t.Fatalf("got role %q, want %q", role.Spec.Name, tc.role)
 			}
 		})
 	}

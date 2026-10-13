@@ -238,11 +238,14 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 		router.HandleFunc("/downloads/tunneler/{name}", forward.GetTunneler).Methods("GET", "HEAD")
 	}
 
+	// capture grants are the credentials of these routes (see capability.go)
+	grants := grantChecker{jwtKey: o.jwtKey, proxyAuthHeader: o.proxyAuthHeader}
+
 	if o.featured("webshark") {
 		plog.Info(plog.TypeSystem, "Serving WebShark", "dir", o.websharkDir)
-		router.HandleFunc("/webshark/json", GetWebSharkJSON).Methods("GET")
-		router.HandleFunc("/webshark/captures/{name}", GetWebSharkCaptureFile).Methods("GET", "HEAD")
-		router.HandleFunc("/webshark/watch", GetWebSharkWatch).Methods("GET")
+		router.HandleFunc("/webshark/json", grants.GetWebSharkJSON).Methods("GET")
+		router.HandleFunc("/webshark/captures/{name}", grants.GetWebSharkCaptureFile).Methods("GET", "HEAD")
+		router.HandleFunc("/webshark/watch", grants.GetWebSharkWatch).Methods("GET")
 		router.PathPrefix("/webshark/").Handler(WebSharkHandler(o.websharkDir, o.basePath))
 	} else {
 		// rather than the phēnix UI, which would load itself in its own frame

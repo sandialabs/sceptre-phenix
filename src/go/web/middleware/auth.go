@@ -340,6 +340,43 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 	return func(h http.Handler) http.Handler { return tokenMiddleware.Handler(userMiddleware(h)) }
 }
 
+// ResolveRole looks up again the role of user, who signed in with the session
+// JWT rawJWT, in the auth mode the JWT signing key jwtKey selects, as Auth
+// does for each request: with sign-in disabled, every user is global-admin;
+// dev auth gives its one user its role; otherwise the user must still exist
+// and still hold the session (not have signed out or deleted it), and gets
+// the role it has now. It does not check the JWT's signature or expiry,
+// which Auth checked when it was presented.
+func ResolveRole(jwtKey, user, rawJWT string) (rbac.Role, error) {
+	switch {
+	case jwtKey == "":
+		return fixedRole("global-admin")
+	case strings.HasPrefix(jwtKey, "dev|"):
+		creds := strings.Split(jwtKey, "|")
+		if len(creds) != 3 || user != creds[1] {
+			return rbac.Role{}, fmt.Errorf("user %s is not the dev auth user", user)
+		}
+
+		return fixedRole(creds[2])
+	}
+
+	u, err := rbac.GetUser(user)
+	if err != nil {
+		return rbac.Role{}, fmt.Errorf("getting user %s: %w", user, err)
+	}
+
+	if err := u.ValidateToken(rawJWT); err != nil {
+		return rbac.Role{}, fmt.Errorf("checking session of user %s: %w", user, err)
+	}
+
+	role, err := u.Role()
+	if err != nil {
+		return rbac.Role{}, fmt.Errorf("getting role of user %s: %w", user, err)
+	}
+
+	return role, nil
+}
+
 // userTokenFromContext returns the parsed JWT from phenix or JWT middleware context keys.
 func userTokenFromContext(ctx context.Context) any {
 	if token := ctx.Value(ContextKeyUser); token != nil {
