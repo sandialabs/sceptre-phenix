@@ -3,43 +3,28 @@
 // current from websocket messages.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const rbac = vi.hoisted(() => ({ allowed: () => true }));
-vi.mock('@/utils/rbac.js', () => ({
-  roleAllowed: (...args) => rbac.allowed(...args),
-}));
-
-const axios = vi.hoisted(() => ({
-  get: vi.fn(),
-  post: vi.fn(),
-  delete: vi.fn(),
-}));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-
-const notify = vi.hoisted(() => ({ error: vi.fn(), show: vi.fn() }));
-vi.mock('@/utils/errorNotif', () => ({
-  useErrorNotification: notify.error,
-  showError: notify.show,
-}));
-
-vi.mock('@/utils/websocket', () => ({
-  addWsHandler: () => {},
-  removeWsHandler: () => {},
-}));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
+const { axios, modules, notify, rbac, resetMocks } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/utils/websocket', modules.websocket);
+vi.mock('@/store.js', modules.store);
 // its terminal needs a browser
-vi.mock('@/components/MiniTerminal.vue', () => ({ default: {} }));
+vi.mock('@/components/MiniTerminal.vue', modules.stub);
 
 import { createLiveRows } from '@/utils/liveRows.js';
 import Scorch from '@/views/Scorch.vue';
 import { flush } from './helpers/async.js';
-import { makeContext } from './helpers/context.js';
+import { wsMsg } from './helpers/fixtures.js';
+import { pageContext } from './helpers/page.js';
+import { denyOnly } from './helpers/permissions.js';
 
 // the page, listing these rows
 function page(experiments = []) {
-  return makeContext(Scorch, {
-    experiments,
-    liveRows: createLiveRows(),
-    $buefy: { toast: { open: vi.fn() } },
+  return pageContext(Scorch, {
+    fields: { experiments, liveRows: createLiveRows() },
   });
 }
 
@@ -52,22 +37,11 @@ const row = (scorch = {}) => ({
   terminal: false,
 });
 
-const scorchMsg = (action, run = 0, result) => ({
-  resource: { type: 'apps/scorch', name: `exp1/${run}`, action },
-  result,
-});
-const expMsg = (action, result) => ({
-  resource: { type: 'experiment', name: 'exp1', action },
-  result,
-});
+const scorchMsg = (action, run = 0, result) =>
+  wsMsg('apps/scorch', `exp1/${run}`, action, result);
+const expMsg = (action, result) => wsMsg('experiment', 'exp1', action, result);
 
-beforeEach(() => {
-  rbac.allowed = () => true;
-  for (const fn of [axios.get, axios.post, axios.delete, notify.error]) {
-    fn.mockReset();
-  }
-  notify.show.mockReset();
-});
+beforeEach(() => resetMocks({ store: {} }));
 
 afterEach(() => vi.useRealTimers());
 
@@ -100,7 +74,7 @@ describe('a created experiment', () => {
     const ctx = page();
     ctx.handle(expMsg('create', { name: 'b', apps: ['soh'] }));
 
-    rbac.allowed = (resource) => resource !== 'experiments/apps';
+    rbac.allowed = denyOnly(['experiments/apps']);
     ctx.handle(expMsg('create', created));
     await flush();
 

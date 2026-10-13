@@ -3,35 +3,24 @@
 // until the server reports over the websocket that a run started or stopped.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const rbac = vi.hoisted(() => ({ allowed: () => true }));
-vi.mock('@/utils/rbac.js', () => ({
-  roleAllowed: (...args) => rbac.allowed(...args),
-}));
-const axios = vi.hoisted(() => ({
-  get: vi.fn(),
-  post: vi.fn(),
-  delete: vi.fn(),
-}));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-const notify = vi.hoisted(() => ({ error: vi.fn(), show: vi.fn() }));
-vi.mock('@/utils/errorNotif', () => ({
-  useErrorNotification: notify.error,
-  showError: notify.show,
-}));
-vi.mock('@/utils/websocket', () => ({
-  addWsHandler: () => {},
-  removeWsHandler: () => {},
-}));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
+const { axios, modules, notify, rbac, resetMocks, switchable } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/utils/websocket', modules.websocket);
+vi.mock('@/store.js', modules.store);
 // its terminal needs a browser
-vi.mock('@/components/MiniTerminal.vue', () => ({ default: {} }));
-const loader = await vi.hoisted(() => import('./helpers/pageLoader.js'));
-vi.mock('@/utils/pageLoader.js', loader.switchable);
+vi.mock('@/components/MiniTerminal.vue', modules.stub);
+vi.mock('@/utils/pageLoader.js', switchable);
 
 import { clearPageCache } from '@/utils/pageCache.js';
 import ScorchRuns from '@/views/ScorchRuns.vue';
-import { flush } from './helpers/async.js';
-import { makeContext } from './helpers/context.js';
+import { flush, never } from './helpers/async.js';
+import { wsMsg } from './helpers/fixtures.js';
+import { openPage } from './helpers/page.js';
+import { withoutLoading } from './helpers/pageLoader.js';
+import { denyOnly } from './helpers/permissions.js';
 import { buttons, renderSSR } from './helpers/render.js';
 
 const url = (run, action = '') =>
@@ -54,12 +43,7 @@ async function open(runs, running = -1) {
       })),
     },
   });
-  const ctx = makeContext(ScorchRuns, {
-    $route: { params: { id: 'exp1' } },
-    $buefy: { toast: { open: vi.fn() } },
-  });
-  ScorchRuns.created.call(ctx);
-  await flush();
+  const ctx = await openPage(ScorchRuns, { id: 'exp1' });
   expect(axios.get).toHaveBeenCalledWith(
     'experiments/exp1/scorch/pipelines',
     expect.objectContaining({ headers: { Accept: 'application/json' } }),
@@ -69,10 +53,7 @@ async function open(runs, running = -1) {
 
 // what the server reports over the websocket about a run
 const report = (ctx, action, run, result) =>
-  ctx.handle({
-    resource: { type: 'apps/scorch', name: `exp1/${run}`, action },
-    result,
-  });
+  ctx.handle(wsMsg('apps/scorch', `exp1/${run}`, action, result));
 
 // the requests sent to start, stop, clear and clean up runs, in order
 const sent = () =>
@@ -91,7 +72,7 @@ const sent = () =>
 
 // the page's buttons as its state has it, the header's and then each run's
 async function pageButtons(ctx) {
-  const html = await loader.withoutLoading(() =>
+  const html = await withoutLoading(() =>
     renderSSR(
       ScorchRuns,
       {},
@@ -107,18 +88,9 @@ async function pageButtons(ctx) {
 
 beforeEach(() => {
   clearPageCache();
-  rbac.allowed = () => true;
-  for (const fn of [
-    axios.get,
-    axios.post,
-    axios.delete,
-    notify.error,
-    notify.show,
-  ]) {
-    fn.mockReset();
-  }
-  axios.post.mockReturnValue(new Promise(() => {}));
-  axios.delete.mockReturnValue(new Promise(() => {}));
+  resetMocks({ store: {} });
+  axios.post.mockImplementation(never);
+  axios.delete.mockImplementation(never);
 });
 
 afterEach(() => vi.useRealTimers());
@@ -325,8 +297,7 @@ describe('Clear', () => {
   });
 
   it('is offered only to roles that may start runs', async () => {
-    rbac.allowed = (resource, verb) =>
-      !(resource === 'experiments/trigger' && verb === 'create');
+    rbac.allowed = denyOnly(['experiments/trigger', 'create']);
     const ctx = await open([{ pipeline: nodes('success') }]);
 
     expect(await pageButtons(ctx)).toEqual({
