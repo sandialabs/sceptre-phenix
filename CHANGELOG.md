@@ -114,6 +114,7 @@ All notable changes to this project will be documented in this file.
 - **VM mounts**: Mounting or unmounting one VM, or a slow download from a mounted VM, held up mount requests for every other VM. An unmount now waits up to 30 seconds for its own VM's downloads, then gives up with `409 mount busy`; mounting a VM while it is being unmounted answers `409`.
 - **Disks and captures**: Changes to the minimega files directory made while disk images were being inspected went unread until the inspection finished, and opening a live capture on another node held up every other capture's release while it asked minimega where the capture was.
 - **Streams and proxies**: A capture stream or WebShark tab that stopped reading kept its capture followed, over the mesh for captures on other nodes, until the connection dropped, and VNC and port forward websockets waited on an unreachable endpoint for as long as the system allowed. Such writes now give up after 10 seconds, the proxies stop connecting after 10 seconds or when the client leaves, and the web, Unix socket and file servers wait at most 10 seconds for a request's headers.
+- **VM copy progress**: Committing a VM's disk to a new backing image could crash phenix when the copy finished while its progress was being reported.
 
 ## [1.0.0]
 
