@@ -29,6 +29,7 @@ import { namedList } from '@/utils/plural.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import { flush } from './helpers/async.js';
 import { lastAlert, lastConfirm } from './helpers/buefy.js';
+import { denyOnly } from './helpers/permissions.js';
 import {
   labeledControls,
   openModal,
@@ -446,8 +447,7 @@ describe("the open VM's port forwards", () => {
   });
 
   it("shows the details to roles that can't list snapshots or forwards", async () => {
-    rbac.allowed = (resource) =>
-      !['vms/snapshots', 'vms/forwards'].includes(resource);
+    rbac.allowed = denyOnly(['vms/snapshots'], ['vms/forwards']);
     const ctx = page();
     axios.get.mockResolvedValue({ data: { name: 'web' } });
 
@@ -483,8 +483,7 @@ describe("the open VM's port forwards", () => {
   });
 
   it("doesn't list them again for a role that can't", async () => {
-    rbac.allowed = (resource, verb) =>
-      !(resource === 'vms/forwards' && verb === 'list');
+    rbac.allowed = denyOnly(['vms/forwards', 'list']);
     const ctx = page({ portForwardModal: { ...modal } });
     axios.post.mockResolvedValue({});
 
@@ -919,7 +918,7 @@ describe('actions on VMs', () => {
   });
 
   it("offers a role that may not list disks the VM's own disk alone", () => {
-    rbac.allowed = (resource) => resource !== 'disks';
+    rbac.allowed = denyOnly(['disks']);
     const ctx = page({ experiment: { name: 'demo', vms } });
 
     ctx.redeploy(['web']);
@@ -1063,8 +1062,7 @@ describe('the selection toolbar', () => {
   ])(
     'hides %s from a role without %s %s on one of them',
     async (label, resource, verb, showModifyStateBar) => {
-      rbac.allowed = (r, v, name) =>
-        !(r === resource && v === verb && name === 'demo/db');
+      rbac.allowed = denyOnly([resource, verb, 'demo/db']);
       const bar = showModifyStateBar ? STATE_BAR : MAIN_BAR;
       expect(await toolbar({ showModifyStateBar })).toEqual(
         bar.filter((shown) => shown !== label),
