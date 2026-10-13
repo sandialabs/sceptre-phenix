@@ -111,6 +111,7 @@ All notable changes to this project will be documented in this file.
 - **SCORCH**: A component output window or read-only break terminal that stopped reading held up every experiment's SCORCH components, and a terminal exiting with one open blocked every other terminal. A window that falls behind now stops streaming; reopening it shows the full output.
 - **Port forwards**: Listing, creating or deleting a forward, and stopping any experiment, waited behind every other experiment's tunnel commands, and creating a forward retried busy cluster ports forever. Creating a forward now gives up after 20 busy ports, and an app's forward request no longer holds up the app.
 - **Netflow**: Starting or stopping one experiment's netflow capture held up every other experiment's netflow requests, and experiment stops, while it waited on the mesh. A capture still starting now reads as not started.
+- **VM mounts**: Mounting or unmounting one VM, or a slow download from a mounted VM, held up mount requests for every other VM. An unmount now waits up to 30 seconds for its own VM's downloads, then gives up with `409 mount busy`; mounting a VM while it is being unmounted answers `409`.
 
 ## [1.0.0]
 

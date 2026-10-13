@@ -1,15 +1,20 @@
 package web
 
 import (
+	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"phenix/util/common"
 	"phenix/util/mm"
+	"phenix/util/polltest"
 	"phenix/web/rbac"
 )
 
@@ -144,5 +149,247 @@ func TestCopyExperimentFileToMount(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(base, "..", "test-vm2", "a.txt")); !os.IsNotExist(err) {
 		t.Fatalf("copied into the sibling mount: %v", err)
+	}
+}
+
+// gatedMount makes mounting wait on a gate, telling entered when one starts,
+// and unmounting count its calls, for one test.
+type gatedMount struct {
+	entered  chan string
+	gate     chan struct{}
+	release  func()
+	unmounts atomic.Int32
+}
+
+func useGatedMount(t *testing.T) *gatedMount {
+	t.Helper()
+
+	g := &gatedMount{entered: make(chan string, 8), gate: make(chan struct{})}
+	g.release = sync.OnceFunc(func() { close(g.gate) })
+
+	originalMount, originalUnmount := mountFilesystem, unmountFilesystem
+
+	mountFilesystem = func(_, name string) error {
+		g.entered <- name
+		<-g.gate
+
+		return nil
+	}
+
+	unmountFilesystem = func(string, string) error {
+		g.unmounts.Add(1)
+
+		return nil
+	}
+
+	t.Cleanup(func() {
+		g.release()
+
+		mountFilesystem, unmountFilesystem = originalMount, originalUnmount
+
+		activeMountsMu.Lock()
+		delete(activeMounts, mm.GetLocalMountPath("test-experiment", "test-vm2"))
+		activeMountsMu.Unlock()
+	})
+
+	return g
+}
+
+// mountServer serves the API as a user who may use every test-experiment
+// VM's mount.
+func mountServer(t *testing.T) string {
+	t.Helper()
+
+	role := combinedRole(
+		testRole("vms/mount", "*", "test-experiment/*"),
+		testRole("experiments/files", "get", "test-experiment"),
+	)
+
+	return serveAs(t, "alice", role).URL + "/api/v1/experiments/test-experiment/vms/"
+}
+
+// mountStatus sends a request without failing the test, so it can run on
+// its own goroutine, and returns its status code, or 0 if it failed.
+func mountStatus(method, url string) int {
+	req, err := http.NewRequestWithContext(context.Background(), method, url, nil)
+	if err != nil {
+		return 0
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0
+	}
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+
+	return resp.StatusCode
+}
+
+// within fails the test if fn does not return within 2 seconds.
+func within(t *testing.T, what string, fn func()) {
+	t.Helper()
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		fn()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s took longer than 2s", what)
+	}
+}
+
+// mountStateOf returns the state of the mount at key, and whether there is one.
+func mountStateOf(key string) (mountState, int, bool) {
+	activeMountsMu.RLock()
+	defer activeMountsMu.RUnlock()
+
+	info, ok := activeMounts[key]
+	if !ok {
+		return 0, 0, false
+	}
+
+	return info.state, info.users, true
+}
+
+// While one VM is being mounted, another VM's mounted files can be listed,
+// and a second request to mount the first waits for the same mount.
+func TestMountingOneVMDoesNotBlockOthers(t *testing.T) {
+	useTestMount(t)
+
+	g := useGatedMount(t)
+	api := mountServer(t)
+
+	first, second := make(chan int, 1), make(chan int, 1)
+
+	go func() { first <- mountStatus(http.MethodPost, api+"test-vm2/mount") }()
+
+	within(t, "the mount starting", func() { <-g.entered })
+
+	go func() { second <- mountStatus(http.MethodPost, api+"test-vm2/mount") }()
+
+	within(t, "listing another VM's mounted files", func() {
+		if code := mountStatus(http.MethodGet, api+"test-vm/files?path=etc"); code != http.StatusOK {
+			t.Errorf("listing files: status %d, want 200", code)
+		}
+	})
+
+	key := mm.GetLocalMountPath("test-experiment", "test-vm2")
+
+	polltest.Until(t, "the second request joining the mount", func() bool {
+		_, users, _ := mountStateOf(key)
+
+		return users == 2
+	})
+
+	g.release()
+
+	within(t, "the mounts answering", func() {
+		if a, b := <-first, <-second; a != http.StatusOK || b != http.StatusOK {
+			t.Errorf("mount statuses = %d, %d; want 200, 200", a, b)
+		}
+	})
+
+	if len(g.entered) != 0 {
+		t.Error("the VM was mounted twice")
+	}
+
+	if state, users, _ := mountStateOf(key); state != mountMounted || users != 2 {
+		t.Errorf("mount state = %d with %d users, want mounted with 2", state, users)
+	}
+}
+
+// An unmount waits for its own mount's downloads, not other mounts' requests,
+// and mounting the VM again meanwhile is refused.
+func TestUnmountWaitsOnlyForItsOwnDownloads(t *testing.T) {
+	base := useTestMount(t)
+
+	g := useGatedMount(t)
+	g.release()
+
+	api := mountServer(t)
+
+	activeMountsMu.RLock()
+	download := activeMounts[base].lock
+	activeMountsMu.RUnlock()
+
+	// a download in progress
+	download.RLock()
+
+	unmounted := make(chan int, 1)
+
+	go func() { unmounted <- mountStatus(http.MethodDelete, api+"test-vm/unmount") }()
+
+	polltest.Until(t, "the unmount starting", func() bool {
+		state, _, _ := mountStateOf(base)
+
+		return state == mountUnmounting
+	})
+
+	within(t, "requests for another VM and this one", func() {
+		if code := mountStatus(http.MethodPost, api+"test-vm2/mount"); code != http.StatusOK {
+			t.Errorf("mounting another VM: status %d, want 200", code)
+		}
+
+		if code := mountStatus(http.MethodPost, api+"test-vm/mount"); code != http.StatusConflict {
+			t.Errorf("mounting the VM being unmounted: status %d, want 409", code)
+		}
+
+		if code := mountStatus(http.MethodGet, api+"test-vm/files?path=etc"); code != http.StatusBadRequest {
+			t.Errorf("listing files being unmounted: status %d, want 400", code)
+		}
+	})
+
+	download.RUnlock()
+
+	within(t, "the unmount answering", func() {
+		if code := <-unmounted; code != http.StatusOK {
+			t.Errorf("unmount status %d, want 200", code)
+		}
+	})
+
+	if _, _, ok := mountStateOf(base); ok || g.unmounts.Load() != 1 {
+		t.Errorf("mount still listed = %v, unmounts = %d; want gone after 1", ok, g.unmounts.Load())
+	}
+}
+
+// An unmount whose mount stays busy gives up with 409 and leaves the mount
+// as it was.
+func TestUnmountGivesUpOnABusyMount(t *testing.T) {
+	base := useTestMount(t)
+
+	g := useGatedMount(t)
+
+	original := unmountWaitTimeout
+	unmountWaitTimeout = 100 * time.Millisecond
+
+	t.Cleanup(func() { unmountWaitTimeout = original })
+
+	activeMountsMu.RLock()
+	download := activeMounts[base].lock
+	activeMountsMu.RUnlock()
+
+	download.RLock()
+	defer download.RUnlock()
+
+	within(t, "the unmount giving up", func() {
+		if code := mountStatus(http.MethodDelete, mountServer(t)+"test-vm/unmount"); code != http.StatusConflict {
+			t.Errorf("unmount status %d, want 409", code)
+		}
+	})
+
+	if state, users, ok := mountStateOf(base); !ok || state != mountMounted || users != 1 {
+		t.Errorf("mount state = %d with %d users (listed %v), want mounted with 1", state, users, ok)
+	}
+
+	if g.unmounts.Load() != 0 {
+		t.Error("unmounted a busy mount")
 	}
 }
