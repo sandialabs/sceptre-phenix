@@ -3,7 +3,6 @@ package web
 import (
 	"compress/gzip"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +24,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/api/livecapture"
 	"phenix/util/plog"
+	"phenix/web/capability"
 	"phenix/web/middleware"
 	"phenix/web/util"
 )
@@ -50,12 +50,6 @@ func findWebShark() (string, bool) {
 }
 
 const (
-	// how long a WebShark capture name keeps working after it was last used.
-	sharkCaptureTTL = 12 * time.Hour
-
-	// at most this many capture names are kept; the least recently used go.
-	maxSharkCaptures = 1024
-
 	sharkHeartbeat = 15 * time.Second
 
 	// WebShark downloads and dissects the whole file again whenever a live
@@ -74,117 +68,6 @@ var (
 	// captureExtensions are the files WebShark opens.
 	captureExtensions = []string{".pcap", ".pcapng", ".cap"} //nolint:gochecknoglobals // constant list
 )
-
-// sharkCapture is a capture WebShark may open. WebShark's own requests carry
-// no phēnix credentials, so each capture is named by a random, unguessable
-// name, given out only to a user allowed to read the capture.
-type sharkCapture struct {
-	name  string
-	title string
-	exp   string
-
-	// the experiment file (as listed) holding the capture, once it stops
-	file string
-
-	// a saved capture: where the headnode has it
-	local string
-
-	// a running capture
-	live  bool
-	vm    string
-	iface int
-
-	used time.Time
-}
-
-// the capture names handed out by this process
-//
-//nolint:gochecknoglobals // one set per process
-var (
-	sharkCapturesMu sync.Mutex
-	sharkCaptures   = make(map[string]*sharkCapture)
-)
-
-// addSharkCapture names the capture and remembers it. The name keeps the
-// capture's file name readable, since WebShark shows it and saves the
-// capture under it: router.pcap becomes router-<random>.pcap.
-func addSharkCapture(c *sharkCapture, base string) string {
-	stem, ext := base, ""
-
-	for _, e := range captureExtensions {
-		for _, suffix := range []string{e + ".gz", e} {
-			if len(base) > len(suffix) && strings.EqualFold(base[len(base)-len(suffix):], suffix) {
-				stem, ext = base[:len(base)-len(suffix)], base[len(base)-len(suffix):]
-
-				break
-			}
-		}
-
-		if ext != "" {
-			break
-		}
-	}
-
-	c.name = stem + "-" + strings.ToLower(rand.Text()) + ext
-	c.used = time.Now()
-
-	sharkCapturesMu.Lock()
-	defer sharkCapturesMu.Unlock()
-
-	var oldest *sharkCapture
-
-	for name, other := range sharkCaptures {
-		if time.Since(other.used) > sharkCaptureTTL {
-			delete(sharkCaptures, name)
-
-			continue
-		}
-
-		if oldest == nil || other.used.Before(oldest.used) {
-			oldest = other
-		}
-	}
-
-	if len(sharkCaptures) >= maxSharkCaptures && oldest != nil {
-		delete(sharkCaptures, oldest.name)
-	}
-
-	sharkCaptures[c.name] = c
-
-	return c.name
-}
-
-// getSharkCapture returns a copy of the named capture, if it has not expired.
-func getSharkCapture(name string) (sharkCapture, bool) {
-	sharkCapturesMu.Lock()
-	defer sharkCapturesMu.Unlock()
-
-	c, ok := sharkCaptures[name]
-	if !ok {
-		return sharkCapture{}, false
-	}
-
-	if time.Since(c.used) > sharkCaptureTTL {
-		delete(sharkCaptures, name)
-
-		return sharkCapture{}, false
-	}
-
-	c.used = time.Now()
-
-	return *c, true
-}
-
-// settleSharkCapture records that a live capture has stopped and where the
-// headnode has its file.
-func settleSharkCapture(name, local string) {
-	sharkCapturesMu.Lock()
-	defer sharkCapturesMu.Unlock()
-
-	if c, ok := sharkCaptures[name]; ok {
-		c.live, c.local = false, local
-	}
-}
 
 func isCaptureFile(name string) bool {
 	name = strings.TrimSuffix(strings.ToLower(name), ".gz")
@@ -208,6 +91,8 @@ type sharkCaptureResponse struct {
 	Capture string `json:"capture"`
 	Live    bool   `json:"live"`
 	Title   string `json:"title"`
+	ID      string `json:"id"`
+	Expires string `json:"expires"`
 }
 
 // CreateWebSharkCapture - POST /experiments/{exp}/webshark
@@ -215,16 +100,11 @@ type sharkCaptureResponse struct {
 // Names a capture for WebShark to open: a saved capture file ({"path": ...},
 // as the experiment's files are listed) or a VM interface's running capture
 // ({"vm": ..., "interface": ...}). A file still being captured is opened
-// live.
-//
-//nolint:funlen // handler
+// live. The name is a capture grant of the user's (see capability.go).
 func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) {
 	var (
-		ctx  = r.Context()
-		role = middleware.RoleFromContext(ctx)
-		user = middleware.UserFromContext(ctx)
-		exp  = mux.Vars(r)["exp"]
-		req  sharkCaptureRequest
+		exp = mux.Vars(r)["exp"]
+		req sharkCaptureRequest
 	)
 
 	if !o.featured("webshark") {
@@ -240,7 +120,40 @@ func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var c *sharkCapture
+	target, ok := resolveSharkTarget(w, r, exp, req)
+	if !ok {
+		return
+	}
+
+	g, name := mintCaptureGrant(r, target, viewOps)
+	title := sharkTitle(target)
+
+	plog.Info(
+		plog.TypeAction, "opened capture in WebShark",
+		"user", g.User, "exp", exp, "capture", title, "id", g.ID,
+	)
+
+	body, _ := json.Marshal(sharkCaptureResponse{
+		Capture: name,
+		Live:    target.Live,
+		Title:   title,
+		ID:      g.ID,
+		Expires: g.Expires.UTC().Format(time.RFC3339),
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// resolveSharkTarget finds the capture a request names, a saved capture file
+// or a running capture, once it has checked that the user's role may read
+// it. It writes the error response and returns false when it does not.
+func resolveSharkTarget(w http.ResponseWriter, r *http.Request, exp string, req sharkCaptureRequest) (capability.Target, bool) {
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+		user = middleware.UserFromContext(ctx)
+	)
 
 	switch {
 	case req.Path != "" && req.VM == "":
@@ -248,13 +161,13 @@ func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) {
 			plog.Warn(plog.TypeSecurity, "opening experiment file in WebShark not allowed", "user", user, "exp", exp)
 			http.Error(w, "forbidden", http.StatusForbidden)
 
-			return
+			return capability.Target{}, false
 		}
 
 		if !isCaptureFile(req.Path) {
 			http.Error(w, "WebShark opens .pcap, .pcapng and .cap files", http.StatusBadRequest)
 
-			return
+			return capability.Target{}, false
 		}
 
 		var writing *experiment.CaptureWritingError
@@ -263,12 +176,7 @@ func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) {
 
 		switch {
 		case err == nil:
-			c = &sharkCapture{ //nolint:exhaustruct // a saved capture
-				title: req.Path,
-				exp:   exp,
-				file:  req.Path,
-				local: local,
-			}
+			return capability.Target{Exp: exp, File: req.Path, VM: "", Interface: 0, Live: false, Local: local}, true
 		case errors.As(err, &writing):
 			req.VM, req.Interface = writing.Capture.VM, &writing.Capture.Interface
 		default:
@@ -279,127 +187,128 @@ func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) {
 
 			http.Error(w, err.Error(), status)
 
-			return
+			return capability.Target{}, false
 		}
 	case req.VM != "" && req.Path == "":
 		if req.Interface == nil || *req.Interface < 0 {
 			http.Error(w, "interface must be an interface index", http.StatusBadRequest)
 
-			return
+			return capability.Target{}, false
 		}
 	default:
 		http.Error(w, `give either "path" or "vm" and "interface"`, http.StatusBadRequest)
 
-		return
+		return capability.Target{}, false
 	}
 
-	if c == nil { // a running capture
-		if !captureReadAllowed(role, exp, req.VM) {
-			plog.Warn(plog.TypeSecurity, "opening VM capture in WebShark not allowed", "user", user, "exp", exp, "vm", req.VM)
-			http.Error(w, "forbidden", http.StatusForbidden)
+	// a running capture
+	if !captureReadAllowed(role, exp, req.VM) {
+		plog.Warn(plog.TypeSecurity, "opening VM capture in WebShark not allowed", "user", user, "exp", exp, "vm", req.VM)
+		http.Error(w, "forbidden", http.StatusForbidden)
 
-			return
-		}
-
-		// opening it starts following it, so it is ready when WebShark asks
-		tap, err := livecapture.Open(exp, req.VM, *req.Interface)
-		if err != nil {
-			status := captureStreamStatus(err)
-			if status == http.StatusInternalServerError {
-				plog.Error(plog.TypeSystem, "opening VM capture for WebShark", "exp", exp, "vm", req.VM, "err", err)
-			}
-
-			http.Error(w, err.Error(), status)
-
-			return
-		}
-
-		capture := tap.Capture()
-		tap.Release()
-
-		file, _ := experiment.CaptureFile(exp, capture.Path)
-
-		c = &sharkCapture{ //nolint:exhaustruct // a running capture
-			title: fmt.Sprintf("%s interface %d (live)", capture.VM, capture.Interface),
-			exp:   exp,
-			file:  file,
-			live:  true,
-			vm:    capture.VM,
-			iface: capture.Interface,
-		}
+		return capability.Target{}, false
 	}
 
-	name := addSharkCapture(c, sharkBaseName(c))
+	// opening it starts following it, so it is ready when WebShark asks
+	tap, err := livecapture.Open(exp, req.VM, *req.Interface)
+	if err != nil {
+		status := captureStreamStatus(err)
+		if status == http.StatusInternalServerError {
+			plog.Error(plog.TypeSystem, "opening VM capture for WebShark", "exp", exp, "vm", req.VM, "err", err)
+		}
 
-	plog.Info(plog.TypeAction, "opened capture in WebShark", "user", user, "exp", exp, "capture", c.title)
+		http.Error(w, err.Error(), status)
 
-	body, _ := json.Marshal(sharkCaptureResponse{Capture: name, Live: c.live, Title: c.title})
+		return capability.Target{}, false
+	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	capture := tap.Capture()
+	tap.Release()
+
+	file, _ := experiment.CaptureFile(exp, capture.Path)
+
+	return capability.Target{
+		Exp: exp, File: file, VM: capture.VM, Interface: capture.Interface, Live: true, Local: "",
+	}, true
 }
 
 // sharkBaseName is the file name WebShark shows and downloads a capture as.
-func sharkBaseName(c *sharkCapture) string {
-	if c.file != "" {
-		return path.Base(c.file)
+func sharkBaseName(t capability.Target) string {
+	if t.File != "" {
+		return path.Base(t.File)
 	}
 
-	return fmt.Sprintf("%s-%d.pcap", c.vm, c.iface)
+	return fmt.Sprintf("%s-%d.pcap", t.VM, t.Interface)
 }
 
-// sharkSource opens what the capture's bytes are read from: its running
-// capture, or its file once that has stopped. The returned Tap, if any, must
-// be released.
-func sharkSource(c sharkCapture) (*livecapture.Tap, *os.File, error) {
-	if c.live {
-		tap, err := livecapture.Open(c.exp, c.vm, c.iface)
+// sharkTitle is how the WebShark page names a capture.
+func sharkTitle(t capability.Target) string {
+	if t.Live {
+		return fmt.Sprintf("%s interface %d (live)", t.VM, t.Interface)
+	}
+
+	return t.File
+}
+
+// sharkSource opens what the grant's capture's bytes are read from: its
+// running capture, or its file once that has stopped. The returned Tap, if
+// any, must be released.
+func sharkSource(g capability.Grant) (*livecapture.Tap, *os.File, error) {
+	t := g.Target
+
+	if t.Live {
+		tap, err := livecapture.Open(t.Exp, t.VM, t.Interface)
 		if err == nil {
 			return tap, nil, nil
 		}
 
-		if !errors.Is(err, livecapture.ErrNotCapturing) || c.file == "" {
+		if !errors.Is(err, livecapture.ErrNotCapturing) || t.File == "" {
 			return nil, nil, err //nolint:wrapcheck // reported as is
 		}
 
 		// the capture stopped and nothing is following it any more: its file
 		// is complete now
-		local, err := experiment.LocalFile(c.exp, c.file)
+		local, err := experiment.LocalFile(t.Exp, t.File)
 		if err != nil {
 			return nil, nil, err //nolint:wrapcheck // reported as is
 		}
 
-		settleSharkCapture(c.name, local)
-		c.local = local
+		captureGrants.Update(g.ID, func(g *capability.Grant) {
+			g.Target.Live, g.Target.Local = false, local
+		})
+
+		t.Local = local
 	}
 
-	f, err := os.Open(c.local)
+	f, err := os.Open(t.Local)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %s", errSharkCaptureNotFound, c.file)
+		return nil, nil, fmt.Errorf("%w: %s", errSharkCaptureNotFound, t.File)
 	}
 
 	return nil, f, nil
 }
 
-// serveSharkCapture sends the capture's bytes: as far as a running capture
-// has got, or the whole file.
-func serveSharkCapture(w http.ResponseWriter, r *http.Request, name string, attachment bool) {
-	c, ok := getSharkCapture(name)
-	if !ok {
-		sharkError(w, "not found", http.StatusNotFound)
+// serveSharkCapture sends the bytes of the capture the grant name names, if
+// it allows op: as far as a running capture has got, or the whole file.
+func (c grantChecker) serveSharkCapture(
+	w http.ResponseWriter, r *http.Request, name string, op capability.Op, attachment bool,
+) {
+	g, status := c.use(r, name, op)
+	if status != 0 {
+		sharkError(w, http.StatusText(status), status)
 
 		return
 	}
 
-	tap, f, err := sharkSource(c)
+	tap, f, err := sharkSource(g)
 	if err != nil {
-		plog.Warn(plog.TypeSystem, "opening capture for WebShark", "exp", c.exp, "capture", c.title, "err", err)
+		plog.Warn(plog.TypeSystem, "opening capture for WebShark", "exp", g.Target.Exp, "id", g.ID, "err", err)
 		sharkError(w, "not found", http.StatusNotFound)
 
 		return
 	}
 
-	base := sharkBaseName(&c)
+	base := sharkBaseName(g.Target)
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
@@ -451,7 +360,7 @@ func sharkError(w http.ResponseWriter, msg string, status int) {
 //
 // WebShark lists the captures it may open (none: phēnix hands out each one
 // by name) and downloads them here.
-func GetWebSharkJSON(w http.ResponseWriter, r *http.Request) {
+func (c grantChecker) GetWebSharkJSON(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
 	switch method := query.Get("method"); method {
@@ -459,31 +368,32 @@ func GetWebSharkJSON(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"files":[],"pwd":"."}`))
 	case "download":
-		serveSharkCapture(w, r, query.Get("capture"), true)
+		c.serveSharkCapture(w, r, query.Get("capture"), capability.OpDownload, true)
 	default:
 		sharkError(w, "method not allowed: "+method, http.StatusBadRequest)
 	}
 }
 
 // GetWebSharkCaptureFile - GET /webshark/captures/{name}.
-func GetWebSharkCaptureFile(w http.ResponseWriter, r *http.Request) {
-	serveSharkCapture(w, r, mux.Vars(r)["name"], false)
+func (c grantChecker) GetWebSharkCaptureFile(w http.ResponseWriter, r *http.Request) {
+	c.serveSharkCapture(w, r, mux.Vars(r)["name"], capability.OpView, false)
 }
 
 // GetWebSharkWatch - GET /webshark/watch?capture=...
 //
 // Server-sent events telling WebShark when a capture grows, so it reloads
 // the capture and shows the new packets: an "init" event with the size it
-// has now, then an "append" event whenever it has grown, and heartbeats.
-func GetWebSharkWatch(w http.ResponseWriter, r *http.Request) {
-	c, ok := getSharkCapture(r.URL.Query().Get("capture"))
-	if !ok {
-		sharkError(w, "not found", http.StatusNotFound)
+// has now, then an "append" event whenever it has grown, and heartbeats. The
+// watch ends when the capture's grant does.
+func (c grantChecker) GetWebSharkWatch(w http.ResponseWriter, r *http.Request) {
+	g, status := c.use(r, r.URL.Query().Get("capture"), capability.OpWatch)
+	if status != 0 {
+		sharkError(w, http.StatusText(status), status)
 
 		return
 	}
 
-	tap, f, err := sharkSource(c)
+	tap, f, err := sharkSource(g)
 	if err != nil {
 		sharkError(w, "not found", http.StatusNotFound)
 
@@ -495,6 +405,9 @@ func GetWebSharkWatch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
+	ctx, cancel := untilRevoked(r.Context(), g.Done)
+	defer cancel()
+
 	watch := &sharkWatch{w: w, rc: http.NewResponseController(w), heartbeat: time.NewTicker(sharkHeartbeat)}
 	defer watch.heartbeat.Stop()
 
@@ -504,7 +417,7 @@ func GetWebSharkWatch(w http.ResponseWriter, r *http.Request) {
 		// a saved capture does not change
 		info, err := f.Stat()
 		if err == nil && watch.changed(info.Size(), info.ModTime(), "init") {
-			watch.wait(r.Context(), nil, nil)
+			watch.wait(ctx, nil, nil)
 		}
 
 		return
@@ -512,7 +425,7 @@ func GetWebSharkWatch(w http.ResponseWriter, r *http.Request) {
 
 	defer tap.Release()
 
-	watchSharkTap(r.Context(), watch, tap)
+	watchSharkTap(ctx, watch, tap)
 }
 
 // watchSharkTap tells WebShark when a running capture grows, as often as

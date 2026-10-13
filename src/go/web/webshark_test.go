@@ -17,6 +17,7 @@ import (
 
 	"phenix/api/livecapture"
 	"phenix/util/mm"
+	"phenix/web/capability"
 	"phenix/web/rbac"
 )
 
@@ -35,7 +36,19 @@ func useWebShark(t *testing.T, captures ...mm.Capture) *testMM {
 	o.features = map[string]bool{"webshark": true}
 	o.websharkDir, o.basePath = t.TempDir(), "/"
 
+	useCaptureGrants(t)
+
 	return fake
+}
+
+// useCaptureGrants gives the test a registry of capture grants of its own.
+func useCaptureGrants(t *testing.T) {
+	t.Helper()
+
+	original := captureGrants
+	captureGrants = capability.New(maxCaptureGrants, maxCaptureGrantsPerUser, nil)
+
+	t.Cleanup(func() { captureGrants = original })
 }
 
 // liveCapture is a running capture of test-vm's interface 0, written to a
@@ -484,16 +497,17 @@ func TestSharkCaptureNamesKeepTheirExtension(t *testing.T) {
 		"no-extension":     {"no-extension-", ""},
 		"dir.pcap/file.gz": {"dir.pcap/file.gz-", ""},
 	} {
-		name := addSharkCapture(&sharkCapture{}, base)
+		name := newCaptureToken(false, base)
 
 		if !strings.HasPrefix(name, want[0]) || !strings.HasSuffix(name, want[1]) ||
 			len(name) < len(want[0])+len(want[1])+20 {
 			t.Errorf("%s named %s, want %s<random>%s", base, name, want[0], want[1])
 		}
+	}
 
-		if _, ok := getSharkCapture(name); !ok {
-			t.Errorf("%s: not found by its name", base)
-		}
+	if token := newCaptureToken(true, "router.pcap"); !strings.HasPrefix(token, "pcs_") || len(token) < 24 ||
+		strings.Contains(token, "router") {
+		t.Errorf("stream token %s, want pcs_<random>", token)
 	}
 }
 

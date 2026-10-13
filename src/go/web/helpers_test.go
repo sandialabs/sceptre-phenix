@@ -188,6 +188,20 @@ func (s *testStore) Update(c *store.Config) error {
 	return nil
 }
 
+func (s *testStore) Delete(c *store.Config) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	i := s.find(c)
+	if i < 0 {
+		return fmt.Errorf("%s/%s: %w", c.Kind, c.Metadata.Name, store.ErrNotExist)
+	}
+
+	s.configs = slices.Delete(s.configs, i, i+1)
+
+	return nil
+}
+
 // useTestStore makes the store hold the configs, as well as any the test has
 // stored already, for the rest of the test.
 func useTestStore(t *testing.T, configs ...store.Config) {
@@ -355,6 +369,18 @@ func serveAs(t *testing.T, user string, role rbac.Role) *httptest.Server {
 
 	name := fmt.Sprintf("test-role-%d", roleNames.Add(1))
 
+	useTestStore(t, store.Config{
+		Version:  "phenix.sandia.gov/v1",
+		Kind:     "Role",
+		Metadata: store.ConfigMetadata{Name: name},
+		Spec:     map[string]any{"roleName": name, "policies": rolePolicies(role)},
+	})
+
+	return serveRouter(t, testPublic(), "dev|"+user+"|"+name)
+}
+
+// rolePolicies are the role's policies as a stored config holds them.
+func rolePolicies(role rbac.Role) []map[string]any {
 	policies := make([]map[string]any, 0, len(role.Spec.Policies))
 	for _, p := range role.Spec.Policies {
 		policies = append(policies, map[string]any{
@@ -362,14 +388,7 @@ func serveAs(t *testing.T, user string, role rbac.Role) *httptest.Server {
 		})
 	}
 
-	useTestStore(t, store.Config{
-		Version:  "phenix.sandia.gov/v1",
-		Kind:     "Role",
-		Metadata: store.ConfigMetadata{Name: name},
-		Spec:     map[string]any{"roleName": name, "policies": policies},
-	})
-
-	return serveRouter(t, testPublic(), "dev|"+user+"|"+name)
+	return policies
 }
 
 // serveRouter serves newRouter's routes over the UI's public files, the API

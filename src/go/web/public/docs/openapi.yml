@@ -698,8 +698,12 @@ paths:
         `experiments/files` `get` permission), or a VM interface's running
         capture (also needs `vms/captures` `list` on `<exp>/<vm>`). A file
         still being captured opens live. WebShark's own requests carry no
-        credentials, so the name is what grants access to the capture, for
-        12 hours after its last use. Open it at
+        credentials, so the name is a capture grant: it is bound to the
+        caller and the session it was given under, and each use checks that
+        the caller may still read the capture. It ends 2 hours after its last
+        use, 12 hours after it was given, or when the session ends (sign-out
+        or token expiry), whichever comes first, and when the experiment or
+        the capture file is deleted. Open it at
         `/webshark/embed?capture=<name>&embed=1`.
       operationId: postExperimentsNameWebshark
       parameters:
@@ -742,6 +746,17 @@ paths:
                     description: whether the capture is still running
                   title:
                     type: string
+                  id:
+                    type: string
+                    description: >-
+                      the grant's ID, not secret, which
+                      `/experiments/{exp_name}/capture-tokens` lists and
+                      revokes it by
+                    example: 3f9a0c51d2e47b86
+                  expires:
+                    type: string
+                    format: date-time
+                    description: when the name stops working at the latest
         "400":
           description: >-
             neither or both of a path and a VM, a VM without an interface
