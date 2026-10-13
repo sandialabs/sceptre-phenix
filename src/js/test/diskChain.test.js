@@ -3,12 +3,14 @@
 // and the warnings beside a VM's disk.
 import { readFileSync } from 'node:fs';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const axios = vi.hoisted(() => ({ get: vi.fn() }));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-vi.mock('@/utils/rbac.js', () => ({ roleAllowed: () => true }));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
+const { axios, modules, resetMocks } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/store.js', modules.store);
 
 import {
   backingChain,
@@ -28,43 +30,32 @@ import {
   fetchIntoCache,
 } from '@/utils/pageCache.js';
 import { pageFetchers } from '@/utils/pageData.js';
-
-// A disk as GET disks lists it: inside the files directory /phenix/images
-// when given its path within it, else outside it.
-const disk = (kind, fullPath, relativePath = '', backingImages = []) => ({
-  kind,
-  name: fullPath.replace(/^.*\//, ''),
-  fullPath,
-  relativePath,
-  outsideFilesDir: !relativePath,
-  readOnly: !relativePath,
-  backingImages,
-});
+import { disk } from './helpers/fixtures.js';
 
 // web_snap.qc2 is backed by the hardened image in the jammy folder, which is
 // backed by an image outside the files directory; another jammy.qc2 is at
 // the top of the files directory
 const disks = [
-  disk('VM', '/phenix/images/web_snap.qc2', 'web_snap.qc2', [
-    '/phenix/images/jammy/jammy_hardened.qc2',
-    '/data/vms/jammy.qc2',
-  ]),
-  disk(
-    'VM',
-    '/phenix/images/jammy/jammy_hardened.qc2',
-    'jammy/jammy_hardened.qc2',
-    ['/data/vms/jammy.qc2'],
-  ),
-  disk('VM', '/data/vms/jammy.qc2'),
-  disk('VM', '/phenix/images/jammy.qc2', 'jammy.qc2'),
-  disk('ISO', '/phenix/images/virtio.iso', 'virtio.iso'),
-  disk('ISO', '/phenix/images/isos/tools.iso', 'isos/tools.iso'),
-  disk('ISO', '/data/isos/drivers.iso'),
+  disk('/phenix/images/web_snap.qc2', 'web_snap.qc2', {
+    backingImages: [
+      '/phenix/images/jammy/jammy_hardened.qc2',
+      '/data/vms/jammy.qc2',
+    ],
+  }),
+  disk('/phenix/images/jammy/jammy_hardened.qc2', 'jammy/jammy_hardened.qc2', {
+    backingImages: ['/data/vms/jammy.qc2'],
+  }),
+  disk('/data/vms/jammy.qc2'),
+  disk('/phenix/images/jammy.qc2', 'jammy.qc2'),
+  disk('/phenix/images/virtio.iso', 'virtio.iso', { kind: 'ISO' }),
+  disk('/phenix/images/isos/tools.iso', 'isos/tools.iso', { kind: 'ISO' }),
+  disk('/data/isos/drivers.iso', '', { kind: 'ISO' }),
 ];
+
+beforeEach(() => resetMocks({ store: {} }));
 
 afterEach(() => {
   clearPageCache();
-  axios.get.mockReset();
   vi.useRealTimers();
 });
 
@@ -86,7 +77,9 @@ describe('backingChain', () => {
 
   it('names a backing image the list does not hold by its full path', () => {
     const chained = [
-      disk('VM', '/phenix/images/a.qc2', 'a.qc2', ['/phenix/images/gone.qc2']),
+      disk('/phenix/images/a.qc2', 'a.qc2', {
+        backingImages: ['/phenix/images/gone.qc2'],
+      }),
     ];
     expect(backingChain(chained, '/phenix/images/a.qc2')).toEqual([
       '/phenix/images/gone.qc2',
@@ -138,9 +131,9 @@ describe('diskOptions', () => {
 
   it('keeps same-named disks in different folders apart, valued by full path', () => {
     const { inside, outside } = diskOptions([
-      disk('VM', '/phenix/images/win/base.qc2', 'win/base.qc2'),
-      disk('VM', '/phenix/images/base.qc2', 'base.qc2'),
-      disk('VM', '/data/base.qc2'),
+      disk('/phenix/images/win/base.qc2', 'win/base.qc2'),
+      disk('/phenix/images/base.qc2', 'base.qc2'),
+      disk('/data/base.qc2'),
     ]);
     expect(inside.map(({ value, label }) => [label, value])).toEqual([
       ['base.qc2', '/phenix/images/base.qc2'],
@@ -151,7 +144,7 @@ describe('diskOptions', () => {
 
   it('offers a disk minimega cannot use disabled, saying why', () => {
     const { inside } = diskOptions([
-      disk('VM', '/phenix/images/my disk.qc2', 'my disk.qc2'),
+      disk('/phenix/images/my disk.qc2', 'my disk.qc2'),
     ]);
     expect(inside).toEqual([
       {
