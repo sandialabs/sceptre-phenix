@@ -6,30 +6,32 @@ paths: {}
 components:
   schemas:
     Topology:
+      description: "Schema describing the Topology resource."
       type: object
-      title: Demo Topology
+      title: Topology
       required:
       - nodes
       properties:
         nodes:
+          description: "Nodes that make up the topology."
           type: array
           title: Nodes
           items:
             $ref: "#/components/schemas/Node"
     Node:
+      description: "Schema describing the Node resource."
       type: object
       title: Node
       required:
       - type
       properties:
         type:
+          description: "Node role or resource type."
           type: string
           title: Node Type
           enum:
           - Firewall
-          - Printer
           - Router
-          - Server
           - Switch
           - VirtualMachine
           default: VirtualMachine
@@ -47,12 +49,14 @@ components:
       - spec
       properties:
         apiVersion:
+          example: phenix.sandia.gov/v0
           type: string
           title: API Version
           description: The config API version; a workflow config is phenix.sandia.gov/v0.
           enum:
           - phenix.sandia.gov/v0
         kind:
+          example: Workflow
           type: string
           title: Kind
           description: The config kind, which is always Workflow.
@@ -82,6 +86,7 @@ components:
               additionalProperties: false
               properties:
                 create:
+                  example: example
                   type: string
                   title: Create
                   description: >-
@@ -89,6 +94,7 @@ components:
                     the branch; unset never creates one.
                   nullable: true
                 update:
+                  example: false
                   type: boolean
                   title: Update
                   description: >-
@@ -96,6 +102,7 @@ components:
                     the branch; defaults to true when unset.
                   nullable: true
                 restart:
+                  example: false
                   type: boolean
                   title: Restart
                   description: >-
@@ -103,6 +110,7 @@ components:
                     stop and restart a running one; defaults to true when unset.
                   nullable: true
             topology:
+              example: example-topology
               type: string
               title: Topology
               description: >-
@@ -111,6 +119,7 @@ components:
                 current topology.
               nullable: true
             scenario:
+              example: example-scenario
               type: string
               title: Scenario
               description: The name of the scenario config; on an update defaults to the experiment's current scenario.
@@ -135,6 +144,7 @@ components:
               additionalProperties:
                 type: string
             deployMode:
+              example: all
               type: string
               title: Deploy Mode
               description: >-
@@ -144,6 +154,7 @@ components:
               nullable: true
               pattern: '^(?i:all|no-headnode|only-headnode)?$'
             useGREMesh:
+              example: false
               type: boolean
               title: Use GRE Mesh
               description: >-
@@ -159,16 +170,19 @@ components:
               additionalProperties: false
               properties:
                 min:
+                  example: 1
                   type: integer
                   title: Minimum
                   description: The lowest VLAN ID the experiment may use; 0 leaves the minimum unset.
                   nullable: true
                 max:
+                  example: 1
                   type: integer
                   title: Maximum
                   description: The highest VLAN ID the experiment may use; 0 leaves the maximum unset.
                   nullable: true
             defaultBridge:
+              example: phenix
               type: string
               title: Default Bridge
               description: >-

@@ -37,7 +37,6 @@ paths:
       tags:
         - Configs
       summary: Get all phenix configs
-      description: ""
       operationId: getConfigs
       parameters:
         - name: kind
@@ -66,7 +65,6 @@ paths:
       tags:
         - Configs
       summary: Create new phenix config
-      description: ""
       operationId: postConfigs
       requestBody:
         description: phenix config creation parameters
@@ -83,6 +81,9 @@ paths:
               type: object
               properties:
                 fileupload:
+                  title: "Fileupload"
+                  description: "Configuration file to create or update."
+                  example: example
                   type: string
                   format: binary
       responses:
@@ -123,7 +124,6 @@ paths:
       tags:
         - Configs
       summary: Get existing phenix config
-      description: ""
       operationId: getConfigsKindName
       parameters:
         - name: kind
@@ -194,6 +194,9 @@ paths:
               type: object
               properties:
                 fileupload:
+                  title: "Fileupload"
+                  description: "Configuration file to create or update."
+                  example: example
                   type: string
                   format: binary
       responses:
@@ -233,7 +236,6 @@ paths:
       tags:
         - Configs
       summary: Delete existing phenix config
-      description: ""
       operationId: deleteConfigsKindName
       parameters:
         - name: kind
@@ -256,7 +258,6 @@ paths:
       tags:
         - Schemas
       summary: Get full schema (all config specs) for specific version
-      description: ""
       operationId: getSchemasVersion
       parameters:
         - name: version
@@ -350,7 +351,6 @@ paths:
       tags:
         - Experiments
       summary: Get all phenix experiments
-      description: ""
       operationId: getExperiments
       parameters:
         - name: screenshot
@@ -370,7 +370,6 @@ paths:
       tags:
         - Experiments
       summary: Create new phenix experiment
-      description: ""
       operationId: postExperiments
       requestBody:
         description: phenix experiment creation parameters
@@ -379,32 +378,71 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - name
+                - topology
               properties:
                 name:
+                  title: "Name"
+                  description: "Name used to identify this resource or entry."
+                  example: example-name
                   type: string
                 topology:
+                  title: "Topology"
+                  description: "Topology configuration embedded in or referenced by this resource."
+                  example: example-topology
                   type: string
-                apps:
+                scenario:
+                  title: "Scenario"
+                  description: "Scenario configuration embedded in or referenced by this resource."
+                  example: example-scenario
+                  type: string
+                vlan_min:
+                  title: "VLAN Min"
+                  description: "Lowest VLAN ID allocated to the experiment."
+                  example: 1
+                  type: integer
+                vlan_max:
+                  title: "VLAN Max"
+                  description: "Highest VLAN ID allocated to the experiment."
+                  example: 1
+                  type: integer
+                workflow_branch:
+                  title: "Workflow Branch"
+                  description: "Git branch associated with the experiment workflow."
+                  example: main
+                  type: string
+                disabled_apps:
+                  title: "Disabled Apps"
+                  description: "Application names to disable in the experiment."
                   type: array
                   items:
                     type: string
-                vlan_min:
-                  type: integer
-                vlan_max:
-                  type: integer
+                    example: example-app
+                deploy_mode:
+                  title: "Deploy Mode"
+                  description: "VM deployment mode: all, no-headnode, or only-headnode."
+                  example: all
+                  type: string
+                  pattern: '^(?i:all|no-headnode|only-headnode)?$'
+                default_bridge:
+                  title: "Default Bridge"
+                  description: "Minimega bridge assigned to interfaces without an explicit bridge."
+                  example: phenix
+                  type: string
+                use_gre_mesh:
+                  title: "Use Gre Mesh"
+                  description: "Whether to connect cluster hosts with a GRE mesh."
+                  example: false
+                  type: boolean
       responses:
-        "200":
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Experiment"
+        "204":
+          description: experiment created
   "/experiments/{name}":
     get:
       tags:
         - Experiments
       summary: Get existing phenix experiment
-      description: ""
       operationId: getExperimentsName
       parameters:
         - name: name
@@ -430,7 +468,6 @@ paths:
       tags:
         - Experiments
       summary: Delete existing phenix experiment
-      description: ""
       operationId: deleteExperimentsName
       parameters:
         - name: name
@@ -442,12 +479,36 @@ paths:
       responses:
         "204":
           description: successful operation
+    patch:
+      tags:
+        - Experiments
+      summary: Update VLAN assignments for a stopped experiment
+      description: Updates aliases already assigned to VLAN IDs; unknown aliases are ignored.
+      operationId: patchExperimentsName
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to update
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: VLAN alias to VLAN ID assignments
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: integer
+      responses:
+        "204":
+          description: experiment updated
   "/experiments/{name}/start":
     post:
       tags:
         - Experiments
       summary: Start existing phenix experiment
-      description: ""
       operationId: postExperimentsNameStart
       parameters:
         - name: name
@@ -468,7 +529,6 @@ paths:
       tags:
         - Experiments
       summary: Stop existing phenix experiment
-      description: ""
       operationId: postExperimentsNameStop
       parameters:
         - name: name
@@ -489,7 +549,6 @@ paths:
       tags:
         - Experiments
       summary: Get current schedule for existing experiment
-      description: ""
       operationId: getExperimentsNameSchedule
       parameters:
         - name: name
@@ -509,7 +568,6 @@ paths:
       tags:
         - Experiments
       summary: Update current schedule for existing experiment
-      description: ""
       operationId: postExperimentsNameSchedule
       parameters:
         - name: name
@@ -517,7 +575,7 @@ paths:
           description: name of phenix experiment to update schedule for
           required: true
           schema:
-            type: name
+            type: string
       requestBody:
         description: scheduling algorithm to use
         required: true
@@ -527,6 +585,9 @@ paths:
               type: object
               properties:
                 algorithm:
+                  title: "Algorithm"
+                  description: "Scheduling algorithm used to assign VMs to cluster hosts."
+                  example: example
                   type: string
       responses:
         "200":
@@ -540,7 +601,6 @@ paths:
       tags:
         - Experiments
       summary: Get captures for existing experiment
-      description: ""
       operationId: getExperimentsNameCaptures
       parameters:
         - name: name
@@ -561,7 +621,6 @@ paths:
       tags:
         - Experiments
       summary: Get list of files for experiment
-      description: ""
       operationId: getExperimentsNameFiles
       parameters:
         - name: name
@@ -582,7 +641,6 @@ paths:
       tags:
         - Experiments
       summary: Download experiment file
-      description: ""
       operationId: getExperimentsNameFilesFilename
       parameters:
         - name: name
@@ -610,7 +668,6 @@ paths:
       tags:
         - Virtual Machines
       summary: get all VMs in existing experiment
-      description: ""
       operationId: getExperimentsNameVms
       parameters:
         - name: exp_name
@@ -637,7 +694,6 @@ paths:
       tags:
         - Virtual Machines
       summary: get given VM in existing experiment
-      description: ""
       operationId: getExperimentsNameVmName
       parameters:
         - name: exp_name
@@ -669,7 +725,6 @@ paths:
       tags:
         - Virtual Machines
       summary: Update existing VM settings in existing experiment
-      description: ""
       operationId: patchExperimentsNameVmsName
       parameters:
         - name: exp_name
@@ -693,22 +748,70 @@ paths:
               type: object
               properties:
                 host:
+                  title: "Host"
+                  description: "Cluster host on which to run the VM."
+                  example: compute-01
                   type: string
                 cpus:
+                  title: "CPUs"
+                  description: "Number of virtual CPUs assigned to the VM."
+                  example: 1
                   type: integer
                 ram:
+                  title: "RAM"
+                  description: "Memory assigned to the VM, in megabytes."
+                  example: 1
                   type: integer
                 disk:
+                  title: "Disk"
+                  description: "Disk image or disk path used by the VM."
+                  example: ubuntu.qc2
                   type: string
                 dnb:
+                  title: "Do Not Boot"
+                  description: "Whether the VM should remain powered off."
+                  example: false
                   type: boolean
                 interface:
+                  title: "Interface"
+                  description: "Network interface to update on the VM."
                   type: object
                   properties:
                     index:
+                      title: "Index"
+                      description: "Minimega network interface index to update."
+                      example: 1
                       type: integer
                     vlan:
-                      type: integer
+                      title: "VLAN"
+                      description: "VLAN alias or identifier assigned to the interface."
+                      example: EXP-1
+                      type: string
+                snapshot:
+                  title: "Snapshot"
+                  description: "Whether to take a VM disk snapshot."
+                  example: false
+                  type: boolean
+                inject_partition:
+                  title: "Inject Partition"
+                  description: "Disk partition used for file injection."
+                  example: 1
+                  type: integer
+                tag_update_mode:
+                  title: "Tag Update Mode"
+                  description: "How the supplied VM tags are applied."
+                  example: SET
+                  type: string
+                  enum:
+                    - NONE
+                    - SET
+                    - ADD
+                tags:
+                  title: "Tags"
+                  description: "String tags associated with the VM."
+                  type: object
+                  additionalProperties:
+                    type: string
       responses:
         "200":
           description: successful operation
@@ -720,7 +823,6 @@ paths:
       tags:
         - Virtual Machines
       summary: Delete phenix experiment VM
-      description: ""
       operationId: deleteExperimentsNameVmsName
       parameters:
         - name: name
@@ -743,7 +845,6 @@ paths:
       tags:
         - Virtual Machines
       summary: start VM in experiment
-      description: ""
       operationId: postExperimentsNameVMsNameStart
       parameters:
         - name: exp_name
@@ -770,7 +871,6 @@ paths:
       tags:
         - Virtual Machines
       summary: stop VM in experiment
-      description: ""
       operationId: postExperimentsNameVMsNameStop
       parameters:
         - name: exp_name
@@ -797,7 +897,6 @@ paths:
       tags:
         - Virtual Machines
       summary: redeploy VM in experiment
-      description: ""
       operationId: postExperimentsNameVMsNameRedeploy
       parameters:
         - name: exp_name
@@ -824,7 +923,6 @@ paths:
       tags:
         - Virtual Machines
       summary: Get screenshot of running VM in experiment
-      description: ""
       operationId: getExperimentsNameVmsNameScreenshot
       parameters:
         - name: exp_name
@@ -864,7 +962,6 @@ paths:
       tags:
         - Virtual Machines
       summary: Tunnel to VNC of running VM using a WebSocket
-      description: ""
       operationId: getExperimentsNameVmsNameVncWs
       parameters:
         - name: exp_name
@@ -887,7 +984,6 @@ paths:
       tags:
         - Virtual Machines
       summary: get phenix experiment VM packet captures
-      description: ""
       operationId: getExperimentsNameVmsNameCaptures
       parameters:
         - name: exp_name
@@ -913,7 +1009,6 @@ paths:
       tags:
         - Virtual Machines
       summary: start phenix experiment VM packet capture
-      description: ""
       operationId: postExperimentsNameVmsNameCapture
       parameters:
         - name: exp_name
@@ -937,8 +1032,14 @@ paths:
               type: object
               properties:
                 interface:
+                  title: "Interface"
+                  description: "Minimega interface index to capture."
+                  example: 1
                   type: integer
                 filename:
+                  title: "Filename"
+                  description: "Name or path of the requested file."
+                  example: capture.pcap
                   type: string
       responses:
         "204":
@@ -947,7 +1048,6 @@ paths:
       tags:
         - Virtual Machines
       summary: stop phenix experiment VM packet captures
-      description: ""
       operationId: deleteExperimentsNameVmsNameCaptures
       parameters:
         - name: exp_name
@@ -970,7 +1070,6 @@ paths:
       tags:
         - Virtual Machines
       summary: get phenix experiment VM snapshots
-      description: ""
       operationId: getExperimentsNameVmsNameSnapshots
       parameters:
         - name: exp_name
@@ -996,7 +1095,6 @@ paths:
       tags:
         - Virtual Machines
       summary: create phenix experiment VM snapshot
-      description: ""
       operationId: postExperimentsNameVmsNameSnapshots
       parameters:
         - name: exp_name
@@ -1020,6 +1118,9 @@ paths:
               type: object
               properties:
                 filename:
+                  title: "Filename"
+                  description: "Name or path of the requested file."
+                  example: capture.pcap
                   type: string
       responses:
         "204":
@@ -1029,7 +1130,6 @@ paths:
       tags:
         - Virtual Machines
       summary: restore phenix experiment VM to snapshot
-      description: ""
       operationId: postExperimentsNameVmsNameSnapshotsSnapshot
       parameters:
         - name: exp_name
@@ -1058,7 +1158,6 @@ paths:
       tags:
         - Virtual Machines
       summary: Get all running VMs
-      description: ""
       operationId: getVMs
       parameters:
         - name: screenshot
@@ -1079,7 +1178,6 @@ paths:
       tags:
         - Applications
       summary: Get all available user applications
-      description: ""
       operationId: getApplications
       responses:
         "200":
@@ -1093,7 +1191,6 @@ paths:
       tags:
         - Builder
       summary: Get topologies that carry a Builder diagram
-      description: ""
       operationId: getBuilderTopologies
       responses:
         "200":
@@ -1139,7 +1236,6 @@ paths:
       tags:
         - Builder
       summary: Get one Builder diagram
-      description: ""
       operationId: getBuilderTopology
       parameters:
         - name: name
@@ -1201,7 +1297,6 @@ paths:
       tags:
         - Builder
       summary: Create a topology and a same-named experiment from Builder
-      description: ""
       operationId: postExperimentFromBuilder
       requestBody:
         description: Builder topology, diagram, VLAN aliases, and scenario
@@ -1223,7 +1318,6 @@ paths:
       tags:
         - Builder
       summary: Update a Builder topology and its same-named experiment
-      description: ""
       operationId: putExperimentFromBuilder
       requestBody:
         description: Builder topology, diagram, VLAN aliases, and scenario
@@ -1246,7 +1340,6 @@ paths:
       tags:
         - Topologies
       summary: Get all available topologies
-      description: ""
       operationId: getTopologies
       responses:
         "200":
@@ -1260,7 +1353,6 @@ paths:
       tags:
         - Disks
       summary: Get all available disk images
-      description: ""
       operationId: getDisks
       responses:
         "200":
@@ -1274,7 +1366,6 @@ paths:
       tags:
         - Hosts
       summary: Get all cluster hosts
-      description: ""
       operationId: getHosts
       responses:
         "200":
@@ -1288,7 +1379,6 @@ paths:
       tags:
         - Users
       summary: Get all users
-      description: ""
       operationId: getUsers
       responses:
         "200":
@@ -1301,7 +1391,6 @@ paths:
       tags:
         - Users
       summary: Create a new user
-      description: ""
       operationId: postUsers
       requestBody:
         description: user details
@@ -1312,16 +1401,33 @@ paths:
               type: object
               properties:
                 username:
+                  title: "Username"
+                  description: "Username used to identify the account."
+                  example: user@example.org
                   type: string
                 password:
+                  title: "Password"
+                  description: "Password supplied for account creation or sign-in."
+                  example: <password>
                   type: string
                 first_name:
+                  title: "First Name"
+                  description: "User given name."
+                  example: Alex
                   type: string
                 last_name:
+                  title: "Last Name"
+                  description: "User family name."
+                  example: Example
                   type: string
                 role_name:
+                  title: "Role Name"
+                  description: "Name of the role assigned to the user."
+                  example: Experiment User
                   type: string
                 resource_names:
+                  title: "Resource Names"
+                  description: "Resource names assigned to the user."
                   type: array
                   items:
                     type: string
@@ -1337,7 +1443,6 @@ paths:
       tags:
         - Users
       summary: Get a specific user
-      description: ""
       operationId: getUserUsername
       parameters:
         - name: username
@@ -1357,7 +1462,6 @@ paths:
       tags:
         - Users
       summary: Update existing user
-      description: ""
       operationId: patchUsersUsername
       parameters:
         - name: username
@@ -1375,12 +1479,23 @@ paths:
               type: object
               properties:
                 first_name:
+                  title: "First Name"
+                  description: "User given name."
+                  example: Alex
                   type: string
                 last_name:
+                  title: "Last Name"
+                  description: "User family name."
+                  example: Example
                   type: string
                 role_name:
+                  title: "Role Name"
+                  description: "Name of the role assigned to the user."
+                  example: Experiment User
                   type: string
                 resource_names:
+                  title: "Resource Names"
+                  description: "Resource names assigned to the user."
                   type: array
                   items:
                     type: string
@@ -1395,7 +1510,6 @@ paths:
       tags:
         - Users
       summary: Delete existing user
-      description: ""
       operationId: deleteUsersUsername
       parameters:
         - name: username
@@ -1412,7 +1526,6 @@ paths:
       tags:
         - Users
       summary: Signup as a new user
-      description: ""
       operationId: postSignup
       requestBody:
         description: user details
@@ -1423,12 +1536,24 @@ paths:
               type: object
               properties:
                 username:
+                  title: "Username"
+                  description: "Username used to identify the account."
+                  example: user@example.org
                   type: string
                 password:
+                  title: "Password"
+                  description: "Password supplied for account creation or sign-in."
+                  example: <password>
                   type: string
                 first_name:
+                  title: "First Name"
+                  description: "User given name."
+                  example: Alex
                   type: string
                 last_name:
+                  title: "Last Name"
+                  description: "User family name."
+                  example: Example
                   type: string
       responses:
         "200":
@@ -1442,7 +1567,6 @@ paths:
       tags:
         - Users
       summary: Login a user
-      description: ""
       operationId: getLogin
       parameters:
         - in: query
@@ -1466,7 +1590,6 @@ paths:
       tags:
         - Users
       summary: Login a user
-      description: ""
       operationId: postLogin
       requestBody:
         description: login credentials
@@ -1475,10 +1598,19 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - user
+                - pass
               properties:
                 user:
+                  title: "User"
+                  description: "Username used to authenticate."
+                  example: johndoe@example.com
                   type: string
                 pass:
+                  title: "Pass"
+                  description: "Password used to authenticate."
+                  example: "<password>"
                   type: string
       responses:
         "200":
@@ -1492,7 +1624,6 @@ paths:
       tags:
         - Users
       summary: Logout a user
-      description: ""
       operationId: getLogout
       responses:
         "204":
@@ -1777,31 +1908,66 @@ servers:
 components:
   schemas:
     Configs:
+      title: "Configs"
+      description: "Schema describing the Configs resource."
       type: object
       properties:
         configs:
+          title: "Configs"
+          description: "Configuration resources returned by the API."
           type: array
           items:
             $ref: "#/components/schemas/Config"
     Config:
+      title: "Config"
+      description: "Schema describing the Config resource."
       type: object
       properties:
         apiVersion:
+          title: "API Version"
+          description: "API version that identifies the resource representation."
+          example: phenix.sandia.gov/v1
           type: string
         kind:
+          title: "Kind"
+          description: "Kind of configuration resource."
+          example: Topology
           type: string
         metadata:
+          title: "Metadata"
+          description: "Metadata associated with the configuration resource."
           type: object
           properties:
             name:
+              title: "Name"
+              description: "Name used to identify this resource or entry."
+              example: example-name
               type: string
+            created:
+              title: "Created"
+              description: "Time when the resource was created."
+              example: "2026-01-01T00:00:00Z"
+              type: string
+              format: date-time
+              readOnly: true
+            updated:
+              title: "Updated"
+              description: "Time when the resource was last updated."
+              example: "2026-01-02T00:00:00Z"
+              type: string
+              format: date-time
+              readOnly: true
             annotations:
+              title: "Annotations"
+              description: "String-valued annotations associated with the configuration resource."
               type: object
               additionalProperties:
                 type: string
           required:
             - name
         spec:
+          title: "Spec"
+          description: "Configuration specification for the resource."
           type: object
           additionalProperties: true
       required:
@@ -1810,266 +1976,615 @@ components:
         - metadata
         - spec
     Experiments:
+      title: "Experiments"
+      description: "Schema describing the Experiments resource."
       type: object
       properties:
         experiments:
+          title: "Experiments"
+          description: "Experiments returned by the API."
           type: array
           items:
             $ref: "#/components/schemas/Experiment"
     Experiment:
+      title: "Experiment"
+      description: "Schema describing the Experiment resource."
       type: object
       properties:
         id:
-          type: integer
+          title: "Id"
+          description: "Unique identifier of the experiment."
+          example: experiment-01
+          type: string
         name:
+          title: "Name"
+          description: "Name used to identify this resource or entry."
+          example: example-name
           type: string
         topology:
+          title: "Topology"
+          description: "Topology configuration embedded in or referenced by this resource."
+          example: example-topology
+          type: string
+        scenario:
+          title: "Scenario"
+          description: "Scenario configuration embedded in or referenced by this resource."
+          example: example-scenario
           type: string
         apps:
+          title: "Apps"
+          description: "Applications configured for this scenario."
           type: array
           items:
             type: string
         start_time:
+          title: "Start Time"
+          description: "Time when the experiment started."
+          example: "2026-01-01T00:00:00Z"
           type: string
           format: date-time
         running:
+          title: "Running"
+          description: "Whether the experiment or VM is currently running."
+          example: false
           type: boolean
+        status:
+          title: "Status"
+          description: "Current lifecycle status of the experiment or VM."
+          example: started
+          type: string
         vm_count:
+          title: "VM Count"
+          description: "Number of VMs associated with the experiment."
+          example: 1
+          type: integer
+        delayed_vms:
+          title: "Delayed VMs"
+          description: "Number of VMs waiting for a delayed start condition."
+          example: 1
           type: integer
         vlan_min:
+          title: "VLAN Min"
+          description: "Lowest VLAN ID allocated to the experiment."
+          example: 1
           type: integer
         vlan_max:
+          title: "VLAN Max"
+          description: "Highest VLAN ID allocated to the experiment."
+          example: 1
           type: integer
         vlan_count:
+          title: "VLAN Count"
+          description: "Number of VLANs allocated to the experiment."
+          example: 1
           type: integer
         vlans:
+          title: "VLANs"
+          description: "VLAN IDs and aliases allocated to the experiment."
           type: array
           items:
             type: object
             properties:
               vlan:
+                title: "VLAN"
+                description: "VLAN alias or identifier assigned to the interface."
+                example: 1
                 type: integer
               alias:
+                title: "Alias"
+                description: "Alias assigned to this VLAN ID."
+                example: EXP-1
                 type: string
         vms:
-          $ref: "#/components/schemas/VMs"
+          title: "VMs"
+          description: "Virtual machines associated with the experiment."
+          type: array
+          items:
+            $ref: "#/components/schemas/VM"
     VMs:
+      title: "VMs"
+      description: "Schema describing the VMs resource."
       type: object
       properties:
         vms:
+          title: "VMs"
+          description: "Virtual machines returned by the API."
           type: array
           items:
             $ref: "#/components/schemas/VM"
     VM:
+      title: "VM"
+      description: "Schema describing the VM resource."
       type: object
       properties:
-        id:
-          type: integer
         name:
+          title: "Name"
+          description: "Name used to identify this resource or entry."
+          example: example-name
           type: string
         experiment:
+          title: "Experiment"
+          description: "Name of the experiment containing the VM."
+          example: example-experiment
           type: string
         host:
+          title: "Host"
+          description: "Cluster host assigned to or running the VM."
+          example: compute-01
           type: string
         ipv4:
+          title: "IPv4"
+          description: "IPv4 addresses assigned to the virtual machine."
           type: array
           items:
             type: string
         cpus:
+          title: "CPUs"
+          description: "Number of virtual CPUs assigned to the VM."
+          example: 1
           type: integer
         ram:
+          title: "RAM"
+          description: "Memory assigned to the VM, in megabytes."
+          example: 1
           type: integer
         disk:
+          title: "Disk"
+          description: "Disk image or disk path used by the VM."
+          example: ubuntu.qc2
           type: string
         dnb:
+          title: "Do Not Boot"
+          description: "Whether the VM should remain powered off."
+          example: false
           type: boolean
         networks:
+          title: "Networks"
+          description: "Networks connected to the VM."
           type: array
           items:
             type: string
         taps:
+          title: "Taps"
+          description: "Tap interfaces associated with the VM."
           type: array
           items:
             type: string
         captures:
+          title: "Captures"
+          description: "Packet captures associated with the VM or experiment."
           type: array
           items:
             $ref: "#/components/schemas/Capture"
         running:
-          type: bool
+          title: "Running"
+          description: "Whether the experiment or VM is currently running."
+          example: false
+          type: boolean
+        busy:
+          title: "Busy"
+          description: "Whether an operation is currently acting on the VM."
+          example: false
+          type: boolean
+        state:
+          title: "State"
+          description: "Current minimega state of the VM."
+          example: running
+          type: string
+        cd_rom:
+          title: "CD-ROM"
+          description: "Disk currently mounted in the VM CD-ROM drive."
+          example: tools.iso
+          type: string
+        tags:
+          title: "Tags"
+          description: "String tags associated with the VM."
+          type: object
+          additionalProperties:
+            type: string
+        cc_active:
+          title: "Miniccc Active"
+          description: "Whether the VM has an active miniccc connection."
+          example: false
+          type: boolean
+        external:
+          title: "External"
+          description: "Whether the VM represents an external node outside minimega."
+          example: false
+          type: boolean
+        delayed_start:
+          title: "Delayed Start"
+          description: "Description of the VM start delay, if any."
+          example: timer:30s
+          type: string
+        snapshot:
+          title: "Snapshot"
+          description: "Whether to take a VM disk snapshot."
+          example: false
+          type: boolean
+        inject_partition:
+          title: "Inject Partition"
+          description: "Disk partition used for file injection."
+          example: 1
+          type: integer
+        description:
+          title: "Description"
+          description: "Human-readable description of this resource or entry."
+          example: Example resource
+          type: string
         uptime:
+          title: "Uptime"
+          description: "Elapsed time since the host or VM started."
+          example: 1
           type: number
           format: float
         screenshot:
+          title: "Screenshot"
+          description: "Base64-encoded screenshot data URL, when requested."
+          example: data:image/png;base64,aGVsbG8=
           type: string
-          format: base64
     Schedule:
+      title: "Schedule"
+      description: "Schema describing the Schedule resource."
       type: object
       properties:
         schedule:
+          title: "Schedule"
+          description: "VM-to-host placement assignments."
           type: array
           items:
             type: object
             properties:
               vm:
+                title: "VM"
+                description: "Name of the VM associated with this result."
+                example: node-01
                 type: string
               host:
+                title: "Host"
+                description: "Cluster host assigned to or running the VM."
+                example: compute-01
                 type: string
               auto_assigned:
+                title: "Auto Assigned"
+                description: "Whether the scheduler selected this host automatically."
+                example: false
                 type: boolean
     Captures:
+      title: "Captures"
+      description: "Schema describing the Captures resource."
       type: object
       properties:
         captures:
+          title: "Captures"
+          description: "Packet captures associated with the VM or experiment."
           type: array
           items:
             $ref: "#/components/schemas/Capture"
     Capture:
+      title: "Capture"
+      description: "Schema describing the Capture resource."
       type: object
       properties:
         vm:
+          title: "VM"
+          description: "Name of the VM associated with this result."
+          example: node-01
           type: string
         interface:
+          title: "Interface"
+          description: "Network interface index used for the packet capture."
+          example: 1
           type: integer
         filepath:
+          title: "Filepath"
+          description: "Path to the packet capture file."
+          example: /phenix/captures/capture.pcap
           type: string
     Snapshots:
+      title: "Snapshots"
+      description: "Schema describing the Snapshots resource."
       type: object
       properties:
         snapshots:
+          title: "Snapshots"
+          description: "Snapshot names available for the VM."
           type: array
           items:
             type: string
     Files:
+      title: "Files"
+      description: "Schema describing the Files resource."
       type: object
       properties:
         files:
+          title: "Files"
+          description: "Files available for the experiment."
           type: array
           items:
             type: string
     Hosts:
+      title: "Hosts"
+      description: "Schema describing the Hosts resource."
       type: object
       properties:
         hosts:
+          title: "Hosts"
+          description: "Host-specific application settings."
           type: array
           items:
             $ref: "#/components/schemas/Host"
     Host:
+      title: "Host"
+      description: "Schema describing the Host resource."
       type: object
       properties:
         name:
+          title: "Name"
+          description: "Name used to identify this resource or entry."
+          example: example-name
           type: string
         cpus:
+          title: "CPUs"
+          description: "Number of CPUs available on the cluster host."
+          example: 1
           type: integer
         load:
-          type: string
+          title: "Load"
+          description: "One-, five-, and fifteen-minute load averages reported for the cluster host."
+          example:
+            - "0.50"
+            - "0.75"
+            - "1.00"
+          type: array
+          items:
+            type: string
+            example: "0.50"
+        cpucommit:
+          title: "CPU Commit"
+          description: "Number of CPUs committed to virtual machines on the host."
+          example: 2
+          type: integer
         memused:
+          title: "Memused"
+          description: "Memory in use on the cluster host, in megabytes."
+          example: 1
+          type: integer
+        memcommit:
+          title: "Memory Commit"
+          description: "Memory committed to virtual machines on the host, in megabytes."
+          example: 2048
           type: integer
         memtotal:
+          title: "Memtotal"
+          description: "Total memory on the cluster host, in megabytes."
+          example: 8192
           type: integer
-        bandwidth:
-          type: string
-        vms:
-          type: integer
-        uptime:
+        tx:
+          title: "Transmit"
+          description: "Transmit bandwidth value reported for the cluster host."
+          example: 0.0
           type: number
           format: float
+        rx:
+          title: "Receive"
+          description: "Receive bandwidth value reported for the cluster host."
+          example: 0.0
+          type: number
+          format: float
+        bandwidth:
+          title: "Bandwidth"
+          description: "Network bandwidth reported for the cluster host."
+          example: "rx: 0.0 / tx: 0.0"
+          type: string
+        diskusage:
+          title: "Disk Usage"
+          description: "Disk usage percentages for phēnix and minimega on the host."
+          type: object
+          properties:
+            diskphenix:
+              title: "Phenix Disk Usage"
+              description: "Percentage of the host filesystem used by phēnix."
+              example: 42.5
+              type: number
+              format: float
+            diskminimega:
+              title: "Minimega Disk Usage"
+              description: "Percentage of the host filesystem used by minimega."
+              example: 35.0
+              type: number
+              format: float
+        netcommit:
+          title: "Network Commit"
+          description: "Network capacity committed to virtual machines on the host."
+          example: 0
+          type: integer
+        vms:
+          title: "VMs"
+          description: "Virtual machines returned by the API."
+          example: 1
+          type: integer
+        uptime:
+          title: "Uptime"
+          description: "Elapsed time since the host or VM started."
+          example: 1
+          type: number
+          format: float
+        headnode:
+          title: "Headnode"
+          description: "Whether this host is the cluster headnode."
+          example: false
+          type: boolean
         schedulable:
+          title: "Schedulable"
+          description: "Whether the cluster host can run VMs."
+          example: false
           type: boolean
     Applications:
+      title: "Applications"
+      description: "Schema describing the Applications resource."
       type: object
       properties:
         applications:
+          title: "Applications"
+          description: "Application names available to experiments."
           type: array
           items:
             type: string
     BuilderTopology:
+      title: "Builder Topology"
+      description: "Schema describing the Builder Topology resource."
       type: object
       required:
+        - name
         - topology
         - builderXML
       properties:
         name:
+          title: "Name"
+          example: example-name
           type: string
           description: topology name; ignored by PUT /builder/topologies/{name}
         topology:
+          title: "Topology"
           type: object
           description: generated topology spec
           properties:
             nodes:
+              title: "Nodes"
+              description: "Nodes that make up the topology."
               type: array
               items:
                 type: object
         builderXML:
+          title: "Builder XML"
+          example: <mxGraphModel/>
           type: string
           description: mxGraph document for the diagram
         vlans:
+          title: "VLANs"
           type: object
           description: VLAN alias to ID, used by the experiment endpoints only
           additionalProperties:
             type: integer
         scenario:
+          title: "Scenario"
+          example: example-scenario
           type: string
           description: scenario name, used by the experiment endpoints only
     Topologies:
+      title: "Topologies"
+      description: "Schema describing the Topologies resource."
       type: object
       properties:
         topologies:
+          title: "Topologies"
+          description: "Topology names returned by the API."
           type: array
           items:
             type: string
     Disks:
+      title: "Disks"
+      description: "Schema describing the Disks resource."
       type: object
       properties:
         disks:
+          title: "Disks"
+          description: "Disk image names available to the server."
           type: array
           items:
             type: string
     Users:
+      title: "Users"
+      description: "Schema describing the Users resource."
       type: object
       properties:
         users:
+          title: "Users"
+          description: "Users returned by the API."
           type: array
           items:
             $ref: "#/components/schemas/User"
     User:
+      title: "User"
+      description: "Schema describing the User resource."
       type: object
       properties:
         username:
+          title: "Username"
+          description: "Username used to identify the account."
+          example: user@example.org
           type: string
         first_name:
+          title: "First Name"
+          description: "User given name."
+          example: Alex
           type: string
         last_name:
+          title: "Last Name"
+          description: "User family name."
+          example: Example
           type: string
         role:
+          title: "Role"
+          description: "Role and policies assigned to the user."
           type: object
           properties:
             name:
+              title: "Name"
+              description: "Name used to identify this resource or entry."
+              example: example-name
               type: string
-            resources:
+            policies:
+              title: "Policies"
+              description: "Access policies assigned to this role."
               type: array
               items:
-                type: string
-            resource_names:
-              type: array
-              items:
-                type: string
-            verbs:
-              type: array
-              items:
-                type: string
+                type: object
+                properties:
+                  resources:
+                    title: "Resources"
+                    description: "Resource types covered by this policy."
+                    type: array
+                    items:
+                      type: string
+                  resourceNames:
+                    title: "Resource Names"
+                    description: "Resource names covered by this policy."
+                    type: array
+                    items:
+                      type: string
+                  verbs:
+                    title: "Verbs"
+                    description: "Actions allowed on the listed resources."
+                    type: array
+                    items:
+                      type: string
+        resource_names:
+          title: "Resource Names"
+          description: "Resource names assigned to the user."
+          type: array
+          items:
+            type: string
+        proxy_token:
+          title: "Proxy Token"
+          description: "Authentication token supplied by a trusted proxy."
+          example: proxy-token-example
+          type: string
+          readOnly: true
     Credentials:
+      title: "Credentials"
+      description: "Schema describing the Credentials resource."
       type: object
       properties:
-        username:
-          type: string
-        first_name:
-          type: string
-        last_name:
-          type: string
-        role:
-          type: string
+        user:
+          title: "User"
+          description: "Whether node start requires user confirmation."
+          $ref: "#/components/schemas/User"
         token:
+          title: "Token"
+          description: "Authentication token returned for subsequent API requests."
+          example: eyJhbGciOi...example
           type: string
     Workflow:
       type: object
@@ -2084,12 +2599,14 @@ components:
         - spec
       properties:
         apiVersion:
+          example: phenix.sandia.gov/v0
           type: string
           title: API Version
           description: The config API version; a workflow config is phenix.sandia.gov/v0.
           enum:
             - phenix.sandia.gov/v0
         kind:
+          example: Workflow
           type: string
           title: Kind
           description: The config kind, which is always Workflow.
@@ -2119,6 +2636,7 @@ components:
               additionalProperties: false
               properties:
                 create:
+                  example: example
                   type: string
                   title: Create
                   description: >-
@@ -2126,6 +2644,7 @@ components:
                     the branch; unset never creates one.
                   nullable: true
                 update:
+                  example: false
                   type: boolean
                   title: Update
                   description: >-
@@ -2133,6 +2652,7 @@ components:
                     the branch; defaults to true when unset.
                   nullable: true
                 restart:
+                  example: false
                   type: boolean
                   title: Restart
                   description: >-
@@ -2140,6 +2660,7 @@ components:
                     stop and restart a running one; defaults to true when unset.
                   nullable: true
             topology:
+              example: example-topology
               type: string
               title: Topology
               description: >-
@@ -2148,6 +2669,7 @@ components:
                 current topology.
               nullable: true
             scenario:
+              example: example-scenario
               type: string
               title: Scenario
               description: The name of the scenario config; on an update defaults to the experiment's current scenario.
@@ -2172,6 +2694,7 @@ components:
               additionalProperties:
                 type: string
             deployMode:
+              example: all
               type: string
               title: Deploy Mode
               description: >-
@@ -2181,6 +2704,7 @@ components:
               nullable: true
               pattern: '^(?i:all|no-headnode|only-headnode)?$'
             useGREMesh:
+              example: false
               type: boolean
               title: Use GRE Mesh
               description: >-
@@ -2196,16 +2720,19 @@ components:
               additionalProperties: false
               properties:
                 min:
+                  example: 1
                   type: integer
                   title: Minimum
                   description: The lowest VLAN ID the experiment may use; 0 leaves the minimum unset.
                   nullable: true
                 max:
+                  example: 1
                   type: integer
                   title: Maximum
                   description: The highest VLAN ID the experiment may use; 0 leaves the maximum unset.
                   nullable: true
             defaultBridge:
+              example: phenix
               type: string
               title: Default Bridge
               description: >-
@@ -2215,9 +2742,14 @@ components:
               nullable: true
               maxLength: 15
     WorkflowResult:
+      title: "Workflow Result"
+      description: "Schema describing the Workflow Result resource."
       type: object
       properties:
         action:
+          title: "Action"
+          description: "Action planned or performed by the workflow."
+          example: create
           type: string
           enum:
             - none
@@ -2227,34 +2759,51 @@ components:
             - updateAndStart
             - restart
         experiment:
+          title: "Experiment"
+          example: example-experiment
           type: string
           description: experiment the action applies to (empty when no experiment is involved)
         reason:
+          title: "Reason"
+          example: No changes are needed.
           type: string
           description: why nothing was done, when action is none
         dryRun:
+          title: "Dry Run"
+          example: false
           type: boolean
           description: true when nothing was changed because dryRun was requested
     WorkflowConfigResult:
+      title: "Workflow Config Result"
       type: object
       description: what POST /workflow/configs/{branch}?dryRun=true would do
       properties:
         action:
+          title: "Action"
+          example: create
           type: string
           enum:
             - create
             - update
           description: whether the request would create the config or update the stored one
         kind:
+          title: "Kind"
+          example: Topology
           type: string
           description: the config's kind, e.g. Topology
         name:
+          title: "Name"
+          example: example-name
           type: string
           description: the config's name after the server filled in its placeholders, such as ${BRANCH_NAME}
         dryRun:
+          title: "Dry Run"
+          example: false
           type: boolean
           description: always true
         pending:
+          title: "Pending"
+          example: Topology/example-topology
           type: string
           description: >
             the value to pass as pending to a dry run of
@@ -2262,36 +2811,60 @@ components:
             ?from=...&topology=... (its fromScenario names and topology
             annotation) and for a topology that includes others by ?include=...
     Options:
+      title: "Options"
+      description: "Schema describing the Options resource."
       type: object
       properties:
         bridge-mode:
+          title: "Bridge Mode"
+          description: "Bridge mode configured on the server."
+          example: native
           type: string
         deploy-mode:
+          title: "Deploy Mode"
+          description: "Default VM deployment mode configured on the server."
+          example: all
           type: string
         use-gre-mesh:
+          title: "Use Gre Mesh"
+          description: "Whether the server uses a GRE mesh between cluster hosts."
+          example: false
           type: boolean
         base-dir.injects:
+          title: "Inject Directory"
+          example: /phenix/injects
           type: string
           description: directory phenix workflow apply stages injects into
         workflow-dry-run:
+          title: "Workflow Dry Run"
+          example: false
           type: boolean
           description: >
             true when POST /workflow/configs/{branch} and POST /workflow/apply/{branch}
             support dryRun, and apply supports pending and expect
     Error:
+      title: "Error"
+      description: "Schema describing the Error resource."
       type: object
       properties:
         message:
+          title: "Message"
+          example: Request could not be completed.
           type: string
           description: what went wrong; for a config validation failure, the first explained line
         cause:
+          title: "Cause"
+          example: Resource not found.
           type: string
           description: the underlying error text
         metadata:
+          title: "Metadata"
           type: object
           description: extra details, returned for some errors
           properties:
             validation:
+              title: "Validation"
+              example: example
               type: string
               description: >
                 for a schema validation failure, the explained lines separated by
@@ -2303,6 +2876,8 @@ components:
                 metadata.name) keeps the validator's text; for an unparsable body
                 sent to POST /configs, the parser error
             validation-raw:
+              title: "Validation Raw"
+              example: example
               type: string
               description: for a schema validation failure, the original validator text
           additionalProperties:
