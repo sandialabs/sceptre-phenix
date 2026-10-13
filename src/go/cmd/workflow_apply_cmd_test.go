@@ -217,6 +217,7 @@ func TestWorkflowApplyCommand(t *testing.T) {
 		"phenix workflow apply helloworld -n",
 		"phenix workflow apply helloworld -f",
 		"phenix workflow apply helloworld -b helloworld-2",
+		"phenix workflow apply helloworld --follow-inject-symlinks",
 		"phenix workflow apply helloworld -c alt.yml",
 		"phenix workflow apply helloworld -b hw-test -c alt.yml -n",
 		"phenix workflow apply ./topo",
@@ -317,6 +318,11 @@ func TestApplyOptionsFromFlags(t *testing.T) {
 			name: "force",
 			args: []string{"workflow", "apply", "helloworld", "-f"},
 			edit: func(opts *applyOptions) { opts.Force = true },
+		},
+		{
+			name: "follow-inject-symlinks",
+			args: []string{"workflow", "apply", "helloworld", "--follow-inject-symlinks"},
+			edit: func(opts *applyOptions) { opts.FollowInjectSymlinks = true },
 		},
 		{
 			name: "name, config and dry run",
