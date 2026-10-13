@@ -577,6 +577,43 @@ func TestRunWorkflowApplyStageErrors(t *testing.T) {
 		assertEmptyDir(t, injects)
 	})
 
+	t.Run("unreadable source file inside followed symlink directory", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root ignores file permissions")
+		}
+
+		injects := t.TempDir()
+		extDir := t.TempDir()
+		realExtDir, err := filepath.EvalSymlinks(extDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		secret := filepath.Join(realExtDir, "secret.key")
+		if err := os.WriteFile(secret, []byte("key"), 0o000); err != nil {
+			t.Fatalf("writing %s: %v", secret, err)
+		}
+
+		dir := newTopologyDir(t, "foo", map[string]string{"phenix-injects/a.txt": "a"})
+		if err := os.Symlink(realExtDir, filepath.Join(dir, injectsDirName, "ext")); err != nil {
+			t.Fatalf("linking ext: %v", err)
+		}
+
+		fake := newFakePhenix(t, fakePhenix{options: serverOptions(injects)})
+		opts := testApplyOptions(fake.socket, t.TempDir())
+		opts.FollowInjectSymlinks = true
+
+		err = runWorkflowApply(t.Context(), opts, dir)
+		want := "; make " + secret + " readable by the user running phenix"
+
+		if !errors.Is(err, fs.ErrPermission) || !strings.HasSuffix(err.Error(), want) || strings.Contains(err.Error(), "can write to") {
+			t.Fatalf("runWorkflowApply() error = %v, want a permission error ending in %q", err, want)
+		}
+
+		checkRequests(t, fake, reqOptions)
+		assertEmptyDir(t, injects)
+	})
+
 	t.Run("working directory inside the destination", func(t *testing.T) {
 		dir := newTopologyDir(t, "foo", map[string]string{"phenix-injects/a.txt": "a"})
 		injects := t.TempDir()
@@ -765,5 +802,81 @@ func TestRunWorkflowApplyPreviousCopyKept(t *testing.T) {
 
 	checkFields(t, leftovers[0], map[string]string{
 		"level": "WARN", "type": "SYSTEM", "step": "injects", "path": filepath.Join(resolved, earlier),
+	})
+}
+
+func TestRunWorkflowApplyFollowInjectSymlinks(t *testing.T) {
+	extDir := t.TempDir()
+	extFile := filepath.Join(extDir, "ext.txt")
+	if err := os.WriteFile(extFile, []byte("external-content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	extSub := filepath.Join(extDir, "subdir")
+	if err := os.Mkdir(extSub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extSub, "inner.txt"), []byte("inner-content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := newTopologyDir(t, "foo", fullTopology())
+
+	// Create symlinks inside phenix-injects
+	symFile := filepath.Join(dir, "phenix-injects", "link_file")
+	if err := os.Symlink(extFile, symFile); err != nil {
+		t.Fatal(err)
+	}
+	symDir := filepath.Join(dir, "phenix-injects", "link_dir")
+	if err := os.Symlink(extSub, symDir); err != nil {
+		t.Fatal(err)
+	}
+
+	injects := t.TempDir()
+	fake := newFakePhenix(t, fakePhenix{
+		options: serverOptions(injects),
+		plan:    workflow.Plan{Action: workflow.ActionCreateAndStart, Experiment: "foo"},
+	})
+
+	opts := testApplyOptions(fake.socket, t.TempDir())
+	opts.FollowInjectSymlinks = true
+
+	logs := captureLogs(t)
+
+	if err := runWorkflowApply(t.Context(), opts, dir); err != nil {
+		t.Fatalf("runWorkflowApply() error = %v", err)
+	}
+
+	stagedDir := filepath.Join(injects, "foo")
+
+	// link_file should be a regular file with external-content, not a symlink
+	info, err := os.Lstat(filepath.Join(stagedDir, "link_file"))
+	if err != nil {
+		t.Fatalf("Lstat link_file: %v", err)
+	}
+	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		t.Errorf("link_file mode = %v, want regular file", info.Mode())
+	}
+	content, err := os.ReadFile(filepath.Join(stagedDir, "link_file"))
+	if err != nil || string(content) != "external-content" {
+		t.Errorf("link_file content = %q (err %v), want %q", content, err, "external-content")
+	}
+
+	// link_dir should be a regular directory with inner.txt, not a symlink
+	dirInfo, err := os.Lstat(filepath.Join(stagedDir, "link_dir"))
+	if err != nil {
+		t.Fatalf("Lstat link_dir: %v", err)
+	}
+	if dirInfo.Mode()&fs.ModeSymlink != 0 || !dirInfo.IsDir() {
+		t.Errorf("link_dir mode = %v, want regular directory", dirInfo.Mode())
+	}
+	innerContent, err := os.ReadFile(filepath.Join(stagedDir, "link_dir", "inner.txt"))
+	if err != nil || string(innerContent) != "inner-content" {
+		t.Errorf("inner.txt content = %q (err %v), want %q", innerContent, err, "inner-content")
+	}
+
+	// 1 scripts/hello.sh + 1 link_file + 1 link_dir/inner.txt = 3
+	checkFields(t, logs.first(t, "injects staged"), map[string]string{
+		"level": "INFO", "step": "injects", "dir": stagedDir, "files": "3",
 	})
 }
