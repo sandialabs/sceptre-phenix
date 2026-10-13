@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -65,24 +66,14 @@ const (
 	TerminalInitTimeout = 5 * time.Second
 )
 
-type termClient struct {
-	id   string
-	ws   *websocket.Conn
-	done chan struct{}
-}
-
-func newTermClient(ws *websocket.Conn) termClient {
-	return termClient{
-		id:   uuid.Must(uuid.NewV4()).String(),
-		ws:   ws,
-		done: make(chan struct{}),
-	}
-}
+// exitedMarker ends a read-only terminal's stream.
+const exitedMarker = "***** BREAK PROCESS EXITED *****"
 
 var (
-	rwTerm  = make(map[int]string)                //nolint:gochecknoglobals // global state
-	roTerms = make(map[int]map[string]termClient) //nolint:gochecknoglobals // global state
-	history = make(map[int]bytes.Buffer)          //nolint:gochecknoglobals // global state
+	rwTerm = make(map[int]string) //nolint:gochecknoglobals // global state
+	// read-only viewers of each terminal; output is queued for them under mu.
+	roTerms = make(map[int]map[string]*viewer) //nolint:gochecknoglobals // global state
+	history = make(map[int]bytes.Buffer)       //nolint:gochecknoglobals // global state
 
 	termClientIDs = make(map[string]chan struct{}) //nolint:gochecknoglobals // global state
 
@@ -275,7 +266,6 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-//nolint:funlen // handler
 func terminalWsHandler(t WebTerm) func(*websocket.Conn) {
 	return func(ws *websocket.Conn) {
 		_, err := os.FindProcess(t.Pid)
@@ -285,118 +275,127 @@ func terminalWsHandler(t WebTerm) func(*websocket.Conn) {
 			return
 		}
 
-		readTerm := func() {
-			for {
-				buf := make([]byte, TerminalBufferSize)
-
-				nr, err := t.Pty.Read(buf)
-				if err != nil {
-					break
-				}
-
-				nw, err := ws.Write(buf[0:nr])
-				if err != nil {
-					break
-				}
-
-				if nw != nr {
-					break
-				}
-
-				mu.Lock()
-				h := history[t.Pid]
-				h.Write(buf[0:nr])
-				history[t.Pid] = h
-
-				ro := roTerms[t.Pid]
-				mu.Unlock()
-
-				for _, client := range ro {
-					nw, err := client.ws.Write(buf[0:nr])
-					if err != nil {
-						close(client.done)
-
-						break
-					}
-
-					if nw != nr {
-						close(client.done)
-
-						break
-					}
-				}
-			}
-		}
-
-		writeTerm := func() {
-			for {
-				buf := make([]byte, TerminalBufferSize)
-
-				nr, err := ws.Read(buf)
-				if err != nil {
-					break
-				}
-
-				nw, err := t.Pty.Write(buf[0:nr])
-				if err != nil {
-					break
-				}
-
-				if nw != nr {
-					break
-				}
-			}
-		}
-
-		waitTerm := func(tc termClient) {
-			select {
-			case <-tc.done:
-				mu.Lock()
-				terms := roTerms[t.Pid]
-				delete(terms, tc.id)
-				roTerms[t.Pid] = terms
-				mu.Unlock()
-			case <-t.Done:
-				mu.Lock()
-				for _, ro := range roTerms[t.Pid] {
-					// notify read-only clients that R/W terminal has exited
-					_, _ = ro.ws.Write([]byte("***** BREAK PROCESS EXITED *****"))
-				}
-
-				delete(roTerms, t.Pid)
-				mu.Unlock()
-			}
-		}
-
 		if t.RO {
-			tc := newTermClient(ws)
+			v := attachReadOnly(t, ws)
 
-			mu.Lock()
+			go v.watch(ws)
+			go waitReadOnly(t, v)
 
-			terms, ok := roTerms[t.Pid]
-			if !ok {
-				terms = make(map[string]termClient)
-			}
+			v.serve()
 
-			terms[tc.id] = tc
-			roTerms[t.Pid] = terms
-
-			if h, ok := history[t.Pid]; ok {
-				_, _ = tc.ws.Write(h.Bytes())
-			}
-
-			mu.Unlock()
-
-			waitTerm(tc)
-		} else {
-			go readTerm()
-
-			writeTerm()
-
-			mu.Lock()
-			delete(rwTerm, t.Pid)
-			mu.Unlock()
+			return
 		}
+
+		go readTerm(t, ws)
+
+		writeTerm(t, ws)
+
+		mu.Lock()
+		delete(rwTerm, t.Pid)
+		mu.Unlock()
+	}
+}
+
+// readTerm copies the terminal's output to its read/write client, which it
+// waits on, and queues it for the read-only viewers, which it does not.
+func readTerm(t WebTerm, rw io.Writer) {
+	for {
+		buf := make([]byte, TerminalBufferSize)
+
+		nr, err := t.Pty.Read(buf)
+		if err != nil {
+			break
+		}
+
+		nw, err := rw.Write(buf[0:nr])
+		if err != nil {
+			break
+		}
+
+		if nw != nr {
+			break
+		}
+
+		mu.Lock()
+		h := history[t.Pid]
+		h.Write(buf[0:nr])
+		history[t.Pid] = h
+
+		for id, v := range roTerms[t.Pid] {
+			if !v.offer(buf[0:nr]) {
+				v.finish()
+				delete(roTerms[t.Pid], id)
+
+				go plog.Warn(plog.TypeSystem, "dropping SCORCH terminal viewer that fell behind", "pid", t.Pid)
+			}
+		}
+		mu.Unlock()
+	}
+}
+
+// writeTerm copies the read/write client's input to the terminal.
+func writeTerm(t WebTerm, rw io.Reader) {
+	for {
+		buf := make([]byte, TerminalBufferSize)
+
+		nr, err := rw.Read(buf)
+		if err != nil {
+			break
+		}
+
+		nw, err := t.Pty.Write(buf[0:nr])
+		if err != nil {
+			break
+		}
+
+		if nw != nr {
+			break
+		}
+	}
+}
+
+// attachReadOnly adds a read-only viewer of the terminal, with the output so
+// far queued for it first.
+func attachReadOnly(t WebTerm, conn frameConn) *viewer {
+	v := newViewer(conn)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// the history is one chunk, so it fits the viewer's empty queue
+	if h, ok := history[t.Pid]; ok {
+		v.offer(h.Bytes())
+	}
+
+	terms, ok := roTerms[t.Pid]
+	if !ok {
+		terms = make(map[string]*viewer)
+	}
+
+	terms[v.id] = v
+	roTerms[t.Pid] = terms
+
+	return v
+}
+
+// waitReadOnly forgets a read-only viewer once it leaves, or tells every
+// read-only viewer the terminal exited, finishing their output.
+func waitReadOnly(t WebTerm, v *viewer) {
+	select {
+	case <-v.gone:
+		mu.Lock()
+		delete(roTerms[t.Pid], v.id)
+		mu.Unlock()
+	case <-t.Done:
+		mu.Lock()
+		for _, ro := range roTerms[t.Pid] {
+			// notify read-only clients that R/W terminal has exited
+			ro.offer([]byte(exitedMarker))
+			ro.finish()
+		}
+
+		delete(roTerms, t.Pid)
+		mu.Unlock()
 	}
 }
 
@@ -483,7 +482,7 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	key := fmt.Sprintf("%s|%d|%d|%s|%s", exp, run, loop, stage, cmp)
-	req := outputRequest{key: key, resp: make(chan outputResponse)}
+	req := outputRequest{key: key, resp: make(chan outputResponse, 1)}
 
 	outputRequests <- req
 
@@ -576,13 +575,14 @@ func StreamComponentOutput(w http.ResponseWriter, r *http.Request) {
 
 func scorchComponentWsHandler(key string) func(*websocket.Conn) {
 	return func(ws *websocket.Conn) {
-		id := uuid.Must(uuid.NewV4()).String()
-		req := wsRequest{key: key, id: id, ws: ws, done: make(chan struct{})}
+		v := newViewer(ws)
 
 		// add client to list for component
-		wsRequests <- req
-		// wait for done channel to be closed
-		<-req.done
+		wsRequests <- wsRequest{key: key, v: v}
+
+		go v.watch(ws)
+
+		v.serve()
 	}
 }
 
