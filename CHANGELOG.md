@@ -139,6 +139,7 @@ All notable changes to this project will be documented in this file.
 - **Disks and captures**: Changes to the minimega files directory made while disk images were being inspected went unread until the inspection finished, and opening a live capture on another node held up every other capture's release while it asked minimega where the capture was.
 - **Streams and proxies**: A capture stream or WebShark tab that stopped reading kept its capture followed, over the mesh for captures on other nodes, until the connection dropped, and VNC and port forward websockets waited on an unreachable endpoint for as long as the system allowed. Such writes now give up after 10 seconds, the proxies stop connecting after 10 seconds or when the client leaves, and the web, Unix socket and file servers wait at most 10 seconds for a request's headers.
 - **VM copy progress**: Committing a VM's disk to a new backing image could crash phenix when the copy finished while its progress was being reported.
+- **minimega**: A minimega command that never answered held up every later command on phenix's shared minimega connection forever. A command now gives up with `timeout running command` after waiting 10 minutes for the connection or holding it for 30, and the connection is replaced. Code can wait with `mmcli.RunContext` and stop waiting when its context ends.
 
 ### Security
 
