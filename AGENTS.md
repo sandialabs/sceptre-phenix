@@ -101,6 +101,7 @@ Docker for full deployments and image builds.
 | Render / lint the API reference (`/docs/`) | `make api-docs` / `scripts/api-docs.sh lint src/go/web/public/docs/openapi.yml` |
 | Format / fixing lint for Go/examples | `make format` / `make lint` |
 | Generate, then non-fixing lint | `make check` |
+| Check generated outputs are reproducible | `make check-generated` |
 | Go core and example tests | `make test` |
 | Build UI, API reference, and `bin/phenix` | `make build` (`SKIP_UI=1`, `SKIP_API_DOCS=1` reuse or skip them) |
 | Build UI only | `make ui` |
@@ -198,7 +199,7 @@ image, documentation, or topology details.
 ## CI and Release Safety
 
 Most GitHub Actions workflows are path-scoped: `ci.yml` generates code and tests
-Go; `frontend.yml` runs Vitest, builds UI/backend, runs Playwright smoke tests,
+Go, and its `generated` job runs `make check-generated`; `frontend.yml` runs Vitest, builds UI/backend, runs Playwright smoke tests,
 and checks UI bundle budgets and Lighthouse audits; `examples.yml` checks
 Go/Python examples; `docs.yml` builds the docs and API reference and publishes
 them from `main`. Every API reference build, local, container, or CI, goes
