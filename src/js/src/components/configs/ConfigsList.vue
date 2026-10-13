@@ -346,7 +346,7 @@
 
   import FileSaver from 'file-saver';
   import { roleAllowed } from '@/utils/rbac.js';
-  import { showError, useErrorNotification } from '@/utils/errorNotif';
+  import { useErrorNotification } from '@/utils/errorNotif';
   import {
     configKey,
     forgetConfig,
@@ -619,9 +619,14 @@
             this.updateConfigs();
           })
           .catch((err) => {
+            // the explained lines keep their layout in the dialog's textarea
             const validation = err.response?.data?.metadata?.validation;
             if (validation) {
-              showError('Validation Error', validation);
+              this.error = {
+                modal: true,
+                title: 'Validation Error',
+                msg: validation,
+              };
             } else {
               useErrorNotification(err);
             }

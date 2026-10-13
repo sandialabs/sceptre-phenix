@@ -348,24 +348,59 @@ describe('the config list', () => {
       });
     });
 
-    it('show why the server refused a config, or report the failure', async () => {
+    // the explained lines and a hint indented under one, as the server sends
+    const validation = [
+      'nodes[0] "ADServer" (line 14): property "image" is missing',
+      '  hint: "image:" is on line 12 under nodes[0].hardware',
+    ].join('\n');
+
+    it('show why the server refused a config in the error dialog', async () => {
       const ctx = list();
       axios.post.mockRejectedValueOnce({
-        response: { data: { metadata: { validation: 'kind: missing' } } },
+        response: { status: 400, data: { metadata: { validation } } },
       });
       ctx.uploadFile(file('bad.yaml'));
       await flush();
-      expect(notify.show).toHaveBeenCalledWith(
-        'Validation Error',
-        'kind: missing',
-      );
 
-      const err = new Error('forbidden');
+      expect(ctx.error).toEqual({
+        modal: true,
+        title: 'Validation Error',
+        msg: validation,
+      });
+      expect(notify.error).not.toHaveBeenCalled();
+      expect(notify.show).not.toHaveBeenCalled();
+
+      const html = await renderSSR(
+        ConfigsList,
+        {},
+        { route: '/configs/', tables: true, data: { error: ctx.error } },
+      );
+      const [, attrs, text] =
+        html.match(
+          /<textarea([^>]*aria-label="Validation errors"[^>]*)>([^<]*)<\/textarea>/,
+        ) ?? [];
+      expect(attrs).toContain(' readonly');
+      expect(attrs).toContain('font-family:monospace');
+      expect(text).toBe(validation.replaceAll('"', '&quot;'));
+
+      ctx.resetErrorModal();
+      expect(ctx.error).toEqual({ modal: false, title: null, msg: null });
+    });
+
+    it.each([
+      [
+        'a refusal without validation lines',
+        { response: { status: 400, data: { message: 'already exists' } } },
+      ],
+      ['a network error', new Error('Network Error')],
+    ])('report %s as an error', async (_, err) => {
+      const ctx = list();
       axios.post.mockRejectedValueOnce(err);
       ctx.uploadFile(file('web.json'));
       await flush();
+
       expect(notify.error).toHaveBeenCalledWith(err);
-      expect(notify.show).toHaveBeenCalledTimes(1);
+      expect(ctx.error.modal).toBe(false);
     });
   });
 
