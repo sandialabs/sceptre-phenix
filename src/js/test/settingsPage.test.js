@@ -3,19 +3,20 @@
 // the settings are loaded again.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const axios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-const notify = vi.hoisted(() => vi.fn());
-vi.mock('@/utils/errorNotif', () => ({ useErrorNotification: notify }));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
-const loader = await vi.hoisted(() => import('./helpers/pageLoader.js'));
-vi.mock('@/utils/pageLoader.js', loader.switchable);
+const { axios, modules, notify, resetMocks, switchable } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/pageLoader.js', switchable);
 
 import { clearPageCache } from '@/utils/pageCache.js';
 import { pageStatus } from '@/utils/pageLoader.js';
 import Settings from '@/views/Settings.vue';
 import { flush } from './helpers/async.js';
-import { makeContext } from './helpers/context.js';
+import { openPage, pageContext } from './helpers/page.js';
+import { withoutLoading } from './helpers/pageLoader.js';
 import { buttons, renderSSR, textOf } from './helpers/render.js';
 
 const settings = () => ({
@@ -37,16 +38,13 @@ const settings = () => ({
 // the page once the server has sent it these settings
 async function open(data = settings()) {
   axios.get.mockResolvedValueOnce({ data });
-  const ctx = makeContext(Settings, { $buefy: { toast: { open: vi.fn() } } });
-  Settings.created.call(ctx);
-  await flush();
-  return ctx;
+  return openPage(Settings);
 }
 
 // What the page shows as its state has it: its text, the switches that are
 // on, and its buttons, marked when disabled or spinning.
 async function shown(ctx) {
-  const html = await loader.withoutLoading(() =>
+  const html = await withoutLoading(() =>
     renderSSR(
       Settings,
       {},
@@ -73,15 +71,13 @@ async function shown(ctx) {
 
 beforeEach(() => {
   clearPageCache();
-  axios.get.mockReset();
-  axios.post.mockReset();
-  notify.mockReset();
+  resetMocks({ store: {} });
 });
 
 describe('the Settings page', () => {
   it("says it is loading, then shows the server's settings", async () => {
     axios.get.mockReturnValueOnce(new Promise(() => {}));
-    const waiting = makeContext(Settings);
+    const waiting = pageContext(Settings);
     Settings.created.call(waiting);
     expect(axios.get.mock.calls[0][0]).toBe('settings');
     expect((await shown(waiting)).text).toBe('Loading settings…');
@@ -99,11 +95,9 @@ describe('the Settings page', () => {
   it('says so when the settings could not be loaded', async () => {
     const err = new Error('forbidden');
     axios.get.mockRejectedValueOnce(err);
-    const ctx = makeContext(Settings);
-    Settings.created.call(ctx);
-    await flush();
+    const ctx = await openPage(Settings);
 
-    expect(notify).toHaveBeenCalledWith(err);
+    expect(notify.error).toHaveBeenCalledWith(err);
     expect(pageStatus.failed).toBe(true);
     expect((await shown(ctx)).text).toBe('Could not load settings');
   });
@@ -161,7 +155,7 @@ describe('the Settings page', () => {
 
     // the page opens with the saved settings next time, before they load
     axios.get.mockReturnValueOnce(new Promise(() => {}));
-    const next = makeContext(Settings);
+    const next = pageContext(Settings);
     Settings.created.call(next);
     expect(next.settings_obj).toEqual(edited);
   });
@@ -174,7 +168,7 @@ describe('the Settings page', () => {
 
     ctx.sendSettingsToServer();
     await flush();
-    expect(notify).toHaveBeenCalledWith(err);
+    expect(notify.error).toHaveBeenCalledWith(err);
     expect(ctx.settings_obj.logging_settings.max_file_age).toBe(30);
     expect((await shown(ctx)).buttons).toEqual([
       'Reset Form',

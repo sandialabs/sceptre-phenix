@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import Tunneler from '@/views/Tunneler.vue';
-import { makeContext } from './helpers/context.js';
+import { pageContext } from './helpers/page.js';
 import { renderSSR, tableRows, textOf } from './helpers/render.js';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -17,7 +17,7 @@ async function open(answer) {
   });
   vi.stubGlobal('fetch', fetch);
 
-  const ctx = makeContext(Tunneler);
+  const ctx = pageContext(Tunneler);
   await Tunneler.created.call(ctx);
   expect(fetch).toHaveBeenCalledWith('/downloads/tunneler');
   return ctx;
@@ -128,7 +128,7 @@ describe('the Tunneler page', () => {
 
   it('says it is loading until the list arrives', async () => {
     vi.stubGlobal('fetch', () => new Promise(() => {}));
-    const ctx = makeContext(Tunneler);
+    const ctx = pageContext(Tunneler);
     Tunneler.created.call(ctx);
     expect((await shown(ctx)).text).toBe('Loading downloads…');
   });
