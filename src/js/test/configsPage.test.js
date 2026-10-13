@@ -3,28 +3,16 @@
 // named by Kind/name, so two kinds may share a name.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const rbac = vi.hoisted(() => ({ allowed: () => true }));
-vi.mock('@/utils/rbac.js', () => ({
-  roleAllowed: (...args) => rbac.allowed(...args),
-}));
-const axios = vi.hoisted(() => ({
-  get: vi.fn(),
-  post: vi.fn(),
-  put: vi.fn(),
-  delete: vi.fn(),
-}));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-const notify = vi.hoisted(() => ({ error: vi.fn(), show: vi.fn() }));
-vi.mock('@/utils/errorNotif', () => ({
-  useErrorNotification: notify.error,
-  showError: notify.show,
-}));
-const saver = vi.hoisted(() => ({ saveAs: vi.fn() }));
-vi.mock('file-saver', () => ({ default: saver }));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
+const { axios, modules, notify, rbac, resetMocks, saver } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/rbac.js', modules.rbac);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('file-saver', modules.fileSaver);
+vi.mock('@/store.js', modules.store);
 // the list comes from the tests
-const loader = await vi.hoisted(() => import('./helpers/pageLoader.js'));
-vi.mock('@/utils/pageLoader.js', loader.idle);
+vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 // the editor's Ace loads in a browser
 vi.mock('@/utils/loadAce.js', () => ({ loadAce: () => Promise.resolve() }));
 
@@ -33,6 +21,7 @@ import ConfigsList from '@/components/configs/ConfigsList.vue';
 import { clearConfigCache } from '@/utils/configCache.js';
 import Configs from '@/views/Configs.vue';
 import { deferredGets, flush } from './helpers/async.js';
+import { dialogs, fakeBuefy, toasts } from './helpers/buefy.js';
 import { makeContext } from './helpers/context.js';
 import {
   openModal,
@@ -60,34 +49,10 @@ const full = (row, spec = {}, annotations) => ({
   spec,
 });
 
-// the dialogs and toasts a component opened
-let dialogs;
-let toasts;
-const buefy = () => ({
-  dialog: {
-    confirm: (opts) => dialogs.push(opts),
-    alert: (opts) => dialogs.push(opts),
-  },
-  toast: { open: (opts) => toasts.push(opts) },
-});
-
 beforeEach(() => {
   stubBrowser();
   clearConfigCache();
-  rbac.allowed = () => true;
-  for (const fn of [
-    axios.get,
-    axios.post,
-    axios.put,
-    axios.delete,
-    notify.error,
-    notify.show,
-    saver.saveAs,
-  ]) {
-    fn.mockReset();
-  }
-  dialogs = [];
-  toasts = [];
+  resetMocks({ store: {} });
 });
 
 afterEach(() => vi.unstubAllGlobals());
@@ -95,7 +60,10 @@ afterEach(() => vi.unstubAllGlobals());
 describe('the config list', () => {
   // the list showing these rows
   function list(configs = [topology, scenario]) {
-    const ctx = makeContext(ConfigsList, { $emit: vi.fn(), $buefy: buefy() });
+    const ctx = makeContext(ConfigsList, {
+      $emit: vi.fn(),
+      $buefy: fakeBuefy(),
+    });
     ctx.configs = configs;
     ctx.loaded = true;
     return ctx;
@@ -262,7 +230,7 @@ describe('the config list', () => {
       const ctx = list();
 
       ctx.deleteConfigs([topology]);
-      expect(dialogs[0]).toMatchObject({
+      expect(dialogs(ctx)[0]).toMatchObject({
         title: 'Delete the Config',
         message:
           'This will delete the Topology/web config. Are you sure you want to do this?',
@@ -270,12 +238,12 @@ describe('the config list', () => {
       });
       expect(axios.delete).not.toHaveBeenCalled();
 
-      dialogs[0].onConfirm();
+      dialogs(ctx)[0].onConfirm();
       expect(axios.delete).toHaveBeenCalledWith('configs/Topology/web');
       await flush();
 
       expect(ctx.configs).toEqual([scenario]);
-      expect(toasts[0].message).toBe(
+      expect(toasts(ctx)[0].message).toBe(
         'The Topology/web config has been deleted.',
       );
       expect(tableRows(await render(ctx)).map((r) => textOf(r.kind))).toEqual([
@@ -288,12 +256,12 @@ describe('the config list', () => {
       const ctx = list();
 
       ctx.deleteConfigs([topology, scenario]);
-      expect(dialogs[0]).toMatchObject({
+      expect(dialogs(ctx)[0]).toMatchObject({
         title: 'Delete the Configs',
         message:
           'This will delete 2 configs. Are you sure you want to do this?',
       });
-      dialogs[0].onConfirm();
+      dialogs(ctx)[0].onConfirm();
       await flush();
 
       expect(axios.delete.mock.calls).toEqual([
@@ -301,7 +269,7 @@ describe('the config list', () => {
         ['configs/Scenario/web'],
       ]);
       expect(ctx.configs).toEqual([]);
-      expect(toasts[0].message).toBe('The configs have been deleted.');
+      expect(toasts(ctx)[0].message).toBe('The configs have been deleted.');
     });
 
     it('keep the row and report a delete the server refuses', async () => {
@@ -310,7 +278,7 @@ describe('the config list', () => {
       const ctx = list();
 
       ctx.deleteConfigs([topology]);
-      dialogs[0].onConfirm();
+      dialogs(ctx)[0].onConfirm();
       await flush();
 
       expect(notify.error).toHaveBeenCalledWith(err);
@@ -335,14 +303,15 @@ describe('the config list', () => {
       expect(ctx.isUploaderModalActive).toBe(false);
       await flush();
 
-      expect(toasts[0].message).toBe('The file web.yml was uploaded');
+      expect(toasts(ctx)[0].message).toBe('The file web.yml was uploaded');
       expect(ctx.loader.load).toHaveBeenCalled();
     });
 
     it('refuse any other file', () => {
-      list().uploadFile(file('notes.txt'));
+      const ctx = list();
+      ctx.uploadFile(file('notes.txt'));
       expect(axios.post).not.toHaveBeenCalled();
-      expect(toasts[0]).toMatchObject({
+      expect(toasts(ctx)[0]).toMatchObject({
         message: 'Valid file types are .yaml, .yml, and .json',
         type: 'is-danger',
       });
@@ -426,7 +395,7 @@ describe('the config editor', () => {
       mode,
       editorConfig,
       $emit: vi.fn(),
-      $buefy: buefy(),
+      $buefy: fakeBuefy(),
     });
     ConfigsEditor.created.call(ctx);
     ConfigsEditor.mounted.call(ctx);
@@ -469,7 +438,7 @@ describe('the config editor', () => {
 
       for (const ctx of [await editor(), await editor('create', null)]) {
         expect(await leave(ctx)).toBe(true);
-        expect(dialogs).toEqual([]);
+        expect(dialogs(ctx)).toEqual([]);
         expect(closed(ctx)).toEqual([['is-done', '']]);
       }
     });
@@ -478,13 +447,13 @@ describe('the config editor', () => {
       const ctx = await edited();
 
       const canceled = leave(ctx);
-      expect(dialogs[0].title).toBe('Edits in Progress');
-      dialogs[0].onCancel();
+      expect(dialogs(ctx)[0].title).toBe('Edits in Progress');
+      dialogs(ctx)[0].onCancel();
       expect(await canceled).toBe(false);
       expect(closed(ctx)).toEqual([]);
 
       const left = leave(ctx);
-      dialogs[1].onConfirm();
+      dialogs(ctx)[1].onConfirm();
       expect(await left).toBe(true);
       expect(closed(ctx)).toEqual([['is-done', '']]);
     });
@@ -513,8 +482,8 @@ describe('the config editor', () => {
       const ctx = await edited();
 
       ctx.saveConfig();
-      expect(dialogs[0].title).toBe('Modify the Config');
-      dialogs[0].onConfirm();
+      expect(dialogs(ctx)[0].title).toBe('Modify the Config');
+      dialogs(ctx)[0].onConfirm();
       await flush();
 
       const [url, body] = axios.put.mock.calls[0];
@@ -533,7 +502,7 @@ describe('the config editor', () => {
           axios.put.mockRejectedValue(err);
           const ctx = await edited();
           ctx.saveConfig();
-          dialogs[0].onConfirm();
+          dialogs(ctx)[0].onConfirm();
           return ctx;
         },
       ],

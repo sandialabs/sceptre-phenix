@@ -3,11 +3,12 @@
 // the component instance.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const axios = vi.hoisted(() => ({ get: vi.fn() }));
-vi.mock('@/utils/axios.js', () => ({ default: axios }));
-const notify = vi.hoisted(() => vi.fn());
-vi.mock('@/utils/errorNotif', () => ({ useErrorNotification: notify }));
-vi.mock('@/store.js', () => ({ usePhenixStore: () => ({}) }));
+const { axios, modules, resetMocks } = await vi.hoisted(
+  () => import('./helpers/mocks.js'),
+);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/errorNotif.js', modules.errorNotif);
+vi.mock('@/store.js', modules.store);
 
 import CreateExperimentCard from '@/components/CreateExperimentCard.vue';
 import {
@@ -19,20 +20,18 @@ import {
   NODE_ANNOTATIONS,
   nodeAnnotationsPayload,
 } from '@/utils/experimentAnnotations.js';
+import { never } from './helpers/async.js';
 import { renderSSR } from './helpers/render.js';
 
 // the card while its topology list is still loading
 function render(props) {
-  axios.get.mockReturnValue(new Promise(() => {}));
+  axios.get.mockImplementation(never);
   return renderSSR(CreateExperimentCard, props);
 }
 
 const { computed, methods } = CreateExperimentCard;
 
-beforeEach(() => {
-  axios.get.mockReset();
-  notify.mockReset();
-});
+beforeEach(() => resetMocks({ store: {} }));
 
 describe('CreateExperimentCard', () => {
   it('shows the scenario field before a topology is chosen', async () => {
