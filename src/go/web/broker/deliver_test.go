@@ -42,6 +42,8 @@ func received(c *Client) []encodedPublish {
 
 //nolint:paralleltest // clients is shared package state
 func TestLogsGoOnlyToSubscribedClientsAllowedToReadThem(t *testing.T) {
+	withLogQueue(t)
+
 	var (
 		reader     = &Client{role: roleAllowing("logs", "get"), publish: make(chan any, 4)}
 		notShowing = &Client{role: roleAllowing("logs", "get"), publish: make(chan any, 4)}
@@ -54,7 +56,7 @@ func TestLogsGoOnlyToSubscribedClientsAllowedToReadThem(t *testing.T) {
 	withClients(t, reader, notShowing, forbidden)
 
 	BroadcastLog(json.RawMessage(`{"msg": "hello"}`))
-	deliver(<-broadcast)
+	deliver(<-logs)
 
 	Broadcast(nil, bt.NewResource("experiment", "exp", "start"), nil)
 	deliver(<-broadcast)

@@ -1,10 +1,16 @@
 package broker
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/gorilla/websocket"
 
 	"phenix/api/vm"
 	"phenix/app"
@@ -17,9 +23,12 @@ import (
 
 const (
 	brokerChannelBuffer        = 1024
+	logBufferSize              = 1024
 	triggerStateError          = "error"
 	logResourceType            = "log"
 	delayedStartScreenshotSize = "215"
+	// how often the broker tells of the clients and log lines it dropped.
+	dropReportInterval = 30 * time.Second
 )
 
 var (
@@ -27,7 +36,46 @@ var (
 	broadcast  = make(chan encodedPublish, brokerChannelBuffer) //nolint:gochecknoglobals // global state
 	register   = make(chan *Client, brokerChannelBuffer)        //nolint:gochecknoglobals // global state
 	unregister = make(chan *Client, brokerChannelBuffer)        //nolint:gochecknoglobals // global state
+
+	// Log lines have their own queue, which drops lines rather than wait: every
+	// plog call in the process sends one, and none may block on the broker.
+	logs = make(chan encodedPublish, logBufferSize) //nolint:gochecknoglobals // global state
+
+	clientCount atomic.Int64  //nolint:gochecknoglobals // global state
+	slowDropped atomic.Uint64 //nolint:gochecknoglobals // global state
+	logsDropped atomic.Uint64 //nolint:gochecknoglobals // global state
+	// log lines dropped that clients have not yet been told of.
+	logsUntold atomic.Uint64 //nolint:gochecknoglobals // global state
+
+	// reports drops; run calls it on its own goroutine, since logging sends to
+	// the broker.
+	dropReporter = func(clients, lines uint64) { //nolint:gochecknoglobals // replaced in tests
+		plog.Warn(
+			plog.TypeSystem,
+			"WebSocket broker dropped slow clients or live log lines",
+			"clients", clients,
+			"log_lines", lines,
+		)
+	}
 )
+
+// Stats counts the broker's clients, and what it dropped since the process
+// started.
+type Stats struct {
+	Clients            int64  `json:"clients"`
+	SlowClientsDropped uint64 `json:"slowClientsDropped"`
+	LogLinesDropped    uint64 `json:"logLinesDropped"`
+}
+
+// CurrentStats returns the broker's counters. It is safe to call from any
+// goroutine.
+func CurrentStats() Stats {
+	return Stats{
+		Clients:            clientCount.Load(),
+		SlowClientsDropped: slowDropped.Load(),
+		LogLinesDropped:    logsDropped.Load(),
+	}
+}
 
 // encodedPublish is a broadcast marshaled once, before it reaches the broker,
 // rather than once for each client it goes to.
@@ -36,32 +84,53 @@ type encodedPublish struct {
 	data []byte
 	// the state the message leaves a VM in, if it tells of one
 	vm *vmState
+	// log lines dropped just before this one
+	skipped uint64
 }
 
-// publish encodes pub and queues it for the clients allowed to see it.
-func publish(pub bt.Publish) {
+// encode marshals pub once for all the clients it goes to.
+func encode(pub bt.Publish) (encodedPublish, bool) {
 	data, err := json.Marshal(pub)
 	if err != nil {
-		plog.Error(plog.TypeSystem, "marshaling message to be published", "err", err)
+		// logged on its own goroutine, since encode runs on the broker's too
+		go plog.Error(plog.TypeSystem, "marshaling message to be published", "err", err)
 
-		return
+		return encodedPublish{}, false
 	}
 
-	out := encodedPublish{pub: pub, data: data, vm: nil}
+	out := encodedPublish{pub: pub, data: data, vm: nil, skipped: 0}
 
 	if state, ok := vmStateOf(pub); ok {
 		out.vm = &state
 	}
 
-	broadcast <- out
+	return out, true
+}
+
+// publish encodes pub and queues it for the clients allowed to see it.
+func publish(pub bt.Publish) {
+	if out, ok := encode(pub); ok {
+		broadcast <- out
+	}
 }
 
 func Start() {
-	triggerSub := pubsub.Subscribe("trigger-app")
-	delayedSub := pubsub.Subscribe("delayed-start")
+	run(context.Background(), pubsub.Subscribe("trigger-app"), pubsub.Subscribe("delayed-start"))
+}
+
+// run hands broadcasts to clients until ctx is done. It owns the clients map,
+// so it does only map edits and non-blocking sends: a client too slow to keep
+// up is dropped, and its connection is closed on another goroutine.
+func run(ctx context.Context, triggerSub, delayedSub <-chan any) {
+	ticker := time.NewTicker(dropReportInterval)
+	defer ticker.Stop()
+
+	var reportedClients, reportedLines uint64
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case pub := <-triggerSub:
 			var (
 				trigger, _ = pub.(app.TriggerPublication)
@@ -84,13 +153,17 @@ func Start() {
 				result = errorResult(trigger.Error)
 			}
 
-			publish(bt.Publish{RequestPolicy: policy, Resource: resource, Result: result})
+			// delivered here: publish queues on the channel this loop drains,
+			// and would block it once that is full
+			if out, ok := encode(bt.Publish{RequestPolicy: policy, Resource: resource, Result: result}); ok {
+				deliver(out)
+			}
 		case pub := <-delayedSub:
 			delayed, _ := pub.(string)
 
 			expName, vmName, ok := strings.Cut(delayed, "/")
 			if !ok {
-				plog.Error(plog.TypeSystem, "unexpected delayed-start publication", "name", delayed)
+				go plog.Error(plog.TypeSystem, "unexpected delayed-start publication", "name", delayed)
 
 				continue
 			}
@@ -100,15 +173,51 @@ func Start() {
 			go publishDelayedStart(delayed, expName, vmName)
 		case cli := <-register:
 			clients[cli] = true
+
+			clientCount.Add(1)
 		case cli := <-unregister:
-			if _, ok := clients[cli]; ok {
-				cli.Stop()
-				delete(clients, cli)
-			}
+			// the client has already closed its connection
+			forget(cli)
 		case out := <-broadcast:
 			deliver(out)
+		case out := <-logs:
+			if out.skipped > 0 {
+				deliverSkipped(out.skipped)
+			}
+
+			deliver(out)
+		case <-ticker.C:
+			// lines dropped after the last line that made it through
+			if n := logsUntold.Swap(0); n > 0 {
+				deliverSkipped(n)
+			}
+
+			droppedClients, droppedLines := slowDropped.Load(), logsDropped.Load()
+
+			if droppedClients != reportedClients || droppedLines != reportedLines {
+				go dropReporter(droppedClients-reportedClients, droppedLines-reportedLines)
+
+				reportedClients, reportedLines = droppedClients, droppedLines
+			}
 		}
 	}
+}
+
+// forget removes cli from the broker's clients.
+func forget(cli *Client) {
+	if _, ok := clients[cli]; ok {
+		delete(clients, cli)
+		clientCount.Add(-1)
+	}
+}
+
+// drop disconnects a client whose queue is full. The client reconnects and
+// reloads what it shows.
+func drop(cli *Client) {
+	forget(cli)
+	slowDropped.Add(1)
+
+	cli.shutdown(websocket.CloseTryAgainLater, "client too slow")
 }
 
 // deliver hands a broadcast to every client allowed to see it. Log lines go
@@ -118,6 +227,15 @@ func deliver(out encodedPublish) {
 	isLog := out.pub.Resource != nil && out.pub.Resource.Type == logResourceType
 
 	for cli := range clients {
+		select {
+		case <-cli.done:
+			// gone, though its unregister may not have arrived yet
+			forget(cli)
+
+			continue
+		default:
+		}
+
 		if isLog && !cli.logsSubscribed.Load() {
 			continue
 		}
@@ -140,9 +258,29 @@ func deliver(out encodedPublish) {
 		select {
 		case cli.publish <- out:
 		default:
-			cli.Stop()
-			delete(clients, cli)
+			drop(cli)
 		}
+	}
+}
+
+// deliverSkipped tells the clients showing logs that n log lines were dropped
+// from their live stream. The log file still has them.
+func deliverSkipped(n uint64) {
+	ts := time.Now().UTC()
+
+	entry, err := json.Marshal(plog.LogEntry{
+		Time:      ts.UnixNano(),
+		Timestamp: ts.Format(plog.TimestampFormat),
+		Level:     "WARN",
+		Type:      string(plog.TypeSystem),
+		Message:   fmt.Sprintf("%d log lines skipped while the server was busy; reload the page to see them", n),
+	})
+	if err != nil {
+		return
+	}
+
+	if out, ok := encode(logPublish(entry)); ok {
+		deliver(out)
 	}
 }
 
@@ -151,13 +289,31 @@ func Broadcast(policy *bt.RequestPolicy, resource *bt.Resource, msg json.RawMess
 }
 
 // BroadcastLog sends a log entry to the clients showing logs that may read
-// them.
+// them. Every log call in the process comes through here, so it never waits:
+// when the broker falls behind the line is dropped from the live stream (the
+// log file still has it), and clients are told how many lines they missed.
 func BroadcastLog(entry json.RawMessage) {
-	publish(bt.Publish{
+	out, ok := encode(logPublish(entry))
+	if !ok {
+		return
+	}
+
+	out.skipped = logsUntold.Swap(0)
+
+	select {
+	case logs <- out:
+	default:
+		logsUntold.Add(out.skipped + 1)
+		logsDropped.Add(1)
+	}
+}
+
+func logPublish(entry json.RawMessage) bt.Publish {
+	return bt.Publish{
 		RequestPolicy: bt.NewRequestPolicy("logs", "get", ""),
 		Resource:      bt.NewResource(logResourceType, "phenix", "update"),
 		Result:        entry,
-	})
+	}
 }
 
 // errorResult is the result of an app error publication: the error's message,

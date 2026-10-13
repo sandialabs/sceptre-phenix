@@ -87,6 +87,16 @@ the command line:
 * `GET /console/{pid}/ws` attaches a websocket to a minimega console the server
   is running. See [minimega](minimega.md#from-the-web-ui).
 
+### Slow clients
+
+The web UI's websocket, `GET /ws`, queues up to 256 messages for each client.
+The server closes a client that falls that far behind with close code 1013
+(Try Again Later) and the reason `client too slow`, so one stalled browser tab
+cannot hold up the others; the web UI reconnects and reloads what it shows. A
+client of its own should do the same. Under heavy load the live log stream
+skips lines rather than wait, and sends a `WARN` entry saying how many it
+skipped; `GET /logs` and the log file still have them.
+
 ## Integrations
 
 The phēnix API can be used to integrate phēnix with external systems. Known

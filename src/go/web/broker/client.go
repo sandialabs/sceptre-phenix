@@ -49,16 +49,21 @@ const (
 	pongWait              = 60 * time.Second
 	pingPeriodNumerator   = 9
 	pingPeriodDenominator = 10
-	pingPeriod            = (pongWait * pingPeriodNumerator) / pingPeriodDenominator
-	maxMsgSize            = 2048
-	socketBufferSize      = 4096
-	publishChannelBuffer  = 256
+	// how long a dropped client gets to take its close frame before its
+	// connection is closed under it.
+	closeWait            = 1 * time.Second
+	maxMsgSize           = 2048
+	socketBufferSize     = 4096
+	publishChannelBuffer = 256
 	// just longer than the screenshot cache, so each round takes fresh
 	// screenshots while clients whose rounds fall within one cache life share
 	// them; every one is a minimega command, which blocks all others.
 	screenshotTickerInterval    = util.ScreenshotCacheDuration + time.Second
 	defaultBrokerScreenshotSize = "200"
 )
+
+// pingPeriod is how often the client is pinged; shortened in tests.
+var pingPeriod = (pongWait * pingPeriodNumerator) / pingPeriodDenominator //nolint:gochecknoglobals // see above
 
 var (
 	newline  = []byte{'\n'}        //nolint:gochecknoglobals // global constant
@@ -69,9 +74,9 @@ var (
 )
 
 type Client struct {
-	role   rbac.Role
-	conn   *websocket.Conn
-	connMu sync.Mutex
+	role rbac.Role
+	// only write writes data frames to it
+	conn wsConn
 
 	publish chan any
 	done    chan struct{}
@@ -138,24 +143,45 @@ func (c *Client) Go() {
 	go c.setScreenshotsTicker()
 }
 
+// Stop disconnects the client. The client's own goroutines call it when they
+// end; the broker uses shutdown instead.
 func (c *Client) Stop() {
-	c.once.Do(c.stop)
+	c.shutdown(websocket.CloseNormalClosure, "")
+
+	// the broker also forgets a client once it sees done closed, so this can
+	// give up when the broker is behind
+	select {
+	case unregister <- c:
+	default:
+	}
 }
 
-func (c *Client) stop() {
-	unregister <- c
+// shutdown marks the client done and closes its connection on another
+// goroutine, so the caller, which may be the broker, never waits on the
+// socket. Only the first call does anything.
+func (c *Client) shutdown(code int, reason string) {
+	c.once.Do(func() {
+		close(c.done)
 
-	close(c.done)
+		go c.closeConn(code, reason)
+	})
+}
 
-	c.connMu.Lock()
-	defer c.connMu.Unlock()
+// closeConn sends the close frame, then closes the connection, which ends a
+// write stuck on a client that stopped reading.
+func (c *Client) closeConn(code int, reason string) {
+	msg := websocket.FormatCloseMessage(code, reason)
 
-	err := c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-	if err != nil {
-		plog.Warn(plog.TypeSystem, "closing client connection", "err", err)
+	err := c.conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(closeWait))
+	if err != nil && !errors.Is(err, websocket.ErrCloseSent) {
+		plog.Debug(plog.TypeSystem, "sending close to WebSocket client", "code", code, "err", err)
 	}
 
 	_ = c.conn.Close()
+
+	if code == websocket.CloseTryAgainLater {
+		plog.Debug(plog.TypeSystem, "dropped WebSocket client", "reason", reason)
+	}
 }
 
 //nolint:cyclop,funlen,gocyclo // complex logic
@@ -563,19 +589,8 @@ func (c *Client) write() {
 				plog.Error(plog.TypeSystem, "publishing message to client", "err", err)
 			}
 		case <-ticker.C:
-			err := c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if err != nil {
-				plog.Error(
-					plog.TypeSystem,
-					"setting write deadline for client connection",
-					"err",
-					err,
-				)
-
-				return
-			}
-
-			err = c.conn.WriteMessage(websocket.PingMessage, nil)
+			// a control frame, which gorilla lets go alongside closeConn's
+			err := c.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(writeWait))
 			if err != nil {
 				plog.Error(plog.TypeSystem, "pinging client connection", "err", err)
 
@@ -691,9 +706,6 @@ func encodeMessage(msg any) ([]byte, error) {
 }
 
 func (c *Client) publisher(msg any) error {
-	c.connMu.Lock()
-	defer c.connMu.Unlock()
-
 	if err := c.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
 		return fmt.Errorf("setting write deadline for client connection: %w", err)
 	}
