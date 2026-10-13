@@ -2,6 +2,8 @@ package web
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io/fs"
 	"mime/multipart"
@@ -26,6 +28,7 @@ import (
 	"phenix/util/polltest"
 	"phenix/web/cache"
 	"phenix/web/rbac"
+	"phenix/web/util"
 )
 
 // diskFiles is a minimega files directory for a test.
@@ -556,6 +559,46 @@ func TestDownloadDiskResumes(t *testing.T) {
 
 	if resp := do(t, http.MethodGet, server+"win", ""); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("a folder: status %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestGetDiskChecksum(t *testing.T) {
+	dir := useDiskFilesDir(t).dir
+
+	writeDisks(t, dir+"/win/a.qc2", dir+"/b.qc2")
+
+	server := serveAs(t, "alice", testRole("disks", "get", "a.qc2", "win")).URL + "/api/v1/disks/checksum?disk="
+
+	resp := do(t, http.MethodGet, server+"win/a.qc2", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	var body util.Checksum
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+
+	sum := sha256.Sum256([]byte(dir + "/win/a.qc2"))
+	if body.Path != "win/a.qc2" || body.SHA256 != hex.EncodeToString(sum[:]) {
+		t.Errorf("got %+v", body)
+	}
+
+	for disk, want := range map[string]int{
+		"b.qc2":     http.StatusForbidden,
+		"win":       http.StatusBadRequest,
+		"c.qc2":     http.StatusForbidden,
+		"win/c.qc2": http.StatusForbidden,
+		"../a.qc2":  http.StatusBadRequest,
+	} {
+		if resp := do(t, http.MethodGet, server+url.QueryEscape(disk), ""); resp.StatusCode != want {
+			t.Errorf("%s: status %d, want %d", disk, resp.StatusCode, want)
+		}
+	}
+
+	server = serveAs(t, "alice", testRole("disks", "get", "missing.qc2")).URL + "/api/v1/disks/checksum?disk="
+	if resp := do(t, http.MethodGet, server+"missing.qc2", ""); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("missing: status %d, want 404", resp.StatusCode)
 	}
 }
 

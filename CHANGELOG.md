@@ -34,7 +34,7 @@ All notable changes to this project will be documented in this file.
 - **CLI**: Added `phenix minimega` as an alias for `phenix mm`, and `-a` and `-n` as shorthands for `--attach` and `--namespace`.
 - **CLI**: Added tab completion for `phenix mm`, which will now suggest minimega commands from the running minimega and `--namespace` from the names of running experiments.
 - **CLI**: `phenix vlan alias <experiment> <alias>` now prints the VLAN ID of that alias, or an error if the alias doesn't exist or doesn't have a VLAN ID yet. Its shell completion also completes experiment and alias names.
-- **Resumable downloads**: Experiment file, disk image, VM mount, tunneler and saved WebShark capture downloads answer `HEAD` and resume with `Range` and `If-Range` against a strong `ETag`, so a browser or `curl -C -` continues an interrupted download instead of starting over.
+- **Resumable downloads**: Experiment file, disk image, VM mount, tunneler and saved WebShark capture downloads answer `HEAD` and resume with `Range` and `If-Range` against a strong `ETag`, so a browser or `curl -C -` continues an interrupted download instead of starting over. `GET /experiments/{name}/files/{filename}/checksum` and `GET /disks/checksum` return a file's SHA-256, computed in the background, which downloads then also send as `Repr-Digest`.
 
 ### Changed
 

@@ -73,7 +73,8 @@ type Served struct {
 // Unless d.Live, the response carries a strong ETag (see FileETag) and the
 // file's modification time, with Cache-Control "private, no-cache": a client
 // may keep the file but must revalidate it, and a browser or curl resumes an
-// interrupted download only while the file is unchanged.
+// interrupted download only while the file is unchanged. If Digests knows the
+// file's checksum it is sent as Repr-Digest; a download never computes one.
 //
 // It returns an error, having sent nothing, if the file cannot be opened
 // (wrapping the [fs.PathError]), is not a regular file (ErrNotRegular) or is
@@ -125,6 +126,12 @@ func ServeOpenFile(w http.ResponseWriter, r *http.Request, f *os.File, d Downloa
 	} else {
 		header.Set("Cache-Control", "private, no-cache")
 		header.Set("ETag", FileETag(info))
+
+		// the whole file's checksum, if known (RFC 9530): it holds for a
+		// range too, so a resumed download can be verified
+		if sum, ok := Digests.Lookup(d.Path, info); ok {
+			header.Set("Repr-Digest", reprDigest(sum))
+		}
 
 		modtime = info.ModTime()
 	}

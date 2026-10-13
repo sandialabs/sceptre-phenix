@@ -74,6 +74,36 @@ JSON, YAML, and plain-text responses are gzip-compressed for clients that send
 `Accept-Encoding: gzip`, which makes a large list such as VMs, disks, or logs
 noticeably faster to fetch over a slow link. Clients that do not advertise gzip
 get the uncompressed response, so no change is needed to keep working.
+Downloads (responses with `Content-Disposition: attachment`) are never
+compressed.
+
+## Downloads
+
+Single-file downloads stream from disk and can be resumed: experiment files,
+disk images, files in a mounted VM, tunneler builds, and saved captures in
+WebShark. Each download route also answers `HEAD`, and every response carries
+`Accept-Ranges: bytes`, a strong `ETag` and `Last-Modified`.
+
+* `Range` asks for part of the file (`206`), such as `bytes=1048576-` for all
+  but the first MiB; a range past the end of the file gives `416`.
+* `If-Range` with an earlier response's `ETag` honors `Range` only while the
+  file is unchanged, and sends a changed file whole (`200`). Browsers do this
+  when you retry a download, so they never splice two versions of a file.
+* `If-None-Match` with the `ETag` answers `304` while the file is unchanged.
+
+`curl -C -` resumes with `Range` alone, so verify a download resumed that way
+with a checksum. `GET /experiments/{name}/files/{file}/checksum?path=` and
+`GET /disks/checksum?disk=` return the file's SHA-256, computed in the
+background: `202` with `Retry-After` until it is known, then `200`. Downloads of
+the file then also send it as `Repr-Digest` (RFC 9530).
+
+The zip downloads of several experiment files or configs are built as they are
+sent, so they cannot be resumed (`Accept-Ranges: none`).
+
+!!! note
+    A reverse proxy in front of phēnix must pass `Range`, `If-Range` and the
+    `ETag` through unchanged, and must not compress downloads, for resuming to
+    work.
 
 ## Streaming Endpoints
 
