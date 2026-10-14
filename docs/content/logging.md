@@ -205,7 +205,7 @@ audited.
 | `capture-webshark-read` | `network` | `access` | `GET /webshark/captures/{name}` (once per grant), `GET /webshark/json?method=download` (once per download) |
 | `capture-token-create` | `iam` | `creation` | `POST /experiments/{exp}/capture-tokens` |
 | `capture-token-revoke` | `iam` | `deletion` | `DELETE /experiments/{exp}/capture-tokens/{id}` |
-| `file-download` | `file` | `access` | `GET /experiments/{name}/files/{filename}` (downloads and the Files tab's viewer), `POST .../files/download` (one event per file sent, including those sent before the download failed), `GET .../vms/{name}/files/download`; refusals of `GET .../files/{filename}/checksum` |
+| `file-download` | `file` | `access` | `GET /experiments/{name}/files/{filename}` (downloads and the Files tab's viewer), `POST .../files/download` (one event per file sent, including those sent before the download failed), `GET .../vms/{name}/files/download`, `GET /jobs/{id}/artifact` of an archive job (one event per file archived); refusals of `GET .../files/{filename}/checksum` and `POST .../files/archive`, and archive jobs that fail or are canceled |
 | `file-upload` | `file` | `creation` | the file server's upload page (one event per file) |
 | `file-delete` | `file` | `deletion` | `DELETE /experiments/{name}/files/{filename}`, `POST .../files/delete` (one event per file) |
 | `console-create` | `process` | `start` | `POST /console` |
@@ -214,7 +214,7 @@ audited.
 | `console-end` | `process` | `end` | none: a console ended, for any reason |
 | `vnc-attach` | `session` | `start` | `GET .../vms/{name}/vnc/ws`; refusals of `GET .../vms/{name}/vnc` |
 | `port-forward-attach` | `network` | `connection` | `GET .../vms/{name}/forwards/{host}/{port}/ws` |
-| `disk-snapshot`, `disk-clone` | `file` | `creation` | `POST /disks/snapshot`, `POST /disks/clone` |
+| `disk-snapshot`, `disk-clone` | `file` | `creation` | `POST /disks/snapshot`, `POST /disks/clone`, `POST /disks/clone/jobs` |
 | `disk-rename`, `disk-commit`, `disk-rebase`, `disk-resize` | `file` | `change` | `POST /disks/rename`, `/disks/commit`, `/disks/rebase`, `/disks/resize` |
 | `disk-delete` | `file` | `deletion` | `DELETE /disks` |
 | `disk-upload` | `file` | `creation` | `POST /disks` |
@@ -226,6 +226,15 @@ audited.
 
 A download is audited once, however many requests resuming it take: for a `GET`
 answered with the whole file, or with a range starting at its first byte.
+
+An action run as a [background job](jobs.md) is audited when the job finishes,
+not when the request starting it is answered: as the user who started it,
+without the request's `source.ip`, `http.request.method` and `url.path`, and
+with the job's ID in `phenix.job.id`. A job canceled before its work was done
+is a failure with `error.message` `canceled`. A request starting the job is
+audited only when refused, or when it fails before the job starts. The files
+of an archive job are audited when its archive is downloaded, by the user
+downloading it, and only those archived, not those its `MISSING.txt` lists.
 
 ### Fields
 
@@ -247,6 +256,8 @@ answered with the whole file, or with a range starting at its first byte.
 | `file.size` | the bytes an upload wrote |
 | `process.pid` | a console's process |
 | `phenix.file.capture`, `phenix.file.preview` | whether a downloaded file is a packet capture, and whether it was shown in the Files tab's viewer |
+| `phenix.file.count` | the files a failed bulk action, such as a download, deletion or archive job, asked for |
+| `phenix.job.id` | the background job that did the action, or built the archive downloaded |
 | `phenix.capture.subnet` | a subnet capture's subnet |
 | `phenix.capability.id`, `phenix.capability.op`, `phenix.capability.ops`, `phenix.capability.expires` | a capture grant's ID (never its token), the operation used or those granted, and when it ends |
 | `phenix.webshark.live` | whether a capture opened in WebShark is still running |

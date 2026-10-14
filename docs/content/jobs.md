@@ -99,6 +99,10 @@ itself, never `jobs`.
 
 To anyone else, another user's job answers `404`, as if it did not exist.
 
+A disk clone, and the files of an archive, are recorded in the audit log as
+for the operations run within their request; see
+[Audit Events](logging.md#audit-events) for when.
+
 ## Web UI
 
 The [background jobs menu](web-ui.md#background-jobs-menu) in the header lists

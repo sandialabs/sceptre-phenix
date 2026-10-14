@@ -42,7 +42,9 @@ websocket, port forward websocket, disk, VM snapshot, commit and mount routes
 log `AUDIT` events with ECS fields (`event.action`, `event.outcome`,
 `user.name`, `source.ip`, ...) for successes, failures and RBAC refusals,
 always written to the system log file whatever `log.level` is; see
-`docs/content/logging.md` ("Audit Events") for the actions and fields.
+`docs/content/logging.md` ("Audit Events") for the actions and fields. A disk
+clone job is audited when it finishes, as the user who started it, and an
+archive job's files when `GET /jobs/{id}/artifact` downloads the archive.
 
 ## Routes
 
