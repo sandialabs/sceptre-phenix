@@ -36,10 +36,11 @@ func (c *recordingCache) SetWithExpire(key string, val any, exp time.Duration) e
 }
 
 func TestTopology(t *testing.T) {
-	useExperiment(t, startTime,
+	stored := useExperiment(t, startTime,
 		vmNode("a", vmIface("IF0", "EXP_1", "10.0.0.1"), vmIface("IF1", "MGMT", "172.16.0.1")),
 		vmNode("b", vmIface("IF0", "EXP_1", "10.0.0.2")),
 	)
+	stored.experiment.Metadata.Revision = 7
 	useMM(t, &fakeMM{vms: mm.VMs{
 		runningVM("a", "EXP_1 (101)", "MGMT (100)"),
 		runningVM("b", "EXP_1 (101)"),
@@ -70,7 +71,8 @@ func TestTopology(t *testing.T) {
 		t.Errorf("Topology has edges %+v, want both VMs joined to the switch", topo.Edges)
 	}
 
-	const key = "experiment|" + testExp + "|search"
+	// keyed by the experiment's revision
+	const key = "experiment|" + testExp + "|search|r7"
 
 	search, _ := fake.vals[key].(vm.TopologySearch)
 	if want := []int{0, 2}; !reflect.DeepEqual(search.VLAN["EXP_1"], want) || search.VLAN["MGMT"] != nil {
@@ -85,5 +87,16 @@ func TestTopology(t *testing.T) {
 
 	if _, err := vm.Topology(testExp, nil); err != nil || fake.sets != 1 {
 		t.Errorf("second Topology: %v after caching the index %d times, want it reused", err, fake.sets)
+	}
+
+	if search, err := vm.TopologySearchIndex(testExp); err != nil || fake.sets != 1 || search.Hostname["a"] != 0 {
+		t.Errorf("TopologySearchIndex = %+v, %v after caching the index %d times, want the cached one", search, err, fake.sets)
+	}
+
+	// an edited experiment has a new revision, so its index is built anew
+	stored.experiment.Metadata.Revision = 8
+
+	if _, err := vm.TopologySearchIndex(testExp); err != nil || fake.sets != 2 {
+		t.Errorf("TopologySearchIndex after an edit: %v after caching the index %d times, want it rebuilt", err, fake.sets)
 	}
 }

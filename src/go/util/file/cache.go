@@ -68,11 +68,11 @@ func newListingCache(ttl time.Duration) *listingCache {
 }
 
 // get returns the listing for key: a copy of a recent one, the result of an
-// identical one in flight, or a fresh one from list. A failed listing is
-// returned to its waiters but never reused. If list panics, the panic carries
-// on up the caller that ran it, and every caller waiting on the listing gets
-// errListingAborted.
-func (c *listingCache) get(key string, list func() (Files, error)) (Files, error) {
+// identical one in flight, or a fresh one from list, with when that listing
+// started. A failed listing is returned to its waiters but never reused. If
+// list panics, the panic carries on up the caller that ran it, and every
+// caller waiting on the listing gets errListingAborted.
+func (c *listingCache) get(key string, list func() (Files, error)) (Files, time.Time, error) {
 	c.mu.Lock()
 
 	if l, ok := c.entries[key]; ok && !c.expired(l) {
@@ -80,7 +80,7 @@ func (c *listingCache) get(key string, list func() (Files, error)) (Files, error
 
 		<-l.done
 
-		return cloneFiles(l.files), l.err
+		return cloneFiles(l.files), l.started, l.err
 	}
 
 	c.prune()
@@ -114,7 +114,7 @@ func (c *listingCache) get(key string, list func() (Files, error)) (Files, error
 	l.files, l.err = list()
 	completed = true
 
-	return cloneFiles(l.files), l.err
+	return cloneFiles(l.files), l.started, l.err
 }
 
 // expired reports whether a finished listing is too old to reuse. A listing in

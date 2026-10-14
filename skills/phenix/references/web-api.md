@@ -89,7 +89,13 @@ started) and every `/ws` message a `seq` (taken as it was published; a VM list
 reply's before its minimega read), from one strictly increasing sequence per
 `phenix ui` process. Data tagged S reflects every change whose message has a
 seq of S or less; keep the highest seq applied per item, ignore lower, and
-reset on websocket reconnect. See `docs/content/api.md#freshness`.
+reset on websocket reconnect. Runtime reads add `X-Phenix-Observed-At` (when
+minimega was read; compare with `Date`) and `X-Phenix-Stale: true` (earlier
+data while minimega is busy). A minimega failure is never an empty success:
+VM lists set `runtime_unknown` (`vms_unknown` per experiment) and list
+unreported VMs as configured, `/soh` has `vms.known`/`vms_stale`, file listings
+answer `502`, and `GET /experiments` answers `500` when the store is
+unreadable. See `docs/content/api.md#freshness`.
 
 `src/go/web/server.go` is the authoritative route list.
 

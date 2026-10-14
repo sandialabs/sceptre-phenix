@@ -64,6 +64,10 @@ the root target does.
   `phenix/web/audit`: `Denied` at each RBAC refusal, `Failure` when the
   authorized operation fails, and `Success` once it works. Add a new action to
   the action table in `docs/content/logging.md`.
+- A new cache or reused result must name its bound and invalidation in the
+  registry in `util/freshness/doc.go`, and report its age with
+  `freshness.SetObserved` when it serves minimega data. A failed minimega read
+  is an error or an explicit unknown flag, never an empty success.
 - Consult [minimega API docs](https://sandia-minimega.github.io/minimega/reference/minimega/) and
   [source](https://github.com/sandia-minimega/minimega) before changing code
   that constructs commands or depends on minimega behavior.

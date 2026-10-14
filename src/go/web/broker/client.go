@@ -20,7 +20,6 @@ import (
 	"phenix/api/experiment"
 	"phenix/api/vm"
 	"phenix/types"
-	"phenix/util/cache"
 	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/plog"
@@ -35,21 +34,17 @@ var marshaler = protojson.MarshalOptions{EmitUnpopulated: true} //nolint:gocheck
 // clientDeps are what a client's requests ask of the store and minimega.
 type clientDeps struct {
 	experiment func(name string) (*types.Experiment, error)
-	vms        func(exp *types.Experiment) []mm.VM
-	// warms the experiment's topology search cache
-	topology   func(exp string) error
+	vms        func(exp *types.Experiment) ([]mm.VM, freshness.Observation)
+	// the experiment's topology search index, cached while it is unchanged
+	topology   func(exp string) (vm.TopologySearch, error)
 	screenshot func(ctx context.Context, exp, vm, size string) ([]byte, error)
 }
 
 //nolint:gochecknoglobals // replaced in tests
 var deps = clientDeps{
 	experiment: experiment.Get,
-	vms:        vm.ListFor,
-	topology: func(exp string) error {
-		_, err := vm.Topology(exp, nil)
-
-		return err //nolint:wrapcheck // logged as is
-	},
+	vms:        vm.ListForObserved,
+	topology:   vm.TopologySearchIndex,
 	screenshot: util.GetScreenshotContext,
 }
 
@@ -481,8 +476,6 @@ func isClosed(ch <-chan struct{}) bool {
 }
 
 // searchTopology answers an experiment/topology search request.
-//
-//nolint:funlen // one case per search term
 func (c *Client) searchTopology(req bt.Request) {
 	var query map[string]string
 
@@ -506,31 +499,21 @@ func (c *Client) searchTopology(req bt.Request) {
 		return
 	}
 
-	cacheKey := fmt.Sprintf("experiment|%s|search", req.Resource.Name)
+	search, err := deps.topology(req.Resource.Name)
+	if err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"getting experiment topology",
+			"exp",
+			req.Resource.Name,
+			"err",
+			err,
+		)
 
-	val, ok := cache.Get(cacheKey)
-	if !ok {
-		// warm the cache (again?)
-		if err := deps.topology(req.Resource.Name); err != nil {
-			plog.Error(
-				plog.TypeSystem,
-				"getting experiment topology",
-				"exp",
-				req.Resource.Name,
-				"err",
-				err,
-			)
-
-			return
-		}
-
-		val, _ = cache.Get(cacheKey)
+		return
 	}
 
-	var (
-		search, _ = val.(vm.TopologySearch)
-		nodes     []int
-	)
+	var nodes []int
 
 	switch strings.ToLower(term) {
 	case "hostname":
@@ -640,7 +623,8 @@ func (c *Client) listVMs(job listJob) {
 
 	// Screenshots follow the list (see updateScreenshots): minimega
 	// takes them one at a time, which would hold back the whole list.
-	allowed, total := util.SelectVMs(expName, deps.vms(exp), exp.Spec.Topology(), query, c.role)
+	vms, observed := deps.vms(exp)
+	allowed, total := util.SelectVMs(expName, vms, exp.Spec.Topology(), query, c.role)
 
 	c.vmMu.Lock()
 
@@ -659,6 +643,7 @@ func (c *Client) listVMs(job listJob) {
 	c.vmMu.Unlock()
 
 	resp := util.VMListToProtobuf(expName, allowed, total, exp.Spec.Topology())
+	util.SetVMListObservation(resp, observed)
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {

@@ -44,3 +44,9 @@ while you are not looking at the page — its browser tab is hidden, or its wind
 does not have focus. The header's refresh button reloads it at once, and says
 how old the figures on screen are; see
 [Page Freshness and Refresh](web-ui.md#page-freshness-and-refresh).
+
+The server reuses a host list it read from minimega in the last 5 seconds, so
+several pages and users polling at once cost one set of minimega commands. The
+figures can therefore be up to 5 seconds older than the reload that fetched
+them, and the age in the header counts from when the server read them, not
+from when the page reloaded.

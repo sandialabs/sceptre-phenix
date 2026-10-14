@@ -496,3 +496,70 @@ func TestDiskUsageCommandAndParse(t *testing.T) {
 		}
 	}
 }
+
+// A `vm info` error is reported as an unknown observation, never as a
+// successful empty list, with the rows of the nodes that did answer.
+func TestGetVMInfoObservedReportsErrors(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	cluster := new(vmInfoCluster)
+	cluster.set(fakeVM{host: "head", name: "b", uptime: "1h0m0s", disk: "plain-b", snapshot: false})
+
+	useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		resps := cluster.reply(cmd)
+
+		if cmd.Base == vmInfoCmd {
+			resps = append(resps, &minicli.Response{Host: "compute1", Error: "compute1 is not answering"})
+		}
+
+		return resps
+	})
+
+	before := time.Now()
+
+	vms, obs := Minimega{}.GetVMInfoObserved(NS("exp"))
+	if obs.Known || obs.Err == nil || !strings.Contains(obs.Err.Error(), "not answering") {
+		t.Fatalf("observation = %+v, want unknown with minimega's error", obs)
+	}
+
+	if obs.At.Before(before) || obs.At.After(time.Now()) {
+		t.Errorf("observed at %v, not during the call", obs.At)
+	}
+
+	if len(vms) != 1 || vms[0].Name != "b" {
+		t.Errorf("VMs = %v, want the headnode's b", vms)
+	}
+
+	// GetVMInfo has no error to return; it logs it and answers what it read
+	if vms := (Minimega{}).GetVMInfo(NS("exp")); len(vms) != 1 {
+		t.Errorf("GetVMInfo = %v, want the headnode's b", vms)
+	}
+}
+
+// A successful read is known, and observed when its run started.
+func TestGetVMInfoObservedWhenRead(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	cluster := new(vmInfoCluster)
+	cluster.set(fakeVM{host: "head", name: "b", uptime: "1h0m0s", disk: "plain-b", snapshot: false})
+
+	var (
+		mu           sync.Mutex
+		firstCommand time.Time
+	)
+
+	useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		mu.Lock()
+		if firstCommand.IsZero() {
+			firstCommand = time.Now()
+		}
+		mu.Unlock()
+
+		return cluster.reply(cmd)
+	})
+
+	_, obs := Minimega{}.GetVMInfoObserved(NS("exp"))
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !obs.Known || obs.Err != nil || obs.At.IsZero() || obs.At.After(firstCommand) {
+		t.Errorf("observation = %+v with the first command at %v, want known, at or before it", obs, firstCommand)
+	}
+}

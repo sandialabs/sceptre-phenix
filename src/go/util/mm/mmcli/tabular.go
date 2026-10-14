@@ -3,6 +3,7 @@
 package mmcli
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/activeshadow/libminimega/minicli"
@@ -57,8 +58,29 @@ func RunTabular(cmd *Command) []map[string]string {
 	return RunTabularStarted(cmd, nil)
 }
 
-// RunTabularStarted is RunTabular, calling started as RunStarted does.
+// RunTabularStarted is RunTabular, calling started as RunStarted does. Errors
+// in the responses are logged and their rows left out, so a failure reads as
+// fewer (or no) rows; use RunTabularChecked to tell the two apart.
 func RunTabularStarted(cmd *Command, started func()) []map[string]string {
+	res, err := RunTabularChecked(cmd, started)
+	if err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"error running mm cmd",
+			"cmd",
+			cmd.Command,
+			"error",
+			err,
+		)
+	}
+
+	return res
+}
+
+// RunTabularChecked is RunTabularStarted, also returning the errors any
+// response reported, joined. The rows are those of the responses without an
+// error, so they may be partial when the error is not nil.
+func RunTabularChecked(cmd *Command, started func()) ([]map[string]string, error) {
 	// copy all fields in header order
 	mapper := tabularToMap
 
@@ -67,19 +89,15 @@ func RunTabularStarted(cmd *Command, started func()) []map[string]string {
 		mapper = tabularToMapCols(cmd.Columns)
 	}
 
-	res := []map[string]string{}
+	var (
+		res  = []map[string]string{}
+		errs []error
+	)
 
 	for resps := range RunStarted(cmd, started) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
-				plog.Error(
-					plog.TypeSystem,
-					"error running mm cmd",
-					"cmd",
-					cmd.Command,
-					"error",
-					resp.Error,
-				)
+				errs = append(errs, reconstructErr(resp.Error))
 
 				continue
 			}
@@ -90,5 +108,5 @@ func RunTabularStarted(cmd *Command, started func()) []map[string]string {
 		}
 	}
 
-	return res
+	return res, errors.Join(errs...)
 }

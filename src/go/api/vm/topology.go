@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"phenix/api/experiment"
+	"phenix/types"
 	"phenix/util/cache"
 	"phenix/util/mm"
 )
@@ -26,9 +27,35 @@ type edge struct {
 }
 
 // topologySearchTTL bounds how long an experiment's topology search index is
-// reused. VM details (VLANs, IPs, disks) change when the experiment starts,
-// stops, or its VMs are edited, and nothing invalidates the index then.
+// kept. The index is keyed by the experiment's store revision, which every
+// edit, start and stop changes, so the bound only limits the memory it holds;
+// VM details minimega changes without a store write (an IP a VM takes by DHCP)
+// show once it expires.
 const topologySearchTTL = 30 * time.Second
+
+// topologySearchKey is the cache key of the experiment's search index.
+func topologySearchKey(exp *types.Experiment) string {
+	return fmt.Sprintf("experiment|%s|search|r%d", exp.Metadata.Name, exp.Metadata.Revision)
+}
+
+// TopologySearchIndex returns the experiment's topology search index, from the
+// cache while the experiment is unchanged, or built (and cached) anew.
+func TopologySearchIndex(exp string) (TopologySearch, error) {
+	stored, err := experiment.Get(exp)
+	if err != nil {
+		return TopologySearch{}, fmt.Errorf("getting experiment %s: %w", exp, err)
+	}
+
+	if val, ok := cache.Get(topologySearchKey(stored)); ok {
+		if search, ok := val.(TopologySearch); ok {
+			return search, nil
+		}
+	}
+
+	_, search := topologyFor(stored, nil)
+
+	return search, nil
+}
 
 func Topology(exp string, ignore []string) (topology, error) {
 	stored, err := experiment.Get(exp)
@@ -36,13 +63,21 @@ func Topology(exp string, ignore []string) (topology, error) {
 		return topology{}, fmt.Errorf("getting VMs: getting experiment %s: %w", exp, err)
 	}
 
+	topo, _ := topologyFor(stored, ignore)
+
+	return topo, nil
+}
+
+// topologyFor is Topology for an experiment read from the store, also
+// returning its search index.
+func topologyFor(stored *types.Experiment, ignore []string) (topology, TopologySearch) {
 	vms := ListFor(stored)
 
 	var (
 		networks = make(map[string]mm.VM)
 		search   TopologySearch
 
-		cacheKey = fmt.Sprintf("experiment|%s|search", exp)
+		cacheKey = topologySearchKey(stored)
 		cached   bool
 
 		nodes  []mm.VM
@@ -115,5 +150,5 @@ func Topology(exp string, ignore []string) (topology, error) {
 		_ = cache.SetWithExpire(cacheKey, search, topologySearchTTL)
 	}
 
-	return topology{Nodes: nodes, Edges: edges, Running: stored.Running()}, nil
+	return topology{Nodes: nodes, Edges: edges, Running: stored.Running()}, search
 }

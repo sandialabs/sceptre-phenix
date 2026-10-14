@@ -90,6 +90,11 @@ type Summary struct {
 	VMs      VMCounts `json:"vms"`
 	DownVMs  []string `json:"down_vms"`
 	VMsError string   `json:"vms_error,omitempty"`
+	// VMsObservedAt is when minimega was read for the VM counts (RFC 3339),
+	// and VMsStale is set when they are earlier counts served while minimega
+	// was busy.
+	VMsObservedAt string `json:"vms_observed_at,omitempty"`
+	VMsStale      bool   `json:"vms_stale,omitempty"`
 
 	Hosts           int   `json:"hosts"`
 	HostsWithErrors int   `json:"hosts_with_errors"`

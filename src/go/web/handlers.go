@@ -31,6 +31,7 @@ import (
 	ifaces "phenix/types/interfaces"
 	putil "phenix/util"
 	"phenix/util/common"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/notes"
 	"phenix/util/plog"
@@ -83,11 +84,21 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 	experiments, err := experiment.List()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiments", "err", err)
+
+		// an empty list would read as no experiments
+		if len(experiments) == 0 {
+			http.Error(w, "unable to read experiments from the store", http.StatusInternalServerError)
+
+			return
+		}
 	}
 
 	allowed := []*proto.Experiment{}
 
 	busy := anyExperimentLocked(experiments)
+
+	// when minimega was read for the VMs listed, and whether it answered
+	observed := freshness.Unobserved()
 
 	for _, exp := range experiments {
 		if !role.Allowed("experiments", "list", exp.Metadata.Name) {
@@ -102,13 +113,15 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 			pb = util.ExperimentSummaryToProtobuf(exp, status)
 		} else {
 			// TODO: limit per-experiment VMs based on RBAC
-			vms := listExperimentVMs(exp, busy && size == "")
+			vms, obs := listExperimentVMs(exp, busy && size == "")
+			observed = observed.Older(obs)
 
 			if exp.Running() && size != "" {
 				addVMScreenshots(exp.Spec.ExperimentName(), vms, size)
 			}
 
 			pb = util.ExperimentToProtobuf(exp, status, vms)
+			pb.VmsUnknown = !obs.Known
 		}
 
 		pb.Percent = percent
@@ -127,6 +140,7 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	freshness.SetObserved(w, observed)
 	_, _ = w.Write(body)
 }
 
@@ -166,13 +180,20 @@ func anyExperimentLocked(experiments []types.Experiment) bool {
 }
 
 // listExperimentVMs lists the experiment's VMs, from its topology alone when
-// minimega is busy.
-func listExperimentVMs(exp types.Experiment, busy bool) []mm.VM {
+// minimega is busy, and how minimega was read for them. A running
+// experiment's VMs listed from the topology are unknown, and stale.
+func listExperimentVMs(exp types.Experiment, busy bool) ([]mm.VM, freshness.Observation) {
 	if busy {
-		return vm.ListConfigured(exp)
+		obs := freshness.Unobserved()
+
+		if exp.Running() {
+			obs.Known, obs.Stale = false, true
+		}
+
+		return vm.ListConfigured(exp), obs
 	}
 
-	return vm.ListFor(&exp)
+	return vm.ListForObserved(&exp)
 }
 
 // CreateExperiment - POST /experiments.
@@ -501,12 +522,15 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
-	var vms []mm.VM
+	var (
+		vms      []mm.VM
+		observed = freshness.Unobserved()
+	)
 
 	if noVMs {
 		vms = vm.ListConfigured(*exp)
 	} else {
-		vms = vm.ListFor(exp)
+		vms, observed = vm.ListForObserved(exp)
 	}
 
 	// This will happen if another handler is currently acting on the
@@ -533,6 +557,9 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	if noVMs {
 		experiment.Vms = nil
+	} else {
+		experiment.VmsUnknown = !observed.Known
+		freshness.SetObserved(w, observed)
 	}
 
 	body, err := marshaler.Marshal(experiment)
@@ -1167,13 +1194,17 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files, err := experiment.Files(name, clientFilter)
+	files, observed, err := experiment.FilesObserved(name, clientFilter)
 	if err != nil {
+		// minimega did not list every node's files; an empty or partial list
+		// would read as files missing
 		plog.Error(plog.TypeSystem, "getting list of files for experiment", "exp", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "could not list files: "+err.Error(), http.StatusBadGateway)
 
 		return
 	}
+
+	freshness.SetObserved(w, observed)
 
 	if sortCol != "" && sortDir != "" {
 		files.SortBy(sortCol, sortDir == "asc")
@@ -1382,13 +1413,16 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 		Size:    pageSize,
 	}
 
-	allowed, total := util.SelectVMs(expName, vm.ListFor(exp), exp.Spec.Topology(), vmQuery, role)
+	vms, observed := vm.ListForObserved(exp)
+	allowed, total := util.SelectVMs(expName, vms, exp.Spec.Topology(), vmQuery, role)
 
 	if size != "" {
 		addVMScreenshots(expName, allowed, size)
 	}
 
 	resp := util.VMListToProtobuf(expName, allowed, total, exp.Spec.Topology())
+	util.SetVMListObservation(resp, observed)
+	freshness.SetObserved(w, observed)
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
@@ -2936,9 +2970,17 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 	exps, err := experiment.List()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiments", "err", err)
+
+		// an empty list would read as no running VMs
+		if len(exps) == 0 {
+			http.Error(w, "unable to read experiments from the store", http.StatusInternalServerError)
+
+			return
+		}
 	}
 
 	allowed := []*proto.VM{}
+	observed := freshness.Unobserved()
 
 	for _, exp := range exps {
 		if !exp.Running() {
@@ -2947,7 +2989,8 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		vms := vm.ListFor(&exp)
+		vms, obs := vm.ListForObserved(&exp)
+		observed = observed.Older(obs)
 		nodes := util.IndexTopology(exp.Spec.Topology())
 
 		for _, vm := range vms {
@@ -2977,7 +3020,9 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp := &proto.VMList{Total: uint32(len(allowed)), Vms: allowed} //nolint:gosec // integer overflow conversion int -> uint32
+	resp := &proto.VMList{Total: uint32(len(allowed)), Vms: allowed} //nolint:gosec,exhaustruct // integer overflow conversion int -> uint32
+	util.SetVMListObservation(resp, observed)
+	freshness.SetObserved(w, observed)
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
@@ -3169,12 +3214,14 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hosts, err := mm.GetClusterHosts(false)
+	hosts, observed, err := mm.GetClusterHostsObserved(false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
+
+	freshness.SetObserved(w, observed)
 
 	allowed := []mm.Host{}
 

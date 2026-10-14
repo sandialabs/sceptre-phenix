@@ -7,12 +7,14 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
 	"phenix/api/soh"
 	"phenix/types"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/middleware"
@@ -84,9 +86,16 @@ func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
 const maxSummaryProblems = 50
 
 // lastVMStates keeps the VM states last read from minimega for each running
-// experiment, for summaries asked for while minimega is busy starting or
-// stopping an experiment (see anyExperimentLocked).
+// experiment (a vmStatesRead), for summaries asked for while minimega is busy
+// starting or stopping an experiment (see anyExperimentLocked). The summary
+// reports their age and marks them stale.
 var lastVMStates sync.Map //nolint:gochecknoglobals // process-wide cache
+
+// vmStatesRead is one read of an experiment's VM states, and when it started.
+type vmStatesRead struct {
+	states map[string]string
+	at     time.Time
+}
 
 // GetSoHSummary - GET /soh.
 //
@@ -117,6 +126,7 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) {
 	var (
 		busy      = anyExperimentLocked(experiments)
 		summaries = make([]soh.Summary, 0, len(experiments))
+		observed  = freshness.Unobserved()
 	)
 
 	for _, exp := range experiments {
@@ -127,7 +137,8 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		states, vmErr := sohVMStates(exp, busy)
+		states, obs, vmErr := sohVMStates(exp, busy)
+		observed = observed.Older(obs)
 
 		summary, err := soh.Summarize(&exp, states, maxSummaryProblems)
 		if err != nil {
@@ -138,6 +149,11 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) {
 		if vmErr != nil {
 			plog.Error(plog.TypeSoh, "getting VM states for state of health", "exp", name, "err", vmErr)
 			summary.VMsError = vmErr.Error()
+		}
+
+		if !obs.At.IsZero() {
+			summary.VMsObservedAt = freshness.FormatTime(obs.At)
+			summary.VMsStale = obs.Stale
 		}
 
 		status, percent := experimentStatus(exp)
@@ -158,38 +174,47 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	freshness.SetObserved(w, observed)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
 // sohVMStates returns minimega's VM states for a running experiment, or nil
-// when there are none to read. While minimega is busy starting or stopping an
-// experiment it returns the states it last read rather than wait.
-func sohVMStates(exp types.Experiment, busy bool) (map[string]string, error) {
+// when there are none to read, and when they were read. While minimega is busy
+// starting or stopping an experiment it returns the states it last read,
+// marked stale, rather than wait; with none read yet, they are unknown.
+func sohVMStates(exp types.Experiment, busy bool) (map[string]string, freshness.Observation, error) {
 	name := exp.Metadata.Name
 
 	// asking minimega about a stopped experiment would recreate its namespace
 	if !exp.Running() || exp.DryRun() {
 		lastVMStates.Delete(name)
 
-		return nil, nil //nolint:nilnil // no states is not an error
+		return nil, freshness.Unobserved(), nil
 	}
 
 	if busy {
-		if states, ok := lastVMStates.Load(name); ok {
-			cached, _ := states.(map[string]string)
+		if last, ok := lastVMStates.Load(name); ok {
+			read, _ := last.(vmStatesRead)
 
-			return cached, nil
+			obs := freshness.Observed(read.at)
+			obs.Stale = true
+
+			return read.states, obs, nil
 		}
 
-		return nil, nil //nolint:nilnil // unknown until minimega is free
+		// unknown until minimega is free
+		return nil, freshness.Observation{At: time.Time{}, Stale: true, Known: false, Err: nil}, nil
 	}
+
+	at := time.Now()
 
 	states, err := mm.GetVMStates(mm.NS(name))
 	if err != nil {
-		return nil, fmt.Errorf("getting VM states: %w", err)
+		return nil, freshness.Observation{At: at, Stale: false, Known: false, Err: err},
+			fmt.Errorf("getting VM states: %w", err)
 	}
 
-	lastVMStates.Store(name, states)
+	lastVMStates.Store(name, vmStatesRead{states: states, at: at})
 
-	return states, nil
+	return states, freshness.Observed(at), nil
 }

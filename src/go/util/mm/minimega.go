@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 
 	"phenix/util/common"
+	"phenix/util/freshness"
 	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 )
@@ -313,27 +314,46 @@ func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
 
 // GetVMInfo returns minimega's details for the VMs in a namespace, optionally
 // filtered by VM name. Concurrent calls asking for the same VMs share one set of
-// minimega commands (see flightGroup); each caller gets its own copy.
+// minimega commands (see flightGroup); each caller gets its own copy. When
+// minimega cannot be read the list is partial or empty, and the error is only
+// logged; GetVMInfoObserved reports it.
 func (m Minimega) GetVMInfo(opts ...Option) VMs {
-	o := NewOptions(opts...)
-
-	vms, err := vmInfoFlights.do(o.ns+"\x00"+o.vm, func(seal func()) VMs {
-		return m.getVMInfo(o, seal)
-	})
-	if err != nil {
-		// The run this call joined panicked. GetVMInfo has no error to return,
-		// so it answers an empty list, as it does when minimega can't be read.
-		plog.Error(plog.TypeSystem, "getting VM info", "ns", o.ns, "vm", o.vm, "error", err)
-
-		return nil
+	vms, obs := m.GetVMInfoObserved(opts...)
+	if obs.Err != nil {
+		plog.Error(plog.TypeSystem, "getting VM info", "ns", NewOptions(opts...).ns, "error", obs.Err)
 	}
 
-	return cloneVMs(vms)
+	return vms
+}
+
+// GetVMInfoObserved is GetVMInfo, also reporting when the VMs were read and
+// whether minimega answered for all of them. An observation that is not Known
+// carries the error, and the VMs then hold only those minimega did report.
+func (m Minimega) GetVMInfoObserved(opts ...Option) (VMs, freshness.Observation) {
+	o := NewOptions(opts...)
+
+	res, err := vmInfoFlights.do(o.ns+"\x00"+o.vm, func(seal func()) vmInfoResult {
+		// before the run's first command, so the data is no older than this
+		at := time.Now()
+		vms, err := m.getVMInfo(o, seal)
+
+		return vmInfoResult{vms: vms, at: at, err: err}
+	})
+	if err == nil {
+		err = res.err
+	}
+
+	if err != nil {
+		return cloneVMs(res.vms), freshness.Observation{At: res.at, Stale: false, Known: false, Err: err}
+	}
+
+	return cloneVMs(res.vms), freshness.Observed(res.at)
 }
 
 // getVMInfo does GetVMInfo's work, calling started just before its first
-// minimega command is sent.
-func (m Minimega) getVMInfo(o options, started func()) VMs {
+// minimega command is sent. The VMs are those minimega reported even when it
+// also reported an error.
+func (m Minimega) getVMInfo(o options, started func()) (VMs, error) {
 	// don't rely on `cc_active` column in `vm info` table
 	activeC2 := getActiveC2(o.ns, started)
 
@@ -360,7 +380,7 @@ func (m Minimega) getVMInfo(o options, started func()) VMs {
 		cmd.Filters = []string{"name=" + o.vm}
 	}
 
-	status := mmcli.RunTabular(cmd)
+	status, statusErr := mmcli.RunTabularChecked(cmd, nil)
 	received := time.Now()
 	vms := make(VMs, 0, len(status))
 
@@ -434,7 +454,11 @@ func (m Minimega) getVMInfo(o options, started func()) VMs {
 		vms = append(vms, vm)
 	}
 
-	return vms
+	if statusErr != nil {
+		return vms, fmt.Errorf("reading VM info: %w", statusErr)
+	}
+
+	return vms, nil
 }
 
 // snapshotBackingDisk returns the image a VM's snapshot disk is based on (or
@@ -1250,9 +1274,18 @@ func (m Minimega) GetVMCaptures(opts ...Option) []Capture {
 // flightGroup), and every fresh answer refreshes the reused one. Each caller
 // gets its own copy.
 func (m Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
+	hosts, _, err := m.GetClusterHostsObserved(schedOnly)
+
+	return hosts, err
+}
+
+// GetClusterHostsObserved is GetClusterHosts, also reporting when the hosts
+// were read from minimega, which for a reused list is up to clusterHostsTTL
+// ago.
+func (m Minimega) GetClusterHostsObserved(schedOnly bool) (Hosts, freshness.Observation, error) {
 	if !schedOnly {
-		if hosts, ok := recentHosts.get(); ok {
-			return cloneHosts(hosts), nil
+		if hosts, at, ok := recentHosts.get(); ok {
+			return cloneHosts(hosts), freshness.Observed(at), nil
 		}
 	}
 
@@ -1264,17 +1297,21 @@ func (m Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
 			recentHosts.put(hosts, at)
 		}
 
-		return clusterHosts{hosts: hosts, err: err}
+		return clusterHosts{hosts: hosts, at: at, err: err}
 	})
 	if err != nil {
-		return nil, fmt.Errorf("getting cluster hosts: %w", err)
+		return nil, freshness.Observation{}, fmt.Errorf("getting cluster hosts: %w", err)
 	}
 
-	if res.err == nil && schedOnly {
-		return schedulableHosts(res.hosts), nil
+	if res.err != nil {
+		return cloneHosts(res.hosts), freshness.Observation{}, res.err
 	}
 
-	return cloneHosts(res.hosts), res.err
+	if schedOnly {
+		return schedulableHosts(res.hosts), freshness.Observed(res.at), nil
+	}
+
+	return cloneHosts(res.hosts), freshness.Observed(res.at), nil
 }
 
 // getClusterHosts does GetClusterHosts' work for the full list, calling

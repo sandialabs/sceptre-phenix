@@ -23,6 +23,7 @@ import (
 	ifaces "phenix/types/interfaces"
 	"phenix/util/common"
 	"phenix/util/file"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 )
@@ -73,33 +74,50 @@ func List(expName string) ([]mm.VM, error) {
 // ListFor is List for an experiment the caller already read from the store, so
 // the experiment is not read again.
 func ListFor(exp *types.Experiment) []mm.VM {
-	running := make(map[string]mm.VM)
+	vms, _ := ListForObserved(exp)
 
-	if exp.Running() {
-		for _, vm := range mm.GetVMInfo(mm.NS(exp.Metadata.Name)) {
-			running[vm.Name] = vm
-		}
+	return vms
+}
+
+// ListForObserved is ListFor, also reporting when minimega was read for a
+// running experiment's VMs (freshness.Unobserved for a stopped one). When
+// minimega did not answer for every VM, the observation is not Known and every
+// VM the topology configures is listed, those minimega did report with their
+// details and the rest as configured with no state, rather than leaving the
+// rest out as not deployed.
+func ListForObserved(exp *types.Experiment) ([]mm.VM, freshness.Observation) {
+	if !exp.Running() {
+		return listVMs(*exp, nil, false), freshness.Unobserved()
 	}
 
-	return listVMs(*exp, running)
+	vms, obs := mm.GetVMInfoObserved(mm.NS(exp.Metadata.Name))
+
+	running := make(map[string]mm.VM, len(vms))
+
+	for _, vm := range vms {
+		running[vm.Name] = vm
+	}
+
+	return listVMs(*exp, running, obs.Known), obs
 }
 
 // ListConfigured lists the experiment's VMs as its topology configures them,
 // without asking minimega for their state, for when minimega is busy.
 func ListConfigured(exp types.Experiment) []mm.VM {
-	return listVMs(exp, nil)
+	return listVMs(exp, nil, false)
 }
 
-// listVMs combines the topology's VMs with running (minimega's details for a
-// running experiment's VMs, or nil to leave them out).
-func listVMs(exp types.Experiment, running map[string]mm.VM) []mm.VM {
+// listVMs combines the topology's VMs with running, minimega's details for a
+// running experiment's VMs. When complete, running holds every VM minimega
+// runs, so a bootable VM it lacks was not deployed and is left out.
+func listVMs(exp types.Experiment, running map[string]mm.VM, complete bool) []mm.VM {
 	var vms []mm.VM
 
 	for idx, node := range exp.Spec.Topology().Nodes() {
 		vm, ifaceNameByVLAN := nodeVM(exp, idx, node)
 
 		details, exists := running[vm.Name]
-		if running != nil && exp.Running() && !exp.DryRun() && !node.External() && !vm.DoNotBoot && !exists {
+		if complete && exp.Running() && !exp.DryRun() && !node.External() && !vm.DoNotBoot && !exists {
 			continue
 		}
 

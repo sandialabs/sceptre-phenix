@@ -466,10 +466,17 @@ paths:
       responses:
         "200":
           description: successful operation
+          headers:
+            X-Phenix-Observed-At:
+              $ref: "#/components/headers/ObservedAt"
+            X-Phenix-Stale:
+              $ref: "#/components/headers/Stale"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Experiments"
+        "500":
+          description: the store could not be read, so no experiments are known
     post:
       tags:
         - Experiments
@@ -617,6 +624,11 @@ paths:
           description: >-
             successful operation; `vms` holds the page asked for and
             `vm_count` how many VMs match, before paging
+          headers:
+            X-Phenix-Observed-At:
+              $ref: "#/components/headers/ObservedAt"
+            X-Phenix-Stale:
+              $ref: "#/components/headers/Stale"
           content:
             application/json:
               schema:
@@ -972,8 +984,8 @@ paths:
       description: >-
         Lists the experiment's files on the head node and every mesh node.
         A listing is reused for a few seconds, so a file written just before
-        the request may not be in it yet. Needs the `experiments/files`
-        `list` permission.
+        the request may not be in it yet; `X-Phenix-Observed-At` says when it
+        was read. Needs the `experiments/files` `list` permission.
       operationId: getExperimentsNameFiles
       parameters:
         - name: name
@@ -1023,10 +1035,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Files"
+          headers:
+            X-Phenix-Observed-At:
+              $ref: "#/components/headers/ObservedAt"
         "400":
           description: pageNum or perPage is not a whole number of at least 1
         "403":
           description: forbidden
+        "502":
+          description: >-
+            minimega could not list the files of every cluster node, so the
+            listing would be incomplete
   "/experiments/{name}/files/download":
     post:
       tags:
@@ -1685,6 +1704,11 @@ paths:
       responses:
         "200":
           description: successful operation
+          headers:
+            X-Phenix-Observed-At:
+              $ref: "#/components/headers/ObservedAt"
+            X-Phenix-Stale:
+              $ref: "#/components/headers/Stale"
           content:
             application/json:
               schema:
@@ -2345,10 +2369,17 @@ paths:
       responses:
         "200":
           description: successful operation
+          headers:
+            X-Phenix-Observed-At:
+              $ref: "#/components/headers/ObservedAt"
+            X-Phenix-Stale:
+              $ref: "#/components/headers/Stale"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/VMs"
+        "500":
+          description: the store could not be read, so no experiments are known
   "/soh":
     get:
       tags:
@@ -2365,7 +2396,14 @@ paths:
       operationId: getSoH
       responses:
         "200":
-          description: successful operation
+          description: >-
+            successful operation; the headers report the oldest VM states in
+            the response, and whether any are earlier states
+          headers:
+            X-Phenix-Observed-At:
+              $ref: "#/components/headers/ObservedAt"
+            X-Phenix-Stale:
+              $ref: "#/components/headers/Stale"
           content:
             application/json:
               schema:
@@ -3152,11 +3190,17 @@ paths:
       tags:
         - Hosts
       summary: Get all cluster hosts
-      description: ""
+      description: >-
+        The list is reused for up to 5 seconds; `X-Phenix-Observed-At` says
+        when it was read from minimega. Each host's disk usage is measured at
+        most once a minute.
       operationId: getHosts
       responses:
         "200":
           description: successful operation
+          headers:
+            X-Phenix-Observed-At:
+              $ref: "#/components/headers/ObservedAt"
           content:
             application/json:
               schema:
@@ -4281,6 +4325,12 @@ components:
           description: >-
             start progress from 0 to 1 while the experiment is starting;
             reported by `GET /experiments` only
+        vms_unknown:
+          type: boolean
+          description: >-
+            minimega did not answer for every VM in `vms` (or was busy), so
+            some are listed as configured with an empty state; only set when
+            the response lists VMs
         vm_count:
           type: integer
         delayed_vms:
@@ -4314,6 +4364,16 @@ components:
         total:
           type: integer
           description: how many VMs there are, before paging
+        runtime_unknown:
+          type: boolean
+          description: >-
+            minimega did not answer for every VM of a running experiment (or
+            was busy): VMs it did not report are listed as configured, with an
+            empty state, instead of being left out
+        observed_at:
+          type: string
+          format: date-time
+          description: when minimega was read for the VMs; empty when it was not
     VM:
       type: object
       properties:
@@ -5117,6 +5177,15 @@ components:
         vms_error:
           type: string
           description: why minimega could not be asked for VM states
+        vms_observed_at:
+          type: string
+          format: date-time
+          description: when minimega was read for the VM counts
+        vms_stale:
+          type: boolean
+          description: >-
+            the VM counts are the states last read, served while minimega is
+            busy starting or stopping an experiment
         hosts:
           type: integer
           description: hosts with results
