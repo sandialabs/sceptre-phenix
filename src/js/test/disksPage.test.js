@@ -6,13 +6,22 @@ import realAxios from 'axios';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, fetching, loaderSpy, modules, notify, rbac, resetMocks } =
-  await vi.hoisted(() => import('./helpers/mocks.js'));
+const {
+  axios,
+  fetching,
+  loaderSpy,
+  modules,
+  notices,
+  notify,
+  rbac,
+  resetMocks,
+} = await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
 vi.mock('@/utils/websocket', modules.websocket);
+vi.mock('@/utils/notify.js', modules.notify);
 // a loader whose load() fetches as the real one does, without the cache
 vi.mock('@/utils/pageLoader.js', fetching);
 
@@ -613,6 +622,52 @@ describe('disk action requests', () => {
     useJobStore().apply(wsMsg('job', 'j1', 'update', done));
     await confirmed;
     expect(ctx.loader.load).toHaveBeenCalled();
+  });
+
+  it('says why a clone failed, and stops waiting for a job the server forgot', async () => {
+    const ctx = opened();
+    axios.post.mockResolvedValue({
+      data: { id: 'j1', kind: 'disk.clone', status: 'running', revision: 1 },
+    });
+    const failed = {
+      id: 'j1',
+      kind: 'disk.clone',
+      status: 'failed',
+      error: 'every item failed',
+      items: [{ name: path, status: 'failed', error: 'no space left' }],
+      revision: 3,
+    };
+    axios.get.mockResolvedValue({ data: failed });
+
+    ctx.cloneDisk(path);
+    let confirmed = ctx.$buefy.dialog.prompt.mock.lastCall[0].onConfirm(
+      'x',
+      dialog(),
+    );
+    await flush();
+    useJobStore().apply(wsMsg('job', 'j1', 'update', failed));
+    await confirmed;
+    expect(notices.open).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.stringify(notices.open.mock.lastCall[0].message.children),
+    ).toContain('no space left');
+
+    // the server restarted while the next clone ran
+    axios.post.mockResolvedValue({
+      data: { id: 'j2', kind: 'disk.clone', status: 'running', revision: 1 },
+    });
+    ctx.cloneDisk(path);
+    confirmed = ctx.$buefy.dialog.prompt.mock.lastCall[0].onConfirm(
+      'y',
+      dialog(),
+    );
+    await flush();
+    useJobStore().apply(wsMsg('job', 'j2', 'remove', {}));
+    await confirmed;
+    expect(notify.error.mock.lastCall[0].message).toMatch(
+      /no longer has job j2/,
+    );
+    expect(ctx.loader.load).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the prompt open and shows why a clone could not start', async () => {

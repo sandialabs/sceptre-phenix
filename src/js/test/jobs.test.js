@@ -180,10 +180,74 @@ describe('the jobs store', () => {
     expect(done.status).toBe('failed');
   });
 
-  it('builds the artifact link with the token, and forgets everything on sign-out', () => {
+  it('fails whenDone once the server no longer has the job', async () => {
+    vi.useFakeTimers();
+    jobs.put(job('j1'));
+    jobs.put(job('j2'));
+    axios.get.mockRejectedValue({ response: { status: 404 } });
+
+    const polled = jobs.whenDone('j1');
+    const removed = jobs.whenDone('j2');
+    const reloaded = jobs.whenDone('j3');
+    const failures = Promise.allSettled([polled, removed, reloaded]);
+
+    // the poll finds the job gone, as after a server restart
+    await vi.advanceTimersByTimeAsync(5000);
+    // a websocket message says the job is gone
+    jobs.apply(wsMsg('job', 'j2', 'remove', {}));
+    // a reload does not list it, and the server says it is gone
+    axios.get.mockImplementation(async (url) => {
+      if (url === 'jobs') return { data: { jobs: [] } };
+      throw { response: { status: 404 } };
+    });
+    await jobs.load();
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const result of await failures) {
+      expect(result.status).toBe('rejected');
+      expect(result.reason.message).toMatch(/no longer has job j\d/);
+    }
+    expect(jobs.jobs.j1).toBeUndefined();
+  });
+
+  it('keeps waiting for a job the server has, though a reload missed it', async () => {
+    jobs.put(job('j1'));
+    let done = null;
+    jobs.whenDone('j1').then((j) => (done = j));
+    axios.get.mockImplementation(async (url) =>
+      url === 'jobs'
+        ? { data: { jobs: [] } }
+        : { data: job('j1', { status: 'succeeded', revision: 2 }) },
+    );
+
+    await jobs.load();
+    await flush();
+
+    expect(axios.get).toHaveBeenCalledWith('jobs/j1');
+    expect(done.status).toBe('succeeded');
+  });
+
+  it('builds and follows the artifact link with the token, and forgets everything on sign-out', () => {
     expect(jobs.artifactURL({ id: 'j1' })).toBe(
       '/api/v1/jobs/j1/artifact?token=t',
     );
+
+    // downloads through a link, not a window a browser may block
+    const link = { click: vi.fn(), remove: vi.fn() };
+    const append = vi.fn();
+    vi.stubGlobal('document', {
+      createElement: () => link,
+      body: { appendChild: append },
+    });
+    jobs.downloadArtifact({ id: 'j1', artifact: { name: 'exp-files.zip' } });
+    vi.unstubAllGlobals();
+    expect(link).toMatchObject({
+      href: '/api/v1/jobs/j1/artifact?token=t',
+      download: 'exp-files.zip',
+    });
+    expect(append).toHaveBeenCalledWith(link);
+    expect(link.click).toHaveBeenCalled();
+    expect(link.remove).toHaveBeenCalled();
 
     jobs.put(job('j1'));
     jobs.clear();

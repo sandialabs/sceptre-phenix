@@ -42,9 +42,19 @@ const whole = (job) =>
     (item) => item.status !== 'succeeded' || 'result' in item,
   );
 
-// the callbacks waiting for a job to finish, by job ID; kept out of the
-// store's state, which only holds what the UI shows
+// the promises waiting for a job to finish, as { resolve, reject }, by job
+// ID; kept out of the store's state, which only holds what the UI shows
 const waiters = new Map();
+
+// fails the promises waiting for a job the server no longer has, as after it
+// restarts, so the pages awaiting them stop waiting
+function forget(id) {
+  const error = new Error(
+    `The server no longer has job ${id}; it may have restarted`,
+  );
+  for (const { reject } of waiters.get(id) ?? []) reject(error);
+  waiters.delete(id);
+}
 
 export const useJobStore = defineStore('jobs', {
   state: () => ({
@@ -86,7 +96,7 @@ export const useJobStore = defineStore('jobs', {
       this.jobs[job.id] = keepHeld ? held : job;
 
       if (!isActiveJob(job)) {
-        for (const resolve of waiters.get(job.id) ?? [])
+        for (const { resolve } of waiters.get(job.id) ?? [])
           resolve(this.jobs[job.id]);
         waiters.delete(job.id);
       }
@@ -105,6 +115,10 @@ export const useJobStore = defineStore('jobs', {
       for (const id of Object.keys(this.jobs)) {
         if (!listed.has(id)) delete this.jobs[id];
       }
+      // asks after the awaited ones, which may have started since the list
+      for (const id of waiters.keys()) {
+        if (!listed.has(id)) this.check(id);
+      }
       this.loaded = true;
     },
 
@@ -113,6 +127,7 @@ export const useJobStore = defineStore('jobs', {
       if (msg?.resource?.type !== 'job') return;
       if (msg.resource.action === 'remove') {
         delete this.jobs[msg.resource.name];
+        forget(msg.resource.name);
         return;
       }
       this.put(msg.result);
@@ -130,6 +145,17 @@ export const useJobStore = defineStore('jobs', {
       return this.put(data);
     },
 
+    // reads the job again, and forgets it if the server no longer has it
+    async check(id) {
+      try {
+        await this.fetch(id);
+      } catch (err) {
+        if (err?.response?.status !== 404) return;
+        delete this.jobs[id];
+        forget(id);
+      }
+    },
+
     async cancel(id) {
       const { data } = await axiosInstance.post(`jobs/${id}/cancel`);
       return this.put(data);
@@ -142,21 +168,19 @@ export const useJobStore = defineStore('jobs', {
     },
 
     // resolves with the job once it has finished, read whole from the
-    // server
+    // server; rejects if the server no longer has it
     whenDone(id) {
       const held = this.jobs[id];
-      const done = new Promise((resolve) => {
+      const done = new Promise((resolve, reject) => {
         if (held && !isActiveJob(held)) {
           resolve(held);
           return;
         }
-        waiters.set(id, [...(waiters.get(id) ?? []), resolve]);
+        waiters.set(id, [...(waiters.get(id) ?? []), { resolve, reject }]);
       });
 
       // in case a websocket message is lost
-      const poll = setInterval(() => {
-        this.fetch(id).catch(() => {});
-      }, DONE_POLL_MS);
+      const poll = setInterval(() => this.check(id), DONE_POLL_MS);
 
       return done
         .finally(() => clearInterval(poll))
@@ -168,6 +192,17 @@ export const useJobStore = defineStore('jobs', {
       const token = usePhenixStore().token ?? '';
       const query = token ? `?token=${encodeURIComponent(token)}` : '';
       return `${import.meta.env.BASE_URL}api/v1/jobs/${job.id}/artifact${query}`;
+    },
+
+    // downloads the job's artifact through a link rather than a new window,
+    // which a browser blocks once the click that asked for it is long past
+    downloadArtifact(job) {
+      const link = document.createElement('a');
+      link.href = this.artifactURL(job);
+      link.download = job.artifact?.name ?? '';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     },
 
     // forgets every job, as on sign-out
