@@ -17,6 +17,7 @@ import (
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -58,16 +59,7 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/vnc", "get", exp+"/"+name) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"vnc access not allowed",
-			"user",
-			ctx.Value(middleware.ContextKeyUser),
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VNCAttach, "vnc access not allowed", audit.Fields{Experiment: exp, VM: name})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -136,16 +128,17 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVNCWebSocket")
 
 	var (
-		ctx  = r.Context()
-		role = middleware.RoleFromContext(ctx)
+		role = middleware.RoleFromContext(r.Context())
 		vars = mux.Vars(r)
 		exp  = vars["exp"]
 		name = vars["name"]
 	)
 
+	fields := audit.Fields{Experiment: exp, VM: name}
+
 	// the same permission as the page that opens it
 	if !role.Allowed("vms/vnc", "get", exp+"/"+name) {
-		plog.Warn(plog.TypeSecurity, "vnc access not allowed", "user", middleware.UserFromContext(ctx), "exp", exp, "vm", name)
+		audit.Denied(r, audit.VNCAttach, "vnc access not allowed", fields)
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -154,12 +147,18 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
 	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting VNC endpoint", "err", err)
+		audit.Failure(r, audit.VNCAttach, "vnc attach failed", fields, err)
 		http.Error(w, "", http.StatusBadRequest)
 
 		return
 	}
 
-	websocket.Handler(util.ConnectWSHandler(endpoint)).ServeHTTP(w, r)
+	proxy := util.ConnectWSHandler(endpoint)
+
+	websocket.Handler(func(ws *websocket.Conn) {
+		audit.Success(r, audit.VNCAttach, "vnc attached", fields)
+		proxy(ws)
+	}).ServeHTTP(w, r)
 }
 
 // vncBannerAnnotation is the map form of a VM's vncBanner annotation.
