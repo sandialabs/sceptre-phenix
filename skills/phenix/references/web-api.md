@@ -37,6 +37,13 @@ TOKEN=$(curl -s -u admin:password http://localhost:3000/api/v1/login | jq -r .to
 curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experiments
 ```
 
+The capture, capture token, WebShark, experiment file, minimega console, VNC
+websocket, port forward websocket, disk, VM snapshot, commit and mount routes
+log `AUDIT` events with ECS fields (`event.action`, `event.outcome`,
+`user.name`, `source.ip`, ...) for successes, failures and RBAC refusals,
+always written to the system log file whatever `log.level` is; see
+`docs/content/logging.md` ("Audit Events") for the actions and fields.
+
 ## Routes
 
 | Resource | Routes |
@@ -86,8 +93,9 @@ API response drops `Accept-Ranges` and `Repr-Digest` and weakens its `ETag` to
 
 With `Accept: text/plain` the same route is the Files tab's viewer: inline,
 `text/plain; charset=utf-8`, compressible, and `413` for a file over 10 MiB.
-The `downloaded file` log line fires once per download (a `GET` answered `200`,
-or `206` from byte 0), with the `range` asked for.
+The `file-download` audit event fires once per download (a `GET` answered
+`200`, or `206` from byte 0), with the `Range` asked for as
+`http.request.range`.
 
 `POST /experiments/{name}/files/download` and `POST /configs/download` build a
 zip as they send it: `Accept-Ranges: none`, `Cache-Control: no-store`, and no

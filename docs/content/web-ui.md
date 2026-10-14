@@ -28,6 +28,10 @@ them:
 | `Tunneler` | the `tunneler-download` feature |
 | `Settings` | `update` on `settings` |
 
+The Logs page's Type filter includes `AUDIT`, the security-relevant actions
+taken through the web UI and API, and its search matches their fields, such as
+`event.action=disk-delete` (see [Audit Events](logging.md#audit-events)).
+
 A feature is something the server found at startup, not a permission. The
 server reports the `webshark` feature when it finds a WebShark build (see
 [WebShark](webshark.md)) and `tunneler-download` when it finds a
