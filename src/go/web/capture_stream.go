@@ -13,6 +13,7 @@ import (
 
 	"phenix/api/livecapture"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/capability"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -58,9 +59,7 @@ func captureStreamStatus(err error) int {
 // first holding the file header and each later one whole packets.
 func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) {
 	var (
-		ctx     = r.Context()
-		role    = middleware.RoleFromContext(ctx)
-		user    = middleware.UserFromContext(ctx)
+		role    = middleware.RoleFromContext(r.Context())
 		vars    = mux.Vars(r)
 		exp     = vars["exp"]
 		name    = vars["name"]
@@ -68,7 +67,7 @@ func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !captureReadAllowed(role, exp, name) {
-		plog.Warn(plog.TypeSecurity, "streaming VM capture not allowed", "user", user, "exp", exp, "vm", name)
+		audit.Denied(r, audit.CaptureStream, "streaming VM capture not allowed", audit.Fields{Experiment: exp, VM: name})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -81,14 +80,16 @@ func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tap, ok := openCaptureTap(w, exp, name, iface)
+	fields := audit.Fields{Experiment: exp, VM: name, Interface: &iface}
+
+	tap, ok := openCaptureTap(w, r, fields)
 	if !ok {
 		return
 	}
 
 	defer tap.Release()
 
-	plog.Info(plog.TypeAction, "streaming VM capture", "user", user, "exp", exp, "vm", name, "interface", iface)
+	audit.Success(r, audit.CaptureStream, "streaming VM capture", fields)
 
 	if websocket.IsWebSocketUpgrade(r) {
 		streamCaptureWebSocket(w, r, tap, fromNow)
@@ -114,19 +115,16 @@ func (c grantChecker) GetCaptureStreamByToken(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	t := g.Target
+	fields := grantAuditFields(r, g, capability.OpStream)
 
-	tap, ok := openCaptureTap(w, t.Exp, t.VM, t.Interface)
+	tap, ok := openCaptureTap(w, r, fields)
 	if !ok {
 		return
 	}
 
 	defer tap.Release()
 
-	plog.Info(
-		plog.TypeAction, "streaming VM capture",
-		"user", g.User, "exp", t.Exp, "vm", t.VM, "interface", t.Interface, "id", g.ID,
-	)
+	audit.Success(r, audit.CaptureStream, "streaming VM capture", fields)
 
 	ctx, cancel := c.untilRevoked(r.Context(), g)
 	defer cancel()
@@ -134,11 +132,17 @@ func (c grantChecker) GetCaptureStreamByToken(w http.ResponseWriter, r *http.Req
 	streamCapture(w, r.WithContext(ctx), tap, r.URL.Query().Get("from") == "now")
 }
 
-// openCaptureTap starts following a VM interface's running capture. It
-// writes the error response and returns false when it cannot.
-func openCaptureTap(w http.ResponseWriter, exp, vm string, iface int) (*livecapture.Tap, bool) {
+// openCaptureTap starts following the running capture of the VM interface
+// fields name, for request r. It writes the error response and returns false
+// when it cannot.
+func openCaptureTap(w http.ResponseWriter, r *http.Request, fields audit.Fields) (*livecapture.Tap, bool) {
+	exp, vm, iface := fields.Experiment, fields.VM, *fields.Interface
+
 	tap, err := livecapture.Open(exp, vm, iface)
 	if err != nil {
+		// not capturing included: it was an attempt to read the capture
+		audit.Failure(r, audit.CaptureStream, "opening VM capture stream failed", fields, err)
+
 		status := captureStreamStatus(err)
 		if status == http.StatusInternalServerError {
 			plog.Error(plog.TypeSystem, "opening VM capture stream", "exp", exp, "vm", vm, "interface", iface, "err", err)

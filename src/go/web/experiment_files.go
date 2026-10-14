@@ -12,6 +12,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/util/mm"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/util"
 )
@@ -78,11 +79,10 @@ func decodeFilesRequest(w http.ResponseWriter, r *http.Request) ([]string, bool)
 	return req.Paths, true
 }
 
-// forbidFiles logs a refused request on the experiment's files and writes a
-// 403 response.
-func forbidFiles(w http.ResponseWriter, r *http.Request, name, action string) {
-	user := middleware.UserFromContext(r.Context())
-	plog.Warn(plog.TypeSecurity, action+" not allowed", "user", user, "exp", name)
+// forbidFiles audits a refused action a on the experiment's files, described
+// by msg, and writes a 403 response.
+func forbidFiles(w http.ResponseWriter, r *http.Request, name string, a audit.Action, msg string) {
+	audit.Denied(r, a, msg+" not allowed", audit.Fields{Experiment: name})
 	http.Error(w, "forbidden", http.StatusForbidden)
 }
 
@@ -98,7 +98,9 @@ func GetExperimentFileChecksum(w http.ResponseWriter, r *http.Request) {
 
 	role := middleware.RoleFromContext(r.Context())
 	if !role.Allowed("experiments/files", "get", name) {
-		forbidFiles(w, r, name, "getting experiment file checksum")
+		user := middleware.UserFromContext(r.Context())
+		plog.Warn(plog.TypeSecurity, "getting experiment file checksum not allowed", "user", user, "exp", name)
+		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
 	}
@@ -135,7 +137,7 @@ func DeleteExperimentFile(w http.ResponseWriter, r *http.Request) {
 
 	role := middleware.RoleFromContext(r.Context())
 	if !role.Allowed("experiments/files", "delete", name) {
-		forbidFiles(w, r, name, "deleting experiment file")
+		forbidFiles(w, r, name, audit.FileDelete, "deleting experiment file")
 
 		return
 	}
@@ -169,7 +171,7 @@ func DeleteExperimentFiles(w http.ResponseWriter, r *http.Request) {
 
 	role := middleware.RoleFromContext(r.Context())
 	if !role.Allowed("experiments/files", "delete", name) {
-		forbidFiles(w, r, name, "deleting experiment files")
+		forbidFiles(w, r, name, audit.FileDelete, "deleting experiment files")
 
 		return
 	}
@@ -232,7 +234,7 @@ func DownloadExperimentFiles(w http.ResponseWriter, r *http.Request) {
 
 	role := middleware.RoleFromContext(r.Context())
 	if !role.Allowed("experiments/files", "get", name) {
-		forbidFiles(w, r, name, "downloading experiment files")
+		forbidFiles(w, r, name, audit.FileDownload, "downloading experiment files")
 
 		return
 	}
@@ -259,6 +261,10 @@ func DownloadExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		return w
 	})
 	if err != nil {
+		audit.Failure(r, audit.FileDownload, "downloading experiment files failed", audit.Fields{
+			Experiment: name, Extra: []any{"phenix.file.count", len(paths)},
+		}, err)
+
 		if started {
 			// The archive is partly sent; aborting the response tells the
 			// client it is incomplete rather than ending it cleanly.
@@ -276,9 +282,9 @@ func DownloadExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := middleware.UserFromContext(r.Context())
-
 	for _, path := range zipped {
-		plog.Info(plog.TypeAction, "downloaded file", "user", user, "exp", name, "file", path)
+		audit.Success(r, audit.FileDownload, "downloaded file", audit.Fields{
+			Experiment: name, File: path, Extra: []any{"phenix.file.capture", isCaptureFile(path)},
+		})
 	}
 }

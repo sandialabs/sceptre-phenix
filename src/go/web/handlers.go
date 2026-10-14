@@ -35,6 +35,7 @@ import (
 	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/cache"
@@ -1207,16 +1208,17 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 		path  = query.Get("path")
 	)
 
+	// the Files tab's viewer shows the file inline as text
+	var (
+		preview = r.Header.Get("Accept") == "text/plain"
+		fields  = audit.Fields{
+			Experiment: name, File: path,
+			Extra: []any{"phenix.file.capture", isCaptureFile(path), "phenix.file.preview", preview},
+		}
+	)
+
 	if !role.Allowed("experiments/files", "get", name) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"getting experiment file not allowed",
-			"user",
-			user,
-			"exp",
-			name,
-		)
+		audit.Denied(r, audit.FileDownload, "getting experiment file not allowed", fields)
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -1224,6 +1226,8 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 
 	local, err := experiment.LocalFile(name, path)
 	if err != nil {
+		audit.Failure(r, audit.FileDownload, "getting experiment file failed", fields, err)
+
 		if status := fileErrorStatus(err); status != http.StatusInternalServerError {
 			http.Error(w, err.Error(), status)
 
@@ -1245,10 +1249,9 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// a download, streamed from disk and resumable; or the Files tab's
-	// viewer, which shows the file inline as text
+	// a download, streamed from disk and resumable; or the viewer's text
 	d := util.Download{Path: local, Name: file, ContentType: "", Live: false, MaxSize: 0}
-	if r.Header.Get("Accept") == "text/plain" {
+	if preview {
 		d.Name = ""
 		d.ContentType = "text/plain; charset=utf-8"
 		d.MaxSize = maxViewBytes
@@ -1256,6 +1259,8 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 
 	served, err := util.ServeDownload(w, r, d)
 	if err != nil {
+		audit.Failure(r, audit.FileDownload, "getting experiment file failed", fields, err)
+
 		switch {
 		case errors.Is(err, util.ErrTooLarge):
 			http.Error(w, path+" is too large to view (over 10 MiB); download it instead", http.StatusRequestEntityTooLarge)
@@ -1269,21 +1274,13 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// once per download, not per resumed range or HEAD
-	if d.Name != "" && served.Started {
-		user := middleware.UserFromContext(ctx)
-		plog.Info(
-			plog.TypeAction,
-			"downloaded file",
-			"user",
-			user,
-			"exp",
-			name,
-			"file",
-			path,
-			"range",
-			r.Header.Get("Range"),
-		)
+	// once per download or view, not per resumed range or HEAD
+	if served.Started {
+		if rng := r.Header.Get("Range"); rng != "" {
+			fields.Extra = append(fields.Extra, "http.request.range", rng)
+		}
+
+		audit.Success(r, audit.FileDownload, "downloaded file", fields)
 	}
 }
 
@@ -2660,17 +2657,7 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/captures", "create", fmt.Sprintf("%s/%s", exp, name)) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"starting capture for VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.CaptureStart, "starting capture for VM not allowed", audit.Fields{Experiment: exp, VM: name})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -2694,8 +2681,12 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := vm.StartCapture(exp, name, int(req.GetInterface()), req.GetFilename()); err != nil {
+	iface := int(req.GetInterface())
+	captured := audit.Fields{Experiment: exp, VM: name, Interface: &iface, File: req.GetFilename()}
+
+	if err := vm.StartCapture(exp, name, iface, req.GetFilename()); err != nil {
 		plog.Error(plog.TypeSystem, "starting capture for VM", "exp", exp, "vm", name, "err", err)
+		audit.Failure(r, audit.CaptureStart, "starting capture for VM failed", captured, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -2710,17 +2701,7 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm capture started",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.CaptureStart, "vm capture started", captured)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -2740,25 +2721,16 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/captures", "delete", fmt.Sprintf("%s/%s", exp, name)) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"stopping captures for VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.CaptureStop, "stopping captures for VM not allowed", audit.Fields{Experiment: exp, VM: name})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
 	}
 
 	var (
-		err  error
-		body json.RawMessage
+		err     error
+		body    json.RawMessage
+		stopped = audit.Fields{Experiment: exp, VM: name}
 	)
 
 	if ifaceStr == "" {
@@ -2772,6 +2744,8 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 
 			return
 		}
+
+		stopped.Interface = &iface
 
 		if err = vm.StopCapture(exp, name, iface); err == nil {
 			body, err = json.Marshal(map[string]int{"interface": iface})
@@ -2797,6 +2771,7 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 			"err",
 			err,
 		)
+		audit.Failure(r, audit.CaptureStop, "stopping captures for VM failed", stopped, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -2811,19 +2786,7 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm capture stopped",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-		"iface",
-		ifaceStr,
-	)
+	audit.Success(r, audit.CaptureStop, "vm capture stopped", stopped)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -2837,15 +2800,7 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("exp/captureSubnet", "create", exp) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"starting subnet capture for experiment not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-		)
+		audit.Denied(r, audit.CaptureStart, "starting subnet capture for experiment not allowed", audit.Fields{Experiment: exp})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -2869,9 +2824,12 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	subnet := []any{"phenix.capture.subnet", req.GetSubnet()}
+
 	vmCaptures, err := vm.CaptureSubnet(exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to start subnet capture", "err", err)
+		audit.Failure(r, audit.CaptureStart, "starting subnet capture failed", audit.Fields{Experiment: exp, Extra: subnet}, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -2885,15 +2843,12 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"subnet capture started",
-		"user",
-		user,
-		"exp",
-		exp,
-	)
+	for _, c := range vmCaptures {
+		audit.Success(r, audit.CaptureStart, "subnet capture started", audit.Fields{
+			Experiment: exp, VM: c.VM, Interface: &c.Interface, File: c.Filepath, Extra: subnet,
+		})
+	}
+
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -2907,15 +2862,7 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("exp/captureSubnet", "delete", exp) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"stopping subnet capture for experiment not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-		)
+		audit.Denied(r, audit.CaptureStop, "stopping subnet capture for experiment not allowed", audit.Fields{Experiment: exp})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -2937,9 +2884,12 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	subnet := []any{"phenix.capture.subnet", req.GetSubnet()}
+
 	vms, err := vm.StopCaptureSubnet(exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to stop subnet capture", "err", err)
+		audit.Failure(r, audit.CaptureStop, "stopping subnet capture failed", audit.Fields{Experiment: exp, Extra: subnet}, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -2953,15 +2903,10 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"subnet capture stopped",
-		"user",
-		user,
-		"exp",
-		exp,
-	)
+	for _, name := range vms {
+		audit.Success(r, audit.CaptureStop, "subnet capture stopped", audit.Fields{Experiment: exp, VM: name, Extra: subnet})
+	}
+
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 

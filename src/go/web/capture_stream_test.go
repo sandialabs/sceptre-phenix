@@ -22,25 +22,43 @@ func TestGetVMCaptureStreamRefuses(t *testing.T) {
 		role  rbac.Role
 		iface string
 		want  int
+		// the audit event: "denied", "failed", or "" for none
+		wantAudit string
 	}{
 		"no file permission": {
-			testRole("vms/captures", "list", "test-experiment/test-vm"), "0", http.StatusForbidden,
+			testRole("vms/captures", "list", "test-experiment/test-vm"), "0", http.StatusForbidden, "denied",
 		},
 		"no capture permission": {
-			testRole("experiments/files", "get", "test-experiment"), "0", http.StatusForbidden,
+			testRole("experiments/files", "get", "test-experiment"), "0", http.StatusForbidden, "denied",
 		},
-		"interface name": {sharkRole(), "eth0", http.StatusBadRequest},
-		"not captured":   {sharkRole(), "1", http.StatusNotFound},
+		"interface name": {sharkRole(), "eth0", http.StatusBadRequest, ""},
+		// an attempt to read the capture, though there is none
+		"not captured": {sharkRole(), "1", http.StatusNotFound, "failed"},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			server := serveAs(t, "alice", tt.role).URL
+			events := captureAudit(t)
 
 			resp := do(t, http.MethodGet,
 				server+"/api/v1/experiments/test-experiment/vms/test-vm/captures/"+tt.iface+"/stream", "")
 			if resp.StatusCode != tt.want {
 				t.Fatalf("expected %d, got %d: %s", tt.want, resp.StatusCode, readBody(t, resp))
+			}
+
+			switch got := events(); tt.wantAudit {
+			case "denied":
+				wantDenied(t, got, "capture-stream")
+			case "failed":
+				e := wantAudit(t, got, "capture-stream", "failure", map[string]any{"user.name": "alice", "phenix.vm.name": "test-vm"})
+				if e != nil && e["error.message"] == nil {
+					t.Errorf("failure without error.message: %v", e)
+				}
+			default:
+				if len(got) != 0 {
+					t.Errorf("audited a request refused before the RBAC check: %v", got)
+				}
 			}
 		})
 	}
@@ -70,9 +88,15 @@ func TestGetVMCaptureStream(t *testing.T) {
 				url += "?from=now"
 			}
 
+			events := captureAudit(t)
 			expect := openCaptureStream(t, url, tt.websocket)
 
 			expect(header, "the file header")
+
+			wantAudit(t, events(), "capture-stream", "success", map[string]any{
+				"user.name": "alice", "phenix.experiment.name": "test-experiment",
+				"phenix.vm.name": "test-vm", "phenix.vm.interface": 0,
+			})
 
 			if !tt.fromNow {
 				expect(old, "the packet already captured")

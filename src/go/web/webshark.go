@@ -24,6 +24,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/api/livecapture"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/capability"
 	"phenix/web/middleware"
 	"phenix/web/util"
@@ -120,7 +121,7 @@ func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	target, ok := resolveSharkTarget(w, r, exp, req)
+	target, ok := resolveSharkTarget(w, r, exp, req, audit.CaptureWebShark)
 	if !ok {
 		return
 	}
@@ -128,10 +129,7 @@ func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) {
 	g, name := mintCaptureGrant(r, target, viewOps)
 	title := sharkTitle(target)
 
-	plog.Info(
-		plog.TypeAction, "opened capture in WebShark",
-		"user", g.User, "exp", exp, "capture", title, "id", g.ID,
-	)
+	audit.Success(r, audit.CaptureWebShark, "opened capture in WebShark", mintedAuditFields(g))
 
 	body, _ := json.Marshal(sharkCaptureResponse{
 		Capture: name,
@@ -147,18 +145,17 @@ func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) {
 
 // resolveSharkTarget finds the capture a request names, a saved capture file
 // or a running capture, once it has checked that the user's role may read
-// it. It writes the error response and returns false when it does not.
-func resolveSharkTarget(w http.ResponseWriter, r *http.Request, exp string, req sharkCaptureRequest) (capability.Target, bool) {
-	var (
-		ctx  = r.Context()
-		role = middleware.RoleFromContext(ctx)
-		user = middleware.UserFromContext(ctx)
-	)
+// it. It writes the error response and returns false when it does not,
+// auditing a refusal or failure as action a.
+func resolveSharkTarget(
+	w http.ResponseWriter, r *http.Request, exp string, req sharkCaptureRequest, a audit.Action,
+) (capability.Target, bool) {
+	role := middleware.RoleFromContext(r.Context())
 
 	switch {
 	case req.Path != "" && req.VM == "":
 		if !role.Allowed("experiments/files", "get", exp) {
-			plog.Warn(plog.TypeSecurity, "opening experiment file in WebShark not allowed", "user", user, "exp", exp)
+			audit.Denied(r, a, "opening experiment file in WebShark not allowed", audit.Fields{Experiment: exp, File: req.Path})
 			http.Error(w, "forbidden", http.StatusForbidden)
 
 			return capability.Target{}, false
@@ -180,6 +177,8 @@ func resolveSharkTarget(w http.ResponseWriter, r *http.Request, exp string, req 
 		case errors.As(err, &writing):
 			req.VM, req.Interface = writing.Capture.VM, &writing.Capture.Interface
 		default:
+			audit.Failure(r, a, "getting experiment file for WebShark failed", audit.Fields{Experiment: exp, File: req.Path}, err)
+
 			status := fileErrorStatus(err)
 			if status == http.StatusInternalServerError {
 				plog.Error(plog.TypeSystem, "getting experiment file for WebShark", "exp", exp, "file", req.Path, "err", err)
@@ -202,8 +201,10 @@ func resolveSharkTarget(w http.ResponseWriter, r *http.Request, exp string, req 
 	}
 
 	// a running capture
+	fields := audit.Fields{Experiment: exp, VM: req.VM, Interface: req.Interface, File: req.Path}
+
 	if !captureReadAllowed(role, exp, req.VM) {
-		plog.Warn(plog.TypeSecurity, "opening VM capture in WebShark not allowed", "user", user, "exp", exp, "vm", req.VM)
+		audit.Denied(r, a, "opening VM capture in WebShark not allowed", fields)
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return capability.Target{}, false
@@ -212,6 +213,8 @@ func resolveSharkTarget(w http.ResponseWriter, r *http.Request, exp string, req 
 	// opening it starts following it, so it is ready when WebShark asks
 	tap, err := livecapture.Open(exp, req.VM, *req.Interface)
 	if err != nil {
+		audit.Failure(r, a, "opening VM capture for WebShark failed", fields, err)
+
 		status := captureStreamStatus(err)
 		if status == http.StatusInternalServerError {
 			plog.Error(plog.TypeSystem, "opening VM capture for WebShark", "exp", exp, "vm", req.VM, "err", err)
@@ -303,6 +306,7 @@ func (c grantChecker) serveSharkCapture(
 	tap, f, err := sharkSource(g)
 	if err != nil {
 		plog.Warn(plog.TypeSystem, "opening capture for WebShark", "exp", g.Target.Exp, "id", g.ID, "err", err)
+		audit.Failure(r, audit.CaptureWebSharkRead, "reading capture for WebShark failed", grantAuditFields(r, g, op), err)
 		sharkError(w, "not found", http.StatusNotFound)
 
 		return
@@ -325,6 +329,8 @@ func (c grantChecker) serveSharkCapture(
 		st := tap.State()
 		http.ServeContent(w, r, base, time.Time{}, io.NewSectionReader(tap, 0, st.Size))
 
+		auditSharkRead(r, g, op, readsFromStart(r))
+
 		return
 	}
 
@@ -336,7 +342,7 @@ func (c grantChecker) serveSharkCapture(
 		saveAs = base
 	}
 
-	_, err = util.ServeOpenFile(w, r, f, util.Download{
+	served, err := util.ServeOpenFile(w, r, f, util.Download{
 		Path:        f.Name(),
 		Name:        saveAs,
 		ContentType: "application/octet-stream",
@@ -345,7 +351,45 @@ func (c grantChecker) serveSharkCapture(
 	})
 	if err != nil {
 		sharkError(w, "not found", http.StatusNotFound)
+
+		return
 	}
+
+	auditSharkRead(r, g, op, served.Started)
+}
+
+// sharkViewsAudited holds the IDs of the grants whose first WebShark view of
+// their capture has been audited: WebShark reads a capture again each time
+// it grows, so only the first read of each grant is.
+var sharkViewsAudited sync.Map //nolint:gochecknoglobals // grant IDs, each dropped when its grant ends
+
+// auditSharkRead audits a read of the grant's capture for op that began a
+// download (started), once per download, or for a view, once per grant.
+func auditSharkRead(r *http.Request, g capability.Grant, op capability.Op, started bool) {
+	if !started {
+		return
+	}
+
+	if op == capability.OpView {
+		if _, seen := sharkViewsAudited.LoadOrStore(g.ID, struct{}{}); seen {
+			return
+		}
+
+		go func() {
+			<-g.Done
+			sharkViewsAudited.Delete(g.ID)
+		}()
+	}
+
+	audit.Success(r, audit.CaptureWebSharkRead, "read capture for WebShark", grantAuditFields(r, g, op))
+}
+
+// readsFromStart reports whether the request reads a file from its first
+// byte: a GET of all of it, or of a range starting there.
+func readsFromStart(r *http.Request) bool {
+	rng := r.Header.Get("Range")
+
+	return r.Method == http.MethodGet && (rng == "" || strings.HasPrefix(rng, "bytes=0-"))
 }
 
 func sharkError(w http.ResponseWriter, msg string, status int) {

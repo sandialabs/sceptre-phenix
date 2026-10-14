@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"slices"
 	"testing"
@@ -27,13 +28,17 @@ func TestStopVMCaptures(t *testing.T) {
 		captures  []mm.Capture
 		want      int
 		wantStops int32
+		// the audit event's outcome and phenix.vm.interface ("" for none)
+		wantOutcome, wantIface string
 	}{
-		"every interface": {"", stopper, both, http.StatusNoContent, 1},
-		"one interface":   {"?iface=1", stopper, both, http.StatusNoContent, 1},
+		"every interface": {"", stopper, both, http.StatusNoContent, 1, "success", ""},
+		"one interface":   {"?iface=1", stopper, both, http.StatusNoContent, 1, "success", "1"},
 		// rather than stop every capture
-		"interface not captured": {"?iface=0", stopper, both[1:], http.StatusInternalServerError, 0},
-		"interface not a number": {"?iface=not-a-number", stopper, both, http.StatusBadRequest, 0},
-		"list only":              {"?iface=0", testRole("vms/captures", "list", "*/*"), both, http.StatusForbidden, 0},
+		"interface not captured": {"?iface=0", stopper, both[1:], http.StatusInternalServerError, 0, "failure", "0"},
+		"interface not a number": {"?iface=not-a-number", stopper, both, http.StatusBadRequest, 0, "", ""},
+		"list only": {
+			"?iface=0", testRole("vms/captures", "list", "*/*"), both, http.StatusForbidden, 0, "failure", "",
+		},
 	}
 
 	for name, tt := range tests {
@@ -50,6 +55,7 @@ func TestStopVMCaptures(t *testing.T) {
 			})
 
 			server := serveAs(t, "alice", tt.role).URL
+			events := captureAudit(t)
 
 			resp := do(t, http.MethodDelete, server+"/api/v1/experiments/test-experiment/vms/test-vm/captures"+tt.query, "")
 			if resp.StatusCode != tt.want {
@@ -58,6 +64,22 @@ func TestStopVMCaptures(t *testing.T) {
 
 			if n := fake.captureStops.Load(); n != tt.wantStops {
 				t.Fatalf("minimega stopped captures %d times, want %d", n, tt.wantStops)
+			}
+
+			got := events()
+			if tt.wantOutcome == "" {
+				if len(got) != 0 {
+					t.Errorf("audited a request refused before the RBAC check: %v", got)
+				}
+
+				return
+			}
+
+			e := wantAudit(t, got, "capture-stop", tt.wantOutcome, map[string]any{
+				"user.name": "alice", "phenix.experiment.name": "test-experiment", "phenix.vm.name": "test-vm",
+			})
+			if iface, ok := e["phenix.vm.interface"]; e != nil && fmt.Sprint(iface) != tt.wantIface && (ok || tt.wantIface != "") {
+				t.Errorf("phenix.vm.interface = %v, want %q", iface, tt.wantIface)
 			}
 		})
 	}
@@ -145,10 +167,16 @@ func TestStopCaptureSubnetNeedsDelete(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			server := serveAs(t, "alice", tc.role).URL
+			events := captureAudit(t)
 
 			resp := do(t, http.MethodPost, server+"/api/v1/experiments/test-experiment/stopCaptureSubnet", "not json")
 			if resp.StatusCode != tc.wantCode {
 				t.Fatalf("expected %d, got %d: %s", tc.wantCode, resp.StatusCode, readBody(t, resp))
+			}
+
+			// a body refused after the RBAC check is not audited
+			if denied := countAudit(events(), "capture-stop", "failure", nil); denied != 0 != (tc.wantCode == http.StatusForbidden) {
+				t.Errorf("%d capture-stop refusals audited for a %d", denied, tc.wantCode)
 			}
 		})
 	}
