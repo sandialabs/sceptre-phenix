@@ -209,7 +209,7 @@ audited.
 | `file-upload` | `file` | `creation` | the file server's upload page (one event per file) |
 | `file-delete` | `file` | `deletion` | `DELETE /experiments/{name}/files/{filename}`, `POST .../files/delete` (one event per file) |
 | `console-create` | `process` | `start` | `POST /console` |
-| `console-attach` | `process` | `access` | `GET /console/{pid}/ws`; refusals of another user's console on any console route |
+| `console-attach` | `process` | `access` | `GET /console/{pid}/ws`; refusals of `GET /console/{pid}` and `POST /console/{pid}/size`, and of another user's console on any console route |
 | `console-terminate` | `process` | `end` | `DELETE /console/{pid}` |
 | `console-end` | `process` | `end` | none: a console ended, for any reason |
 | `vnc-attach` | `session` | `start` | `GET .../vms/{name}/vnc/ws`; refusals of `GET .../vms/{name}/vnc` |
@@ -277,7 +277,7 @@ as `event.action=disk-delete` or `user.name=alice`.
 Actions taken with the `phenix` CLI, such as `phenix vm capture` or
 `phenix image`, have no web user and are not audited, and neither are a
 WebShark capture's watch requests or the console's resize and status checks,
-other than refusals of another user's console.
+other than their refusals.
 
 ### Shipping Audit Events with Filebeat
 

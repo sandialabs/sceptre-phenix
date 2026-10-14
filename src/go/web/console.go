@@ -115,12 +115,7 @@ func GetConsole(w http.ResponseWriter, r *http.Request) {
 	role := middleware.RoleFromContext(r.Context())
 
 	if !role.Allowed("miniconsole", "get") {
-		plog.Warn(
-			plog.TypeSecurity,
-			"getting miniconsole not allowed",
-			"user",
-			middleware.UserFromContext(r.Context()),
-		)
+		audit.Denied(r, audit.ConsoleAttach, "getting miniconsole not allowed", audit.Fields{})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -174,12 +169,7 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) {
 	role := middleware.RoleFromContext(r.Context())
 
 	if !role.Allowed("miniconsole", "post") {
-		plog.Warn(
-			plog.TypeSecurity,
-			"resizing miniconsole not allowed",
-			"user",
-			middleware.UserFromContext(r.Context()),
-		)
+		audit.Denied(r, audit.ConsoleAttach, "resizing miniconsole not allowed", audit.Fields{})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
