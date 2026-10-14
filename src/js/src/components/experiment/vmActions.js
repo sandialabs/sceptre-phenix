@@ -1,5 +1,9 @@
 import { isInterfaceCapturing } from '@/utils/captures.js';
-import { namedList, pluralWord, upperFirst } from '@/utils/plural.js';
+import {
+  actionState,
+  partitionForAction,
+  skippedText,
+} from '@/utils/operations.js';
 
 // What the running experiment page shows for a VM's state, and which VM
 // actions a role may take on a VM in its current state. The details modal, the
@@ -280,38 +284,28 @@ export function vmActionState(name, vm, { can, features = [] }) {
   if (!action) throw new Error(`unknown VM action ${name}`);
 
   const label = forVm(action.label, vm);
-  const verb = action.verb ? forVm(action.verb, vm) : label.toLowerCase();
-  const result = {
-    name,
-    label,
-    description: forVm(action.description, vm),
-    icon: action.icon,
-    type: action.type ?? null,
-    outlined: !!action.outlined,
-    permitted: true,
-    disabled: false,
-    reason: null,
-  };
-
-  const deny = (reason, permitted = true) => ({
-    ...result,
-    permitted,
-    disabled: true,
-    reason: `Can't ${verb}: ${reason}`,
-  });
-
-  if (vm.external) return deny('external nodes are not VMs', false);
-  if (action.feature && !features.includes(action.feature)) {
-    return deny('the server does not support it', false);
-  }
-  if (!actionPermitted(name, can)) {
-    return deny("you don't have permission", false);
+  let unavailable = null;
+  if (vm.external) unavailable = 'external nodes are not VMs';
+  else if (action.feature && !features.includes(action.feature)) {
+    unavailable = 'the server does not support it';
   }
 
-  const blocked = stateBlocks(action, vm);
-  if (blocked) return deny(blocked);
-
-  return result;
+  return actionState(
+    {
+      name,
+      label,
+      verb: action.verb ? forVm(action.verb, vm) : label.toLowerCase(),
+      description: forVm(action.description, vm),
+      icon: action.icon,
+      type: action.type,
+      outlined: action.outlined,
+    },
+    {
+      unavailable,
+      permitted: unavailable ? true : actionPermitted(name, can),
+      blocked: unavailable ? null : stateBlocks(action, vm),
+    },
+  );
 }
 
 // the action states for a list of action names
@@ -327,39 +321,19 @@ export function vmActionStates(names, vm, opts) {
 export function partitionVMsForAction(name, names, vms) {
   const action = VM_ACTIONS[name];
   const byName = new Map((vms ?? []).map((vm) => [vm.name, vm]));
-  const allowed = [];
-  const skipped = new Map();
-  for (const vmName of [names].flat()) {
-    const vm = byName.get(vmName);
-    const reason = vm
-      ? stateBlocks(action, vm)
-      : 'the VM is not shown in the table';
-    if (reason) skipped.set(reason, [...(skipped.get(reason) ?? []), vmName]);
-    else allowed.push(vmName);
-  }
-  return {
-    allowed,
-    skipped: [...skipped].map(([reason, list]) => ({ reason, names: list })),
-  };
+  return partitionForAction(
+    names,
+    (vmName) => byName.get(vmName),
+    (vm) => stateBlocks(action, vm),
+    'the VM is not shown in the table',
+  );
 }
-
-const PLURAL_VERBS = { is: 'are', does: 'do' };
 
 // One sentence for each reason partitionVMsForAction skipped VMs for, turning
 // a reason about "the VM" into one about all of them: "The VMs a and b are
 // not running."
 export function skippedVMsText(skipped) {
-  return skipped
-    .map(({ reason, names }) => {
-      const subject = upperFirst(namedList(names, 'VM'));
-      const text = reason.replace(
-        /^the VM (is|does)\b/,
-        (_, verb) =>
-          `${subject} ${pluralWord(names.length, verb, PLURAL_VERBS[verb])}`,
-      );
-      return `${text}.`;
-    })
-    .join(' ');
+  return skippedText(skipped, 'VM');
 }
 
 // Splits minimega's "alias (vlan)" network names, pairing each interface with
