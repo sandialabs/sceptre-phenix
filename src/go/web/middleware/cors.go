@@ -9,8 +9,9 @@ const (
 	methods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 	headers = "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, " +
 		"X-Phenix-Auth-Token, If-Match, If-None-Match"
-	// the response headers a cross-origin script may read.
-	exposed = "ETag, Location, X-Phenix-Seq, X-Phenix-Revision, X-Phenix-Observed-At, X-Phenix-Stale"
+	// the response headers a cross-origin script may read
+	// (Date, to measure X-Phenix-Observed-At against the server's clock).
+	exposed = "Date, ETag, Location, X-Phenix-Seq, X-Phenix-Revision, X-Phenix-Observed-At, X-Phenix-Stale"
 )
 
 func AllowCORS(next http.Handler) http.Handler {

@@ -177,3 +177,62 @@ describe('websocket traffic', () => {
     expect(page.$buefy.toast.open).not.toHaveBeenCalled();
   });
 });
+
+describe('ordering VM lists against VM changes', () => {
+  // the server's answer to a VM list request it read at seq
+  const listAt = (seq, vms, extra = {}) => ({
+    ...vmList('exp1', vms),
+    seq,
+    result: { vms, total: vms.length, ...extra },
+  });
+  const vmMsg = (action, vm, seq) =>
+    wsMsg('experiment/vm', `exp1/${vm.name}`, action, vm, seq);
+
+  const states = (page) =>
+    page.experiment.vms.map((vm) => `${vm.name}:${vm.state}`);
+
+  async function withVms(vms) {
+    const page = await openPage();
+    loaderSpy.options.apply(running([]));
+    page.handleWs(listAt(5, vms));
+    return page;
+  }
+
+  it('keeps a VM stopped when a list read before the stop arrives after it', async () => {
+    const page = await withVms([{ name: 'vm1', state: 'RUNNING' }]);
+
+    page.handleWs(vmMsg('stop', { name: 'vm1', state: 'QUIT' }, 20));
+    page.handleWs(listAt(10, [{ name: 'vm1', state: 'RUNNING' }]));
+    expect(states(page)).toEqual(['vm1:QUIT']);
+
+    // a list read after the stop is taken as it is
+    page.handleWs(listAt(30, [{ name: 'vm1', state: 'RUNNING' }]));
+    expect(states(page)).toEqual(['vm1:RUNNING']);
+  });
+
+  it('keeps a deleted VM out of a list read before the delete', async () => {
+    const page = await withVms([{ name: 'vm1' }, { name: 'vm2' }]);
+
+    page.handleWs(vmMsg('delete', { name: 'vm1' }, 20));
+    page.handleWs(listAt(10, [{ name: 'vm1' }, { name: 'vm2' }]));
+    expect(page.experiment.vms.map((vm) => vm.name)).toEqual(['vm2']);
+  });
+
+  it('forgets the changes it ordered by when the websocket reconnects', async () => {
+    const page = await withVms([{ name: 'vm1', state: 'RUNNING' }]);
+    page.handleWs(vmMsg('stop', { name: 'vm1', state: 'QUIT' }, 20));
+
+    // a restarted server numbers its messages afresh
+    ws.reconnect.forEach((f) => f());
+    page.handleWs(listAt(3, [{ name: 'vm1', state: 'RUNNING' }]));
+    expect(states(page)).toEqual(['vm1:RUNNING']);
+  });
+
+  it('says when minimega did not answer for the VMs', async () => {
+    const page = await withVms([{ name: 'vm1' }]);
+    expect(page.runtimeUnknown).toBe(false);
+
+    page.handleWs(listAt(10, [{ name: 'vm1' }], { runtime_unknown: true }));
+    expect(page.runtimeUnknown).toBe(true);
+  });
+});

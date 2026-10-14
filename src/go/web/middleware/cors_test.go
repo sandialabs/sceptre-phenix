@@ -23,7 +23,7 @@ func TestAllowCORSHeaders(t *testing.T) {
 		}
 	}
 
-	for _, h := range []string{"ETag", "X-Phenix-Seq", "X-Phenix-Revision", "X-Phenix-Observed-At", "X-Phenix-Stale"} {
+	for _, h := range []string{"Date", "ETag", "X-Phenix-Seq", "X-Phenix-Revision", "X-Phenix-Observed-At", "X-Phenix-Stale"} {
 		if !strings.Contains(w.Header().Get("Access-Control-Expose-Headers"), h) {
 			t.Errorf("Access-Control-Expose-Headers lacks %s", h)
 		}

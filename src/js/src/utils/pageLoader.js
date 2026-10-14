@@ -1,16 +1,61 @@
 import { reactive } from 'vue';
-import { cachedPage, fetchIntoCache } from '@/utils/pageCache.js';
+import {
+  cachedPage,
+  fetchIntoCache,
+  isInvalidated,
+} from '@/utils/pageCache.js';
 import { useErrorNotification } from '@/utils/errorNotif.js';
+import { FreshnessMeta, resourceFor, staleReason } from '@/utils/freshness.js';
 
 // Load state of the page on screen, shown by RefreshStatus in the header.
 // refresh is null when the page has nothing to reload.
 export const pageStatus = reactive({
   refresh: null,
   loading: false,
-  updatedAt: null,
+  updatedAt: null, // when the data on screen arrived (ms)
+  // when the server read the data on screen (ms, on the browser's clock)
+  observedAt: null,
   failed: false, // whether the latest load failed
   fresh: false, // whether a load has come back since the page opened
+  // whether the data on screen may be out of date, and why (see
+  // freshness.js staleReason); age and disconnection are judged as the
+  // header redraws, by currentStaleReason
+  stale: false,
+  staleReason: null,
+  resource: null, // the page's cache key, for its freshness rules
 });
+
+// Why the data on screen may be out of date now, or null: the reason set by
+// its load, or else one judged from its age and the live connection.
+export function currentStaleReason(now = Date.now()) {
+  if (pageStatus.staleReason) return pageStatus.staleReason;
+  if (pageStatus.observedAt === null) return null;
+  return staleReason(
+    { observedAt: pageStatus.observedAt },
+    resourceFor(pageStatus.resource),
+    now,
+  );
+}
+
+// records in pageStatus how fresh the data the page just applied is
+const showFreshness = (meta, fallbackAt, invalidated = false) => {
+  pageStatus.observedAt = meta?.observedAt ?? fallbackAt;
+  pageStatus.staleReason = staleReason(
+    { stale: !!meta?.stale, invalidated },
+    undefined,
+  );
+  pageStatus.stale = pageStatus.staleReason !== null;
+};
+
+const resetStatus = () => {
+  pageStatus.loading = false;
+  pageStatus.updatedAt = null;
+  pageStatus.observedAt = null;
+  pageStatus.failed = false;
+  pageStatus.fresh = false;
+  pageStatus.stale = false;
+  pageStatus.staleReason = null;
+};
 
 // Placeholder for a table whose first load has not finished: it says so
 // when that load failed rather than claiming it is still loading.
@@ -33,10 +78,13 @@ let owner = null;
 // is shown at once, progress shows in the header, and the header's refresh
 // button reloads it.
 //
-//   fetch(signal) resolves to the data; signal aborts the request.
-//   apply(data, { requestedAt }) puts the data on the page; requestedAt is
-//     when the data was requested, so updates the page received since then
-//     can be kept (see liveRows.js).
+//   fetch(signal, meta) resolves to the data; signal aborts the request, and
+//     meta (a FreshnessMeta) goes with its requests, which report how fresh
+//     their responses are into it (see freshness.js).
+//   apply(data, { requestedAt, seq, observedAt, stale }) puts the data on the
+//     page; seq orders it against websocket messages, so updates the page
+//     received since the server read it can be kept (see liveRows.js), and
+//     requestedAt is when it was requested, on the browser's clock.
 //   key is the cache key; pass a function to decide per load, returning
 //     null to skip caching (e.g. for non-default filters), or omit it for
 //     live pages whose cached copy would mislead.
@@ -68,16 +116,21 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
     start() {
       owner = loader;
       pageStatus.refresh = refresh ?? (() => loader.load());
-      pageStatus.loading = false;
-      pageStatus.updatedAt = null;
-      pageStatus.failed = false;
-      pageStatus.fresh = false;
+      resetStatus();
 
       const k = cacheKey();
+      pageStatus.resource = k;
       const cached = k ? cachedPage(k) : undefined;
       if (cached) {
-        apply(cached.data, { requestedAt: cached.at });
+        const meta = cached.meta;
+        apply(cached.data, {
+          requestedAt: cached.at,
+          seq: meta?.seq,
+          observedAt: meta?.observedAt ?? cached.at,
+          stale: !!meta?.stale,
+        });
         pageStatus.updatedAt = cached.at;
+        showFreshness(meta, cached.at, isInvalidated(cached));
       }
 
       return loader.load();
@@ -93,9 +146,13 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
         request = fetchIntoCache(k, fetch);
       } else {
         const controller = new AbortController();
+        const meta = new FreshnessMeta();
         request = {
-          promise: new Promise((resolve) => resolve(fetch(controller.signal))),
+          promise: new Promise((resolve) =>
+            resolve(fetch(controller.signal, meta)),
+          ),
           startedAt: Date.now(),
+          meta,
           release: () => controller.abort(),
         };
       }
@@ -107,12 +164,20 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
         const data = await request.promise;
         if (current !== request) return false;
 
-        apply(data, { requestedAt: request.startedAt });
+        const meta = request.meta;
+        apply(data, {
+          requestedAt: request.startedAt,
+          seq: meta?.seq,
+          observedAt: meta?.observedAt ?? request.startedAt,
+          stale: !!meta?.stale,
+        });
 
         if (owner === loader) {
+          pageStatus.resource = k;
           pageStatus.updatedAt = Date.now();
           pageStatus.failed = false;
           pageStatus.fresh = true;
+          showFreshness(meta, request.startedAt);
         }
         return true;
       } catch (err) {
@@ -136,10 +201,8 @@ export function createPageLoader({ key = null, fetch, apply, refresh }) {
 
       owner = null;
       pageStatus.refresh = null;
-      pageStatus.loading = false;
-      pageStatus.updatedAt = null;
-      pageStatus.failed = false;
-      pageStatus.fresh = false;
+      pageStatus.resource = null;
+      resetStatus();
     },
   };
 

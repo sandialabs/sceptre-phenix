@@ -723,6 +723,14 @@
     <div style="margin-top: -4em">
       <b-tabs v-model="activeTab">
         <b-tab-item label="VMs" icon="desktop">
+          <b-notification
+            v-if="runtimeUnknown"
+            class="runtime-unknown"
+            type="is-warning"
+            :closable="false"
+            role="status">
+            minimega did not answer; showing the VMs as configured.
+          </b-notification>
           <b-field v-if="paginationNeeded" grouped position="is-right">
             <div class="control is-flex">
               <b-switch
@@ -1237,6 +1245,7 @@
   import { showError, useErrorNotification } from '@/utils/errorNotif';
   import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
   import { cachePage } from '@/utils/pageCache.js';
+  import { FreshnessMeta } from '@/utils/freshness.js';
   import { experimentKey, fetchRunningExperiment } from '@/utils/pageData.js';
   import { useTable } from '@/utils/useTable.js';
   import { escapeHTML } from '@/utils/escapeHTML.js';
@@ -1278,6 +1287,17 @@
 
   // the screenshot width the server uses until the page asks for another
   const DEFAULT_SCREENSHOT_WIDTH = 200;
+
+  // experiment/vm messages that change or remove a VM's row, whose seq a VM
+  // list read earlier must not undo (screenshots and errors change no state)
+  const VM_CHANGES = new Set([
+    'update',
+    'delete',
+    'start',
+    'stop',
+    'redeploying',
+    'redeployed',
+  ]);
 
   // the netflow tab's position among the tabs
   const NETFLOW_TAB = 3;
@@ -1405,7 +1425,15 @@
       document.addEventListener('visibilitychange', this.onVisibilityChange);
       // the server drops VM subscriptions and the screenshot size when the
       // websocket reconnects
+      // the seq of the last change to each VM, and of each VM's delete, from
+      // the websocket, so a VM list the server read before a change does not
+      // undo it (see listedVms)
+      this.vmSeq = new Map();
+      this.vmDeletedSeq = new Map();
       this.offWsReconnect = onWsReconnect(() => {
+        // a restarted server numbers its messages afresh
+        this.vmSeq.clear();
+        this.vmDeletedSeq.clear();
         if (this.vncWidth != DEFAULT_SCREENSHOT_WIDTH) {
           this.setVncScreenshotRes(this.vncWidth);
         }
@@ -1416,8 +1444,8 @@
       // is while a fresh one loads
       this.loader = createPageLoader({
         key: experimentKey(this.$route.params.id),
-        fetch: (signal) =>
-          fetchRunningExperiment(this.$route.params.id, signal),
+        fetch: (signal, meta) =>
+          fetchRunningExperiment(this.$route.params.id, signal, meta),
         apply: (experiment) => {
           if (!experiment.running) {
             // stopped since the page was opened; Base shows the stopped view
@@ -1760,6 +1788,49 @@
         return this.experiment.vms.find((vm) => vm.name == name);
       },
 
+      // The VMs of a list the server read at seq listSeq, as the table shows
+      // them: a VM changed by a websocket message after the list was read
+      // keeps the row on screen, one deleted since stays out, and the
+      // screenshots already shown are kept, as they follow the list. A list
+      // without a seq loses to every recorded change.
+      listedVms(vms, listSeq) {
+        const seq = listSeq ?? -Infinity;
+        const current = new Map(
+          (this.experiment.vms ?? []).map((vm) => [vm.name, vm]),
+        );
+
+        const rows = vms
+          .filter(
+            (vm) => !((this.vmDeletedSeq.get(vm.name) ?? -Infinity) > seq),
+          )
+          .map((vm) => {
+            const shown = current.get(vm.name);
+            if (shown && (this.vmSeq.get(vm.name) ?? -Infinity) > seq) {
+              return shown;
+            }
+            return { ...vm, screenshot: vm.screenshot || shown?.screenshot };
+          });
+
+        // changes this list already reflects need no remembering
+        if (Number.isFinite(seq)) {
+          for (const seqs of [this.vmSeq, this.vmDeletedSeq]) {
+            for (const [name, at] of seqs) if (at <= seq) seqs.delete(name);
+          }
+        }
+
+        return rows;
+      },
+
+      // records the seq of a websocket message that changed or deleted a VM
+      recordVmChange(name, msg) {
+        const action = msg.resource.action;
+        if (msg.seq === undefined || !VM_CHANGES.has(action)) return;
+
+        const seqs = action === 'delete' ? this.vmDeletedSeq : this.vmSeq;
+        seqs.set(name, Math.max(seqs.get(name) ?? -Infinity, msg.seq));
+        if (action !== 'delete') this.vmDeletedSeq.delete(name);
+      },
+
       // Swaps in the server's copy of a VM. A copy without a screenshot keeps
       // the one shown while the VM stays running; a VM that stopped, or is
       // starting again, has no current screen until the next one arrives.
@@ -1879,15 +1950,9 @@
               return;
             }
 
-            // screenshots follow the list, so keep the ones already shown
-            const shots = new Map(
-              (this.experiment.vms ?? []).map((vm) => [vm.name, vm.screenshot]),
-            );
-            this.experiment.vms = msg.result.vms.map((vm) => ({
-              ...vm,
-              screenshot: vm.screenshot || shots.get(vm.name),
-            }));
+            this.experiment.vms = this.listedVms(msg.result.vms, msg.seq);
             this.table.total = msg.result.total;
+            this.runtimeUnknown = !!msg.result.runtime_unknown;
             this.vmsLoaded = true;
 
             // a VM still without a screenshot by then has none to show
@@ -1903,9 +1968,14 @@
               !this.search.filter &&
               (!this.table.isPaginated || this.table.currentPage === 1)
             ) {
-              cachePage(experimentKey(this.$route.params.id), {
-                ...this.experiment,
-              });
+              cachePage(
+                experimentKey(this.$route.params.id),
+                { ...this.experiment },
+                Object.assign(new FreshnessMeta(), {
+                  seq: msg.seq,
+                  observedAt: Date.now(),
+                }),
+              );
             }
 
             // Only add successful searches to the search history
@@ -1921,6 +1991,8 @@
           case 'experiment/vm': {
             const name = this.eventVmName(msg);
             if (name === null) break;
+
+            this.recordVmChange(name, msg);
 
             switch (msg.resource.action) {
               case 'update': {
@@ -3720,6 +3792,8 @@
         },
         // whether the websocket has sent the VM table yet
         vmsLoaded: false,
+        // whether minimega failed to answer for the VMs last listed
+        runtimeUnknown: false,
         // whether the page has asked the websocket for the VM table
         vmsRequested: false,
         expModal: {

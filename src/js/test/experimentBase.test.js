@@ -140,6 +140,8 @@ describe("an experiment's page", () => {
     expect(text).toBe('Loading experiment…');
     expect(axios.get).toHaveBeenCalledWith('experiments/exp1', {
       signal: expect.any(AbortSignal),
+      // reports the response's freshness into the cache entry
+      meta: expect.any(Object),
       params: { vms: false },
     });
 

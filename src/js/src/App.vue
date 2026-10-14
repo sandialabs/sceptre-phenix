@@ -19,8 +19,12 @@
   import { TimeoutTool } from '@/utils/timeout.js';
   import { schedulePagePreload } from '@/utils/pageData.js';
   import { useJobStore } from '@/utils/jobs.js';
+  import { invalidatePages } from '@/utils/pageCache.js';
 
   const store = usePhenixStore();
+
+  // cached pages a live update changes are loaded again on their next visit
+  addWsHandler(invalidatePages);
   const timeout = new TimeoutTool();
   const jobs = useJobStore();
 
@@ -87,6 +91,7 @@
 
   onUnmounted(() => {
     forgetJobs();
+    removeWsHandler(invalidatePages);
     disconnectWebsocket();
   });
 </script>

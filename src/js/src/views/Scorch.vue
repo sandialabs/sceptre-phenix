@@ -206,7 +206,11 @@
     scorchPipelines,
     scorchRow,
   } from '@/utils/pageData.js';
-  import { addWsHandler, removeWsHandler } from '@/utils/websocket';
+  import {
+    addWsHandler,
+    onWsReconnect,
+    removeWsHandler,
+  } from '@/utils/websocket';
   import { escapeHTML } from '@/utils/escapeHTML.js';
   import { confirmOperation } from '@/utils/operations.js';
   import { useTable } from '@/utils/useTable.js';
@@ -229,14 +233,16 @@
     async created() {
       addWsHandler(this.handle);
       this.liveRows = createLiveRows();
+      // a restarted server numbers its messages afresh
+      this.offWsReconnect = onWsReconnect(() => this.liveRows.reset());
       this.loader = createPageLoader({
         key: 'scorch',
         fetch: pageFetchers.scorch,
-        apply: (experiments, { requestedAt }) => {
+        apply: (experiments, { seq }) => {
           this.experiments = this.liveRows.merge(
             experiments,
             this.experiments,
-            requestedAt,
+            seq,
           );
           this.loaded = true;
           this.getTerminals();
@@ -247,6 +253,7 @@
 
     beforeUnmount() {
       removeWsHandler(this.handle);
+      this.offWsReconnect?.();
       this.loader.stop();
       // the rows live on in the page cache: stop their spinners
       this.experiments.forEach((exp) => this.settle(exp));
@@ -659,12 +666,12 @@
       handle(msg) {
         switch (msg.resource.type) {
           case 'apps/scorch': {
-            this.liveRows.touch(msg.resource.name.split('/')[0]);
+            this.liveRows.touch(msg.resource.name.split('/')[0], msg.seq);
             this.wsHandleScorch(msg);
             break;
           }
           case 'experiment': {
-            this.liveRows.touch(msg.resource.name);
+            this.liveRows.touch(msg.resource.name, msg.seq);
             this.wsHandleExperiment(msg);
             break;
           }

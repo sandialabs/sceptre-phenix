@@ -1,5 +1,6 @@
 import {
   createPageLoader,
+  currentStaleReason,
   loadingText,
   pageStatus,
   stillLoading,
@@ -9,8 +10,10 @@ import {
   cachedPage,
   cachePage,
   clearPageCache,
+  invalidatePages,
   isLoadingPage,
 } from '@/utils/pageCache.js';
+import { FreshnessMeta, setWsDown } from '@/utils/freshness.js';
 import { useErrorNotification } from '@/utils/errorNotif.js';
 import { usePhenixStore } from '@/store.js';
 import { createPinia, setActivePinia } from 'pinia';
@@ -256,4 +259,102 @@ test('signing out drops cached pages and cancels their background loads', async 
   await loaded;
   expect(apply.mock.calls).toEqual([[['host2'], expect.anything()]]);
   next.stop();
+});
+
+// a FreshnessMeta as a load's responses fill it in
+const loadMeta = (fields) => Object.assign(new FreshnessMeta(), fields);
+
+test("a page is told the cached and the fresh data's seq and age", async () => {
+  cachePage('hosts', ['cached'], loadMeta({ seq: 5, observedAt: 1000 }));
+  const apply = vi.fn();
+  const loader = createPageLoader({
+    key: 'hosts',
+    fetch: async (_, meta) => {
+      Object.assign(meta, { seq: 9, observedAt: 2000, stale: true });
+      return ['fresh'];
+    },
+    apply,
+  });
+
+  const done = loader.start();
+  expect(apply).toHaveBeenCalledWith(['cached'], {
+    requestedAt: expect.any(Number),
+    seq: 5,
+    observedAt: 1000,
+    stale: false,
+  });
+  expect(pageStatus.observedAt).toBe(1000);
+
+  await done;
+  expect(apply).toHaveBeenLastCalledWith(['fresh'], {
+    requestedAt: expect.any(Number),
+    seq: 9,
+    observedAt: 2000,
+    stale: true,
+  });
+  // the server served earlier data
+  expect(pageStatus).toMatchObject({
+    observedAt: 2000,
+    stale: true,
+    staleReason: 'server',
+  });
+  loader.stop();
+  expect(pageStatus).toMatchObject({ observedAt: null, stale: false });
+});
+
+test('a cached page changed by a live update shows as out of date until it reloads', async () => {
+  cachePage('experiments', ['cached'], loadMeta({ seq: 5, observedAt: 1000 }));
+  invalidatePages({
+    resource: { type: 'experiment', name: 'a', action: 'stop' },
+    seq: 6,
+  });
+
+  const { fetch, calls } = manualFetch();
+  const loader = createPageLoader({
+    key: 'experiments',
+    fetch,
+    apply: () => {},
+  });
+  const done = loader.start();
+  expect(pageStatus).toMatchObject({
+    stale: true,
+    staleReason: 'invalidated',
+  });
+
+  calls[0].resolve(['fresh']);
+  await done;
+  expect(pageStatus.stale).toBe(false);
+  loader.stop();
+});
+
+test('data shows as out of date once older than its bound, or while live updates are down', async () => {
+  const loader = createPageLoader({
+    key: 'hosts',
+    fetch: async (_, meta) => {
+      meta.observedAt = 1000;
+      return [];
+    },
+    apply: () => {},
+  });
+  await loader.start();
+
+  expect(currentStaleReason(1000 + 60 * 1000)).toBeNull();
+  expect(currentStaleReason(1000 + 91 * 1000)).toBe('age');
+  loader.stop();
+
+  // the Experiments page is kept current by live updates
+  const live = createPageLoader({
+    key: 'experiments',
+    fetch: async () => [],
+    apply: () => {},
+  });
+  await live.start();
+  setWsDown(true);
+  try {
+    expect(currentStaleReason()).toBe('disconnected');
+  } finally {
+    setWsDown(false);
+  }
+  expect(currentStaleReason()).toBeNull();
+  live.stop();
 });

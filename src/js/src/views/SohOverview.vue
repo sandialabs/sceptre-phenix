@@ -394,7 +394,11 @@
     vmSegments,
   } from '@/utils/sohOverview.js';
   import { useTable } from '@/utils/useTable.js';
-  import { addWsHandler, removeWsHandler } from '@/utils/websocket';
+  import {
+    addWsHandler,
+    onWsReconnect,
+    removeWsHandler,
+  } from '@/utils/websocket';
 
   // Several websocket messages often arrive together (a VM restarting, an
   // experiment starting); one summary request covers them.
@@ -455,14 +459,16 @@
     created() {
       addWsHandler(this.handleWs);
       this.liveRows = createLiveRows();
+      // a restarted server numbers its messages afresh
+      this.offWsReconnect = onWsReconnect(() => this.liveRows.reset());
       this.loader = createPageLoader({
         key: 'soh',
         fetch: pageFetchers.soh,
-        apply: (experiments, { requestedAt }) => {
+        apply: (experiments, { seq }) => {
           this.experiments = this.liveRows.merge(
             experiments,
             this.experiments,
-            requestedAt,
+            seq,
           );
           this.loaded = true;
         },
@@ -473,6 +479,7 @@
 
     beforeUnmount() {
       removeWsHandler(this.handleWs);
+      this.offWsReconnect?.();
       clearTimeout(this.reloadTimer);
       clearInterval(this.pollTimer);
       this.experiments.forEach((exp) => this.settle(exp));
@@ -724,12 +731,12 @@
         const action = msg.resource?.action;
 
         if (type === 'experiment') {
-          this.handleExperiment(msg.resource.name, action, msg.result);
+          this.handleExperiment(msg.resource.name, action, msg.result, msg.seq);
           return;
         }
 
         if (type === 'apps/soh') {
-          this.handleSoh(msg.resource.name, action, msg.result);
+          this.handleSoh(msg.resource.name, action, msg.result, msg.seq);
           return;
         }
 
@@ -739,14 +746,14 @@
         }
       },
 
-      handleExperiment(name, action, result) {
+      handleExperiment(name, action, result, seq) {
         const exp = this.find(name);
 
         switch (action) {
           case 'starting':
           case 'stopping':
             if (exp) {
-              this.liveRows.touch(name);
+              this.liveRows.touch(name, seq);
               exp.status = action;
               exp.percent = 0;
             }
@@ -764,13 +771,13 @@
         }
       },
 
-      handleSoh(name, action, result) {
+      handleSoh(name, action, result, seq) {
         const exp = this.find(name);
         if (!exp) return;
 
         switch (action) {
           case 'start':
-            this.liveRows.touch(name);
+            this.liveRows.touch(name, seq);
             this.settle(exp);
             exp.soh_running = true;
             break;

@@ -268,9 +268,9 @@
         // only the default view is reopened, so only it is worth keeping;
         // streamed entries are pushed onto the cached array too
         key: () => (this.isDefaultView() ? 'logs' : null),
-        fetch: async (signal) => {
+        fetch: async (signal, meta) => {
           if (this.isDefaultView()) {
-            return pageFetchers.logs(signal);
+            return pageFetchers.logs(signal, meta);
           }
 
           // a refresh of a relative range ("Last 1 Hour") moves it to now

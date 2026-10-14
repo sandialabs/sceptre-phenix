@@ -73,8 +73,8 @@ this will only show a list of VMs that a user can view.
   } else {
     // the running view makes the same request, so it joins this one; it
     // leaves out the VMs, which only the running view lists
-    request = fetchIntoCache(experimentKey(name), (signal) =>
-      fetchRunningExperiment(name, signal),
+    request = fetchIntoCache(experimentKey(name), (signal, meta) =>
+      fetchRunningExperiment(name, signal, meta),
     );
     request.promise.then(
       (exp) => show(exp.running),
