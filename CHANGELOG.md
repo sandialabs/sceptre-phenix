@@ -40,6 +40,7 @@ All notable changes to this project will be documented in this file.
 - **Audit log**: Capture, capture token, WebShark, experiment file, console, VNC, port forward, disk image, VM snapshot, commit and mount actions, refusals included, are logged as `AUDIT` events with ECS fields, always written to the system log file whatever `log.level` is, and the Logs page can filter by them.
 - **Background jobs**: `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel`, `DELETE /jobs/{id}` and `GET /jobs/{id}/artifact` list, follow, cancel, dismiss and download long operations that run on in the server, with websocket updates and a `jobs` permission that Experiment Admin roles gain on startup for their experiments.
 - **Jobs CLI**: `phenix job list`, `get`, `cancel` and `wait` follow and cancel the running server's background jobs over its unix socket, and `wait` exits 0, 2 or 1 when a job succeeded, partly succeeded or failed.
+- **Disk clone jobs**: `POST /disks/clone/jobs` clones a disk image in a cancelable background job that reports the bytes copied, and an interrupted clone leaves no image behind.
 
 ### Changed
 

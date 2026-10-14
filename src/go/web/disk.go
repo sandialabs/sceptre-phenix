@@ -19,6 +19,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"phenix/api/disk"
+	"phenix/api/job"
 	"phenix/store"
 	"phenix/util/mm"
 	"phenix/util/plog"
@@ -52,6 +53,14 @@ func WatchDisks(ctx context.Context) {
 	}
 
 	go warm()
+
+	// clones that never finished, as a restart leaves
+	dir := mm.GetMMFullPath("")
+	if removed, err := disk.RemoveStalePartials(dir); err != nil {
+		plog.Warn(plog.TypeSystem, "removing partial disk clones", "dir", dir, "err", err)
+	} else if removed > 0 {
+		plog.Info(plog.TypeSystem, "removed partial disk clones", "dir", dir, "count", removed)
+	}
 
 	watchFilesDirectory(ctx, mm.FilesDirectoryGiven(), diskChangeDebounce, func() {
 		warm()
@@ -439,6 +448,69 @@ func CloneDisk(w http.ResponseWriter, r *http.Request) {
 
 	diskActionDone(r, audit.DiskClone, "cloned disk", path, newPath)
 	w.WriteHeader(http.StatusOK)
+}
+
+// CloneDiskJob - POST /disks/clone/jobs?disk={disk}&new={new}
+//
+// Clones as CloneDisk does, in a background job that reports the bytes
+// copied and can be canceled, leaving no file. It checks the request as
+// CloneDisk does before answering 202 with the job.
+func CloneDiskJob(w http.ResponseWriter, r *http.Request) {
+	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
+
+	path, newPath, err := diskAndNew(r)
+	if err != nil {
+		diskError(w, err)
+
+		return
+	}
+
+	if !role.Allowed("disks", "create", filepath.Base(newPath)) {
+		diskForbidden(w, r, "cloning disk not allowed", "from_disk", path, "to_disk", newPath)
+
+		return
+	}
+
+	size, err := disk.CloneSize(path, newPath)
+	if err != nil {
+		diskError(w, err)
+
+		return
+	}
+
+	var (
+		user    = middleware.UserFromContext(r.Context())
+		newName = filepath.Base(newPath)
+	)
+
+	startJob(w, r, job.Spec{
+		Kind:       "disk.clone",
+		Owner:      "",
+		Experiment: "",
+		Title:      fmt.Sprintf("Clone %s to %s", filepath.Base(path), newName),
+		Params:     map[string]string{"disk": path, "new": newPath},
+		Items:      []string{newName},
+		BytesTotal: size,
+		Cancelable: true,
+		Run: func(ctx context.Context, run *job.Run) error {
+			run.ItemStarted(newName)
+
+			if err := disk.CloneDiskContext(ctx, path, newPath, run.AddBytes); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err() //nolint:wrapcheck // the job is canceled
+				}
+
+				run.ItemFailed(newName, err)
+
+				return nil
+			}
+
+			run.ItemSucceeded(newName, nil)
+			plog.Info(plog.TypeAction, "cloned disk", "user", user, "from_disk", path, "to_disk", newPath, "job", run.ID())
+
+			return nil
+		},
+	})
 }
 
 // RenameDisk - POST /disks/rename?disk={disk}&new={new}

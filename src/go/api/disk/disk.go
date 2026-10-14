@@ -1,9 +1,9 @@
 package disk
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -75,39 +75,13 @@ func (MMDiskFiles) ResizeDisk(src, size string) error {
 // CloneDisk copies src to dst, a file it creates, so it never replaces one.
 // The copy is not sparse.
 func (MMDiskFiles) CloneDisk(src, dst string) error {
-	in, err := openRegular(src)
-	if err != nil {
-		return err
-	}
+	return cloneFile(context.Background(), src, dst, nil)
+}
 
-	defer func() { _ = in.Close() }()
-
-	info, err := in.Stat()
-	if err != nil {
-		return fmt.Errorf("cloning %s: %w", src, err)
-	}
-
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
-	if errors.Is(err, fs.ErrExist) {
-		return fmt.Errorf("%w: %s", ErrExists, dst)
-	}
-
-	if err != nil {
-		return fmt.Errorf("cloning %s: %w", src, err)
-	}
-
-	_, err = io.Copy(out, in)
-	if closeErr := out.Close(); err == nil {
-		err = closeErr
-	}
-
-	if err != nil {
-		_ = os.Remove(dst)
-
-		return fmt.Errorf("cloning %s to %s: %w", src, dst, err)
-	}
-
-	return nil
+// CloneDiskContext is CloneDisk that stops, leaving no file, once ctx is
+// done, and tells progress of each chunk copied (see cloneFile).
+func (MMDiskFiles) CloneDiskContext(ctx context.Context, src, dst string, progress func(n int64)) error {
+	return cloneFile(ctx, src, dst, progress)
 }
 
 // RenameDisk renames src to dst, never replacing a file at dst.

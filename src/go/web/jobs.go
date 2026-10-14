@@ -83,6 +83,28 @@ func notifyJob(j job.Job, removed bool) {
 	)
 }
 
+// startJob starts a job for the request's user, logs it, and answers 202 with
+// the job and its location.
+func startJob(w http.ResponseWriter, r *http.Request, spec job.Spec) {
+	spec.Owner = middleware.UserFromContext(r.Context())
+
+	j, err := jobs.Start(spec)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "starting job", "kind", spec.Kind, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	plog.Info(
+		plog.TypeAction, "job started",
+		"job", j.ID, "kind", j.Kind, "user", j.Owner, "exp", j.Experiment, "items", len(j.Items),
+	)
+
+	w.Header().Set("Location", "/api/v1/jobs/"+j.ID)
+	writeJob(w, http.StatusAccepted, j)
+}
+
 // writeJob answers with the job as JSON.
 func writeJob(w http.ResponseWriter, status int, j job.Job) {
 	body, err := json.Marshal(j)
