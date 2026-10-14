@@ -18,7 +18,7 @@ Each job records:
 
 | Kind | Started by | Items |
 |---|---|---|
-| `vms.action` | the VM table's bulk actions | the VMs |
+| `vms.action` | the VM table's bulk actions (`POST /api/v1/experiments/{exp}/vms/actions`, see [VM Multi Action](vm-multi-action.md#from-the-api)) | the VMs |
 | `files.archive` | downloading several experiment files (`POST /api/v1/experiments/{name}/files/archive`, see [Experiments](experiments.md#acting-on-several-files)) | the files |
 | `disk.clone` | cloning a disk image (`POST /api/v1/disks/clone/jobs`, see [Disks](disks.md#cloning-in-the-background)) | the new image |
 
