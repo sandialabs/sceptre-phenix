@@ -44,6 +44,7 @@ All notable changes to this project will be documented in this file.
 - **Disk clone jobs**: `POST /disks/clone/jobs` clones a disk image in a cancelable background job that reports the bytes copied, and an interrupted clone leaves no image behind.
 - **Experiment file archives**: `POST /experiments/{name}/files/archive` builds a zip of several experiment files in a background job that reports each file's outcome, leaves out files it cannot fetch (listed in `MISSING.txt`), and serves the archive resumably from `GET /jobs/{id}/artifact`.
 - **Bulk VM actions**: `POST /experiments/{exp}/vms/actions` starts, pauses, restarts, shuts down, kills or resets the disks of several VMs in one background job that reports each VM's outcome, skipping VMs the role may not act on.
+- **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and `phenix config edit` refuses to save over a config changed while it was open.
 
 ### Changed
 

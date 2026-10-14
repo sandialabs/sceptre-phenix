@@ -2,6 +2,8 @@ package config_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -105,5 +107,69 @@ func TestWorkflowIsNotAConfigKind(t *testing.T) {
 	_, err := config.Create(config.CreateFromYAML([]byte(doc)), config.CreateWithValidation())
 	if !errors.Is(err, types.ErrValidationFailed) {
 		t.Errorf("Create(Workflow config) error = %v, want ErrValidationFailed", err)
+	}
+}
+
+// useMockStore makes a gomock store the package store until the test ends.
+// The mock fails the test on any call it does not expect.
+func useMockStore(t *testing.T) *store.MockStore {
+	t.Helper()
+
+	m := store.NewMockStore(gomock.NewController(t))
+
+	original := store.DefaultStore
+	store.DefaultStore = m                              //nolint:reassign // mocking
+	t.Cleanup(func() { store.DefaultStore = original }) //nolint:reassign // restore test double
+
+	return m
+}
+
+// storedAt makes a mocked Get read the named config at a revision.
+func storedAt(revision uint64) func(*store.Config) error {
+	return func(c *store.Config) error {
+		c.Metadata.Created = "then"
+		c.Metadata.Revision = revision
+
+		return nil
+	}
+}
+
+// An update that names a revision the config has moved past is refused before
+// hooks run or anything is written, including on the rename path.
+func TestUpdateIfRevisionConflicts(t *testing.T) {
+	for _, newName := range []string{"a", "renamed"} {
+		m := useMockStore(t)
+		m.EXPECT().Get(gomock.Any()).DoAndReturn(storedAt(3))
+
+		c, _ := store.NewConfig("topology/" + newName)
+		c.IfRevision = 2
+
+		if err := config.Update("topology/a", c); !errors.Is(err, store.ErrConflict) {
+			t.Errorf("update to %s at a stale revision: err = %v, want ErrConflict", newName, err)
+		}
+	}
+}
+
+// config edit refuses to save over a config that changed while it was being
+// edited, whatever revision the edited YAML gives.
+func TestEditIfRevisionConflicts(t *testing.T) {
+	// the "editor" sets the revision in the YAML to the config's new one
+	editor := filepath.Join(t.TempDir(), "editor")
+
+	script := "#!/bin/sh\nsed 's/revision: 1$/revision: 2/' \"$1\" > \"$1.new\" && mv \"$1.new\" \"$1\"\n"
+	if err := os.WriteFile(editor, []byte(script), 0o700); err != nil { //nolint:gosec // an executable test editor
+		t.Fatal(err)
+	}
+
+	t.Setenv("EDITOR", editor)
+
+	m := useMockStore(t)
+	gomock.InOrder(
+		m.EXPECT().Get(gomock.Any()).DoAndReturn(storedAt(1)), // read for the editor
+		m.EXPECT().Get(gomock.Any()).DoAndReturn(storedAt(2)), // changed meanwhile
+	)
+
+	if _, err := config.Edit("topology/a", false); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("edit of a config changed meanwhile: err = %v, want ErrConflict", err)
 	}
 }
