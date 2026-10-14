@@ -143,6 +143,7 @@ func TestDeleteExperimentFile(t *testing.T) {
 			}})
 
 			fake := useTestFiles(t, "scorch/run-0/a.log", "a[1].log", "live.pcap")
+			events := captureAudit(t)
 
 			resp := requestFiles(t, http.MethodDelete, "/x?path="+url.QueryEscape(tc.path), "", "delete")
 			if resp.StatusCode != tc.wantCode {
@@ -152,12 +153,26 @@ func TestDeleteExperimentFile(t *testing.T) {
 			if !slices.Equal(fake.deleted, tc.wantDeleted) {
 				t.Fatalf("deleted %v, want %v", fake.deleted, tc.wantDeleted)
 			}
+
+			// authorized, so audited whether it worked or not
+			outcome := "failure"
+			if tc.wantCode == http.StatusNoContent {
+				outcome = "success"
+			}
+
+			fields := map[string]any{"user.name": "alice", "phenix.experiment.name": "test-experiment"}
+			if tc.path != "" {
+				fields["file.path"] = tc.path
+			}
+
+			wantAudit(t, events(), "file-delete", outcome, fields)
 		})
 	}
 }
 
 func TestDeleteExperimentFilesReportsEachFailure(t *testing.T) {
 	fake := useTestFiles(t, "a.log", "b.log")
+	events := captureAudit(t)
 
 	resp := requestFiles(t, http.MethodPost, "/delete", `{"paths":["a.log","missing.log","../x","b.log","a.log"]}`, "delete")
 	if resp.StatusCode != http.StatusOK {
@@ -186,6 +201,21 @@ func TestDeleteExperimentFilesReportsEachFailure(t *testing.T) {
 
 	if want := []string{"test-experiment/files/a.log", "test-experiment/files/b.log"}; !slices.Equal(fake.deleted, want) {
 		t.Errorf("asked minimega to delete %v, want %v", fake.deleted, want)
+	}
+
+	got := events()
+
+	for path, outcome := range map[string]string{
+		"a.log": "success", "b.log": "success", "missing.log": "failure", "../x": "failure",
+	} {
+		e := wantAudit(t, got, "file-delete", outcome, map[string]any{"user.name": "alice", "file.path": path})
+		if outcome == "failure" && e != nil && e["error.message"] == nil {
+			t.Errorf("%s: failure without error.message", path)
+		}
+	}
+
+	if n := len(got); n != 4 {
+		t.Errorf("%d audit events, want one per path: %v", n, got)
 	}
 }
 

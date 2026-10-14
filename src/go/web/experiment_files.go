@@ -142,8 +142,12 @@ func DeleteExperimentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	deleted := audit.Fields{Experiment: name, File: path}
+
 	err := experiment.DeleteFile(name, path)
 	if err != nil {
+		audit.Failure(r, audit.FileDelete, "deleting experiment file failed", deleted, err)
+
 		status := fileErrorStatus(err)
 		if status == http.StatusInternalServerError {
 			plog.Error(plog.TypeSystem, "deleting experiment file", "exp", name, "file", path, "err", err)
@@ -156,8 +160,7 @@ func DeleteExperimentFile(w http.ResponseWriter, r *http.Request) {
 
 	revokeExperimentFileGrants(name, path)
 
-	user := middleware.UserFromContext(r.Context())
-	plog.Info(plog.TypeAction, "deleted file", "user", user, "exp", name, "file", path)
+	audit.Success(r, audit.FileDelete, "deleted file", deleted)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -183,6 +186,10 @@ func DeleteExperimentFiles(w http.ResponseWriter, r *http.Request) {
 
 	deleted, refused, err := experiment.DeleteFiles(name, paths)
 	if err != nil {
+		audit.Failure(r, audit.FileDelete, "deleting experiment files failed", audit.Fields{
+			Experiment: name, Extra: []any{"phenix.file.count", len(paths)},
+		}, err)
+
 		status := fileErrorStatus(err)
 		if status == http.StatusInternalServerError {
 			plog.Error(plog.TypeSystem, "deleting experiment files", "exp", name, "err", err)
@@ -193,11 +200,9 @@ func DeleteExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := middleware.UserFromContext(r.Context())
-
 	for _, path := range deleted {
 		revokeExperimentFileGrants(name, path)
-		plog.Info(plog.TypeAction, "deleted file", "user", user, "exp", name, "file", path)
+		audit.Success(r, audit.FileDelete, "deleted file", audit.Fields{Experiment: name, File: path})
 	}
 
 	failed := make([]fileDeleteFailure, 0, len(refused))
@@ -205,6 +210,10 @@ func DeleteExperimentFiles(w http.ResponseWriter, r *http.Request) {
 	// In the order asked for, once each.
 	for _, path := range paths {
 		if err, ok := refused[path]; ok {
+			audit.Failure(r, audit.FileDelete, "deleting experiment file failed", audit.Fields{
+				Experiment: name, File: path,
+			}, err)
+
 			failed = append(failed, fileDeleteFailure{Path: path, Error: err.Error()})
 			delete(refused, path)
 		}
