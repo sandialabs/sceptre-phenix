@@ -533,6 +533,16 @@ instead.
     A zip is built as it is sent, so an interrupted zip download cannot be
     resumed: download very large files one at a time instead.
 
+Through the API, `POST /api/v1/experiments/<name>/files/archive` with the same
+`{"paths": [...]}` body builds the archive in a [background job](jobs.md)
+instead, with the same limits and checks. A file that cannot be fetched, such
+as one a mesh node no longer has, is left out rather than failing the whole
+archive: the job ends `partial`, the archive is named
+`<experiment name>-files-incomplete.zip`, and a `MISSING.txt` entry in it lists
+each file left out and why. The finished archive downloads, resumably, from
+`GET /api/v1/jobs/<id>/artifact` for an hour, and canceling the job leaves no
+archive.
+
 !!! tip "Resuming a download from a shell"
     `curl -C -` resumes a single-file download where an earlier attempt
     stopped:

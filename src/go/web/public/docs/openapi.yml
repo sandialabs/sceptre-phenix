@@ -1024,6 +1024,57 @@ paths:
           description: a path is not one of the experiment's files
         "413":
           description: more than 500 files, or more than 2 GiB in total
+  "/experiments/{name}/files/archive":
+    post:
+      tags:
+        - Experiments
+        - Jobs
+      summary: Build a zip archive of several experiment files in a background job
+      description: >-
+        Checks the files as POST .../files/download does, then builds their
+        zip archive in a `files.archive` background job whose items are the
+        files and whose progress counts the bytes read. A file that cannot be
+        fetched is left out, the job ends `partial`, and the archive, named
+        `<name>-files-incomplete.zip` instead of `<name>-files.zip`, lists it
+        with the reason in a `MISSING.txt` entry. Download the archive, which
+        resumes, from GET /jobs/{id}/artifact; canceling the job leaves no
+        archive. Needs the `experiments/files` `get` permission.
+      operationId: postExperimentsNameFilesArchive
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to archive files from
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FilePaths"
+      responses:
+        "202":
+          description: the job, started
+          headers:
+            Location:
+              description: the job, at /api/v1/jobs/{id}
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          description: >-
+            no paths, a path that is not clean and relative to the files
+            directory, or a pcap a running capture is still writing
+        "403":
+          description: forbidden
+        "404":
+          description: a path is not one of the experiment's files
+        "413":
+          description: more than 500 files, or more than 2 GiB in total
   "/experiments/{name}/files/delete":
     post:
       tags:

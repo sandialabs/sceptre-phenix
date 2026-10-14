@@ -17,7 +17,14 @@ import (
 func useJobs(t *testing.T) *job.Registry {
 	t.Helper()
 
-	r := job.NewRegistry(job.WithArtifactDir(t.TempDir()))
+	return useJobsIn(t, t.TempDir())
+}
+
+// useJobsIn is useJobs keeping artifacts in dir.
+func useJobsIn(t *testing.T, dir string) *job.Registry {
+	t.Helper()
+
+	r := job.NewRegistry(job.WithArtifactDir(dir))
 
 	original := jobs
 	jobs = r

@@ -286,14 +286,26 @@ func useTestExperiment(t *testing.T) {
 	}))
 }
 
-// testFiles is the cluster's listing of test-experiment's files, and records
-// the deletions asked of it. Any other file.ClusterFiles method panics through
-// the nil embedded interface.
+// testFiles is the cluster's listing of test-experiment's files, records the
+// deletions asked of it, and copies files from mesh nodes as the test says.
+// Any other file.ClusterFiles method panics through the nil embedded
+// interface.
 type testFiles struct {
 	file.ClusterFiles
 
 	files   file.Files
 	deleted []string
+	// copies a file only a mesh node has to the headnode; without it, no
+	// mesh node has the file
+	copy func(src string) error
+}
+
+func (f *testFiles) CopyFile(src, _ string, _ file.CopyStatus) error {
+	if f.copy != nil {
+		return f.copy(src)
+	}
+
+	return fmt.Errorf("no mesh node has %s", src)
 }
 
 func (f *testFiles) GetExperimentFiles(string, string) (file.Files, error) {

@@ -3,6 +3,7 @@ package experiment_test
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -449,6 +450,10 @@ func TestZipFilesRefusesBeforeWriting(t *testing.T) { //nolint:paralleltest // r
 				t.Fatalf("ZipFiles = %v, want %v", err, tc.want)
 			}
 
+			if _, err := experiment.PlanZip("exp", tc.paths, small); !errors.Is(err, tc.want) {
+				t.Errorf("PlanZip = %v, want %v", err, tc.want)
+			}
+
 			if started {
 				t.Fatal("started the archive before refusing it")
 			}
@@ -491,3 +496,99 @@ func TestZipFilesReturnsTheFilesSentBeforeFailing(t *testing.T) { //nolint:paral
 type writerFunc func(p []byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+// With SkipFailed, a file that vanished after the plan is left out, reported,
+// and listed in MISSING.txt, and the rest are archived.
+func TestZipPlanSkipsFailedFiles(t *testing.T) { //nolint:paralleltest // replaces package state
+	useFilesDir(t, "exp", map[string]string{"a.log": "alpha", "gone.log": "soon gone", "c.log": "gamma"})
+	useListedFiles(t)
+
+	plan, err := experiment.PlanZip("exp", []string{"a.log", "gone.log", "c.log"}, zipLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if plan.Total != int64(len("alpha")+len("soon gone")+len("gamma")) || plan.Sizes["gone.log"] != 9 {
+		t.Errorf("plan totals %d bytes, sizes %v", plan.Total, plan.Sizes)
+	}
+
+	if err := os.Remove(filepath.Join(common.PhenixBase, "images", "exp", "files", "gone.log")); err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		buf     bytes.Buffer
+		bytesIn int64
+		failed  = map[string]error{}
+		started []string
+	)
+
+	archived, err := plan.Write(t.Context(), &buf, experiment.ZipHooks{
+		OnStart:    func(p string) { started = append(started, p) },
+		OnFile:     func(p string, err error) { failed[p] = err },
+		OnBytes:    func(n int64) { bytesIn += n },
+		SkipFailed: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.Equal(archived, []string{"a.log", "c.log"}) || len(started) != 3 {
+		t.Errorf("archived %v after starting %v", archived, started)
+	}
+
+	if failed["a.log"] != nil || !errors.Is(failed["gone.log"], experiment.ErrFileNotFound) {
+		t.Errorf("file outcomes %v", failed)
+	}
+
+	if bytesIn != int64(len("alpha")+len("gamma")) {
+		t.Errorf("read %d bytes", bytesIn)
+	}
+
+	archive, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	names := make([]string, 0, len(archive.File))
+
+	for _, f := range archive.File {
+		names = append(names, f.Name)
+
+		if f.Name == "MISSING.txt" {
+			rc, _ := f.Open()
+			missing, _ := io.ReadAll(rc)
+			_ = rc.Close()
+
+			if !strings.Contains(string(missing), "gone.log: ") {
+				t.Errorf("MISSING.txt does not list gone.log: %q", missing)
+			}
+		}
+	}
+
+	if !slices.Equal(names, []string{"a.log", "c.log", "MISSING.txt"}) {
+		t.Errorf("archive holds %v", names)
+	}
+
+	// without SkipFailed the archive fails
+	if _, err := plan.Write(t.Context(), io.Discard, experiment.ZipHooks{}); !errors.Is(err, experiment.ErrFileNotFound) {
+		t.Errorf("Write without SkipFailed = %v, want ErrFileNotFound", err)
+	}
+}
+
+func TestZipPlanWriteStopsWhenCanceled(t *testing.T) { //nolint:paralleltest // replaces package state
+	useFilesDir(t, "exp2", map[string]string{"a.log": "alpha", "b.log": "beta"})
+	useListedFiles(t)
+
+	plan, err := experiment.PlanZip("exp2", []string{"a.log", "b.log"}, zipLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	_, err = plan.Write(ctx, io.Discard, experiment.ZipHooks{OnStart: func(string) { cancel() }})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Write = %v, want context.Canceled", err)
+	}
+}
