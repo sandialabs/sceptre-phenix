@@ -308,9 +308,10 @@ func DownloadExperimentFiles(w http.ResponseWriter, r *http.Request) {
 // files.
 const archiveKind = "files.archive"
 
-//nolint:gochecknoinits // registers the archive jobs' download log
+//nolint:gochecknoinits // registers the archive jobs' audit
 func init() {
-	artifactServed[archiveKind] = logArchiveDownload
+	artifactServed[archiveKind] = auditArchiveDownload
+	jobFinished[archiveKind] = auditArchiveJob
 }
 
 // ArchiveExperimentFiles - POST /experiments/{name}/files/archive.
@@ -318,13 +319,15 @@ func init() {
 // It checks the files as DownloadExperimentFiles does, then builds their zip
 // archive in a background job, for GET /jobs/{id}/artifact. A file that fails
 // is left out and listed in the archive's MISSING.txt, and the archive is
-// named <exp>-files-incomplete.zip.
+// named <exp>-files-incomplete.zip. The files are audited as downloaded when
+// the archive is (see auditArchiveDownload), and the job when it fails (see
+// auditArchiveJob).
 func ArchiveExperimentFiles(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["name"]
 
 	role := middleware.RoleFromContext(r.Context())
 	if !role.Allowed("experiments/files", "get", name) {
-		forbidFiles(w, r, name, "archiving experiment files")
+		forbidFiles(w, r, name, audit.FileDownload, "archiving experiment files")
 
 		return
 	}
@@ -346,8 +349,6 @@ func ArchiveExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := middleware.UserFromContext(r.Context())
-
 	startJob(w, r, job.Spec{
 		Kind:       archiveKind,
 		Owner:      "",
@@ -358,7 +359,7 @@ func ArchiveExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		BytesTotal: plan.Total,
 		Cancelable: true,
 		Run: func(ctx context.Context, run *job.Run) error {
-			return archiveFiles(ctx, run, plan, user)
+			return archiveFiles(ctx, run, plan)
 		},
 	})
 }
@@ -367,7 +368,7 @@ func ArchiveExperimentFiles(w http.ResponseWriter, r *http.Request) {
 // then renames it to <exp>-files.zip, or <exp>-files-incomplete.zip when a
 // file was left out, and makes it the job's artifact. When the job is
 // canceled, or no file could be archived, the partial file is removed.
-func archiveFiles(ctx context.Context, run *job.Run, plan experiment.ZipPlan, user string) error {
+func archiveFiles(ctx context.Context, run *job.Run, plan experiment.ZipPlan) error {
 	dir, err := run.Dir()
 	if err != nil {
 		return err //nolint:wrapcheck // says what failed
@@ -424,21 +425,39 @@ func archiveFiles(ctx context.Context, run *job.Run, plan experiment.ZipPlan, us
 		return fmt.Errorf("finishing archive: %w", err)
 	}
 
-	for _, path := range archived {
-		plog.Info(plog.TypeAction, "archived file", "user", user, "exp", plan.Name, "file", path, "job", run.ID())
-	}
-
 	return run.SetArtifact(filepath.Join(dir, final), final, incomplete) //nolint:wrapcheck // says what failed
 }
 
-// logArchiveDownload logs, as DownloadExperimentFiles does, each file in an
-// archive job's artifact when a download of it begins.
-func logArchiveDownload(r *http.Request, j job.Job) {
-	user := middleware.UserFromContext(r.Context())
+// auditArchiveJob audits, as the user who started it, an archive job that
+// finished without an archive: no file can be downloaded from it.
+func auditArchiveJob(j job.Job) {
+	if j.Artifact != nil {
+		return
+	}
+
+	audit.BackgroundFailure(j.Owner, audit.FileDownload, "downloading experiment files failed", audit.Fields{
+		Experiment: j.Experiment, Extra: []any{"phenix.file.count", len(j.Items), "phenix.job.id", j.ID},
+	}, jobError(j))
+}
+
+// auditArchiveDownload audits, as DownloadExperimentFiles does, each file in
+// an archive job's artifact when a download of it begins: the files archived,
+// not those MISSING.txt lists.
+func auditArchiveDownload(r *http.Request, j job.Job) {
+	extra := []any{"phenix.job.id", j.ID}
+
+	if rng := r.Header.Get("Range"); rng != "" {
+		extra = append(extra, "http.request.range", rng)
+	}
 
 	for _, item := range j.Items {
-		if item.Status == job.ItemSucceeded {
-			plog.Info(plog.TypeAction, "downloaded file", "user", user, "exp", j.Experiment, "file", item.Name, "job", j.ID)
+		if item.Status != job.ItemSucceeded {
+			continue
 		}
+
+		audit.Success(r, audit.FileDownload, "downloaded file", audit.Fields{
+			Experiment: j.Experiment, File: item.Name,
+			Extra: append([]any{"phenix.file.capture", isCaptureFile(item.Name)}, extra...),
+		})
 	}
 }

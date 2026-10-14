@@ -93,6 +93,9 @@ func TestExperimentFileHandlersForbidden(t *testing.T) {
 		"download several": {
 			method: http.MethodPost, path: "/download", body: `{"paths":["a.log"]}`, verb: "list", action: "file-download",
 		},
+		"archive several": {
+			method: http.MethodPost, path: "/archive", body: `{"paths":["a.log"]}`, verb: "list", action: "file-download",
+		},
 	}
 
 	for name, tc := range tests {
@@ -717,6 +720,7 @@ func TestArchiveExperimentFiles(t *testing.T) {
 
 	registry := useJobs(t)
 	server := serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
+	events := captureAudit(t)
 
 	started := startArchive(t, server, `{"paths":["a.log","scorch/run-0/b.json"]}`)
 
@@ -741,6 +745,27 @@ func TestArchiveExperimentFiles(t *testing.T) {
 	if got := zipEntries(t, body); len(got) != 2 || got["a.log"] != "alpha" || got["scorch/run-0/b.json"] != "{}" {
 		t.Errorf("zip holds %v", got)
 	}
+
+	// each file is audited as downloaded when the archive is, once however
+	// many requests resuming it take
+	resume := do(t, http.MethodGet, server+"/api/v1/jobs/"+j.ID+"/artifact", "", "Range", "bytes=5-")
+	if resume.StatusCode != http.StatusPartialContent {
+		t.Errorf("resume: %d", resume.StatusCode)
+	}
+
+	got := events()
+	for _, path := range []string{"a.log", "scorch/run-0/b.json"} {
+		if n := countAudit(got, "file-download", "success", map[string]any{
+			"user.name": "alice", "phenix.experiment.name": "test-experiment", "file.path": path,
+			"phenix.job.id": j.ID, "url.path": "/api/v1/jobs/" + j.ID + "/artifact",
+		}); n != 1 {
+			t.Errorf("%s audited %d times, want 1: %v", path, n, got)
+		}
+	}
+
+	if n := len(got); n != 2 {
+		t.Errorf("%d audit events, want 2: %v", n, got)
+	}
 }
 
 // A file that cannot be fetched is left out: the job ends partial, with an
@@ -754,6 +779,7 @@ func TestArchiveExperimentFilesLeavesOutFailures(t *testing.T) {
 
 	registry := useJobs(t)
 	server := serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
+	events := captureAudit(t)
 
 	j := waitJob(t, registry, startArchive(t, server, `{"paths":["a.log","remote.log"]}`).ID)
 
@@ -773,11 +799,25 @@ func TestArchiveExperimentFilesLeavesOutFailures(t *testing.T) {
 		t.Errorf("zip holds %v", got)
 	}
 
-	// with nothing archived, the job fails without an artifact
+	// only the file archived reached the user
+	downloaded := events()
+	wantAudit(t, downloaded, "file-download", "success", map[string]any{"file.path": "a.log", "phenix.job.id": j.ID})
+
+	if n := countAudit(downloaded, "file-download", "success", nil); n != 1 {
+		t.Errorf("%d files audited as downloaded, want 1: %v", n, downloaded)
+	}
+
+	// with nothing archived, the job fails without an artifact, audited as a
+	// failed download
 	j = waitJob(t, registry, startArchive(t, server, `{"paths":["remote.log"]}`).ID)
 	if j.Status != job.StatusFailed || j.Artifact != nil {
 		t.Errorf("job of only failures: %s, artifact %+v", j.Status, j.Artifact)
 	}
+
+	waitAudit(t, events, "file-download", "failure", map[string]any{
+		"user.name": "alice", "phenix.experiment.name": "test-experiment", "phenix.job.id": j.ID,
+		"phenix.file.count": 1,
+	})
 }
 
 // A canceled archive job leaves no archive behind.
@@ -791,6 +831,7 @@ func TestArchiveExperimentFilesCanceled(t *testing.T) {
 		dir      = t.TempDir()
 		registry = useJobsIn(t, dir)
 		server   = serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
+		events   = captureAudit(t)
 	)
 
 	fake.copy = func(string) error {
@@ -823,4 +864,8 @@ func TestArchiveExperimentFilesCanceled(t *testing.T) {
 	for _, e := range entries {
 		t.Errorf("canceled job left %s", e.Name())
 	}
+
+	waitAudit(t, events, "file-download", "failure", map[string]any{
+		"user.name": "alice", "phenix.job.id": j.ID, "error.message": "canceled",
+	})
 }

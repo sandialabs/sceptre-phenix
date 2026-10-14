@@ -27,6 +27,10 @@ var jobs = job.Default //nolint:gochecknoglobals // replaced in tests
 // job kind, to log what the artifact holds.
 var artifactServed = map[string]func(r *http.Request, j job.Job){} //nolint:gochecknoglobals // filled in by the job kinds
 
+// jobFinished are called once a job has finished, by job kind, to audit what
+// its work did as the user who started it.
+var jobFinished = map[string]func(j job.Job){} //nolint:gochecknoglobals // filled in by the job kinds
+
 // jobAccess checks whether a role may act on a job of another user, given
 // the job's RBAC resource name (see jobResourceName).
 type jobAccess func(role rbac.Role, name string) bool
@@ -63,7 +67,12 @@ func ConfigureJobs() {
 // notifyJob tells websocket clients of a change to a job, and logs its end.
 func notifyJob(j job.Job, removed bool) {
 	broker.PublishJob(j, removed)
+	logJobEnd(j, removed)
+}
 
+// logJobEnd logs a job's end, and audits its work, when the change to it is
+// its finishing.
+func logJobEnd(j job.Job, removed bool) {
 	// a job's final state is told once
 	if removed || !j.Status.Terminal() {
 		return
@@ -82,6 +91,29 @@ func notifyJob(j job.Job, removed bool) {
 		"job", j.ID, "kind", j.Kind, "user", j.Owner, "exp", j.Experiment, "status", string(j.Status),
 		"succeeded", succeeded, "failed", failed, "skipped", skipped, "duration", duration.String(),
 	)
+
+	if auditJob, ok := jobFinished[j.Kind]; ok {
+		auditJob(j)
+	}
+}
+
+// jobError is why a finished job, or its first failed item, failed.
+func jobError(j job.Job) error {
+	if j.Status == job.StatusCanceled {
+		return errors.New("canceled")
+	}
+
+	for _, item := range j.Items {
+		if item.Status == job.ItemFailed && item.Error != "" {
+			return errors.New(item.Error)
+		}
+	}
+
+	if j.Error != "" {
+		return errors.New(j.Error)
+	}
+
+	return fmt.Errorf("job %s", j.Status)
 }
 
 // startJob starts a job for the request's user, logs it, and answers 202 with

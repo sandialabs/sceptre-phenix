@@ -467,11 +467,20 @@ func CloneDisk(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// cloneKind is the kind of the background jobs that clone a disk image.
+const cloneKind = "disk.clone"
+
+//nolint:gochecknoinits // registers the clone jobs' audit
+func init() {
+	jobFinished[cloneKind] = auditCloneJob
+}
+
 // CloneDiskJob - POST /disks/clone/jobs?disk={disk}&new={new}
 //
 // Clones as CloneDisk does, in a background job that reports the bytes
 // copied and can be canceled, leaving no file. It checks the request as
-// CloneDisk does before answering 202 with the job.
+// CloneDisk does before answering 202 with the job. The clone is audited
+// when the job finishes (see auditCloneJob).
 func CloneDiskJob(w http.ResponseWriter, r *http.Request) {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
@@ -482,26 +491,26 @@ func CloneDiskJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cloned := audit.Fields{File: path, Target: newPath}
+
 	if !role.Allowed("disks", "create", filepath.Base(newPath)) {
-		diskForbidden(w, r, "cloning disk not allowed", "from_disk", path, "to_disk", newPath)
+		diskForbidden(w, r, audit.DiskClone, "cloning disk not allowed", cloned)
 
 		return
 	}
 
+	// a clone CloneDisk would refuse fails before the job starts, as there
 	size, err := disk.CloneSize(path, newPath)
 	if err != nil {
-		diskError(w, err)
+		diskFailed(w, r, audit.DiskClone, "cloning disk failed", cloned, err)
 
 		return
 	}
 
-	var (
-		user    = middleware.UserFromContext(r.Context())
-		newName = filepath.Base(newPath)
-	)
+	newName := filepath.Base(newPath)
 
 	startJob(w, r, job.Spec{
-		Kind:       "disk.clone",
+		Kind:       cloneKind,
 		Owner:      "",
 		Experiment: "",
 		Title:      fmt.Sprintf("Clone %s to %s", filepath.Base(path), newName),
@@ -523,11 +532,25 @@ func CloneDiskJob(w http.ResponseWriter, r *http.Request) {
 			}
 
 			run.ItemSucceeded(newName, nil)
-			plog.Info(plog.TypeAction, "cloned disk", "user", user, "from_disk", path, "to_disk", newPath, "job", run.ID())
 
 			return nil
 		},
 	})
+}
+
+// auditCloneJob audits, as the user who started it, the clone a finished
+// clone job made, or failed to make: a job canceled before its copy finished
+// made none.
+func auditCloneJob(j job.Job) {
+	cloned := audit.Fields{File: j.Params["disk"], Target: j.Params["new"], Extra: []any{"phenix.job.id", j.ID}}
+
+	if succeeded, _, _, _ := j.Counts(); succeeded > 0 {
+		audit.Background(j.Owner, audit.DiskClone, "cloned disk", audit.OutcomeSuccess, cloned)
+
+		return
+	}
+
+	audit.BackgroundFailure(j.Owner, audit.DiskClone, "cloning disk failed", cloned, jobError(j))
 }
 
 // RenameDisk - POST /disks/rename?disk={disk}&new={new}
