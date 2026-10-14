@@ -164,7 +164,9 @@ Responses that serve runtime state read from minimega say how old it is.
 `X-Phenix-Stale: true` means the response serves data past its normal bound,
 such as the VM states last read while minimega is busy starting or stopping an
 experiment. `GET /hosts`, `GET /experiments`, `GET /experiments/{name}`, the
-VM lists, `GET /experiments/{name}/files` and `GET /soh` send them.
+VM lists, `GET /experiments/{name}/files` and `GET /soh` send them. `GET
+/experiments` also sends `X-Phenix-Stale: true` when it leaves out stored
+experiments it could not read.
 
 When minimega cannot be read, a response never reports it as empty:
 

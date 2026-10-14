@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -104,6 +105,44 @@ func TestGetExperimentsStoreFailure(t *testing.T) {
 	resp := do(t, http.MethodGet, server+"/api/v1/experiments", "")
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("GET experiments with an unreadable store: %d, want 500", resp.StatusCode)
+	}
+}
+
+// undecodableStore is the test store, also holding an experiment that cannot
+// be decoded.
+type undecodableStore struct {
+	*testStore
+}
+
+func (s undecodableStore) List(kinds ...string) (store.Configs, error) {
+	configs, _ := s.testStore.List(kinds...)
+
+	return append(configs, store.Config{
+		Version:  "phenix.sandia.gov/v0",
+		Kind:     "Experiment",
+		Metadata: store.ConfigMetadata{Name: "broken"},
+	}), nil
+}
+
+// A list missing experiments that could not be read is served, marked stale.
+func TestGetExperimentsPartialIsStale(t *testing.T) {
+	useTestExperiment(t)
+	server := serveAs(t, "alice", experimentViewerRole()).URL
+
+	s, _ := store.DefaultStore.(*testStore)
+	store.DefaultStore = undecodableStore{testStore: s} //nolint:reassign // useTestStore restores it
+
+	resp := do(t, http.MethodGet, server+"/api/v1/experiments?vms=false", "")
+	body := readBody(t, resp)
+
+	var exps proto.ExperimentList
+	if err := protojson.Unmarshal([]byte(body), &exps); resp.StatusCode != http.StatusOK || err != nil {
+		t.Fatalf("GET experiments: %d, %v: %s", resp.StatusCode, err, body)
+	}
+
+	stale, _ := strconv.ParseBool(resp.Header.Get(freshness.HeaderStale))
+	if len(exps.GetExperiments()) != 1 || !stale {
+		t.Errorf("experiments = %v, stale %v; want test-experiment, stale", &exps, stale)
 	}
 }
 

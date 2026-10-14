@@ -95,7 +95,7 @@ data while minimega is busy). A minimega failure is never an empty success:
 VM lists set `runtime_unknown` (`vms_unknown` per experiment) and list
 unreported VMs as configured, `/soh` has `vms.known`/`vms_stale`, file listings
 answer `502`, and `GET /experiments` answers `500` when the store is
-unreadable. See `docs/content/api.md#freshness`.
+unreadable (and is `X-Phenix-Stale` when it leaves out unreadable experiments). See `docs/content/api.md#freshness`.
 
 `src/go/web/server.go` is the authoritative route list.
 

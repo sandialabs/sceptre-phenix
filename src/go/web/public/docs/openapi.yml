@@ -465,7 +465,9 @@ paths:
             default: true
       responses:
         "200":
-          description: successful operation
+          description: >-
+            successful operation; `X-Phenix-Stale` is also set when stored
+            experiments that could not be read are left out
           headers:
             X-Phenix-Observed-At:
               $ref: "#/components/headers/ObservedAt"
