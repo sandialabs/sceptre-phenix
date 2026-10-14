@@ -98,6 +98,9 @@ what their role allows.
       <b-navbar-item v-if="auth" tag="div">
         <refresh-status></refresh-status>
       </b-navbar-item>
+      <b-navbar-item v-if="auth" tag="div">
+        <jobs-menu></jobs-menu>
+      </b-navbar-item>
       <b-navbar-item v-if="proxyAuth" class="navbar-item" @click="logout"
         >Reauthorize
       </b-navbar-item>
@@ -115,9 +118,10 @@ what their role allows.
   import axiosInstance from '@/utils/axios.js';
   import { endConsole } from '@/utils/consoleSession.js';
   import RefreshStatus from '@/components/RefreshStatus.vue';
+  import JobsMenu from '@/components/jobs/JobsMenu.vue';
 
   export default {
-    components: { RefreshStatus },
+    components: { RefreshStatus, JobsMenu },
     setup() {
       return { roleAllowed };
     },
@@ -125,7 +129,8 @@ what their role allows.
     //  but Experiments waits for the user to log in, a Disabled role gets
     //  no Users link, an authenticating proxy gets Reauthorize rather than
     //  Logout, and Tunneler and WebShark show only when the server offers
-    //  them (WebShark also needs a role that can open captures).
+    //  them (WebShark also needs a role that can open captures). Signed-in
+    //  users get the background jobs menu.
     computed: {
       auth() {
         const phenixStore = usePhenixStore();

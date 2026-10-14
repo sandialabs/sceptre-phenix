@@ -1,5 +1,7 @@
-// The header: a link to each page the signed-in role may open, and the
-// current page's load state beside the button that reloads it.
+// The header: a link to each page the signed-in role may open, the current
+// page's load state beside the button that reloads it, and the background
+// jobs menu.
+import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const store = vi.hoisted(() => ({
@@ -12,6 +14,7 @@ vi.mock('@/store.js', () => ({ usePhenixStore: () => store }));
 vi.mock('@/utils/axios.js', () => ({ default: { get: vi.fn() } }));
 
 import AppHeader from '@/components/AppHeader.vue';
+import { useJobStore } from '@/utils/jobs.js';
 import { pageStatus } from '@/utils/pageLoader.js';
 import { renderSSR, textOf, tooltipButtons } from './helpers/render.js';
 import { role } from './helpers/roles.js';
@@ -19,6 +22,7 @@ import { role } from './helpers/roles.js';
 const NOW = Date.parse('2026-09-30T12:00:00Z');
 
 beforeEach(() => {
+  setActivePinia(createPinia());
   // the refresh status's clock, and the timer it keeps it current with
   vi.useFakeTimers({ now: NOW });
   Object.assign(store, { auth: true, role: null, features: [] });
@@ -207,5 +211,42 @@ describe('the refresh status', () => {
     Object.assign(pageStatus, { refresh: () => {}, updatedAt: NOW });
     store.auth = false;
     expect(await renderSSR(AppHeader)).not.toContain('refresh-status');
+  });
+});
+
+describe('the jobs menu', () => {
+  const viewer = role('Viewer', ['experiments', 'list']);
+  const job = (id, status) => ({
+    id,
+    title: `Job ${id}`,
+    kind: 'vms.action',
+    experiment: 'exp',
+    status,
+    progress: { done: 0, total: 1 },
+    items: [],
+    created: `2026-10-14T00:00:0${id}Z`,
+    revision: 1,
+  });
+
+  it('counts the running jobs in its accessible name', async () => {
+    store.role = viewer;
+    const jobs = useJobStore();
+    jobs.put(job('1', 'running'));
+    jobs.put(job('2', 'queued'));
+    jobs.put(job('3', 'succeeded'));
+
+    const html = await renderSSR(AppHeader);
+    expect(html).toContain('aria-label="Background jobs (2 jobs running)"');
+    expect(html).toMatch(/class="tag is-info is-rounded jobs-count"[^>]*>2</);
+  });
+
+  it('says when there are none, and is not shown to no one signed in', async () => {
+    store.role = viewer;
+    expect(await renderSSR(AppHeader)).toContain(
+      'aria-label="Background jobs (0 jobs running)"',
+    );
+
+    Object.assign(store, { auth: false });
+    expect(await renderSSR(AppHeader)).not.toContain('Background jobs');
   });
 });

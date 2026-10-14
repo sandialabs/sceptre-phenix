@@ -99,6 +99,12 @@ itself, never `jobs`.
 
 To anyone else, another user's job answers `404`, as if it did not exist.
 
+## Web UI
+
+The [background jobs menu](web-ui.md#background-jobs-menu) in the header lists
+your jobs, with their progress, and cancels, downloads and dismisses them. It
+picks up jobs again after a reload or a lost connection.
+
 ## Command line
 
 `phenix job` follows and cancels the jobs of the running `phenix ui` server

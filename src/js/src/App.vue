@@ -1,9 +1,12 @@
 <script setup>
   import { RouterView } from 'vue-router';
   import {
+    addWsHandler,
     connectWebsocket,
     disconnectWebsocket,
     isWsConnected,
+    onWsReconnect,
+    removeWsHandler,
   } from './utils/websocket';
   import AppHeader from '@/components/AppHeader.vue';
   import AppFooter from '@/components/AppFooter.vue';
@@ -15,9 +18,33 @@
 
   import { TimeoutTool } from '@/utils/timeout.js';
   import { schedulePagePreload } from '@/utils/pageData.js';
+  import { useJobStore } from '@/utils/jobs.js';
 
   const store = usePhenixStore();
   const timeout = new TimeoutTool();
+  const jobs = useJobStore();
+
+  // Background jobs: loaded once signed in, kept current by the websocket,
+  // and loaded again after it reconnects (a reload or a lost connection),
+  // since messages sent meanwhile are lost.
+  const applyJob = (msg) => jobs.apply(msg);
+  const loadJobs = () =>
+    jobs.load().catch((err) => console.warn('failed to load jobs', err));
+  let stopJobReload = null;
+
+  function followJobs() {
+    if (stopJobReload) return;
+    addWsHandler(applyJob);
+    stopJobReload = onWsReconnect(loadJobs);
+    loadJobs();
+  }
+
+  function forgetJobs() {
+    removeWsHandler(applyJob);
+    stopJobReload?.();
+    stopJobReload = null;
+    jobs.clear();
+  }
 
   fetch(router.resolve({ name: 'features' }).href)
     .then((resp) => resp.json())
@@ -35,6 +62,7 @@
     // connect websockets once user has authenticated (or auth disabled)
     if (import.meta.env.VITE_AUTH === 'disabled' || store.auth) {
       connectWebsocket();
+      followJobs();
       timeout.fetchAndStart();
       schedulePagePreload();
     } else {
@@ -47,14 +75,18 @@
         }
 
         if (newAuth) {
+          followJobs();
           timeout.fetchAndStart();
           schedulePagePreload();
+        } else {
+          forgetJobs();
         }
       });
     }
   });
 
   onUnmounted(() => {
+    forgetJobs();
     disconnectWebsocket();
   });
 </script>

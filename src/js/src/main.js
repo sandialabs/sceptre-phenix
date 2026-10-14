@@ -24,7 +24,7 @@ import {
     faPaintbrush, faTv, faCircle, faRefresh, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
     faTableColumns, faArrowPointer, faBroom, faEraser, faBook,
     faServer, faClock, faHourglassHalf, faMicrochip, faMemory, faPlug, faUpRightFromSquare, faCircleDot, faBan,
-    faExpand, faImage, faFileCode, faShareNodes
+    faExpand, faImage, faFileCode, faShareNodes, faListCheck, faRedo
 } from '@fortawesome/free-solid-svg-icons'
 
 // prettier-ignore
@@ -37,7 +37,7 @@ library.add(
     faPaintbrush, faTv, faCircle, faRefresh, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
     faTableColumns, faArrowPointer, faBroom, faEraser, faBook,
     faServer, faClock, faHourglassHalf, faMicrochip, faMemory, faPlug, faUpRightFromSquare, faCircleDot, faBan,
-    faExpand, faImage, faFileCode, faShareNodes
+    faExpand, faImage, faFileCode, faShareNodes, faListCheck, faRedo
 )
 
 // icons of our own (see utils/icons.js)
