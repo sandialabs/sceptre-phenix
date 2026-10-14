@@ -20,12 +20,23 @@ const isExperiment = (msg) => type(msg) === 'experiment';
 const isExperimentConfig = (msg) =>
   type(msg) === 'config' && !!msg.resource.name?.startsWith('Experiment/');
 
-// whether msg tells of the experiment `name` or one of its VMs
+// experiment/* actions that change no state: progress reports and replies to
+// one client's queries
+const NO_CHANGE_ACTIONS = new Set(['progress', 'list', 'search']);
+
+// whether msg is about one of an experiment's VMs and changes its state (a
+// recurring screenshot changes none)
+const isVmChange = (msg) =>
+  !!type(msg)?.startsWith('experiment/') &&
+  !type(msg).endsWith('/screenshot') &&
+  !NO_CHANGE_ACTIONS.has(msg.resource.action);
+
+// whether msg tells of a change to the experiment `name` or one of its VMs
 const aboutExperiment = (msg, name) => {
   const target = msg.resource?.name ?? '';
   return (
     (isExperiment(msg) && target === name) ||
-    (type(msg)?.startsWith('experiment/') && target.startsWith(`${name}/`)) ||
+    (isVmChange(msg) && target.startsWith(`${name}/`)) ||
     (isExperimentConfig(msg) && target === `Experiment/${name}`)
   );
 };
