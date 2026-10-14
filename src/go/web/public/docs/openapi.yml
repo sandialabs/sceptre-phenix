@@ -1912,6 +1912,10 @@ paths:
       responses:
         "101":
           description: switching protocols
+        "400":
+          description: the VM's VNC endpoint could not be found
+        "403":
+          description: the role may not `get` the VM's `vms/vnc`
   "/experiments/{exp_name}/vms/{vm_name}/captures":
     get:
       tags:
