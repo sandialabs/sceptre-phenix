@@ -60,6 +60,11 @@ the root target does.
   silently recover.
 - Use `phenix/util/plog` for core logs with the correct `LogType` and structured
   key/value fields.
+- A web handler for a security-relevant action (reading captures or files,
+  consoles and remote sessions, changing disks or files) logs it with
+  `phenix/web/audit`: `Denied` at each RBAC refusal, `Failure` when the
+  authorized operation fails, and `Success` once it works. Add a new action to
+  the action table in `docs/content/logging.md`.
 - Consult [minimega API docs](https://sandia-minimega.github.io/minimega/reference/minimega/) and
   [source](https://github.com/sandia-minimega/minimega) before changing code
   that constructs commands or depends on minimega behavior.

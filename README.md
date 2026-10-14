@@ -354,6 +354,11 @@ func MyFunc() {
 }
 ```
 
+Web handlers log security-relevant actions (capture access, consoles, disk
+changes, file deletion, ...) as `AUDIT` records with ECS fields through
+`phenix/web/audit`. These always reach the system log file, whatever
+`log.level` is; see [Audit Events](docs/content/logging.md#audit-events).
+
 ### 🧠 Decision Log
 
 | Decision | Reasoning |

@@ -37,6 +37,7 @@ All notable changes to this project will be documented in this file.
 - **CLI**: `phenix vlan alias <experiment> <alias>` now prints the VLAN ID of that alias, or an error if the alias doesn't exist or doesn't have a VLAN ID yet. Its shell completion also completes experiment and alias names.
 - **Resumable downloads**: Experiment file, disk image, VM mount, tunneler and saved WebShark capture downloads can be resumed with `Range`, and `GET .../files/{filename}/checksum` and `GET /disks/checksum` return a file's SHA-256.
 - **Health checks**: `GET /healthz` (liveness) and `GET /readyz` (readiness of minimega, the store, qemu-img, WebShark and disk space) report health as `application/health+json`, and `phenix healthcheck` queries them.
+- **Audit log**: Capture, capture token, WebShark, experiment file, console, VNC, port forward, disk image, VM snapshot, commit and mount actions, refusals included, are logged as `AUDIT` events with ECS fields, always written to the system log file whatever `log.level` is, and the Logs page can filter by them.
 
 ### Changed
 
@@ -80,6 +81,7 @@ All notable changes to this project will be documented in this file.
 - **API compression**: Downloads are no longer gzip-compressed.
 - **Experiment file downloads**: Files stream from disk instead of loading into server memory, and the Files tab's viewer refuses files over 10 MiB.
 - **Containers**: The Docker and Podman images, the compose file and `podman/pod.yml` check health with `phenix healthcheck`.
+- **Logs (breaking)**: The log lines of those audited actions changed from type `SECURITY` or `ACTION` with `user`, `exp` and `vm` keys to type `AUDIT` with ECS keys such as `user.name`, `phenix.experiment.name` and `phenix.vm.name`.
 
 ### Removed
 
@@ -146,6 +148,8 @@ All notable changes to this project will be documented in this file.
 - **Streams and proxies**: Capture streams, WebShark, VNC and port forward websockets could hang on a client or endpoint that stopped responding.
 - **VM copy progress**: Committing a VM's disk to a new backing image could crash phenix.
 - **minimega**: A minimega command that never answered held up every later minimega command.
+- **VNC**: Any signed-in user could open any VM's VNC websocket; it now needs `get` on `vms/vnc`.
+- **Uploads**: A VM mount file upload without a file crashed its request, and a disk or VM mount file upload that failed partway was reported as done.
 
 ### Security
 
