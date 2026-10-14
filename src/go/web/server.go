@@ -411,6 +411,8 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	api.HandleFunc("/experiments/{name}/files", GetExperimentFiles).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files/download", DownloadExperimentFiles).
 		Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/files/archive", ArchiveExperimentFiles).
+		Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files/delete", DeleteExperimentFiles).
 		Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files/{filename}", GetExperimentFile).

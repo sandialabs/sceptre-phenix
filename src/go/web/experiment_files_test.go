@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"phenix/api/job"
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
@@ -659,5 +660,167 @@ func TestGetExperimentFileChecksumRefuses(t *testing.T) {
 				wantDenied(t, events(), "file-download")
 			}
 		})
+	}
+}
+
+// startArchive asks for an archive of test-experiment's files at paths as a
+// user who may get them, and returns the job started.
+func startArchive(t *testing.T, server, body string) job.Job {
+	t.Helper()
+
+	resp := do(t, http.MethodPost, server+"/api/v1/experiments/test-experiment/files/archive", body)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	var started job.Job
+	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
+		t.Fatal(err)
+	}
+
+	if loc := resp.Header.Get("Location"); loc != "/api/v1/jobs/"+started.ID {
+		t.Errorf("Location %q", loc)
+	}
+
+	return started
+}
+
+// zipEntries reads a zip archive's entries.
+func zipEntries(t *testing.T, body string) map[string]string {
+	t.Helper()
+
+	archive, err := zip.NewReader(strings.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("reading zip: %v", err)
+	}
+
+	got := map[string]string{}
+
+	for _, f := range archive.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		data, _ := io.ReadAll(rc)
+		_ = rc.Close()
+		got[f.Name] = string(data)
+	}
+
+	return got
+}
+
+// An archive job builds the zip, which its owner downloads from the job.
+func TestArchiveExperimentFiles(t *testing.T) {
+	useExperimentFilesDir(t, map[string]string{"a.log": "alpha", "scorch/run-0/b.json": "{}"})
+	useTestFiles(t)
+
+	registry := useJobs(t)
+	server := serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
+
+	started := startArchive(t, server, `{"paths":["a.log","scorch/run-0/b.json"]}`)
+
+	if started.Kind != "files.archive" || started.Experiment != "test-experiment" || len(started.Items) != 2 ||
+		started.Progress.BytesTotal != int64(len("alpha{}")) {
+		t.Errorf("started %+v", started)
+	}
+
+	j := waitJob(t, registry, started.ID)
+	if j.Status != job.StatusSucceeded || j.Artifact == nil || j.Artifact.Name != "test-experiment-files.zip" ||
+		j.Artifact.Incomplete {
+		t.Fatalf("job %s, artifact %+v", j.Status, j.Artifact)
+	}
+
+	resp := do(t, http.MethodGet, server+"/api/v1/jobs/"+j.ID+"/artifact", "")
+	body := readBody(t, resp)
+
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "application/zip" {
+		t.Fatalf("artifact: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+
+	if got := zipEntries(t, body); len(got) != 2 || got["a.log"] != "alpha" || got["scorch/run-0/b.json"] != "{}" {
+		t.Errorf("zip holds %v", got)
+	}
+}
+
+// A file that cannot be fetched is left out: the job ends partial, with an
+// incomplete archive listing it in MISSING.txt.
+func TestArchiveExperimentFilesLeavesOutFailures(t *testing.T) {
+	useExperimentFilesDir(t, map[string]string{"a.log": "alpha"})
+
+	// only a mesh node has remote.log, and it cannot be copied
+	fake := useTestFiles(t, "remote.log")
+	fake.files[0].Size = 6
+
+	registry := useJobs(t)
+	server := serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
+
+	j := waitJob(t, registry, startArchive(t, server, `{"paths":["a.log","remote.log"]}`).ID)
+
+	if j.Status != job.StatusPartial || j.Artifact == nil || !j.Artifact.Incomplete ||
+		j.Artifact.Name != "test-experiment-files-incomplete.zip" {
+		t.Fatalf("job %s, artifact %+v", j.Status, j.Artifact)
+	}
+
+	if j.Items[1].Status != job.ItemFailed || !strings.Contains(j.Items[1].Error, "remote.log") {
+		t.Errorf("remote.log's outcome %+v", j.Items[1])
+	}
+
+	resp := do(t, http.MethodGet, server+"/api/v1/jobs/"+j.ID+"/artifact", "")
+
+	got := zipEntries(t, readBody(t, resp))
+	if got["a.log"] != "alpha" || !strings.Contains(got["MISSING.txt"], "remote.log: ") || len(got) != 2 {
+		t.Errorf("zip holds %v", got)
+	}
+
+	// with nothing archived, the job fails without an artifact
+	j = waitJob(t, registry, startArchive(t, server, `{"paths":["remote.log"]}`).ID)
+	if j.Status != job.StatusFailed || j.Artifact != nil {
+		t.Errorf("job of only failures: %s, artifact %+v", j.Status, j.Artifact)
+	}
+}
+
+// A canceled archive job leaves no archive behind.
+func TestArchiveExperimentFilesCanceled(t *testing.T) {
+	useExperimentFilesDir(t, map[string]string{"a.log": "alpha"})
+
+	var (
+		fake     = useTestFiles(t, "remote.log")
+		copying  = make(chan struct{})
+		release  = make(chan struct{})
+		dir      = t.TempDir()
+		registry = useJobsIn(t, dir)
+		server   = serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
+	)
+
+	fake.copy = func(string) error {
+		close(copying)
+		<-release
+
+		return nil
+	}
+
+	started := startArchive(t, server, `{"paths":["a.log","remote.log"]}`)
+
+	<-copying
+
+	if resp := do(t, http.MethodPost, server+"/api/v1/jobs/"+started.ID+"/cancel", ""); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("cancel: %d", resp.StatusCode)
+	}
+
+	close(release)
+
+	j := waitJob(t, registry, started.ID)
+	if j.Status != job.StatusCanceled || j.Artifact != nil {
+		t.Fatalf("job %s, artifact %+v", j.Status, j.Artifact)
+	}
+
+	entries, err := os.ReadDir(filepath.Join(dir, started.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, e := range entries {
+		t.Errorf("canceled job left %s", e.Name())
 	}
 }

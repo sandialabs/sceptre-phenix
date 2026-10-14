@@ -2,6 +2,7 @@ package experiment
 
 import (
 	"archive/zip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -174,23 +175,67 @@ var storedExtensions = []string{ //nolint:gochecknoglobals // constant list
 // the files' sizes: a failure then (ErrInvalidFilePath, ErrFileNotFound,
 // mm.ErrCaptureExists, ErrDownloadTooLarge) has written nothing. It returns
 // the paths archived, each flushed to the writer once it is complete, and on
-// a later failure those flushed before it.
+// a later failure those flushed before it. It is PlanZip followed by
+// ZipPlan.Write, which fails at the first file it cannot archive.
 func ZipFiles(name string, paths []string, limits ZipLimits, start func() io.Writer) ([]string, error) {
+	plan, err := PlanZip(name, paths, limits)
+	if err != nil {
+		return nil, err
+	}
+
+	return plan.Write(context.Background(), start(), ZipHooks{OnStart: nil, OnFile: nil, OnBytes: nil, SkipFailed: false})
+}
+
+// ZipPlan is a checked zip archive of an experiment's files, ready to write.
+type ZipPlan struct {
+	// the experiment
+	Name string
+	// the files to archive, in order, once each
+	Paths []string
+	// each file's size, as the check found it
+	Sizes map[string]int64
+	// the files' sizes in total
+	Total int64
+}
+
+// ZipHooks tell the caller of ZipPlan.Write how it goes.
+type ZipHooks struct {
+	// called before each file is archived
+	OnStart func(path string)
+	// called after each file, with the error that kept it out, if any
+	OnFile func(path string, err error)
+	// called with the bytes of each chunk of a file read
+	OnBytes func(n int64)
+	// archive the other files when one fails, listing those that failed, and
+	// why, in a MISSING.txt entry
+	SkipFailed bool
+}
+
+// missingEntry names the archive entry that lists the files left out.
+const missingEntry = "MISSING.txt"
+
+// PlanZip checks every path as File does and totals the files' sizes, the
+// files only a mesh node has sized from the cluster's listing, without
+// copying anything. It fails with ErrInvalidFilePath, ErrFileNotFound,
+// mm.ErrCaptureExists or ErrDownloadTooLarge.
+func PlanZip(name string, paths []string, limits ZipLimits) (ZipPlan, error) {
 	paths = util.Unique(paths)
 
 	if len(paths) == 0 {
-		return nil, fmt.Errorf("%w: no files given", ErrInvalidFilePath)
+		return ZipPlan{}, fmt.Errorf("%w: no files given", ErrInvalidFilePath)
 	}
 
 	if len(paths) > limits.MaxFiles {
-		return nil, fmt.Errorf("%w: %d files asked for, at most %d allowed", ErrDownloadTooLarge, len(paths), limits.MaxFiles)
+		return ZipPlan{}, fmt.Errorf(
+			"%w: %d files asked for, at most %d allowed", ErrDownloadTooLarge, len(paths), limits.MaxFiles,
+		)
 	}
 
 	var (
 		capturing = captureChecker(name)
 		listing   file.Files
 		listed    bool
-		total     int64
+		plan      = ZipPlan{Name: name, Paths: paths, Sizes: make(map[string]int64, len(paths)), Total: 0}
 	)
 
 	// A file only a mesh node has is sized from the listing, without copying
@@ -219,56 +264,107 @@ func ZipFiles(name string, paths []string, limits ZipLimits, start func() io.Wri
 	for _, p := range paths {
 		clean, err := cleanFilePath(p)
 		if err != nil {
-			return nil, err
+			return ZipPlan{}, err
 		}
 
 		err = capturing(clean)
 		if err != nil {
-			return nil, err
+			return ZipPlan{}, err
 		}
 
 		size, ok := localFileSize(localFilePath(name, clean))
 		if !ok {
 			size, err = listedSize(clean)
 			if err != nil {
-				return nil, err
+				return ZipPlan{}, err
 			}
 		}
 
-		total += size
-		if total > limits.MaxBytes {
-			return nil, fmt.Errorf("%w: the files total more than %d bytes", ErrDownloadTooLarge, limits.MaxBytes)
+		plan.Sizes[p] = size
+
+		plan.Total += size
+		if plan.Total > limits.MaxBytes {
+			return ZipPlan{}, fmt.Errorf("%w: the files total more than %d bytes", ErrDownloadTooLarge, limits.MaxBytes)
 		}
 	}
 
+	return plan, nil
+}
+
+// Write writes the zip archive of the plan's files to w, one at a time from
+// the headnode's copy, and returns the paths archived, each flushed to w once
+// complete, including on a failure. A file it cannot archive fails the
+// archive, unless hooks.SkipFailed, when it is left out and listed in a
+// MISSING.txt entry with the reason. It stops with ctx's error
+// once ctx is done, leaving w with a partial archive.
+func (p ZipPlan) Write(ctx context.Context, w io.Writer, hooks ZipHooks) ([]string, error) {
 	var (
-		archive = zip.NewWriter(start())
-		zipped  = make([]string, 0, len(paths))
+		archive  = zip.NewWriter(w)
+		archived = make([]string, 0, len(p.Paths))
+		missing  strings.Builder
 	)
 
-	for _, p := range paths {
-		err := addToZip(archive, name, p)
+	for _, filePath := range p.Paths {
+		if err := ctx.Err(); err != nil {
+			return archived, err //nolint:wrapcheck // the caller tells cancellation apart
+		}
+
+		if hooks.OnStart != nil {
+			hooks.OnStart(filePath)
+		}
+
+		err := addToZip(ctx, archive, p.Name, filePath, hooks.OnBytes)
 		if err == nil {
-			err = archive.Flush()
+			// a file counts as sent only once its bytes reach w
+			if flushErr := archive.Flush(); flushErr != nil {
+				return archived, fmt.Errorf("writing zip archive: %w", flushErr)
+			}
+		}
+
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return archived, ctxErr //nolint:wrapcheck // the caller tells cancellation apart
+		}
+
+		if hooks.OnFile != nil {
+			hooks.OnFile(filePath, err)
+		}
+
+		if err == nil {
+			archived = append(archived, filePath)
+
+			continue
+		}
+
+		if !hooks.SkipFailed {
+			return archived, err
+		}
+
+		fmt.Fprintf(&missing, "%s: %v\n", filePath, err)
+	}
+
+	if missing.Len() > 0 {
+		entry, err := archive.Create(missingEntry)
+		if err == nil {
+			_, err = io.WriteString(entry, "These files could not be added to the archive:\n\n"+missing.String())
 		}
 
 		if err != nil {
-			return zipped, err
+			return archived, fmt.Errorf("adding %s to zip archive: %w", missingEntry, err)
 		}
-
-		zipped = append(zipped, p)
 	}
 
 	err := archive.Close()
 	if err != nil {
-		return zipped, fmt.Errorf("finishing zip archive: %w", err)
+		return archived, fmt.Errorf("finishing zip archive: %w", err)
 	}
 
-	return zipped, nil
+	return archived, nil
 }
 
-// addToZip copies the experiment's file (a clean path) into the archive.
-func addToZip(archive *zip.Writer, name, clean string) error {
+// addToZip copies the experiment's file (a clean path) into the archive,
+// telling onBytes, if not nil, of each chunk read, and stopping once ctx is
+// done.
+func addToZip(ctx context.Context, archive *zip.Writer, name, clean string, onBytes func(n int64)) error {
 	local, err := fetchFile(name, clean)
 	if err != nil {
 		return err
@@ -300,12 +396,32 @@ func addToZip(archive *zip.Writer, name, clean string) error {
 		return fmt.Errorf("adding %s to zip archive: %w", clean, err)
 	}
 
-	_, err = io.Copy(w, f)
+	_, err = io.Copy(w, &ctxReader{ctx: ctx, r: f, onBytes: onBytes})
 	if err != nil {
 		return fmt.Errorf("adding %s to zip archive: %w", clean, err)
 	}
 
 	return nil
+}
+
+// ctxReader reads r until ctx is done, telling onBytes of each read.
+type ctxReader struct {
+	ctx     context.Context //nolint:containedctx // bounds one copy
+	r       io.Reader
+	onBytes func(n int64)
+}
+
+func (c *ctxReader) Read(b []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err //nolint:wrapcheck // the caller tells cancellation apart
+	}
+
+	n, err := c.r.Read(b)
+	if n > 0 && c.onBytes != nil {
+		c.onBytes(int64(n))
+	}
+
+	return n, err //nolint:wrapcheck // io.Copy expects io.EOF as is
 }
 
 // DeleteFiles deletes the experiment's files at paths (relative to its files

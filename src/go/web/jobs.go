@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -103,6 +104,15 @@ func startJob(w http.ResponseWriter, r *http.Request, spec job.Spec) {
 
 	w.Header().Set("Location", "/api/v1/jobs/"+j.ID)
 	writeJob(w, http.StatusAccepted, j)
+}
+
+// countOf is n and noun, plural unless n is 1, as in "3 VMs".
+func countOf(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // writeJob answers with the job as JSON.

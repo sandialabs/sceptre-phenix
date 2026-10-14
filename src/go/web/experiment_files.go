@@ -1,15 +1,20 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
+	"phenix/api/job"
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/audit"
@@ -296,5 +301,144 @@ func DownloadExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		}
 
 		http.Error(w, err.Error(), status)
+	}
+}
+
+// archiveKind is the kind of the background jobs that archive experiment
+// files.
+const archiveKind = "files.archive"
+
+//nolint:gochecknoinits // registers the archive jobs' download log
+func init() {
+	artifactServed[archiveKind] = logArchiveDownload
+}
+
+// ArchiveExperimentFiles - POST /experiments/{name}/files/archive.
+//
+// It checks the files as DownloadExperimentFiles does, then builds their zip
+// archive in a background job, for GET /jobs/{id}/artifact. A file that fails
+// is left out and listed in the archive's MISSING.txt, and the archive is
+// named <exp>-files-incomplete.zip.
+func ArchiveExperimentFiles(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["name"]
+
+	role := middleware.RoleFromContext(r.Context())
+	if !role.Allowed("experiments/files", "get", name) {
+		forbidFiles(w, r, name, "archiving experiment files")
+
+		return
+	}
+
+	paths, ok := decodeFilesRequest(w, r)
+	if !ok {
+		return
+	}
+
+	plan, err := experiment.PlanZip(name, paths, experiment.ZipLimits{MaxFiles: maxZipFiles, MaxBytes: maxZipBytes})
+	if err != nil {
+		status := fileErrorStatus(err)
+		if status == http.StatusInternalServerError {
+			plog.Error(plog.TypeSystem, "archiving experiment files", "exp", name, "err", err)
+		}
+
+		http.Error(w, err.Error(), status)
+
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	startJob(w, r, job.Spec{
+		Kind:       archiveKind,
+		Owner:      "",
+		Experiment: name,
+		Title:      fmt.Sprintf("Archive %s of %s", countOf(len(plan.Paths), "file"), name),
+		Params:     nil,
+		Items:      plan.Paths,
+		BytesTotal: plan.Total,
+		Cancelable: true,
+		Run: func(ctx context.Context, run *job.Run) error {
+			return archiveFiles(ctx, run, plan, user)
+		},
+	})
+}
+
+// archiveFiles writes the plan's archive to <job dir>/<exp>-files.zip.partial,
+// then renames it to <exp>-files.zip, or <exp>-files-incomplete.zip when a
+// file was left out, and makes it the job's artifact. When the job is
+// canceled, or no file could be archived, the partial file is removed.
+func archiveFiles(ctx context.Context, run *job.Run, plan experiment.ZipPlan, user string) error {
+	dir, err := run.Dir()
+	if err != nil {
+		return err //nolint:wrapcheck // says what failed
+	}
+
+	partial := filepath.Join(dir, plan.Name+"-files.zip.partial")
+
+	f, err := os.OpenFile(partial, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // in the job's own folder
+	if err != nil {
+		return fmt.Errorf("creating archive: %w", err)
+	}
+
+	archived, err := plan.Write(ctx, f, experiment.ZipHooks{
+		OnStart: run.ItemStarted,
+		OnFile: func(path string, err error) {
+			if err != nil {
+				run.ItemFailed(path, err)
+
+				return
+			}
+
+			run.ItemSucceeded(path, nil)
+		},
+		OnBytes:    run.AddBytes,
+		SkipFailed: true,
+	})
+
+	if closeErr := f.Close(); err == nil && closeErr != nil {
+		err = fmt.Errorf("writing archive: %w", closeErr)
+	}
+
+	if err == nil && len(archived) == 0 {
+		err = errors.New("no file could be archived")
+	}
+
+	if err != nil {
+		_ = os.Remove(partial)
+
+		return err
+	}
+
+	var (
+		incomplete = len(archived) < len(plan.Paths)
+		final      = plan.Name + "-files.zip"
+	)
+
+	if incomplete {
+		final = plan.Name + "-files-incomplete.zip"
+	}
+
+	if err := os.Rename(partial, filepath.Join(dir, final)); err != nil {
+		_ = os.Remove(partial)
+
+		return fmt.Errorf("finishing archive: %w", err)
+	}
+
+	for _, path := range archived {
+		plog.Info(plog.TypeAction, "archived file", "user", user, "exp", plan.Name, "file", path, "job", run.ID())
+	}
+
+	return run.SetArtifact(filepath.Join(dir, final), final, incomplete) //nolint:wrapcheck // says what failed
+}
+
+// logArchiveDownload logs, as DownloadExperimentFiles does, each file in an
+// archive job's artifact when a download of it begins.
+func logArchiveDownload(r *http.Request, j job.Job) {
+	user := middleware.UserFromContext(r.Context())
+
+	for _, item := range j.Items {
+		if item.Status == job.ItemSucceeded {
+			plog.Info(plog.TypeAction, "downloaded file", "user", user, "exp", j.Experiment, "file", item.Name, "job", j.ID)
+		}
 	}
 }
