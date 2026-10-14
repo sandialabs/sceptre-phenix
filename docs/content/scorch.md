@@ -322,7 +322,7 @@ The page showing an experiment's pipelines is reached from the `Experiment` or `
 - `Experiment:` followed by the experiment's name, in a box colored by the experiment's state: green while it is running, red while it is stopped, and yellow while it is starting or stopping. Its tooltip spells the state out, as in `The experiment is running`.
 - `Start all`: starts every run that is not already running or waiting to start. Its tooltip reads `Starts all defined runs in order one by one (not in parallel)`, because Scorch executes one run at a time per experiment; a run that is already executing finishes first.
 - `Stop all`: stops the run that is executing and drops the runs still waiting to start
-- `Clear all`: clears the status of every run that is not running
+- `Clear all`: clears the status of every run that is not running, then says in one summary how many it cleared, listing any it could not with the reason and offering `Retry failed` for those that may work if tried again
 
 Each run is shown below that with its own header: the title `Run:` followed by the run's name (or its number if the run has no name), and on the right a tag reading `running` or `stopped` with the run's own buttons:
 

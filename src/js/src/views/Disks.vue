@@ -113,6 +113,16 @@
             </div>
           </div>
 
+          <div v-if="cloneJobsOf(detailsModal.disk).length" class="clones">
+            <hr />
+            <p class="title is-5">Clones</p>
+            <job-progress
+              v-for="job in cloneJobsOf(detailsModal.disk)"
+              :key="job.id"
+              :job="job"
+              class="mb-2"></job-progress>
+          </div>
+
           <div class="actions">
             <hr />
             <p class="title is-5">Actions</p>
@@ -370,6 +380,8 @@
 
 <script>
   import DiskWarning from '@/components/DiskWarning.vue';
+  import JobProgress from '@/components/jobs/JobProgress.vue';
+  import { useJobStore } from '@/utils/jobs.js';
   import axiosInstance from '@/utils/axios.js';
   import {
     diskLabel,
@@ -395,7 +407,7 @@
   const UPLOAD_TYPES = ['.qcow2', '.qc2', '_rootfs.tgz', '.hdd', '.iso'];
 
   export default {
-    components: { DiskWarning },
+    components: { DiskWarning, JobProgress },
     setup() {
       return {
         ...useTable({ name: 'disks' }),
@@ -610,9 +622,14 @@
             ),
         });
       },
+      // Clones the disk in a background job: the prompt closes once the
+      // server has started it, the jobs menu and the disk's details show its
+      // progress, and the list reloads when it ends.
       cloneDisk(path) {
         this.$buefy.dialog.prompt({
-          message: 'Are you sure you want to clone this disk?',
+          message:
+            'Are you sure you want to clone this disk? The copy is made in ' +
+            'the background.',
           inputAttrs: {
             type: 'text',
             placeholder: 'New image name',
@@ -620,13 +637,30 @@
           },
           canCancel: ['button'],
           closeOnConfirm: false,
-          onConfirm: (value, dialog) =>
-            this.actionWrapper(
-              'disks/clone',
-              { disk: path, new: value },
-              dialog,
-            ),
+          onConfirm: async (value, dialog) => {
+            dialog.startLoading();
+            let job;
+            try {
+              job = await useJobStore().start('disks/clone/jobs', null, {
+                params: { disk: path, new: value },
+              });
+            } catch (err) {
+              useErrorNotification(err);
+              dialog.cancelLoading();
+              return;
+            }
+            dialog.close();
+            await useJobStore().whenDone(job.id);
+            this.loader.load();
+          },
         });
+      },
+      // the clone jobs of a disk, as the jobs store keeps them
+      cloneJobsOf(disk) {
+        return useJobStore().list.filter(
+          (job) =>
+            job.kind === 'disk.clone' && job.params?.disk === disk.fullPath,
+        );
       },
       renameDisk(path) {
         this.$buefy.dialog.prompt({

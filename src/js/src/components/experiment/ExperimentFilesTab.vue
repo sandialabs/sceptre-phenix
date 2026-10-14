@@ -37,6 +37,7 @@
         :can-delete="canDeleteFiles"
         :downloading="filesDownloading"
         :deleting="filesBulkDeleting"
+        :archive="archiveJob"
         @download="downloadSelectedFiles"
         @delete="confirmDeleteSelectedFiles"
         @clear="clearFileSelection" />
@@ -233,23 +234,22 @@
   import { CAPTURE_ICON } from '@/components/experiment/vmActions.js';
   import { usePhenixStore } from '@/store.js';
   import axiosInstance from '@/utils/axios.js';
-  import { showError, useErrorNotification } from '@/utils/errorNotif';
+  import { useErrorNotification } from '@/utils/errorNotif';
   import { escapeHTML } from '@/utils/escapeHTML.js';
   import {
     deleteExperimentFile,
     deleteExperimentFiles,
-    downloadExperimentFiles,
+    archiveExperimentFiles,
     keepListed,
   } from '@/utils/experimentFiles.js';
+  import { isActiveJob, useJobStore } from '@/utils/jobs.js';
+  import { notifyOutcome } from '@/utils/operations.js';
   import { fileText } from '@/utils/fileText.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { plural } from '@/utils/plural.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { useTable } from '@/utils/useTable.js';
   import { isCaptureFile, webSharkInstalled } from '@/utils/webshark.js';
-
-  // failures listed by name after deleting several files; the rest are counted
-  const LISTED_FAILURES = 10;
 
   // The Files tab of the running and stopped experiment pages: listing,
   // viewing, downloading and deleting the experiment's files. The search box
@@ -279,6 +279,11 @@
       return { filesTable: table };
     },
 
+    beforeUnmount() {
+      // an archive built after this is left to the jobs menu
+      this.unmounted = true;
+    },
+
     data() {
       return {
         categories: [],
@@ -295,6 +300,8 @@
         deletingFiles: [],
         filesDownloading: false,
         filesBulkDeleting: false,
+        // the ID of the job building the checked files' archive
+        archiveJobID: null,
       };
     },
 
@@ -349,6 +356,12 @@
         return this.selectedFiles.length > 0 && !this.allFilesSelected;
       },
 
+      // the archive job as the jobs store keeps it current
+      archiveJob() {
+        return this.archiveJobID
+          ? (useJobStore().jobs[this.archiveJobID] ?? null)
+          : null;
+      },
       filesBusy() {
         return this.filesDownloading || this.filesBulkDeleting;
       },
@@ -598,26 +611,17 @@
           );
           this.removeFileRows(deleted);
 
-          if (failed.length == 0) {
-            this.$buefy.toast.open({
-              message: `Deleted ${plural(deleted.length, 'file')}`,
-              type: 'is-success',
-              duration: 4000,
-            });
-          } else {
-            // the failed rows stay selected, to retry or download
-            const lines = failed
-              .slice(0, LISTED_FAILURES)
-              .map((f) => `${f.path}: ${f.error}`);
-            if (failed.length > LISTED_FAILURES) {
-              lines.push(`and ${failed.length - LISTED_FAILURES} more`);
-            }
-            showError(
-              `Deleted ${deleted.length} of ${plural(paths.length, 'file')};` +
-                ` ${failed.length} could not be deleted`,
-              lines.join('\n'),
-            );
-          }
+          // the failed rows stay selected, to retry or download
+          notifyOutcome(this.$buefy, {
+            verbPast: 'Deleted',
+            noun: 'file',
+            items: paths.map((path) => {
+              const failure = failed.find((f) => f.path === path);
+              return failure
+                ? { name: path, status: 'failed', error: failure.error }
+                : { name: path, status: 'succeeded' };
+            }),
+          });
         } catch (err) {
           useErrorNotification(err);
         } finally {
@@ -627,17 +631,37 @@
         }
       },
 
+      // Has the server build the checked files' archive in a background job,
+      // whose progress the toolbar shows, then downloads it, unless it is
+      // incomplete: that one waits for an explicit click on its warning
+      // button. Leaving the page leaves the download to the jobs menu.
       async downloadSelectedFiles() {
         const paths = [...this.selectedFiles];
         if (paths.length == 0 || this.filesBusy) return;
         this.filesDownloading = true;
 
         try {
-          await downloadExperimentFiles(this.$route.params.id, paths);
+          const job = await archiveExperimentFiles(
+            this.$route.params.id,
+            paths,
+          );
+          this.archiveJobID = job.id;
+          const done = await useJobStore().whenDone(job.id);
+          if (this.unmounted) return;
+
+          if (done.artifact && !done.artifact.incomplete) {
+            window.open(useJobStore().artifactURL(done), '_blank');
+          } else if (!done.artifact) {
+            notifyOutcome(this.$buefy, {
+              verbPast: 'Archived',
+              noun: 'file',
+              items: done.items ?? [],
+            });
+          }
         } catch (err) {
           useErrorNotification(err);
         } finally {
-          this.filesDownloading = false;
+          this.filesDownloading = isActiveJob(this.archiveJob);
         }
       },
     },

@@ -39,6 +39,7 @@ All notable changes to this project will be documented in this file.
 - **Health checks**: `GET /healthz` (liveness) and `GET /readyz` (readiness of minimega, the store, qemu-img, WebShark and disk space) report health as `application/health+json`, and `phenix healthcheck` queries them.
 - **Audit log**: Capture, capture token, WebShark, experiment file, console, VNC, port forward, disk image, VM snapshot, commit and mount actions, refusals included, are logged as `AUDIT` events with ECS fields, always written to the system log file whatever `log.level` is, and the Logs page can filter by them.
 - **Background jobs**: `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel`, `DELETE /jobs/{id}` and `GET /jobs/{id}/artifact` list, follow, cancel, dismiss and download long operations that run on in the server, with websocket updates and a `jobs` permission that Experiment Admin roles gain on startup for their experiments.
+- **Background jobs**: `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel`, `DELETE /jobs/{id}` and `GET /jobs/{id}/artifact` list, follow, cancel, dismiss and download long operations that run on in the server, with websocket updates, a header jobs menu, and a `jobs` permission that Experiment Admin roles gain on startup for their experiments.
 - **Jobs CLI**: `phenix job list`, `get`, `cancel` and `wait` follow and cancel the running server's background jobs over its unix socket, and `wait` exits 0, 2 or 1 when a job succeeded, partly succeeded or failed.
 - **Disk clone jobs**: `POST /disks/clone/jobs` clones a disk image in a cancelable background job that reports the bytes copied, and an interrupted clone leaves no image behind.
 - **Experiment file archives**: `POST /experiments/{name}/files/archive` builds a zip of several experiment files in a background job that reports each file's outcome, leaves out files it cannot fetch (listed in `MISSING.txt`), and serves the archive resumably from `GET /jobs/{id}/artifact`.
@@ -87,6 +88,10 @@ All notable changes to this project will be documented in this file.
 - **Experiment file downloads**: Files stream from disk instead of loading into server memory, and the Files tab's viewer refuses files over 10 MiB.
 - **Containers**: The Docker and Podman images, the compose file and `podman/pod.yml` check health with `phenix healthcheck`.
 - **Logs (breaking)**: The log lines of those audited actions changed from type `SECURITY` or `ACTION` with `user`, `exp` and `vm` keys to type `AUDIT` with ECS keys such as `user.name`, `phenix.experiment.name` and `phenix.vm.name`.
+- **VM table**: Bulk start, pause, restart, shutdown, kill and reset disk run as one background job behind one confirm dialog that names the skipped VMs.
+- **Operation feedback**: Bulk VM actions, VM snapshots, backing images, memory snapshots, capture all, experiment file deletes and archives, and SCORCH Clear all report one outcome summary, with Retry failed for errors worth retrying.
+- **Experiment files**: Downloading several files builds a resumable archive in a background job, and files that cannot be fetched are left out and listed in its `MISSING.txt`.
+- **Disks**: Clone runs in the background, with its progress and a cancel button in the jobs menu and the disk's details.
 
 ### Removed
 
@@ -156,6 +161,7 @@ All notable changes to this project will be documented in this file.
 - **VNC**: Any signed-in user could open any VM's VNC websocket; it now needs `get` on `vms/vnc`.
 - **Uploads**: A VM mount file upload without a file crashed its request, and a disk or VM mount file upload that failed partway was reported as done.
 - **Disks**: A failed disk upload showed no error.
+- **VM table**: A bulk VM action stopped waiting after the first VM finished, and showed one error notification for each failed VM.
 
 ### Security
 

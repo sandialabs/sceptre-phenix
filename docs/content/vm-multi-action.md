@@ -49,10 +49,25 @@ do not have snapshots enabled; `restart` skips paused VMs; and
 `reset disk state` skips VMs that are paused or do not have snapshots enabled. A
 selected VM the table no longer shows, because it is on another page, a search
 filtered it out, or it was killed, is skipped as well, since its state is
-unknown. Skipped VMs are named, with the reason, in a `No Action` dialog, such
-as `The VMs web and db are not running.`, and the VMs that are left are listed
-in a dialog before anything happens. Clicking an action's button clears the
-selection, whether or not its dialog is then confirmed.
+unknown. One dialog asks before anything happens: it lists the VMs the action
+will act on and, below, names the skipped VMs with the reason, such as
+`The VMs web and db are not running.` Only when every selected VM is skipped
+does a `No Action` dialog say why instead. Clicking an action's button clears
+the selection, whether or not its dialog is then confirmed.
+
+`start`, `pause`, `restart`, `shutdown`, `kill` and `reset disk state` run as
+one [background job](jobs.md) for all the VMs, which the
+[jobs menu](web-ui.md#background-jobs-menu) shows and can cancel; canceling
+stops after the VMs in progress finish. The page waits until the job ends, then
+shows each VM as the job left it. When every VM succeeded, a short message
+says so (`Restarted 3 VMs`); otherwise one lasting notification sums up the
+outcome (`Restarted 2 of 3 VMs; 1 failed`), names up to eight VMs that failed or
+were skipped with the reason, and offers `Retry failed` for the VMs that may
+work if tried again, such as one that was busy with another action.
+`create vm snapshot`, `create backing image`, `create memory snapshot`, and
+capturing all of a VM's interfaces send one request for each VM or interface
+and sum up how they went the same way, rather than showing one error for each
+failure.
 
 #### Modify State Toolbar
 

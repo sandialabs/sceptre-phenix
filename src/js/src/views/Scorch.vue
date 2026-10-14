@@ -207,6 +207,8 @@
     scorchRow,
   } from '@/utils/pageData.js';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
+  import { escapeHTML } from '@/utils/escapeHTML.js';
+  import { confirmOperation } from '@/utils/operations.js';
   import { useTable } from '@/utils/useTable.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { createLiveRows } from '@/utils/liveRows.js';
@@ -294,7 +296,7 @@
           : `Start experiment ${exp.name}`;
       },
 
-      expControl(exp) {
+      async expControl(exp) {
         if (exp.status == 'starting' || exp.status == 'stopping') {
           this.$buefy.toast.open({
             message: `The ${exp.name} experiment is currently ${exp.status}. You cannot make any changes at this time.`,
@@ -304,40 +306,22 @@
           return;
         }
 
-        if (exp.running) {
-          this.$buefy.dialog.confirm({
-            title: 'Stop the Experiment',
-            message: `This will stop the ${exp.name} experiment.`,
-            cancelText: 'Cancel',
-            confirmText: 'Stop',
-            type: 'is-danger',
-            hasIcon: true,
+        const stop = exp.running;
+        const confirmed = await confirmOperation(this.$buefy, {
+          title: stop ? 'Stop the Experiment' : 'Start the Experiment',
+          message: `This will ${stop ? 'stop' : 'start'} the ${escapeHTML(exp.name)} experiment.`,
+          confirmText: stop ? 'Stop' : 'Start',
+          type: stop ? 'is-danger' : 'is-success',
+          noun: 'experiment',
+        });
+        if (!confirmed) return;
 
-            onConfirm: () => {
-              axiosInstance
-                .post(`experiments/${exp.name}/stop`)
-                .catch((err) => {
-                  useErrorNotification(err);
-                });
-            },
-          });
-        } else {
-          this.$buefy.dialog.confirm({
-            title: 'Start the Experiment',
-            message: `This will start the ${exp.name} experiment.`,
-            cancelText: 'Cancel',
-            confirmText: 'Start',
-            type: 'is-success',
-            hasIcon: true,
-
-            onConfirm: () => {
-              axiosInstance
-                .post(`experiments/${exp.name}/start`)
-                .catch((err) => {
-                  useErrorNotification(err);
-                });
-            },
-          });
+        try {
+          await axiosInstance.post(
+            `experiments/${exp.name}/${stop ? 'stop' : 'start'}`,
+          );
+        } catch (err) {
+          useErrorNotification(err);
         }
       },
 

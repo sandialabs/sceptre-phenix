@@ -3,6 +3,7 @@
 // for each one it disables, in the details window and on the table's rows,
 // and the requests those actions send.
 import realAxios from 'axios';
+import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axios, fetching, loaderSpy, modules, notify, rbac, resetMocks } =
@@ -17,7 +18,8 @@ vi.mock('@/utils/pageLoader.js', fetching);
 
 import Disks from '@/views/Disks.vue';
 import { flush } from './helpers/async.js';
-import { disk } from './helpers/fixtures.js';
+import { disk, httpError, wsMsg } from './helpers/fixtures.js';
+import { useJobStore } from '@/utils/jobs.js';
 import { pageContext } from './helpers/page.js';
 import {
   allowAll,
@@ -37,6 +39,7 @@ import {
 const page = (fields) => pageContext(Disks, { fields });
 
 beforeEach(() => {
+  setActivePinia(createPinia());
   resetMocks({ store: { token: 't', features: [], role: null } });
   axios.get.mockResolvedValue({ data: { disks: [] } });
 });
@@ -80,6 +83,15 @@ describe('the disk list', () => {
     ctx.handleWs({ resource: { type: 'disks', action: 'update' } });
     ctx.handleWs({ resource: { type: 'experiment', action: 'update' } });
     expect(loaderSpy.load).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows why an upload failed', async () => {
+    axios.post.mockRejectedValue(httpError(507, 'no space left on device'));
+    page().uploadDisk({ name: 'a.qc2' });
+    await flush();
+    expect(notify.error).toHaveBeenCalledWith(
+      'Error uploading: no space left on device',
+    );
   });
 
   it('refuses to upload a file that is no disk image', () => {
@@ -545,7 +557,6 @@ describe('disk action requests', () => {
 
   it.each([
     ['snapshotDisk', 'prompt', 'post', 'disks/snapshot', { new: 'n+1&.qc2' }],
-    ['cloneDisk', 'prompt', 'post', 'disks/clone', { new: 'n+1&.qc2' }],
     ['renameDisk', 'prompt', 'post', 'disks/rename', { new: 'n+1&.qc2' }],
     ['resizeDisk', 'prompt', 'post', 'disks/resize', { size: '+5G' }],
     ['deleteDisk', 'confirm', 'delete', 'disks', {}],
@@ -572,6 +583,72 @@ describe('disk action requests', () => {
       expect(ctx.loader.load).toHaveBeenCalled();
     },
   );
+
+  it('clones in a background job, closing the prompt once it starts and reloading when it ends', async () => {
+    const ctx = opened();
+    const job = {
+      id: 'j1',
+      kind: 'disk.clone',
+      status: 'running',
+      revision: 1,
+    };
+    axios.post.mockResolvedValue({ data: job });
+    const done = { ...job, status: 'succeeded', revision: 3 };
+    axios.get.mockResolvedValue({ data: done });
+
+    ctx.cloneDisk(path);
+    const open = dialog();
+    const confirmed = ctx.$buefy.dialog.prompt.mock.lastCall[0].onConfirm(
+      'n+1&.qc2',
+      open,
+    );
+    await flush();
+
+    const [url, body, config] = axios.post.mock.lastCall;
+    expect([url, body]).toEqual(['disks/clone/jobs', null]);
+    expect(query({ url, ...config })).toEqual({ disk: path, new: 'n+1&.qc2' });
+    expect(open.close).toHaveBeenCalled();
+    expect(ctx.loader.load).not.toHaveBeenCalled();
+
+    useJobStore().apply(wsMsg('job', 'j1', 'update', done));
+    await confirmed;
+    expect(ctx.loader.load).toHaveBeenCalled();
+  });
+
+  it('keeps the prompt open and shows why a clone could not start', async () => {
+    const ctx = opened();
+    const err = httpError(409, 'disk image exists');
+    axios.post.mockRejectedValue(err);
+
+    ctx.cloneDisk(path);
+    const open = dialog();
+    await ctx.$buefy.dialog.prompt.mock.lastCall[0].onConfirm('x', open);
+
+    expect(notify.error).toHaveBeenCalledWith(err);
+    expect(open.cancelLoading).toHaveBeenCalled();
+    expect(open.close).not.toHaveBeenCalled();
+  });
+
+  it("shows a disk's clones in its details", () => {
+    const ctx = opened();
+    useJobStore().put({
+      id: 'j1',
+      kind: 'disk.clone',
+      params: { disk: path },
+      status: 'running',
+      revision: 1,
+    });
+    useJobStore().put({
+      id: 'j2',
+      kind: 'disk.clone',
+      params: { disk: '/other.qc2' },
+      status: 'running',
+      revision: 1,
+    });
+    expect(ctx.cloneJobsOf({ fullPath: path }).map((j) => j.id)).toEqual([
+      'j1',
+    ]);
+  });
 
   it('rebases with the disk, backing image and mode as query parameters', () => {
     const ctx = opened();

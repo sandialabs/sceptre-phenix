@@ -1258,6 +1258,13 @@
     isoDisks,
   } from '@/utils/diskChain.js';
   import { listText, namedList, pluralWord } from '@/utils/plural.js';
+  import { useJobStore } from '@/utils/jobs.js';
+  import {
+    confirmOperation,
+    notifyOutcome,
+    outcomeFromJob,
+    outcomeFromSettled,
+  } from '@/utils/operations.js';
   import externalImg from '@/assets/imgs/external.png';
   import notAvailableImg from '@/assets/imgs/not-available.png';
   import delayedImg from '@/assets/imgs/delayed.png';
@@ -1329,6 +1336,16 @@
       error: null,
     };
   }
+
+  // what each power action did, for its outcome summary
+  const VM_ACTION_DONE = {
+    start: 'Started',
+    pause: 'Paused',
+    restart: 'Restarted',
+    shutdown: 'Shut down',
+    kill: 'Killed',
+    resetDisk: 'Reset the disks of',
+  };
 
   export default {
     emits: ['running'],
@@ -2445,43 +2462,42 @@
         }
       },
 
-      captureSnapshot(name) {
-        name = this.actionableVMs('snapshot', name);
-        if (name.length === 0) return;
+      async captureSnapshot(names) {
+        const { allowed, skipped } = partitionVMsForAction(
+          'snapshot',
+          names,
+          this.experiment.vms,
+        );
+        if (allowed.length === 0) {
+          this.alertSkipped(skipped);
+          return;
+        }
 
         const t = timestampParts();
         const time = `${t.year}-${t.month}-${t.day}_${t.hours}${t.minutes}`;
 
-        this.$buefy.dialog.confirm({
+        const confirmed = await confirmOperation(this.$buefy, {
           title: pluralWord(
-            name.length,
+            allowed.length,
             'Create a VM Snapshot',
             'Create VM Snapshots',
           ),
-          message: `This will create ${pluralWord(name.length, 'a snapshot', 'snapshots')} of ${namedList(name, 'VM')}.`,
-          cancelText: 'Cancel',
+          message: `This will create ${pluralWord(allowed.length, 'a snapshot', 'snapshots')} of ${namedList(allowed, 'VM')}.`,
           confirmText: 'Create',
           type: 'is-success',
-          hasIcon: true,
-          onConfirm: () => {
-            this.resetExpModal();
-            name.forEach((vmName) => {
-              axiosInstance
-                .post(
-                  'experiments/' +
-                    this.$route.params.id +
-                    '/vms/' +
-                    vmName +
-                    '/snapshots',
-                  { filename: time },
-                  { timeout: 0 },
-                )
-                .catch((err) => {
-                  useErrorNotification(err);
-                });
-            });
-          },
+          skipped,
+          noun: 'VM',
         });
+        if (!confirmed) return;
+
+        this.resetExpModal();
+        this.fanOut(allowed, 'Snapshotted', (vmName) =>
+          axiosInstance.post(
+            `experiments/${this.$route.params.id}/vms/${vmName}/snapshots`,
+            { filename: time },
+            { timeout: 0 },
+          ),
+        );
       },
 
       restoreSnapshot(name, snapshot) {
@@ -2545,6 +2561,9 @@
 
       backingImage(vm) {
         const names = vm.map((arg) => arg.name);
+        const files = Object.fromEntries(
+          vm.map((arg) => [arg.name, arg.filename + '.qc2']),
+        );
         this.$buefy.dialog.confirm({
           title: pluralWord(
             names.length,
@@ -2560,21 +2579,13 @@
             this.diskImageModal.active = false;
             this.resetDiskImageModal();
             this.resetExpModal();
-            let url = '';
-            let body = '';
-            vm.forEach((arg) => {
-              url =
-                'experiments/' +
-                this.$route.params.id +
-                '/vms/' +
-                arg.name +
-                '/commit';
-              body = { filename: arg.filename + '.qc2' };
-
-              axiosInstance.post(url, body, { timeout: 0 }).catch((err) => {
-                useErrorNotification(err);
-              });
-            });
+            this.fanOut(names, 'Created backing images of', (name) =>
+              axiosInstance.post(
+                `experiments/${this.$route.params.id}/vms/${name}/commit`,
+                { filename: files[name] },
+                { timeout: 0 },
+              ),
+            );
           },
         });
       },
@@ -2612,46 +2623,42 @@
       },
 
       createMemorySnapshot(vm) {
+        const files = Object.fromEntries(
+          vm.map((arg) => [arg.name, arg.filename + '.elf']),
+        );
         this.memorySnapshotModal.active = false;
-        let url = '';
-        let body = '';
-        vm.forEach((arg) => {
-          url =
-            'experiments/' +
-            this.$route.params.id +
-            '/vms/' +
-            arg.name +
-            '/memorySnapshot';
-          body = { filename: arg.filename + '.elf' };
+        this.resetMemorySnapshotModal();
+        this.fanOut(Object.keys(files), 'Created memory snapshots of', (name) =>
+          axiosInstance.post(
+            `experiments/${this.$route.params.id}/vms/${name}/memorySnapshot`,
+            { filename: files[name] },
+            { timeout: 0 },
+          ),
+        );
+      },
 
-          axiosInstance.post(url, body, { timeout: 0 }).catch((err) => {
-            useErrorNotification(err);
-          });
-
-          this.resetMemorySnapshotModal();
+      // Sends one request for each name, then tells in one summary how they
+      // went, offering to send again those that may work if retried.
+      async fanOut(names, verbPast, send, noun = 'VM') {
+        const results = await Promise.allSettled(names.map(send));
+        notifyOutcome(this.$buefy, {
+          verbPast,
+          noun,
+          items: outcomeFromSettled(names, results),
+          onRetry: (retry) => this.fanOut(retry, verbPast, send, noun),
         });
       },
 
       killVm(names) {
-        this.confirmVmAction(
-          'kill',
-          names,
-          (vms) => ({
-            title: `Kill the ${pluralWord(vms.length, 'VM')}`,
-            message:
-              `This will kill ${namedList(vms, 'VM')}. You will not be able ` +
-              `to restore ${pluralWord(vms.length, 'it', 'them')} until you ` +
-              `restart the ${this.$route.params.id} experiment!`,
-            confirmText: pluralWord(vms.length, 'KILL IT!', 'KILL THEM!'),
-            type: 'is-danger',
-          }),
-          (url, name) =>
-            axiosInstance.delete(url).then(() => {
-              this.experiment.vms = this.experiment.vms.filter(
-                (vm) => vm.name != name,
-              );
-            }),
-        );
+        this.confirmVmAction('kill', names, (vms) => ({
+          title: `Kill the ${pluralWord(vms.length, 'VM')}`,
+          message:
+            `This will kill ${namedList(vms, 'VM')}. You will not be able ` +
+            `to restore ${pluralWord(vms.length, 'it', 'them')} until you ` +
+            `restart the ${this.$route.params.id} experiment!`,
+          confirmText: pluralWord(vms.length, 'KILL IT!', 'KILL THEM!'),
+          type: 'is-danger',
+        }));
       },
 
       stop() {
@@ -2974,20 +2981,21 @@
           hasIcon: true,
           onConfirm: async () => {
             setPending(true);
+            // the rows update from the captures' websocket events
+            const file = Object.fromEntries(
+              targets.map((iface, i) => [`interface ${iface}`, files[i]]),
+            );
             try {
-              const results = await Promise.allSettled(
-                targets.map((iface, i) =>
+              await this.fanOut(
+                Object.keys(file),
+                `Started packet captures of ${vm.name} on`,
+                (name) =>
                   axiosInstance.post(url, {
-                    interface: iface,
-                    filename: files[i],
+                    interface: Number(name.split(' ')[1]),
+                    filename: file[name],
                   }),
-                ),
+                'interface',
               );
-              // each failure has its own notification; the rows update from
-              // the captures' websocket events
-              results
-                .filter((result) => result.status === 'rejected')
-                .forEach((result) => useErrorNotification(result.reason));
             } finally {
               setPending(false);
             }
@@ -3034,88 +3042,48 @@
       },
 
       startVm(names) {
-        this.confirmVmAction(
-          'start',
-          names,
-          (vms) => ({
-            title: `Start the ${pluralWord(vms.length, 'VM')}`,
-            message: `This will start ${namedList(vms, 'VM')}.`,
-            confirmText: 'Start',
-            type: 'is-success',
-          }),
-          (url) =>
-            axiosInstance
-              .post(`${url}/start`)
-              .then((resp) => this.replaceVm(resp.data)),
-        );
+        this.confirmVmAction('start', names, (vms) => ({
+          title: `Start the ${pluralWord(vms.length, 'VM')}`,
+          message: `This will start ${namedList(vms, 'VM')}.`,
+          confirmText: 'Start',
+          type: 'is-success',
+        }));
       },
 
       pauseVm(names) {
-        this.confirmVmAction(
-          'pause',
-          names,
-          (vms) => ({
-            title: `Pause the ${pluralWord(vms.length, 'VM')}`,
-            message: `This will pause ${namedList(vms, 'VM')}.`,
-            confirmText: 'Pause',
-            type: 'is-success',
-          }),
-          (url) =>
-            axiosInstance
-              .post(`${url}/stop`)
-              .then((resp) => this.replaceVm(resp.data)),
-        );
+        this.confirmVmAction('pause', names, (vms) => ({
+          title: `Pause the ${pluralWord(vms.length, 'VM')}`,
+          message: `This will pause ${namedList(vms, 'VM')}.`,
+          confirmText: 'Pause',
+          type: 'is-success',
+        }));
       },
 
       resetVmState(names) {
-        this.confirmVmAction(
-          'resetDisk',
-          names,
-          (vms) => ({
-            title: `Reset the ${pluralWord(vms.length, "VM's Disk", "VMs' Disks")}`,
-            message: `This will reset the disk state of ${namedList(vms, 'VM')}.`,
-            confirmText: 'Reset',
-            type: 'is-success',
-          }),
-          (url) =>
-            axiosInstance
-              .get(`${url}/reset`)
-              .then((resp) => this.replaceVm(resp.data)),
-        );
+        this.confirmVmAction('resetDisk', names, (vms) => ({
+          title: `Reset the ${pluralWord(vms.length, "VM's Disk", "VMs' Disks")}`,
+          message: `This will reset the disk state of ${namedList(vms, 'VM')}.`,
+          confirmText: 'Reset',
+          type: 'is-success',
+        }));
       },
 
       restartVm(names) {
-        this.confirmVmAction(
-          'restart',
-          names,
-          (vms) => ({
-            title: `Restart the ${pluralWord(vms.length, 'VM')}`,
-            message: `This will restart ${namedList(vms, 'VM')}.`,
-            confirmText: 'Restart',
-            type: 'is-success',
-          }),
-          (url) =>
-            axiosInstance
-              .get(`${url}/restart`)
-              .then((resp) => this.replaceVm(resp.data)),
-        );
+        this.confirmVmAction('restart', names, (vms) => ({
+          title: `Restart the ${pluralWord(vms.length, 'VM')}`,
+          message: `This will restart ${namedList(vms, 'VM')}.`,
+          confirmText: 'Restart',
+          type: 'is-success',
+        }));
       },
 
       shutdownVm(names) {
-        this.confirmVmAction(
-          'shutdown',
-          names,
-          (vms) => ({
-            title: `Shut Down the ${pluralWord(vms.length, 'VM')}`,
-            message: `This will shut down ${namedList(vms, 'VM')}.`,
-            confirmText: 'Shut Down',
-            type: 'is-danger',
-          }),
-          (url) =>
-            axiosInstance
-              .get(`${url}/shutdown`)
-              .then((resp) => this.replaceVm(resp.data)),
-        );
+        this.confirmVmAction('shutdown', names, (vms) => ({
+          title: `Shut Down the ${pluralWord(vms.length, 'VM')}`,
+          message: `This will shut down ${namedList(vms, 'VM')}.`,
+          confirmText: 'Shut Down',
+          type: 'is-danger',
+        }));
       },
 
       redeploy(names) {
@@ -3393,38 +3361,83 @@
           names,
           this.experiment.vms,
         );
-        if (skipped.length > 0) {
-          this.$buefy.dialog.alert({
-            title: 'No Action',
-            message: escapeHTML(skippedVMsText(skipped)),
-            confirmText: 'Ok',
-          });
-        }
+        if (skipped.length > 0) this.alertSkipped(skipped);
         return allowed;
       },
 
-      // Asks to take an action on the named VMs its rules allow, saying which
-      // it skips and why, then sends each VM's request: `ask(vms)` words the
-      // question for the VMs it acts on, and `send(url, name)` makes one VM's
-      // request, given the VM's URL.
-      confirmVmAction(action, names, ask, send) {
-        const vmList = this.actionableVMs(action, names);
-        if (vmList.length === 0) return;
-
-        this.$buefy.dialog.confirm({
-          ...ask(vmList),
-          cancelText: 'Cancel',
-          hasIcon: true,
-          onConfirm: () => {
-            this.isWaiting = true;
-            this.resetExpModal();
-            for (const name of vmList) {
-              send(`experiments/${this.$route.params.id}/vms/${name}`, name)
-                .catch((err) => useErrorNotification(err))
-                .finally(() => (this.isWaiting = false));
-            }
-          },
+      // says which VMs an action skipped, and why
+      alertSkipped(skipped) {
+        this.$buefy.dialog.alert({
+          title: 'No Action',
+          message: escapeHTML(skippedVMsText(skipped)),
+          confirmText: 'Ok',
         });
+      },
+
+      // Asks once to take a power action on the named VMs its rules allow,
+      // saying in the same dialog which it skips and why, then takes it in
+      // one background job: `ask(vms)` words the question for the VMs it
+      // acts on.
+      async confirmVmAction(action, names, ask) {
+        const { allowed, skipped } = partitionVMsForAction(
+          action,
+          names,
+          this.experiment.vms,
+        );
+        if (allowed.length === 0) {
+          this.alertSkipped(skipped);
+          return;
+        }
+
+        const confirmed = await confirmOperation(this.$buefy, {
+          ...ask(allowed),
+          skipped,
+          noun: 'VM',
+        });
+        if (confirmed) await this.runVmJob(action, allowed);
+      },
+
+      // Takes a power action on the VMs in a background job, waiting for it,
+      // then shows each VM as the job left it and says how it went, offering
+      // to retry the VMs that may work if tried again. The table's rows also
+      // follow the VMs' own websocket updates meanwhile.
+      async runVmJob(action, vms) {
+        const jobs = useJobStore();
+        this.isWaiting = true;
+        this.resetExpModal();
+        try {
+          const job = await jobs.start(
+            `experiments/${this.$route.params.id}/vms/actions`,
+            { action, vms },
+          );
+          const done = await jobs.whenDone(job.id);
+          const items = outcomeFromJob(done);
+
+          const succeeded = (done?.items ?? []).filter(
+            (item) => item.status === 'succeeded',
+          );
+          if (action === 'kill') {
+            const killed = new Set(succeeded.map((item) => item.name));
+            this.experiment.vms = this.experiment.vms.filter(
+              (vm) => !killed.has(vm.name),
+            );
+          } else {
+            for (const item of succeeded) {
+              if (item.result) this.replaceVm(item.result);
+            }
+          }
+
+          notifyOutcome(this.$buefy, {
+            verbPast: VM_ACTION_DONE[action],
+            noun: 'VM',
+            items,
+            onRetry: (retry) => this.runVmJob(action, retry),
+          });
+        } catch (err) {
+          useErrorNotification(err);
+        } finally {
+          this.isWaiting = false;
+        }
       },
 
       updateCaptureLabel(vm) {

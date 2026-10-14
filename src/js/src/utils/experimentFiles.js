@@ -1,5 +1,5 @@
-import FileSaver from 'file-saver';
 import axiosInstance from '@/utils/axios.js';
+import { useJobStore } from '@/utils/jobs.js';
 
 const filesURL = (exp) => `experiments/${encodeURIComponent(exp)}/files`;
 
@@ -18,22 +18,10 @@ export async function deleteExperimentFiles(exp, paths) {
   return { deleted: resp.data?.deleted ?? [], failed: resp.data?.failed ?? [] };
 }
 
-// POST /experiments/{name}/files/download: saves the zip the server streams
-export async function downloadExperimentFiles(exp, paths) {
-  try {
-    const resp = await axiosInstance.post(
-      `${filesURL(exp)}/download`,
-      { paths },
-      { responseType: 'blob' },
-    );
-    FileSaver.saveAs(resp.data, `${exp}-files.zip`);
-  } catch (err) {
-    // with responseType blob the error text arrives as a Blob too
-    if (err?.response?.data instanceof Blob) {
-      err.response.data = await err.response.data.text();
-    }
-    throw err;
-  }
+// POST /experiments/{name}/files/archive: the server builds the zip in a
+// background job (see utils/jobs.js), which this returns
+export function archiveExperimentFiles(exp, paths) {
+  return useJobStore().start(`${filesURL(exp)}/archive`, { paths });
 }
 
 // the selected paths still in the listed files, or the same array when all
