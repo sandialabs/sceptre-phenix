@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 )
 
 // cloneChunk is how much a clone copies between checks of its context and
@@ -124,8 +125,9 @@ func copyChunks(ctx context.Context, out io.Writer, in io.Reader, progress func(
 // RemoveStalePartials deletes the temporary files of clones that never
 // finished, as a crash or restart leaves, from the minimega files directory
 // dir and its folders (as far down as the disk list looks), and returns how
-// many it deleted.
-func RemoveStalePartials(dir string) (int, error) {
+// many it deleted. It keeps those changed since before, which clones still
+// running may be writing.
+func RemoveStalePartials(dir string, before time.Time) (int, error) {
 	root, err := filepath.EvalSymlinks(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return 0, nil
@@ -167,6 +169,11 @@ func RemoveStalePartials(dir string) (int, error) {
 
 		if !entry.Type().IsRegular() || !partialName.MatchString(entry.Name()) {
 			return nil
+		}
+
+		info, err := entry.Info()
+		if err != nil || !info.ModTime().Before(before) {
+			return nil //nolint:nilerr // a file gone or in use is not stale
 		}
 
 		if err := os.Remove(p); err != nil {

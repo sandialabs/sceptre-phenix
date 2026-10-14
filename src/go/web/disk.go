@@ -54,13 +54,30 @@ func WatchDisks(ctx context.Context) {
 
 	go warm()
 
-	// clones that never finished, as a restart leaves
-	dir := mm.GetMMFullPath("")
-	if removed, err := disk.RemoveStalePartials(dir); err != nil {
-		plog.Warn(plog.TypeSystem, "removing partial disk clones", "dir", dir, "err", err)
-	} else if removed > 0 {
-		plog.Info(plog.TypeSystem, "removed partial disk clones", "dir", dir, "count", removed)
+	// clones that never finished, as a restart leaves: those this process
+	// did not start, in the files directory phenix uses now and, once
+	// minimega gives it, in minimega's
+	started := time.Now()
+	sweep := func(dir string) {
+		if removed, err := disk.RemoveStalePartials(dir, started); err != nil {
+			plog.Warn(plog.TypeSystem, "removing partial disk clones", "dir", dir, "err", err)
+		} else if removed > 0 {
+			plog.Info(plog.TypeSystem, "removed partial disk clones", "dir", dir, "count", removed)
+		}
 	}
+
+	dir := mm.GetMMFullPath("")
+	sweep(dir)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-mm.FilesDirectoryGiven():
+			if given := mm.GetMMFullPath(""); given != dir {
+				sweep(given)
+			}
+		}
+	}()
 
 	watchFilesDirectory(ctx, mm.FilesDirectoryGiven(), diskChangeDebounce, func() {
 		warm()
