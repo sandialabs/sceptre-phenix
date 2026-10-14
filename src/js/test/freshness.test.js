@@ -138,4 +138,16 @@ describe('resourceFor', () => {
       false,
     );
   });
+
+  it("ignores messages that change none of an experiment's state", () => {
+    const [matches] = resourceFor('experiment/exp1').invalidatedBy;
+    const msg = (type, action) => ({
+      resource: { type, name: 'exp1/vm1', action },
+    });
+    const key = 'experiment/exp1';
+    expect(matches(msg('experiment/vm/screenshot', 'update'), key)).toBe(false);
+    expect(matches(msg('experiment/vm/commit', 'progress'), key)).toBe(false);
+    expect(matches(msg('experiment/vm', 'stop'), key)).toBe(true);
+    expect(matches(msg('experiment/vm/snapshot', 'create'), key)).toBe(true);
+  });
 });
