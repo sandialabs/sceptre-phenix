@@ -192,6 +192,7 @@ func roleAllowingNames(resource, verb string, names ...string) rbac.Role {
 		{Resources: []string{resource}, ResourceNames: names, Verbs: []string{verb}},
 	}}}
 }
+
 // Every broadcast carries a seq greater than the last one's, so clients can
 // order them against each other and against REST responses.
 func TestBroadcastsCarryIncreasingSeq(t *testing.T) {

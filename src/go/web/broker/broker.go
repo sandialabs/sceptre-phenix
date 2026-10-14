@@ -372,6 +372,7 @@ func PublishJob(j job.Job, removed bool) {
 		RequestPolicy: bt.NewRequestPolicy("jobs", "list", name),
 		Resource:      bt.NewResource("job", j.ID, action),
 		Result:        body,
+		Seq:           0, // stamped by encode
 	})
 	if !ok {
 		return
