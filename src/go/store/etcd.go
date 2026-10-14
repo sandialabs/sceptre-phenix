@@ -95,6 +95,8 @@ func (e Etcd) List(kinds ...string) (Configs, error) {
 				return nil, fmt.Errorf("unmarshaling config JSON: %w", err)
 			}
 
+			c.Metadata.Revision = uint64(entry.ModRevision) //nolint:gosec // etcd revisions are positive
+
 			configs = append(configs, c)
 		}
 	}
@@ -120,6 +122,8 @@ func (e Etcd) Get(c *Config) error {
 		return fmt.Errorf("unmarshaling config JSON: %w", err)
 	}
 
+	c.Metadata.Revision = uint64(entry.ModRevision) //nolint:gosec // etcd revisions are positive
+
 	return nil
 }
 
@@ -134,15 +138,21 @@ func (e Etcd) Create(c *Config) error {
 
 	c.Metadata.Created = now
 	c.Metadata.Updated = now
+	// etcd assigns the revision; the stored JSON carries none, and reads take
+	// it from the key's ModRevision
+	c.Metadata.Revision = 0
 
 	v, err := json.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
 
-	if _, err := e.cli.Put(context.Background(), key, string(v)); err != nil {
+	resp, err := e.cli.Put(context.Background(), key, string(v))
+	if err != nil {
 		return fmt.Errorf("writing config JSON to Etcd: %w", err)
 	}
+
+	c.Metadata.Revision = uint64(resp.Header.GetRevision()) //nolint:gosec // etcd revisions are positive
 
 	return nil
 }
@@ -150,22 +160,38 @@ func (e Etcd) Create(c *Config) error {
 func (e Etcd) Update(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
 
-	if resp, _ := e.cli.Get(context.Background(), key); resp.Count == 0 {
-		return fmt.Errorf("config %s/%s doesn't exist", c.Kind, c.Metadata.Name)
-	}
+	metadata := c.Metadata
 
-	now := time.Now().Format(time.RFC3339)
-
-	c.Metadata.Updated = now
+	c.Metadata.Updated = time.Now().Format(time.RFC3339)
+	c.Metadata.Revision = 0
 
 	v, err := json.Marshal(c)
 	if err != nil {
+		c.Metadata = metadata
+
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
 
-	if _, err := e.cli.Put(context.Background(), key, string(v)); err != nil {
+	// The put only happens while the key exists (and, with IfRevision, is still
+	// at that revision), so a concurrent delete or write is never overwritten.
+	resp, err := e.cli.Txn(context.Background()).
+		If(etcdRevisionCompare(key, c.IfRevision)).
+		Then(clientv3.OpPut(key, string(v))).
+		Else(clientv3.OpGet(key)).
+		Commit()
+	if err != nil {
+		c.Metadata = metadata
+
 		return fmt.Errorf("writing config JSON to Etcd: %w", err)
 	}
+
+	if !resp.Succeeded {
+		c.Metadata = metadata
+
+		return etcdTxnFailure(resp, c)
+	}
+
+	c.Metadata.Revision = uint64(resp.Header.GetRevision()) //nolint:gosec // etcd revisions are positive
 
 	return nil
 }
@@ -177,9 +203,55 @@ func (e Etcd) Patch(c *Config, u map[string]any) error {
 func (e Etcd) Delete(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
 
-	if _, err := e.cli.Delete(context.Background(), key); err != nil {
+	if c.IfRevision == 0 {
+		if _, err := e.cli.Delete(context.Background(), key); err != nil {
+			return fmt.Errorf("deleting key %s: %w", key, err)
+		}
+
+		return nil
+	}
+
+	resp, err := e.cli.Txn(context.Background()).
+		If(etcdRevisionCompare(key, c.IfRevision)).
+		Then(clientv3.OpDelete(key)).
+		Else(clientv3.OpGet(key)).
+		Commit()
+	if err != nil {
 		return fmt.Errorf("deleting key %s: %w", key, err)
 	}
 
+	if !resp.Succeeded {
+		return etcdTxnFailure(resp, c)
+	}
+
 	return nil
+}
+
+// etcdRevisionCompare is the condition for a write to key: the key exists and,
+// when ifRevision is not zero, was last written at that revision.
+func etcdRevisionCompare(key string, ifRevision uint64) clientv3.Cmp {
+	if ifRevision == 0 {
+		// a key that exists was created at a revision above zero
+		return clientv3.Compare(clientv3.CreateRevision(key), ">", 0)
+	}
+
+	return clientv3.Compare(clientv3.ModRevision(key), "=", int64(ifRevision)) //nolint:gosec // revisions fit in int64
+}
+
+// etcdTxnFailure explains why an etcdRevisionCompare transaction did not run
+// its write, from the key read by its Else branch.
+func etcdTxnFailure(resp *clientv3.TxnResponse, c *Config) error {
+	var current int64
+
+	if len(resp.Responses) > 0 {
+		if kvs := resp.Responses[0].GetResponseRange().GetKvs(); len(kvs) > 0 {
+			current = kvs[0].ModRevision
+		}
+	}
+
+	if current == 0 {
+		return fmt.Errorf("config %s/%s doesn't exist: %w", c.Kind, c.Metadata.Name, ErrNotExist)
+	}
+
+	return fmt.Errorf("%w: at revision %d, not %d", ErrConflict, current, c.IfRevision)
 }

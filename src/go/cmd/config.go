@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"phenix/api/config"
+	"phenix/store"
 	"phenix/types"
 	"phenix/util"
 	"phenix/util/plog"
@@ -417,6 +418,16 @@ func newConfigEditCmd() *cobra.Command {
 					plog.Warn(plog.TypeSystem, "configuration not updated", "config", args[0])
 
 					return nil
+				}
+
+				if errors.Is(err, store.ErrConflict) {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						args[0]+" changed while you were editing it; run `phenix config edit` again",
+					)
+
+					return err.Humanized()
 				}
 
 				err := util.HumanizeError(

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -208,8 +209,7 @@ func (b *BoltDB) Create(c *Config) error {
 
 	defer func() { _ = b.Close() }()
 
-	// restored if the name is taken, so a create of an existing name leaves c
-	// as it was
+	// restored on failure, so a create of an existing name leaves c as it was
 	metadata := c.Metadata
 
 	// The created timestamp may already be set if the call to Create is part of a
@@ -225,12 +225,7 @@ func (b *BoltDB) Create(c *Config) error {
 
 	c.Metadata.Updated = now
 
-	v, err := json.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("marshaling config JSON: %w", err)
-	}
-
-	err = b.db.Update(func(tx *bbolt.Tx) error {
+	err := b.db.Update(func(tx *bbolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(c.Kind))
 		if err != nil {
 			return fmt.Errorf("creating bucket in Bolt: %w", err)
@@ -240,15 +235,15 @@ func (b *BoltDB) Create(c *Config) error {
 			return ErrExist
 		}
 
-		return bucket.Put([]byte(c.Metadata.Name), v)
+		return putWithRevision(tx, bucket, c)
 	})
-	if errors.Is(err, ErrExist) {
+	if err != nil {
 		c.Metadata = metadata
 
-		return ErrExist
-	}
+		if errors.Is(err, ErrExist) {
+			return ErrExist
+		}
 
-	if err != nil {
 		return fmt.Errorf("writing config JSON to Bolt: %w", err)
 	}
 
@@ -262,29 +257,34 @@ func (b *BoltDB) Update(c *Config) error {
 
 	defer func() { _ = b.Close() }()
 
-	updated := c.Metadata.Updated
+	// restored on failure, so a failed update leaves c as it was
+	metadata := c.Metadata
 	c.Metadata.Updated = time.Now().Format(time.RFC3339)
 
-	v, err := json.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("marshaling config JSON: %w", err)
-	}
-
-	err = b.db.Update(func(tx *bbolt.Tx) error {
+	err := b.db.Update(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte(c.Kind))
-		if bucket == nil || bucket.Get([]byte(c.Metadata.Name)) == nil {
+		if bucket == nil {
 			return ErrNotExist
 		}
 
-		return bucket.Put([]byte(c.Metadata.Name), v)
+		stored := bucket.Get([]byte(c.Metadata.Name))
+		if stored == nil {
+			return ErrNotExist
+		}
+
+		if err := checkRevision(stored, c.IfRevision); err != nil {
+			return err
+		}
+
+		return putWithRevision(tx, bucket, c)
 	})
-	if errors.Is(err, ErrNotExist) {
-		c.Metadata.Updated = updated
-
-		return ErrNotExist
-	}
-
 	if err != nil {
+		c.Metadata = metadata
+
+		if errors.Is(err, ErrNotExist) || errors.Is(err, ErrConflict) {
+			return err
+		}
+
 		return fmt.Errorf("writing config JSON to Bolt: %w", err)
 	}
 
@@ -304,8 +304,17 @@ func (b *BoltDB) Delete(c *Config) error {
 
 	err := b.db.Update(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte(c.Kind))
-		if bucket == nil || bucket.Get([]byte(c.Metadata.Name)) == nil {
+		if bucket == nil {
 			return ErrNotExist
+		}
+
+		stored := bucket.Get([]byte(c.Metadata.Name))
+		if stored == nil {
+			return ErrNotExist
+		}
+
+		if err := checkRevision(stored, c.IfRevision); err != nil {
+			return err
 		}
 
 		return bucket.Delete([]byte(c.Metadata.Name))
@@ -328,6 +337,70 @@ func (b *BoltDB) put(bucket, k string, v []byte) error {
 	})
 	if err != nil {
 		return fmt.Errorf("updating value for key %s in bucket %s: %w", k, bucket, err)
+	}
+
+	return nil
+}
+
+// revisionKey holds the last revision given to a config, in the phenix bucket.
+// One counter for every kind keeps revisions unique across the store, as etcd's
+// are.
+const revisionKey = "revision"
+
+// putWithRevision gives c the store's next revision and writes it to bucket.
+// The counter and the config are written in the same transaction, and Bolt
+// opens the file exclusively for writes, so revisions are unique across
+// processes sharing the file.
+func putWithRevision(tx *bbolt.Tx, bucket *bbolt.Bucket, c *Config) error {
+	meta, err := tx.CreateBucketIfNotExists([]byte("phenix"))
+	if err != nil {
+		return fmt.Errorf("creating bucket in Bolt: %w", err)
+	}
+
+	var rev uint64
+
+	if v := meta.Get([]byte(revisionKey)); len(v) == revisionSize {
+		rev = binary.BigEndian.Uint64(v)
+	}
+
+	rev++
+
+	if err := meta.Put([]byte(revisionKey), binary.BigEndian.AppendUint64(nil, rev)); err != nil {
+		return fmt.Errorf("writing revision counter: %w", err)
+	}
+
+	c.Metadata.Revision = rev
+
+	v, err := json.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("marshaling config JSON: %w", err)
+	}
+
+	return bucket.Put([]byte(c.Metadata.Name), v)
+}
+
+// revisionSize is the length of the encoded revision counter.
+const revisionSize = 8
+
+// checkRevision returns ErrConflict when want is not zero and the stored
+// config JSON is at another revision.
+func checkRevision(stored []byte, want uint64) error {
+	if want == 0 {
+		return nil
+	}
+
+	var current struct {
+		Metadata struct {
+			Revision uint64 `json:"revision"`
+		} `json:"metadata"`
+	}
+
+	if err := json.Unmarshal(stored, &current); err != nil {
+		return fmt.Errorf("unmarshaling config JSON: %w", err)
+	}
+
+	if current.Metadata.Revision != want {
+		return fmt.Errorf("%w: at revision %d, not %d", ErrConflict, current.Metadata.Revision, want)
 	}
 
 	return nil

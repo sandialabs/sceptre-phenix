@@ -55,6 +55,11 @@ phenix config delete <kind>/<name> ...              # delete one or more specifi
 phenix config delete all [kind]                     # delete every stored config, or every config of one kind
 ```
 
+Stored configs carry `metadata.revision`, set by the store on every write and
+ignored on input. `config edit` refuses to save if the config was written
+while the editor was open ("changed while you were editing it"); run it again
+to edit the newer version.
+
 ## `phenix experiment` — experiment lifecycle
 
 ```bash

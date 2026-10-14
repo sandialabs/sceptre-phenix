@@ -212,3 +212,120 @@ func TestBoltOpensStoreWithoutFreelist(t *testing.T) {
 		t.Fatalf("reading as an earlier release: %v", err)
 	}
 }
+
+// Every write gives a config the store's next revision, across kinds and
+// names, and reads return it.
+func TestBoltRevisionsIncreaseAcrossConfigs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "store.bdb")
+	b := newTestBolt(t, path)
+
+	a, _ := NewConfig("topology/a")
+	if err := b.Create(a); err != nil || a.Metadata.Revision != 1 {
+		t.Fatalf("create a: revision %d, %v; want 1", a.Metadata.Revision, err)
+	}
+
+	if err := b.Update(a); err != nil || a.Metadata.Revision != 2 {
+		t.Fatalf("update a: revision %d, %v; want 2", a.Metadata.Revision, err)
+	}
+
+	s, _ := NewConfig("scenario/b")
+	if err := b.Create(s); err != nil || s.Metadata.Revision != 3 {
+		t.Fatalf("create b: revision %d, %v; want 3", s.Metadata.Revision, err)
+	}
+
+	got, _ := NewConfig("topology/a")
+	if err := b.Get(got); err != nil || got.Metadata.Revision != 2 {
+		t.Fatalf("get a: revision %d, %v; want 2", got.Metadata.Revision, err)
+	}
+
+	configs, err := b.List("Topology", "Scenario")
+	if err != nil || len(configs) != 2 ||
+		configs[0].Metadata.Revision != 2 || configs[1].Metadata.Revision != 3 {
+		t.Fatalf("list = %+v, %v; want revisions 2 and 3", configs, err)
+	}
+
+	// a config written before revisions existed reads as revision 0, and gets
+	// the next revision on its next write
+	legacy, _ := NewConfig("topology/legacy")
+	v, _ := json.Marshal(legacy)
+
+	if err := b.open(); err != nil {
+		t.Fatal(err)
+	}
+
+	err = b.put("Topology", "legacy", v)
+	_ = b.Close()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.Get(legacy); err != nil || legacy.Metadata.Revision != 0 {
+		t.Fatalf("get legacy: revision %d, %v; want 0", legacy.Metadata.Revision, err)
+	}
+
+	if err := b.Update(legacy); err != nil || legacy.Metadata.Revision != 4 {
+		t.Fatalf("update legacy: revision %d, %v; want 4", legacy.Metadata.Revision, err)
+	}
+
+	// the counter is in the file, so another store on it continues from there
+	other := newTestBolt(t, path)
+
+	c, _ := NewConfig("topology/c")
+	if err := other.Create(c); err != nil || c.Metadata.Revision != 5 {
+		t.Fatalf("create through a second store: revision %d, %v; want 5", c.Metadata.Revision, err)
+	}
+}
+
+// An update or delete with IfRevision runs only while the stored config is at
+// that revision, and a refused one changes neither the store nor the config.
+func TestBoltIfRevision(t *testing.T) {
+	b := newTestBolt(t, filepath.Join(t.TempDir(), "store.bdb"))
+
+	c, _ := NewConfig("topology/a")
+	if err := b.Create(c); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.Update(c); err != nil { // revision 2
+		t.Fatal(err)
+	}
+
+	stale, _ := NewConfig("topology/a")
+	stale.Spec = map[string]any{"edited": true}
+	stale.IfRevision = 1
+
+	if err := b.Update(stale); !errors.Is(err, ErrConflict) {
+		t.Fatalf("update at a stale revision: err = %v, want ErrConflict", err)
+	}
+
+	if stale.Metadata.Revision != 0 || stale.Metadata.Updated != "" {
+		t.Fatalf("a refused update changed the config's metadata to %+v", stale.Metadata)
+	}
+
+	got, _ := NewConfig("topology/a")
+	if err := b.Get(got); err != nil || got.Metadata.Revision != 2 || got.Spec != nil {
+		t.Fatalf("after a refused update the store holds %+v, %v", got, err)
+	}
+
+	if err := b.Delete(stale); !errors.Is(err, ErrConflict) {
+		t.Fatalf("delete at a stale revision: err = %v, want ErrConflict", err)
+	}
+
+	current, _ := NewConfig("topology/a")
+	current.IfRevision = 2
+
+	if err := b.Update(current); err != nil || current.Metadata.Revision != 3 {
+		t.Fatalf("update at the current revision: revision %d, %v; want 3", current.Metadata.Revision, err)
+	}
+
+	current.IfRevision = 3
+
+	if err := b.Delete(current); err != nil {
+		t.Fatalf("delete at the current revision: %v", err)
+	}
+
+	if err := b.Get(got); !errors.Is(err, ErrNotExist) {
+		t.Fatalf("get after delete: err = %v, want ErrNotExist", err)
+	}
+}
