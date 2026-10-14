@@ -136,10 +136,20 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVNCWebSocket")
 
 	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		exp  = vars["exp"]
 		name = vars["name"]
 	)
+
+	// the same permission as the page that opens it
+	if !role.Allowed("vms/vnc", "get", exp+"/"+name) {
+		plog.Warn(plog.TypeSecurity, "vnc access not allowed", "user", middleware.UserFromContext(ctx), "exp", exp, "vm", name)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
 
 	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name))
 	if err != nil {
