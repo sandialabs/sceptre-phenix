@@ -173,3 +173,43 @@ func TestEditIfRevisionConflicts(t *testing.T) {
 		t.Errorf("edit of a config changed meanwhile: err = %v, want ErrConflict", err)
 	}
 }
+
+// A rename whose delete of the old config fails removes the renamed copy it
+// created, although the update named the old config's revision.
+func TestUpdateRenameRollsBackCreate(t *testing.T) {
+	m := useMockStore(t)
+	m.EXPECT().Get(gomock.Any()).DoAndReturn(storedAt(5))
+	m.EXPECT().Update(gomock.Any()).Return(store.ErrNotExist)
+	m.EXPECT().Create(gomock.Any()).DoAndReturn(func(c *store.Config) error {
+		c.Metadata.Revision = 9
+
+		return nil
+	})
+
+	var deleted []string
+
+	m.EXPECT().Delete(gomock.Any()).Times(2).DoAndReturn(func(c *store.Config) error {
+		if c.Metadata.Name == "a" {
+			return store.ErrConflict // changed by a concurrent writer
+		}
+
+		if c.IfRevision != 0 && c.IfRevision != c.Metadata.Revision {
+			return store.ErrConflict
+		}
+
+		deleted = append(deleted, c.Metadata.Name)
+
+		return nil
+	})
+
+	c := validateTestTopology(t, "phenix.sandia.gov/v1", "b", "{nodes: []}")
+	c.IfRevision = 5
+
+	if err := config.Update("topology/a", c); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("rename with a failing delete: err = %v, want ErrConflict", err)
+	}
+
+	if !slices.Equal(deleted, []string{"b"}) {
+		t.Errorf("deleted %v, want the renamed copy [b]", deleted)
+	}
+}
