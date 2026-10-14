@@ -290,6 +290,10 @@ func Get(name string, upgrade bool) (*store.Config, error) {
 					return nil, fmt.Errorf("creating new config from spec: %w", err)
 				}
 
+				// the upgrade is of the stored revision, which a write of it
+				// must name
+				cfg.Metadata.Revision = c.Metadata.Revision
+
 				return cfg, nil
 			}
 		}

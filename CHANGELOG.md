@@ -40,6 +40,7 @@ All notable changes to this project will be documented in this file.
 - **Experiment file archives**: `POST /experiments/{name}/files/archive` builds a zip of several experiment files in a background job that reports each file's outcome, leaves out files it cannot fetch (listed in `MISSING.txt`), and serves the archive resumably from `GET /jobs/{id}/artifact`.
 - **Bulk VM actions**: `POST /experiments/{exp}/vms/actions` starts, pauses, restarts, shuts down, kills or resets the disks of several VMs in one background job that reports each VM's outcome, skipping VMs the role may not act on.
 - **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and `phenix config edit` refuses to save over a config changed while it was open.
+- **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and `phenix config edit` refuses to save over a config changed while it was open. `GET /configs/{kind}/{name}` returns it as an `ETag`, and `PUT` and `DELETE` honor `If-Match` with a 412.
 
 ### Changed
 
@@ -139,6 +140,7 @@ All notable changes to this project will be documented in this file.
 - **Uploads**: A VM mount file upload without a file crashed its request, and a disk or VM mount file upload that failed partway was reported as done.
 - **Disks**: A failed disk upload showed no error.
 - **VM table**: A bulk VM action stopped waiting after the first VM finished, and showed one error notification for each failed VM.
+- **Config API**: `GET /configs` returned `null` instead of `[]` when the role could see no configs, and CORS preflights did not allow the `X-Phenix-Auth-Token` header.
 
 ## [1.0.0]
 

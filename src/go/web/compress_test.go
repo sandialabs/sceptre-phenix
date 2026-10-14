@@ -249,6 +249,27 @@ func TestCompressResponsesWeakensValidators(t *testing.T) {
 	}
 }
 
+// A config's ETag names its revision, not its bytes, so it stays strong when
+// the config is compressed and can be sent back in If-Match.
+func TestCompressResponsesKeepsRevisionETag(t *testing.T) {
+	h := CompressResponses(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		setRevisionHeaders(w, 5)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, bigJSON)
+	}))
+
+	resp := get(t, h, "/api/v1/configs/topology/demo", "gzip")
+	if resp.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatal("response was not compressed")
+	}
+
+	if got := resp.Header.Get("ETag"); got != `"r5"` {
+		t.Errorf(`ETag = %q, want the strong "r5"`, got)
+	}
+
+	_ = readBody(t, resp)
+}
+
 // A range of a text file is the uncompressed bytes asked for, even from a
 // client that accepts gzip. Go's client drops gzip when it sends a Range, so
 // the header is set explicitly.

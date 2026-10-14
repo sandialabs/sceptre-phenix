@@ -140,6 +140,10 @@ paths:
                 description: location of newly created config
                 type: string
                 format: uri
+            ETag:
+              $ref: "#/components/headers/ConfigETag"
+            X-Phenix-Revision:
+              $ref: "#/components/headers/ConfigRevision"
         "400":
           description: >
             unknown content type or file extension, unparsable body (the parser
@@ -194,9 +198,15 @@ paths:
               - application/json
               - application/x-yaml
             default: application/json
+        - $ref: "#/components/parameters/ConfigIfNoneMatch"
       responses:
         "200":
           description: successful operation
+          headers:
+            ETag:
+              $ref: "#/components/headers/ConfigETag"
+            X-Phenix-Revision:
+              $ref: "#/components/headers/ConfigRevision"
           content:
             application/json:
               schema:
@@ -204,6 +214,8 @@ paths:
             application/x-yaml:
               schema:
                 $ref: "#/components/schemas/Config"
+        "304":
+          $ref: "#/components/responses/ConfigNotModified"
     put:
       tags:
         - Configs
@@ -225,6 +237,7 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/ConfigIfMatch"
       requestBody:
         description: phenix config update parameters
         required: true
@@ -251,6 +264,10 @@ paths:
                 description: location of updated config
                 type: string
                 format: uri
+            ETag:
+              $ref: "#/components/headers/ConfigETag"
+            X-Phenix-Revision:
+              $ref: "#/components/headers/ConfigRevision"
         "400":
           description: >
             unknown content type or file extension, a config that does not exist,
@@ -269,6 +286,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "412":
+          $ref: "#/components/responses/ConfigPreconditionFailed"
         "500":
           description: the request or the uploaded file cannot be read or parsed
           content:
@@ -294,9 +313,18 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/ConfigIfMatch"
       responses:
         "204":
           description: successful operation
+        "400":
+          description: a malformed If-Match header, or the config cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "412":
+          $ref: "#/components/responses/ConfigPreconditionFailed"
   "/schemas/{version}":
     get:
       tags:
@@ -4163,6 +4191,22 @@ components:
           properties:
             name:
               type: string
+            created:
+              type: string
+              readOnly: true
+              description: when the config was first stored (RFC 3339); ignored on input
+            updated:
+              type: string
+              readOnly: true
+              description: when the config was last written (RFC 3339, whole seconds); ignored on input
+            revision:
+              type: integer
+              format: int64
+              readOnly: true
+              description: >-
+                set by the store on every write and only increasing; opaque, so
+                compare it for equality only. Absent for a config not written
+                since revisions were added. Ignored on input
             annotations:
               type: object
               additionalProperties:
@@ -5484,7 +5528,40 @@ components:
       required: false
       schema:
         type: string
+    # Config revisions: conditional reads and writes of one config.
+    ConfigIfMatch:
+      name: If-Match
+      in: header
+      description: >-
+        optional; the config's `ETag` from an earlier read (`"r<revision>"`),
+        or `*`. The write runs only while the config is still at that
+        revision, and answers 412 otherwise, so a concurrent change is not
+        silently overwritten. Weak tags never match; a malformed value is a
+        400.
+      required: false
+      schema:
+        type: string
+    ConfigIfNoneMatch:
+      name: If-None-Match
+      in: header
+      description: the config's `ETag` from an earlier read; 304 while the config is still at that revision
+      required: false
+      schema:
+        type: string
   headers:
+    # Config revisions: conditional reads and writes of one config.
+    ConfigETag:
+      description: >-
+        strong validator `"r<revision>"` naming the config's revision (not
+        its bytes, so it holds for a gzip-compressed body too); absent for a
+        config not written since revisions were added
+      schema:
+        type: string
+    ConfigRevision:
+      description: the config's `metadata.revision`, as a plain number; absent when the ETag is
+      schema:
+        type: integer
+        format: int64
     ETag:
       description: >-
         strong validator built from the file's inode, size and modification
@@ -5512,6 +5589,20 @@ components:
       schema:
         type: string
   responses:
+    # Config revisions: conditional reads and writes of one config.
+    ConfigNotModified:
+      description: the config is still at the `If-None-Match` revision
+      headers:
+        ETag:
+          $ref: "#/components/headers/ConfigETag"
+    ConfigPreconditionFailed:
+      description: >-
+        the config is no longer at the `If-Match` revision, or does not exist;
+        `metadata.revision` holds its current revision
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     PartialContent:
       description: the requested range of the file
       headers:

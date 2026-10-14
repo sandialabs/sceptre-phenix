@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"phenix/util/freshness"
 )
 
 // Responses smaller than this gain little from compression, so they are sent
@@ -200,7 +202,10 @@ func (cw *compressWriter) decide(code int) {
 		// which the identity bytes' checksum does not
 		cw.Header().Del("Repr-Digest")
 
-		if etag := cw.Header().Get("ETag"); etag != "" && !strings.HasPrefix(etag, "W/") {
+		// A config's ETag names its store revision, not its bytes, and stays
+		// strong so it can be sent back in If-Match.
+		if etag := cw.Header().Get("ETag"); etag != "" && !strings.HasPrefix(etag, "W/") &&
+			cw.Header().Get(freshness.HeaderRevision) == "" {
 			cw.Header().Set("ETag", "W/"+etag)
 		}
 
