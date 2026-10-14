@@ -520,8 +520,15 @@ func TestConsoleRoutesNeedPermission(t *testing.T) {
 		t.Fatal("attached without permission")
 	}
 
-	for _, action := range []string{"console-create", "console-terminate", "console-attach"} {
+	for _, action := range []string{"console-create", "console-terminate"} {
 		wantDenied(t, events(), action)
+	}
+
+	// the status check, resize and websocket refusals
+	for _, route := range []string{path, path + "/size", path + "/ws"} {
+		wantAudit(t, events(), "console-attach", "failure", map[string]any{
+			"event.reason": "forbidden", "url.path": "/api/v1" + route,
+		})
 	}
 }
 
