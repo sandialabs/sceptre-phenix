@@ -648,9 +648,15 @@ func TestGetExperimentFileChecksumRefuses(t *testing.T) {
 			useExperimentFilesDir(t, map[string]string{"live.pcap": "pcap", "a.log": "a"})
 			useTestFiles(t, "live.pcap", "a.log")
 
+			events := captureAudit(t)
+
 			resp := requestFiles(t, http.MethodGet, "/x/checksum?path="+url.QueryEscape(tc.path), "", tc.verb)
 			if resp.StatusCode != tc.wantCode {
 				t.Fatalf("expected %d, got %d: %s", tc.wantCode, resp.StatusCode, readBody(t, resp))
+			}
+
+			if tc.wantCode == http.StatusForbidden {
+				wantDenied(t, events(), "file-download")
 			}
 		})
 	}

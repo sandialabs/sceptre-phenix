@@ -98,8 +98,9 @@ func GetExperimentFileChecksum(w http.ResponseWriter, r *http.Request) {
 
 	role := middleware.RoleFromContext(r.Context())
 	if !role.Allowed("experiments/files", "get", name) {
-		user := middleware.UserFromContext(r.Context())
-		plog.Warn(plog.TypeSecurity, "getting experiment file checksum not allowed", "user", user, "exp", name)
+		audit.Denied(r, audit.FileDownload, "getting experiment file checksum not allowed", audit.Fields{
+			Experiment: name, File: path,
+		})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return

@@ -205,7 +205,7 @@ audited.
 | `capture-webshark-read` | `network` | `access` | `GET /webshark/captures/{name}` (once per grant), `GET /webshark/json?method=download` (once per download) |
 | `capture-token-create` | `iam` | `creation` | `POST /experiments/{exp}/capture-tokens` |
 | `capture-token-revoke` | `iam` | `deletion` | `DELETE /experiments/{exp}/capture-tokens/{id}` |
-| `file-download` | `file` | `access` | `GET /experiments/{name}/files/{filename}` (downloads and the Files tab's viewer), `POST .../files/download` (one event per file sent, including those sent before the download failed), `GET .../vms/{name}/files/download` |
+| `file-download` | `file` | `access` | `GET /experiments/{name}/files/{filename}` (downloads and the Files tab's viewer), `POST .../files/download` (one event per file sent, including those sent before the download failed), `GET .../vms/{name}/files/download`; refusals of `GET .../files/{filename}/checksum` |
 | `file-upload` | `file` | `creation` | the file server's upload page (one event per file) |
 | `file-delete` | `file` | `deletion` | `DELETE /experiments/{name}/files/{filename}`, `POST .../files/delete` (one event per file) |
 | `console-create` | `process` | `start` | `POST /console` |
@@ -218,7 +218,7 @@ audited.
 | `disk-rename`, `disk-commit`, `disk-rebase`, `disk-resize` | `file` | `change` | `POST /disks/rename`, `/disks/commit`, `/disks/rebase`, `/disks/resize` |
 | `disk-delete` | `file` | `deletion` | `DELETE /disks` |
 | `disk-upload` | `file` | `creation` | `POST /disks` |
-| `disk-download` | `file` | `access` | `GET /disks/download` |
+| `disk-download` | `file` | `access` | `GET /disks/download`; refusals of `GET /disks/checksum` |
 | `vm-snapshot`, `vm-commit`, `vm-memory-snapshot` | `file` | `creation` | `POST .../vms/{name}/snapshots`, `/commit`, `/memorySnapshot` |
 | `vm-restore` | `file` | `change` | `POST .../vms/{name}/snapshots/{snapshot}` |
 | `vm-mount`, `vm-unmount` | `session` | `start`, `end` | `POST .../vms/{name}/mount`, `DELETE .../vms/{name}/unmount` |
