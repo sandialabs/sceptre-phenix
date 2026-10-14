@@ -418,8 +418,10 @@ func TestDiskActionsRefuse(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before, runs := tree(t, filepath.Dir(dir)), files.runs()
+			server := serveAs(t, "alice", tc.role).URL
+			events := captureAudit(t)
 
-			resp := do(t, tc.method, serveAs(t, "alice", tc.role).URL+"/api/v1/disks"+tc.target, "")
+			resp := do(t, tc.method, server+"/api/v1/disks"+tc.target, "")
 			body := readBody(t, resp)
 
 			if resp.StatusCode != tc.want {
@@ -437,6 +439,26 @@ func TestDiskActionsRefuse(t *testing.T) {
 			if tc.want == http.StatusForbidden && files.runs() != runs {
 				t.Error("inspected an image for a role not allowed to act on it")
 			}
+
+			action, _, _ := strings.Cut(strings.TrimPrefix(tc.target, "/"), "?")
+			if action == "" {
+				action = "delete"
+			}
+
+			switch got := events(); tc.want {
+			case http.StatusForbidden:
+				wantDenied(t, got, "disk-"+action)
+			case http.StatusConflict:
+				wantAudit(t, got, "disk-"+action, "failure", map[string]any{"user.name": "alice"})
+			default:
+				// refused before the RBAC check, or failed after it: neither a
+				// refusal nor a success
+				if n := countAudit(got, "disk-"+action, "success", nil); n != 0 || countAudit(
+					got, "disk-"+action, "failure", map[string]any{"event.reason": "forbidden"},
+				) != 0 {
+					t.Errorf("audited a refusal or success for a %d: %v", tc.want, got)
+				}
+			}
 		})
 	}
 }
@@ -453,6 +475,7 @@ func TestDiskActionsOnNestedImages(t *testing.T) {
 	var (
 		server = serveAs(t, "alice", disksRole(nil, "create", "update", "delete")).URL + "/api/v1/disks"
 		q      = url.QueryEscape
+		events = captureAudit(t)
 	)
 
 	for _, tc := range []struct {
@@ -480,6 +503,19 @@ func TestDiskActionsOnNestedImages(t *testing.T) {
 		if got := files.sent(); !slices.Equal(got, tc.sent) {
 			t.Errorf("%s %s sent %q, want %q", tc.method, tc.target, got, tc.sent)
 		}
+	}
+
+	for action, fields := range map[string]map[string]any{
+		"disk-snapshot": {"file.path": dir + "/win/win10.qcow2", "phenix.file.target_path": dir + "/win/snap.qcow2"},
+		"disk-commit":   {"file.path": dir + "/win/child.qc2", "phenix.file.target_path": dir + "/a.qc2"},
+		"disk-resize":   {"file.path": dir + "/win/win10.qcow2", "phenix.disk.size": "+1G"},
+		"disk-rebase":   {"file.path": dir + "/win/child.qc2", "phenix.disk.unsafe": true},
+		"disk-clone":    {"file.path": dir + "/win/win10.qcow2", "phenix.file.target_path": dir + "/win/copy.qcow2"},
+		"disk-rename":   {"file.path": dir + "/win/copy.qcow2", "phenix.file.target_path": dir + "/win/moved.qc2"},
+		"disk-delete":   {"file.path": dir + "/win/a b.qc2", "file.name": "a b.qc2"},
+	} {
+		fields["user.name"] = "alice"
+		wantAudit(t, events(), action, "success", fields)
 	}
 
 	written := tree(t, dir)
@@ -510,23 +546,39 @@ func TestDownloadDiskRefuses(t *testing.T) {
 	for name, tc := range map[string]struct {
 		disk string
 		want int
+		// the audit event's outcome, "" for none
+		outcome string
 	}{
-		"in a folder":            {disk: "win/a.qc2", want: http.StatusOK},
-		"absolute, in a folder":  {disk: dir + "/win/a.qc2", want: http.StatusOK},
-		"missing":                {disk: "a.qc2", want: http.StatusNotFound},
+		"in a folder":            {disk: "win/a.qc2", want: http.StatusOK, outcome: "success"},
+		"absolute, in a folder":  {disk: dir + "/win/a.qc2", want: http.StatusOK, outcome: "success"},
+		"missing":                {disk: "a.qc2", want: http.StatusNotFound, outcome: "failure"},
 		"relative, outside":      {disk: "../a.qc2", want: http.StatusBadRequest},
 		"absolute, outside":      {disk: "/etc/a.qc2", want: http.StatusBadRequest},
 		"sibling sharing prefix": {disk: dir + "-other/a.qc2", want: http.StatusBadRequest},
 		"the directory above":    {disk: "..", want: http.StatusBadRequest},
 		"experiment files":       {disk: "exp/files/a.qc2", want: http.StatusBadRequest},
 		"a hidden name":          {disk: "..a.qc2", want: http.StatusBadRequest},
-		"not allowed":            {disk: "b.qc2", want: http.StatusForbidden},
+		"not allowed":            {disk: "b.qc2", want: http.StatusForbidden, outcome: "failure"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			events := captureAudit(t)
 			resp := do(t, http.MethodGet, server+url.QueryEscape(tc.disk), "")
 
 			if resp.StatusCode != tc.want {
 				t.Fatalf("expected %d, got %d", tc.want, resp.StatusCode)
+			}
+
+			if _ = readBody(t, resp); tc.outcome == "" {
+				if got := events(); len(got) != 0 {
+					t.Errorf("audited a request refused before the RBAC check: %v", got)
+				}
+
+				return
+			}
+
+			e := wantAudit(t, events(), "disk-download", tc.outcome, map[string]any{"user.name": "alice"})
+			if tc.want == http.StatusForbidden && e != nil && e["event.reason"] != "forbidden" {
+				t.Errorf("refusal audited without event.reason: %v", e)
 			}
 		})
 	}
@@ -641,6 +693,9 @@ func TestUploadDiskRefusesWhatItCannotSave(t *testing.T) {
 		"a folder's name": {field: "file", filename: "win"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			events := captureAudit(t)
+			defer func() { wantAudit(t, events(), "disk-upload", "failure", map[string]any{"user.name": "alice"}) }()
+
 			resp := upload(t, tc.field, tc.filename)
 			if body := readBody(t, resp); resp.StatusCode != http.StatusInternalServerError ||
 				!strings.HasPrefix(body, "Error uploading") {
@@ -653,9 +708,22 @@ func TestUploadDiskRefusesWhatItCannotSave(t *testing.T) {
 		})
 	}
 
+	events := captureAudit(t)
+
 	if resp := upload(t, "file", "new.qc2"); resp.StatusCode != http.StatusOK {
 		t.Fatalf("uploading after the refusals: status %d: %s", resp.StatusCode, readBody(t, resp))
 	}
+
+	wantAudit(t, events(), "disk-upload", "success", map[string]any{
+		"user.name": "alice", "phenix.file.target_path": dir + "/new.qc2", "file.size": len("uploaded"),
+	})
+
+	refused := serveAs(t, "alice", testRole("disks", "get")).URL + "/api/v1/disks"
+	if resp := do(t, http.MethodPost, refused, ""); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("uploading without permission: status %d", resp.StatusCode)
+	}
+
+	wantDenied(t, events(), "disk-upload")
 
 	if got := tree(t, dir)[dir+"/new.qc2"]; got != "uploaded" {
 		t.Errorf("uploaded new.qc2 holds %q, want %q", got, "uploaded")
@@ -737,5 +805,32 @@ func TestVMDiskMustSuitMinimega(t *testing.T) {
 	resp = do(t, http.MethodPost, server+"/api/v1/experiments/test-experiment/vms/test-vm/redeploy", `{"disk": "a,b.qc2"}`)
 	if body := readBody(t, resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(body, "contains ','") {
 		t.Errorf("redeploying a VM from a name with a comma: status %d: %s; want 400 naming the comma", resp.StatusCode, body)
+	}
+}
+
+// A VM's snapshot, restore, commit and memory snapshot refusals are audited.
+func TestVMDiskActionsRefuse(t *testing.T) {
+	server := serveAs(t, "alice", testRole("vms", "get", "test-experiment/test-vm")).URL +
+		"/api/v1/experiments/test-experiment/vms/test-vm"
+
+	for route, action := range map[string]string{
+		"/snapshots":          "vm-snapshot",
+		"/snapshots/snap.qc2": "vm-restore",
+		"/commit":             "vm-commit",
+		"/memorySnapshot":     "vm-memory-snapshot",
+	} {
+		t.Run(action, func(t *testing.T) {
+			events := captureAudit(t)
+
+			resp := do(t, http.MethodPost, server+route, `{"filename":"x.qc2"}`)
+			if resp.StatusCode != http.StatusForbidden {
+				t.Fatalf("expected 403, got %d: %s", resp.StatusCode, readBody(t, resp))
+			}
+
+			wantDenied(t, events(), action)
+			wantAudit(t, events(), action, "failure", map[string]any{
+				"user.name": "alice", "phenix.experiment.name": "test-experiment", "phenix.vm.name": "test-vm",
+			})
+		})
 	}
 }

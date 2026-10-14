@@ -2978,17 +2978,7 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/snapshots", "create", fullName) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"snapshotting VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMSnapshot, "snapshotting VM not allowed", audit.Fields{Experiment: exp, VM: name})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -3068,6 +3058,7 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	cb := func(s string) { status <- s }
+	snapshotted := audit.Fields{Experiment: exp, VM: name, Target: req.GetFilename()}
 
 	if err := vm.Snapshot(exp, name, req.GetFilename(), cb); err != nil {
 		broker.Broadcast(
@@ -3077,6 +3068,7 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "snapshotting VM", "exp", exp, "vm", name, "err", err)
+		audit.Failure(r, audit.VMSnapshot, "snapshotting VM failed", snapshotted, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -3088,19 +3080,7 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm snapshotted",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-		"file",
-		req.GetFilename(),
-	)
+	audit.Success(r, audit.VMSnapshot, "vm snapshotted", snapshotted)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -3116,18 +3096,10 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 		snap     = vars["snapshot"]
 	)
 
+	restored := audit.Fields{Experiment: exp, VM: name, File: snap}
+
 	if !role.Allowed("vms/snapshots", "update", fullName) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"restoring VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMRestore, "restoring VM not allowed", restored)
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -3173,6 +3145,7 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "restoring VM", "exp", exp, "vm", name, "err", err)
+		audit.Failure(r, audit.VMRestore, "restoring VM failed", restored, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -3184,17 +3157,7 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm restored",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.VMRestore, "vm restored", restored)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -3212,17 +3175,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/commit", "create", fullName) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"committing VM not allowed",
-			"user",
-			user,
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMCommit, "committing VM not allowed", audit.Fields{Experiment: expName, VM: name})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -3327,6 +3280,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	cb := func(s float64) { status <- s }
+	committed := audit.Fields{Experiment: expName, VM: name, Target: filename}
 
 	if _, err = vm.CommitToDisk(expName, name, filename, cb); err != nil {
 		broker.Broadcast(
@@ -3336,10 +3290,14 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "committing VM", "exp", expName, "vm", name, "err", err)
+		audit.Failure(r, audit.VMCommit, "committing VM failed", committed, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
+
+	// committed, whether or not the VM can be read back for the response
+	audit.Success(r, audit.VMCommit, "vm committed", committed)
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
@@ -3376,17 +3334,6 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm committed",
-		"user",
-		user,
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -3404,17 +3351,9 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/memorySnapshot", "create", fullName) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"capturing memory snapshot of VM not allowed",
-			"user",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMMemorySnapshot, "capturing memory snapshot of VM not allowed", audit.Fields{
+			Experiment: exp, VM: name,
+		})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -3519,6 +3458,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	cb := func(s string) { status <- s }
+	snapshotted := audit.Fields{Experiment: exp, VM: name, Target: filename}
 
 	if _, err = vm.MemorySnapshot(exp, name, filename, cb); err != nil {
 		broker.Broadcast(
@@ -3528,6 +3468,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "memory snapshot for VM", "exp", exp, "vm", name, "err", err)
+		audit.Failure(r, audit.VMMemorySnapshot, "memory snapshot of VM failed", snapshotted, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
@@ -3541,17 +3482,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 		marshalled,
 	)
 
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm memory snapshot created",
-		"user",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.VMMemorySnapshot, "vm memory snapshot created", snapshotted)
 	w.WriteHeader(http.StatusNoContent)
 }
 
