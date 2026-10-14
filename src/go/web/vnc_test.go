@@ -1,10 +1,14 @@
 package web
 
 import (
+	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/websocket"
 
 	"phenix/web/rbac"
 )
@@ -204,11 +208,63 @@ func TestVNCWebSocketNeedsPermission(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			server := serveAs(t, "alice", role).URL
+			events := captureAudit(t)
 
 			resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/vms/test-vm/vnc/ws", "")
 			if resp.StatusCode != http.StatusForbidden {
 				t.Fatalf("expected 403, got %d: %s", resp.StatusCode, readBody(t, resp))
 			}
+
+			wantDenied(t, events(), "vnc-attach")
 		})
 	}
+}
+
+// Opening a VM's VNC websocket is audited once it is attached.
+func TestVNCWebSocketAttachIsAudited(t *testing.T) {
+	// the VM's VNC server: echoes what it is sent
+	l, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = l.Close() })
+
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+
+		defer conn.Close()
+
+		_, _ = io.Copy(conn, conn)
+	}()
+
+	useTestMM(t, &testMM{vnc: l.Addr().String()})
+
+	api := serveAs(t, "alice", testRole("vms/vnc", "get", "test-experiment/test-vm")).URL + "/api/v1"
+	events := captureAudit(t)
+
+	ws, err := websocket.Dial(
+		"ws"+strings.TrimPrefix(api, "http")+"/experiments/test-experiment/vms/test-vm/vnc/ws", "", api,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer ws.Close()
+
+	if _, err := ws.Write([]byte("RFB")); err != nil {
+		t.Fatal(err)
+	}
+
+	buf := make([]byte, 3)
+	if _, err := io.ReadFull(ws, buf); err != nil || string(buf) != "RFB" {
+		t.Fatalf("proxied: %q, %v", buf, err)
+	}
+
+	wantAudit(t, events(), "vnc-attach", "success", map[string]any{
+		"user.name": "alice", "phenix.experiment.name": "test-experiment", "phenix.vm.name": "test-vm",
+	})
 }

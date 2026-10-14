@@ -63,7 +63,8 @@ type testMM struct {
 	vms      mm.VMs
 	captures []mm.Capture // of the experiment, and of each VM
 	states   map[string]string
-	err      error // from reading VM states and stopping captures
+	err      error  // from reading VM states and stopping captures
+	vnc      string // every VM's VNC endpoint
 
 	vmListings, captureListings, stateReads, captureStops atomic.Int32
 }
@@ -71,6 +72,8 @@ type testMM struct {
 func (m *testMM) IsHeadnode(string) bool { return true }
 
 func (m *testMM) GetVMHost(...mm.Option) (string, error) { return "headnode", nil }
+
+func (m *testMM) GetVNCEndpoint(...mm.Option) (string, error) { return m.vnc, nil }
 
 func (m *testMM) GetVMInfo(...mm.Option) mm.VMs {
 	m.vmListings.Add(1)
