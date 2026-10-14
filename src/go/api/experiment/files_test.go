@@ -496,6 +496,7 @@ func TestZipFilesReturnsTheFilesSentBeforeFailing(t *testing.T) { //nolint:paral
 type writerFunc func(p []byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
 // With SkipFailed, a file that vanished after the plan is left out, reported,
 // and listed in MISSING.txt, and the rest are archived.
 func TestZipPlanSkipsFailedFiles(t *testing.T) { //nolint:paralleltest // replaces package state
