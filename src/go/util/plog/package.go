@@ -72,7 +72,7 @@ func With(args ...any) *slog.Logger {
 
 type LogType string
 
-// Keep in sync with Log.vue.
+// Keep in sync with Logs.vue.
 const logAttrType = "type"
 
 const (
@@ -84,6 +84,7 @@ const (
 	TypeHTTP      LogType = "HTTP"
 	TypeMinimega  LogType = "MINIMEGA"
 	TypeSystem    LogType = "SYSTEM" // default. Use if no other option is appropriate
+	TypeAudit     LogType = "AUDIT"  // security-relevant user actions; see Audit
 )
 
 // Log logs to configured loggers. LogType is a required enum used for identifying what a log message is for.
