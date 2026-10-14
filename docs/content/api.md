@@ -107,6 +107,40 @@ sent, so they cannot be resumed (`Accept-Ranges: none`).
     `ETag` through unchanged, and must not compress downloads, for resuming to
     work.
 
+## Revisions and Conditional Requests
+
+Every stored config has a `metadata.revision` that changes on each write (see
+[Configuration Files](configuration.md#revisions)). `GET /configs/{kind}/{name}`
+returns it as a strong `ETag`, `"r<revision>"`, and as a plain number in
+`X-Phenix-Revision`. `POST /configs` and `PUT /configs/{kind}/{name}` return the
+new revision the same way. The ETag names the revision rather than the bytes,
+so it stays strong when the response is gzip-compressed.
+
+Send the ETag back in `If-Match` on `PUT` or `DELETE /configs/{kind}/{name}`
+and the write runs only while the config is still at that revision. Otherwise
+it is refused with `412 Precondition Failed`, whose `metadata.revision` holds
+the current revision, so you can reload the config instead of overwriting
+someone else's change. `If-Match: *` only requires the config to exist, and a
+malformed `If-Match` is a `400`. `If-Match` is optional: a write without it
+replaces the config whatever its revision. `If-None-Match` on a `GET` answers
+`304` while the config is unchanged.
+
+```bash
+curl -si -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  http://localhost:3000/api/v1/configs/topology/demo | grep -i '^etag'
+# ETag: "r42"
+
+curl -s -X PUT -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  -H 'Content-Type: application/x-yaml' -H 'If-Match: "r42"' \
+  --data-binary @demo.yaml http://localhost:3000/api/v1/configs/topology/demo
+# 204 with ETag: "r43", or 412 if someone saved the config after you read it
+```
+
+`GET /configs` lists each config's `metadata.revision`, and returns
+`{"configs": []}` rather than `null` when the role can see none. The
+`Access-Control-Expose-Headers` of every API response include `ETag` and
+`X-Phenix-Revision`, so a script on another origin can read them.
+
 ## Streaming Endpoints
 
 Two endpoints stream rather than return a document, and are easiest to use from

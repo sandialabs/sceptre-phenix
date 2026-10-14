@@ -76,6 +76,14 @@ When a config fails its schema, the config routes (`POST /configs`,
 explained lines in `metadata.validation`, one per line, and the validator's
 text in `metadata.validation-raw`; see [`workflow.md`](workflow.md).
 
+Config revisions: `GET /configs/{kind}/{name}` sends `ETag: "r<revision>"`
+and `X-Phenix-Revision` (none for a config unwritten since revisions were
+added; the ETag stays strong when gzipped) and answers `If-None-Match` with
+`304`. `PUT` and `DELETE` take an optional `If-Match` (`"r<n>"` list or `*`):
+`412` with `metadata.revision` when the config moved on, `400` when malformed.
+`POST` and `PUT` return the new `ETag`. `GET /configs` returns `[]`, never
+`null`.
+
 `src/go/web/server.go` is the authoritative route list.
 
 ## Downloads
@@ -92,7 +100,7 @@ and `If-Range` with the `ETag` resumes only while the file is unchanged,
 answering a changed file with the whole new one (`200`). `If-None-Match` gives
 `304`. Downloads are attachments and are never gzip-compressed; a compressed
 API response drops `Accept-Ranges` and `Repr-Digest` and weakens its `ETag` to
-`W/"..."`.
+`W/"..."` (except a config's revision ETag).
 
 With `Accept: text/plain` the same route is the Files tab's viewer: inline,
 `text/plain; charset=utf-8`, compressible, and `413` for a file over 10 MiB.

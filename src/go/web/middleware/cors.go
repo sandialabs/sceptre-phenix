@@ -7,7 +7,10 @@ import (
 const (
 	origins = "*"
 	methods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-	headers = "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization"
+	headers = "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, " +
+		"X-Phenix-Auth-Token, If-Match, If-None-Match"
+	// the response headers a cross-origin script may read.
+	exposed = "ETag, Location, X-Phenix-Seq, X-Phenix-Revision, X-Phenix-Observed-At, X-Phenix-Stale"
 )
 
 func AllowCORS(next http.Handler) http.Handler {
@@ -15,6 +18,7 @@ func AllowCORS(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", origins)
 		w.Header().Set("Access-Control-Allow-Methods", methods)
 		w.Header().Set("Access-Control-Allow-Headers", headers)
+		w.Header().Set("Access-Control-Expose-Headers", exposed)
 
 		if r.Method == http.MethodOptions {
 			return
