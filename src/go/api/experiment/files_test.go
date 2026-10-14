@@ -455,3 +455,39 @@ func TestZipFilesRefusesBeforeWriting(t *testing.T) { //nolint:paralleltest // r
 		})
 	}
 }
+
+func TestZipFilesReturnsTheFilesSentBeforeFailing(t *testing.T) { //nolint:paralleltest // replaces package state
+	useFilesDir(t, "partial", map[string]string{
+		"a.log": "alpha",
+		"b.gz":  string(make([]byte, 16<<10)), // stored, so larger than the zip writer's buffer
+		"c.log": "gamma",
+	})
+	useListedFiles(t)
+
+	// takes the first write, a.log flushed, and fails every later one
+	var writes int
+
+	failing := writerFunc(func(p []byte) (int, error) {
+		writes++
+		if writes > 1 {
+			return 0, errors.New("client went away")
+		}
+
+		return len(p), nil
+	})
+
+	zipped, err := experiment.ZipFiles("partial", []string{"a.log", "b.gz", "c.log"}, zipLimits,
+		func() io.Writer { return failing })
+	if err == nil {
+		t.Fatal("ZipFiles succeeded writing to a failing writer")
+	}
+
+	if want := []string{"a.log"}; !slices.Equal(zipped, want) {
+		t.Errorf("zipped %v, want %v", zipped, want)
+	}
+}
+
+// writerFunc is an [io.Writer] of a function.
+type writerFunc func(p []byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }

@@ -173,7 +173,8 @@ var storedExtensions = []string{ //nolint:gochecknoglobals // constant list
 // memory. Before calling start it checks every path as File does and totals
 // the files' sizes: a failure then (ErrInvalidFilePath, ErrFileNotFound,
 // mm.ErrCaptureExists, ErrDownloadTooLarge) has written nothing. It returns
-// the paths archived.
+// the paths archived, each flushed to the writer once it is complete, and on
+// a later failure those flushed before it.
 func ZipFiles(name string, paths []string, limits ZipLimits, start func() io.Writer) ([]string, error) {
 	paths = util.Unique(paths)
 
@@ -240,21 +241,30 @@ func ZipFiles(name string, paths []string, limits ZipLimits, start func() io.Wri
 		}
 	}
 
-	archive := zip.NewWriter(start())
+	var (
+		archive = zip.NewWriter(start())
+		zipped  = make([]string, 0, len(paths))
+	)
 
 	for _, p := range paths {
 		err := addToZip(archive, name, p)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			err = archive.Flush()
 		}
+
+		if err != nil {
+			return zipped, err
+		}
+
+		zipped = append(zipped, p)
 	}
 
 	err := archive.Close()
 	if err != nil {
-		return nil, fmt.Errorf("finishing zip archive: %w", err)
+		return zipped, fmt.Errorf("finishing zip archive: %w", err)
 	}
 
-	return paths, nil
+	return zipped, nil
 }
 
 // addToZip copies the experiment's file (a clean path) into the archive.
