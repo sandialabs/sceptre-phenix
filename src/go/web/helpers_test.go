@@ -2,9 +2,11 @@ package web
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,6 +23,7 @@ import (
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
+	"phenix/util/plog"
 	"phenix/web/rbac"
 )
 
@@ -481,4 +484,98 @@ func readBody(t *testing.T, resp *http.Response) string {
 	}
 
 	return string(body)
+}
+
+// auditEvent is an audit record as the system log file holds it.
+type auditEvent map[string]any
+
+// captureAudit records the audit events logged during the test; the
+// returned function lists those logged so far.
+func captureAudit(t *testing.T) func() []auditEvent {
+	t.Helper()
+
+	var (
+		mu     sync.Mutex
+		events []auditEvent
+	)
+
+	plog.AddHandler(t.Name(), slog.NewJSONHandler(writerFunc(func(p []byte) (int, error) {
+		var e auditEvent
+		if err := json.Unmarshal(p, &e); err == nil && e["type"] == string(plog.TypeAudit) {
+			mu.Lock()
+			events = append(events, e)
+			mu.Unlock()
+		}
+
+		return len(p), nil
+	}), &slog.HandlerOptions{Level: slog.LevelDebug}))
+	t.Cleanup(func() { plog.RemoveHandler(t.Name()) })
+
+	return func() []auditEvent {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return slices.Clone(events)
+	}
+}
+
+// writerFunc is an [io.Writer] of a function.
+type writerFunc func(p []byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// matches reports whether the event is of the action and outcome, and has
+// each of fields (compared as JSON decodes them, so numbers as float64).
+func (e auditEvent) matches(action, outcome string, fields map[string]any) bool {
+	if e["event.action"] != action || e["event.outcome"] != outcome {
+		return false
+	}
+
+	for k, v := range fields {
+		if fmt.Sprint(e[k]) != fmt.Sprint(v) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// wantAudit fails the test unless one of events is of the action and
+// outcome with each of fields; it returns that event.
+func wantAudit(t *testing.T, events []auditEvent, action, outcome string, fields map[string]any) auditEvent {
+	t.Helper()
+
+	for _, e := range events {
+		if e.matches(action, outcome, fields) {
+			return e
+		}
+	}
+
+	t.Errorf("no %s %s audit event with %v among %d:", action, outcome, fields, len(events))
+
+	for _, e := range events {
+		t.Errorf("  %v", e)
+	}
+
+	return nil
+}
+
+// countAudit counts the events of the action and outcome with each of fields.
+func countAudit(events []auditEvent, action, outcome string, fields map[string]any) int {
+	n := 0
+
+	for _, e := range events {
+		if e.matches(action, outcome, fields) {
+			n++
+		}
+	}
+
+	return n
+}
+
+// wantDenied fails the test unless events hold an RBAC refusal of the action.
+func wantDenied(t *testing.T, events []auditEvent, action string) {
+	t.Helper()
+
+	wantAudit(t, events, action, "failure", map[string]any{"event.reason": "forbidden"})
 }

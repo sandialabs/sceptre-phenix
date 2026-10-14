@@ -146,6 +146,10 @@ type Fields struct {
 	// none, such as one a capture grant authorizes.
 	User string
 
+	// URLPath replaces the request's path (url.path) when that carries a
+	// secret, such as a capture token.
+	URLPath string
+
 	Experiment string // phenix.experiment.name
 	VM         string // phenix.vm.name
 	Interface  *int   // phenix.vm.interface
@@ -228,7 +232,7 @@ func emit(r *http.Request, e event, f Fields) {
 		attrs = append(attrs, "event.reason", f.Reason)
 	}
 
-	attrs = append(attrs, actor(r, f.User)...)
+	attrs = append(attrs, actor(r, f.User, f.URLPath)...)
 	attrs = append(attrs, subject(f)...)
 
 	if e.err != nil {
@@ -239,8 +243,9 @@ func emit(r *http.Request, e event, f Fields) {
 }
 
 // actor is the fields naming who acted, and from where: the request's user,
-// or user when given, and the request's client. user.name is always present.
-func actor(r *http.Request, user string) []any {
+// or user when given, and the request's client and path, or path when given.
+// user.name is always present.
+func actor(r *http.Request, user, path string) []any {
 	if r == nil {
 		return []any{"user.name", user}
 	}
@@ -265,7 +270,11 @@ func actor(r *http.Request, user string) []any {
 	}
 
 	// the path only: a query can carry a token
-	return append(attrs, "http.request.method", r.Method, "url.path", r.URL.Path)
+	if path == "" {
+		path = r.URL.Path
+	}
+
+	return append(attrs, "http.request.method", r.Method, "url.path", path)
 }
 
 // subject is the fields naming what the action acted on.

@@ -167,6 +167,7 @@ func TestCreateWebSharkCaptureOfSavedFile(t *testing.T) {
 	useExperimentFilesDir(t, map[string]string{"captures/router.pcap": contents, "notes.txt": "hi"})
 
 	server := serveAs(t, "alice", sharkRole()).URL
+	events := captureAudit(t)
 
 	capture := openInWebShark(t, server, `{"path":"captures/router.pcap"}`)
 	if capture.Live || capture.Title != "captures/router.pcap" || !strings.HasPrefix(capture.Capture, "router-") ||
@@ -194,6 +195,24 @@ func TestCreateWebSharkCaptureOfSavedFile(t *testing.T) {
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown name: expected 404, got %d", resp.StatusCode)
 	}
+
+	// WebShark reads it again as it likes: the view is audited once
+	_ = readBody(t, do(t, http.MethodGet, server+"/webshark/captures/"+capture.Capture, ""))
+
+	got := events()
+	file := map[string]any{"user.name": "alice", "file.path": "captures/router.pcap", "phenix.capability.id": capture.ID}
+
+	wantAudit(t, got, "capture-webshark-open", "success", map[string]any{
+		"user.name": "alice", "phenix.experiment.name": "test-experiment", "file.path": "captures/router.pcap",
+		"phenix.webshark.live": false,
+	})
+
+	for op, want := range map[string]int{"view": 1, "download": 1} {
+		file["phenix.capability.op"] = op
+		if n := countAudit(got, "capture-webshark-read", "success", file); n != want {
+			t.Errorf("%d WebShark %s reads audited, want %d", n, op, want)
+		}
+	}
 }
 
 func TestCreateWebSharkCaptureRefuses(t *testing.T) {
@@ -205,29 +224,47 @@ func TestCreateWebSharkCaptureRefuses(t *testing.T) {
 		role rbac.Role
 		body string
 		want int
+		// the audit event's outcome, "" for none
+		wantOutcome string
 	}{
 		"no file permission": {
-			testRole("experiments/files", "list", "test-experiment"), `{"path":"a.pcap"}`, http.StatusForbidden,
+			testRole("experiments/files", "list", "test-experiment"), `{"path":"a.pcap"}`, http.StatusForbidden, "failure",
 		},
 		"no capture permission": {
-			testRole("experiments/files", "get", "test-experiment"), `{"vm":"test-vm","interface":0}`, http.StatusForbidden,
+			testRole("experiments/files", "get", "test-experiment"), `{"vm":"test-vm","interface":0}`,
+			http.StatusForbidden, "failure",
 		},
-		"not a capture":      {sharkRole(), `{"path":"notes.txt"}`, http.StatusBadRequest},
-		"escaping path":      {sharkRole(), `{"path":"../other/a.pcap"}`, http.StatusBadRequest},
-		"missing file":       {sharkRole(), `{"path":"gone.pcap"}`, http.StatusNotFound},
-		"both":               {sharkRole(), `{"path":"a.pcap","vm":"test-vm","interface":0}`, http.StatusBadRequest},
-		"neither":            {sharkRole(), `{}`, http.StatusBadRequest},
-		"no interface":       {sharkRole(), `{"vm":"test-vm"}`, http.StatusBadRequest},
-		"not being captured": {sharkRole(), `{"vm":"test-vm","interface":1}`, http.StatusNotFound},
+		"not a capture": {sharkRole(), `{"path":"notes.txt"}`, http.StatusBadRequest, ""},
+		// the role may read files, wherever this one is
+		"escaping path":      {sharkRole(), `{"path":"../other/a.pcap"}`, http.StatusBadRequest, "failure"},
+		"missing file":       {sharkRole(), `{"path":"gone.pcap"}`, http.StatusNotFound, "failure"},
+		"both":               {sharkRole(), `{"path":"a.pcap","vm":"test-vm","interface":0}`, http.StatusBadRequest, ""},
+		"neither":            {sharkRole(), `{}`, http.StatusBadRequest, ""},
+		"no interface":       {sharkRole(), `{"vm":"test-vm"}`, http.StatusBadRequest, ""},
+		"not being captured": {sharkRole(), `{"vm":"test-vm","interface":1}`, http.StatusNotFound, "failure"},
 	}
 
 	useTestFiles(t) // lists no files
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			resp, _ := createSharkCapture(t, serveAs(t, "alice", tt.role).URL, tt.body)
+			server := serveAs(t, "alice", tt.role).URL
+			events := captureAudit(t)
+
+			resp, _ := createSharkCapture(t, server, tt.body)
 			if resp.StatusCode != tt.want {
 				t.Fatalf("expected %d, got %d: %s", tt.want, resp.StatusCode, readBody(t, resp))
+			}
+
+			got := events()
+
+			switch {
+			case tt.want == http.StatusForbidden:
+				wantDenied(t, got, "capture-webshark-open")
+			case tt.wantOutcome != "":
+				wantAudit(t, got, "capture-webshark-open", tt.wantOutcome, map[string]any{"user.name": "alice"})
+			case len(got) != 0:
+				t.Errorf("audited a request refused before the RBAC check: %v", got)
 			}
 		})
 	}
@@ -259,10 +296,16 @@ func TestCreateWebSharkCaptureOfRunningCapture(t *testing.T) {
 	server := serveAs(t, "alice", sharkRole()).URL
 
 	// the file being captured opens live, found with one listing of captures
+	audited := captureAudit(t)
+
 	capture := openInWebShark(t, server, `{"path":"live.pcap"}`)
 	if !capture.Live || !strings.HasPrefix(capture.Capture, "live-") {
 		t.Fatalf("got %+v, want a live capture", capture)
 	}
+
+	wantAudit(t, audited(), "capture-webshark-open", "success", map[string]any{
+		"user.name": "alice", "phenix.vm.name": "test-vm", "phenix.vm.interface": 0, "phenix.webshark.live": true,
+	})
 
 	if n := fake.captureListings.Load(); n != 1 {
 		t.Fatalf("captures listed %d times, want once", n)

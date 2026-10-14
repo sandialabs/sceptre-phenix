@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -236,6 +237,7 @@ func TestCaptureGrantProxyUser(t *testing.T) {
 	server := serveAs(t, "alice", sharkRole()).URL
 	capture := openInWebShark(t, server, `{"path":"a.pcap"}`)
 	url := server + "/webshark/captures/" + capture.Capture
+	events := captureAudit(t)
 
 	for _, tc := range []struct {
 		user string
@@ -249,6 +251,12 @@ func TestCaptureGrantProxyUser(t *testing.T) {
 			t.Errorf("proxy user %q: got %d, want %d", tc.user, resp.StatusCode, tc.want)
 		}
 	}
+
+	// the grant's user, refused because another user used it
+	wantAudit(t, events(), "capture-webshark-read", "failure", map[string]any{
+		"user.name": "alice", "phenix.proxy_user": "bob", "event.reason": "another proxy user",
+		"phenix.capability.id": capture.ID,
+	})
 }
 
 // With sign-in disabled every user is global-admin, and grants work the same.
@@ -385,6 +393,7 @@ func TestCaptureTokenStreams(t *testing.T) {
 	followLiveCapture(t)
 
 	server := serveAs(t, "alice", sharkRole()).URL
+	events := captureAudit(t)
 	token := streamToken(t, server)
 
 	if !strings.HasPrefix(token.Token, "pcs_") || token.ID == "" || token.UseBy == "" || token.Expires == "" ||
@@ -424,6 +433,26 @@ func TestCaptureTokenStreams(t *testing.T) {
 	if resp := do(t, http.MethodGet, server+"/webshark/captures/"+token.Token, ""); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("as a WebShark capture: got %d, want 403", resp.StatusCode)
 	}
+
+	got := events()
+	grant := map[string]any{"user.name": "alice", "phenix.capability.id": token.ID, "phenix.vm.name": "test-vm"}
+
+	wantAudit(t, got, "capture-token-create", "success", grant)
+
+	// each stream, as the grant's user, though the request names none
+	if n := countAudit(got, "capture-stream", "success", grant); n != 2 {
+		t.Errorf("%d streams audited, want 2", n)
+	}
+
+	wantAudit(t, got, "capture-webshark-read", "failure", map[string]any{
+		"user.name": "alice", "event.reason": "operation not granted", "phenix.capability.op": "view",
+	})
+
+	for _, e := range got {
+		if strings.Contains(fmt.Sprint(e), token.Token) {
+			t.Errorf("audit event carries the token: %v", e)
+		}
+	}
 }
 
 // Revoking a stream token ends the streams it opened.
@@ -454,10 +483,16 @@ func TestCaptureTokenRevokeEndsStream(t *testing.T) {
 
 	revoke := server + "/api/v1/experiments/test-experiment/capture-tokens/" + token.ID
 
+	events := captureAudit(t)
+
 	resp := do(t, http.MethodDelete, revoke, "")
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("revoking: got %d", resp.StatusCode)
 	}
+
+	wantAudit(t, events(), "capture-token-revoke", "success", map[string]any{
+		"user.name": "alice", "phenix.capability.id": token.ID, "phenix.experiment.name": "test-experiment",
+	})
 
 	if _, err := io.ReadAll(stream.Body); err != nil || ctx.Err() != nil {
 		t.Fatalf("the stream did not end: %v %v", err, ctx.Err())

@@ -18,6 +18,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/store"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/capability"
 	"phenix/web/middleware"
 )
@@ -125,12 +126,63 @@ func mintCaptureGrant(r *http.Request, target capability.Target, ops []capabilit
 	token := newCaptureSecret(stream, sharkBaseName(target))
 	g = captureGrants.Mint(token, g)
 
-	plog.Info(
-		plog.TypeSecurity, "capture grant given",
-		"user", g.User, "exp", target.Exp, "id", g.ID, "ops", ops, "expires", g.Expires,
-	)
-
 	return g, token
+}
+
+// targetAuditFields name a capture grant's target in an audit event.
+func targetAuditFields(t capability.Target) audit.Fields {
+	f := audit.Fields{Experiment: t.Exp, VM: t.VM, File: t.File}
+
+	if t.VM != "" {
+		iface := t.Interface
+		f.Interface = &iface
+	}
+
+	return f
+}
+
+// grantAuditFields name a capture grant, its user and its target in an
+// audit event of request r's use of it for op. The token is never logged:
+// url.path is the route's template, as the token may be part of the path.
+func grantAuditFields(r *http.Request, g capability.Grant, op capability.Op) audit.Fields {
+	f := targetAuditFields(g.Target)
+	f.User = g.User
+	f.URLPath = "-"
+	f.Extra = []any{"phenix.capability.id", g.ID, "phenix.capability.op", string(op)}
+
+	if route := mux.CurrentRoute(r); route != nil {
+		if tmpl, err := route.GetPathTemplate(); err == nil {
+			f.URLPath = tmpl
+		}
+	}
+
+	return f
+}
+
+// grantAuditAction is the audited action of a use of a capture grant for op.
+func grantAuditAction(op capability.Op) audit.Action {
+	if op == capability.OpStream {
+		return audit.CaptureStream
+	}
+
+	return audit.CaptureWebSharkRead
+}
+
+// mintedAuditFields name a grant just given, for the audit event of giving it.
+func mintedAuditFields(g capability.Grant) audit.Fields {
+	ops := make([]string, len(g.Ops))
+	for i, op := range g.Ops {
+		ops[i] = string(op)
+	}
+
+	f := targetAuditFields(g.Target)
+	f.Extra = []any{
+		"phenix.capability.id", g.ID, "phenix.capability.ops", ops,
+		"phenix.capability.expires", g.Expires.UTC().Format(time.RFC3339),
+		"phenix.webshark.live", g.Target.Live,
+	}
+
+	return f
 }
 
 // sessionExpiry is when the session JWT raw expires, or zero when it has no
@@ -180,10 +232,10 @@ func (c grantChecker) use(r *http.Request, token string, op capability.Op) (capa
 
 	switch {
 	case errors.Is(err, capability.ErrOperation):
-		plog.Warn(
-			plog.TypeSecurity, "capture grant used for an operation it does not allow",
-			"user", g.User, "exp", g.Target.Exp, "id", g.ID, "op", op,
-		)
+		f := grantAuditFields(r, g, op)
+		f.Reason = "operation not granted"
+
+		audit.Denied(r, grantAuditAction(op), "capture grant used for an operation it does not allow", f)
 
 		return g, http.StatusForbidden
 	case err != nil:
@@ -194,10 +246,11 @@ func (c grantChecker) use(r *http.Request, token string, op capability.Op) (capa
 	// One that names users only on API requests leaves the header out.
 	if c.proxyAuthHeader != "" {
 		if user := r.Header.Get(c.proxyAuthHeader); user != "" && user != g.User {
-			plog.Warn(
-				plog.TypeSecurity, "capture grant used by another proxy user",
-				"user", g.User, "proxy_user", user, "exp", g.Target.Exp, "id", g.ID, "op", op,
-			)
+			f := grantAuditFields(r, g, op)
+			f.Reason = "another proxy user"
+			f.Extra = append(f.Extra, "phenix.proxy_user", user)
+
+			audit.Denied(r, grantAuditAction(op), "capture grant used by another proxy user", f)
 
 			return g, http.StatusForbidden
 		}
@@ -469,7 +522,7 @@ func CreateCaptureToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	target, ok := resolveSharkTarget(w, r, exp, req.sharkCaptureRequest)
+	target, ok := resolveSharkTarget(w, r, exp, req.sharkCaptureRequest, audit.CaptureTokenCreate)
 	if !ok {
 		return
 	}
@@ -481,6 +534,8 @@ func CreateCaptureToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	g, token := mintCaptureGrant(r, target, ops)
+
+	audit.Success(r, audit.CaptureTokenCreate, "capture token given", mintedAuditFields(g))
 
 	resp := newCaptureToken(g)
 	resp.Token = token
@@ -539,7 +594,9 @@ func DeleteCaptureToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plog.Info(plog.TypeSecurity, "capture grant revoked", "reason", "revoked by user", "user", user, "exp", vars["exp"], "id", id)
+	audit.Success(r, audit.CaptureTokenRevoke, "capture token revoked", audit.Fields{
+		Experiment: vars["exp"], Extra: []any{"phenix.capability.id", id},
+	})
 
 	w.WriteHeader(http.StatusNoContent)
 }

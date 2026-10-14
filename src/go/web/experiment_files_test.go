@@ -82,15 +82,22 @@ func TestExperimentFileHandlersForbidden(t *testing.T) {
 		path   string
 		body   string
 		verb   string // the role's only verb, not the one needed
+		action string // the refused action audited
 	}{
-		"delete one":       {method: http.MethodDelete, path: "/a.log?path=a.log", verb: "get"},
-		"delete several":   {method: http.MethodPost, path: "/delete", body: `{"paths":["a.log"]}`, verb: "get"},
-		"download several": {method: http.MethodPost, path: "/download", body: `{"paths":["a.log"]}`, verb: "list"},
+		"delete one": {method: http.MethodDelete, path: "/a.log?path=a.log", verb: "get", action: "file-delete"},
+		"delete several": {
+			method: http.MethodPost, path: "/delete", body: `{"paths":["a.log"]}`, verb: "get", action: "file-delete",
+		},
+		"download one": {method: http.MethodGet, path: "/a.log?path=a.log", verb: "list", action: "file-download"},
+		"download several": {
+			method: http.MethodPost, path: "/download", body: `{"paths":["a.log"]}`, verb: "list", action: "file-download",
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			fake := useTestFiles(t, "a.log")
+			events := captureAudit(t)
 
 			resp := requestFiles(t, tc.method, tc.path, tc.body, tc.verb)
 			if resp.StatusCode != http.StatusForbidden {
@@ -100,6 +107,8 @@ func TestExperimentFileHandlersForbidden(t *testing.T) {
 			if len(fake.deleted) != 0 {
 				t.Fatalf("deleted %v without permission", fake.deleted)
 			}
+
+			wantDenied(t, events(), tc.action)
 		})
 	}
 }
@@ -194,6 +203,8 @@ func TestDownloadExperimentFilesStreamsZip(t *testing.T) {
 	useExperimentFilesDir(t, map[string]string{"a.log": "alpha", "scorch/run-0/b.json": "{}"})
 	useTestFiles(t)
 
+	events := captureAudit(t)
+
 	resp := requestFiles(t, http.MethodPost, "/download", `{"paths":["a.log","scorch/run-0/b.json"]}`, "get")
 
 	body := readBody(t, resp)
@@ -234,6 +245,10 @@ func TestDownloadExperimentFilesStreamsZip(t *testing.T) {
 
 	if len(got) != 2 || got["a.log"] != "alpha" || got["scorch/run-0/b.json"] != "{}" {
 		t.Errorf("zip holds %v", got)
+	}
+
+	for _, path := range []string{"a.log", "scorch/run-0/b.json"} {
+		wantAudit(t, events(), "file-download", "success", map[string]any{"user.name": "alice", "file.path": path})
 	}
 }
 
@@ -310,6 +325,11 @@ func TestGetExperimentFileResumes(t *testing.T) {
 	data := strings.Repeat("0123456789abcdef", 4096) // 64 KiB
 	useExperimentFilesDir(t, map[string]string{"scorch/run-0/out.bin": data})
 
+	events := captureAudit(t)
+	downloads := func() int {
+		return countAudit(events(), "file-download", "success", map[string]any{"file.path": "scorch/run-0/out.bin"})
+	}
+
 	resp := getExperimentFile(t, http.MethodGet, "scorch/run-0/out.bin")
 	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || body != data {
 		t.Fatalf("download: status %d, %d bytes", resp.StatusCode, len(body))
@@ -334,6 +354,11 @@ func TestGetExperimentFileResumes(t *testing.T) {
 	resp = getExperimentFile(t, http.MethodGet, "scorch/run-0/out.bin", "Range", "bytes=40000-", "If-Range", etag)
 	if body := readBody(t, resp); resp.StatusCode != http.StatusPartialContent || body != data[40000:] {
 		t.Fatalf("resume: status %d, %d bytes; want 206 with the last %d", resp.StatusCode, len(body), len(data)-40000)
+	}
+
+	// audited once, not per resumed range
+	if n := downloads(); n != 1 {
+		t.Errorf("%d downloads audited after one and a resume, want 1", n)
 	}
 
 	rewritten := strings.ToUpper(data)
@@ -438,6 +463,54 @@ func TestGetExperimentFileRefuses(t *testing.T) {
 				t.Fatalf("expected %d, got %d: %s", tc.wantCode, resp.StatusCode, readBody(t, resp))
 			}
 		})
+	}
+}
+
+func TestGetExperimentFileAudits(t *testing.T) {
+	useExperimentFilesDir(t, map[string]string{"a.log": "alpha", "captures/r.pcap": "pcap"})
+
+	tests := map[string]struct {
+		path    string
+		header  []string
+		outcome string
+		fields  map[string]any
+	}{
+		"download": {
+			path: "a.log", outcome: "success",
+			fields: map[string]any{"phenix.file.preview": false, "phenix.file.capture": false, "file.name": "a.log"},
+		},
+		"capture download": {
+			path: "captures/r.pcap", outcome: "success",
+			fields: map[string]any{"phenix.file.capture": true, "file.path": "captures/r.pcap", "file.name": "r.pcap"},
+		},
+		"preview": {
+			path: "a.log", header: []string{"Accept", "text/plain"}, outcome: "success",
+			fields: map[string]any{"phenix.file.preview": true},
+		},
+		"range from the start": {
+			path: "a.log", header: []string{"Range", "bytes=0-1"}, outcome: "success",
+			fields: map[string]any{"http.request.range": "bytes=0-1"},
+		},
+		"missing": {path: "gone.log", outcome: "failure", fields: map[string]any{"file.path": "gone.log"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			events := captureAudit(t)
+
+			_ = readBody(t, getExperimentFile(t, http.MethodGet, tc.path, tc.header...))
+
+			tc.fields["user.name"] = "alice"
+			tc.fields["phenix.experiment.name"] = "test-experiment"
+
+			wantAudit(t, events(), "file-download", tc.outcome, tc.fields)
+		})
+	}
+
+	// a HEAD request reads nothing
+	events := captureAudit(t)
+	if _ = getExperimentFile(t, http.MethodHead, "a.log"); len(events()) != 0 {
+		t.Errorf("HEAD audited: %v", events())
 	}
 }
 
