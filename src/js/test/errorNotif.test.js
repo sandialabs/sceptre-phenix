@@ -152,6 +152,13 @@ describe('useErrorNotification', () => {
     expect(message()).toContain('Token was invalid. Logging out');
   });
 
+  it('shows a message given as a string', async () => {
+    await useErrorNotification('Error uploading: disk <full>');
+    expect(lines()).toEqual([
+      '<b>Error:</b> Error uploading: disk &lt;full&gt;',
+    ]);
+  });
+
   it('says nothing of requests canceled on leaving a page', async () => {
     await useErrorNotification({ code: 'ERR_CANCELED', message: 'canceled' });
     expect(console.warn).not.toHaveBeenCalled();

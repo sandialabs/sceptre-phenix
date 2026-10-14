@@ -1,10 +1,17 @@
 import { usePhenixStore } from '@/store.js';
 import { escapeHTML } from '@/utils/escapeHTML.js';
 import { openNotification } from '@/utils/notify.js';
+import { errorSteps } from '@/utils/operations.js';
 
+// Shows an error: a request's, an Error, or a message (a string).
 export async function useErrorNotification(error) {
   // requests are canceled on purpose when the user leaves a page
   if (error?.code === 'ERR_CANCELED') return;
+
+  // a message rather than an error object
+  if (typeof error === 'string' || error == null) {
+    error = { message: error ?? 'Unknown error' };
+  }
 
   let message;
   console.warn('Error', error);
@@ -33,18 +40,6 @@ export async function useErrorNotification(error) {
 
 const textHTML = (text) =>
   escapeHTML(text).replace(/\n/g, '<br>').replace(/\t/g, '&emsp;');
-
-// Splits an error chain into its steps, outermost first. The server nests
-// errors with hashicorp/go-multierror, which writes each level as
-// "1 error occurred:\n\t* cause", so a failure deep in a SCORCH run otherwise
-// reads as one long run-on sentence.
-function errorSteps(text) {
-  return String(text ?? '')
-    .split(/\s*\d+ errors? occurred:\s*/)
-    .flatMap((part) => part.split(/(?:^|\n)\s*\*\s+|^\*\s+|\s\*\s+(?=\S)/))
-    .map((step) => step.trim().replace(/:$/, '').trim())
-    .filter(Boolean);
-}
 
 // The notification body for an error and its optional cause: the outermost
 // error as the title, then each step that led to it on its own line, the

@@ -131,6 +131,7 @@ All notable changes to this project will be documented in this file.
 - **minimega**: A minimega command that never answered held up every later minimega command.
 - **VNC**: Any signed-in user could open any VM's VNC websocket; it now needs `get` on `vms/vnc`.
 - **Uploads**: A VM mount file upload without a file crashed its request, and a disk or VM mount file upload that failed partway was reported as done.
+- **Disks**: A failed disk upload showed no error.
 
 ## [1.0.0]
 
