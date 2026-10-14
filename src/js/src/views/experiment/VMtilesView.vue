@@ -102,6 +102,7 @@ to access the VM VNC by clicking on the screenshot.
   import { createPageLoader } from '@/utils/pageLoader.js';
   import { pageFetchers } from '@/utils/pageData.js';
   import { inForeground } from '@/utils/foreground.js';
+  import { RESOURCES } from '@/utils/freshness.js';
   import { usePhenixStore } from '@/store';
   export default {
     beforeUnmount() {
@@ -190,7 +191,7 @@ to access the VM VNC by clicking on the screenshot.
           if (inForeground() && !this.loader.loading) {
             this.loader.load();
           }
-        }, 60000);
+        }, RESOURCES.vmtiles.pollMs);
       },
 
       vmFullName(vm) {

@@ -141,6 +141,7 @@ bandwidth available for experiments, the number of VMs, and host uptime.
   import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
   import { pageFetchers } from '@/utils/pageData.js';
   import { inForeground } from '@/utils/foreground.js';
+  import { RESOURCES } from '@/utils/freshness.js';
 
   export default {
     mixins: [formattingMixin],
@@ -176,7 +177,7 @@ bandwidth available for experiments, the number of VMs, and host uptime.
           if (inForeground() && !this.loader.loading) {
             this.loader.load();
           }
-        }, 30000);
+        }, RESOURCES.hosts.pollMs);
       },
 
       decorator(sum, len) {
