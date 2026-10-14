@@ -650,7 +650,7 @@
           if (this.unmounted) return;
 
           if (done.artifact && !done.artifact.incomplete) {
-            window.open(useJobStore().artifactURL(done), '_blank');
+            useJobStore().downloadArtifact(done);
           } else if (!done.artifact) {
             notifyOutcome(this.$buefy, {
               verbPast: 'Archived',

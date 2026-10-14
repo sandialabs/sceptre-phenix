@@ -602,8 +602,12 @@ describe('downloading the selected files', () => {
     ...fields,
   });
 
+  // the store's artifact downloads, which need a document
+  const downloads = () =>
+    vi.spyOn(useJobStore(), 'downloadArtifact').mockImplementation(() => {});
+
   it('builds the archive in a job and downloads it when done', async () => {
-    vi.stubGlobal('window', { open: vi.fn() });
+    const download = downloads();
     axios.post.mockResolvedValue({
       data: archiveJob({ status: 'running', artifact: undefined, revision: 1 }),
     });
@@ -626,15 +630,14 @@ describe('downloading the selected files', () => {
     useJobStore().apply(wsMsg('job', 'j1', 'update', archiveJob()));
     await pending;
 
-    expect(window.open).toHaveBeenCalledWith(
-      '/api/v1/jobs/j1/artifact?token=t',
-      '_blank',
+    expect(download).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'j1' }),
     );
     expect(tab.filesDownloading).toBe(false);
   });
 
   it('leaves an incomplete archive for an explicit click', async () => {
-    vi.stubGlobal('window', { open: vi.fn() });
+    const download = downloads();
     const incomplete = archiveJob({
       status: 'partial',
       artifact: {
@@ -650,12 +653,12 @@ describe('downloading the selected files', () => {
 
     await tab.downloadSelectedFiles();
 
-    expect(window.open).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
     expect(tab.archiveJob.artifact.incomplete).toBe(true);
   });
 
   it('sums up an archive that could not be built, and one left behind downloads nothing', async () => {
-    vi.stubGlobal('window', { open: vi.fn() });
+    const download = downloads();
     const failed = archiveJob({
       status: 'failed',
       artifact: undefined,
@@ -676,7 +679,7 @@ describe('downloading the selected files', () => {
     axios.get.mockResolvedValue({ data: archiveJob() });
     tab.unmounted = true;
     await tab.downloadSelectedFiles();
-    expect(window.open).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
   });
 
   it('shows a request it cannot start', async () => {

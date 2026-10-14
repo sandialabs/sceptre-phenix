@@ -382,6 +382,7 @@
   import DiskWarning from '@/components/DiskWarning.vue';
   import JobProgress from '@/components/jobs/JobProgress.vue';
   import { useJobStore } from '@/utils/jobs.js';
+  import { notifyOutcome, outcomeFromJob } from '@/utils/operations.js';
   import axiosInstance from '@/utils/axios.js';
   import {
     diskLabel,
@@ -650,7 +651,18 @@
               return;
             }
             dialog.close();
-            await useJobStore().whenDone(job.id);
+            try {
+              // a canceled clone needs no report: the user stopped it
+              const done = await useJobStore().whenDone(job.id);
+              if (done.status !== 'canceled')
+                notifyOutcome(this.$buefy, {
+                  verbPast: 'Cloned',
+                  noun: 'disk image',
+                  items: outcomeFromJob(done),
+                });
+            } catch (err) {
+              useErrorNotification(err);
+            }
             this.loader.load();
           },
         });
