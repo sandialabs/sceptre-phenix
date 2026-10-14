@@ -42,6 +42,7 @@ All notable changes to this project will be documented in this file.
 - **Jobs CLI**: `phenix job list`, `get`, `cancel` and `wait` follow and cancel the running server's background jobs over its unix socket, and `wait` exits 0, 2 or 1 when a job succeeded, partly succeeded or failed.
 - **Disk clone jobs**: `POST /disks/clone/jobs` clones a disk image in a cancelable background job that reports the bytes copied, and an interrupted clone leaves no image behind.
 - **Experiment file archives**: `POST /experiments/{name}/files/archive` builds a zip of several experiment files in a background job that reports each file's outcome, leaves out files it cannot fetch (listed in `MISSING.txt`), and serves the archive resumably from `GET /jobs/{id}/artifact`.
+- **Bulk VM actions**: `POST /experiments/{exp}/vms/actions` starts, pauses, restarts, shuts down, kills or resets the disks of several VMs in one background job that reports each VM's outcome, skipping VMs the role may not act on.
 
 ### Changed
 

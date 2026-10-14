@@ -80,6 +80,25 @@ a VM's state. These buttons, again named by their tooltips, are:
 Per-VM actions, including the ones this toolbar has no equivalent for, are
 described in [VMs](vms.md).
 
+### From the API
+
+`POST /api/v1/experiments/<name>/vms/actions` takes one power action on
+several VMs in a [background job](jobs.md):
+
+```bash
+curl -X POST -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  -d '{"action": "restart", "vms": ["web", "db", "fw"]}' \
+  http://localhost:3000/api/v1/experiments/exp1/vms/actions
+```
+
+`action` is one of `start`, `pause`, `restart`, `shutdown`, `kill` or
+`resetDisk`, and `vms` names up to 1000 VMs. The job acts on four VMs at a
+time, each exactly as the VM's own route would, and records each VM's outcome:
+a VM your role may not act on is skipped, and a VM busy with another action
+fails and is marked retryable. When your role may act on none of the VMs, the
+request is refused with `403` and no job starts. Canceling the job starts no
+more VMs; the ones in progress finish.
+
 ### From the Command Line Binary
 
 Several `phenix vm` commands support selecting target VMs by label with `-l` / `--label`, or all VMs using `all`.

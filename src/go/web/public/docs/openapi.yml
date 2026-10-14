@@ -1643,6 +1643,80 @@ paths:
                 $ref: "#/components/schemas/VMs"
         "400":
           description: pageNum or perPage is not a whole number of at least 1
+  "/experiments/{exp_name}/vms/actions":
+    post:
+      tags:
+        - Virtual Machines
+        - Jobs
+      summary: Take one power action on several VMs in a background job
+      description: >-
+        Starts a `vms.action` background job that takes the action on each
+        VM, four at a time, exactly as the VM's own route does (the same
+        permission, lock, websocket messages and logs). A VM the role may not
+        act on is skipped with `you don't have permission`; a VM another action
+        holds fails with `retryable` set. Each succeeded item's `result` is the
+        VM as the single-VM route returns it (none for `kill`). Canceling the
+        job starts no more VMs, and the VMs in progress finish. The actions
+        and their single-VM routes and permissions are `start` (POST
+        .../start, `vms/start` `update`), `pause` (POST .../stop, `vms/stop`
+        `update`), `restart` (`vms/restart` `update`), `shutdown`
+        (`vms/shutdown` `update`), `resetDisk` (GET .../reset, `vms/reset`
+        `update`) and `kill` (DELETE .../{vm_name}, `vms` `delete`).
+      operationId: postExperimentsNameVmsActions
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of the running phenix experiment
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+                - vms
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - start
+                    - pause
+                    - restart
+                    - shutdown
+                    - kill
+                    - resetDisk
+                vms:
+                  type: array
+                  description: the VMs' names; repeats count once
+                  minItems: 1
+                  maxItems: 1000
+                  items:
+                    type: string
+            example:
+              action: restart
+              vms:
+                - web
+                - db
+      responses:
+        "202":
+          description: the job, started
+          headers:
+            Location:
+              description: the job, at /api/v1/jobs/{id}
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          description: an unknown action, a malformed body, or no VMs or more than 1000
+        "403":
+          description: the role may take the action on none of the VMs
   "/experiments/{exp_name}/vms/{vm_name}":
     get:
       tags:

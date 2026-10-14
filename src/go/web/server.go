@@ -426,6 +426,7 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	api.HandleFunc("/soh", GetSoHSummary).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms", GetVMs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms", UpdateVMs).Methods("PATCH", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/actions", RunVMActions).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}", GetVM).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}", UpdateVM).Methods("PATCH", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}", DeleteVM).Methods("DELETE", "OPTIONS")
