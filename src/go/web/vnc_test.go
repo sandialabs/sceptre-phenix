@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"phenix/web/rbac"
 )
 
 // getVNCPage stores test-experiment with one VM, test-vm, whose vncBanner
@@ -191,5 +193,22 @@ func TestVNCPageContentSecurityPolicy(t *testing.T) {
 
 	if len(nonces) != 2 {
 		t.Error("two requests got the same nonce")
+	}
+}
+
+// The VNC websocket needs the permission its page does.
+func TestVNCWebSocketNeedsPermission(t *testing.T) {
+	for name, role := range map[string]rbac.Role{
+		"other VM":    testRole("vms/vnc", "get", "test-experiment/other-vm"),
+		"no VNC role": testRole("vms", "get", "test-experiment/test-vm"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := serveAs(t, "alice", role).URL
+
+			resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/vms/test-vm/vnc/ws", "")
+			if resp.StatusCode != http.StatusForbidden {
+				t.Fatalf("expected 403, got %d: %s", resp.StatusCode, readBody(t, resp))
+			}
+		})
 	}
 }
