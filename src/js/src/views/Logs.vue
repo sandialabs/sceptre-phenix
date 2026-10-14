@@ -234,7 +234,8 @@
     'Custom Date Range': null,
   };
   const KNOWN_TYPES = [
-    // keep in sync with plog/package.go
+    // keep in sync with util/plog/package.go
+    'AUDIT',
     'SECURITY',
     'SOH',
     'SCORCH',
