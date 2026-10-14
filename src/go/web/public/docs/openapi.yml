@@ -1,6 +1,26 @@
 openapi: 3.0.0
 info:
-  description: phenix API
+  description: |
+    phenix API
+
+    ## Ordering and freshness
+
+    Every response under `/api/v1` carries `X-Phenix-Seq`, a number from one
+    strictly increasing sequence per phenix process, taken as the request
+    started, and `Cache-Control: no-cache, private` unless the endpoint says
+    otherwise. Every message on the `/ws` websocket carries the same sequence
+    in its `seq` field, taken as the message was published (a reply to a
+    client request, such as an `experiment/vms` list, takes it before its data
+    is read). Data tagged with seq S reflects every change whose message
+    carries a seq of S or less, so a client keeps, per item, the highest seq
+    it applied and ignores data tagged lower. Sequence numbers are comparable
+    only within one server process: reset them when the websocket reconnects.
+
+    Responses that serve runtime state read from minimega may also carry
+    `X-Phenix-Observed-At` (when the oldest data in the response was read,
+    RFC 3339; compare it with the `Date` header) and `X-Phenix-Stale: true`
+    (the data is older than its normal bound, such as earlier data served
+    while minimega was busy).
   version: 0.0.0
   title: phenix
   termsOfService: http://swagger.io/terms/
@@ -5549,6 +5569,25 @@ components:
       schema:
         type: string
   headers:
+    # Ordering and freshness, on every API response (see the description).
+    Seq:
+      description: >-
+        this process's sequence number, taken as the request started; orders
+        the response against websocket messages and other responses
+      schema:
+        type: integer
+        format: int64
+    ObservedAt:
+      description: when the oldest runtime data in the response was read from minimega (RFC 3339)
+      schema:
+        type: string
+        format: date-time
+    Stale:
+      description: "`true` when the response serves runtime data past its normal bound"
+      schema:
+        type: string
+        enum:
+          - "true"
     # Config revisions: conditional reads and writes of one config.
     ConfigETag:
       description: >-

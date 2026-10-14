@@ -178,6 +178,7 @@ func Start(opts ...ServerOption) error {
 		addRoutesToRouter(api, socketRoutes()...)
 
 		api.Use(middleware.NoAuth)
+		api.Use(middleware.Freshness)
 
 		_ = os.Remove(common.UnixSocket)
 
@@ -563,6 +564,8 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	}
 
 	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
+	// after Auth, so a refused request takes no sequence number
+	api.Use(middleware.Freshness)
 
 	switch o.logMiddleware {
 	case "full":

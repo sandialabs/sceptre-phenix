@@ -141,6 +141,26 @@ curl -s -X PUT -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
 `Access-Control-Expose-Headers` of every API response include `ETag` and
 `X-Phenix-Revision`, so a script on another origin can read them.
 
+## Freshness
+
+Every API response carries `X-Phenix-Seq`, a number from one sequence that
+only increases within a `phenix ui` process, taken as the request started.
+Every message on the `/ws` websocket carries the same sequence in its `seq`
+field, taken as the message was published, after the change it tells of. A
+reply to a websocket request, such as an `experiment/vms` list, takes its
+`seq` before it reads its data.
+
+Use it to order what you receive: data tagged with seq S reflects every change
+whose message carries a seq of S or less. Keep, for each item, the highest seq
+you applied, and ignore item data tagged with a lower one. A list tagged L
+leaves out items whose delete message has a seq above L, and keeps items
+created with a seq above L that it lacks. Sequence numbers are only comparable
+within one server process, so reset what you track when the websocket
+reconnects.
+
+API responses are sent with `Cache-Control: no-cache, private`, unless the
+endpoint sets its own.
+
 ## Streaming Endpoints
 
 Two endpoints stream rather than return a document, and are easiest to use from

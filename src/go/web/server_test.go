@@ -34,9 +34,10 @@ func TestRouterServesTheUI(t *testing.T) {
 			path: "/webshark/embed", wantStatus: http.StatusNotFound,
 			wantBody: "WebShark is not installed",
 		},
+		// API data is revalidated: the freshness middleware marks it
 		"API": {
 			path: "/api/v1/options", wantStatus: http.StatusOK,
-			wantEncoding: "gzip", wantBody: `"deploy-mode"`,
+			wantEncoding: "gzip", wantCache: "no-cache, private", wantBody: `"deploy-mode"`,
 		},
 	}
 
@@ -54,6 +55,10 @@ func TestRouterServesTheUI(t *testing.T) {
 
 			if got := resp.Header.Get("Cache-Control"); got != tt.wantCache {
 				t.Errorf("Cache-Control %q, want %q", got, tt.wantCache)
+			}
+
+			if strings.HasPrefix(tt.path, "/api/") && resp.Header.Get("X-Phenix-Seq") == "" {
+				t.Error("an API response has no X-Phenix-Seq")
 			}
 
 			if body := readBody(t, resp); !strings.Contains(body, tt.wantBody) {

@@ -16,6 +16,7 @@ import (
 	"phenix/api/vm"
 	"phenix/app"
 	putil "phenix/util"
+	"phenix/util/freshness"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
 	bt "phenix/web/broker/brokertypes"
@@ -98,8 +99,15 @@ type encodedPublish struct {
 	owner string
 }
 
-// encode marshals pub once for all the clients it goes to.
+// encode marshals pub once for all the clients it goes to. It stamps pub
+// with the next seq unless it has one: it runs as the message is published,
+// on the goroutine that made the change the message tells of, so the seq is
+// greater than that of any read that could have missed the change.
 func encode(pub bt.Publish) (encodedPublish, bool) {
+	if pub.Seq == 0 {
+		pub.Seq = freshness.Seq()
+	}
+
 	data, err := json.Marshal(pub)
 	if err != nil {
 		// logged on its own goroutine, since encode runs on the broker's too
@@ -165,7 +173,7 @@ func run(ctx context.Context, triggerSub, delayedSub <-chan any) {
 
 			// delivered here: publish queues on the channel this loop drains,
 			// and would block it once that is full
-			if out, ok := encode(bt.Publish{RequestPolicy: policy, Resource: resource, Result: result}); ok {
+			if out, ok := encode(bt.Publish{RequestPolicy: policy, Resource: resource, Result: result, Seq: 0}); ok {
 				deliver(out)
 			}
 		case pub := <-delayedSub:
@@ -298,7 +306,7 @@ func deliverSkipped(n uint64) {
 }
 
 func Broadcast(policy *bt.RequestPolicy, resource *bt.Resource, msg json.RawMessage) {
-	publish(bt.Publish{RequestPolicy: policy, Resource: resource, Result: msg})
+	publish(bt.Publish{RequestPolicy: policy, Resource: resource, Result: msg, Seq: 0})
 }
 
 // BroadcastLog sends a log entry to the clients showing logs that may read
@@ -379,6 +387,7 @@ func logPublish(entry json.RawMessage) bt.Publish {
 		RequestPolicy: bt.NewRequestPolicy("logs", "get", ""),
 		Resource:      bt.NewResource(logResourceType, "phenix", "update"),
 		Result:        entry,
+		Seq:           0, // stamped by encode
 	}
 }
 
@@ -419,6 +428,7 @@ func publishDelayedStart(delayed, expName, vmName string) {
 		RequestPolicy: policy,
 		Resource:      bt.NewResource("experiment/vm", delayed, "start"),
 		Result:        body,
+		Seq:           0, // stamped by encode
 	})
 
 	screenshot, err := util.GetScreenshot(expName, vmName, delayedStartScreenshotSize)
@@ -437,5 +447,6 @@ func publishDelayedStart(delayed, expName, vmName string) {
 		RequestPolicy: policy,
 		Resource:      bt.NewResource("experiment/vm/screenshot", delayed, "update"),
 		Result:        body,
+		Seq:           0, // stamped by encode
 	})
 }

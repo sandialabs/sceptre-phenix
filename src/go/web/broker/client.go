@@ -21,6 +21,7 @@ import (
 	"phenix/api/vm"
 	"phenix/types"
 	"phenix/util/cache"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/plog"
 	bt "phenix/web/broker/brokertypes"
@@ -157,8 +158,13 @@ func NewClient(role rbac.Role, user string, conn *websocket.Conn) *Client {
 }
 
 // send queues msg for the client, giving up once the client is gone so the
-// sender does not block forever on a publish channel no one drains.
+// sender does not block forever on a publish channel no one drains. A message
+// without a seq gets the next one.
 func (c *Client) send(msg bt.Publish) bool {
+	if msg.Seq == 0 {
+		msg.Seq = freshness.Seq()
+	}
+
 	select {
 	case c.publish <- msg:
 		return true
@@ -612,6 +618,10 @@ func (c *Client) listVMs(job listJob) {
 
 	expName := req.Resource.Name
 
+	// taken before the experiment and its VMs are read, so the list orders
+	// before any VM message telling of a change it may have missed
+	seq := freshness.Seq()
+
 	exp, err := deps.experiment(expName)
 	if err != nil {
 		plog.Error(
@@ -667,6 +677,7 @@ func (c *Client) listVMs(job listJob) {
 	if !c.send(bt.Publish{ //nolint:exhaustruct // partial initialization
 		Resource: bt.NewResource(vmsResourceType, expName, "list"),
 		Result:   body,
+		Seq:      seq,
 	}) {
 		return
 	}
