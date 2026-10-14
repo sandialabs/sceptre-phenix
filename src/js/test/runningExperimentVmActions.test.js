@@ -1,11 +1,13 @@
 // How the running experiment page runs the VM actions its details modal,
 // Actions column, and selection toolbar ask for, and what its VM table and
 // details modal show.
+import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notify, rbac, resetMocks } = await vi.hoisted(
+const { axios, modules, notices, notify, rbac, resetMocks } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
 );
+vi.mock('@/utils/notify.js', modules.notify);
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
@@ -28,7 +30,7 @@ import {
 import { namedList } from '@/utils/plural.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import { flush } from './helpers/async.js';
-import { lastAlert, lastConfirm } from './helpers/buefy.js';
+import { lastAlert, lastConfirm, toasts } from './helpers/buefy.js';
 import { denyOnly } from './helpers/permissions.js';
 import {
   labeledControls,
@@ -46,7 +48,10 @@ import { blockedStorage } from './helpers/storage.js';
 const { onVmAction, showVlanModal } = RunningExperiment.methods;
 const { expModalVm } = RunningExperiment.computed;
 
-beforeEach(() => resetMocks());
+beforeEach(() => {
+  resetMocks();
+  setActivePinia(createPinia());
+});
 
 // the page's method for each VM action, and whether it takes the VM itself
 // rather than its name
@@ -562,38 +567,50 @@ describe('actions on VMs', () => {
   // 'gone' is not in the table
   const selection = ['web', 'off', 'held', 'persistent', 'db', 'gone'];
 
-  // the server answers a VM request with the VM as it is now
-  const answer = async (url) => ({
-    data: { name: url.split('/')[3], state: 'ANSWERED' },
-  });
+  // The server's answers to a bulk action: the job it starts, finished, and
+  // the job read whole, each VM with the outcome `outcomes` gives it
+  // (succeeded unless named), a succeeded one with its VM.
+  const answerJob = (outcomes = {}) => {
+    const items = (vms) =>
+      vms.map((name) => {
+        const outcome = outcomes[name] ?? { status: 'succeeded' };
+        return outcome.status === 'succeeded'
+          ? { name, status: 'succeeded', result: { name, state: 'ANSWERED' } }
+          : { name, ...outcome };
+      });
+    let id = 0;
+    axios.post.mockImplementation(async (_, body) => {
+      const job = {
+        id: `j${++id}`,
+        kind: 'vms.action',
+        status: 'succeeded',
+        items: items(body.vms),
+        revision: 2,
+      };
+      axios.get.mockResolvedValueOnce({ data: job });
+      return { data: job };
+    });
+  };
 
   it.each([
-    ['startVm', 'start', 'post', '/start', 'Start the VMs', 'Start'],
-    ['pauseVm', 'pause', 'post', '/stop', 'Pause the VMs', 'Pause'],
-    ['restartVm', 'restart', 'get', '/restart', 'Restart the VMs', 'Restart'],
-    [
-      'shutdownVm',
-      'shutdown',
-      'get',
-      '/shutdown',
-      'Shut Down the VMs',
-      'Shut Down',
-    ],
+    ['startVm', 'start', 'Start the VMs', 'Start', 'Started'],
+    ['pauseVm', 'pause', 'Pause the VMs', 'Pause', 'Paused'],
+    ['restartVm', 'restart', 'Restart the VMs', 'Restart', 'Restarted'],
+    ['shutdownVm', 'shutdown', 'Shut Down the VMs', 'Shut Down', 'Shut down'],
     [
       'resetVmState',
       'resetDisk',
-      'get',
-      '/reset',
       "Reset the VMs' Disks",
       'Reset',
+      'Reset the disks of',
     ],
   ])(
-    '%s asks about the VMs the %s rule allows, then sends %s requests for them',
-    async (method, action, verb, path, title, confirmText) => {
+    '%s asks once about the VMs the %s rule allows, naming those it skips, then runs one job for them',
+    async (method, action, title, confirmText, done) => {
       const ctx = page({
         experiment: { name: 'demo', vms: structuredClone(vms) },
       });
-      axios[verb].mockImplementation(answer);
+      answerJob();
       const { allowed, skipped } = partitionVMsForAction(
         action,
         selection,
@@ -601,74 +618,121 @@ describe('actions on VMs', () => {
       );
 
       ctx[method](selection);
-      expect(lastAlert(ctx)).toMatchObject({
-        title: 'No Action',
-        message: skippedVMsText(skipped),
-      });
+      expect(ctx.$buefy.dialog.alert).not.toHaveBeenCalled();
       const dialog = lastConfirm(ctx);
       expect(dialog).toMatchObject({ title, confirmText });
       expect(dialog.message).toContain(namedList(allowed, 'VM'));
-      expect(axios[verb]).not.toHaveBeenCalled();
+      expect(dialog.message).toContain(skippedVMsText(skipped));
+      expect(axios.post).not.toHaveBeenCalled();
 
       dialog.onConfirm();
-      expect(ctx.isWaiting).toBe(true);
-      expect(axios[verb].mock.calls.map(([url]) => url)).toEqual(
-        allowed.map((name) => `experiments/demo/vms/${name}${path}`),
-      );
+      await flush();
       await flush();
       expect(ctx.isWaiting).toBe(false);
 
-      // each VM is shown as the server returned it
+      // one request for all of them, not one each
+      expect(axios.post.mock.calls).toEqual([
+        ['experiments/demo/vms/actions', { action, vms: allowed }, undefined],
+      ]);
+      // each VM is shown as the job left it
       expect(
         ctx.experiment.vms
           .filter((vm) => vm.state === 'ANSWERED')
           .map((vm) => vm.name),
       ).toEqual(allowed);
+      expect(toasts(ctx)).toEqual([
+        expect.objectContaining({
+          message: `${done} ${allowed.length} VMs`,
+          type: 'is-success',
+        }),
+      ]);
     },
   );
 
   it('kills the VMs the kill rule allows and takes them out of the table', async () => {
     const ctx = page({ experiment: { name: 'demo', vms: [...vms] } });
-    axios.delete.mockResolvedValue({ status: 204 });
-    const { allowed, skipped } = partitionVMsForAction('kill', selection, vms);
+    answerJob();
+    const { skipped } = partitionVMsForAction('kill', selection, vms);
 
     ctx.killVm(selection);
-    expect(lastAlert(ctx).message).toBe(skippedVMsText(skipped));
     const dialog = lastConfirm(ctx);
     expect(dialog).toMatchObject({
       title: 'Kill the VMs',
-      message:
-        'This will kill the VMs web, persistent, and db. You will not be ' +
-        'able to restore them until you restart the demo experiment!',
       confirmText: 'KILL THEM!',
     });
+    expect(dialog.message).toContain(
+      '<p>This will kill the VMs web, persistent, and db. You will not be ' +
+        'able to restore them until you restart the demo experiment!</p>',
+    );
+    expect(dialog.message).toContain(skippedVMsText(skipped));
 
     dialog.onConfirm();
-    expect(ctx.isWaiting).toBe(true);
-    expect(axios.delete.mock.calls.map(([url]) => url)).toEqual(
-      allowed.map((name) => `experiments/demo/vms/${name}`),
-    );
     await flush();
-    expect(ctx.isWaiting).toBe(false);
+    await flush();
+    expect(axios.post).toHaveBeenCalledWith(
+      'experiments/demo/vms/actions',
+      { action: 'kill', vms: ['web', 'persistent', 'db'] },
+      undefined,
+    );
     expect(ctx.experiment.vms.map((vm) => vm.name)).toEqual(['off', 'held']);
   });
 
-  it('says which VMs it skips and why, and names the rest', () => {
+  it('says how a partly failed job went, and retries the VMs worth it', async () => {
+    const ctx = page({
+      experiment: { name: 'demo', vms: structuredClone(vms) },
+    });
+    answerJob({
+      persistent: {
+        status: 'failed',
+        error: 'vm persistent is locked',
+        retryable: true,
+      },
+      db: { status: 'failed', error: 'minimega says no' },
+    });
+
+    ctx.restartVm(['web', 'persistent', 'db']);
+    lastConfirm(ctx).onConfirm();
+    await flush();
+    await flush();
+
+    expect(toasts(ctx)).toEqual([]);
+    expect(notices.open).toHaveBeenCalledTimes(1);
+    const { message, indefinite } = notices.open.mock.lastCall[0];
+    expect(indefinite).toBe(true);
+    const text = JSON.stringify(message.children, (_, v) =>
+      typeof v === 'function' ? undefined : v,
+    );
+    expect(text).toContain('Restarted 1 of 3 VMs; 2 failed');
+    expect(text).toContain('persistent: vm persistent is locked');
+    expect(text).toContain('Retry failed (1)');
+
+    // the retry starts a job for the retryable VM alone
+    const retry = message.children.find((child) => child.type === 'button');
+    retry.props.onClick();
+    await flush();
+    await flush();
+    expect(axios.post.mock.lastCall).toEqual([
+      'experiments/demo/vms/actions',
+      { action: 'restart', vms: ['persistent'] },
+      undefined,
+    ]);
+  });
+
+  it('says which VMs it skips and why, in the one dialog', () => {
     const ctx = page({ experiment: { name: 'demo', vms } });
     ctx.shutdownVm(selection);
-    expect(lastAlert(ctx).message).toBe(
-      'The VMs off and held are not running. ' +
-        'The gone VM is not shown in the table.',
-    );
     expect(lastConfirm(ctx).message).toBe(
-      'This will shut down the VMs web, persistent, and db.',
+      '<p>This will shut down the VMs web, persistent, and db.</p>' +
+        '<p class="mt-3 has-text-grey-dark">The VMs off and held are not ' +
+        'running. The gone VM is not shown in the table.</p>',
     );
 
     ctx.restartVm(selection);
-    expect(lastAlert(ctx).message).toBe(
+    expect(lastConfirm(ctx).message).toContain(
       'The held VM is paused and must be resumed first. ' +
         'The gone VM is not shown in the table.',
     );
+    expect(ctx.$buefy.dialog.alert).not.toHaveBeenCalled();
   });
 
   it('words its question for one VM', () => {
@@ -676,7 +740,7 @@ describe('actions on VMs', () => {
     ctx.shutdownVm('web');
     expect(lastConfirm(ctx)).toMatchObject({
       title: 'Shut Down the VM',
-      message: 'This will shut down the web VM.',
+      message: '<p>This will shut down the web VM.</p>',
     });
     ctx.resetVmState('web');
     expect(lastConfirm(ctx).title).toBe("Reset the VM's Disk");
@@ -684,17 +748,32 @@ describe('actions on VMs', () => {
     expect(lastConfirm(ctx)).toMatchObject({
       title: 'Kill the VM',
       message:
-        'This will kill the web VM. You will not be able to restore it ' +
-        'until you restart the demo experiment!',
+        '<p>This will kill the web VM. You will not be able to restore it ' +
+        'until you restart the demo experiment!</p>',
       confirmText: 'KILL IT!',
     });
     expect(ctx.$buefy.dialog.alert).not.toHaveBeenCalled();
   });
 
-  it('reports a failed request and stops waiting', async () => {
+  it('waits while the job runs, not just until the first VM is done', async () => {
+    // the job store's poll while it waits
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const ctx = page({ experiment: { name: 'demo', vms } });
+    axios.post.mockResolvedValue({
+      data: { id: 'j1', status: 'running', items: [], revision: 1 },
+    });
+
+    ctx.restartVm(['web', 'db']);
+    lastConfirm(ctx).onConfirm();
+    await flush();
+    expect(ctx.isWaiting).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('reports a job that could not start and stops waiting', async () => {
     const ctx = page({ experiment: { name: 'demo', vms } });
     const err = new Error('boom');
-    axios.get.mockRejectedValue(err);
+    axios.post.mockRejectedValue(err);
 
     ctx.restartVm('web');
     lastConfirm(ctx).onConfirm();
@@ -703,9 +782,14 @@ describe('actions on VMs', () => {
     expect(ctx.isWaiting).toBe(false);
   });
 
-  it('creates snapshots of the VMs the snapshot rule allows', () => {
+  it('creates snapshots of the VMs the snapshot rule allows, and sums up how it went', async () => {
     const ctx = page({ experiment: { name: 'demo', vms } });
-    axios.post.mockResolvedValue({});
+    axios.post.mockResolvedValueOnce({});
+    axios.post.mockRejectedValueOnce(
+      Object.assign(new Error('500'), {
+        response: { status: 500, data: 'disk full' },
+      }),
+    );
     const { allowed, skipped } = partitionVMsForAction(
       'snapshot',
       selection,
@@ -713,22 +797,64 @@ describe('actions on VMs', () => {
     );
 
     ctx.captureSnapshot(selection);
-    expect(lastAlert(ctx).message).toBe(skippedVMsText(skipped));
-    expect(lastConfirm(ctx)).toMatchObject({
-      title: 'Create VM Snapshots',
-      message: 'This will create snapshots of the VMs web and db.',
-    });
+    await flush();
+    expect(ctx.$buefy.dialog.alert).not.toHaveBeenCalled();
+    expect(lastConfirm(ctx)).toMatchObject({ title: 'Create VM Snapshots' });
+    expect(lastConfirm(ctx).message).toContain(
+      'This will create snapshots of the VMs web and db.',
+    );
+    expect(lastConfirm(ctx).message).toContain(skippedVMsText(skipped));
 
     lastConfirm(ctx).onConfirm();
+    await flush();
     expect(axios.post.mock.calls.map(([url]) => url)).toEqual(
       allowed.map((name) => `experiments/demo/vms/${name}/snapshots`),
     );
+    await flush();
+    // one summary, not a notification for each failure
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(notices.open).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.stringify(notices.open.mock.lastCall[0].message.children),
+    ).toContain('Snapshotted 1 of 2 VMs; 1 failed');
 
     ctx.captureSnapshot('web');
+    await flush();
     expect(lastConfirm(ctx)).toMatchObject({
       title: 'Create a VM Snapshot',
-      message: 'This will create a snapshot of the web VM.',
+      message: '<p>This will create a snapshot of the web VM.</p>',
     });
+  });
+
+  it('creates memory snapshots in one go, summing up how they went', async () => {
+    const ctx = page({ experiment: { name: 'demo', vms } });
+    axios.post.mockResolvedValue({});
+    ctx.memorySnapshotModal = {
+      active: true,
+      vm: [
+        { name: 'web', filename: 'web_1' },
+        { name: 'db', filename: 'db_1' },
+      ],
+    };
+
+    ctx.createMemorySnapshot(ctx.memorySnapshotModal.vm);
+    expect(ctx.memorySnapshotModal).toEqual({ active: false, vm: [] });
+    await flush();
+    expect(axios.post.mock.calls).toEqual([
+      [
+        'experiments/demo/vms/web/memorySnapshot',
+        { filename: 'web_1.elf' },
+        { timeout: 0 },
+      ],
+      [
+        'experiments/demo/vms/db/memorySnapshot',
+        { filename: 'db_1.elf' },
+        { timeout: 0 },
+      ],
+    ]);
+    expect(toasts(ctx)).toEqual([
+      expect.objectContaining({ message: 'Created memory snapshots of 2 VMs' }),
+    ]);
   });
 
   it("suggests each backing image's name from the file name of the VM's disk", () => {

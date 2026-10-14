@@ -170,3 +170,42 @@ describe('experiment messages', () => {
     expect(ctx.experiments).toEqual([]);
   });
 });
+
+describe('the experiment button', () => {
+  it.each([
+    [true, 'Stop the Experiment', 'Stop', 'stop'],
+    [false, 'Start the Experiment', 'Start', 'start'],
+  ])(
+    'asks once, naming the experiment escaped, then sends the request (running: %s)',
+    async (running, title, confirmText, path) => {
+      axios.post.mockResolvedValue({});
+      const exp = { ...row(), name: 'a<b>', running };
+      const ctx = page([exp]);
+
+      const done = ctx.expControl(exp);
+      const dialog = ctx.$buefy.dialog.confirm.mock.lastCall[0];
+      expect(dialog).toMatchObject({ title, confirmText });
+      expect(dialog.message).toBe(
+        `<p>This will ${path} the a&lt;b&gt; experiment.</p>`,
+      );
+      dialog.onConfirm();
+      await done;
+      expect(axios.post).toHaveBeenCalledWith(`experiments/a<b>/${path}`);
+    },
+  );
+
+  it('sends nothing when canceled, and reports a refused request', async () => {
+    const ctx = page([row()]);
+    let done = ctx.expControl(row());
+    ctx.$buefy.dialog.confirm.mock.lastCall[0].onCancel();
+    await done;
+    expect(axios.post).not.toHaveBeenCalled();
+
+    const err = new Error('forbidden');
+    axios.post.mockRejectedValue(err);
+    done = ctx.expControl(row());
+    ctx.$buefy.dialog.confirm.mock.lastCall[0].onConfirm();
+    await done;
+    expect(notify.error).toHaveBeenCalledWith(err);
+  });
+});

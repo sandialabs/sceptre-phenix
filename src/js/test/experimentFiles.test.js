@@ -1,9 +1,10 @@
 // The experiment pages' Files tab (ExperimentFilesTab.vue): listing, opening,
 // selecting, downloading and deleting the experiment's files, and how the
 // running and stopped experiment pages hold it.
+import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notify, rbac, resetMocks, saver, store } =
+const { axios, modules, notices, notify, rbac, resetMocks, store } =
   await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
@@ -12,7 +13,7 @@ vi.mock('@/store.js', modules.store);
 // the experiment pages around the tab
 vi.mock('@/utils/websocket', modules.websocket);
 vi.mock('@/utils/pageLoader.js', modules.pageLoader);
-vi.mock('file-saver', modules.fileSaver);
+vi.mock('@/utils/notify.js', modules.notify);
 
 import { h } from 'vue';
 
@@ -22,7 +23,8 @@ import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
 import { deferredGets, flush } from './helpers/async.js';
 import { dialogs, toasts } from './helpers/buefy.js';
-import { httpError } from './helpers/fixtures.js';
+import { httpError, wsMsg } from './helpers/fixtures.js';
+import { useJobStore } from '@/utils/jobs.js';
 import { pageContext } from './helpers/page.js';
 import {
   allowAll,
@@ -90,7 +92,10 @@ const ROLES = [
   ['a role that may do nothing', denyAll, false, false, false],
 ];
 
-beforeEach(() => resetMocks());
+beforeEach(() => {
+  resetMocks();
+  setActivePinia(createPinia());
+});
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -520,6 +525,10 @@ describe('deleting the selected files', () => {
     expect(dialogs(tab)).toHaveLength(0);
   });
 
+  // the text of the outcome notification last opened
+  const outcomeText = () =>
+    JSON.stringify(notices.open.mock.lastCall[0].message.children);
+
   it('reports the files it could not delete, which stay selected', async () => {
     axios.post.mockResolvedValue({
       data: {
@@ -535,17 +544,16 @@ describe('deleting the selected files', () => {
 
     await tab.deleteSelectedFiles();
 
-    expect(notify.show).toHaveBeenCalledWith(
-      'Deleted 1 of 3 files; 2 could not be deleted',
-      'c.pcap: capture already exists: c.pcap\n' +
-        'scorch/run-0/b.json: file not found',
-    );
+    expect(notices.open).toHaveBeenCalledTimes(1);
+    expect(outcomeText()).toContain('Deleted 1 of 3 files; 2 failed');
+    expect(outcomeText()).toContain('c.pcap: capture already exists: c.pcap');
+    expect(outcomeText()).toContain('scorch/run-0/b.json: file not found');
     expect(tab.selectedFiles).toEqual(['c.pcap', 'scorch/run-0/b.json']);
     expect(tab.files).toHaveLength(2);
     expect(toasts(tab)).toHaveLength(0);
   });
 
-  it('names the first ten failures and counts the rest', async () => {
+  it('names the first eight failures and counts the rest', async () => {
     const paths = Array.from({ length: 12 }, (_, i) => `f${i}.log`);
     axios.post.mockResolvedValue({
       data: {
@@ -558,10 +566,9 @@ describe('deleting the selected files', () => {
 
     await tab.deleteSelectedFiles();
 
-    const lines = notify.show.mock.calls[0][1].split('\n');
-    expect(lines).toHaveLength(11);
-    expect(lines[9]).toBe('f9.log: busy');
-    expect(lines[10]).toBe('and 2 more');
+    expect(outcomeText()).toContain('f7.log: busy');
+    expect(outcomeText()).not.toContain('f8.log: busy');
+    expect(outcomeText()).toContain('and 4 more');
   });
 
   it('shows the error and relists when the request fails', async () => {
@@ -580,28 +587,100 @@ describe('deleting the selected files', () => {
 });
 
 describe('downloading the selected files', () => {
-  it('saves the zip the server streams, spinning until done', async () => {
-    const zip = new Blob(['PK']);
-    axios.post.mockResolvedValue({ data: zip });
+  // the server's archive job for the paths, as it ends
+  const archiveJob = (fields = {}) => ({
+    id: 'j1',
+    kind: 'files.archive',
+    experiment: 'exp1',
+    status: 'succeeded',
+    items: [
+      { name: 'a.log', status: 'succeeded' },
+      { name: 'c.pcap', status: 'succeeded' },
+    ],
+    artifact: { name: 'exp1-files.zip', size: 10 },
+    revision: 3,
+    ...fields,
+  });
+
+  it('builds the archive in a job and downloads it when done', async () => {
+    vi.stubGlobal('window', { open: vi.fn() });
+    axios.post.mockResolvedValue({
+      data: archiveJob({ status: 'running', artifact: undefined, revision: 1 }),
+    });
+    axios.get.mockResolvedValue({ data: archiveJob() });
     const tab = listing();
     tab.selectedFiles = ['a.log', 'c.pcap'];
 
     const pending = tab.downloadSelectedFiles();
     expect(tab.filesDownloading).toBe(true);
     expect(tab.filesBusy).toBe(true);
+    await flush();
+    expect(axios.post).toHaveBeenCalledWith(
+      'experiments/exp1/files/archive',
+      { paths: ['a.log', 'c.pcap'] },
+      undefined,
+    );
+    expect(tab.archiveJob.status).toBe('running');
+
+    // the job's websocket update says it finished
+    useJobStore().apply(wsMsg('job', 'j1', 'update', archiveJob()));
     await pending;
 
-    expect(axios.post).toHaveBeenCalledWith(
-      'experiments/exp1/files/download',
-      { paths: ['a.log', 'c.pcap'] },
-      { responseType: 'blob' },
+    expect(window.open).toHaveBeenCalledWith(
+      '/api/v1/jobs/j1/artifact?token=t',
+      '_blank',
     );
-    expect(saver.saveAs).toHaveBeenCalledWith(zip, 'exp1-files.zip');
     expect(tab.filesDownloading).toBe(false);
   });
 
-  it('shows the server error text, which arrives as a blob', async () => {
-    const err = httpError(413, new Blob(['download too large']));
+  it('leaves an incomplete archive for an explicit click', async () => {
+    vi.stubGlobal('window', { open: vi.fn() });
+    const incomplete = archiveJob({
+      status: 'partial',
+      artifact: {
+        name: 'exp1-files-incomplete.zip',
+        size: 5,
+        incomplete: true,
+      },
+    });
+    axios.post.mockResolvedValue({ data: incomplete });
+    axios.get.mockResolvedValue({ data: incomplete });
+    const tab = listing();
+    tab.selectedFiles = ['a.log', 'c.pcap'];
+
+    await tab.downloadSelectedFiles();
+
+    expect(window.open).not.toHaveBeenCalled();
+    expect(tab.archiveJob.artifact.incomplete).toBe(true);
+  });
+
+  it('sums up an archive that could not be built, and one left behind downloads nothing', async () => {
+    vi.stubGlobal('window', { open: vi.fn() });
+    const failed = archiveJob({
+      status: 'failed',
+      artifact: undefined,
+      items: [{ name: 'a.log', status: 'failed', error: 'not found' }],
+    });
+    axios.post.mockResolvedValue({ data: failed });
+    axios.get.mockResolvedValue({ data: failed });
+    const tab = listing();
+    tab.selectedFiles = ['a.log'];
+
+    await tab.downloadSelectedFiles();
+    expect(
+      JSON.stringify(notices.open.mock.lastCall[0].message.children),
+    ).toContain('a.log: not found');
+
+    // a tab the user left opens nothing
+    axios.post.mockResolvedValue({ data: archiveJob() });
+    axios.get.mockResolvedValue({ data: archiveJob() });
+    tab.unmounted = true;
+    await tab.downloadSelectedFiles();
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it('shows a request it cannot start', async () => {
+    const err = httpError(413, 'download too large');
     axios.post.mockRejectedValue(err);
     const tab = listing();
     tab.selectedFiles = ['a.log'];
@@ -609,8 +688,6 @@ describe('downloading the selected files', () => {
     await tab.downloadSelectedFiles();
 
     expect(notify.error).toHaveBeenCalledWith(err);
-    expect(err.response.data).toBe('download too large');
-    expect(saver.saveAs).not.toHaveBeenCalled();
     expect(tab.filesDownloading).toBe(false);
   });
 
@@ -746,7 +823,7 @@ describe('rendering', () => {
     },
   );
 
-  it('spins the toolbar button at work and holds the others', async () => {
+  it('spins the delete button at work and holds the others', async () => {
     const toolbar = async (props) =>
       (await renderSSR(FileSelectionActions, { count: 2, ...props }))
         .match(/<button[^>]*>/g)
@@ -759,8 +836,9 @@ describe('rendering', () => {
     const can = { canDownload: true, canDelete: true };
 
     expect(await toolbar(can)).toEqual([idle, idle, idle]);
+    // the archive job's progress shows instead of a spinner
     expect(await toolbar({ ...can, downloading: true })).toEqual([
-      { loading: true, disabled: false },
+      held,
       held,
       held,
     ]);
@@ -771,6 +849,25 @@ describe('rendering', () => {
     ]);
     // only the clear button without permission to download or delete
     expect(await toolbar({})).toEqual([idle]);
+  });
+
+  it("shows the archive job's progress", async () => {
+    const html = await renderSSR(FileSelectionActions, {
+      count: 2,
+      canDownload: true,
+      downloading: true,
+      archive: {
+        id: 'j1',
+        title: 'Archive 2 files of exp1',
+        kind: 'files.archive',
+        status: 'running',
+        cancelable: true,
+        progress: { done: 1, total: 2, bytes: 5, bytesTotal: 10 },
+        items: [],
+      },
+    });
+    expect(textOf(html)).toContain('1 of 2 files done');
+    expect(html).toContain('aria-label="Cancel Archive 2 files of exp1"');
   });
 });
 

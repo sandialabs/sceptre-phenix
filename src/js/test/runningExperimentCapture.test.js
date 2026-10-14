@@ -4,9 +4,10 @@
 // chain and its CD-ROM's ISO image.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notify, rbac, resetMocks } = await vi.hoisted(
+const { axios, modules, notices, notify, rbac, resetMocks } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
 );
+vi.mock('@/utils/notify.js', modules.notify);
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
@@ -115,7 +116,7 @@ describe('capturing all interfaces', () => {
     );
   });
 
-  it('starts several with plural wording and reports each failure', async () => {
+  it('starts several with plural wording and sums up how they went', async () => {
     const ctx = page();
     axios.get.mockResolvedValue({ data: { captures: [] } });
     const err = new Error('capture already exists');
@@ -131,8 +132,12 @@ describe('capturing all interfaces', () => {
     expect(axios.post.mock.calls.map(([, body]) => body.interface)).toEqual([
       0, 2,
     ]);
-    expect(notify.error).toHaveBeenCalledTimes(1);
-    expect(notify.error).toHaveBeenCalledWith(err);
+    // one summary, naming the failure
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(notices.open).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.stringify(notices.open.mock.lastCall[0].message.children),
+    ).toContain('interface 2: capture already exists');
     expect(ctx.captureAllPending.web).toBeUndefined();
   });
 

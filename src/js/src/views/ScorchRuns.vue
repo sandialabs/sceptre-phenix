@@ -163,6 +163,7 @@
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import axiosInstance from '@/utils/axios.js';
   import { showError, useErrorNotification } from '@/utils/errorNotif';
+  import { notifyOutcome, outcomeFromSettled } from '@/utils/operations.js';
   import { createPageLoader } from '@/utils/pageLoader.js';
   import { scorchRunsKey } from '@/utils/pageData.js';
   import { usePhenixStore } from '@/store.js';
@@ -342,6 +343,15 @@
       // forgets the statuses of the run's components; the server sends the
       // cleared pipeline for each loop over the websocket
       async clearRun(exp, runID) {
+        try {
+          await this.sendClear(exp, runID);
+        } catch (err) {
+          useErrorNotification(err);
+        }
+      },
+
+      // asks the server to clear the run, rejecting with its error
+      async sendClear(exp, runID) {
         const run = this.runs?.[runID];
         if (!run || !this.canClear(run)) return;
 
@@ -351,16 +361,30 @@
             `experiments/${exp}/scorch/pipelines/${runID}/clear`,
           );
           if (run.loop > 0) this.loopView(exp, runID, 0);
-        } catch (err) {
-          useErrorNotification(err);
         } finally {
           run.clearing = false;
         }
       },
 
-      clearAll() {
-        this.runs.forEach((run, id) => {
-          if (this.canClear(run)) this.clearRun(this.expName, id);
+      // clears every run that can be, then says in one summary how it went
+      async clearAll(ids) {
+        const exp = this.expName;
+        const runIDs =
+          ids ??
+          this.runs
+            .map((run, id) => (this.canClear(run) ? id : null))
+            .filter((id) => id !== null);
+        const results = await Promise.allSettled(
+          runIDs.map((id) => this.sendClear(exp, id)),
+        );
+        notifyOutcome(this.$buefy, {
+          verbPast: 'Cleared',
+          noun: 'run',
+          items: outcomeFromSettled(
+            runIDs.map((id) => `${id}`),
+            results,
+          ),
+          onRetry: (retry) => this.clearAll(retry.map(Number)),
         });
       },
 

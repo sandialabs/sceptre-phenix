@@ -38,6 +38,10 @@ export const axios = {
 // useErrorNotification and showError
 export const notify = { error: vi.fn(), show: vi.fn() };
 
+// the lasting notifications opened outside a component (utils/notify.js),
+// such as the outcome of an operation that did not fully succeed
+export const notices = { open: vi.fn() };
+
 // what usePhenixStore() returns after resetMocks()
 export const STORE_DEFAULTS = {
   token: 't',
@@ -80,6 +84,10 @@ export const modules = {
     sendWsMsg: (msg) => ws.sent.push(msg),
   }),
   fileSaver: () => ({ default: saver }),
+  notify: () => ({
+    openNotification: (...args) => notices.open(...args),
+    setNotificationApp: () => {},
+  }),
   // a component that cannot run outside a browser, such as MiniTerminal.vue
   stub: () => ({ default: {} }),
   // every page gets a loader that loads nothing
@@ -95,6 +103,7 @@ export function resetMocks({ store: fields = STORE_DEFAULTS } = {}) {
   for (const fn of [
     ...Object.values(axios),
     ...Object.values(notify),
+    notices.open,
     saver.saveAs,
   ]) {
     fn.mockReset();

@@ -3,8 +3,9 @@
 // until the server reports over the websocket that a run started or stopped.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, modules, notify, rbac, resetMocks, switchable } =
+const { axios, modules, notices, notify, rbac, resetMocks, switchable } =
   await vi.hoisted(() => import('./helpers/mocks.js'));
+vi.mock('@/utils/notify.js', modules.notify);
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
@@ -279,11 +280,49 @@ describe('Clear', () => {
       { pipeline: nodes('failure') },
     ]);
 
-    ctx.clearAll();
+    await ctx.clearAll();
     expect(sent()).toEqual([
       `POST ${url(0, 'clear')}`,
       `POST ${url(2, 'clear')}`,
     ]);
+    expect(ctx.$buefy.toast.open).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Cleared 2 runs' }),
+    );
+  });
+
+  it('all says in one summary which runs it could not clear, and retries them', async () => {
+    axios.post
+      .mockRejectedValueOnce(
+        Object.assign(new Error('503'), {
+          response: { status: 503, data: 'busy' },
+        }),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error('403'), {
+          response: { status: 403, data: 'forbidden' },
+        }),
+      );
+    const ctx = await open([
+      { pipeline: nodes('success') },
+      { pipeline: nodes('failure') },
+    ]);
+
+    await ctx.clearAll();
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(notices.open).toHaveBeenCalledTimes(1);
+    const { message } = notices.open.mock.lastCall[0];
+    const text = JSON.stringify(message.children, (_, v) =>
+      typeof v === 'function' ? undefined : v,
+    );
+    expect(text).toContain('Cleared 0 of 2 runs; 2 failed');
+    expect(text).toContain('0: busy');
+    expect(text).toContain('1: forbidden');
+
+    axios.post.mockResolvedValue({});
+    await message.children
+      .find((child) => child.type === 'button')
+      .props.onClick();
+    expect(sent().at(-1)).toBe(`POST ${url(0, 'clear')}`);
   });
 
   it('reports a clear the server refuses', async () => {

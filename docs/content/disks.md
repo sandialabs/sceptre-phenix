@@ -201,7 +201,11 @@ and downloads the file itself, so those work on an existing image of any name.
 
 ### Cloning in the background
 
-A clone copies the whole file, which can take minutes for a large image.
+A clone copies the whole file, which can take minutes for a large image, so
+`Clone` runs it in the background: the dialog closes as soon as the server has
+started the copy, the [jobs menu](web-ui.md#background-jobs-menu) and the
+image's details show its progress and can cancel it, and the list reloads when
+it ends.
 `POST /api/v1/disks/clone/jobs?disk=&new=` makes the same checks as
 `POST /api/v1/disks/clone`, then answers at once with a
 [background job](jobs.md) that copies the image, counting the bytes copied, and

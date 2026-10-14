@@ -511,8 +511,15 @@ each row, and one in the heading that checks or clears every file the table is
 showing. Checking a file puts a toolbar above the table, holding whichever of
 these your role allows:
 
-* `Download (N)` downloads the checked files as one
-  `<experiment name>-files.zip` archive.
+* `Download (N)` has the server build the checked files into one
+  `<experiment name>-files.zip` archive in a [background job](jobs.md), whose
+  progress shows in the toolbar and the
+  [jobs menu](web-ui.md#background-jobs-menu), and downloads it once built. A
+  file the server cannot fetch is left out: the archive is then named
+  `<experiment name>-files-incomplete.zip`, lists each missing file and why in
+  its `MISSING.txt`, and downloads only when you click
+  `Download incomplete archive` and confirm. If you leave the page meanwhile,
+  download the archive from the jobs menu, within the hour.
 * `Delete (N)` asks to confirm once for all of them, with `Delete N Files` as
   the confirm button, then deletes them together.
 * The last button clears the selection.
@@ -523,15 +530,15 @@ Only files you can still see stay checked: searching, changing the category, or
 moving to another page drops the rest of the selection.
 
 When some of the files cannot be deleted, phēnix deletes the ones it can and
-reports the rest, naming up to ten of them with the reason and counting any
-beyond that. Those files stay checked, so you can try again or download them
+reports the rest in one summary, naming up to eight of them with the reason and
+counting any beyond that. Those files stay checked, so you can try again or download them
 instead.
 
 !!! note
     One zip download holds at most 500 files and 2 GiB in total. A larger one is
     refused before any of it is sent; through the [API](api.md) that is a `413`.
-    A zip is built as it is sent, so an interrupted zip download cannot be
-    resumed: download very large files one at a time instead.
+    The finished archive downloads like a single file, so an interrupted
+    download of it can be resumed.
 
 Through the API, `POST /api/v1/experiments/<name>/files/archive` with the same
 `{"paths": [...]}` body builds the archive in a [background job](jobs.md)
