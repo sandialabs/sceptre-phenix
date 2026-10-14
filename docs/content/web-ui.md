@@ -85,6 +85,26 @@ A page's load finishes even if you leave before it comes back, for up to two
 minutes, so the data is ready when you return; a request nothing is waiting on
 any more is canceled instead.
 
+## Background Jobs Menu
+
+Next to the refresh status, a button with a checklist icon opens the
+[background jobs](jobs.md) you started, such as bulk VM actions, file archives
+and disk clones, along with the jobs of other users your role may see. A badge
+on the button counts the jobs still running, and its name says how many, as in
+`Background jobs (2 jobs running)`.
+
+The menu lists every running or queued job and the ten most recent finished
+ones. Each shows its title, its status in words (`Running`, `Partly succeeded`,
+`Failed`, ...), a progress bar while it runs, and a line saying how far it got,
+which screen readers announce as it changes. A running job you can cancel has a
+`Cancel` button, a finished file archive has a `Download` button
+(`Download incomplete archive` when some files could not be added, which asks
+before downloading), and a finished job has a `Dismiss` button that removes it.
+A link under each job opens its experiment.
+
+Jobs keep running when you leave the page that started them, reload, or lose
+the connection; the menu catches up when the page reconnects.
+
 ## Tables
 
 The `Paginate` toggle sits above its table, on the right, and appears only
