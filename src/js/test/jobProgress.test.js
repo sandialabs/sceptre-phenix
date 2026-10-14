@@ -13,6 +13,7 @@ vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 
 import JobProgress from '@/components/jobs/JobProgress.vue';
 import { useJobStore } from '@/utils/jobs.js';
+import { flush } from './helpers/async.js';
 import { lastConfirm } from './helpers/buefy.js';
 import { httpError } from './helpers/fixtures.js';
 import { pageContext } from './helpers/page.js';
@@ -113,17 +114,54 @@ describe('JobProgress', () => {
     expect(liveLine(html)).toBe('1 of 2 files succeeded, 1 failed');
     expect(textOf(html)).toContain('b.log : not found');
 
-    vi.stubGlobal('window', { open: vi.fn() });
+    const download = vi
+      .spyOn(useJobStore(), 'downloadArtifact')
+      .mockImplementation(() => {});
     const ctx = pageContext(JobProgress, { fields: { job: partial } });
     ctx.download();
-    expect(window.open).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
     expect(lastConfirm(ctx).message).toContain('MISSING.txt');
     lastConfirm(ctx).onConfirm();
-    expect(window.open).toHaveBeenCalledWith(
-      '/api/v1/jobs/j1/artifact?token=t',
-      '_blank',
+    expect(download).toHaveBeenCalledWith(partial);
+  });
+
+  it("gives a lone item's reason for failing", async () => {
+    const failed = job({
+      kind: 'disk.clone',
+      status: 'failed',
+      error: 'every item failed',
+      items: [{ name: 'a.qc2', status: 'failed', error: 'no space left' }],
+      progress: { done: 1, total: 1 },
+    });
+    const html = await render({ job: failed });
+    expect(liveLine(html)).toBe(
+      '0 of 1 disk image succeeded, 1 failed, every item failed, no space left',
     );
-    vi.unstubAllGlobals();
+    expect(textOf(html)).toContain('a.qc2 : no space left');
+
+    const menu = await render({ job: failed, compact: true });
+    expect(liveLine(menu)).toMatch(/no space left$/);
+  });
+
+  it('counts only done items, and reads the whole job, when a copy leaves items out', async () => {
+    const shortened = job({
+      kind: 'vms.action',
+      status: 'succeeded',
+      items: [{ name: 'a', status: 'succeeded' }],
+      itemsOmitted: 999,
+      progress: { done: 1000, total: 1000 },
+      revision: 4,
+    });
+    expect(liveLine(await render({ job: shortened }))).toBe(
+      '1000 of 1000 VMs done',
+    );
+
+    axios.get.mockResolvedValue({ data: { ...shortened, itemsOmitted: 0 } });
+    const ctx = pageContext(JobProgress, { fields: { job: shortened } });
+    JobProgress.mounted.call(ctx);
+    await flush();
+    expect(axios.get).toHaveBeenCalledWith('jobs/j1');
+    expect(useJobStore().jobs.j1.itemsOmitted).toBe(0);
   });
 
   it('cancels and dismisses through the server, and reports a failure', async () => {
