@@ -3979,8 +3979,8 @@ paths:
       summary: List background jobs
       description: >-
         The requesting user's jobs, and those of other users the role may list
-        (`jobs` `list` on their experiment), newest first. Also served on the
-        unix socket.
+        (`jobs` `list` on their experiment), newest first, without their items'
+        `result`, which GET /jobs/{id} returns. Also served on the unix socket.
       operationId: getJobs
       parameters:
         - name: experiment

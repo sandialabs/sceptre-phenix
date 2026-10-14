@@ -40,7 +40,7 @@ func useJobsIn(t *testing.T, dir string) *job.Registry {
 
 // startTestJob starts a job of owner on exp that runs until release closes,
 // or at once when release is nil, writing an artifact holding content when
-// content is not empty.
+// content is not empty. Its one item's result is {"name": "a"}.
 func startTestJob(t *testing.T, r *job.Registry, owner, exp string, release chan struct{}, content string) job.Job {
 	t.Helper()
 
@@ -55,7 +55,7 @@ func startTestJob(t *testing.T, r *job.Registry, owner, exp string, release chan
 				}
 			}
 
-			run.ItemSucceeded("a", nil)
+			run.ItemSucceeded("a", map[string]string{"name": "a"})
 
 			if content == "" {
 				return nil
@@ -100,7 +100,8 @@ func waitJob(t *testing.T, r *job.Registry, id string) job.Job {
 	return job.Job{}
 }
 
-// listedJobs returns the IDs GET /jobs lists.
+// listedJobs returns the IDs GET /jobs lists, which leaves out the items'
+// results.
 func listedJobs(t *testing.T, url string) []string {
 	t.Helper()
 
@@ -120,6 +121,12 @@ func listedJobs(t *testing.T, url string) []string {
 	ids := make([]string, 0, len(body.Jobs))
 	for _, j := range body.Jobs {
 		ids = append(ids, j.ID)
+
+		for _, item := range j.Items {
+			if item.Result != nil {
+				t.Errorf("GET /jobs: job %s item %s has result %s", j.ID, item.Name, item.Result)
+			}
+		}
 	}
 
 	return ids
@@ -190,6 +197,18 @@ func TestJobVisibility(t *testing.T) {
 		if resp := do(t, http.MethodGet, url, ""); resp.StatusCode != tc.want {
 			t.Errorf("%s: GET %s = %d, want %d", name, url, resp.StatusCode, tc.want)
 		}
+	}
+
+	// one job, unlike the list, has its items' results
+	resp := do(t, http.MethodGet, alice.URL+"/api/v1/jobs/"+exp1.ID, "")
+
+	var got job.Job
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got.Items) != 1 || string(got.Items[0].Result) != `{"name":"a"}` {
+		t.Errorf("GET /jobs/%s items = %+v, want a's result", exp1.ID, got.Items)
 	}
 }
 

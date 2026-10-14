@@ -135,7 +135,7 @@ each command fails with `phenix ui is not running (no socket at ...)`.
 
 | Route | Does |
 |---|---|
-| `GET /api/v1/jobs` | lists your jobs, and the ones you may list, newest first; `?experiment=`, `?kind=` and `?active=true` filter it |
+| `GET /api/v1/jobs` | lists your jobs, and the ones you may list, newest first, without their items' results; `?experiment=`, `?kind=` and `?active=true` filter it |
 | `GET /api/v1/jobs/{id}` | returns one job, with every item and its result |
 | `POST /api/v1/jobs/{id}/cancel` | cancels it: `202`, or `409` once it finished or when it cannot be canceled |
 | `DELETE /api/v1/jobs/{id}` | dismisses a finished job and deletes its artifact: `204`, or `409` while it runs |

@@ -25,7 +25,7 @@ Code: `src/go/api/job` (registry), `src/go/web/jobs.go` (routes).
 
 | Route | Answers |
 |---|---|
-| `GET /jobs?experiment=&kind=&active=true` | `{"jobs": [...]}`, newest first |
+| `GET /jobs?experiment=&kind=&active=true` | `{"jobs": [...]}`, newest first, without item `result`s |
 | `GET /jobs/{id}` | the job, every item with its result |
 | `POST /jobs/{id}/cancel` | `202` + job (`cancelRequested`); `409` finished or not cancelable |
 | `DELETE /jobs/{id}` | `204`; `409` while queued or running |

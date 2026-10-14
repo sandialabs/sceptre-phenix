@@ -169,7 +169,7 @@ func ownJob(w http.ResponseWriter, r *http.Request, may jobAccess) (job.Job, boo
 // GetJobs - GET /jobs?experiment=&kind=&active=.
 //
 // Lists the user's jobs, and those of other users the role may list, newest
-// first.
+// first, without their items' results, which GET /jobs/{id} returns.
 func GetJobs(w http.ResponseWriter, r *http.Request) {
 	var (
 		ctx   = r.Context()
@@ -191,6 +191,10 @@ func GetJobs(w http.ResponseWriter, r *http.Request) {
 
 	for _, j := range all {
 		if j.Owner == user || mayListJob(role, jobResourceName(j)) {
+			for i := range j.Items {
+				j.Items[i].Result = nil
+			}
+
 			visible = append(visible, j)
 		}
 	}
