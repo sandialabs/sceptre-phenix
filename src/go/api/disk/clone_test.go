@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // leftovers returns the names in dir other than the given ones.
@@ -164,7 +165,16 @@ func TestRemoveStalePartials(t *testing.T) {
 		writeFile(t, path, "x")
 	}
 
-	removed, err := RemoveStalePartials(dir)
+	// a clone started since keeps its file
+	running := filepath.Join(dir, ".new.qc2.partial-00112233445566ff")
+	writeFile(t, running, "x")
+
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(running, future, future); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := RemoveStalePartials(dir, time.Now().Add(time.Minute))
 	if err != nil || removed != 2 {
 		t.Fatalf("RemoveStalePartials = %d, %v; want 2", removed, err)
 	}
@@ -175,7 +185,8 @@ func TestRemoveStalePartials(t *testing.T) {
 		"ubuntu.qc2.partial-0123456789abcdef":     true,
 		".ubuntu.qc2.partial-0123":                true,
 		".hidden/.x.qc2.partial-0123456789abcdef": true,
-		"ubuntu.qc2": true,
+		".new.qc2.partial-00112233445566ff":       true,
+		"ubuntu.qc2":                              true,
 	} {
 		_, err := os.Stat(filepath.Join(dir, p))
 		if exists := err == nil; exists != want {
@@ -183,7 +194,7 @@ func TestRemoveStalePartials(t *testing.T) {
 		}
 	}
 
-	if n, err := RemoveStalePartials(filepath.Join(dir, "missing")); n != 0 || err != nil {
+	if n, err := RemoveStalePartials(filepath.Join(dir, "missing"), time.Now()); n != 0 || err != nil {
 		t.Errorf("a missing files directory: %d, %v", n, err)
 	}
 }

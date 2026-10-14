@@ -213,7 +213,7 @@ can be canceled. The copy is written to a hidden temporary file beside the new
 image (`.<new name>.partial-<random>`), which the disk list leaves out, and
 takes the new name only once it is complete. A canceled or failed clone deletes
 it, and when the server restarts mid-clone, it deletes what the clone left the
-next time it starts, so an interrupted clone never leaves an image that looks
+next time it starts (in minimega's files directory once minimega answers), so an interrupted clone never leaves an image that looks
 complete.
 
 The server makes the same checks, whatever sends the request, and the error
