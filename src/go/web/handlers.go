@@ -100,6 +100,9 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 	// when minimega was read for the VMs listed, and whether it answered
 	observed := freshness.Unobserved()
 
+	// some experiments could not be read, so the list is incomplete
+	observed.Stale = err != nil
+
 	for _, exp := range experiments {
 		if !role.Allowed("experiments", "list", exp.Metadata.Name) {
 			continue
