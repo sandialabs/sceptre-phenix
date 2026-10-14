@@ -38,9 +38,11 @@ export const vm = (fields = {}) => ({
 });
 
 // a message the server sends over the websocket
-export const wsMsg = (type, name, action, result) => ({
+export const wsMsg = (type, name, action, result, seq) => ({
   resource: { type, name, action },
   result,
+  // the server's sequence number, when the test orders messages by it
+  ...(seq === undefined ? {} : { seq }),
 });
 
 // the error axios rejects with when the server answers with `status`

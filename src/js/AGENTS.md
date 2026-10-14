@@ -43,6 +43,10 @@ The development server needs a backend on `localhost:3000`.
 - Use existing Pinia, router, Axios, Buefy, and component patterns.
 - Import Font Awesome icons individually in `src/main.js`; never import the
   entire icon set.
+- Page data caches, reuse windows, stale thresholds and the live updates that
+  invalidate a cached page are declared in `src/utils/freshness.js`; do not add
+  ad hoc caches. Order list data against websocket updates by the server's
+  `seq` (see `src/utils/liveRows.js`), never by the browser's clock.
 - UI changes must meet WCAG 2.2 AA accessibility guidelines; the Playwright
   routes smoke test enforces this with axe-core (see [e2e/README.md](e2e/README.md)).
 - Authentication is selected at build time with

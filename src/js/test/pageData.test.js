@@ -15,7 +15,10 @@ import {
   cachePage,
   clearPageCache,
   fetchIntoCache,
+  invalidatePages,
+  isInvalidated,
 } from '@/utils/pageCache.js';
+import { FreshnessMeta } from '@/utils/freshness.js';
 import {
   DEFAULT_LOG_WINDOW,
   HOST_LIST_REUSE_MS,
@@ -79,7 +82,7 @@ describe('the list pages', () => {
 
   it('asks the server to inspect every disk again on a rescan', async () => {
     serve({ 'disks?refresh=true': { disks: [] } });
-    await pageFetchers.disks(undefined, { rescan: true });
+    await pageFetchers.disks(undefined, undefined, { rescan: true });
     expect(urls()).toEqual(['disks?refresh=true']);
   });
 
@@ -217,6 +220,66 @@ describe('the shared lists', () => {
     expect(cachedPage('hosts').data).toEqual([
       { name: 'new', schedulable: true },
     ]);
+  });
+});
+
+describe('live updates of cached pages', () => {
+  const loadedAt = (seq) => Object.assign(new FreshnessMeta(), { seq });
+  const experimentMsg = (seq) => ({
+    resource: { type: 'experiment', name: 'a', action: 'stop' },
+    seq,
+  });
+
+  it('mark a cached page changed only by a message newer than its load', () => {
+    cachePage('experiments', [{ name: 'a' }], loadedAt(10));
+    cachePage('hosts', [], loadedAt(10));
+
+    invalidatePages(experimentMsg(9));
+    expect(isInvalidated(cachedPage('experiments'))).toBe(false);
+
+    invalidatePages(experimentMsg(11));
+    expect(isInvalidated(cachedPage('experiments'))).toBe(true);
+    // hosts are not changed by experiment messages
+    expect(isInvalidated(cachedPage('hosts'))).toBe(false);
+
+    // a load the server read before the change does not clear it
+    cachePage('experiments', [{ name: 'a' }], loadedAt(10));
+    expect(isInvalidated(cachedPage('experiments'))).toBe(true);
+    cachePage('experiments', [{ name: 'a' }], loadedAt(12));
+    expect(isInvalidated(cachedPage('experiments'))).toBe(false);
+  });
+
+  it('are loaded again rather than reused once changed', async () => {
+    cachePage('experiments', [{ name: 'old' }], loadedAt(10));
+    expect(await experimentList()).toEqual([{ name: 'old' }]);
+
+    invalidatePages(experimentMsg(11));
+    serve({ 'experiments?vms=false': { experiments: [{ name: 'new' }] } });
+    expect(await experimentList()).toEqual([{ name: 'new' }]);
+    expect(urls()).toEqual(['experiments?vms=false']);
+  });
+
+  it("pass each request the load's freshness, which a composite load folds in", async () => {
+    axiosInstance.get.mockImplementation(async (url, { meta }) => {
+      // as the axios interceptor fills it in
+      meta.seq = Math.min(
+        meta.seq ?? Infinity,
+        url === 'experiments?vms=false' ? 7 : 9,
+      );
+      return {
+        data:
+          url === 'experiments?vms=false'
+            ? { experiments: [{ name: 'a', apps: ['scorch'] }] }
+            : { pipelines: [] },
+      };
+    });
+
+    const request = fetchIntoCache('scorch', pageFetchers.scorch);
+    await request.promise;
+    request.release();
+    // never newer than the experiment list it is built on
+    expect(cachedPage('scorch').meta.seq).toBe(7);
+    expect(cachedPage(scorchRunsKey('a')).meta.seq).toBe(9);
   });
 });
 

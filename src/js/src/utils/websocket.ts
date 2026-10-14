@@ -1,6 +1,7 @@
 /// <reference types="vite/types/importMeta.d.ts" />
 import { usePhenixStore } from '@/store.js';
 import { debug } from '@/utils/debug.js';
+import { setWsDown } from '@/utils/freshness.js';
 import { ToastProgrammatic as Toast } from 'buefy';
 
 let globalWs: WebSocket = null;
@@ -52,6 +53,7 @@ export function connectWebsocket(): void {
   globalWs.onopen = () => {
     debug('connected websocket');
     numFailedConnects = 0;
+    setWsDown(false);
 
     if (errorToast !== null) {
       errorToast.close();
@@ -81,6 +83,9 @@ export function connectWebsocket(): void {
       return;
     }
 
+    // live pages may miss updates until the socket reopens
+    setWsDown(true);
+
     if (errorToast === null) {
       errorToast = new Toast().open({
         message: `websocket connection closed. Trying to reconnect...`,
@@ -98,6 +103,7 @@ export function connectWebsocket(): void {
 
 export function disconnectWebsocket(): void {
   shouldBeConnected = false;
+  setWsDown(false);
   debug('disconnected websocket');
 
   if (reconnectTimer !== null) {

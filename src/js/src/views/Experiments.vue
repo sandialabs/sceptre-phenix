@@ -283,7 +283,11 @@
   import { createLiveRows } from '@/utils/liveRows.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import axiosInstance from '@/utils/axios.js';
-  import { addWsHandler, removeWsHandler } from '@/utils/websocket';
+  import {
+    addWsHandler,
+    onWsReconnect,
+    removeWsHandler,
+  } from '@/utils/websocket';
   import { useTable } from '@/utils/useTable.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { plural } from '@/utils/plural.js';
@@ -306,16 +310,19 @@
     async beforeUnmount() {
       clearTimeout(this.reloadTimer);
       removeWsHandler(this.handleWs);
+      this.offWsReconnect?.();
       this.loader.stop();
     },
 
     async created() {
       addWsHandler(this.handleWs);
       this.liveRows = createLiveRows();
+      // a restarted server numbers its messages afresh
+      this.offWsReconnect = onWsReconnect(() => this.liveRows.reset());
       this.loader = createPageLoader({
         key: 'experiments',
         fetch: pageFetchers.experiments,
-        apply: (experiments, { requestedAt }) => {
+        apply: (experiments, { seq }) => {
           // the server reports a starting experiment's progress from 0 to 1
           const loaded = experiments.map((exp) => ({
             ...exp,
@@ -325,7 +332,7 @@
           // a row known only from websocket messages takes the loaded
           // details and keeps the progress the messages reported
           this.experiments = this.liveRows
-            .merge(loaded, this.experiments, requestedAt)
+            .merge(loaded, this.experiments, seq)
             .map((exp) => {
               const row = exp.partial && byName.get(exp.name);
               if (!row) return exp;
@@ -410,9 +417,9 @@
         }
 
         if (msg.resource.action == 'delete') {
-          this.liveRows.remove(msg.resource.name);
+          this.liveRows.remove(msg.resource.name, msg.seq);
         } else {
-          this.liveRows.touch(msg.resource.name);
+          this.liveRows.touch(msg.resource.name, msg.seq);
         }
         let exp = this.experiments;
 

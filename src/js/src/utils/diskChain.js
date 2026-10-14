@@ -2,11 +2,12 @@
 // page shows (GET disks), which already carries each image's backing chain,
 // and how pages name and offer the images in that list. Each image is known
 // by its full path: two images may share a file name in different folders.
+import { RESOURCES } from '@/utils/freshness.js';
 import { recentPage } from '@/utils/pageCache.js';
 import { pageFetchers } from '@/utils/pageData.js';
 
 // a disk list this recent is reused rather than asked for again
-export const DISK_LIST_REUSE_MS = 60 * 1000;
+export const DISK_LIST_REUSE_MS = RESOURCES.disks.reuseMs;
 
 // the name of the group of images outside the minimega files directory
 export const OUTSIDE_GROUP = 'Outside the standard images directory';

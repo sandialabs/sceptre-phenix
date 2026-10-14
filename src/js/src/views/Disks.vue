@@ -421,7 +421,8 @@
       this.rescan = false;
       this.loader = createPageLoader({
         key: 'disks',
-        fetch: (signal) => pageFetchers.disks(signal, { rescan: this.rescan }),
+        fetch: (signal, meta) =>
+          pageFetchers.disks(signal, meta, { rescan: this.rescan }),
         apply: (disks) => {
           this.disks = disks;
           this.loaded = true;

@@ -147,6 +147,15 @@ Topology config, and can be changed while the experiment runs, but apps read
 most of them when the experiment starts, so most changes take effect the next
 time it starts.
 
+#### VM State Unknown
+
+When minimega does not answer for every VM of a running experiment (for
+example, a cluster node is down), the experiment's VMs tab says
+`minimega did not answer; showing the VMs as configured` above the table. The
+VMs minimega did not report are then listed as the topology configures them,
+with no state, rather than left out. The next list replaces them once minimega
+answers.
+
 #### Busy VMs
 
 While an action is running on the VM, the card shows `Busy with another action`

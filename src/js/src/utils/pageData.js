@@ -10,6 +10,7 @@ import {
   recentPage,
 } from '@/utils/pageCache.js';
 import { whenIdle } from '@/utils/prefetch.js';
+import { FreshnessMeta, mergeFreshness, RESOURCES } from '@/utils/freshness.js';
 import { roleAllowed } from '@/utils/rbac.js';
 import { usePhenixStore } from '@/store.js';
 
@@ -31,15 +32,17 @@ export const stoppedExperimentKey = (name) => `experiment/${name}/stopped`;
 // cache key for an experiment's SCORCH runs page (its pipelines response)
 export const scorchRunsKey = (name) => `scorchruns/${name}`;
 
-const get = async (url, signal, config = {}) =>
-  (await axiosInstance.get(url, { signal, ...config })).data;
+// GET url; meta, if given, receives the response's freshness (see
+// freshness.js)
+const get = async (url, signal, meta, config = {}) =>
+  (await axiosInstance.get(url, { signal, meta, ...config })).data;
 
 // The running experiment page's data, without its VMs: the page lists them
 // over the websocket (experiment/vms), so having the server also ask minimega
 // for them here would only repeat that work. The VM rows the page last showed
 // are kept, so the next visit opens with them while the fresh list loads.
-export async function fetchRunningExperiment(name, signal) {
-  const experiment = await get(`experiments/${name}`, signal, {
+export async function fetchRunningExperiment(name, signal, meta) {
+  const experiment = await get(`experiments/${name}`, signal, meta, {
     params: { vms: false },
   });
   return {
@@ -48,22 +51,18 @@ export async function fetchRunningExperiment(name, signal) {
   };
 }
 
-// An experiment list this recent is reused rather than asked for again.
-const EXPERIMENT_LIST_REUSE_MS = 5000;
-
 // The experiment list for pages built on it (SCORCH, WebShark), sharing the
-// Experiments page's request or recent result: listing experiments has the
-// server query minimega for every running one.
-export function experimentList() {
-  return recentPage(
-    'experiments',
-    pageFetchers.experiments,
-    EXPERIMENT_LIST_REUSE_MS,
-  );
+// Experiments page's request or recent result (see the reuse window in
+// freshness.js): listing experiments has the server query minimega for every
+// running one. meta, if given, takes on the list's freshness.
+export async function experimentList(meta) {
+  const experiments = await recentPage('experiments', pageFetchers.experiments);
+  mergeFreshness(meta, cachedPage('experiments')?.meta);
+  return experiments;
 }
 
 // A host list this recent is reused by pages that only need host names.
-export const HOST_LIST_REUSE_MS = 60 * 1000;
+export const HOST_LIST_REUSE_MS = RESOURCES.hosts.reuseMs;
 
 // The names of the hosts VMs can be scheduled on, sorted, from the Hosts
 // page's cached list when it is recent (or its request in flight) rather than
@@ -93,8 +92,8 @@ export const scorchListed = (exp) =>
 
 // GET /experiments/{name}/scorch/pipelines, which also says whether the SCORCH
 // app is running
-export const scorchPipelines = (name, signal) =>
-  get(`experiments/${name}/scorch/pipelines`, signal, {
+export const scorchPipelines = (name, signal, meta) =>
+  get(`experiments/${name}/scorch/pipelines`, signal, meta, {
     headers: { Accept: 'application/json' },
   });
 
@@ -111,25 +110,29 @@ export const scorchRow = (exp, pipelines) => ({
   },
 });
 
+// Each fetcher takes (signal, meta) and passes meta with its requests, so the
+// page cache knows how fresh the result is.
 export const pageFetchers = {
-  experiments: async (signal) =>
+  experiments: async (signal, meta) =>
     // the list only shows VM counts, which need nothing from minimega
-    (await get('experiments?vms=false', signal)).experiments ?? [],
+    (await get('experiments?vms=false', signal, meta)).experiments ?? [],
 
-  configs: async (signal) => (await get('configs', signal)).configs ?? [],
+  configs: async (signal, meta) =>
+    (await get('configs', signal, meta)).configs ?? [],
 
   // rescan: have the server inspect every image again, not only changed ones
-  disks: async (signal, { rescan = false } = {}) =>
-    (await get(rescan ? 'disks?refresh=true' : 'disks', signal)).disks ?? [],
+  disks: async (signal, meta, { rescan = false } = {}) =>
+    (await get(rescan ? 'disks?refresh=true' : 'disks', signal, meta)).disks ??
+    [],
 
-  hosts: async (signal) => (await get('hosts', signal)).hosts ?? [],
+  hosts: async (signal, meta) => (await get('hosts', signal, meta)).hosts ?? [],
 
-  users: async (signal) => {
+  users: async (signal, meta) => {
     // roles are only used for the role dropdown when creating/editing
     const [users, roles] = await Promise.all([
-      get('users', signal),
+      get('users', signal, meta),
       roleAllowed('roles', 'list')
-        ? get('roles', signal).catch((err) => {
+        ? get('roles', signal, meta).catch((err) => {
             // the user list is still worth showing without roles
             useErrorNotification(err);
             return null;
@@ -143,17 +146,17 @@ export const pageFetchers = {
     };
   },
 
-  logs: async (signal) => {
+  logs: async (signal, meta) => {
     const start = new Date(Date.now() - DEFAULT_LOG_WINDOW * 1000);
     return withLogIds(
-      (await get(`logs?start=${start.toISOString()}`, signal)) ?? [],
+      (await get(`logs?start=${start.toISOString()}`, signal, meta)) ?? [],
     );
   },
 
   // experiments that have SCORCH configured, with their run state and run
   // names
-  scorch: async (signal) => {
-    const experiments = await experimentList();
+  scorch: async (signal, meta) => {
+    const experiments = await experimentList(meta);
 
     // The list already names each experiment's apps, so only experiments with
     // SCORCH configured are asked for their pipelines. Fetched concurrently
@@ -163,11 +166,13 @@ export const pageFetchers = {
         // one forbidden experiment must not fail the whole list
         if (!scorchListed(exp)) return null;
 
-        const pipelines = await scorchPipelines(exp.name, signal);
+        const runMeta = new FreshnessMeta();
+        const pipelines = await scorchPipelines(exp.name, signal, runMeta);
+        mergeFreshness(meta, runMeta);
         // the experiment's runs page shows the same response, so it opens at
         // once too, unless it has fetched a fresher copy of its own
         const runsKey = scorchRunsKey(exp.name);
-        if (!isLoadingPage(runsKey)) cachePage(runsKey, pipelines);
+        if (!isLoadingPage(runsKey)) cachePage(runsKey, pipelines, runMeta);
         return scorchRow(exp, pipelines);
       }),
     );
@@ -176,12 +181,13 @@ export const pageFetchers = {
   },
 
   // every experiment's state of health, as far as the role may get each
-  soh: async (signal) => (await get('soh', signal)).experiments ?? [],
+  soh: async (signal, meta) =>
+    (await get('soh', signal, meta)).experiments ?? [],
 
-  settings: async (signal) => await get('settings', signal),
+  settings: async (signal, meta) => await get('settings', signal, meta),
 
-  vmtiles: async (signal) =>
-    (await get('vms?screenshot=500', signal)).vms ?? [],
+  vmtiles: async (signal, meta) =>
+    (await get('vms?screenshot=500', signal, meta)).vms ?? [],
 };
 
 // Tabs worth loading ahead of a visit, cheapest first, with who may see them

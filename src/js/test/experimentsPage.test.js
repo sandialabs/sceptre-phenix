@@ -110,11 +110,12 @@ describe('websocket messages', () => {
 
   it('fill a row known only from messages with the loaded details', () => {
     const ctx = page([]);
-    const requestedAt = Date.now();
 
+    // the progress message came after the server read the list (seq 10)
     ctx.handleWs({
       resource: { type: 'experiment', name: 'new', action: 'progress' },
       result: { percent: 0.5 },
+      seq: 20,
     });
     expect(ctx.experiments[0]).toMatchObject({
       name: 'new',
@@ -133,7 +134,7 @@ describe('websocket messages', () => {
           vm_count: 7,
         },
       ],
-      { requestedAt },
+      { seq: 10 },
     );
 
     expect(ctx.experiments).toEqual([
@@ -145,6 +146,25 @@ describe('websocket messages', () => {
         vm_count: 7,
       },
     ]);
+  });
+
+  it('take a list the server read after a change over the row it changed', () => {
+    const ctx = page([{ name: 'demo', status: 'started' }]);
+
+    ctx.handleWs({
+      resource: { type: 'experiment', name: 'demo', action: 'stop' },
+      result: { name: 'demo', running: false },
+      seq: 20,
+    });
+    const shown = ctx.experiments[0];
+
+    // read before the stop: the row the message changed stays
+    loaderSpy.options.apply([{ name: 'demo', status: 'started' }], { seq: 15 });
+    expect(ctx.experiments[0]).toBe(shown);
+
+    // read after it (say the experiment was started again from the CLI)
+    loaderSpy.options.apply([{ name: 'demo', status: 'started' }], { seq: 25 });
+    expect(ctx.experiments[0].status).toBe('started');
   });
 
   it('reload the list when an experiment config is created elsewhere', () => {
