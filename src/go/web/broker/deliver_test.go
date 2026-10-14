@@ -98,7 +98,9 @@ func TestBroadcastIsEncodedOnce(t *testing.T) {
 
 	out := <-broadcast
 
-	want, err := json.Marshal(bt.Publish{Resource: bt.NewResource("experiment/vm", "exp/vm1", "update"), Result: result})
+	want, err := json.Marshal(bt.Publish{
+		Resource: bt.NewResource("experiment/vm", "exp/vm1", "update"), Result: result, Seq: out.pub.Seq,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,4 +191,25 @@ func roleAllowingNames(resource, verb string, names ...string) rbac.Role {
 	return rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{
 		{Resources: []string{resource}, ResourceNames: names, Verbs: []string{verb}},
 	}}}
+}
+// Every broadcast carries a seq greater than the last one's, so clients can
+// order them against each other and against REST responses.
+func TestBroadcastsCarryIncreasingSeq(t *testing.T) {
+	var last uint64
+
+	for range 3 {
+		Broadcast(nil, bt.NewResource("experiment", "exp", "update"), json.RawMessage(`{}`))
+
+		out := <-broadcast
+
+		var msg struct {
+			Seq uint64 `json:"seq"`
+		}
+
+		if err := json.Unmarshal(out.data, &msg); err != nil || msg.Seq <= last || msg.Seq != out.pub.Seq {
+			t.Fatalf("broadcast %s after seq %d: %v; want a larger seq", out.data, last, err)
+		}
+
+		last = msg.Seq
+	}
 }

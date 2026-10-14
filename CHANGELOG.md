@@ -41,6 +41,7 @@ All notable changes to this project will be documented in this file.
 - **Bulk VM actions**: `POST /experiments/{exp}/vms/actions` starts, pauses, restarts, shuts down, kills or resets the disks of several VMs in one background job that reports each VM's outcome, skipping VMs the role may not act on.
 - **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and `phenix config edit` refuses to save over a config changed while it was open.
 - **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and `phenix config edit` refuses to save over a config changed while it was open. `GET /configs/{kind}/{name}` returns it as an `ETag`, and `PUT` and `DELETE` honor `If-Match` with a 412.
+- **Ordering**: API responses carry an `X-Phenix-Seq` header and websocket messages a `seq` field from one increasing sequence, so clients can tell which of two updates is newer.
 
 ### Changed
 

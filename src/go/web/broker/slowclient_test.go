@@ -606,3 +606,57 @@ func TestScreenshotWaitEndsWithTheClient(t *testing.T) {
 		t.Error("asked for the second screenshot after the client left")
 	}
 }
+
+// A VM list orders before a VM change broadcast while minimega was being read
+// for it: the list's seq is taken before the read, so a client keeps the
+// change rather than the list's older view of the VM.
+//
+//nolint:paralleltest // replaces the store and the client's dependencies
+func TestListSeqPrecedesBroadcastDuringRead(t *testing.T) {
+	useExperiment(t)
+	withDeps(t)
+
+	var (
+		entered = make(chan struct{}, 1)
+		gate    = make(chan struct{})
+		release = sync.OnceFunc(func() { close(gate) })
+	)
+
+	t.Cleanup(release)
+
+	deps.vms = func(*types.Experiment) []mm.VM {
+		entered <- struct{}{}
+		<-gate
+
+		return nil
+	}
+
+	conn := newFakeConn(t)
+	startFakeClient(t, conn, roleAllowing("vms", "list"))
+
+	conn.reads <- listRequest("exp")
+
+	within(t, "the list asking minimega", func() { <-entered })
+
+	Broadcast(nil, bt.NewResource("experiment/vm", "exp/vm1", "stop"), json.RawMessage(`{"name":"vm1"}`))
+
+	stop := <-broadcast
+
+	release()
+
+	var list bt.Publish
+
+	polltest.Until(t, "the list reply", func() bool {
+		for _, msg := range conn.messages() {
+			if json.Unmarshal(msg, &list) == nil && list.Resource != nil && list.Resource.Type == "experiment/vms" {
+				return true
+			}
+		}
+
+		return false
+	})
+
+	if list.Seq == 0 || list.Seq >= stop.pub.Seq {
+		t.Errorf("list seq %d, stop broadcast seq %d; want the list's lower", list.Seq, stop.pub.Seq)
+	}
+}

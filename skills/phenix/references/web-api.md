@@ -84,6 +84,13 @@ added; the ETag stays strong when gzipped) and answers `If-None-Match` with
 `POST` and `PUT` return the new `ETag`. `GET /configs` returns `[]`, never
 `null`.
 
+Ordering: every `/api/v1` response has `X-Phenix-Seq` (taken as the request
+started) and every `/ws` message a `seq` (taken as it was published; a VM list
+reply's before its minimega read), from one strictly increasing sequence per
+`phenix ui` process. Data tagged S reflects every change whose message has a
+seq of S or less; keep the highest seq applied per item, ignore lower, and
+reset on websocket reconnect. See `docs/content/api.md#freshness`.
+
 `src/go/web/server.go` is the authoritative route list.
 
 ## Downloads
