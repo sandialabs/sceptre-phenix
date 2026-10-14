@@ -487,7 +487,10 @@ func Update(name string, c *store.Config) error {
 
 			deleteErr := store.Delete(old)
 			if deleteErr != nil {
-				_ = store.Delete(c) // don't offer a path to creation via updates
+				// Don't offer a path to creation via updates. Remove the copy
+				// just created, unless something changed it meanwhile.
+				c.IfRevision = c.Metadata.Revision
+				_ = store.Delete(c)
 
 				return fmt.Errorf("renaming updated config in store: %w", deleteErr)
 			}
