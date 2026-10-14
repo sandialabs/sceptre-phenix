@@ -118,13 +118,19 @@ succeed list each item's outcome.
       outcome() {
         return outcomeFromJob(this.job);
       },
+      // a single item's outcome shows only when it has a reason to give
       showOutcome() {
         return (
           !this.compact &&
           !this.active &&
           this.job.status !== 'succeeded' &&
-          this.outcome.length > 1
+          (this.outcome.length > 1 || this.outcome.some((item) => item.error))
         );
+      },
+      // a finished job whose copy, such as a websocket message's, leaves out
+      // some items, so its counts need the whole job
+      partial() {
+        return !this.active && this.job.itemsOmitted > 0;
       },
       statusLine() {
         const p = this.job.progress ?? {};
@@ -139,16 +145,38 @@ succeed list each item's outcome.
             : '';
           return `${p.done ?? 0} of ${total} done${bytes}${canceling}`;
         }
+        if (this.partial) return `${p.done ?? 0} of ${total} done`;
         const counts = summarizeOutcome(this.outcome);
         const parts = [`${counts.succeeded} of ${total} succeeded`];
         for (const status of ['failed', 'skipped', 'canceled']) {
           if (counts[status]) parts.push(`${counts[status]} ${status}`);
         }
         if (this.job.error) parts.push(this.job.error);
+        // the menu lists no outcome, so a lone item's reason goes here
+        if (this.outcome.length === 1 && this.outcome[0].error) {
+          parts.push(this.outcome[0].error);
+        }
         return parts.join(', ');
       },
     },
+    watch: {
+      partial: {
+        handler(partial) {
+          if (partial) this.fetchWhole();
+        },
+      },
+    },
+    mounted() {
+      if (this.partial) this.fetchWhole();
+    },
     methods: {
+      // reads the whole job, for the items a shortened copy left out; the
+      // status line keeps its count of done items if that fails
+      fetchWhole() {
+        useJobStore()
+          .fetch(this.job.id)
+          .catch(() => {});
+      },
       async cancel() {
         this.busy = true;
         try {
@@ -171,8 +199,7 @@ succeed list each item's outcome.
         }
       },
       download() {
-        const open = () =>
-          window.open(useJobStore().artifactURL(this.job), '_blank');
+        const open = () => useJobStore().downloadArtifact(this.job);
 
         if (!this.job.artifact.incomplete) {
           open();
