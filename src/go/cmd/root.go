@@ -245,7 +245,7 @@ func argsWithUsage(validate cobra.PositionalArgs) cobra.PositionalArgs {
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 }
 

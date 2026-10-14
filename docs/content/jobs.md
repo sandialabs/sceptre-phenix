@@ -99,6 +99,32 @@ itself, never `jobs`.
 
 To anyone else, another user's job answers `404`, as if it did not exist.
 
+## Command line
+
+`phenix job` follows and cancels the jobs of the running `phenix ui` server
+over its unix socket (`--unix-socket`), which acts as Global Admin, so it sees
+every user's jobs:
+
+```bash
+phenix job list                          # every job, newest first
+phenix job list --experiment exp1 --active -o json
+phenix job get j0f3a9c2e81b4d7a6         # the job and each item's outcome
+phenix job cancel j0f3a9c2e81b4d7a6
+phenix job wait j0f3a9c2e81b4d7a6 --timeout 10m
+```
+
+`phenix job wait` asks for the job every second until it finishes, prints it,
+and exits `0` when it succeeded, `2` when it ended `partial`, and `1` when it
+failed or was canceled, or when waiting timed out. Without a running server,
+each command fails with `phenix ui is not running (no socket at ...)`.
+
+!!! note
+    The command line can follow jobs, but not start them. Commands such as
+    `phenix vm start` act in the `phenix` process itself rather than through the
+    server, so they wait for their result as before and are not jobs; start
+    bulk VM actions, file archives and disk clones from the web UI or the REST
+    API.
+
 ## REST API
 
 | Route | Does |
