@@ -20,11 +20,13 @@ func useJobs(t *testing.T) *job.Registry {
 	return useJobsIn(t, t.TempDir())
 }
 
-// useJobsIn is useJobs keeping artifacts in dir.
-func useJobsIn(t *testing.T, dir string) *job.Registry {
+// useJobsIn is useJobs keeping artifacts in dir, with further options. Its
+// jobs are logged and audited as they finish, as the server's are, but not
+// published to websocket clients.
+func useJobsIn(t *testing.T, dir string, opts ...job.Option) *job.Registry {
 	t.Helper()
 
-	r := job.NewRegistry(job.WithArtifactDir(dir))
+	r := job.NewRegistry(append([]job.Option{job.WithArtifactDir(dir), job.WithNotifier(logJobEnd)}, opts...)...)
 
 	original := jobs
 	jobs = r
@@ -98,6 +100,28 @@ func waitJob(t *testing.T, r *job.Registry, id string) job.Job {
 	t.Fatalf("job %s did not finish", id)
 
 	return job.Job{}
+}
+
+// waitAudit returns the audit events once one of them is of the action and
+// outcome with each of fields, as a job audits its work just after it
+// finishes; it fails the test if none comes.
+func waitAudit(t *testing.T, events func() []auditEvent, action, outcome string, fields map[string]any) []auditEvent {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if got := events(); countAudit(got, action, outcome, fields) > 0 {
+			return got
+		}
+
+		time.Sleep(time.Millisecond)
+	}
+
+	got := events()
+	wantAudit(t, got, action, outcome, fields)
+
+	return got
 }
 
 // listedJobs returns the IDs GET /jobs lists, which leaves out the items'

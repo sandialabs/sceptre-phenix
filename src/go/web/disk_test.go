@@ -446,6 +446,8 @@ func TestDiskActionsRefuse(t *testing.T) {
 			}
 
 			action, _, _ := strings.Cut(strings.TrimPrefix(tc.target, "/"), "?")
+			action = strings.TrimSuffix(action, "/jobs") // a job audits its synchronous route's action
+
 			if action == "" {
 				action = "delete"
 			}
@@ -547,6 +549,7 @@ func TestCloneDiskJob(t *testing.T) {
 	writeDisks(t, files.dir+"/win/win10.qcow2")
 
 	server := serveAs(t, "alice", disksRole(nil, "create")).URL + "/api/v1/disks"
+	events := captureAudit(t)
 
 	resp := do(t, http.MethodPost, server+"/clone/jobs?disk=win/win10.qcow2&new=copy", "")
 	if resp.StatusCode != http.StatusAccepted {
@@ -578,6 +581,86 @@ func TestCloneDiskJob(t *testing.T) {
 	if written[files.dir+"/win/copy.qcow2"] != files.dir+"/win/win10.qcow2" || len(written) != 2 {
 		t.Errorf("files after the clone: %v", written)
 	}
+
+	// audited when the job finishes, as the user who started it
+	got := waitAudit(t, events, "disk-clone", "success", map[string]any{
+		"user.name": "alice", "file.path": files.dir + "/win/win10.qcow2",
+		"phenix.file.target_path": files.dir + "/win/copy.qcow2", "phenix.job.id": started.ID,
+	})
+
+	if n := len(got); n != 1 {
+		t.Errorf("%d audit events, want 1: %v", n, got)
+	}
+}
+
+// A clone job whose copy fails, or that is canceled before it copies, is
+// audited as a failed clone when it finishes.
+func TestCloneDiskJobAuditsFailure(t *testing.T) {
+	files := useDiskFilesDir(t)
+
+	// one job at a time, so the clones wait behind a held job
+	registry := useJobsIn(t, t.TempDir(), job.WithLimits(1, 1))
+	events := captureAudit(t)
+
+	writeDisks(t, files.dir+"/a.qc2", files.dir+"/b.qc2")
+
+	server := serveAs(t, "alice", disksRole(nil, "create")).URL + "/api/v1/disks"
+
+	release := make(chan struct{})
+	held := startTestJob(t, registry, "alice", "", release, "")
+
+	failing := startClone(t, server+"/clone/jobs?disk=a.qc2&new=a-copy")
+	canceled := startClone(t, server+"/clone/jobs?disk=b.qc2&new=b-copy")
+
+	// the image is gone by the time the job runs
+	if err := os.Remove(files.dir + "/a.qc2"); err != nil {
+		t.Fatal(err)
+	}
+
+	cancel := strings.TrimSuffix(server, "/disks") + "/jobs/" + canceled.ID + "/cancel"
+	if resp := do(t, http.MethodPost, cancel, ""); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("cancel: %d", resp.StatusCode)
+	}
+
+	close(release)
+	waitJob(t, registry, held.ID)
+
+	if j := waitJob(t, registry, failing.ID); j.Status != job.StatusFailed {
+		t.Errorf("clone of a removed image: %s", j.Status)
+	}
+
+	if j := waitJob(t, registry, canceled.ID); j.Status != job.StatusCanceled {
+		t.Errorf("canceled clone: %s", j.Status)
+	}
+
+	e := waitAudit(t, events, "disk-clone", "failure", map[string]any{
+		"user.name": "alice", "file.path": files.dir + "/a.qc2", "phenix.job.id": failing.ID,
+	})
+	wantAudit(t, e, "disk-clone", "failure", map[string]any{
+		"user.name": "alice", "file.path": files.dir + "/b.qc2", "phenix.job.id": canceled.ID,
+		"error.message": "canceled",
+	})
+
+	if n := countAudit(events(), "disk-clone", "success", nil); n != 0 {
+		t.Errorf("%d clones audited as done", n)
+	}
+}
+
+// startClone asks for the clone job at url, and returns the job started.
+func startClone(t *testing.T, url string) job.Job {
+	t.Helper()
+
+	resp := do(t, http.MethodPost, url, "")
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	var started job.Job
+	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
+		t.Fatal(err)
+	}
+
+	return started
 }
 
 // A disk download names its image relative to the minimega files directory,

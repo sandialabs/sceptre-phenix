@@ -7,7 +7,9 @@
 //
 // A handler calls Denied at each RBAC refusal, Failure when the authorized
 // operation fails, and Success once it has worked. Validation errors raised
-// before the RBAC check are not audited.
+// before the RBAC check are not audited. Work a handler leaves to a
+// background job is audited when the job finishes, with Background or
+// BackgroundFailure, as the user who started it.
 package audit
 
 import (
@@ -196,6 +198,14 @@ func Background(user string, a Action, msg string, outcome Outcome, f Fields) {
 	f.User = user
 
 	emit(nil, event{level: slog.LevelInfo, action: a, denied: false, outcome: outcome, msg: msg, err: nil}, f)
+}
+
+// BackgroundFailure logs that an action taken for user outside any request,
+// such as a background job's work, failed with err.
+func BackgroundFailure(user string, a Action, msg string, f Fields, err error) {
+	f.User = user
+
+	emit(nil, event{level: slog.LevelWarn, action: a, denied: false, outcome: OutcomeFailure, msg: msg, err: err}, f)
 }
 
 // event is what an audit record says happened.

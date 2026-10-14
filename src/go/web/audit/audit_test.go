@@ -243,6 +243,41 @@ func TestBackgroundEvent(t *testing.T) {
 	}
 }
 
+func TestBackgroundFailureEvent(t *testing.T) {
+	events := capture(t)
+
+	audit.BackgroundFailure("bob", audit.DiskClone, "cloning disk failed", audit.Fields{
+		File: "/files/a.qc2", Target: "/files/b.qc2",
+	}, errors.New("disk full"))
+
+	lines := events()
+	if len(lines) != 1 {
+		t.Fatalf("got %d audit records, want 1", len(lines))
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &got); err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]any{
+		"level": "WARN", "user.name": "bob", "event.action": "disk-clone", "event.outcome": "failure",
+		"error.message": "disk full", "file.path": "/files/a.qc2", "phenix.file.target_path": "/files/b.qc2",
+	}
+
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %#v, want %#v", k, got[k], v)
+		}
+	}
+
+	for _, k := range []string{"event.reason", "source.ip", "url.path"} {
+		if _, ok := got[k]; ok {
+			t.Errorf("background failure has %s: %v", k, got[k])
+		}
+	}
+}
+
 func TestGrantUserOverridesContext(t *testing.T) {
 	events := capture(t)
 
