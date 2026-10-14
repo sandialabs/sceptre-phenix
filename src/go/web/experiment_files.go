@@ -269,6 +269,14 @@ func DownloadExperimentFiles(w http.ResponseWriter, r *http.Request) {
 
 		return w
 	})
+
+	// Each file sent, even when a later one fails.
+	for _, path := range zipped {
+		audit.Success(r, audit.FileDownload, "downloaded file", audit.Fields{
+			Experiment: name, File: path, Extra: []any{"phenix.file.capture", isCaptureFile(path)},
+		})
+	}
+
 	if err != nil {
 		audit.Failure(r, audit.FileDownload, "downloading experiment files failed", audit.Fields{
 			Experiment: name, Extra: []any{"phenix.file.count", len(paths)},
@@ -287,13 +295,5 @@ func DownloadExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		}
 
 		http.Error(w, err.Error(), status)
-
-		return
-	}
-
-	for _, path := range zipped {
-		audit.Success(r, audit.FileDownload, "downloaded file", audit.Fields{
-			Experiment: name, File: path, Extra: []any{"phenix.file.capture", isCaptureFile(path)},
-		})
 	}
 }

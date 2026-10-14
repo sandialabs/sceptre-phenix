@@ -282,6 +282,49 @@ func TestDownloadExperimentFilesStreamsZip(t *testing.T) {
 	}
 }
 
+// A download failing part way still audits each file sent before it failed.
+func TestDownloadExperimentFilesAuditsFilesSentBeforeFailing(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read an unreadable file")
+	}
+
+	useExperimentFilesDir(t, map[string]string{"a.log": "alpha", "b.log": "beta"})
+	useTestFiles(t)
+
+	unreadable := filepath.Join(common.PhenixBase, "images", "test-experiment", "files", "b.log")
+	if err := os.Chmod(unreadable, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	events := captureAudit(t)
+
+	server := serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+		server+"/api/v1/experiments/test-experiment/files/download", strings.NewReader(`{"paths":["a.log","b.log"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The aborted response fails when its headers or its body are read.
+	resp, err := http.DefaultClient.Do(req)
+	if err == nil {
+		_, err = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+	}
+
+	if err == nil {
+		t.Fatal("a download that failed part way ended cleanly")
+	}
+
+	wantAudit(t, events(), "file-download", "success", map[string]any{"file.path": "a.log"})
+	wantAudit(t, events(), "file-download", "failure", map[string]any{"phenix.file.count": 2})
+
+	if n := countAudit(events(), "file-download", "success", map[string]any{"file.path": "b.log"}); n != 0 {
+		t.Errorf("audited the file that failed as downloaded")
+	}
+}
+
 func TestDownloadExperimentFilesRefusals(t *testing.T) {
 	useExperimentFilesDir(t, map[string]string{"a.log": "alpha"})
 
