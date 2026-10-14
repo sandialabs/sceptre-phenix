@@ -1,5 +1,11 @@
 package mm
 
+import (
+	"time"
+
+	"phenix/util/freshness"
+)
+
 func ReadScriptFromFile(ns, filename string) error {
 	return DefaultMM.ReadScriptFromFile(ns, filename)
 }
@@ -28,6 +34,26 @@ func GetLaunchProgress(ns string, expected int) (float64, error) {
 
 func GetVMInfo(opts ...Option) VMs {
 	return DefaultMM.GetVMInfo(opts...)
+}
+
+// vmInfoObserver is the optional part of MM that reports when VM info was
+// read and whether minimega answered. It is kept out of MM so the stand-ins
+// tests use for MM need not implement it.
+type vmInfoObserver interface {
+	GetVMInfoObserved(...Option) (VMs, freshness.Observation)
+}
+
+// GetVMInfoObserved is GetVMInfo, also reporting when the VMs were read and
+// whether minimega answered for all of them. An MM that cannot tell is taken
+// to have answered now.
+func GetVMInfoObserved(opts ...Option) (VMs, freshness.Observation) {
+	if o, ok := DefaultMM.(vmInfoObserver); ok {
+		return o.GetVMInfoObserved(opts...)
+	}
+
+	at := time.Now()
+
+	return DefaultMM.GetVMInfo(opts...), freshness.Observed(at)
 }
 
 func GetVMScreenshot(opts ...Option) ([]byte, error) {
@@ -120,6 +146,30 @@ func GetVMCaptures(opts ...Option) []Capture {
 
 func GetClusterHosts(schedOnly bool) (Hosts, error) {
 	return DefaultMM.GetClusterHosts(schedOnly)
+}
+
+// clusterHostsObserver is the optional part of MM that reports when the
+// cluster hosts were read; see vmInfoObserver.
+type clusterHostsObserver interface {
+	GetClusterHostsObserved(bool) (Hosts, freshness.Observation, error)
+}
+
+// GetClusterHostsObserved is GetClusterHosts, also reporting when the hosts
+// were read from minimega. An MM that cannot tell is taken to have read them
+// now.
+func GetClusterHostsObserved(schedOnly bool) (Hosts, freshness.Observation, error) {
+	if o, ok := DefaultMM.(clusterHostsObserver); ok {
+		return o.GetClusterHostsObserved(schedOnly)
+	}
+
+	at := time.Now()
+
+	hosts, err := DefaultMM.GetClusterHosts(schedOnly)
+	if err != nil {
+		return hosts, freshness.Observation{}, err //nolint:wrapcheck // as GetClusterHosts
+	}
+
+	return hosts, freshness.Observed(at), nil
 }
 
 func GetNamespaceHosts(ns string) (Hosts, error) {

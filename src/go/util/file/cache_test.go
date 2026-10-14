@@ -3,16 +3,28 @@ package file
 import (
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/activeshadow/libminimega/minicli"
+
+	"phenix/util/mm/mmtest"
 )
 
 // newTestCache returns a listing cache whose listings expire only when a test
 // ages them.
 func newTestCache() *listingCache {
 	return newListingCache(time.Hour)
+}
+
+// fill runs a listing for key, for tests that only need it cached.
+func fill(c *listingCache, key string, list func() (Files, error)) error {
+	_, _, err := c.get(key, list)
+
+	return err
 }
 
 // age makes key's listing look as if it started d earlier.
@@ -40,7 +52,7 @@ func TestListingCacheReusesUntilExpired(t *testing.T) {
 	list := countingList(&calls, Files{{Name: "a.pcap", Path: "a.pcap"}})
 
 	for range 3 {
-		files, err := cache.get("exp/files/", list)
+		files, _, err := cache.get("exp/files/", list)
 		if err != nil || len(files) != 1 {
 			t.Fatalf("expected one file, got %v (err %v)", files, err)
 		}
@@ -52,7 +64,7 @@ func TestListingCacheReusesUntilExpired(t *testing.T) {
 
 	cache.age("exp/files/", cache.ttl)
 
-	if _, err := cache.get("exp/files/", list); err != nil {
+	if _, _, err := cache.get("exp/files/", list); err != nil {
 		t.Fatal(err)
 	}
 
@@ -66,8 +78,8 @@ func TestListingCacheKeysByExperiment(t *testing.T) {
 
 	var calls atomic.Int32
 
-	_, _ = cache.get(listingKey("a"), countingList(&calls, nil))
-	_, _ = cache.get(listingKey("b"), countingList(&calls, nil))
+	_ = fill(cache, listingKey("a"), countingList(&calls, nil))
+	_ = fill(cache, listingKey("b"), countingList(&calls, nil))
 
 	if calls.Load() != 2 {
 		t.Fatalf("expected a listing per experiment, got %d", calls.Load())
@@ -104,7 +116,7 @@ func TestListingCacheMergesConcurrentListings(t *testing.T) {
 	go func() {
 		defer wg.Done()
 
-		results[0], _ = cache.get("k", func() (Files, error) { return list(), nil })
+		results[0], _, _ = cache.get("k", func() (Files, error) { return list(), nil })
 	}()
 
 	<-entered
@@ -115,7 +127,7 @@ func TestListingCacheMergesConcurrentListings(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			results[i], _ = cache.get("k", func() (Files, error) { return list(), nil })
+			results[i], _, _ = cache.get("k", func() (Files, error) { return list(), nil })
 		}()
 	}
 
@@ -148,7 +160,7 @@ func TestListingCacheDropsListingInvalidatedInFlight(t *testing.T) {
 	go func() {
 		defer close(done)
 
-		_, _ = cache.get("k", func() (Files, error) {
+		_ = fill(cache, "k", func() (Files, error) {
 			calls.Add(1)
 			close(entered)
 			<-release
@@ -162,7 +174,7 @@ func TestListingCacheDropsListingInvalidatedInFlight(t *testing.T) {
 	close(release)
 	<-done
 
-	_, _ = cache.get("k", countingList(&calls, nil))
+	_ = fill(cache, "k", countingList(&calls, nil))
 
 	if calls.Load() != 2 {
 		t.Fatalf("expected a new listing after an in-flight invalidate, got %d listings", calls.Load())
@@ -180,11 +192,11 @@ func TestListingCacheDoesNotReuseFailures(t *testing.T) {
 		return nil, errors.New("minimega unavailable")
 	}
 
-	if _, err := cache.get("k", failing); err == nil {
+	if _, _, err := cache.get("k", failing); err == nil {
 		t.Fatal("expected the listing's error")
 	}
 
-	if _, err := cache.get("k", countingList(&calls, nil)); err != nil {
+	if _, _, err := cache.get("k", countingList(&calls, nil)); err != nil {
 		t.Fatalf("expected a fresh listing after a failure, got %v", err)
 	}
 
@@ -207,7 +219,7 @@ func TestListingCacheReleasesWaitersOnPanic(t *testing.T) {
 	go func() {
 		defer func() { panicked <- recover() }()
 
-		_, _ = cache.get("k", func() (Files, error) {
+		_ = fill(cache, "k", func() (Files, error) {
 			close(entered)
 			<-release
 			panic("boom")
@@ -236,7 +248,7 @@ func TestListingCacheReleasesWaitersOnPanic(t *testing.T) {
 
 	var calls atomic.Int32
 
-	if _, err := cache.get("k", countingList(&calls, nil)); err != nil || calls.Load() != 1 {
+	if _, _, err := cache.get("k", countingList(&calls, nil)); err != nil || calls.Load() != 1 {
 		t.Fatalf("expected a fresh listing after the panic, got %d listings (err %v)", calls.Load(), err)
 	}
 }
@@ -251,11 +263,11 @@ func TestListingCacheHandsOutCopies(t *testing.T) {
 		}, nil
 	}
 
-	first, _ := cache.get("k", list)
+	first, _, _ := cache.get("k", list)
 	first.SortByName(true)
 	first[0].Categories[0] = "changed"
 
-	second, _ := cache.get("k", list)
+	second, _, _ := cache.get("k", list)
 
 	if second[0].Name != "b" || second[1].Categories[0] != "Unknown" {
 		t.Fatalf("a caller's changes leaked into the cached listing: %+v", second)
@@ -265,11 +277,11 @@ func TestListingCacheHandsOutCopies(t *testing.T) {
 func TestListingCachePrunesExpiredListings(t *testing.T) {
 	cache := newTestCache()
 
-	_, _ = cache.get("old", countingList(new(atomic.Int32), nil))
+	_ = fill(cache, "old", countingList(new(atomic.Int32), nil))
 
 	cache.age("old", cache.ttl)
 
-	_, _ = cache.get("new", countingList(new(atomic.Int32), nil))
+	_ = fill(cache, "new", countingList(new(atomic.Int32), nil))
 
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
@@ -292,7 +304,7 @@ func installListing(t *testing.T, files Files) {
 
 	experimentListings = newListingCache(time.Hour)
 
-	_, _ = experimentListings.get(listingKey(exp), func() (Files, error) { return files, nil })
+	_ = fill(experimentListings, listingKey(exp), func() (Files, error) { return files, nil })
 }
 
 func TestMMClusterFilesFiltersCachedListing(t *testing.T) {
@@ -396,7 +408,7 @@ func TestDeletingFilesDropsCachedListings(t *testing.T) { //nolint:paralleltest 
 
 func TestInvalidateExperimentFiles(t *testing.T) {
 	installListing(t, Files{{Name: "a", Path: "a"}})
-	_, _ = experimentListings.get(listingKey("other"), func() (Files, error) { return nil, nil })
+	_ = fill(experimentListings, listingKey("other"), func() (Files, error) { return nil, nil })
 
 	InvalidateExperimentFiles("exp")
 
@@ -409,5 +421,51 @@ func TestInvalidateExperimentFiles(t *testing.T) {
 
 	if _, ok := experimentListings.entries[listingKey("other")]; !ok {
 		t.Fatal("expected other experiments' listings to be kept")
+	}
+}
+
+// A listing a node failed to answer is an error, not fewer files, and is not
+// reused; a listing reports when it was read, also when reused.
+//
+//nolint:paralleltest // replaces the listing cache and minimega
+func TestListingErrorsPropagate(t *testing.T) {
+	installListing(t, nil)
+	experimentListings.invalidateAll()
+
+	var failing atomic.Bool
+
+	failing.Store(true)
+
+	mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
+		if strings.HasPrefix(cmd.Base, "mesh send all file list") && failing.Load() {
+			return []*minicli.Response{{Host: "compute1", Error: "timed out"}}
+		}
+
+		if strings.HasPrefix(cmd.Base, "file list") {
+			return []*minicli.Response{mmtest.Tabular("head", []string{"dir", "name", "size", "modified"},
+				[]string{"", "exp/files/notes.txt", "5", "2026-01-01T00:00:00Z"})}
+		}
+
+		return nil
+	})
+
+	var files MMClusterFiles
+
+	if listed, _, err := files.GetExperimentFilesObserved("exp", ""); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("listing with a node timing out = %v, %v; want its error", listed, err)
+	}
+
+	failing.Store(false)
+
+	before := time.Now()
+
+	listed, first, err := files.GetExperimentFilesObserved("exp", "")
+	if err != nil || len(listed) != 1 || first.At.Before(before) || !first.Known {
+		t.Fatalf("listing once the node answers = %v, %+v, %v; want notes.txt, read now", listed, first, err)
+	}
+
+	_, again, err := files.GetExperimentFilesObserved("exp", "")
+	if err != nil || !again.At.Equal(first.At) {
+		t.Fatalf("reused listing observed at %v, %v; want the first's %v", again.At, err, first.At)
 	}
 }

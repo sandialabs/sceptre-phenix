@@ -34,19 +34,20 @@ func Observed(at time.Time) Observation {
 	return Observation{At: at, Stale: false, Known: true, Err: nil}
 }
 
-// Older combines two observations of parts of one response: the older At,
-// stale if either is, known only if both are, and the first error.
-func (o Observation) Older(p Observation) Observation {
-	switch {
-	case o.At.IsZero():
-		return p
-	case p.At.IsZero():
-		return o
-	}
+// Unobserved is a response part that read nothing at runtime (a stopped
+// experiment's VMs, say): it has no time and leaves the others' flags as they
+// are, so combining starts from it.
+func Unobserved() Observation {
+	return Observation{At: time.Time{}, Stale: false, Known: true, Err: nil}
+}
 
+// Older combines two observations of parts of one response: the older At
+// (ignoring a zero one), stale if either is, known only if both are, and the
+// first error.
+func (o Observation) Older(p Observation) Observation {
 	combined := o
 
-	if p.At.Before(o.At) {
+	if o.At.IsZero() || (!p.At.IsZero() && p.At.Before(o.At)) {
 		combined.At = p.At
 	}
 
@@ -61,21 +62,20 @@ func (o Observation) Older(p Observation) Observation {
 }
 
 // SetObserved reports an observation in a response's headers: its time in
-// X-Phenix-Observed-At, and X-Phenix-Stale when it is stale. A zero
-// observation sets nothing. Call it before the response's header is written.
+// X-Phenix-Observed-At, if it has one, and X-Phenix-Stale when it is stale.
+// Call it before the response's header is written.
 func SetObserved(w http.ResponseWriter, o Observation) {
-	if o.At.IsZero() {
-		return
+	if !o.At.IsZero() {
+		w.Header().Set(HeaderObservedAt, FormatTime(o.At))
 	}
-
-	w.Header().Set(HeaderObservedAt, o.At.UTC().Format(time.RFC3339Nano))
 
 	if o.Stale {
 		w.Header().Set(HeaderStale, "true")
 	}
 }
 
-// SetStale marks a response as serving data past its normal bound.
-func SetStale(w http.ResponseWriter) {
-	w.Header().Set(HeaderStale, "true")
+// FormatTime formats an observation time as headers and bodies carry it:
+// RFC 3339 in UTC, with fractional seconds.
+func FormatTime(at time.Time) string {
+	return at.UTC().Format(time.RFC3339Nano)
 }

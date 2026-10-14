@@ -19,16 +19,26 @@ const launchTolerance = 10 * time.Second
 const clusterHostsTTL = 5 * time.Second
 
 var (
-	vmInfoFlights       flightGroup[VMs]          //nolint:gochecknoglobals // shared by concurrent callers
+	vmInfoFlights       flightGroup[vmInfoResult] //nolint:gochecknoglobals // shared by concurrent callers
 	clusterHostsFlights flightGroup[clusterHosts] //nolint:gochecknoglobals // shared by concurrent callers
 	snapshotDisks       snapshotDiskCache         //nolint:gochecknoglobals // process-lifetime cache
 	recentHosts         recentClusterHosts        //nolint:gochecknoglobals // shared by all callers
 )
 
+// vmInfoResult is one GetVMInfo run, as shared between its callers: the VMs
+// read, when the run started, and the error minimega reported, if any (the VMs
+// are then partial).
+type vmInfoResult struct {
+	vms VMs
+	at  time.Time
+	err error
+}
+
 // clusterHosts is one GetClusterHosts result, as shared between the callers of
-// one run.
+// one run, with when the run started.
 type clusterHosts struct {
 	hosts Hosts
+	at    time.Time
 	err   error
 }
 
@@ -66,17 +76,17 @@ type snapshotDiskCache struct {
 	entries map[string]snapshotDiskEntry
 }
 
-// get returns the latest list if it is younger than clusterHostsTTL. Callers
-// must not modify it.
-func (c *recentClusterHosts) get() (Hosts, bool) {
+// get returns the latest list if it is younger than clusterHostsTTL, and when
+// the run that read it started. Callers must not modify it.
+func (c *recentClusterHosts) get() (Hosts, time.Time, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.hosts == nil || time.Since(c.at) >= clusterHostsTTL {
-		return nil, false
+		return nil, time.Time{}, false
 	}
 
-	return c.hosts, true
+	return c.hosts, c.at, true
 }
 
 // put stores a list read by a run started at `at`, unless a later run's list

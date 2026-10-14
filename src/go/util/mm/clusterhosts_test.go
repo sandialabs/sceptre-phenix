@@ -370,3 +370,22 @@ func TestSameHostSet(t *testing.T) {
 		}
 	}
 }
+
+// A reused host list reports when it was first read, not when it was reused.
+func TestGetClusterHostsObservedReportsReadTime(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	useFakeMinimega(t, fakeMesh{
+		head: "head", peers: "compute1", members: "compute1", compute: []string{"compute1"},
+	}.reply)
+
+	_, first, err := Minimega{}.GetClusterHostsObserved(false)
+	if err != nil || !first.Known || first.At.IsZero() {
+		t.Fatalf("first read: %+v, %v", first, err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+
+	_, reused, err := Minimega{}.GetClusterHostsObserved(false)
+	if err != nil || !reused.At.Equal(first.At) {
+		t.Fatalf("reused list observed at %v, %v; want the first read's %v", reused.At, err, first.At)
+	}
+}

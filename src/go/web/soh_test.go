@@ -220,4 +220,39 @@ func TestGetSoHSummaryReusesStatesWhileBusy(t *testing.T) {
 	if !sums[1].VMs.Known || sums[1].VMs.Running != 2 {
 		t.Errorf("expected zeta's last states, got %+v", sums[1].VMs)
 	}
+
+	// they are reported as earlier states, with when they were read
+	if !sums[1].VMsStale || sums[1].VMsObservedAt == "" {
+		t.Errorf("zeta's reused states: stale %v, observed at %q; want stale with a time",
+			sums[1].VMsStale, sums[1].VMsObservedAt)
+	}
+
+	resp := do(t, http.MethodGet, serveAs(t, "alice", sohSummaryRole("*")).URL+"/api/v1/soh", "")
+	if resp.Header.Get("X-Phenix-Stale") != "true" || resp.Header.Get("X-Phenix-Observed-At") != sums[1].VMsObservedAt {
+		t.Errorf("headers stale %q, observed at %q; want true and zeta's %q",
+			resp.Header.Get("X-Phenix-Stale"), resp.Header.Get("X-Phenix-Observed-At"), sums[1].VMsObservedAt)
+	}
+}
+
+// While minimega is busy and nothing was read yet, a running experiment's VM
+// counts are unknown, not zero.
+func TestGetSoHSummaryUnknownWhileBusyWithoutStates(t *testing.T) {
+	useTestStore(t,
+		sohSummaryExperiment("zeta", true, "soh"),
+		sohSummaryExperiment("starting", false, "soh"),
+	)
+	useTestMM(t, &testMM{})
+
+	lastVMStates.Delete("zeta")
+
+	if err := cache.LockExperimentForStarting("starting"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { cache.UnlockExperiment("starting") })
+
+	_, sums := getSohSummary(t, sohSummaryRole("*"))
+	if len(sums) != 2 || sums[1].VMs.Known || sums[1].VMsObservedAt != "" {
+		t.Errorf("zeta = %+v, want unknown VM counts with no time", sums)
+	}
 }

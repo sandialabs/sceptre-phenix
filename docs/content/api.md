@@ -158,6 +158,26 @@ created with a seq above L that it lacks. Sequence numbers are only comparable
 within one server process, so reset what you track when the websocket
 reconnects.
 
+Responses that serve runtime state read from minimega say how old it is.
+`X-Phenix-Observed-At` is when the oldest data in the response was read (RFC
+3339); compare it with the response's `Date` header rather than your own clock.
+`X-Phenix-Stale: true` means the response serves data past its normal bound,
+such as the VM states last read while minimega is busy starting or stopping an
+experiment. `GET /hosts`, `GET /experiments`, `GET /experiments/{name}`, the
+VM lists, `GET /experiments/{name}/files` and `GET /soh` send them.
+
+When minimega cannot be read, a response never reports it as empty:
+
+* A VM list of a running experiment sets `runtime_unknown` (`vms_unknown` on an
+  experiment) and lists the VMs minimega did not report as configured, with an
+  empty state, instead of leaving them out.
+* The state of health summary sets `vms.known` to `false`, and
+  `vms_stale` with `vms_observed_at` when it shows earlier VM states.
+* `GET /experiments/{name}/files` answers `502` when a cluster node's files
+  could not be listed.
+* `GET /experiments` and `GET /vms` answer `500` when the store cannot be read,
+  and successful lists are `[]`, never `null`.
+
 API responses are sent with `Cache-Control: no-cache, private`, unless the
 endpoint sets its own.
 

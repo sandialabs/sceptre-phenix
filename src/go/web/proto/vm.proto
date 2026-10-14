@@ -38,6 +38,11 @@ message VM {
 message VMList {
   repeated VM vms = 1;
   uint32 total = 2;
+  // minimega did not answer for every VM of a running experiment: VMs it did
+  // not report are listed as configured, with no state
+  bool runtime_unknown = 3 [json_name="runtime_unknown"];
+  // when minimega was read for the VMs (RFC 3339), empty when it was not
+  string observed_at = 4 [json_name="observed_at"];
 }
 
 message Capture {

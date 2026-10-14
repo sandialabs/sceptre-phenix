@@ -18,6 +18,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/types"
 	v1 "phenix/types/version/v1"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/util/polltest"
@@ -350,11 +351,11 @@ func TestReadKeepsReadingWhileAListIsSlow(t *testing.T) {
 
 	t.Cleanup(release)
 
-	deps.vms = func(*types.Experiment) []mm.VM {
+	deps.vms = func(*types.Experiment) ([]mm.VM, freshness.Observation) {
 		entered <- struct{}{}
 		<-gate
 
-		return nil
+		return nil, freshness.Observed(time.Now())
 	}
 
 	conn := newFakeConn(t)
@@ -411,14 +412,14 @@ func TestListRequestsAreLatestWins(t *testing.T) {
 
 	first := true
 
-	deps.vms = func(*types.Experiment) []mm.VM {
+	deps.vms = func(*types.Experiment) ([]mm.VM, freshness.Observation) {
 		if first {
 			first = false
 			entered <- struct{}{}
 			<-gate
 		}
 
-		return nil
+		return nil, freshness.Observed(time.Now())
 	}
 
 	conn := newFakeConn(t)
@@ -493,11 +494,11 @@ func TestUnsubscribeOutlastsPendingLists(t *testing.T) {
 		return experiment.Get("exp")
 	}
 
-	deps.vms = func(*types.Experiment) []mm.VM {
+	deps.vms = func(*types.Experiment) ([]mm.VM, freshness.Observation) {
 		entered <- struct{}{}
 		<-gate
 
-		return []mm.VM{{Name: "vm1", Running: true}}
+		return []mm.VM{{Name: "vm1", Running: true}}, freshness.Observed(time.Now())
 	}
 
 	shots := make(chan string, 8)
@@ -624,11 +625,11 @@ func TestListSeqPrecedesBroadcastDuringRead(t *testing.T) {
 
 	t.Cleanup(release)
 
-	deps.vms = func(*types.Experiment) []mm.VM {
+	deps.vms = func(*types.Experiment) ([]mm.VM, freshness.Observation) {
 		entered <- struct{}{}
 		<-gate
 
-		return nil
+		return nil, freshness.Observed(time.Now())
 	}
 
 	conn := newFakeConn(t)

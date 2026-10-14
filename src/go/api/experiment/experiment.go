@@ -25,6 +25,7 @@ import (
 	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/file"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 	"phenix/util/notes"
@@ -1258,6 +1259,13 @@ func Delete(name string) error {
 // few seconds old (see file.InvalidateExperimentFiles).
 func Files(name, filter string) (file.Files, error) {
 	return file.GetExperimentFiles(name, filter) //nolint:wrapcheck // passthrough
+}
+
+// FilesObserved is Files, also reporting when the listing was read from
+// minimega. It returns an error, not a partial listing, when a cluster node
+// could not be listed.
+func FilesObserved(name, filter string) (file.Files, freshness.Observation, error) {
+	return file.GetExperimentFilesObserved(name, filter) //nolint:wrapcheck // passthrough
 }
 
 // InvalidateFiles makes the next Files call list the experiment's files anew,

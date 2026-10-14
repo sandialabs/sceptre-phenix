@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"phenix/util"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 )
@@ -42,6 +43,31 @@ func GetExperimentFiles(exp, filter string) (Files, error) {
 	return DefaultClusterFiles.GetExperimentFiles(exp, filter) //nolint:wrapcheck // passthrough
 }
 
+// filesObserver is the optional part of ClusterFiles that reports when a
+// listing was read. It is kept out of ClusterFiles so the stand-ins tests use
+// need not implement it.
+type filesObserver interface {
+	GetExperimentFilesObserved(exp, filter string) (Files, freshness.Observation, error)
+}
+
+// GetExperimentFilesObserved is GetExperimentFiles, also reporting when the
+// listing was read from minimega, which for a reused listing is up to
+// listingTTL ago. A ClusterFiles that cannot tell is taken to have read it now.
+func GetExperimentFilesObserved(exp, filter string) (Files, freshness.Observation, error) {
+	if o, ok := DefaultClusterFiles.(filesObserver); ok {
+		return o.GetExperimentFilesObserved(exp, filter)
+	}
+
+	at := time.Now()
+
+	files, err := DefaultClusterFiles.GetExperimentFiles(exp, filter)
+	if err != nil {
+		return nil, freshness.Observation{}, err //nolint:wrapcheck // passthrough
+	}
+
+	return files, freshness.Observed(at), nil
+}
+
 func GetExperimentSnapshots(exp string) ([]string, error) {
 	return DefaultClusterFiles.GetExperimentSnapshots(exp) //nolint:wrapcheck // passthrough
 }
@@ -64,24 +90,36 @@ func DeleteFile(path string) error {
 type MMClusterFiles struct{}
 
 // GetExperimentFiles lists the experiment's files, reusing a listing made in
-// the last few seconds (see listingTTL), and keeps those matching filter.
-func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
-	files, err := experimentListings.get(listingKey(exp), func() (Files, error) {
-		return listExperimentFiles(exp), nil
+// the last few seconds (see listingTTL), and keeps those matching filter. It
+// returns an error, never a partial listing, when a cluster node could not be
+// listed.
+func (f MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
+	files, _, err := f.GetExperimentFilesObserved(exp, filter)
+
+	return files, err
+}
+
+// GetExperimentFilesObserved is GetExperimentFiles, also reporting when the
+// listing was read from minimega.
+func (MMClusterFiles) GetExperimentFilesObserved(exp, filter string) (Files, freshness.Observation, error) {
+	files, started, err := experimentListings.get(listingKey(exp), func() (Files, error) {
+		return listExperimentFiles(exp)
 	})
 	if err != nil {
-		return nil, err
+		return nil, freshness.Observation{}, err
 	}
 
+	observed := freshness.Observed(started)
+
 	if len(filter) == 0 {
-		return files, nil
+		return files, observed, nil
 	}
 
 	// Build a Boolean expression tree and determine
 	// the fields that should be searched
 	filterTree := BuildTree(filter)
 	if filterTree == nil {
-		return nil, nil
+		return nil, observed, nil
 	}
 
 	var matched Files
@@ -92,12 +130,14 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 		}
 	}
 
-	return matched, nil
+	return matched, observed, nil
 }
 
 // listExperimentFiles asks minimega for every file in the experiment's files
-// directory, on the mesh nodes and the headnode, and categorizes them.
-func listExperimentFiles(exp string) Files {
+// directory, on the mesh nodes and the headnode, and categorizes them. A
+// directory that does not exist lists as empty (minimega's `file list` globs
+// the path); a node that fails to answer is an error.
+func listExperimentFiles(exp string) (Files, error) {
 	var (
 		// Using a map here to weed out duplicates. The key is the relative path to
 		// the file to ensure files with the same name in different directories get
@@ -117,7 +157,12 @@ func listExperimentFiles(exp string) Files {
 	for _, command := range commands {
 		cmd.Command = command
 
-		for _, row := range mmcli.RunTabular(cmd) {
+		rows, err := mmcli.RunTabularChecked(cmd, nil)
+		if err != nil {
+			return nil, fmt.Errorf("listing files of experiment %s: %w", exp, err)
+		}
+
+		for _, row := range rows {
 			name := filepath.Base(row["name"])
 			file := File{Name: name, Path: strings.TrimPrefix(row["name"], root)} //nolint:exhaustruct // partial initialization
 
@@ -192,7 +237,7 @@ func listExperimentFiles(exp string) Files {
 		files = append(files, file)
 	}
 
-	return files
+	return files, nil
 }
 
 func (MMClusterFiles) GetExperimentSnapshots(exp string) ([]string, error) {

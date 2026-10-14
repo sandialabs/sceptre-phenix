@@ -47,6 +47,7 @@ All notable changes to this project will be documented in this file.
 - **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and `phenix config edit` refuses to save over a config changed while it was open.
 - **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and `phenix config edit` refuses to save over a config changed while it was open. `GET /configs/{kind}/{name}` returns it as an `ETag`, and `PUT` and `DELETE` honor `If-Match` with a 412.
 - **Ordering**: API responses carry an `X-Phenix-Seq` header and websocket messages a `seq` field from one increasing sequence, so clients can tell which of two updates is newer.
+- **Data age**: Responses with runtime data from minimega carry `X-Phenix-Observed-At`, and `X-Phenix-Stale` when they serve earlier data while minimega is busy; the State of Health summary adds `vms_observed_at` and `vms_stale`.
 
 ### Changed
 
@@ -165,6 +166,8 @@ All notable changes to this project will be documented in this file.
 - **Uploads**: A VM mount file upload without a file crashed its request, and a disk or VM mount file upload that failed partway was reported as done.
 - **Disks**: A failed disk upload showed no error.
 - **VM table**: A bulk VM action stopped waiting after the first VM finished, and showed one error notification for each failed VM.
+- **minimega failures**: A running experiment whose VMs minimega did not report showed no VMs, a failed file listing showed no files, and a store failure listed no experiments; VM lists now set `runtime_unknown` and list the VMs as configured, file listings answer 502, and `GET /experiments` answers 500.
+- **Topology search**: The search served a topology from before the experiment was edited, started or stopped for up to 30 seconds.
 - **Config API**: `GET /configs` returned `null` instead of `[]` when the role could see no configs, and CORS preflights did not allow the `X-Phenix-Auth-Token` header.
 
 ### Security

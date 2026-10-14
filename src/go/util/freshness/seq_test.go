@@ -70,11 +70,17 @@ func TestObservationOlder(t *testing.T) {
 		t.Errorf("a.Older(b) = %+v, want b's time, stale, unknown, with b's error", got)
 	}
 
-	if got := a.Older(freshness.Observation{}); !got.At.Equal(now) || !got.Known {
-		t.Errorf("a.Older(zero) = %+v, want a", got)
+	if got := freshness.Unobserved().Older(a); got != a {
+		t.Errorf("Unobserved().Older(a) = %+v, want a", got)
 	}
 
-	if got := (freshness.Observation{}).Older(a); !got.At.Equal(now) || !got.Known {
-		t.Errorf("zero.Older(a) = %+v, want a", got)
+	if got := a.Older(freshness.Unobserved()); got != a {
+		t.Errorf("a.Older(Unobserved()) = %+v, want a", got)
+	}
+
+	// a part served stale with no time of its own still makes the whole stale
+	busy := freshness.Observation{Stale: true, Known: false}
+	if got := a.Older(busy); !got.At.Equal(now) || !got.Stale || got.Known {
+		t.Errorf("a.Older(busy) = %+v, want a's time, stale and unknown", got)
 	}
 }

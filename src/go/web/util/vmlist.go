@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ifaces "phenix/types/interfaces"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/web/proto"
 	"phenix/web/rbac"
@@ -101,6 +102,9 @@ func VMListToProtobuf(expName string, vms mm.VMs, total int, topo ifaces.Topolog
 	list := &proto.VMList{
 		Total: uint32(total), //nolint:gosec // integer overflow conversion int -> uint32
 		Vms:   make([]*proto.VM, len(vms)),
+		// set by SetVMListObservation
+		RuntimeUnknown: false,
+		ObservedAt:     "",
 	}
 	nodes := IndexTopology(topo)
 
@@ -109,6 +113,17 @@ func VMListToProtobuf(expName string, vms mm.VMs, total int, topo ifaces.Topolog
 	}
 
 	return list
+}
+
+// SetVMListObservation records in list how its VMs were read from minimega:
+// runtime_unknown when minimega did not answer for every VM, and observed_at
+// when it was read at all.
+func SetVMListObservation(list *proto.VMList, obs freshness.Observation) {
+	list.RuntimeUnknown = !obs.Known
+
+	if !obs.At.IsZero() {
+		list.ObservedAt = freshness.FormatTime(obs.At)
+	}
 }
 
 // sortByDelay orders VMs by the delay holding back their start, as the UI's
