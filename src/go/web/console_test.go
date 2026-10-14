@@ -47,7 +47,7 @@ func useTestConsoles(t *testing.T, grace time.Duration) *consoleRegistry {
 		registry.mu.Unlock()
 
 		for _, console := range running {
-			console.end()
+			console.end(consoleEndedByUser)
 		}
 
 		consoles, o = original, originalOpts
@@ -266,6 +266,7 @@ func TestConsoleEndsOnceUnattachedForTheGracePeriod(t *testing.T) {
 	api := consoleAPI(t, "alice", consoleRole())
 	pid := createTestConsole(t, api)
 	console := registry.lookup(pid)
+	events := captureAudit(t)
 
 	unattached := idleTimer(t, console)
 
@@ -302,6 +303,14 @@ func TestConsoleEndsOnceUnattachedForTheGracePeriod(t *testing.T) {
 
 	console.expire(idleTimer(t, console))
 	waitConsoleEnded(t, console)
+
+	wantAudit(t, events(), "console-end", "success", map[string]any{
+		"user.name": "alice", "process.pid": pid, "phenix.console.end_reason": "idle",
+	})
+
+	if n := countAudit(events(), "console-attach", "success", map[string]any{"process.pid": pid}); n != 2 {
+		t.Errorf("%d attaches audited, want 2", n)
+	}
 
 	if resp := do(t, http.MethodGet, api+"/console/"+strconv.Itoa(pid), ""); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for the ended console, got %d", resp.StatusCode)
@@ -362,6 +371,7 @@ func TestConsoleEndsWhenItsProcessExits(t *testing.T) {
 	api := consoleAPI(t, "alice", consoleRole())
 	pid := createTestConsole(t, api)
 	console := registry.lookup(pid)
+	events := captureAudit(t)
 
 	ws, err := dialTestConsole(t, api, pid)
 	if err != nil {
@@ -393,6 +403,12 @@ func TestConsoleEndsWhenItsProcessExits(t *testing.T) {
 		t.Fatal("ended console still registered")
 	}
 
+	got := events()
+	wantAudit(t, got, "console-attach", "success", map[string]any{"user.name": "alice", "process.pid": pid})
+	wantAudit(t, got, "console-end", "success", map[string]any{
+		"user.name": "alice", "process.pid": pid, "phenix.console.end_reason": "exited",
+	})
+
 	if _, err := dialTestConsole(t, api, pid); err == nil {
 		t.Fatal("attached to an ended console")
 	}
@@ -401,6 +417,7 @@ func TestConsoleEndsWhenItsProcessExits(t *testing.T) {
 func TestDeleteConsoleEndsIt(t *testing.T) {
 	registry := useTestConsoles(t, time.Minute)
 	api := consoleAPI(t, "alice", consoleRole())
+	events := captureAudit(t)
 	pid := createTestConsole(t, api)
 	console := registry.lookup(pid)
 
@@ -416,6 +433,13 @@ func TestDeleteConsoleEndsIt(t *testing.T) {
 		t.Fatal("console still running after DELETE")
 	}
 
+	got := events()
+	wantAudit(t, got, "console-create", "success", map[string]any{"user.name": "alice", "process.pid": pid})
+	wantAudit(t, got, "console-terminate", "success", map[string]any{"user.name": "alice", "process.pid": pid})
+	wantAudit(t, got, "console-end", "success", map[string]any{
+		"user.name": "alice", "process.pid": pid, "phenix.console.end_reason": "user",
+	})
+
 	resp = do(t, http.MethodDelete, api+"/console/"+strconv.Itoa(pid), "")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 deleting it again, got %d", resp.StatusCode)
@@ -426,10 +450,11 @@ func TestConsoleIsOnlyItsOwners(t *testing.T) {
 	registry := useTestConsoles(t, time.Minute)
 
 	var (
-		alice = consoleAPI(t, "alice", consoleRole())
-		bob   = consoleAPI(t, "bob", consoleRole())
-		pid   = createTestConsole(t, alice)
-		path  = "/console/" + strconv.Itoa(pid)
+		alice  = consoleAPI(t, "alice", consoleRole())
+		bob    = consoleAPI(t, "bob", consoleRole())
+		pid    = createTestConsole(t, alice)
+		path   = "/console/" + strconv.Itoa(pid)
+		events = captureAudit(t)
 	)
 
 	for _, tt := range []struct{ method, path string }{
@@ -450,6 +475,12 @@ func TestConsoleIsOnlyItsOwners(t *testing.T) {
 		t.Fatal("another user ended the console")
 	}
 
+	for _, action := range []string{"console-terminate", "console-attach"} {
+		wantAudit(t, events(), action, "failure", map[string]any{
+			"user.name": "bob", "process.pid": pid, "event.reason": "not owner",
+		})
+	}
+
 	if resp := do(t, http.MethodGet, alice+path, ""); resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET as the owner: expected 200, got %d", resp.StatusCode)
 	}
@@ -467,6 +498,7 @@ func TestConsoleRoutesNeedPermission(t *testing.T) {
 
 	// may use the console, but not start, resize or end one
 	viewer := consoleAPI(t, "alice", testRole("miniconsole", "get"))
+	events := captureAudit(t)
 
 	for _, tt := range []struct{ method, path string }{
 		{http.MethodPost, "/console"},
@@ -486,6 +518,10 @@ func TestConsoleRoutesNeedPermission(t *testing.T) {
 
 	if _, err := dialTestConsole(t, none, pid); err == nil {
 		t.Fatal("attached without permission")
+	}
+
+	for _, action := range []string{"console-create", "console-terminate", "console-attach"} {
+		wantDenied(t, events(), action)
 	}
 }
 

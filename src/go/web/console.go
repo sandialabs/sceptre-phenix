@@ -21,8 +21,16 @@ import (
 	"golang.org/x/net/websocket"
 
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/util"
+)
+
+// Why a console ended, as its audit event's phenix.console.end_reason says.
+const (
+	consoleEndedByUser = "user"
+	consoleEndedIdle   = "idle"
+	consoleExited      = "exited"
 )
 
 // A minimega console outlives the websockets that show it, so the user keeps
@@ -49,7 +57,10 @@ const (
 	consoleResizeSleep = 100 * time.Millisecond
 )
 
-var errConsoleEnded = errors.New("console ended")
+var (
+	errConsoleEnded    = errors.New("console ended")
+	errConsoleNotEnded = errors.New("console did not end")
+)
 
 // consoles are the running minimega consoles, by pid.
 var consoles = newConsoleRegistry( //nolint:gochecknoglobals // shared by every request
@@ -73,7 +84,7 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !role.Allowed("miniconsole", "post") {
-		plog.Warn(plog.TypeSecurity, "creating miniconsole not allowed", "user", user)
+		audit.Denied(r, audit.ConsoleCreate, "creating miniconsole not allowed", audit.Fields{})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
@@ -84,13 +95,13 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 	console, err := consoles.start(context.WithoutCancel(ctx), user)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "starting minimega console", "err", err)
+		audit.Failure(r, audit.ConsoleCreate, "starting miniconsole failed", audit.Fields{}, err)
 		http.Error(w, "could not start terminal: "+err.Error(), http.StatusInternalServerError)
 
 		return
 	}
 
-	plog.Info(plog.TypeSystem, "spawned new minimega console", "pid", console.pid)
-	plog.Info(plog.TypeAction, "miniconsole created", "user", user)
+	audit.Success(r, audit.ConsoleCreate, "miniconsole created", audit.Fields{PID: console.pid})
 
 	body, _ := json.Marshal(util.WithRoot("pid", console.pid))
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
@@ -115,7 +126,7 @@ func GetConsole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	console, ok := ownConsole(w, r)
+	console, ok := ownConsole(w, r, audit.ConsoleAttach)
 	if !ok {
 		return
 	}
@@ -129,32 +140,31 @@ func GetConsole(w http.ResponseWriter, r *http.Request) {
 // Ending a console needs the same permission as starting one: it is the
 // user's own process, and the ownership check is what guards it.
 func DeleteConsole(w http.ResponseWriter, r *http.Request) {
-	var (
-		ctx  = r.Context()
-		role = middleware.RoleFromContext(ctx)
-		user = middleware.UserFromContext(ctx)
-	)
+	role := middleware.RoleFromContext(r.Context())
 
 	if !role.Allowed("miniconsole", "post") {
-		plog.Warn(plog.TypeSecurity, "ending miniconsole not allowed", "user", user)
+		audit.Denied(r, audit.ConsoleTerminate, "ending miniconsole not allowed", audit.Fields{})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
 	}
 
-	console, ok := ownConsole(w, r)
+	console, ok := ownConsole(w, r, audit.ConsoleTerminate)
 	if !ok {
 		return
 	}
 
-	plog.Info(plog.TypeAction, "miniconsole ended", "user", user, "pid", console.pid)
+	fields := audit.Fields{PID: console.pid}
 
-	if !console.end() {
+	if !console.end(consoleEndedByUser) {
 		plog.Error(plog.TypeSystem, "minimega console did not end", "pid", console.pid)
+		audit.Failure(r, audit.ConsoleTerminate, "ending miniconsole failed", fields, errConsoleNotEnded)
 		http.Error(w, "console did not end", http.StatusInternalServerError)
 
 		return
 	}
+
+	audit.Success(r, audit.ConsoleTerminate, "miniconsole ended", fields)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -175,7 +185,7 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	console, ok := ownConsole(w, r)
+	console, ok := ownConsole(w, r, audit.ConsoleAttach)
 	if !ok {
 		return
 	}
@@ -224,18 +234,13 @@ func WsConsole(w http.ResponseWriter, r *http.Request) {
 	role := middleware.RoleFromContext(r.Context())
 
 	if !role.Allowed("miniconsole", "get") {
-		plog.Warn(
-			plog.TypeSecurity,
-			"getting miniconsole not allowed",
-			"user",
-			middleware.UserFromContext(r.Context()),
-		)
+		audit.Denied(r, audit.ConsoleAttach, "attaching to miniconsole not allowed", audit.Fields{})
 		http.Error(w, "forbidden", http.StatusForbidden)
 
 		return
 	}
 
-	console, ok := ownConsole(w, r)
+	console, ok := ownConsole(w, r, audit.ConsoleAttach)
 	if !ok {
 		return
 	}
@@ -246,10 +251,12 @@ func WsConsole(w http.ResponseWriter, r *http.Request) {
 
 		client, err := console.attach()
 		if err != nil {
+			audit.Failure(r, audit.ConsoleAttach, "attaching to miniconsole failed", audit.Fields{PID: console.pid}, err)
+
 			return
 		}
 
-		plog.Debug(plog.TypeSystem, "attached to minimega console", "pid", console.pid)
+		audit.Success(r, audit.ConsoleAttach, "attached to miniconsole", audit.Fields{PID: console.pid})
 
 		written := make(chan struct{})
 		go client.serve(ws, written)
@@ -264,9 +271,10 @@ func WsConsole(w http.ResponseWriter, r *http.Request) {
 }
 
 // ownConsole returns the running console the request's pid names when the
-// requesting user started it, and otherwise answers the request itself.
-// Another user's console is reported as not found, so pids are not probed.
-func ownConsole(w http.ResponseWriter, r *http.Request) (*consoleSession, bool) {
+// requesting user started it, and otherwise answers the request itself,
+// auditing a refused action a on another user's console. Another user's
+// console is reported as not found, so pids are not probed.
+func ownConsole(w http.ResponseWriter, r *http.Request, a audit.Action) (*consoleSession, bool) {
 	pid, err := strconv.Atoi(mux.Vars(r)["pid"])
 	if err != nil {
 		http.Error(w, "invalid pid", http.StatusBadRequest)
@@ -278,14 +286,7 @@ func ownConsole(w http.ResponseWriter, r *http.Request) (*consoleSession, bool) 
 
 	console := consoles.lookup(pid)
 	if console != nil && console.owner != user {
-		plog.Warn(
-			plog.TypeSecurity,
-			"minimega console belongs to another user",
-			"user",
-			user,
-			"pid",
-			pid,
-		)
+		audit.Denied(r, a, "minimega console belongs to another user", audit.Fields{PID: pid, Reason: "not owner"})
 
 		console = nil
 	}
@@ -356,6 +357,8 @@ func (r *consoleRegistry) start(ctx context.Context, owner string) (*consoleSess
 		idle:     nil,
 		idleGen:  0,
 		ended:    false,
+
+		endReason: "",
 	}
 
 	r.mu.Lock()
@@ -408,6 +411,9 @@ type consoleSession struct {
 	// idleGen tells a stale idle timer, one stopped too late, to do nothing.
 	idleGen int
 	ended   bool
+	// endReason is why the console was ended, once something ended it: the
+	// first of consoleEndedByUser and consoleEndedIdle to.
+	endReason string
 }
 
 // pump copies the console's output to its history and its websockets.
@@ -471,13 +477,22 @@ func (s *consoleSession) wait(cmd *exec.Cmd, pumped <-chan struct{}) {
 	for client := range s.clients {
 		s.removeLocked(client)
 	}
+
+	reason := s.endReason
 	s.mu.Unlock()
 
 	_ = s.tty.Close()
 
-	close(s.done)
+	if reason == "" {
+		reason = consoleExited
+	}
 
-	plog.Info(plog.TypeSystem, "minimega console exited", "pid", s.pid)
+	// before done closes, so it is logged by the time anything sees it ended
+	audit.Background(s.owner, audit.ConsoleEnd, "minimega console ended", audit.OutcomeSuccess, audit.Fields{
+		PID: s.pid, Extra: []any{"phenix.console.end_reason", reason},
+	})
+
+	close(s.done)
 }
 
 // attach adds a websocket client, which first gets the console's history.
@@ -553,11 +568,26 @@ func (s *consoleSession) expire(gen int) {
 
 	plog.Info(plog.TypeSystem, "ending unattached minimega console", "pid", s.pid, "after", s.grace)
 
+	s.endingLocked(consoleEndedIdle)
+
 	_ = s.proc.Kill()
 }
 
-// end kills the console's process and reports whether the console ended.
-func (s *consoleSession) end() bool {
+// endingLocked records why the console is being ended, unless something
+// already ended it.
+func (s *consoleSession) endingLocked(reason string) {
+	if s.endReason == "" {
+		s.endReason = reason
+	}
+}
+
+// end kills the console's process, for the reason, and reports whether the
+// console ended.
+func (s *consoleSession) end(reason string) bool {
+	s.mu.Lock()
+	s.endingLocked(reason)
+	s.mu.Unlock()
+
 	_ = s.proc.Kill()
 
 	select {
