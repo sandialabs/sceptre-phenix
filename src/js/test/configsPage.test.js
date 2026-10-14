@@ -494,6 +494,92 @@ describe('the config editor', () => {
       ]);
     });
 
+    describe('a config at a known revision', () => {
+      const revised = {
+        kind: 'Topology',
+        metadata: { name: 'web', updated: '2025-01-02T03:04:05Z', revision: 7 },
+      };
+
+      // an editor with the revised config open and edited, saved and
+      // confirmed
+      async function saved() {
+        axios.get.mockResolvedValue({ data: full(revised, { nodes: [] }) });
+        const ctx = await editor('edit', revised);
+        ctx.config.str = ctx.config.str.replace('nodes: []', 'nodes: [a]');
+        ctx.saveConfig();
+        dialogs(ctx)[0].onConfirm();
+        await flush();
+        return ctx;
+      }
+
+      const ifMatch = (call) => call[2].headers['If-Match'];
+
+      it('is saved only if unchanged since it was opened', async () => {
+        axios.put.mockResolvedValue({});
+        const ctx = await saved();
+
+        expect(ifMatch(axios.put.mock.calls[0])).toBe('"r7"');
+        expect(closed(ctx)).toEqual([
+          ['is-done', 'config Topology/web has been edited'],
+        ]);
+      });
+
+      it('asks what to do when it changed meanwhile, and can overwrite it', async () => {
+        axios.put.mockRejectedValueOnce({
+          response: { status: 412, data: { metadata: { revision: '9' } } },
+        });
+        const ctx = await saved();
+
+        expect(ctx.conflict).toMatchObject({
+          modal: true,
+          name: 'Topology/web',
+          from: 7,
+          to: 9,
+        });
+        expect(closed(ctx)).toEqual([]);
+        expect(notify.error).not.toHaveBeenCalled();
+
+        const html = await renderSSR(
+          ConfigsEditor,
+          { mode: 'edit', editorConfig: revised },
+          { data: { conflict: ctx.conflict } },
+        );
+        expect(textOf(openModal(html))).toBe(
+          'Config Changed Topology/web changed since you opened it ' +
+            '(revision 7 → 9). Reload it (your edits are lost) ' +
+            'Overwrite anyway Cancel',
+        );
+
+        // overwriting sends the same config without the precondition
+        axios.put.mockResolvedValueOnce({});
+        await ctx.overwriteConflicted();
+        expect(axios.put).toHaveBeenCalledTimes(2);
+        expect(ifMatch(axios.put.mock.calls[1])).toBeUndefined();
+        expect(axios.put.mock.calls[1][1]).toBe(axios.put.mock.calls[0][1]);
+        expect(closed(ctx)).toHaveLength(1);
+      });
+
+      it('reloads the newer config, dropping the edits', async () => {
+        axios.put.mockRejectedValueOnce({
+          response: { status: 412, data: { metadata: { revision: '9' } } },
+        });
+        const ctx = await saved();
+
+        axios.get.mockResolvedValue({
+          data: full(
+            { ...revised, metadata: { ...revised.metadata, revision: 9 } },
+            { nodes: ['b'] },
+          ),
+        });
+        ctx.reloadConflicted();
+        await flush();
+
+        expect(ctx.conflict.modal).toBe(false);
+        expect(ctx.loadedRevision).toBe(9);
+        expect(ctx.config.str).toContain('- b');
+      });
+    });
+
     // a failed save or create, on an editor opened for it
     const saves = [
       [

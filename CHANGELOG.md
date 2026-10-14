@@ -46,6 +46,7 @@ All notable changes to this project will be documented in this file.
 - **Bulk VM actions**: `POST /experiments/{exp}/vms/actions` starts, pauses, restarts, shuts down, kills or resets the disks of several VMs in one background job that reports each VM's outcome, skipping VMs the role may not act on.
 - **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and `phenix config edit` refuses to save over a config changed while it was open.
 - **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and `phenix config edit` refuses to save over a config changed while it was open. `GET /configs/{kind}/{name}` returns it as an `ETag`, and `PUT` and `DELETE` honor `If-Match` with a 412.
+- **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and the config editor and `phenix config edit` refuse to save over a config changed while it was open. `GET /configs/{kind}/{name}` returns it as an `ETag`, and `PUT` and `DELETE` honor `If-Match` with a 412.
 - **Ordering**: API responses carry an `X-Phenix-Seq` header and websocket messages a `seq` field from one increasing sequence, so clients can tell which of two updates is newer.
 - **Data age**: Responses with runtime data from minimega carry `X-Phenix-Observed-At`, and `X-Phenix-Stale` when they serve earlier data while minimega is busy; the State of Health summary adds `vms_observed_at` and `vms_stale`.
 
@@ -53,7 +54,7 @@ All notable changes to this project will be documented in this file.
 
 - **Image Defaults (breaking)**: `phenix image create` defaults `--release` to `noble`. Debian releases now default to the Debian components `main contrib non-free non-free-firmware` instead of the Ubuntu ones.
 - **Image miniccc Service**: `miniccc` systemd service created by `phenix image {build|inject-miniexe}` now sets `User=root` and `HOME=/root`, so commands run through `cc exec` have an environment.
-- **Loading**: A header status with a refresh button replaces full-page spinners. After login the Experiments, Configs, Disks, Hosts, Users, Logs, Scorch, State of Health and Settings tabs preload in the background, pages show their cached data at once, and a load you leave keeps running for up to 2 minutes. Empty tables say why they are empty.
+- **Loading**: A header status with a refresh button replaces full-page spinners. After login the Experiments, Configs, Disks, Hosts, Users, Logs, Scorch, State of Health and Settings tabs preload in the background, pages show their cached data at once, and a load you leave keeps running for up to 2 minutes. Empty tables say why they are empty. The header shows how old the server's data is and marks it `may be out of date` when minimega was busy, it changed elsewhere, live updates dropped, or it is older than the page expects.
 - **minimega load**: Listing VMs takes 3 minimega commands instead of about 3 per VM, and identical concurrent listings and screenshots share one run. Experiment starts use their own connection, file and host listings are cached for 5 seconds, and waiting miniccc commands share one poller per namespace. Hosts refresh every 30 seconds and VM tiles every 60, only while the page is visible.
 - **VM screenshots**: Taken every 15 seconds instead of 5, only of running VMs while the tab is visible, and no longer at all once you leave the experiment page (they kept minimega busy for the rest of the session). They reach the page as `experiment/vm/screenshot` updates after the VM rows.
 - **Server**: BoltDB store reads no longer wait on each other, and writes keep the free page list in the file and use one transaction (existing stores convert on first write). Requests read the experiment once, websocket messages are encoded once, and log lines go only to Logs page clients whose role may read logs.
@@ -168,6 +169,7 @@ All notable changes to this project will be documented in this file.
 - **VM table**: A bulk VM action stopped waiting after the first VM finished, and showed one error notification for each failed VM.
 - **minimega failures**: A running experiment whose VMs minimega did not report showed no VMs, a failed file listing showed no files, and a store failure listed no experiments; VM lists now set `runtime_unknown` and list the VMs as configured, file listings answer 502, and `GET /experiments` answers 500.
 - **Topology search**: The search served a topology from before the experiment was edited, started or stopped for up to 30 seconds.
+- **Live lists**: A VM, experiment, SCORCH or State of Health list the server read before a live update could undo it when it arrived later, such as showing a VM that had just stopped as running.
 - **Config API**: `GET /configs` returned `null` instead of `[]` when the role could see no configs, and CORS preflights did not allow the `X-Phenix-Auth-Token` header.
 
 ### Security

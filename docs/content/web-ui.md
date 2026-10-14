@@ -57,23 +57,47 @@ of the navbar says how old what you are looking at is, with a button beside it
 The status reads:
 
 * `Loading…` while the page's first load runs.
-* `Refreshing…` while a later load runs.
-* `Updated just now`, then `Updated 3 min ago` and so on, counting up every 15
+* `Refreshing…` while a later load runs, with the age of the data on screen
+  when it is a minute or more old, such as `Refreshing… (data 3 min old)`.
+* `Updated just now`, then `Updated 3 min ago` and so on, checked every 15
   seconds.
-* `Updated 10:42:05 AM`, the time of the load, once it is an hour or more old.
+* `Updated 10:42:05 AM`, once the data is an hour or more old.
 * `Refresh failed` when the last load failed. The page keeps showing what it
   already had.
+* `· may be out of date` after the age when phēnix knows the data may no longer
+  be current. Hovering over the status says why:
+    * `minimega was busy; showing earlier data`: the server answered with the
+      data it read last, as it does while an experiment starts or stops.
+    * `changed elsewhere since it loaded`: a live update changed the data while
+      you were on another page; the fresh load replaces it.
+    * `live updates disconnected`: the page is kept current by live updates,
+      and the connection that carries them dropped.
+    * `older than 90 s` (or another limit): the data has not been reloaded for
+      longer than the page expects, such as the Hosts page's 90 seconds.
+
+The age is measured from when the server read the data, not from when your
+browser received it, so a host list the server reused, or a page kept from an
+earlier visit, shows its real age, and a wrong clock on your computer does not
+matter.
 
 The button's icon is colored to match: yellow while a load is running, green
-after a load succeeded, and red after one failed. While a load runs, the icon
-spins and the button cannot be pressed. A page with nothing to reload, such as
-`Builder`, shows neither the status nor the button.
+after a load succeeded, orange while the data may be out of date, and red after
+a load failed. While a load runs, the icon spins and the button cannot be
+pressed. A page with nothing to reload, such as `Builder`, shows neither the
+status nor the button.
 
 The Experiments, Configs, Disks, Hosts, Users, Logs, Scorch, State of Health
 and Settings pages, the VM tiles, and each experiment's own page keep the data
 they last loaded, so returning to one opens it filled in. An experiment's page
 says `Loading experiment…` when nothing has been kept for it yet. The kept data
-is cleared when you log out, so one user never sees another's.
+is cleared when you log out, so one user never sees another's. When a live
+update changes a page you have left, such as an experiment stopped from another
+browser, the kept copy is marked out of date and the next visit loads it again
+rather than reusing it.
+
+Lists and live updates are ordered by the server, not by your browser's clock:
+a list the server read before an update never undoes it, so a VM stopped while
+the VM table was loading stays stopped.
 
 After you sign in, the UI loads the Experiments, Configs, Users, Logs, Hosts,
 Scorch, State of Health, Settings and Disks tabs in the background, two requests

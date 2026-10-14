@@ -769,6 +769,12 @@ correct it. Any other failure, such as a missing permission or a network
 problem, is reported in the usual error notification instead. An invalid upload
 reports its error the same way.
 
+A save only overwrites the config if nobody saved it since you opened it (see
+[Revisions](#revisions)). Otherwise the `Config Changed` dialog names the
+revision you opened and the current one, and offers to `Reload it (your edits
+are lost)`, to `Overwrite anyway`, which saves your version over the newer one,
+or to `Cancel` and keep editing.
+
 #### New Config
 
 The editor window for creating a new config will allow editing the filename in a

@@ -127,6 +127,13 @@ VM or an `soh` run changes, and while a run is writing its results it reloads
 every 15 seconds for as long as the page is in the foreground. The refresh
 control in the header reloads it at any time.
 
+While an experiment is starting or stopping, minimega is busy, so the overview
+shows each running experiment's VM states as it last read them, says `states may
+be out of date` under the `VM Health` bar (hovering over it gives the time they
+were read), and the header marks the page `may be out of date`. A running
+experiment whose VM states were never read, or that minimega could not answer
+for, shows `states unavailable` instead of counts.
+
 ## Topology Graph
 
 This tab displays a network graph of the running experiment.
