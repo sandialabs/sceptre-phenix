@@ -68,6 +68,15 @@ tags:
       but only an authenticated request (a valid token, or any request when
       auth is disabled) sees the `output` fields, which may name paths, hosts
       and errors.
+  - name: Jobs
+    description: >-
+      Background jobs: long operations (bulk VM actions, experiment file
+      archives, disk clones) that run on in the server after the request that
+      starts them answers 202. A job belongs to the user who started it; other
+      users see, cancel or dismiss it only with the `jobs` permission on its
+      experiment (`*` for a job of no experiment), and anyone else gets 404.
+      Jobs live in the server's memory only: a restart loses them. A finished
+      job is kept for an hour, at most 200 of them.
 paths:
   "/configs":
     get:
@@ -3790,6 +3799,163 @@ paths:
           description: the server is ready (status pass or warn)
         "503":
           description: the server is not ready (status fail)
+  "/jobs":
+    get:
+      tags:
+        - Jobs
+      summary: List background jobs
+      description: >-
+        The requesting user's jobs, and those of other users the role may list
+        (`jobs` `list` on their experiment), newest first. Also served on the
+        unix socket.
+      operationId: getJobs
+      parameters:
+        - name: experiment
+          in: query
+          description: only the jobs of this experiment
+          required: false
+          schema:
+            type: string
+        - name: kind
+          in: query
+          description: only jobs of this kind
+          required: false
+          schema:
+            type: string
+            enum:
+              - vms.action
+              - files.archive
+              - disk.clone
+        - name: active
+          in: query
+          description: "`true` for only the jobs queued or running"
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: the jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Job"
+  "/jobs/{id}":
+    parameters:
+      - $ref: "#/components/parameters/JobID"
+    get:
+      tags:
+        - Jobs
+      summary: Get a background job
+      description: >-
+        The job with every item and its result. Needs to be the job's owner,
+        or `jobs` `get`. Also served on the unix socket.
+      operationId: getJob
+      responses:
+        "200":
+          description: the job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: no such job, or another user's that the role may not get
+    delete:
+      tags:
+        - Jobs
+      summary: Dismiss a finished background job
+      description: >-
+        Forgets the job and deletes its artifact. Needs to be the job's owner,
+        or `jobs` `delete`.
+      operationId: deleteJob
+      responses:
+        "204":
+          description: the job is dismissed
+        "404":
+          description: no such job, or another user's that the role may not delete
+        "409":
+          description: the job is still queued or running
+  "/jobs/{id}/cancel":
+    post:
+      tags:
+        - Jobs
+      summary: Cancel a background job
+      description: >-
+        A queued job ends `canceled` at once. A running job ends `canceled`
+        when its work notices: a VM action job after the VMs in progress, an
+        archive or clone job at once, leaving no file. Needs to be the job's
+        owner, or `jobs` `update`. Also served on the unix socket.
+      operationId: postJobCancel
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "202":
+          description: the job, with `cancelRequested`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: no such job, or another user's that the role may not cancel
+        "409":
+          description: >-
+            the job has finished (`job has finished`), or cannot be canceled
+            (`this job cannot be canceled`)
+  "/jobs/{id}/artifact":
+    get:
+      tags:
+        - Jobs
+      summary: Download a background job's artifact
+      description: >-
+        The file the job produced, as an attachment. Downloads resume with
+        `Range` and `If-Range`, as other downloads do. Needs to be the job's
+        owner, or `jobs` `get`. A browser link may pass the token as `?token=`.
+      operationId: getJobArtifact
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the artifact
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "206":
+          $ref: "#/components/responses/PartialContent"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "404":
+          description: no such job, another user's, or a job with no artifact
+        "416":
+          $ref: "#/components/responses/RangeNotSatisfiable"
+    head:
+      tags:
+        - Jobs
+      summary: Check a background job's artifact
+      description: The GET response's headers without the file.
+      operationId: headJobArtifact
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "200":
+          description: the artifact's headers
+        "404":
+          description: no such job, another user's, or a job with no artifact
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
@@ -4954,9 +5120,172 @@ components:
         - status
         - time
 
+    Job:
+      type: object
+      description: A background job and the outcome of each of its items.
+      required:
+        - id
+        - kind
+        - owner
+        - title
+        - status
+        - cancelable
+        - progress
+        - items
+        - created
+        - updated
+        - revision
+      properties:
+        id:
+          type: string
+          description: "`j` and 16 hex digits"
+          example: j0f3a9c2e81b4d7a6
+        kind:
+          type: string
+          enum:
+            - vms.action
+            - files.archive
+            - disk.clone
+        owner:
+          type: string
+          description: the user who started the job
+        experiment:
+          type: string
+          description: the experiment the job acts on, if any
+        title:
+          type: string
+          example: Restart 3 VMs
+        params:
+          type: object
+          description: what the job was asked to do, such as its action
+          additionalProperties:
+            type: string
+        status:
+          type: string
+          description: >-
+            `partial` when some items succeeded and others failed or were
+            skipped, `failed` when none succeeded or the job itself failed
+          enum:
+            - queued
+            - running
+            - succeeded
+            - partial
+            - failed
+            - canceled
+        cancelable:
+          type: boolean
+        cancelRequested:
+          type: boolean
+        progress:
+          $ref: "#/components/schemas/JobProgress"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobItem"
+        itemsOmitted:
+          type: integer
+          description: >-
+            items a websocket message left out (it carries at most 500); GET
+            the job for them all
+        error:
+          type: string
+          description: why the job failed, when no item tells
+        artifact:
+          $ref: "#/components/schemas/JobArtifact"
+        created:
+          type: string
+          format: date-time
+        updated:
+          type: string
+          format: date-time
+        started:
+          type: string
+          format: date-time
+        finished:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+          description: increases with every change; keep the update with the highest
+    JobItem:
+      type: object
+      required:
+        - name
+        - status
+      properties:
+        name:
+          type: string
+          description: the VM, file or disk image the item acts on
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - succeeded
+            - failed
+            - skipped
+            - canceled
+        error:
+          type: string
+          description: why the item failed or was skipped
+          example: you don't have permission
+        retryable:
+          type: boolean
+          description: >-
+            trying the item again later may succeed, such as a VM another
+            action holds
+        result:
+          type: object
+          description: >-
+            what the item's action returned, such as the VM it left (as GET
+            /experiments/{exp}/vms/{name} returns it); not sent over the
+            websocket
+    JobProgress:
+      type: object
+      required:
+        - done
+        - total
+      properties:
+        done:
+          type: integer
+          description: items with an outcome
+        total:
+          type: integer
+          description: items, or 1 for a job of none
+        bytes:
+          type: integer
+          format: int64
+          description: bytes handled, for file work
+        bytesTotal:
+          type: integer
+          format: int64
+    JobArtifact:
+      type: object
+      description: The file a job produced, at GET /jobs/{id}/artifact.
+      required:
+        - name
+        - size
+      properties:
+        name:
+          type: string
+          example: exp1-files.zip
+        size:
+          type: integer
+          format: int64
+        incomplete:
+          type: boolean
+          description: the file lacks some of what was asked for
+
   # Shared by the single-file download routes, which resume interrupted
   # downloads with Range and If-Range.
   parameters:
+    JobID:
+      name: id
+      in: path
+      description: the job's ID
+      required: true
+      schema:
+        type: string
     RangeHeader:
       name: Range
       in: header

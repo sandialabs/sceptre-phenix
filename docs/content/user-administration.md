@@ -581,6 +581,15 @@ permissions the same way the server does.
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
+#### Resource: `jobs`
+
+|      |      |
+|------|------|
+| Verb | list, get, update, delete |
+| Desc | list, read (and download the artifact of), cancel, and dismiss [background jobs](jobs.md) other users started; a user always may for their own |
+| Exp. Scoped | yes (the job's experiment; a job of no experiment, such as a disk clone, needs `*`) |
+| Res. Scoped | no |
+
 ### Built-In Roles
 
 The following default roles are defined in phēnix as YAML resource specifications:
@@ -673,6 +682,13 @@ spec:
     - create
     - delete
   - resources:
+    - jobs
+    verbs:
+    - list
+    - get
+    - update
+    - delete
+  - resources:
     - hosts
     resourceNames:
     - "*"
@@ -688,6 +704,12 @@ spec:
     `Experiment Viewer` and `VM Admin` do not get it. `Experiment User` can
     still upload experiment files but cannot delete them, and `Experiment
     Viewer` and `VM Admin` can do neither.
+
+!!! note
+    The `jobs` policy was also added after phēnix shipped this role. The UI
+    server adds it on startup the same way, scoped to each user's experiments,
+    so an Experiment Admin sees and cancels the [background jobs](jobs.md) of
+    those experiments that other users started.
 
 #### Experiment User (`experiment-user`)
 

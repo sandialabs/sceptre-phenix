@@ -24,7 +24,7 @@ func idleClient(t *testing.T) *Client {
 			return
 		}
 
-		clients <- NewClient(roleAllowing("vms", "list"), conn)
+		clients <- NewClient(roleAllowing("vms", "list"), "", conn)
 	}))
 	t.Cleanup(srv.Close)
 

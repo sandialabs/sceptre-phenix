@@ -10,6 +10,7 @@ import (
 )
 
 const experimentFilesResource = "experiments/files"
+const jobsResource = "jobs"
 const experimentFilesCreateVerb = "create"
 const experimentFilesDeleteVerb = "delete"
 const experimentAdminRole = "Experiment Admin"
@@ -18,27 +19,34 @@ const experimentUserRole = "Experiment User"
 // EnsureExperimentFilesCreatePermission lets existing Experiment Admin and
 // Experiment User roles, and users with them, upload experiment files.
 func EnsureExperimentFilesCreatePermission() error {
-	return ensureExperimentFilesPermission(experimentFilesCreateVerb, experimentFilesRole)
+	return ensurePermission(experimentFilesResource, []string{experimentFilesCreateVerb}, experimentFilesRole)
 }
 
 // EnsureExperimentFilesDeletePermission lets existing Experiment Admin roles,
 // and users with them, delete experiment files, as the default Experiment Admin
 // role does. Experiment User and viewer roles are left without it.
 func EnsureExperimentFilesDeletePermission() error {
-	return ensureExperimentFilesPermission(experimentFilesDeleteVerb, experimentFilesDeleteRole)
+	return ensurePermission(experimentFilesResource, []string{experimentFilesDeleteVerb}, experimentFilesDeleteRole)
 }
 
-// ensureExperimentFilesPermission adds verb on experiment files to the stored
-// roles, and the roles of users, that want it. A user's new permission takes
-// the resource names of the user's experiments policy.
-func ensureExperimentFilesPermission(verb string, wants func(role string) bool) error {
+// EnsureJobsPermission lets existing Experiment Admin roles, and users with
+// them, see, cancel and dismiss the background jobs of their experiments that
+// other users started, as the default Experiment Admin role does.
+func EnsureJobsPermission() error {
+	return ensurePermission(jobsResource, []string{"list", "get", "update", "delete"}, experimentFilesDeleteRole)
+}
+
+// ensurePermission adds verbs on resource to the stored roles, and the roles
+// of users, that want it. A user's new permission takes the resource names of
+// the user's experiments policy.
+func ensurePermission(resource string, verbs []string, wants func(role string) bool) error {
 	roles, err := GetRoles()
 	if err != nil {
 		return fmt.Errorf("getting roles: %w", err)
 	}
 
 	for _, role := range roles {
-		if wants(role.Spec.Name) && ensureExperimentFilesPolicy(role.Spec, verb, nil) {
+		if wants(role.Spec.Name) && ensurePolicy(role.Spec, resource, verbs, nil) {
 			if err := role.Save(); err != nil {
 				return fmt.Errorf("saving role %s: %w", role.Spec.Name, err)
 			}
@@ -55,7 +63,7 @@ func ensureExperimentFilesPermission(verb string, wants func(role string) bool) 
 			continue
 		}
 
-		if ensureExperimentFilesPolicy(user.Spec.Role, verb, experimentResourceNames(user.Spec.Role)) {
+		if ensurePolicy(user.Spec.Role, resource, verbs, experimentResourceNames(user.Spec.Role)) {
 			user.config.Spec = structs.MapDefaultCase(user.Spec, structs.CASESNAKE)
 
 			if err := user.Save(); err != nil {
@@ -73,23 +81,26 @@ func experimentFilesRole(name string) bool {
 }
 
 // experimentFilesDeleteRole returns true for roles that should allow deleting
-// experiment files.
+// experiment files, and acting on other users' jobs of their experiments.
 func experimentFilesDeleteRole(name string) bool {
 	return name == experimentAdminRole
 }
 
-// ensureExperimentFilesPolicy ensures the role can take verb on experiment
-// files for the given names.
-func ensureExperimentFilesPolicy(role *v1.RoleSpec, verb string, names []string) bool {
+// ensurePolicy ensures the role can take verbs on resource for the given
+// names.
+func ensurePolicy(role *v1.RoleSpec, resource string, verbs, names []string) bool {
 	for _, policy := range role.Policies {
-		if !slices.Contains(policy.Resources, experimentFilesResource) {
+		if !slices.Contains(policy.Resources, resource) {
 			continue
 		}
 
 		var changed bool
-		if !slices.Contains(policy.Verbs, verb) {
-			policy.Verbs = append(policy.Verbs, verb)
-			changed = true
+
+		for _, verb := range verbs {
+			if !slices.Contains(policy.Verbs, verb) {
+				policy.Verbs = append(policy.Verbs, verb)
+				changed = true
+			}
 		}
 
 		for _, name := range names {
@@ -104,7 +115,7 @@ func ensureExperimentFilesPolicy(role *v1.RoleSpec, verb string, names []string)
 
 	role.Policies = append(
 		role.Policies,
-		&v1.PolicySpec{Resources: []string{experimentFilesResource}, ResourceNames: names, Verbs: []string{verb}},
+		&v1.PolicySpec{Resources: []string{resource}, ResourceNames: names, Verbs: slices.Clone(verbs)},
 	)
 
 	return true

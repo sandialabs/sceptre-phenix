@@ -106,7 +106,7 @@ func dialTestClient(t *testing.T, role rbac.Role) (*Client, *websocket.Conn) {
 			return
 		}
 
-		c := NewClient(role, conn)
+		c := NewClient(role, "", conn)
 
 		go c.read()
 		go c.write()

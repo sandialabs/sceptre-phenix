@@ -100,6 +100,9 @@ type Job struct {
 
 	Progress Progress `json:"progress"`
 	Items    []Item   `json:"items"`
+	// how many items a shortened copy of the job, such as a websocket
+	// message, leaves out
+	ItemsOmitted int `json:"itemsOmitted,omitempty"`
 	// why the job failed, when no item tells
 	Error    string    `json:"error,omitempty"`
 	Artifact *Artifact `json:"artifact,omitempty"`

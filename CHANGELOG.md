@@ -33,6 +33,7 @@ All notable changes to this project will be documented in this file.
 - **Resumable downloads**: Experiment file, disk image, VM mount, tunneler and saved WebShark capture downloads can be resumed with `Range`, and `GET .../files/{filename}/checksum` and `GET /disks/checksum` return a file's SHA-256.
 - **Health checks**: `GET /healthz` (liveness) and `GET /readyz` (readiness of minimega, the store, qemu-img, WebShark and disk space) report health as `application/health+json`, and `phenix healthcheck` queries them.
 - **Audit log**: Capture, capture token, WebShark, experiment file, console, VNC, port forward, disk image, VM snapshot, commit and mount actions, refusals included, are logged as `AUDIT` events with ECS fields, always written to the system log file whatever `log.level` is, and the Logs page can filter by them.
+- **Background jobs**: `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel`, `DELETE /jobs/{id}` and `GET /jobs/{id}/artifact` list, follow, cancel, dismiss and download long operations that run on in the server, with websocket updates and a `jobs` permission that Experiment Admin roles gain on startup for their experiments.
 
 ### Changed
 

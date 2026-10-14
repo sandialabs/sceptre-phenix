@@ -106,6 +106,8 @@ var (
 
 type Client struct {
 	role rbac.Role
+	// the user the client authenticated as
+	user string
 	// only write writes data frames to it
 	conn wsConn
 
@@ -141,9 +143,10 @@ type Client struct {
 	logsSubscribed atomic.Bool
 }
 
-func NewClient(role rbac.Role, conn *websocket.Conn) *Client {
+func NewClient(role rbac.Role, user string, conn *websocket.Conn) *Client {
 	return &Client{ //nolint:exhaustruct // partial initialization
 		role:      role,
+		user:      user,
 		conn:      conn,
 		publish:   make(chan any, publishChannelBuffer),
 		done:      make(chan struct{}),
@@ -1025,5 +1028,5 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
-	NewClient(role, conn).Go()
+	NewClient(role, middleware.UserFromContext(r.Context()), conn).Go()
 }

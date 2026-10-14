@@ -34,5 +34,9 @@ func Init() error {
 		return fmt.Errorf("ensuring experiment file delete permissions: %w", err)
 	}
 
+	if err := rbac.EnsureJobsPermission(); err != nil {
+		return fmt.Errorf("ensuring job permissions: %w", err)
+	}
+
 	return nil
 }

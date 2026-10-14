@@ -162,6 +162,55 @@ func TestEnsureExperimentFilesPermissions(t *testing.T) {
 	}
 }
 
+// The jobs migration lets stored Experiment Admin roles, and users with that
+// role, act on other users' jobs of their experiments; other roles are left
+// alone. Running it again changes nothing.
+//
+//nolint:paralleltest // replaces the store
+func TestEnsureJobsPermission(t *testing.T) {
+	var (
+		experiments = policy("experiments", nil, "list", "get")
+		scopedA     = policy("experiments", []string{"exp-a"}, "get")
+		jobVerbs    = []string{"list", "get", "update", "delete"}
+	)
+
+	role := func(name string, policies ...*v1.PolicySpec) *v1.RoleSpec {
+		return &v1.RoleSpec{Name: name, Policies: policies}
+	}
+
+	useStore(t,
+		[]*v1.RoleSpec{
+			role(experimentAdminRole, experiments),
+			role(experimentUserRole, experiments),
+		},
+		[]*v1.UserSpec{
+			{Username: "scoped-admin", Role: role(experimentAdminRole, scopedA)},
+			{Username: "user", Role: role(experimentUserRole, scopedA)},
+		},
+	)
+
+	want := map[string][]*v1.PolicySpec{
+		"role Experiment Admin": {experiments, policy(jobsResource, nil, jobVerbs...)},
+		"role Experiment User":  {experiments},
+		"user scoped-admin":     {scopedA, policy(jobsResource, []string{"exp-a"}, jobVerbs...)},
+		"user user":             {scopedA},
+	}
+
+	for _, pass := range []string{"first", "repeated"} {
+		if err := EnsureJobsPermission(); err != nil {
+			t.Fatalf("%s migration: %v", pass, err)
+		}
+
+		got := storedPolicies(t)
+
+		for name, policies := range want {
+			if !reflect.DeepEqual(got[name], policies) {
+				t.Errorf("%s migration: %s policies = %s, want %s", pass, name, describe(got[name]), describe(policies))
+			}
+		}
+	}
+}
+
 func describe(policies []*v1.PolicySpec) string {
 	out := make([]string, len(policies))
 	for i, p := range policies {

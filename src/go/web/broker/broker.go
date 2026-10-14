@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"phenix/api/job"
 	"phenix/api/vm"
 	"phenix/app"
 	putil "phenix/util"
@@ -93,6 +94,8 @@ type encodedPublish struct {
 	vm *vmState
 	// log lines dropped just before this one
 	skipped uint64
+	// the user the message is for, besides the clients its policy allows
+	owner string
 }
 
 // encode marshals pub once for all the clients it goes to.
@@ -105,7 +108,7 @@ func encode(pub bt.Publish) (encodedPublish, bool) {
 		return encodedPublish{}, false
 	}
 
-	out := encodedPublish{pub: pub, data: data, vm: nil, skipped: 0}
+	out := encodedPublish{pub: pub, data: data, vm: nil, skipped: 0, owner: ""}
 
 	if state, ok := vmStateOf(pub); ok {
 		out.vm = &state
@@ -227,8 +230,9 @@ func drop(cli *Client) {
 	cli.shutdown(websocket.CloseTryAgainLater, "client too slow")
 }
 
-// deliver hands a broadcast to every client allowed to see it. Log lines go
-// only to clients that asked for them.
+// deliver hands a broadcast to every client allowed to see it: its owner, if
+// it has one, and the clients its policy allows. Log lines go only to clients
+// that asked for them.
 func deliver(out encodedPublish) {
 	policy := out.pub.RequestPolicy
 	isLog := out.pub.Resource != nil && out.pub.Resource.Type == logResourceType
@@ -250,6 +254,8 @@ func deliver(out encodedPublish) {
 		var allow bool
 
 		switch {
+		case out.owner != "" && cli.user == out.owner:
+			allow = true
 		case policy == nil:
 			allow = true
 		case policy.ResourceName == "":
@@ -313,6 +319,59 @@ func BroadcastLog(entry json.RawMessage) {
 		logsUntold.Add(out.skipped + 1)
 		logsDropped.Add(1)
 	}
+}
+
+// maxJobItems is the most items of a job a job message carries; the rest are
+// counted in ItemsOmitted, and GET /jobs/{id} returns them all.
+const maxJobItems = 500
+
+// PublishJob tells the job's owner, and the clients allowed to list jobs of
+// its experiment (or, for a job of none, every job), of a change to a job, or
+// that it is gone (removed). The message leaves out the items' results, and
+// items beyond maxJobItems.
+func PublishJob(j job.Job, removed bool) {
+	action := "update"
+	if removed {
+		action = "remove"
+	}
+
+	name := j.Experiment
+	if name == "" {
+		name = "*"
+	}
+
+	if len(j.Items) > maxJobItems {
+		j.ItemsOmitted = len(j.Items) - maxJobItems
+		j.Items = j.Items[:maxJobItems]
+	}
+
+	items := make([]job.Item, len(j.Items))
+	for i, item := range j.Items {
+		item.Result = nil
+		items[i] = item
+	}
+
+	j.Items = items
+
+	body, err := json.Marshal(j)
+	if err != nil {
+		go plog.Error(plog.TypeSystem, "marshaling job to be published", "job", j.ID, "err", err)
+
+		return
+	}
+
+	out, ok := encode(bt.Publish{
+		RequestPolicy: bt.NewRequestPolicy("jobs", "list", name),
+		Resource:      bt.NewResource("job", j.ID, action),
+		Result:        body,
+	})
+	if !ok {
+		return
+	}
+
+	out.owner = j.Owner
+
+	broadcast <- out
 }
 
 func logPublish(entry json.RawMessage) bt.Publish {
