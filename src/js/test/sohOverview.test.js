@@ -526,6 +526,16 @@ describe('rendering', () => {
     expect(text).toContain('External / HIL');
   });
 
+  it('says when VM states may be out of date', async () => {
+    cachePage('soh', [
+      summary({ vms_stale: true, vms_observed_at: '2026-10-14T10:00:00Z' }),
+    ]);
+
+    const html = await render({ tables: true });
+    expect(textOf(html)).toContain('states may be out of date');
+    expect(html).toContain('title="minimega was busy; showing the VM states');
+  });
+
   it('shows no summary line before the first load', async () => {
     const html = await render();
     expect(html).not.toContain('SOH active on');

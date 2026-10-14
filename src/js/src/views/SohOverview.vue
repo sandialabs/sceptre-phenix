@@ -149,6 +149,12 @@
                 {{ seg.label }}</span
               >
             </div>
+            <div
+              v-if="props.row.vms_stale"
+              class="sub vms-stale"
+              :title="staleTitle(props.row)">
+              states may be out of date
+            </div>
           </template>
           <template v-else>
             <div class="health-bar is-empty"></div>
@@ -597,6 +603,15 @@
         return TONES[verdict(row)] ?? TONES.healthy;
       },
 
+      // why a row's VM states may be out of date
+      staleTitle(row) {
+        const at = Date.parse(row.vms_observed_at);
+        const when = Number.isFinite(at)
+          ? ` read at ${new Date(at).toLocaleTimeString()}`
+          : '';
+        return `minimega was busy; showing the VM states${when}`;
+      },
+
       healthCaption(row) {
         const total = row.vms?.total ?? 0;
         const vms = plural(total, 'VM');
@@ -947,6 +962,10 @@
   .health-bar span {
     flex-basis: 0;
     min-width: 3px;
+  }
+
+  .vms-stale {
+    font-style: italic;
   }
 
   .health-caption b {

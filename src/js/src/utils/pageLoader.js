@@ -29,12 +29,9 @@ export const pageStatus = reactive({
 // its load, or else one judged from its age and the live connection.
 export function currentStaleReason(now = Date.now()) {
   if (pageStatus.staleReason) return pageStatus.staleReason;
-  if (pageStatus.observedAt === null) return null;
-  return staleReason(
-    { observedAt: pageStatus.observedAt },
-    resourceFor(pageStatus.resource),
-    now,
-  );
+  const observedAt = pageStatus.observedAt ?? pageStatus.updatedAt;
+  if (observedAt === null) return null;
+  return staleReason({ observedAt }, resourceFor(pageStatus.resource), now);
 }
 
 // records in pageStatus how fresh the data the page just applied is

@@ -19,6 +19,36 @@
       </footer>
     </div>
   </b-modal>
+  <b-modal
+    v-model="conflict.modal"
+    has-modal-card
+    aria-modal
+    aria-labelledby="config-conflict-title">
+    <div class="modal-card" style="width: 40em">
+      <header class="modal-card-head x-modal-dark">
+        <p id="config-conflict-title" class="modal-card-title">
+          Config Changed
+        </p>
+      </header>
+      <section class="modal-card-body x-modal-dark">
+        <p>
+          {{ conflict.name }} changed since you opened it (revision
+          {{ conflict.from }} → {{ conflict.to ?? 'unknown' }}).
+        </p>
+      </section>
+      <footer class="modal-card-foot x-modal-dark buttons is-right">
+        <button class="button is-light" @click="reloadConflicted">
+          Reload it (your edits are lost)
+        </button>
+        <button class="button is-warning" @click="overwriteConflicted">
+          Overwrite anyway
+        </button>
+        <button class="button is-dark" @click="conflict.modal = false">
+          Cancel
+        </button>
+      </footer>
+    </div>
+  </b-modal>
   <section class="hero is-light is-bold is-small">
     <div class="columns p-4">
       <div class="column is-1" />
@@ -151,7 +181,7 @@
   import { debounce } from 'lodash-es';
 
   import axiosInstance from '@/utils/axios.js';
-  import { configKey, fullConfig } from '@/utils/configCache.js';
+  import { configKey, forgetConfig, fullConfig } from '@/utils/configCache.js';
 
   export default {
     expose: ['confirmResetEditor'],
@@ -184,38 +214,7 @@
       } else if (this.mode == 'edit') {
         this.editor.isLoading = true;
 
-        // usually already loaded by the viewer or a hover over the config
-        fullConfig(this.editorConfig)
-          .then((config) => {
-            if (this.isBuilderTopology(config)) {
-              this.$buefy.dialog.alert({
-                title: 'Built by Builder',
-                message: 'This configuration can only be edited in Builder',
-                confirmText: 'OK',
-                type: 'is-warning',
-                hasIcon: true,
-              });
-            } else {
-              this.config.obj = config;
-              this.config.str = this.getConfigStr('yaml');
-              this.original = this.config.str;
-
-              if (this.config.obj.kind == 'Experiment') {
-                if (
-                  this.config.obj.status &&
-                  this.config.obj.status.startTime !== ''
-                ) {
-                  this.expStart = true;
-                }
-              }
-              this.editor.lang = 'yaml';
-            }
-            this.editor.isLoading = false;
-          })
-          .catch((err) => {
-            useErrorNotification(err);
-            this.editor.isLoading = false;
-          });
+        this.loadConfig();
       }
       window.addEventListener('beforeunload', this.handlePageReload);
     },
@@ -252,6 +251,12 @@
         },
 
         original: '', // the config as loaded, to tell whether it was edited
+        // the store revision of the config as loaded, which a save names in
+        // If-Match so it does not overwrite a change made meanwhile
+        loadedRevision: null,
+        // a save refused because the config changed: its name, the revision
+        // loaded and the current one, and the save to resend
+        conflict: { modal: false, name: '', from: null, to: null, save: null },
 
         expRunning: false,
         expStart: false, //TODO: remove
@@ -260,6 +265,44 @@
       };
     },
     methods: {
+      // opens the edited config: usually already loaded by the viewer or a
+      // hover over the config
+      loadConfig() {
+        this.editor.isLoading = true;
+
+        fullConfig(this.editorConfig)
+          .then((config) => {
+            if (this.isBuilderTopology(config)) {
+              this.$buefy.dialog.alert({
+                title: 'Built by Builder',
+                message: 'This configuration can only be edited in Builder',
+                confirmText: 'OK',
+                type: 'is-warning',
+                hasIcon: true,
+              });
+            } else {
+              this.config.obj = config;
+              this.config.str = this.getConfigStr('yaml');
+              this.original = this.config.str;
+              this.loadedRevision = config.metadata?.revision ?? null;
+
+              if (this.config.obj.kind == 'Experiment') {
+                if (
+                  this.config.obj.status &&
+                  this.config.obj.status.startTime !== ''
+                ) {
+                  this.expStart = true;
+                }
+              }
+              this.editor.lang = 'yaml';
+            }
+            this.editor.isLoading = false;
+          })
+          .catch((err) => {
+            useErrorNotification(err);
+            this.editor.isLoading = false;
+          });
+      },
       // asks before a reload throws away edits
       handlePageReload(event) {
         if (this.changed) event.preventDefault();
@@ -444,17 +487,54 @@
           confirmText: 'Save',
           type: 'is-warning',
           hasIcon: true,
-          onConfirm: () => {
-            axiosInstance
-              .put('configs/' + name, JSON.stringify(config), {
-                headers: { 'Content-Type': 'application/json' },
-              })
-              .then(() => {
-                this.resetEditor(`config ${name} has been edited`);
-              })
-              .catch((err) => this.showSaveError(err));
-          },
+          onConfirm: () => this.putConfig(name, config, this.loadedRevision),
         });
+      },
+
+      // Saves config over the config `name`. With a revision, the server
+      // refuses the save (412) if the config has changed since that revision
+      // was loaded, and a dialog offers to reload it or overwrite it anyway.
+      putConfig(name, config, revision) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (revision) headers['If-Match'] = `"r${revision}"`;
+
+        return axiosInstance
+          .put('configs/' + name, JSON.stringify(config), { headers })
+          .then(() => {
+            // the cached copies are of the revision this save replaced
+            forgetConfig(this.editorConfig ?? this.config.obj);
+            forgetConfig(config);
+            this.resetEditor(`config ${name} has been edited`);
+          })
+          .catch((err) => {
+            if (err.response?.status === 412) {
+              const current = Number(err.response.data?.metadata?.revision);
+              Object.assign(this.conflict, {
+                modal: true,
+                name,
+                from: revision,
+                to: Number.isFinite(current) && current > 0 ? current : null,
+                save: () => this.putConfig(name, config, null),
+              });
+              return;
+            }
+            this.showSaveError(err);
+          });
+      },
+
+      // sends the refused save again, without If-Match, replacing the newer
+      // config
+      overwriteConflicted() {
+        const save = this.conflict.save;
+        this.conflict.modal = false;
+        return save?.();
+      },
+
+      // opens the config as it is now, dropping the edits
+      reloadConflicted() {
+        this.conflict.modal = false;
+        forgetConfig(this.editorConfig);
+        this.loadConfig();
       },
 
       createConfig(lang) {

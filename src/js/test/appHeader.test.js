@@ -30,7 +30,11 @@ beforeEach(() => {
     refresh: null,
     loading: false,
     updatedAt: null,
+    observedAt: null,
     failed: false,
+    stale: false,
+    staleReason: null,
+    resource: null,
   });
 });
 
@@ -136,9 +140,56 @@ describe('the refresh status', () => {
       { label: 'Loading…', state: 'loading', disabled: true, spins: true },
     ],
     [
-      'says a reload is running over data already shown',
+      'says a reload is running over data already shown, and its age',
       { loading: true, updatedAt: NOW - 5 * minute },
+      {
+        label: 'Refreshing… (data 5 min old)',
+        state: 'loading',
+        disabled: true,
+        spins: true,
+      },
+    ],
+    [
+      'says a reload is running over data read moments ago',
+      { loading: true, updatedAt: NOW - 20 * 1000 },
       { label: 'Refreshing…', state: 'loading', disabled: true, spins: true },
+    ],
+    [
+      'measures the age from when the server read the data',
+      { updatedAt: NOW - 30 * 1000, observedAt: NOW - 3 * minute },
+      {
+        label: 'Updated 3 min ago',
+        state: 'ok',
+        disabled: false,
+        spins: false,
+      },
+    ],
+    [
+      'says the server served earlier data',
+      {
+        updatedAt: NOW,
+        observedAt: NOW - 3 * minute,
+        stale: true,
+        staleReason: 'server',
+      },
+      {
+        label: 'Updated 3 min ago · may be out of date',
+        state: 'stale',
+        disabled: false,
+        spins: false,
+        reason: 'minimega was busy; showing earlier data',
+      },
+    ],
+    [
+      'says data older than its bound may be out of date',
+      { updatedAt: NOW - 2 * minute, resource: 'hosts' },
+      {
+        label: 'Updated 2 min ago · may be out of date',
+        state: 'stale',
+        disabled: false,
+        spins: false,
+        reason: 'older than 90 s',
+      },
     ],
     [
       'shows a reload after a failure as loading',
@@ -190,13 +241,19 @@ describe('the refresh status', () => {
     Object.assign(pageStatus, { refresh: () => {}, ...status });
     const html = await renderSSR(AppHeader);
 
-    const label = html.match(/<span class="refresh-label"[^>]*>([^<]*)</)[1];
+    const label = html.match(
+      /<span[^>]*class="[^"]*refresh-label[^"]*"[^>]*>([^<]*)</,
+    )[1];
+    const reason = html.match(/<span class="is-sr-only"[^>]*>: ([^<]*)</)?.[1];
     const [button] = tooltipButtons(html);
     expect({
       label,
-      state: button.attrs.match(/refresh-(loading|ok|failed|idle)\b/)?.[1],
+      state: button.attrs.match(
+        /refresh-(loading|ok|failed|idle|stale)\b/,
+      )?.[1],
       disabled: button.disabled,
       spins: /data-icon="sync-alt" class="fa-spin"/.test(html),
+      ...(reason && { reason }),
     }).toEqual(want);
     expect(button).toMatchObject({
       tooltip: "Refresh this page's data",

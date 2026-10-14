@@ -1,10 +1,11 @@
 // Full configs, as the Configs page's viewer and editor load them, so opening
 // a config, then editing it, fetches it once. The config list only carries
-// metadata; a cached copy is used while the list's `updated` time for it is
-// unchanged. Cleared on logout with the other page data.
+// metadata; a cached copy is used while the list's revision for it (or, for a
+// config not written since revisions were added, its `updated` time, which
+// has whole seconds) is unchanged. Cleared on logout with the other page data.
 import axiosInstance from '@/utils/axios.js';
 
-const cache = new Map(); // "Kind/name" -> { updated, promise }
+const cache = new Map(); // "Kind/name" -> { version, promise }
 
 export const configKey = (cfg) => `${cfg.kind}/${cfg.metadata.name}`;
 
@@ -12,14 +13,16 @@ export const configKey = (cfg) => `${cfg.kind}/${cfg.metadata.name}`;
 // may change it freely.
 export async function fullConfig(cfg) {
   const key = configKey(cfg);
-  const updated = cfg.metadata.updated;
+  const version = cfg.metadata.revision
+    ? `r${cfg.metadata.revision}`
+    : cfg.metadata.updated;
 
   let entry = cache.get(key);
-  if (!entry || entry.updated !== updated) {
+  if (!entry || entry.version !== version) {
     const promise = axiosInstance
       .get(`configs/${key}`, { headers: { Accept: 'application/json' } })
       .then((resp) => resp.data);
-    entry = { updated, promise };
+    entry = { version, promise };
     cache.set(key, entry);
 
     // a failed load is not worth keeping
