@@ -31,7 +31,9 @@ Code: `src/go/api/job` (registry), `src/go/web/jobs.go` (routes).
 | `DELETE /jobs/{id}` | `204`; `409` while queued or running |
 | `GET/HEAD /jobs/{id}/artifact` | the file, resumable with `Range`; `404` when there is none |
 
-The first three are also served on the unix socket (as `global-admin`).
+The first three are also served on the unix socket (as `global-admin`), which
+`phenix job list|get|cancel|wait` uses (see [`cli.md`](cli.md)); the CLI
+cannot start jobs.
 Websocket (`/ws`) messages: `{"resource": {"type": "job", "name": <id>,
 "action": "update"|"remove"}, "result": <job>}`, throttled to 4/s per job
 while running, without item `result`s and with at most 500 items

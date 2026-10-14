@@ -125,6 +125,20 @@ phenix workflow apply <DIR|NAME> -c <file>          # --config: workflow config,
 The argument, the directory layout, the steps, the workflow config, and the
 troubleshooting table are in [`workflow.md`](workflow.md).
 
+## `phenix job` — follow the running server's background jobs
+
+```bash
+phenix job list [--experiment X] [--kind K] [--active] [-o json]  # every user's jobs, newest first
+phenix job get <ID> [-o json]       # the job and each item's outcome, error and retryable flag
+phenix job cancel <ID>              # queued: canceled at once; running: stops when its work notices
+phenix job wait <ID> [--timeout D]  # poll every second; exit 0 succeeded, 2 partial, 1 failed/canceled/timeout
+```
+
+Talks to `phenix ui` over `--unix-socket` as Global Admin; without a server it
+fails with `phenix ui is not running (no socket at ...)`. Jobs are started only
+from the web UI or REST API (the CLI's `vm` and disk commands run in-process and
+are not jobs); see [`jobs.md`](jobs.md).
+
 ## `phenix vm` — manage running VMs within an experiment
 
 ```bash
