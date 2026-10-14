@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"phenix/api/job"
 	v1 "phenix/types/version/v1"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/rbac"
@@ -110,4 +111,82 @@ func TestBroadcastIsEncodedOnce(t *testing.T) {
 	if err != nil || string(b) != string(want) {
 		t.Errorf("encodeMessage() = %s, %v; want the broadcast's data", b, err)
 	}
+}
+
+// A job message reaches the job's owner and the clients allowed to list jobs
+// of its experiment, without the items' results, and with at most
+// maxJobItems items.
+//
+//nolint:paralleltest // clients is shared package state
+func TestJobsGoToTheirOwnerAndJobAdmins(t *testing.T) {
+	var (
+		owner    = &Client{role: roleAllowing("vms", "list"), user: "alice", publish: make(chan any, 4)}
+		other    = &Client{role: roleAllowing("vms", "list"), user: "bob", publish: make(chan any, 4)}
+		admin    = &Client{role: roleAllowingNames("jobs", "list", "*"), user: "admin", publish: make(chan any, 4)}
+		expAdmin = &Client{role: roleAllowingNames("jobs", "list", "exp1"), user: "carol", publish: make(chan any, 4)}
+		other2   = &Client{role: roleAllowingNames("jobs", "list", "exp2"), user: "dave", publish: make(chan any, 4)}
+	)
+
+	withClients(t, owner, other, admin, expAdmin, other2)
+
+	items := make([]job.Item, maxJobItems+2)
+	for i := range items {
+		items[i] = job.Item{Name: "vm", Status: job.ItemSucceeded, Result: json.RawMessage(`{"big":true}`)}
+	}
+
+	PublishJob(job.Job{ID: "j1", Owner: "alice", Experiment: "exp1", Items: items}, false)
+	deliver(<-broadcast)
+
+	for name, tc := range map[string]struct {
+		c    *Client
+		want bool
+	}{
+		"owner": {owner, true}, "another user": {other, false}, "jobs admin": {admin, true},
+		"admin of the experiment": {expAdmin, true}, "admin of another experiment": {other2, false},
+	} {
+		got := received(tc.c)
+		if (len(got) == 1) != tc.want {
+			t.Errorf("%s: got %d messages, want it: %t", name, len(got), tc.want)
+
+			continue
+		}
+
+		if !tc.want {
+			continue
+		}
+
+		var sent job.Job
+		if err := json.Unmarshal(got[0].pub.Result, &sent); err != nil {
+			t.Fatal(err)
+		}
+
+		if got[0].pub.Resource.Type != "job" || got[0].pub.Resource.Action != "update" {
+			t.Errorf("%s: resource %+v", name, got[0].pub.Resource)
+		}
+
+		if len(sent.Items) != maxJobItems || sent.ItemsOmitted != 2 || sent.Items[0].Result != nil {
+			t.Errorf("%s: %d items, %d omitted, result %s", name, len(sent.Items), sent.ItemsOmitted, sent.Items[0].Result)
+		}
+	}
+
+	// a job of no experiment reaches only admins of every job
+	PublishJob(job.Job{ID: "j2", Owner: "bob"}, true)
+	deliver(<-broadcast)
+
+	for name, tc := range map[string]struct {
+		c    *Client
+		want int
+	}{"owner": {other, 1}, "jobs admin": {admin, 1}, "admin of an experiment": {expAdmin, 0}} {
+		if got := received(tc.c); len(got) != tc.want {
+			t.Errorf("job of no experiment, %s: got %d messages, want %d", name, len(got), tc.want)
+		} else if tc.want == 1 && got[0].pub.Resource.Action != "remove" {
+			t.Errorf("removal sent as %s", got[0].pub.Resource.Action)
+		}
+	}
+}
+
+func roleAllowingNames(resource, verb string, names ...string) rbac.Role {
+	return rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{
+		{Resources: []string{resource}, ResourceNames: names, Verbs: []string{verb}},
+	}}}
 }

@@ -37,7 +37,7 @@ available in two places:
 
 The API docs are organized by tag (`Configs`, `Experiments`, `Virtual
 Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`,
-`Workflow`, etc.) and document most endpoints, including request parameters
+`Workflow`, `Jobs`, etc.) and document most endpoints, including request parameters
 and response schemas. Some routes are not documented there yet, among them
 `/ws`, `/logs`, `/roles`, `/settings`, the netflow routes, and the `/webshark/`
 routes outside `/api/v1` that WebShark itself calls and that stream a capture by
@@ -138,6 +138,15 @@ The capture stream above, and WebShark's live update stream, end when one
 write to the client takes longer than 10 seconds, letting go of the capture.
 The server also waits at most 10 seconds for a request's headers; request
 bodies and responses are not time-limited.
+
+## Background Jobs
+
+Long operations run as [background jobs](jobs.md): the route that starts one
+answers `202 Accepted` with the job and a `Location: /api/v1/jobs/{id}`
+header, and `GET /api/v1/jobs/{id}` follows it to the end. `GET /api/v1/jobs`
+lists your jobs, `POST /api/v1/jobs/{id}/cancel` cancels one,
+`DELETE /api/v1/jobs/{id}` dismisses a finished one, and
+`GET /api/v1/jobs/{id}/artifact` downloads the file it produced, resumably.
 
 ## Health Endpoints
 

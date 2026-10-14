@@ -18,6 +18,7 @@ Detailed references and examples, loaded only when needed:
 |---|---|
 | Global flags, every subcommand and flag | [`references/cli.md`](references/cli.md) |
 | REST auth modes and the full route table | [`references/web-api.md`](references/web-api.md) |
+| Background jobs (bulk VM actions, file archives, disk clones): statuses, routes, RBAC | [`references/jobs.md`](references/jobs.md) |
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
