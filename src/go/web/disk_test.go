@@ -636,6 +636,8 @@ func TestGetDiskChecksum(t *testing.T) {
 		t.Errorf("got %+v", body)
 	}
 
+	events := captureAudit(t)
+
 	for disk, want := range map[string]int{
 		"b.qc2":     http.StatusForbidden,
 		"win":       http.StatusBadRequest,
@@ -647,6 +649,10 @@ func TestGetDiskChecksum(t *testing.T) {
 			t.Errorf("%s: status %d, want %d", disk, resp.StatusCode, want)
 		}
 	}
+
+	wantAudit(t, events(), "disk-download", "failure", map[string]any{
+		"event.reason": "forbidden", "file.path": dir + "/b.qc2",
+	})
 
 	server = serveAs(t, "alice", testRole("disks", "get", "missing.qc2")).URL + "/api/v1/disks/checksum?disk="
 	if resp := do(t, http.MethodGet, server+"missing.qc2", ""); resp.StatusCode != http.StatusNotFound {

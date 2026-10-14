@@ -681,9 +681,7 @@ func GetDiskChecksum(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !role.Allowed("disks", "get", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(plog.TypeSecurity, "getting disk checksum not allowed", "user", user, "disk", path)
-		http.Error(w, "forbidden", http.StatusForbidden)
+		diskForbidden(w, r, audit.DiskDownload, "getting disk checksum not allowed", audit.Fields{File: path})
 
 		return
 	}
