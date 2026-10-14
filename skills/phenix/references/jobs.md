@@ -39,6 +39,12 @@ Websocket (`/ws`) messages: `{"resource": {"type": "job", "name": <id>,
 while running, without item `result`s and with at most 500 items
 (`itemsOmitted` counts the rest).
 
+## Kinds
+
+| Kind | Started by | Items | Cancel |
+|---|---|---|---|
+| `disk.clone` | `POST /disks/clone/jobs?disk=&new=` (checks as `/disks/clone`; `disks` `create` on the new name) | the new image's file name | stops at once; the hidden `.<new>.partial-<hex>` copy is removed (and swept on startup) |
+
 ## RBAC
 
 A job belongs to the user who started it. Other users need resource `jobs`

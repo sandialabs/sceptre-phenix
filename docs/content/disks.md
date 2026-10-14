@@ -199,6 +199,19 @@ take as one argument: no white space or control characters, and none of `"`,
 from `Clone` or `Rename` follows the same rule. phēnix clones, renames, deletes,
 and downloads the file itself, so those work on an existing image of any name.
 
+### Cloning in the background
+
+A clone copies the whole file, which can take minutes for a large image.
+`POST /api/v1/disks/clone/jobs?disk=&new=` makes the same checks as
+`POST /api/v1/disks/clone`, then answers at once with a
+[background job](jobs.md) that copies the image, counting the bytes copied, and
+can be canceled. The copy is written to a hidden temporary file beside the new
+image (`.<new name>.partial-<random>`), which the disk list leaves out, and
+takes the new name only once it is complete. A canceled or failed clone deletes
+it, and when the server restarts mid-clone, it deletes what the clone left the
+next time it starts, so an interrupted clone never leaves an image that looks
+complete.
+
 The server makes the same checks, whatever sends the request, and the error
 names the reason. It answers 400 for an image outside the minimega files
 directory or at a path the list leaves out, a folder rather than an image, a new

@@ -22,6 +22,7 @@ import (
 	"phenix/api/disk"
 	"phenix/api/disk/disktest"
 	"phenix/api/experiment"
+	"phenix/api/job"
 	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/mm/mmtest"
@@ -403,6 +404,10 @@ func TestDiskActionsRefuse(t *testing.T) {
 		{"clone not allowed", http.MethodPost, "/clone?disk=a.qc2&new=x", disksRole(nil, "update", "get"), http.StatusForbidden},
 		{"clone to no name", http.MethodPost, "/clone?disk=" + q("win/win10.qcow2") + "&new=", all, http.StatusBadRequest},
 		{"clone to a folder", http.MethodPost, "/clone?disk=" + q("win/win10.qcow2") + "&new=" + q("backup/"), all, http.StatusBadRequest},
+		{"clone job outside", http.MethodPost, "/clone/jobs?disk=" + q(outside+"/o.qc2") + "&new=x", all, http.StatusBadRequest},
+		{"clone job onto an image", http.MethodPost, "/clone/jobs?disk=a.qc2&new=over.qc2", all, http.StatusConflict},
+		{"clone job of a missing image", http.MethodPost, "/clone/jobs?disk=missing.qc2&new=x", all, http.StatusNotFound},
+		{"clone job not allowed", http.MethodPost, "/clone/jobs?disk=a.qc2&new=x", disksRole(nil, "update", "get"), http.StatusForbidden},
 		{"rename onto an image", http.MethodPost, "/rename?disk=a.qc2&new=over.qc2", all, http.StatusConflict},
 		{"rename to a name with a comma", http.MethodPost, "/rename?disk=a.qc2&new=" + q("a,b"), all, http.StatusBadRequest},
 		{"rename a folder", http.MethodPost, "/rename?disk=win&new=x", all, http.StatusBadRequest},
@@ -530,6 +535,48 @@ func TestDiskActionsOnNestedImages(t *testing.T) {
 		if got, ok := written[path]; want == "" && ok || want != "" && got != want {
 			t.Errorf("%s holds %q (exists: %t), want %q", path, got, ok, want)
 		}
+	}
+}
+
+// A clone job answers 202 with the job, which copies the image, counting its
+// bytes, and leaves no temporary file.
+func TestCloneDiskJob(t *testing.T) {
+	files := useDiskFilesDir(t)
+	registry := useJobs(t)
+
+	writeDisks(t, files.dir+"/win/win10.qcow2")
+
+	server := serveAs(t, "alice", disksRole(nil, "create")).URL + "/api/v1/disks"
+
+	resp := do(t, http.MethodPost, server+"/clone/jobs?disk=win/win10.qcow2&new=copy", "")
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	var started job.Job
+	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
+		t.Fatal(err)
+	}
+
+	if loc := resp.Header.Get("Location"); loc != "/api/v1/jobs/"+started.ID {
+		t.Errorf("Location %q", loc)
+	}
+
+	size := int64(len(files.dir + "/win/win10.qcow2"))
+
+	if started.Kind != "disk.clone" || started.Owner != "alice" || started.Progress.BytesTotal != size ||
+		len(started.Items) != 1 || started.Items[0].Name != "copy.qcow2" || !started.Cancelable {
+		t.Errorf("started %+v", started)
+	}
+
+	j := waitJob(t, registry, started.ID)
+	if j.Status != job.StatusSucceeded || j.Progress.Bytes != size {
+		t.Errorf("job %s with %d bytes copied: %+v", j.Status, j.Progress.Bytes, j)
+	}
+
+	written := tree(t, files.dir)
+	if written[files.dir+"/win/copy.qcow2"] != files.dir+"/win/win10.qcow2" || len(written) != 2 {
+		t.Errorf("files after the clone: %v", written)
 	}
 }
 

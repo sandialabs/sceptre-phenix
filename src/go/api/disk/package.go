@@ -1,6 +1,7 @@
 package disk
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -145,6 +146,61 @@ func CloneDisk(src, dst string) error {
 	dst, err = newImage(dst)
 	if err != nil {
 		return err
+	}
+
+	return DefaultDiskFiles.CloneDisk(src, dst)
+}
+
+// CloneSize checks a clone of src to dst as CloneDisk does, without cloning,
+// and returns the bytes it would copy.
+func CloneSize(src, dst string) (int64, error) {
+	src, err := Resolve(src)
+	if err != nil {
+		return 0, err
+	}
+
+	if err := requireFile(src); err != nil {
+		return 0, err
+	}
+
+	if _, err := newImage(dst); err != nil {
+		return 0, err
+	}
+
+	info, err := os.Stat(src)
+	if err != nil {
+		return 0, fmt.Errorf("disk image: %w", err)
+	}
+
+	return info.Size(), nil
+}
+
+// contextCloner is a DiskFiles whose clones can be canceled and report their
+// progress.
+type contextCloner interface {
+	CloneDiskContext(ctx context.Context, src, dst string, progress func(n int64)) error
+}
+
+// CloneDiskContext is CloneDisk that stops once ctx is done and tells
+// progress of the bytes copied, when the DiskFiles can; otherwise it clones as
+// CloneDisk does.
+func CloneDiskContext(ctx context.Context, src, dst string, progress func(n int64)) error {
+	src, err := Resolve(src)
+	if err != nil {
+		return err
+	}
+
+	if err := requireFile(src); err != nil {
+		return err
+	}
+
+	dst, err = newImage(dst)
+	if err != nil {
+		return err
+	}
+
+	if cloner, ok := DefaultDiskFiles.(contextCloner); ok {
+		return cloner.CloneDiskContext(ctx, src, dst, progress)
 	}
 
 	return DefaultDiskFiles.CloneDisk(src, dst)

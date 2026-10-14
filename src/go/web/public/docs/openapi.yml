@@ -2721,6 +2721,54 @@ paths:
           description: the new image exists already
         "500":
           description: the copy failed
+  "/disks/clone/jobs":
+    post:
+      tags:
+        - Disks
+        - Jobs
+      summary: Copy a disk image in a background job
+      description: >-
+        Checks the request as POST /disks/clone does, then copies the image in
+        a `disk.clone` background job whose one item is the new image's file
+        name and whose progress counts the bytes copied. The copy goes to a
+        hidden temporary file (`.<new>.partial-<hex>`) that becomes the new
+        image only once complete, so a canceled or interrupted clone leaves no
+        image; the server deletes such temporary files when it starts. Needs
+        the `disks` `create` permission for the new image's file name.
+      operationId: postDisksCloneJob
+      parameters:
+        - name: disk
+          in: query
+          description: the image, as for POST /disks/clone
+          required: true
+          schema:
+            type: string
+        - name: new
+          in: query
+          description: the new image, as for POST /disks/clone
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: the job, started
+          headers:
+            Location:
+              description: the job, at /api/v1/jobs/{id}
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          description: as for POST /disks/clone
+        "403":
+          description: forbidden
+        "404":
+          description: no such image, or no folder for the new one
+        "409":
+          description: the new image exists already
   "/disks/rename":
     post:
       tags:

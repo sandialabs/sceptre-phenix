@@ -499,6 +499,9 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	api.HandleFunc("/disks/clone", CloneDisk).
 		Methods("POST", "OPTIONS").
 		Queries("disk", "{disk}", "new", "{new}")
+	api.HandleFunc("/disks/clone/jobs", CloneDiskJob).
+		Methods("POST", "OPTIONS").
+		Queries("disk", "{disk}", "new", "{new}")
 	api.HandleFunc("/disks", DeleteDisk).Methods("DELETE", "OPTIONS").Queries("disk", "{disk}")
 	api.HandleFunc("/disks/rename", RenameDisk).
 		Methods("POST", "OPTIONS").
