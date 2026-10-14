@@ -212,7 +212,8 @@ curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experi
 ```
 
 [`references/web-api.md`](references/web-api.md) has the route table, the
-`?token=` query-parameter alternative, and proxy/dev auth modes.
+`?token=` query-parameter alternative, proxy/dev auth modes, config revisions
+(`ETag`/`If-Match`), and the `X-Phenix-Seq` ordering and freshness headers.
 
 ## Gotchas
 
