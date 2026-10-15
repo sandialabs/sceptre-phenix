@@ -22,7 +22,7 @@ func requestGone(r *http.Request) bool {
 // debug level. A client leaving is no error: the handler then logs nothing
 // else at error level and writes nothing.
 func requestCanceled(r *http.Request, err error) bool {
-	if err == nil || !requestGone(r) || !errors.Is(err, context.Canceled) {
+	if !endedWith(r.Context(), err) {
 		return false
 	}
 
@@ -32,4 +32,12 @@ func requestCanceled(r *http.Request, err error) bool {
 	)
 
 	return true
+}
+
+// endedWith reports whether err is commands run for ctx giving up because ctx
+// is done (see mm.Context).
+func endedWith(ctx context.Context, err error) bool {
+	ctxErr := ctx.Err()
+
+	return err != nil && ctxErr != nil && errors.Is(err, ctxErr)
 }

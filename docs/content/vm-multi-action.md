@@ -115,7 +115,8 @@ fails and is marked retryable. When your role may act on none of the VMs, the
 request is refused with `403` and no job starts. Canceling the job starts no
 more VMs; the ones in progress finish, except those whose minimega commands
 were still waiting for the minimega connection, which end `canceled`
-untouched.
+untouched. For such a VM, websocket clients that were told it was starting,
+stopping or restarting get a `canceled` `experiment/vm` message, not a failure.
 
 ### From the Command Line Binary
 

@@ -31,6 +31,9 @@ const (
 	bulkVMWorkers = 4
 	// vmActionKind is the kind of the bulk VM action jobs.
 	vmActionKind = "vms.action"
+	// vmActionCanceled withdraws the before broadcast of an action that gave
+	// up without touching the VM.
+	vmActionCanceled = "canceled"
 )
 
 // vmAction is one of the power actions on a VM, as its single-VM handler and
@@ -71,6 +74,11 @@ type vmAction struct {
 	// the title of a bulk action job, before its VM count
 	title string
 }
+
+// vmBroadcast sends a VM action's broadcasts; tests record them.
+//
+//nolint:gochecknoglobals // replaced by tests
+var vmBroadcast = broker.Broadcast
 
 // vmActions are the VM power actions, by the name the bulk action takes.
 //
@@ -195,6 +203,16 @@ type vmRequest struct {
 	jobID string
 }
 
+// logArgs are the fields of the request's log lines.
+func (req vmRequest) logArgs() []any {
+	args := []any{"user", req.user, "exp", req.exp, "vm", req.name}
+	if req.jobID != "" {
+		args = append(args, "job", req.jobID)
+	}
+
+	return args
+}
+
 // runVMAction takes the action on the VM, with the RBAC check, lock,
 // broadcasts and logs of its single-VM handler, and returns the VM as JSON
 // when the action ends with one. A role that may not act fails with 403,
@@ -236,7 +254,7 @@ func runVMAction(req vmRequest, a *vmAction) ([]byte, error) {
 
 	broadcast := func(action string, body []byte) {
 		if action != "" {
-			broker.Broadcast(policy, bt.NewResource("experiment/vm", fullName, action), body)
+			vmBroadcast(policy, bt.NewResource("experiment/vm", fullName, action), body)
 		}
 	}
 
@@ -255,7 +273,16 @@ func runVMAction(req vmRequest, a *vmAction) ([]byte, error) {
 	broadcast(a.before, nil)
 
 	if err := a.do(req.ctx, req.exp, req.name); err != nil {
-		return nil, fail(http.StatusInternalServerError, err)
+		if !endedWith(req.ctx, err) {
+			return nil, fail(http.StatusInternalServerError, err)
+		}
+
+		// the VM was not touched: no failure, and the transition is withdrawn
+		if a.before != "" {
+			broadcast(vmActionCanceled, nil)
+		}
+
+		return nil, fmt.Errorf("%s: %w", a.title, err)
 	}
 
 	var body []byte
@@ -274,12 +301,7 @@ func runVMAction(req vmRequest, a *vmAction) ([]byte, error) {
 		}
 
 		if a.screenshot != "" {
-			screenshot, err := util.GetScreenshot(req.exp, req.name, a.screenshot)
-			if err != nil {
-				plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-			} else {
-				v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
-			}
+			v.Screenshot = vmScreenshot(req.exp, req.name, a.screenshot)
 		}
 
 		if a.stopped {
@@ -294,14 +316,22 @@ func runVMAction(req vmRequest, a *vmAction) ([]byte, error) {
 
 	broadcast(a.after, body)
 
-	logArgs := []any{"user", req.user, "exp", req.exp, "vm", req.name}
-	if req.jobID != "" {
-		logArgs = append(logArgs, "job", req.jobID)
-	}
-
-	plog.Info(plog.TypeAction, a.done, logArgs...)
+	plog.Info(plog.TypeAction, a.done, req.logArgs()...)
 
 	return body, nil
+}
+
+// vmScreenshot returns the VM's screenshot as a data URL, or "" when it
+// cannot be taken.
+func vmScreenshot(exp, name, size string) string {
+	screenshot, err := util.GetScreenshot(exp, name, size)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+
+		return ""
+	}
+
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 }
 
 // serveVMAction takes the named action on the request's VM and answers as
@@ -447,7 +477,7 @@ func runVMActions(ctx context.Context, run *job.Run, req vmRequest, action *vmAc
 				body, err := runVMAction(one, action)
 
 				switch {
-				case ctx.Err() != nil && errors.Is(err, context.Canceled):
+				case endedWith(ctx, err):
 					// canceled with the job (see job.Registry.Cancel)
 				case errors.Is(err, job.ErrForbidden):
 					run.ItemSkipped(name, job.ErrForbidden.Error())
