@@ -83,7 +83,9 @@ matter.
 The button's icon is colored to match: yellow while a load is running, green
 after a load succeeded, orange while the data may be out of date, and red after
 a load failed. While a load runs, the icon spins and the button cannot be
-pressed. A page with nothing to reload, such as `Builder`, shows neither the
+pressed. Screen readers announce only a failed load and data that may be out
+of date, with the reason, not each reload or change of age. A page with
+nothing to reload, such as `Builder`, shows neither the
 status nor the button.
 
 The Experiments, Configs, Disks, Hosts, Users, Logs, Scorch, State of Health
