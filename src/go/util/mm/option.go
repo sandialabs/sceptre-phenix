@@ -53,13 +53,9 @@ func NewOptions(opts ...Option) options {
 	return o
 }
 
-// Context gives the minimega commands a call runs the context of the request
-// or job they are run for: once ctx is done, a command still waiting for the
-// shared minimega connection gives up without being sent (see
-// mmcli.RunContext), and the call returns an error wrapping ctx's error. A call
-// that changes something in several commands checks ctx only until its first
-// change is sent, so it is never left half done. Without it, commands wait as
-// mmcli.Run does.
+// Context gives up a call's commands still waiting for the shared connection once ctx is done (see
+// mmcli.RunContext), returning ctx's error. A call making several changes checks ctx only until its
+// first change is sent, so it is never left half done.
 func Context(ctx context.Context) Option {
 	return func(o *options) {
 		o.ctx = ctx

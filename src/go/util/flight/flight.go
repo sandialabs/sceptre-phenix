@@ -35,12 +35,9 @@ type call[T any] struct {
 	finished bool
 }
 
-// Do runs fn, or joins an unsealed run for key and returns its result. fn runs
-// with a context canceled once every caller has left because its own ctx is
-// done; a joined caller returns ctx's error as soon as ctx is done. fn may call
-// seal, any number of times, to stop later callers joining. If fn panics, the
-// panic carries on up its own caller, and the callers that joined get
-// ErrAborted. Every caller gets the same value, so none may modify it.
+// Do runs fn, or joins key's unsealed run and returns its result, which callers must not modify; fn
+// may call seal to stop later joins. fn's context ends once every caller's ctx is done, and a
+// joined caller returns ctx's error at once, or ErrAborted if fn panicked.
 func (g *Group[T]) Do( //nolint:ireturn // T is concrete at each use
 	ctx context.Context,
 	key string,

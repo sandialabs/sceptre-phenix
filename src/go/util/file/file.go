@@ -51,12 +51,9 @@ type filesObserver interface {
 	GetExperimentFilesObserved(ctx context.Context, exp, filter string) (Files, freshness.Observation, error)
 }
 
-// GetExperimentFilesObserved is GetExperimentFiles, also reporting when the
-// listing was read from minimega, which for a reused listing is up to
-// listingTTL ago. A ClusterFiles that cannot tell is taken to have read it now.
-// The listing's minimega commands give up once ctx, and that of every other
-// caller waiting for the same listing, is done (see mm.Context), and the call
-// then returns an error wrapping ctx's error.
+// GetExperimentFilesObserved is GetExperimentFiles, also reporting when the listing was read (now,
+// for a ClusterFiles that cannot tell). Its commands give up once ctx and those of the other callers
+// waiting for it are done, and the call then returns ctx's error.
 func GetExperimentFilesObserved(ctx context.Context, exp, filter string) (Files, freshness.Observation, error) {
 	if o, ok := DefaultClusterFiles.(filesObserver); ok {
 		return o.GetExperimentFilesObserved(ctx, exp, filter)
