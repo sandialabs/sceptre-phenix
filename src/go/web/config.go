@@ -301,7 +301,8 @@ func redactConfig(cfg *store.Config) {
 
 // keepUserSecrets gives an update of the User config name the stored password
 // and tokens in place of any it carries, since the configs API never returns
-// them; the users routes change them.
+// them; the users routes change them. Without an If-Match revision, the update
+// must still find the revision read here, so a concurrent change is not lost.
 func keepUserSecrets(name string, c *store.Config) error {
 	if !strings.EqualFold(c.Kind, kindUser) {
 		return nil
@@ -334,6 +335,10 @@ func keepUserSecrets(name string, c *store.Config) error {
 		} else {
 			delete(c.Spec, field)
 		}
+	}
+
+	if c.IfRevision == 0 {
+		c.IfRevision = old.Metadata.Revision
 	}
 
 	return nil
@@ -775,12 +780,12 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		c.Spec["experimentName"] = vars["name"]
 	}
 
+	c.IfRevision = ifRevision
+
 	if err := keepUserSecrets(name, c); err != nil {
 		return weberror.NewWebError(err, "unable to read config %s", name).
 			SetStatus(http.StatusInternalServerError)
 	}
-
-	c.IfRevision = ifRevision
 
 	if err := config.Update(name, c); err != nil {
 		return updateConfigWebError(err, name, src)

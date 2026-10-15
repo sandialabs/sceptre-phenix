@@ -532,6 +532,10 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 				return weberror.NewWebError(err, "config to update (%s) does not exist", name)
 			}
 
+			if errors.Is(err, store.ErrConflict) {
+				return conflictWebError(err, name)
+			}
+
 			if errors.Is(err, types.ErrValidationFailed) {
 				return validationWebError(src, err)
 			}
