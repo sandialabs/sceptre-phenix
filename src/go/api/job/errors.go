@@ -15,6 +15,9 @@ var (
 	ErrActive = errors.New("job is still queued or running")
 	// ErrNotCancelable is returned when canceling a job that cannot stop.
 	ErrNotCancelable = errors.New("this job cannot be canceled")
+	// ErrQueueFull is returned when starting a job that would have to wait
+	// while its owner, or everyone, already has the most jobs waiting.
+	ErrQueueFull = errors.New("too many jobs are waiting to run; try again once some finish")
 
 	// ErrRetryable marks an error that trying again later may not repeat,
 	// such as a resource busy with another action.

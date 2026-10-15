@@ -38,7 +38,9 @@ four statuses:
 | `canceled` | someone canceled the job before it finished |
 
 phēnix runs at most 4 jobs at once for each user and 16 in all; later jobs
-wait, `queued`, and start in the order they came as slots free.
+wait, `queued`, and start in the order they came as slots free. At most 32 of
+a user's jobs, and 256 in all, wait at once: starting one more that would
+have to wait answers `429 Too Many Requests` with `Retry-After`.
 
 ### Item outcomes
 
