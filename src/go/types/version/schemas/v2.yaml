@@ -223,10 +223,15 @@ components:
       properties:
         includeTopologies:
           title: "Included Topologies"
-          description: "Topology configs or file paths to merge into this topology."
-          type: array
-          items:
-            type: string
+          description: >-
+            Topology configs or file paths to merge into this topology. A
+            single value is read as a list of one.
+          nullable: true
+          anyOf:
+          - type: array
+            items:
+              type: string
+          - type: string
           example:
           - /phenix/topologies/common.yml
           - shared-topology

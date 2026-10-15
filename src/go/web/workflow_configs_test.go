@@ -77,9 +77,9 @@ spec:
       - image: x.qc2
 `
 
-// upsertTestUndecodableTopology is a topology that passes its schema, which
-// does not declare includeTopologies, but does not decode: a mapping is no
-// include name. Its name expands to main-topo on branch main.
+// upsertTestUndecodableTopology is a topology that would not decode, as a
+// mapping is no include name, and that its schema refuses first. Its name
+// expands to main-topo on branch main.
 const upsertTestUndecodableTopology = `apiVersion: phenix.sandia.gov/v1
 kind: Topology
 metadata:
@@ -300,9 +300,10 @@ func TestWorkflowUpsertConfigDryRunExplainsValidationErrors(t *testing.T) {
 // the real upsert stores nothing and config.Update's own read never happens.
 func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
 	tests := []struct {
-		name      string
-		body      string
-		wantCause string
+		name        string
+		body        string
+		wantMessage string // when not the create or update message
+		wantCause   string
 	}{
 		{
 			name:      "node named all",
@@ -310,9 +311,10 @@ func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
 			wantCause: `topology "main-topo" cannot be used in an experiment: validating node all: hostname 'all' is reserved`,
 		},
 		{
-			name:      "topology that does not decode",
-			body:      upsertTestUndecodableTopology,
-			wantCause: `decoding topology "main-topo": `,
+			name:        "topology that does not decode",
+			body:        upsertTestUndecodableTopology,
+			wantMessage: `spec (line 6): doesn't match any schema from "anyOf" (at includeTopologies)`,
+			wantCause:   `config validation failed: Error at "/includeTopologies"`,
 		},
 	}
 
@@ -326,6 +328,10 @@ func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
 				wantMessage := "unable to create new config Topology/main-topo"
 				if exists {
 					wantMessage = "unable to update config Topology/main-topo"
+				}
+
+				if tt.wantMessage != "" {
+					wantMessage = tt.wantMessage
 				}
 
 				send := func(query string) error {
