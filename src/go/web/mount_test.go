@@ -558,6 +558,11 @@ func TestUploadMountFile(t *testing.T) {
 		})
 	}
 
+	// an upload replaces a longer file of the same name whole
+	if err := os.WriteFile(filepath.Join(base, "etc", "notes.txt"), []byte("an older, longer file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	events := captureAudit(t)
 
 	if resp := upload(t, "etc", "file"); resp.StatusCode != http.StatusOK {
