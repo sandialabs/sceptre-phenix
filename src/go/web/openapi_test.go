@@ -117,10 +117,10 @@ func (s openAPISpec) documents(method, path string, status int) bool {
 }
 
 // routerOperations are the operations of the server's routes, keyed as in an
-// openAPISpec, with every optional feature on. Routes of no method (the UI's
-// files and the WebShark proxy, served by prefix) and OPTIONS, which every API
-// route takes for CORS preflights, are left out.
-func routerOperations(t *testing.T) map[string]bool {
+// openAPISpec, with every optional feature on, and the paths of the routes of
+// any method. OPTIONS, which every API route takes for CORS preflights, is
+// left out.
+func routerOperations(t *testing.T) (map[string]bool, []string) {
 	t.Helper()
 
 	server := serveContract(t, func(o *serverOptions) {
@@ -132,7 +132,10 @@ func routerOperations(t *testing.T) map[string]bool {
 		t.Fatalf("the server's handler is a %T", server.Config.Handler)
 	}
 
-	ops := map[string]bool{}
+	var (
+		ops       = map[string]bool{}
+		anyMethod []string
+	)
 
 	err := router.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
 		path, err := route.GetPathTemplate()
@@ -142,7 +145,9 @@ func routerOperations(t *testing.T) map[string]bool {
 
 		methods, err := route.GetMethods()
 		if err != nil {
-			return nil //nolint:nilerr // a route of any method
+			anyMethod = append(anyMethod, path)
+
+			return nil //nolint:nilerr // a route of any method, which the caller checks
 		}
 
 		scope := "root"
@@ -162,7 +167,24 @@ func routerOperations(t *testing.T) map[string]bool {
 		t.Fatal(err)
 	}
 
-	return ops
+	return ops, anyMethod
+}
+
+// routesOfAnyMethod are the routes, by path or path prefix, that take any
+// method: the UI's files, which openapi.yml leaves out, and the API's
+// subrouter, whose routes each name their methods.
+//
+//nolint:gochecknoglobals // constant table
+var routesOfAnyMethod = map[string]string{
+	"/api/v1":                        "the API's subrouter; its routes are walked one by one",
+	"/webshark/":                     "WebShark's pages and scripts, behind its own routes",
+	"/docs/":                         "the documentation site",
+	"/novnc/":                        "noVNC, which the VNC page loads",
+	"/xterm.js/":                     "xterm.js, which the console page loads",
+	"/assets/":                       "the UI's hashed scripts, styles and images",
+	"/grapheditor/builder.bundle.js": "the Topology Builder's scripts, bundled",
+	"/grapheditor/":                  "the Topology Builder's other files",
+	"/favicon.ico":                   "the UI's icon",
 }
 
 // undocumentedRoutes are the routes openapi.yml leaves out on purpose, each
@@ -173,7 +195,6 @@ var undocumentedRoutes = map[string]string{
 	// pages and forms of the UI, not an API
 	"root GET /builder":       "the Topology Builder page",
 	"root POST /builder/save": "the Topology Builder's file download form",
-	"root GET /version":       "the build the UI shows",
 	// WebShark's own requests, which only the bundled WebShark makes, with
 	// the capture name POST /experiments/{exp}/webshark gives it
 	"root GET /webshark/json":         "WebShark's capture listing and download",
@@ -189,64 +210,75 @@ var undocumentedRoutes = map[string]string{
 }
 
 // undocumentedBeforeContract are the API routes openapi.yml has never
-// described. They predate the API contract tests; a new route may not join
-// them.
+// described, each with what it does. They predate the API contract tests,
+// and leave openapi.yml as they are documented; a new route may not join them.
 //
 //nolint:gochecknoglobals // constant table
-var undocumentedBeforeContract = []string{
-	"api DELETE /experiments/{}/netflow",
-	"api DELETE /experiments/{}/trigger",
-	"api DELETE /experiments/{}/vms/{}/cdrom",
-	"api DELETE /experiments/{}/vms/{}/forwards",
-	"api DELETE /experiments/{}/vms/{}/unmount",
-	"api GET /experiments/{}/apps",
-	"api GET /experiments/{}/netflow",
-	"api GET /experiments/{}/scorch/components/{}/{}/{}/{}",
-	"api GET /experiments/{}/scorch/terminals",
-	"api GET /experiments/{}/scorch/terminals/{}",
-	"api GET /experiments/{}/scorch/terminals/{}/{}/{}/{}",
-	"api GET /experiments/{}/soh",
-	"api GET /experiments/{}/topology",
-	"api GET /experiments/{}/topology/search",
-	"api GET /experiments/{}/vms/{}/files",
-	"api GET /experiments/{}/vms/{}/forwards",
-	"api GET /experiments/{}/vms/{}/reset",
-	"api GET /experiments/{}/vms/{}/restart",
-	"api GET /experiments/{}/vms/{}/shutdown",
-	"api GET /experiments/{}/vms/{}/vnc",
-	"api GET /logs",
-	"api GET /roles",
-	"api GET /settings",
-	"api GET /settings/password",
-	"api GET /settings/timeout",
-	"api GET /topologies/{}/scenarios",
-	"api PATCH /experiments/{}",
-	"api PATCH /experiments/{}/vms",
-	"api POST /configs/download",
-	"api POST /experiments/{}/captureSubnet",
-	"api POST /experiments/{}/netflow",
-	"api POST /experiments/{}/scorch/terminals/{}/exit/{}",
-	"api POST /experiments/{}/stopCaptureSubnet",
-	"api POST /experiments/{}/trigger",
-	"api POST /experiments/{}/vms/{}/cdrom",
-	"api POST /experiments/{}/vms/{}/commit",
-	"api POST /experiments/{}/vms/{}/files/copy",
-	"api POST /experiments/{}/vms/{}/forwards",
-	"api POST /experiments/{}/vms/{}/memorySnapshot",
-	"api POST /experiments/{}/vms/{}/mount",
-	"api POST /settings",
-	"api POST /users/{}/tokens",
-	"api PUT /experiments/{}/vms/{}/files/upload",
+var undocumentedBeforeContract = map[string]string{
+	"api DELETE /experiments/{}/netflow":                    "stops the experiment's netflow capture",
+	"api DELETE /experiments/{}/trigger":                    "cancels the experiment's triggered apps",
+	"api DELETE /experiments/{}/vms/{}/cdrom":               "ejects a VM's CD-ROM",
+	"api DELETE /experiments/{}/vms/{}/forwards":            "removes a VM's port forward",
+	"api DELETE /experiments/{}/vms/{}/unmount":             "unmounts a VM's disk",
+	"api GET /experiments/{}/apps":                          "lists the experiment's apps",
+	"api GET /experiments/{}/netflow":                       "the experiment's netflow capture",
+	"api GET /experiments/{}/scorch/components/{}/{}/{}/{}": "a SCORCH component's output",
+	"api GET /experiments/{}/scorch/terminals":              "lists the SCORCH break terminals",
+	"api GET /experiments/{}/scorch/terminals/{}":           "a SCORCH break terminal",
+	"api GET /experiments/{}/scorch/terminals/{}/{}/{}/{}":  "a SCORCH component's break terminal",
+	"api GET /experiments/{}/soh":                           "the experiment's state of health",
+	"api GET /experiments/{}/topology":                      "the experiment's network graph",
+	"api GET /experiments/{}/topology/search":               "searches the experiment's network graph",
+	"api GET /experiments/{}/vms/{}/files":                  "lists a mounted VM disk's files",
+	"api GET /experiments/{}/vms/{}/forwards":               "lists a VM's port forwards",
+	"api GET /experiments/{}/vms/{}/reset":                  "resets a VM's disk state",
+	"api GET /experiments/{}/vms/{}/restart":                "restarts a VM",
+	"api GET /experiments/{}/vms/{}/shutdown":               "shuts a VM down",
+	"api GET /experiments/{}/vms/{}/vnc":                    "a VM's VNC page",
+	"api GET /logs":                                         "streams the server's logs",
+	"api GET /roles":                                        "lists the roles",
+	"api GET /settings":                                     "the server's settings",
+	"api GET /settings/password":                            "the password requirements",
+	"api GET /settings/timeout":                             "the session timeout",
+	"api GET /topologies/{}/scenarios":                      "lists a topology's scenarios",
+	"api PATCH /experiments/{}":                             "updates an experiment",
+	"api PATCH /experiments/{}/vms":                         "updates several VMs",
+	"api POST /configs/download":                            "downloads several configs as an archive",
+	"api POST /experiments/{}/captureSubnet":                "captures a subnet's VM interfaces",
+	"api POST /experiments/{}/netflow":                      "starts a netflow capture",
+	"api POST /experiments/{}/scorch/terminals/{}/exit/{}":  "exits a SCORCH break terminal",
+	"api POST /experiments/{}/stopCaptureSubnet":            "stops a subnet's captures",
+	"api POST /experiments/{}/trigger":                      "triggers the experiment's apps",
+	"api POST /experiments/{}/vms/{}/cdrom":                 "changes a VM's CD-ROM",
+	"api POST /experiments/{}/vms/{}/commit":                "commits a VM's disk to a new image",
+	"api POST /experiments/{}/vms/{}/files/copy":            "copies an experiment file into a mounted VM disk",
+	"api POST /experiments/{}/vms/{}/forwards":              "adds a VM port forward",
+	"api POST /experiments/{}/vms/{}/memorySnapshot":        "snapshots a VM's memory",
+	"api POST /experiments/{}/vms/{}/mount":                 "mounts a VM's disk",
+	"api POST /settings":                                    "changes the server's settings",
+	"api POST /users/{}/tokens":                             "creates a user's API token",
+	"api PUT /experiments/{}/vms/{}/files/upload":           "uploads a file into a mounted VM disk",
 }
 
 // Every operation the router serves is in openapi.yml, and every operation
 // openapi.yml describes is one the router serves, except the routes left out
 // on purpose. The routes the Unix socket serves are among the router's.
 func TestRouterMatchesOpenAPI(t *testing.T) {
-	var (
-		spec   = loadOpenAPI(t)
-		router = routerOperations(t)
-	)
+	spec := loadOpenAPI(t)
+	router, anyMethod := routerOperations(t)
+
+	// an API route must name its methods to be compared with openapi.yml
+	for _, path := range anyMethod {
+		if routesOfAnyMethod[path] == "" {
+			t.Errorf("route %s takes any method: give it Methods(), or add it to routesOfAnyMethod", path)
+		}
+	}
+
+	for path := range routesOfAnyMethod {
+		if !slices.Contains(anyMethod, path) {
+			t.Errorf("%s is no longer a route of any method: take it off routesOfAnyMethod", path)
+		}
+	}
 
 	for _, r := range socketRoutes() {
 		for _, method := range r.methods {
@@ -259,7 +291,7 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 	var missing, extra []string
 
 	for key := range router {
-		if _, ok := spec[key]; !ok && undocumentedRoutes[key] == "" && !slices.Contains(undocumentedBeforeContract, key) {
+		if _, ok := spec[key]; !ok && undocumentedRoutes[key] == "" && undocumentedBeforeContract[key] == "" {
 			missing = append(missing, key)
 		}
 	}
@@ -287,7 +319,7 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 		}
 	}
 
-	for _, key := range undocumentedBeforeContract {
+	for key := range undocumentedBeforeContract {
 		if _, ok := spec[key]; ok || !router[key] {
 			t.Errorf("%s is described in openapi.yml, or no longer a route: take it off undocumentedBeforeContract", key)
 		}
