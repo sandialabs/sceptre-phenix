@@ -39,6 +39,10 @@ All notable changes to this project will be documented in this file.
 
 - **Topology v0 (breaking)**: Topology configs with apiVersion `phenix.sandia.gov/v0` are no longer supported.
 
+### Removed
+
+- **Topology v0 (breaking)**: Topology configs with apiVersion `phenix.sandia.gov/v0` are no longer supported.
+
 ### Fixed
 
 - **Topology Builder**:
