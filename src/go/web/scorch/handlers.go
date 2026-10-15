@@ -126,6 +126,7 @@ func GetTerminals(w http.ResponseWriter, r *http.Request) {
 	terms, _ := GetExperimentTerminals(exp, -1)
 
 	body, _ := json.Marshal(util.WithRoot("terminals", terms))
+	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -166,6 +167,7 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body, _ := json.Marshal(t)
+	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -205,6 +207,7 @@ func ConnectTerminalByPID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body, _ := json.Marshal(t)
+	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 

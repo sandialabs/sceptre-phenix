@@ -317,6 +317,7 @@ func serveVMAction(w http.ResponseWriter, r *http.Request, action string) {
 	case body == nil:
 		w.WriteHeader(http.StatusNoContent)
 	default:
+		w.Header().Set("Content-Type", mimeJSON)
 		_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 	}
 }

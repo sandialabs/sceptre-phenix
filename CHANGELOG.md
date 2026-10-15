@@ -160,7 +160,7 @@ All notable changes to this project will be documented in this file.
 - **Config API**: `GET /configs` returned `null` instead of `[]` when the role could see no configs, and CORS preflights did not allow the `X-Phenix-Auth-Token` header. Getting, updating or deleting a config that does not exist answered 400 instead of 404.
 - **API routes**: An unknown `/api/v1` path answered with the web UI's page instead of 404, and an authenticated `OPTIONS` request ran the route's action, such as a delete.
 - **Base path**: The `Location` header of a config created, updated or upserted through `POST /workflow/configs/{branch}` left out the base path phēnix is served behind.
-- **JSON responses**: `GET /features`, `GET /version` and the console routes sent their JSON as `text/plain`.
+- **JSON responses**: Most API routes that answer JSON, such as `GET /experiments`, `GET /features` and `GET /version`, sent it as `text/plain`.
 - **Experiment update**: `PATCH /experiments/{name}` answered 200 instead of 204, and 500 instead of 404 for an unknown experiment or 400 for a malformed body.
 - **VM updates**: `PATCH /experiments/{exp}/vms` crashed its request when the body's `total` was below the number of VMs, and otherwise answered with empty VMs in place of those the role could not patch; it now answers with the VMs it updated.
 - **Config downloads**: An archive of configs larger than 4 KiB lost its attachment name, and a config that could not be read broke the archive partway instead of answering an error.

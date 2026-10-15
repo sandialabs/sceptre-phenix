@@ -77,6 +77,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -193,6 +194,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		req.Username,
 	)
 
+	w.Header().Set("Content-Type", mimeJSON)
 	//nolint:gosec // XSS via taint analysis
 	_, _ = w.Write(body)
 }
@@ -243,6 +245,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }
 
@@ -435,6 +438,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 

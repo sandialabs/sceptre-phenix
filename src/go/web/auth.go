@@ -169,6 +169,7 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		u.LastName(),
 	)
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }
 
@@ -362,6 +363,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	plog.Info(plog.TypeSecurity, "user signed in", "user", u.Username())
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }
 
@@ -511,6 +513,7 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 
 	plog.Info(plog.TypeSecurity, "create token for user", "user", u.Username())
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }
 
@@ -558,5 +561,6 @@ func GetRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 }

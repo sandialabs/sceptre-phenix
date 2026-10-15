@@ -902,6 +902,52 @@ func TestContractErrors(t *testing.T) {
 	}
 }
 
+// The routes that answer JSON say so in Content-Type, as openapi.yml
+// documents, rather than leaving the server to sniff text/plain.
+func TestContractJSONContentType(t *testing.T) {
+	const (
+		exp = "/api/v1/experiments/" + contractExp
+		vm  = exp + "/vms/" + contractVM
+	)
+
+	for _, path := range []string{
+		"/api/v1/experiments",
+		exp,
+		exp + "/schedule",
+		exp + "/captures",
+		exp + "/topology",
+		exp + "/topology/search?hostname=" + contractVM,
+		exp + "/soh",
+		exp + "/vms",
+		vm,
+		vm + "/captures",
+		vm + "/forwards",
+		vm + "/files?path=etc",
+		exp + "/scorch/terminals",
+		"/api/v1/vms",
+		"/api/v1/disks",
+		"/api/v1/applications",
+		"/api/v1/topologies",
+		"/api/v1/topologies/" + contractTopo + "/scenarios",
+		"/api/v1/users",
+		"/api/v1/roles",
+	} {
+		t.Run(path, func(t *testing.T) {
+			useContractFixture(t)
+			server := serveContractAs(t, contractAdmin(), nil).URL
+
+			resp := do(t, http.MethodGet, server+path, "")
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+			}
+
+			if got := resp.Header.Get("Content-Type"); got != mimeJSON {
+				t.Errorf("Content-Type %q, want %s", got, mimeJSON)
+			}
+		})
+	}
+}
+
 // Behind a proxy that serves phenix under a base path, and strips it from
 // requests, the URLs the server gives clients reach it through the proxy:
 // job and config locations carry the base path, a capture token's URL,
