@@ -20,6 +20,7 @@
   import { useJobStore } from '@/utils/jobs.js';
   import { invalidatePages } from '@/utils/pageCache.js';
   import { followSignIn } from '@/utils/signIn.js';
+  import { viewKey } from '@/utils/viewKey.js';
 
   const store = usePhenixStore();
 
@@ -97,7 +98,9 @@
     <a class="skip-link" href="#main">Skip to main content</a>
     <app-header></app-header>
     <main id="main" class="row container is-fullhd px-4" tabindex="-1">
-      <router-view></router-view>
+      <router-view v-slot="{ Component, route }">
+        <component :is="Component" :key="viewKey(route)"></component>
+      </router-view>
     </main>
     <app-footer></app-footer>
   </div>
