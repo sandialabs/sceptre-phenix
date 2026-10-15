@@ -133,6 +133,7 @@ All notable changes to this project will be documented in this file.
 - **CLI**: Every `phenix` command waits at most one minute for the server's options over `--unix-socket` instead of hanging on a server that never answers. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Containers**: The Docker and Podman builds gave the `INSTALL_CERTS` certificates to yarn, but the UI builds with npm, so building the UI behind a TLS-inspecting proxy failed to install its packages.
 - **Live updates**: A browser tab that stopped reading its websocket could delay or stop live updates for every other tab.
+- **Sign-out**: Signing out of a page that was loaded already signed in left its websocket connected as that user, so whoever signed in next in that tab got the previous user's live updates and jobs menu.
 - **SCORCH**: A component output window or break terminal that stopped reading could hold up every experiment's SCORCH components.
 - **Port forwards**: Port forward requests waited behind other experiments' tunnel commands, and creating a forward could retry busy ports forever.
 - **Netflow**: Starting or stopping one experiment's netflow capture held up other experiments' netflow requests and experiment stops.
