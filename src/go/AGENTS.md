@@ -35,8 +35,9 @@ the root target does.
 - Preserve bundled third-party assets under `web/public/` unless explicitly
   upgrading or replacing them.
 - Config changes must keep versioned structs, interfaces, YAML/JSON tags,
-  OpenAPI schemas, upgrades, examples, and API output aligned.
-- Preserve old config upgrades and persisted BoltDB/etcd compatibility.
+  OpenAPI schemas, examples, and API output aligned.
+- Preserve persisted BoltDB/etcd compatibility. A kind decodes only at its
+  version in `types/version.StoredVersion`; there are no config upgraders.
 - RBAC changes require generated policy, migrations when needed, and migration
   tests. Keep CLI, REST, websocket, and UI authorization equivalent.
 - API route changes require domain behavior, `web/server.go`, RBAC,

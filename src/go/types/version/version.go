@@ -60,8 +60,6 @@ func GetVersionedSpecForKind(kind, version string) (any, error) {
 		}
 	case "Scenario":
 		switch version {
-		case "v1":
-			return new(v1.ScenarioSpec), nil
 		case "v2":
 			return new(v2.ScenarioSpec), nil
 		default:

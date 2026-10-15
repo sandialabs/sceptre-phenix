@@ -412,7 +412,7 @@ func TestPrepareCreate(t *testing.T) {
 				expectPrepareRead(m, "scenario/bar", undecodableScenario)
 			},
 			wantErr: workflow.ErrUnresolved,
-			wantMsg: `decoding scenario "bar": upgrading scenario to v2: unknown version v7`,
+			wantMsg: `decoding scenario "bar": unknown scenario version v7`,
 		},
 		{
 			name:   "fromScenario app does not merge",
@@ -1243,18 +1243,6 @@ func TestPendingRef(t *testing.T) {
 			name: "scenario that does not decode",
 			cfg:  prepareScenario("bar", "foo", numericFrom),
 			want: "Scenario/bar?topology=foo",
-		},
-		{
-			// A v1 scenario keeps its apps in a map, and the upgrader gives
-			// them no fromScenario.
-			name: "v1 scenario",
-			cfg: store.Config{
-				Version:  "phenix.sandia.gov/v1",
-				Kind:     "Scenario",
-				Metadata: store.ConfigMetadata{Name: "old"},
-				Spec:     map[string]any{"apps": map[string]any{"experiment": []any{}}},
-			},
-			want: "Scenario/old?",
 		},
 		{
 			// The weak decode names an include 7 by its decimal string.

@@ -179,7 +179,7 @@ func rejectRunningExperimentForTopology(
 // updateBuilderTopology writes a Builder diagram and its generated spec onto an
 // existing topology config, returning the stored config.
 func updateBuilderTopology(req builder) (*store.Config, error) {
-	topo, err := config.Get(store.ConfigFullName("topology", req.Name), false)
+	topo, err := config.Get(store.ConfigFullName("topology", req.Name))
 	if err != nil {
 		return nil, err
 	}
@@ -1026,7 +1026,7 @@ func GetBuilderTopology(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	topology, err := config.Get(name, false)
+	topology, err := config.Get(name)
 	if err != nil {
 		if errors.Is(err, store.ErrNotExist) {
 			return weberror.NewWebError(err, "unable to get topology %s from store", vars["name"]).
