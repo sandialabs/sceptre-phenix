@@ -225,6 +225,46 @@ func TestCloseTunnelGivesUpBeforeTheFirstClose(t *testing.T) { //nolint:parallel
 	}
 }
 
+// A close that minimega answered with an error closed nothing, so the call
+// still gives up with its context: the other tunnels are not closed.
+func TestCloseTunnelGoesOnOnlyAfterAClose(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		switch base := strings.TrimSpace(cmd.Base); {
+		case strings.HasPrefix(base, "cc tunnel list "):
+			return []*minicli.Response{
+				mmtest.Tabular("head", []string{"vm", "id", "src port", "dst", "dst port"},
+					[]string{"vm1", "3", "50001", "127.0.0.1", "22"},
+					[]string{"vm1", "4", "50002", "127.0.0.1", "22"}),
+			}
+		case strings.HasPrefix(base, "cc tunnel close"):
+			cancel()
+
+			return []*minicli.Response{{Host: "head", Error: "boom"}}
+		}
+
+		return vm1OnHeadnode(cmd)
+	})
+
+	if err := CloseTunnel(NS("exp"), VMName("vm1"), Context(ctx)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("CloseTunnel reported %v, want %v", err, context.Canceled)
+	}
+
+	var closes []string
+
+	for _, cmd := range received() {
+		if base := strings.TrimSpace(cmd.Base); strings.HasPrefix(base, "cc tunnel close") {
+			closes = append(closes, base)
+		}
+	}
+
+	if !slices.Equal(closes, []string{"cc tunnel close vm1 3"}) {
+		t.Fatalf("minimega received closes %q, want only the first", closes)
+	}
+}
+
 // A cluster host list whose context ends partway gives up with its context's
 // error: it neither takes the mesh check that gave up for a changed mesh (and
 // clears the hosts namespace) nor keeps the partial list for later callers.
