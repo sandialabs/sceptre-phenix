@@ -10,10 +10,13 @@ button to reload it. Pages opt in with createPageLoader.
     <span class="refresh-alert is-sr-only" role="status" aria-live="polite">{{
       alert
     }}</span>
+    <!-- hidden from screen readers while it repeats the announcement, so
+         reading the header does not say "Refresh failed" twice -->
     <span
       class="refresh-label"
       :class="{ 'refresh-stale-label': stale }"
       :title="stale ? staleText : null"
+      :aria-hidden="label && label === alert ? 'true' : null"
       >{{ label
       }}<span v-if="stale" class="is-sr-only">: {{ staleText }}</span></span
     >
