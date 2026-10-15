@@ -78,7 +78,13 @@ token. A role without the permission a route needs gets `403`, except on the
 routes that answer `404` so as not to reveal another user's job, console or
 capture token. An unknown path under `/api/v1` answers `404`, and a method a
 path does not take `405`, before any authentication. An `OPTIONS` request
-answers `204` without running the route.
+answers `204` without running the route, or `200` with `--allow-cors`.
+
+With `--jwt-signing-key proxy-jwt`, where the proxy in front of phēnix checks
+the token, phēnix reads the token only from the `X-Phenix-Auth-Token` header,
+answers `400` when it is missing or malformed, and `401` when its user is
+unknown or no longer holds it. With authentication disabled, every request
+acts as `global-admin`.
 
 Behind a reverse proxy that serves phēnix under a base path (`--base-path`),
 the proxy strips the base path from requests, and the `Location` headers of
@@ -159,8 +165,10 @@ curl -s -X PUT -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
 
 ## Freshness
 
-Every response of an API route carries `X-Phenix-Seq`, a number from one sequence that
-only increases within a `phenix ui` process, taken as the request started.
+Every response of an API route that gets past authentication carries
+`X-Phenix-Seq`, a number from one sequence that only increases within a
+`phenix ui` process, taken as the request started. A `401` or `403` refusal
+from authentication and an `OPTIONS` answer do not carry it.
 Every message on the `/ws` websocket carries the same sequence in its `seq`
 field, taken as the message was published, after the change it tells of. A
 reply to a websocket request, such as an `experiment/vms` list, takes its

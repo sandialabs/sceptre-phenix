@@ -90,10 +90,16 @@ func TestRouterAnswersOptions(t *testing.T) {
 
 			server := serveAs(t, "alice", testRole("options", "list")).URL
 
+			// as documented: 204, or 200 when CORS is allowed
+			want := http.StatusNoContent
+			if cors {
+				want = http.StatusOK
+			}
+
 			for _, path := range []string{"/api/v1/jobs/" + j.ID, "/api/v1/jobs"} {
 				resp := do(t, http.MethodOptions, server+path, "")
-				if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-					t.Errorf("OPTIONS %s: status %d", path, resp.StatusCode)
+				if resp.StatusCode != want {
+					t.Errorf("OPTIONS %s: status %d, want %d", path, resp.StatusCode, want)
 				}
 
 				if got := resp.Header.Get("Access-Control-Allow-Origin") != ""; got != cors {

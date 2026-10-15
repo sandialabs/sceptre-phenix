@@ -36,9 +36,10 @@ With auth on, a request without a token gets `403`; a malformed, expired or
 signed-out token, or a `--proxy-auth-header` user other than the token's,
 `401`. A missing permission is `403`, but jobs, consoles and capture tokens of
 other users answer `404`. Unknown `/api/v1` paths answer `404` and wrong methods
-`405`, before auth; `OPTIONS` answers `204` without running the route. Behind
-a proxy with `--base-path` the proxy strips it, and job and config `Location`
-headers include it.
+`405`, before auth; `OPTIONS` answers `204` (`200` with `--allow-cors`) without
+running the route. Under `proxy-jwt` the token is read only from the header, and
+a missing or malformed one is `400`. Behind a proxy with `--base-path` the proxy
+strips it, and job and config `Location` headers include it.
 `src/go/web/contract_test.go` pins these per route.
 
 ```bash
@@ -94,7 +95,8 @@ An unknown config is `404` (`412` with `If-Match`).
 `POST` and `PUT` return the new `ETag`. `GET /configs` returns `[]`, never
 `null`.
 
-Ordering: every `/api/v1` route's response has `X-Phenix-Seq` (taken as the request
+Ordering: every `/api/v1` route's response past auth (not a `401`/`403` auth
+refusal or an `OPTIONS` answer) has `X-Phenix-Seq` (taken as the request
 started) and every `/ws` message a `seq` (taken as it was published; a VM list
 reply's before its minimega read), from one strictly increasing sequence per
 `phenix ui` process. Data tagged S reflects every change whose message has a
