@@ -334,18 +334,18 @@ func BroadcastLog(entry json.RawMessage) {
 const maxJobItems = 500
 
 // PublishJob tells the job's owner, and the clients allowed to list jobs of
-// its experiment (or, for a job of none, every job), of a change to a job, or
-// that it is gone (removed). The message leaves out the items' results, and
-// items beyond maxJobItems.
+// its experiment (or, for a job of none, to list jobs/global), of a change to
+// a job, or that it is gone (removed). The message leaves out the items'
+// results, and items beyond maxJobItems.
 func PublishJob(j job.Job, removed bool) {
 	action := "update"
 	if removed {
 		action = "remove"
 	}
 
-	name := j.Experiment
-	if name == "" {
-		name = "*"
+	policy := bt.NewRequestPolicy("jobs", "list", j.Experiment)
+	if j.Experiment == "" {
+		policy = bt.NewRequestPolicy("jobs/global", "list", "")
 	}
 
 	if len(j.Items) > maxJobItems {
@@ -369,7 +369,7 @@ func PublishJob(j job.Job, removed bool) {
 	}
 
 	out, ok := encode(bt.Publish{
-		RequestPolicy: bt.NewRequestPolicy("jobs", "list", name),
+		RequestPolicy: policy,
 		Resource:      bt.NewResource("job", j.ID, action),
 		Result:        body,
 		Seq:           0, // stamped by encode

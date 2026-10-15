@@ -52,6 +52,8 @@ while running, without item `result`s and with at most 500 items
 A job belongs to the user who started it. Other users need resource `jobs`
 with `list`/`get`/`update`/`delete` (see / download, cancel, dismiss) on the
 job's experiment as resource name; a job of no experiment (disk clone) needs
-`*`. Everyone else gets `404`. Experiment Admin has `jobs` on its experiments
-(added to stored roles on startup); Global Admin matches through `*`.
+resource `jobs/global` with the same verbs instead, which no `jobs` resource
+name reaches, not even `*`. Everyone else gets `404`. Experiment Admin has
+`jobs` on its experiments (added to stored roles on startup); Global Admin
+matches both through `*` and `*/*`.
 Starting a job needs only the operation's own permission.

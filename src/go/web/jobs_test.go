@@ -164,7 +164,13 @@ func TestJobVisibility(t *testing.T) {
 	var (
 		alice = serveAs(t, "alice", testRole("experiments", "get"))
 		bob   = serveAs(t, "bob", testRole("experiments", "get"))
-		admin = serveAs(t, "admin", combinedRole(testRole("jobs", "list", "*"), testRole("jobs", "get", "*")))
+		admin = serveAs(t, "admin", combinedRole(
+			testRole("jobs", "list", "*"), testRole("jobs", "get", "*"),
+			testRole("jobs/global", "list"), testRole("jobs/global", "get"),
+		))
+		// an Experiment Admin of every experiment, who does not reach jobs of
+		// none
+		expAdmin = serveAs(t, "exp-admin", combinedRole(testRole("jobs", "list", "*"), testRole("jobs", "get", "*")))
 		// an Experiment Admin of exp1
 		scoped = serveAs(t, "scoped", combinedRole(testRole("jobs", "list", "exp1"), testRole("jobs", "get", "exp1")))
 
@@ -183,10 +189,11 @@ func TestJobVisibility(t *testing.T) {
 		url  string
 		want []string
 	}{
-		"owner":                 {alice.URL, []string{noExp.ID, exp2.ID, exp1.ID}},
-		"another user":          {bob.URL, []string{bobs.ID}},
-		"jobs admin":            {admin.URL, allIDs},
-		"experiment jobs admin": {scoped.URL, []string{bobs.ID, exp1.ID}},
+		"owner":                  {alice.URL, []string{noExp.ID, exp2.ID, exp1.ID}},
+		"another user":           {bob.URL, []string{bobs.ID}},
+		"jobs admin":             {admin.URL, allIDs},
+		"experiments jobs admin": {expAdmin.URL, []string{bobs.ID, exp2.ID, exp1.ID}},
+		"experiment jobs admin":  {scoped.URL, []string{bobs.ID, exp1.ID}},
 	} {
 		got := listedJobs(t, tc.url)
 		if len(got) != len(tc.want) {
@@ -208,14 +215,15 @@ func TestJobVisibility(t *testing.T) {
 		url, id string
 		want    int
 	}{
-		"owner":                     {alice.URL, exp1.ID, http.StatusOK},
-		"another user":              {bob.URL, exp1.ID, http.StatusNotFound},
-		"jobs admin":                {admin.URL, noExp.ID, http.StatusOK},
-		"experiment admin, its own": {scoped.URL, exp1.ID, http.StatusOK},
-		"experiment admin, another": {scoped.URL, exp2.ID, http.StatusNotFound},
-		"experiment admin, no exp":  {scoped.URL, noExp.ID, http.StatusNotFound},
-		"unknown job":               {admin.URL, "j0000000000000000", http.StatusNotFound},
-		"another user's artifact":   {bob.URL, exp1.ID + "/artifact", http.StatusNotFound},
+		"owner":                            {alice.URL, exp1.ID, http.StatusOK},
+		"another user":                     {bob.URL, exp1.ID, http.StatusNotFound},
+		"jobs admin":                       {admin.URL, noExp.ID, http.StatusOK},
+		"experiment admin, its own":        {scoped.URL, exp1.ID, http.StatusOK},
+		"experiment admin, another":        {scoped.URL, exp2.ID, http.StatusNotFound},
+		"experiment admin, no exp":         {scoped.URL, noExp.ID, http.StatusNotFound},
+		"every experiment's admin, no exp": {expAdmin.URL, noExp.ID, http.StatusNotFound},
+		"unknown job":                      {admin.URL, "j0000000000000000", http.StatusNotFound},
+		"another user's artifact":          {bob.URL, exp1.ID + "/artifact", http.StatusNotFound},
 	} {
 		url := tc.url + "/api/v1/jobs/" + tc.id
 
@@ -368,5 +376,32 @@ func TestStartJobLocationHasBasePath(t *testing.T) {
 		if got := rec.Header().Get("Location"); got != want+j.ID {
 			t.Errorf("base path %q: Location %q, want %q", base, got, want+j.ID)
 		}
+	}
+}
+
+// Another user's job of no experiment, such as a disk clone, is canceled only
+// by a role with jobs/global, not by one with jobs on every experiment.
+//
+//nolint:paralleltest // replaces the job registry and store
+func TestCancelJobOfNoExperiment(t *testing.T) {
+	r := useJobs(t)
+
+	var (
+		expAdmin = serveAs(t, "exp-admin", testRole("jobs", "update", "*"))
+		admin    = serveAs(t, "admin", testRole("jobs/global", "update"))
+		release  = make(chan struct{})
+		running  = startTestJob(t, r, "alice", "", release, "")
+	)
+
+	t.Cleanup(func() { close(release) })
+
+	cancelURL := "/api/v1/jobs/" + running.ID + "/cancel"
+
+	if resp := do(t, http.MethodPost, expAdmin.URL+cancelURL, ""); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("every experiment's jobs admin canceling: %d, want 404", resp.StatusCode)
+	}
+
+	if resp := do(t, http.MethodPost, admin.URL+cancelURL, ""); resp.StatusCode != http.StatusAccepted {
+		t.Errorf("jobs/global admin canceling: %d, want 202", resp.StatusCode)
 	}
 }

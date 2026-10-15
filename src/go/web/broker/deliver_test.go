@@ -124,12 +124,13 @@ func TestJobsGoToTheirOwnerAndJobAdmins(t *testing.T) {
 	var (
 		owner    = &Client{role: roleAllowing("vms", "list"), user: "alice", publish: make(chan any, 4)}
 		other    = &Client{role: roleAllowing("vms", "list"), user: "bob", publish: make(chan any, 4)}
-		admin    = &Client{role: roleAllowingNames("jobs", "list", "*"), user: "admin", publish: make(chan any, 4)}
+		admin    = &Client{role: jobsAdmin(), user: "admin", publish: make(chan any, 4)}
+		allExps  = &Client{role: roleAllowingNames("jobs", "list", "*"), user: "erin", publish: make(chan any, 4)}
 		expAdmin = &Client{role: roleAllowingNames("jobs", "list", "exp1"), user: "carol", publish: make(chan any, 4)}
 		other2   = &Client{role: roleAllowingNames("jobs", "list", "exp2"), user: "dave", publish: make(chan any, 4)}
 	)
 
-	withClients(t, owner, other, admin, expAdmin, other2)
+	withClients(t, owner, other, admin, allExps, expAdmin, other2)
 
 	items := make([]job.Item, maxJobItems+2)
 	for i := range items {
@@ -144,7 +145,8 @@ func TestJobsGoToTheirOwnerAndJobAdmins(t *testing.T) {
 		want bool
 	}{
 		"owner": {owner, true}, "another user": {other, false}, "jobs admin": {admin, true},
-		"admin of the experiment": {expAdmin, true}, "admin of another experiment": {other2, false},
+		"admin of every experiment": {allExps, true},
+		"admin of the experiment":   {expAdmin, true}, "admin of another experiment": {other2, false},
 	} {
 		got := received(tc.c)
 		if (len(got) == 1) != tc.want {
@@ -171,20 +173,32 @@ func TestJobsGoToTheirOwnerAndJobAdmins(t *testing.T) {
 		}
 	}
 
-	// a job of no experiment reaches only admins of every job
+	// a job of no experiment reaches only admins of jobs/global, not even
+	// admins of every experiment's jobs
 	PublishJob(job.Job{ID: "j2", Owner: "bob"}, true)
 	deliver(<-broadcast)
 
 	for name, tc := range map[string]struct {
 		c    *Client
 		want int
-	}{"owner": {other, 1}, "jobs admin": {admin, 1}, "admin of an experiment": {expAdmin, 0}} {
+	}{
+		"owner": {other, 1}, "jobs admin": {admin, 1}, "admin of every experiment": {allExps, 0},
+		"admin of an experiment": {expAdmin, 0},
+	} {
 		if got := received(tc.c); len(got) != tc.want {
 			t.Errorf("job of no experiment, %s: got %d messages, want %d", name, len(got), tc.want)
 		} else if tc.want == 1 && got[0].pub.Resource.Action != "remove" {
 			t.Errorf("removal sent as %s", got[0].pub.Resource.Action)
 		}
 	}
+}
+
+// jobsAdmin may list every job, of any experiment or of none.
+func jobsAdmin() rbac.Role {
+	return rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{
+		{Resources: []string{"jobs"}, ResourceNames: []string{"*"}, Verbs: []string{"list"}},
+		{Resources: []string{"jobs/global"}, Verbs: []string{"list"}},
+	}}}
 }
 
 func roleAllowingNames(resource, verb string, names ...string) rbac.Role {

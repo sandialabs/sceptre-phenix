@@ -31,19 +31,45 @@ var artifactServed = map[string]func(r *http.Request, j job.Job){} //nolint:goch
 // its work did as the user who started it.
 var jobFinished = map[string]func(j job.Job){} //nolint:gochecknoglobals // filled in by the job kinds
 
-// jobAccess checks whether a role may act on a job of another user, given
-// the job's RBAC resource name (see jobResourceName).
-type jobAccess func(role rbac.Role, name string) bool
+// jobAccess checks whether a role may act on a job of another user.
+type jobAccess func(role rbac.Role, j job.Job) bool
 
 // The checks for each verb on another user's job, written out so the RBAC
-// policy generator finds them.
+// policy generator finds them. A job of an experiment needs the jobs
+// permission on its experiment; a job of none, such as a disk clone, needs
+// jobs/global, which an experiment-scoped role's patterns, even "*", do not
+// reach.
 //
 //nolint:gochecknoglobals // constant checks
 var (
-	mayListJob   jobAccess = func(role rbac.Role, name string) bool { return role.Allowed("jobs", "list", name) }
-	mayGetJob    jobAccess = func(role rbac.Role, name string) bool { return role.Allowed("jobs", "get", name) }
-	mayCancelJob jobAccess = func(role rbac.Role, name string) bool { return role.Allowed("jobs", "update", name) }
-	mayRemoveJob jobAccess = func(role rbac.Role, name string) bool { return role.Allowed("jobs", "delete", name) }
+	mayListJob jobAccess = func(role rbac.Role, j job.Job) bool {
+		if j.Experiment == "" {
+			return role.Allowed("jobs/global", "list")
+		}
+
+		return role.Allowed("jobs", "list", j.Experiment)
+	}
+	mayGetJob jobAccess = func(role rbac.Role, j job.Job) bool {
+		if j.Experiment == "" {
+			return role.Allowed("jobs/global", "get")
+		}
+
+		return role.Allowed("jobs", "get", j.Experiment)
+	}
+	mayCancelJob jobAccess = func(role rbac.Role, j job.Job) bool {
+		if j.Experiment == "" {
+			return role.Allowed("jobs/global", "update")
+		}
+
+		return role.Allowed("jobs", "update", j.Experiment)
+	}
+	mayRemoveJob jobAccess = func(role rbac.Role, j job.Job) bool {
+		if j.Experiment == "" {
+			return role.Allowed("jobs/global", "delete")
+		}
+
+		return role.Allowed("jobs", "delete", j.Experiment)
+	}
 )
 
 // ConfigureJobs points the job registry at the server: it tells websocket
@@ -161,16 +187,6 @@ func writeJob(w http.ResponseWriter, status int, j job.Job) {
 	_, _ = w.Write(body)
 }
 
-// jobResourceName is the RBAC resource name a user who did not start the job
-// needs a jobs permission on: its experiment, or "*" for a job of none.
-func jobResourceName(j job.Job) string {
-	if j.Experiment != "" {
-		return j.Experiment
-	}
-
-	return "*"
-}
-
 // ownJob returns the job the request names, if the user started it or may act
 // on it. Anyone else is answered 404, as for a job that does not exist.
 func ownJob(w http.ResponseWriter, r *http.Request, may jobAccess) (job.Job, bool) {
@@ -188,7 +204,7 @@ func ownJob(w http.ResponseWriter, r *http.Request, may jobAccess) (job.Job, boo
 		return job.Job{}, false
 	}
 
-	if j.Owner != user && !may(role, jobResourceName(j)) {
+	if j.Owner != user && !may(role, j) {
 		plog.Warn(plog.TypeSecurity, "accessing another user's job not allowed", "user", user, "job", id, "method", r.Method)
 		http.Error(w, "job not found", http.StatusNotFound)
 
@@ -222,7 +238,7 @@ func GetJobs(w http.ResponseWriter, r *http.Request) {
 	visible := make([]job.Job, 0, len(all))
 
 	for _, j := range all {
-		if j.Owner == user || mayListJob(role, jobResourceName(j)) {
+		if j.Owner == user || mayListJob(role, j) {
 			for i := range j.Items {
 				j.Items[i].Result = nil
 			}

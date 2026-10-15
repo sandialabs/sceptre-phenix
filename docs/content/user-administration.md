@@ -603,7 +603,16 @@ permissions the same way the server does.
 |------|------|
 | Verb | list, get, update, delete |
 | Desc | list, read (and download the artifact of), cancel, and dismiss [background jobs](jobs.md) other users started; a user always may for their own |
-| Exp. Scoped | yes (the job's experiment; a job of no experiment, such as a disk clone, needs `*`) |
+| Exp. Scoped | yes (the job's experiment; a job of no experiment needs `jobs/global` instead) |
+| Res. Scoped | no |
+
+#### Resource: `jobs/global`
+
+|      |      |
+|------|------|
+| Verb | list, get, update, delete |
+| Desc | as for `jobs`, for the background jobs of no experiment, such as disk clones, that other users started |
+| Exp. Scoped | no |
 | Res. Scoped | no |
 
 ### Built-In Roles
