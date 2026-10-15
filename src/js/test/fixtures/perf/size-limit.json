@@ -3,7 +3,7 @@
     "name": "Entry JS (loaded on every page)",
     "passed": true,
     "size": 149564,
-    "sizeLimit": 155000
+    "sizeLimit": 200000
   },
   {
     "name": "Entry CSS",
