@@ -153,6 +153,26 @@ func TestUpdateConfigIfMatch(t *testing.T) {
 	}
 }
 
+// An updated config's location is under the base path the UI is served
+// behind.
+func TestUpdateConfigLocationHasBasePath(t *testing.T) {
+	useRevisionTestStore(t)
+
+	original := o
+	t.Cleanup(func() { o = original })
+
+	o.basePath = "/phenix/"
+
+	w := httptest.NewRecorder()
+	if err := UpdateConfig(w, configRequest(t, http.MethodPut, nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := w.Header().Get("Location"), "/phenix/api/v1/configs/topology/demo"; got != want {
+		t.Errorf("Location %q, want %q", got, want)
+	}
+}
+
 func TestGetConfigsEmptyList(t *testing.T) {
 	useRevisionTestStore(t)
 

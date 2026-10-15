@@ -398,20 +398,9 @@ func mergeBuilderVLANAliases(
 }
 
 // builderTopologyLocation returns the absolute path a created Builder topology
-// is readable at. o.basePath is the prefix the UI is served behind and is
-// normalized to start and end with "/", so prefer it over assuming the API is
-// mounted at the server root.
+// is readable at.
 func builderTopologyLocation(name string) string {
-	base := o.basePath
-	if !strings.HasPrefix(base, "/") {
-		base = "/" + base
-	}
-
-	if !strings.HasSuffix(base, "/") {
-		base += "/"
-	}
-
-	return base + "api/v1/builder/topologies/" + url.PathEscape(name)
+	return apiLocation("builder/topologies/" + url.PathEscape(name))
 }
 
 // publishBuilderTopology broadcasts a topology config summary after a Builder
