@@ -203,7 +203,6 @@ var undocumentedRoutes = map[string]string{
 	"root GET /webshark/watch":        "WebShark's capture growth events",
 	// websockets, which an OpenAPI 3.0 operation cannot describe
 	"api GET /ws": "the UI's event websocket",
-	"api GET /experiments/{}/vms/{}/forwards/{}/{}/ws":         "the port forward websocket",
 	"api GET /experiments/{}/scorch/components/{}/{}/{}/{}/ws": "the SCORCH component output websocket",
 	"api GET /experiments/{}/scorch/terminals/{}/ws/{}":        "the SCORCH terminal websocket",
 }
@@ -214,35 +213,18 @@ var undocumentedRoutes = map[string]string{
 //
 //nolint:gochecknoglobals // constant table
 var undocumentedBeforeContract = map[string]string{
-	"api DELETE /experiments/{}/vms/{}/cdrom":               "ejects a VM's CD-ROM",
-	"api DELETE /experiments/{}/vms/{}/forwards":            "removes a VM's port forward",
-	"api DELETE /experiments/{}/vms/{}/unmount":             "unmounts a VM's disk",
 	"api GET /experiments/{}/scorch/components/{}/{}/{}/{}": "a SCORCH component's output",
 	"api GET /experiments/{}/scorch/terminals":              "lists the SCORCH break terminals",
 	"api GET /experiments/{}/scorch/terminals/{}":           "a SCORCH break terminal",
 	"api GET /experiments/{}/scorch/terminals/{}/{}/{}/{}":  "a SCORCH component's break terminal",
-	"api GET /experiments/{}/vms/{}/files":                  "lists a mounted VM disk's files",
-	"api GET /experiments/{}/vms/{}/forwards":               "lists a VM's port forwards",
-	"api GET /experiments/{}/vms/{}/reset":                  "resets a VM's disk state",
-	"api GET /experiments/{}/vms/{}/restart":                "restarts a VM",
-	"api GET /experiments/{}/vms/{}/shutdown":               "shuts a VM down",
-	"api GET /experiments/{}/vms/{}/vnc":                    "a VM's VNC page",
-	"api GET /logs":                                         "streams the server's logs",
-	"api GET /roles":                                        "lists the roles",
-	"api GET /settings":                                     "the server's settings",
-	"api GET /settings/password":                            "the password requirements",
-	"api GET /settings/timeout":                             "the session timeout",
-	"api PATCH /experiments/{}/vms":                         "updates several VMs",
-	"api POST /experiments/{}/scorch/terminals/{}/exit/{}":  "exits a SCORCH break terminal",
-	"api POST /experiments/{}/vms/{}/cdrom":                 "changes a VM's CD-ROM",
-	"api POST /experiments/{}/vms/{}/commit":                "commits a VM's disk to a new image",
-	"api POST /experiments/{}/vms/{}/files/copy":            "copies an experiment file into a mounted VM disk",
-	"api POST /experiments/{}/vms/{}/forwards":              "adds a VM port forward",
-	"api POST /experiments/{}/vms/{}/memorySnapshot":        "snapshots a VM's memory",
-	"api POST /experiments/{}/vms/{}/mount":                 "mounts a VM's disk",
-	"api POST /settings":                                    "changes the server's settings",
-	"api POST /users/{}/tokens":                             "creates a user's API token",
-	"api PUT /experiments/{}/vms/{}/files/upload":           "uploads a file into a mounted VM disk",
+	"api GET /logs":              "streams the server's logs",
+	"api GET /roles":             "lists the roles",
+	"api GET /settings":          "the server's settings",
+	"api GET /settings/password": "the password requirements",
+	"api GET /settings/timeout":  "the session timeout",
+	"api POST /experiments/{}/scorch/terminals/{}/exit/{}": "exits a SCORCH break terminal",
+	"api POST /settings":        "changes the server's settings",
+	"api POST /users/{}/tokens": "creates a user's API token",
 }
 
 // Every operation the router serves is in openapi.yml, and every operation

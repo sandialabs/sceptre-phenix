@@ -2323,6 +2323,64 @@ paths:
                 $ref: "#/components/schemas/VMs"
         "400":
           description: pageNum or perPage is not a whole number of at least 1
+    patch:
+      tags:
+        - Virtual Machines
+      summary: Update several VMs of a stopped experiment
+      description: >-
+        Applies each VM's changes as `PATCH
+        /experiments/{exp_name}/vms/{vm_name}` would, one VM after another,
+        and answers with the VMs it updated. Only `cpus`, `ram`, `disk`,
+        `dnb`, `interface`, `host` and `snapshot` are applied; other fields
+        are ignored. A VM the role may not `patch` (`vms`, on
+        `<exp>/<vm>`) is left out, and every disk is checked before any VM
+        changes. A failed update ends the request with the VMs before it
+        changed.
+      operationId: patchExperimentsNameVms
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                vms:
+                  title: VMs
+                  type: array
+                  description: each VM's changes, by name
+                  items:
+                    $ref: "#/components/schemas/VMUpdate"
+                total:
+                  title: Total
+                  type: integer
+                  description: ignored
+                  example: 2
+            example:
+              vms:
+                - name: web
+                  dnb: true
+                - name: db
+                  dnb: true
+      responses:
+        "200":
+          description: the VMs updated, and how many
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VMs"
+        "400":
+          description: >-
+            a malformed body, a disk minimega cannot use, or an experiment
+            that could not be read
+        "500":
+          description: a VM could not be updated or read back
   "/experiments/{exp_name}/vms/actions":
     post:
       tags:
@@ -2748,6 +2806,35 @@ paths:
                 format: base64
         "400":
           description: the size is out of range, or no screenshot could be taken
+  "/experiments/{exp_name}/vms/{vm_name}/vnc":
+    get:
+      tags:
+        - Virtual Machines
+      summary: Open a VM's VNC page
+      description: >-
+        The noVNC page that connects to the VM's console over
+        `GET /experiments/{exp_name}/vms/{vm_name}/vnc/ws`, with the VM's
+        `vncBanner` annotation as its banner. A browser opens it as a link,
+        with the token as `?token=`. The page sends a Content-Security-Policy
+        that runs only its own scripts, and is not cached. Needs the
+        `vms/vnc` `get` permission.
+      operationId: getExperimentsNameVmsNameVnc
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+      responses:
+        "200":
+          description: the VNC page
+          content:
+            text/html:
+              schema:
+                type: string
+        "403":
+          description: forbidden
+        "404":
+          description: the experiment's topology has no such VM
+        "500":
+          description: the page could not be built
   "/experiments/{exp_name}/vms/{vm_name}/vnc/ws":
     get:
       tags:
@@ -2919,6 +3006,189 @@ paths:
           description: forbidden
         "404":
           description: the interface is not being captured
+  "/experiments/{exp_name}/vms/{vm_name}/cdrom":
+    post:
+      tags:
+        - Virtual Machines
+      summary: Change the disc in a VM's CD-ROM drive
+      description: >-
+        Inserts an image into the running VM's CD-ROM drive, replacing any
+        there, and publishes an `experiment/vm` `cdrom-inserted` message on
+        the `/ws` websocket. Needs the `vms/cdrom` `update` permission.
+      operationId: postExperimentsNameVmsNameCdrom
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+        - name: isoPath
+          in: query
+          description: the image to insert, as minimega names it
+          required: true
+          schema:
+            type: string
+          example: /phenix/images/tools.iso
+      responses:
+        "204":
+          description: the disc was changed
+        "403":
+          description: forbidden
+        "500":
+          description: the disc could not be changed
+    delete:
+      tags:
+        - Virtual Machines
+      summary: Eject the disc in a VM's CD-ROM drive
+      description: >-
+        Ejects the running VM's CD-ROM and publishes an `experiment/vm`
+        `cdrom-ejected` message on the `/ws` websocket. Needs the `vms/cdrom`
+        `delete` permission.
+      operationId: deleteExperimentsNameVmsNameCdrom
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+      responses:
+        "204":
+          description: the disc was ejected
+        "403":
+          description: forbidden
+        "500":
+          description: the disc could not be ejected
+  "/experiments/{exp_name}/vms/{vm_name}/commit":
+    post:
+      tags:
+        - Virtual Machines
+      summary: Commit a VM's disk to a new image
+      description: >-
+        Writes the running VM's disk as it is now, its snapshot's changes
+        included, to a new image backed by nothing else, pausing the VM while
+        it does, and answers once it is written.
+        Progress is published on the `/ws` websocket as
+        `experiment/vm/commit` messages (`committing`, `progress` with a
+        `percent`, then `commit` with this response, or
+        `errorCommitting`). Needs the `vms/commit` `create` permission.
+      operationId: postExperimentsNameVmsNameCommit
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageFilename"
+      responses:
+        "200":
+          description: the new image, and the VM
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  disk:
+                    title: Disk
+                    type: string
+                    description: the new image's name
+                    example: web-committed.qc2
+                  vm:
+                    title: VM
+                    description: the VM
+                    allOf:
+                      - $ref: "#/components/schemas/VM"
+        "400":
+          description: >-
+            a malformed body, no filename, or an experiment that could not be
+            read afterwards
+        "403":
+          description: forbidden
+        "409":
+          description: another action holds the VM
+        "500":
+          description: the disk could not be committed, or the VM read back
+  "/experiments/{exp_name}/vms/{vm_name}/files":
+    get:
+      tags:
+        - Virtual Machines
+      summary: List a folder of a mounted VM disk
+      description: >-
+        Lists the folder's entries, with paths relative to the mount. Entries
+        read before a read error are still listed, with the error in `error`.
+        Only with the `vm-mount` feature. Needs the `vms/mount` `list`
+        permission.
+      operationId: getExperimentsNameVmsNameFiles
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+        - name: path
+          in: query
+          description: the folder, relative to the mount
+          required: true
+          schema:
+            type: string
+          example: etc
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                    description: why the folder could not be read in full; empty when it was
+                    example: ""
+                  files:
+                    title: Files
+                    type: array
+                    nullable: true
+                    description: the folder's entries; null when it is empty
+                    items:
+                      $ref: "#/components/schemas/File"
+        "400":
+          description: the VM is not mounted, or the path is a file or outside the mount
+        "403":
+          description: forbidden
+        "500":
+          description: the path could not be read, or reading it timed out
+  "/experiments/{exp_name}/vms/{vm_name}/files/copy":
+    post:
+      tags:
+        - Virtual Machines
+      summary: Copy an experiment file into a mounted VM disk
+      description: >-
+        Copies a file of the experiment's files, on the head node, into a
+        folder of the mount under its own name, replacing a file of that
+        name. Only with the `vm-mount` feature. Needs the `vms/mount` `patch`
+        permission and the `experiments/files` `get` permission.
+      operationId: postExperimentsNameVmsNameFilesCopy
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+        - name: source
+          in: query
+          description: the experiment file, relative to the experiment's files directory
+          required: true
+          schema:
+            type: string
+          example: captures/router_eth0.pcap
+        - name: path
+          in: query
+          description: the folder to copy into, relative to the mount
+          required: true
+          schema:
+            type: string
+          example: tmp
+      responses:
+        "200":
+          description: the file was copied
+        "400":
+          description: >-
+            the VM is not mounted, the folder is outside the mount or a file,
+            or the source is not one of the experiment's files
+        "403":
+          description: forbidden
+        "500":
+          description: the folder or the source could not be read, or the copy failed
   "/experiments/{exp_name}/vms/{vm_name}/files/download":
     get:
       tags:
@@ -3017,6 +3287,340 @@ paths:
           description: forbidden
         "404":
           description: no such file
+  "/experiments/{exp_name}/vms/{vm_name}/restart":
+    get:
+      tags:
+        - Virtual Machines
+      summary: Restart a VM
+      description: >-
+        Resets the running VM, as its reset button would, or starts it if it
+        has quit, and answers with it. Needs the `vms/restart` `update`
+        permission.
+      operationId: getExperimentsNameVmsNameRestart
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+      responses:
+        "200":
+          description: the VM, restarted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        "400":
+          description: the experiment could not be read
+        "403":
+          description: forbidden
+        "409":
+          description: another action holds the VM
+        "500":
+          description: the VM could not be restarted
+  "/experiments/{exp_name}/vms/{vm_name}/shutdown":
+    get:
+      tags:
+        - Virtual Machines
+      summary: Shut a VM down
+      description: >-
+        Stops the VM's packet captures and asks it to power off, killing it
+        if it has not within 30 seconds, and answers with it. Needs the
+        `vms/shutdown` `update` permission.
+      operationId: getExperimentsNameVmsNameShutdown
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+      responses:
+        "200":
+          description: the VM, shut down
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        "400":
+          description: the experiment could not be read
+        "403":
+          description: forbidden
+        "409":
+          description: another action holds the VM
+        "500":
+          description: the VM could not be shut down
+  "/experiments/{exp_name}/vms/{vm_name}/reset":
+    get:
+      tags:
+        - Virtual Machines
+      summary: Reset a VM's disk
+      description: >-
+        Kills the VM, after stopping its packet captures, replaces its disk
+        snapshot with a fresh one of its image, so the changes it made are
+        lost, and starts it again; answers with the VM. The VM must run from
+        a snapshot. Needs the `vms/reset` `update` permission.
+      operationId: getExperimentsNameVmsNameReset
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+      responses:
+        "200":
+          description: the VM, reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        "400":
+          description: the experiment could not be read
+        "403":
+          description: forbidden
+        "409":
+          description: another action holds the VM
+        "500":
+          description: the VM could not be reset
+  "/experiments/{exp_name}/vms/{vm_name}/memorySnapshot":
+    post:
+      tags:
+        - Virtual Machines
+      summary: Snapshot a VM's memory to a file
+      description: >-
+        Dumps the running VM's memory to a file and answers once it is
+        written. Progress is published on the `/ws` websocket as
+        `experiment/vm/memorySnapshot` messages (`committing`, `progress`
+        with a `percent`, then `commit` with the file's name as `disk`, or
+        `errorCommitting`). Needs the `vms/memorySnapshot` `create`
+        permission.
+      operationId: postExperimentsNameVmsNameMemorySnapshot
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageFilename"
+      responses:
+        "204":
+          description: the memory snapshot was written
+        "400":
+          description: a malformed body, or no filename
+        "403":
+          description: forbidden
+        "409":
+          description: another action holds the VM
+        "500":
+          description: the memory snapshot failed
+  "/experiments/{exp_name}/vms/{vm_name}/forwards":
+    get:
+      tags:
+        - Virtual Machines
+      summary: List a VM's port forwards
+      description: >-
+        Every user's forwards to the VM, after dropping those whose tunnel
+        has closed. Needs the `vms/forwards` `list` permission.
+      operationId: getExperimentsNameVmsNameForwards
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listeners:
+                    title: Listeners
+                    type: array
+                    nullable: true
+                    description: the forwards; null when there are none
+                    items:
+                      $ref: "#/components/schemas/PortForward"
+        "403":
+          description: forbidden
+    post:
+      tags:
+        - Virtual Machines
+      summary: Forward a port to a VM
+      description: >-
+        Opens a minimega tunnel from a cluster port to the destination, as
+        seen from the VM's cluster host, and makes it the caller's forward,
+        which `GET .../forwards/{host}/{port}/ws` attaches to and
+        `phenix-tunneler` serves on the caller's own computer. `dst=VNC`
+        forwards the VM's VNC console instead. A user has at most one forward
+        to each host and port of a VM. Publishes an `experiment/vm/forward`
+        `create` message on the `/ws` websocket. Needs the `vms/forwards`
+        `create` permission.
+      operationId: postExperimentsNameVmsNameForwards
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+        - name: src
+          in: query
+          description: the local port the forward is to be served on, recorded for the tunneler
+          required: true
+          schema:
+            type: integer
+          example: 2222
+        - name: host
+          in: query
+          description: the destination host, as the VM's cluster host reaches it
+          required: false
+          schema:
+            type: string
+            default: 127.0.0.1
+        - name: dst
+          in: query
+          description: the destination port, or `VNC` for the VM's VNC console
+          required: true
+          schema:
+            type: string
+          example: "22"
+      responses:
+        "204":
+          description: the forward was created
+        "400":
+          description: >-
+            the forward could not be created: a port is not a number, the VM
+            was not found, the user has this forward already, or the tunnel
+            failed
+        "403":
+          description: forbidden
+    delete:
+      tags:
+        - Virtual Machines
+      summary: Close a port forward to a VM
+      description: >-
+        Closes the caller's own forward to the host and port, and publishes an
+        `experiment/vm/forward` `delete` message on the `/ws` websocket.
+        Needs the `vms/forwards` `delete` permission.
+      operationId: deleteExperimentsNameVmsNameForwards
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+        - name: host
+          in: query
+          description: the forward's destination host
+          required: false
+          schema:
+            type: string
+            default: 127.0.0.1
+        - name: dst
+          in: query
+          description: the forward's destination port (5900 for a VNC forward)
+          required: true
+          schema:
+            type: integer
+          example: 22
+      responses:
+        "204":
+          description: the forward was closed
+        "400":
+          description: the port is not a number, or the user has no such forward
+        "403":
+          description: forbidden
+        "404":
+          description: minimega does not know the VM
+        "500":
+          description: the tunnel could not be closed
+  "/experiments/{exp_name}/vms/{vm_name}/forwards/{host}/{port}/ws":
+    get:
+      tags:
+        - Virtual Machines
+      summary: Attach to a port forward over a WebSocket
+      description: >-
+        Proxies the forward's TCP connection over the websocket in binary
+        frames, both ways, until either side closes. The caller's own forward
+        to the host and port is used, else another user's at random. The
+        handshake needs an `Origin` header. Needs the `vms/forwards` `get`
+        permission.
+      operationId: getExperimentsNameVmsNameForwardsHostPortWs
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+        - name: host
+          in: path
+          description: the forward's destination host
+          required: true
+          schema:
+            type: string
+        - name: port
+          in: path
+          description: the forward's destination port
+          required: true
+          schema:
+            type: integer
+      responses:
+        "101":
+          description: switching protocols; the forward's bytes follow as binary frames
+        "400":
+          description: no forward to the host and port, or not a websocket handshake
+        "403":
+          description: forbidden, or a handshake without an `Origin` header
+  "/experiments/{exp_name}/vms/{vm_name}/mount":
+    post:
+      tags:
+        - Virtual Machines
+      summary: Mount a VM's disk on the server
+      description: >-
+        Mounts the running VM's disk under the server's mount directory, for
+        the file routes that follow, and counts the caller as one of its
+        users; a request made while another is mounting it waits for that
+        mount. Only with the `vm-mount` feature. Needs the `vms/mount` `post`
+        permission.
+      operationId: postExperimentsNameVmsNameMount
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+      responses:
+        "200":
+          description: the disk is mounted
+        "403":
+          description: forbidden
+        "409":
+          description: the disk is being unmounted
+        "500":
+          description: the disk could not be mounted
+  "/experiments/{exp_name}/vms/{vm_name}/files/upload":
+    put:
+      tags:
+        - Virtual Machines
+      summary: Upload a file into a mounted VM disk
+      description: >-
+        Writes the uploaded file into the folder under its own file name,
+        replacing a file of that name. Only with the `vm-mount` feature.
+        Needs the `vms/mount` `patch` permission.
+      operationId: putExperimentsNameVmsNameFilesUpload
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+        - name: path
+          in: query
+          description: the folder to write into, relative to the mount
+          required: true
+          schema:
+            type: string
+          example: tmp
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  title: File
+                  type: string
+                  format: binary
+                  description: the file, saved under its file name
+                  example: notes.txt
+      responses:
+        "200":
+          description: the file was written
+        "400":
+          description: the VM is not mounted, or the path is outside the mount
+        "403":
+          description: forbidden
+        "500":
+          description: the folder does not exist, the form has no file, or the file could not be written
   "/experiments/{exp_name}/vms/{vm_name}/snapshots":
     get:
       tags:
@@ -3105,6 +3709,32 @@ paths:
       responses:
         "204":
           description: successful operation
+  "/experiments/{exp_name}/vms/{vm_name}/unmount":
+    delete:
+      tags:
+        - Virtual Machines
+      summary: Unmount a VM's disk
+      description: >-
+        Ends the caller's use of the VM's mount, and unmounts the disk once
+        no user is left, after waiting up to 30 seconds for the mount's file
+        requests to finish. A VM that is not mounted answers 200 too. Only
+        with the `vm-mount` feature. Needs the `vms/mount` `delete`
+        permission.
+      operationId: deleteExperimentsNameVmsNameUnmount
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+      responses:
+        "200":
+          description: the caller's use ended, and the disk is unmounted when no one else uses it
+        "403":
+          description: forbidden
+        "409":
+          description: >-
+            the disk is being mounted or unmounted, or file requests kept it
+            busy for 30 seconds (`mount busy`)
+        "500":
+          description: the disk could not be unmounted
   "/vms":
     get:
       tags:
@@ -7720,10 +8350,170 @@ components:
           items:
             type: string
           example: [web]
+    VMUpdate:
+      title: VM Update
+      type: object
+      description: The changes to one VM of a stopped experiment; fields left out keep their value.
+      required:
+        - name
+      properties:
+        name:
+          title: Name
+          type: string
+          description: the VM's name
+          example: web
+        cpus:
+          title: CPUs
+          type: integer
+          description: virtual CPUs; 0 keeps them
+          example: 2
+        ram:
+          title: RAM
+          type: integer
+          description: memory in megabytes; 0 keeps it
+          example: 2048
+        disk:
+          title: Disk
+          type: string
+          description: the disk image; empty keeps it
+          example: ubuntu.qc2
+        dnb:
+          title: Do Not Boot
+          type: boolean
+          description: whether the VM is marked do not boot
+          example: true
+        interface:
+          title: Interface
+          type: object
+          description: an interface to connect to another VLAN
+          properties:
+            index:
+              title: Index
+              type: integer
+              description: the interface's index
+              example: 0
+            vlan:
+              title: VLAN
+              type: string
+              description: the VLAN alias to connect it to
+              example: EXP_2
+        host:
+          title: Host
+          type: string
+          description: the cluster host to schedule the VM on
+          example: compute1
+        snapshot:
+          title: Snapshot
+          type: boolean
+          description: whether the VM runs from a snapshot of its disk
+          example: true
+    ImageFilename:
+      title: Image Filename
+      type: object
+      description: The name of the file to write.
+      required:
+        - filename
+      properties:
+        filename:
+          title: Filename
+          type: string
+          description: the file's name, in the minimega files directory unless absolute
+          example: web-committed.qc2
+    PortForward:
+      title: Port Forward
+      type: object
+      description: A user's port forward to a VM.
+      properties:
+        exp:
+          title: Experiment
+          type: string
+          description: the experiment's name
+          example: exp1
+        vm:
+          title: VM
+          type: string
+          description: the VM's name
+          example: web
+        srcPort:
+          title: Src Port
+          type: integer
+          description: the local port the forward is to be served on
+          example: 2222
+        dstHost:
+          title: Dst Host
+          type: string
+          description: the destination host, as the VM's cluster host reaches it
+          example: 127.0.0.1
+        dstPort:
+          title: Dst Port
+          type: integer
+          description: the destination port
+          example: 22
+        owner:
+          title: Owner
+          type: string
+          description: the user who created the forward
+          example: alice@example.com
+    File:
+      title: File
+      type: object
+      description: A file or folder.
+      properties:
+        name:
+          title: Name
+          type: string
+          description: the file's name
+          example: hostname
+        path:
+          title: Path
+          type: string
+          description: the file's path, relative to the folder listed from
+          example: /etc/hostname
+        date:
+          title: Date
+          type: string
+          description: when the file was last modified, RFC 3339
+          example: "2026-01-01T10:00:00Z"
+        size:
+          title: Size
+          type: integer
+          description: the file's size in bytes
+          example: 8
+        categories:
+          title: Categories
+          type: array
+          description: what the file is, when known
+          items:
+            type: string
+          example: []
+        plainText:
+          title: Plain Text
+          type: boolean
+          description: whether the file is plain text
+          example: true
+        isDir:
+          title: Is Dir
+          type: boolean
+          description: whether the entry is a folder
+          example: false
 
   # Shared by the single-file download routes, which resume interrupted
   # downloads with Range and If-Range.
   parameters:
+    ExpName:
+      name: exp_name
+      in: path
+      description: name of phenix experiment
+      required: true
+      schema:
+        type: string
+    VMName:
+      name: vm_name
+      in: path
+      description: name of the experiment's VM
+      required: true
+      schema:
+        type: string
     JobID:
       name: id
       in: path
