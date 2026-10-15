@@ -42,6 +42,10 @@ func Init() error {
 		return fmt.Errorf("ensuring subnet capture stop permissions: %w", err)
 	}
 
+	if err := rbac.DropNullResourceNames(); err != nil {
+		return fmt.Errorf("dropping null resource names: %w", err)
+	}
+
 	if err := rbac.EnsureExperimentViewerMountScope(); err != nil {
 		return fmt.Errorf("scoping Experiment Viewer mount permissions: %w", err)
 	}
