@@ -36,19 +36,20 @@ var (
 	mmDead bool             //nolint:gochecknoglobals // flags mm for replacement
 )
 
-// Deadlines for commands on the shared connection run without a context's
-// own (Run and RunStarted). Tests shorten them.
+// Deadlines for commands on the shared connection. Tests shorten them.
 //
 //nolint:gochecknoglobals // see above
 var (
 	// DefaultWaitTimeout is how long a command waits behind others for the
-	// shared connection before giving up with ErrTimeout.
+	// shared connection before giving up with ErrTimeout, however long its
+	// context (see RunContext) would let it wait.
 	DefaultWaitTimeout = 10 * time.Minute
 
-	// DefaultCommandTimeout is how long a command may hold the shared
-	// connection. Past it the caller gets ErrTimeout and the connection is
-	// abandoned, so the commands behind it can go on; minimega still finishes
-	// the command. Long-running commands use RunDedicated instead.
+	// DefaultCommandTimeout is how long a command run without a context
+	// deadline may hold the shared connection. Past it the caller gets
+	// ErrTimeout and the connection is abandoned, so the commands behind it
+	// can go on; minimega still finishes the command. Long-running commands
+	// use RunDedicated instead.
 	DefaultCommandTimeout = 30 * time.Minute
 )
 
@@ -362,8 +363,10 @@ func guard(
 // returned as part of the response channel, which the caller must drain. A
 // command waiting longer than DefaultWaitTimeout for the shared connection, or
 // holding it longer than DefaultCommandTimeout, returns ErrTimeout.
+//
+// Code serving a web request or a background job uses RunContext instead.
 func Run(c *Command) chan *miniclient.Response {
-	return RunStarted(c, nil)
+	return runShared(context.Background(), c, nil)
 }
 
 // RunStarted is Run, calling started (if not nil) just before the command is
@@ -371,47 +374,36 @@ func Run(c *Command) chan *miniclient.Response {
 // connection. started may run with the shared connection's lock held, so it
 // must be quick and must not run minimega commands itself.
 func RunStarted(c *Command, started func()) chan *miniclient.Response {
-	ctx, cancel := context.WithTimeout(context.Background(), DefaultWaitTimeout)
-
-	out := runShared(ctx, c, started, DefaultCommandTimeout)
-
-	// only the wait for the connection uses ctx, and that is over
-	cancel()
-
-	return out
+	return runShared(context.Background(), c, started)
 }
 
-// RunContext is Run for a caller that may stop waiting, such as a request
-// whose client left: once ctx is done, a command still waiting for the shared
-// connection gives up, returning ctx's error, without having been sent. A
-// command already sent is not interrupted, since that would disturb the
-// shared connection; it is bounded by ctx's deadline, if any, or else by
-// DefaultCommandTimeout, as with Run.
-//
-// No phenix code calls it yet: request handlers, background jobs and the mm
-// package still use Run, RunStarted and the tabular helpers, so a command
-// whose request or job has ended still waits up to DefaultWaitTimeout for its
-// turn. Threading request and job contexts through the mm package to here is
-// what lets them give up.
+// RunContext is Run for a command run on behalf of something that may end
+// first, such as a web request whose client may leave or a job that may be
+// canceled: once ctx is done, a command still waiting for the shared
+// connection gives up without having been sent, returning an error that wraps
+// ctx's error (ErrTimeout for its deadline). A command already sent is not
+// interrupted, since that would disturb the shared connection; it is bounded
+// by ctx's deadline, if any, or else by DefaultCommandTimeout. Whatever ctx
+// says, a command waits no longer than DefaultWaitTimeout, as with Run.
 func RunContext(ctx context.Context, c *Command) chan *miniclient.Response {
-	timeout := DefaultCommandTimeout
+	return runShared(ctx, c, nil)
+}
 
-	if deadline, ok := ctx.Deadline(); ok {
-		timeout = max(time.Until(deadline), time.Nanosecond)
-	}
-
-	return runShared(ctx, c, nil, timeout)
+// RunStartedContext is RunContext, calling started as RunStarted does.
+func RunStartedContext(ctx context.Context, c *Command, started func()) chan *miniclient.Response {
+	return runShared(ctx, c, started)
 }
 
 // runShared runs c on the shared connection once it is free, unless c has a
-// timeout of its own, which gives it a private connection.
-func runShared(
-	ctx context.Context,
-	c *Command,
-	started func(),
-	timeout time.Duration,
-) chan *miniclient.Response {
+// timeout of its own, which gives it a private connection. Nothing is sent
+// once ctx is done.
+func runShared(ctx context.Context, c *Command, started func()) chan *miniclient.Response {
 	cmdStr := c.String()
+
+	// checked first, as select picks at random when the connection is free too
+	if err := ctx.Err(); err != nil {
+		return wrapErr(gaveUp(err))
+	}
 
 	if c.Timeout > 0 {
 		notify(started)
@@ -419,15 +411,13 @@ func runShared(
 		return runPrivate(cmdStr, c.Timeout)
 	}
 
+	wait, cancel := context.WithTimeout(ctx, DefaultWaitTimeout)
+	defer cancel()
+
 	select {
 	case shared <- struct{}{}:
-	case <-ctx.Done():
-		err := ctx.Err()
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = ErrTimeout
-		}
-
-		return wrapErr(fmt.Errorf("waiting for the minimega connection: %w", err))
+	case <-wait.Done():
+		return wrapErr(gaveUp(wait.Err()))
 	}
 
 	release := func() { <-shared }
@@ -441,9 +431,25 @@ func runShared(
 		return wrapErr(err)
 	}
 
+	timeout := DefaultCommandTimeout
+
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = max(time.Until(deadline), time.Nanosecond)
+	}
+
 	// shared is held until guard has read the terminal error, so no other
 	// command can reach Conn.err in between
 	return guard(active, active.Run(cmdStr), release, timeout)
+}
+
+// gaveUp is the error of a command that stopped waiting for the shared
+// connection because err ended its wait: ErrTimeout for a deadline, else err.
+func gaveUp(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		err = ErrTimeout
+	}
+
+	return fmt.Errorf("waiting for the minimega connection: %w", err)
 }
 
 // RunDedicated runs the given command on a connection of its own, with no

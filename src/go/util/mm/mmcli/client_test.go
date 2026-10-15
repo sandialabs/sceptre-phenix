@@ -21,14 +21,17 @@ const (
 )
 
 // useFakeMinimega points the package at the fake minimega (see mmtest.Use),
-// with a shared connection of its own.
-func useFakeMinimega(t *testing.T, handle mmtest.Handler) {
+// with a shared connection of its own, and returns mmtest.Use's listing of
+// the commands received.
+func useFakeMinimega(t *testing.T, handle mmtest.Handler) func() []mmtest.Command {
 	t.Helper()
 
-	mmtest.Use(t, handle)
+	received := mmtest.Use(t, handle)
 
 	resetConn()
 	t.Cleanup(resetConn)
+
+	return received
 }
 
 // resetConn drops the shared connection, so the next command dials anew.

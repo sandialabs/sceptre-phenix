@@ -14,14 +14,14 @@ import (
 
 // holdShared runs a "hold" command on the shared connection until the
 // returned function is called (or the test ends), and waits until minimega
-// has it.
-func holdShared(t *testing.T) func() {
+// has it. received lists the commands minimega has received since.
+func holdShared(t *testing.T) (func(), func() []mmtest.Command) {
 	t.Helper()
 
 	release := make(chan struct{})
 	unhold := sync.OnceFunc(func() { close(release) })
 
-	useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
 		if cmd.Base == "hold" {
 			<-release
 		}
@@ -44,7 +44,7 @@ func holdShared(t *testing.T) func() {
 
 	mmtest.Await(t, "hold")
 
-	return unhold
+	return unhold, received
 }
 
 func command(name string) *Command {
@@ -57,7 +57,7 @@ func command(name string) *Command {
 // A command waiting behind another for the shared connection gives up, never
 // sent, once its context is done.
 func TestRunContextGivesUpWaiting(t *testing.T) {
-	unhold := holdShared(t)
+	unhold, received := holdShared(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan error, 1)
@@ -79,6 +79,116 @@ func TestRunContextGivesUpWaiting(t *testing.T) {
 
 	if err := ErrorResponse(Run(command("after"))); err != nil {
 		t.Fatalf("the next command failed: %v", err)
+	}
+
+	if n := mmtest.Count(received(), "waiting"); n != 0 {
+		t.Errorf("minimega received the command that gave up %d times, want 0", n)
+	}
+}
+
+// The tabular helpers' context variants give up as RunContext does, with no
+// rows: RunTabularCheckedContext returns an error wrapping the context's, and
+// RunTabularContext logs it.
+func TestRunTabularContextGivesUpWaiting(t *testing.T) {
+	_, received := holdShared(t)
+
+	t.Run("checked", func(t *testing.T) {
+		rows := giveUp(t, func(ctx context.Context) []map[string]string {
+			rows, err := RunTabularCheckedContext(ctx, command("checked"), nil)
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("got error %v, want %v", err, context.Canceled)
+			}
+
+			return rows
+		})
+
+		if len(rows) != 0 {
+			t.Errorf("got rows %v, want none", rows)
+		}
+	})
+
+	t.Run("logged", func(t *testing.T) {
+		if rows := giveUp(t, func(ctx context.Context) []map[string]string {
+			return RunTabularContext(ctx, command("logged"))
+		}); len(rows) != 0 {
+			t.Errorf("got rows %v, want none", rows)
+		}
+	})
+
+	for _, name := range []string{"checked", "logged"} {
+		if n := mmtest.Count(received(), name); n != 0 {
+			t.Errorf("minimega received the %s command that gave up %d times, want 0", name, n)
+		}
+	}
+}
+
+// giveUp runs run with a context canceled while it waits, and returns what
+// run returned, failing the test if it keeps waiting.
+func giveUp[T any](t *testing.T, run func(ctx context.Context) T) T { //nolint:ireturn // T is concrete at each use
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan T, 1)
+
+	go func() { done <- run(ctx) }()
+
+	cancel()
+
+	select {
+	case got := <-done:
+		return got
+	case <-time.After(maxWait):
+		t.Fatal("the command kept waiting after its context was canceled")
+
+		panic("unreachable")
+	}
+}
+
+// A command whose context is already done is never sent, even when the
+// shared connection is free.
+func TestRunContextDoneSendsNothing(t *testing.T) {
+	received := useFakeMinimega(t, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for range 20 {
+		if err := ErrorResponse(RunContext(ctx, command("late"))); !errors.Is(err, context.Canceled) {
+			t.Fatalf("RunContext returned %v, want %v", err, context.Canceled)
+		}
+	}
+
+	if n := mmtest.Count(received(), "late"); n != 0 {
+		t.Errorf("minimega received %d commands whose context was done, want 0", n)
+	}
+}
+
+// A context's deadline ends the wait with ErrTimeout, as Run's default does.
+func TestRunContextDeadlineIsATimeout(t *testing.T) {
+	holdShared(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	t.Cleanup(cancel)
+
+	if err := ErrorResponse(RunContext(ctx, command("waiting"))); !errors.Is(err, ErrTimeout) {
+		t.Fatalf("RunContext returned %v, want %v", err, ErrTimeout)
+	}
+}
+
+// A context that is never done still waits no longer than DefaultWaitTimeout.
+//
+//nolint:paralleltest // shortens the default deadlines
+func TestRunContextGivesUpWaitingAfterTheDefault(t *testing.T) {
+	saved := DefaultWaitTimeout
+	DefaultWaitTimeout = testTimeout
+
+	t.Cleanup(func() { DefaultWaitTimeout = saved })
+
+	holdShared(t)
+
+	err := ErrorResponse(RunContext(context.Background(), command("waiting")))
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("RunContext returned %v, want %v", err, ErrTimeout)
 	}
 }
 
