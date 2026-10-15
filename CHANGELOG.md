@@ -84,6 +84,7 @@ All notable changes to this project will be documented in this file.
 - **Operation feedback**: Bulk VM actions, VM snapshots, backing images, memory snapshots, capture all, experiment file deletes and archives, and SCORCH Clear all report one outcome summary, with Retry failed for errors worth retrying.
 - **Experiment files**: Downloading several files builds a resumable archive in a background job, and files that cannot be fetched are left out and listed in its `MISSING.txt`.
 - **Disks**: Clone runs in the background, with its progress and a cancel button in the jobs menu and the disk's details.
+- **Subnet captures**: Stopping a subnet's captures (`POST /experiments/{exp}/stopCaptureSubnet`) needs `exp/captureSubnet` `delete` instead of `create`, which roles that may start them gain on startup.
 
 ### Removed
 
