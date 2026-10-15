@@ -6637,8 +6637,8 @@ components:
       type: object
       properties:
         id:
-          title: "Id"
-          example: experiment-01
+          title: "ID"
+          example: ""
           type: string
           description: unused; always empty
         name:
@@ -7307,7 +7307,7 @@ components:
       properties:
         hosts:
           title: "Hosts"
-          description: "Host-specific application settings."
+          description: "The cluster hosts the role may list."
           type: array
           items:
             $ref: "#/components/schemas/Host"
