@@ -1,4 +1,4 @@
-package mm
+package flight
 
 import (
 	"context"
@@ -8,30 +8,32 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"phenix/util/polltest"
 )
 
-//nolint:paralleltest // counts the callers waiting in any flightGroup
-func TestFlightGroupMergesCallsBeforeSeal(t *testing.T) {
+func TestGroupMergesCallsBeforeSeal(t *testing.T) {
+	t.Parallel()
+
 	const callers = 5
 
 	var (
-		group   flightGroup[int]
+		group   Group[int]
 		runs    atomic.Int32
 		release = make(chan struct{})
 		wg      sync.WaitGroup
 		results = make([]int, callers)
 	)
 
-	fn := func(_ context.Context, seal func()) int {
+	fn := func(ctx context.Context, seal func()) (int, error) {
 		runs.Add(1)
 		<-release
 		seal()
 
-		return 42
+		return 42, ctx.Err() // nil: every caller still waits
 	}
 
-	// Let every caller finish even if the test fails first, so none is left
-	// waiting on the run when a later test counts the callers waiting.
+	// Let every caller finish even if the test fails first.
 	unblock := sync.OnceFunc(func() { close(release) })
 
 	t.Cleanup(func() {
@@ -45,12 +47,12 @@ func TestFlightGroupMergesCallsBeforeSeal(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			results[i] = value(group.do(context.Background(), "k", fn))
+			results[i] = value(group.Do(context.Background(), "k", fn))
 		}()
 	}
 
 	// Whichever caller arrives first runs fn; the rest wait for its result.
-	waitForJoined(t, callers-1)
+	polltest.Until(t, "every caller waits for the run", func() bool { return group.Waiting("k") == callers })
 
 	unblock()
 	wg.Wait()
@@ -66,12 +68,12 @@ func TestFlightGroupMergesCallsBeforeSeal(t *testing.T) {
 	}
 
 	// Nothing is kept once the run is done: the next call runs on its own.
-	if got := value(group.do(context.Background(), "k", func(context.Context, func()) int { return 7 })); got != 7 {
+	if got := value(group.Do(context.Background(), "k", func(context.Context, func()) (int, error) { return 7, nil })); got != 7 {
 		t.Fatalf("call after the run got %d, want its own result 7", got)
 	}
 }
 
-func TestFlightGroupRunsCallAlone(t *testing.T) {
+func TestGroupRunsCallAlone(t *testing.T) {
 	t.Parallel()
 
 	for name, tc := range map[string]struct {
@@ -82,7 +84,7 @@ func TestFlightGroupRunsCallAlone(t *testing.T) {
 		"while a run for another key waits":  {seal: false, key: "other"},
 	} {
 		var (
-			group   flightGroup[int]
+			group   Group[int]
 			entered = make(chan struct{})
 			release = make(chan struct{})
 			first   = make(chan int, 1)
@@ -90,7 +92,7 @@ func TestFlightGroupRunsCallAlone(t *testing.T) {
 		)
 
 		go func() {
-			first <- value(group.do(context.Background(), "k", func(_ context.Context, seal func()) int {
+			first <- value(group.Do(context.Background(), "k", func(_ context.Context, seal func()) (int, error) {
 				if tc.seal {
 					seal()
 				}
@@ -98,7 +100,7 @@ func TestFlightGroupRunsCallAlone(t *testing.T) {
 				close(entered)
 				<-release
 
-				return 1
+				return 1, nil
 			}))
 		}()
 
@@ -107,7 +109,7 @@ func TestFlightGroupRunsCallAlone(t *testing.T) {
 		// A started run may have read minimega before this call was made, and a
 		// run for another key answers another question: the call runs alone.
 		go func() {
-			second <- value(group.do(context.Background(), tc.key, func(context.Context, func()) int { return 2 }))
+			second <- value(group.Do(context.Background(), tc.key, func(context.Context, func()) (int, error) { return 2, nil }))
 		}()
 
 		select {
@@ -127,30 +129,30 @@ func TestFlightGroupRunsCallAlone(t *testing.T) {
 	}
 }
 
-//nolint:paralleltest // counts the callers waiting in any flightGroup
-func TestFlightGroupReleasesWaitersOnPanic(t *testing.T) {
+func TestGroupReleasesWaitersOnPanic(t *testing.T) {
+	t.Parallel()
+
 	type result struct {
 		val int
 		err error
 	}
 
 	var (
-		group    flightGroup[int]
+		group    Group[int]
 		entered  = make(chan struct{})
 		release  = make(chan struct{})
 		joined   = make(chan result, 1)
 		panicked = make(chan any, 1)
 	)
 
-	// Let the run panic even if the test fails first, so its waiter is not
-	// left waiting when a later test counts the callers waiting.
+	// Let the run panic even if the test fails first.
 	unblock := sync.OnceFunc(func() { close(release) })
 	t.Cleanup(unblock)
 
 	go func() {
 		defer func() { panicked <- recover() }()
 
-		_, _ = group.do(context.Background(), "k", func(context.Context, func()) int {
+		_, _ = group.Do(context.Background(), "k", func(context.Context, func()) (int, error) {
 			close(entered)
 			<-release
 			panic("boom")
@@ -160,16 +162,16 @@ func TestFlightGroupReleasesWaitersOnPanic(t *testing.T) {
 	<-entered
 
 	go func() {
-		val, err := group.do(context.Background(), "k", func(context.Context, func()) int { return 7 })
+		val, err := group.Do(context.Background(), "k", func(context.Context, func()) (int, error) { return 7, nil })
 		joined <- result{val: val, err: err}
 	}()
 
-	waitForJoined(t, 1)
+	polltest.Until(t, "the second caller joins the run", func() bool { return group.Waiting("k") == 2 })
 	unblock()
 
 	got := <-joined
-	if !errors.Is(got.err, errFlightAborted) {
-		t.Fatalf("waiter got (%d, %v), want errFlightAborted", got.val, got.err)
+	if !errors.Is(got.err, ErrAborted) {
+		t.Fatalf("waiter got (%d, %v), want ErrAborted", got.val, got.err)
 	}
 
 	if got.val != 0 {
@@ -182,7 +184,7 @@ func TestFlightGroupReleasesWaitersOnPanic(t *testing.T) {
 	}
 
 	// The key is free again: the next call runs on its own and succeeds.
-	val, err := group.do(context.Background(), "k", func(context.Context, func()) int { return 9 })
+	val, err := group.Do(context.Background(), "k", func(context.Context, func()) (int, error) { return 9, nil })
 	if err != nil || val != 9 {
 		t.Fatalf("call after the panic got (%d, %v), want (9, nil)", val, err)
 	}
@@ -191,11 +193,11 @@ func TestFlightGroupReleasesWaitersOnPanic(t *testing.T) {
 // A caller whose context ends while it waits for another's run returns at
 // once, and the run goes on for the callers still waiting. Once none is left,
 // the run's context is canceled, and a later call runs on its own.
-//
-//nolint:paralleltest // counts the callers waiting in any flightGroup
-func TestFlightGroupCancelsARunNoOneWaitsFor(t *testing.T) {
+func TestGroupCancelsARunNoOneWaitsFor(t *testing.T) {
+	t.Parallel()
+
 	var (
-		group      flightGroup[int]
+		group      Group[int]
 		running    = make(chan context.Context, 1)
 		leaderDone = make(chan int, 1)
 		joinedDone = make(chan error, 1)
@@ -208,22 +210,22 @@ func TestFlightGroupCancelsARunNoOneWaitsFor(t *testing.T) {
 	t.Cleanup(cancelJoined)
 
 	go func() {
-		leaderDone <- value(group.do(leaderCtx, "k", func(ctx context.Context, _ func()) int {
+		leaderDone <- value(group.Do(leaderCtx, "k", func(ctx context.Context, _ func()) (int, error) {
 			running <- ctx
 			<-ctx.Done()
 
-			return 1
+			return 1, nil
 		}))
 	}()
 
 	runCtx := <-running
 
 	go func() {
-		_, err := group.do(joinedCtx, "k", func(context.Context, func()) int { return 2 })
+		_, err := group.Do(joinedCtx, "k", func(context.Context, func()) (int, error) { return 2, nil })
 		joinedDone <- err
 	}()
 
-	waitForJoined(t, 1)
+	polltest.Until(t, "the second caller joins the run", func() bool { return group.Waiting("k") == 2 })
 	cancelJoined()
 
 	if err := <-joinedDone; !errors.Is(err, context.Canceled) {
@@ -240,12 +242,47 @@ func TestFlightGroupCancelsARunNoOneWaitsFor(t *testing.T) {
 		t.Fatalf("leader got %d, want its run's 1", got)
 	}
 
-	if got := value(group.do(context.Background(), "k", func(context.Context, func()) int { return 3 })); got != 3 {
+	if got := value(group.Do(context.Background(), "k", func(context.Context, func()) (int, error) { return 3, nil })); got != 3 {
 		t.Fatalf("call after the canceled run got %d, want its own result 3", got)
 	}
 }
 
-// value returns a flightGroup result, panicking (which fails the test, even
+// A forgotten run still answers the callers waiting for it, while later
+// callers start a new one.
+func TestGroupForget(t *testing.T) {
+	t.Parallel()
+
+	var (
+		group   Group[int]
+		entered = make(chan struct{})
+		release = make(chan struct{})
+		first   = make(chan int, 1)
+	)
+
+	go func() {
+		first <- value(group.Do(context.Background(), "k", func(context.Context, func()) (int, error) {
+			close(entered)
+			<-release
+
+			return 1, nil
+		}))
+	}()
+
+	<-entered
+	group.Forget("k")
+
+	if got := value(group.Do(context.Background(), "k", func(context.Context, func()) (int, error) { return 2, nil })); got != 2 {
+		t.Errorf("call after Forget got %d, want its own result 2", got)
+	}
+
+	close(release)
+
+	if got := <-first; got != 1 {
+		t.Errorf("forgotten run got %d, want 1", got)
+	}
+}
+
+// value returns a Group result, panicking (which fails the test, even
 // from another goroutine) if the run aborted.
 func value[T any](val T, err error) T { //nolint:ireturn // T is concrete at each use
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 
 	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
+	"phenix/util/polltest"
 )
 
 var vmInfoHeader = []string{ //nolint:gochecknoglobals // test fixture
@@ -277,7 +278,7 @@ func TestGetVMInfoMergesConcurrentCalls(t *testing.T) { //nolint:paralleltest //
 		}()
 	}
 
-	waitForJoined(t, callers-1)
+	polltest.Until(t, "every caller waits for the run", func() bool { return vmInfoFlights.Waiting("exp\x00") == callers })
 
 	unhold()
 	wg.Wait()
