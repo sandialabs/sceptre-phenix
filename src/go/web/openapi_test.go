@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -86,6 +87,33 @@ func loadOpenAPI(t *testing.T) openAPISpec {
 	}
 
 	return spec
+}
+
+// documents reports whether the spec documents status for a request: the
+// path, with its query, is concrete, as sent to the server.
+func (s openAPISpec) documents(method, path string, status int) bool {
+	path, _, _ = strings.Cut(path, "?")
+
+	scope := "root"
+	if rest, ok := strings.CutPrefix(path, "/api/v1"); ok {
+		scope, path = "api", rest
+	}
+
+	prefix := scope + " " + method + " "
+
+	for key, statuses := range s {
+		template, ok := strings.CutPrefix(key, prefix)
+		if !ok {
+			continue
+		}
+
+		pattern := "^" + strings.ReplaceAll(regexp.QuoteMeta(template), `\{\}`, `[^/]+`) + "$"
+		if regexp.MustCompile(pattern).MatchString(path) {
+			return slices.Contains(statuses, strconv.Itoa(status))
+		}
+	}
+
+	return false
 }
 
 // routerOperations are the operations of the server's routes, keyed as in an
