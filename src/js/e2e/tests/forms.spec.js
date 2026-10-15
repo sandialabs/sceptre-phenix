@@ -138,7 +138,7 @@ test('configs: schema selection generates a config template', async ({
 
   const fullSchema = page.waitForResponse(
     (response) =>
-      response.url().endsWith('/api/v1/schemas/v2') &&
+      response.url().endsWith('/api/v1/schemas/v1') &&
       response.request().method() === 'GET',
   );
   const roleSchema = page.waitForResponse(

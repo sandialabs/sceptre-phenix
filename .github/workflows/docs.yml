@@ -7,13 +7,13 @@ on:
     paths:
       - 'docs/**'
       - 'src/go/web/public/docs/openapi.yml'
-      - 'src/go/types/version/schemas/v2.yaml'
+      - 'src/go/types/version/schemas/**'
       - '.github/workflows/docs.yml'
   pull_request:
     paths:
       - 'docs/**'
       - 'src/go/web/public/docs/openapi.yml'
-      - 'src/go/types/version/schemas/v2.yaml'
+      - 'src/go/types/version/schemas/**'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 

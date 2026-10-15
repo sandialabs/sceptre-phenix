@@ -329,3 +329,21 @@ func TestValidationWebErrorExplainsUnwrappedErrors(t *testing.T) {
 		t.Errorf("validationWebError(ValidateConfigSpec(demo)): %v", err)
 	}
 }
+
+// A kind at an apiVersion whose schema file does not hold it is a 400
+// validation error, not an unknown kind.
+func TestCreateConfigRejectsKindAtWrongVersion(t *testing.T) {
+	installValidationTestStore(t) // validation fails before any store call
+
+	body := []byte("apiVersion: phenix.sandia.gov/v1\nkind: Scenario\nmetadata:\n  name: demo\nspec:\n  apps: []\n")
+	req := validationTestRequest(t, http.MethodPost, "/api/v1/configs", "application/x-yaml", body, nil)
+
+	var werr *weberror.WebError
+	if err := CreateConfig(httptest.NewRecorder(), req); !errors.As(err, &werr) {
+		t.Fatalf("expected a *weberror.WebError, got %v", err)
+	}
+
+	if werr.Status != http.StatusBadRequest || !strings.Contains(werr.Cause, "kind Scenario is not valid at apiVersion v1") {
+		t.Errorf("got status %d, cause %q; want 400 naming the kind and apiVersion", werr.Status, werr.Cause)
+	}
+}

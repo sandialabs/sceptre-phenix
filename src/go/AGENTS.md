@@ -39,6 +39,9 @@ the root target does.
   OpenAPI schemas, examples, and API output aligned.
 - Preserve persisted BoltDB compatibility. A kind decodes only at its version
   in `types/version.StoredVersion`; there are no config upgraders.
+- A kind's schema lives only in `types/version/schemas/<version>.yaml` for its
+  stored version. Config validation and the UI config editor both read the
+  file of the config's own `apiVersion`, so a schema change goes in that file.
 - RBAC changes require generated policy, migrations when needed, and migration
   tests. Keep CLI, REST, websocket, and UI authorization equivalent.
 - API route changes require domain behavior, `web/server.go`, RBAC,

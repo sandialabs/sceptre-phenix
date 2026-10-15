@@ -19,9 +19,11 @@ func init() { //nolint:gochecknoinits // library configuration
 	openapi3.SchemaErrorDetailsDisabled = true //nolint:reassign // configure library error verbosity
 }
 
-// ValidateConfigSpec validates the spec in the given config using the
-// appropriate `openapi3.Schema` validator. Any validation errors encountered
-// are returned.
+// ValidateConfigSpec validates the spec in the given config against the
+// component schema for its kind in the schema file of its own apiVersion, so
+// a v1 Topology is checked against v1.yaml and a v2 Scenario against v2.yaml.
+// A kind with no schema at its apiVersion fails validation, wrapping the
+// lookup error. Any validation errors encountered are returned.
 func ValidateConfigSpec(c store.Config) error {
 	if g := c.APIGroup(); g != store.APIGroup {
 		if g == "" {
@@ -44,7 +46,19 @@ func ValidateConfigSpec(c store.Config) error {
 		return fmt.Errorf("validating config: %w", err)
 	}
 
-	return ValidateSchema(c.Kind, version.LATEST_VERSION, c.Spec)
+	err := ValidateSchema(c.Kind, c.APIVersion(), c.Spec)
+	if err != nil && !errors.Is(err, ErrValidationFailed) {
+		// no schema for the kind at this apiVersion: the config is invalid
+		return fmt.Errorf(
+			"%w: kind %s is not valid at apiVersion %s: %w",
+			ErrValidationFailed,
+			c.Kind,
+			c.APIVersion(),
+			err,
+		)
+	}
+
+	return err
 }
 
 // ValidateSchema validates value against the component schema called name in

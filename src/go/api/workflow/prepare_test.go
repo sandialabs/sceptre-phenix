@@ -1407,7 +1407,7 @@ func TestPreparePendingMatchesStored(t *testing.T) {
 		notFound  = `decoding topology "foo": loading included topology missing-include: could not find topology missing-include`
 	)
 
-	// The includes pass the v2 Topology schema, which does not declare them,
+	// The includes pass the Topology schema, which does not declare them,
 	// in every form the real apply's weak decode accepts.
 	withInclude := prepareTopology()
 	withInclude.Spec["includeTopologies"] = []any{"missing-include"}
