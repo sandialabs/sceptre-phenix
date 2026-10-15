@@ -183,3 +183,32 @@ func TestPortForwardAttachIsAudited(t *testing.T) {
 		t.Errorf("no port-forward-attach event for %s among %v", user, events())
 	}
 }
+
+// Attaching to another user's forward needs one to the very host and port
+// asked for, not one whose port starts with the port asked for.
+//
+//nolint:paralleltest // replaces the store, minimega and the forwards
+func TestPortForwardAttachMatchesHostAndPort(t *testing.T) {
+	useForwards(t, []string{"exp"}, nil, ft.Listener{
+		Exp: "exp", VM: "vm", DstHost: "10.0.0.10", DstPort: 2222, Owner: "alice",
+		ClusterHost: "127.0.0.1", ClusterPort: echoListener(t), QEMU: true,
+	})
+
+	role := rbac.Role{Spec: &v1.RoleSpec{Name: "Viewer", Policies: []*v1.PolicySpec{
+		{Resources: []string{"vms/forwards"}, ResourceNames: []string{"exp/vm"}, Verbs: []string{"get"}},
+	}}}
+
+	api := forwardAPI(t, "bob", role)
+
+	for _, path := range []string{
+		"/experiments/exp/vms/vm/forwards/10.0.0.1/2222/ws",
+		"/experiments/exp/vms/vm/forwards/10.0.0.10/22/ws",
+	} {
+		ws, err := websocket.Dial("ws"+strings.TrimPrefix(api, "http")+path, "", api)
+		if err == nil {
+			_ = ws.Close()
+
+			t.Errorf("%s attached to the forward to 10.0.0.10 port 2222", path)
+		}
+	}
+}

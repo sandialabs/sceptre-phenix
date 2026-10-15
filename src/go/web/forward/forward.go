@@ -308,18 +308,16 @@ func GetPortForwards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var (
-		listeners []ft.Listener
-		prefix    = fmt.Sprintf("%s:%s", exp, vm)
-	)
+	var listeners []ft.Listener
 
 	reapVMForwards(exp, vm)
 
 	forwardsMu.Lock()
 
-	for key := range forwards {
-		if strings.HasPrefix(key, prefix) {
-			listeners = append(listeners, forwards[key])
+	// by field, as a key prefix would also match a VM whose name extends this one's
+	for _, l := range forwards {
+		if l.Exp == exp && l.VM == vm {
+			listeners = append(listeners, l)
 		}
 	}
 
@@ -561,14 +559,12 @@ func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var (
-		prefix  = fmt.Sprintf("%s:%s:%s:%s", exp, vm, host, port)
-		matches []string
-	)
+	var matches []string
 
-	// Check to see if a forward exists that anyone created.
-	for key := range forwards {
-		if strings.HasPrefix(key, prefix) {
+	// Check to see if a forward exists that anyone created: by field, as a
+	// key prefix would also match a longer port, such as 2222 for 22.
+	for key, l := range forwards {
+		if l.Exp == exp && l.VM == vm && l.DstHost == host && strconv.Itoa(l.DstPort) == port {
 			matches = append(matches, key)
 		}
 	}
