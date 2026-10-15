@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"phenix/store"
@@ -187,5 +188,28 @@ func TestGetConfigsEmptyList(t *testing.T) {
 
 	if got := w.Body.String(); got != `{"configs":[]}` {
 		t.Errorf("GET /configs that the role sees none of = %s, want {\"configs\":[]}", got)
+	}
+}
+
+// A config that does not exist is not found, whether read, updated or
+// deleted.
+func TestConfigNotFound(t *testing.T) {
+	useRevisionTestStore(t)
+
+	vars := map[string]string{"kind": "topology", "name": "none"}
+
+	for method, handler := range map[string]func(http.ResponseWriter, *http.Request) error{
+		http.MethodGet:    GetConfig,
+		http.MethodPut:    UpdateConfig,
+		http.MethodDelete: DeleteConfig,
+	} {
+		t.Run(method, func(t *testing.T) {
+			req := validationTestRequest(t, method, "/api/v1/configs/topology/none", mimeJSON,
+				[]byte(strings.Replace(revisionTestTopology, `"demo"`, `"none"`, 1)), vars)
+
+			if status, _ := webErrorStatus(t, handler(httptest.NewRecorder(), req)); status != http.StatusNotFound {
+				t.Errorf("status %d, want %d", status, http.StatusNotFound)
+			}
+		})
 	}
 }

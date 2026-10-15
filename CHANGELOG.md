@@ -143,7 +143,7 @@ All notable changes to this project will be documented in this file.
 - **minimega failures**: A running experiment whose VMs minimega did not report showed no VMs, a failed file listing showed no files, and a store failure listed no experiments; VM lists now set `runtime_unknown` and list the VMs as configured, file listings answer 502, and `GET /experiments` answers 500.
 - **Topology search**: The search served a topology from before the experiment was edited, started or stopped for up to 30 seconds.
 - **Live lists**: A VM, experiment, SCORCH or State of Health list the server read before a live update could undo it when it arrived later, such as showing a VM that had just stopped as running.
-- **Config API**: `GET /configs` returned `null` instead of `[]` when the role could see no configs, and CORS preflights did not allow the `X-Phenix-Auth-Token` header.
+- **Config API**: `GET /configs` returned `null` instead of `[]` when the role could see no configs, and CORS preflights did not allow the `X-Phenix-Auth-Token` header. Getting, updating or deleting a config that does not exist answered 400 instead of 404.
 - **API routes**: An unknown `/api/v1` path answered with the web UI's page instead of 404, and an authenticated `OPTIONS` request ran the route's action, such as a delete.
 - **Base path**: The `Location` header of a config created, updated or upserted through `POST /workflow/configs/{branch}` left out the base path phēnix is served behind.
 - **JSON responses**: `GET /features`, `GET /version` and the console routes sent their JSON as `text/plain`.
