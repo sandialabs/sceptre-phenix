@@ -99,6 +99,7 @@ Docker for full deployments and image builds.
 | Install with another Python | `SYSTEM_PYTHON=/path/to/python3.12 make install-dev` |
 | Generate mocks, protobufs, RBAC, and the API reference | `make generate` (Go only: `make generate-go`) |
 | Render / lint the API reference (`/docs/`) | `make api-docs` / `scripts/api-docs.sh lint src/go/web/public/docs/openapi.yml` |
+| Lint the config schemas | `scripts/api-docs.sh lint-schemas` |
 | Format / fixing lint for Go/examples | `make format` / `make lint` |
 | Generate, then non-fixing lint | `make check` |
 | Check generated outputs are reproducible | `make check-generated` |
@@ -206,9 +207,10 @@ latter writing a budget summary with deltas against the default branch;
 `examples.yml` checks Go/Python examples; `docs.yml` builds the docs and API
 reference and publishes them from `main`. Every API reference build, local,
 container, or CI, goes through `scripts/api-docs.sh`, which pins the Redocly CLI
-version; a prek hook lints `openapi.yml` with it. `lint.yml` runs the `prek`
-hooks, including golangci-lint for Go (`src/go/prek.toml`), on every push, and
-`packages.yml` builds Docker, Debian, and Podman outputs on every push that
+version; prek hooks lint `openapi.yml` and the config schemas with it.
+`lint.yml` runs the `prek` hooks, including golangci-lint for Go
+(`src/go/prek.toml`), on every push, and `packages.yml` builds Docker, Debian,
+and Podman outputs on every push that
 changes more than the docs; `cancel-closed-pr.yml` cancels a closed pull request
 branch's push-triggered runs (branches in this repository only), while each
 workflow's own concurrency group cancels the pull request's `pull_request` runs.

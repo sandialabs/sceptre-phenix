@@ -261,7 +261,8 @@ components:
         topology:
           title: "Topology"
           description: "Topology configuration embedded in or referenced by this resource."
-          $ref: "#/components/schemas/Topology"
+          allOf:
+          - $ref: "#/components/schemas/Topology"
         scenario:
           title: "Scenario"
           description: "Scenario configuration embedded in or referenced by this resource."
@@ -1415,4 +1416,3 @@ components:
           minLength: 1
           default: /dev/ttyS0
           example: /dev/ttyS0
-          pattern:

@@ -49,7 +49,8 @@ the root target does.
 - Config schemas are OpenAPI YAML files embedded with `//go:embed`:
   `types/schemas/config.yaml` for the envelope (apiVersion, kind, metadata,
   spec) and `types/version/schemas/v*.yaml` for each kind's spec. Edit the
-  YAML, never a Go string.
+  YAML, never a Go string. A prek hook lints them with
+  `scripts/api-docs.sh lint-schemas` (rules in `types/redocly.yaml`).
 - Preserve persisted BoltDB/etcd compatibility. A kind decodes only at its
   version in `types/version.StoredVersion`; there are no config upgraders.
 - RBAC changes require generated policy, migrations when needed, and migration

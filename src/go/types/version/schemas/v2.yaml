@@ -334,11 +334,13 @@ components:
         topology:
           title: "Topology"
           description: "Topology configuration embedded in or referenced by this resource."
-          $ref: "#/components/schemas/Topology"
+          allOf:
+          - $ref: "#/components/schemas/Topology"
         scenario:
           title: "Scenario"
           description: "Scenario configuration embedded in or referenced by this resource."
-          $ref: "#/components/schemas/Scenario"
+          allOf:
+          - $ref: "#/components/schemas/Scenario"
         baseDir:
           title: "Base Dir"
           description: "Working directory used by the experiment."
