@@ -232,7 +232,7 @@ leaving you on a page full of permission errors.
 |      |      |
 |------|------|
 | Verb | create |
-| Desc | trigger the running stage of an experiment, and type into or exit a SCORCH break terminal |
+| Desc | trigger the running stage of an experiment |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
@@ -610,6 +610,20 @@ instead of writing back the old ones. Change a password or a token from the
 | Desc | manage port forwarding rules for experiment VMs |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
+
+#### Resource: `scorch/terminals`
+
+|      |      |
+|------|------|
+| Verb | write |
+| Desc | type into and exit a SCORCH terminal, such as the one a `break` component opens |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+A SCORCH terminal is a shell running as the phēnix server process, which
+usually runs as root, so whoever may write to one controls the phēnix server
+and can get around RBAC. Only `Global Admin` has this permission by default.
+Without it a user sees the terminal read-only.
 
 #### Resource: `vms/cdrom`
 

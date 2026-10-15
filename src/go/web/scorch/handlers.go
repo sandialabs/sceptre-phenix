@@ -63,6 +63,7 @@ func RegisterRoutes(api *mux.Router) {
 
 const (
 	appNameScorch       = "scorch"
+	terminalsResource   = "scorch/terminals"
 	TerminalBufferSize  = 32 * 1024
 	TerminalInitTimeout = 5 * time.Second
 )
@@ -106,11 +107,11 @@ func canView(w http.ResponseWriter, r *http.Request, exp string) bool {
 	return false
 }
 
-// mayWrite reports whether the request's role may type into the experiment's
-// SCORCH terminals and stop them, which, like starting a pipeline, needs
-// experiments/trigger create.
-func mayWrite(r *http.Request, exp string) bool {
-	return middleware.RoleFromContext(r.Context()).Allowed("experiments/trigger", "create", exp)
+// canWriteTerminal reports whether the request's role may type into the
+// experiment's SCORCH terminals and exit them. A terminal is a shell running as
+// the phenix server process, so this needs its own scorch/terminals write.
+func canWriteTerminal(r *http.Request, exp string) bool {
+	return middleware.RoleFromContext(r.Context()).Allowed(terminalsResource, "write", exp)
 }
 
 // GetTerminals - GET /experiments/{name}/scorch/terminals.
@@ -162,7 +163,7 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := initTerminal(exp, run, loop, stage, cmp, mayWrite(r, exp))
+	t, err := initTerminal(exp, run, loop, stage, cmp, canWriteTerminal(r, exp))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 
@@ -178,8 +179,8 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
 //
 // Connects to a terminal by the PID of the process it runs, as the loc and
 // exit URLs of an earlier connection name it, rather than by the component it
-// breaks in. As on the component route, only a role that may trigger the
-// experiment can take the terminal's read/write side.
+// breaks in. As on the component route, only a role that may write to the
+// experiment's terminals can take the terminal's read/write side.
 func ConnectTerminalByPID(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ConnectTerminalByPID")
 
@@ -202,7 +203,7 @@ func ConnectTerminalByPID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := initTerminal(exp, term.Run, term.Loop, term.Stage, term.Name, mayWrite(r, exp))
+	t, err := initTerminal(exp, term.Run, term.Loop, term.Stage, term.Name, canWriteTerminal(r, exp))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 
@@ -238,7 +239,7 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	readOnly, status := claimTerminalClient(pid, mux.Vars(r)["id"], mayWrite(r, exp))
+	readOnly, status := claimTerminalClient(pid, mux.Vars(r)["id"], canWriteTerminal(r, exp))
 
 	switch status {
 	case http.StatusNotFound:
@@ -270,7 +271,7 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !mayWrite(r, exp) {
+	if !canWriteTerminal(r, exp) {
 		plog.Warn(
 			plog.TypeSecurity,
 			"exiting experiment scorch terminal not allowed",
@@ -587,7 +588,7 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 
 	if resp.running {
 		if resp.terminal {
-			t, err := initTerminal(exp, run, loop, stage, cmp, mayWrite(r, exp))
+			t, err := initTerminal(exp, run, loop, stage, cmp, canWriteTerminal(r, exp))
 			if err != nil {
 				return weberror.NewWebError(err, "unable to initialize terminal")
 			}

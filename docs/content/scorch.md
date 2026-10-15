@@ -49,7 +49,7 @@ The following Scorch component types are considered `core` components, in that t
 
 ### `break` Component
 
-The `break` component is comparable to a source code break point when debugging an application in that it pauses execution of the current Scorch run until a user exits the break. While the `break` component is running, users have access to a shell on the server running phēnix as the user running phēnix. The first user to access the shell via the terminal modal in the UI whose role may create `experiments/trigger` (the permission that starts a run) will have read-write access and can exit the break. Every other user whose role may get the experiment has read-only access but will get live updates as the user with read-write access uses the terminal.
+The `break` component is comparable to a source code break point when debugging an application in that it pauses execution of the current Scorch run until a user exits the break. While the `break` component is running, users have access to a shell on the server running phēnix as the user running phēnix. The first user to access the shell via the terminal modal in the UI whose role has the `scorch/terminals` `write` permission (by default only Global Admin) will have read-write access and can exit the break. Every other user whose role may get the experiment has read-only access but will get live updates as the user with read-write access uses the terminal.
 
 It's possible to configure the `break` component in the Scorch app configuration to create a minimega tap when the component is executed. When the component is executed, the tap will be deleted. In addition to the tap, external network access can also be configured (e.g., Internet access).
 

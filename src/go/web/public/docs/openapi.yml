@@ -2146,12 +2146,12 @@ paths:
         Gives the caller a client of the terminal running the process, whose
         PID the `loc` and `exit` of an earlier connection name: `loc`, the
         websocket to attach with, and, for the first client whose role has the
-        `experiments/trigger` `create` permission, which may write to the
+        `scorch/terminals` `write` permission, which may write to the
         terminal, `exit`, the route that ends it. Every other client only
         watches (`readOnly`), and a client without that permission never
         takes the writing side, even when no one holds it. A client must
         attach within 5 seconds. Needs the `experiments` `get` permission;
-        writing to the terminal also needs `experiments/trigger` `create`.
+        writing to the terminal also needs `scorch/terminals` `write`.
       operationId: getExperimentsNameScorchTerminalsPid
       parameters:
         - $ref: "#/components/parameters/ScorchExp"
@@ -2177,7 +2177,7 @@ paths:
       description: >-
         As `GET .../terminals/{pid}`, for the terminal the break component
         opened. Needs the `experiments` `get` permission; writing to the
-        terminal also needs `experiments/trigger` `create`.
+        terminal also needs `scorch/terminals` `write`.
       operationId: getExperimentsNameScorchTerminalsRunLoopStageCmp
       parameters:
         - $ref: "#/components/parameters/ScorchExp"
@@ -2209,8 +2209,8 @@ paths:
         the writing client's process exits, read-only clients get `*****
         BREAK PROCESS EXITED *****` and the websocket closes. The handshake
         needs an `Origin` header. Needs the `experiments` `get` permission;
-        attaching as the writing client also needs `experiments/trigger`
-        `create`.
+        attaching as the writing client also needs `scorch/terminals`
+        `write`.
       operationId: getExperimentsNameScorchTerminalsPidWsId
       parameters:
         - $ref: "#/components/parameters/ScorchExp"
@@ -2227,7 +2227,7 @@ paths:
         "403":
           description: >-
             forbidden, a handshake without an `Origin` header, or the writing
-            client's ID from a role without the `experiments/trigger` `create`
+            client's ID from a role without the `scorch/terminals` `write`
             permission
         "404":
           description: no such terminal for the experiment, or a client ID unknown, used or expired
@@ -2241,7 +2241,7 @@ paths:
         publishes an `apps/scorch` `terminal-exit` message on the `/ws`
         websocket. Only the writing client, by the `exit` its connect route
         gave, may end it. Needs the `experiments` `get` and the
-        `experiments/trigger` `create` permissions.
+        `scorch/terminals` `write` permissions.
       operationId: postExperimentsNameScorchTerminalsPidExitId
       parameters:
         - $ref: "#/components/parameters/ScorchExp"

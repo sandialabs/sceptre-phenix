@@ -296,19 +296,21 @@ func fakeTerminal(t *testing.T, pid int) {
 	})
 }
 
-// A role that may only view an experiment gets a read-only SCORCH terminal and
-// may not stop it, even when no one holds its read/write side; a role that may
-// trigger the experiment gets the read/write side and its exit location.
+// A role that may only view an experiment, or also trigger it, gets a
+// read-only SCORCH terminal and may not stop it, even when no one holds its
+// read/write side; a role that may write to the experiment's terminals gets the
+// read/write side and its exit location.
 //
 //nolint:paralleltest // shares the terminal maps
-func TestTerminalWriteNeedsTrigger(t *testing.T) {
+func TestTerminalWriteNeedsTerminalWrite(t *testing.T) {
 	const pid = 999999
 
 	fakeTerminal(t, pid)
 
 	var (
 		viewer   = roleFor("experiments", "get")
-		operator = roleFor("experiments", "get", "experiments/trigger", "create")
+		trigger  = roleFor("experiments", "get", "experiments/trigger", "create")
+		operator = roleFor("experiments", "get", terminalsResource, "write")
 	)
 
 	connect := func(role *rbac.Role) WebTerm {
@@ -327,8 +329,10 @@ func TestTerminalWriteNeedsTrigger(t *testing.T) {
 		return term
 	}
 
-	if term := connect(viewer); !term.RO || term.Exit != "" {
-		t.Fatalf("viewer got read-only %v and exit %q, want a read-only terminal with no exit", term.RO, term.Exit)
+	for who, role := range map[string]*rbac.Role{"viewer": viewer, "trigger role": trigger} {
+		if term := connect(role); !term.RO || term.Exit != "" {
+			t.Fatalf("%s got read-only %v and exit %q, want a read-only terminal with no exit", who, term.RO, term.Exit)
+		}
 	}
 
 	mu.Lock()
@@ -348,21 +352,62 @@ func TestTerminalWriteNeedsTrigger(t *testing.T) {
 	id := rwTerm[pid]
 	mu.Unlock()
 
-	exit := "/experiments/exp/scorch/terminals/999999/exit/" + id
-	if rec := serveScorch(http.MethodPost, exit, viewer); rec.Code != http.StatusForbidden {
-		t.Errorf("viewer exiting with the read/write ID: status %d, want 403", rec.Code)
+	for who, role := range map[string]*rbac.Role{"viewer": viewer, "trigger role": trigger} {
+		exit := "/experiments/exp/scorch/terminals/999999/exit/" + id
+		if rec := serveScorch(http.MethodPost, exit, role); rec.Code != http.StatusForbidden {
+			t.Errorf("%s exiting with the read/write ID: status %d, want 403", who, rec.Code)
+		}
+
+		stream := "/experiments/exp/scorch/terminals/999999/ws/" + id
+		if rec := serveScorch(http.MethodGet, stream, role); rec.Code != http.StatusForbidden {
+			t.Errorf("%s streaming with the read/write ID: status %d, want 403", who, rec.Code)
+		}
+	}
+}
+
+// Only scorch/terminals write on the experiment, which Global Admin's wildcard
+// verbs include, lets a role write to its terminals: every scorch verb, read
+// verbs on every resource, and triggering the experiment do not.
+func TestCanWriteTerminal(t *testing.T) {
+	t.Parallel()
+
+	every := func(verbs ...string) *rbac.Role {
+		return &rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{{
+			Resources: []string{"*", "*/*"}, ResourceNames: []string{"*", "*/*"}, Verbs: verbs,
+		}}}}
 	}
 
-	stream := "/experiments/exp/scorch/terminals/999999/ws/" + id
-	if rec := serveScorch(http.MethodGet, stream, viewer); rec.Code != http.StatusForbidden {
-		t.Errorf("viewer streaming with the read/write ID: status %d, want 403", rec.Code)
+	other := roleFor(terminalsResource, "write")
+	other.Spec.Policies[0].ResourceNames = []string{"other"}
+
+	for name, tc := range map[string]struct {
+		role *rbac.Role
+		want bool
+	}{
+		"scorch/terminals write":       {roleFor(terminalsResource, "write"), true},
+		"everything":                   {every("*"), true},
+		"every scorch verb":            {roleFor(appNameScorch, "*"), false},
+		"read everything":              {every("list", "get"), false},
+		"trigger the experiment":       {roleFor("experiments/trigger", "create"), false},
+		"terminal write elsewhere":     {other, false},
+		"scorch/terminals other verbs": {roleFor(terminalsResource, "get"), false},
+		"no role":                      {nil, false},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if tc.role != nil {
+			req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, *tc.role))
+		}
+
+		if got := canWriteTerminal(req, "exp"); got != tc.want {
+			t.Errorf("%s: %t, want %t", name, got, tc.want)
+		}
 	}
 }
 
 // A terminal is reached by the PID of the process it runs, as a terminal of
 // its experiment only. A role that may only view the experiment
 // gets a read-only terminal and never takes its read/write side; the first
-// client that may trigger the experiment may write to it, and the others only
+// client that may write to its terminals may write to it, and the others only
 // watch.
 //
 //nolint:paralleltest // shares the terminal maps
@@ -373,7 +418,7 @@ func TestConnectTerminalByPID(t *testing.T) {
 
 	var (
 		viewer   = roleFor("experiments", "get")
-		operator = roleFor("experiments", "get", "experiments/trigger", "create")
+		operator = roleFor("experiments", "get", terminalsResource, "write")
 	)
 
 	connect := func(role *rbac.Role, readOnly bool) {
@@ -439,7 +484,7 @@ func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
 
 	var (
 		viewer   = roleFor("experiments", "get")
-		operator = roleFor("experiments", "get", "experiments/trigger", "create")
+		operator = roleFor("experiments", "get", terminalsResource, "write")
 	)
 
 	connect := func(role *rbac.Role) WebTerm {
@@ -572,7 +617,7 @@ func TestStreamTerminalClaimsClientIDOnce(t *testing.T) {
 
 	fakeTerminal(t, pid)
 
-	operator := roleFor("experiments", "get", "experiments/trigger", "create")
+	operator := roleFor("experiments", "get", terminalsResource, "write")
 
 	rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/terminals/4444", operator)
 	if rec.Code != http.StatusOK {

@@ -178,6 +178,10 @@ All notable changes to this project will be documented in this file.
 - **SCORCH terminals**: Websockets that attached to a SCORCH terminal with the same client ID at the same time could all attach and crash their requests; a client ID now attaches once.
 - **CLI**: `phenix util role-table` left out the permissions phenix checks through named constants, such as most `users` permissions, and the `phenix ui --users` help described its entries as pipe-delimited.
 
+### Security
+
+- **SCORCH terminals (breaking for custom roles)**: Typing into or exiting a SCORCH terminal, a shell running as the phēnix server process, needs the new `scorch/terminals` `write` permission instead of `experiments/trigger` `create`, and only Global Admin has it by default.
+
 ## [1.0.0]
 
 ### Changed
