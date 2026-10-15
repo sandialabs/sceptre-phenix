@@ -302,6 +302,7 @@
         </b-table-column>
         <b-table-column label="Actions" width="150" centered v-slot="props">
           <b-tooltip
+            v-if="userTokenAllowed(props.row.username)"
             class="action"
             :delay="500"
             label="create new user token"
@@ -358,7 +359,7 @@
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import { usePhenixStore } from '@/store';
   import { useTable } from '@/utils/useTable.js';
-  import { roleAllowed } from '@/utils/rbac.js';
+  import { roleAllowed, userTokenAllowed } from '@/utils/rbac.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
   import { pageFetchers } from '@/utils/pageData.js';
@@ -370,7 +371,7 @@
 
   export default {
     setup() {
-      return { ...useTable({ name: 'users' }), roleAllowed };
+      return { ...useTable({ name: 'users' }), roleAllowed, userTokenAllowed };
     },
     beforeUnmount() {
       removeWsHandler(this.handleWs);

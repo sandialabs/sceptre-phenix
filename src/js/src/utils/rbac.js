@@ -72,6 +72,19 @@ export function roleAllowed(resource, verb, ...names) {
   return false;
 }
 
+// Creating an API token needs users patch on the user and, for another user,
+// users/tokens create on them too, as auth.go#CreateUserToken checks.
+export function userTokenAllowed(username) {
+  if (!roleAllowed('users', 'patch', username)) {
+    return false;
+  }
+
+  return (
+    username === usePhenixStore().username ||
+    roleAllowed('users/tokens', 'create', username)
+  );
+}
+
 // should match policy.go#resourceNameAllowed
 let resourceNameAllowed = (policy, name) => {
   var allowed = false;

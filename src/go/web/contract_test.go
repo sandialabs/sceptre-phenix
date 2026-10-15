@@ -96,6 +96,12 @@ func useContractFixture(t *testing.T) contractFixture {
 	useCaptureGrants(t)
 	useContractMount(t)
 
+	// another user, for routes that act on a user other than the requester
+	useTestStore(t, store.Config{
+		Version: "phenix.sandia.gov/v1", Kind: "User", Metadata: store.ConfigMetadata{Name: "bob"},
+		Spec: map[string]any{"username": "bob", "rbac": map[string]any{"roleName": "test-role", "policies": []any{}}},
+	})
+
 	topology, err := store.NewConfigFromJSON([]byte(revisionTestTopology))
 	if err != nil {
 		t.Fatal(err)
@@ -345,6 +351,12 @@ func contractRoutes() []contractRoute {
 
 		// state of health
 		{method: "GET", path: "/api/v1/soh", need: one(testRole("experiments", "list"))},
+
+		// users: a token for another user also needs users/tokens create
+		{
+			method: "POST", path: "/api/v1/users/bob/tokens", body: `{"lifetime":"1h"}`, want: ok,
+			need: []rbac.Role{testRole(resourceUsers, verbPatch, "bob"), testRole("users/tokens", "create", "bob")},
+		},
 
 		// configs, read and written at a revision
 		{
@@ -871,10 +883,6 @@ func TestContractErrors(t *testing.T) {
 				t.Helper()
 
 				useGlobalAdmin(t)
-				useTestStore(t, store.Config{
-					Version: "phenix.sandia.gov/v1", Kind: "User", Metadata: store.ConfigMetadata{Name: "bob"},
-					Spec: map[string]any{"username": "bob"},
-				})
 
 				return "/api/v1/users"
 			},

@@ -104,7 +104,9 @@ Without the `-k` (or `--jwt-signing-key`), authentication is disabled.
 
 ## Generating User Authentication Tokens
 
-From the `Users` tab, click the key icon next to the given user's name. A dialog
+From the `Users` tab, click the key icon next to the given user's name. The
+icon shows for your own user, and for another user only when your role has
+[`users/tokens`](#resource-userstokens) `create` on them. A dialog
 box will pop up where you can enter in a description for the token to be created
 and an expiration date. This expiration date should be entered in Golang time
 duration. For example, `4320h` is valid and represents 4320 hours or about 6
@@ -530,6 +532,20 @@ directory. See [Disks](disks.md#permissions).
 | Desc | delete an existing user |
 | Exp. Scoped | no |
 | Res. Scoped | yes |
+
+#### Resource: `users/tokens`
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | create an API token for another user (also needs `users` `patch` on them) |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
+
+A user with `users` `patch` on themselves creates their own tokens without it.
+A token lets whoever holds it act as its user, so only `Global Admin` has this
+permission by default; a custom role that created tokens for other users with
+`users` `patch` alone needs it added.
 
 #### Resource: `users/roles`
 

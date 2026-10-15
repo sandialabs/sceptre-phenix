@@ -428,6 +428,21 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// a token for another user lets its holder act as that user
+	if requester := middleware.UserFromContext(ctx); uname != requester && !role.Allowed("users/tokens", "create", uname) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"creating a token for another user not allowed",
+			"user",
+			requester,
+			"username",
+			uname,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
 	u, err := rbac.GetUser(uname)
 	if err != nil {
 		plog.Error(

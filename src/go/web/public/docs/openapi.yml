@@ -5115,7 +5115,8 @@ paths:
       description: >-
         Signs a token for the user that lasts the lifetime given, and adds it
         to the user's tokens, so it works until it expires or is removed.
-        Needs the `users` `patch` permission on the user.
+        Needs the `users` `patch` permission on the user and, for a user other
+        than the requester, `users/tokens` `create` on them as well.
       operationId: postUsersUsernameTokens
       parameters:
         - name: username

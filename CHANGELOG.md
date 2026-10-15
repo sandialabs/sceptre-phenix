@@ -46,6 +46,7 @@ All notable changes to this project will be documented in this file.
 - **Config revisions**: Stored configs carry a `metadata.revision` that changes on every write, and the config editor and `phenix config edit` refuse to save over a config changed while it was open. `GET /configs/{kind}/{name}` returns it as an `ETag`, and `PUT` and `DELETE` honor `If-Match` with a 412.
 - **Ordering**: API responses carry an `X-Phenix-Seq` header and websocket messages a `seq` field from one increasing sequence, so clients can tell which of two updates is newer.
 - **Data age**: Responses with runtime data from minimega carry `X-Phenix-Observed-At`, and `X-Phenix-Stale` when they serve earlier data while minimega is busy; the State of Health summary adds `vms_observed_at` and `vms_stale`, and the web UI header shows how old its data is.
+- **Token permission**: Creating an API token for another user needs the new `users/tokens` `create` permission on that user as well as `users` `patch`, which Global Admin has, and the Users tab shows the token button only to roles that may use it.
 
 ### Changed
 
