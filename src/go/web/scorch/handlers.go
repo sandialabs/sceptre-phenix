@@ -55,7 +55,7 @@ func RegisterRoutes(api *mux.Router) {
 	api.Handle(base+"pipelines/{run}", weberror.ErrorHandler(StartPipeline)).Methods("POST", "OPTIONS")
 	api.Handle(base+"pipelines/{run}", weberror.ErrorHandler(CancelPipeline)).Methods("DELETE", "OPTIONS")
 	api.HandleFunc(base+"terminals", GetTerminals).Methods("GET", "OPTIONS")
-	api.HandleFunc(base+"terminals/{pid}", ConnectTerminal).Methods("GET", "OPTIONS")
+	api.HandleFunc(base+"terminals/{pid}", ConnectTerminalByPID).Methods("GET", "OPTIONS")
 	api.HandleFunc(base+"terminals/{pid}/exit/{id}", ExitTerminal).Methods("POST", "OPTIONS")
 	api.HandleFunc(base+"terminals/{pid}/ws/{id}", StreamTerminal).Methods("GET", "OPTIONS")
 	api.HandleFunc(base+"terminals/{run}/{loop}/{stage}/{cmp}", ConnectTerminal).Methods("GET", "OPTIONS")
@@ -161,6 +161,45 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
 	t, err := initTerminal(exp, run, loop, stage, cmp, mayWrite(r, exp))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	body, _ := json.Marshal(t)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+}
+
+// ConnectTerminalByPID - GET /experiments/{name}/scorch/terminals/{pid}.
+//
+// Connects to a terminal as GET /terminals list it, by the PID of the
+// process it runs, rather than by the component it breaks in. As on the
+// component route, only a role that may trigger the experiment can take the
+// terminal's read/write side.
+func ConnectTerminalByPID(w http.ResponseWriter, r *http.Request) {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ConnectTerminalByPID")
+
+	exp := mux.Vars(r)["name"]
+	if !canView(w, r, exp) {
+		return
+	}
+
+	pid, err := strconv.Atoi(mux.Vars(r)["pid"])
+	if err != nil {
+		http.Error(w, "invalid terminal PID provided", http.StatusBadRequest)
+
+		return
+	}
+
+	term, err := GetTerminalByPID(pid)
+	if err != nil || term.Exp != exp {
+		http.Error(w, "no web terminal found", http.StatusNotFound)
+
+		return
+	}
+
+	t, err := initTerminal(exp, term.Run, term.Loop, term.Stage, term.Name, mayWrite(r, exp))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
 
 		return
 	}

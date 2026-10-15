@@ -95,6 +95,7 @@ func TestViewingOutputNeedsExperimentGet(t *testing.T) {
 		"component output":        {http.MethodGet, "/experiments/exp/scorch/components/0/0/start/cc"},
 		"component output stream": {http.MethodGet, "/experiments/exp/scorch/components/0/0/start/cc/ws"},
 		"terminals":               {http.MethodGet, "/experiments/exp/scorch/terminals"},
+		"terminal by PID":         {http.MethodGet, "/experiments/exp/scorch/terminals/1"},
 		"component terminal":      {http.MethodGet, "/experiments/exp/scorch/terminals/0/0/start/cc"},
 		"terminal stream":         {http.MethodGet, "/experiments/exp/scorch/terminals/1/ws/id"},
 		"terminal exit":           {http.MethodPost, "/experiments/exp/scorch/terminals/1/exit/id"},
@@ -352,5 +353,69 @@ func TestTerminalWriteNeedsTrigger(t *testing.T) {
 	stream := "/experiments/exp/scorch/terminals/999999/ws/" + id
 	if rec := serveScorch(http.MethodGet, stream, viewer); rec.Code != http.StatusForbidden {
 		t.Errorf("viewer streaming with the read/write ID: status %d, want 403", rec.Code)
+	}
+}
+
+// A terminal is reached by the PID GET /terminals lists it under, as a
+// terminal of its experiment only. A role that may only view the experiment
+// gets a read-only terminal and never takes its read/write side; the first
+// client that may trigger the experiment may write to it, and the others only
+// watch.
+//
+//nolint:paralleltest // shares the terminal maps
+func TestConnectTerminalByPID(t *testing.T) {
+	const pid = 4242
+
+	fakeTerminal(t, pid)
+
+	var (
+		viewer   = roleFor("experiments", "get")
+		operator = roleFor("experiments", "get", "experiments/trigger", "create")
+	)
+
+	connect := func(role *rbac.Role, readOnly bool) {
+		t.Helper()
+
+		rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/terminals/4242", role)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body)
+		}
+
+		var got WebTerm
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+
+		if got.Exp != "exp" || got.Stage != "start" || got.Name != "cc" || got.RO != readOnly ||
+			!strings.Contains(got.Loc, "/scorch/terminals/4242/ws/") || (got.Exit != "") == readOnly {
+			t.Errorf("terminal = %+v, want cc's, read-only %v", got, readOnly)
+		}
+	}
+
+	connect(viewer, true)
+
+	mu.Lock()
+	_, held := rwTerm[pid]
+	mu.Unlock()
+
+	if held {
+		t.Fatal("a viewer took the terminal's read/write side")
+	}
+
+	connect(operator, false)
+	connect(operator, true)
+	connect(viewer, true)
+
+	for path, want := range map[string]int{
+		"/experiments/exp/scorch/terminals/1":      http.StatusNotFound,
+		"/experiments/exp/scorch/terminals/x":      http.StatusBadRequest,
+		"/experiments/other/scorch/terminals/4242": http.StatusNotFound,
+	} {
+		role := roleFor("experiments", "get")
+		role.Spec.Policies[0].ResourceNames = []string{"*"}
+
+		if rec := serveScorch(http.MethodGet, path, role); rec.Code != want {
+			t.Errorf("%s: status %d, want %d", path, rec.Code, want)
+		}
 	}
 }
