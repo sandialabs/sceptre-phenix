@@ -182,6 +182,7 @@ All notable changes to this project will be documented in this file.
 ### Security
 
 - **SCORCH permissions (breaking for custom roles)**: Viewing SCORCH needs the new `scorch` `get` permission, and starting, cleaning up, canceling and clearing runs `scorch` `post` or `delete` instead of `experiments/trigger`, all with `experiments` `get` on the experiment. Triggering or canceling the `scorch` app, or every app, through `/experiments/{name}/trigger` also needs `scorch` `post` or `delete`.
+- **SCORCH updates**: SCORCH pipeline, terminal and run progress websocket messages go only to clients whose role may get `scorch` and the experiment.
 - **SCORCH terminals (breaking for custom roles)**: Typing into or exiting a SCORCH terminal, a shell running as the phēnix server process, needs the new `scorch/terminals` `write` permission instead of `experiments/trigger` `create`, which only Global Admin and Scorch Admin have by default.
 
 ## [1.0.0]

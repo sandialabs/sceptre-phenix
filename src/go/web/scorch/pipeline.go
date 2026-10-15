@@ -620,7 +620,16 @@ func broadcastPipeline(exp string, run, loop int, pl *pipeline) {
 	body, _ := json.Marshal(pl)
 
 	resource := bt.NewResource("apps/scorch", name, "pipeline-update")
-	broker.Broadcast(bt.NewRequestPolicy("experiments", "get", exp), resource, body)
+	broker.BroadcastWithPolicies(viewPolicies(exp), resource, body)
+}
+
+// viewPolicies are what a client needs to get the experiment's SCORCH
+// updates, as viewing its SCORCH needs.
+func viewPolicies(exp string) []*bt.RequestPolicy {
+	return []*bt.RequestPolicy{
+		bt.NewRequestPolicy(appNameScorch, "get", exp),
+		bt.NewRequestPolicy("experiments", "get", exp),
+	}
 }
 
 type PipelineUpdate struct {

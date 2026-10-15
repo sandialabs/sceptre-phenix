@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -27,6 +28,7 @@ const (
 	brokerChannelBuffer        = 1024
 	logBufferSize              = 1024
 	triggerStateError          = "error"
+	scorchApp                  = "scorch"
 	logResourceType            = "log"
 	experimentResourceType     = "experiment"
 	vmsResourceType            = "experiment/vms"
@@ -98,6 +100,8 @@ type encodedPublish struct {
 	skipped uint64
 	// the user the message is for, besides the clients its policy allows
 	owner string
+	// policies a client must also pass, besides the message's own
+	also []*bt.RequestPolicy
 }
 
 // encode marshals pub once for all the clients it goes to. It stamps pub
@@ -117,7 +121,7 @@ func encode(pub bt.Publish) (encodedPublish, bool) {
 		return encodedPublish{}, false
 	}
 
-	out := encodedPublish{pub: pub, data: data, vm: nil, skipped: 0, owner: ""}
+	out := encodedPublish{pub: pub, data: data, vm: nil, skipped: 0, owner: "", also: nil}
 
 	if state, ok := vmStateOf(pub); ok {
 		out.vm = &state
@@ -151,30 +155,11 @@ func run(ctx context.Context, triggerSub, delayedSub <-chan any) {
 		case <-ctx.Done():
 			return
 		case pub := <-triggerSub:
-			var (
-				trigger, _ = pub.(app.TriggerPublication)
-				typ        = "apps/" + trigger.App
-
-				policy   = bt.NewRequestPolicy("experiments/trigger", "create", trigger.Experiment)
-				resource = bt.NewResource(typ, trigger.Experiment, trigger.State)
-			)
-
-			if trigger.Verb != "" {
-				policy.Verb = trigger.Verb
-			}
-
-			if trigger.Resource != "" {
-				resource.Name = trigger.Resource
-			}
-
-			var result json.RawMessage
-			if trigger.State == triggerStateError {
-				result = errorResult(trigger.Error)
-			}
+			trigger, _ := pub.(app.TriggerPublication)
 
 			// delivered here: publish queues on the channel this loop drains,
 			// and would block it once that is full
-			if out, ok := encode(bt.Publish{RequestPolicy: policy, Resource: resource, Result: result, Seq: 0}); ok {
+			if out, ok := encodeTrigger(trigger); ok {
 				deliver(out)
 			}
 		case pub := <-delayedSub:
@@ -260,17 +245,11 @@ func deliver(out encodedPublish) {
 			continue
 		}
 
-		var allow bool
-
-		switch {
-		case out.owner != "" && cli.user == out.owner:
-			allow = true
-		case policy == nil:
-			allow = true
-		case policy.ResourceName == "":
-			allow = cli.role.Allowed(policy.Resource, policy.Verb)
-		default:
-			allow = cli.role.Allowed(policy.Resource, policy.Verb, policy.ResourceName)
+		allow := out.owner != "" && cli.user == out.owner
+		if !allow {
+			allow = allowedBy(cli, policy) && !slices.ContainsFunc(out.also, func(p *bt.RequestPolicy) bool {
+				return !allowedBy(cli, p)
+			})
 		}
 
 		if !allow {
@@ -283,6 +262,53 @@ func deliver(out encodedPublish) {
 			drop(cli)
 		}
 	}
+}
+
+// allowedBy reports whether the client's role passes policy; every role
+// passes no policy.
+func allowedBy(cli *Client, policy *bt.RequestPolicy) bool {
+	switch {
+	case policy == nil:
+		return true
+	case policy.ResourceName == "":
+		return cli.role.Allowed(policy.Resource, policy.Verb)
+	default:
+		return cli.role.Allowed(policy.Resource, policy.Verb, policy.ResourceName)
+	}
+}
+
+// encodeTrigger encodes an app trigger's progress for the clients that may
+// trigger the app, or, for SCORCH, whose runs are started with scorch
+// permissions, that may view the experiment's SCORCH.
+func encodeTrigger(trigger app.TriggerPublication) (encodedPublish, bool) {
+	var (
+		policy   = bt.NewRequestPolicy("experiments/trigger", "create", trigger.Experiment)
+		resource = bt.NewResource("apps/"+trigger.App, trigger.Experiment, trigger.State)
+		also     []*bt.RequestPolicy
+	)
+
+	if trigger.Verb != "" {
+		policy.Verb = trigger.Verb
+	}
+
+	if trigger.App == scorchApp {
+		policy = bt.NewRequestPolicy(scorchApp, "get", trigger.Experiment)
+		also = []*bt.RequestPolicy{bt.NewRequestPolicy("experiments", "get", trigger.Experiment)}
+	}
+
+	if trigger.Resource != "" {
+		resource.Name = trigger.Resource
+	}
+
+	var result json.RawMessage
+	if trigger.State == triggerStateError {
+		result = errorResult(trigger.Error)
+	}
+
+	out, ok := encode(bt.Publish{RequestPolicy: policy, Resource: resource, Result: result, Seq: 0})
+	out.also = also
+
+	return out, ok
 }
 
 // deliverSkipped tells the clients showing logs that n log lines were dropped
@@ -308,6 +334,26 @@ func deliverSkipped(n uint64) {
 
 func Broadcast(policy *bt.RequestPolicy, resource *bt.Resource, msg json.RawMessage) {
 	publish(bt.Publish{RequestPolicy: policy, Resource: resource, Result: msg, Seq: 0})
+}
+
+// BroadcastWithPolicies sends msg to the clients whose role passes every one
+// of policies, such as SCORCH updates, which need scorch get and experiments
+// get on the experiment.
+func BroadcastWithPolicies(policies []*bt.RequestPolicy, resource *bt.Resource, msg json.RawMessage) {
+	if len(policies) == 0 {
+		Broadcast(nil, resource, msg)
+
+		return
+	}
+
+	out, ok := encode(bt.Publish{RequestPolicy: policies[0], Resource: resource, Result: msg, Seq: 0})
+	if !ok {
+		return
+	}
+
+	out.also = policies[1:]
+
+	broadcast <- out
 }
 
 // BroadcastLog sends a log entry to the clients showing logs that may read

@@ -6537,7 +6537,9 @@ paths:
         update, or a `log` entry. A client gets only the messages its role
         may see, each checked against the permission of the route that
         made the change, and `log` entries only once it subscribes and only
-        when its role may `get` `logs`.
+        when its role may `get` `logs`. SCORCH `apps/scorch` messages, run
+        progress included, need `scorch` `get` and `experiments` `get` on
+        their experiment.
 
         A client sends JSON `WebSocketRequest`s, of at most 2 KiB:
 

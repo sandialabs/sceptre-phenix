@@ -624,7 +624,7 @@ instead of writing back the old ones. Change a password or a token from the
 |      |      |
 |------|------|
 | Verb | get |
-| Desc | see an experiment's SCORCH runs, component output and read-only terminals |
+| Desc | see an experiment's SCORCH runs, component output and read-only terminals, and get its SCORCH websocket updates |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
