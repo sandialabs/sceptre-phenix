@@ -5,10 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 )
 
 func TestHealthURL(t *testing.T) {
@@ -68,6 +71,14 @@ func runRootHealthcheck(t *testing.T, args ...string) (string, error, bool) {
 
 	t.Cleanup(func() {
 		_ = flags.Set("store.endpoint", original)
+
+		// cobra keeps flag values between runs of the same command
+		if cmd, _, err := rootCmd.Find([]string{"healthcheck"}); err == nil {
+			cmd.Flags().VisitAll(func(f *pflag.Flag) {
+				_ = f.Value.Set(f.DefValue)
+				f.Changed = false
+			})
+		}
 
 		rootCmd.SetArgs(nil)
 		rootCmd.SetOut(nil)
@@ -148,5 +159,37 @@ func TestHealthcheckCommand(t *testing.T) {
 
 	if _, err, _ := runRootHealthcheck(t, "--url", srv.URL, "--timeout", "1s"); !errors.Is(err, errUnhealthy) {
 		t.Errorf("no server: error %v, want it to be unhealthy", err)
+	}
+}
+
+//nolint:paralleltest // runs the root command and sets the environment
+func TestHealthcheckFromEnvironment(t *testing.T) {
+	srv, err := url.Parse(healthServer(t, http.StatusOK, `{"status":"pass"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PHENIX_UI_LISTEN_ENDPOINT", srv.Host)
+
+	if out, err, _ := runRootHealthcheck(t); err != nil || strings.TrimSpace(out) != "pass (200)" {
+		t.Errorf("endpoint from PHENIX_UI_LISTEN_ENDPOINT: %q, %v, want pass (200) and no error", out, err)
+	}
+}
+
+// The help names the settings the check can read: phenix ui's flags are not
+// among them, since they live only in the ui process.
+func TestHealthcheckHelp(t *testing.T) {
+	t.Parallel()
+
+	help := newHealthcheckCmd().Long
+
+	if strings.Contains(help, "flags of phenix ui") {
+		t.Errorf("help says phenix ui's flags are read:\n%s", help)
+	}
+
+	for _, want := range []string{"PHENIX_UI_LISTEN_ENDPOINT", "PHENIX_UI_TLS_KEY", "PHENIX_UI_TLS_CERT", "--url"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("help does not mention %s:\n%s", want, help)
+		}
 	}
 }
