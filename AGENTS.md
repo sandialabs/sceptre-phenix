@@ -160,7 +160,7 @@ and pass it explicitly, for example
 | Build, install, logging, config | `README.md` |
 | App development | `examples/README.md`, `examples/TUTORIAL.md` |
 | Config interfaces and fields | `src/go/types/interfaces/`, `src/go/types/version/` |
-| YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml` |
+| YAML config schemas | `src/go/types/schemas/config.yaml` (the envelope every config matches), `src/go/types/version/schemas/{v0,v1,v2}.yaml` (each kind's spec) |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
 | Topology Builder | [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md), `src/go/web/builder.go`, `src/go/web/public/grapheditor/` |
 | Narrative docs source | [`docs/`](docs/) |
