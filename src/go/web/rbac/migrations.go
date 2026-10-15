@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 
 	"github.com/activeshadow/structs"
@@ -79,18 +80,21 @@ func EnsureCaptureSubnetStopPermission() error {
 
 // addCaptureSubnetStop gives the role, for each policy that lets it start
 // subnet captures but not stop them, a policy that lets it stop them on the
-// same names. It reports whether it changed the role.
+// same names. A policy covers subnet captures when one of its resource
+// patterns matches captureSubnetResource, as Role.Allowed matches them, so
+// "exp/*" counts. It reports whether it changed the role.
 func addCaptureSubnetStop(role *v1.RoleSpec) bool {
 	var added []*v1.PolicySpec
 
 	for _, policy := range role.Policies {
-		if !slices.Contains(policy.Resources, captureSubnetResource) || !slices.Contains(policy.Verbs, "create") ||
+		if !coversCaptureSubnet(policy) || !slices.Contains(policy.Verbs, "create") ||
 			slices.Contains(policy.Verbs, "delete") || slices.Contains(policy.Verbs, "*") {
 			continue
 		}
 
 		stops := func(p *v1.PolicySpec) bool {
-			return slices.Contains(p.Resources, captureSubnetResource) && slices.Contains(p.Verbs, "delete") &&
+			return coversCaptureSubnet(p) &&
+				(slices.Contains(p.Verbs, "delete") || slices.Contains(p.Verbs, "*")) &&
 				slices.Equal(p.ResourceNames, policy.ResourceNames)
 		}
 
@@ -108,6 +112,16 @@ func addCaptureSubnetStop(role *v1.RoleSpec) bool {
 	role.Policies = append(role.Policies, added...)
 
 	return len(added) > 0
+}
+
+// coversCaptureSubnet reports whether one of the policy's resource patterns
+// matches captureSubnetResource.
+func coversCaptureSubnet(policy *v1.PolicySpec) bool {
+	return slices.ContainsFunc(policy.Resources, func(pattern string) bool {
+		matched, _ := filepath.Match(pattern, captureSubnetResource)
+
+		return matched
+	})
 }
 
 // ensurePermission adds verbs on resource to the stored roles, and the roles
