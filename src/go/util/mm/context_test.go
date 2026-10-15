@@ -189,3 +189,38 @@ func TestReadsReportTheirContextEnding(t *testing.T) { //nolint:paralleltest // 
 		t.Fatalf("minimega received %q, want nothing", mmtest.Bases(got))
 	}
 }
+
+// Closing a VM's tunnels whose context ends before the first close is sent
+// closes none of them: the close gave up, so the call has changed nothing yet
+// and must not go on regardless of its context.
+func TestCloseTunnelGivesUpBeforeTheFirstClose(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		switch base := strings.TrimSpace(cmd.Base); {
+		case strings.HasPrefix(base, "cc tunnel list "):
+			return []*minicli.Response{
+				mmtest.Tabular("head", []string{"vm", "id", "src port", "dst", "dst port"},
+					[]string{"vm1", "3", "50001", "127.0.0.1", "22"},
+					[]string{"vm1", "4", "50002", "127.0.0.1", "22"}),
+			}
+		case base == vmInfoCmd:
+			// the last command CloseTunnel's context sees through
+			cancel()
+		}
+
+		return vm1OnHeadnode(cmd)
+	})
+
+	err := CloseTunnel(NS("exp"), VMName("vm1"), Context(ctx))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("CloseTunnel reported %v, want %v", err, context.Canceled)
+	}
+
+	for _, cmd := range received() {
+		if strings.Contains(cmd.Base, "cc tunnel close") {
+			t.Fatalf("minimega received %q, want no tunnel closed", mmtest.Bases(received()))
+		}
+	}
+}
