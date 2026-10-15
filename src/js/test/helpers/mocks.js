@@ -71,7 +71,8 @@ export const modules = {
     roleAllowed: (...args) => rbac.allowed(...args),
     userTokenAllowed: (username) =>
       rbac.allowed('users', 'patch', username) &&
-      rbac.allowed('users/tokens', 'create', username),
+      (username === store.username ||
+        rbac.allowed('users/tokens', 'create', username)),
   }),
   axios: () => ({ default: axios }),
   errorNotif: () => ({
