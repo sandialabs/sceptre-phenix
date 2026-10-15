@@ -88,12 +88,15 @@ All notable changes to this project will be documented in this file.
 - **CLI**: Upgraded cobra from v1.0.0 to v1.10.2 and pflag from v1.0.3 to v1.0.9. `phenix completion bash` now generates cobra's V2 Bash script, and `phenix completion powershell` includes descriptions.
 - **API compression**: Downloads are no longer gzip-compressed.
 - **Experiment file downloads**: Files stream from disk instead of loading into server memory, and the Files tab's viewer refuses files over 10 MiB.
-- **Containers**: The Docker and Podman images, the compose file and `podman/pod.yml` check health with `phenix healthcheck`.
+- **Containers**: The Docker and Podman images, the compose file and `podman/pod.yml` check health with `phenix healthcheck`. A container that passes `--listen-endpoint` or `--tls-key`/`--tls-cert` only on the `phenix ui` command line reports unhealthy unless it sets `PHENIX_UI_LISTEN_ENDPOINT` or `PHENIX_UI_TLS_KEY`/`PHENIX_UI_TLS_CERT` instead, or overrides the check with `phenix healthcheck --url`.
 - **Logs (breaking)**: The log lines of those audited actions changed from type `SECURITY` or `ACTION` with `user`, `exp` and `vm` keys to type `AUDIT` with ECS keys such as `user.name`, `phenix.experiment.name` and `phenix.vm.name`.
 - **VM table**: Bulk start, pause, restart, shutdown, kill and reset disk run as one background job behind one confirm dialog that names the skipped VMs.
 - **Operation feedback**: Bulk VM actions, VM snapshots, backing images, memory snapshots, capture all, experiment file deletes and archives, and SCORCH Clear all report one outcome summary, with Retry failed for errors worth retrying.
 - **Experiment files**: Downloading several files builds a resumable archive in a background job, and files that cannot be fetched are left out and listed in its `MISSING.txt`.
 - **Disks**: Clone runs in the background, with its progress and a cancel button in the jobs menu and the disk's details.
+- **Websocket clients**: A `/ws` client that falls too far behind on updates is disconnected with close code 1013 (`client too slow`) and must reconnect and reload.
+- **VM unmount**: Unmounting a VM waits at most 30 seconds for downloads from it, then answers `409 mount busy` and leaves it mounted.
+- **minimega commands**: A command on the shared minimega connection fails with `timeout running command` once it has waited 10 minutes for the connection or held it for 30 minutes.
 - **Subnet captures**: Stopping a subnet's captures (`POST /experiments/{exp}/stopCaptureSubnet`) needs `exp/captureSubnet` `delete` instead of `create`, which roles that may start them gain on startup.
 
 ### Removed

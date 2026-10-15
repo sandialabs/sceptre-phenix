@@ -162,8 +162,10 @@ It builds the URL from the `ui.listen-endpoint`, `ui.tls-key` and `ui.tls-cert`
 settings (the config file or `PHENIX_UI_*` environment variables), probing
 `127.0.0.1` (or `::1`) when the server listens on every address, and `https`
 when TLS is configured; it does not verify a loopback server's certificate. A
-`--listen-endpoint` given only on the `phenix ui` command line is not visible
-to it, so pass `--url` or set `PHENIX_UI_LISTEN_ENDPOINT` then. Unlike other
+`--listen-endpoint`, `--tls-key` or `--tls-cert` given only on the `phenix ui`
+command line is not visible to it, so pass `--url` or set
+`PHENIX_UI_LISTEN_ENDPOINT`, `PHENIX_UI_TLS_KEY` and `PHENIX_UI_TLS_CERT`
+then. Unlike other
 subcommands it opens no store, unix socket or log file, so it is cheap to run
 often.
 

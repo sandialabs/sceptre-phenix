@@ -198,7 +198,9 @@ WORKDIR /opt/phenix
 # Liveness of `phenix ui` (process up, store readable), through the UI
 # server's /healthz. Containers running other phenix commands should disable
 # it: `docker run --no-healthcheck`, or `healthcheck: {disable: true}` in
-# compose.
+# compose. The check finds the server from PHENIX_UI_* variables or the config
+# file, not from `phenix ui` flags: set a non-default listen endpoint or TLS
+# that way, or override the check with `phenix healthcheck --url`.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD ["phenix", "healthcheck"]
 
