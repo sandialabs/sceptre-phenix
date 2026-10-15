@@ -74,6 +74,7 @@ All notable changes to this project will be documented in this file.
 - **CI**: The Frontend workflow builds the UI and phenix once and shares them with the e2e and performance jobs.
 - **CI**: A `generated` job checks that generated code and the API reference are reproducible (`make check-generated`).
 - **Build**: `make generate` and `make build` also render the API reference served at `/docs/`, with one pinned Redocly CLI version.
+- **API reference**: The API reference documents every route, including the websockets and the routes outside `/api/v1`.
 - **Configuration and API Schemas**: Corrected versioned config and OpenAPI schemas to match Go models and API payloads, and added field documentation and representative examples.
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, form controls, selection checkboxes and modal close buttons, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, status tag, code and State of Health tab colors, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.

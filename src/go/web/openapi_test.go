@@ -187,27 +187,10 @@ var routesOfAnyMethod = map[string]string{
 	"/favicon.ico":                   "the UI's icon",
 }
 
-// undocumentedRoutes are the routes openapi.yml leaves out on purpose, each
-// with the reason.
-//
-//nolint:gochecknoglobals // constant table
-var undocumentedRoutes = map[string]string{
-	// pages and forms of the UI, not an API
-	// WebShark's own requests, which only the bundled WebShark makes, with
-	// the capture name POST /experiments/{exp}/webshark gives it
-	// websockets, which an OpenAPI 3.0 operation cannot describe
-}
-
-// undocumentedBeforeContract are the API routes openapi.yml has never
-// described, each with what it does. They predate the API contract tests,
-// and leave openapi.yml as they are documented; a new route may not join them.
-//
-//nolint:gochecknoglobals // constant table
-var undocumentedBeforeContract = map[string]string{}
-
 // Every operation the router serves is in openapi.yml, and every operation
-// openapi.yml describes is one the router serves, except the routes left out
-// on purpose. The routes the Unix socket serves are among the router's.
+// openapi.yml describes is one the router serves; only the routes of any
+// method, which serve the UI's own files, are left out. The routes the Unix
+// socket serves are among the router's.
 func TestRouterMatchesOpenAPI(t *testing.T) {
 	spec := loadOpenAPI(t)
 	router, anyMethod := routerOperations(t)
@@ -236,7 +219,7 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 	var missing, extra []string
 
 	for key := range router {
-		if _, ok := spec[key]; !ok && undocumentedRoutes[key] == "" && undocumentedBeforeContract[key] == "" {
+		if _, ok := spec[key]; !ok {
 			missing = append(missing, key)
 		}
 	}
@@ -256,17 +239,5 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 
 	for _, key := range extra {
 		t.Errorf("openapi.yml describes %s, which the router does not serve", key)
-	}
-
-	for key := range undocumentedRoutes {
-		if _, ok := spec[key]; ok || !router[key] {
-			t.Errorf("%s is described in openapi.yml, or no longer a route: take it off undocumentedRoutes", key)
-		}
-	}
-
-	for key := range undocumentedBeforeContract {
-		if _, ok := spec[key]; ok || !router[key] {
-			t.Errorf("%s is described in openapi.yml, or no longer a route: take it off undocumentedBeforeContract", key)
-		}
 	}
 }

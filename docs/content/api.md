@@ -37,13 +37,15 @@ available in two places:
 
 The API docs are organized by tag (`Configs`, `Experiments`, `Virtual
 Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`,
-`Workflow`, `Jobs`, etc.) and document most endpoints, including request parameters
-and response schemas. Some routes are not documented there yet, among them
-`/ws`, `/logs`, `/roles`, `/settings`, the netflow routes, and the `/webshark/`
-routes outside `/api/v1` that WebShark itself calls (`/webshark/json`,
-`/webshark/captures/{name}` and `/webshark/watch`), which take a capture token
-instead of a sign-in token. `GET /webshark/streams/{token}`, which streams a
-capture by token, is documented.
+`Workflow`, `Jobs`, `Events`, etc.) and document every route, including request
+parameters, response schemas and status codes. That includes the websockets
+(`/ws` and the netflow, VNC, console, port forward and SCORCH streams), each
+described as a `GET` that answers `101` with its message protocol, and the
+routes outside `/api/v1`: the health, features and version routes, the
+Builder page, and the `/webshark/` routes that WebShark itself calls and that
+stream a capture by token, which take a capture token instead of a sign-in
+token. Only the web UI's own files (scripts, styles, images and the
+documentation site) are left out.
 
 !!! info
     The underlying OpenAPI spec is maintained at
