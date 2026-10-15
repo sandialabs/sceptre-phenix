@@ -3,10 +3,14 @@
 // Works against an empty store; no experiment or configs required.
 const { test, expect, expectAccessible } = require('./helpers');
 
-// Pages that load data say in the header when the load has finished (it fails
-// on Hosts without minimega); the rest show what they found.
+// Pages that load data say in the header's visible label when the load has
+// finished (it fails on Hosts without minimega); the rest show what they
+// found. A failure is also in a screen-reader-only status, so the label is
+// matched by its class rather than by text alone.
 const dataLoaded = (page) =>
-  page.getByText('Updated just now').or(page.getByText('Refresh failed'));
+  page
+    .locator('.refresh-label')
+    .filter({ hasText: /Updated just now|Refresh failed/ });
 
 // Each route, the path it lands on when that differs, and what shows once it
 // has loaded.
