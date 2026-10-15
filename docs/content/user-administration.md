@@ -227,7 +227,7 @@ leaving you on a page full of permission errors.
 |      |      |
 |------|------|
 | Verb | create |
-| Desc | trigger the running stage of an experiment |
+| Desc | trigger the running stage of an experiment, and type into or exit a SCORCH break terminal |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
@@ -443,7 +443,7 @@ directory. See [Disks](disks.md#permissions).
 | Verb | create |
 | Desc | snapshot or clone a disk image |
 | Exp. Scoped | no |
-| Res. Scoped | yes (the new image's file name) |
+| Res. Scoped | yes (the new image's file name; the image copied also needs `get`) |
 
 |      |      |
 |------|------|
