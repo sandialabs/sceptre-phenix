@@ -27,6 +27,10 @@ var (
 	// the command legitimately produced no output.
 	ErrNoResponse = errors.New("no response from minimega (connection lost)")
 
+	// errDeadline is a wait ended by its context's deadline: it is both
+	// ErrTimeout and [context.DeadlineExceeded].
+	errDeadline error = deadlineError{}
+
 	// shared is held by the command using the shared connection, so commands
 	// take it one at a time; a channel, so a waiter can give up.
 	shared = make(chan struct{}, 1) //nolint:gochecknoglobals // global lock
@@ -53,6 +57,14 @@ var (
 	DefaultCommandTimeout = 30 * time.Minute
 )
 
+type deadlineError struct{}
+
+func (deadlineError) Error() string { return ErrTimeout.Error() + " (context deadline exceeded)" }
+
+func (deadlineError) Is(target error) bool {
+	return target == ErrTimeout || target == context.DeadlineExceeded
+}
+
 // errResponse builds the single response value used to report an error back
 // through a response channel.
 func errResponse(err error) *miniclient.Response {
@@ -69,7 +81,7 @@ func errResponse(err error) *miniclient.Response {
 // reconstructErr turns a response's error string back into an error, restoring
 // the sentinel identity where the string is one of ours.
 func reconstructErr(msg string) error {
-	for _, sentinel := range []error{ErrTimeout, ErrNoResponse, context.Canceled} {
+	for _, sentinel := range []error{errDeadline, ErrTimeout, ErrNoResponse, context.Canceled} {
 		if msg == sentinel.Error() {
 			return sentinel
 		}
@@ -381,7 +393,7 @@ func RunStarted(c *Command, started func()) chan *miniclient.Response {
 // first, such as a web request whose client may leave or a job that may be
 // canceled: once ctx is done, a command still waiting for the shared
 // connection gives up without having been sent, returning an error that wraps
-// ctx's error (ErrTimeout for its deadline). A command already sent is not
+// ctx's error (and ErrTimeout for its deadline). A command already sent is not
 // interrupted, since that would disturb the shared connection; it is bounded
 // by ctx's deadline, if any, or else by DefaultCommandTimeout. Whatever ctx
 // says, a command waits no longer than DefaultWaitTimeout, as with Run.
@@ -417,7 +429,7 @@ func runShared(ctx context.Context, c *Command, started func()) chan *miniclient
 	select {
 	case shared <- struct{}{}:
 	case <-wait.Done():
-		return wrapErr(gaveUp(wait.Err()))
+		return wrapErr(gaveUp(ctx.Err()))
 	}
 
 	release := func() { <-shared }
@@ -443,10 +455,13 @@ func runShared(ctx context.Context, c *Command, started func()) chan *miniclient
 }
 
 // gaveUp is the error of a command that stopped waiting for the shared
-// connection because err ended its wait: ErrTimeout for a deadline, else err.
+// connection: err, its context's error, or ErrTimeout after DefaultWaitTimeout.
 func gaveUp(err error) error {
-	if errors.Is(err, context.DeadlineExceeded) {
+	switch {
+	case err == nil:
 		err = ErrTimeout
+	case errors.Is(err, context.DeadlineExceeded):
+		err = errDeadline
 	}
 
 	return fmt.Errorf("waiting for the minimega connection: %w", err)

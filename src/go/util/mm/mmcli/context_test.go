@@ -163,15 +163,22 @@ func TestRunContextDoneSendsNothing(t *testing.T) {
 	}
 }
 
-// A context's deadline ends the wait with ErrTimeout, as Run's default does.
+// A context's deadline ends the wait with an error that is both ErrTimeout,
+// as Run's default gives, and the context's own error.
 func TestRunContextDeadlineIsATimeout(t *testing.T) {
 	holdShared(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	t.Cleanup(cancel)
 
-	if err := ErrorResponse(RunContext(ctx, command("waiting"))); !errors.Is(err, ErrTimeout) {
-		t.Fatalf("RunContext returned %v, want %v", err, ErrTimeout)
+	err := ErrorResponse(RunContext(ctx, command("waiting")))
+	if !errors.Is(err, ErrTimeout) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("RunContext returned %v, want %v and %v", err, ErrTimeout, context.DeadlineExceeded)
+	}
+
+	_, err = RunTabularCheckedContext(ctx, command("tabular"), nil)
+	if !errors.Is(err, ctx.Err()) {
+		t.Fatalf("RunTabularCheckedContext returned %v, want %v", err, ctx.Err())
 	}
 }
 
@@ -187,8 +194,8 @@ func TestRunContextGivesUpWaitingAfterTheDefault(t *testing.T) {
 	holdShared(t)
 
 	err := ErrorResponse(RunContext(context.Background(), command("waiting")))
-	if !errors.Is(err, ErrTimeout) {
-		t.Fatalf("RunContext returned %v, want %v", err, ErrTimeout)
+	if !errors.Is(err, ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("RunContext returned %v, want %v alone", err, ErrTimeout)
 	}
 }
 
