@@ -208,6 +208,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  "/configs/download":
+    post:
+      tags:
+        - Configs
+      summary: Download configs as YAML
+      description: >-
+        Sends one config as a YAML attachment named `<Kind>-<name>.yml`, or
+        several as a zip attachment, `configs.zip`, of such files. An
+        experiment config is sent without its `experimentName`. Needs the
+        `configs` `get` permission; in an archive, a config the role may not
+        get is left out, while a single config the role may not get is
+        refused. Every config of an archive is read before it is sent, which
+        is built as it is sent, so it cannot be resumed (`Accept-Ranges:
+        none`).
+      operationId: postConfigsDownload
+      requestBody:
+        description: the configs, each as `<Kind>/<name>`
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+                example: Topology/demo
+      responses:
+        "200":
+          description: the config, or the archive of configs
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: one config, as YAML
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: >-
+            the body is not a list of config names, or a config does not
+            exist or cannot be read
+        "403":
+          description: forbidden
+        "500":
+          description: a config could not be converted to YAML
   "/configs/{kind}/{name}":
     get:
       tags:
@@ -752,6 +797,39 @@ paths:
           description: no such experiment
         "500":
           description: the experiment could not be read or written
+  "/experiments/{name}/apps":
+    get:
+      tags:
+        - Experiments
+      summary: Get whether each of an experiment's apps is running
+      description: >-
+        Maps each app the experiment's scenario names, and any app its status
+        reports, to whether the app's running stage is running now. Needs the
+        `experiments/apps` `get` permission.
+      operationId: getExperimentsNameApps
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+                example:
+                  soh: false
+                  scorch: true
+        "400":
+          description: the experiment could not be read
+        "403":
+          description: forbidden
   "/experiments/{name}/start":
     post:
       tags:
@@ -1101,6 +1179,44 @@ paths:
           description: revoked
         "404":
           description: no such token of the caller's, or it has ended
+  "/experiments/{name}/captureSubnet":
+    post:
+      tags:
+        - Experiments
+      summary: Capture the interfaces of an experiment's VMs on a subnet
+      description: >-
+        Starts a packet capture on each interface of the running experiment's
+        VMs whose address is in the subnet, or of the listed VMs only. Needs
+        the `exp/captureSubnet` `create` permission.
+      operationId: postExperimentsNameCaptureSubnet
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaptureSubnetRequest"
+      responses:
+        "200":
+          description: the captures started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Captures"
+        "400":
+          description: the body is not a capture request
+        "403":
+          description: forbidden
+        "500":
+          description: >-
+            the experiment is not running, the subnet is not a CIDR prefix, or
+            a capture could not be started
   "/experiments/{name}/files":
     get:
       tags:
@@ -1559,6 +1675,109 @@ paths:
           description: the path is not one of the experiment's files
         "409":
           description: the file changed while it was hashed; ask again
+  "/experiments/{name}/netflow":
+    get:
+      tags:
+        - Experiments
+      summary: Check whether an experiment's netflow capture is running
+      description: Needs the `experiments/netflow` `get` permission.
+      operationId: getExperimentsNameNetflow
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: the netflow capture is running
+        "403":
+          description: forbidden
+        "404":
+          description: no netflow capture is running for the experiment
+    post:
+      tags:
+        - Experiments
+      summary: Start a netflow capture of an experiment
+      description: >-
+        Has every cluster node send the netflow records of the experiment's
+        bridge to the server, which hands them to the clients of
+        `GET /experiments/{name}/netflow/ws`. The experiment must be running
+        and have its own default bridge, not `phenix`. Needs the
+        `experiments/netflow` `create` permission.
+      operationId: postExperimentsNameNetflow
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: the netflow capture has started
+        "400":
+          description: the capture is already running, or there is no such experiment
+        "403":
+          description: forbidden
+        "409":
+          description: the experiment is not running, or its default bridge is `phenix`
+        "500":
+          description: the capture could not be started
+    delete:
+      tags:
+        - Experiments
+      summary: Stop an experiment's netflow capture
+      description: >-
+        Stops the capture on every cluster node and closes its websocket
+        clients normally (1000, `netflow stopped`). Needs the
+        `experiments/netflow` `delete` permission.
+      operationId: deleteExperimentsNameNetflow
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: the netflow capture has stopped
+        "403":
+          description: forbidden
+        "404":
+          description: no netflow capture is running for the experiment
+        "500":
+          description: a cluster node could not stop the capture
+  "/experiments/{name}/netflow/ws":
+    get:
+      tags:
+        - Experiments
+      summary: Receive an experiment's netflow records over a WebSocket
+      description: >-
+        Each text message is one netflow record as a JSON
+        `NetflowRecord`. The server pings every 7 seconds and closes a client
+        that has not answered within 10; what a client sends is ignored, and
+        a message over 1 KiB closes the websocket. Records a client is too
+        slow to take are dropped for it. When the capture stops, the server
+        closes the websocket normally (1000) with the reason `netflow
+        stopped`. Needs the `experiments/netflow` `get` permission.
+      operationId: getExperimentsNameNetflowWs
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      responses:
+        "101":
+          description: switching protocols; netflow records follow as `NetflowRecord` JSON messages
+        "403":
+          description: forbidden
+        "404":
+          description: no netflow capture is running for the experiment
   "/experiments/{name}/scorch/pipelines":
     get:
       tags:
@@ -1784,6 +2003,265 @@ paths:
             or the run does not configure that loop
         "403":
           description: getting the experiment is not allowed for this user
+  "/experiments/{name}/topology":
+    get:
+      tags:
+        - Experiments
+      summary: Get an experiment's network graph
+      description: >-
+        A node for each VM and one for each VLAN the VMs connect to (type
+        `Switch`), and an edge for each VM interface, from the VM to its
+        VLAN. Needs the `experiments/topology` `get` permission.
+      operationId: getExperimentsNameTopology
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: ignore
+          in: query
+          description: a VLAN to leave out of the graph, such as a management network; may repeat
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          example: [MGMT]
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperimentGraph"
+        "400":
+          description: the experiment could not be read
+        "403":
+          description: forbidden
+  "/experiments/{name}/topology/search":
+    get:
+      tags:
+        - Experiments
+      summary: Search an experiment's network graph
+      description: >-
+        Finds the graph nodes that match each query parameter given, and
+        lists their IDs, in no particular order. Each of
+        `hostname`, `disk`, `node-type`, `os-type`, `label`, `annotation`,
+        `vlan` and `ip` takes one value; `ip` also takes a CIDR prefix,
+        matching every address in it. Other parameters are ignored. Needs the
+        `experiments/topology` `get` permission.
+      operationId: getExperimentsNameTopologySearch
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: hostname
+          in: query
+          description: a VM's hostname
+          schema:
+            type: string
+        - name: disk
+          in: query
+          description: a disk image the VMs boot from
+          schema:
+            type: string
+        - name: node-type
+          in: query
+          description: a node type, such as VirtualMachine
+          schema:
+            type: string
+        - name: os-type
+          in: query
+          description: an OS type, such as linux
+          schema:
+            type: string
+        - name: label
+          in: query
+          description: a label, as key=value
+          schema:
+            type: string
+        - name: annotation
+          in: query
+          description: an annotation key the VMs have
+          schema:
+            type: string
+        - name: vlan
+          in: query
+          description: a VLAN alias the VMs connect to
+          schema:
+            type: string
+        - name: ip
+          in: query
+          description: an IPv4 address, or a CIDR prefix
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes:
+                    title: Nodes
+                    type: array
+                    nullable: true
+                    description: the IDs of the matching graph nodes; null when none match
+                    items:
+                      type: integer
+                    example: [0, 3]
+        "400":
+          description: the experiment could not be read
+        "403":
+          description: forbidden
+  "/experiments/{name}/trigger":
+    post:
+      tags:
+        - Experiments
+      summary: Run the running stage of an experiment's apps
+      description: >-
+        Answers at once and runs the running stage of each app `apps` names,
+        one after another, in the background, stopping at the first that
+        fails. Every query parameter is passed to the apps as metadata. Each
+        app's progress is published on the `/ws` websocket as an
+        `apps/<app>` resource named after the experiment, whose action is
+        `start`, then `success` or `error` (with the error as its result).
+        Needs the `experiments/trigger` `create` permission.
+      operationId: postExperimentsNameTrigger
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: apps
+          in: query
+          description: the apps to trigger, comma-separated
+          required: true
+          schema:
+            type: string
+          example: soh,scorch
+      responses:
+        "204":
+          description: the apps are being triggered
+        "403":
+          description: forbidden
+    delete:
+      tags:
+        - Experiments
+      summary: Cancel an experiment's triggered apps
+      description: >-
+        Answers at once and cancels the running stage of each app `apps`
+        names that a trigger started, publishing an `apps/<app>` `success`
+        message, with the `delete` permission verb, on the `/ws` websocket.
+        Needs the `experiments/trigger` `delete` permission.
+      operationId: deleteExperimentsNameTrigger
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: apps
+          in: query
+          description: the apps to cancel, comma-separated
+          required: true
+          schema:
+            type: string
+          example: scorch
+      responses:
+        "204":
+          description: the apps are being canceled
+        "403":
+          description: forbidden
+  "/experiments/{name}/soh":
+    get:
+      tags:
+        - State of Health
+      summary: Get an experiment's state of health
+      description: >-
+        The experiment's network graph with each VM's latest soh results, and
+        the hosts and flows between them that the soh app recorded. The
+        `MGMT` and `MIRROR` VLANs are left out. Needs the `experiments` `get`
+        permission.
+      operationId: getExperimentsNameSoh
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: statusFilter
+          in: query
+          description: keep only the VMs with this status; empty keeps every VM
+          required: false
+          schema:
+            type: string
+            enum: [running, notrunning, notboot, notdeploy, external]
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SoHNetwork"
+        "403":
+          description: forbidden
+        "500":
+          description: the experiment, or its soh results, could not be read
+  "/experiments/{name}/stopCaptureSubnet":
+    post:
+      tags:
+        - Experiments
+      summary: Stop the captures of an experiment's VMs on a subnet
+      description: >-
+        Stops the packet captures of the experiment's VMs with an interface
+        in the subnet, or of the listed VMs only. Needs the
+        `exp/captureSubnet` `delete` permission.
+      operationId: postExperimentsNameStopCaptureSubnet
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaptureSubnetRequest"
+      responses:
+        "200":
+          description: the VMs whose captures stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vms:
+                    title: VMs
+                    type: array
+                    description: the VMs whose captures stopped
+                    items:
+                      type: string
+                    example: [web, db]
+        "400":
+          description: the body is not a capture request
+        "403":
+          description: forbidden
+        "500":
+          description: the experiment could not be read, or a capture could not be stopped
   "/experiments/{exp_name}/vms":
     get:
       tags:
@@ -2859,6 +3337,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Topologies"
+  "/topologies/{name}/scenarios":
+    get:
+      tags:
+        - Topologies
+      summary: Get the scenarios of a topology
+      description: >-
+        Maps each scenario whose `topology` annotation names the topology,
+        and that the role may list, to the apps it runs. Needs the
+        `scenarios` `list` permission.
+      operationId: getTopologiesNameScenarios
+      parameters:
+        - name: name
+          in: path
+          description: name of the topology
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scenarios:
+                    title: Scenarios
+                    type: object
+                    description: each scenario's apps, by scenario name
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: string
+                    example:
+                      demo-scenario: [soh, scorch]
+        "403":
+          description: forbidden
+        "500":
+          description: the scenarios could not be listed
   "/disks":
     get:
       tags:
@@ -6780,6 +7297,429 @@ components:
           example: false
           type: boolean
           description: the file lacks some of what was asked for
+    NetflowRecord:
+      title: Netflow Record
+      type: object
+      description: One netflow record of an experiment's bridge.
+      properties:
+        proto:
+          title: Protocol
+          type: integer
+          description: the IP protocol number
+          example: 6
+        src:
+          title: Source
+          type: string
+          description: the source address
+          example: 10.0.0.1
+        sport:
+          title: Source Port
+          type: integer
+          description: the source port
+          example: 50123
+        dst:
+          title: Destination
+          type: string
+          description: the destination address
+          example: 10.0.0.2
+        dport:
+          title: Destination Port
+          type: integer
+          description: the destination port
+          example: 443
+        packets:
+          title: Packets
+          type: integer
+          description: packets in the flow
+          example: 12
+        bytes:
+          title: Bytes
+          type: integer
+          description: bytes in the flow
+          example: 4096
+    ExperimentGraph:
+      title: Experiment Graph
+      type: object
+      description: An experiment's VMs and VLANs as a graph.
+      properties:
+        nodes:
+          title: Nodes
+          type: array
+          description: the VMs, then a `Switch` node for each VLAN
+          items:
+            $ref: "#/components/schemas/GraphNode"
+        edges:
+          title: Edges
+          type: array
+          description: one edge for each VM interface
+          items:
+            $ref: "#/components/schemas/GraphEdge"
+        running:
+          title: Running
+          type: boolean
+          description: whether the experiment is running
+          example: true
+    GraphNode:
+      title: Graph Node
+      type: object
+      description: >-
+        A VM, as minimega reports it for a running experiment, or a VLAN's
+        `Switch` node, which sets only `id`, `name`, `type` and `networks`.
+      properties:
+        id:
+          title: ID
+          type: integer
+          description: the node's ID in the graph, which edges and searches name
+          example: 0
+        name:
+          title: Name
+          type: string
+          description: the VM's hostname, or the VLAN's alias
+          example: web
+        description:
+          title: Description
+          type: string
+          description: the VM's description from the topology
+          example: Web server
+        type:
+          title: Type
+          type: string
+          description: the node's type, such as VirtualMachine, or Switch for a VLAN
+          example: VirtualMachine
+        experiment:
+          title: Experiment
+          type: string
+          description: the experiment's name
+          example: exp1
+        host:
+          title: Host
+          type: string
+          description: the cluster host running the VM
+          example: compute1
+        ipv4:
+          title: IPv4
+          type: array
+          description: the VM's IPv4 address on each interface
+          items:
+            type: string
+          example: [10.0.0.1]
+        cpus:
+          title: CPUs
+          type: integer
+          description: the VM's virtual CPUs
+          example: 1
+        ram:
+          title: RAM
+          type: integer
+          description: the VM's memory, in megabytes
+          example: 1024
+        disk:
+          title: Disk
+          type: string
+          description: the VM's disk image
+          example: ubuntu.qc2
+        inject_partition:
+          title: Inject Partition
+          type: integer
+          description: the disk partition injections go to
+          example: 1
+        osType:
+          title: OS Type
+          type: string
+          description: the VM's OS type
+          example: linux
+        dnb:
+          title: Do Not Boot
+          type: boolean
+          description: whether the VM is marked do not boot
+          example: false
+        networks:
+          title: Networks
+          type: array
+          description: the VLAN each interface connects to
+          items:
+            type: string
+          example: [EXP_1]
+        taps:
+          title: Taps
+          type: array
+          description: the VM's tap interfaces
+          items:
+            type: string
+          example: [mega_tap0]
+        captures:
+          title: Captures
+          type: array
+          description: the VM's running packet captures
+          items:
+            $ref: "#/components/schemas/Capture"
+        state:
+          title: State
+          type: string
+          description: minimega's state of the VM
+          example: RUNNING
+        running:
+          title: Running
+          type: boolean
+          description: whether the VM is running
+          example: true
+        busy:
+          title: Busy
+          type: boolean
+          description: whether an action holds the VM
+          example: false
+        ccActive:
+          title: Miniccc Active
+          type: boolean
+          description: whether the VM's miniccc agent is connected
+          example: true
+        uptime:
+          title: Uptime
+          type: number
+          description: seconds the VM has run
+          example: 3600
+        cdRom:
+          title: CD-ROM
+          type: string
+          description: the image in the VM's CD-ROM drive, if any
+          example: tools.iso
+        tags:
+          title: Tags
+          type: object
+          description: the VM's minimega tags
+          additionalProperties:
+            type: string
+        snapshot:
+          title: Snapshot
+          type: boolean
+          description: whether the VM runs from a snapshot of its disk
+          example: true
+        labels:
+          title: Labels
+          type: object
+          description: the VM's labels from the topology
+          additionalProperties:
+            type: string
+    GraphEdge:
+      title: Graph Edge
+      type: object
+      description: An edge between two graph nodes.
+      properties:
+        id:
+          title: ID
+          type: integer
+          description: the edge's ID
+          example: 0
+        source:
+          title: Source
+          type: integer
+          description: the ID of the node the edge starts at
+          example: 0
+        target:
+          title: Target
+          type: integer
+          description: the ID of the node the edge ends at
+          example: 3
+        length:
+          title: Length
+          type: integer
+          description: the edge's drawn length
+          example: 150
+    SoHNetwork:
+      title: SoH Network
+      type: object
+      description: An experiment's network graph with its state of health.
+      properties:
+        started:
+          title: Started
+          type: boolean
+          description: whether the experiment's start has finished
+          example: true
+        soh_initialized:
+          title: SoH Initialized
+          type: boolean
+          description: whether the soh app has finished a run
+          example: true
+        soh_running:
+          title: SoH Running
+          type: boolean
+          description: whether the soh app is running now
+          example: false
+        nodes:
+          title: Nodes
+          type: array
+          description: the VMs, then a node for each VLAN
+          items:
+            $ref: "#/components/schemas/SoHNode"
+        edges:
+          title: Edges
+          type: array
+          description: one edge for each VM interface
+          items:
+            $ref: "#/components/schemas/GraphEdge"
+        hosts:
+          title: Hosts
+          type: array
+          description: the hosts the soh app recorded flows between
+          items:
+            type: string
+          example: [web, db]
+        host_flows:
+          title: Host Flows
+          type: array
+          description: >-
+            a matrix of the flows the soh app recorded: the entry at row i,
+            column j counts those from host i to host j
+          items:
+            type: array
+            items:
+              type: integer
+          example: [[0, 3], [2, 0]]
+    SoHNode:
+      title: SoH Node
+      type: object
+      description: A graph node with its state of health.
+      properties:
+        id:
+          title: ID
+          type: integer
+          description: the node's ID in the graph
+          example: 0
+        label:
+          title: Label
+          type: string
+          description: the VM's hostname, or the VLAN's alias
+          example: web
+        image:
+          title: Image
+          type: string
+          description: >-
+            what the UI draws the node as: the VM's OS type, `Router` or
+            `Firewall` for those node types, or `switch` for a VLAN
+          example: linux
+        tags:
+          title: Tags
+          type: object
+          description: the node's tags
+          additionalProperties:
+            type: string
+        status:
+          title: Status
+          type: string
+          description: the VM's state, or `ignore` for a VLAN
+          enum: [running, notrunning, notboot, notdeploy, external, ignore]
+        soh:
+          title: SoH
+          description: the VM's latest soh results, if any
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/SoHHostState"
+    SoHHostState:
+      title: SoH Host State
+      type: object
+      description: One VM's latest soh results, each check's kind in its own list.
+      properties:
+        hostname:
+          title: Hostname
+          type: string
+          description: the VM's hostname
+          example: web
+        cpuLoad:
+          title: CPU Load
+          type: string
+          description: the VM's CPU load
+          example: "0.12"
+        networking:
+          title: Networking
+          type: array
+          description: the network checks
+          items:
+            $ref: "#/components/schemas/SoHState"
+        reachability:
+          title: Reachability
+          type: array
+          description: the reachability checks
+          items:
+            $ref: "#/components/schemas/SoHState"
+        files:
+          title: Files
+          type: array
+          description: the checks that files exist
+          items:
+            $ref: "#/components/schemas/SoHState"
+        filesAbsent:
+          title: Files Absent
+          type: array
+          description: the checks that files do not exist
+          items:
+            $ref: "#/components/schemas/SoHState"
+        services:
+          title: Services
+          type: array
+          description: the service checks
+          items:
+            $ref: "#/components/schemas/SoHState"
+        processes:
+          title: Processes
+          type: array
+          description: the process checks
+          items:
+            $ref: "#/components/schemas/SoHState"
+        listeners:
+          title: Listeners
+          type: array
+          description: the listener checks
+          items:
+            $ref: "#/components/schemas/SoHState"
+        containers:
+          title: Containers
+          type: array
+          description: the container checks
+          items:
+            $ref: "#/components/schemas/SoHState"
+    SoHState:
+      title: SoH State
+      type: object
+      description: One soh check's result.
+      properties:
+        metadata:
+          title: Metadata
+          type: object
+          description: what the check looked at, such as its target
+          additionalProperties: true
+        timestamp:
+          title: Timestamp
+          type: string
+          description: when the check ran, RFC 3339
+          example: "2026-01-01T10:00:00Z"
+        success:
+          title: Success
+          type: string
+          description: what passed, when the check passed
+          example: 10.0.0.2 reachable
+        error:
+          title: Error
+          type: string
+          description: why the check failed, when it failed
+          example: no route to host
+    CaptureSubnetRequest:
+      title: Capture Subnet Request
+      type: object
+      description: The VMs whose interfaces on a subnet to capture or stop capturing.
+      properties:
+        subnet:
+          title: Subnet
+          type: string
+          description: the subnet, as a CIDR prefix
+          example: 10.0.0.0/24
+        vms:
+          title: VMs
+          type: array
+          description: the VMs to act on; empty acts on every VM of the experiment
+          items:
+            type: string
+          example: [web]
 
   # Shared by the single-file download routes, which resume interrupted
   # downloads with Range and If-Range.
