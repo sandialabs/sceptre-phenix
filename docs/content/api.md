@@ -69,6 +69,21 @@ A token in an `Authorization` header is ignored.
 See [Generating User Authentication Tokens](user-administration.md#generating-user-authentication-tokens)
 for details.
 
+### Status Codes
+
+With authentication enabled, an API request without a token is refused with
+`403`, and one with a malformed, expired or signed-out token with `401`, as is
+one whose user a proxy's `--proxy-auth-header` names differently than the
+token. A role without the permission a route needs gets `403`, except on the
+routes that answer `404` so as not to reveal another user's job, console or
+capture token. An unknown path under `/api/v1` answers `404`, and a method a
+path does not take `405`, before any authentication. An `OPTIONS` request
+answers `204` without running the route.
+
+Behind a reverse proxy that serves phēnix under a base path (`--base-path`),
+the proxy strips the base path from requests, and the `Location` headers of
+new jobs and configs include it.
+
 ## Response Encoding
 
 JSON, YAML, and plain-text responses are gzip-compressed for clients that send
@@ -143,7 +158,7 @@ curl -s -X PUT -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
 
 ## Freshness
 
-Every API response carries `X-Phenix-Seq`, a number from one sequence that
+Every response of an API route carries `X-Phenix-Seq`, a number from one sequence that
 only increases within a `phenix ui` process, taken as the request started.
 Every message on the `/ws` websocket carries the same sequence in its `seq`
 field, taken as the message was published, after the change it tells of. A
@@ -219,7 +234,7 @@ bodies and responses are not time-limited.
 
 Long operations run as [background jobs](jobs.md): the route that starts one
 answers `202 Accepted` with the job and a `Location: /api/v1/jobs/{id}`
-header, and `GET /api/v1/jobs/{id}` follows it to the end. `GET /api/v1/jobs`
+header (under the base path, see [Status Codes](#status-codes)), and `GET /api/v1/jobs/{id}` follows it to the end. `GET /api/v1/jobs`
 lists your jobs, `POST /api/v1/jobs/{id}/cancel` cancels one,
 `DELETE /api/v1/jobs/{id}` dismisses a finished one, and
 `GET /api/v1/jobs/{id}/artifact` downloads the file it produced, resumably.

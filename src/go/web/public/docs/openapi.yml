@@ -5,8 +5,8 @@ info:
 
     ## Ordering and freshness
 
-    Every response under `/api/v1` carries `X-Phenix-Seq`, a number from one
-    strictly increasing sequence per phenix process, taken as the request
+    Every response of an `/api/v1` route carries `X-Phenix-Seq`, a number from
+    one strictly increasing sequence per phenix process, taken as the request
     started, and `Cache-Control: no-cache, private` unless the endpoint says
     otherwise. Every message on the `/ws` websocket carries the same sequence
     in its `seq` field, taken as the message was published (a reply to a
@@ -21,6 +21,20 @@ info:
     RFC 3339; compare it with the `Date` header) and `X-Phenix-Stale: true`
     (the data is older than its normal bound, such as earlier data served
     while minimega was busy).
+
+    ## Errors and authentication
+
+    Requests carry a token in `X-Phenix-Auth-Token: Bearer <token>`, or in a
+    `token` query parameter for browser links, unless auth is disabled.
+    Without one, an API route answers 403; with a malformed, expired or
+    signed-out token, or behind a proxy naming another user than the token's,
+    401. A role without the permission a route needs gets 403, except where a
+    route says it answers 404 so as not to reveal another user's job, console
+    or token. An unknown `/api/v1` path is a 404 and a method a path does not
+    take is a 405, both before authentication, and an `OPTIONS` request
+    answers 204 without running the route. Behind a proxy serving phenix under
+    a base path (`ui.base-path`), the proxy strips it, and the `Location`
+    headers of jobs and configs carry it.
   version: 0.0.0
   title: phenix
   termsOfService: http://swagger.io/terms/
