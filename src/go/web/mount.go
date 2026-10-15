@@ -423,45 +423,7 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 		user,
 	)
 
-	var (
-		info fs.FileInfo
-		err  error
-		done = make(chan struct{})
-	)
-
-	go func() {
-		info, err = os.Stat(combinedPath)
-
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		if err != nil {
-			plog.Error(plog.TypeSystem, "error getting mount path", "path", combinedPath)
-			http.Error(
-				w,
-				fmt.Sprintf("Error getting path %s: %v", combinedPath, err),
-				http.StatusInternalServerError,
-			)
-
-			return
-		}
-
-		if !info.IsDir() {
-			http.Error(w, "Expected directory not file: "+combinedPath, http.StatusBadRequest)
-
-			return
-		}
-	case <-time.After(MountPathTimeout):
-		plog.Error(plog.TypeSystem, "timeout getting mount path", "path", combinedPath)
-		http.Error(w, "timeout getting path "+combinedPath, http.StatusInternalServerError)
-
-		return
-	}
-
 	if !file.WithinDir(basePath, combinedPath) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
 		plog.Error(
 			plog.TypeSecurity,
 			"user attempted getting path outside of mount",
@@ -479,12 +441,66 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var (
+		dir  *os.File
+		info fs.FileInfo
+		err  error
+		done = make(chan struct{})
+	)
+
+	go func() {
+		dir, err = openInMount(basePath, combinedPath, os.O_RDONLY, 0)
+		if err == nil {
+			info, err = dir.Stat()
+		}
+
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		if dir != nil {
+			defer func() { _ = dir.Close() }()
+		}
+
+		if err != nil {
+			plog.Error(plog.TypeSystem, "error getting mount path", "path", combinedPath)
+			http.Error(
+				w,
+				fmt.Sprintf("Error getting path %s: %v", combinedPath, err),
+				http.StatusInternalServerError,
+			)
+
+			return
+		}
+
+		if !info.IsDir() {
+			http.Error(w, "Expected directory not file: "+combinedPath, http.StatusBadRequest)
+
+			return
+		}
+	case <-time.After(MountPathTimeout):
+		// close what the open finds, should it ever return
+		go func() {
+			<-done
+
+			if dir != nil {
+				_ = dir.Close()
+			}
+		}()
+
+		plog.Error(plog.TypeSystem, "timeout getting mount path", "path", combinedPath)
+		http.Error(w, "timeout getting path "+combinedPath, http.StatusInternalServerError)
+
+		return
+	}
+
 	var dirEntries []fs.DirEntry
 
 	done = make(chan struct{})
 
 	go func() {
-		dirEntries, err = os.ReadDir(combinedPath)
+		dirEntries, err = dir.ReadDir(-1)
 
 		close(done)
 	}()
@@ -566,13 +582,7 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	served, err := util.ServeDownload(w, r, util.Download{
-		Path:        combinedPath,
-		Name:        filepath.Base(combinedPath),
-		ContentType: "application/octet-stream",
-		Live:        false,
-		MaxSize:     0,
-	})
+	served, err := serveMountFile(w, r, basePath, combinedPath)
 	if err != nil {
 		audit.Failure(r, audit.FileDownload, "downloading vm mount file failed", downloaded, err)
 
@@ -604,8 +614,6 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // UploadMountFile - PUT /experiments/{exp}/vms/{name}/files/upload?path=.
-//
-//nolint:funlen // handler
 func UploadMountFile(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	basePath := mm.GetLocalMountPath(vars["exp"], vars["name"])
@@ -632,19 +640,6 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) {
 	combinedPath := filepath.Join(basePath, vars["path"])
 	uploaded.Target = combinedPath
 
-	//nolint:gosec // Path traversal via taint analysis
-	if _, err := os.Stat(combinedPath); err != nil {
-		plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
-		audit.Failure(r, audit.VMFileUpload, "uploading vm mount file failed", uploaded, err)
-		http.Error(
-			w,
-			fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()),
-			http.StatusInternalServerError,
-		)
-
-		return
-	}
-
 	if !file.WithinDir(basePath, combinedPath) {
 		uploaded.Reason = reasonOutsideMount
 		audit.Denied(r, audit.VMFileUpload, "user attempted uploading file outside of mount", uploaded)
@@ -652,6 +647,18 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) {
 			w,
 			fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath),
 			http.StatusBadRequest,
+		)
+
+		return
+	}
+
+	if _, err := statInMount(basePath, combinedPath); err != nil {
+		plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
+		audit.Failure(r, audit.VMFileUpload, "uploading vm mount file failed", uploaded, err)
+		http.Error(
+			w,
+			fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()),
+			http.StatusInternalServerError,
 		)
 
 		return
@@ -677,11 +684,7 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) {
 
 	uploaded.Target = filepath.Join(combinedPath, handler.Filename)
 
-	localFile, err := os.OpenFile( //nolint:gosec // Path traversal via taint analysis
-		uploaded.Target,
-		os.O_WRONLY|os.O_CREATE,
-		0o600,
-	)
+	localFile, err := openInMount(basePath, uploaded.Target, os.O_WRONLY|os.O_CREATE, mountFileMode)
 	if err != nil {
 		plog.Error(
 			plog.TypeSystem,
@@ -757,7 +760,7 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := os.Stat(destDir)
+	info, err := statInMount(basePath, destDir)
 	if err != nil {
 		audit.Failure(r, audit.VMFileCopy, "copying file to vm mount failed", copied, err)
 		http.Error(w, "Error getting path "+destDir+": "+err.Error(), http.StatusInternalServerError)
@@ -801,11 +804,7 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	destFile, err := os.OpenFile(
-		destPath,
-		os.O_CREATE|os.O_TRUNC|os.O_WRONLY,
-		0o600,
-	) //nolint:gosec // destination validated against mount path
+	destFile, err := openInMount(basePath, destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mountFileMode)
 	if err != nil {
 		audit.Failure(r, audit.VMFileCopy, "copying file to vm mount failed", copied, err)
 		http.Error(w, "Error creating destination file: "+err.Error(), http.StatusInternalServerError)
@@ -822,4 +821,85 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	audit.Success(r, audit.VMFileCopy, "copied file to vm mount", copied)
+}
+
+// mountFileMode is the mode of a file uploaded or copied into a mount.
+const mountFileMode = 0o600
+
+// openInMount opens path, which file.WithinDir has placed in the mount at
+// basePath, through an [os.Root] of the mount. The guest owns the mounted
+// file system, so a symlink in it may name any path on the server; the root
+// follows only the symlinks that stay inside the mount, and refuses the rest.
+func openInMount(basePath, path string, flag int, perm fs.FileMode) (*os.File, error) {
+	root, rel, err := mountRoot(basePath, path)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = root.Close() }()
+
+	f, err := root.OpenFile(rel, flag, perm)
+	if err != nil {
+		return nil, fmt.Errorf("opening %s in mount: %w", path, err)
+	}
+
+	return f, nil
+}
+
+// statInMount describes path in the mount at basePath, as openInMount opens
+// it.
+func statInMount(basePath, path string) (fs.FileInfo, error) {
+	root, rel, err := mountRoot(basePath, path)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = root.Close() }()
+
+	info, err := root.Stat(rel)
+	if err != nil {
+		return nil, fmt.Errorf("getting %s in mount: %w", path, err)
+	}
+
+	return info, nil
+}
+
+// mountRoot opens the mount at basePath as an [os.Root], with path relative
+// to it.
+func mountRoot(basePath, path string) (*os.Root, string, error) {
+	rel, err := filepath.Rel(basePath, path)
+	if err != nil {
+		return nil, "", fmt.Errorf("finding %s in mount: %w", path, err)
+	}
+
+	root, err := os.OpenRoot(basePath)
+	if err != nil {
+		return nil, "", fmt.Errorf("opening mount %s: %w", basePath, err)
+	}
+
+	return root, rel, nil
+}
+
+// serveMountFile sends path, a file in the mount at basePath, as
+// util.ServeDownload does, opened through openInMount.
+func serveMountFile(w http.ResponseWriter, r *http.Request, basePath, path string) (util.Served, error) {
+	f, err := openInMount(basePath, path, os.O_RDONLY, 0)
+	if err != nil {
+		return util.Served{}, err
+	}
+
+	defer func() { _ = f.Close() }()
+
+	served, err := util.ServeOpenFile(w, r, f, util.Download{
+		Path:        path,
+		Name:        filepath.Base(path),
+		ContentType: "application/octet-stream",
+		Live:        false,
+		MaxSize:     0,
+	})
+	if err != nil {
+		return served, fmt.Errorf("serving %s from mount: %w", path, err)
+	}
+
+	return served, nil
 }
