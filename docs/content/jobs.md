@@ -146,7 +146,8 @@ each command fails with `phenix ui is not running (no socket at ...)`.
 | `GET /api/v1/jobs/{id}/artifact` | downloads its artifact, resumable with `Range` (see [API](api.md#downloads)) |
 
 A route that starts a job answers `202 Accepted` with the job and a
-`Location: /api/v1/jobs/{id}` header. It checks what it can first, such as
+`Location: /api/v1/jobs/{id}` header, under the base path phēnix is served
+behind (`--base-path`), if any. It checks what it can first, such as
 permissions and limits, and answers with the usual `400`, `403`, `404`, `409`
 or `413` without starting a job when they fail.
 

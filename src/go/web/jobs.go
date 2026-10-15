@@ -117,7 +117,7 @@ func jobError(j job.Job) error {
 }
 
 // startJob starts a job for the request's user, logs it, and answers 202 with
-// the job and its location.
+// the job and its location, under the base path.
 func startJob(w http.ResponseWriter, r *http.Request, spec job.Spec) {
 	spec.Owner = middleware.UserFromContext(r.Context())
 
@@ -134,7 +134,7 @@ func startJob(w http.ResponseWriter, r *http.Request, spec job.Spec) {
 		"job", j.ID, "kind", j.Kind, "user", j.Owner, "exp", j.Experiment, "items", len(j.Items),
 	)
 
-	w.Header().Set("Location", "/api/v1/jobs/"+j.ID)
+	w.Header().Set("Location", apiLocation("jobs/"+j.ID))
 	writeJob(w, http.StatusAccepted, j)
 }
 

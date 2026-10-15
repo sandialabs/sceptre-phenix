@@ -1,8 +1,8 @@
 # phenix Background Jobs
 
 `phenix ui` runs long operations as background jobs: the request that starts
-one answers `202 Accepted` with the job and `Location: /api/v1/jobs/{id}`, and
-the job runs on in the server. Jobs live only in that server's memory: a
+one answers `202 Accepted` with the job and `Location: /api/v1/jobs/{id}`
+(under `--base-path`, if set), and the job runs on in the server. Jobs live only in that server's memory: a
 restart loses them and stops their work. User docs: `docs/content/jobs.md`.
 Code: `src/go/api/job` (registry), `src/go/web/jobs.go` (routes).
 

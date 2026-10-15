@@ -157,7 +157,7 @@ paths:
           headers:
             Location:
               schema:
-                description: location of newly created config
+                description: location of newly created config, under the server's base path
                 type: string
                 format: uri
             ETag:
@@ -281,7 +281,7 @@ paths:
           headers:
             Location:
               schema:
-                description: location of updated config
+                description: location of updated config, under the server's base path
                 type: string
                 format: uri
             ETag:
@@ -1127,7 +1127,7 @@ paths:
           description: the job, started
           headers:
             Location:
-              description: the job, at /api/v1/jobs/{id}
+              description: the job, at /api/v1/jobs/{id} under the server's base path
               schema:
                 type: string
           content:
@@ -1780,7 +1780,7 @@ paths:
           description: the job, started
           headers:
             Location:
-              description: the job, at /api/v1/jobs/{id}
+              description: the job, at /api/v1/jobs/{id} under the server's base path
               schema:
                 type: string
           content:
@@ -2967,7 +2967,7 @@ paths:
           description: the job, started
           headers:
             Location:
-              description: the job, at /api/v1/jobs/{id}
+              description: the job, at /api/v1/jobs/{id} under the server's base path
               schema:
                 type: string
           content:

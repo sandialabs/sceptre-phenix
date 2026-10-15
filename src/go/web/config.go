@@ -392,8 +392,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to create new config")
 	}
 
-	w.Header().
-		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
+	w.Header().Set("Location", apiLocation(strings.ToLower(fmt.Sprintf("configs/%s/%s", c.Kind, c.Metadata.Name))))
 	setRevisionHeaders(w, c.Metadata.Revision)
 	w.WriteHeader(http.StatusCreated)
 
@@ -674,8 +673,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		c.Metadata.Revision = storedRevision(c.FullName())
 	}
 
-	w.Header().
-		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
+	w.Header().Set("Location", apiLocation(strings.ToLower(fmt.Sprintf("configs/%s/%s", c.Kind, c.Metadata.Name))))
 	setRevisionHeaders(w, c.Metadata.Revision)
 	w.WriteHeader(http.StatusNoContent)
 

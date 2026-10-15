@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -340,5 +341,32 @@ func TestJobArtifact(t *testing.T) {
 
 	if _, err := os.Stat(zipped.Artifact.Path); !os.IsNotExist(err) {
 		t.Errorf("dismissed job's artifact remains: %v", err)
+	}
+}
+
+// A started job's location is under the base path the UI is served behind.
+func TestStartJobLocationHasBasePath(t *testing.T) {
+	useJobs(t)
+
+	original := o
+	t.Cleanup(func() { o = original })
+
+	for base, want := range map[string]string{"": "/api/v1/jobs/", "/": "/api/v1/jobs/", "/phenix/": "/phenix/api/v1/jobs/", "phenix": "/phenix/api/v1/jobs/"} {
+		o.basePath = base
+
+		rec := httptest.NewRecorder()
+		startJob(rec, httptest.NewRequest(http.MethodPost, "/", nil), job.Spec{
+			Kind: "test", Owner: "", Experiment: "", Items: []string{"a"},
+			Run: func(context.Context, *job.Run) error { return nil },
+		})
+
+		var j job.Job
+		if err := json.NewDecoder(rec.Body).Decode(&j); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := rec.Header().Get("Location"); got != want+j.ID {
+			t.Errorf("base path %q: Location %q, want %q", base, got, want+j.ID)
+		}
 	}
 }

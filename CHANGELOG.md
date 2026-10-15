@@ -168,6 +168,7 @@ All notable changes to this project will be documented in this file.
 - **Topology search**: The search served a topology from before the experiment was edited, started or stopped for up to 30 seconds.
 - **Live lists**: A VM, experiment, SCORCH or State of Health list the server read before a live update could undo it when it arrived later, such as showing a VM that had just stopped as running.
 - **Config API**: `GET /configs` returned `null` instead of `[]` when the role could see no configs, and CORS preflights did not allow the `X-Phenix-Auth-Token` header.
+- **Base path**: The `Location` header of a created or updated config left out the base path phēnix is served behind.
 
 ### Security
 

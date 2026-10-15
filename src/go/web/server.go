@@ -579,6 +579,23 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 	return router, nil
 }
 
+// apiLocation returns the absolute path of the API resource at p, relative to
+// /api/v1/, as a client behind the proxy reaches it: o.basePath is the prefix
+// the UI is served behind, normalized to start and end with "/" (a test may
+// set it unnormalized).
+func apiLocation(p string) string {
+	base := o.basePath
+	if !strings.HasPrefix(base, "/") {
+		base = "/" + base
+	}
+
+	if !strings.HasSuffix(base, "/") {
+		base += "/"
+	}
+
+	return base + "api/v1/" + p
+}
+
 // socketRoutes are the API routes the Unix socket serves as well.
 func socketRoutes() []route {
 	return []route{
