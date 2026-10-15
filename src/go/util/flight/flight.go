@@ -28,8 +28,8 @@ type call[T any] struct {
 	err  error // ErrAborted if fn did not return; set before done is closed
 
 	// guarded by the group's mu: cancel cancels the run's context; waiting
-	// counts the callers whose context is not done; finished is set once fn
-	// is over, after which callers leaving change nothing
+	// counts the callers that have not left; finished is set once fn is over,
+	// after which callers leaving change nothing
 	cancel   context.CancelFunc
 	waiting  int
 	finished bool
@@ -50,11 +50,11 @@ func (g *Group[T]) Do( //nolint:ireturn // T is concrete at each use
 	}
 
 	if c, ok := g.calls[key]; ok {
-		stop := g.join(ctx, key, c)
+		leave := g.join(ctx, key, c)
 
 		g.mu.Unlock()
 
-		defer stop()
+		defer leave()
 
 		select {
 		case <-c.done:
@@ -71,11 +71,11 @@ func (g *Group[T]) Do( //nolint:ireturn // T is concrete at each use
 	c := &call[T]{done: make(chan struct{}), cancel: cancel} //nolint:exhaustruct // val and err are set by fn below
 
 	g.calls[key] = c
-	stop := g.join(ctx, key, c)
+	leave := g.join(ctx, key, c)
 
 	g.mu.Unlock()
 
-	defer stop()
+	defer leave()
 
 	seal := func() { g.forget(key, c) }
 
@@ -136,28 +136,37 @@ func (g *Group[T]) forget(key string, c *call[T]) {
 	}
 }
 
-// join counts a caller waiting for c until its ctx is done. Once none is left
-// before c finishes, c is forgotten and its context canceled. The returned
-// function stops the watch on ctx. g.mu must be held.
-func (g *Group[T]) join(ctx context.Context, key string, c *call[T]) func() bool {
+// join counts a caller waiting for c until its ctx is done or it leaves. Once
+// none is left before c finishes, c is forgotten and its context canceled. The
+// returned function is the caller leaving. g.mu must be held.
+func (g *Group[T]) join(ctx context.Context, key string, c *call[T]) func() {
 	c.waiting++
 
-	return context.AfterFunc(ctx, func() {
-		g.mu.Lock()
-		defer g.mu.Unlock()
+	stop := context.AfterFunc(ctx, func() { g.leave(key, c) })
 
-		if c.finished {
-			return
+	// stop can win against ctx's cancel and keep leave from running, so run it here.
+	return func() {
+		if stop() {
+			g.leave(key, c)
 		}
+	}
+}
 
-		if c.waiting--; c.waiting > 0 {
-			return
-		}
+func (g *Group[T]) leave(key string, c *call[T]) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-		if g.calls[key] == c {
-			delete(g.calls, key)
-		}
+	if c.finished {
+		return
+	}
 
-		c.cancel()
-	})
+	if c.waiting--; c.waiting > 0 {
+		return
+	}
+
+	if g.calls[key] == c {
+		delete(g.calls, key)
+	}
+
+	c.cancel()
 }
