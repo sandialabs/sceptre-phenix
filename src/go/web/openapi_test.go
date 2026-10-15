@@ -193,14 +193,8 @@ var routesOfAnyMethod = map[string]string{
 //nolint:gochecknoglobals // constant table
 var undocumentedRoutes = map[string]string{
 	// pages and forms of the UI, not an API
-	"root GET /builder":       "the Topology Builder page",
-	"root POST /builder/save": "the Topology Builder's file download form",
 	// WebShark's own requests, which only the bundled WebShark makes, with
 	// the capture name POST /experiments/{exp}/webshark gives it
-	"root GET /webshark/json":         "WebShark's capture listing and download",
-	"root GET /webshark/captures/{}":  "WebShark's capture file",
-	"root HEAD /webshark/captures/{}": "WebShark's capture file",
-	"root GET /webshark/watch":        "WebShark's capture growth events",
 	// websockets, which an OpenAPI 3.0 operation cannot describe
 }
 
