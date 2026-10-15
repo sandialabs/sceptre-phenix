@@ -36,6 +36,80 @@ func EnsureJobsPermission() error {
 	return ensurePermission(jobsResource, []string{"list", "get", "update", "delete"}, experimentFilesDeleteRole)
 }
 
+// captureSubnetResource is the resource of starting (create) and stopping
+// (delete) the captures of a subnet.
+const captureSubnetResource = "exp/captureSubnet"
+
+// EnsureCaptureSubnetStopPermission lets the stored roles, and users' roles,
+// that may start subnet captures stop them as well. Stopping once needed the
+// same create permission as starting, and now needs delete.
+func EnsureCaptureSubnetStopPermission() error {
+	roles, err := GetRoles()
+	if err != nil {
+		return fmt.Errorf("getting roles: %w", err)
+	}
+
+	for _, role := range roles {
+		if addCaptureSubnetStop(role.Spec) {
+			if err := role.Save(); err != nil {
+				return fmt.Errorf("saving role %s: %w", role.Spec.Name, err)
+			}
+		}
+	}
+
+	users, err := GetUsers()
+	if err != nil {
+		return fmt.Errorf("getting users: %w", err)
+	}
+
+	for _, user := range users {
+		if user.Spec.Role == nil || !addCaptureSubnetStop(user.Spec.Role) {
+			continue
+		}
+
+		user.config.Spec = structs.MapDefaultCase(user.Spec, structs.CASESNAKE)
+
+		if err := user.Save(); err != nil {
+			return fmt.Errorf("saving user %s: %w", user.Username(), err)
+		}
+	}
+
+	return nil
+}
+
+// addCaptureSubnetStop gives the role, for each policy that lets it start
+// subnet captures but not stop them, a policy that lets it stop them on the
+// same names. It reports whether it changed the role.
+func addCaptureSubnetStop(role *v1.RoleSpec) bool {
+	var added []*v1.PolicySpec
+
+	for _, policy := range role.Policies {
+		if !slices.Contains(policy.Resources, captureSubnetResource) || !slices.Contains(policy.Verbs, "create") ||
+			slices.Contains(policy.Verbs, "delete") || slices.Contains(policy.Verbs, "*") {
+			continue
+		}
+
+		stops := func(p *v1.PolicySpec) bool {
+			return slices.Contains(p.Resources, captureSubnetResource) && slices.Contains(p.Verbs, "delete") &&
+				slices.Equal(p.ResourceNames, policy.ResourceNames)
+		}
+
+		if slices.ContainsFunc(role.Policies, stops) || slices.ContainsFunc(added, stops) {
+			continue
+		}
+
+		added = append(added, &v1.PolicySpec{
+			Resources:     []string{captureSubnetResource},
+			ResourceNames: slices.Clone(policy.ResourceNames),
+			Verbs:         []string{"delete"},
+		})
+	}
+
+	role.Policies = append(role.Policies, added...)
+
+	return len(added) > 0
+}
+
 // ensurePermission adds verbs on resource to the stored roles, and the roles
 // of users, that want it. A user's new permission takes the resource names of
 // the user's experiments policy.

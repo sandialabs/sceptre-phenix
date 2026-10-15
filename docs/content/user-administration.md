@@ -368,6 +368,22 @@ leaving you on a page full of permission errors.
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
+#### Resource: `exp/captureSubnet`
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | start packet captures on every VM interface in a subnet of an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | stop the packet captures of a subnet of an experiment (roles that may start them gain it on startup) |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
 #### Resource: `vms/snapshots`
 
 |      |      |

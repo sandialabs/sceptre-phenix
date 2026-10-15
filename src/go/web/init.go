@@ -38,5 +38,9 @@ func Init() error {
 		return fmt.Errorf("ensuring job permissions: %w", err)
 	}
 
+	if err := rbac.EnsureCaptureSubnetStopPermission(); err != nil {
+		return fmt.Errorf("ensuring subnet capture stop permissions: %w", err)
+	}
+
 	return nil
 }

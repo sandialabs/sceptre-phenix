@@ -211,6 +211,65 @@ func TestEnsureJobsPermission(t *testing.T) {
 	}
 }
 
+// The subnet capture migration lets stored roles, and users' roles, that may
+// start subnet captures stop them too, on the same names, leaving roles that
+// already may, or that may not start them, alone. Running it again changes
+// nothing.
+//
+//nolint:paralleltest // replaces the store
+func TestEnsureCaptureSubnetStopPermission(t *testing.T) {
+	var (
+		experiments = policy("experiments", nil, "list", "get")
+		start       = policy(captureSubnetResource, nil, "create")
+		startA      = &v1.PolicySpec{
+			Resources: []string{captureSubnetResource, "vms/captures"}, ResourceNames: []string{"exp-a"},
+			Verbs: []string{"get", "create"},
+		}
+		startStop = policy(captureSubnetResource, nil, "create", "delete")
+		anything  = policy(captureSubnetResource, nil, "*")
+	)
+
+	role := func(name string, policies ...*v1.PolicySpec) *v1.RoleSpec {
+		return &v1.RoleSpec{Name: name, Policies: policies}
+	}
+
+	useStore(t,
+		[]*v1.RoleSpec{
+			role("Capturer", experiments, start),
+			role("Stopper", startStop),
+			role("Anything", anything),
+			role("Viewer", experiments),
+		},
+		[]*v1.UserSpec{
+			{Username: "scoped", Role: role("Capturer", startA)},
+			{Username: "viewer", Role: role("Viewer", experiments)},
+		},
+	)
+
+	want := map[string][]*v1.PolicySpec{
+		"role Capturer": {experiments, start, policy(captureSubnetResource, nil, "delete")},
+		"role Stopper":  {startStop},
+		"role Anything": {anything},
+		"role Viewer":   {experiments},
+		"user scoped":   {startA, policy(captureSubnetResource, []string{"exp-a"}, "delete")},
+		"user viewer":   {experiments},
+	}
+
+	for _, pass := range []string{"first", "repeated"} {
+		if err := EnsureCaptureSubnetStopPermission(); err != nil {
+			t.Fatalf("%s migration: %v", pass, err)
+		}
+
+		got := storedPolicies(t)
+
+		for name, policies := range want {
+			if !reflect.DeepEqual(got[name], policies) {
+				t.Errorf("%s migration: %s policies = %s, want %s", pass, name, describe(got[name]), describe(policies))
+			}
+		}
+	}
+}
+
 func describe(policies []*v1.PolicySpec) string {
 	out := make([]string, len(policies))
 	for i, p := range policies {
