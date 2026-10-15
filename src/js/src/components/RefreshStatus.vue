@@ -4,7 +4,12 @@ from when the server read it, whether it may be out of date and why, with a
 button to reload it. Pages opt in with createPageLoader.
 -->
 <template>
-  <div v-if="pageStatus.refresh" class="refresh-status" aria-live="polite">
+  <div v-if="pageStatus.refresh" class="refresh-status">
+    <!-- announces only a failed reload or data that may be out of date, not
+         each poll's loading and age changes -->
+    <span class="refresh-alert is-sr-only" role="status" aria-live="polite">{{
+      alert
+    }}</span>
     <span
       class="refresh-label"
       :class="{ 'refresh-stale-label': stale }"
@@ -98,6 +103,12 @@ button to reload it. Pages opt in with createPageLoader.
         if (this.pageStatus.failed) return 'failed';
         if (!this.pageStatus.updatedAt) return 'idle';
         return this.stale ? 'stale' : 'ok';
+      },
+      // what a screen reader is told: only a problem with the data shown
+      alert() {
+        if (this.pageStatus.loading) return '';
+        if (this.pageStatus.failed) return 'Refresh failed';
+        return this.stale ? `Data may be out of date: ${this.staleText}` : '';
       },
       label() {
         if (this.pageStatus.loading) {
