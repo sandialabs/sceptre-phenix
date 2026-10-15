@@ -45,7 +45,7 @@ while running, without item `result`s and with at most 500 items
 |---|---|---|---|
 | `vms.action` | `POST /experiments/{exp}/vms/actions` (`{"action", "vms"}`; each VM checked as its single-VM route: `vms/start`, `vms/stop` (pause), `vms/restart`, `vms/shutdown`, `vms/reset` (resetDisk) `update`, or `vms` `delete` (kill); 403 if none allowed) | the VMs; `result` is the VM | stops dispatching; the 4 VMs in progress finish. Forbidden VMs `skipped`, locked VMs `failed` + `retryable` |
 | `files.archive` | `POST /experiments/{name}/files/archive` (`{"paths"}`; checks and limits as `/files/download`; `experiments/files` `get`) | the files | stops at once; no archive. Artifact `<exp>-files.zip`, or `<exp>-files-incomplete.zip` (`artifact.incomplete`, job `partial`) with `MISSING.txt` listing files left out. Logs `archived file` when built and `downloaded file` on the artifact's first GET |
-| `disk.clone` | `POST /disks/clone/jobs?disk=&new=` (checks as `/disks/clone`; `disks` `create` on the new name) | the new image's file name | stops at once; the hidden `.<new>.partial-<hex>` copy is removed (and swept on startup) |
+| `disk.clone` | `POST /disks/clone/jobs?disk=&new=` (checks as `/disks/clone`; `disks` `create` on the new name and `get` on the source) | the new image's file name | stops at once; the hidden `.<new>.partial-<hex>` copy is removed (and swept on startup) |
 
 ## RBAC
 
