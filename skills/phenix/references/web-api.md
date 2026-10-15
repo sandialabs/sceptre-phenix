@@ -100,6 +100,10 @@ Config RBAC names are `Kind/name` (`Topology/demo`). `POST /configs` and the
 create branch of `POST /workflow/configs/{branch}` check `configs` `create`
 against the new config's `Kind/name`, and a `PUT` that renames a config or
 changes its kind also needs `create` for the new one; otherwise `403`.
+A `User` config comes back from `GET /configs/{kind}/{name}` and
+`POST /configs/download` without `password` and `tokens` (the ETag is still the
+stored revision), and `PUT` or the workflow upsert keeps the stored ones,
+ignoring any in the body.
 
 Ordering: every `/api/v1` route's response past auth (not a `401`/`403` auth
 refusal or an `OPTIONS` answer) has `X-Phenix-Seq` (taken as the request

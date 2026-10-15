@@ -561,6 +561,11 @@ that may only create `Topology/*` configs cannot create a `User` or `Role`
 config. An update that renames a config or changes its kind also needs
 `create` for the new `Kind/name`.
 
+The configs API never returns a `User` config's password hash or API tokens,
+and an update of a `User` config through it keeps the stored ones, so an
+edited config sent back without them leaves them as they were. Change a
+password or a token from the `Users` tab or the users API.
+
 #### Resource: `settings`
 
 |      |      |

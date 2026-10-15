@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -31,7 +32,10 @@ import (
 	"phenix/web/weberror"
 )
 
-const kindExperiment = "Experiment"
+const (
+	kindExperiment = "Experiment"
+	kindUser       = "User"
+)
 const MaxUploadSize = 1 << 20
 
 // GetConfigs - GET /configs.
@@ -169,11 +173,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
-		// TODO: also clear passwords for users
-		if cfg.Kind == kindExperiment {
-			// Clear experiment name... not applicable to end users.
-			delete(cfg.Spec, "experimentName")
-		}
+		redactConfig(cfg)
 
 		body, err := yaml.Marshal(cfg)
 		if err != nil {
@@ -220,11 +220,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
-		// TODO: also clear passwords for users
-		if cfg.Kind == kindExperiment {
-			// Clear experiment name... not applicable to end users.
-			delete(cfg.Spec, "experimentName")
-		}
+		redactConfig(cfg)
 
 		body, err := yaml.Marshal(cfg)
 		if err != nil {
@@ -273,6 +269,72 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		"configs",
 		strings.Join(configs, ","),
 	)
+
+	return nil
+}
+
+// userSecretFields are the User config fields holding credentials: the
+// password hash and the user's API tokens.
+func userSecretFields() []string {
+	return []string{"password", "tokens"}
+}
+
+// redactConfig removes from a config the configs API returns an experiment's
+// name in its spec and a user's credentials, leaving the stored config as is.
+func redactConfig(cfg *store.Config) {
+	var drop []string
+
+	switch {
+	case cfg.Kind == kindExperiment:
+		drop = []string{"experimentName"}
+	case strings.EqualFold(cfg.Kind, kindUser):
+		drop = userSecretFields()
+	default:
+		return
+	}
+
+	cfg.Spec = maps.Clone(cfg.Spec)
+	for _, field := range drop {
+		delete(cfg.Spec, field)
+	}
+}
+
+// keepUserSecrets gives an update of the User config name the stored password
+// and tokens in place of any it carries, since the configs API never returns
+// them; the users routes change them.
+func keepUserSecrets(name string, c *store.Config) error {
+	if !strings.EqualFold(c.Kind, kindUser) {
+		return nil
+	}
+
+	old, err := store.NewConfig(name)
+	if err != nil {
+		return nil //nolint:nilerr // no stored config of that name to keep from
+	}
+
+	if err := store.Get(old); err != nil {
+		if errors.Is(err, store.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("getting config %s: %w", name, err)
+	}
+
+	if !strings.EqualFold(old.Kind, kindUser) {
+		return nil
+	}
+
+	if c.Spec == nil {
+		c.Spec = make(map[string]any)
+	}
+
+	for _, field := range userSecretFields() {
+		if v, ok := old.Spec[field]; ok {
+			c.Spec[field] = v
+		} else {
+			delete(c.Spec, field)
+		}
+	}
 
 	return nil
 }
@@ -518,11 +580,9 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 		return werr
 	}
 
-	if cfg.Kind == kindExperiment {
-		// Clear experiment name... not applicable to end users.
-		delete(cfg.Spec, "experimentName")
-	}
+	redactConfig(cfg)
 
+	// the ETag names the stored revision, secrets included
 	setRevisionHeaders(w, cfg.Metadata.Revision)
 
 	if inm := r.Header.Get("If-None-Match"); inm != "" && cfg.Metadata.Revision > 0 &&
@@ -713,6 +773,11 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	if c.Kind == kindExperiment {
 		// Reset experiment name in spec since we removed it before sending.
 		c.Spec["experimentName"] = vars["name"]
+	}
+
+	if err := keepUserSecrets(name, c); err != nil {
+		return weberror.NewWebError(err, "unable to read config %s", name).
+			SetStatus(http.StatusInternalServerError)
 	}
 
 	c.IfRevision = ifRevision
