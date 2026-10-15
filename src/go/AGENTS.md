@@ -74,6 +74,16 @@ the root target does.
   registry in `util/freshness/doc.go`, and report its age with
   `freshness.SetObserved` when it serves minimega data. A failed minimega read
   is an error or an explicit unknown flag, never an empty success.
+- Code serving a web request, websocket or background job passes its
+  context to minimega, so a command still waiting for the shared connection
+  gives up once the client leaves or the job is canceled: `mm.Context(ctx)`
+  (or `mm.C2Context`) for `util/mm`, the `ctx` argument of `api/vm`, and
+  `mmcli.RunContext` and the `...Context` tabular helpers for direct
+  commands. An action of several commands checks the context only until its
+  first change, and work shared with other callers or broadcast to them uses
+  `context.WithoutCancel`. A handler whose request ended writes nothing and
+  logs it at debug level (`requestGone`, `requestCanceled` in `web/`). CLI
+  commands, startup and background loops keep plain `mmcli.Run`.
 - Consult [minimega API docs](https://sandia-minimega.github.io/minimega/reference/minimega/) and
   [source](https://github.com/sandia-minimega/minimega) before changing code
   that constructs commands or depends on minimega behavior.
