@@ -28,6 +28,7 @@ const (
 	logBufferSize              = 1024
 	triggerStateError          = "error"
 	logResourceType            = "log"
+	experimentResourceType     = "experiment"
 	vmsResourceType            = "experiment/vms"
 	delayedStartScreenshotSize = "215"
 	// how often the broker tells of the clients and log lines it dropped.
