@@ -210,15 +210,7 @@ var undocumentedRoutes = map[string]string{
 // and leave openapi.yml as they are documented; a new route may not join them.
 //
 //nolint:gochecknoglobals // constant table
-var undocumentedBeforeContract = map[string]string{
-	"api GET /logs":              "streams the server's logs",
-	"api GET /roles":             "lists the roles",
-	"api GET /settings":          "the server's settings",
-	"api GET /settings/password": "the password requirements",
-	"api GET /settings/timeout":  "the session timeout",
-	"api POST /settings":         "changes the server's settings",
-	"api POST /users/{}/tokens":  "creates a user's API token",
-}
+var undocumentedBeforeContract = map[string]string{}
 
 // Every operation the router serves is in openapi.yml, and every operation
 // openapi.yml describes is one the router serves, except the routes left out
