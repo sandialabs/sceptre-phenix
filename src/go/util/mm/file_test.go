@@ -20,7 +20,7 @@ func forgetFilesDirectory(t *testing.T) {
 
 	forget := func() {
 		filesDir.mu.Lock()
-		filesDir.dir, filesDir.askedAt, filesDir.given = "", time.Time{}, make(chan struct{})
+		filesDir.dir, filesDir.askedAt, filesDir.given, filesDir.asking = "", time.Time{}, make(chan struct{}), nil
 		filesDir.mu.Unlock()
 	}
 
@@ -99,6 +99,85 @@ func TestGetMMFullPath(t *testing.T) { //nolint:paralleltest // shares the fake 
 
 	if got := mmtest.Count(received(), "args"); got != 2 {
 		t.Fatalf("asked minimega for its args %d times, want twice", got)
+	}
+}
+
+// While one caller waits on a slow minimega for its files directory, others
+// are not held up: FilesDirectoryGiven answers at once, and GetMMFullPath
+// gives the fallback after filesDirWait, or minimega's answer if it comes
+// first.
+func TestFilesDirectoryDoesNotWaitOnASlowMinimega(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	var (
+		release = make(chan struct{})
+		asked   = make(chan struct{}, 1)
+	)
+
+	useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		if cmd.Base != "args" {
+			return nil
+		}
+
+		asked <- struct{}{}
+		<-release
+
+		return []*minicli.Response{
+			mmtest.Tabular("head", []string{"base", "filepath"}, []string{"/tmp/minimega", "/srv/files/"}),
+		}
+	})
+
+	forgetFilesDirectory(t)
+
+	base := t.TempDir()
+
+	originalBase, originalWait := common.PhenixBase, filesDirWait
+	common.PhenixBase, filesDirWait = base, 50*time.Millisecond //nolint:reassign // the fallback's parent
+
+	t.Cleanup(func() { common.PhenixBase, filesDirWait = originalBase, originalWait }) //nolint:reassign // restore
+
+	first := make(chan string, 1)
+
+	go func() { first <- GetMMFullPath("a.qc2") }()
+
+	select {
+	case <-asked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("minimega was not asked")
+	}
+
+	within := func(what string, fn func()) {
+		t.Helper()
+
+		done := make(chan struct{})
+
+		go func() {
+			fn()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			close(release)
+			t.Fatalf("%s waited on minimega", what)
+		}
+	}
+
+	within("FilesDirectoryGiven", func() { _ = FilesDirectoryGiven() })
+
+	within("another GetMMFullPath", func() {
+		if got := GetMMFullPath("a.qc2"); got != base+"/images/a.qc2" {
+			t.Errorf("another caller got %q, want the fallback", got)
+		}
+	})
+
+	close(release)
+
+	if got := <-first; got != "/srv/files/a.qc2" {
+		t.Errorf("the asking caller got %q, want minimega's answer", got)
+	}
+
+	if got := GetMMFullPath("a.qc2"); got != "/srv/files/a.qc2" {
+		t.Errorf("after the answer: %q", got)
 	}
 }
 
