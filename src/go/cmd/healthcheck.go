@@ -29,8 +29,10 @@ func newHealthcheckCmd() *cobra.Command {
   Requests the server's liveness endpoint (/healthz), or with --ready its
   readiness endpoint (/readyz), and exits 0 when it answers 200 and 1
   otherwise. The URL comes from ui.listen-endpoint and ui.tls-key/tls-cert
-  (flags of phenix ui, the config file, or PHENIX_UI_* environment
-  variables), with a wildcard host replaced by loopback; --url overrides it.
+  (the config file or PHENIX_UI_* environment variables), with a wildcard
+  host replaced by loopback; --url overrides it. Flags given only on the
+  phenix ui command line are not seen here: pass --url, or set
+  PHENIX_UI_LISTEN_ENDPOINT, PHENIX_UI_TLS_KEY and PHENIX_UI_TLS_CERT.
 
   Unlike other subcommands, healthcheck opens no store, unix socket or log
   file, so it is cheap enough for a container health check.`
