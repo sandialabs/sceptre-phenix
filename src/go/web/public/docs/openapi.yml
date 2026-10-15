@@ -226,7 +226,8 @@ paths:
       description: >-
         Sends one config as a YAML attachment named `<Kind>-<name>.yml`, or
         several as a zip attachment, `configs.zip`, of such files. An
-        experiment config is sent without its `experimentName`. Needs the
+        experiment config is sent without its `experimentName`, and a User
+        config without its `password` and `tokens`. Needs the
         `configs` `get` permission; in an archive, a config the role may not
         get is left out, while a single config the role may not get is
         refused. Every config of an archive is read before it is sent, which
@@ -268,6 +269,10 @@ paths:
       tags:
         - Configs
       summary: Get existing phenix config
+      description: >-
+        An Experiment config is sent without its `experimentName`, and a User
+        config without its `password` hash and `tokens`. The ETag still names
+        the stored revision, so it changes when only those fields do.
       operationId: getConfigsKindName
       parameters:
         - name: kind
@@ -324,7 +329,9 @@ paths:
         Can also be used to rename a config by changing the name in the metadata
         portion of the config header and using the old name in the request path.
         A rename or a change of kind also needs `configs` `create` for the new
-        `Kind/name`.
+        `Kind/name`. A User config keeps its stored `password` and `tokens`,
+        whatever the body holds, so a config sent back as GET returned it
+        changes neither; the users routes change them.
       operationId: putConfigsKindName
       parameters:
         - name: kind
