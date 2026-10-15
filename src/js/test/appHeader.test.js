@@ -14,8 +14,10 @@ vi.mock('@/store.js', () => ({ usePhenixStore: () => store }));
 vi.mock('@/utils/axios.js', () => ({ default: { get: vi.fn() } }));
 
 import AppHeader from '@/components/AppHeader.vue';
+import RefreshStatus from '@/components/RefreshStatus.vue';
 import { useJobStore } from '@/utils/jobs.js';
 import { pageStatus } from '@/utils/pageLoader.js';
+import { makeContext } from './helpers/context.js';
 import { renderSSR, textOf, tooltipButtons } from './helpers/render.js';
 import { role } from './helpers/roles.js';
 
@@ -281,6 +283,34 @@ describe('the refresh status', () => {
       html.match(/class="refresh-alert is-sr-only"[^>]*>([^<]*)</)[1],
     ).toBe(want);
   });
+
+  it.each([
+    ['a failed reload', { failed: true, updatedAt: NOW }, 'Refresh failed'],
+    [
+      'data that stays out of date',
+      { updatedAt: NOW - 2 * minute, resource: 'hosts' },
+      'Data may be out of date: older than 90 s',
+    ],
+  ])(
+    'keeps announcing %s through each poll, so it is not read out again',
+    (_, status, want) => {
+      Object.assign(pageStatus, { refresh: () => {}, ...status });
+      const ctx = makeContext(RefreshStatus);
+      // the alert after the page status changes, as its watcher leaves it
+      const after = (change) => {
+        Object.assign(pageStatus, change);
+        RefreshStatus.watch.problem?.handler.call(ctx, ctx.problem);
+        return ctx.alert;
+      };
+
+      expect(after({})).toBe(want);
+      expect(after({ loading: true })).toBe(want);
+      expect(after({ loading: false })).toBe(want);
+      expect(after({ loading: true })).toBe(want);
+      // a reload that fixes it clears the announcement
+      expect(after({ loading: false, failed: false, updatedAt: NOW })).toBe('');
+    },
+  );
 
   it('is left out on a page with nothing to reload, and when signed out', async () => {
     store.role = role('Viewer', ['experiments', 'list']);
