@@ -96,6 +96,11 @@ An unknown config is `404` (a `PUT` or `DELETE` with `If-Match`: `412`;
 `POST` and `PUT` return the new `ETag`. `GET /configs` returns `[]`, never
 `null`.
 
+Config RBAC names are `Kind/name` (`Topology/demo`). `POST /configs` and the
+create branch of `POST /workflow/configs/{branch}` check `configs` `create`
+against the new config's `Kind/name`, and a `PUT` that renames a config or
+changes its kind also needs `create` for the new one; otherwise `403`.
+
 Ordering: every `/api/v1` route's response past auth (not a `401`/`403` auth
 refusal or an `OPTIONS` answer) has `X-Phenix-Seq` (taken as the request
 started) and every `/ws` message a `seq` (taken as it was published; a VM list

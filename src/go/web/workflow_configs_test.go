@@ -481,7 +481,7 @@ func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 				req := upsertTestRequest(t, query, upsertTestTopology)
 				req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, rbac.Role{Spec: &v1.RoleSpec{}}))
 
-				want := "creating configs not allowed for test-user"
+				want := "creating config Topology/main-topo not allowed for test-user"
 				if exists {
 					want = "updating config Topology/main-topo not allowed for test-user"
 				}

@@ -31,9 +31,11 @@ func useDefaultRoles(t *testing.T) {
 	}
 }
 
-// roleRequest is a request made by test-user with the role and route variables.
+// roleRequest is a JSON request made by test-user with the role and route
+// variables.
 func roleRequest(method, target, body string, vars map[string]string, role rbac.Role) *http.Request {
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("Content-Type", mimeJSON)
 	req = mux.SetURLVars(req, vars)
 
 	ctx := context.WithValue(req.Context(), middleware.ContextKeyRole, role)

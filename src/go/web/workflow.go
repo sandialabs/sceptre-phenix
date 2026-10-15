@@ -541,15 +541,8 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to update config %s", name)
 		}
 	} else {
-		if !role.Allowed("configs", "create") {
-			user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-			err := weberror.NewWebError(
-				nil,
-				"creating configs not allowed for %s",
-				user,
-			)
-
-			return err.SetStatus(http.StatusForbidden)
+		if err := authorizeConfigCreate(r, cfg); err != nil {
+			return err
 		}
 
 		cfg, err = createOrValidate(cfg, dryRun)

@@ -172,6 +172,7 @@ All notable changes to this project will be documented in this file.
 - **etcd store**: phēnix crashed when it checked whether a component of an etcd store was initialized and the store had no record of it.
 - **User roles**: Saved roles and users stored `resourceNames: null` for a policy that names no resources, so a later edit of the config failed validation, and the web UI threw an error checking such a policy against a name.
 - **Users**: `POST /users` crashed its request for a username already taken and stored a user without a role when the role did not exist, and `phenix ui --users` also stored such users; both now store nothing, and `POST /users` answers 409 for a taken username.
+- **Security, configs**: Creating a config, through the Configs page, `POST /configs` or `POST /workflow/configs/{branch}`, or renaming one or changing its kind, checked `configs` `create` without the new config's `Kind/name`, so a role allowed to create only topologies could create `User` and `Role` configs.
 
 ## [1.0.0]
 

@@ -359,6 +359,12 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 		return nil, errors.New("no config, path, or data provided")
 	}
 
+	if o.check != nil {
+		if err := o.check(c); err != nil {
+			return nil, err
+		}
+	}
+
 	if o.validate {
 		if err := Validate(c); err != nil {
 			return nil, err
