@@ -239,7 +239,7 @@ phenix settings db ...            # legacy BoltDB-backed settings
 phenix ui                         # run the phenix web UI/API server
 phenix healthcheck [--ready] [--url URL] [-o json]  # probe the UI server's /healthz (or /readyz); exit 0 on 200
 phenix util app-json <exp>        # print the experiment JSON a user app receives on stdin
-phenix util role-table            # print the permissions/roles table
+phenix util role-table            # print every permission phenix checks, and which roles allow it
 phenix completion bash|zsh|fish|powershell
 phenix version
 ```

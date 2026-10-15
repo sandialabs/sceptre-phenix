@@ -200,6 +200,7 @@ All notable changes to this project will be documented in this file.
 - **Security, configs**: Creating a config, through the Configs page, `POST /configs` or `POST /workflow/configs/{branch}`, or renaming one or changing its kind, checked `configs` `create` without the new config's `Kind/name`, so a role allowed to create only topologies could create `User` and `Role` configs.
 - **Security, user secrets**: The configs API returned `User` configs with their password hash and API tokens to any role that could read them, and an update of a `User` config could replace or remove them; it now leaves them out of responses and keeps the stored ones on update.
 - **SCORCH terminals**: Websockets that attached to a SCORCH terminal with the same client ID at the same time could all attach and crash their requests; a client ID now attaches once.
+- **CLI**: `phenix util role-table` left out the permissions phenix checks through named constants, such as most `users` permissions, and the `phenix ui --users` help described its entries as pipe-delimited.
 
 ### Security
 
