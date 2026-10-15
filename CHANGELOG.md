@@ -191,6 +191,7 @@ All notable changes to this project will be documented in this file.
 - **VM mount uploads**: Uploading a file over a longer one of the same name in a mounted VM left the end of the old file behind.
 - **Port forwards**: A VM's forward list also listed the forwards of VMs whose names start with its name, and attaching to a forward on a port could attach to another user's forward on a longer port that starts with it, such as 2222 for 22.
 - **SCORCH terminals**: `GET /experiments/{name}/scorch/terminals/{pid}` always answered 400; it now connects to the terminal running that process.
+- **Settings**: `POST /settings` with a password minimum length outside 8 to 32 saved the password rules before it, and answered 500 instead of 400.
 
 ### Security
 
