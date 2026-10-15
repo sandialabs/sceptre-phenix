@@ -138,7 +138,8 @@ the current revision, so you can reload the config instead of overwriting
 someone else's change. `If-Match: *` only requires the config to exist, and a
 malformed `If-Match` is a `400`. `If-Match` is optional: a write without it
 replaces the config whatever its revision. `If-None-Match` on a `GET` answers
-`304` while the config is unchanged.
+`304` while the config is unchanged. A `GET`, `PUT` or `DELETE` of a config
+that does not exist answers `404`, or `412` when it carries `If-Match`.
 
 ```bash
 curl -si -H "X-Phenix-Auth-Token: Bearer $TOKEN" \

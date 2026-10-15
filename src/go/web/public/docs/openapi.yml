@@ -250,6 +250,12 @@ paths:
                 $ref: "#/components/schemas/Config"
         "304":
           $ref: "#/components/responses/ConfigNotModified"
+        "404":
+          description: the config does not exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     put:
       tags:
         - Configs
@@ -304,9 +310,9 @@ paths:
               $ref: "#/components/headers/ConfigRevision"
         "400":
           description: >
-            unknown content type or file extension, a config that does not exist,
-            an unknown kind, a schema validation failure (explained lines in
-            metadata.validation, original validator text in
+            unknown content type or file extension, an unknown kind, a schema
+            validation failure (explained lines in metadata.validation, original
+            validator text in
             metadata.validation-raw), or a config hook or the store rejects the
             config; for an Experiment config, also a failure to reconfigure the
             experiment after the updated config was stored
@@ -316,6 +322,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: updating the config is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: the config does not exist
           content:
             application/json:
               schema:
@@ -353,6 +365,12 @@ paths:
           description: successful operation
         "400":
           description: a malformed If-Match header, or the config cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: the config does not exist
           content:
             application/json:
               schema:

@@ -458,7 +458,12 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 
 	cfg, err := config.Get(name)
 	if err != nil {
-		return weberror.NewWebError(err, "unable to get config %s from store", name)
+		werr := weberror.NewWebError(err, "unable to get config %s from store", name)
+		if errors.Is(err, store.ErrNotExist) {
+			return werr.SetStatus(http.StatusNotFound)
+		}
+
+		return werr
 	}
 
 	if cfg.Kind == kindExperiment {
@@ -751,6 +756,10 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 			return conflictWebError(err, name)
 		}
 
+		if errors.Is(err, store.ErrNotExist) {
+			return weberror.NewWebError(err, "config %s does not exist", name).SetStatus(http.StatusNotFound)
+		}
+
 		return weberror.NewWebError(err, "unable to update config %s", name)
 	}
 
@@ -781,7 +790,7 @@ func updateConfigWebError(err error, name string, src []byte) error {
 	case errors.Is(err, store.ErrConflict):
 		return conflictWebError(err, name)
 	case errors.Is(err, store.ErrNotExist):
-		return weberror.NewWebError(err, "config to update (%s) does not exist", name)
+		return weberror.NewWebError(err, "config to update (%s) does not exist", name).SetStatus(http.StatusNotFound)
 	case errors.Is(err, types.ErrValidationFailed):
 		return validationWebError(src, err)
 	case errors.Is(err, store.ErrInvalidFormat):
