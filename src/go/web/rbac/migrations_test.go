@@ -109,6 +109,9 @@ func TestEnsureExperimentFilesPermissions(t *testing.T) {
 			user("admin", role(experimentAdminRole, experiments)),
 			user("scoped-admin", role(experimentAdminRole,
 				scopedA, policy(experimentFilesResource, []string{"exp-a"}, "create"))),
+			// assigned before every unnamed policy was scoped
+			user("unscoped-admin", role(experimentAdminRole,
+				scopedA, policy(experimentFilesResource, nil, "create", "delete"))),
 			user("scoped-user", role(experimentUserRole,
 				scopedAB, policy(experimentFilesResource, []string{"exp-a"}, "get"))),
 			// only an experiments policy scopes the new permission
@@ -131,6 +134,9 @@ func TestEnsureExperimentFilesPermissions(t *testing.T) {
 			experiments, policy(experimentFilesResource, nil, "create", "delete"),
 		},
 		"user scoped-admin": {
+			scopedA, policy(experimentFilesResource, []string{"exp-a"}, "create", "delete"),
+		},
+		"user unscoped-admin": {
 			scopedA, policy(experimentFilesResource, []string{"exp-a"}, "create", "delete"),
 		},
 		"user scoped-user": {
@@ -186,6 +192,8 @@ func TestEnsureJobsPermission(t *testing.T) {
 		},
 		[]*v1.UserSpec{
 			{Username: "scoped-admin", Role: role(experimentAdminRole, scopedA)},
+			// assigned before every unnamed policy was scoped
+			{Username: "unscoped-admin", Role: role(experimentAdminRole, scopedA, policy(jobsResource, nil, jobVerbs...))},
 			{Username: "user", Role: role(experimentUserRole, scopedA)},
 		},
 	)
@@ -194,6 +202,7 @@ func TestEnsureJobsPermission(t *testing.T) {
 		"role Experiment Admin": {experiments, policy(jobsResource, nil, jobVerbs...)},
 		"role Experiment User":  {experiments},
 		"user scoped-admin":     {scopedA, policy(jobsResource, []string{"exp-a"}, jobVerbs...)},
+		"user unscoped-admin":   {scopedA, policy(jobsResource, []string{"exp-a"}, jobVerbs...)},
 		"user user":             {scopedA},
 	}
 
