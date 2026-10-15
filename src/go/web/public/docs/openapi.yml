@@ -4041,6 +4041,80 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Applications"
+  "/builder":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Builder
+      summary: Open the Topology Builder
+      description: >-
+        The graphical Topology Builder's page, served from the server root
+        rather than under `/api/v1`. It calls the `/builder/topologies` and
+        `/experiments/builder` API routes with the signed-in user's token.
+      operationId: getBuilderPage
+      responses:
+        "200":
+          description: the Builder page
+          content:
+            text/html:
+              schema:
+                type: string
+        "500":
+          description: the page could not be read
+  "/builder/save":
+    servers:
+      - url: http://localhost:3000
+    post:
+      tags:
+        - Builder
+      summary: Download a Builder diagram as a file
+      description: >-
+        Sends the posted diagram back as an attachment, which is how the
+        Builder's File menu saves a diagram to the user's computer. The
+        Builder posts a hidden form whose fields hold `encodeURIComponent`
+        results, which are decoded once more. Served from the server root,
+        and needs no credentials, since it only echoes what it is sent.
+      operationId: postBuilderSave
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - xml
+              properties:
+                xml:
+                  title: XML
+                  type: string
+                  description: the diagram, URI-encoded
+                  example: "%3CmxGraphModel%2F%3E"
+                filename:
+                  title: Filename
+                  type: string
+                  description: the attachment's name, URI-encoded; defaults to `export`
+                  example: demo.xml
+                format:
+                  title: Format
+                  type: string
+                  description: the diagram's format
+                  enum: [xml, svg]
+                  default: xml
+      responses:
+        "200":
+          description: the diagram, as an attachment
+          content:
+            application/xml:
+              schema:
+                type: string
+            image/svg+xml:
+              schema:
+                type: string
+        "400":
+          description: >-
+            no diagram, a field that is not URI-encoded, or a format other
+            than xml or svg
   "/builder/topologies":
     get:
       tags:
@@ -5743,6 +5817,145 @@ paths:
           description: the name is empty, is not a bare file name, or starts with a dot
         "404":
           description: no such build is installed on this server
+  "/webshark/json":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Experiments
+      summary: Answer WebShark's capture listing and download requests
+      description: >-
+        What the bundled WebShark asks of its server, with a capture name that
+        `POST /experiments/{exp_name}/webshark` or a capture token gave as
+        its only credential (see `GET /webshark/captures/{name}`).
+        `method=files` lists no captures, since WebShark opens each one by
+        name; `method=download` sends the capture as an attachment, needs a
+        name that allows `download`, and resumes as other downloads do.
+        Served from the server root, only when WebShark is installed. Errors
+        are WebShark's JSON, `{"err": 1, "errstr": "..."}`.
+      operationId: getWebsharkJson
+      parameters:
+        - name: method
+          in: query
+          description: what WebShark asks for
+          required: true
+          schema:
+            type: string
+            enum: [files, download]
+        - name: capture
+          in: query
+          description: the capture name, for `download`
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: no captures, or the capture
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    title: Files
+                    type: array
+                    description: always empty
+                    items:
+                      type: string
+                    example: []
+                  pwd:
+                    title: Pwd
+                    type: string
+                    description: always `.`
+                    example: .
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: a method other than files or download
+        "403":
+          description: >-
+            the capture name does not allow downloads, or a proxy that names
+            its user named another user than the name's
+        "404":
+          description: >-
+            no such capture name, one that has ended, or whose user may no
+            longer read the capture, or a capture that is gone
+        "503":
+          description: the user's access to the capture could not be checked
+  "/webshark/captures/{name}":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Experiments
+      summary: Read a capture for WebShark
+      description: >-
+        The capture a capture name names, as WebShark reads it to show it:
+        the name is the only credential, bound to the user and session it was
+        given to, and each use checks that the user may still read the
+        capture. A saved capture resumes as other downloads do; a running
+        capture sends the bytes captured so far, with no `ETag` or
+        `Last-Modified` and `Cache-Control: no-store`. Served from the server
+        root, only when WebShark is installed.
+      operationId: getWebsharkCapturesName
+      parameters:
+        - name: name
+          in: path
+          description: the capture name
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/RangeHeader"
+        - $ref: "#/components/parameters/IfRangeHeader"
+        - $ref: "#/components/parameters/IfNoneMatchHeader"
+      responses:
+        "200":
+          description: the capture
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "206":
+          $ref: "#/components/responses/PartialContent"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "403":
+          description: >-
+            the capture name does not allow viewing, or a proxy that names its
+            user named another user than the name's
+        "404":
+          description: >-
+            no such capture name, one that has ended, or whose user may no
+            longer read the capture, or a capture that is gone
+        "416":
+          $ref: "#/components/responses/RangeNotSatisfiable"
+        "503":
+          description: the user's access to the capture could not be checked
+    head:
+      tags:
+        - Experiments
+      summary: Check a capture for WebShark
+      description: The GET response's headers without the capture.
+      operationId: headWebsharkCapturesName
+      parameters:
+        - name: name
+          in: path
+          description: the capture name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the capture's headers
+        "403":
+          description: the capture name does not allow viewing, or names another proxy user
+        "404":
+          description: no such capture name, one that has ended, or a capture that is gone
+        "503":
+          description: the user's access to the capture could not be checked
   "/webshark/streams/{token}":
     servers:
       - url: http://localhost:3000
@@ -5793,6 +6006,54 @@ paths:
             being captured
         "503":
           description: the token's user's access could not be checked
+  "/webshark/watch":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Experiments
+      summary: Follow a capture's growth for WebShark
+      description: >-
+        Server-sent events that tell WebShark when a running capture grows,
+        so it reloads the capture: a `capture-changed` event whose `kind` is
+        `init`, with the capture's size and modification time, then one of
+        kind `append` each time it has grown, at most as often as its size
+        allows, and `heartbeat` events between them. A saved capture gets
+        only its `init`. The stream ends when the capture name does. Needs a
+        capture name that allows `watch`. Served from the server root, only
+        when WebShark is installed.
+      operationId: getWebsharkWatch
+      parameters:
+        - name: capture
+          in: query
+          description: the capture name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: >-
+            the events, each `event: <name>` and `data: <JSON>`:
+            `capture-changed` data is `{"size": <bytes>, "mtime":
+            <milliseconds since the epoch>, "kind": "init" | "append"}`, and
+            `heartbeat` data is `{"t": <milliseconds since the epoch>}`
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                event: capture-changed
+                data: {"kind":"init","mtime":1767261600000,"size":4096}
+        "403":
+          description: >-
+            the capture name does not allow watching, or a proxy that names its
+            user named another user than the name's
+        "404":
+          description: >-
+            no such capture name, one that has ended, or whose user may no
+            longer read the capture, or a capture that is gone
+        "503":
+          description: the user's access to the capture could not be checked
   "/healthz":
     servers:
       - url: http://localhost:3000
