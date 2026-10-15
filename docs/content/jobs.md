@@ -93,8 +93,9 @@ dismiss it only with the `jobs` permission (see
 
 The permission's resource name is the job's experiment, so an Experiment Admin
 role sees and cancels the jobs of its own experiments. A job of no experiment,
-such as a disk clone, needs the permission on every resource (`*`), which only
-Global Admin has. Starting a job needs only the permission of the operation
+such as a disk clone, needs the same verbs on the `jobs/global` resource
+instead, which Global Admin has; a `jobs` permission does not reach it, even
+on every experiment (`*`). Starting a job needs only the permission of the operation
 itself, never `jobs`.
 
 To anyone else, another user's job answers `404`, as if it did not exist.

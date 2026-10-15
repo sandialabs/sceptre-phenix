@@ -112,7 +112,8 @@ tags:
       archives, disk clones) that run on in the server after the request that
       starts them answers 202. A job belongs to the user who started it; other
       users see, cancel or dismiss it only with the `jobs` permission on its
-      experiment (`*` for a job of no experiment), and anyone else gets 404.
+      experiment, or `jobs/global` for a job of no experiment, and anyone else
+      gets 404.
       Jobs live in the server's memory only: a restart loses them. A finished
       job is kept for an hour, at most 200 of them.
 paths:
