@@ -2,11 +2,12 @@ package file
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
+
+	"phenix/util/flight"
 )
 
 // listingTTL is how long an experiment's file listing is reused. Listing asks
@@ -17,10 +18,6 @@ import (
 // files invalidate the listing; changes made elsewhere (another phenix
 // process, SCORCH components, a VM writing to a mount) show within this long.
 const listingTTL = 5 * time.Second
-
-// errListingAborted is what the callers waiting on a listing get when the
-// listing panicked, instead of an empty listing that would read as no files.
-var errListingAborted = errors.New("shared file listing aborted before returning a result")
 
 // experimentListings caches the MMClusterFiles listing of each experiment.
 var experimentListings = newListingCache(listingTTL) //nolint:gochecknoglobals // process-wide cache
@@ -46,33 +43,25 @@ func listingKey(exp string) string {
 // listingCache reuses file listings for a short while and merges concurrent
 // identical listings into one. It is safe for concurrent use.
 type listingCache struct {
-	ttl time.Duration
+	ttl     time.Duration
+	flights flight.Group[listing]
 
 	mu      sync.Mutex
-	entries map[string]*listing
+	entries map[string]listing  // listings that succeeded
+	running map[string]*listing // listings in flight that may still be kept
 }
 
-// listing is one run of a listing: in flight until done is closed, then its
-// result, reused until it expires or is invalidated.
+// listing is one listing's files, as they were when it started.
 type listing struct {
-	done chan struct{}
-
-	// cancel cancels the run's context; waiting counts the callers still
-	// waiting for the run in flight, whose context is not done. Both are
-	// guarded by the cache's mu.
-	cancel  context.CancelFunc
-	waiting int
-
-	// set before done is closed, read only after
-	files Files
-	err   error // errListingAborted if list did not return
-
-	// when the run started: the listing shows the files as they were then
+	files   Files
 	started time.Time
 }
 
 func newListingCache(ttl time.Duration) *listingCache {
-	return &listingCache{ttl: ttl, mu: sync.Mutex{}, entries: make(map[string]*listing)}
+	return &listingCache{
+		ttl: ttl, flights: flight.Group[listing]{}, mu: sync.Mutex{},
+		entries: make(map[string]listing), running: make(map[string]*listing),
+	}
 }
 
 // get is getContext for a caller that waits however long the listing takes.
@@ -80,148 +69,109 @@ func (c *listingCache) get(key string, list func() (Files, error)) (Files, time.
 	return c.getContext(context.Background(), key, func(context.Context) (Files, error) { return list() })
 }
 
-// getContext returns the listing for key: a copy of a recent one, the result
-// of an identical one in flight, or a fresh one from list, with when that
-// listing started. A failed listing is returned to its waiters but never
-// reused. If list panics, the panic carries on up the caller that ran it, and
-// every caller waiting on the listing gets errListingAborted.
-//
-// list runs with a context of its own, canceled once every caller waiting for
-// the listing has stopped because the caller's ctx is done, so a listing no
-// one waits for gives up its queued minimega commands (see mmcli.RunContext).
-// A caller waiting for another's listing returns ctx's error as soon as ctx
-// is done; the caller running list returns once list does.
+// getContext returns a copy of a recent listing for key, or of one from list,
+// shared with concurrent callers (see flight.Group), with when it started. A
+// failed listing is never reused.
 func (c *listingCache) getContext(
 	ctx context.Context,
 	key string,
 	list func(ctx context.Context) (Files, error),
 ) (Files, time.Time, error) {
-	c.mu.Lock()
-
-	if l, ok := c.entries[key]; ok && !c.expired(l) {
-		select {
-		case <-l.done:
-			c.mu.Unlock()
-
-			return cloneFiles(l.files), l.started, l.err
-		default:
-		}
-
-		stop := c.join(ctx, key, l)
-
-		c.mu.Unlock()
-
-		defer stop()
-
-		select {
-		case <-l.done:
-			return cloneFiles(l.files), l.started, l.err
-		case <-ctx.Done():
-			return nil, time.Time{}, fmt.Errorf("waiting for the file listing: %w", ctx.Err())
-		}
+	if l, ok := c.recent(key); ok {
+		return cloneFiles(l.files), l.started, nil
 	}
 
-	c.prune()
-
-	listCtx, cancel := context.WithCancel(context.Background())
-
-	l := &listing{done: make(chan struct{}), files: nil, err: nil, started: time.Now(), cancel: cancel, waiting: 0}
-	c.entries[key] = l
-	stop := c.join(ctx, key, l)
-
-	c.mu.Unlock()
-
-	defer stop()
-
-	completed := false
-
-	// Release the waiters even if list panics, telling them it did.
-	defer func() {
-		if !completed {
-			l.err = errListingAborted
+	l, err := c.flights.Do(ctx, key, func(ctx context.Context, _ func()) (listing, error) {
+		// another caller's listing may have finished since recent was checked
+		if l, ok := c.recent(key); ok {
+			return l, nil
 		}
 
-		c.mu.Lock()
+		return c.run(ctx, key, list)
+	})
 
-		// A failed listing is not reused. One invalidated while in flight is no
-		// longer in entries (see invalidate).
-		if l.err != nil && c.entries[key] == l {
-			delete(c.entries, key)
-		}
-
-		c.mu.Unlock()
-
-		cancel()
-		close(l.done)
-	}()
-
-	l.files, l.err = list(listCtx)
-	completed = true
-
-	return cloneFiles(l.files), l.started, l.err
+	return cloneFiles(l.files), l.started, err
 }
 
-// join counts a caller waiting for l, a listing in flight, until the caller's
-// ctx is done. Once no caller is left waiting, l is dropped, so no later
-// caller joins a listing no one waits for, and its context is canceled. The
-// returned function stops the count's watch on ctx, once the caller is done
-// waiting. c.mu must be held.
-func (c *listingCache) join(ctx context.Context, key string, l *listing) func() bool {
-	l.waiting++
+// run lists key's files, keeping the listing unless it failed or key was
+// invalidated meanwhile.
+func (c *listingCache) run(
+	ctx context.Context,
+	key string,
+	list func(ctx context.Context) (Files, error),
+) (listing, error) {
+	l := &listing{files: nil, started: time.Now()}
 
-	return context.AfterFunc(ctx, func() {
+	c.mu.Lock()
+	c.running[key] = l
+	c.mu.Unlock()
+
+	defer func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 
-		if l.waiting--; l.waiting > 0 {
-			return
+		if c.running[key] == l {
+			delete(c.running, key)
 		}
+	}()
 
-		if c.entries[key] == l {
-			delete(c.entries, key)
-		}
-
-		l.cancel()
-	})
-}
-
-// expired reports whether a finished listing is too old to reuse. A listing in
-// flight is never expired. c.mu must be held.
-func (c *listingCache) expired(l *listing) bool {
-	select {
-	case <-l.done:
-		return time.Since(l.started) >= c.ttl
-	default:
-		return false
+	files, err := list(ctx)
+	if err != nil {
+		return listing{files: files, started: l.started}, err
 	}
-}
 
-// prune drops expired listings, so experiments no longer looked at do not
-// hold on to theirs. c.mu must be held.
-func (c *listingCache) prune() {
-	for key, l := range c.entries {
-		if c.expired(l) {
-			delete(c.entries, key)
-		}
-	}
-}
+	l.files = files
 
-// invalidate drops the listing for key. A listing in flight still answers the
-// callers already waiting on it, as they asked before the change, but later
-// callers start a new one.
-func (c *listingCache) invalidate(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.running[key] == l {
+		c.entries[key] = *l
+	}
+
+	return *l, nil
+}
+
+// recent returns key's listing unless it is too old to reuse, pruning those
+// that are.
+func (c *listingCache) recent(key string) (listing, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for k, l := range c.entries {
+		if time.Since(l.started) >= c.ttl {
+			delete(c.entries, k)
+		}
+	}
+
+	l, ok := c.entries[key]
+
+	return l, ok
+}
+
+// invalidate drops the listing for key. A listing in flight still answers the
+// callers already waiting on it, as they asked before the change, but is not
+// kept, and later callers start a new one.
+func (c *listingCache) invalidate(key string) {
+	c.mu.Lock()
 	delete(c.entries, key)
+	delete(c.running, key)
+	c.mu.Unlock()
+
+	c.flights.Forget(key)
 }
 
 // invalidateAll drops every listing, as invalidate does.
 func (c *listingCache) invalidateAll() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
+	keys := slices.Collect(maps.Keys(c.running))
 	clear(c.entries)
+	clear(c.running)
+	c.mu.Unlock()
+
+	for _, key := range keys {
+		c.flights.Forget(key)
+	}
 }
 
 // cloneFiles copies a cached listing for a caller, who may sort, filter, or
