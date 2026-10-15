@@ -224,3 +224,34 @@ func TestCloseTunnelGivesUpBeforeTheFirstClose(t *testing.T) { //nolint:parallel
 		}
 	}
 }
+
+// A cluster host list whose context ends partway gives up with its context's
+// error: it neither takes the mesh check that gave up for a changed mesh (and
+// clears the hosts namespace) nor keeps the partial list for later callers.
+func TestClusterHostsGiveUpWithTheirContext(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	mesh := fakeMesh{head: "head", peers: "compute1", members: "compute1", compute: []string{"compute1"}}
+
+	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		if cmd.Base == "mesh list peers" {
+			cancel()
+		}
+
+		return mesh.reply(cmd)
+	})
+
+	if _, _, err := (Minimega{}).GetClusterHostsObserved(ctx, false); !errors.Is(err, context.Canceled) {
+		t.Fatalf("GetClusterHostsObserved reported %v, want %v", err, context.Canceled)
+	}
+
+	want := []string{"minimega: host", "mesh list peers"}
+	if got := hostCommands(received()); !slices.Equal(got, want) {
+		t.Fatalf("minimega received %q, want %q", got, want)
+	}
+
+	if _, _, ok := recentHosts.get(); ok {
+		t.Fatal("the list that gave up was kept for later callers")
+	}
+}

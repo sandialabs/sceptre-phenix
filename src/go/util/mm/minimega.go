@@ -1360,25 +1360,27 @@ func (m Minimega) GetVMCaptures(opts ...Option) []Capture {
 // flightGroup), and every fresh answer refreshes the reused one. Each caller
 // gets its own copy.
 func (m Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
-	hosts, _, err := m.GetClusterHostsObserved(schedOnly)
+	hosts, _, err := m.GetClusterHostsObserved(context.Background(), schedOnly)
 
 	return hosts, err
 }
 
 // GetClusterHostsObserved is GetClusterHosts, also reporting when the hosts
 // were read from minimega, which for a reused list is up to clusterHostsTTL
-// ago.
-func (m Minimega) GetClusterHostsObserved(schedOnly bool) (Hosts, freshness.Observation, error) {
+// ago. The list's minimega commands give up once ctx, and that of every other
+// caller waiting for the same list, is done (see Context), and the call then
+// returns an error wrapping ctx's error.
+func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshness.Observation, error) {
 	if !schedOnly {
 		if hosts, at, ok := recentHosts.get(); ok {
 			return cloneHosts(hosts), freshness.Observed(at), nil
 		}
 	}
 
-	res, err := clusterHostsFlights.do(context.Background(), "", func(_ context.Context, seal func()) clusterHosts {
+	res, err := clusterHostsFlights.do(ctx, "", func(ctx context.Context, seal func()) clusterHosts {
 		at := time.Now()
 
-		hosts, err := m.getClusterHosts(seal)
+		hosts, err := m.getClusterHosts(ctx, seal)
 		if err == nil {
 			recentHosts.put(hosts, at)
 		}
@@ -1402,10 +1404,15 @@ func (m Minimega) GetClusterHostsObserved(schedOnly bool) (Hosts, freshness.Obse
 
 // getClusterHosts does GetClusterHosts' work for the full list, calling
 // started just before its first minimega command is sent. The headnode is
-// always last.
-func (m Minimega) getClusterHosts(started func()) (Hosts, error) {
+// always last. Once ctx is done, it gives up with an error wrapping ctx's
+// error rather than return a list some commands gave up on.
+func (m Minimega) getClusterHosts(ctx context.Context, started func()) (Hosts, error) {
 	// Get headnode details. The default namespace only ever spans this node.
-	hosts := processNamespaceHosts("minimega", started)
+	hosts := processNamespaceHosts(ctx, "minimega", started)
+
+	if err := ended(ctx); err != nil {
+		return nil, err
+	}
 
 	if len(hosts) == 0 {
 		return []Host{}, errors.New("no cluster hosts found")
@@ -1421,12 +1428,23 @@ func (m Minimega) getClusterHosts(started func()) (Hosts, error) {
 
 	// Recreate the dummy namespace used for getting compute nodes if the mesh
 	// has changed since it was created (see phenixNamespaceCurrent).
-	if !phenixNamespaceCurrent(head.Name) {
+	current := phenixNamespaceCurrent(ctx, head.Name)
+
+	// a check that gave up is no sign the mesh changed
+	if err := ended(ctx); err != nil {
+		return nil, err
+	}
+
+	if !current {
 		_ = m.ClearNamespace(phenixHostsNS)
 	}
 
 	// Get compute nodes details
-	hosts = processNamespaceHosts(phenixHostsNS, nil)
+	hosts = processNamespaceHosts(ctx, phenixHostsNS, nil)
+
+	if err := ended(ctx); err != nil {
+		return nil, err
+	}
 
 	for _, host := range hosts {
 		// This will happen if the headnode is included as a compute node
@@ -1441,7 +1459,7 @@ func (m Minimega) getClusterHosts(started func()) (Hosts, error) {
 		host.Schedulable = true
 
 		// Add disk info
-		host.DiskUsage = m.getHostDiskUsage(host.Name)
+		host.DiskUsage = m.getHostDiskUsage(ctx, host.Name)
 
 		cluster = append(cluster, host)
 	}
@@ -1449,7 +1467,11 @@ func (m Minimega) getClusterHosts(started func()) (Hosts, error) {
 	head.Name = common.TrimHostnameSuffixes(head.Name)
 
 	// Add disk info
-	head.DiskUsage = m.getHostDiskUsage(head.Name)
+	head.DiskUsage = m.getHostDiskUsage(ctx, head.Name)
+
+	if err := ended(ctx); err != nil {
+		return nil, err
+	}
 
 	cluster = append(cluster, head)
 
@@ -1469,15 +1491,15 @@ func (m Minimega) getClusterHosts(started func()) (Hosts, error) {
 // compared with the current mesh peers (both local commands) and it is only
 // recreated when they differ, or when either can't be read (such as a minimega
 // without `mesh list peers`).
-func phenixNamespaceCurrent(self string) bool {
-	peers, err := hostList(mmcli.NewCommand(), "mesh list peers")
+func phenixNamespaceCurrent(ctx context.Context, self string) bool {
+	peers, err := hostList(ctx, mmcli.NewCommand(), "mesh list peers")
 	if err != nil {
 		return false
 	}
 
 	// Looking the namespace's hosts up creates it, with the current peers, if
 	// it doesn't exist (after minimega restarted, say).
-	members, err := hostList(mmcli.NewNamespacedCommand(phenixHostsNS), "ns hosts")
+	members, err := hostList(ctx, mmcli.NewNamespacedCommand(phenixHostsNS), "ns hosts")
 	if err != nil {
 		return false
 	}
@@ -1491,10 +1513,10 @@ func phenixNamespaceCurrent(self string) bool {
 
 // hostList runs a command answering with a minimega host list such as
 // `node[1-3],head` and expands it.
-func hostList(cmd *mmcli.Command, command string) ([]string, error) {
+func hostList(ctx context.Context, cmd *mmcli.Command, command string) ([]string, error) {
 	cmd.Command = command
 
-	resp, err := mmcli.SingleResponse(mmcli.Run(cmd))
+	resp, err := mmcli.SingleResponse(mmcli.RunContext(ctx, cmd))
 	if err != nil {
 		return nil, fmt.Errorf("running %s: %w", command, err)
 	}
@@ -1553,7 +1575,7 @@ func schedulableHosts(hosts Hosts) Hosts {
 
 func (m Minimega) GetNamespaceHosts(ns string) (Hosts, error) {
 	// Get namespace nodes details
-	processed := processNamespaceHosts(ns, nil)
+	processed := processNamespaceHosts(context.Background(), ns, nil)
 
 	hosts := make([]Host, 0, len(processed))
 
@@ -1561,7 +1583,7 @@ func (m Minimega) GetNamespaceHosts(ns string) (Hosts, error) {
 		host.Name = common.TrimHostnameSuffixes(host.Name)
 
 		// Add disk info
-		host.DiskUsage = m.getHostDiskUsage(host.Name)
+		host.DiskUsage = m.getHostDiskUsage(context.Background(), host.Name)
 
 		hosts = append(hosts, host)
 	}
@@ -1582,7 +1604,7 @@ func (Minimega) Headnode() string {
 	}
 
 	// Get headnode details
-	hosts := processNamespaceHosts("minimega", nil)
+	hosts := processNamespaceHosts(context.Background(), "minimega", nil)
 
 	if len(hosts) == 0 {
 		// hosts is empty on any mmcli failure, fall back to the last known
@@ -2217,6 +2239,12 @@ func (Minimega) MeshShell(host, command string) error {
 }
 
 func (Minimega) MeshShellResponse(host, command string) (string, error) {
+	return meshShellResponse(context.Background(), host, command)
+}
+
+// meshShellResponse is MeshShellResponse, its command giving up once ctx is
+// done (see Context).
+func meshShellResponse(ctx context.Context, host, command string) (string, error) {
 	cmd := mmcli.NewCommand()
 
 	if host == "" {
@@ -2235,7 +2263,7 @@ func (Minimega) MeshShellResponse(host, command string) (string, error) {
 	)
 
 	// Drain the full response channel -- returning early would abandon it and wedge the shared minimega connection.
-	for resps := range mmcli.Run(cmd) {
+	for resps := range mmcli.RunContext(ctx, cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
 				plog.Warn(plog.TypeSystem, "error running shell command", "cmd", cmd.Command, "error", resp.Error)
@@ -2392,11 +2420,11 @@ func deleteFile(path string) error {
 	return nil
 }
 
-func processNamespaceHosts(namespace string, started func()) Hosts {
+func processNamespaceHosts(ctx context.Context, namespace string, started func()) Hosts {
 	cmd := mmcli.NewNamespacedCommand(namespace)
 	cmd.Command = hostColumn
 
-	status := mmcli.RunTabularStarted(cmd, started)
+	status := mmcli.RunTabularStartedContext(ctx, cmd, started)
 	hosts := make(Hosts, 0, len(status))
 
 	for _, row := range status {
@@ -2441,7 +2469,7 @@ var (
 // getHostDiskUsage returns the percent of the disks holding phenix's and
 // minimega's base directories on `host` that is in use, measured at most once
 // per diskUsageTTL. Both are measured with a single shell command.
-func (m Minimega) getHostDiskUsage(host string) DiskUsage {
+func (m Minimega) getHostDiskUsage(ctx context.Context, host string) DiskUsage {
 	paths := []string{common.PhenixBase, common.MinimegaBase}
 	usage := make([]float64, len(paths))
 	stale := false
@@ -2460,7 +2488,7 @@ func (m Minimega) getHostDiskUsage(host string) DiskUsage {
 	diskUsageMu.Unlock()
 
 	if stale {
-		measured := m.measureDiskUsage(host, paths...)
+		measured := m.measureDiskUsage(ctx, host, paths...)
 		now := time.Now()
 
 		diskUsageMu.Lock()
@@ -2481,8 +2509,8 @@ func (m Minimega) getHostDiskUsage(host string) DiskUsage {
 // measureDiskUsage runs one shell command on `host` to get the disk usage for
 // each of `paths`, returning the usage keyed by index into `paths` for each
 // path it could be measured for.
-func (m Minimega) measureDiskUsage(host string, paths ...string) map[int]float64 {
-	resp, err := m.MeshShellResponse(host, diskUsageCommand(paths...))
+func (Minimega) measureDiskUsage(ctx context.Context, host string, paths ...string) map[int]float64 {
+	resp, err := meshShellResponse(ctx, host, diskUsageCommand(paths...))
 	if err != nil {
 		return nil
 	}

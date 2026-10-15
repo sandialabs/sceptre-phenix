@@ -1,6 +1,7 @@
 package mm
 
 import (
+	"context"
 	"time"
 
 	"phenix/util/freshness"
@@ -151,15 +152,16 @@ func GetClusterHosts(schedOnly bool) (Hosts, error) {
 // clusterHostsObserver is the optional part of MM that reports when the
 // cluster hosts were read; see vmInfoObserver.
 type clusterHostsObserver interface {
-	GetClusterHostsObserved(bool) (Hosts, freshness.Observation, error)
+	GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshness.Observation, error)
 }
 
 // GetClusterHostsObserved is GetClusterHosts, also reporting when the hosts
 // were read from minimega. An MM that cannot tell is taken to have read them
-// now.
-func GetClusterHostsObserved(schedOnly bool) (Hosts, freshness.Observation, error) {
+// now. Its minimega commands give up once ctx is done (see Context), where
+// the MM supports it.
+func GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshness.Observation, error) {
 	if o, ok := DefaultMM.(clusterHostsObserver); ok {
-		return o.GetClusterHostsObserved(schedOnly)
+		return o.GetClusterHostsObserved(ctx, schedOnly)
 	}
 
 	at := time.Now()
