@@ -57,8 +57,9 @@ func Count(expName string) (int, error) {
 
 // List collects VMs, combining topology settings with running VM details if the
 // experiment is running. It returns a slice of VM structs and any errors
-// encountered while gathering them.
-func List(expName string) ([]mm.VM, error) {
+// encountered while gathering them. Its minimega commands give up once ctx is
+// done (see mm.Context), leaving the running VMs' details out.
+func List(ctx context.Context, expName string) ([]mm.VM, error) {
 	if expName == "" {
 		return nil, errors.New("no experiment name provided")
 	}
@@ -68,13 +69,13 @@ func List(expName string) ([]mm.VM, error) {
 		return nil, fmt.Errorf("getting experiment %s: %w", expName, err)
 	}
 
-	return ListFor(exp), nil
+	return ListFor(ctx, exp), nil
 }
 
 // ListFor is List for an experiment the caller already read from the store, so
 // the experiment is not read again.
-func ListFor(exp *types.Experiment) []mm.VM {
-	vms, _ := ListForObserved(exp)
+func ListFor(ctx context.Context, exp *types.Experiment) []mm.VM {
+	vms, _ := ListForObserved(ctx, exp)
 
 	return vms
 }
@@ -84,13 +85,14 @@ func ListFor(exp *types.Experiment) []mm.VM {
 // minimega did not answer for every VM, the observation is not Known and every
 // VM the topology configures is listed, those minimega did report with their
 // details and the rest as configured with no state, rather than leaving the
-// rest out as not deployed.
-func ListForObserved(exp *types.Experiment) ([]mm.VM, freshness.Observation) {
+// rest out as not deployed. The observation of a listing whose minimega
+// commands gave up because ctx is done carries ctx's error.
+func ListForObserved(ctx context.Context, exp *types.Experiment) ([]mm.VM, freshness.Observation) {
 	if !exp.Running() {
 		return listVMs(*exp, nil, false), freshness.Unobserved()
 	}
 
-	vms, obs := mm.GetVMInfoObserved(mm.NS(exp.Metadata.Name))
+	vms, obs := mm.GetVMInfoObserved(mm.NS(exp.Metadata.Name), mm.Context(ctx))
 
 	running := make(map[string]mm.VM, len(vms))
 
@@ -251,8 +253,9 @@ func mergeRunning(vm *mm.VM, details mm.VM, ifaceNameByVLAN map[string]string) {
 // Get retrieves the VM with the given name from the experiment with the given
 // name. If the experiment is running, topology VM settings are combined with
 // running VM details. It returns a pointer to a VM struct, and any errors
-// encountered while retrieving the VM.
-func Get(expName, vmName string) (*mm.VM, error) {
+// encountered while retrieving the VM, among them ctx's error once ctx is done
+// (see mm.Context).
+func Get(ctx context.Context, expName, vmName string) (*mm.VM, error) {
 	if expName == "" {
 		return nil, errors.New("no experiment name provided")
 	}
@@ -266,12 +269,12 @@ func Get(expName, vmName string) (*mm.VM, error) {
 		return nil, fmt.Errorf("getting experiment %s: %w", expName, err)
 	}
 
-	return GetFor(exp, vmName)
+	return GetFor(ctx, exp, vmName)
 }
 
 // GetFor is Get for an experiment the caller already read from the store, so
 // the experiment is not read again.
-func GetFor(exp *types.Experiment, vmName string) (*mm.VM, error) {
+func GetFor(ctx context.Context, exp *types.Experiment, vmName string) (*mm.VM, error) {
 	if vmName == "" {
 		return nil, errors.New("no VM name provided")
 	}
@@ -316,7 +319,10 @@ func GetFor(exp *types.Experiment, vmName string) (*mm.VM, error) {
 		return vm, nil
 	}
 
-	details := mm.GetVMInfo(mm.NS(expName), mm.VMName(vmName))
+	details := mm.GetVMInfo(mm.NS(expName), mm.VMName(vmName), mm.Context(ctx))
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("getting details of VM %s: %w", vmName, err)
+	}
 
 	if len(details) != 1 {
 		return vm, nil
@@ -504,7 +510,7 @@ func Pause(expName, vmName string) error {
 		return errors.New("no VM name provided")
 	}
 
-	err := StopCaptures(expName, vmName)
+	err := StopCaptures(context.Background(), expName, vmName)
 	if err != nil && !errors.Is(err, ErrNoCaptures) {
 		return fmt.Errorf("stopping captures for VM %s in experiment %s: %w", vmName, expName, err)
 	}
@@ -517,8 +523,9 @@ func Pause(expName, vmName string) error {
 }
 
 // Restart restarts a running VM with the given name in the experiment with the given
-// name. It returns any errors encountered while restarting the VM.
-func Restart(expName, vmName string) error {
+// name. It returns any errors encountered while restarting the VM. Once ctx is
+// done, a minimega command not yet sent gives up (see mm.Context).
+func Restart(ctx context.Context, expName, vmName string) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
 	}
@@ -527,21 +534,21 @@ func Restart(expName, vmName string) error {
 		return errors.New("no VM name provided")
 	}
 
-	state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vmName))
+	state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vmName), mm.Context(ctx))
 	if err != nil {
 		return fmt.Errorf("retrieving state for VM %s in experiment %s: %w", vmName, expName, err)
 	}
 
 	// Using "system_reset" on a VM that is in the "QUIT" state fails
 	if state == vmStateQuit {
-		return mm.StartVM(mm.NS(expName), mm.VMName(vmName))
+		return mm.StartVM(mm.NS(expName), mm.VMName(vmName), mm.Context(ctx))
 	}
 
 	cmd := mmcli.NewNamespacedCommand(expName)
 	qmp := `{ "execute": "system_reset" }`
 	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
 
-	_, err = mmcli.SingleResponse(mmcli.Run(cmd))
+	_, err = mmcli.SingleResponse(mmcli.RunContext(ctx, cmd))
 	if err != nil {
 		return fmt.Errorf("restarting VM %s: %w", vmName, err)
 	}
@@ -550,8 +557,10 @@ func Restart(expName, vmName string) error {
 }
 
 // Shutdown powers off a running VM with the given name in the experiment with the given
-// name. It returns any errors encountered while shutting down the VM.
-func Shutdown(expName, vmName string) error {
+// name. It returns any errors encountered while shutting down the VM. ctx is
+// checked until the shutdown starts (see mm.Context); from then on, it goes on
+// whatever ctx says.
+func Shutdown(ctx context.Context, expName, vmName string) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
 	}
@@ -560,7 +569,7 @@ func Shutdown(expName, vmName string) error {
 		return errors.New("no VM name provided")
 	}
 
-	state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vmName))
+	state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vmName), mm.Context(ctx))
 	if err != nil {
 		return fmt.Errorf("retrieving state for VM %s in experiment %s: %w", vmName, expName, err)
 	}
@@ -570,8 +579,12 @@ func Shutdown(expName, vmName string) error {
 		return nil
 	}
 
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("shutting down VM %s in experiment %s: %w", vmName, expName, err)
+	}
+
 	// Stop all packet captures for a vm that will be powered down
-	err = StopCaptures(expName, vmName)
+	err = StopCaptures(context.Background(), expName, vmName)
 	if err != nil && !errors.Is(err, ErrNoCaptures) {
 		return fmt.Errorf("stopping captures for VM %s in experiment %s: %w", vmName, expName, err)
 	}
@@ -624,8 +637,10 @@ func Shutdown(expName, vmName string) error {
 }
 
 // ResetDiskState restores the disk state of a vm to the initial disk state
-// It returns any errors encountered while restarting the VM.
-func ResetDiskState(expName, vmName string) error {
+// It returns any errors encountered while restarting the VM. ctx is checked
+// until the reset starts (see mm.Context); from then on, it goes on whatever
+// ctx says.
+func ResetDiskState(ctx context.Context, expName, vmName string) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
 	}
@@ -641,7 +656,11 @@ func ResetDiskState(expName, vmName string) error {
 	cmd.Columns = []string{"host", "name", "id", "state", "disks", "snapshot"}
 	cmd.Filters = []string{"name=" + vmName}
 
-	status := mmcli.RunTabular(cmd)
+	status := mmcli.RunTabularContext(ctx, cmd)
+
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("resetting disk of VM %s in experiment %s: %w", vmName, expName, err)
+	}
 
 	if len(status) == 0 {
 		return errors.New("vm not found")
@@ -664,7 +683,7 @@ func ResetDiskState(expName, vmName string) error {
 	// its original state.  We are going to assume that a vm
 	// that has been shutdown will not have any active packet captures
 	if status[0]["state"] == vmStateRunning {
-		err := StopCaptures(expName, vmName)
+		err := StopCaptures(context.Background(), expName, vmName)
 		if err != nil && !errors.Is(err, ErrNoCaptures) {
 			return fmt.Errorf(
 				"stopping captures for VM %s in experiment %s: %w",
@@ -863,7 +882,7 @@ func Snapshots(expName, vmName string) ([]string, error) {
 // Snapshot takes a snapshot of the current state of the VM (disk and memory)
 // snapshots can later be restored.
 func Snapshot(expName, vmName, out string, cb func(string)) error { //nolint:funlen // complex logic
-	vm, err := Get(expName, vmName)
+	vm, err := Get(context.Background(), expName, vmName)
 	if err != nil {
 		return fmt.Errorf("getting VM details: %w", err)
 	}
@@ -1186,7 +1205,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 	// VM can't be running or we won't be able to copy snapshot remotely.
 	if status[0]["state"] != vmStateQuit {
-		err := Shutdown(expName, vmName)
+		err := Shutdown(context.Background(), expName, vmName)
 		if err != nil {
 			return "", fmt.Errorf("stopping VM: %w", err)
 		}
@@ -1365,7 +1384,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 //
 //	that is compatible with memory forensic toolkits Volatility and Google's Rekall.
 func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error) { //nolint:funlen // complex logic
-	_, err := Get(expName, vmName)
+	_, err := Get(context.Background(), expName, vmName)
 	if err != nil {
 		return "", fmt.Errorf("getting VM details: %w", err)
 	}
@@ -1514,7 +1533,7 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 		return nil, errors.New("packet captures can only be started for a running experiment")
 	}
 
-	vms, err := List(expName)
+	vms, err := List(context.Background(), expName)
 	if err != nil {
 		return nil, fmt.Errorf("getting vm list for %s failed", expName)
 	}
@@ -1571,7 +1590,7 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 			}
 
 			filename := fmt.Sprintf("%s_%d_%s.pcap", vm.Name, iface, getTimestamp())
-			if StartCaptureForVM(&vm, expName, vm.Name, iface, filename) == nil {
+			if StartCaptureForVM(context.Background(), &vm, expName, vm.Name, iface, filename) == nil {
 				started = true
 			}
 		}
@@ -1622,7 +1641,7 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 		return nil, errors.New("packet captures can only be stopped for a running experiment")
 	}
 
-	vms, err := List(expName)
+	vms, err := List(context.Background(), expName)
 	if err != nil {
 		return nil, fmt.Errorf("getting vm list for %s failed", expName)
 	}
@@ -1677,7 +1696,7 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 			continue
 		}
 
-		if StopCaptures(expName, vm.Name) == nil {
+		if StopCaptures(context.Background(), expName, vm.Name) == nil {
 			matchedVMs = append(matchedVMs, vm.Name)
 		}
 	}
@@ -1702,8 +1721,9 @@ func hasAddressIn(addresses []string, subnet *net.IPNet) bool {
 	})
 }
 
-// ChangeOpticalDisc changes the optical disc in the first drive.
-func ChangeOpticalDisc(expName, vmName, isoPath string) error {
+// ChangeOpticalDisc changes the optical disc in the first drive. Once ctx is
+// done, the change gives up if minimega has not been sent it (see mm.Context).
+func ChangeOpticalDisc(ctx context.Context, expName, vmName, isoPath string) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
 	}
@@ -1719,7 +1739,7 @@ func ChangeOpticalDisc(expName, vmName, isoPath string) error {
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = fmt.Sprintf("vm cdrom change %s %s", vmName, isoPath)
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(mmcli.RunContext(ctx, cmd))
 	if err != nil {
 		return fmt.Errorf("changing optical disc for VM %s: %w", vmName, err)
 	}
@@ -1727,8 +1747,9 @@ func ChangeOpticalDisc(expName, vmName, isoPath string) error {
 	return nil
 }
 
-// EjectOpticalDisc ejects the optical disc in the first drive.
-func EjectOpticalDisc(expName, vmName string) error {
+// EjectOpticalDisc ejects the optical disc in the first drive. Once ctx is
+// done, the eject gives up if minimega has not been sent it (see mm.Context).
+func EjectOpticalDisc(ctx context.Context, expName, vmName string) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
 	}
@@ -1740,7 +1761,7 @@ func EjectOpticalDisc(expName, vmName string) error {
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = "vm cdrom eject " + vmName
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(mmcli.RunContext(ctx, cmd))
 	if err != nil {
 		return fmt.Errorf("ejecting optical disc for VM %s: %w", vmName, err)
 	}

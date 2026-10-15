@@ -318,7 +318,7 @@ func stopExperiment(name string) ([]byte, error) {
 		return nil, err.SetStatus(http.StatusInternalServerError)
 	}
 
-	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vm.ListFor(exp)))
+	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vm.ListFor(context.Background(), exp)))
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to stop experiment %s", name)
 

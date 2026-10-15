@@ -351,7 +351,7 @@ func TestReadKeepsReadingWhileAListIsSlow(t *testing.T) {
 
 	t.Cleanup(release)
 
-	deps.vms = func(*types.Experiment) ([]mm.VM, freshness.Observation) {
+	deps.vms = func(context.Context, *types.Experiment) ([]mm.VM, freshness.Observation) {
 		entered <- struct{}{}
 		<-gate
 
@@ -412,7 +412,7 @@ func TestListRequestsAreLatestWins(t *testing.T) {
 
 	first := true
 
-	deps.vms = func(*types.Experiment) ([]mm.VM, freshness.Observation) {
+	deps.vms = func(context.Context, *types.Experiment) ([]mm.VM, freshness.Observation) {
 		if first {
 			first = false
 			entered <- struct{}{}
@@ -494,7 +494,7 @@ func TestUnsubscribeOutlastsPendingLists(t *testing.T) {
 		return experiment.Get("exp")
 	}
 
-	deps.vms = func(*types.Experiment) ([]mm.VM, freshness.Observation) {
+	deps.vms = func(context.Context, *types.Experiment) ([]mm.VM, freshness.Observation) {
 		entered <- struct{}{}
 		<-gate
 
@@ -625,7 +625,7 @@ func TestListSeqPrecedesBroadcastDuringRead(t *testing.T) {
 
 	t.Cleanup(release)
 
-	deps.vms = func(*types.Experiment) ([]mm.VM, freshness.Observation) {
+	deps.vms = func(context.Context, *types.Experiment) ([]mm.VM, freshness.Observation) {
 		entered <- struct{}{}
 		<-gate
 

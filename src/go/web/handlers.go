@@ -198,7 +198,7 @@ func listExperimentVMs(exp types.Experiment, busy bool) ([]mm.VM, freshness.Obse
 		return vm.ListConfigured(exp), obs
 	}
 
-	return vm.ListForObserved(&exp)
+	return vm.ListForObserved(context.Background(), &exp)
 }
 
 // CreateExperiment - POST /experiments.
@@ -320,7 +320,7 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vms := vm.ListFor(exp)
+	vms := vm.ListFor(context.Background(), exp)
 
 	body, err = marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
 	if err != nil {
@@ -539,7 +539,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	if noVMs {
 		vms = vm.ListConfigured(*exp)
 	} else {
-		vms, observed = vm.ListForObserved(exp)
+		vms, observed = vm.ListForObserved(context.Background(), exp)
 	}
 
 	// This will happen if another handler is currently acting on the
@@ -704,7 +704,7 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to get experiment %s", name)
 	}
 
-	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vm.ListFor(exp)))
+	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vm.ListFor(context.Background(), exp)))
 	if err != nil {
 		return weberror.NewWebError(err, "unable to marshal experiment %s", name)
 	}
@@ -1429,7 +1429,7 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 		Size:    pageSize,
 	}
 
-	vms, observed := vm.ListForObserved(exp)
+	vms, observed := vm.ListForObserved(context.Background(), exp)
 	allowed, total := util.SelectVMs(expName, vms, exp.Spec.Topology(), vmQuery, role)
 
 	if size != "" {
@@ -1487,7 +1487,7 @@ func GetVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vm, err := vm.GetFor(exp, name)
+	vm, err := vm.GetFor(context.Background(), exp, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -1637,7 +1637,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vm, err := vm.GetFor(exp, name)
+	vm, err := vm.GetFor(context.Background(), exp, name)
 	if err != nil {
 		http.Error(w, "unable to get VM", http.StatusInternalServerError)
 
@@ -1788,7 +1788,7 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		vm, err := vm.GetFor(exp, vmRequest.GetName())
+		vm, err := vm.GetFor(context.Background(), exp, vmRequest.GetName())
 		if err != nil {
 			http.Error(w, "unable to get VM", http.StatusInternalServerError)
 
@@ -1939,7 +1939,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v, err := vm.GetFor(exp, name)
+	v, err := vm.GetFor(context.Background(), exp, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -2001,7 +2001,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the VM details again since redeploying may have changed them.
-	v, err = vm.Get(expName, name)
+	v, err = vm.Get(context.Background(), expName, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -2167,7 +2167,7 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 	iface := int(req.GetInterface())
 	captured := audit.Fields{Experiment: exp, VM: name, Interface: &iface, File: req.GetFilename()}
 
-	if err := vm.StartCapture(exp, name, iface, req.GetFilename()); err != nil {
+	if err := vm.StartCapture(context.Background(), exp, name, iface, req.GetFilename()); err != nil {
 		plog.Error(plog.TypeSystem, "starting capture for VM", "exp", exp, "vm", name, "err", err)
 		audit.Failure(r, audit.CaptureStart, "starting capture for VM failed", captured, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -2217,7 +2217,7 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if ifaceStr == "" {
-		err = vm.StopCaptures(exp, name)
+		err = vm.StopCaptures(context.Background(), exp, name)
 	} else {
 		var iface int
 
@@ -2230,7 +2230,7 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 
 		stopped.Interface = &iface
 
-		if err = vm.StopCapture(exp, name, iface); err == nil {
+		if err = vm.StopCapture(context.Background(), exp, name, iface); err == nil {
 			body, err = json.Marshal(map[string]int{"interface": iface})
 			if err != nil {
 				plog.Error(plog.TypeSystem, "marshaling capture stop result", "err", err)
@@ -2798,7 +2798,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v, err := vm.GetFor(exp, name)
+	v, err := vm.GetFor(context.Background(), exp, name)
 	if err != nil {
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/commit", "create", fullName),
@@ -3017,7 +3017,7 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		vms, obs := vm.ListForObserved(&exp)
+		vms, obs := vm.ListForObserved(context.Background(), &exp)
 		observed = observed.Older(obs)
 		nodes := util.IndexTopology(exp.Spec.Topology())
 
@@ -3305,7 +3305,7 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := vm.ChangeOpticalDisc(exp, name, isoPath)
+	err := vm.ChangeOpticalDisc(context.Background(), exp, name, isoPath)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "changing disc for VM", "exp", exp, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -3361,7 +3361,7 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := vm.EjectOpticalDisc(exp, name)
+	err := vm.EjectOpticalDisc(context.Background(), exp, name)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "ejecting disc for VM", "exp", exp, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

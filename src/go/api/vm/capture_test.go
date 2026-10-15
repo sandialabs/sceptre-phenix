@@ -1,6 +1,7 @@
 package vm_test
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -29,9 +30,9 @@ func TestStartCapture(t *testing.T) {
 	boom := errors.New("boom")
 
 	// forVM starts a capture with StartCaptureForVM and the given VM details
-	forVM := func(v *mm.VM) func(string, string, int, string) error {
-		return func(exp, name string, iface int, out string) error {
-			return vm.StartCaptureForVM(v, exp, name, iface, out)
+	forVM := func(v *mm.VM) func(context.Context, string, string, int, string) error {
+		return func(ctx context.Context, exp, name string, iface int, out string) error {
+			return vm.StartCaptureForVM(ctx, v, exp, name, iface, out)
 		}
 	}
 
@@ -42,7 +43,7 @@ func TestStartCapture(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		start      func(exp, vm string, iface int, out string) error // default StartCapture
+		start      func(ctx context.Context, exp, vm string, iface int, out string) error // default StartCapture
 		exp, vm    string
 		iface      int
 		out        string
@@ -101,7 +102,7 @@ func TestStartCapture(t *testing.T) {
 				start = vm.StartCapture
 			}
 
-			checkErr(t, start(test.exp, test.vm, test.iface, test.out), test.wantErr)
+			checkErr(t, start(t.Context(), test.exp, test.vm, test.iface, test.out), test.wantErr)
 
 			if fake.starts != test.wantStarts {
 				t.Errorf("started %d captures, want %d", fake.starts, test.wantStarts)
@@ -114,8 +115,8 @@ func TestStopCaptures(t *testing.T) {
 	boom := errors.New("boom")
 
 	// one stops the capture on one interface with StopCapture
-	one := func(iface int) func(exp, vm string) error {
-		return func(exp, name string) error { return vm.StopCapture(exp, name, iface) }
+	one := func(iface int) func(ctx context.Context, exp, vm string) error {
+		return func(ctx context.Context, exp, name string) error { return vm.StopCapture(ctx, exp, name, iface) }
 	}
 
 	both := []mm.Capture{
@@ -125,7 +126,7 @@ func TestStopCaptures(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		stop      func(exp, vm string) error // default StopCaptures
+		stop      func(ctx context.Context, exp, vm string) error // default StopCaptures
 		exp, vm   string
 		captures  []mm.Capture
 		stopErr   error
@@ -169,7 +170,7 @@ func TestStopCaptures(t *testing.T) {
 				stop = vm.StopCaptures
 			}
 
-			checkErr(t, stop(test.exp, test.vm), test.wantErr)
+			checkErr(t, stop(t.Context(), test.exp, test.vm), test.wantErr)
 
 			if fake.stops != test.wantStops {
 				t.Errorf("stopped captures %d times, want %d", fake.stops, test.wantStops)
@@ -205,7 +206,7 @@ func TestResolveInterface(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			useCaptureVM(t, &fakeMM{}, test.networks...)
 
-			v, err := vm.Get(testExp, "test-vm")
+			v, err := vm.Get(t.Context(), testExp, "test-vm")
 			if err != nil {
 				t.Fatalf("Get: %v", err)
 			}
@@ -229,7 +230,7 @@ func TestCaptureByInterfaceName(t *testing.T) {
 		captures: []mm.Capture{{VM: "test-vm", Interface: 0, Filepath: "test-experiment/files/out.pcap"}},
 	}, "EXP_2 (102)", "EXP_1 (101)")
 
-	v, err := vm.Get(testExp, "test-vm")
+	v, err := vm.Get(t.Context(), testExp, "test-vm")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -239,11 +240,11 @@ func TestCaptureByInterfaceName(t *testing.T) {
 		t.Fatalf("ResolveInterface: %v", err)
 	}
 
-	if err := vm.StartCaptureForVM(v, testExp, "test-vm", iface, "out.pcap"); err != nil {
+	if err := vm.StartCaptureForVM(t.Context(), v, testExp, "test-vm", iface, "out.pcap"); err != nil {
 		t.Fatalf("StartCaptureForVM: %v", err)
 	}
 
-	if err := vm.StopCapture(testExp, "test-vm", iface); err != nil {
+	if err := vm.StopCapture(t.Context(), testExp, "test-vm", iface); err != nil {
 		t.Fatalf("StopCapture: %v", err)
 	}
 

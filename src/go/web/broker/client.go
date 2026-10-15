@@ -34,7 +34,7 @@ var marshaler = protojson.MarshalOptions{EmitUnpopulated: true} //nolint:gocheck
 // clientDeps are what a client's requests ask of the store and minimega.
 type clientDeps struct {
 	experiment func(name string) (*types.Experiment, error)
-	vms        func(exp *types.Experiment) ([]mm.VM, freshness.Observation)
+	vms        func(ctx context.Context, exp *types.Experiment) ([]mm.VM, freshness.Observation)
 	// the experiment's topology search index, cached while it is unchanged
 	topology   func(exp string) (vm.TopologySearch, error)
 	screenshot func(ctx context.Context, exp, vm, size string) ([]byte, error)
@@ -623,7 +623,7 @@ func (c *Client) listVMs(job listJob) {
 
 	// Screenshots follow the list (see updateScreenshots): minimega
 	// takes them one at a time, which would hold back the whole list.
-	vms, observed := deps.vms(exp)
+	vms, observed := deps.vms(context.Background(), exp)
 	allowed, total := util.SelectVMs(expName, vms, exp.Spec.Topology(), query, c.role)
 
 	c.vmMu.Lock()
