@@ -286,6 +286,27 @@ describe('the refresh status', () => {
   });
 
   it.each([
+    ['a failed reload', { failed: true, updatedAt: NOW }, true],
+    ['a reload that fixes it', { updatedAt: NOW }, false],
+    ['the retry of a failed reload', { failed: true, loading: true }, false],
+    [
+      'data that may be out of date',
+      { updatedAt: NOW - 2 * minute, resource: 'hosts' },
+      false,
+    ],
+  ])(
+    'hides the label from screen readers only while it repeats the announcement: %s',
+    async (_, status, hidden) => {
+      store.role = role('Viewer', ['experiments', 'list']);
+      Object.assign(pageStatus, { refresh: () => {}, ...status });
+      const html = await renderSSR(AppHeader);
+
+      const label = html.match(/<span[^>]*class="[^"]*refresh-label[^>]*>/)[0];
+      expect(label.includes('aria-hidden="true"')).toBe(hidden);
+    },
+  );
+
+  it.each([
     ['a failed reload', { failed: true, updatedAt: NOW }, 'Refresh failed'],
     [
       'data that stays out of date',
