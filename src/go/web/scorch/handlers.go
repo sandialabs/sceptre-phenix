@@ -238,29 +238,20 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := mux.Vars(r)["id"]
+	readOnly, status := claimTerminalClient(pid, mux.Vars(r)["id"], mayWrite(r, exp))
 
-	mu.Lock()
-	done, ok := termClientIDs[id]
-	mu.Unlock()
+	switch status {
+	case http.StatusNotFound:
+		http.Error(w, "terminal client ID invalid", status)
 
-	if !ok {
-		http.Error(w, "terminal client ID invalid", http.StatusNotFound)
+		return
+	case http.StatusForbidden:
+		http.Error(w, "forbidden", status)
 
 		return
 	}
 
-	mu.Lock()
-	t.RO = rwTerm[pid] != id
-	mu.Unlock()
-
-	if !t.RO && !mayWrite(r, exp) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-
-		return
-	}
-
-	close(done)
+	t.RO = readOnly
 
 	plog.Debug(plog.TypeSystem, "starting web terminal streamer", "pid", pid)
 
@@ -475,6 +466,30 @@ func waitReadOnly(t WebTerm, v *viewer) {
 // initTerminal hands a client of the terminal its stream location. The first
 // client that may write (rw) gets the terminal's read/write side and its exit
 // location; every other client gets a read-only stream.
+// claimTerminalClient takes the client ID initTerminal gave for the terminal
+// pid and reports whether the client reads only. An ID is claimed once, so a
+// second websocket with it gets 404; the writer's ID, sent by a role that may
+// not write, gets 403 and stays unclaimed for the writer.
+func claimTerminalClient(pid int, id string, writable bool) (bool, int) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	done, ok := termClientIDs[id]
+	if !ok {
+		return false, http.StatusNotFound
+	}
+
+	writer := rwTerm[pid] == id
+	if writer && !writable {
+		return false, http.StatusForbidden
+	}
+
+	delete(termClientIDs, id)
+	close(done)
+
+	return !writer, http.StatusOK
+}
+
 func initTerminal(exp string, run, loop int, stage, cmp string, rw bool) (WebTerm, error) {
 	key := fmt.Sprintf("%s|%d|%d|%s|%s", exp, run, loop, stage, cmp)
 

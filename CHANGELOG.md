@@ -175,6 +175,7 @@ All notable changes to this project will be documented in this file.
 - **Users**: `POST /users` crashed its request for a username already taken and stored a user without a role when the role did not exist, and `phenix ui --users` also stored such users; both now store nothing, and `POST /users` answers 409 for a taken username.
 - **Security, configs**: Creating a config, through the Configs page, `POST /configs` or `POST /workflow/configs/{branch}`, or renaming one or changing its kind, checked `configs` `create` without the new config's `Kind/name`, so a role allowed to create only topologies could create `User` and `Role` configs.
 - **Security, user secrets**: The configs API returned `User` configs with their password hash and API tokens to any role that could read them, and an update of a `User` config could replace or remove them; it now leaves them out of responses and keeps the stored ones on update.
+- **SCORCH terminals**: Websockets that attached to a SCORCH terminal with the same client ID at the same time could all attach and crash their requests; a client ID now attaches once.
 
 ## [1.0.0]
 
