@@ -47,9 +47,9 @@ func forgetCluster() {
 // flightGroup.do waiting for the result of another caller's run. A caller that
 // joins a run sends no minimega command, so the dump is the only place to see
 // it. This depends on the dump's text format, which the runtime does not
-// promise to keep: a "goroutine N [chan receive]:" header followed by the
+// promise to keep: a "goroutine N [select]:" header followed by the
 // blocked function's frame, named as [runtime.FuncForPC] names it.
-var joinedRun = regexp.MustCompile(`(?m)^goroutine \d+ \[chan receive[^\]]*\]:\n` +
+var joinedRun = regexp.MustCompile(`(?m)^goroutine \d+ \[(chan receive|select)[^\]]*\]:\n` +
 	regexp.QuoteMeta(runtime.FuncForPC(reflect.ValueOf((*flightGroup[struct{}]).do).Pointer()).Name()) + `\(`)
 
 // waitForJoined waits until n callers, in any flightGroup, are waiting for the

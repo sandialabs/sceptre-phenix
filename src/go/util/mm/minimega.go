@@ -2,6 +2,7 @@ package mm
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/activeshadow/libminimega/miniclient"
 	"github.com/activeshadow/libminimega/ranges"
 	"github.com/hashicorp/go-multierror"
 
@@ -79,6 +81,35 @@ var digitRuns = regexp.MustCompile(`\d+`)
 var queuedCountRegex = regexp.MustCompile(`(?m)^VMs: (\d+)$`)
 
 type Minimega struct{}
+
+// run sends cmd for o's context (see Context).
+func (o options) run(cmd *mmcli.Command) chan *miniclient.Response {
+	return mmcli.RunContext(o.ctx, cmd)
+}
+
+// tabular is mmcli.RunTabular for o's context (see Context).
+func (o options) tabular(cmd *mmcli.Command) []map[string]string {
+	return mmcli.RunTabularContext(o.ctx, cmd)
+}
+
+// ended returns, once ctx is done, an error wrapping ctx's error, so an answer
+// left empty because its commands gave up (see Context) is not taken for an
+// empty answer from minimega.
+func ended(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("minimega commands given up: %w", err)
+	}
+
+	return nil
+}
+
+// committed is o for the commands of a call after its first change was sent:
+// they run whatever o's context says, so the call is never left half done.
+func (o options) committed() options {
+	o.ctx = context.WithoutCancel(o.ctx)
+
+	return o
+}
 
 // ReadScriptFromFile runs `read` against ns. The namespace has to travel
 // with the command: minimega's `read` prefixes every line of the script
@@ -314,13 +345,19 @@ func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
 
 // GetVMInfo returns minimega's details for the VMs in a namespace, optionally
 // filtered by VM name. Concurrent calls asking for the same VMs share one set of
-// minimega commands (see flightGroup); each caller gets its own copy. When
+// minimega commands (see flightGroup), which give up once the Context of every
+// call sharing them is done; each caller gets its own copy. When
 // minimega cannot be read the list is partial or empty, and the error is only
 // logged; GetVMInfoObserved reports it.
 func (m Minimega) GetVMInfo(opts ...Option) VMs {
 	vms, obs := m.GetVMInfoObserved(opts...)
-	if obs.Err != nil {
-		plog.Error(plog.TypeSystem, "getting VM info", "ns", NewOptions(opts...).ns, "error", obs.Err)
+
+	switch o := NewOptions(opts...); {
+	case obs.Err == nil:
+	case o.ctx.Err() != nil:
+		plog.Debug(plog.TypeSystem, "getting VM info canceled", "ns", o.ns, "error", obs.Err)
+	default:
+		plog.Error(plog.TypeSystem, "getting VM info", "ns", o.ns, "error", obs.Err)
 	}
 
 	return vms
@@ -332,10 +369,14 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs {
 func (m Minimega) GetVMInfoObserved(opts ...Option) (VMs, freshness.Observation) {
 	o := NewOptions(opts...)
 
-	res, err := vmInfoFlights.do(o.ns+"\x00"+o.vm, func(seal func()) vmInfoResult {
+	res, err := vmInfoFlights.do(o.ctx, o.ns+"\x00"+o.vm, func(ctx context.Context, seal func()) vmInfoResult {
 		// before the run's first command, so the data is no older than this
 		at := time.Now()
-		vms, err := m.getVMInfo(o, seal)
+
+		run := o
+		run.ctx = ctx
+
+		vms, err := m.getVMInfo(run, seal)
 
 		return vmInfoResult{vms: vms, at: at, err: err}
 	})
@@ -355,7 +396,7 @@ func (m Minimega) GetVMInfoObserved(opts ...Option) (VMs, freshness.Observation)
 // also reported an error.
 func (m Minimega) getVMInfo(o options, started func()) (VMs, error) {
 	// don't rely on `cc_active` column in `vm info` table
-	activeC2 := getActiveC2(o.ns, started)
+	activeC2 := getActiveC2(o.ctx, o.ns, started)
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = vmInfoCmd
@@ -380,7 +421,7 @@ func (m Minimega) getVMInfo(o options, started func()) (VMs, error) {
 		cmd.Filters = []string{"name=" + o.vm}
 	}
 
-	status, statusErr := mmcli.RunTabularChecked(cmd, nil)
+	status, statusErr := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
 	received := time.Now()
 	vms := make(VMs, 0, len(status))
 
@@ -388,7 +429,7 @@ func (m Minimega) getVMInfo(o options, started func()) (VMs, error) {
 
 	// One `capture` listing for the namespace, rather than one per VM.
 	if len(status) > 0 {
-		captures = GroupCapturesByVM(m.GetExperimentCaptures(NS(o.ns)))
+		captures = GroupCapturesByVM(m.GetExperimentCaptures(NS(o.ns), Context(o.ctx)))
 	}
 
 	for _, row := range status {
@@ -444,7 +485,7 @@ func (m Minimega) getVMInfo(o options, started func()) (VMs, error) {
 				launch.at = received.Add(-uptime)
 			}
 
-			vm.Disk = snapshotBackingDisk(launch)
+			vm.Disk = snapshotBackingDisk(o.ctx, launch)
 		} else if disk != "" {
 			// Attempting to get disk info when not using a snapshot will cause a
 			// locked file error.
@@ -464,7 +505,7 @@ func (m Minimega) getVMInfo(o options, started func()) (VMs, error) {
 // snapshotBackingDisk returns the image a VM's snapshot disk is based on (or
 // the snapshot itself if minimega can't say), asking minimega at most once per
 // launch of the VM.
-func snapshotBackingDisk(launch vmLaunch) string {
+func snapshotBackingDisk(ctx context.Context, launch vmLaunch) string {
 	if disk, ok := snapshotDisks.lookup(launch); ok {
 		return disk
 	}
@@ -476,7 +517,7 @@ func snapshotBackingDisk(launch vmLaunch) string {
 		cmd.Command = fmt.Sprintf("mesh send %s %s", launch.host, cmd.Command)
 	}
 
-	resp := mmcli.RunTabular(cmd)
+	resp := mmcli.RunTabularContext(ctx, cmd)
 
 	if len(resp) == 0 {
 		return launch.disk
@@ -515,7 +556,7 @@ func (Minimega) GetVMScreenshot(opts ...Option) ([]byte, error) {
 	)
 
 	// Drain the full response channel
-	for resps := range mmcli.Run(cmd) {
+	for resps := range o.run(cmd) {
 		for _, resp := range resps.Resp {
 			if screenshot != nil {
 				continue
@@ -554,6 +595,10 @@ func (Minimega) GetVMScreenshot(opts ...Option) ([]byte, error) {
 		return nil, err
 	}
 
+	if err := ended(o.ctx); err != nil {
+		return nil, err
+	}
+
 	return nil, ErrScreenshotNotFound
 }
 
@@ -567,8 +612,12 @@ func (Minimega) GetVNCEndpoint(opts ...Option) (string, error) {
 
 	var endpoint string
 
-	for _, vm := range mmcli.RunTabular(cmd) {
+	for _, vm := range o.tabular(cmd) {
 		endpoint = fmt.Sprintf("%s:%s", vm[hostColumn], vm["vnc_port"])
+	}
+
+	if err := ended(o.ctx); endpoint == "" && err != nil {
+		return "", err
 	}
 
 	if endpoint == "" {
@@ -584,7 +633,7 @@ func (Minimega) StartVM(opts ...Option) error {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm start " + o.vm
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(o.run(cmd))
 	if err != nil {
 		return fmt.Errorf("starting VM %s in namespace %s: %w", o.vm, o.ns, err)
 	}
@@ -598,7 +647,7 @@ func (Minimega) StopVM(opts ...Option) error {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm stop " + o.vm
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(o.run(cmd))
 	if err != nil {
 		return fmt.Errorf("stopping VM %s in namespace %s: %w", o.vm, o.ns, err)
 	}
@@ -618,7 +667,11 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 	cmd.Command = vmInfoCmd
 	cmd.Filters = []string{"name=" + o.vm}
 
-	info := mmcli.RunTabular(cmd)
+	info := o.tabular(cmd)
+	if err := ended(o.ctx); err != nil {
+		return err
+	}
+
 	if len(info) == 0 {
 		return fmt.Errorf("no info found for VM %s in namespace %s", o.vm, o.ns)
 	}
@@ -631,7 +684,8 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 
 	cmd.Command = "vm config clone " + o.vm
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	// the first change: the commands after it run whatever o's context says
+	err := mmcli.ErrorResponse(o.run(cmd))
 	if err != nil {
 		return fmt.Errorf("cloning VM %s in namespace %s: %w", o.vm, o.ns, err)
 	}
@@ -758,11 +812,12 @@ func (Minimega) KillVM(opts ...Option) error {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm kill " + o.vm
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(o.run(cmd))
 	if err != nil {
 		return fmt.Errorf("killing VM %s in namespace %s: %w", o.vm, o.ns, err)
 	}
 
+	// the VM is gone, so its record goes too, whatever o's context says
 	return flushVM(o.ns, o.vm)
 }
 
@@ -774,7 +829,11 @@ func (Minimega) GetVMHost(opts ...Option) (string, error) {
 	cmd.Columns = []string{hostColumn}
 	cmd.Filters = []string{"name=" + o.vm}
 
-	status := mmcli.RunTabular(cmd)
+	status := o.tabular(cmd)
+
+	if err := ended(o.ctx); len(status) == 0 && err != nil {
+		return "", err
+	}
 
 	if len(status) == 0 {
 		return "", fmt.Errorf("vm %s not found", o.vm)
@@ -798,7 +857,7 @@ func (Minimega) GetVMHosts(opts ...Option) map[string]string {
 
 	hosts := make(map[string]string)
 
-	for _, row := range mmcli.RunTabular(cmd) {
+	for _, row := range o.tabular(cmd) {
 		hosts[row["name"]] = row[hostColumn]
 	}
 
@@ -815,7 +874,11 @@ func (Minimega) GetVMIPv4(opts ...Option) ([]string, error) {
 	cmd.Columns = []string{"ip"}
 	cmd.Filters = []string{"name=" + o.vm}
 
-	rows := mmcli.RunTabular(cmd)
+	rows := o.tabular(cmd)
+	if err := ended(o.ctx); len(rows) == 0 && err != nil {
+		return nil, err
+	}
+
 	if len(rows) == 0 {
 		return nil, fmt.Errorf("vm %s in namespace %s: %w", o.vm, o.ns, ErrVMNotFound)
 	}
@@ -826,7 +889,7 @@ func (Minimega) GetVMIPv4(opts ...Option) ([]string, error) {
 // getVMIdentities returns the name and UUID of the VMs in a namespace
 // (optionally filtered by VM name), and nothing else, using a single narrow
 // `vm info`.
-func getVMIdentities(ns, name string) VMs {
+func getVMIdentities(ctx context.Context, ns, name string) VMs {
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = vmInfoCmd
 	cmd.Columns = []string{"name", "uuid"}
@@ -835,7 +898,7 @@ func getVMIdentities(ns, name string) VMs {
 		cmd.Filters = []string{"name=" + name}
 	}
 
-	rows := mmcli.RunTabular(cmd)
+	rows := mmcli.RunTabularContext(ctx, cmd)
 	vms := make(VMs, 0, len(rows))
 
 	for _, row := range rows {
@@ -861,7 +924,7 @@ func (Minimega) GetVMStates(opts ...Option) (map[string]string, error) {
 		errs   []string
 	)
 
-	for resps := range mmcli.Run(cmd) {
+	for resps := range o.run(cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
 				errs = append(errs, resp.Error)
@@ -882,6 +945,10 @@ func (Minimega) GetVMStates(opts ...Option) (map[string]string, error) {
 		}
 	}
 
+	if err := ended(o.ctx); err != nil {
+		return nil, err
+	}
+
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("getting VM states in namespace %s: %s", o.ns, strings.Join(errs, "; "))
 	}
@@ -897,7 +964,11 @@ func (Minimega) GetVMState(opts ...Option) (string, error) {
 	cmd.Columns = []string{stateColumn}
 	cmd.Filters = []string{"name=" + o.vm}
 
-	status := mmcli.RunTabular(cmd)
+	status := o.tabular(cmd)
+
+	if err := ended(o.ctx); len(status) == 0 && err != nil {
+		return "", err
+	}
 
 	if len(status) == 0 {
 		return "", fmt.Errorf("vm %s not found", o.vm)
@@ -912,15 +983,17 @@ func (Minimega) SetVMTags(opts ...Option) error {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = fmt.Sprintf("clear vm tag %s ", o.vm)
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(o.run(cmd))
 	if err != nil {
 		return fmt.Errorf("failed to clear tags for vm %s: %w", o.vm, err)
 	}
 
+	o = o.committed()
+
 	for k, v := range o.tags {
 		cmd.Command = fmt.Sprintf("vm tag %s \"%s\" \"%s\"", o.vm, k, v)
 
-		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		err := mmcli.ErrorResponse(o.run(cmd))
 		if err != nil {
 			return fmt.Errorf("failed to set tag for vm %s: %s=%s %w", o.vm, k, v, err)
 		}
@@ -935,7 +1008,7 @@ func (Minimega) ConnectVMInterface(opts ...Option) error {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = connectVMInterfaceCommand(o)
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(o.run(cmd))
 	if err != nil {
 		return fmt.Errorf(
 			"connecting interface %d on VM %s to VLAN %s in namespace %s: %w",
@@ -965,7 +1038,7 @@ func (Minimega) DisconnectVMInterface(opts ...Option) error {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = fmt.Sprintf("vm net disconnect %s %d", o.vm, o.connectIface)
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(o.run(cmd))
 	if err != nil {
 		return fmt.Errorf(
 			"disconnecting interface %d on VM %s in namespace %s: %w",
@@ -985,7 +1058,7 @@ func (Minimega) CreateBridge(opts ...Option) error {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = fmt.Sprintf("ns bridge %s gre", o.bridge)
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(o.run(cmd))
 	if err != nil {
 		return fmt.Errorf(
 			"creating bridge %s with GRE mesh between namespace hosts: %w",
@@ -1023,7 +1096,7 @@ func (Minimega) CreateTunnel(opts ...Option) error {
 
 	// For a VM on the headnode, the command runs on every node in the
 	// namespace, and the others answer that the VM isn't found.
-	if err := mmcli.VMTargetErrorResponse(mmcli.Run(cmd)); err != nil {
+	if err := mmcli.VMTargetErrorResponse(o.run(cmd)); err != nil {
 		return fmt.Errorf(
 			"creating tunnel to %s (%d:%s:%d): %w",
 			o.vm,
@@ -1061,7 +1134,7 @@ func (Minimega) GetTunnels(opts ...Option) []map[string]string {
 		cmd.Filters = append(cmd.Filters, fmt.Sprintf("'src port'=%d", o.srcPort))
 	}
 
-	return mmcli.RunTabular(cmd)
+	return o.tabular(cmd)
 }
 
 func (Minimega) CloseTunnel(opts ...Option) error {
@@ -1088,7 +1161,11 @@ func (Minimega) CloseTunnel(opts ...Option) error {
 		cmd.Command = fmt.Sprintf("%s cc tunnel close %s %s", cmdPrefix, o.vm, row["id"])
 
 		// See CreateTunnel.
-		err := mmcli.VMTargetErrorResponse(mmcli.Run(cmd))
+		err := mmcli.VMTargetErrorResponse(o.run(cmd))
+
+		// once one is closed, close the rest
+		o = o.committed()
+
 		if err != nil {
 			errs = multierror.Append(
 				errs,
@@ -1130,14 +1207,14 @@ func (Minimega) StartVMCapture(opts ...Option) error {
 	cmd := mmcli.NewCommand()
 	cmd.Command = fmt.Sprintf("%s shell mkdir -p %s", cmdPrefix, dir)
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+	if err := mmcli.ErrorResponse(o.run(cmd)); err != nil {
 		return fmt.Errorf("ensuring experiment files directory exists: %w", err)
 	}
 
 	cmd = mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = fmt.Sprintf("capture pcap vm %s %d %s", o.vm, o.captureIface, o.captureFile)
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+	if err := mmcli.ErrorResponse(o.run(cmd)); err != nil {
 		return fmt.Errorf(
 			"starting VM capture for interface %d on VM %s in namespace %s: %w",
 			o.captureIface,
@@ -1158,6 +1235,9 @@ func (Minimega) StopVMCapture(opts ...Option) error {
 	o := NewOptions(opts...)
 
 	captures := GetVMCaptures(opts...)
+	if err := ended(o.ctx); err != nil {
+		return err
+	}
 
 	if o.captureIfaceSet {
 		var found bool
@@ -1184,7 +1264,7 @@ func (Minimega) StopVMCapture(opts ...Option) error {
 		cmd.Command = "capture pcap delete vm " + o.vm
 	}
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(o.run(cmd))
 	if err != nil {
 		if o.captureIfaceSet {
 			return fmt.Errorf(
@@ -1211,7 +1291,7 @@ func (Minimega) GetExperimentCaptures(opts ...Option) []Capture {
 
 	var captures []Capture
 
-	for _, row := range mmcli.RunTabular(cmd) {
+	for _, row := range o.tabular(cmd) {
 		// `interface` column will be empty if the capture is bridge-wide
 		if row["interface"] == "" {
 			// currently phenix doesn't provide the option to create bridge-wide
@@ -1289,7 +1369,7 @@ func (m Minimega) GetClusterHostsObserved(schedOnly bool) (Hosts, freshness.Obse
 		}
 	}
 
-	res, err := clusterHostsFlights.do("", func(seal func()) clusterHosts {
+	res, err := clusterHostsFlights.do(context.Background(), "", func(_ context.Context, seal func()) clusterHosts {
 		at := time.Now()
 
 		hosts, err := m.getClusterHosts(seal)
@@ -1562,8 +1642,12 @@ func (Minimega) GetVLANs(opts ...Option) (map[string]int, error) {
 
 	var (
 		vlans  = make(map[string]int)
-		status = mmcli.RunTabular(cmd)
+		status = o.tabular(cmd)
 	)
+
+	if err := ended(o.ctx); err != nil {
+		return nil, err
+	}
 
 	for _, row := range status {
 		alias := row["alias"]
@@ -1611,7 +1695,11 @@ func (Minimega) c2Client(o c2Options) (string, string, error) {
 		return o.vm, "", nil
 	}
 
-	vms := getVMIdentities(o.ns, o.vm)
+	vms := getVMIdentities(o.ctx, o.ns, o.vm)
+	if err := ended(o.ctx); len(vms) == 0 && err != nil {
+		return "", "", err
+	}
+
 	if len(vms) == 0 {
 		return "", "", fmt.Errorf("vm %s does not exist", o.vm)
 	}
@@ -1647,7 +1735,7 @@ func (Minimega) c2Client(o c2Options) (string, string, error) {
 		case <-after:
 			return "", "", ErrC2ClientNotActive
 		default:
-			rows := mmcli.RunTabular(cmd)
+			rows := mmcli.RunTabularContext(o.ctx, cmd)
 
 			if len(rows) != 0 {
 				return vm.Name, vm.UUID, nil
@@ -1677,14 +1765,15 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 		return "", fmt.Errorf("cannot execute command: %w", err)
 	}
 
-	// post runs a cc command, returning what minimega answers with (for
-	// commands sent to clients, the command's ID) and minimega's error as is.
-	post := func(cmd string) (string, error) {
+	// post runs a cc command for ctx, returning what minimega answers with
+	// (for commands sent to clients, the command's ID) and minimega's error
+	// as is.
+	post := func(ctx context.Context, cmd string) (string, error) {
 		c := mmcli.NewNamespacedCommand(o.ns)
 		c.Command = cmd
 		c.Timeout = o.timeout
 
-		data, err := mmcli.SingleDataResponse(mmcli.Run(c))
+		data, err := mmcli.SingleDataResponse(mmcli.RunContext(ctx, c))
 		if err != nil {
 			return "", err //nolint:wrapcheck // wrapped by postErr
 		}
@@ -1719,11 +1808,15 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 			c.Command = "cc filter name=" + vmName
 		}
 
-		if err := mmcli.ErrorResponse(mmcli.Run(c)); err != nil {
+		if err := mmcli.ErrorResponse(mmcli.RunContext(o.ctx, c)); err != nil {
 			return "", fmt.Errorf("setting host filter to %s: %w", vmName, err)
 		}
 
-		id, err := post(cmd)
+		// With the filter set, the command is posted and the filter cleared
+		// whatever o's context says.
+		committed := context.WithoutCancel(o.ctx)
+
+		id, err := post(committed, cmd)
 		if errors.Is(err, mmcli.ErrTimeout) || errors.Is(err, mmcli.ErrNoResponse) {
 			// minimega may yet post the command. With the filter cleared by
 			// then, it would reach every VM.
@@ -1738,7 +1831,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 
 		c.Command = clearCCFilterCmd
 
-		if clearErr := mmcli.ErrorResponse(mmcli.Run(c)); clearErr != nil {
+		if clearErr := mmcli.ErrorResponse(mmcli.RunContext(committed, c)); clearErr != nil {
 			// Whatever the command's outcome, it was posted with this VM's
 			// filter. phenix sets its own filter before each cc command, so
 			// only unfiltered commands from elsewhere are affected.
@@ -1838,7 +1931,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 				return "", fmt.Errorf("creating mount directory: %w", err)
 			}
 
-			id, err := post(cmd)
+			id, err := post(o.ctx, cmd)
 			if err != nil {
 				return "", fmt.Errorf("error creating mount: %w", postErr(cmd, err))
 			}
@@ -1847,7 +1940,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 		} else {
 			cmd := "clear cc mount " + vmName
 
-			id, err := post(cmd)
+			id, err := post(o.ctx, cmd)
 			if err != nil {
 				return "", fmt.Errorf("error clearing mount: %w", postErr(cmd, err))
 			}
@@ -1863,7 +1956,7 @@ func (Minimega) GetC2Response(opts ...C2Option) (string, error) {
 	o := NewC2Options(opts...)
 
 	if o.responseType == "" {
-		return getResponse(o.ns, o.commandID)
+		return getResponse(o.ctx, o.ns, o.commandID)
 	}
 
 	if o.vm == "" {
@@ -1873,12 +1966,16 @@ func (Minimega) GetC2Response(opts ...C2Option) (string, error) {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "cc response " + o.commandID
 
-	resp, err := mmcli.SingleResponse(mmcli.Run(cmd))
+	resp, err := mmcli.SingleResponse(mmcli.RunContext(o.ctx, cmd))
 	if err != nil {
 		return "", fmt.Errorf("getting response for command %s: %w", o.commandID, err)
 	}
 
-	vms := getVMIdentities(o.ns, o.vm)
+	vms := getVMIdentities(o.ctx, o.ns, o.vm)
+	if err := ended(o.ctx); len(vms) == 0 && err != nil {
+		return "", err
+	}
+
 	if len(vms) == 0 {
 		return "", fmt.Errorf("vm %s does not exist", o.vm)
 	}
@@ -1929,7 +2026,7 @@ func (Minimega) WaitForC2Response(opts ...C2Option) (string, error) {
 		return "", err
 	}
 
-	return getResponse(o.ns, o.commandID)
+	return getResponse(o.ctx, o.ns, o.commandID)
 }
 
 func (Minimega) ClearC2Responses(opts ...C2Option) error {
@@ -1938,7 +2035,7 @@ func (Minimega) ClearC2Responses(opts ...C2Option) error {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "clear cc responses"
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	err := mmcli.ErrorResponse(mmcli.RunContext(o.ctx, cmd))
 	if err != nil {
 		return fmt.Errorf("clearing C2 responses for namespace %s: %w", o.ns, err)
 	}
@@ -2189,24 +2286,24 @@ func GetLocalMountPath(ns, vm string) string {
 	return filepath.Join(common.MountDir(), ns, vm)
 }
 
-func getActiveC2(ns string, started func()) map[string]bool {
+func getActiveC2(ctx context.Context, ns string, started func()) map[string]bool {
 	active := make(map[string]bool)
 
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = ccClientCmd
 
-	for _, row := range mmcli.RunTabularStarted(cmd, started) {
+	for _, row := range mmcli.RunTabularStartedContext(ctx, cmd, started) {
 		active[row["uuid"]] = true
 	}
 
 	return active
 }
 
-func getResponse(ns, id string) (string, error) {
+func getResponse(ctx context.Context, ns, id string) (string, error) {
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = fmt.Sprintf("cc response %s raw", id)
 
-	resp, err := mmcli.SingleResponse(mmcli.Run(cmd))
+	resp, err := mmcli.SingleResponse(mmcli.RunContext(ctx, cmd))
 	if err != nil {
 		return "", fmt.Errorf("getting response for command %s: %w", id, err)
 	}

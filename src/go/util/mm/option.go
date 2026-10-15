@@ -12,6 +12,8 @@ const DefaultC2Timeout = 5 * time.Minute
 type Option func(*options)
 
 type options struct {
+	ctx context.Context //nolint:containedctx // carried to the commands an option set runs
+
 	ns     string
 	vm     string
 	cpu    int
@@ -40,13 +42,26 @@ type options struct {
 }
 
 func NewOptions(opts ...Option) options {
-	o := options{injectPart: 1} //nolint:exhaustruct // partial initialization
+	o := options{ctx: context.Background(), injectPart: 1} //nolint:exhaustruct // partial initialization
 
 	for _, opt := range opts {
 		opt(&o)
 	}
 
 	return o
+}
+
+// Context gives the minimega commands a call runs the context of the request
+// or job they are run for: once ctx is done, a command still waiting for the
+// shared minimega connection gives up without being sent (see
+// mmcli.RunContext), and the call returns an error wrapping ctx's error. A call
+// that changes something in several commands checks ctx only until its first
+// change is sent, so it is never left half done. Without it, commands wait as
+// mmcli.Run does.
+func Context(ctx context.Context) Option {
+	return func(o *options) {
+		o.ctx = ctx
+	}
 }
 
 func NS(n string) Option {

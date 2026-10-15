@@ -1,6 +1,7 @@
 package mm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -21,7 +22,7 @@ func TestFlightGroupMergesCallsBeforeSeal(t *testing.T) {
 		results = make([]int, callers)
 	)
 
-	fn := func(seal func()) int {
+	fn := func(_ context.Context, seal func()) int {
 		runs.Add(1)
 		<-release
 		seal()
@@ -44,7 +45,7 @@ func TestFlightGroupMergesCallsBeforeSeal(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			results[i] = value(group.do("k", fn))
+			results[i] = value(group.do(context.Background(), "k", fn))
 		}()
 	}
 
@@ -65,7 +66,7 @@ func TestFlightGroupMergesCallsBeforeSeal(t *testing.T) {
 	}
 
 	// Nothing is kept once the run is done: the next call runs on its own.
-	if got := value(group.do("k", func(func()) int { return 7 })); got != 7 {
+	if got := value(group.do(context.Background(), "k", func(context.Context, func()) int { return 7 })); got != 7 {
 		t.Fatalf("call after the run got %d, want its own result 7", got)
 	}
 }
@@ -89,7 +90,7 @@ func TestFlightGroupRunsCallAlone(t *testing.T) {
 		)
 
 		go func() {
-			first <- value(group.do("k", func(seal func()) int {
+			first <- value(group.do(context.Background(), "k", func(_ context.Context, seal func()) int {
 				if tc.seal {
 					seal()
 				}
@@ -105,7 +106,9 @@ func TestFlightGroupRunsCallAlone(t *testing.T) {
 
 		// A started run may have read minimega before this call was made, and a
 		// run for another key answers another question: the call runs alone.
-		go func() { second <- value(group.do(tc.key, func(func()) int { return 2 })) }()
+		go func() {
+			second <- value(group.do(context.Background(), tc.key, func(context.Context, func()) int { return 2 }))
+		}()
 
 		select {
 		case got := <-second:
@@ -147,7 +150,7 @@ func TestFlightGroupReleasesWaitersOnPanic(t *testing.T) {
 	go func() {
 		defer func() { panicked <- recover() }()
 
-		_, _ = group.do("k", func(func()) int {
+		_, _ = group.do(context.Background(), "k", func(context.Context, func()) int {
 			close(entered)
 			<-release
 			panic("boom")
@@ -157,7 +160,7 @@ func TestFlightGroupReleasesWaitersOnPanic(t *testing.T) {
 	<-entered
 
 	go func() {
-		val, err := group.do("k", func(func()) int { return 7 })
+		val, err := group.do(context.Background(), "k", func(context.Context, func()) int { return 7 })
 		joined <- result{val: val, err: err}
 	}()
 
@@ -179,9 +182,66 @@ func TestFlightGroupReleasesWaitersOnPanic(t *testing.T) {
 	}
 
 	// The key is free again: the next call runs on its own and succeeds.
-	val, err := group.do("k", func(func()) int { return 9 })
+	val, err := group.do(context.Background(), "k", func(context.Context, func()) int { return 9 })
 	if err != nil || val != 9 {
 		t.Fatalf("call after the panic got (%d, %v), want (9, nil)", val, err)
+	}
+}
+
+// A caller whose context ends while it waits for another's run returns at
+// once, and the run goes on for the callers still waiting. Once none is left,
+// the run's context is canceled, and a later call runs on its own.
+//
+//nolint:paralleltest // counts the callers waiting in any flightGroup
+func TestFlightGroupCancelsARunNoOneWaitsFor(t *testing.T) {
+	var (
+		group      flightGroup[int]
+		running    = make(chan context.Context, 1)
+		leaderDone = make(chan int, 1)
+		joinedDone = make(chan error, 1)
+
+		leaderCtx, cancelLeader = context.WithCancel(context.Background())
+		joinedCtx, cancelJoined = context.WithCancel(context.Background())
+	)
+
+	t.Cleanup(cancelLeader)
+	t.Cleanup(cancelJoined)
+
+	go func() {
+		leaderDone <- value(group.do(leaderCtx, "k", func(ctx context.Context, _ func()) int {
+			running <- ctx
+			<-ctx.Done()
+
+			return 1
+		}))
+	}()
+
+	runCtx := <-running
+
+	go func() {
+		_, err := group.do(joinedCtx, "k", func(context.Context, func()) int { return 2 })
+		joinedDone <- err
+	}()
+
+	waitForJoined(t, 1)
+	cancelJoined()
+
+	if err := <-joinedDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("the caller that left got %v, want %v", err, context.Canceled)
+	}
+
+	if err := runCtx.Err(); err != nil {
+		t.Fatalf("the run's context ended (%v) while its leader still waited", err)
+	}
+
+	cancelLeader()
+
+	if got := <-leaderDone; got != 1 {
+		t.Fatalf("leader got %d, want its run's 1", got)
+	}
+
+	if got := value(group.do(context.Background(), "k", func(context.Context, func()) int { return 3 })); got != 3 {
+		t.Fatalf("call after the canceled run got %d, want its own result 3", got)
 	}
 }
 
