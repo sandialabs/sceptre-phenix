@@ -277,6 +277,36 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// configPermName returns the Kind/name config permissions are checked against,
+// or, for an unknown kind, the name as given, which kind-scoped roles do not match.
+func configPermName(c *store.Config) string {
+	if name := store.ConfigFullName(c.Kind, c.Metadata.Name); name != "" {
+		return name
+	}
+
+	return c.FullName()
+}
+
+// authorizeConfigCreate checks that the requester may create a config of c's
+// kind and name, so a role limited to some kinds cannot create User or Role
+// configs and grant itself more access.
+func authorizeConfigCreate(r *http.Request, c *store.Config) error {
+	var (
+		role = middleware.RoleFromContext(r.Context())
+		name = configPermName(c)
+	)
+
+	if role.Allowed("configs", "create", name) {
+		return nil
+	}
+
+	user := middleware.UserFromContext(r.Context())
+	plog.Warn(plog.TypeSecurity, "creating config not allowed", "user", user, "config", name)
+
+	return weberror.NewWebError(nil, "creating config %s not allowed for %s", name, user).
+		SetStatus(http.StatusForbidden)
+}
+
 // CreateConfig - POST /configs.
 //
 //nolint:funlen // handler
@@ -307,8 +337,11 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	var (
 		typ  = r.Header.Get("Content-Type")
-		opts = []config.CreateOption{config.CreateWithValidation()}
-		src  []byte
+		opts = []config.CreateOption{
+			config.CreateWithCheck(func(c *store.Config) error { return authorizeConfigCreate(r, c) }),
+			config.CreateWithValidation(),
+		}
+		src []byte
 	)
 
 	switch {
@@ -382,6 +415,11 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	c, err := config.Create(opts...)
 	if err != nil {
+		var werr *weberror.WebError
+		if errors.As(err, &werr) {
+			return werr
+		}
+
 		if errors.Is(err, store.ErrExist) {
 			return weberror.NewWebError(err, "config with same name already exists")
 		}
@@ -661,6 +699,13 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 			"unknown content type provided when updating config: %s",
 			typ,
 		)
+	}
+
+	// renaming a config or changing its kind creates a config under the new name
+	if configPermName(c) != name {
+		if err := authorizeConfigCreate(r, c); err != nil {
+			return err
+		}
 	}
 
 	if c.Kind == kindExperiment {

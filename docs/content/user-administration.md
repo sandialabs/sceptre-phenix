@@ -555,6 +555,12 @@ alone, so write `resourceNames` that way: `Topology/my-topo` rather than
 `Topology/*` to cover every config or every topology. The web UI checks config
 permissions the same way the server does.
 
+`create` is checked against the new config's `Kind/name`, through the Configs
+page, `POST /configs` and `POST /workflow/configs/{branch}` alike, so a role
+that may only create `Topology/*` configs cannot create a `User` or `Role`
+config. An update that renames a config or changes its kind also needs
+`create` for the new `Kind/name`.
+
 #### Resource: `settings`
 
 |      |      |
