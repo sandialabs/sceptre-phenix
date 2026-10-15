@@ -132,10 +132,12 @@ const Layers = {
 //   route: where the app's router is, as a path or a location
 //   data: state set over the component's data()
 //   tables: draw b-table with the stand-ins above
+//   instances: an array that collects every component instance rendered,
+//     so a test can call the handlers the render wired up
 export async function renderSSR(
   component,
   props = {},
-  { route = '/', data, tables = false } = {},
+  { route = '/', data, tables = false, instances } = {},
 ) {
   const root = data
     ? {
@@ -157,6 +159,13 @@ export async function renderSSR(
   app.component('font-awesome-layers', Layers);
   app.component('font-awesome-layers-text', Layers);
   installBuefy(app);
+  if (instances) {
+    app.mixin({
+      created() {
+        instances.push(this);
+      },
+    });
+  }
   if (tables) {
     app.component('b-table', Table);
     app.component('b-table-column', TableColumn);

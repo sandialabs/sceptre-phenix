@@ -167,6 +167,36 @@ describe('the Tunneler button', () => {
     expect(button(html)).toContain('aria-current="page"');
   });
 
+  it('closes the burger menu when followed', async () => {
+    Object.assign(store, {
+      role: role('Viewer', ['experiments', 'list']),
+      features: ['tunneler-download'],
+    });
+    const menu = (html) => html.match(/class="navbar-menu[^"]*"/)[0];
+    expect(menu(await renderSSR(AppHeader))).not.toContain('is-active');
+    expect(
+      menu(await renderSSR(AppHeader, {}, { data: { menuOpen: true } })),
+    ).toContain('is-active');
+
+    const instances = [];
+    await renderSSR(AppHeader, {}, { instances });
+    const header = instances.find((vm) => 'menuOpen' in vm.$data);
+    const navbar = instances.find((vm) => vm.$options.name === 'BNavbar');
+    const link = instances.find(
+      (vm) =>
+        vm.$options.name === 'RouterLink' && vm.$props.to.name === 'tunneler',
+    );
+
+    navbar.toggleActive();
+    expect(header.menuOpen).toBe(true);
+    // the anchor's click handlers: the router's navigate, then the button's
+    const click = { button: 0, defaultPrevented: false, preventDefault() {} };
+    await Promise.all(
+      [link.$.subTree.props.onClick].flat().map((on) => on(click)),
+    );
+    expect(header.menuOpen).toBe(false);
+  });
+
   it.each([
     ['the server has no tunneler downloads', true, []],
     ['no one is signed in', false, ['tunneler-download']],
