@@ -1564,8 +1564,8 @@ paths:
         "400":
           description: >-
             the run ID is not a number, the experiment could not be read from
-            the store, the run has no cleanup components, or the run is
-            already executing
+            the store, the run (or the experiment's scorch app) does not exist
+            or has no cleanup components, or the run is already executing
         "403":
           description: starting Scorch runs is not allowed for this user
         "500":
@@ -1605,7 +1605,9 @@ paths:
         "403":
           description: clearing Scorch runs is not allowed for this user
         "404":
-          description: the experiment's scorch app metadata has no such run
+          description: >-
+            the experiment's scorch app metadata has no such run, or the
+            experiment has no scorch app
         "409":
           description: the run is executing
         "500":

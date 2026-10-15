@@ -206,6 +206,33 @@ func TestClearAndCleanUpRuns(t *testing.T) {
 	}
 }
 
+// An experiment without a SCORCH app has no runs to clear or clean up.
+//
+//nolint:paralleltest // starts the SCORCH processors and replaces the store
+func TestClearAndCleanUpWithoutScorch(t *testing.T) {
+	useScorch(t)
+
+	c, _ := store.NewConfig("experiment/plain")
+	c.Spec = map[string]any{"experimentName": "plain"}
+
+	if err := store.Create(c); err != nil {
+		t.Fatal(err)
+	}
+
+	operator := roleFor("experiments", "get", "experiments/trigger", "create")
+	operator.Spec.Policies[0].ResourceNames = []string{"plain"}
+	operator.Spec.Policies[1].ResourceNames = []string{"plain"}
+
+	for path, want := range map[string]int{
+		"/experiments/plain/scorch/pipelines/0/clear":   http.StatusNotFound,
+		"/experiments/plain/scorch/pipelines/0/cleanup": http.StatusBadRequest,
+	} {
+		if rec := serveScorch(http.MethodPost, path, operator); rec.Code != want {
+			t.Errorf("POST %s: %d %s, want %d", path, rec.Code, rec.Body, want)
+		}
+	}
+}
+
 // componentStatus returns the status of the named component in a run's
 // pipeline, as GET /experiments/exp/scorch/pipelines lists it.
 func componentStatus(t *testing.T, run int, name string) string {

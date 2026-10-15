@@ -21,6 +21,7 @@ import (
 	"phenix/api/scorch/scorchexe"
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
+	"phenix/types"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
 	"phenix/web/cache"
@@ -780,7 +781,7 @@ func ClearPipeline(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
-	md, err := scorchmd.DecodeMetadata(exp)
+	md, err := scorchRuns(exp)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to decode scorch metadata for experiment %s", name)
 
@@ -805,6 +806,17 @@ func ClearPipeline(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
+}
+
+// scorchRuns decodes the experiment's scorch app metadata, which has no runs
+// when the experiment has no scorch app.
+func scorchRuns(exp *types.Experiment) (scorchmd.ScorchMetadata, error) {
+	md, err := scorchmd.DecodeMetadata(exp)
+	if errors.Is(err, scorchmd.ErrScorchNotConfigured) {
+		return scorchmd.ScorchMetadata{}, nil
+	}
+
+	return md, err //nolint:wrapcheck // the callers say what failed
 }
 
 // TODO: change this to `scorch/runs`
@@ -870,7 +882,7 @@ func startPipeline(w http.ResponseWriter, r *http.Request, cleanupOnly bool) err
 	}
 
 	if cleanupOnly {
-		md, err := scorchmd.DecodeMetadata(exp)
+		md, err := scorchRuns(exp)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to decode scorch metadata for experiment %s", name)
 
