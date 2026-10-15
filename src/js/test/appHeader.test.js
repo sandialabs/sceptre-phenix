@@ -261,6 +261,27 @@ describe('the refresh status', () => {
     });
   });
 
+  it.each([
+    ['nothing while a reload runs', { loading: true, updatedAt: NOW }, ''],
+    ['nothing once data loads', { updatedAt: NOW - 5 * minute }, ''],
+    ['a failed reload', { failed: true, updatedAt: NOW }, 'Refresh failed'],
+    [
+      'data that may be out of date, and why',
+      { updatedAt: NOW - 2 * minute, resource: 'hosts' },
+      'Data may be out of date: older than 90 s',
+    ],
+  ])('announces %s', async (_, status, want) => {
+    store.role = role('Viewer', ['experiments', 'list']);
+    Object.assign(pageStatus, { refresh: () => {}, ...status });
+    const html = await renderSSR(AppHeader);
+
+    // the only live region is the one for problems, so polls stay quiet
+    expect(html.match(/aria-live=/g)).toHaveLength(1);
+    expect(
+      html.match(/class="refresh-alert is-sr-only"[^>]*>([^<]*)</)[1],
+    ).toBe(want);
+  });
+
   it('is left out on a page with nothing to reload, and when signed out', async () => {
     store.role = role('Viewer', ['experiments', 'list']);
     expect(await renderSSR(AppHeader)).not.toContain('refresh-status');
