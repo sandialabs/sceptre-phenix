@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"phenix/api/config"
+	"phenix/store"
 	"phenix/store/storetest"
+	"phenix/types"
 	v1 "phenix/types/version/v1"
 )
 
@@ -181,5 +183,45 @@ func TestSetResourceNamesScopesEveryUnnamedPolicy(t *testing.T) {
 
 	if err := (&Role{Spec: &v1.RoleSpec{}}).SetResourceNames("["); !errors.Is(err, ErrResourceNameInvalid) {
 		t.Errorf("an invalid name: %v", err)
+	}
+}
+
+// A saved policy that names no resources leaves resourceNames out rather than
+// storing null, which the role schema rejects on the next edit.
+//
+//nolint:paralleltest // replaces the store
+func TestSaveOmitsNullResourceNames(t *testing.T) {
+	useStore(t, []*v1.RoleSpec{{
+		Name:     "Unscoped",
+		Policies: []*v1.PolicySpec{policy("vms/forwards", nil, "create")},
+	}}, nil)
+
+	role, err := RoleFromConfig("Unscoped")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := role.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	c, _ := store.NewConfig("role/unscoped")
+	if err := store.Get(c); err != nil {
+		t.Fatal(err)
+	}
+
+	policies, _ := c.Spec["policies"].([]any)
+	if len(policies) != 1 {
+		t.Fatalf("stored policies = %#v, want one", c.Spec["policies"])
+	}
+
+	if p, _ := policies[0].(map[string]any); p == nil {
+		t.Fatalf("stored policy = %#v, want a map", policies[0])
+	} else if names, set := p["resourceNames"]; set {
+		t.Errorf("stored resourceNames = %#v, want it left out", names)
+	}
+
+	if err := types.ValidateConfigSpec(*c); err != nil {
+		t.Errorf("stored role fails its schema: %v", err)
 	}
 }

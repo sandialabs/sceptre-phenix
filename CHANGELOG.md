@@ -170,6 +170,7 @@ All notable changes to this project will be documented in this file.
 - **SCORCH terminals**: `GET /experiments/{name}/scorch/terminals/{pid}` always answered 400; it now connects to the terminal running that process. A read-only terminal client that never attached took the writing client's rights away after 5 seconds.
 - **Settings**: `POST /settings` with a password minimum length outside 8 to 32 saved the password rules before it, and answered 500 instead of 400.
 - **etcd store**: phēnix crashed when it checked whether a component of an etcd store was initialized and the store had no record of it.
+- **User roles**: Saved roles and users stored `resourceNames: null` for a policy that names no resources, so a later edit of the config failed validation, and the web UI threw an error checking such a policy against a name.
 
 ## [1.0.0]
 

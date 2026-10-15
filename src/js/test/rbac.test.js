@@ -204,3 +204,15 @@ test("answers from the signed-in role's own policies after a new sign in", () =>
   expect(roleAllowed('experiments', 'get', 'exp1')).toBe(false);
   expect(roleAllowed('experiments', 'get', 'exp2')).toBe(true);
 });
+
+test('a policy with null resource names allows no resource name', () => {
+  signIn({
+    name: 'Null Resource Names',
+    policies: [
+      { resources: ['vms/forwards'], resourceNames: null, verbs: ['create'] },
+    ],
+  });
+
+  expect(roleAllowed('vms/forwards', 'create')).toBe(true);
+  expect(roleAllowed('vms/forwards', 'create', 'expA/vm1')).toBe(false);
+});
