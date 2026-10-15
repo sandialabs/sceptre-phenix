@@ -12,6 +12,7 @@ import (
 
 	"github.com/activeshadow/libminimega/minicli"
 
+	"phenix/util/flight"
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
 )
@@ -34,7 +35,9 @@ func (c *listingCache) age(key string, d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.entries[key].started = c.entries[key].started.Add(-d)
+	l := c.entries[key]
+	l.started = l.started.Add(-d)
+	c.entries[key] = l
 }
 
 // countingList returns a listing function that counts its calls.
@@ -216,6 +219,7 @@ func TestListingCacheReleasesWaitersOnPanic(t *testing.T) {
 		entered  = make(chan struct{})
 		release  = make(chan struct{})
 		panicked = make(chan any, 1)
+		joined   = make(chan error, 1)
 	)
 
 	go func() {
@@ -230,10 +234,16 @@ func TestListingCacheReleasesWaitersOnPanic(t *testing.T) {
 
 	<-entered
 
-	cache.mu.Lock()
-	inFlight := cache.entries["k"]
-	cache.mu.Unlock()
+	go func() {
+		files, _, err := cache.get("k", func() (Files, error) { return Files{{Name: "a", Path: "a"}}, nil })
+		if files != nil {
+			err = errors.New("got files")
+		}
 
+		joined <- err
+	}()
+
+	polltest.Until(t, "the second caller joins the listing", func() bool { return cache.flights.Waiting("k") == 2 })
 	close(release)
 
 	// The panic still reaches the caller whose listing it was.
@@ -241,11 +251,8 @@ func TestListingCacheReleasesWaitersOnPanic(t *testing.T) {
 		t.Fatalf("lister recovered %v, want the original panic", r)
 	}
 
-	// What every caller that joined the listing gets once it is done.
-	<-inFlight.done
-
-	if !errors.Is(inFlight.err, errListingAborted) || inFlight.files != nil {
-		t.Fatalf("joined callers get %v, %v; want no files and errListingAborted", inFlight.files, inFlight.err)
+	if err := <-joined; !errors.Is(err, flight.ErrAborted) {
+		t.Fatalf("the joined caller got %v, want no files and %v", err, flight.ErrAborted)
 	}
 
 	var calls atomic.Int32
@@ -507,14 +514,7 @@ func TestListingCacheCancelsAListingNoOneWaitsFor(t *testing.T) {
 		joinedDone <- err
 	}()
 
-	polltest.Until(t, "the second caller waits for the listing", func() bool {
-		cache.mu.Lock()
-		defer cache.mu.Unlock()
-
-		l, ok := cache.entries["k"]
-
-		return ok && l.waiting == 2
-	})
+	polltest.Until(t, "the second caller waits for the listing", func() bool { return cache.flights.Waiting("k") == 2 })
 
 	cancelJoined()
 
@@ -536,5 +536,29 @@ func TestListingCacheCancelsAListingNoOneWaitsFor(t *testing.T) {
 
 	if _, _, err := cache.get("k", countingList(&calls, nil)); err != nil || calls.Load() != 1 {
 		t.Fatalf("call after the canceled listing: err %v, %d listings; want its own", err, calls.Load())
+	}
+}
+
+// A listing that succeeds although its last caller left is still reused.
+func TestListingCacheKeepsAListingThatSucceededAsItsCallerLeft(t *testing.T) {
+	cache := newTestCache()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	_, _, err := cache.getContext(ctx, "k", func(listCtx context.Context) (Files, error) {
+		cancel()
+		<-listCtx.Done()
+
+		return Files{{Name: "a", Path: "a"}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var calls atomic.Int32
+
+	if files, _, err := cache.get("k", countingList(&calls, nil)); err != nil || len(files) != 1 || calls.Load() != 0 {
+		t.Fatalf("listing after = %v, %v with %d new listings; want the first reused", files, err, calls.Load())
 	}
 }
