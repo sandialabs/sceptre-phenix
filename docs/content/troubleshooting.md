@@ -63,7 +63,9 @@ phēnix sends most minimega commands over one shared connection, one at a time.
 A command that waits more than 10 minutes for that connection, or holds it for
 more than 30 minutes, fails with `timeout running command`, so one stuck
 command cannot hold up every other one for good. minimega still finishes a
-command phēnix stopped waiting for. Long-running work, such as an experiment's
+command phēnix stopped waiting for. A command waits its turn even after the
+browser request or background job that sent it has ended: phēnix does not yet
+withdraw it early. Long-running work, such as an experiment's
 start script and VM launches, uses connections of its own and is not limited
 this way. Seeing this error usually means minimega itself is stuck or
 overloaded: check `minimega -e version` and the minimega log on the headnode.
