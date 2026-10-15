@@ -5143,7 +5143,7 @@ paths:
                     description: the token's note
                     example: CI pipeline
                   exp:
-                    title: Experiment
+                    title: Expiration
                     type: string
                     format: date-time
                     description: when the token expires
