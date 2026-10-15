@@ -266,3 +266,91 @@ func componentStatus(t *testing.T, run int, name string) string {
 
 	return ""
 }
+
+// fakeTerminal registers a terminal of experiment exp's component cc, with no
+// process behind it, and forgets it when the test ends.
+func fakeTerminal(t *testing.T, pid int) {
+	t.Helper()
+
+	term := newWebTerm("exp", 0, 0, "start", "cc")
+	term.Pid = pid
+
+	webTermMu.Lock()
+	webTermsPid[pid] = term
+	webTermsExp[term.key] = term
+	webTermMu.Unlock()
+
+	t.Cleanup(func() {
+		webTermMu.Lock()
+		delete(webTermsPid, pid)
+		delete(webTermsExp, term.key)
+		webTermMu.Unlock()
+
+		mu.Lock()
+		delete(rwTerm, pid)
+		mu.Unlock()
+	})
+}
+
+// A role that may only view an experiment gets a read-only SCORCH terminal and
+// may not stop it, even when no one holds its read/write side; a role that may
+// trigger the experiment gets the read/write side and its exit location.
+//
+//nolint:paralleltest // shares the terminal maps
+func TestTerminalWriteNeedsTrigger(t *testing.T) {
+	const pid = 999999
+
+	fakeTerminal(t, pid)
+
+	var (
+		viewer   = roleFor("experiments", "get")
+		operator = roleFor("experiments", "get", "experiments/trigger", "create")
+	)
+
+	connect := func(role *rbac.Role) WebTerm {
+		t.Helper()
+
+		rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/terminals/0/0/start/cc", role)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("connecting: status %d %s", rec.Code, rec.Body)
+		}
+
+		var term WebTerm
+		if err := json.Unmarshal(rec.Body.Bytes(), &term); err != nil {
+			t.Fatal(err)
+		}
+
+		return term
+	}
+
+	if term := connect(viewer); !term.RO || term.Exit != "" {
+		t.Fatalf("viewer got read-only %v and exit %q, want a read-only terminal with no exit", term.RO, term.Exit)
+	}
+
+	mu.Lock()
+	_, held := rwTerm[pid]
+	mu.Unlock()
+
+	if held {
+		t.Fatal("a viewer took the terminal's read/write side")
+	}
+
+	term := connect(operator)
+	if term.RO || term.Exit == "" {
+		t.Fatalf("operator got read-only %v and exit %q, want the read/write side", term.RO, term.Exit)
+	}
+
+	mu.Lock()
+	id := rwTerm[pid]
+	mu.Unlock()
+
+	exit := "/experiments/exp/scorch/terminals/999999/exit/" + id
+	if rec := serveScorch(http.MethodPost, exit, viewer); rec.Code != http.StatusForbidden {
+		t.Errorf("viewer exiting with the read/write ID: status %d, want 403", rec.Code)
+	}
+
+	stream := "/experiments/exp/scorch/terminals/999999/ws/" + id
+	if rec := serveScorch(http.MethodGet, stream, viewer); rec.Code != http.StatusForbidden {
+		t.Errorf("viewer streaming with the read/write ID: status %d, want 403", rec.Code)
+	}
+}

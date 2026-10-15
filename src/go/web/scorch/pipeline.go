@@ -620,7 +620,7 @@ func broadcastPipeline(exp string, run, loop int, pl *pipeline) {
 	body, _ := json.Marshal(pl)
 
 	resource := bt.NewResource("apps/scorch", name, "pipeline-update")
-	broker.Broadcast(nil, resource, body)
+	broker.Broadcast(bt.NewRequestPolicy("experiments", "get", exp), resource, body)
 }
 
 type PipelineUpdate struct {
