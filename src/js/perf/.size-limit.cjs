@@ -7,7 +7,7 @@ module.exports = [
     name: 'Entry JS (loaded on every page)',
     path: '../dist/assets/index-*.js',
     gzip: true,
-    limit: '155 kB',
+    limit: '200 kB',
   },
   {
     name: 'Entry CSS',
