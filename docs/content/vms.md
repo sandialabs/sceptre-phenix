@@ -341,6 +341,10 @@ The mount browser modal presents two panes:
   [experiment file server](settings.md#settings-reference) is enabled (see
   below).
 
+Every path stays inside the VM's file system: a symbolic link in the VM that
+points outside it, to an absolute path or up past its root, cannot be browsed,
+downloaded, or written through.
+
 Several users can have the same VM mounted; it is unmounted when the last of
 them closes the modal. That unmount waits up to 30 seconds for downloads from
 the VM to finish, and otherwise leaves the VM mounted and fails with

@@ -572,3 +572,99 @@ func TestUploadMountFile(t *testing.T) {
 		"user.name": "alice", "phenix.file.target_path": filepath.Join(base, "etc", "notes.txt"), "file.size": 8,
 	})
 }
+
+// A symlink in the guest's mounted file system that leads out of the mount,
+// to an absolute path or up past the mount, is not followed by a listing, a
+// download, an upload or a copy; one that stays in the mount is.
+func TestMountFileRequestsDoNotFollowSymlinksOut(t *testing.T) {
+	useTestExperiment(t)
+	useTestMM(t, &testMM{})
+	useTestFiles(t, "a.txt")
+
+	base := useTestMount(t)
+	sibling := filepath.Join(base, "..", "test-vm2")
+
+	for link, target := range map[string]string{
+		"abs-secret": filepath.Join(sibling, "secret"),
+		"rel-secret": "../test-vm2/secret",
+		"abs-dir":    sibling,
+		"rel-dir":    "../test-vm2",
+		"inside":     "etc/hostname",
+	} {
+		if err := os.Symlink(target, filepath.Join(base, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, path := range []string{"abs-secret", "rel-secret"} {
+		resp := requestMount(t, http.MethodGet, "/download", url.Values{"path": {path}})
+		if body := readBody(t, resp); resp.StatusCode == http.StatusOK || strings.Contains(body, "not yours") {
+			t.Errorf("downloading %s: status %d: %s", path, resp.StatusCode, body)
+		}
+	}
+
+	if resp := requestMount(t, http.MethodGet, "/download", url.Values{"path": {"inside"}}); resp.StatusCode != http.StatusOK ||
+		readBody(t, resp) != "test-vm" {
+		t.Errorf("downloading a symlink inside the mount: status %d", resp.StatusCode)
+	}
+
+	for _, path := range []string{"abs-dir", "rel-dir"} {
+		resp := requestMount(t, http.MethodGet, "", url.Values{"path": {path}})
+		if body := readBody(t, resp); resp.StatusCode == http.StatusOK || strings.Contains(body, "secret") {
+			t.Errorf("listing %s: status %d: %s", path, resp.StatusCode, body)
+		}
+
+		resp = requestMount(t, http.MethodPost, "/copy", url.Values{"source": {"a.txt"}, "path": {path}})
+		if resp.StatusCode == http.StatusOK {
+			t.Errorf("copying into %s: status %d", path, resp.StatusCode)
+		}
+
+		var body bytes.Buffer
+
+		form := multipart.NewWriter(&body)
+		part, _ := form.CreateFormFile("file", "notes.txt")
+		_, _ = part.Write([]byte("uploaded"))
+		_ = form.Close()
+
+		server := serveAs(t, "alice", mountRole()).URL
+		resp = do(t, http.MethodPut,
+			server+"/api/v1/experiments/test-experiment/vms/test-vm/files/upload?path="+path,
+			body.String(), "Content-Type", form.FormDataContentType())
+
+		if resp.StatusCode == http.StatusOK {
+			t.Errorf("uploading into %s: status %d", path, resp.StatusCode)
+		}
+	}
+
+	entries, err := os.ReadDir(sibling)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(entries) != 1 {
+		t.Errorf("wrote into the sibling mount: %v", entries)
+	}
+}
+
+// A path outside the mount is refused the same way whether or not it exists,
+// so the listing and upload routes do not tell which server paths exist.
+func TestMountPathsOutsideTellNothing(t *testing.T) {
+	base := useTestMount(t)
+	server := serveAs(t, "alice", mountRole()).URL + "/api/v1/experiments/test-experiment/vms/test-vm/files"
+
+	for _, path := range []string{"../test-vm2", "../no-such-vm"} {
+		resp := requestMount(t, http.MethodGet, "", url.Values{"path": {path}})
+		if body := readBody(t, resp); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("listing %s: status %d: %s, want 400", path, resp.StatusCode, body)
+		}
+
+		resp = do(t, http.MethodPut, server+"/upload?path="+url.QueryEscape(path), "")
+		if body := readBody(t, resp); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("uploading to %s: status %d: %s, want 400", path, resp.StatusCode, body)
+		}
+	}
+
+	if _, err := os.Stat(filepath.Join(base, "..", "test-vm2")); err != nil {
+		t.Fatal(err)
+	}
+}
