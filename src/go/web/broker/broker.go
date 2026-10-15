@@ -412,7 +412,7 @@ func errorResult(err error) []byte {
 // a time with everything else, and a user stopping the VM meanwhile must not
 // be undone by a late start message.
 func publishDelayedStart(delayed, expName, vmName string) {
-	v, err := vm.Get(expName, vmName)
+	v, err := vm.Get(context.Background(), expName, vmName)
 	if err != nil || !v.Running {
 		return
 	}

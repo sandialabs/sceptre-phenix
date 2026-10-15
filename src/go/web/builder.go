@@ -309,7 +309,7 @@ func publishBuilderExperiment(name, action string) *weberror.WebError {
 		body,
 	)
 
-	vms, _ := vm.List(name)
+	vms, _ := vm.List(context.Background(), name)
 
 	body, err = marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
 	if err != nil {

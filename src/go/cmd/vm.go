@@ -72,7 +72,7 @@ func vmArgsCompletion(_ *cobra.Command, args []string, toComplete string) ([]str
 		}
 		return names, cobra.ShellCompDirectiveNoFileComp
 	} else if len(args) == 1 {
-		vms, err := vm.List(args[0])
+		vms, err := vm.List(context.Background(), args[0])
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
@@ -159,7 +159,7 @@ func vmMatchesAnyLabel(vmInfo mm.VM, labels []string) (bool, error) {
 }
 
 func listVMsByLabel(expName string, labels []string) ([]mm.VM, error) {
-	allVMs, err := vm.List(expName)
+	allVMs, err := vm.List(context.Background(), expName)
 	if err != nil {
 		return nil, err
 	}
@@ -374,6 +374,14 @@ func processVariableVMsArgument(fn func(expName, vmName string) error, cmd *cobr
 	return nil
 }
 
+// withoutContext is fn for the CLI, whose minimega commands wait as long as
+// they must (see mm.Context).
+func withoutContext(fn func(ctx context.Context, expName, vmName string) error) func(expName, vmName string) error {
+	return func(expName, vmName string) error {
+		return fn(context.Background(), expName, vmName)
+	}
+}
+
 /*
 ---------- VM Command Definitions ----------
 */
@@ -441,14 +449,14 @@ func newVMInfoCmd() *cobra.Command {
 			} else {
 				switch len(args) {
 				case 1:
-					vms, err = vm.List(args[0])
+					vms, err = vm.List(context.Background(), args[0])
 					if err != nil {
 						err := util.HumanizeError(err, "Unable to get a list of VMs")
 
 						return err.Humanized()
 					}
 				case infoArgs:
-					vmInfo, err := vm.Get(args[0], args[1])
+					vmInfo, err := vm.Get(context.Background(), args[0], args[1])
 					if err != nil {
 						err := util.HumanizeError(
 							err,
@@ -520,7 +528,7 @@ func newVMRestartCmd() *cobra.Command {
 		Short:             "Restart running, paused, or powered off VM(s) for a specific experiment",
 		ValidArgsFunction: vmArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return processVariableVMsArgument(vm.Restart, cmd, args, "restart", "restarted")
+			return processVariableVMsArgument(withoutContext(vm.Restart), cmd, args, "restart", "restarted")
 		},
 	}
 
@@ -541,7 +549,7 @@ func newVMResetDiskCmd() *cobra.Command {
 		Long:              desc,
 		ValidArgsFunction: vmArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return processVariableVMsArgument(vm.ResetDiskState, cmd, args, "reset disk", "disk reset")
+			return processVariableVMsArgument(withoutContext(vm.ResetDiskState), cmd, args, "reset disk", "disk reset")
 		},
 	}
 
@@ -636,7 +644,7 @@ func newVMShutdownCmd() *cobra.Command {
 		Long:              desc,
 		ValidArgsFunction: vmArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return processVariableVMsArgument(vm.Shutdown, cmd, args, "shutdown", "shutdown")
+			return processVariableVMsArgument(withoutContext(vm.Shutdown), cmd, args, "shutdown", "shutdown")
 		},
 	}
 
@@ -945,7 +953,7 @@ func newVMCaptureCmd() *cobra.Command {
 				out      = args[3]
 			)
 
-			v, err := vm.Get(expName, vmName)
+			v, err := vm.Get(context.Background(), expName, vmName)
 			if err != nil {
 				err := util.HumanizeError(
 					err,
@@ -967,7 +975,7 @@ func newVMCaptureCmd() *cobra.Command {
 				return err.Humanized()
 			}
 
-			if err := vm.StartCaptureForVM(v, expName, vmName, iface, out); err != nil {
+			if err := vm.StartCaptureForVM(context.Background(), v, expName, vmName, iface, out); err != nil {
 				err := util.HumanizeError(
 					err,
 					"%s",
@@ -1018,7 +1026,7 @@ func newVMCaptureCmd() *cobra.Command {
 			if len(filter) > 0 {
 				filterTree := mm.BuildTree(filter)
 
-				vms, err := vm.List(expName)
+				vms, err := vm.List(context.Background(), expName)
 				if err != nil {
 					err := util.HumanizeError(
 						err,
@@ -1085,7 +1093,7 @@ func newVMCaptureCmd() *cobra.Command {
 			if len(args) == stopCaptureIfaceArgs {
 				ifaceArg := args[2]
 
-				v, err := vm.Get(expName, vmName)
+				v, err := vm.Get(context.Background(), expName, vmName)
 				if err != nil {
 					err := util.HumanizeError(
 						err,
@@ -1107,7 +1115,7 @@ func newVMCaptureCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				if err := vm.StopCapture(expName, vmName, iface); err != nil {
+				if err := vm.StopCapture(context.Background(), expName, vmName, iface); err != nil {
 					err := util.HumanizeError(
 						err,
 						"%s",
@@ -1131,7 +1139,7 @@ func newVMCaptureCmd() *cobra.Command {
 				return nil
 			}
 
-			err := vm.StopCaptures(expName, vmName)
+			err := vm.StopCaptures(context.Background(), expName, vmName)
 			if err != nil {
 				err := util.HumanizeError(
 					err,
@@ -1174,7 +1182,7 @@ func newVMCaptureCmd() *cobra.Command {
 			if len(filter) > 0 {
 				filterTree := mm.BuildTree(filter)
 
-				vms, err := vm.List(expName)
+				vms, err := vm.List(context.Background(), expName)
 				if err != nil {
 					err := util.HumanizeError(
 						err,
@@ -1278,7 +1286,7 @@ func newVMCaptureStreamCmd() *cobra.Command {
 				fromNow = MustGetBool(cmd.Flags(), "from-now")
 			)
 
-			v, err := vm.Get(expName, vmName)
+			v, err := vm.Get(context.Background(), expName, vmName)
 			if err != nil {
 				err := util.HumanizeError(err, "%s", "Unable to get details for the "+vmName+" VM")
 

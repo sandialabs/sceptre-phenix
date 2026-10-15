@@ -55,7 +55,7 @@ func TestListForObservedKeepsConfiguredVMsWhenUnknown(t *testing.T) {
 
 	mm.DefaultMM = fake //nolint:reassign // install test double
 
-	vms, obs := vm.ListForObserved(exp)
+	vms, obs := vm.ListForObserved(t.Context(), exp)
 	if obs.Known || !obs.At.Equal(at) {
 		t.Errorf("observation = %+v, want minimega's unknown one", obs)
 	}
@@ -71,7 +71,7 @@ func TestListForObservedKeepsConfiguredVMsWhenUnknown(t *testing.T) {
 	// a known answer drops the VM minimega does not run, as not deployed
 	fake.obs = freshness.Observed(at)
 
-	if vms, _ := vm.ListForObserved(exp); !slices.Equal(vmNames(vms), []string{"a"}) {
+	if vms, _ := vm.ListForObserved(t.Context(), exp); !slices.Equal(vmNames(vms), []string{"a"}) {
 		t.Errorf("VMs with a known answer = %v, want only a", vmNames(vms))
 	}
 }

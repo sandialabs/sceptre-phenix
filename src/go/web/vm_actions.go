@@ -52,8 +52,9 @@ type vmAction struct {
 	// with the VM after acting; "" sends none
 	before, failed, after string
 
-	// does the action
-	do func(exp, name string) error
+	// does the action, giving up minimega commands not yet sent once ctx is
+	// done (see mm.Context)
+	do func(ctx context.Context, exp, name string) error
 
 	// the action ends with the VM (else with no body): its screenshot is
 	// taken at this size ("" for none), and it is reported stopped when
@@ -85,7 +86,9 @@ var vmActions = map[string]*vmAction{
 		before:     "starting",
 		failed:     "errorStarting",
 		after:      "start",
-		do:         func(exp, name string) error { return mm.StartVM(mm.NS(exp), mm.VMName(name)) },
+		do: func(ctx context.Context, exp, name string) error {
+			return mm.StartVM(mm.NS(exp), mm.VMName(name), mm.Context(ctx))
+		},
 		withVM:     true,
 		screenshot: defaultScreenshotSize,
 		done:       "vm started",
@@ -101,10 +104,12 @@ var vmActions = map[string]*vmAction{
 		before:     "stopping",
 		failed:     "errorStopping",
 		after:      "stop",
-		do:         func(exp, name string) error { return mm.StopVM(mm.NS(exp), mm.VMName(name)) },
-		withVM:     true,
-		done:       "vm stopped",
-		title:      "Pause",
+		do: func(ctx context.Context, exp, name string) error {
+			return mm.StopVM(mm.NS(exp), mm.VMName(name), mm.Context(ctx))
+		},
+		withVM: true,
+		done:   "vm stopped",
+		title:  "Pause",
 	},
 	"restart": {
 		allowed:    func(role rbac.Role, n string) bool { return role.Allowed("vms/restart", "update", n) },
@@ -149,12 +154,14 @@ var vmActions = map[string]*vmAction{
 		title:      "Reset the disk of",
 	},
 	"kill": {
-		allowed:      func(role rbac.Role, n string) bool { return role.Allowed("vms", "delete", n) },
-		resource:     "vms",
-		verb:         "delete",
-		denied:       "deleting vm not allowed",
-		after:        "delete",
-		do:           func(exp, name string) error { return mm.KillVM(mm.NS(exp), mm.VMName(name)) },
+		allowed:  func(role rbac.Role, n string) bool { return role.Allowed("vms", "delete", n) },
+		resource: "vms",
+		verb:     "delete",
+		denied:   "deleting vm not allowed",
+		after:    "delete",
+		do: func(ctx context.Context, exp, name string) error {
+			return mm.KillVM(mm.NS(exp), mm.VMName(name), mm.Context(ctx))
+		},
 		needsRunning: true,
 		done:         "vm deleted",
 		title:        "Kill",
@@ -240,7 +247,7 @@ func runVMAction(req vmRequest, a *vmAction) ([]byte, error) {
 
 	broadcast(a.before, nil)
 
-	if err := a.do(req.exp, req.name); err != nil {
+	if err := a.do(context.Background(), req.exp, req.name); err != nil {
 		return nil, fail(http.StatusInternalServerError, err)
 	}
 
@@ -252,7 +259,7 @@ func runVMAction(req vmRequest, a *vmAction) ([]byte, error) {
 			return nil, fail(http.StatusBadRequest, err)
 		}
 
-		v, err := vm.GetFor(exp, req.name)
+		v, err := vm.GetFor(context.Background(), exp, req.name)
 		if err != nil {
 			return nil, fail(http.StatusInternalServerError, err)
 		}

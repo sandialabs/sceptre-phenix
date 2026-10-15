@@ -131,7 +131,7 @@ func TestGetAndList(t *testing.T) {
 			wantGet.Labels = labels
 			wantGet.Annotations = map[string]any{"vncBanner": "web"}
 
-			got, err := vm.Get(testExp, "web")
+			got, err := vm.Get(t.Context(), testExp, "web")
 			if err != nil {
 				t.Fatalf("Get: %v", err)
 			}
@@ -140,7 +140,7 @@ func TestGetAndList(t *testing.T) {
 				t.Errorf("Get = %+v\nwant %+v", *got, wantGet)
 			}
 
-			listed, err := vm.List(testExp)
+			listed, err := vm.List(t.Context(), testExp)
 			if err != nil {
 				t.Fatalf("List: %v", err)
 			}
@@ -156,12 +156,12 @@ func TestGetAndList(t *testing.T) {
 
 			reads := stored.gets
 
-			gotFor, err := vm.GetFor(exp, "web")
+			gotFor, err := vm.GetFor(t.Context(), exp, "web")
 			if err != nil || !reflect.DeepEqual(*gotFor, wantGet) {
 				t.Errorf("GetFor = %+v, %v\nwant %+v", gotFor, err, wantGet)
 			}
 
-			if listedFor := vm.ListFor(exp); !reflect.DeepEqual(listedFor, listed) {
+			if listedFor := vm.ListFor(t.Context(), exp); !reflect.DeepEqual(listedFor, listed) {
 				t.Errorf("ListFor = %+v\nwant %+v", listedFor, listed)
 			}
 
@@ -192,19 +192,19 @@ func TestGetAndListRejectUnknownNames(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got, err := vm.Get(test.exp, test.vm); err == nil {
+			if got, err := vm.Get(t.Context(), test.exp, test.vm); err == nil {
 				t.Errorf("Get = %+v, want an error", got)
 			}
 
 			if test.exp != testExp {
-				if got, err := vm.List(test.exp); err == nil {
+				if got, err := vm.List(t.Context(), test.exp); err == nil {
 					t.Errorf("List = %+v, want an error", got)
 				}
 
 				return
 			}
 
-			if got, err := vm.GetFor(exp, test.vm); err == nil {
+			if got, err := vm.GetFor(t.Context(), exp, test.vm); err == nil {
 				t.Errorf("GetFor = %+v, want an error", got)
 			}
 		})
@@ -258,7 +258,7 @@ func TestListOfRunningExperiment(t *testing.T) {
 			stored.experiment.Spec["schedules"] = map[string]any{"web": "compute2"}
 			useMM(t, &fakeMM{vms: test.reported})
 
-			listed, err := vm.List(testExp)
+			listed, err := vm.List(t.Context(), testExp)
 			if err != nil {
 				t.Fatalf("List: %v", err)
 			}

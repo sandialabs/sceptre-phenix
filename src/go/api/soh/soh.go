@@ -1,6 +1,7 @@
 package soh
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -29,7 +30,7 @@ func GetFor(exp *types.Experiment, statusFilter string) (*Network, error) { //no
 	// fetch all the VMs in the experiment (minimega's full VM info, not a
 	// narrow listing such as mm.GetVMStates: this uses each VM's state,
 	// networks, and tags)
-	vms := vm.ListFor(exp)
+	vms := vm.ListFor(context.Background(), exp)
 
 	status := make(map[string]*HostState)
 

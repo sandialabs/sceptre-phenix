@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"time"
@@ -71,7 +72,7 @@ func Topology(exp string, ignore []string) (topology, error) {
 // topologyFor is Topology for an experiment read from the store, also
 // returning its search index.
 func topologyFor(stored *types.Experiment, ignore []string) (topology, TopologySearch) {
-	vms := ListFor(stored)
+	vms := ListFor(context.Background(), stored)
 
 	var (
 		networks = make(map[string]mm.VM)

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,7 +27,7 @@ func fakeVMAction(t *testing.T, action string, fail map[string]error, block chan
 		do    = a.do
 	)
 
-	a.do = func(_, name string) error {
+	a.do = func(_ context.Context, _, name string) error {
 		if block != nil {
 			<-block
 		}
