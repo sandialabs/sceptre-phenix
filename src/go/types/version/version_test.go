@@ -17,7 +17,6 @@ func TestEmbeddedOpenAPISchemas(t *testing.T) {
 		version string
 		kind    string
 	}{
-		{name: "v0 topology", version: "v0", kind: "Topology"},
 		{name: "v0 workflow", version: "v0", kind: "Workflow"},
 		{name: "v1 experiment", version: "v1", kind: "Experiment"},
 		{name: "v2 scenario", version: "v2", kind: "Scenario"},

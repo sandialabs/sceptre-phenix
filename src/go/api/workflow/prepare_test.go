@@ -368,7 +368,7 @@ func TestPrepareCreate(t *testing.T) {
 			action:  workflow.ActionCreate,
 			setup:   func(m *store.MockStore) { expectPrepareRead(m, "topology/foo", undecodableTopology) },
 			wantErr: workflow.ErrUnresolved,
-			wantMsg: `decoding topology "foo": upgrading topology to v1: unknown version v7`,
+			wantMsg: `decoding topology "foo": unknown topology version v7`,
 		},
 		{
 			name:   "scenario does not exist",

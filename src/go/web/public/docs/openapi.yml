@@ -296,7 +296,7 @@ paths:
       tags:
         - Schemas
       summary: Get schema for specific config spec kind/version
-      description: the Workflow schema exists only in version v0
+      description: the Workflow schema exists only in version v0, which holds no other kind
       operationId: getSchemasKindVersion
       parameters:
         - name: kind

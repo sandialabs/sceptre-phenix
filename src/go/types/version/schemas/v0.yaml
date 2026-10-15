@@ -5,35 +5,6 @@ info:
 paths: {}
 components:
   schemas:
-    Topology:
-      type: object
-      title: Demo Topology
-      required:
-      - nodes
-      properties:
-        nodes:
-          type: array
-          title: Nodes
-          items:
-            $ref: "#/components/schemas/Node"
-    Node:
-      type: object
-      title: Node
-      required:
-      - type
-      properties:
-        type:
-          type: string
-          title: Node Type
-          enum:
-          - Firewall
-          - Printer
-          - Router
-          - Server
-          - Switch
-          - VirtualMachine
-          default: VirtualMachine
-          example: VirtualMachine
     Workflow:
       type: object
       title: Workflow
