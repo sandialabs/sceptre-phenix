@@ -25,6 +25,7 @@ import (
 	"phenix/util/mm"
 	"phenix/web/capability"
 	"phenix/web/rbac"
+	"phenix/web/scorch"
 )
 
 // The API contract: each route contractRoutes lists is driven through the
@@ -73,6 +74,8 @@ type contractFixture struct {
 }
 
 // useContractFixture sets up the contract fixture until the test ends.
+var scorchProcessors sync.Once //nolint:gochecknoglobals // started once per test binary
+
 func useContractFixture(t *testing.T) contractFixture {
 	t.Helper()
 
@@ -95,6 +98,9 @@ func useContractFixture(t *testing.T) contractFixture {
 
 	useCaptureGrants(t)
 	useContractMount(t)
+
+	// the processors that answer for SCORCH component output
+	scorchProcessors.Do(func() { scorch.Start("/") })
 
 	// another user, for routes that act on a user other than the requester
 	useTestStore(t, store.Config{
@@ -323,7 +329,10 @@ func contractRoutes() []contractRoute {
 
 		// SCORCH: scorch permissions on the experiment, and getting it
 		{method: "GET", path: exp + "/scorch/pipelines/0/0", need: scorch("get"), jsonErrors: true},
+		{method: "GET", path: exp + "/scorch/components/0/0/start/a", need: scorch("get"), want: ok},
 		{method: "GET", path: exp + "/scorch/terminals", need: scorch("get"), want: ok},
+		{method: "GET", path: exp + "/scorch/terminals/1", need: scorch("get"), want: []int{http.StatusNotFound}},
+		{method: "POST", path: exp + "/scorch/pipelines/0", need: scorch("post"), jsonErrors: true},
 		{method: "POST", path: exp + "/scorch/pipelines/0/cleanup", need: scorch("post"), jsonErrors: true},
 		{method: "POST", path: exp + "/scorch/pipelines/0/clear", need: scorch("delete"), jsonErrors: true},
 		{method: "DELETE", path: exp + "/scorch/pipelines/0", need: scorch("delete"), want: done, jsonErrors: true},
