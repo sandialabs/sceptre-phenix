@@ -149,11 +149,19 @@ available roles and their access rights.
 | Experiment Viewer | Can see assigned experiments and VMs within assigned experiments, but cannot modify or control experiments or VMs.       | E V   | E V   |        |        |       |        |
 | VM Admin          | Can see assigned experiments, and has full administrative control over VMs in assigned experiments.                       | E V   | E V   |   V    |   V    |   V   |   V    |
 | VM Viewer         | Can only see VM screenshots and access VM VNC, nothing else.                                                             |   V   |       |        |        |       |        |
+| Scorch Viewer     | Can see assigned experiments' SCORCH pipelines, component output and read-only terminals, and their files.               | E     | E     |        |        |       |        |
+| Scorch Admin      | Can do what Scorch Viewer can, control SCORCH runs, write to SCORCH terminals, and see VMs and their screenshots.        | E V   | E V   |        |        |       |        |
 
 Key: E - experiment resource, V - VM resource, U - user resource
 
 E\* in the Experiment Admin row means the role can delete an experiment's
 files, but not the experiment itself.
+
+Experiment Admin, Experiment User and VM Admin can also start, cancel, clean
+up and clear SCORCH runs of their experiments, and Global Viewer, Experiment
+Viewer and Scorch Viewer can see them. Only Global Admin and Scorch Admin can
+type into a SCORCH terminal; see
+[`scorch/terminals`](#resource-scorchterminals).
 
 The web UI hides or disables what your role cannot do, using the same permission
 names the server checks. If you open a page your role cannot use, such as an old
@@ -622,7 +630,8 @@ instead of writing back the old ones. Change a password or a token from the
 
 A SCORCH terminal is a shell running as the phēnix server process, which
 usually runs as root, so whoever may write to one controls the phēnix server
-and can get around RBAC. Only `Global Admin` has this permission by default.
+and can get around RBAC. Only `Global Admin` and `Scorch Admin` have this
+permission by default.
 Without it a user sees the terminal read-only.
 
 #### Resource: `vms/cdrom`
@@ -760,6 +769,12 @@ spec:
     - update
     - delete
   - resources:
+    - scorch
+    verbs:
+    - get
+    - post
+    - delete
+  - resources:
     - hosts
     resourceNames:
     - "*"
@@ -825,6 +840,17 @@ spec:
     verbs:
     - create
   - resources:
+    - "vms/forwards"
+    verbs:
+    - create
+    - delete
+  - resources:
+    - scorch
+    verbs:
+    - get
+    - post
+    - delete
+  - resources:
     - hosts
     resourceNames:
     - "*"
@@ -849,6 +875,10 @@ spec:
     - "vms/*"
     verbs:
     - list
+    - get
+  - resources:
+    - scorch
+    verbs:
     - get
   - resources:
     - hosts
@@ -890,7 +920,23 @@ spec:
     - "vms/*"
     verbs:
     - "*"
+  - resources:
+    - scorch
+    verbs:
+    - get
+    - post
+    - delete
 ```
+
+!!! note
+    The `scorch` policies of the Experiment Admin, Experiment User,
+    Experiment Viewer and VM Admin roles, and Experiment User's `vms/forwards`
+    policy, were added after phēnix shipped these roles. The UI server adds
+    them once to each stored role and to the role of every user assigned it,
+    scoped to the user's experiments or VMs, and marks the role with the
+    `phenix.rbac/service-permissions` annotation. Unlike the other startup
+    additions on this page, it does not add them again, so an administrator
+    can take them away.
 
 #### VM Viewer (`vm-viewer`)
 
@@ -919,3 +965,78 @@ spec:
     - delete
     - get
 ```
+
+#### Scorch Viewer (`scorch-viewer`)
+
+```yaml
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: scorch-viewer
+spec:
+  roleName: Scorch Viewer
+  policies:
+  - resources:
+    - experiments
+    verbs:
+    - list
+    - get
+  - resources:
+    - "experiments/apps"
+    - "experiments/files"
+    verbs:
+    - list
+    - get
+  - resources:
+    - scorch
+    verbs:
+    - get
+```
+
+#### Scorch Admin (`scorch-admin`)
+
+```yaml
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: scorch-admin
+spec:
+  roleName: Scorch Admin
+  policies:
+  - resources:
+    - experiments
+    verbs:
+    - list
+    - get
+  - resources:
+    - "experiments/apps"
+    - "experiments/files"
+    verbs:
+    - list
+    - get
+  - resources:
+    - vms
+    verbs:
+    - list
+    - get
+  - resources:
+    - "vms/screenshot"
+    verbs:
+    - get
+  - resources:
+    - scorch
+    verbs:
+    - "*"
+  - resources:
+    - "scorch/terminals"
+    verbs:
+    - write
+```
+
+!!! warning
+    Scorch Admin can write to SCORCH terminals, which are shells running as
+    the phēnix server process, so it gives control of the phēnix server. Only
+    assign it to users trusted with that access.
+
+The UI server creates the Scorch Viewer and Scorch Admin roles once on an
+install made before they existed. A deleted one is not created again.
