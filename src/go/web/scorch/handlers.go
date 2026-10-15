@@ -463,9 +463,6 @@ func waitReadOnly(t WebTerm, v *viewer) {
 	}
 }
 
-// initTerminal hands a client of the terminal its stream location. The first
-// client that may write (rw) gets the terminal's read/write side and its exit
-// location; every other client gets a read-only stream.
 // claimTerminalClient takes the client ID initTerminal gave for the terminal
 // pid and reports whether the client reads only. An ID is claimed once, so a
 // second websocket with it gets 404; the writer's ID, sent by a role that may
@@ -490,6 +487,9 @@ func claimTerminalClient(pid int, id string, writable bool) (bool, int) {
 	return !writer, http.StatusOK
 }
 
+// initTerminal hands a client of the terminal its stream location. The first
+// client that may write (rw) gets the terminal's read/write side and its exit
+// location; every other client gets a read-only stream.
 func initTerminal(exp string, run, loop int, stage, cmp string, rw bool) (WebTerm, error) {
 	key := fmt.Sprintf("%s|%d|%d|%s|%s", exp, run, loop, stage, cmp)
 
