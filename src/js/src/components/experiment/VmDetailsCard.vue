@@ -50,6 +50,7 @@
             </router-link>
           </b-tooltip>
           <b-tooltip
+            v-if="canViewScorch"
             label="view scorch"
             type="is-dark"
             position="is-bottom"
@@ -544,7 +545,7 @@
     annotationText,
     nodeAnnotationsPayload,
   } from '@/utils/experimentAnnotations.js';
-  import { roleAllowed } from '@/utils/rbac.js';
+  import { roleAllowed, scorchAllowed } from '@/utils/rbac.js';
   import { docsPage } from '@/utils/docs.js';
   import { diskLabel } from '@/utils/diskChain.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
@@ -763,6 +764,9 @@
           !!this.experiment &&
           roleAllowed('experiments', 'get', this.experiment)
         );
+      },
+      canViewScorch() {
+        return scorchAllowed('get', this.experiment);
       },
       canListDisks() {
         return roleAllowed('disks', 'list');

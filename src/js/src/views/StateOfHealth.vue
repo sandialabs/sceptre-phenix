@@ -659,7 +659,7 @@
                   </a>
                 </b-tooltip>
                 <b-tooltip
-                  v-if="roleAllowed('experiments', 'get', $route.params.id)"
+                  v-if="scorchAllowed('get', $route.params.id)"
                   label="view scorch"
                   type="is-light"
                   position="is-left"
@@ -741,7 +741,7 @@
 <script>
   import { BColorpicker } from 'buefy';
   import FileSaver from 'file-saver';
-  import { roleAllowed } from '@/utils/rbac.js';
+  import { roleAllowed, scorchAllowed } from '@/utils/rbac.js';
   import * as d3 from 'd3';
   import VmLabelsModal from '@/components/VMLabelsModal.vue';
   import SohDownloadMenu from '@/components/soh/SohDownloadMenu.vue';
@@ -789,6 +789,7 @@
     setup() {
       return {
         roleAllowed,
+        scorchAllowed,
         // the page's load state, for the Refresh Network button
         pageStatus,
         docsPage,

@@ -3,9 +3,8 @@
 // (created by a workflow, the Configs page or the CLI).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, capturing, loaderSpy, modules, resetMocks } = await vi.hoisted(
-  () => import('./helpers/mocks.js'),
-);
+const { axios, capturing, loaderSpy, modules, rbac, resetMocks } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/store.js', modules.store);
@@ -16,6 +15,7 @@ vi.mock('@/utils/pageData.js', () => ({ pageFetchers: {} }));
 import Experiments from '@/views/Experiments.vue';
 import { never } from './helpers/async.js';
 import { pageContext } from './helpers/page.js';
+import { denyOnly } from './helpers/permissions.js';
 import { renderSSR, tableRows, textOf } from './helpers/render.js';
 
 beforeEach(() => {
@@ -84,6 +84,24 @@ describe('the table', () => {
       { field: 'vlan_range', sorts: false },
       { field: undefined, sorts: false },
     ]);
+  });
+
+  it('links SCORCH only for a role that may get scorch', async () => {
+    const render = () =>
+      renderSSR(
+        Experiments,
+        {},
+        {
+          route: '/experiments',
+          data: { experiments, loaded: true },
+          tables: true,
+        },
+      );
+    const link = 'aria-label="View SCORCH runs for experiment exp1"';
+    expect(await render()).toContain(link);
+
+    rbac.allowed = denyOnly(['scorch', 'get']);
+    expect(await render()).not.toContain(link);
   });
 
   it('searches names literally', () => {

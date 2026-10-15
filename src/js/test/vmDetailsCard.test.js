@@ -454,6 +454,13 @@ describe('VmDetailsCard permissions', () => {
       ['aria-label="view soh"', 'aria-label="view scorch"'],
       'vm-card-docs',
     ],
+    [
+      'the SCORCH link',
+      ['scorch', 'get'],
+      {},
+      'aria-label="view scorch"',
+      'aria-label="view soh"',
+    ],
     ['the Disks link', ['disks'], {}, 'vm-card-disks', 'vm-card-docs'],
   ])(
     'hides %s from a role without %j',

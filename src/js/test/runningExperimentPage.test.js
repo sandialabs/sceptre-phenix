@@ -3,7 +3,7 @@
 // reconnects, and what it does with websocket traffic that is not its own.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, capturing, loaderSpy, modules, resetMocks, ws } =
+const { axios, capturing, loaderSpy, modules, rbac, resetMocks, ws } =
   await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
@@ -17,7 +17,8 @@ import { experimentKey } from '@/utils/pageData.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import { wsMsg } from './helpers/fixtures.js';
 import { pageContext } from './helpers/page.js';
-import { stubBrowser } from './helpers/render.js';
+import { denyOnly } from './helpers/permissions.js';
+import { renderSSR, stubBrowser } from './helpers/render.js';
 
 // The page on exp1, created as it is when opened. Not page.js's openPage,
 // whose flush() waits on a timer the fake timers hold back.
@@ -102,6 +103,22 @@ describe('loading', () => {
 
     expect(page.$emit).toHaveBeenCalledWith('running', false);
     expect(vmLists()).toHaveLength(0);
+  });
+});
+
+describe('the toolbar', () => {
+  it('links SCORCH only for a role that may get scorch', async () => {
+    const render = () =>
+      renderSSR(
+        RunningExperiment,
+        {},
+        { route: '/experiment/exp1', data: { experiment: running([]) } },
+      );
+    const link = 'aria-label="View SCORCH runs for experiment exp1"';
+    expect(await render()).toContain(link);
+
+    rbac.allowed = denyOnly(['scorch', 'get']);
+    expect(await render()).not.toContain(link);
   });
 });
 

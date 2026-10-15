@@ -675,7 +675,7 @@
         <b-field>
           <b-tooltip label="view scorch" type="is-light" :delay="500">
             <router-link
-              v-if="roleAllowed('experiments', 'get', experiment.name)"
+              v-if="scorchAllowed('get', experiment.name)"
               :aria-label="`View SCORCH runs for experiment ${$route.params.id}`"
               class="button is-light"
               :to="{
@@ -1239,7 +1239,7 @@
   import { debounce } from 'lodash-es';
   import { markRaw } from 'vue';
   import { readPref, writePref } from '@/utils/prefs.js';
-  import { roleAllowed } from '@/utils/rbac.js';
+  import { roleAllowed, scorchAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { showError, useErrorNotification } from '@/utils/errorNotif';
@@ -1386,6 +1386,7 @@
       return {
         table,
         roleAllowed,
+        scorchAllowed,
         tagCount,
         pluralWord,
         NETFLOW_TAB,

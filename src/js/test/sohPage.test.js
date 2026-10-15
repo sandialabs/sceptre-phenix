@@ -3,7 +3,7 @@
 // messages, and its SVG and GEXF downloads.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axios, fetching, modules, notify, resetMocks, saver } =
+const { axios, fetching, modules, notify, rbac, resetMocks, saver } =
   await vi.hoisted(() => import('./helpers/mocks.js'));
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
@@ -17,6 +17,7 @@ vi.mock('file-saver', modules.fileSaver);
 import { GROUPS_MAX_NODES } from '@/utils/soh/layouts.js';
 import StateOfHealth from '@/views/StateOfHealth.vue';
 import { pageContext } from './helpers/page.js';
+import { denyOnly } from './helpers/permissions.js';
 import { buttons, renderSSR, stubBrowser, textOf } from './helpers/render.js';
 import { sohFixture } from './sohFixture.js';
 
@@ -48,6 +49,14 @@ describe('rendering', () => {
         off: cls.includes('is-disabled'),
       }),
     );
+
+  it('links SCORCH only for a role that may get scorch', async () => {
+    const link = 'aria-label="view scorch"';
+    expect(await render({ nodes, edges })).toContain(link);
+
+    rbac.allowed = denyOnly(['scorch', 'get']);
+    expect(await render({ nodes, edges })).not.toContain(link);
+  });
 
   it('counts the VMs and VLANs the filter shows', async () => {
     const counts = (html) =>

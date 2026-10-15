@@ -257,7 +257,7 @@
               type="is-light"
               multilined>
               <router-link
-                v-if="roleAllowed('experiments', 'get', props.row.name)"
+                v-if="scorchAllowed('get', props.row.name)"
                 :aria-label="`View SCORCH runs for experiment ${props.row.name}`"
                 class="button is-light is-small"
                 :to="{
@@ -289,7 +289,7 @@
     removeWsHandler,
   } from '@/utils/websocket';
   import { useTable } from '@/utils/useTable.js';
-  import { roleAllowed } from '@/utils/rbac.js';
+  import { roleAllowed, scorchAllowed } from '@/utils/rbac.js';
   import { plural } from '@/utils/plural.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import {
@@ -304,7 +304,11 @@
     mixins: [formattingMixin],
 
     setup() {
-      return { ...useTable({ name: 'experiments' }), roleAllowed };
+      return {
+        ...useTable({ name: 'experiments' }),
+        roleAllowed,
+        scorchAllowed,
+      };
     },
 
     async beforeUnmount() {
