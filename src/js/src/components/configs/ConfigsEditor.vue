@@ -285,9 +285,12 @@
         this.editor.isLoading = true;
         let version = config.apiVersion.split('/')[1];
 
-        // Always get v2 (latest version) of full schema.
+        // The kind's schema refers to sub-schemas in the full schema of the
+        // same version, so get that version's full schema to resolve them.
         axiosInstance
-          .get('schemas/v2', { headers: { Accept: 'application/json' } })
+          .get('schemas/' + version, {
+            headers: { Accept: 'application/json' },
+          })
           .then((spec) => {
             axiosInstance
               .get('schemas/' + config.kind + '/' + version, {
@@ -312,7 +315,7 @@
           })
           .catch((err) => {
             useErrorNotification(err);
-            this.isWaiting = false;
+            this.editor.isLoading = false;
           });
       },
       async confirmResetEditor() {

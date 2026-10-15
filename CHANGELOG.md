@@ -27,12 +27,14 @@ All notable changes to this project will be documented in this file.
 - **Topology schema**: Require node hostnames to be at least 2 characters long.
 - **Workflow API**: A workflow apply is validated before a running experiment is stopped, so an invalid one returns 400 or 409 instead of 500 and leaves the experiment running. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow Schema (breaking)**: Workflow configs are validated against the new `Workflow` schema, so unknown or misspelled keys, values of the wrong type and a missing `spec` return 400 instead of being ignored. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+- **Config Schemas (breaking)**: Configs are validated against the schema of their own apiVersion, and the v1 schemas match what validation used.
 
 ### Removed
 
 - **Topology v0 (breaking)**: Topology configs with apiVersion `phenix.sandia.gov/v0` are no longer supported.
 - **Scenario v1 (breaking)**: Scenario configs with apiVersion `phenix.sandia.gov/v1` are no longer supported.
 - **Config CLI and API (breaking)**: Removed the `--show-upgraded` (`-u`) flag of `phenix config get` and the `noupgrade` query parameter of `GET /api/v1/configs/{kind}/{name}`.
+- **Schemas API (breaking)**: `GET /api/v1/schemas/v2` and `GET /api/v1/schemas/{kind}/v2` no longer serve the Topology, Experiment, Image, User and Role schemas, which are served at `v1`.
 
 ### Fixed
 

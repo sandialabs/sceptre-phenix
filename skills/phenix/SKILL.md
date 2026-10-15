@@ -33,7 +33,7 @@ Detailed references and examples, loaded only when needed:
 Every phenix config (topology, scenario, experiment, image, user, role) is:
 
 ```yaml
-apiVersion: phenix.sandia.gov/v1   # v2 for Scenario; no other version loads
+apiVersion: phenix.sandia.gov/v1   # v2 for Scenario; no other version loads or validates
 kind: Topology                     # Topology | Scenario | Experiment | Image | User | Role
 metadata:
   name: my-topology

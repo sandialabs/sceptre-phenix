@@ -158,7 +158,7 @@ and pass it explicitly, for example
 | Build, install, logging, config | `README.md` |
 | App development | `examples/README.md`, `examples/TUTORIAL.md` |
 | Config interfaces and fields | `src/go/types/interfaces/`, `src/go/types/version/` |
-| YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml` (`v0` holds only `Workflow`) |
+| YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml`, one file per `apiVersion` holding the kinds stored at it: `v0` `Workflow`, `v1` `Topology`/`Experiment`/`Image`/`User`/`Role`, `v2` `Scenario` |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
 | Topology Builder | [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md), `src/go/web/builder.go`, `src/go/web/public/grapheditor/` |
 | Narrative docs source | [`docs/`](docs/) |
