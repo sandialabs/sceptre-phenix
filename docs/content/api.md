@@ -40,8 +40,10 @@ Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`,
 `Workflow`, `Jobs`, etc.) and document most endpoints, including request parameters
 and response schemas. Some routes are not documented there yet, among them
 `/ws`, `/logs`, `/roles`, `/settings`, the netflow routes, and the `/webshark/`
-routes outside `/api/v1` that WebShark itself calls and that stream a capture by
-token, which take a capture token instead of a sign-in token.
+routes outside `/api/v1` that WebShark itself calls (`/webshark/json`,
+`/webshark/captures/{name}` and `/webshark/watch`), which take a capture token
+instead of a sign-in token. `GET /webshark/streams/{token}`, which streams a
+capture by token, is documented.
 
 !!! info
     The underlying OpenAPI spec is maintained at
@@ -144,8 +146,9 @@ the current revision, so you can reload the config instead of overwriting
 someone else's change. `If-Match: *` only requires the config to exist, and a
 malformed `If-Match` is a `400`. `If-Match` is optional: a write without it
 replaces the config whatever its revision. `If-None-Match` on a `GET` answers
-`304` while the config is unchanged. A `GET`, `PUT` or `DELETE` of a config
-that does not exist answers `404`, or `412` when it carries `If-Match`.
+`304` while the config is unchanged. A `GET` of a config that does not exist
+answers `404`, whatever its headers; a `PUT` or `DELETE` of one answers `404`,
+or `412` when it carries `If-Match`.
 
 ```bash
 curl -si -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
@@ -209,7 +212,7 @@ endpoint sets its own.
 
 ## Streaming Endpoints
 
-Two endpoints stream rather than return a document, and are easiest to use from
+Three endpoints stream rather than return a document, and are easiest to use from
 the command line:
 
 * `GET /experiments/{exp}/vms/{name}/captures/{interface}/stream` streams a
