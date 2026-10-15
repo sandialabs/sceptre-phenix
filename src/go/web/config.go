@@ -200,7 +200,15 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	zipper := zip.NewWriter(w)
+	// Every config is read before the archive starts, so a failure answers
+	// with an error rather than a broken archive, and the headers go out
+	// before the zip writer's buffer first fills.
+	type entry struct {
+		name string
+		body []byte
+	}
+
+	entries := make([]entry, 0, len(configs))
 
 	for _, name := range configs {
 		if !role.Allowed("configs", "get", name) {
@@ -225,20 +233,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		fn := fmt.Sprintf("%s-%s.yml", cfg.Kind, cfg.Metadata.Name)
-
-		zf, err := zipper.Create(fn)
-		if err != nil {
-			plog.Error(plog.TypeSystem, "creating zip file entry", "file", fn, "err", err)
-
-			continue
-		}
-
-		if _, err := zf.Write(body); err != nil {
-			plog.Error(plog.TypeSystem, "writing config to zip file", "file", fn, "err", err)
-
-			continue
-		}
+		entries = append(entries, entry{name: fmt.Sprintf("%s-%s.yml", cfg.Kind, cfg.Metadata.Name), body: body})
 	}
 
 	w.Header().Set("Content-Type", "application/zip")
@@ -246,6 +241,23 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 	// built as it is sent, so it cannot be resumed or cached
 	w.Header().Set("Accept-Ranges", "none")
 	w.Header().Set("Cache-Control", "no-store")
+
+	zipper := zip.NewWriter(w)
+
+	for _, e := range entries {
+		zf, err := zipper.Create(e.name)
+		if err != nil {
+			plog.Error(plog.TypeSystem, "creating zip file entry", "file", e.name, "err", err)
+
+			continue
+		}
+
+		if _, err := zf.Write(e.body); err != nil {
+			plog.Error(plog.TypeSystem, "writing config to zip file", "file", e.name, "err", err)
+
+			continue
+		}
+	}
 
 	// This will flush the zipped configs to the HTTP writer.
 	if err := zipper.Close(); err != nil {
