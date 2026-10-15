@@ -170,21 +170,11 @@ func Start(opts ...ServerOption) error {
 	}
 
 	if common.UnixSocket != "" {
-		var (
-			router = mux.NewRouter().StrictSlash(true)
-			api    = router.PathPrefix("/api/v1").Subrouter()
-		)
-
-		addRoutesToRouter(api, socketRoutes()...)
-
-		api.Use(middleware.NoAuth)
-		api.Use(middleware.Freshness)
-
 		_ = os.Remove(common.UnixSocket)
 
 		plog.Info(plog.TypeSystem, "starting Unix socket server", "path", common.UnixSocket)
 
-		server := newHTTPServer("", router)
+		server := newHTTPServer("", newSocketRouter())
 
 		//nolint:exhaustruct // partial initialization
 		listener, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", common.UnixSocket)
@@ -605,6 +595,23 @@ func apiLocation(p string) string {
 	}
 
 	return base + "api/v1/" + p
+}
+
+// newSocketRouter routes the API routes the Unix socket serves, to every
+// local client as global-admin, since the socket's file permissions are its
+// access control.
+func newSocketRouter() *mux.Router {
+	var (
+		router = mux.NewRouter().StrictSlash(true)
+		api    = router.PathPrefix("/api/v1").Subrouter()
+	)
+
+	addRoutesToRouter(api, socketRoutes()...)
+
+	api.Use(middleware.NoAuth)
+	api.Use(middleware.Freshness)
+
+	return router
 }
 
 // socketRoutes are the API routes the Unix socket serves as well.
