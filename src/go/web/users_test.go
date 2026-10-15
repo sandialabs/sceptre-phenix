@@ -120,3 +120,41 @@ func TestConfigureUsersSkipsUnknownRole(t *testing.T) {
 		t.Errorf("role = %q, want %q", user.RoleName(), experimentUserRole)
 	}
 }
+
+// users patch lets a user create their own tokens; a token for another user
+// also needs users/tokens create for that user.
+//
+//nolint:paralleltest // replaces the store
+func TestCreateUserTokenForOtherUser(t *testing.T) {
+	storetest.Use(t)
+	createUserWithToken(t, "test-user")
+	createUserWithToken(t, "bob")
+
+	original := o
+	t.Cleanup(func() { o = original })
+
+	o.jwtKey = testJWTKey
+
+	patch := func(name string) rbac.Role { return testRole(resourceUsers, verbPatch, name) }
+	tokens := func(name string) rbac.Role { return testRole("users/tokens", "create", name) }
+
+	for _, tc := range []struct {
+		name, target string
+		role         rbac.Role
+		want         int
+	}{
+		{"own token", "test-user", patch("test-user"), http.StatusOK},
+		{"another user's token", "bob", patch("bob"), http.StatusForbidden},
+		{"another user's token with users/tokens", "bob", combinedRole(patch("bob"), tokens("bob")), http.StatusOK},
+		{"users/tokens for someone else", "bob", combinedRole(patch("bob"), tokens("carol")), http.StatusForbidden},
+		{"users/tokens without patch", "bob", tokens("bob"), http.StatusForbidden},
+	} {
+		w := httptest.NewRecorder()
+		vars := map[string]string{"username": tc.target}
+		CreateUserToken(w, roleRequest(http.MethodPost, "/api/v1/users/"+tc.target+"/tokens", `{"lifetime":"1h"}`, vars, tc.role))
+
+		if w.Code != tc.want {
+			t.Errorf("%s: status %d, want %d (%s)", tc.name, w.Code, tc.want, w.Body.String())
+		}
+	}
+}

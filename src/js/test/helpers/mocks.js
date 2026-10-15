@@ -22,8 +22,8 @@ import { allowAll } from './permissions.js';
 // modules.pageLoader
 export { capturing, fetching, loaderSpy, switchable } from './pageLoader.js';
 
-// roleAllowed(resource, verb, name) answers with rbac.allowed; set it to a
-// predicate from permissions.js
+// roleAllowed(resource, verb, name), and the checks built on it, answer with
+// rbac.allowed; set it to a predicate from permissions.js
 export const rbac = { allowed: allowAll };
 
 export const axios = {
@@ -67,7 +67,12 @@ const remove = (list, item) => {
 
 // a vi.mock factory for each module, by name
 export const modules = {
-  rbac: () => ({ roleAllowed: (...args) => rbac.allowed(...args) }),
+  rbac: () => ({
+    roleAllowed: (...args) => rbac.allowed(...args),
+    userTokenAllowed: (username) =>
+      rbac.allowed('users', 'patch', username) &&
+      rbac.allowed('users/tokens', 'create', username),
+  }),
   axios: () => ({ default: axios }),
   errorNotif: () => ({
     useErrorNotification: notify.error,
