@@ -670,3 +670,47 @@ func TestOpenDoesNotAskMinimegaUnderTheRegistryLock(t *testing.T) { //nolint:par
 		t.Fatal("Open did not return")
 	}
 }
+
+// RemoveStaleSpools deletes the capture spools last written before the time
+// given, leaving newer spools and other temporary files.
+func TestRemoveStaleSpools(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	started := time.Now()
+
+	for name, age := range map[string]time.Duration{
+		"phenix-capture-1.pcap": time.Hour,
+		"phenix-capture-2.pcap": -time.Minute,
+		"other-1.pcap":          time.Hour,
+	} {
+		path := filepath.Join(tmp, name)
+		if err := os.WriteFile(path, []byte("spooled"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		at := started.Add(-age)
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	removed, err := RemoveStaleSpools(started)
+	if err != nil || removed != 1 {
+		t.Fatalf("removed %d spools (%v), want 1", removed, err)
+	}
+
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	left := make([]string, 0, len(entries))
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+
+	if strings.Join(left, " ") != "other-1.pcap phenix-capture-2.pcap" {
+		t.Errorf("left %v", left)
+	}
+}

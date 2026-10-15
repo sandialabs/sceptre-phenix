@@ -150,6 +150,8 @@ func Start(opts ...ServerOption) error {
 
 	ConfigureJobs()
 
+	removeStaleCaptureSpools()
+
 	plog.Info(plog.TypeSystem, "starting scorch processors")
 
 	scorch.Start(o.basePath)

@@ -26,6 +26,20 @@ const (
 	captureStreamReadDeadline  = 2 * captureStreamPingInterval
 )
 
+// removeStaleCaptureSpools deletes the spools of remote captures that a
+// previous run of the server, stopped or crashed while a capture was open,
+// left in the temporary directory.
+func removeStaleCaptureSpools() {
+	removed, err := livecapture.RemoveStaleSpools(time.Now())
+	if err != nil {
+		plog.Warn(plog.TypeSystem, "removing stale capture spools", "err", err)
+	}
+
+	if removed > 0 {
+		plog.Info(plog.TypeSystem, "removed stale capture spools", "count", removed)
+	}
+}
+
 // pcapContentType is the registered media type of a pcap file.
 const pcapContentType = "application/vnd.tcpdump.pcap"
 
