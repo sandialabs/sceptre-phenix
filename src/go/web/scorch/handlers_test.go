@@ -3,10 +3,12 @@ package scorch
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -497,5 +499,140 @@ func TestTerminalWriterOutlastsUnattachedViewer(t *testing.T) {
 
 	if next := connect(operator); next.RO {
 		t.Error("an unattached writer kept its rights")
+	}
+}
+
+// A terminal client ID is claimed once: a writer whose role may write and any
+// reader claim it, and the writer's ID sent by a role that may not write is
+// refused and left for the writer.
+//
+//nolint:paralleltest // shares the terminal maps
+func TestClaimTerminalClient(t *testing.T) {
+	for i, tc := range []struct {
+		name                  string
+		writer, writable      bool
+		wantStatus            int
+		wantReadOnly, claimed bool
+	}{
+		{"writer that may write", true, true, http.StatusOK, false, true},
+		{"writer that may not write", true, false, http.StatusForbidden, false, false},
+		{"reader that may write", false, true, http.StatusOK, true, true},
+		{"reader that may not write", false, false, http.StatusOK, true, true},
+	} {
+		pid, id, done := 5000+i, fmt.Sprintf("client-%d", i), make(chan struct{})
+
+		mu.Lock()
+		termClientIDs[id] = done
+		rwTerm[pid] = "other-client"
+
+		if tc.writer {
+			rwTerm[pid] = id
+		}
+		mu.Unlock()
+
+		readOnly, status := claimTerminalClient(pid, id, tc.writable)
+		if status != tc.wantStatus || (status == http.StatusOK && readOnly != tc.wantReadOnly) {
+			t.Errorf("%s: read-only %t, status %d; want %t, %d", tc.name, readOnly, status, tc.wantReadOnly, tc.wantStatus)
+		}
+
+		mu.Lock()
+		_, pending := termClientIDs[id]
+		mu.Unlock()
+
+		if pending == tc.claimed {
+			t.Errorf("%s: ID still pending %t, want claimed %t", tc.name, pending, tc.claimed)
+		}
+
+		if tc.claimed {
+			select {
+			case <-done:
+			default:
+				t.Errorf("%s: the claim did not close done", tc.name)
+			}
+
+			if _, status := claimTerminalClient(pid, id, tc.writable); status != http.StatusNotFound {
+				t.Errorf("%s: claiming the ID again: status %d, want 404", tc.name, status)
+			}
+		}
+
+		mu.Lock()
+		delete(termClientIDs, id)
+		delete(rwTerm, pid)
+		mu.Unlock()
+	}
+}
+
+// Websockets that open a terminal with the same client ID at once claim it
+// once, rather than each closing its done channel, which panicked; an unknown
+// ID gets 404.
+//
+//nolint:paralleltest // shares the terminal maps
+func TestStreamTerminalClaimsClientIDOnce(t *testing.T) {
+	const pid = 4444
+
+	fakeTerminal(t, pid)
+
+	operator := roleFor("experiments", "get", "experiments/trigger", "create")
+
+	rec := serveScorch(http.MethodGet, "/experiments/exp/scorch/terminals/4444", operator)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("connecting: status %d %s", rec.Code, rec.Body)
+	}
+
+	var term WebTerm
+	if err := json.Unmarshal(rec.Body.Bytes(), &term); err != nil {
+		t.Fatal(err)
+	}
+
+	// the websocket handler takes over the connection, so this needs a server
+	router := mux.NewRouter()
+	RegisterRoutes(router)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), middleware.ContextKeyRole, *operator)
+		router.ServeHTTP(w, r.WithContext(ctx))
+	}))
+	t.Cleanup(server.Close)
+
+	status := func(path string) int {
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+path, nil)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return 0 // the handler closed the connection after its failed handshake
+		}
+
+		_ = resp.Body.Close()
+
+		return resp.StatusCode
+	}
+
+	stream := "/experiments/exp/scorch/terminals/4444/ws/" + term.Loc[strings.LastIndex(term.Loc, "/")+1:]
+
+	var (
+		wg      sync.WaitGroup
+		claimed atomic.Int32
+	)
+
+	for range 16 {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			if status(stream) != http.StatusNotFound {
+				claimed.Add(1)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if n := claimed.Load(); n != 1 {
+		t.Errorf("%d websockets claimed the client ID, want 1", n)
+	}
+
+	if got := status("/experiments/exp/scorch/terminals/4444/ws/unknown"); got != http.StatusNotFound {
+		t.Errorf("unknown client ID: status %d, want 404", got)
 	}
 }
