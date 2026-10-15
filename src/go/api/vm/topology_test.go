@@ -52,7 +52,7 @@ func TestTopology(t *testing.T) {
 
 	t.Cleanup(func() { cache.DefaultCache = original }) //nolint:reassign // restore
 
-	topo, err := vm.Topology(testExp, []string{"MGMT"})
+	topo, err := vm.Topology(t.Context(), testExp, []string{"MGMT"})
 	if err != nil {
 		t.Fatalf("Topology: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestTopology(t *testing.T) {
 		t.Errorf("search index cached for %v, want a short expiry", ttl)
 	}
 
-	if _, err := vm.Topology(testExp, nil); err != nil || fake.sets != 1 {
+	if _, err := vm.Topology(t.Context(), testExp, nil); err != nil || fake.sets != 1 {
 		t.Errorf("second Topology: %v after caching the index %d times, want it reused", err, fake.sets)
 	}
 

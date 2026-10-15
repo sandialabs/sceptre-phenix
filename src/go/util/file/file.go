@@ -76,6 +76,23 @@ func GetExperimentSnapshots(exp string) ([]string, error) {
 	return DefaultClusterFiles.GetExperimentSnapshots(exp) //nolint:wrapcheck // passthrough
 }
 
+// snapshotsLister is the optional part of ClusterFiles whose snapshot listing
+// gives up once a context is done; see filesObserver.
+type snapshotsLister interface {
+	GetExperimentSnapshotsContext(ctx context.Context, exp string) ([]string, error)
+}
+
+// GetExperimentSnapshotsContext is GetExperimentSnapshots, its listing's
+// minimega commands giving up once ctx is done as GetExperimentFilesObserved's
+// do, where DefaultClusterFiles supports it.
+func GetExperimentSnapshotsContext(ctx context.Context, exp string) ([]string, error) {
+	if l, ok := DefaultClusterFiles.(snapshotsLister); ok {
+		return l.GetExperimentSnapshotsContext(ctx, exp) //nolint:wrapcheck // passthrough
+	}
+
+	return DefaultClusterFiles.GetExperimentSnapshots(exp) //nolint:wrapcheck // passthrough
+}
+
 func CopyFile(path, dest string, status CopyStatus) error {
 	return DefaultClusterFiles.CopyFile(path, dest, status) //nolint:wrapcheck // passthrough
 }
@@ -248,12 +265,18 @@ func listExperimentFiles(ctx context.Context, exp string) (Files, error) {
 	return files, nil
 }
 
-func (MMClusterFiles) GetExperimentSnapshots(exp string) ([]string, error) {
+func (f MMClusterFiles) GetExperimentSnapshots(exp string) ([]string, error) {
+	return f.GetExperimentSnapshotsContext(context.Background(), exp)
+}
+
+// GetExperimentSnapshotsContext is GetExperimentSnapshots, giving up once ctx
+// is done as GetExperimentFilesObserved does.
+func (f MMClusterFiles) GetExperimentSnapshotsContext(ctx context.Context, exp string) ([]string, error) {
 	// Using a map here to weed out duplicates and to ensure each snapshot has
 	// both a memory snapshot (.state) and a disk snapshot (.hdd).
 	matches := make(map[string]string)
 
-	files, err := GetExperimentFiles(exp, "")
+	files, _, err := f.GetExperimentFilesObserved(ctx, exp, "")
 	if err != nil {
 		return nil, fmt.Errorf("getting experiment file names: %w", err)
 	}

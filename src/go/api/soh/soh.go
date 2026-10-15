@@ -19,8 +19,10 @@ const defaultEdgeLength = 150
 var vlanAliasRegex = regexp.MustCompile(`(.*) \(\d*\)`)
 
 // GetFor builds the experiment's state-of-health network from an experiment
-// the caller already read from the store.
-func GetFor(exp *types.Experiment, statusFilter string) (*Network, error) { //nolint:funlen // complex logic
+// the caller already read from the store. Once ctx is done, its minimega
+// commands give up (see mm.Context) and it returns an error wrapping ctx's
+// error.
+func GetFor(ctx context.Context, exp *types.Experiment, statusFilter string) (*Network, error) { //nolint:funlen // complex logic
 	var (
 		// Create an empty network
 		network = new(Network)
@@ -30,7 +32,10 @@ func GetFor(exp *types.Experiment, statusFilter string) (*Network, error) { //no
 	// fetch all the VMs in the experiment (minimega's full VM info, not a
 	// narrow listing such as mm.GetVMStates: this uses each VM's state,
 	// networks, and tags)
-	vms := vm.ListFor(context.Background(), exp)
+	vms := vm.ListFor(ctx, exp)
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("listing VMs of experiment %s: %w", exp.Metadata.Name, err)
+	}
 
 	status := make(map[string]*HostState)
 

@@ -337,7 +337,7 @@ func TestCaptureSubnet(t *testing.T) {
 				startErr: test.startErr,
 			})
 
-			got, err := vm.CaptureSubnet(testExp, test.subnet, test.vms)
+			got, err := vm.CaptureSubnet(t.Context(), testExp, test.subnet, test.vms)
 			checkErr(t, err, test.wantErr)
 
 			if !reflect.DeepEqual(got, test.want) {
@@ -399,7 +399,7 @@ func TestStopCaptureSubnet(t *testing.T) {
 				stopErr:  test.stopErr,
 			})
 
-			got, err := vm.StopCaptureSubnet(testExp, test.subnet, test.vms)
+			got, err := vm.StopCaptureSubnet(t.Context(), testExp, test.subnet, test.vms)
 			checkErr(t, err, test.wantErr)
 
 			if !reflect.DeepEqual(got, test.want) {
@@ -408,6 +408,55 @@ func TestStopCaptureSubnet(t *testing.T) {
 
 			if fake.stops != test.wantStops {
 				t.Errorf("stopped captures %d times, want %d", fake.stops, test.wantStops)
+			}
+		})
+	}
+}
+
+// Subnet captures give up with their context until the first capture starts
+// or stops: none is tried once the context is done, and a failure while it
+// ends stops the rest.
+func TestSubnetCapturesGiveUpWithTheirContext(t *testing.T) {
+	calls := map[string]func(ctx context.Context) error{
+		"start": func(ctx context.Context) error {
+			_, err := vm.CaptureSubnet(ctx, testExp, "10.0.0.0/24", nil)
+
+			return err
+		},
+		"stop": func(ctx context.Context) error {
+			_, err := vm.StopCaptureSubnet(ctx, testExp, "", nil)
+
+			return err
+		},
+	}
+
+	for name, call := range calls {
+		t.Run(name+" after its context ended", func(t *testing.T) {
+			fake := useSubnetVMs(t, false, &fakeMM{captures: []mm.Capture{{VM: "a", Interface: 0}}})
+
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+
+			checkErr(t, call(ctx), context.Canceled)
+
+			if fake.starts+fake.stops != 0 {
+				t.Fatalf("tried %d captures, want none", fake.starts+fake.stops)
+			}
+		})
+
+		t.Run(name+" failing as its context ends", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+
+			boom := errors.New("boom")
+			fake := useSubnetVMs(t, false, &fakeMM{
+				captures: []mm.Capture{{VM: "a", Interface: 0}},
+				startErr: boom, stopErr: boom, onCapture: cancel,
+			})
+
+			checkErr(t, call(ctx), context.Canceled)
+
+			if fake.starts+fake.stops != 1 {
+				t.Fatalf("tried %d captures, want only the first", fake.starts+fake.stops)
 			}
 		})
 	}

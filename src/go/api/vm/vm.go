@@ -859,8 +859,11 @@ func Kill(expName, vmName string) error {
 	return nil
 }
 
-func Snapshots(expName, vmName string) ([]string, error) {
-	snapshots, err := file.GetExperimentSnapshots(expName)
+// Snapshots lists the VM's snapshots. Once ctx is done, the listing's
+// minimega commands give up (see mm.Context) and it returns an error wrapping
+// ctx's error.
+func Snapshots(ctx context.Context, expName, vmName string) ([]string, error) {
+	snapshots, err := file.GetExperimentSnapshotsContext(ctx, expName)
 	if err != nil {
 		return nil, fmt.Errorf("getting list of experiment snapshots: %w", err)
 	}
@@ -1012,7 +1015,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error { //nolint:fun
 func Restore(expName, vmName, snap string) error {
 	snap = strings.TrimSuffix(snap, filepath.Ext(snap))
 
-	snapshots, err := Snapshots(expName, vmName)
+	snapshots, err := Snapshots(context.Background(), expName, vmName)
 	if err != nil {
 		return fmt.Errorf("getting list of snapshots for VM: %w", err)
 	}
@@ -1521,8 +1524,11 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 
 // CaptureSubnet starts a packet capture on each interface in the specified
 // subnet of every running VM, and returns those VMs' captures, each once. The
-// vmList argument is optional and defines the list of VMs to search.
-func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error) {
+// vmList argument is optional and defines the list of VMs to search. ctx is
+// checked until the first capture starts (see mm.Context): it returns an error
+// wrapping ctx's error if ctx is done before then, and from then on goes on
+// whatever ctx says.
+func CaptureSubnet(ctx context.Context, expName, subnet string, vmList []string) ([]mm.Capture, error) {
 	// Make sure the experiment is running
 	exp, err := experiment.Get(expName)
 	if err != nil {
@@ -1533,9 +1539,13 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 		return nil, errors.New("packet captures can only be started for a running experiment")
 	}
 
-	vms, err := List(context.Background(), expName)
+	vms, err := List(ctx, expName)
 	if err != nil {
 		return nil, fmt.Errorf("getting vm list for %s failed", expName)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("listing VMs of experiment %s: %w", expName, err)
 	}
 
 	_, refNet, err := net.ParseCIDR(subnet)
@@ -1564,6 +1574,11 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 		}
 	}
 
+	var (
+		changed   bool
+		committed = context.WithoutCancel(ctx)
+	)
+
 	// Find the interfaces that are in the
 	// specified subnet
 	for _, vm := range vms {
@@ -1590,8 +1605,22 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 			}
 
 			filename := fmt.Sprintf("%s_%d_%s.pcap", vm.Name, iface, getTimestamp())
-			if StartCaptureForVM(context.Background(), &vm, expName, vm.Name, iface, filename) == nil {
-				started = true
+
+			// once one is started, start the rest
+			run := ctx
+			if changed {
+				run = committed
+			}
+
+			err := StartCaptureForVM(run, &vm, expName, vm.Name, iface, filename)
+			if err == nil {
+				started, changed = true, true
+
+				continue
+			}
+
+			if err := run.Err(); err != nil {
+				return nil, fmt.Errorf("starting captures in subnet %s: %w", subnet, err)
 			}
 		}
 
@@ -1629,8 +1658,9 @@ func capturesForVMs(expName string, vmNames []string) []mm.Capture {
 // subnet argument is optional: without it, every running VM's captures are
 // stopped, while a subnet that does not parse matches no VM. The vmList argument
 // optionally limits the VMs searched. It returns the names of the VMs whose
-// captures it stopped.
-func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error) {
+// captures it stopped. ctx is checked until the first VM's captures stop, as
+// for CaptureSubnet.
+func StopCaptureSubnet(ctx context.Context, expName, subnet string, vmList []string) ([]string, error) {
 	// Make sure the experiment is running
 	exp, err := experiment.Get(expName)
 	if err != nil {
@@ -1641,9 +1671,13 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 		return nil, errors.New("packet captures can only be stopped for a running experiment")
 	}
 
-	vms, err := List(context.Background(), expName)
+	vms, err := List(ctx, expName)
 	if err != nil {
 		return nil, fmt.Errorf("getting vm list for %s failed", expName)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("listing VMs of experiment %s: %w", expName, err)
 	}
 
 	_, refNet, err := net.ParseCIDR(subnet)
@@ -1672,6 +1706,8 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 		}
 	}
 
+	committed := context.WithoutCancel(ctx)
+
 	// Find the interfaces that are in the
 	// specified subnet
 	for _, vm := range vms {
@@ -1696,8 +1732,21 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 			continue
 		}
 
-		if StopCaptures(context.Background(), expName, vm.Name) == nil {
+		// once one VM's captures are stopped, stop the rest
+		run := ctx
+		if len(matchedVMs) > 0 {
+			run = committed
+		}
+
+		err := StopCaptures(run, expName, vm.Name)
+		if err == nil {
 			matchedVMs = append(matchedVMs, vm.Name)
+
+			continue
+		}
+
+		if err := run.Err(); err != nil {
+			return nil, fmt.Errorf("stopping captures in subnet %s: %w", subnet, err)
 		}
 	}
 

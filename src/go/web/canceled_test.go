@@ -19,6 +19,7 @@ import (
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
 	"phenix/web/middleware"
+	"phenix/web/rbac"
 )
 
 // holdMinimega points phenix at the fake minimega through the real mm
@@ -68,45 +69,74 @@ func holdMinimega(t *testing.T) func() []mmtest.Command {
 
 // A request whose client leaves while its minimega commands wait for the
 // shared connection gives them up, unsent, and writes nothing.
-func TestGetVMGivesUpWhenTheClientLeaves(t *testing.T) {
-	useTestStore(t, namedExperiment(t, "exp", "2024-01-01T00:00:00Z", diskVM("a", "a.qc2")))
-
-	received := holdMinimega(t)
-
-	ctx, cancel := context.WithCancel(
-		context.WithValue(t.Context(), middleware.ContextKeyRole, testRole("vms", "get", "exp/a")),
-	)
-
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/experiments/exp/vms/a", nil)
-	req = mux.SetURLVars(req, map[string]string{"exp": "exp", "name": "a"})
-
-	var (
-		rec  = httptest.NewRecorder()
-		done = make(chan struct{})
-	)
-
-	go func() {
-		defer close(done)
-
-		GetVM(rec, req)
-	}()
-
-	cancel()
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("GetVM kept waiting for minimega after its client left")
+func TestReadsGiveUpWhenTheClientLeaves(t *testing.T) {
+	tests := map[string]struct {
+		handler http.HandlerFunc
+		path    string
+		vars    map[string]string
+		role    rbac.Role
+	}{
+		"vm": {
+			handler: GetVM, path: "/experiments/exp/vms/a",
+			vars: map[string]string{"exp": "exp", "name": "a"}, role: testRole("vms", "get", "exp/a"),
+		},
+		"vm snapshots": {
+			handler: GetVMSnapshots, path: "/experiments/exp/vms/a/snapshots",
+			vars: map[string]string{"exp": "exp", "name": "a"}, role: testRole("vms/snapshots", "list", "exp/a"),
+		},
+		"state of health": {
+			handler: GetExperimentSoH, path: "/experiments/exp/soh",
+			vars: map[string]string{"name": "exp"}, role: testRole("experiments", "get", "exp"),
+		},
+		"topology": {
+			handler: GetExperimentTopology, path: "/experiments/exp/topology",
+			vars: map[string]string{"name": "exp"}, role: testRole("experiments/topology", "get", "exp"),
+		},
+		"cluster hosts": {
+			handler: GetClusterHosts, path: "/hosts", role: testRole("hosts", "list", "*"),
+		},
 	}
 
-	if rec.Body.Len() != 0 {
-		t.Errorf("GetVM wrote %q (status %d) to a client that left", rec.Body.String(), rec.Code)
-	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			useTestStore(t, namedExperiment(t, "exp", "2024-01-01T00:00:00Z", diskVM("a", "a.qc2")))
 
-	// leaving out the files directory lookup, if this test made it
-	got := slices.DeleteFunc(mmtest.Bases(received()), func(base string) bool { return base == "args" })
-	if !slices.Equal(got, []string{"hold"}) {
-		t.Errorf("minimega received %q, want only the hold", got)
+			received := holdMinimega(t)
+
+			ctx, cancel := context.WithCancel(context.WithValue(t.Context(), middleware.ContextKeyRole, tc.role))
+
+			req := httptest.NewRequestWithContext(ctx, http.MethodGet, tc.path, nil)
+			req = mux.SetURLVars(req, tc.vars)
+
+			var (
+				rec  = httptest.NewRecorder()
+				done = make(chan struct{})
+			)
+
+			go func() {
+				defer close(done)
+
+				tc.handler(rec, req)
+			}()
+
+			cancel()
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the handler kept waiting for minimega after its client left")
+			}
+
+			if rec.Body.Len() != 0 {
+				t.Errorf("the handler wrote %q (status %d) to a client that left", rec.Body.String(), rec.Code)
+			}
+
+			// leaving out the files directory lookup, if this test made it
+			got := slices.DeleteFunc(mmtest.Bases(received()), func(base string) bool { return base == "args" })
+			if !slices.Equal(got, []string{"hold"}) {
+				t.Errorf("minimega received %q, want only the hold", got)
+			}
+		})
 	}
 }
 

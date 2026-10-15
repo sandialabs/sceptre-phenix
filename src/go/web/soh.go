@@ -59,7 +59,11 @@ func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	state, err := soh.GetFor(stored, statusFilter)
+	state, err := soh.GetFor(ctx, stored, statusFilter)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 

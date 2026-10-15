@@ -44,7 +44,11 @@ func GetExperimentTopology(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	topo, err := vm.Topology(name, ignore)
+	topo, err := vm.Topology(ctx, name, ignore)
+	if requestCanceled(r, err) {
+		return
+	}
+
 	if err != nil {
 		http.Error(w, "unable to get experiment topology", http.StatusBadRequest)
 
