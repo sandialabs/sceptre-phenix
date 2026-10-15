@@ -305,7 +305,7 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 			plog.TypeSystem,
 			"Unknown route requested",
 			"route",
-			r.RequestURI,
+			middleware.RedactURI(r.RequestURI),
 			"method",
 			r.Method,
 		)
@@ -340,7 +340,9 @@ func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
 
 	// rather than the UI's page, which an API client would take for data
 	api.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		plog.Warn(plog.TypeSystem, "Unknown API route requested", "route", r.RequestURI, "method", r.Method)
+		plog.Warn(
+			plog.TypeSystem, "Unknown API route requested", "route", middleware.RedactURI(r.RequestURI), "method", r.Method,
+		)
 		http.Error(w, "no such API route", http.StatusNotFound)
 	})
 

@@ -2,9 +2,13 @@ package web
 
 import (
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
+
+	"phenix/util/plog"
 )
 
 func TestRouterServesTheUI(t *testing.T) {
@@ -135,5 +139,40 @@ func TestRouterServesTheBuilderBundle(t *testing.T) {
 	resp = do(t, http.MethodGet, url, "", "Accept-Encoding", "gzip", "If-None-Match", resp.Header.Get("ETag"))
 	if resp.StatusCode != http.StatusNotModified {
 		t.Fatalf("revalidation status %d, want %d", resp.StatusCode, http.StatusNotModified)
+	}
+}
+
+// A request for an unknown route, of the UI or the API, is logged without the
+// session token its URL may carry.
+func TestUnknownRoutesLogNoToken(t *testing.T) {
+	server := serveAs(t, "alice", testRole("options", "list")).URL
+
+	var (
+		mu   sync.Mutex
+		logs strings.Builder
+	)
+
+	plog.AddHandler(t.Name(), slog.NewJSONHandler(writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return logs.Write(p)
+	}), &slog.HandlerOptions{Level: slog.LevelDebug}))
+	t.Cleanup(func() { plog.RemoveHandler(t.Name()) })
+
+	for _, path := range []string{
+		"/api/v1/experiments/e/vms/v/files/download?path=/a&token=SECRET-JWT",
+		"/no-such-page?token=SECRET-JWT",
+	} {
+		_ = readBody(t, do(t, http.MethodGet, server+path, ""))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if got := logs.String(); !strings.Contains(got, "Unknown API route") || !strings.Contains(got, "Unknown route") {
+		t.Fatalf("unknown routes not logged: %s", got)
+	} else if strings.Contains(got, "SECRET-JWT") {
+		t.Errorf("logged the token: %s", got)
 	}
 }
