@@ -169,7 +169,12 @@ func stopCaptures(ctx context.Context, expName, vmName string, iface *int) error
 		return fmt.Errorf("listing captures of VM %s in experiment %s: %w", vmName, expName, err)
 	}
 
-	if captures == nil {
+	return stopListedCaptures(ctx, expName, vmName, iface, captures)
+}
+
+// stopListedCaptures is stopCaptures for the VM's captures as already listed.
+func stopListedCaptures(ctx context.Context, expName, vmName string, iface *int, captures []mm.Capture) error {
+	if len(captures) == 0 {
 		return fmt.Errorf("vm %s in experiment %s: %w", vmName, expName, ErrNoCaptures)
 	}
 
@@ -205,7 +210,7 @@ func stopCaptures(ctx context.Context, expName, vmName string, iface *int) error
 		return fmt.Errorf("creating files directory for experiment %s: %w", expName, err)
 	}
 
-	opts := []mm.Option{mm.NS(expName), mm.VMName(vmName), mm.Context(ctx)}
+	opts := []mm.Option{mm.NS(expName), mm.VMName(vmName), mm.Context(ctx), mm.KnownCaptures(captures)}
 
 	if iface != nil {
 		opts = append(opts, mm.CaptureInterface(*iface))

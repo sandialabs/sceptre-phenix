@@ -32,6 +32,8 @@ type options struct {
 	captureIface    int
 	captureIfaceSet bool
 	captureFile     string
+	captures        []Capture
+	capturesKnown   bool
 
 	screenshotSize string
 
@@ -140,6 +142,15 @@ func CaptureInterface(i int) Option {
 func CaptureFile(f string) Option {
 	return func(o *options) {
 		o.captureFile = f
+	}
+}
+
+// KnownCaptures gives the VM's captures as the caller already listed them, so
+// StopVMCapture does not list them again.
+func KnownCaptures(c []Capture) Option {
+	return func(o *options) {
+		o.captures = c
+		o.capturesKnown = true
 	}
 }
 

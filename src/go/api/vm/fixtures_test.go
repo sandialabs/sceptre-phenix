@@ -52,7 +52,7 @@ type fakeMM struct {
 	// called as each capture starts or stops, before it reports its error
 	onCapture func()
 
-	starts, stops, connects, tagUpdates, captureListings int
+	starts, stops, connects, tagUpdates, captureListings, vmCaptureListings int
 }
 
 func (m *fakeMM) GetVMInfo(...mm.Option) mm.VMs {
@@ -60,6 +60,8 @@ func (m *fakeMM) GetVMInfo(...mm.Option) mm.VMs {
 }
 
 func (m *fakeMM) GetVMCaptures(...mm.Option) []mm.Capture {
+	m.vmCaptureListings++
+
 	return m.captures
 }
 
