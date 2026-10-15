@@ -15,6 +15,7 @@ vi.mock('@/utils/axios.js', () => ({ default: { get: vi.fn() } }));
 
 import AppHeader from '@/components/AppHeader.vue';
 import RefreshStatus from '@/components/RefreshStatus.vue';
+import JobsMenu from '@/components/jobs/JobsMenu.vue';
 import { useJobStore } from '@/utils/jobs.js';
 import { pageStatus } from '@/utils/pageLoader.js';
 import { makeContext } from './helpers/context.js';
@@ -360,6 +361,34 @@ describe('the jobs menu', () => {
     expect(html).toMatch(
       /id="jobs-panel"[^>]*role="region"|role="region"[^>]*id="jobs-panel"/,
     );
+    // nor a modal or popup: the panel is shown in place, closed at first
+    expect(html).not.toContain('aria-modal');
+    expect(html).not.toContain('aria-haspopup');
+    expect(html).toMatch(/class="dropdown is-right jobs-menu"/);
+  });
+
+  it('closes on Escape, back to its button, and on a click outside it', () => {
+    const inside = {};
+    const trigger = { focus: vi.fn() };
+    const menu = makeContext(JobsMenu, {
+      $refs: { root: { contains: (el) => el === inside }, trigger },
+    });
+
+    menu.open = true;
+    menu.closeOutside({ target: inside });
+    expect(menu.open).toBe(true);
+    menu.closeOutside({ target: {} });
+    expect(menu.open).toBe(false);
+    expect(trigger.focus).not.toHaveBeenCalled();
+
+    menu.open = true;
+    menu.close(true);
+    expect(menu.open).toBe(false);
+    expect(trigger.focus).toHaveBeenCalledOnce();
+
+    // Escape with the panel already closed leaves focus where it is
+    menu.close(true);
+    expect(trigger.focus).toHaveBeenCalledOnce();
   });
 
   it('says when there are none, and is not shown to no one signed in', async () => {
