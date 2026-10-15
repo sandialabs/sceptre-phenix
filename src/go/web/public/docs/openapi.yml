@@ -3594,7 +3594,7 @@ paths:
           headers:
             Location:
               schema:
-                description: location of the created or updated config
+                description: location of the created or updated config, under the server's base path
                 type: string
                 format: uri
         "400":

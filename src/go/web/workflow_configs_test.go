@@ -669,3 +669,27 @@ func TestConfigName(t *testing.T) {
 		})
 	}
 }
+
+// An upserted config's location is under the base path the UI is served
+// behind.
+func TestWorkflowUpsertConfigLocationHasBasePath(t *testing.T) {
+	t.Setenv("BRANCH_NAME", "")
+
+	original := o
+	t.Cleanup(func() { o = original })
+
+	o.basePath = "/phenix/"
+
+	m := installValidationTestStore(t)
+	expectUpsertExists(m, workflowTestKey("topology/main-topo"), false)
+	m.EXPECT().Create(gomock.Any()).Return(nil)
+
+	rec := httptest.NewRecorder()
+	if err := WorkflowUpsertConfig(rec, upsertTestRequest(t, "", upsertTestTopology)); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := rec.Header().Get("Location"), "/phenix/api/v1/configs/topology/main-topo"; got != want {
+		t.Errorf("Location %q, want %q", got, want)
+	}
+}

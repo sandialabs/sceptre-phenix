@@ -559,7 +559,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	w.Header().Set("Location", strings.ToLower("/api/v1/configs/"+name))
+	w.Header().Set("Location", apiLocation(strings.ToLower("configs/"+name)))
 	w.WriteHeader(http.StatusCreated)
 
 	cfg.Spec = nil
