@@ -78,6 +78,10 @@ tags:
     description: Workflow config upserts and applies, and the server options clients read
   - name: State of Health
     description: State of health across experiments
+  - name: Settings
+    description: The web UI settings the store holds, and the parts of them every user reads
+  - name: Logs
+    description: The server's log entries
   - name: Console
     description: >-
       minimega consoles in the web UI (the server must run with
@@ -5004,6 +5008,74 @@ paths:
       responses:
         "204":
           description: successful operation
+  "/users/{username}/tokens":
+    post:
+      tags:
+        - Users
+      summary: Create an API token for a user
+      description: >-
+        Signs a token for the user that lasts the lifetime given, and adds it
+        to the user's tokens, so it works until it expires or is removed.
+        Needs the `users` `patch` permission on the user.
+      operationId: postUsersUsernameTokens
+      parameters:
+        - name: username
+          in: path
+          description: the user to create the token for
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - lifetime
+              properties:
+                lifetime:
+                  title: Lifetime
+                  type: string
+                  description: >-
+                    how long the token lasts: a Go duration, such as `720h`,
+                    or a whole number of days, such as `30`
+                  example: 720h
+                desc:
+                  title: Description
+                  type: string
+                  description: a note on the token; defaults to when it was made
+                  example: CI pipeline
+      responses:
+        "200":
+          description: the token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    title: Token
+                    type: string
+                    description: the token, for `X-Phenix-Auth-Token`
+                    example: eyJhbGciOi...example
+                  desc:
+                    title: Description
+                    type: string
+                    description: the token's note
+                    example: CI pipeline
+                  exp:
+                    title: Experiment
+                    type: string
+                    format: date-time
+                    description: when the token expires
+                    example: "2026-02-01T10:00:00Z"
+        "400":
+          description: a malformed body, or a lifetime that is neither a duration nor a number of days
+        "403":
+          description: forbidden
+        "500":
+          description: the user does not exist, or the token could not be signed or saved
   "/signup":
     post:
       tags:
@@ -5989,6 +6061,155 @@ paths:
           description: the role may no longer get the files the archive holds
         "404":
           description: no such job, another user's, or a job with no artifact
+  "/roles":
+    get:
+      tags:
+        - Users
+      summary: List the roles
+      description: Needs the `roles` `list` permission.
+      operationId: getRoles
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  roles:
+                    title: Roles
+                    type: array
+                    nullable: true
+                    description: the roles; null when there are none
+                    items:
+                      $ref: "#/components/schemas/Role"
+        "403":
+          description: forbidden
+        "500":
+          description: the roles could not be read
+  "/settings":
+    get:
+      tags:
+        - Settings
+      summary: Get the web UI settings
+      description: >-
+        The password rules, log file rotation and session timeout the web
+        UI's Settings page edits, which the store holds. Needs no permission.
+      operationId: getSettings
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        "500":
+          description: the settings could not be read
+    post:
+      tags:
+        - Settings
+      summary: Change the web UI settings
+      description: >-
+        Replaces every setting with the body's, which take effect at once. A
+        field the body leaves out is set to its zero value, so send them all,
+        as `GET /settings` returns them. Needs the `settings` `update`
+        permission.
+      operationId: postSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Settings"
+      responses:
+        "200":
+          description: the settings were changed
+        "400":
+          description: the body is not settings
+        "403":
+          description: forbidden
+        "500":
+          description: >-
+            a setting could not be saved, or the password minimum length is
+            not from 8 to 32
+  "/settings/password":
+    get:
+      tags:
+        - Settings
+      summary: Get the password rules
+      description: >-
+        What a new password must have, which the sign-up and password forms
+        check. Needs no permission.
+      operationId: getSettingsPassword
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordSettings"
+        "500":
+          description: the settings could not be read
+  "/settings/timeout":
+    get:
+      tags:
+        - Settings
+      summary: Get the web UI session timeout
+      description: >-
+        When the web UI signs an idle user out, and warns before it does.
+        Needs no permission.
+      operationId: getSettingsTimeout
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeoutSettings"
+        "500":
+          description: the settings could not be read
+  "/logs":
+    get:
+      tags:
+        - Logs
+      summary: Get the server's log entries in a time range
+      description: >-
+        The entries of the server's system log file, rotated files included,
+        from `start` to `end`, oldest first. The Logs page then follows new
+        entries on the `/ws` websocket (`log` resource). Needs the `logs`
+        `get` permission.
+      operationId: getLogs
+      parameters:
+        - name: start
+          in: query
+          description: the time of the first entry, RFC 3339
+          required: true
+          schema:
+            type: string
+            format: date-time
+          example: "2026-01-01T10:00:00Z"
+        - name: end
+          in: query
+          description: the time of the last entry, RFC 3339; defaults to 30 seconds from now
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: the entries, an empty list when none match
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LogEntry"
+        "400":
+          description: start is missing, or start or end is not an RFC 3339 time
+        "403":
+          description: forbidden
+        "500":
+          description: the log files could not be read
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
@@ -7074,38 +7295,8 @@ components:
         role:
           title: "Role"
           description: "Role and policies assigned to the user."
-          type: object
-          properties:
-            name:
-              title: "Name"
-              description: "Name used to identify this resource or entry."
-              example: example-name
-              type: string
-            policies:
-              title: "Policies"
-              description: "Access policies assigned to this role."
-              type: array
-              items:
-                type: object
-                properties:
-                  resources:
-                    title: "Resources"
-                    description: "Resource types covered by this policy."
-                    type: array
-                    items:
-                      type: string
-                  resourceNames:
-                    title: "Resource Names"
-                    description: "Resource names covered by this policy."
-                    type: array
-                    items:
-                      type: string
-                  verbs:
-                    title: "Verbs"
-                    description: "Actions allowed on the listed resources."
-                    type: array
-                    items:
-                      type: string
+          allOf:
+            - $ref: "#/components/schemas/Role"
         resource_names:
           title: "Resource Names"
           description: "Resource names assigned to the user."
@@ -8773,6 +8964,165 @@ components:
           type: boolean
           description: whether the client only watches the terminal
           example: false
+    Role:
+      title: Role
+      type: object
+      description: A role and the policies it grants.
+      properties:
+        name:
+          title: Name
+          type: string
+          description: the role's name
+          example: Experiment User
+        policies:
+          title: Policies
+          type: array
+          description: the role's policies
+          items:
+            type: object
+            properties:
+              resources:
+                title: Resources
+                type: array
+                description: the resource types the policy covers
+                items:
+                  type: string
+                example: [experiments, vms/*]
+              resourceNames:
+                title: Resource Names
+                type: array
+                description: the names of the resources the policy covers
+                items:
+                  type: string
+                example: [exp1, exp1/*]
+              verbs:
+                title: Verbs
+                type: array
+                description: the actions the policy allows
+                items:
+                  type: string
+                example: [get, list]
+    Settings:
+      title: Settings
+      type: object
+      description: The settings of the web UI's Settings page.
+      properties:
+        password_settings:
+          title: Password Settings
+          description: the password rules
+          allOf:
+            - $ref: "#/components/schemas/PasswordSettings"
+        logging_settings:
+          title: Logging Settings
+          description: the system log file's rotation
+          allOf:
+            - $ref: "#/components/schemas/LoggingSettings"
+        timeout_settings:
+          title: Timeout Settings
+          description: the session timeout
+          allOf:
+            - $ref: "#/components/schemas/TimeoutSettings"
+    PasswordSettings:
+      title: Password Settings
+      type: object
+      description: What a new password must have.
+      properties:
+        lowercase_req:
+          title: Lowercase Req
+          type: boolean
+          description: whether a password needs a lowercase letter
+          example: true
+        uppercase_req:
+          title: Uppercase Req
+          type: boolean
+          description: whether a password needs an uppercase letter
+          example: true
+        number_req:
+          title: Number Req
+          type: boolean
+          description: whether a password needs a number
+          example: true
+        symbol_req:
+          title: Symbol Req
+          type: boolean
+          description: whether a password needs a symbol
+          example: false
+        min_length:
+          title: Min Length
+          type: integer
+          description: the shortest password allowed, from 8 to 32
+          example: 8
+    LoggingSettings:
+      title: Logging Settings
+      type: object
+      description: When the system log file is rotated, and how many old files are kept.
+      properties:
+        max_file_rotations:
+          title: Max File Rotations
+          type: integer
+          description: old log files to keep
+          example: 3
+        max_file_size:
+          title: Max File Size
+          type: integer
+          description: size in megabytes at which the log file is rotated
+          example: 100
+        max_file_age:
+          title: Max File Age
+          type: integer
+          description: days to keep an old log file
+          example: 90
+    TimeoutSettings:
+      title: Timeout Settings
+      type: object
+      description: When the web UI signs an idle user out.
+      properties:
+        enabled:
+          title: Enabled
+          type: boolean
+          description: whether idle users are signed out
+          example: true
+        timeout_min:
+          title: Timeout Min
+          type: number
+          description: minutes of idleness before the user is signed out
+          example: 30
+        warning_min:
+          title: Warning Min
+          type: number
+          description: minutes before signing out that the user is warned
+          example: 3
+    LogEntry:
+      title: Log Entry
+      type: object
+      description: One entry of the server's log.
+      properties:
+        time:
+          title: Time
+          type: integer
+          format: int64
+          description: when the entry was logged, in microseconds since the Unix epoch
+          example: 1767261600000000
+        timestamp:
+          title: Timestamp
+          type: string
+          description: when the entry was logged, readable
+          example: "2026-01-01 10:00:00.000"
+        level:
+          title: Level
+          type: string
+          description: the entry's level
+          example: INFO
+        msg:
+          title: Message
+          type: string
+          description: the entry's message, with its other fields appended
+          example: "experiment started exp=exp1"
+        type:
+          title: Type
+          type: string
+          description: what the entry is about
+          enum: [SYSTEM, ACTION, SECURITY, AUDIT, HTTP, MINIMEGA, SOH, SCORCH, PHENIX-APP]
 
   # Shared by the single-file download routes, which resume interrupted
   # downloads with Range and If-Range.
