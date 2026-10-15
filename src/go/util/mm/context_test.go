@@ -255,3 +255,33 @@ func TestClusterHostsGiveUpWithTheirContext(t *testing.T) { //nolint:paralleltes
 		t.Fatal("the list that gave up was kept for later callers")
 	}
 }
+
+// A VM listing whose follow-up reads (captures, snapshot disks) gave up
+// because its context ended after `vm info` was answered reports ctx's error,
+// not a complete listing.
+func TestGetVMInfoReportsFollowUpsThatGaveUp(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		if cmd.Base != vmInfoCmd {
+			return nil
+		}
+
+		cancel()
+
+		return []*minicli.Response{mmtest.Tabular("head",
+			[]string{"name", stateColumn, "uptime", "disks", "snapshot"},
+			[]string{"vm1", "RUNNING", "1h0m0s", "/snap/vm1.qcow2", "true"},
+		)}
+	})
+
+	vms, err := (Minimega{}).getVMInfo(NewOptions(NS("exp"), Context(ctx)), nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("getVMInfo = %v, %v; want %v", vms, err, context.Canceled)
+	}
+
+	if n := mmtest.Count(received(), captureCmd); n != 0 {
+		t.Fatalf("minimega received %d capture listings, want none", n)
+	}
+}
