@@ -1,6 +1,7 @@
 package mm
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -43,7 +44,7 @@ func (m Minimega) ActiveC2Clients(ns string, refs []C2ClientRef) map[C2ClientRef
 	}
 
 	var (
-		identities = getVMIdentities(ns, "")
+		identities = getVMIdentities(context.Background(), ns, "")
 		clients    = c2ClientRows(ns)
 	)
 
