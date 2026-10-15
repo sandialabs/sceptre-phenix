@@ -14,12 +14,12 @@
   import router from '@/router';
   import { usePhenixStore } from '@/store';
   import { storeToRefs } from 'pinia';
-  import { watch } from 'vue';
 
   import { TimeoutTool } from '@/utils/timeout.js';
   import { schedulePagePreload } from '@/utils/pageData.js';
   import { useJobStore } from '@/utils/jobs.js';
   import { invalidatePages } from '@/utils/pageCache.js';
+  import { followSignIn } from '@/utils/signIn.js';
 
   const store = usePhenixStore();
 
@@ -62,34 +62,30 @@
       store.featuresLoaded = true;
     });
 
-  onMounted(() => {
-    // connect websockets once user has authenticated (or auth disabled)
-    if (import.meta.env.VITE_AUTH === 'disabled' || store.auth) {
-      connectWebsocket();
-      followJobs();
-      timeout.fetchAndStart();
-      schedulePagePreload();
-    } else {
-      const { auth } = storeToRefs(store);
-      watch(auth, async (newAuth) => {
-        if (newAuth && !isWsConnected()) {
-          connectWebsocket();
-        } else if (!newAuth && isWsConnected()) {
-          disconnectWebsocket();
-        }
+  let stopFollowingSignIn = () => {};
 
-        if (newAuth) {
-          followJobs();
-          timeout.fetchAndStart();
-          schedulePagePreload();
-        } else {
-          forgetJobs();
-        }
-      });
-    }
+  onMounted(() => {
+    // connect websockets once user has authenticated (or auth disabled), and
+    // drop the user's websocket and jobs on every sign-out, also when the
+    // page was loaded already signed in
+    const { auth } = storeToRefs(store);
+    stopFollowingSignIn = followSignIn(auth, {
+      authDisabled: import.meta.env.VITE_AUTH === 'disabled',
+      onSignIn: () => {
+        if (!isWsConnected()) connectWebsocket();
+        followJobs();
+        timeout.fetchAndStart();
+        schedulePagePreload();
+      },
+      onSignOut: () => {
+        if (isWsConnected()) disconnectWebsocket();
+        forgetJobs();
+      },
+    });
   });
 
   onUnmounted(() => {
+    stopFollowingSignIn();
     forgetJobs();
     removeWsHandler(invalidatePages);
     disconnectWebsocket();
