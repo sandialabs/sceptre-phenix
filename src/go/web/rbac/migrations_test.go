@@ -9,6 +9,7 @@ import (
 
 	"phenix/store"
 	"phenix/store/storetest"
+	"phenix/types"
 	v1 "phenix/types/version/v1"
 )
 
@@ -356,4 +357,89 @@ func describe(policies []*v1.PolicySpec) string {
 	}
 
 	return "[" + strings.Join(out, "; ") + "]"
+}
+
+// The null resource names migration removes the resourceNames: null stored in
+// role and user policies, keeping named policies and the rest of the config.
+// Running it again changes nothing.
+//
+//nolint:paralleltest // replaces the store
+func TestDropNullResourceNames(t *testing.T) {
+	storetest.Use(t)
+
+	policies := func() []any {
+		return []any{
+			map[string]any{"resources": []any{"vms"}, "resourceNames": nil, "verbs": []any{"get"}},
+			map[string]any{"resources": []any{"hosts"}, "resourceNames": []any{"*"}, "verbs": []any{"list"}},
+		}
+	}
+
+	stored := map[string]map[string]any{
+		"role/legacy": {"roleName": "Legacy", "policies": policies()},
+		"user/legacy": {
+			"username": "legacy",
+			"password": "hash",
+			"rbac":     map[string]any{"roleName": "Legacy", "policies": policies()},
+		},
+	}
+
+	for name, spec := range stored {
+		c, err := store.NewConfig(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c.Spec = spec
+
+		if err := store.Create(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, pass := range []string{"first", "repeated"} {
+		if err := DropNullResourceNames(); err != nil {
+			t.Fatalf("%s migration: %v", pass, err)
+		}
+
+		for name := range stored {
+			c, _ := store.NewConfig(name)
+			if err := store.Get(c); err != nil {
+				t.Fatal(err)
+			}
+
+			list := c.Spec["policies"]
+			if c.Kind == "User" {
+				if c.Spec["password"] != "hash" {
+					t.Errorf("%s migration: %s password = %v, want it kept", pass, name, c.Spec["password"])
+				}
+
+				role, _ := c.Spec["rbac"].(map[string]any)
+				list = role["policies"]
+			}
+
+			got, _ := list.([]any)
+			if len(got) != 2 {
+				t.Fatalf("%s migration: %s policies = %#v, want two", pass, name, list)
+			}
+
+			if p, _ := got[0].(map[string]any); p == nil {
+				t.Errorf("%s migration: %s policy = %#v, want a map", pass, name, got[0])
+			} else if names, set := p["resourceNames"]; set {
+				t.Errorf("%s migration: %s unnamed policy resourceNames = %#v, want it left out", pass, name, names)
+			}
+
+			if p, _ := got[1].(map[string]any); !reflect.DeepEqual(p["resourceNames"], []any{"*"}) {
+				t.Errorf("%s migration: %s named policy = %#v, want its names kept", pass, name, got[1])
+			}
+		}
+	}
+
+	c, _ := store.NewConfig("role/legacy")
+	if err := store.Get(c); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := types.ValidateConfigSpec(*c); err != nil {
+		t.Errorf("migrated role fails its schema: %v", err)
+	}
 }

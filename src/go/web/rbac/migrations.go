@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/activeshadow/structs"
 
+	"phenix/store"
 	v1 "phenix/types/version/v1"
 )
 
@@ -151,6 +153,56 @@ func EnsureExperimentViewerMountScope() error {
 	}
 
 	return nil
+}
+
+// DropNullResourceNames removes the resourceNames: null that roles and users
+// saved before an empty list was left out, since the role schema rejects it.
+func DropNullResourceNames() error {
+	configs, err := store.List("Role", "User")
+	if err != nil {
+		return fmt.Errorf("getting roles and users: %w", err)
+	}
+
+	for i := range configs {
+		c := &configs[i]
+
+		policies := c.Spec["policies"]
+		if strings.EqualFold(c.Kind, "User") {
+			role, _ := c.Spec["rbac"].(map[string]any)
+			policies = role["policies"]
+		}
+
+		if !dropNullNames(policies) {
+			continue
+		}
+
+		c.IfRevision = c.Metadata.Revision
+
+		if err := store.Update(c); err != nil {
+			return fmt.Errorf("updating %s: %w", c.FullName(), err)
+		}
+	}
+
+	return nil
+}
+
+// dropNullNames removes resourceNames from the stored policies that hold
+// null there, and reports whether it removed any.
+func dropNullNames(policies any) bool {
+	list, _ := policies.([]any)
+
+	var changed bool
+
+	for _, p := range list {
+		policy, _ := p.(map[string]any)
+		if names, ok := policy["resourceNames"]; ok && names == nil {
+			delete(policy, "resourceNames")
+
+			changed = true
+		}
+	}
+
+	return changed
 }
 
 // scopeUnnamed gives the role's policies on resource that name nothing the
