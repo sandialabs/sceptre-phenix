@@ -80,7 +80,6 @@ describe('the menu', () => {
         'Builder',
         'Console',
         'WebShark',
-        'Tunneler',
         'Settings',
       ],
     ],
@@ -130,6 +129,56 @@ describe('the menu', () => {
     const html = await renderSSR(AppHeader);
     expect(links(html)).toEqual(['Experiments']);
     expect(textOf(html)).not.toContain('Logout');
+  });
+});
+
+describe('the Tunneler button', () => {
+  // the Tunneler link at the right of the header, if there is one
+  const button = (html) =>
+    html
+      .slice(html.indexOf('navbar-end'))
+      .match(/<a\b[^>]*tunneler-button[^>]*>[\s\S]*?<\/a>/)?.[0];
+
+  it('links to the Tunneler page at the right of the header, not as a tab', async () => {
+    Object.assign(store, {
+      role: role('Viewer', ['experiments', 'list']),
+      features: ['tunneler-download'],
+    });
+    const html = await renderSSR(AppHeader);
+
+    expect(links(html)).not.toContain('Tunneler');
+    const link = button(html);
+    expect(link).toMatch(/href="\/tunneler"/);
+    const classes = link.match(/class="([^"]*)"/)[1].split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining(['button', 'is-primary', 'is-medium']),
+    );
+    expect(link).toContain('data-icon="download"');
+    expect(textOf(link)).toBe('Tunneler');
+    expect(link).not.toContain('aria-current');
+  });
+
+  it('is marked as the current page on the Tunneler page', async () => {
+    Object.assign(store, {
+      role: role('Viewer', ['experiments', 'list']),
+      features: ['tunneler-download'],
+    });
+    const html = await renderSSR(AppHeader, {}, { route: '/tunneler' });
+    expect(button(html)).toContain('aria-current="page"');
+  });
+
+  it.each([
+    ['the server has no tunneler downloads', true, []],
+    ['no one is signed in', false, ['tunneler-download']],
+  ])('is left out when %s', async (_, auth, features) => {
+    Object.assign(store, {
+      auth,
+      role: role('Viewer', ['experiments', 'list']),
+      features,
+    });
+    const html = await renderSSR(AppHeader);
+    expect(html).not.toContain('tunneler-button');
+    expect(html).not.toContain('href="/tunneler"');
   });
 });
 

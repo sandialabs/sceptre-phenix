@@ -28,10 +28,9 @@ const json = (body) =>
     headers: { 'Content-Type': 'application/json' },
   });
 
-// what the page shows below its quick start: the table's rows, or else its
-// message
-async function shown(ctx) {
-  const html = await renderSSR(
+// the page's HTML once its list has been read into ctx
+const page = (ctx) =>
+  renderSSR(
     Tunneler,
     {},
     {
@@ -45,7 +44,12 @@ async function shown(ctx) {
       },
     },
   );
-  const below = html.slice(html.indexOf('<hr'));
+
+// what the page shows under its downloads heading: the table's rows, or else
+// its message
+async function shown(ctx) {
+  const html = await page(ctx);
+  const below = html.slice(html.indexOf('</h1>'), html.indexOf('<hr'));
   const body = below.includes('<tbody>')
     ? below.slice(below.indexOf('<tbody>'), below.indexOf('</tbody>'))
     : below;
@@ -124,6 +128,15 @@ describe('the Tunneler page', () => {
     const { text, rows } = await shown(await open(answer));
     expect(text).toBe(message);
     expect(rows).toEqual([]);
+  });
+
+  it('puts the downloads before the quick start', async () => {
+    const html = await page(await open(json({ files: [] })));
+    expect(html.indexOf('id="downloads"')).toBeGreaterThan(-1);
+    expect(html.indexOf('id="downloads"')).toBeLessThan(
+      html.indexOf('id="quick-start"'),
+    );
+    expect(textOf(html)).toContain('downloaded via the table above');
   });
 
   it('says it is loading until the list arrives', async () => {

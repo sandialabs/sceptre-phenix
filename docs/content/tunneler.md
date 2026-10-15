@@ -13,15 +13,16 @@ UI.
 
 ## Downloading the Tunneler
 
-Click on the `Tunneler` tab in the banner near the top of the phēnix UI.
+Click the `Tunneler` button at the right-hand end of the banner at the top
+of the phēnix UI.
 
 ![screenshot](images/tunneler_tab.png)
 
-The page starts with a `Quick Start` summary of the steps described below,
-ending in a `Tunneler documentation` link back to this page. Below that is
-a table of the `phenix-tunneler` builds installed on the phēnix server,
-with an `OS` and an `Architecture` column and a `Download` link for each
-build.
+The page starts with a `Tunneler Downloads` table of the `phenix-tunneler`
+builds installed on the phēnix server, with an `OS` and an `Architecture`
+column and a `Download` link for each build. Below that is a `Quick Start`
+summary of the steps described below, ending in a `Tunneler documentation`
+link back to this page.
 
 phēnix ships these builds:
 
@@ -44,7 +45,7 @@ Download the binary that matches your local machine and make it
 executable (on Linux/MacOS, `chmod +x phenix-tunneler-<os>-<arch>`).
 
 !!! note
-    The `Tunneler` tab, and its downloads, are only available if the
+    The `Tunneler` button, and its downloads, are only available if the
     phēnix server has been configured to serve tunneler binaries (a
     `downloads/tunneler` directory must exist in the directory the phēnix
     server runs from when it starts). This will be the case if you have a typical deployment using the Docker image.

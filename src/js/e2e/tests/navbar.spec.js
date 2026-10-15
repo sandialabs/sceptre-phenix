@@ -1,5 +1,5 @@
 // The header: its refresh status and button, the page data the app preloads in
-// the background, and the tabs for optional server features.
+// the background, and the links for optional server features.
 const {
   test: base,
   expect,
@@ -107,7 +107,9 @@ test('pages show preloaded data at once, and a load left behind still fills it',
   await pageDataLoaded(page);
 });
 
-test('tabs for optional server features follow /features', async ({ page }) => {
+test('links for optional server features follow /features', async ({
+  page,
+}) => {
   const nav = page.getByRole('navigation');
   // answers /features as a server without, then with, WebShark and the
   // tunneler downloads would
@@ -127,7 +129,14 @@ test('tabs for optional server features follow /features', async ({ page }) => {
   await page.unrouteAll();
   await offer(['webshark', 'tunneler-download']);
   await page.goto('/experiments');
-  await expect(nav.getByRole('link', { name: 'Tunneler' })).toBeVisible();
+  // Tunneler is a button at the right of the header, current on its page
+  const tunneler = nav.getByRole('link', { name: 'Tunneler' });
+  await expect(tunneler).toBeVisible();
+  await tunneler.click();
+  await expect(
+    page.getByRole('heading', { name: 'Tunneler Downloads' }),
+  ).toBeVisible();
+  await expect(tunneler).toHaveAttribute('aria-current', 'page');
   await nav.getByRole('link', { name: 'WebShark' }).click();
   await expect(page.getByLabel('Experiment')).toBeVisible();
 });
