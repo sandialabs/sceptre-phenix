@@ -378,13 +378,9 @@ func guard(
 	return out
 }
 
-// Run runs the given command against minimega, automatically redialing the
-// shared connection if it was disconnected. Any errors encountered will be
-// returned as part of the response channel, which the caller must drain. A
-// command waiting longer than DefaultWaitTimeout for the shared connection, or
-// holding it longer than DefaultCommandTimeout, returns ErrTimeout.
-//
-// Code serving a web request or a background job uses RunContext instead.
+// Run runs c on the shared connection, redialing it if needed; errors come in the response channel,
+// which the caller must drain. Past DefaultWaitTimeout or DefaultCommandTimeout it returns
+// ErrTimeout. Code serving a web request or a background job uses RunContext instead.
 func Run(c *Command) chan *miniclient.Response {
 	return runShared(context.Background(), c, nil)
 }
@@ -397,14 +393,9 @@ func RunStarted(c *Command, started func()) chan *miniclient.Response {
 	return runShared(context.Background(), c, started)
 }
 
-// RunContext is Run for a command run on behalf of something that may end
-// first, such as a web request whose client may leave or a job that may be
-// canceled: once ctx is done, a command still waiting for the shared
-// connection gives up without having been sent, returning an error that wraps
-// ErrNotSent and ctx's error (and ErrTimeout for its deadline). A command already sent is not
-// interrupted, since that would disturb the shared connection; it is bounded
-// by ctx's deadline, if any, or else by DefaultCommandTimeout. Whatever ctx
-// says, a command waits no longer than DefaultWaitTimeout, as with Run.
+// RunContext is Run for a request or job that may end first: once ctx is done, a command still
+// waiting for the shared connection gives up unsent (ErrNotSent wrapping ctx's error). A sent
+// command is not interrupted; ctx's deadline, if any, bounds it in place of DefaultCommandTimeout.
 func RunContext(ctx context.Context, c *Command) chan *miniclient.Response {
 	return runShared(ctx, c, nil)
 }

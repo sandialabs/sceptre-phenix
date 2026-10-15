@@ -344,12 +344,9 @@ func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
 	return float64(queued) / float64(expected), nil
 }
 
-// GetVMInfo returns minimega's details for the VMs in a namespace, optionally
-// filtered by VM name. Concurrent calls asking for the same VMs share one set of
-// minimega commands (see flight.Group), which give up once the Context of every
-// call sharing them is done; each caller gets its own copy. When
-// minimega cannot be read the list is partial or empty, and the error is only
-// logged; GetVMInfoObserved reports it.
+// GetVMInfo returns minimega's details for a namespace's VMs, or one VM's. Concurrent identical
+// calls share one run (see flight.Group) and each gets a copy. A failed read leaves the list partial
+// and is only logged; GetVMInfoObserved reports it.
 func (m Minimega) GetVMInfo(opts ...Option) VMs {
 	vms, obs := m.GetVMInfoObserved(opts...)
 

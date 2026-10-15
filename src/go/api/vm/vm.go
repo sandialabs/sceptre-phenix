@@ -80,13 +80,9 @@ func ListFor(ctx context.Context, exp *types.Experiment) []mm.VM {
 	return vms
 }
 
-// ListForObserved is ListFor, also reporting when minimega was read for a
-// running experiment's VMs (freshness.Unobserved for a stopped one). When
-// minimega did not answer for every VM, the observation is not Known and every
-// VM the topology configures is listed, those minimega did report with their
-// details and the rest as configured with no state, rather than leaving the
-// rest out as not deployed. The observation of a listing whose minimega
-// commands gave up because ctx is done carries ctx's error.
+// ListForObserved is ListFor, also reporting when minimega was read (Unobserved for a stopped
+// experiment). Unless the observation is Known, the VMs minimega missed are listed as configured,
+// with no state; a listing whose commands gave up because ctx is done carries ctx's error.
 func ListForObserved(ctx context.Context, exp *types.Experiment) ([]mm.VM, freshness.Observation) {
 	if !exp.Running() {
 		return listVMs(*exp, nil, false), freshness.Unobserved()
@@ -1522,12 +1518,9 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 	return out, nil
 }
 
-// CaptureSubnet starts a packet capture on each interface in the specified
-// subnet of every running VM, and returns those VMs' captures, each once. The
-// vmList argument is optional and defines the list of VMs to search. ctx is
-// checked until the first capture starts (see mm.Context): it returns an error
-// wrapping ctx's error if ctx is done before then, and from then on goes on
-// whatever ctx says.
+// CaptureSubnet starts a capture on each interface in subnet of every running VM (of vmList, if
+// given), and returns those VMs' captures, each once. ctx is checked only until the first capture
+// starts (see mm.Context).
 func CaptureSubnet(ctx context.Context, expName, subnet string, vmList []string) ([]mm.Capture, error) {
 	// Make sure the experiment is running
 	exp, err := experiment.Get(expName)
@@ -1653,13 +1646,9 @@ func capturesForVMs(expName string, vmNames []string) []mm.Capture {
 	return captures
 }
 
-// StopCaptureSubnet stops all the captures of each running VM that has an
-// address in the specified subnet, including those on its other interfaces. The
-// subnet argument is optional: without it, every running VM's captures are
-// stopped, while a subnet that does not parse matches no VM. The vmList argument
-// optionally limits the VMs searched. It returns the names of the VMs whose
-// captures it stopped. ctx is checked until the first VM's captures stop, as
-// for CaptureSubnet.
+// StopCaptureSubnet stops every capture of each running VM (of vmList, if given) with an address
+// in subnet: any VM without a subnet, none for one that does not parse. It returns the VMs it
+// stopped, and checks ctx only until the first VM's captures stop.
 func StopCaptureSubnet(ctx context.Context, expName, subnet string, vmList []string) ([]string, error) {
 	// Make sure the experiment is running
 	exp, err := experiment.Get(expName)
