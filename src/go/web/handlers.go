@@ -1713,10 +1713,10 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp := &proto.VMList{Total: req.GetTotal()} //nolint:exhaustruct // partial initialization
-	resp.Vms = make([]*proto.VM, int(req.GetTotal()))
+	// the VMs updated, which leaves out those the role may not patch
+	resp := &proto.VMList{Vms: make([]*proto.VM, 0, len(req.GetVms()))} //nolint:exhaustruct // partial initialization
 
-	for index, vmRequest := range req.GetVms() {
+	for _, vmRequest := range req.GetVms() {
 		// Skip any vms that are not allowed to be updated
 		if !role.Allowed("vms", "patch", fmt.Sprintf("%s/%s", expName, vmRequest.GetName())) {
 			plog.Warn(
@@ -1795,7 +1795,7 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		resp.Vms[index] = util.VMToProtobuf(expName, *vm, exp.Spec.Topology())
+		resp.Vms = append(resp.Vms, util.VMToProtobuf(expName, *vm, exp.Spec.Topology()))
 		plog.Info(
 			plog.TypeAction,
 			"vm updated",
@@ -1807,6 +1807,8 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 			vmRequest.GetName(),
 		)
 	}
+
+	resp.Total = uint32(len(resp.GetVms())) //nolint:gosec // as many VMs as the request named
 
 	body, err = marshaler.Marshal(resp)
 	if err != nil {
