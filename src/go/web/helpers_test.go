@@ -385,6 +385,14 @@ var roleNames atomic.Int64 //nolint:gochecknoglobals // unique across tests
 func serveAs(t *testing.T, user string, role rbac.Role) *httptest.Server {
 	t.Helper()
 
+	return serveRouter(t, testPublic(), devKey(t, user, role))
+}
+
+// devKey is the JWT signing key of dev authentication as user with role,
+// which it adds to the test's store as serveAs does.
+func devKey(t *testing.T, user string, role rbac.Role) string {
+	t.Helper()
+
 	name := fmt.Sprintf("test-role-%d", roleNames.Add(1))
 
 	useTestStore(t, store.Config{
@@ -394,7 +402,7 @@ func serveAs(t *testing.T, user string, role rbac.Role) *httptest.Server {
 		Spec:     map[string]any{"roleName": name, "policies": rolePolicies(role)},
 	})
 
-	return serveRouter(t, testPublic(), "dev|"+user+"|"+name)
+	return "dev|" + user + "|" + name
 }
 
 // rolePolicies are the role's policies as a stored config holds them.
