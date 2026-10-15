@@ -161,6 +161,7 @@ All notable changes to this project will be documented in this file.
 - **Base path**: The `Location` header of a config created, updated or upserted through `POST /workflow/configs/{branch}` left out the base path phēnix is served behind.
 - **JSON responses**: `GET /features`, `GET /version` and the console routes sent their JSON as `text/plain`.
 - **Experiment update**: `PATCH /experiments/{name}` answered 200 instead of 204, and 500 instead of 404 for an unknown experiment or 400 for a malformed body.
+- **VM updates**: `PATCH /experiments/{exp}/vms` crashed its request when the body's `total` was below the number of VMs, and otherwise answered with empty VMs in place of those the role could not patch; it now answers with the VMs it updated.
 
 ## [1.0.0]
 

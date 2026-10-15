@@ -173,3 +173,50 @@ func TestVMListPaging(t *testing.T) {
 		})
 	}
 }
+
+// Updating several VMs answers with the VMs it updated, whatever total the
+// request gives, and leaves out a VM the role may not patch.
+func TestUpdateVMsAnswersTheUpdatedVMs(t *testing.T) {
+	node := func(hostname string) map[string]any {
+		return map[string]any{
+			"type":     "VirtualMachine",
+			"general":  map[string]any{"hostname": hostname, "do_not_boot": false},
+			"hardware": map[string]any{"os_type": "linux", "drives": []map[string]any{{"image": "test.qc2"}}},
+		}
+	}
+
+	totals := map[string]string{"no total": "", "too few": `"total": 0,`, "too many": `"total": 5,`}
+
+	for name, total := range totals {
+		t.Run(name, func(t *testing.T) {
+			useTestStore(t, namedExperiment(t, "stopped", "", node("vm-a"), node("vm-b")))
+
+			server := serveAs(t, "alice", testRole("vms", "patch", "stopped/vm-a"))
+			body := `{` + total + `"vms": [{"name": "vm-b", "dnb": true}, {"name": "vm-a", "dnb": true}]}`
+
+			resp := do(t, http.MethodPatch, server.URL+"/api/v1/experiments/stopped/vms", body)
+
+			raw, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d: %s", resp.StatusCode, raw)
+			}
+
+			var list proto.VMList
+			if err := protojson.Unmarshal(raw, &list); err != nil {
+				t.Fatalf("unmarshaling %s: %v", raw, err)
+			}
+
+			if len(list.GetVms()) != 1 || list.GetVms()[0].GetName() != "vm-a" || !list.GetVms()[0].GetDoNotBoot() {
+				t.Errorf("vms = %v, want vm-a, not to boot", list.GetVms())
+			}
+
+			if list.GetTotal() != 1 {
+				t.Errorf("total = %d, want 1", list.GetTotal())
+			}
+		})
+	}
+}
