@@ -68,8 +68,8 @@ func TestRunContextGivesUpWaiting(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Errorf("RunContext returned %v, want %v", err, context.Canceled)
+		if !errors.Is(err, context.Canceled) || !errors.Is(err, ErrNotSent) {
+			t.Errorf("RunContext returned %v, want %v and %v", err, context.Canceled, ErrNotSent)
 		}
 	case <-time.After(maxWait):
 		t.Fatal("RunContext kept waiting after its context was canceled")
@@ -172,8 +172,8 @@ func TestRunContextDeadlineIsATimeout(t *testing.T) {
 	t.Cleanup(cancel)
 
 	err := ErrorResponse(RunContext(ctx, command("waiting")))
-	if !errors.Is(err, ErrTimeout) || !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("RunContext returned %v, want %v and %v", err, ErrTimeout, context.DeadlineExceeded)
+	if !errors.Is(err, ErrTimeout) || !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, ErrNotSent) {
+		t.Fatalf("RunContext returned %v, want %v, %v and %v", err, ErrTimeout, context.DeadlineExceeded, ErrNotSent)
 	}
 
 	_, err = RunTabularCheckedContext(ctx, command("tabular"), nil)
@@ -240,8 +240,9 @@ func TestRunAbandonsAHungCommand(t *testing.T) {
 		return reply("ok")
 	})
 
-	if err := ErrorResponse(Run(command("hang"))); !errors.Is(err, ErrTimeout) {
-		t.Fatalf("Run returned %v, want %v", err, ErrTimeout)
+	// sent, so not ErrNotSent
+	if err := ErrorResponse(Run(command("hang"))); !errors.Is(err, ErrTimeout) || errors.Is(err, ErrNotSent) {
+		t.Fatalf("Run returned %v, want %v alone", err, ErrTimeout)
 	}
 
 	done := make(chan string, 1)

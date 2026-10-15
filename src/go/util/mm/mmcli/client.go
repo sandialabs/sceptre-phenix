@@ -27,6 +27,10 @@ var (
 	// the command legitimately produced no output.
 	ErrNoResponse = errors.New("no response from minimega (connection lost)")
 
+	// ErrNotSent is wrapped by the error of a command that gave up waiting for
+	// the shared connection, so minimega never received it.
+	ErrNotSent = errors.New("waiting for the minimega connection")
+
 	// errDeadline is a wait ended by its context's deadline: it is both
 	// ErrTimeout and [context.DeadlineExceeded].
 	errDeadline error = deadlineError{}
@@ -81,6 +85,10 @@ func errResponse(err error) *miniclient.Response {
 // reconstructErr turns a response's error string back into an error, restoring
 // the sentinel identity where the string is one of ours.
 func reconstructErr(msg string) error {
+	if rest, ok := strings.CutPrefix(msg, ErrNotSent.Error()+": "); ok {
+		return fmt.Errorf("%w: %w", ErrNotSent, reconstructErr(rest))
+	}
+
 	for _, sentinel := range []error{errDeadline, ErrTimeout, ErrNoResponse, context.Canceled} {
 		if msg == sentinel.Error() {
 			return sentinel
@@ -393,7 +401,7 @@ func RunStarted(c *Command, started func()) chan *miniclient.Response {
 // first, such as a web request whose client may leave or a job that may be
 // canceled: once ctx is done, a command still waiting for the shared
 // connection gives up without having been sent, returning an error that wraps
-// ctx's error (and ErrTimeout for its deadline). A command already sent is not
+// ErrNotSent and ctx's error (and ErrTimeout for its deadline). A command already sent is not
 // interrupted, since that would disturb the shared connection; it is bounded
 // by ctx's deadline, if any, or else by DefaultCommandTimeout. Whatever ctx
 // says, a command waits no longer than DefaultWaitTimeout, as with Run.
@@ -464,7 +472,7 @@ func gaveUp(err error) error {
 		err = errDeadline
 	}
 
-	return fmt.Errorf("waiting for the minimega connection: %w", err)
+	return fmt.Errorf("%w: %w", ErrNotSent, err)
 }
 
 // RunDedicated runs the given command on a connection of its own, with no

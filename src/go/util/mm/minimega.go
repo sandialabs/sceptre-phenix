@@ -1168,22 +1168,22 @@ func (Minimega) CloseTunnel(opts ...Option) error {
 
 		// See CreateTunnel.
 		err := mmcli.VMTargetErrorResponse(o.run(cmd))
-		if err != nil {
-			errs = multierror.Append(
-				errs,
-				fmt.Errorf("closing tunnel to %s (%s:%d): %w", o.vm, o.dstHost, o.dstPort, err),
-			)
+		if err == nil {
+			// once one is closed, close the rest
+			o = o.committed()
+
+			continue
 		}
 
-		// A close that gave up waiting because o's context is done (see
-		// Context) was never sent: nothing is closed yet, and the rest would
-		// give up as well.
-		if o.ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, mmcli.ErrTimeout)) {
+		errs = multierror.Append(
+			errs,
+			fmt.Errorf("closing tunnel to %s (%s:%d): %w", o.vm, o.dstHost, o.dstPort, err),
+		)
+
+		// none is closed yet, and the rest would give up as well
+		if errors.Is(err, mmcli.ErrNotSent) && o.ctx.Err() != nil {
 			return errs
 		}
-
-		// once one is closed, close the rest
-		o = o.committed()
 	}
 
 	return errs
