@@ -297,6 +297,20 @@ describe('the jobs menu', () => {
     expect(html).toMatch(/class="tag is-info is-rounded jobs-count"[^>]*>2</);
   });
 
+  it('is a disclosure whose buttons and links assistive technology reaches', async () => {
+    store.role = viewer;
+    useJobStore().put(job('1', 'running'));
+
+    const html = await renderSSR(AppHeader);
+    // no menu, whose items' children would be presentational
+    expect(html).not.toMatch(/role="menu(item)?"/);
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('aria-controls="jobs-panel"');
+    expect(html).toMatch(
+      /id="jobs-panel"[^>]*role="region"|role="region"[^>]*id="jobs-panel"/,
+    );
+  });
+
   it('says when there are none, and is not shown to no one signed in', async () => {
     store.role = viewer;
     expect(await renderSSR(AppHeader)).toContain(

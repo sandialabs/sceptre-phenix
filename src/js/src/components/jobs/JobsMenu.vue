@@ -1,19 +1,20 @@
 <!--
 The header's background jobs menu: a button counting the running jobs, which
 opens the recent jobs with their progress, a link to each one's experiment,
-and their cancel, download and dismiss buttons.
+and their cancel, download and dismiss buttons. It is a disclosure, a button
+that shows and hides a panel, rather than an ARIA menu: a menu item's
+children are presentational, which would hide the panel's buttons and links
+from assistive technology.
 -->
 <template>
-  <b-dropdown
-    position="is-bottom-left"
-    aria-role="menu"
-    :mobile-modal="false"
-    class="jobs-menu">
-    <template #trigger>
+  <b-dropdown position="is-bottom-left" :mobile-modal="false" class="jobs-menu">
+    <template #trigger="{ active }">
       <button
         type="button"
         class="button is-small is-dark jobs-trigger"
         :aria-label="triggerLabel"
+        :aria-expanded="active ? 'true' : 'false'"
+        aria-controls="jobs-panel"
         :title="triggerLabel">
         <b-icon icon="list-check" size="is-small"></b-icon>
         <span
@@ -24,8 +25,13 @@ and their cancel, download and dismiss buttons.
         >
       </button>
     </template>
-    <b-dropdown-item custom aria-role="menuitem" class="jobs-panel">
-      <p class="jobs-heading">Background jobs</p>
+    <b-dropdown-item
+      custom
+      id="jobs-panel"
+      role="region"
+      aria-labelledby="jobs-heading"
+      class="jobs-panel">
+      <p id="jobs-heading" class="jobs-heading">Background jobs</p>
       <p v-if="!jobs.recent.length" class="jobs-empty">No background jobs</p>
       <ul v-else class="jobs-list">
         <li v-for="job in jobs.recent" :key="job.id" class="jobs-entry">
