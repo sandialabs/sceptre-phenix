@@ -60,7 +60,13 @@ func (e *Etcd) IsInitialized(component Component) bool {
 		return false
 	}
 
-	return string(resp.Kvs[0].Value) == "true"
+	return etcdInitialized(resp)
+}
+
+// etcdInitialized reports whether a component key read says "true"; a missing
+// key means the component is not initialized.
+func etcdInitialized(resp *clientv3.GetResponse) bool {
+	return len(resp.Kvs) > 0 && string(resp.Kvs[0].Value) == "true"
 }
 
 func (e *Etcd) InitializeComponent(component Component) error {

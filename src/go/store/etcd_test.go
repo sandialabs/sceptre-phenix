@@ -30,3 +30,21 @@ func TestEtcdTxnFailure(t *testing.T) {
 		t.Errorf("key at another revision: err = %v, want ErrConflict", err)
 	}
 }
+
+func TestEtcdInitialized(t *testing.T) {
+	get := func(kvs ...*mvccpb.KeyValue) *clientv3.GetResponse {
+		return &clientv3.GetResponse{Kvs: kvs}
+	}
+
+	if etcdInitialized(get()) {
+		t.Error("missing key: initialized = true, want false")
+	}
+
+	if etcdInitialized(get(&mvccpb.KeyValue{Value: []byte("false")})) {
+		t.Error(`value "false": initialized = true, want false`)
+	}
+
+	if !etcdInitialized(get(&mvccpb.KeyValue{Value: []byte("true")})) {
+		t.Error(`value "true": initialized = false, want true`)
+	}
+}
