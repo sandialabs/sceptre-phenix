@@ -65,7 +65,8 @@ There are three primary ways to create new users.
 
 2. From the `Users` tab, click the `+` button to create a new user. Here the
    administrator will add the [role(s) and resource
-   name(s)](#user-administration).
+   name(s)](#user-administration). phenix refuses a username that is already
+   taken or a role that does not exist, and stores no user.
 
     ![screenshot](images/create_a_new_user.png){: width=400 .center}
 
@@ -75,12 +76,14 @@ There are three primary ways to create new users.
    For users in the file that already exist, `phenix` ensures the user role
    matches what's in the file and updates it as necessary. This file is also
    automatically watched, so any users added to the file while `phenix` is
-   running will automatically be added to `phenix`.
+   running will automatically be added to `phenix`. An entry may end with
+   resource names that scope the role, each after its own `:`. phenix skips
+   and logs an entry whose role does not exist, and stores no user for it.
 
 ```yaml
 ui:
   users:
-    - <username>:<password>:<role name>
+    - <username>:<password>:<role name>[:<resource name>...]
     - ...
 ```
 

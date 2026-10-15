@@ -144,11 +144,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := rbac.NewUser(req.Username, req.Password)
-
-	user.Spec.FirstName = req.FirstName
-	user.Spec.LastName = req.LastName
-
+	// check the role before storing anything, so an unknown role leaves no user
 	uRole, err := rbac.RoleFromConfig(req.RoleName)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "role not found", "role", req.RoleName)
@@ -166,7 +162,33 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		[]string{verbGet, verbPatch},
 	)
 
-	_ = user.SetRole(uRole)
+	if _, err := rbac.GetUser(req.Username); err == nil {
+		http.Error(w, "user already exists", http.StatusConflict)
+
+		return
+	}
+
+	user := rbac.NewUser(req.Username, req.Password)
+	if user == nil {
+		plog.Error(plog.TypeSystem, "creating user", "user", req.Username)
+		http.Error(w, "error creating user", http.StatusInternalServerError)
+
+		return
+	}
+
+	user.Spec.FirstName = req.FirstName
+	user.Spec.LastName = req.LastName
+
+	if err := user.SetRole(uRole); err != nil {
+		plog.Error(plog.TypeSystem, "setting user role", "user", req.Username, "err", err)
+
+		// do not leave a user without a role behind
+		_ = config.Delete("user/" + req.Username)
+
+		http.Error(w, "error setting user role", http.StatusInternalServerError)
+
+		return
+	}
 
 	resp := userFromRBAC(*user)
 
