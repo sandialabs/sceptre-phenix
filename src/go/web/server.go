@@ -64,6 +64,12 @@ func ConfigureUsers(users []string) error {
 
 	for _, u := range users {
 		creds := strings.Split(u, ":")
+		if len(creds) < 3 { //nolint:mnd // username, password and role
+			plog.Error(plog.TypeSecurity, "skipping malformed default user", "user", creds[0])
+
+			continue
+		}
+
 		uname := creds[0]
 		pword := creds[1]
 		rname := creds[2]
@@ -89,9 +95,21 @@ func ConfigureUsers(users []string) error {
 			continue
 		}
 
+		// do not store a user whose role does not exist
+		if _, err := rbac.RoleFromConfig(rname); err != nil {
+			plog.Error(plog.TypeSecurity, "skipping default user with unknown role", "user", uname, "role", rname)
+
+			continue
+		}
+
 		plog.Info(plog.TypeSecurity, "creating default user", "user", uname, "role", rname)
 
 		user := rbac.NewUser(uname, pword)
+		if user == nil {
+			plog.Error(plog.TypeSecurity, "creating default user", "user", uname)
+
+			continue
+		}
 
 		setUserRole(user, rname, creds[3:]...)
 	}

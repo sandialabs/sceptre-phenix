@@ -862,6 +862,23 @@ func TestContractErrors(t *testing.T) {
 		"clean up run the experiment lacks": {
 			method: "POST", path: exp + "/scorch/pipelines/0/cleanup", want: http.StatusBadRequest, json: true,
 		},
+		"user with unknown role": {
+			method: "POST", path: "/api/v1/users", body: createUserBody("carol", "No Such Role"), want: http.StatusBadRequest,
+		},
+		"user with taken username": {
+			method: "POST", path: "/api/v1/users", body: createUserBody("bob", "Global Admin"), want: http.StatusConflict,
+			prepare: func(t *testing.T, _ contractFixture) string {
+				t.Helper()
+
+				useGlobalAdmin(t)
+				useTestStore(t, store.Config{
+					Version: "phenix.sandia.gov/v1", Kind: "User", Metadata: store.ConfigMetadata{Name: "bob"},
+					Spec: map[string]any{"username": "bob"},
+				})
+
+				return "/api/v1/users"
+			},
+		},
 		"unknown API path":       {method: "GET", path: "/api/v1/no-such-route", want: http.StatusNotFound},
 		"method a job takes not": {method: "PUT", prepare: bobs(""), want: http.StatusMethodNotAllowed},
 		"method SOH takes not":   {method: "PATCH", path: "/api/v1/soh", want: http.StatusMethodNotAllowed},
