@@ -1,7 +1,42 @@
 <template>
-  <div class="content">
+  <div class="content tunneler">
+    <section id="downloads" aria-labelledby="downloads-heading">
+      <h1 id="downloads-heading">Tunneler Downloads</h1>
+      <p v-if="notInstalled">
+        Tunneler downloads are not installed on this phēnix server.
+      </p>
+      <b-table v-else :data="downloads">
+        <template #empty>
+          <div class="has-text-centered">
+            {{
+              failed
+                ? 'Could not list the tunneler downloads'
+                : loaded
+                  ? 'No tunneler builds are installed on this server'
+                  : 'Loading downloads…'
+            }}
+          </div>
+        </template>
+        <b-table-column label="OS" v-slot="props">
+          {{ props.row.os }}
+        </b-table-column>
+        <b-table-column label="Architecture" v-slot="props">
+          {{ props.row.arch }}
+        </b-table-column>
+        <b-table-column label="Download" centered v-slot="props">
+          <a
+            :href="props.row.link"
+            download
+            :aria-label="`Download ${props.row.file}`"
+            :title="props.row.file">
+            <b-icon icon="file-download" size="is-small"></b-icon>
+          </a>
+        </b-table-column>
+      </b-table>
+    </section>
+    <hr />
     <div id="quick-start">
-      <h1>Quick Start</h1>
+      <h2>Quick Start</h2>
       <p>
         The phēnix-tunneler is an application phēnix users can run on their
         local machine in order to access services in VMs locally.
@@ -18,7 +53,7 @@
         <br />
 
         Once the appropriate phenix-tunneler executable is downloaded via the
-        table below, users can do the above by starting the phenix-tunneler
+        table above, users can do the above by starting the phenix-tunneler
         server and then creating a new port forward for a VM in the phēnix UI.
 
         <br />
@@ -63,38 +98,6 @@
         for more.
       </p>
     </div>
-    <hr />
-    <p v-if="notInstalled">
-      Tunneler downloads are not installed on this phēnix server.
-    </p>
-    <b-table v-else :data="downloads">
-      <template #empty>
-        <div class="has-text-centered">
-          {{
-            failed
-              ? 'Could not list the tunneler downloads'
-              : loaded
-                ? 'No tunneler builds are installed on this server'
-                : 'Loading downloads…'
-          }}
-        </div>
-      </template>
-      <b-table-column label="OS" v-slot="props">
-        {{ props.row.os }}
-      </b-table-column>
-      <b-table-column label="Architecture" v-slot="props">
-        {{ props.row.arch }}
-      </b-table-column>
-      <b-table-column label="Download" centered v-slot="props">
-        <a
-          :href="props.row.link"
-          download
-          :aria-label="`Download ${props.row.file}`"
-          :title="props.row.file">
-          <b-icon icon="file-download" size="is-small"></b-icon>
-        </a>
-      </b-table-column>
-    </b-table>
   </div>
 </template>
 
@@ -157,9 +160,14 @@
     color: whitesmoke !important;
   }
 
-  div#quick-start {
+  div.tunneler {
     width: 60%;
+    min-width: min(100%, 36rem);
     margin: auto;
+  }
+
+  section#downloads {
+    max-width: 36rem;
   }
 
   code {

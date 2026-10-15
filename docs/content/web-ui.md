@@ -25,8 +25,11 @@ them:
 | `Builder` | `list` on `configs`; opens in a new browser tab |
 | `Console` | `post` on `miniconsole` |
 | `WebShark` | the `webshark` feature, plus `get` on `experiments/files` or `list` on `vms/captures` |
-| `Tunneler` | the `tunneler-download` feature |
 | `Settings` | `update` on `settings` |
+
+When the server has the `tunneler-download` feature, a `Tunneler` button at
+the right-hand end of the navbar opens the [Tunneler](tunneler.md) download
+page.
 
 The Logs page's Type filter includes `AUDIT`, the security-relevant actions
 taken through the web UI and API, and its search matches their fields, such as

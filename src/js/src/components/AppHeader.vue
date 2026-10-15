@@ -5,7 +5,7 @@ based on whether the user is logged in and furthermore based on
 what their role allows.
  -->
 <template>
-  <b-navbar class="mb-4">
+  <b-navbar v-model="menuOpen" class="mb-4">
     <template #brand>
       <b-navbar-item tag="router-link" :to="{ name: 'home' }" :active="false">
         <img src="@/assets/imgs/phenix-banner.png" alt="phenix" />
@@ -81,12 +81,6 @@ what their role allows.
         >WebShark</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && tunneler"
-        tag="router-link"
-        :to="{ name: 'tunneler' }">
-        Tunneler
-      </b-navbar-item>
-      <b-navbar-item
         v-if="auth && roleAllowed('settings', 'update')"
         tag="router-link"
         :to="{ name: 'settings' }"
@@ -95,6 +89,18 @@ what their role allows.
     </template>
 
     <template #end>
+      <b-navbar-item v-if="auth && tunneler" tag="div" class="tunneler-item">
+        <b-button
+          tag="router-link"
+          :to="{ name: 'tunneler' }"
+          type="is-primary"
+          size="is-medium"
+          icon-left="download"
+          class="tunneler-button"
+          @click="menuOpen = false"
+          >Tunneler</b-button
+        >
+      </b-navbar-item>
       <b-navbar-item v-if="auth" tag="div">
         <refresh-status></refresh-status>
       </b-navbar-item>
@@ -125,12 +131,17 @@ what their role allows.
     setup() {
       return { roleAllowed };
     },
+    // the burger menu's state: Buefy leaves it open after a click on a
+    // button's label, so the Tunneler button closes it itself
+    data() {
+      return { menuOpen: false };
+    },
     //  The computed elements decide what the header shows: every link
     //  but Experiments waits for the user to log in, a Disabled role gets
     //  no Users link, an authenticating proxy gets Reauthorize rather than
-    //  Logout, and Tunneler and WebShark show only when the server offers
-    //  them (WebShark also needs a role that can open captures). Signed-in
-    //  users get the background jobs menu.
+    //  Logout, and the Tunneler button and WebShark show only when the server
+    //  offers them (WebShark also needs a role that can open captures).
+    //  Signed-in users get the background jobs menu.
     computed: {
       auth() {
         const phenixStore = usePhenixStore();
@@ -183,3 +194,23 @@ what their role allows.
     },
   };
 </script>
+
+<style scoped>
+  .tunneler-item {
+    padding-block: 0.25rem;
+  }
+
+  /* darker than $primary so white text keeps 5:1 (AA) */
+  .tunneler-button.button.is-primary {
+    background-color: #b5501f;
+  }
+
+  .tunneler-button.button.is-primary:hover,
+  .tunneler-button.button.is-primary.router-link-exact-active {
+    background-color: #9a4420;
+  }
+
+  .tunneler-button.router-link-exact-active {
+    box-shadow: inset 0 -3px 0 whitesmoke;
+  }
+</style>

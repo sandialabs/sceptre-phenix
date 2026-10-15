@@ -8,9 +8,10 @@ const { test, expect } = require('./helpers');
 
 const LATENCY_MS = 1000;
 
-// Nav tabs present with auth disabled and an empty store. WebShark and
-// Tunneler show only when the server offers them, and Builder leaves the Vue
-// app. Without --minimega-console the Console page only says so.
+// Nav tabs present with auth disabled and an empty store. WebShark shows only
+// when the server offers it, Tunneler is a header button rather than a tab, and
+// Builder leaves the Vue app. Without --minimega-console the Console page only
+// says so.
 const tabs = [
   '/configs/',
   '/disks/',
