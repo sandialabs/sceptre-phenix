@@ -75,7 +75,8 @@ export function roleAllowed(resource, verb, ...names) {
 // should match policy.go#resourceNameAllowed
 let resourceNameAllowed = (policy, name) => {
   var allowed = false;
-  for (const n of policy.resourceNames) {
+  // a policy that names no resources can arrive with null resource names
+  for (const n of policy.resourceNames ?? []) {
     let negate = n.startsWith('!');
     let n2 = n.replace('!', '');
 
