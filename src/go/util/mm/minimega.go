@@ -500,6 +500,11 @@ func (m Minimega) getVMInfo(o options, started func()) (VMs, error) {
 		return vms, fmt.Errorf("reading VM info: %w", statusErr)
 	}
 
+	// the capture and disk reads give up quietly once o.ctx is done
+	if err := ended(o.ctx); len(status) > 0 && err != nil {
+		return vms, err
+	}
+
 	return vms, nil
 }
 
