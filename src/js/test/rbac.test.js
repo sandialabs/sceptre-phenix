@@ -1,8 +1,16 @@
 // Which resources and resource names a role's policies allow; mirrors
 // role_test.go.
-import { roleAllowed, userTokenAllowed } from '@/utils/rbac.js';
+import {
+  roleAllowed,
+  scorchAllowed,
+  scorchControlAllowed,
+  scorchTerminalWriteAllowed,
+  userTokenAllowed,
+} from '@/utils/rbac.js';
 import { usePhenixStore } from '@/store.js';
 import { beforeEach, test, expect, vi } from 'vitest';
+
+import { role } from './helpers/roles.js';
 
 vi.mock('@/store.js', () => ({ usePhenixStore: vi.fn() }));
 
@@ -241,4 +249,73 @@ test('a token for another user also needs users/tokens create on them', () => {
   });
   expect(userTokenAllowed('bob')).toBe(true);
   expect(userTokenAllowed('carol')).toBe(false);
+});
+
+// SCORCH needs the scorch verb and experiments get on the experiment, as
+// scorch/handlers.go checks; experiments/trigger plays no part.
+test.each([
+  [
+    'Experiment User of expA',
+    role(
+      'Experiment User',
+      ['experiments', 'get', ['expA']],
+      ['scorch', 'get', ['expA']],
+      ['scorch', 'post', ['expA']],
+      ['scorch', 'delete', ['expA']],
+    ),
+    { view: true, start: true, cancel: true, other: false },
+  ],
+  [
+    'Scorch Viewer',
+    role('Scorch Viewer', ['experiments', 'get'], ['scorch', 'get']),
+    { view: true, start: false, cancel: false, other: true },
+  ],
+  [
+    'scorch without the experiment',
+    role('Scorch Only', ['scorch', '*']),
+    { view: false, start: false, cancel: false, other: false },
+  ],
+  [
+    'trigger without scorch',
+    role(
+      'Trigger Only',
+      ['experiments', 'get'],
+      ['experiments/trigger', 'create'],
+      ['experiments/trigger', 'delete'],
+    ),
+    { view: false, start: false, cancel: false, other: false },
+  ],
+])('SCORCH for a %s', (_, signedIn, want) => {
+  signIn(signedIn);
+
+  expect(scorchAllowed('get', 'expA')).toBe(want.view);
+  expect(scorchControlAllowed('expA', false)).toBe(want.start);
+  expect(scorchControlAllowed('expA', true)).toBe(want.cancel);
+  expect(scorchAllowed('get', 'expB')).toBe(want.other);
+});
+
+// only scorch/terminals write lets a role type into a SCORCH terminal: every
+// scorch verb and reading everything do not
+test.each([
+  [
+    'scorch/terminals write',
+    role('Writer', ['scorch/terminals', 'write']),
+    true,
+  ],
+  ['every verb on everything', role('Admin', ['*', '*'], ['*/*', '*']), true],
+  ['every scorch verb', role('Scorch Runner', ['scorch', '*']), false],
+  [
+    'reading everything',
+    role('Global Viewer', ['*', 'get'], ['*/*', 'get']),
+    false,
+  ],
+  [
+    'scorch/terminals write elsewhere',
+    role('Elsewhere', ['scorch/terminals', 'write', ['expB']]),
+    false,
+  ],
+])('SCORCH terminal writes with %s', (_, signedIn, want) => {
+  signIn(signedIn);
+
+  expect(scorchTerminalWriteAllowed('expA')).toBe(want);
 });

@@ -334,15 +334,51 @@ describe('Clear', () => {
     expect(notify.error).toHaveBeenCalledWith(err);
     expect((await pageButtons(ctx)).runs[0][0]).toBe('Clear');
   });
+});
 
-  it('is offered only to roles that may start runs', async () => {
-    rbac.allowed = denyOnly(['experiments/trigger', 'create']);
-    const ctx = await open([{ pipeline: nodes('success') }]);
+describe('Permissions', () => {
+  // starting and cleaning up need scorch post, stopping and clearing scorch
+  // delete, each with experiments get; experiments/trigger plays no part
+  it.each([
+    [
+      'scorch post',
+      ['scorch', 'post'],
+      { header: ['Stop all (disabled)', 'Clear all'], runs: [['Clear']] },
+    ],
+    [
+      'scorch delete',
+      ['scorch', 'delete'],
+      { header: ['Start all'], runs: [['start this run']] },
+    ],
+    ['experiments get', ['experiments', 'get'], { header: [], runs: [[]] }],
+    [
+      'no experiments/trigger',
+      ['experiments/trigger'],
+      {
+        header: ['Start all', 'Stop all (disabled)', 'Clear all'],
+        runs: [['Clear', 'start this run']],
+      },
+    ],
+  ])(
+    'offers the run controls a role without %s may use',
+    async (_, perm, want) => {
+      const ctx = await open([{ pipeline: nodes('success') }]);
+      expect(await pageButtons(ctx)).toEqual({
+        header: ['Start all', 'Stop all (disabled)', 'Clear all'],
+        runs: [['Clear', 'start this run']],
+      });
 
-    expect(await pageButtons(ctx)).toEqual({
-      header: ['Stop all (disabled)'],
-      runs: [['start this run']],
-    });
+      rbac.allowed = denyOnly(perm);
+      expect(await pageButtons(ctx)).toEqual(want);
+    },
+  );
+
+  it('offers Cleanup only to roles that may post scorch', async () => {
+    const ctx = await open([{ hasCleanup: true }]);
+    expect((await pageButtons(ctx)).runs[0]).toContain('Cleanup');
+
+    rbac.allowed = denyOnly(['scorch', 'post']);
+    expect((await pageButtons(ctx)).runs[0]).not.toContain('Cleanup');
   });
 });
 

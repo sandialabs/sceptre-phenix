@@ -64,6 +64,7 @@ All notable changes to this project will be documented in this file.
 - **API**: Experiment listings report start `percent` and can skip minimega (`?vms=false`), SCORCH pipelines include `app_running` and the experiment's status, VM lists sort by `delayed`, and the experiment start broadcast no longer lists VMs.
 - **Hosts**: Disk usage is measured at most once a minute and shown as a percentage.
 - **Tunneler**: A `Tunneler` button at the right of the header replaces the Tunneler tab, and the page lists the builds the server has (`GET /downloads/tunneler`) above its quick start.
+- **SCORCH permissions in the UI**: The Scorch tab, its links and its run, cleanup and clear buttons show only to roles with the matching `scorch` permission, and terminals open read-only without `scorch/terminals` `write`.
 - **Browser console**: Production builds log only warnings and errors, and lint rejects new `console.log` calls.
 - **CI**: The Frontend workflow cancels superseded runs, and closing a pull request cancels its CI.
 - **CI**: The Frontend workflow builds the UI and phenix once and shares them with the e2e and performance jobs.

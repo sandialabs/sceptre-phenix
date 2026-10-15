@@ -4,7 +4,7 @@ import { ToastProgrammatic as Toast } from 'buefy';
 
 import { usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
-import { roleAllowed } from '@/utils/rbac.js';
+import { roleAllowed, scorchAllowed } from '@/utils/rbac.js';
 import { canUseWebShark } from '@/utils/webshark.js';
 
 const router = createRouter({
@@ -95,7 +95,8 @@ const router = createRouter({
       name: 'scorch',
       meta: {
         title: 'SCORCH',
-        allowed: () => roleAllowed('experiments', 'list'),
+        allowed: () =>
+          roleAllowed('scorch', 'get') && roleAllowed('experiments', 'list'),
       },
       component: () => import('@/views/Scorch.vue'),
     },
@@ -104,7 +105,7 @@ const router = createRouter({
       name: 'scorchruns',
       meta: {
         title: 'SCORCH runs',
-        allowed: (to) => roleAllowed('experiments', 'get', to.params.id),
+        allowed: (to) => scorchAllowed('get', to.params.id),
       },
       component: () => import('@/views/ScorchRuns.vue'),
     },

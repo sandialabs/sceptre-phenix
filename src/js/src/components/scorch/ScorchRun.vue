@@ -44,7 +44,10 @@
             <span>Cleanup</span>
           </button>
         </b-tooltip>
-        <b-tooltip :label="statusLabel" type="is-light is-left">
+        <b-tooltip
+          v-if="controllable"
+          :label="statusLabel"
+          type="is-light is-left">
           <button
             class="button is-dark"
             :class="{ 'is-loading': pending }"
@@ -124,6 +127,11 @@
       },
       controller: {
         type: Function,
+      },
+      // whether the role may start the run, or cancel it while it runs
+      controllable: {
+        type: Boolean,
+        default: false,
       },
       cleaner: {
         type: Function,

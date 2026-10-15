@@ -26,6 +26,10 @@ export { capturing, fetching, loaderSpy, switchable } from './pageLoader.js';
 // rbac.allowed; set it to a predicate from permissions.js
 export const rbac = { allowed: allowAll };
 
+// as rbac.js#scorchAllowed, on rbac.allowed
+const scorchAllowed = (verb, exp) =>
+  rbac.allowed('scorch', verb, exp) && rbac.allowed('experiments', 'get', exp);
+
 export const axios = {
   get: vi.fn(),
   post: vi.fn(),
@@ -73,6 +77,11 @@ export const modules = {
       rbac.allowed('users', 'patch', username) &&
       (username === store.username ||
         rbac.allowed('users/tokens', 'create', username)),
+    scorchAllowed: (verb, exp) => scorchAllowed(verb, exp),
+    scorchControlAllowed: (exp, running) =>
+      scorchAllowed(running ? 'delete' : 'post', exp),
+    scorchTerminalWriteAllowed: (exp) =>
+      rbac.allowed('scorch/terminals', 'write', exp),
   }),
   axios: () => ({ default: axios }),
   errorNotif: () => ({

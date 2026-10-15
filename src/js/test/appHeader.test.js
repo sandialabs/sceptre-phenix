@@ -105,6 +105,12 @@ describe('the menu', () => {
       'links only the pages a role may open, as the router allows them',
       viewer,
       ['webshark'],
+      ['Experiments', 'Users', 'State of Health'],
+    ],
+    [
+      'links Scorch for a role that may also get scorch',
+      role('Scorch Viewer', ['experiments', 'list'], ['scorch', 'get']),
+      [],
       ['Experiments', 'Users', 'Scorch', 'State of Health'],
     ],
     [

@@ -46,7 +46,7 @@
         header-class="sort-inline"
         sortable
         v-slot="props">
-        <template v-if="roleAllowed('experiments', 'get', props.row.name)">
+        <template v-if="scorchAllowed('get', props.row.name)">
           <b-tooltip label="view SCORCH components" type="is-dark">
             <router-link
               class="navbar-item"
@@ -114,7 +114,9 @@
             {{ scorchStatus(props.row) }}
           </span>
           <b-tooltip
-            v-if="scorchControlAllowed(props.row)"
+            v-if="
+              scorchControlAllowed(props.row.name, props.row.scorch.running)
+            "
             :label="scorchControlLabel(props.row)"
             type="is-dark">
             <button
@@ -127,7 +129,7 @@
             </button>
           </b-tooltip>
           <b-tooltip
-            v-if="roleAllowed('experiments', 'get', props.row.name)"
+            v-if="scorchAllowed('get', props.row.name)"
             label="Go to SCORCH pipelines"
             type="is-dark">
             <router-link
@@ -142,10 +144,7 @@
       <b-table-column label="Terminal" centered v-slot="props">
         <button
           :aria-label="`Open terminal for experiment ${props.row.name}`"
-          v-if="
-            props.row.terminal &&
-            roleAllowed('experiments', 'get', props.row.name)
-          "
+          v-if="props.row.terminal && scorchAllowed('get', props.row.name)"
           class="button is-small is-white"
           @click="showExperimentTerminal(props.row.name)">
           <b-icon icon="terminal"></b-icon>
@@ -214,7 +213,12 @@
   import { escapeHTML } from '@/utils/escapeHTML.js';
   import { confirmOperation } from '@/utils/operations.js';
   import { useTable } from '@/utils/useTable.js';
-  import { roleAllowed } from '@/utils/rbac.js';
+  import {
+    roleAllowed,
+    scorchAllowed,
+    scorchControlAllowed,
+    scorchTerminalWriteAllowed,
+  } from '@/utils/rbac.js';
   import { createLiveRows } from '@/utils/liveRows.js';
 
   // how long a SCORCH button spins waiting for the server to report that the
@@ -224,7 +228,7 @@
   export default {
     setup() {
       const { table } = useTable();
-      return { table, roleAllowed };
+      return { table, roleAllowed, scorchAllowed, scorchControlAllowed };
     },
     components: {
       'vue-terminal': Terminal,
@@ -353,14 +357,6 @@
         );
       },
 
-      scorchControlAllowed(exp) {
-        return roleAllowed(
-          'experiments/trigger',
-          exp.scorch.running ? 'delete' : 'create',
-          exp.name,
-        );
-      },
-
       // the button stops the current run, or starts the first one
       scorchControlLabel(exp) {
         return exp.scorch.running
@@ -483,7 +479,8 @@
                 this.terminal.loc = t.loc;
                 this.terminal.exit = t.exit;
                 this.terminal.exp = t.exp;
-                this.terminal.ro = t.readOnly;
+                this.terminal.ro =
+                  t.readOnly || !scorchTerminalWriteAllowed(t.exp);
                 this.terminal.modal = true;
               } else {
                 // the component exited since the terminal was listed

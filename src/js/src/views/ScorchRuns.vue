@@ -21,7 +21,7 @@
       </b-tooltip>
       <div class="buttons">
         <b-tooltip
-          v-if="roleAllowed('experiments/trigger', 'create', expName)"
+          v-if="scorchAllowed('post', expName)"
           label="Starts all defined runs in order one by one (not in parallel)"
           type="is-light"
           multilined>
@@ -34,7 +34,7 @@
           </button>
         </b-tooltip>
         <button
-          v-if="roleAllowed('experiments/trigger', 'delete', expName)"
+          v-if="scorchAllowed('delete', expName)"
           class="button is-danger"
           :disabled="!canStopAll"
           @click="stopAll">
@@ -42,7 +42,7 @@
           <span>Stop all</span>
         </button>
         <b-tooltip
-          v-if="roleAllowed('experiments/trigger', 'create', expName)"
+          v-if="scorchAllowed('delete', expName)"
           label="clear the status of every run that is not running"
           type="is-light is-left">
           <button
@@ -64,14 +64,15 @@
         :loop="run.loop"
         :running="run.running"
         :pending="run.pending || run.queued"
-        :has-cleanup="run.hasCleanup"
+        :has-cleanup="run.hasCleanup && scorchAllowed('post', expName)"
         :can-clean-up="!anyBusy"
         :nodes="run.nodes"
         :viewer="componentDetail"
         :controller="scorchControl"
+        :controllable="scorchControlAllowed(expName, run.running)"
         :cleaner="cleanupRun"
         :clearer="clearRun"
-        :clearable="roleAllowed('experiments/trigger', 'create', expName)"
+        :clearable="scorchAllowed('delete', expName)"
         :can-clear="canClear(run)"
         :rewinder="loopHistory" />
     </div>
@@ -167,7 +168,12 @@
   import { createPageLoader } from '@/utils/pageLoader.js';
   import { scorchRunsKey } from '@/utils/pageData.js';
   import { usePhenixStore } from '@/store.js';
-  import { roleAllowed } from '@/utils/rbac.js';
+  import {
+    roleAllowed,
+    scorchAllowed,
+    scorchControlAllowed,
+    scorchTerminalWriteAllowed,
+  } from '@/utils/rbac.js';
 
   import ScorchKey from '@/components/scorch/ScorchKey.vue';
   import ScorchRun from '@/components/scorch/ScorchRun.vue';
@@ -202,7 +208,7 @@
 
   export default {
     setup() {
-      return { roleAllowed };
+      return { roleAllowed, scorchAllowed, scorchControlAllowed };
     },
 
     components: {
@@ -524,7 +530,8 @@
                   this.terminal.loc = t.loc;
                   this.terminal.exit = t.exit;
                   this.terminal.exp = t.exp;
-                  this.terminal.ro = t.readOnly;
+                  this.terminal.ro =
+                    t.readOnly || !scorchTerminalWriteAllowed(t.exp);
                   this.terminal.modal = true;
                 } else {
                   this.exitOutput();

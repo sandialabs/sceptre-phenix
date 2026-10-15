@@ -85,6 +85,26 @@ export function userTokenAllowed(username) {
   );
 }
 
+// SCORCH needs a scorch verb and experiments get on the experiment, as
+// scorch/handlers.go checks: get to view its runs, post to start one or its
+// cleanup stage, and delete to cancel or clear one.
+export function scorchAllowed(verb, exp) {
+  return (
+    roleAllowed('scorch', verb, exp) && roleAllowed('experiments', 'get', exp)
+  );
+}
+
+// Starting a SCORCH run needs scorch post, and canceling one scorch delete.
+export function scorchControlAllowed(exp, running) {
+  return scorchAllowed(running ? 'delete' : 'post', exp);
+}
+
+// Typing into and exiting a SCORCH terminal, a shell on the phenix server,
+// needs scorch/terminals write; the server gives other roles a read-only one.
+export function scorchTerminalWriteAllowed(exp) {
+  return roleAllowed('scorch/terminals', 'write', exp);
+}
+
 // should match policy.go#resourceNameAllowed
 let resourceNameAllowed = (policy, name) => {
   var allowed = false;

@@ -70,16 +70,42 @@ describe('a created experiment', () => {
     expect(ctx.$buefy.toast.open).toHaveBeenCalled();
   });
 
-  it('is left out when the SCORCH list would not show it', async () => {
-    const ctx = page();
-    ctx.handle(expMsg('create', { name: 'b', apps: ['soh'] }));
+  it.each([[['experiments/apps']], [['scorch', 'get']]])(
+    'is left out when the SCORCH list would not show it (without %j)',
+    async (perm) => {
+      const ctx = page();
+      ctx.handle(expMsg('create', { name: 'b', apps: ['soh'] }));
 
-    rbac.allowed = denyOnly(['experiments/apps']);
-    ctx.handle(expMsg('create', created));
+      rbac.allowed = denyOnly(perm);
+      ctx.handle(expMsg('create', created));
+      await flush();
+
+      expect(axios.get).not.toHaveBeenCalled();
+      expect(ctx.experiments).toEqual([]);
+    },
+  );
+});
+
+describe('the terminal', () => {
+  // the server gives a role without scorch/terminals write a read-only
+  // terminal; the page shows it as one whatever the server sent
+  it.each([
+    ['may write', [], false],
+    ['may not write', [['scorch/terminals', 'write']], true],
+  ])('opens read-only unless the role %s', async (_, denied, ro) => {
+    rbac.allowed = denyOnly(...denied);
+    axios.get.mockResolvedValue({
+      data: { terminal: { loc: '/ws', exit: '/exit', exp: 'exp1' } },
+    });
+    const ctx = page([{ ...row(), terminal: true }]);
+    ctx.terminals = {
+      exp1: { exp: 'exp1', run: 0, loop: 0, stage: 'start', name: 'brk' },
+    };
+
+    ctx.showExperimentTerminal('exp1');
     await flush();
 
-    expect(axios.get).not.toHaveBeenCalled();
-    expect(ctx.experiments).toEqual([]);
+    expect(ctx.terminal).toMatchObject({ modal: true, ro });
   });
 });
 

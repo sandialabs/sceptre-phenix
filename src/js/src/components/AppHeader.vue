@@ -49,7 +49,11 @@ what their role allows.
         >Logs</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && roleAllowed('experiments', 'list')"
+        v-if="
+          auth &&
+          roleAllowed('scorch', 'get') &&
+          roleAllowed('experiments', 'list')
+        "
         tag="router-link"
         :to="{ name: 'scorch' }"
         >Scorch</b-navbar-item

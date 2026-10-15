@@ -88,7 +88,8 @@ export const hasScorch = (exp) => (exp?.apps ?? []).includes('scorch');
 export const scorchListed = (exp) =>
   hasScorch(exp) &&
   roleAllowed('experiments/apps', 'get', exp.name) &&
-  roleAllowed('experiments', 'get', exp.name);
+  roleAllowed('experiments', 'get', exp.name) &&
+  roleAllowed('scorch', 'get', exp.name);
 
 // GET /experiments/{name}/scorch/pipelines, which also says whether the SCORCH
 // app is running
