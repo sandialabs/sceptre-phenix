@@ -17,6 +17,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"sync"
@@ -254,7 +255,7 @@ func prepare(c Capture) (*Tap, error) {
 	if local {
 		t.store, err = os.Open(c.Path)
 	} else {
-		t.store, err = os.CreateTemp("", "phenix-capture-*.pcap")
+		t.store, err = os.CreateTemp("", spoolPattern)
 		if t.store != nil {
 			t.spool = t.store.Name()
 		}
@@ -267,6 +268,44 @@ func prepare(c Capture) (*Tap, error) {
 	}
 
 	return t, nil
+}
+
+// spoolPattern names the temporary files a Tap of a capture on another node
+// spools the capture to.
+const spoolPattern = "phenix-capture-*.pcap"
+
+// RemoveStaleSpools deletes the capture spools in the temporary directory
+// last written before since, such as those a server that was stopped or
+// crashed with a capture open left, and returns how many it deleted. A spool
+// still written to is newer, and a Tap reads its spool through the file it
+// holds open, so deleting one in use would lose nothing.
+func RemoveStaleSpools(since time.Time) (int, error) {
+	spools, err := filepath.Glob(filepath.Join(os.TempDir(), spoolPattern))
+	if err != nil {
+		return 0, fmt.Errorf("listing capture spools: %w", err)
+	}
+
+	var (
+		removed int
+		errs    []error
+	)
+
+	for _, spool := range spools {
+		info, err := os.Lstat(spool)
+		if err != nil || !info.Mode().IsRegular() || !info.ModTime().Before(since) {
+			continue
+		}
+
+		if err := os.Remove(spool); err != nil {
+			errs = append(errs, err)
+
+			continue
+		}
+
+		removed++
+	}
+
+	return removed, errors.Join(errs...)
 }
 
 // discard closes a Tap prepare returned that was never started.
