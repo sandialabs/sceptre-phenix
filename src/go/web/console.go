@@ -104,6 +104,8 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 	audit.Success(r, audit.ConsoleCreate, "miniconsole created", audit.Fields{PID: console.pid})
 
 	body, _ := json.Marshal(util.WithRoot("pid", console.pid))
+
+	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
@@ -127,6 +129,8 @@ func GetConsole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body, _ := json.Marshal(util.WithRoot("pid", console.pid))
+
+	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 

@@ -73,8 +73,8 @@ func createTestConsole(t *testing.T, api string) int {
 	t.Helper()
 
 	resp := do(t, http.MethodPost, api+"/console", "")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("creating console: got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "application/json" {
+		t.Fatalf("creating console: got %d, %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 
 	var body struct {
@@ -481,8 +481,9 @@ func TestConsoleIsOnlyItsOwners(t *testing.T) {
 		})
 	}
 
-	if resp := do(t, http.MethodGet, alice+path, ""); resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET as the owner: expected 200, got %d", resp.StatusCode)
+	if resp := do(t, http.MethodGet, alice+path, ""); resp.StatusCode != http.StatusOK ||
+		resp.Header.Get("Content-Type") != "application/json" {
+		t.Fatalf("GET as the owner: expected 200 JSON, got %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 
 	if resp := do(t, http.MethodPost, alice+path+"/size?cols=100&rows=40", ""); resp.StatusCode != http.StatusOK {
