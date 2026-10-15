@@ -3,6 +3,7 @@ package rbac
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -223,5 +224,19 @@ func TestSaveOmitsNullResourceNames(t *testing.T) {
 
 	if err := types.ValidateConfigSpec(*c); err != nil {
 		t.Errorf("stored role fails its schema: %v", err)
+	}
+}
+
+// The generated permission list holds checks whose resource or verb is a
+// constant, as well as those written as literals.
+func TestKnownPermissions(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range []Permission{
+		{"users", "get"}, {"users", "list"}, {"users/roles", "patch"}, {"users/tokens", "create"}, {"configs", "create"},
+	} {
+		if !slices.Contains(Permissions, want) {
+			t.Errorf("Permissions lacks %s %s", want.Resource, want.Verb)
+		}
 	}
 }
