@@ -82,6 +82,28 @@ func TestOpenAPISchemasValid(t *testing.T) {
 	assertOpenAPIPropertiesDocumented(t, "#", raw)
 }
 
+// The config schema, embedded from schemas/config.yaml, is valid OpenAPI
+// whose properties are documented as openapi.yml's are.
+func TestConfigSchemaDocumented(t *testing.T) {
+	t.Parallel()
+
+	doc, err := openapi3.NewLoader().LoadFromData(OpenAPI)
+	if err != nil {
+		t.Fatalf("load config schema: %v", err)
+	}
+
+	if err := doc.Validate(context.Background()); err != nil {
+		t.Fatalf("validate config schema: %v", err)
+	}
+
+	var raw any
+	if err := yaml.Unmarshal(OpenAPI, &raw); err != nil {
+		t.Fatalf("parse config schema: %v", err)
+	}
+
+	assertOpenAPIPropertiesDocumented(t, "#", raw)
+}
+
 func assertJSONFieldsInSchema(t *testing.T, name string, schema *openapi3.Schema, model reflect.Type) {
 	t.Helper()
 

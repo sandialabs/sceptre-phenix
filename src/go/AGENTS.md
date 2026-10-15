@@ -46,6 +46,10 @@ the root target does.
   upgrading or replacing them.
 - Config changes must keep versioned structs, interfaces, YAML/JSON tags,
   OpenAPI schemas, examples, and API output aligned.
+- Config schemas are OpenAPI YAML files embedded with `//go:embed`:
+  `types/schemas/config.yaml` for the envelope (apiVersion, kind, metadata,
+  spec) and `types/version/schemas/v*.yaml` for each kind's spec. Edit the
+  YAML, never a Go string.
 - Preserve persisted BoltDB/etcd compatibility. A kind decodes only at its
   version in `types/version.StoredVersion`; there are no config upgraders.
 - RBAC changes require generated policy, migrations when needed, and migration
