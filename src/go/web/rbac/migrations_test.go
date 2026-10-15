@@ -286,6 +286,69 @@ func TestEnsureCaptureSubnetStopPermission(t *testing.T) {
 	}
 }
 
+// The Experiment Viewer mount migration scopes the unnamed vms/mount policy of
+// users given the role before every unnamed policy was scoped on assignment to
+// the names of their VM policy. The stored role, users whose mount policy is
+// scoped, and other roles are left alone. Running it again changes nothing.
+//
+//nolint:paralleltest // replaces the store
+func TestEnsureExperimentViewerMountScope(t *testing.T) {
+	var (
+		scopedA   = []string{"exp-a", "exp-a/*"}
+		resources = []string{"experiments", "experiments/*", "vms", "vms/*"}
+		viewing   = func(names []string) *v1.PolicySpec {
+			return &v1.PolicySpec{Resources: resources, ResourceNames: names, Verbs: []string{"list", "get"}}
+		}
+		hosts = policy("hosts", []string{"*"}, "list")
+		mount = func(names []string) *v1.PolicySpec { return policy(mountResource, names, "post", "delete") }
+	)
+
+	role := func(name string, policies ...*v1.PolicySpec) *v1.RoleSpec {
+		return &v1.RoleSpec{Name: name, Policies: policies}
+	}
+
+	useStore(t,
+		[]*v1.RoleSpec{role(experimentViewerRole, viewing(nil), hosts, mount(nil))},
+		[]*v1.UserSpec{
+			{Username: "legacy", Role: role(experimentViewerRole, viewing(scopedA), hosts, mount(nil))},
+			{Username: "scoped", Role: role(experimentViewerRole, viewing(scopedA), hosts, mount([]string{"exp-b/*"}))},
+			{Username: "unnamed", Role: role(experimentViewerRole, viewing(nil), mount(nil))},
+			{Username: "other", Role: role(experimentUserRole, viewing(scopedA), hosts, mount(nil))},
+		},
+	)
+
+	want := map[string][]*v1.PolicySpec{
+		"role Experiment Viewer": {viewing(nil), hosts, mount(nil)},
+		"user legacy":            {viewing(scopedA), hosts, mount(scopedA)},
+		"user scoped":            {viewing(scopedA), hosts, mount([]string{"exp-b/*"})},
+		"user unnamed":           {viewing(nil), mount(nil)},
+		"user other":             {viewing(scopedA), hosts, mount(nil)},
+	}
+
+	for _, pass := range []string{"first", "repeated"} {
+		if err := EnsureExperimentViewerMountScope(); err != nil {
+			t.Fatalf("%s migration: %v", pass, err)
+		}
+
+		got := storedPolicies(t)
+
+		for name, policies := range want {
+			if !reflect.DeepEqual(got[name], policies) {
+				t.Errorf("%s migration: %s policies = %s, want %s", pass, name, describe(got[name]), describe(policies))
+			}
+		}
+	}
+
+	user, err := GetUser("legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r, _ := user.Role(); !r.Allowed(mountResource, "post", "exp-a/vm") || r.Allowed(mountResource, "post", "exp-b/vm") {
+		t.Error("the migrated user may not mount exactly the VMs of exp-a")
+	}
+}
+
 func describe(policies []*v1.PolicySpec) string {
 	out := make([]string, len(policies))
 	for i, p := range policies {
